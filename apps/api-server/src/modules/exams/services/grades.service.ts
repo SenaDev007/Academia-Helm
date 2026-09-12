@@ -115,6 +115,17 @@ export class GradesService {
    *
    * On fusionne les 2 sources (déduplication par studentId) pour maximiser
    * les chances d'afficher tous les élèves de la classe.
+   *
+   * ⭐ FIX 2026-09-12 « la liste des élèves ne s'affiche pas » :
+   *   Le filtre historique n'acceptait que ACTIVE/ENROLLED/CONFIRMED/PENDING.
+   *   Or le flux d'admission standard pose status=ADMITTED (et RE_ENROLLED
+   *   à la réinscription) → la quasi-totalité des élèves admis étaient
+   *   INVISIBLES dans la fiche de saisie dès que ClassStudent était vide.
+   *   On s'aligne sur la définition « élèves de la classe » du module Élèves
+   *   (students-lifecycle.service.ts) : ADMITTED, PRE_REGISTERED, ACTIVE,
+   *   ENROLLED (+ RE_ENROLLED / VALIDATED / historiques par sécurité).
+   *   Seuls WITHDRAWN (radié) et TRANSFERRED (sorti) sont exclus, ainsi que
+   *   les élèves inactifs (Student.isActive=false — archivés/tests).
    */
   async getGradingSheet(evaluationId: string, tenantId: string) {
     const evaluation = await this.prisma.evaluation.findFirst({
@@ -122,7 +133,10 @@ export class GradesService {
       include: {
         class: {
           include: {
-            classStudents: { include: { student: true } },
+            classStudents: {
+              where: { student: { isActive: true } },
+              include: { student: true },
+            },
           },
         },
       },
@@ -130,7 +144,7 @@ export class GradesService {
 
     if (!evaluation) throw new NotFoundException('Evaluation not found');
 
-    // Source 1 : ClassStudent (relation directe)
+    // Source 1 : ClassStudent (relation directe) — élèves actifs uniquement
     const studentsFromClassStudents = evaluation.class?.classStudents?.map(cs => cs.student) || [];
 
     // Source 2 : StudentEnrollment (élèves inscrits dans cette classe pour cette année)
@@ -141,7 +155,13 @@ export class GradesService {
           classId: evaluation.classId,
           tenantId,
           academicYearId: evaluation.academicYearId,
-          status: { in: ['ACTIVE', 'ENROLLED', 'CONFIRMED', 'PENDING'] },
+          status: {
+            in: [
+              'ACTIVE', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED',
+              'RE_ENROLLED', 'VALIDATED', 'CONFIRMED', 'PENDING',
+            ],
+          },
+          student: { isActive: true },
         },
         include: { student: true },
       });

@@ -20,7 +20,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Plus, Search, Calendar, Eye, Send, Trash2, Pencil, Lock, XCircle,
-  Play, CheckCircle, MoreVertical, Loader2, Settings,
+  Play, CheckCircle, MoreVertical, Loader2, Settings, ListChecks, X,
 } from 'lucide-react';
 import { ModuleContainer, FormModal } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -37,6 +37,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
+import { cn } from '@/lib/utils';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
@@ -126,6 +127,42 @@ const EMPTY_FORM: EvaluationForm = {
   endDate: new Date().toISOString().slice(0, 10),
   maxScore: '20',
   coefficient: '1',
+};
+
+/**
+ * ⭐ MODIFICATION MULTIPLE : chaque champ est précédé d'une case « Appliquer » —
+ * seuls les champs cochés sont appliqués à toutes les évaluations sélectionnées.
+ */
+interface BulkEditForm {
+  applyType: boolean;
+  evaluationTypeId: string;
+  applyPeriod: boolean;
+  periodId: string;
+  applyDates: boolean;
+  startDate: string;
+  endDate: string;
+  applyMaxScore: boolean;
+  maxScore: string;
+  applyCoefficient: boolean;
+  coefficient: string;
+  applyTitle: boolean;
+  title: string;
+}
+
+const EMPTY_BULK_FORM: BulkEditForm = {
+  applyType: false,
+  evaluationTypeId: '',
+  applyPeriod: false,
+  periodId: '',
+  applyDates: false,
+  startDate: new Date().toISOString().slice(0, 10),
+  endDate: new Date().toISOString().slice(0, 10),
+  applyMaxScore: false,
+  maxScore: '20',
+  applyCoefficient: false,
+  coefficient: '1',
+  applyTitle: false,
+  title: '',
 };
 
 // ⭐ Ordre pédagogique des classes (Maternelle → Primaire → Secondaire)
@@ -225,6 +262,8 @@ interface EvaluationAction {
  */
 
 interface GroupedEvaluation {
+  // Clé de regroupement — identifiant stable utilisé par la sélection multiple
+  key: string;
   // Clé de regroupement
   classId: string;
   className: string;
@@ -246,74 +285,86 @@ interface GroupedEvaluation {
   subjectByEvalId?: Record<string, string>;
 }
 
+/**
+ * ⭐ Regroupement des évaluations par
+ * (classId × evaluationTypeId × periodId × startDate × endDate).
+ * Remonté au niveau de la page pour piloter la SÉLECTION MULTIPLE
+ * (les cartes groupées partagent la même clé que le groupe).
+ */
+function buildEvaluationGroups(evaluations: Evaluation[]): GroupedEvaluation[] {
+  const map = new Map<string, GroupedEvaluation>();
+  for (const ev of evaluations) {
+    const classId = ev.class?.id || '_no_class';
+    const evaluationTypeId = ev.evaluationType?.id || '_no_type';
+    const periodId = ev.period?.id || '_no_period';
+    const sd = ev.startDate || ev.evaluationDate || '';
+    const ed = ev.endDate || ev.startDate || ev.evaluationDate || '';
+    const key = `${classId}|${evaluationTypeId}|${periodId}|${sd}|${ed}`;
+
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        classId,
+        className: ev.class?.name || 'Sans classe',
+        evaluationTypeId,
+        evaluationTypeName: ev.evaluationType?.name || 'Évaluation',
+        evaluationTypeCode: ev.evaluationType?.code,
+        periodId,
+        periodName: ev.period?.name || '',
+        startDate: ev.startDate || null,
+        endDate: ev.endDate || null,
+        subjects: [],
+        evaluationIds: [],
+        statuses: [],
+        firstEvaluation: ev,
+        subjectByEvalId: {},
+      });
+    }
+    const g = map.get(key)!;
+    if (ev.subject && !g.subjects.find((s) => s.id === ev.subject!.id)) {
+      g.subjects.push({ id: ev.subject.id, name: ev.subject.name });
+    }
+    // ⭐ V10d — mapping explicite evaluationId → subjectId (robuste aux doublons)
+    if (ev.subject) g.subjectByEvalId![ev.id] = ev.subject.id;
+    g.evaluationIds.push(ev.id);
+    g.statuses.push(ev.status);
+  }
+  return Array.from(map.values()).sort((a, b) => {
+    // Trier par classe (ordre pédagogique) puis par date de début
+    const classCmp = getClassOrderIndex(a.className) - getClassOrderIndex(b.className);
+    if (classCmp !== 0) return classCmp;
+    const da = a.startDate ? new Date(a.startDate).getTime() : 0;
+    const db = b.startDate ? new Date(b.startDate).getTime() : 0;
+    return da - db;
+  });
+}
+
 function EvaluationCardsByClass({
-  evaluations,
+  groups,
   getAvailableActions,
   onOpenEdit,
   isMaternelle,
+  selectedKeys,
+  onToggleSelect,
 }: {
-  evaluations: Evaluation[];
+  groups: GroupedEvaluation[];
   getAvailableActions: (group: GroupedEvaluation) => EvaluationAction[];
   onOpenEdit: (group: GroupedEvaluation) => void;
   isMaternelle: boolean;
+  selectedKeys: Set<string>;
+  onToggleSelect: (key: string) => void;
 }) {
-  // Grouper par (classId × evaluationTypeId × periodId × startDate × endDate)
-  const grouped = useMemo(() => {
-    const map = new Map<string, GroupedEvaluation>();
-    for (const ev of evaluations) {
-      const classId = ev.class?.id || '_no_class';
-      const evaluationTypeId = ev.evaluationType?.id || '_no_type';
-      const periodId = ev.period?.id || '_no_period';
-      const sd = ev.startDate || ev.evaluationDate || '';
-      const ed = ev.endDate || ev.startDate || ev.evaluationDate || '';
-      const key = `${classId}|${evaluationTypeId}|${periodId}|${sd}|${ed}`;
-
-      if (!map.has(key)) {
-        map.set(key, {
-          classId,
-          className: ev.class?.name || 'Sans classe',
-          evaluationTypeId,
-          evaluationTypeName: ev.evaluationType?.name || 'Évaluation',
-          evaluationTypeCode: ev.evaluationType?.code,
-          periodId,
-          periodName: ev.period?.name || '',
-          startDate: ev.startDate || null,
-          endDate: ev.endDate || null,
-          subjects: [],
-          evaluationIds: [],
-          statuses: [],
-          firstEvaluation: ev,
-          subjectByEvalId: {},
-        });
-      }
-      const g = map.get(key)!;
-      if (ev.subject && !g.subjects.find((s) => s.id === ev.subject!.id)) {
-        g.subjects.push({ id: ev.subject.id, name: ev.subject.name });
-      }
-      // ⭐ V10d — mapping explicite evaluationId → subjectId (robuste aux doublons)
-      if (ev.subject) g.subjectByEvalId![ev.id] = ev.subject.id;
-      g.evaluationIds.push(ev.id);
-      g.statuses.push(ev.status);
-    }
-    return Array.from(map.values()).sort((a, b) => {
-      // Trier par classe (ordre pédagogique) puis par date de début
-      const classCmp = getClassOrderIndex(a.className) - getClassOrderIndex(b.className);
-      if (classCmp !== 0) return classCmp;
-      const da = a.startDate ? new Date(a.startDate).getTime() : 0;
-      const db = b.startDate ? new Date(b.startDate).getTime() : 0;
-      return da - db;
-    });
-  }, [evaluations]);
-
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-      {grouped.map((group, idx) => (
+      {groups.map((group, idx) => (
         <EvaluationProgramCard
-          key={`${group.classId}-${group.evaluationTypeId}-${idx}`}
+          key={group.key || `${group.classId}-${group.evaluationTypeId}-${idx}`}
           group={group}
           isMaternelle={isMaternelle}
           actions={getAvailableActions(group)}
           onOpenEdit={() => onOpenEdit(group)}
+          selected={selectedKeys.has(group.key)}
+          onToggleSelect={() => onToggleSelect(group.key)}
         />
       ))}
     </div>
@@ -332,11 +383,15 @@ function EvaluationProgramCard({
   isMaternelle,
   actions,
   onOpenEdit,
+  selected,
+  onToggleSelect,
 }: {
   group: GroupedEvaluation;
   isMaternelle: boolean;
   actions: EvaluationAction[];
   onOpenEdit: () => void;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }) {
   // Formatage des dates : "25 juil. 2026" (pas d'heure)
   const startDate = group.startDate ? new Date(group.startDate) : null;
@@ -372,8 +427,10 @@ function EvaluationProgramCard({
   const subjectCount = group.subjects.length;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow flex flex-col overflow-visible">
-      {/* En-tête : classe + statut */}
+    <div className={`bg-white rounded-2xl border-2 shadow-sm hover:shadow-md transition-shadow flex flex-col overflow-visible ${
+      selected ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
+    }`}>
+      {/* En-tête : classe + statut + sélection */}
       <div className="px-5 py-4 bg-gradient-to-br from-blue-50 to-indigo-50/50 border-b border-blue-100">
         <div className="flex items-start justify-between">
           <div className="flex items-center space-x-3 min-w-0">
@@ -387,14 +444,31 @@ function EvaluationProgramCard({
               </p>
             </div>
           </div>
-          <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap ${
-            allValidated ? 'bg-emerald-100 text-emerald-700'
-            : anyCancelled ? 'bg-red-100 text-red-700'
-            : allPlanned ? 'bg-blue-100 text-blue-700'
-            : 'bg-amber-100 text-amber-700'
-          }`}>
-            {headerStatus}
-          </span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* ⭐ Case à cocher de sélection multiple (suppression / modification groupées) */}
+            {onToggleSelect && (
+              <input
+                type="checkbox"
+                checked={!!selected}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect();
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-[18px] h-[18px] rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer flex-shrink-0"
+                title="Sélectionner pour une action groupée"
+                aria-label={`Sélectionner les évaluations de ${group.className}`}
+              />
+            )}
+            <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap ${
+              allValidated ? 'bg-emerald-100 text-emerald-700'
+              : anyCancelled ? 'bg-red-100 text-red-700'
+              : allPlanned ? 'bg-blue-100 text-blue-700'
+              : 'bg-amber-100 text-amber-700'
+            }`}>
+              {headerStatus}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -671,6 +745,193 @@ export default function EvaluationsPage() {
     }
     return result;
   }, [evaluations, statusFilter, searchQuery]);
+
+  // ⭐ Regroupement des évaluations filtrées (une carte = 1 session par classe)
+  const groupedEvaluations = useMemo(
+    () => buildEvaluationGroups(filteredEvaluations),
+    [filteredEvaluations],
+  );
+
+  // ─── SÉLECTION MULTIPLE (suppression / modification groupées) ──────────
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkForm, setBulkForm] = useState<BulkEditForm>(EMPTY_BULK_FORM);
+
+  const selectedGroups = useMemo(
+    () => groupedEvaluations.filter((g) => selectedKeys.has(g.key)),
+    [groupedEvaluations, selectedKeys],
+  );
+  const selectedEvalCount = selectedGroups.reduce((n, g) => n + g.evaluationIds.length, 0);
+
+  const toggleSelectGroup = (key: string) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+  const selectAllGroups = () => setSelectedKeys(new Set(groupedEvaluations.map((g) => g.key)));
+  const clearSelection = () => setSelectedKeys(new Set());
+
+  // Réinitialiser la sélection quand on change de niveau / langue / année
+  useEffect(() => {
+    clearSelection();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeLevel, scopeLang, academicYear?.id]);
+
+  /**
+   * ⭐ SUPPRESSION MULTIPLE : supprime toutes les évaluations des sessions
+   * sélectionnées (les VALIDATED/LOCKED sont ignorées, comme en suppression
+   * unitaire ; les évaluations avec notes sont annulées — pas effacées).
+   */
+  const handleBulkDelete = async () => {
+    const allIds = selectedGroups.flatMap((g) => g.evaluationIds);
+    const deletableIds = allIds.filter((id) => {
+      const ev = evaluations.find((e) => e.id === id);
+      return ev && !['VALIDATED', 'LOCKED'].includes(ev.status);
+    });
+    const skipped = allIds.length - deletableIds.length;
+
+    if (deletableIds.length === 0) {
+      toastWarning('Aucune évaluation supprimable dans la sélection (validées ou verrouillées).');
+      return;
+    }
+
+    const classNames = Array.from(new Set(selectedGroups.map((g) => g.className))).join(', ');
+    const ok = await danger(
+      `Supprimer ${deletableIds.length} évaluation(s) sur ${selectedGroups.length} classe(s) ?\n\nClasses : ${classNames}` +
+        (skipped > 0 ? `\n\n⚠ ${skipped} évaluation(s) validée(s)/verrouillée(s) seront ignorées.` : ''),
+      'Suppression multiple',
+      'Cette action est irréversible. Les évaluations contenant des notes seront annulées (conservées dans l\u2019historique).'
+    );
+    if (!ok) return;
+
+    setBulkDeleting(true);
+    try {
+      const results = await Promise.allSettled(
+        deletableIds.map((id) => institutionalExamsService.deleteEvaluation(id)),
+      );
+      const okCount = results.filter((r) => r.status === 'fulfilled').length;
+      const failCount = results.length - okCount;
+      if (failCount > 0) {
+        toastWarning(`${okCount} évaluation(s) supprimée(s), ${failCount} en échec`, {
+          description: 'Consultez la console pour les détails.',
+        });
+      } else {
+        toastSuccess(`${okCount} évaluation(s) supprimée(s)`, {
+          description: `${selectedGroups.length} classe(s) : ${classNames}`,
+        });
+      }
+      clearSelection();
+      await loadData();
+    } catch (err: any) {
+      toastError('Erreur lors de la suppression multiple', { description: err.message });
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  /**
+   * ⭐ MODIFICATION MULTIPLE : applique les MÊMES informations à toutes les
+   * évaluations sélectionnées. Seuls les champs cochés sont appliqués —
+   * les VALIDATED/LOCKED/CANCELLED sont ignorées (verrouillées).
+   */
+  const handleBulkEditSave = async () => {
+    const anyApplied = bulkForm.applyType || bulkForm.applyPeriod || bulkForm.applyDates
+      || bulkForm.applyMaxScore || bulkForm.applyCoefficient || bulkForm.applyTitle;
+    if (!anyApplied) {
+      toastError('Cochez au moins un champ à appliquer à la sélection.');
+      return;
+    }
+    if (bulkForm.applyDates && (!bulkForm.startDate || !bulkForm.endDate)) {
+      toastError('Dates de début et de fin requises.');
+      return;
+    }
+    if (bulkForm.applyType && !bulkForm.evaluationTypeId) {
+      toastError('Sélectionnez le type d\u2019évaluation à appliquer.');
+      return;
+    }
+    if (bulkForm.applyPeriod && !bulkForm.periodId) {
+      toastError('Sélectionnez la période à appliquer.');
+      return;
+    }
+
+    // Construire le payload avec les SEULS champs cochés
+    const payload: any = {};
+    if (bulkForm.applyType) payload.evaluationTypeId = bulkForm.evaluationTypeId;
+    if (bulkForm.applyPeriod) payload.periodId = bulkForm.periodId;
+    if (bulkForm.applyDates) {
+      const startIso = new Date(bulkForm.startDate).toISOString();
+      const endIso = new Date(bulkForm.endDate).toISOString();
+      payload.evaluationDate = startIso;
+      payload.startDate = startIso;
+      payload.endDate = endIso;
+    }
+    if (bulkForm.applyMaxScore && !isMaternelle) {
+      payload.maxScore = parseFloat(bulkForm.maxScore) || 20;
+    }
+    if (bulkForm.applyCoefficient && !isMaternelle && !isEN) {
+      payload.coefficient = parseFloat(bulkForm.coefficient) || 1;
+    }
+    if (bulkForm.applyTitle) {
+      payload.title = bulkForm.title.trim() || null;
+    }
+
+    // Cibler uniquement les évaluations modifiables (non verrouillées)
+    const targetIds: string[] = [];
+    selectedGroups.forEach((g) =>
+      g.evaluationIds.forEach((id) => {
+        const ev = evaluations.find((e) => e.id === id);
+        if (ev && !['VALIDATED', 'LOCKED', 'CANCELLED'].includes(ev.status)) {
+          targetIds.push(id);
+        }
+      }),
+    );
+    const skipped = selectedEvalCount - targetIds.length;
+
+    if (targetIds.length === 0) {
+      toastWarning('Aucune évaluation modifiable dans la sélection (validées, verrouillées ou annulées).');
+      return;
+    }
+
+    setBulkSaving(true);
+    try {
+      const results = await Promise.allSettled(
+        targetIds.map((id) => institutionalExamsService.updateEvaluation(id, payload)),
+      );
+      const okCount = results.filter((r) => r.status === 'fulfilled').length;
+      const failCount = results.length - okCount;
+      if (failCount > 0) {
+        toastWarning(`${okCount} évaluation(s) mise(s) à jour, ${failCount} en échec`, {
+          description: 'Consultez la console pour les détails.',
+        });
+      } else {
+        toastSuccess(`${okCount} évaluation(s) mise(s) à jour`, {
+          description:
+            `${selectedGroups.length} classe(s) · champs appliqués : ` +
+            [
+              bulkForm.applyType ? 'type' : null,
+              bulkForm.applyPeriod ? 'période' : null,
+              bulkForm.applyDates ? 'dates' : null,
+              bulkForm.applyMaxScore && !isMaternelle ? 'barème' : null,
+              bulkForm.applyCoefficient && !isMaternelle && !isEN ? 'coefficient' : null,
+              bulkForm.applyTitle ? 'titre' : null,
+            ].filter(Boolean).join(', ') +
+            (skipped > 0 ? ` · ${skipped} ignorée(s) (verrouillée(s))` : ''),
+        });
+      }
+      setIsBulkEditOpen(false);
+      clearSelection();
+      await loadData();
+    } catch (err: any) {
+      toastError('Erreur lors de la modification multiple', { description: err.message });
+    } finally {
+      setBulkSaving(false);
+    }
+  };
 
   // ─── Handlers ────────────────────────────────────────────────────────────
   const handleOpenCreate = () => {
@@ -1136,6 +1397,65 @@ export default function EvaluationsPage() {
               </div>
             </div>
 
+            {/* ⭐ Barre d'actions groupées (suppression / modification multiples) */}
+            {selectedEvalCount > 0 && (
+              <div className="sticky top-2 z-20 flex flex-wrap items-center gap-2 bg-blue-600 text-white rounded-xl px-4 py-2.5 shadow-lg">
+                <ListChecks className="w-4 h-4 flex-shrink-0" />
+                <span className="text-sm font-semibold whitespace-nowrap">
+                  {selectedGroups.length} session{selectedGroups.length > 1 ? 's' : ''} sélectionnée{selectedGroups.length > 1 ? 's' : ''} — {selectedEvalCount} évaluation{selectedEvalCount > 1 ? 's' : ''}
+                </span>
+                <div className="flex-1" />
+                {selectedKeys.size < groupedEvaluations.length ? (
+                  <button
+                    onClick={selectAllGroups}
+                    className="text-xs font-semibold bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    Tout sélectionner
+                  </button>
+                ) : (
+                  <button
+                    onClick={clearSelection}
+                    className="text-xs font-semibold bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    Tout désélectionner
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    // Pré-remplir avec les valeurs de la 1ère session sélectionnée
+                    const first = selectedGroups[0];
+                    setBulkForm({
+                      ...EMPTY_BULK_FORM,
+                      evaluationTypeId: first?.evaluationTypeCode || '',
+                      periodId: first?.periodId || '',
+                      maxScore: first ? String(first.firstEvaluation.maxScore || 20) : '20',
+                      coefficient: first ? String(first.firstEvaluation.coefficient || 1) : '1',
+                    });
+                    setIsBulkEditOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-semibold bg-white text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Modifier en masse
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  className="flex items-center gap-1.5 text-xs font-semibold bg-red-500 hover:bg-red-600 disabled:opacity-50 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                >
+                  {bulkDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  Supprimer
+                </button>
+                <button
+                  onClick={clearSelection}
+                  className="flex items-center gap-1 text-xs font-semibold bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Annuler
+                </button>
+              </div>
+            )}
+
             {/* ⭐ Vue en cartes groupées par classe (programmation des évaluations) */}
             {loading ? (
               <div className="flex items-center justify-center py-16">
@@ -1154,10 +1474,12 @@ export default function EvaluationsPage() {
               </div>
             ) : (
               <EvaluationCardsByClass
-                evaluations={filteredEvaluations}
+                groups={groupedEvaluations}
                 getAvailableActions={getAvailableActions}
                 onOpenEdit={handleOpenEdit}
                 isMaternelle={isMaternelle}
+                selectedKeys={selectedKeys}
+                onToggleSelect={toggleSelectGroup}
               />
             )}
           </div>
@@ -1701,6 +2023,235 @@ export default function EvaluationsPage() {
         )}
       </div>
     </FormModal>
+    {/* ─── Modal Modification Multiple ────────────────────────────────────── */}
+    <FormModal
+      title="Modification multiple"
+      subtitle={`${selectedEvalCount} évaluation(s) sur ${selectedGroups.length} classe(s) — seuls les champs cochés seront appliqués partout`}
+      isOpen={isBulkEditOpen}
+      onClose={() => setIsBulkEditOpen(false)}
+      size="lg"
+      actions={
+        <>
+          <button
+            onClick={() => setIsBulkEditOpen(false)}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={handleBulkEditSave}
+            disabled={bulkSaving}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+          >
+            {bulkSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {bulkSaving ? 'Application...' : `Appliquer à ${selectedEvalCount} évaluation(s)`}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-4 py-2">
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <p className="text-xs text-amber-800">
+            <strong>Comment ça marche :</strong> cochez uniquement les informations que vous voulez
+            appliquer à <strong>toutes</strong> les évaluations sélectionnées, puis cliquez sur
+            « Appliquer ». Les classes et matières de chaque session restent inchangées, et les
+            évaluations déjà validées / verrouillées sont ignorées automatiquement.
+          </p>
+        </div>
+
+        {/* Type d'évaluation */}
+        <div className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            checked={bulkForm.applyType}
+            onChange={(e) => setBulkForm({ ...bulkForm, applyType: e.target.checked })}
+            className="w-4 h-4 mt-1.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer flex-shrink-0"
+            aria-label="Appliquer le type d'évaluation"
+          />
+          <div className="flex-1 min-w-0">
+            <Label className="flex items-center gap-2">
+              {labels.evaluationType}
+              <span className="text-[10px] font-normal text-gray-400">(appliquer)</span>
+            </Label>
+            <div className={cn(!bulkForm.applyType && 'opacity-50 pointer-events-none')}>
+              <Select
+                value={bulkForm.evaluationTypeId}
+                onValueChange={(v) => setBulkForm({ ...bulkForm, evaluationTypeId: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={labels.selectPlaceholder}>
+                    {(() => {
+                      const t = evaluationTypes.find((x) => x.id === bulkForm.evaluationTypeId);
+                      return t ? (t.code ? `[${t.code}] ${t.name}` : t.name) : null;
+                    })()}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {evaluationTypes.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.code ? `[${t.code}] ${t.name}` : t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+
+        {/* Période */}
+        <div className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            checked={bulkForm.applyPeriod}
+            onChange={(e) => setBulkForm({ ...bulkForm, applyPeriod: e.target.checked })}
+            className="w-4 h-4 mt-1.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer flex-shrink-0"
+            aria-label="Appliquer la période"
+          />
+          <div className="flex-1 min-w-0">
+            <Label className="flex items-center gap-2">
+              {labels.period}
+              <span className="text-[10px] font-normal text-gray-400">(appliquer)</span>
+            </Label>
+            <div className={cn(!bulkForm.applyPeriod && 'opacity-50 pointer-events-none')}>
+              <Select
+                value={bulkForm.periodId}
+                onValueChange={(v) => setBulkForm({ ...bulkForm, periodId: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={labels.selectPlaceholder}>
+                    {(() => {
+                      const p = periods.find((x) => x.id === bulkForm.periodId);
+                      return p ? translatePeriodName(p.name, scopeLang as 'FR' | 'EN' | undefined) : null;
+                    })()}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {periods.map((p) => (
+                    <SelectItem key={p.id} value={p.id} disabled={p.isClosed}>
+                      {`${translatePeriodName(p.name, scopeLang as 'FR' | 'EN' | undefined)}${p.isClosed ? ` (${labels.closed})` : ''}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+
+        {/* Intervalle de dates */}
+        <div className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            checked={bulkForm.applyDates}
+            onChange={(e) => setBulkForm({ ...bulkForm, applyDates: e.target.checked })}
+            className="w-4 h-4 mt-1.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer flex-shrink-0"
+            aria-label="Appliquer les dates"
+          />
+          <div className="flex-1 min-w-0">
+            <Label className="flex items-center gap-2">
+              {labels.startDate} → {labels.endDate}
+              <span className="text-[10px] font-normal text-gray-400">(appliquer)</span>
+            </Label>
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                type="date"
+                value={bulkForm.startDate}
+                onChange={(e) => setBulkForm({ ...bulkForm, startDate: e.target.value })}
+                disabled={!bulkForm.applyDates}
+                className={!bulkForm.applyDates ? 'opacity-50' : ''}
+              />
+              <Input
+                type="date"
+                value={bulkForm.endDate}
+                onChange={(e) => setBulkForm({ ...bulkForm, endDate: e.target.value })}
+                disabled={!bulkForm.applyDates}
+                className={!bulkForm.applyDates ? 'opacity-50' : ''}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Barème + coefficient (masqués pour la maternelle qualitative) */}
+        {!isMaternelle && (
+          <div className="flex items-start gap-3">
+            <div className="flex flex-col gap-3 flex-1 min-w-0">
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={bulkForm.applyMaxScore}
+                  onChange={(e) => setBulkForm({ ...bulkForm, applyMaxScore: e.target.checked })}
+                  className="w-4 h-4 mt-1.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer flex-shrink-0"
+                  aria-label="Appliquer le barème"
+                />
+                <div className="flex-1 min-w-0">
+                  <Label className="flex items-center gap-2">
+                    {labels.maxScore}
+                    <span className="text-[10px] font-normal text-gray-400">(appliquer)</span>
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    value={bulkForm.maxScore}
+                    onChange={(e) => setBulkForm({ ...bulkForm, maxScore: e.target.value })}
+                    disabled={!bulkForm.applyMaxScore}
+                    className={!bulkForm.applyMaxScore ? 'opacity-50' : ''}
+                  />
+                </div>
+              </div>
+              {!isEN && (
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={bulkForm.applyCoefficient}
+                    onChange={(e) => setBulkForm({ ...bulkForm, applyCoefficient: e.target.checked })}
+                    className="w-4 h-4 mt-1.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer flex-shrink-0"
+                    aria-label="Appliquer le coefficient"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <Label className="flex items-center gap-2">
+                      {labels.coefficient}
+                      <span className="text-[10px] font-normal text-gray-400">(appliquer)</span>
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.5"
+                      value={bulkForm.coefficient}
+                      onChange={(e) => setBulkForm({ ...bulkForm, coefficient: e.target.value })}
+                      disabled={!bulkForm.applyCoefficient}
+                      className={!bulkForm.applyCoefficient ? 'opacity-50' : ''}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Titre */}
+        <div className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            checked={bulkForm.applyTitle}
+            onChange={(e) => setBulkForm({ ...bulkForm, applyTitle: e.target.checked })}
+            className="w-4 h-4 mt-1.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer flex-shrink-0"
+            aria-label="Appliquer le titre"
+          />
+          <div className="flex-1 min-w-0">
+            <Label className="flex items-center gap-2">
+              {labels.title}
+              <span className="text-[10px] font-normal text-gray-400">(appliquer)</span>
+            </Label>
+            <Input
+              value={bulkForm.title}
+              onChange={(e) => setBulkForm({ ...bulkForm, title: e.target.value })}
+              disabled={!bulkForm.applyTitle}
+              placeholder="Ex : Évaluation mensuelle 1 - Trimestre 1"
+              className={!bulkForm.applyTitle ? 'opacity-50' : ''}
+            />
+          </div>
+        </div>
+      </div>
+    </FormModal>
+
     {confirmDialog}
     </>
   );

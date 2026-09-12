@@ -53,6 +53,8 @@ export interface Evaluation {
 }
 
 export interface GroupedEvaluation {
+  /** ⭐ Identifiant stable du groupe (classId|typeId|periodId|start|end) — sélection multiple */
+  key?: string;
   classId: string;
   className: string;
   evaluationTypeId: string;

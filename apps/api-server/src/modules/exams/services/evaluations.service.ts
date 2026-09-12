@@ -622,6 +622,24 @@ export class EvaluationsService {
       }
     }
 
+    // ⭐ FIX 2026-09-12 (modification multiple) : le frontend manipule les types
+    // d'évaluation par CODE (EM1, FIRST_CA… — issus de school_academic_settings),
+    // mais evaluation_types.id est un UUID. Sans résolution, un PATCH avec un
+    // code cassait la FK (P2003). On résout code → UUID via la même logique que
+    // create() (scoped au niveau de la classe de l'évaluation).
+    if (updateData.evaluationTypeId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(updateData.evaluationTypeId)) {
+      const resolvedType = await this.resolveEvaluationType(
+        tenantId,
+        updateData.evaluationTypeId,
+        evaluation.classId ? [evaluation.classId] : [],
+      );
+      if (resolvedType) {
+        updateData.evaluationTypeId = resolvedType.id;
+      } else {
+        delete updateData.evaluationTypeId;
+      }
+    }
+
     return this.prisma.evaluation.update({
       where: { id },
       data: updateData,

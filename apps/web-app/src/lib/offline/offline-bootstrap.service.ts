@@ -18,6 +18,13 @@ import { invalidateActiveYearCache } from './offline-fetch';
 
 const BOOTSTRAP_API = '/api/sync/bootstrap';
 
+/** ⭐ v3.5.0 — Flag versionné du prefetch critique (v2 = stores corrigés).
+ *    Les appareils déjà bootstrappés avec l'ANCIEN code (stores au pluriel
+ *    → prefetch silencieusement vide) doivent re-exécuter le prefetch UNE
+ *    fois — d'où le suffixe de version dans la clé. */
+const CRITICAL_DATA_FLAG_PREFIX = 'academia_helm_critical_data_';
+const CRITICAL_DATA_VERSION = 'v2';
+
 export interface BootstrapData {
   user: any;
   tenant: any;
@@ -148,18 +155,36 @@ class OfflineBootstrapService {
    * Pré-remplit les données métier critiques dans IndexedDB
    * pour que l'app fonctionne hors ligne dès le premier login.
    * Appelé de manière asynchrone après le bootstrap de base.
+   *
+   * ⭐ v3.5.0 — CORRECTIF CRITIQUE (retour terrain « fausses données » hors
+   *    ligne) : les noms de stores étaient AU PLURIEL ('students', 'teachers',
+   *    'classes'…) alors que les stores IDB réels sont au SINGULIER Prisma
+   *    ('student', 'teacher', 'class'…) → this.db.transaction(['students'])
+   *    levait NotFoundError → attrapé silencieusement → le prefetch
+   *    « réussissait » dans les logs alors que RIEN n'était écrit dans IDB.
+   *    Hors ligne, les modules qui tombent en fallback IndexedDB servaient
+   *    donc des données VIDES (KPI à zéro).
+   *    + liste étendue (paiements, personnel, salles, emplois du temps,
+   *    référentiels) pour couvrir les dashboards de tous les modules.
    */
   private async prefetchCriticalData(tenantId: string): Promise<void> {
     if (!syncEngine.isOnline()) return;
 
-    const criticalEndpoints = [
-      { url: `/api/students?limit=500`, store: 'students' },
-      { url: `/api/teachers?limit=200`, store: 'teachers' },
-      { url: `/api/classes?limit=200`, store: 'classes' },
-      { url: `/api/subjects?limit=200`, store: 'subjects' },
-      { url: `/api/finance/fee-structures?limit=100`, store: 'fee_structures' },
-      { url: `/api/exams?limit=200`, store: 'exams' },
-      { url: `/api/attendance?limit=500`, store: 'attendance' },
+    // ⚠️ Les stores correspondent EXACTEMENT aux noms déclarés dans
+    //    local-db.service.ts (singulier, sans séparateur) — cf. store-names.ts.
+    const criticalEndpoints: Array<{ url: string; store: string }> = [
+      { url: '/api/students?limit=500', store: 'student' },
+      { url: '/api/teachers?limit=200', store: 'teacher' },
+      { url: '/api/classes?limit=200', store: 'class' },
+      { url: '/api/subjects?limit=200', store: 'subject' },
+      { url: '/api/school-levels?limit=100', store: 'schoollevel' },
+      { url: '/api/finance/fee-structures?limit=100', store: 'feestructure' },
+      { url: '/api/exams?limit=200', store: 'exam' },
+      { url: '/api/attendance?limit=500', store: 'attendancerecord' },
+      { url: '/api/finance/payments?limit=500', store: 'payment' },
+      { url: '/api/hr/staff?limit=200', store: 'staff' },
+      { url: '/api/rooms?limit=200', store: 'room' },
+      { url: '/api/timetables?limit=200', store: 'timetable' },
     ];
 
     // Exécuter les requêtes en parallèle avec un timeout
@@ -260,6 +285,38 @@ class OfflineBootstrapService {
     if (!isReady && syncEngine.isOnline()) {
       console.log('[Bootstrap] Not yet bootstrapped — starting auto-bootstrap...');
       await this.bootstrap(tenantId);
+    }
+  }
+
+  /**
+   * ⭐ v3.5.0 — Pré-fetch des données critiques POUR LES APPAREILS DÉJÀ
+   *    BOOTSTRAPPÉS : le flag de bootstrap principal est déjà posé sur les
+   *    devices existants → prefetchCriticalData (interne au bootstrap) ne
+   *    s'exécutera plus jamais. Or l'ANCIEN prefetch écrivait dans des stores
+   *    INEXISTANTS (pluriel) → IDB vide → « fausses données » offline.
+   *    Ce guard versionné (v2) re-exécute le prefetch corrigé UNE fois, puis
+   *    pose son propre flag. À appeler au montage (layout-client), après le
+   *    check de cohérence tenant.
+   */
+  async ensureCriticalDataPrefetched(tenantId: string): Promise<void> {
+    try {
+      const flagKey = `${CRITICAL_DATA_FLAG_PREFIX}${CRITICAL_DATA_VERSION}_${tenantId}`;
+      if (localStorage.getItem(flagKey) === 'true') return;
+    } catch {
+      /* localStorage indisponible — on tente quand même */
+    }
+    if (!syncEngine.isOnline()) return; // re-tentative au prochain montage online
+
+    console.log('[Bootstrap] Critical data prefetch v2 (corrected stores) — running...');
+    await this.prefetchCriticalData(tenantId);
+
+    try {
+      localStorage.setItem(
+        `${CRITICAL_DATA_FLAG_PREFIX}${CRITICAL_DATA_VERSION}_${tenantId}`,
+        'true',
+      );
+    } catch {
+      /* non-bloquant — re-tentative au prochain montage */
     }
   }
 
@@ -366,7 +423,10 @@ class OfflineBootstrapService {
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith('academia_helm_bootstrapped_')) {
+        if (key && (
+          key.startsWith('academia_helm_bootstrapped_') ||
+          key.startsWith(CRITICAL_DATA_FLAG_PREFIX) // ⭐ v3.5.0 — prefetch critique versionné
+        )) {
           keysToRemove.push(key);
         }
       }

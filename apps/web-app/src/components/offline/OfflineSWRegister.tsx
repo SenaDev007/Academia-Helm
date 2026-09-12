@@ -36,6 +36,26 @@ export function OfflineSWRegister() {
         registration.addEventListener('waiting', (event) => {
           (event.target as any)?.postMessage?.({ type: 'SKIP_WAITING' });
         });
+
+        // ⭐ v3.5.0 — Communiquer l'origine réelle de l'API au SW (pour
+        //    l'interception cross-origin des GET axios — le SW est isolé du
+        //    DOM et ne peut pas lire getApiBaseUrl() lui-même ; un
+        //    redémarrage du SW perd la valeur → renvoyée à chaque register).
+        navigator.serviceWorker.ready
+          .then(async (reg) => {
+            const sw = reg.active;
+            if (!sw) return;
+            try {
+              const { getApiBaseUrl } = await import('@/lib/utils/urls');
+              const apiBase = getApiBaseUrl();
+              if (apiBase) {
+                sw.postMessage({ type: 'SET_API_ORIGIN', origin: apiBase });
+              }
+            } catch {
+              /* non-bloquant — le SW dérive api.<domaine> par défaut */
+            }
+          })
+          .catch(() => { /* non-bloquant */ });
       })
       .catch((err) => {
         console.warn('[SW] Failed to register unified service worker:', err);

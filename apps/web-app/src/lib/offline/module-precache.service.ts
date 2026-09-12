@@ -31,80 +31,140 @@
  * ============================================================================
  */
 
+/**
+ * ⭐ v3.5.0 — LISTE COMPLÈTE des routes /app/* (112 routes STATIQUES réelles,
+ *    énumérées depuis tous les page.tsx sous src/app/app — hors routes
+ *    dynamiques [id]).
+ *    ANCIENNEMENT (v3.4) : 72 routes « à la main » → ~40 routes manquantes,
+ *    dont /app/pedagogy/academic-structure (retour terrain : « connexion
+ *    indisponible pour /app/pedagogy/academic-structure » hors ligne).
+ *    Les routes inexistantes de l'ancienne liste (ex. /app/students/enrollments)
+ *    ont été retirées (404 au pré-cache = ACK échoué = retries inutiles).
+ */
 const MODULE_ROUTES: string[] = [
-  // ─── Modules principaux ───
+  // ─── Racine + portails par rôle ───
   '/app',
-  '/app/finance',
-  '/app/finance/accounts',
-  '/app/finance/fees',
-  '/app/finance/payments',
-  '/app/finance/collection-summary',
-  '/app/finance/collection',
-  '/app/finance/expenses',
-  '/app/finance/cash-registers',
-  '/app/finance/treasury',
-  '/app/finance/aggregation',
-  '/app/finance/reports',
-  '/app/finance/audit',
-  '/app/finance/settings',
-  '/app/students',
-  '/app/students/enrollments',
-  '/app/students/classes',
-  '/app/students/attendance',
-  '/app/students/discipline',
-  '/app/students/documents',
-  '/app/students/id-cards',
-  '/app/students/guardians',
-  '/app/students/aggregation',
-  '/app/hr',
-  '/app/hr/staff',
-  '/app/hr/contracts',
-  '/app/hr/planning',
-  '/app/hr/reporting',
-  '/app/hr/cnss',
-  '/app/hr/taxes',
-  '/app/pedagogy',
-  '/app/pedagogy/daily-logs',
-  '/app/pedagogy/class-logs',
-  '/app/pedagogy/subjects',
-  '/app/pedagogy/teachers',
-  '/app/pedagogy/timetables',
-  '/app/pedagogy/academic-levels',
-  '/app/pedagogy/academic-series',
-  '/app/pedagogy/academic-cycles',
-  '/app/pedagogy/rooms',
-  '/app/pedagogy/control',
-  '/app/pedagogy/weekly-reports',
-  '/app/exams',
-  '/app/exams/evaluations',
-  '/app/exams/grades',
-  '/app/exams/bulletins',
-  '/app/exams/councils',
-  '/app/exams/analytics',
-  '/app/exams/audit',
-  '/app/exams/registre',
-  '/app/exams/settings',
-  '/app/exams/unlock-requests',
-  '/app/exams/validation',
-  '/app/communication',
-  '/app/communication/dashboard',
-  '/app/communication/messages',
-  '/app/communication/templates',
-  '/app/communication/inbox',
-  '/app/communication/history',
-  '/app/communication/scheduled-emails',
+  '/app/censeur',
+  '/app/comptable',
+  '/app/director',
+  '/app/director/oversight',
+  '/app/discipline',
+  '/app/secretaire',
+  '/app/secretaire-comptable',
+  '/app/surveillant',
+  // ─── Cantine / CMS / EduCast / Infirmerie / Bibliothèque / QHSE / Shop ───
   '/app/canteen',
   '/app/cms',
   '/app/educast',
   '/app/infirmary',
   '/app/library',
-  '/app/parent',
   '/app/qhse',
-  '/app/saisiemaster',
-  '/app/settings',
   '/app/shop',
-  '/app/teacher',
+  '/app/saisiemaster',
   '/app/transport',
+  // ─── Communication ───
+  '/app/communication',
+  '/app/communication/dashboard',
+  '/app/communication/history',
+  '/app/communication/inbox',
+  '/app/communication/messages',
+  '/app/communication/scheduled-emails',
+  '/app/communication/templates',
+  // ─── Examens ───
+  '/app/exams',
+  '/app/exams/analytics',
+  '/app/exams/audit',
+  '/app/exams/bulletins',
+  '/app/exams/councils',
+  '/app/exams/evaluations',
+  '/app/exams/grades',
+  '/app/exams/recap',
+  '/app/exams/registre',
+  '/app/exams/settings',
+  '/app/exams/unlock-requests',
+  '/app/exams/validation',
+  // ─── Finances ───
+  '/app/finance',
+  '/app/finance/accounts',
+  '/app/finance/aggregation',
+  '/app/finance/audit',
+  '/app/finance/cash-registers',
+  '/app/finance/collection',
+  '/app/finance/collection-summary',
+  '/app/finance/expenses',
+  '/app/finance/fees',
+  '/app/finance/general-fees',
+  '/app/finance/overrides',
+  '/app/finance/payments',
+  '/app/finance/reports',
+  '/app/finance/settings',
+  '/app/finance/treasury',
+  // ─── RH ───
+  '/app/hr',
+  '/app/hr/administration',
+  '/app/hr/allowances',
+  '/app/hr/attendance',
+  '/app/hr/cnss',
+  '/app/hr/collaborators',
+  '/app/hr/contracts',
+  '/app/hr/embauche',
+  '/app/hr/ia',
+  '/app/hr/internships',
+  '/app/hr/leaves',
+  '/app/hr/payroll',
+  '/app/hr/planning',
+  '/app/hr/recruitment',
+  '/app/hr/recruitment/settings',
+  '/app/hr/reporting',
+  '/app/hr/settings',
+  '/app/hr/staff',
+  // ─── Parents ───
+  '/app/parent',
+  '/app/parent/attendance',
+  '/app/parent/cahier-journal',
+  '/app/parent/children',
+  '/app/parent/documents',
+  '/app/parent/messages',
+  '/app/parent/payments',
+  '/app/parent/results',
+  '/app/parent/tasks',
+  '/app/parent/timetable',
+  // ─── Pédagogie ───
+  '/app/pedagogy',
+  '/app/pedagogy/academic-structure',
+  '/app/pedagogy/annual-planning',
+  '/app/pedagogy/assignments',
+  '/app/pedagogy/class-diaries',
+  '/app/pedagogy/control',
+  '/app/pedagogy/control-en',
+  '/app/pedagogy/global-library',
+  '/app/pedagogy/orion',
+  '/app/pedagogy/pedagogical-materials',
+  '/app/pedagogy/production',
+  '/app/pedagogy/production-en',
+  '/app/pedagogy/sara-compose',
+  '/app/pedagogy/subjects',
+  '/app/pedagogy/tasks',
+  '/app/pedagogy/teachers',
+  '/app/pedagogy/timetable-engine',
+  '/app/pedagogy/timetables',
+  // ─── Paramètres ───
+  '/app/settings',
+  '/app/settings/billing',
+  // ─── Élèves ───
+  '/app/students',
+  // ─── Enseignants ───
+  '/app/teacher',
+  '/app/teacher/annual-planning',
+  '/app/teacher/classes',
+  '/app/teacher/communication',
+  '/app/teacher/educast',
+  '/app/teacher/exams',
+  '/app/teacher/library',
+  '/app/teacher/orion',
+  '/app/teacher/pedagogy',
+  '/app/teacher/tasks',
+  '/app/teacher/timetable',
 ];
 
 const BATCH_SIZE = 5; // 5 routes en parallèle
@@ -454,7 +514,273 @@ export function invalidateModulePrecache(): void {
     localStorage.removeItem(PRECACHE_TS_KEY);
     localStorage.removeItem(PRECACHE_SW_VERSION_KEY); // ⭐ v3.3.1
     localStorage.removeItem('academia_helm_modules_precached'); // legacy
+    localStorage.removeItem(API_PRECACHE_TS_KEY); // ⭐ v3.5.0 — données KPI aussi
   } catch {
     /* noop */
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * ⭐ v3.5.0 — PRÉ-CACHE DES DONNÉES API (KPIs des dashboards)
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * PROBLÈME (retour terrain, sept. 2026) : « je me suis connecté, j'ai coupé
+ * la connexion, je suis passé sur un autre module → affiché mais avec de
+ * FAUSSES données (KPI faux) ». Cause : les réponses API n'étaient mises en
+ * cache par le SW (ah-api) qu'au moment où la page les FETCHAIT en ligne —
+ * un module jamais visité n'avait AUCUNE donnée cachée → KPI vides/à zéro.
+ *
+ * SOLUTION offline-first : après le login (et 1×/24 h), le client envoie au
+ * SW la liste des endpoints KPI de TOUS les dashboards + ses headers
+ * d'authentification → le SW fetch chaque endpoint et l'écrit dans ah-api
+ * sous la clé normalisée (tenant|user — cf. sw.js v3.5.0). Hors ligne, les
+ * dashboards servent les VRAIES données, SANS visite préalable.
+ */
+
+/** Flag 24 h propre aux données API (le cache ah-api n'est pas versionné). */
+const API_PRECACHE_TS_KEY = 'academia_helm_api_precached_at';
+const API_PRECACHE_TTL_MS = 24 * 60 * 60 * 1000;
+/** Taux de réussite minimum (ACK du SW) pour poser le flag 24 h. */
+const API_MIN_SUCCESS_RATE = 0.7;
+/** Attente max de l'ACK PRECACHE_API_RESULT (le SW fetch ~15 s/endpoint). */
+const API_ACK_TIMEOUT_MS = 120000;
+
+let inFlightApiRun: Promise<void> | null = null;
+
+function isApiPrecacheFresh(): boolean {
+  try {
+    const ts = Number(localStorage.getItem(API_PRECACHE_TS_KEY) || 0);
+    return ts > 0 && Date.now() - ts < API_PRECACHE_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
+/** Session persistée (localStorage) — tenant + user pour les query params. */
+function readSessionContext(): { tenantId?: string; userId?: string } {
+  try {
+    const raw = localStorage.getItem('session');
+    if (raw) {
+      const s = JSON.parse(raw) as {
+        tenantId?: string; user?: { id?: string; tenantId?: string };
+        tenant?: { id?: string };
+      };
+      return {
+        tenantId: s.tenantId || s.tenant?.id || s.user?.tenantId || undefined,
+        userId: s.user?.id || undefined,
+      };
+    }
+  } catch { /* session corrompue */ }
+  return {};
+}
+
+/** Année académique active : localStorage currentAcademicYearId | academicYear.id. */
+function readAcademicYearId(): string | null {
+  try {
+    const direct = localStorage.getItem('currentAcademicYearId');
+    if (direct) return direct;
+    const raw = localStorage.getItem('academicYear');
+    if (raw) {
+      const y = JSON.parse(raw) as { id?: string };
+      if (y?.id) return String(y.id);
+    }
+  } catch { /* non-bloquant */ }
+  return null;
+}
+
+/** Niveau scolaire courant : 'ALL' ou UUID (localStorage). */
+function readSchoolLevelId(): string | null {
+  try {
+    const direct = localStorage.getItem('currentSchoolLevelId');
+    if (direct) return direct;
+    const raw = localStorage.getItem('schoolLevel');
+    if (raw) {
+      const sl = JSON.parse(raw) as { schoolLevelId?: string; id?: string };
+      const id = sl?.schoolLevelId || sl?.id;
+      if (id) return String(id);
+    }
+  } catch { /* non-bloquant */ }
+  return null;
+}
+
+/** Construit un query string en ignorant les valeurs vides/nulles. */
+function qs(params: Record<string, string | number | null | undefined>): string {
+  const parts = Object.entries(params)
+    .filter(([, v]) => v !== null && v !== undefined && String(v) !== '');
+  if (!parts.length) return '';
+  return '?' + parts.map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`).join('&');
+}
+
+/**
+ * Liste des endpoints GET chargés par les DASHBOARDS de chaque module
+ * (inventaire exhaustif des composants *Dashboard* / hooks *DashboardQueries*).
+ * Query params résolus depuis localStorage (année/niveau/session) — les mêmes
+ * sources que celles des hooks au montage.
+ */
+function buildApiPrecacheUrls(apiBase: string): string[] {
+  const year = readAcademicYearId();
+  const level = readSchoolLevelId();
+  const levelParam = level && level !== 'ALL' ? level : null; // 'ALL' → param omis
+  const { tenantId, userId } = readSessionContext();
+  const urls: string[] = [];
+
+  // ─── Contexte transverse (providers du layout — chargés sur TOUTES les pages) ───
+  urls.push('/api/academic-years');
+  urls.push('/api/school-levels');
+  // ─── Sidebar (feature codes — sinon la sidebar tombe à 4 modules hors ligne) ───
+  urls.push(`/api/settings/features${qs({ tenant_id: tenantId })}`);
+
+  // ─── Dashboard principal /app (PilotageDashboardV2) ───
+  urls.push(`/api/general/consolidated-report${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+  urls.push(`/api/general/weighted-average${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+  urls.push(`/api/students/statistics${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+  urls.push(`/api/finance/reports/kpi${qs({ tenantId, academicYearId: year })}`);
+  urls.push('/api/finance/payments/today');
+  urls.push(`/api/dashboard/tuition-personalizations${qs({ academicYearId: year })}`);
+  urls.push(`/api/dashboard/grade-evolution${qs({ academicYearId: year })}`);
+  urls.push(`/api/dashboard/hr-overview${qs({ tenantId, academicYearId: year })}`);
+  urls.push(`/api/dashboard/age-distribution${qs({ tenantId, academicYearId: year })}`);
+  urls.push(`/api/dashboard/grade-analytics${qs({ tenantId, academicYearId: year })}`);
+  urls.push(`/api/dashboard/overview${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+  urls.push(`/api/orion/alerts${qs({ academicYearId: year, schoolLevelId: levelParam, status: 'active', limit: 3 })}`);
+
+  // ─── Pédagogie (PedagogyModuleDashboard) ───
+  urls.push(`/api/pedagogy/control/dashboard${qs({ academicYearId: year })}`);
+  urls.push(`/api/pedagogy/control/snapshots${qs({ academicYearId: year })}`);
+  urls.push(`/api/pedagogy/orion-advanced/dashboard${qs({ academicYearId: year })}`);
+  urls.push(`/api/pedagogy/orion/kpis${qs({ academicYearId: year })}`);
+  urls.push(`/api/pedagogy/academic-structure/levels${qs({ academicYearId: year })}`);
+  urls.push(`/api/timetables${qs({ academicYearId: year })}`);
+  urls.push(`/api/rooms${qs({ academicYearId: year })}`);
+  urls.push('/api/subjects');
+
+  // ─── Finances (FinanceDashboardV2) ───
+  urls.push(`/api/finance/student-accounts${qs({ academicYearId: year, exportAll: 'true' })}`);
+  urls.push(`/api/finance/fee-structures/overrides${qs({ academicYearId: year })}`);
+
+  // ─── RH (HROverview — le cache-buster _t est retiré par la clé SW) ───
+  urls.push(`/api/hr/overview/dashboard${qs({ tenantId, academicYearId: year })}`);
+
+  // ─── Examens ───
+  urls.push('/api/all-classes');
+
+  // ─── Élèves (StudentsModuleDashboard) ───
+  urls.push(`/api/classes${qs({ academicYearId: year, schoolLevelId: level || 'ALL' })}`);
+
+  // ─── Communication (WhatsAppChat au montage) ───
+  if (userId) {
+    urls.push(`/api/chat/conversations${qs({ userId })}`);
+    urls.push(`/api/chat/channels${qs({ userId })}`);
+    urls.push(`/api/chat/v2/notifications/muted-conversations${qs({ userId })}`);
+  }
+  urls.push('/api/chat/auto-groups');
+  urls.push('/api/chat/live-streams');
+
+  // ─── Cross-origin (axios apiClient → apiBase, ex. https://api.<domaine>/api) ───
+  if (apiBase) {
+    // Pédagogie — dashboard directeur (pedagogySpaceService)
+    urls.push(`${apiBase}/pedagogy-space/director/pedagogy-dashboard${qs({ academicYearId: year })}`);
+    // Examens — evaluations (institutionalExams.service) — FR + EN
+    const evalParams = { academicYearId: year, schoolLevelId: levelParam };
+    urls.push(`${apiBase}/institutional-exams/evaluations${qs({ ...evalParams, language: 'FR' })}`);
+    urls.push(`${apiBase}/institutional-exams/evaluations${qs({ ...evalParams, language: 'EN' })}`);
+  }
+
+  return urls;
+}
+
+/**
+ * Pré-cache les données API (KPIs) via le SW — fire-and-forget, non bloquant.
+ * Auto-gardé (1×/24 h) + garde de concurrence + flag posé seulement si ≥ 70 %
+ * des endpoints ont réellement été cachés (ACK PRECACHE_API_RESULT du SW).
+ */
+export async function precacheApiData(): Promise<void> {
+  if (typeof window === 'undefined') return;
+  if (!('serviceWorker' in navigator)) return;
+  if (!navigator.onLine) {
+    console.log('[ApiPrecache] Offline — skipping');
+    return;
+  }
+  if (isApiPrecacheFresh()) {
+    console.log('[ApiPrecache] Fresh (<24 h) — skipping');
+    return;
+  }
+  if (inFlightApiRun) return inFlightApiRun;
+
+  inFlightApiRun = runApiPrecache().finally(() => {
+    inFlightApiRun = null;
+  });
+  return inFlightApiRun;
+}
+
+async function runApiPrecache(): Promise<void> {
+  const registration = await navigator.serviceWorker.ready;
+  const sw = registration.active;
+  if (!sw) {
+    console.warn('[ApiPrecache] No active SW — skipping');
+    return;
+  }
+
+  // Origine réelle de l'API (pour les endpoints axios cross-origin)
+  let apiBase = '';
+  try {
+    const { getApiBaseUrl } = await import('@/lib/utils/urls');
+    apiBase = getApiBaseUrl().replace(/\/+$/, '');
+  } catch {
+    /* pas d'origine cross-origin → endpoints relatifs seulement */
+  }
+
+  const urls = buildApiPrecacheUrls(apiBase);
+  if (!urls.length) return;
+
+  // Headers d'authentification — les MÊMES que ceux des appels réels de la
+  // page (axios/fetch) → le SW calcule la même identité (tenant|user) → la
+  // clé de cache correspondra exactement à celle des requêtes hors ligne.
+  let headers: Record<string, string> = {};
+  try {
+    const { getClientAuthorizationHeader } = await import('@/lib/auth/client-access-token');
+    headers = { ...getClientAuthorizationHeader() };
+  } catch {
+    /* sans JWT → endpoints publics seulement */
+  }
+  const { tenantId } = readSessionContext();
+  if (tenantId && !headers['X-Tenant-ID']) {
+    headers['X-Tenant-ID'] = tenantId;
+  }
+
+  // ACK du SW (wrapper objet : TS ne narrow pas une propriété assignée dans
+  // une closure — contrairement à une variable locale)
+  const ack: { value: { okCount: number; total: number } | null } = { value: null };
+  const onMessage = (event: MessageEvent) => {
+    const data = event.data as { type?: string; okCount?: number; total?: number } | null;
+    if (data?.type === 'PRECACHE_API_RESULT') {
+      ack.value = { okCount: Number(data.okCount || 0), total: Number(data.total || 0) };
+    }
+  };
+  navigator.serviceWorker.addEventListener('message', onMessage);
+
+  try {
+    console.log(`[ApiPrecache] Dispatching ${urls.length} endpoints to SW…`);
+    sw.postMessage({ type: 'PRECACHE_API', urls, headers });
+
+    const start = Date.now();
+    while (!ack.value && Date.now() - start < API_ACK_TIMEOUT_MS) {
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+
+    const result = ack.value;
+    if (result && result.total > 0 && result.okCount / result.total >= API_MIN_SUCCESS_RATE) {
+      try {
+        localStorage.setItem(API_PRECACHE_TS_KEY, String(Date.now()));
+      } catch { /* localStorage indisponible */ }
+      console.log(`[ApiPrecache] Complete — ${result.okCount}/${result.total} endpoints cached`);
+    } else {
+      // Pas de flag → re-tentative au prochain montage ou au retour du réseau
+      console.warn(
+        `[ApiPrecache] Incomplete (${result ? `${result.okCount}/${result.total}` : 'no ACK'}) — flag non posé`,
+      );
+    }
+  } finally {
+    navigator.serviceWorker.removeEventListener('message', onMessage);
   }
 }

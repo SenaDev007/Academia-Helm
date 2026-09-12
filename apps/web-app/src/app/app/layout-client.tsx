@@ -186,6 +186,12 @@ export default function AppLayoutClient({
       try {
         const { offlineBootstrapService } = await import('@/lib/offline/offline-bootstrap.service');
         await offlineBootstrapService.ensureTenantCacheCoherence(tenant.id);
+        // ⭐ v3.5.0 — prefetch critique CORRIGÉ (stores singuliers) pour les
+        //    appareils déjà bootstrappés avec l'ancien code (IDB vide) —
+        //    guard versionné, s'exécute UNE fois par tenant puis flag.
+        offlineBootstrapService
+          .ensureCriticalDataPrefetched(tenant.id)
+          .catch((err) => console.warn('[Bootstrap] Critical data prefetch v2 failed:', err));
       } catch (err) {
         console.warn('[Bootstrap] Tenant coherence check failed:', err);
       }
@@ -226,6 +232,9 @@ export default function AppLayoutClient({
   //    ⭐ v3.3.1 : le garde 24 h est désormais sensible à la VERSION du SW
   //    (les caches ah-pages-* sont purgés à chaque bump) + écoute des
   //    activations SW (SW_ACTIVATED) pour invalider le flag immédiatement.
+  //    ⭐ v3.5.0 : + PRÉ-CACHE DES DONNÉES API (KPIs de tous les dashboards) —
+  //    hors ligne, les modules affichent les VRAIES données sans visite
+  //    préalable en ligne (exigence offline-first, retour terrain sept. 2026).
   useEffect(() => {
     if (!tenant?.id) return;
     let cancelled = false;
@@ -240,6 +249,15 @@ export default function AppLayoutClient({
               console.log(`[ModulePrecache] Progress: ${current}/${total}`);
             }
           });
+          // ⭐ v3.5.0 — données KPI des dashboards (5 s après le début du
+          //    pré-cache des routes : priorité — c'est ce que l'utilisateur
+          //    voit en premier quand il coupe le réseau)
+          setTimeout(() => {
+            if (cancelled) return;
+            import('@/lib/offline/module-precache.service')
+              .then(({ precacheApiData }) => precacheApiData())
+              .catch((err) => console.warn('[ApiPrecache] Failed to start:', err));
+          }, 5000);
         })
         .catch((err) => {
           console.warn('[ModulePrecache] Failed to start:', err);

@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * SERVICE WORKER UNIFIÉ — Academia Helm (v3.3 « offline lecture API GET »)
+ * SERVICE WORKER UNIFIÉ — Academia Helm (v3.5 « offline-first complet »)
  * ============================================================================
  *
  * ⭐ SW UNIQUE à la racine du domaine (scope: '/'). NE PAS enregistrer
@@ -8,35 +8,43 @@
  *    sw-site.js et sw-chat.js sont OBSOLÈTES et sont désinstallés par
  *    UniversalSWRegister à la première visite.
  *
- * v3.4.0 : (1) CORRECTIF CRITIQUE (retour terrain « connexion indisponible
- *    pour /app/pedagogy » hors ligne) — le multi-tenant SANS sous-domaine fait
- *    naviguer l'app avec ?tenant=… sur TOUS les liens (sidebar, redirections
- *    post-login) ; les entrées pré-cachées SANS query ne matchaient JAMAIS
- *    ces navigations (Cache.match exact) → réponse sobre même avec un
- *    pré-cache complet. Désormais les handlers HTML/RSC matchent en cascade :
- *    exact → sans query params (ignoreSearch) ; et le pré-cache embarque le
- *    ?tenant= courant envoyé par le client.
- *    (2) PRÉ-CACHE FIABILISÉ — le SW ACK chaque route (message
- *    PRECACHE_MODULE_RESULT) : le client ne marque le pré-cache « frais » QUE
- *    si ≥ 90 % des routes ont réussi (retries incluses) — sinon il est
- *    retenté au prochain montage / au retour du réseau (fini le fire-and-
- *    forget aveugle dont le flag optimiste masquait les échecs 2G/3G).
- *    (3) PRÉ-CACHE RSC — payload flight par route (best-effort) → navigation
- *    client hors ligne SANS rechargement dur.
- *    (4) Vary supprimé des copies mises en cache (une entrée RSC cachée
- *    depuis un prefetch ne matchait JAMAIS une navigation : Vary mismatch).
- *    (5) réponse sobre enrichie : page HTML sobre + auto-rechargement au
- *    retour du réseau (script inline « online » → reload).
+ * v3.5.0 : (retour terrain « KPI faux hors ligne » + « page connexion
+ *    indisponible pour /app/pedagogy/academic-structure ») :
+ *    (1) INTERCEPTION CROSS-ORIGIN des GET axios vers l'API (api.<domaine>)
+ *        — NetworkFirst + cache ah-api + fallback offline. Avant, les appels
+ *        axios (apiClient, baseURL https://api.academiahelm.com/api) étaient
+ *        cross-origin → JAMAIS interceptés → hors ligne la moitié des KPI
+ *        des dashboards tombaient à zéro/null (« fausses données »).
+ *    (2) IDENTITÉ NORMALISÉE (tenant|user) pour les clés du cache API : la
+ *        même URL est désormais cachée sous la MÊME clé quel que soit le
+ *        style d'appel (fetch cookie-only, fetch+JWT, axios JWT+xtid) —
+ *        fini la fragmentation de clés qui faisait rater le cache.
+ *    (3) PRÉ-CACHE DES DONNÉES API (message PRECACHE_API) : le client envoie
+ *        la liste des endpoints KPI de TOUS les dashboards + ses headers
+ *        d'authentification ; le SW fetch chaque endpoint et l'écrit dans
+ *        ah-api → hors ligne, les KPI sont EXACTS sans avoir visité le
+ *        module en ligne auparavant (exigence offline-first).
+ *    (4) PLUS AUCUNE page « connexion indisponible » pour /app/* : le
+ *        fallback de TOUTE navigation /app/* non cachée est désormais le
+ *        SHELL /app pré-caché (+ script inline de rechargement au retour du
+ *        réseau / après réveil serveur, avec garde anti-boucle). L'offline
+ *        minimal (dernier recours absolu si même le shell manque) ne
+ *        concerne PLUS que les pages publiques.
+ *    (5) SET_API_ORIGIN : la page communique au SW l'origine réelle de
+ *        l'API (getApiBaseUrl()) — remplace la dérivation par défaut.
+ *    (6) Clé de cache API : le paramètre cache-buster `_t` (hrFetch) est
+ *        retiré → les requêtes successives partagent la même entrée.
  *
- * v3.3.1 : (1) à l'activation, les pages ouvertes sont notifiées
- *    (SW_ACTIVATED) afin d'invalider le flag 24 h du pré-cache des modules
- *    — les caches ah-pages-<version> étant purgés à chaque version, un flag
- *    « frais » survivant au bump de version laissait l'app SANS modules
- *    offline (le shell dashboard était servi à la place des modules) ;
- *    (2) réponse au message GET_SW_VERSION (le client compare la version
- *    active du SW à celle enregistrée au dernier pré-cache) ;
- *    (3) le fallback shell /app n'est servi QUE pour la racine /app — pour
- *    un module profond non caché, réponse sobre (jamais le dashboard).
+ * v3.4.0 : (1) CORRECTIF « connexion indisponible pour /app/pedagogy » —
+ *    cascade exact → ignoreSearch pour les navigations ?tenant=… ;
+ *    (2) pré-cache fiabilisé (ACK par route, flag 24 h si ≥ 90 %) ;
+ *    (3) pré-cache RSC par route ; (4) Vary retiré des copies cachées ;
+ *    (5) réponse sobre auto-rechargeable.
+ * v3.3.1 : SW_ACTIVATED notifie les pages (invalidation du flag 24 h) ;
+ *    réponse au message GET_SW_VERSION.
+ *    (⚠️ v3.5.0 : l'ancienne note « shell /app uniquement pour la racine »
+ *    est OBSOLÈTE — le shell est désormais servi pour TOUTE route /app/*
+ *    non cachée, JAMAIS de page d'erreur pour l'app.)
  *
  * Responsabilités (fusion v3, sept. 2026) :
  *   1. WEB PUSH + notificationclick + pushsubscriptionchange
@@ -77,7 +85,33 @@
  * ============================================================================
  */
 
-const SW_VERSION = 'v3.4.0';
+// ⭐ v3.5.0 — Origine de l'API (interception cross-origin des GET axios,
+//    baseURL https://api.<domaine>/api). Déterminée :
+//    (a) par message SET_API_ORIGIN de la page (OfflineSWRegister envoie
+//        l'origine réelle issue de getApiBaseUrl()) ;
+//    (b) à défaut, par dérivation depuis self.location (api.<domaine racine>).
+let apiOriginOverride = null;
+
+function deriveApiOrigin() {
+  try {
+    const host = self.location.hostname;
+    if (!host || host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost')) {
+      return null;
+    }
+    const labels = host.split('.');
+    if (labels.length <= 2) return self.location.protocol + '//api.' + host;
+    return self.location.protocol + '//api.' + labels.slice(1).join('.');
+  } catch {
+    return null;
+  }
+}
+
+/** Origine API connue (override explicite prioritaire sur la dérivation). */
+function getApiOrigin() {
+  return apiOriginOverride || deriveApiOrigin();
+}
+
+const SW_VERSION = 'v3.5.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 const PAGE_CACHE = `ah-pages-${SW_VERSION}`;
 const AUTH_CACHE = 'ah-auth-token'; // ⭐ miroir JWT pour le background sync — JAMAIS purgé
@@ -128,8 +162,18 @@ const RSC_TIMEOUT = 4000;
 //    Requêtes avec cookies mais SANS identité reconnue → réseau direct (pas
 //    de cache — anti-fuite). Requêtes anonymes (site public) → clé URL simple.
 const API_CACHE = 'ah-api';
-const API_CACHE_MAX = 300;
+// ⭐ v3.5.0 — 400 (pré-cache ~40 endpoints KPI + navigations/visites réelles :
+//    avec 300, le LRU pouvait évicter les entrées pré-cachées au profit des
+//    URLs visitées avec des params différents avant un passage hors ligne).
+const API_CACHE_MAX = 400;
 const API_TIMEOUT = 8000;
+// ⭐ v3.5.0 — Timeout des GET CROSS-ORIGIN (axios) : 25 s, ALIGNÉ sur le
+//    budget d'axios (30 s) et les cold starts Neon (10-13 s documentés).
+//    Le 8 s du same-origin est trop court ici : couper un appel axios à 8 s
+//    alors que le serveur répond à 12 s provoquerait des « erreurs réseau »
+//    de régression en ligne (l'ancien comportement sans interception laissait
+//    axios attendre jusqu'à 30 s).
+const CROSS_API_TIMEOUT = 25000;
 
 // ⭐ Shell pré-caché au premier install : l'app PWA démarre hors ligne sans
 //    page de substitution. '/login' couvre la start_url, '/app' l'application.
@@ -289,12 +333,30 @@ self.addEventListener('fetch', (event) => {
   } catch {
     return;
   }
-  if (url.origin !== self.location.origin) return;
+
+  // ⭐ v3.5.0 — Deux origines sont interceptées : l'app (same-origin) ET
+  //    l'API (cross-origin axios apiClient, baseURL https://api.<domaine>/api).
+  //    Tout AUTRE cross-origin (analytics, images tierces…) → réseau direct.
+  const isSameOrigin = url.origin === self.location.origin;
+  const isApiOrigin = url.origin === getApiOrigin();
+  if (!isSameOrigin && !isApiOrigin) return;
 
   const pathname = url.pathname;
 
-  // Routes interdites → réseau direct
+  // Routes interdites → réseau direct (les chemins axios cross-origin sont
+  // tous préfixés /api/ → les mêmes patterns s'appliquent : auth/sync jamais cachés)
   if (NEVER_INTERCEPT.some((pattern) => pattern.test(pathname))) return;
+
+  // ⭐ v3.5.0 — API GET CROSS-ORIGIN (axios) : NetworkFirst + cache + fallback
+  //    offline. AVANT : les GET axios vers api.<domaine> n'étaient JAMAIS
+  //    interceptés → hors ligne, la moitié des KPI des dashboards (ceux
+  //    servis par apiClient) tombaient à zéro/null (« fausses données »).
+  //    Timeout élargi (25 s) : cf. CROSS_API_TIMEOUT — pas de régression
+  //    sur les cold starts Neon.
+  if (isApiOrigin && !isSameOrigin) {
+    event.respondWith(handleApiGet(request, CROSS_API_TIMEOUT));
+    return;
+  }
 
   // ⭐ v3.2.0 — Requêtes RSC/flight du routeur Next 16 (navigation client) :
   //    `rsc: 1` (navigation), `next-router-prefetch: 1` (préchargement liens),
@@ -511,57 +573,175 @@ function fnv1a(str) {
 }
 
 /**
- * Identité de la requête pour le scoping du cache API (isolation tenant).
- * Sources reconnues, par ordre de fiabilité :
- *   - header `x-tenant-id`
- *   - header `Authorization` (Bearer JWT — signature distinctive en queue)
- *   - cookies d'identité (noms contenant token/session/tenant/auth :
- *     academia_session, academia_token, x-tenant-id, …)
+ * ⭐ v3.5.0 — Identité NORMALISÉE (tenant + user) du cache API.
+ *
+ *    PROBLÈME (v3.4) : la clé intégrait un hash des headers BRUTS → la MÊME
+ *    URL était cachée sous des clés DIFFÉRENTES selon le style d'appel
+ *    (fetchJson cookie-only ≠ offlineFetch JWT+cookies ≠ axios JWT+xtid)
+ *    → fragmentation : une entrée pré-cachée ou visitée via un style
+ *    n'était JAMAIS retrouvée par un autre style → « fausses données ».
+ *
+ *    Désormais on extrait les MÊMES VALEURS (tenantId, userId) de toutes
+ *    les sources disponibles — la clé est donc IDENTIQUE quel que soit le
+ *    style d'appel :
+ *      1. header `x-tenant-id` (+ cookies x-tenant-id)
+ *      2. JWT Authorization (claims tenantId + sub)
+ *      3. cookie `academia_session` (JSON { user: { id }, tenant: { id } })
+ *
  * Retour :
- *   - string non vide → identité → clé = URL + '?__ah_t=' + hash
- *   - null            → cookies présents mais AUCUNE identité reconnue →
- *                       réseau direct, JAMAIS servi depuis le cache (anti-fuite
- *                       cross-tenant sur contexte de session inconnu)
- *   - 'ANONYMOUS'     → ni identité ni cookies → données publiques → clé = URL
+ *   - 'T:<tenantId>|U:<userId>'      → clé = URL + '?__ah_t=' + hash
+ *     (fallback identité brute si tenant/user non extractibles mais
+ *      matériau d'identité présent — ex. session cookie opaque)
+ *   - null   → cookies présents mais AUCUNE identité reconnaissable →
+ *              réseau direct, JAMAIS servi depuis le cache (anti-fuite)
+ *   - 'ANONYMOUS' → ni identité ni cookies → données publiques → clé = URL
  */
+function decodeJwtPayload(jwt) {
+  try {
+    const parts = jwt.split('.');
+    if (parts.length < 2) return null;
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(b64);
+    let json = '';
+    for (let i = 0; i < bin.length; i++) {
+      json += '%' + bin.charCodeAt(i).toString(16).padStart(2, '0');
+    }
+    return JSON.parse(decodeURIComponent(json));
+  } catch {
+    return null;
+  }
+}
+
 function apiIdentity(request) {
-  const parts = [];
-  const xtid = request.headers.get('x-tenant-id');
-  if (xtid) parts.push('xtid:' + xtid);
+  let tenantId = null;
+  let userId = null;
+  let rawMaterial = false;
+
+  const xtidHeader = request.headers.get('x-tenant-id');
+  if (xtidHeader && xtidHeader.trim()) {
+    tenantId = xtidHeader.trim();
+    rawMaterial = true;
+  }
+
   const authz = request.headers.get('authorization');
-  if (authz) parts.push('authz:' + authz.length + ':' + authz.slice(-48));
+  if (authz && authz.trim()) {
+    rawMaterial = true;
+    if (authz.toLowerCase().startsWith('bearer ')) {
+      const claims = decodeJwtPayload(authz.slice(7).trim());
+      if (claims) {
+        const jwtTenant = claims.tenantId || claims.tenant_id ||
+          (claims.tenant && claims.tenant.id) || null;
+        if (jwtTenant && !tenantId) tenantId = String(jwtTenant);
+        if (!userId) {
+          const sub = claims.sub || claims.userId || claims.user_id || null;
+          if (sub) userId = String(sub);
+        }
+      }
+    }
+  }
+
   const cookieHeader = request.headers.get('cookie');
   if (cookieHeader) {
     const pairs = cookieHeader.split(';').map((s) => s.trim()).filter(Boolean);
-    const identityPairs = pairs.filter((p) => {
-      const name = (p.split('=')[0] || '').toLowerCase();
-      return /token|session|tenant|auth/.test(name);
-    });
-    if (identityPairs.length) parts.push('cookie:' + identityPairs.join('&'));
+    for (const pair of pairs) {
+      const eq = pair.indexOf('=');
+      if (eq === -1) continue;
+      const name = pair.slice(0, eq).toLowerCase();
+      let value = pair.slice(eq + 1);
+      try {
+        value = decodeURIComponent(value);
+      } catch {
+        /* garder la valeur brute */
+      }
+      if (name === 'x-tenant-id' && value && !tenantId) {
+        tenantId = value;
+        rawMaterial = true;
+      }
+      if ((name === 'academia_token' || name === 'academia_token_jwt') && value && !userId) {
+        // Cookie JWT (httpOnly academia_token) → claims tenantId/sub
+        const claims = decodeJwtPayload(value);
+        if (claims) {
+          const jwtTenant = claims.tenantId || claims.tenant_id || null;
+          if (jwtTenant && !tenantId) tenantId = String(jwtTenant);
+          const sub = claims.sub || claims.userId || null;
+          if (sub) userId = String(sub);
+          rawMaterial = true;
+        }
+      }
+      if (name === 'academia_session' && value) {
+        try {
+          const session = JSON.parse(value);
+          const t = session?.tenant?.id ?? session?.user?.tenantId ??
+            session?.tenantId ?? null;
+          if (t && !tenantId) tenantId = String(t);
+          const u = session?.user?.id ?? session?.userId ?? null;
+          if (u && !userId) userId = String(u);
+          rawMaterial = true;
+        } catch {
+          /* session opaque — matériau d'identité quand même */
+          rawMaterial = true;
+        }
+      } else if (/token|session|tenant|auth/.test(name)) {
+        rawMaterial = true;
+      }
+    }
   }
-  if (parts.length) return parts.join('|');
+
+  // ⭐ Identité normalisée (tenant|user) — stable d'un style d'appel à l'autre
+  if (tenantId || userId) return 'T:' + (tenantId || '?') + '|U:' + (userId || '?');
+
+  // Fallback matériau brut (session opaque sans JSON parsable) : la clé
+  // restera propre à ce style d'appel (comportement v3.4) — cache-on-visit
+  // cohérent, mais sans garantie de matching inter-styles.
+  if (rawMaterial) {
+    const parts = [];
+    if (xtidHeader) parts.push('xtid:' + xtidHeader);
+    if (authz) parts.push('authz:' + authz.length + ':' + authz.slice(-48));
+    if (cookieHeader) {
+      const identityPairs = cookieHeader.split(';').map((s) => s.trim())
+        .filter(Boolean)
+        .filter((p) => /token|session|tenant|auth/.test((p.split('=')[0] || '').toLowerCase()));
+      if (identityPairs.length) parts.push('cookie:' + identityPairs.join('&'));
+    }
+    if (parts.length) return parts.join('|');
+  }
+
   if (cookieHeader) return null;
   return 'ANONYMOUS';
 }
 
-async function handleApiGet(request) {
+/** ⭐ v3.5.0 — Clé de cache API : URL SANS le cache-buster `_t` (hrFetch
+ *    ajoute ?_t=<timestamp> à chaque GET → sans normalisation, chaque
+ *    requête produisait une NOUVELLE clé et ne retrouvait jamais le cache).
+ *    ⚠️ PAS de fragment (#) — le constructeur Request SUPPRIME les fragments
+ *    d'URL → on utilise un query param (préservé dans request.url). */
+function apiCacheKey(request, identity) {
+  let base;
+  try {
+    const u = new URL(request.url);
+    u.searchParams.delete('_t');
+    u.searchParams.sort(); // ordre stable des params → même clé quel que soit l'ordre
+    base = u.toString();
+  } catch {
+    base = request.url;
+  }
+  if (identity === 'ANONYMOUS') return base;
+  return base + (base.includes('?') ? '&' : '?') + '__ah_t=' + fnv1a(identity);
+}
+
+async function handleApiGet(request, timeoutMs = API_TIMEOUT) {
   const identity = apiIdentity(request);
   // Contexte de session inconnu (cookies sans identité reconnue) → réseau
   // direct : on ne met PAS en cache et on ne sert JAMAIS depuis le cache.
   if (identity === null) return fetch(request);
 
-  const key = identity === 'ANONYMOUS'
-    ? request.url
-    // ⚠️ PAS de fragment (#) — le constructeur Request SUPPRIME les fragments
-    // d'URL → la clé perdrerait son scope identitaire. On utilise un query
-    // param (préservé dans request.url, comme _rsc pour le cache RSC).
-    : request.url + (request.url.includes('?') ? '&' : '?') + '__ah_t=' + fnv1a(identity);
+  const key = apiCacheKey(request, identity);
   const cache = await caches.open(API_CACHE);
   const offline = !self.navigator || self.navigator.onLine === false;
 
   if (!offline) {
     try {
-      const response = await fetchWithTimeout(request, API_TIMEOUT);
+      const response = await fetchWithTimeout(request, timeoutMs);
       if (response && response.status === 200 && !response.redirected) {
         const ct = response.headers.get('content-type') || '';
         if (ct.includes('json')) {
@@ -651,9 +831,44 @@ async function fetchAndCacheImmutable(request) {
 
 // ─── Handler : navigations /app/* (app shell, jamais de page offline) ─────
 
-/** ⭐ v3.3.1 — La racine de l'app uniquement (pas les modules profonds). */
-function isAppRootNavigation(pathname) {
-  return pathname === '/app' || pathname === '/app/';
+/** ⭐ v3.5.0 — Toute route /app/* (y compris modules profonds et sous-onglets).
+ *    Retour terrain : « vous avez encore créé une page pour dire qu'il n'y a
+ *    pas de connexion » — l'exigence offline-first est explicite : AUCUNE
+ *    page « sans connexion » pour l'app, JAMAIS. Quand la route exacte n'est
+ *    pas en cache, on sert le SHELL /app pré-caché : l'app React démarre,
+ *    l'utilisateur continue à travailler (sidebar → navigation client RSC
+ *    cachée), et un script inline recharge la VRAIE route dès que le réseau
+ *    revient (ou après réveil du serveur — garde anti-boucle incluse). */
+function isAppNavigation(pathname) {
+  return pathname === '/app' || pathname === '/app/' || pathname.startsWith('/app/');
+}
+
+/** Injecte dans le HTML du shell un script de rechargement de la vraie route
+ *  au retour du réseau (+ retry différé si le serveur était juste en train de
+ *  se réveiller — Neon cold start). Garde anti-boucle : max 2 rechargements
+ *  auto par URL et par session onglet (sessionStorage). */
+async function shellWithRecoveryScript(shellResponse) {
+  try {
+    const html = await shellResponse.clone().text();
+    const script =
+      '<script>(function(){try{' +
+      'var k="ah_shell_reload_"+location.pathname;var n=0;' +
+      'try{n=Number(sessionStorage.getItem(k)||0)}catch(e){}' +
+      'if(n<2){try{sessionStorage.setItem(k,String(n+1))}catch(e){}' +
+      'window.addEventListener("online",function(){location.reload()});' +
+      'setTimeout(function(){if(navigator.onLine){location.reload()}},20000);}' +
+      '}catch(e){}})();</' + 'script>';
+    const patched = html.includes('</body>')
+      ? html.replace('</body>', script + '</body>')
+      : html + script;
+    return new Response(patched, {
+      status: shellResponse.status,
+      statusText: shellResponse.statusText,
+      headers: shellResponse.headers,
+    });
+  } catch {
+    return shellResponse;
+  }
 }
 
 async function handleAppShellNavigation(request) {
@@ -666,13 +881,14 @@ async function handleAppShellNavigation(request) {
     // ⭐ v3.4.0 — cascade exact → ignoreSearch (liens ?tenant=…)
     const cachedExact = await matchRouteCache(cache, request);
     if (cachedExact) return cachedExact;
-    // ⭐ v3.3.1 : shell /app UNIQUEMENT pour la racine — pour un module
-    //    profond (/app/finance, /app/hr…) non caché, servir le shell du
-    //    dashboard était TROMPEUR (l'hydratation Next rend le dashboard
-    //    avec les données du dashboard). Réponse sobre à la place.
-    if (isAppRootNavigation(url.pathname)) {
-      const cachedShell = await matchRouteCache(cache, '/app');
-      if (cachedShell) return cachedShell; // app shell → routing client + IndexedDB
+    // ⭐ v3.5.0 — shell /app pour TOUTE route /app/* non cachée : l'app
+    //    démarre depuis le cache, l'utilisateur continue à travailler
+    //    (JAMAIS de page « connexion indisponible » pour l'app).
+    const cachedShell = await matchRouteCache(cache, '/app');
+    if (cachedShell) {
+      return url.pathname === '/app' || url.pathname === '/app/'
+        ? cachedShell
+        : shellWithRecoveryScript(cachedShell);
     }
   }
 
@@ -698,14 +914,22 @@ async function handleAppShellNavigation(request) {
     // ⭐ v3.4.0 — cascade exact → ignoreSearch (liens ?tenant=…)
     const cachedExact = await matchRouteCache(cache, request);
     if (cachedExact) return cachedExact;
-    // ⭐ v3.3.1 : shell /app UNIQUEMENT pour la racine (cf. ÉTAPE 1) —
-    //    jamais le dashboard en substitut d'un module profond non caché.
-    if (isAppRootNavigation(url.pathname)) {
-      const cachedShell = await matchRouteCache(cache, '/app');
-      if (cachedShell) return cachedShell;
+    // ⭐ v3.5.0 — shell /app pour TOUTE route /app/* (cf. ÉTAPE 1) : l'app
+    //    reste utilisable + rechargement auto de la vraie route quand le
+    //    serveur répond à nouveau.
+    const cachedShell = await matchRouteCache(cache, '/app');
+    if (cachedShell) {
+      return url.pathname === '/app' || url.pathname === '/app/'
+        ? cachedShell
+        : shellWithRecoveryScript(cachedShell);
     }
-    // Dernier recours (shell pas encore pré-caché, ex. SW fraîchement installé
-    // offline) : réponse sobre NON-bloquante — un texte simple, PAS une page
+    // Dernier recours ABSOLU (shell pas encore pré-caché, ex. SW fraîchement
+    // installé offline) : redirection immédiate vers /app — le shell y sera
+    // servi depuis le pré-cache d'installation (PRECACHE_URLS inclut /app).
+    // Si même /app échoue, offlineMinimalResponse prendra le relai.
+    if (isAppNavigation(url.pathname) && url.pathname !== '/app' && url.pathname !== '/app/') {
+      return Response.redirect(new URL('/app', url.origin).toString(), 302);
+    }
     return offlineMinimalResponse(url.pathname);
   }
 }
@@ -850,7 +1074,108 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'PRECACHE_MODULE' && event.data.url) {
     event.waitUntil(precacheModule(event.data.url, event.source));
   }
+
+  // ⭐ v3.5.0 — Origine réelle de l'API (cross-origin axios) : la page
+  //    (OfflineSWRegister) l'envoie à chaque chargement — le SW est isolé du
+  //    DOM et ne peut pas lire getApiBaseUrl() lui-même. Un redémarrage du SW
+  //    perd la valeur → la page la renvoie à chaque register().
+  if (event.data && event.data.type === 'SET_API_ORIGIN' && typeof event.data.origin === 'string') {
+    try {
+      const u = new URL(event.data.origin);
+      apiOriginOverride = u.origin;
+    } catch {
+      /* origine invalide — on garde la dérivation */
+    }
+  }
+
+  // ⭐ v3.5.0 — PRÉ-CACHE DES DONNÉES API (KPIs des dashboards) : le client
+  //    envoie la liste des endpoints + ses headers d'authentification ; le SW
+  //    fetch chaque endpoint et l'écrit dans ah-api sous la clé normalisée
+  //    (tenant|user). Hors ligne, les dashboards servent alors les VRAIES
+  //    données sans que l'utilisateur ait visité chaque module en ligne.
+  if (event.data && event.data.type === 'PRECACHE_API' && Array.isArray(event.data.urls)) {
+    event.waitUntil(
+      precacheApiEndpoints(event.data.urls, event.data.headers || {}, event.source),
+    );
+  }
 });
+
+// ─── Pré-cache des données API (v3.5.0) ────────────────────────────────
+/**
+ * Fetch chaque endpoint et l'écrit dans ah-api avec la MÊME clé normalisée
+ * que celle que calculera la requête réelle de la page (apiIdentity sur les
+ * headers fournis → tenant|user). ACK global PRECACHE_API_RESULT.
+ *
+ * Headers fournis par le client : Authorization (Bearer JWT) + X-Tenant-ID —
+ * les mêmes que ceux des appels axios/fetch de la page → même identité →
+ * même clé → le cache est retrouvé hors ligne.
+ *
+ * ⚠️ CORS : les endpoints cross-origin (api.<domaine>) sont fetch avec
+ * credentials 'omit' — exactement comme axios sans withCredentials → le
+ * préflight OPTIONS Authorization est le même que celui des appels réels.
+ */
+async function precacheApiEndpoints(urls, headers, sourceClient) {
+  const cache = await caches.open(API_CACHE);
+
+  const authHeaders = {};
+  const authz = headers.authorization || headers.Authorization;
+  if (authz) authHeaders['Authorization'] = String(authz);
+  const xtid = headers['x-tenant-id'] || headers['X-Tenant-ID'] || headers['X-Tenant-Id'];
+  if (xtid) authHeaders['X-Tenant-ID'] = String(xtid);
+
+  let okCount = 0;
+  const BATCH = 4;
+  for (let i = 0; i < urls.length; i += BATCH) {
+    const batch = urls.slice(i, i + BATCH);
+    if (!self.navigator || self.navigator.onLine === false) {
+      // Connexion perdue en cours de pré-cache → arrêt (le client reprendra
+      // au retour du réseau — le flag n'est posé qu'en cas de succès).
+      break;
+    }
+    await Promise.allSettled(
+      batch.map(async (rawUrl) => {
+        try {
+          const absolute = new URL(String(rawUrl), self.location.origin);
+          const isCrossOrigin = absolute.origin !== self.location.origin;
+          const req = new Request(absolute.toString(), {
+            method: 'GET',
+            credentials: isCrossOrigin ? 'omit' : 'include',
+            headers: { ...authHeaders, Accept: 'application/json' },
+          });
+          const res = await fetchWithTimeout(req, 15000);
+          if (res && res.status === 200 && !res.redirected) {
+            const ct = res.headers.get('content-type') || '';
+            if (ct.includes('json')) {
+              const identity = apiIdentity(req);
+              if (identity !== null) {
+                const key = apiCacheKey(req, identity);
+                const copy = await toCacheableCopy(res);
+                await cache.put(new Request(key), copy);
+                okCount++;
+              }
+            }
+          }
+        } catch {
+          /* endpoint échoué — compté comme non-caché, retry au prochain cycle */
+        }
+      }),
+    );
+  }
+
+  trimApiCache().catch(() => {});
+
+  if (sourceClient && typeof sourceClient.postMessage === 'function') {
+    try {
+      sourceClient.postMessage({
+        type: 'PRECACHE_API_RESULT',
+        okCount,
+        total: urls.length,
+      });
+    } catch {
+      /* client parti — non-bloquant */
+    }
+  }
+}
 
 // ─── Pré-cache d'un module (HTML + chunks JS/CSS + payload RSC) ───────────
 /**

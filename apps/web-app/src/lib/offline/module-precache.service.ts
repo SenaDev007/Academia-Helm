@@ -1,26 +1,33 @@
 /**
  * ============================================================================
- * MODULE PRECACHE SERVICE — Pré-cache tous les chunks JS des modules au login
+ * MODULE PRECACHE SERVICE — Pré-cache HTML + RSC + chunks JS des modules
  * ============================================================================
  *
  * ⭐ RÔLE : au bootstrap (1er login sur un device), pré-cacher TOUTES les
  *    routes /app/* pour que l'utilisateur puisse naviguer en offline vers
  *    N'IMPORTE QUEL module sans avoir besoin de l'avoir visité en online avant.
  *
- *    Avant : seuls les modules visités en online étaient cachés (StaleWhileRevalidate)
- *    → en offline, un module non visité affichait "pas de données" ou page blanche
- *    Maintenant : au login, on fetch toutes les routes /app/* en arrière-plan
- *    → le SW les met en cache → tous les modules accessibles offline
- *
  * ⭐ FLUX :
  *    1. Bootstrap IDB (30 tables essentielles) → données métier
- *    2. Module precache (121 routes) → chunks JS + HTML de chaque module
+ *    2. Module precache (121 routes) → chunks JS + HTML + payload RSC
  *    3. L'utilisateur peut couper internet et naviguer partout
  *
- * ⭐ PERFORMANCE :
- *    - 121 routes × ~50-200KB chacune = ~6-24 MB total
- *    - Fetch en parallèle (batch de 5) → ~30-60s au login
- *    - Fire-and-forget (non bloquant — l'utilisateur peut utiliser l'app pendant)
+ * ⭐ v3.4.0 — FIABILISATION (retour terrain sept. 2026 : « connexion
+ *    indisponible pour /app/pedagogy » hors ligne) :
+ *    - ANCIENNEMENT fire-and-forget : le flag 24 h était posé au DISPATCH
+ *      des messages, avant tout résultat → un pré-cache à moitié échoué
+ *      (timeouts 2G/3G silencieux) passait pour « frais » → modules
+ *      manquants offline pendant 24 h.
+ *    - Désormais le SW ACK chaque route (PRECACHE_MODULE_RESULT) ; le flag
+ *      n'est posé QUE si ≥ 90 % des routes ont réussi (retries incluses),
+ *      sinon le pré-cache sera retenté au prochain montage / au retour du
+ *      réseau (listener « online » du layout-client).
+ *    - Les URLs de pré-cache portent le ?tenant= courant : les navigations
+ *      réelles de l'app (sidebar /app/pedagogy?tenant=…) matchent les
+ *      entrées de cache EXACTEMENT (le SW matche aussi en ignoreSearch en
+ *      secours).
+ *    - Garde de concurrence : mount + listener online ne déclenchent qu'une
+ *      seule exécution à la fois.
  * ============================================================================
  */
 
@@ -101,7 +108,17 @@ const MODULE_ROUTES: string[] = [
 ];
 
 const BATCH_SIZE = 5; // 5 routes en parallèle
-const FETCH_TIMEOUT_MS = 10000; // 10s par route
+// (le fetch effectif est fait par le SW — timeout 10 s côté sw.js precacheModule)
+
+/** ⭐ v3.4.0 — Attente max des ACK du SW par passe (fetch 10 s + marge). */
+const ACK_TIMEOUT_MS = 30000;
+/** ⭐ v3.4.0 — Passe initiale + 2 retries pour les routes échouées. */
+const MAX_PASSES = 3;
+/** ⭐ v3.4.0 — Taux de réussite minimum pour poser le flag 24 h. */
+const MIN_SUCCESS_RATE = 0.9;
+
+/** ⭐ v3.4.0 — Garde de concurrence (mount + listener online simultanés). */
+let inFlightRun: Promise<void> | null = null;
 
 /**
  * Garde anti-répétition : re-pré-cache au plus 1×/24 h (et après chaque
@@ -205,10 +222,18 @@ export function initModulePrecacheInvalidation(): void {
 
 /**
  * Pré-cache tous les modules en demandant au Service Worker de fetcher
- * chaque route + parser le HTML pour extraire et cacher les chunks JS/CSS.
+ * chaque route + parser le HTML pour extraire et cacher les chunks JS/CSS
+ * (+ le payload RSC de la route, best-effort — sw.js v3.4.0).
  *
- * Le SW fait le travail efficace (parse HTML + fetch chunks en parallèle).
- * Le client se contente d'envoyer des messages `PRECACHE_MODULE` au SW.
+ * ⭐ v3.4.0 — FIABILISÉ :
+ *   - le SW ACK chaque route (PRECACHE_MODULE_RESULT) ;
+ *   - les routes échouées sont retentées (MAX_PASSES au total) ;
+ *   - le flag 24 h n'est posé QUE si ≥ MIN_SUCCESS_RATE des routes ont
+ *     réussi — sinon le pré-cache sera retenté au prochain montage / au
+ *     retour du réseau (fini le flag optimiste posé au dispatch).
+ *   - les URLs portent le ?tenant= courant (les navigations réelles de
+ *     l'app l'ont aussi) ;
+ *   - garde de concurrence (mount + listener « online »).
  *
  * Fire-and-forget — non bloquant pour l'utilisateur.
  *
@@ -236,7 +261,21 @@ export async function precacheAllModules(
     return;
   }
 
-  console.log(`[ModulePrecache] Starting — ${MODULE_ROUTES.length} routes to cache`);
+  // ⭐ v3.4.0 — Garde de concurrence : le layout appelle run() au montage ET
+  //    au retour du réseau — une seule exécution à la fois.
+  if (inFlightRun) return inFlightRun;
+
+  inFlightRun = runPrecache(activeVersion, onProgress).finally(() => {
+    inFlightRun = null;
+  });
+  return inFlightRun;
+}
+
+/** ⭐ v3.4.0 — Cœur du pré-cache (ACK-based, retries, flag conditionnel). */
+async function runPrecache(
+  activeVersion: string | null,
+  onProgress?: (current: number, total: number) => void,
+): Promise<void> {
   const startTime = Date.now();
 
   // ⭐ Attendre que le SW soit prêt
@@ -247,63 +286,163 @@ export async function precacheAllModules(
     return;
   }
 
-  let completed = 0;
-  const total = MODULE_ROUTES.length;
+  // ⭐ v3.4.0 — Contexte tenant courant : les URLs de l'app portent toutes
+  //    ?tenant=… (mode multi-tenant SANS sous-domaine) — le pré-cache doit
+  //    stocker les MÊMES URLs pour que Cache.match fonctionne hors ligne.
+  const tenantQuery = buildTenantQuery();
+  const routeUrls = MODULE_ROUTES.map((route) => buildRouteUrl(route, tenantQuery));
+  const total = routeUrls.length;
 
-  // Traiter par batches de BATCH_SIZE
-  for (let i = 0; i < MODULE_ROUTES.length; i += BATCH_SIZE) {
-    const batch = MODULE_ROUTES.slice(i, i + BATCH_SIZE);
+  console.log(
+    `[ModulePrecache] Starting — ${total} routes to cache` +
+      (tenantQuery ? ` (tenant: ${tenantQuery.split('&')[0]})` : ''),
+  );
 
-    // ⭐ Envoyer un message PRECACHE_MODULE au SW pour chaque route
-    //    Le SW fetch la route + parse le HTML + cache les chunks JS/CSS
-    await Promise.allSettled(
-      batch.map(async (route) => {
-        try {
-          // Construire l'URL absolue
-          const absoluteUrl = new URL(route, window.location.origin).href;
+  // ⭐ v3.4.0 — Écoute des ACK du SW (résultat réel par route)
+  const results = new Map<string, boolean>();
+  const onMessage = (event: MessageEvent) => {
+    const data = event.data as
+      | { type?: string; url?: string; ok?: boolean; rscOk?: boolean }
+      | null;
+    if (data?.type === 'PRECACHE_MODULE_RESULT' && typeof data.url === 'string') {
+      results.set(data.url, Boolean(data.ok));
+    }
+  };
+  navigator.serviceWorker.addEventListener('message', onMessage);
 
-          // Envoyer le message au SW
-          // ⭐ Le SW ne renvoie pas de réponse — on attend juste un peu
-          //    pour étaler la charge. Le SW fait le travail en arrière-plan.
-          sw.postMessage({
-            type: 'PRECACHE_MODULE',
-            url: absoluteUrl,
-          });
+  try {
+    let pending = routeUrls;
+    let dispatchedTotal = 0;
 
-          // Petite attente pour ne pas saturer le SW
-          await new Promise((r) => setTimeout(r, 500));
-        } catch (err) {
-          console.warn(`[ModulePrecache] Failed: ${route}`, err instanceof Error ? err.message : '');
-        } finally {
-          completed++;
-          onProgress?.(completed, total);
+    // ⭐ Passe initiale + retries des échecs (MAX_PASSES au total)
+    for (let pass = 1; pass <= MAX_PASSES && pending.length > 0; pass++) {
+      if (!navigator.onLine) {
+        console.warn(`[ModulePrecache] Connection perdue (passe ${pass}) — arrêt`);
+        break;
+      }
+
+      for (let i = 0; i < pending.length; i += BATCH_SIZE) {
+        const batch = pending.slice(i, i + BATCH_SIZE);
+
+        await Promise.allSettled(
+          batch.map(async (url) => {
+            try {
+              sw.postMessage({ type: 'PRECACHE_MODULE', url });
+              dispatchedTotal++;
+              onProgress?.(Math.min(dispatchedTotal, total), total);
+              // Petite attente pour ne pas saturer le SW
+              await new Promise((r) => setTimeout(r, 500));
+            } catch (err) {
+              console.warn(
+                `[ModulePrecache] Dispatch failed: ${url}`,
+                err instanceof Error ? err.message : '',
+              );
+            }
+          }),
+        );
+
+        // Pause entre les batches
+        if (i + BATCH_SIZE < pending.length) {
+          await new Promise((r) => setTimeout(r, 300));
         }
-      }),
+      }
+
+      // ⭐ v3.4.0 — Attendre les ACK de cette passe (le SW fetch ~10 s/route)
+      await waitForAcks(results, pending, ACK_TIMEOUT_MS);
+
+      const failed = pending.filter((url) => !results.get(url));
+      if (failed.length === 0) break;
+      if (pass < MAX_PASSES) {
+        console.warn(
+          `[ModulePrecache] Passe ${pass}: ${failed.length}/${pending.length} routes échouées — retry`,
+        );
+      }
+      pending = failed;
+    }
+
+    // ⭐ v3.4.0 — Bilan RÉEL (ACK-based) : le flag n'est posé que si ≥ 90 %
+    const okCount = routeUrls.filter((url) => results.get(url)).length;
+    const successRate = okCount / total;
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(
+      `[ModulePrecache] Complete — ${okCount}/${total} routes cached ` +
+        `(${(successRate * 100).toFixed(0)}%) in ${duration}s`,
     );
 
-    // Pause entre les batches
-    if (i + BATCH_SIZE < MODULE_ROUTES.length) {
-      await new Promise((r) => setTimeout(r, 300));
-    }
-  }
-
-  const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log(`[ModulePrecache] Complete — ${completed}/${total} routes dispatched to SW in ${duration}s`);
-
-  // ⭐ Marquer comme pré-caché (le SW continue en arrière-plan) — timestamp
-  //    pour re-pré-cacher demain (nouveaux déploiements = nouveaux chunks)
-  //    + version du SW pour détecter les bumps (caches purgés → re-pré-cache)
-  try {
-    localStorage.setItem(PRECACHE_TS_KEY, String(Date.now()));
-    if (activeVersion) {
-      localStorage.setItem(PRECACHE_SW_VERSION_KEY, activeVersion);
+    if (successRate >= MIN_SUCCESS_RATE && navigator.onLine) {
+      try {
+        localStorage.setItem(PRECACHE_TS_KEY, String(Date.now()));
+        if (activeVersion) {
+          localStorage.setItem(PRECACHE_SW_VERSION_KEY, activeVersion);
+        } else {
+          localStorage.removeItem(PRECACHE_SW_VERSION_KEY); // version inconnue → re-pré-cache au prochain montage
+        }
+        localStorage.removeItem('academia_helm_modules_precached'); // legacy
+      } catch {
+        /* localStorage indisponible — le pré-cache se refera au prochain montage */
+      }
     } else {
-      localStorage.removeItem(PRECACHE_SW_VERSION_KEY); // version inconnue → re-pré-cache au prochain montage
+      // ⚠️ PAS de flag : le pré-cache incomplet sera retenté au prochain
+      // montage (15 s) ou au retour du réseau (listener « online »).
+      console.warn(
+        `[ModulePrecache] Succès insuffisant (${okCount}/${total}) — flag NON posé, retry au prochain montage/online`,
+      );
     }
-    localStorage.removeItem('academia_helm_modules_precached'); // legacy
-  } catch {
-    /* localStorage indisponible — le pré-cache se refera au prochain montage */
+  } finally {
+    navigator.serviceWorker.removeEventListener('message', onMessage);
   }
+}
+
+/** ⭐ v3.4.0 — Query string tenant courant (mode multi-tenant sans sous-domaine).
+ *  Priorité : URL courante (?tenant= / ?tenant_id=) puis session localStorage. */
+function buildTenantQuery(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    const params = new URLSearchParams(window.location.search);
+    let tenant = params.get('tenant') || '';
+    let tenantId = params.get('tenant_id') || '';
+    if (!tenant || !tenantId) {
+      const raw = localStorage.getItem('session');
+      if (raw) {
+        const session = JSON.parse(raw) as {
+          tenantId?: string;
+          tenant?: { id?: string; slug?: string; subdomain?: string };
+        };
+        tenant = tenant || session.tenant?.slug || session.tenant?.subdomain || '';
+        tenantId = tenantId || session.tenantId || session.tenant?.id || '';
+      }
+    }
+    const parts: string[] = [];
+    if (tenant) parts.push(`tenant=${encodeURIComponent(tenant)}`);
+    if (tenantId) parts.push(`tenant_id=${encodeURIComponent(tenantId)}`);
+    return parts.join('&');
+  } catch {
+    return '';
+  }
+}
+
+/** ⭐ v3.4.0 — URL absolue de la route avec le query tenant courant. */
+function buildRouteUrl(route: string, tenantQuery: string): string {
+  const base = new URL(route, window.location.origin).href;
+  if (!tenantQuery) return base;
+  return base + (base.includes('?') ? '&' : '?') + tenantQuery;
+}
+
+/** ⭐ v3.4.0 — Attend (poll léger) que toutes les URLs données aient reçu
+ *  leur ACK du SW, ou le timeout (les ACK manquants comptent échecs). */
+function waitForAcks(results: Map<string, boolean>, urls: string[], timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const tick = () => {
+      const allSettled = urls.every((u) => results.has(u));
+      if (allSettled || Date.now() - start > timeoutMs) {
+        resolve();
+        return;
+      }
+      setTimeout(tick, 500);
+    };
+    tick();
+  });
 }
 
 /**

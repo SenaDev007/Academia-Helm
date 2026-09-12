@@ -60,6 +60,9 @@ import LogoCircle from '@/components/ui/LogoCircle';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
 import { persistClientSession, markFreshLogin, hasLocalSessionHints, isRecentlyLoggedOut, clearRecentlyLoggedOutFlag, clearClientSessionSync } from '@/lib/auth/client-access-token';
+// ⭐ v3.4.0 — enveloppe d'auth hors ligne : re-login offline après un logout
+//    (même école + même identifiant + même mot de passe → session restaurée)
+import { saveOfflineAuthEnvelope, tryOfflineLogin } from '@/lib/auth/offline-auth-envelope';
 import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
@@ -859,6 +862,52 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         (typeof navigator !== 'undefined' && !navigator.onLine);
 
       if (isOfflineError) {
+        // ⭐ v3.4.0 — RE-CONNEXION HORS LIGNE : si un login a déjà réussi sur
+        //    cet appareil (enveloppe locale) et que l'école / l'identifiant /
+        //    le mot de passe saisis correspondent, restaurer la session et
+        //    entrer dans l'app (pages servies par le SW, données par le cache
+        //    API identitaire — le token restauré est le même).
+        const offlineIdentifier =
+          portalType === 'teacher'
+            ? teacherCredentials.teacherIdentifier.trim()
+            : portalType === 'parent'
+              ? parentCredentials.phone.trim()
+              : schoolCredentials.email.trim();
+        const offlinePassword =
+          portalType === 'teacher'
+            ? teacherCredentials.password
+            : portalType === 'parent'
+              ? ((parentCredentials as { password?: string }).password || '')
+              : schoolCredentials.password;
+        if (offlineIdentifier && offlinePassword) {
+          const restored = await tryOfflineLogin({
+            identifier: offlineIdentifier,
+            password: offlinePassword,
+            portalType: portalType || undefined,
+            tenantSlug: tenantSlug || undefined,
+            tenantId: tenantIdFromUrl || undefined,
+          });
+          if (restored) {
+            const restoredPortal = (restored.portalType || '').toUpperCase();
+            const dest =
+              restoredPortal === 'TEACHER'
+                ? '/app/teacher'
+                : restoredPortal === 'PARENT'
+                  ? '/app/parent'
+                  : redirectPath || '/app';
+            const slug =
+              restored.tenant?.slug || restored.tenant?.subdomain || tenantSlug || '';
+            const url = new URL(dest, window.location.origin);
+            if (slug) url.searchParams.set('tenant', slug);
+            if (restored.tenant?.id) {
+              url.searchParams.set('tenant_id', String(restored.tenant.id));
+            }
+            markFreshLogin();
+            window.location.href = url.toString();
+            return;
+          }
+        }
+
         // ⭐ Vérifier si l'utilisateur a déjà une session valide en cache
         let hasValidSession = false;
         try {
@@ -1064,7 +1113,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       data = completed;
     }
 
-    persistClientSession({
+    // ⭐ v3.4.0 — snapshot partagé persistClientSession + enveloppe offline
+    const sessionSnapshot = {
       accessToken: data.accessToken,
       refreshToken: data.refreshToken,
       serverSessionId: data.serverSessionId,
@@ -1072,7 +1122,17 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       tenant: data.tenant,
       portalType: portalType?.toUpperCase() || null,
       expiresAt: data.expiresAt,
-    });
+    };
+    persistClientSession(sessionSnapshot);
+    // ⭐ v3.4.0 — enveloppe d'auth hors ligne (re-login offline après logout)
+    saveOfflineAuthEnvelope({
+      identifier: schoolCredentials.email.trim(),
+      password: schoolCredentials.password,
+      portalType: portalType?.toUpperCase() || 'SCHOOL',
+      tenantSlug: data.tenant?.slug || data.tenant?.subdomain || tenantSlug || null,
+      tenantId: data.tenant?.id || tenantIdFromUrl || null,
+      snapshot: sessionSnapshot,
+    }).catch(() => {});
 
     const tenantKey = data.tenant?.id || tenantIdFromUrl || tenantSlug || 'platform';
     saveEmailForTenant(schoolCredentials.email, tenantKey);
@@ -1216,7 +1276,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       data = completed;
     }
 
-    persistClientSession({
+    // ⭐ v3.4.0 — snapshot partagé persistClientSession + enveloppe offline
+    const sessionSnapshot = {
       accessToken: data.accessToken,
       refreshToken: data.refreshToken,
       serverSessionId: data.serverSessionId,
@@ -1224,7 +1285,17 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       tenant: data.tenant,
       portalType: 'SCHOOL',
       expiresAt: data.expiresAt,
-    });
+    };
+    persistClientSession(sessionSnapshot);
+    // ⭐ v3.4.0 — enveloppe d'auth hors ligne (re-login offline après logout)
+    saveOfflineAuthEnvelope({
+      identifier: schoolCredentials.email.trim(),
+      password: schoolCredentials.password,
+      portalType: 'SCHOOL',
+      tenantSlug: data.tenant?.slug || data.tenant?.subdomain || tenantSlug || null,
+      tenantId: data.tenant?.id || tenantIdForApi || null,
+      snapshot: sessionSnapshot,
+    }).catch(() => {});
 
     const tenantKey = data.tenant?.id || tenantIdForApi || 'platform';
     saveEmailForTenant(schoolCredentials.email.trim(), tenantKey);
@@ -1291,7 +1362,8 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       throw new Error(data.message || data.error || 'Erreur lors de la connexion');
     }
 
-    persistClientSession({
+    // ⭐ v3.4.0 — snapshot partagé persistClientSession + enveloppe offline
+    const sessionSnapshot = {
       accessToken: data.accessToken,
       portalSessionId: data.portalSessionId,
       user: data.user,
@@ -1301,7 +1373,17 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       // ⭐ P4 : périmètre serveur (niveaux/pistes) — pilote la langue UI et
       //    les sélecteurs verrouillés de l'espace enseignant
       scope: data.scope ?? undefined,
-    });
+    };
+    persistClientSession(sessionSnapshot);
+    // ⭐ v3.4.0 — enveloppe d'auth hors ligne (re-login offline après logout)
+    saveOfflineAuthEnvelope({
+      identifier: teacherCredentials.teacherIdentifier.trim(),
+      password: teacherCredentials.password,
+      portalType: 'TEACHER',
+      tenantSlug: data.tenant?.slug || data.tenant?.subdomain || tenantSlug || null,
+      tenantId: data.tenant?.id || tenantIdForApi || null,
+      snapshot: sessionSnapshot,
+    }).catch(() => {});
 
     // ⭐ FIX : utiliser le slug du tenant retourné par l'API (data.tenant.slug)
     //    plutôt que tenantSlug de l'URL qui peut être un UUID ou un slug
@@ -1418,14 +1500,28 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     }
 
     // Connexion réussie — persister la session et rediriger
-    persistClientSession({
+    // ⭐ v3.4.0 — snapshot partagé persistClientSession + enveloppe offline
+    //    (parent : uniquement si un mot de passe a été saisi — vérifiable offline)
+    const sessionSnapshot = {
       accessToken: data.accessToken,
       portalSessionId: data.portalSessionId,
       user: data.user,
       tenant: data.tenant,
       portalType: 'PARENT',
       expiresAt: data.expiresAt,
-    });
+    };
+    persistClientSession(sessionSnapshot);
+    const parentPassword = (parentCredentials as { password?: string }).password;
+    if (parentPassword) {
+      saveOfflineAuthEnvelope({
+        identifier: parentCredentials.phone.trim(),
+        password: parentPassword,
+        portalType: 'PARENT',
+        tenantSlug: data.tenant?.slug || data.tenant?.subdomain || tenantSlug || null,
+        tenantId: data.tenant?.id || tenantIdForApi || null,
+        snapshot: sessionSnapshot,
+      }).catch(() => {});
+    }
 
     const redirectUrl = getTenantRedirectUrl({
       tenantSlug: tenantSlug || data.tenant?.slug || data.tenant?.id,

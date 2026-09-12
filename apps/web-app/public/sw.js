@@ -8,6 +8,26 @@
  *    sw-site.js et sw-chat.js sont OBSOLÈTES et sont désinstallés par
  *    UniversalSWRegister à la première visite.
  *
+ * v3.4.0 : (1) CORRECTIF CRITIQUE (retour terrain « connexion indisponible
+ *    pour /app/pedagogy » hors ligne) — le multi-tenant SANS sous-domaine fait
+ *    naviguer l'app avec ?tenant=… sur TOUS les liens (sidebar, redirections
+ *    post-login) ; les entrées pré-cachées SANS query ne matchaient JAMAIS
+ *    ces navigations (Cache.match exact) → réponse sobre même avec un
+ *    pré-cache complet. Désormais les handlers HTML/RSC matchent en cascade :
+ *    exact → sans query params (ignoreSearch) ; et le pré-cache embarque le
+ *    ?tenant= courant envoyé par le client.
+ *    (2) PRÉ-CACHE FIABILISÉ — le SW ACK chaque route (message
+ *    PRECACHE_MODULE_RESULT) : le client ne marque le pré-cache « frais » QUE
+ *    si ≥ 90 % des routes ont réussi (retries incluses) — sinon il est
+ *    retenté au prochain montage / au retour du réseau (fini le fire-and-
+ *    forget aveugle dont le flag optimiste masquait les échecs 2G/3G).
+ *    (3) PRÉ-CACHE RSC — payload flight par route (best-effort) → navigation
+ *    client hors ligne SANS rechargement dur.
+ *    (4) Vary supprimé des copies mises en cache (une entrée RSC cachée
+ *    depuis un prefetch ne matchait JAMAIS une navigation : Vary mismatch).
+ *    (5) réponse sobre enrichie : page HTML sobre + auto-rechargement au
+ *    retour du réseau (script inline « online » → reload).
+ *
  * v3.3.1 : (1) à l'activation, les pages ouvertes sont notifiées
  *    (SW_ACTIVATED) afin d'invalider le flag 24 h du pré-cache des modules
  *    — les caches ah-pages-<version> étant purgés à chaque version, un flag
@@ -57,7 +77,7 @@
  * ============================================================================
  */
 
-const SW_VERSION = 'v3.3.1';
+const SW_VERSION = 'v3.4.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 const PAGE_CACHE = `ah-pages-${SW_VERSION}`;
 const AUTH_CACHE = 'ah-auth-token'; // ⭐ miroir JWT pour le background sync — JAMAIS purgé
@@ -83,9 +103,11 @@ const IMMUTABLE_CACHE = 'ah-static-immutable';
 //    cache servi ; pas de cache → 503 IMMÉDIAT (le routeur déclenche
 //    l'error boundary → UI hors ligne, JAMAIS de spinner infini).
 //    Clés normalisées SANS le param _rsc (le hash varie par build → les
-//    prefetch d'un build restent réutilisables). LRU : max 150 entrées.
+//    prefetch d'un build restent réutilisables). LRU : max 250 entrées.
 const RSC_CACHE = 'ah-rsc';
-const RSC_CACHE_MAX = 150;
+// ⭐ v3.4.0 — 250 (121 routes de modules pré-cachées + navigations normales :
+//    avec 150, le LRU évictait les entrées de modules au profit des visites).
+const RSC_CACHE_MAX = 250;
 const RSC_TIMEOUT = 4000;
 
 // ⭐ v3.3.0 — CACHE DES RÉPONSES API GET (lecture hors ligne).
@@ -364,11 +386,57 @@ function isRscRequest(request, url) {
   return false;
 }
 
-/** Clé de cache normalisée : URL SANS le param _rsc (hash par build). */
-function rscCacheKey(request) {
-  const u = new URL(request.url);
+/** Clé de cache normalisée : URL SANS le param _rsc (hash par build).
+ *  Accepte un Request OU une URL en string (le pré-cache v3.4.0 passe une URL). */
+function rscCacheKey(requestOrUrl) {
+  const u = new URL(typeof requestOrUrl === 'string' ? requestOrUrl : requestOrUrl.url);
   u.searchParams.delete('_rsc');
   return u.toString();
+}
+
+// ─── v3.4.0 — Helpers de cache fiables ──────────────────────────────────
+
+/** En-têtes « cachables » : SANS Vary (une entrée cachée depuis un prefetch
+ *  ne matcherait JAMAIS une navigation : Vary: RSC, Next-Router-Prefetch…),
+ *  SANS Content-Encoding/Length (le corps est décodé par .text()). */
+function cacheableHeaders(response) {
+  const headers = new Headers();
+  response.headers.forEach((value, key) => {
+    const lk = key.toLowerCase();
+    if (lk === 'vary' || lk === 'content-encoding' || lk === 'content-length') return;
+    headers.set(key, value);
+  });
+  return headers;
+}
+
+/** Copie « cachable » d'une réponse (Vary retiré, corps décodé).
+ *  ⚠️ clone() AVANT tout await → utilisable en fire-and-forget pendant que
+ *  la réponse d'origine est renvoyée à la page. */
+async function toCacheableCopy(response) {
+  const clone = response.clone();
+  const headers = cacheableHeaders(response);
+  const body = await clone.text();
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+/** ⭐ v3.4.0 — Matching en cascade : exact PUIS sans query params.
+ *    CORRECTIF CRITIQUE : les liens de l'app portent tous ?tenant=… (mode
+ *    multi-tenant SANS sous-domaine) alors que le pré-cache stockait des
+ *    routes SANS query → cache.match(request) échouait TOUJOURS hors ligne
+ *    → « connexion indisponible pour /app/<module> » même pré-caché. */
+async function matchRouteCache(cache, requestOrUrl) {
+  try {
+    const exact = await cache.match(requestOrUrl);
+    if (exact) return exact;
+    const loose = await cache.match(requestOrUrl, { ignoreSearch: true });
+    return loose || null;
+  } catch {
+    return null;
+  }
 }
 
 async function handleRsc(request) {
@@ -379,9 +447,14 @@ async function handleRsc(request) {
   if (!offline) {
     try {
       const response = await fetchWithTimeout(request, RSC_TIMEOUT);
-      if (response && response.status === 200) {
-        const clone = response.clone();
-        cache.put(new Request(key), clone).then(() => trimRscCache());
+      if (response && response.status === 200 && !response.redirected) {
+        // ⭐ v3.4.0 — copie SANS Vary : une entrée cachée depuis un prefetch
+        //    (Next-Router-Prefetch: 1) ne matchait JAMAIS une navigation réelle
+        //    (Vary mismatch) → le cache RSC semblait vide hors ligne.
+        toCacheableCopy(response)
+          .then((copy) => cache.put(new Request(key), copy))
+          .then(() => trimRscCache())
+          .catch(() => {});
       }
       return response;
     } catch {
@@ -390,9 +463,11 @@ async function handleRsc(request) {
   }
 
   // Hors ligne (ou réseau KO) → payload en cache ?
+  // ⭐ v3.4.0 — cascade exact → ignoreSearch : le pré-cache stocke la clé
+  //    SANS le ?tenant= courant, les navigations réelles l'ont AVEC.
   let cached = null;
   try {
-    cached = await cache.match(key);
+    cached = await matchRouteCache(cache, key);
   } catch {
     /* cache illisible */
   }
@@ -487,11 +562,16 @@ async function handleApiGet(request) {
   if (!offline) {
     try {
       const response = await fetchWithTimeout(request, API_TIMEOUT);
-      if (response && response.status === 200) {
+      if (response && response.status === 200 && !response.redirected) {
         const ct = response.headers.get('content-type') || '';
         if (ct.includes('json')) {
-          const clone = response.clone();
-          cache.put(new Request(key), clone).then(() => trimApiCache());
+          // ⭐ v3.4.0 — copie SANS Vary (la clé identitaire __ah_t protège
+          //    déjà l'isolation tenant : le Vary sur la copie cachée ne
+          //    servait qu'à faire échouer le matching).
+          toCacheableCopy(response)
+            .then((copy) => cache.put(new Request(key), copy))
+            .then(() => trimApiCache())
+            .catch(() => {});
         }
       }
       return response;
@@ -583,14 +663,15 @@ async function handleAppShellNavigation(request) {
   // ⭐ ÉTAPE 1 : hors ligne (navigator.onLine === false) → cache immédiat
   //    (zéro latence — pas de timeout inutile, pas de page blanche)
   if (!self.navigator || self.navigator.onLine === false) {
-    const cachedExact = await cache.match(request);
+    // ⭐ v3.4.0 — cascade exact → ignoreSearch (liens ?tenant=…)
+    const cachedExact = await matchRouteCache(cache, request);
     if (cachedExact) return cachedExact;
     // ⭐ v3.3.1 : shell /app UNIQUEMENT pour la racine — pour un module
     //    profond (/app/finance, /app/hr…) non caché, servir le shell du
     //    dashboard était TROMPEUR (l'hydratation Next rend le dashboard
     //    avec les données du dashboard). Réponse sobre à la place.
     if (isAppRootNavigation(url.pathname)) {
-      const cachedShell = await cache.match('/app');
+      const cachedShell = await matchRouteCache(cache, '/app');
       if (cachedShell) return cachedShell; // app shell → routing client + IndexedDB
     }
   }
@@ -599,20 +680,28 @@ async function handleAppShellNavigation(request) {
   //    timeout, cache write, puis fallback shell SANS page « hors ligne ».
   try {
     const networkResponse = await fetchWithTimeout(request, HTML_TIMEOUT);
-    if (networkResponse && networkResponse.ok) {
-      cache.put(request, networkResponse.clone());
+    if (networkResponse && networkResponse.ok && !networkResponse.redirected) {
+      // ⭐ v3.4.0 — copie SANS Vary (fire-and-forget : la réponse est rendue
+      //    à la page immédiatement, la copie se fait en arrière-plan).
+      //    ⚠️ PAS de cache des réponses REDIRIGÉES (session expirée → le
+      //    middleware renvoie la page login : l'embarquer sous la clé du
+      //    module empoisonnerait le cache offline).
+      toCacheableCopy(networkResponse)
+        .then((copy) => cache.put(request, copy))
+        .catch(() => {});
       return networkResponse;
     }
     throw new Error('Network response not ok');
   } catch {
     // Réseau échoué/timeout (Wifi sans Internet, Neon qui se réveille…)
     // → cache exact de la route si déjà visitée
-    const cachedExact = await cache.match(request);
+    // ⭐ v3.4.0 — cascade exact → ignoreSearch (liens ?tenant=…)
+    const cachedExact = await matchRouteCache(cache, request);
     if (cachedExact) return cachedExact;
     // ⭐ v3.3.1 : shell /app UNIQUEMENT pour la racine (cf. ÉTAPE 1) —
     //    jamais le dashboard en substitut d'un module profond non caché.
     if (isAppRootNavigation(url.pathname)) {
-      const cachedShell = await cache.match('/app');
+      const cachedShell = await matchRouteCache(cache, '/app');
       if (cachedShell) return cachedShell;
     }
     // Dernier recours (shell pas encore pré-caché, ex. SW fraîchement installé
@@ -627,7 +716,9 @@ async function handlePublicPageNavigation(request) {
   const url = new URL(request.url);
 
   if (!self.navigator || self.navigator.onLine === false) {
-    const cachedExact = await cache.match(request);
+    // ⭐ v3.4.0 — cascade exact → ignoreSearch : /login?portal=school&tenant=x
+    //    matche désormais l'entrée pré-cachée /login (start_url PWA).
+    const cachedExact = await matchRouteCache(cache, request);
     if (cachedExact) return cachedExact;
     // ⭐ v3.2.0 : plus de shell /login|/app pour une page publique non visitée
     //    (rendre la page de connexion sous /tarification est trompeur) →
@@ -637,28 +728,67 @@ async function handlePublicPageNavigation(request) {
 
   try {
     const networkResponse = await fetchWithTimeout(request, 4000);
-    if (networkResponse && networkResponse.ok) {
-      cache.put(request, networkResponse.clone());
+    if (networkResponse && networkResponse.ok && !networkResponse.redirected) {
+      // ⭐ v3.4.0 — copie SANS Vary (fire-and-forget)
+      toCacheableCopy(networkResponse)
+        .then((copy) => cache.put(request, copy))
+        .catch(() => {});
       return networkResponse;
     }
     throw new Error('Network response not ok');
   } catch {
-    const cachedExact = await cache.match(request);
+    // ⭐ v3.4.0 — cascade exact → ignoreSearch (login/portal avec ?tenant=)
+    const cachedExact = await matchRouteCache(cache, request);
     if (cachedExact) return cachedExact;
     return offlineMinimalResponse(url.pathname);
   }
 }
 
-// ⭐ Réponse minimale de dernier recours — délibérément sobre (une ligne de
-//    texte, PAS une page plein écran avec boutons) : cas ultra-marginale d'un
-//    navigateur hors ligne AVANT tout pré-cache. L'utilisateur recharge dès
-//    qu'il a du réseau ; aucune page « hors ligne » bloquante ne s'affiche.
+// ⭐ Réponse minimale de dernier recours — volontairement sobre (pas de
+//    layout complet) MAIS auto-récupérable (v3.4.0) : elle n'est servie que
+//    lorsqu'aucune copie locale n'existe (cas ultra-marginal : module jamais
+//    pré-caché + navigateur hors ligne). Un script inline recharge la page
+//    dès le retour du réseau (« online ») — l'utilisateur n'a plus besoin
+//    de recharger manuellement après sa reconnexion.
 function offlineMinimalResponse(pathname) {
-  const body = `Academia Helm — connexion indisponible pour ${pathname}. Reconnectez-vous puis rechargez la page : vos données locales restent intactes.`;
+  const safePath = String(pathname).replace(/[<>&"]/g, (c) =>
+    ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c]);
+  const body = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Academia Helm — hors ligne</title>
+<style>
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background:#0A2A5E; color:#e8eefc; }
+  .card { max-width: 520px; padding: 32px 28px; text-align:center; }
+  .logo { font-size: 20px; font-weight: 700; letter-spacing: .5px; color:#F2C94C; margin-bottom: 18px; }
+  p { line-height: 1.6; font-size: 15px; color:#c7d5f2; margin:0; }
+  .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color:#fff; }
+  button { margin-top: 22px; padding: 12px 26px; border:0; border-radius: 10px;
+    background:#F2C94C; color:#0A2A5E; font-weight:600; font-size:15px; cursor:pointer; }
+  .hint { margin-top:14px; font-size:12px; color:#8fa8d8; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">ACADEMIA HELM</div>
+    <p>Connexion indisponible pour <span class="path">${safePath}</span>.<br>
+    Reconnectez-vous puis rechargez la page&nbsp;: vos données locales restent intactes.</p>
+    <button onclick="window.location.reload()">Réessayer</button>
+    <div class="hint">Cette page se rechargera automatiquement au retour du réseau.</div>
+  </div>
+  <script>
+    window.addEventListener('online', function () { window.location.reload(); });
+  </script>
+</body>
+</html>`;
   return new Response(body, {
     status: 503,
     statusText: 'Offline',
-    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
   });
 }
 
@@ -714,13 +844,29 @@ self.addEventListener('message', (event) => {
 
   // ⭐ PRÉ-CACHE DE MODULE — le client demande au SW de fetcher une route
   //    et de mettre en cache son HTML + les chunks JS/CSS référencés.
+  //    ⭐ v3.4.0 — la source du message est passée au pré-cache pour l'ACK
+  //    (PRECACHE_MODULE_RESULT) : le client sait désormais si la route a
+  //    RÉELLEMENT été mise en cache (fini le fire-and-forget aveugle).
   if (event.data && event.data.type === 'PRECACHE_MODULE' && event.data.url) {
-    event.waitUntil(precacheModule(event.data.url));
+    event.waitUntil(precacheModule(event.data.url, event.source));
   }
 });
 
-// ─── Pré-cache d'un module (HTML + chunks JS/CSS référencés) ──────────────
-async function precacheModule(routeUrl) {
+// ─── Pré-cache d'un module (HTML + chunks JS/CSS + payload RSC) ───────────
+/**
+ * ⭐ v3.4.0 — Trois changements :
+ *   1. ACK systématique à la page émettrice (PRECACHE_MODULE_RESULT) — le
+ *      client ne marque le pré-cache « frais » que si les routes réussissent.
+ *   2. Le HTML est stocké via une copie SANS Vary (le Cache.match d'une
+ *      navigation réelle échouait sur les entrées stockées avec Vary).
+ *   3. Le payload RSC de la route est pré-caché (best-effort) → navigation
+ *      client hors ligne SANS rechargement dur ; si le payload ne matche pas
+ *      les attentes du routeur, celui-ci retombe de toute façon sur la
+ *      navigation dure → HTML caché (comportement v3.3).
+ */
+async function precacheModule(routeUrl, sourceClient) {
+  let htmlOk = false;
+  let rscOk = false;
   try {
     const cache = await caches.open(PAGE_CACHE);
     const staticCache = await caches.open(IMMUTABLE_CACHE); // ⭐ chunks immuables — cache persistant
@@ -730,53 +876,99 @@ async function precacheModule(routeUrl) {
       headers: { Accept: 'text/html,application/xhtml+xml' },
     }), 10000);
 
-    if (!response || !response.ok) return;
+    if (response && response.ok && !response.redirected) {
+      // ⭐ v3.4.0 — copie SANS Vary : les navigations réelles (?tenant=…, sans
+      //    headers RSC) matchent désormais l'entrée (Vary: RSC, Next-Router-*
+      //    faisait échouer le matching de Cache).
+      //    ⚠️ PAS de cache des réponses REDIRIGÉES (tenant invalide/session
+      //    expirée → middleware renvoie /portal ou /login : embarquer cette
+      //    page sous la clé du module empoisonnerait le cache offline).
+      const headers = cacheableHeaders(response);
+      const html = await response.text();
+      await cache.put(routeUrl, new Response(html, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      }));
+      htmlOk = true;
 
-    await cache.put(routeUrl, response.clone());
+      const chunkUrls = new Set();
 
-    const html = await response.text();
-    const chunkUrls = new Set();
+      const scriptRegex = /<script[^>]+src=["']([^"']+)["']/g;
+      const linkRegex = /<link[^>]+href=["']([^"']+)["']/g;
 
-    const scriptRegex = /<script[^>]+src=["']([^"']+)["']/g;
-    const linkRegex = /<link[^>]+href=["']([^"']+)["']/g;
-
-    let match;
-    while ((match = scriptRegex.exec(html)) !== null) {
-      const src = match[1];
-      if (src && (src.includes('/_next/') || src.endsWith('.js'))) {
-        chunkUrls.add(new URL(src, routeUrl).href);
+      let match;
+      while ((match = scriptRegex.exec(html)) !== null) {
+        const src = match[1];
+        if (src && (src.includes('/_next/') || src.endsWith('.js'))) {
+          chunkUrls.add(new URL(src, routeUrl).href);
+        }
       }
-    }
-    while ((match = linkRegex.exec(html)) !== null) {
-      const href = match[1];
-      if (href && (href.includes('/_next/') || href.endsWith('.css'))) {
-        chunkUrls.add(new URL(href, routeUrl).href);
+      while ((match = linkRegex.exec(html)) !== null) {
+        const href = match[1];
+        if (href && (href.includes('/_next/') || href.endsWith('.css'))) {
+          chunkUrls.add(new URL(href, routeUrl).href);
+        }
       }
-    }
 
-    const chunks = Array.from(chunkUrls);
-    if (chunks.length === 0) return;
-
-    const BATCH = 5;
-    for (let i = 0; i < chunks.length; i += BATCH) {
-      const batch = chunks.slice(i, i + BATCH);
-      await Promise.allSettled(
-        batch.map(async (chunkUrl) => {
-          try {
-            const existing = await staticCache.match(chunkUrl);
-            if (existing) return; // déjà caché, skip
-            const chunkRes = await fetchWithTimeout(new Request(chunkUrl), 8000);
-            if (chunkRes && chunkRes.ok) {
-              await staticCache.put(chunkUrl, chunkRes.clone());
+      const chunks = Array.from(chunkUrls);
+      const BATCH = 5;
+      for (let i = 0; i < chunks.length; i += BATCH) {
+        const batch = chunks.slice(i, i + BATCH);
+        await Promise.allSettled(
+          batch.map(async (chunkUrl) => {
+            try {
+              const existing = await staticCache.match(chunkUrl);
+              if (existing) return; // déjà caché, skip
+              const chunkRes = await fetchWithTimeout(new Request(chunkUrl), 8000);
+              if (chunkRes && chunkRes.ok) {
+                await staticCache.put(chunkUrl, chunkRes.clone());
+              }
+            } catch {
+              // Non-bloquant
             }
-          } catch {
-            // Non-bloquant
-          }
-        }),
-      );
+          }),
+        );
+      }
+    }
+
+    // ⭐ v3.4.0 — PRÉ-CACHE RSC (best-effort, APRÈS l'HTML qui reste la
+    //    priorité) : payload flight de la route sous clé normalisée (sans
+    //    _rsc). Ne bloque JAMAIS l'ACK HTML.
+    try {
+      const rscCache = await caches.open(RSC_CACHE);
+      const rscUrl = routeUrl + (routeUrl.includes('?') ? '&' : '?') + '_rsc=precache';
+      const rscRes = await fetchWithTimeout(new Request(rscUrl, {
+        credentials: 'include',
+        headers: { RSC: '1', Accept: 'text/x-component' },
+      }), 10000);
+      if (rscRes && rscRes.ok && !rscRes.redirected) {
+        const key = rscCacheKey(rscUrl);
+        const copy = await toCacheableCopy(rscRes);
+        await rscCache.put(new Request(key), copy);
+        rscOk = true;
+        trimRscCache();
+      }
+    } catch {
+      // Best-effort : la navigation dure (HTML caché) reste le filet de sécurité
     }
   } catch {
-    // Non-bloquant
+    // Non-bloquant — l'ACK ok:false informe le client (retry / pas de flag)
+  }
+
+  // ⭐ v3.4.0 — ACK SYSTÉMATIQUE (même en échec) : le client marque le
+  //    pré-cache « frais » uniquement si les routes réussissent réellement.
+  if (sourceClient && typeof sourceClient.postMessage === 'function') {
+    try {
+      sourceClient.postMessage({
+        type: 'PRECACHE_MODULE_RESULT',
+        url: routeUrl,
+        ok: htmlOk,
+        rscOk,
+      });
+    } catch {
+      /* client parti — non-bloquant */
+    }
   }
 }
 

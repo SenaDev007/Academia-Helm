@@ -8,6 +8,16 @@
  *    sw-site.js et sw-chat.js sont OBSOLÈTES et sont désinstallés par
  *    UniversalSWRegister à la première visite.
  *
+ * v3.3.1 : (1) à l'activation, les pages ouvertes sont notifiées
+ *    (SW_ACTIVATED) afin d'invalider le flag 24 h du pré-cache des modules
+ *    — les caches ah-pages-<version> étant purgés à chaque version, un flag
+ *    « frais » survivant au bump de version laissait l'app SANS modules
+ *    offline (le shell dashboard était servi à la place des modules) ;
+ *    (2) réponse au message GET_SW_VERSION (le client compare la version
+ *    active du SW à celle enregistrée au dernier pré-cache) ;
+ *    (3) le fallback shell /app n'est servi QUE pour la racine /app — pour
+ *    un module profond non caché, réponse sobre (jamais le dashboard).
+ *
  * Responsabilités (fusion v3, sept. 2026) :
  *   1. WEB PUSH + notificationclick + pushsubscriptionchange
  *   2. APP-SHELL OFFLINE pour /app/* (pattern PWA) :
@@ -47,7 +57,7 @@
  * ============================================================================
  */
 
-const SW_VERSION = 'v3.3.0';
+const SW_VERSION = 'v3.3.1';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 const PAGE_CACHE = `ah-pages-${SW_VERSION}`;
 const AUTH_CACHE = 'ah-auth-token'; // ⭐ miroir JWT pour le background sync — JAMAIS purgé
@@ -225,6 +235,21 @@ self.addEventListener('activate', (event) => {
           .map((name) => caches.delete(name)),
       );
       await self.clients.claim();
+
+      // ⭐ v3.3.1 — Notifier les pages ouvertes : la version du SW vient de
+      //    changer → les caches versionnés (ah-pages-*) ont été purgés → le
+      //    flag 24 h du pré-cache des modules (localStorage, côté client) est
+      //    désormais PÉRIMÉ et doit être invalidé, sinon l'app n'a plus AUCUN
+      //    module offline jusqu'à l'expiration du flag (symptôme : le shell
+      //    dashboard est servi à la place des modules après un déploiement).
+      try {
+        const clientList = await self.clients.matchAll({ type: 'window' });
+        for (const client of clientList) {
+          client.postMessage({ type: 'SW_ACTIVATED', version: SW_VERSION });
+        }
+      } catch {
+        /* non-bloquant */
+      }
     })(),
   );
 });
@@ -545,6 +570,12 @@ async function fetchAndCacheImmutable(request) {
 }
 
 // ─── Handler : navigations /app/* (app shell, jamais de page offline) ─────
+
+/** ⭐ v3.3.1 — La racine de l'app uniquement (pas les modules profonds). */
+function isAppRootNavigation(pathname) {
+  return pathname === '/app' || pathname === '/app/';
+}
+
 async function handleAppShellNavigation(request) {
   const cache = await caches.open(PAGE_CACHE);
   const url = new URL(request.url);
@@ -554,8 +585,14 @@ async function handleAppShellNavigation(request) {
   if (!self.navigator || self.navigator.onLine === false) {
     const cachedExact = await cache.match(request);
     if (cachedExact) return cachedExact;
-    const cachedShell = await cache.match('/app');
-    if (cachedShell) return cachedShell; // app shell → routing client + IndexedDB
+    // ⭐ v3.3.1 : shell /app UNIQUEMENT pour la racine — pour un module
+    //    profond (/app/finance, /app/hr…) non caché, servir le shell du
+    //    dashboard était TROMPEUR (l'hydratation Next rend le dashboard
+    //    avec les données du dashboard). Réponse sobre à la place.
+    if (isAppRootNavigation(url.pathname)) {
+      const cachedShell = await cache.match('/app');
+      if (cachedShell) return cachedShell; // app shell → routing client + IndexedDB
+    }
   }
 
   // ⭐ ÉTAPE 2 : en ligne (ou détection navigateur incertaine) → réseau avec
@@ -572,10 +609,12 @@ async function handleAppShellNavigation(request) {
     // → cache exact de la route si déjà visitée
     const cachedExact = await cache.match(request);
     if (cachedExact) return cachedExact;
-    // → sinon le SHELL /app pré-caché : l'utilisateur continue de travailler,
-    //   les données viennent d'IndexedDB (l'app est offline-first)
-    const cachedShell = await cache.match('/app');
-    if (cachedShell) return cachedShell;
+    // ⭐ v3.3.1 : shell /app UNIQUEMENT pour la racine (cf. ÉTAPE 1) —
+    //    jamais le dashboard en substitut d'un module profond non caché.
+    if (isAppRootNavigation(url.pathname)) {
+      const cachedShell = await cache.match('/app');
+      if (cachedShell) return cachedShell;
+    }
     // Dernier recours (shell pas encore pré-caché, ex. SW fraîchement installé
     // offline) : réponse sobre NON-bloquante — un texte simple, PAS une page
     return offlineMinimalResponse(url.pathname);
@@ -648,6 +687,20 @@ function fetchWithTimeout(request, timeoutMs) {
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING' || event.data?.type === 'SKIP_WAITING') {
     self.skipWaiting();
+  }
+
+  // ⭐ v3.3.1 — Version du SW actif : le client la compare à la version
+  //    enregistrée lors du dernier pré-cache des modules (les caches
+  //    ah-pages-<version> sont purgés à chaque bump → le pré-cache doit
+  //    être refait). Réponse envoyée à la source du message (la page).
+  if (event.data?.type === 'GET_SW_VERSION') {
+    try {
+      if (event.source && typeof event.source.postMessage === 'function') {
+        event.source.postMessage({ type: 'SW_VERSION', version: SW_VERSION });
+      }
+    } catch {
+      /* client parti — non-bloquant */
+    }
   }
   if (event.data === 'CLEAR_CACHE') {
     caches.keys().then((names) => {

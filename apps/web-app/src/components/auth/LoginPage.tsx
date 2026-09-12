@@ -845,11 +845,17 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       let userMessage = rawMessage;
 
       // ⭐ Détecter si l'erreur est due à une perte de connexion (offline)
+      //    ⭐ v3.3.1 — 'timeout' N'EST PLUS classé offline : un timeout arrive
+      //    AUSSI quand on est en ligne (serveur lent : cold start Vercel/Neon,
+      //    2G/3G saturée) — dire « Vous êtes hors ligne » à un utilisateur
+      //    connecté l'a fait croire à un bug de détection réseau. Aligné sur
+      //    client.ts (« Un timeout ne signifie PAS que l'utilisateur est hors
+      //    ligne ») : un timeout tombe désormais dans la branche « serveur en
+      //    cours de démarrage » ci-dessous.
       const isOfflineError = rawMessage.includes('Failed to fetch') ||
         rawMessage.includes('NetworkError') ||
         rawMessage.includes('Connexion indisponible') ||
         rawMessage.includes('ERR_NETWORK') ||
-        rawMessage.includes('timeout') ||
         (typeof navigator !== 'undefined' && !navigator.onLine);
 
       if (isOfflineError) {
@@ -1043,7 +1049,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       }),
     });
 
-    let data = await response.json();
+    // ⭐ Parse tolérant : une page d'erreur non-JSON (Cloudflare 52x via www)
+    //    ne doit pas devenir une SyntaxError « Unexpected token » opaque.
+    let data = await response.json().catch(() => ({}) as any);
 
     if (!response.ok) {
       throw new Error(data.message || 'Erreur lors de la connexion');
@@ -1123,8 +1131,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     }
 
     // ── Même pattern que le bouton DEV : /api/auth/login avec portal_type ──
+    //    ⭐ v3.3.1 — fetchWithTimeout (10 s + abort-on-unmount) au lieu d'un
+    //    fetch nu : sur 2G/3G instable, un fetch sans timeout peut rester
+    //    pendant des minutes en échec silencieux (l'utilisateur voit un
+    //    spinner sans fin et croit être hors ligne alors qu'il est connecté).
     const attemptLogin = async (portalTypeAttempt: 'SCHOOL' | 'PLATFORM') => {
-      return fetch('/api/auth/login', {
+      return fetchWithTimeout('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1139,7 +1151,10 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     };
 
     let response = await attemptLogin('SCHOOL');
-    let data = await response.json();
+    // ⭐ Réponse non-JSON possible (page d'erreur Cloudflare 52x via le domaine
+    //    www) → parse tolérant au lieu d'une SyntaxError « Unexpected token »
+    //    transformée en faux message « hors ligne ».
+    let data = await response.json().catch(() => ({}) as any);
 
     // ── Retry automatique si PLATFORM_OWNER détecté (même logique que DEV) ──
     const message = typeof data?.message === 'string' ? data.message : '';

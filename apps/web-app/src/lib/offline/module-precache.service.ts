@@ -111,6 +111,16 @@ const FETCH_TIMEOUT_MS = 10000; // 10s par route
 const PRECACHE_TS_KEY = 'academia_helm_modules_precached_at';
 const PRECACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 h
 
+/** ⭐ v3.3.1 — Version du SW au moment du dernier pré-cache.
+ *    Les caches du SW sont VERSIONNÉS (ah-pages-v3.3.1…) et PURGÉS à chaque
+ *    nouvelle version du SW, mais l'ancien flag 24 h (localStorage) survivait
+ *    au bump → le pré-cache était esquivé alors que les caches venaient d'être
+ *    vidés → PLUS AUCUN module offline après un déploiement (le shell du
+ *    dashboard était servi à la place des modules). Désormais le flag n'est
+ *    valable QUE s'il correspond à la version ACTIVE du SW.
+ */
+const PRECACHE_SW_VERSION_KEY = 'academia_helm_precache_sw_version';
+
 /** Retourne true si un pré-cache a été fait il y a moins de 24 h. */
 function isPrecacheFresh(): boolean {
   try {
@@ -119,6 +129,78 @@ function isPrecacheFresh(): boolean {
   } catch {
     return false;
   }
+}
+
+/** Version enregistrée lors du dernier pré-cache (null si absente). */
+function getStoredPrecacheVersion(): string | null {
+  try {
+    return localStorage.getItem(PRECACHE_SW_VERSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ⭐ v3.3.1 — Version du SW ACTIF, demandée au SW via message (réponse
+ *    SW_VERSION). Null si le SW ne répond pas (ancienne version sans le
+ *    handler, timeout, SW non installé) → l'appelant re-pré-cache (sécurité).
+ */
+function getActiveSwVersion(timeoutMs = 2000): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+      resolve(null);
+      return;
+    }
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener('message', onMessage);
+    };
+    const done = (version: string | null) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(version);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'SW_VERSION' && event.data.version) {
+        done(String(event.data.version));
+      }
+    };
+    const timer = setTimeout(() => done(null), timeoutMs);
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    navigator.serviceWorker
+      .ready
+      .then((registration) => {
+        const sw = registration.active;
+        if (!sw) {
+          done(null);
+          return;
+        }
+        sw.postMessage({ type: 'GET_SW_VERSION' });
+      })
+      .catch(() => done(null));
+  });
+}
+
+let swActivatedListenerBound = false;
+
+/**
+ * ⭐ v3.3.1 — Écoute les activations de NOUVELLES versions du SW : à chaque
+ *    bump, les caches ah-pages-<version> sont purgés → on invalide le flag
+ *    24 h pour que le pré-cache soit refait dès que possible (montage suivant
+ *    ou retour du réseau). À appeler une fois au montage de l'app.
+ */
+export function initModulePrecacheInvalidation(): void {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+  if (swActivatedListenerBound) return;
+  swActivatedListenerBound = true;
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type === 'SW_ACTIVATED') {
+      console.log(`[ModulePrecache] SW ${event.data.version} activé — invalidation du flag de pré-cache (caches purgés)`);
+      invalidateModulePrecache();
+    }
+  });
 }
 
 /**
@@ -143,8 +225,14 @@ export async function precacheAllModules(
   }
 
   // ⭐ Vérifier si déjà pré-caché récemment pour ce device (1×/24 h)
-  if (isPrecacheFresh()) {
-    console.log('[ModulePrecache] Fresh (<24 h) — skipping');
+  //    ⭐ v3.3.1 — ET pour la version ACTIVE du SW : les caches ah-pages-*
+  //    sont purgés à chaque nouvelle version du SW ; un flag « frais » d'une
+  //    version précédente ne vaut plus rien. Si le SW ne répond pas (null),
+  //    on re-pré-cache (par sécurité — coût : quelques MB refetchés).
+  const activeVersion = await getActiveSwVersion();
+  const storedVersion = getStoredPrecacheVersion();
+  if (isPrecacheFresh() && activeVersion && storedVersion === activeVersion) {
+    console.log(`[ModulePrecache] Fresh (<24 h, SW ${storedVersion}) — skipping`);
     return;
   }
 
@@ -204,8 +292,14 @@ export async function precacheAllModules(
 
   // ⭐ Marquer comme pré-caché (le SW continue en arrière-plan) — timestamp
   //    pour re-pré-cacher demain (nouveaux déploiements = nouveaux chunks)
+  //    + version du SW pour détecter les bumps (caches purgés → re-pré-cache)
   try {
     localStorage.setItem(PRECACHE_TS_KEY, String(Date.now()));
+    if (activeVersion) {
+      localStorage.setItem(PRECACHE_SW_VERSION_KEY, activeVersion);
+    } else {
+      localStorage.removeItem(PRECACHE_SW_VERSION_KEY); // version inconnue → re-pré-cache au prochain montage
+    }
     localStorage.removeItem('academia_helm_modules_precached'); // legacy
   } catch {
     /* localStorage indisponible — le pré-cache se refera au prochain montage */
@@ -213,11 +307,13 @@ export async function precacheAllModules(
 }
 
 /**
- * Invalide le flag de pré-cache (à appeler au logout ou changement de tenant).
+ * Invalide le flag de pré-cache (à appeler au logout ou changement de tenant,
+ * ou automatiquement quand une nouvelle version du SW s'active).
  */
 export function invalidateModulePrecache(): void {
   try {
     localStorage.removeItem(PRECACHE_TS_KEY);
+    localStorage.removeItem(PRECACHE_SW_VERSION_KEY); // ⭐ v3.3.1
     localStorage.removeItem('academia_helm_modules_precached'); // legacy
   } catch {
     /* noop */

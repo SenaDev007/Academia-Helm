@@ -223,13 +223,18 @@ export default function AppLayoutClient({
   //    pré-cache ne se déclenchait qu'au tout premier login du device).
   //    Auto-gardé par le service (1×/24 h — couvre les nouveaux déploiements).
   //    Retenté automatiquement au retour du réseau si pas encore fait.
+  //    ⭐ v3.3.1 : le garde 24 h est désormais sensible à la VERSION du SW
+  //    (les caches ah-pages-* sont purgés à chaque bump) + écoute des
+  //    activations SW (SW_ACTIVATED) pour invalider le flag immédiatement.
   useEffect(() => {
     if (!tenant?.id) return;
     let cancelled = false;
     const run = () => {
       if (cancelled) return;
       import('@/lib/offline/module-precache.service')
-        .then(({ precacheAllModules }) => {
+        .then(({ precacheAllModules, initModulePrecacheInvalidation }) => {
+          // Écouter les futures activations de versions du SW (idempotent)
+          initModulePrecacheInvalidation();
           precacheAllModules((current, total) => {
             if (current % 10 === 0 || current === total) {
               console.log(`[ModulePrecache] Progress: ${current}/${total}`);

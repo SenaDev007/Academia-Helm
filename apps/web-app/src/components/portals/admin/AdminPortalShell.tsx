@@ -54,7 +54,9 @@ import { LanguageSwitcher } from '@/contexts/I18nContext';
 import { useL } from '@/lib/i18n/bilingual';
 import AcademicYearSelector from '@/components/pilotage/AcademicYearSelector';
 import SchoolLevelSelector from '@/components/pilotage/SchoolLevelSelector';
-import AcademicTrackSelector from '@/components/pilotage/AcademicTrackSelector';
+// ⛔ 2026-09-12 : AcademicTrackSelector RETIRÉ du header portail admin — boutons
+// « Piste académique / Francophone / Anglophone » jamais demandés (flag parasite).
+// import AcademicTrackSelector from '@/components/pilotage/AcademicTrackSelector';
 import {
   ADMIN_PORTALS,
   canRoleAccessAdminPortal,
@@ -388,7 +390,7 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
             <div className="hidden sm:flex items-center gap-2 md:gap-3">
               <AcademicYearSelector />
               <SchoolLevelSelector />
-              <AcademicTrackSelector />
+              {/* ⛔ AcademicTrackSelector retiré (2026-09-12) — boutons jamais demandés */}
             </div>
           </div>
         </header>

@@ -33,7 +33,8 @@ export default function KPICards({ data }: KPICardsProps) {
   const L = useL();
   const kpis = [
     {
-      label: L('Enrolment', 'Enrolment'),
+      // ⭐ 2026-09-12 : libellé FR correct (était resté en anglais « Enrolment »)
+      label: L('Effectifs', 'Enrolment'),
       value: data?.enrollment?.total || 0,
       icon: Users,
       color: 'text-blue-600',

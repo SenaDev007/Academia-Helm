@@ -24,7 +24,11 @@ import { useRouter } from 'next/navigation';
 import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 import AcademicYearSelector from './AcademicYearSelector';
 import SchoolLevelSelector from './SchoolLevelSelector';
-import AcademicTrackSelector from './AcademicTrackSelector';
+// ⛔ 2026-09-12 : AcademicTrackSelector RETIRÉ de la topbar — l'utilisateur n'a
+// jamais demandé ces boutons « Piste académique / Francophone / Anglophone ».
+// La locale UI reste pilotée par I18nContext (scope serveur + LanguageSwitcher) ;
+// la piste de DONNÉES reste pilotée par BilingualContext (verrou scope serveur).
+// import AcademicTrackSelector from './AcademicTrackSelector';
 // ⛔ OFFLINE-FIRST DÉSACTIVÉ — useOffline/useSyncStatus supprimés
 // import { useOffline, useSyncStatus } from '@/hooks/useOffline';
 import InAppReviewModal from '@/components/reviews/InAppReviewModal';
@@ -447,7 +451,8 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
             <div className="hidden sm:flex items-center space-x-2 md:space-x-3">
               <AcademicYearSelector />
               <SchoolLevelSelector />
-              <AcademicTrackSelector />
+              {/* ⛔ AcademicTrackSelector retiré (2026-09-12) — boutons jamais demandés,
+                  apparition conditionnelle parasite via feature flag BILINGUAL_TRACK */}
             </div>
             )}
           </div>

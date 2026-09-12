@@ -53,25 +53,45 @@ export function useEnabledFeatureCodes() {
         const arr = Array.isArray(data) ? data : [];
         // Si le backend retourne un tableau vide, c'est probablement une erreur
         // (un tenant a toujours au moins les modules par défaut)
-        if (arr.length === 0 && retryCountRef.current < MAX_RETRIES) {
+        // ⭐ 2026-09-12 : hors ligne, on ne perd pas 4 s en retries inutiles —
+        //    le SW sert le cache sinon on fail-open immédiatement.
+        if (arr.length === 0 && retryCountRef.current < MAX_RETRIES && navigator.onLine) {
           console.warn('[useEnabledFeatureCodes] API returned empty feature list, retrying...');
           retryCountRef.current += 1;
           setTimeout(() => fetchFeatures(), RETRY_DELAY_MS);
           return;
         }
         retryCountRef.current = 0;
+        // ⭐ 2026-09-12 : liste VIDE après épuisement des retries → FAIL-OPEN
+        //    vers les modules par défaut (sinon la sidebar tombe à 4 modules —
+        //    seuls ceux sans featureCode — hors ligne, cf. retour terrain).
+        if (arr.length === 0) {
+          console.warn('[useEnabledFeatureCodes] Empty feature list after retries — using defaults (fail-open)');
+          setError(true);
+          setList(
+            Array.from(DEFAULT_ENABLED_CODES).map((code) => ({
+              featureCode: code,
+              isEnabled: true,
+              status: 'ACTIVE',
+            }))
+          );
+          return;
+        }
         setList(arr);
       })
       .catch((err) => {
         console.error('[useEnabledFeatureCodes] Failed to fetch features:', err?.message || err);
-        if (retryCountRef.current < MAX_RETRIES) {
+        // ⭐ 2026-09-12 : hors ligne → pas de retries (le SW a déjà tenté son
+        //    cache) → fail-open direct pour ne pas laisser la sidebar vide.
+        const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        if (!offline && retryCountRef.current < MAX_RETRIES) {
           retryCountRef.current += 1;
           console.warn(`[useEnabledFeatureCodes] Retry ${retryCountRef.current}/${MAX_RETRIES} in ${RETRY_DELAY_MS}ms...`);
           setTimeout(() => fetchFeatures(), RETRY_DELAY_MS);
           return;
         }
-        // FAIL-OPEN : après épuisement des retries, utiliser les modules par défaut
-        // plutôt que de verrouiller l'utilisateur hors de l'application
+        // FAIL-OPEN : après épuisement des retries (ou hors ligne), utiliser les
+        // modules par défaut plutôt que de verrouiller l'utilisateur hors de l'app
         console.warn('[useEnabledFeatureCodes] All retries failed, using default enabled features (fail-open)');
         setError(true);
         setList(

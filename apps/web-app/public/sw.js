@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * SERVICE WORKER UNIFIÉ — Academia Helm (v3.2 « offline-first sans page hors-ligne »)
+ * SERVICE WORKER UNIFIÉ — Academia Helm (v3.3 « offline lecture API GET »)
  * ============================================================================
  *
  * ⭐ SW UNIQUE à la racine du domaine (scope: '/'). NE PAS enregistrer
@@ -26,12 +26,19 @@
  *          → CacheFirst (1 an)
  *        - Navigations HTML PUBLIQUES (site institutionnel, login, landing)
  *          → NetworkFirst (4 s timeout) + fallback cache + shell /app
- *        - Tout le reste (API, /platform/*, cross-origin)
- *          → PAS D'INTERCEPTION (réseau direct — l'intercepteur global de la
- *            page lit IndexedDB en offline, cf. global-fetch-interceptor.ts)
+ *        - ⭐ v3.3.0 — API GET /api/* (hors auth/sync) → NetworkFirst (8 s)
+ *          + cache CACHÉ IDENTITAIRE (clé scopée par tenant/session via
+ *          cookies d'identité + Authorization → aucune fuite cross-tenant)
+ *          + fallback offline → 503 rapide si absent du cache.
+ *          Concerne TOUTES les UI (dashboards, sidebar feature codes,
+ *          enseignant, parent, secrétaire, site public…) — le SW étant SOUS
+ *          tous les fetch de la page, aucune race d'installation possible.
+ *        - Tout le reste (mutations, /platform/*, cross-origin)
+ *          → PAS D'INTERCEPTION (réseau direct)
  *
  * ⛔ JAMAIS de cache pour :
- *   - /api/* (données dynamiques + sécurité — gérées par IndexedDB/intercepteur)
+ *   - /api/auth/*, /api/sync/*, /api/*-auth/* (sessions/tokens — toujours réseau)
+ *   - les mutations POST/PUT/PATCH/DELETE (jamais interceptées — GET uniquement)
  *   - /app/*, /platform/*, /patronat, /federis, /saisiemaster
  *     (pages authentifiées — servies via l'app-shell, pas mises en cache HTML)
  *   - les scripts SW eux-mêmes (/sw*.js)
@@ -40,7 +47,7 @@
  * ============================================================================
  */
 
-const SW_VERSION = 'v3.2.0';
+const SW_VERSION = 'v3.3.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 const PAGE_CACHE = `ah-pages-${SW_VERSION}`;
 const AUTH_CACHE = 'ah-auth-token'; // ⭐ miroir JWT pour le background sync — JAMAIS purgé
@@ -70,6 +77,27 @@ const IMMUTABLE_CACHE = 'ah-static-immutable';
 const RSC_CACHE = 'ah-rsc';
 const RSC_CACHE_MAX = 150;
 const RSC_TIMEOUT = 4000;
+
+// ⭐ v3.3.0 — CACHE DES RÉPONSES API GET (lecture hors ligne).
+//    PROBLÈME (sept. 2026, retour terrain) : hors ligne, après un changement
+//    de module (navigation complète servie par le SW), la sidebar tombait à
+//    4 modules (feature codes /api/settings/features non servis) et AUCUNE
+//    donnée ne s'affichait (agrégats /api/general/* vides). Causes :
+//    - le SW n'interceptait AUCUNE requête /api/* (NEVER_INTERCEPT) ;
+//    - le fallback IndexedDB de la page échoue silencieusement pour les
+//      réponses sans champ `id` (stores keyPath:'id') — listes de features,
+//      objets d'agrégats… jamais cachées.
+//    Désormais : NetworkFirst (8 s) → cache 200 JSON ; hors ligne / réseau KO
+//    → dernière réponse en cache ; absent → 503 IMMÉDIAT (jamais de spinner).
+//    CLÉ IDENTITAIRE : la clé de cache intègre un hash des identifiants de la
+//    requête (Authorization, cookies d'identité, x-tenant-id) → un utilisateur
+//    d'une AUTRE école/session ne peut jamais être servi avec le cache du
+//    précédent (isolation tenant stricte, même offline).
+//    Requêtes avec cookies mais SANS identité reconnue → réseau direct (pas
+//    de cache — anti-fuite). Requêtes anonymes (site public) → clé URL simple.
+const API_CACHE = 'ah-api';
+const API_CACHE_MAX = 300;
+const API_TIMEOUT = 8000;
 
 // ⭐ Shell pré-caché au premier install : l'app PWA démarre hors ligne sans
 //    page de substitution. '/login' couvre la start_url, '/app' l'application.
@@ -128,7 +156,10 @@ const CACHEABLE_HTML_PATTERNS = [
 
 // ⛔ Requêtes à ne JAMAIS intercepter
 const NEVER_INTERCEPT = [
-  /^\/api\//, // API (BFF + données dynamiques — IndexedDB/intercepteur page)
+  // ⭐ v3.3.0 — API : uniquement auth/sync/webhooks restent hors cache (tokens,
+  //    sessions, files d'attente). Les AUTRES /api/* GET passent désormais par
+  //    handleApiGet (NetworkFirst + cache identitaire + fallback offline).
+  /^\/api\/(auth|admin-auth|school-auth|portal\/auth|sync|webhooks?|billing\/webhook|health|monitoring)(\/|$)/,
   /^\/platform\//, // back-office admin
   /^\/patronat(\/|$)/,
   /^\/saisiemaster(\/|$)/,
@@ -189,6 +220,7 @@ self.addEventListener('activate', (event) => {
           .filter((name) => name.startsWith('ah-') && !name.startsWith(AUTH_CACHE) &&
             name !== IMMUTABLE_CACHE && // ⭐ chunks immuables JAMAIS purgés
             name !== RSC_CACHE && // ⭐ payloads RSC — survivent aux mises à jour (LRU)
+            name !== API_CACHE && // ⭐ v3.3.0 — réponses API GET — survivent (LRU, NetworkFirst en ligne)
             !name.endsWith(SW_VERSION))
           .map((name) => caches.delete(name)),
       );
@@ -224,6 +256,14 @@ self.addEventListener('fetch', (event) => {
   //    SPINNER INFINI au changement de module. MAINTENANT : cache + 503 rapide.
   if (isRscRequest(request, url)) {
     event.respondWith(handleRsc(request));
+    return;
+  }
+
+  // ⭐ v3.3.0 — API GET /api/* : NetworkFirst + cache identitaire + fallback
+  //    offline (les chemins auth/sync/webhooks ont déjà été exclus par
+  //    NEVER_INTERCEPT ci-dessus ; les non-GET sont sortis en tête de handler).
+  if (pathname.startsWith('/api/')) {
+    event.respondWith(handleApiGet(request));
     return;
   }
 
@@ -351,6 +391,118 @@ async function trimRscCache() {
     const keys = await cache.keys();
     if (keys.length > RSC_CACHE_MAX) {
       const excess = keys.slice(0, keys.length - RSC_CACHE_MAX);
+      await Promise.all(excess.map((k) => cache.delete(k)));
+    }
+  } catch {
+    /* non-bloquant */
+  }
+}
+
+// ─── API GET : NetworkFirst + cache identitaire + fallback offline ────────
+
+/** Hash FNV-1a 32 bits — condense l'identité (Authorization/cookies) en clé. */
+function fnv1a(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h * 0x01000193) >>> 0;
+  }
+  return h.toString(16);
+}
+
+/**
+ * Identité de la requête pour le scoping du cache API (isolation tenant).
+ * Sources reconnues, par ordre de fiabilité :
+ *   - header `x-tenant-id`
+ *   - header `Authorization` (Bearer JWT — signature distinctive en queue)
+ *   - cookies d'identité (noms contenant token/session/tenant/auth :
+ *     academia_session, academia_token, x-tenant-id, …)
+ * Retour :
+ *   - string non vide → identité → clé = URL + '?__ah_t=' + hash
+ *   - null            → cookies présents mais AUCUNE identité reconnue →
+ *                       réseau direct, JAMAIS servi depuis le cache (anti-fuite
+ *                       cross-tenant sur contexte de session inconnu)
+ *   - 'ANONYMOUS'     → ni identité ni cookies → données publiques → clé = URL
+ */
+function apiIdentity(request) {
+  const parts = [];
+  const xtid = request.headers.get('x-tenant-id');
+  if (xtid) parts.push('xtid:' + xtid);
+  const authz = request.headers.get('authorization');
+  if (authz) parts.push('authz:' + authz.length + ':' + authz.slice(-48));
+  const cookieHeader = request.headers.get('cookie');
+  if (cookieHeader) {
+    const pairs = cookieHeader.split(';').map((s) => s.trim()).filter(Boolean);
+    const identityPairs = pairs.filter((p) => {
+      const name = (p.split('=')[0] || '').toLowerCase();
+      return /token|session|tenant|auth/.test(name);
+    });
+    if (identityPairs.length) parts.push('cookie:' + identityPairs.join('&'));
+  }
+  if (parts.length) return parts.join('|');
+  if (cookieHeader) return null;
+  return 'ANONYMOUS';
+}
+
+async function handleApiGet(request) {
+  const identity = apiIdentity(request);
+  // Contexte de session inconnu (cookies sans identité reconnue) → réseau
+  // direct : on ne met PAS en cache et on ne sert JAMAIS depuis le cache.
+  if (identity === null) return fetch(request);
+
+  const key = identity === 'ANONYMOUS'
+    ? request.url
+    // ⚠️ PAS de fragment (#) — le constructeur Request SUPPRIME les fragments
+    // d'URL → la clé perdrerait son scope identitaire. On utilise un query
+    // param (préservé dans request.url, comme _rsc pour le cache RSC).
+    : request.url + (request.url.includes('?') ? '&' : '?') + '__ah_t=' + fnv1a(identity);
+  const cache = await caches.open(API_CACHE);
+  const offline = !self.navigator || self.navigator.onLine === false;
+
+  if (!offline) {
+    try {
+      const response = await fetchWithTimeout(request, API_TIMEOUT);
+      if (response && response.status === 200) {
+        const ct = response.headers.get('content-type') || '';
+        if (ct.includes('json')) {
+          const clone = response.clone();
+          cache.put(new Request(key), clone).then(() => trimApiCache());
+        }
+      }
+      return response;
+    } catch {
+      // Réseau KO (2G/3G instable) → fallback cache ci-dessous
+    }
+  }
+
+  // Hors ligne (ou réseau KO) → dernière réponse en cache ?
+  let cached = null;
+  try {
+    cached = await cache.match(key);
+  } catch {
+    /* cache illisible */
+  }
+  if (cached) return cached;
+
+  // Pas de cache + réseau indisponible → échec RAPIDE avec corps explicite :
+  // le fetcher de la page (fetchJson → null, offlineFetch → IDB) gère ce 503
+  // proprement — JAMAIS de spinner infini.
+  return new Response(
+    JSON.stringify({ error: 'offline', message: 'Données non disponibles hors ligne (aucune copie locale)' }),
+    {
+      status: 503,
+      headers: { 'Content-Type': 'application/json', 'X-AH-Offline': '1' },
+    },
+  );
+}
+
+/** LRU simple : garde au plus API_CACHE_MAX entrées (ordre d'insertion). */
+async function trimApiCache() {
+  try {
+    const cache = await caches.open(API_CACHE);
+    const keys = await cache.keys();
+    if (keys.length > API_CACHE_MAX) {
+      const excess = keys.slice(0, keys.length - API_CACHE_MAX);
       await Promise.all(excess.map((k) => cache.delete(k)));
     }
   } catch {

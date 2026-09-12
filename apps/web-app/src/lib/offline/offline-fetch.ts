@@ -86,9 +86,21 @@ export async function offlineFetch<T = any>(
     return await networkFetch<T>(url, fetchOptions);
   }
 
-  // HORS LIGNE : lecture depuis IndexedDB (retourne [] si vide — c'est légitime)
+  // ⭐ HORS LIGNE (v3.3.0) : on tente D'ABORD le « réseau » — le Service
+  //    Worker (sw.js v3.3) sert alors la DERNIÈRE réponse en cache (Cache
+  //    API, clé identitaire tenant/session) : c'est la source offline la
+  //    plus fraîche ET au format exact (JSON brut de l'API, sans re-mapping
+  //    IDB). Si le SW n'a pas de copie (503 X-AH-Offline) → fallback
+  //    IndexedDB (comportement historique : [] si vide — légitime).
+  //    Avant : retour systématique à localFallback → les réponses sans champ
+  //    `id` (agrégats dashboards, listes de features…) n'étaient JAMAIS en
+  //    cache IDB (put keyPath:'id' échoue) → « aucune donnée hors ligne ».
   if (!isOnline) {
-    return await localFallback<T>(storeName, tenantId);
+    try {
+      return await networkFetch<T>(url, fetchOptions);
+    } catch {
+      return await localFallback<T>(storeName, tenantId);
+    }
   }
 
   // EN LIGNE : essayer le réseau, fallback local si échec

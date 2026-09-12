@@ -10311,3 +10311,28 @@ Stage Summary:
 - ✅ Saisie des notes : toutes les classes du niveau affichées avec effectifs ; élèves ADMITTED désormais visibles dans les fiches
 - 5 fichiers modifiés, +1100/−216 — commit à pousser (Railway api-server + Vercel web-app)
 - Suivi : tester en production après déploiement (niveau PRIMAIRE FR : CP avec 26 élèves ; niveau MATERNELLE : Maternelle 1/2)
+
+---
+Task ID: 58
+Agent: Super Z (session principale)
+Task: Mode offline (retour utilisateur post-57) — « connexion indisponible pour /app/pedagogy » au changement de module hors ligne + re-login hors ligne impossible après logout
+
+Work Log:
+- Reproduction depuis le retour terrain : login → coupure réseau → clic module Pédagogie → page sobre SW « connexion indisponible pour /app/pedagogy » ; F5 → page native « pas d'accès internet » (Ctrl+F5 = bypass SW, non corrigeable) ; reconnexion → module OK.
+- DIAGNOSTIC (cause racine n°1, critique) : l'app est multi-tenant SANS sous-domaine (NEXT_PUBLIC_USE_SUBDOMAIN_TENANTS non défini) → TOUS les liens de l'app (sidebar, redirections post-login) portent ?tenant=… alors que le pré-cache stockait les routes SANS query → Cache.match exact ÉCHOUAIT TOUJOURS hors ligne, même avec un pré-cache complet → réponse sobre. Vérifié : PilotageSidebar construit href=`${path}?tenant=${tenantParam}`.
+- Cause racine n°2 : pré-cache fire-and-forget — flag 24 h posé au DISPATCH des messages PRECACHE_MODULE, avant tout résultat ; les échecs SW (timeout 10 s en 2G/3G) étaient silencieux → modules réellement manquants + flag « frais » qui bloque les retries 24 h.
+- Cause racine n°3 : Vary non retiré des copies cachées — une entrée RSC cachée depuis un prefetch (Next-Router-Prefetch: 1) ne matchait JAMAIS une requête de navigation (Vary mismatch) → cache RSC inopérant hors ligne.
+- Cause racine n°4 : aucun mécanisme de re-login hors ligne (login = POST réseau, logout purge localStorage/session).
+- CORRECTIFS (commit 92a3ce54d, poussé, déployé et vérifié) :
+  * sw.js v3.4.0 — matchRouteCache() : cascade exact → ignoreSearch pour HTML /app, RSC et pages publiques (login?portal=&tenant= matche l'entrée pré-cachée /login) ; helpers cacheableHeaders/toCacheableCopy (Vary + Content-Encoding/Length retirés des copies cachées) ; refus des réponses REDIRIGÉES (anti-empoisonnement : session expirée → middleware renvoie /login sous la clé du module) ; pré-cache RSC par route (best-effort, clé normalisée sans _rsc) → navigation client hors ligne sans hard reload ; ACK PRECACHE_MODULE_RESULT à la page émettrice ; LRU RSC 150 → 250 ; réponse sobre devenue page HTML sobre (branding AH) avec auto-rechargement au retour du réseau (script inline « online » → reload).
+  * module-precache.service.ts — pré-cache ACK-based : les URLs de pré-cache portent le ?tenant=/?tenant_id= courant (URL courante puis session localStorage) ; 3 passes max avec retry des échecs ; flag 24 h posé SEULEMENT si ≥ 90 % de routes ACK-OK (sinon re-run au prochain montage/online) ; garde de concurrence inFlightRun.
+  * offline-auth-envelope.ts (NOUVEAU) — enveloppe d'auth hors ligne sauvegardée à chaque login réussi : identifiant + hash SHA-256(sel:motdepasse) + snapshot de session (tokens/user/tenant) ; TTL 7 j ; mono-tenant (école différente refusée) ; tryOfflineLogin restaure la session via persistClientSession (localStorage + miroir Cache API pour le background sync).
+  * LoginPage.tsx — enveloppe sauvegardée après login école (handleSchoolLogin), standard, enseignant, parent (si mot de passe saisi) ; dans le catch isOfflineError : tryOfflineLogin avec les identifiants saisis (identifier+password+tenant du portail courant) → si OK, markFreshLogin + redirect /app?tenant=… (les caches SW prennent le relais, MÊME token → MÊME clé identitaire du cache API → données offline servables).
+- Validation : node --check sw.js OK ; tsc 661 erreurs (= baseline, 0 nouvelle — erreurs LoginPage toutes hors plages modifiées) ; eslint 3 fichiers exit 0 ; rebasé sur 183c75694 (session parallèle Task 42 poussée entre-temps).
+- Post-déploiement vérifié : sw.js servi = v3.4.0 (www ET apex, cache-control max-age=0) ; /api/health 200 {"backend":"ok"}.
+
+Stage Summary:
+- Le test offline NE doit être fait qu'après : (1) rechargement complet post-déploiement (activation SW v3.4.0), (2) ~1 min en ligne (pré-cache 15 s après montage, ACK vérifiés désormais — voir console « [ModulePrecache] Complete — X/121 »).
+- Scénario corrigé : offline + clic module → payload RSC précaché (soft nav) ou HTML précaché (hard nav) → module s'affiche avec données du cache API identitaire ; si module inconnu → page sobre qui se recharge SEULE au retour réseau.
+- Re-login offline : logout → offline → mêmes identifiants sur le même portail → session restaurée → app utilisable offline (données = cache API SW ; IDB purgé au logout par design tenant-strict). Mauvais mot de passe → refusé (hash local).
+- Known limitations : Ctrl+F5 offline bypass le SW (page native navigateur — pas corrigeable) ; les modules JAMAIS visités ni pré-cachés (pré-cache < 90 %) tombent sur la page sobre auto-récupérable ; à la reconnexion, la session restaurée peut être révoquée côté serveur → 401 → refresh → re-login en ligne normal.

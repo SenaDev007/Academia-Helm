@@ -1850,15 +1850,10 @@ export default function PilotageDashboardV2({ showQuickAccess = true }: Pilotage
         color: (item.label || item.gender || '').toLowerCase().includes('f') ? '#EC4899' : '#3B82F6',
       }));
     }
-    const total = consolidated?.enrollment?.total || 0;
-    if (total > 0) {
-      // ⭐ P4-final : libellés bilingues (fallback estimation 51/49)
-      const isEN = L('fr', 'en') === 'en';
-      return [
-        { label: isEN ? 'Boys' : 'Garçons', value: Math.round(total * 0.51), color: '#3B82F6' },
-        { label: isEN ? 'Girls' : 'Filles', value: Math.round(total * 0.49), color: '#EC4899' },
-      ];
-    }
+    // ⭐ v3.6.0 offline-first : PLUS JAMAIS de répartition fabriquée 51/49 —
+    //    sans données byGender réelles (hors ligne sans cache), on rend []
+    //    (le donut affiche « Aucune donnée ») au lieu d'inventer des nombres
+    //    qui ressemblent à des vraies données (retour terrain « KPI faux »).
     return [];
   }, [studentsStats, consolidated]);
 

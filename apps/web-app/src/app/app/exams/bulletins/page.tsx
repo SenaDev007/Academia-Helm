@@ -3465,15 +3465,11 @@ function ReceivedBulletinsTab({ tenantId, academicYearId, user }: { tenantId?: s
     try {
       // Sign all bulletins — use the first student's class
       const firstBulletin = bulletins[0];
-      // Find classId from first student
-      const classRes = await apiClient.get(`/institutional-exams/bulletins/annotations?studentId=${firstBulletin.studentId}&periodId=${selectedPeriodId}`);
-      // Use a class-level sign endpoint
-      // We need to find the class — use the workflow endpoint
-      // For now, sign each bulletin individually via the annotations endpoint
-      // Actually, we need to use teacher-sign which requires classId
-      // Let's find the class from the student's enrollment
-      const enrollRes = await apiClient.get(`/api/students/${firstBulletin.studentId}/enrollment?academicYearId=${academicYearId}`);
-      const classId = enrollRes.data?.classId;
+      // ⭐ fix v3.6.0 : chaque bulletin porte DÉJÀ classId (cf. bulletins.controller
+      //    Nest : « bulletins : liste complète (avec classId pour chacun) »).
+      //    L'ancien code fetchait /students/:id/enrollment avec l'URL DOUBLÉE
+      //    (/api/api/…) → 404 permanent → « Impossible de déterminer la classe ».
+      const classId = firstBulletin.classId || firstBulletin.class?.id;
       if (!classId) {
         toastError('Erreur', { description: 'Impossible de déterminer la classe' });
         return;
@@ -3496,8 +3492,8 @@ function ReceivedBulletinsTab({ tenantId, academicYearId, user }: { tenantId?: s
     setActionLoading(true);
     try {
       const firstBulletin = bulletins[0];
-      const enrollRes = await apiClient.get(`/api/students/${firstBulletin.studentId}/enrollment?academicYearId=${academicYearId}`);
-      const classId = enrollRes.data?.classId;
+      // ⭐ fix v3.6.0 — idem handleSignAll : classId est déjà sur le bulletin
+      const classId = firstBulletin.classId || firstBulletin.class?.id;
       if (!classId) {
         toastError('Erreur', { description: 'Impossible de déterminer la classe' });
         return;

@@ -30,7 +30,10 @@ export default function TemplatesPage() {
     const fetchTemplates = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch('/api/communication/v2/templates');
+        // ⭐ fix offline-first v3.6.0 : l'ancien chemin `/api/communication/v2/templates`
+        //    n'a AUCUNE route BFF (404 → modèles TOUJOURS vides, même en ligne).
+        //    La vraie route BFF est `/api/communication/templates`.
+        const response = await fetch('/api/communication/templates', { credentials: 'include' });
         if (response.ok) {
           const data = await response.json();
           setTemplates(data);

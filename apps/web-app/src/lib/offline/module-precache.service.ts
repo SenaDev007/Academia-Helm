@@ -521,29 +521,45 @@ export function invalidateModulePrecache(): void {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * ⭐ v3.5.0 — PRÉ-CACHE DES DONNÉES API (KPIs des dashboards)
+ * ⭐ v3.6.0 — PRÉ-CACHE DES DONNÉES API : TOUS LES MODULES, TOUS LES ONGLETS
  * ══════════════════════════════════════════════════════════════════════════
  *
- * PROBLÈME (retour terrain, sept. 2026) : « je me suis connecté, j'ai coupé
- * la connexion, je suis passé sur un autre module → affiché mais avec de
- * FAUSSES données (KPI faux) ». Cause : les réponses API n'étaient mises en
- * cache par le SW (ah-api) qu'au moment où la page les FETCHAIT en ligne —
- * un module jamais visité n'avait AUCUNE donnée cachée → KPI vides/à zéro.
+ * EXIGENCE PRODUIT (sept. 2026, retour terrain) : « tous les modules
+ * fonctionnels, tous les onglets, tous les sous-onglets, les modales —
+ * tout s'affiche correctement offline et charge bien leurs données
+ * respectives offline ». Les vagues précédentes (v3.5.0) ne couvraient que
+ * les ~40 endpoints KPI des DASHBOARDS : les onglets/sous-onglets des
+ * modules n'avaient des données hors ligne QUE s'ils avaient été visités
+ * en ligne avant (modèle « lazy cache » rejeté explicitement).
  *
- * SOLUTION offline-first : après le login (et 1×/24 h), le client envoie au
- * SW la liste des endpoints KPI de TOUS les dashboards + ses headers
- * d'authentification → le SW fetch chaque endpoint et l'écrit dans ah-api
- * sous la clé normalisée (tenant|user — cf. sw.js v3.5.0). Hors ligne, les
- * dashboards servent les VRAIES données, SANS visite préalable.
+ * SOLUTION v3.6.0 — 2 VAGUES PROACTIVES (après login, 1×/24 h) :
+ *   VAGUE 1 (statique, ~230 endpoints) : l'inventaire exhaustif des GET
+ *   émis au montage de CHAQUE onglet/sous-onglet des 15 modules :
+ *   pilotage, organisation pédagogique, espace censeur, élèves & scolarité,
+ *   vie scolaire, espace directeur, finances & économat, examens/notes,
+ *   personnel RH, Helm Connect, cantine, EduCast, Academia Shop, site
+ *   institutionnel (CMS), paramètres — + les portails enseignant/parent.
+ *   Gating par rôle (buckets STAFF / TEACHER / PARENT) pour ne pas gaspiller
+ *   la bande passante 2G/3G sur des endpoints qui répondraient 403.
+ *   VAGUE 2 (dynamique, par entité) : les familles d'URLs à paramètre
+ *   d'entité (notes par évaluation, EDT par horaire, endpoints par enfant
+ *   du parent, plans annuels par niveau, risk-score par trimestre) sont
+ *   construites en LECTURE des listes de la vague 1 (déjà en cache SW).
+ *
+ * ACK « skip-aware » (sw.js v3.6.0) : les 400/401/403/404/405 = endpoint
+ * non applicable au rôle → skipCount — le taux de réussite se calcule sur
+ * okCount/(total−skipCount) (avant : un rôle restreint faisait échouer le
+ * flag 24 h → retries permanents).
  */
 
 /** Flag 24 h propre aux données API (le cache ah-api n'est pas versionné). */
 const API_PRECACHE_TS_KEY = 'academia_helm_api_precached_at';
 const API_PRECACHE_TTL_MS = 24 * 60 * 60 * 1000;
-/** Taux de réussite minimum (ACK du SW) pour poser le flag 24 h. */
+/** Taux de réussite minimum (okCount / (total − skipCount)) pour le flag 24 h. */
 const API_MIN_SUCCESS_RATE = 0.7;
-/** Attente max de l'ACK PRECACHE_API_RESULT (le SW fetch ~15 s/endpoint). */
-const API_ACK_TIMEOUT_MS = 120000;
+/** Attente max de l'ACK PRECACHE_API_RESULT PAR VAGUE (~230 endpoints,
+ *  batchs de 6 × 15 s — le SW traite en arrière-plan, non bloquant). */
+const API_ACK_TIMEOUT_MS = 600000;
 
 let inFlightApiRun: Promise<void> | null = null;
 
@@ -556,18 +572,35 @@ function isApiPrecacheFresh(): boolean {
   }
 }
 
-/** Session persistée (localStorage) — tenant + user pour les query params. */
-function readSessionContext(): { tenantId?: string; userId?: string } {
+/** Session persistée (localStorage) — contexte complet pour les buckets par rôle. */
+interface PrecacheSessionContext {
+  tenantId?: string;
+  userId?: string;
+  /** Profil Teacher lié (double casquette directeur-enseignant) — le même
+   *  fallback que les pages : user.teacherId || user.id (portail enseignant). */
+  teacherId?: string;
+  portalType?: string;
+  role?: string;
+}
+
+function readSessionContext(): PrecacheSessionContext {
   try {
     const raw = localStorage.getItem('session');
     if (raw) {
       const s = JSON.parse(raw) as {
-        tenantId?: string; user?: { id?: string; tenantId?: string };
-        tenant?: { id?: string };
+        tenantId?: string; user?: {
+          id?: string; tenantId?: string; role?: string; teacherId?: string;
+        }; tenant?: { id?: string };
+        portalType?: string;
       };
+      const teacherId = s.user?.teacherId ||
+        (s.portalType === 'TEACHER' ? s.user?.id : undefined);
       return {
         tenantId: s.tenantId || s.tenant?.id || s.user?.tenantId || undefined,
         userId: s.user?.id || undefined,
+        teacherId: teacherId || undefined,
+        portalType: s.portalType || undefined,
+        role: s.user?.role || undefined,
       };
     }
   } catch { /* session corrompue */ }
@@ -612,87 +645,648 @@ function qs(params: Record<string, string | number | null | undefined>): string 
 }
 
 /**
- * Liste des endpoints GET chargés par les DASHBOARDS de chaque module
- * (inventaire exhaustif des composants *Dashboard* / hooks *DashboardQueries*).
- * Query params résolus depuis localStorage (année/niveau/session) — les mêmes
- * sources que celles des hooks au montage.
+ * ⭐ v3.6.0 — VAGUE 1 (statique) : inventaire exhaustif des GET émis au
+ * montage de chaque onglet/sous-onglet des 15 modules. Query params résolus
+ * depuis localStorage (année/niveau/session) — les MÊMES sources que celles
+ * des pages au montage (clés de cache identiques → cache retrouvé offline).
+ *
+ * ⚠️ Les variantes de paramètres comptent : une URL `?academicYearId=x` et
+ * `?academicYearId=x&schoolLevelId=y` sont DEUX clés de cache distinctes.
+ * Quand le niveau courant est défini (≠ ALL), on pré-cache les deux formes
+ * (la page émet l'une ou l'autre selon son état de filtre au montage).
+ *
+ * Gating par rôle (buckets) :
+ *   - TEACHER  : user.teacherId (double casquette) OU portail enseignant
+ *   - PARENT   : portail parent
+ *   - STAFF    : tout le reste (admin/direction/promoteur/secrétariat/…)
+ *     (FINANCE / RH en sous-gating par rôles — cf. PilotageSidebar)
  */
-function buildApiPrecacheUrls(apiBase: string): string[] {
+function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContext): string[] {
   const year = readAcademicYearId();
   const level = readSchoolLevelId();
   const levelParam = level && level !== 'ALL' ? level : null; // 'ALL' → param omis
-  const { tenantId, userId } = readSessionContext();
+  const { tenantId, userId, teacherId, portalType, role } = ctx;
+
+  // ─── Buckets par rôle ───
+  const isTeacher = Boolean(teacherId) || portalType === 'TEACHER' ||
+    ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE',
+      'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR'].includes(String(role));
+  const isParent = portalType === 'PARENT' || role === 'PARENT';
+  // Staff = portail SCHOOL/PLATFORM, ou ni enseignant ni parent (défaut sûr)
+  const isStaff = !isParent && (portalType === 'SCHOOL' || portalType === 'PLATFORM' ||
+    (!isTeacher || portalType === undefined));
+  const hasFinance = isStaff && [
+    'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING',
+    'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE',
+    'SECRETAIRE_COMPTABLE', 'ECONOME', 'INTENDANT', 'DIRECTEUR_GENERAL',
+    'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE',
+    'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CFO', 'FINANCE_MANAGER',
+    'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', 'admin', 'ADMIN',
+  ].includes(String(role));
+  const hasHr = isStaff && [
+    'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR',
+    'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
+    'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE',
+    'DIRECTEUR_MAT_PRI', 'HR_MANAGER', 'PAYROLL_MANAGER', 'SECRETAIRE_COMPTABLE',
+    'SCOLARITE', 'admin', 'ADMIN',
+  ].includes(String(role));
+
   const urls: string[] = [];
 
-  // ─── Contexte transverse (providers du layout — chargés sur TOUTES les pages) ───
+  // ═══ 1. CONTEXTE TRANSVERSE (providers du layout — toutes les pages) ═══
+  urls.push('/api/context/bootstrap');
   urls.push('/api/academic-years');
   urls.push('/api/school-levels');
-  // ─── Sidebar (feature codes — sinon la sidebar tombe à 4 modules hors ligne) ───
+  if (tenantId) {
+    urls.push(`/api/settings/academic-years${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/academic-years/active${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/billing/subscription-status/${tenantId}`);
+  }
+  // Périodes de l'année active (examens/bulletins/conseils — l'id est CONNU)
+  if (year) urls.push(`/api/settings/academic-years/${year}/periods`);
+  // Sidebar (feature codes — sinon la sidebar tombe à 4 modules hors ligne)
   urls.push(`/api/settings/features${qs({ tenant_id: tenantId })}`);
+  urls.push('/api/settings/identity');
+  urls.push(`/api/settings/bilingual${qs({ tenant_id: tenantId })}`);
+  urls.push('/api/tenant-theme');
+  if (apiBase) urls.push(`${apiBase}/tenant-features/check/BILINGUAL_TRACK`);
+  // Cloche de notifications (tous les shells)
+  if (apiBase) {
+    urls.push(`${apiBase}/notifications/unread-count`);
+    urls.push(`${apiBase}/notifications?limit=20`);
+  }
 
-  // ─── Dashboard principal /app (PilotageDashboardV2) ───
-  urls.push(`/api/general/consolidated-report${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
-  urls.push(`/api/general/weighted-average${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
-  urls.push(`/api/students/statistics${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
-  urls.push(`/api/finance/reports/kpi${qs({ tenantId, academicYearId: year })}`);
-  urls.push('/api/finance/payments/today');
-  urls.push(`/api/dashboard/tuition-personalizations${qs({ academicYearId: year })}`);
-  urls.push(`/api/dashboard/grade-evolution${qs({ academicYearId: year })}`);
-  urls.push(`/api/dashboard/hr-overview${qs({ tenantId, academicYearId: year })}`);
-  urls.push(`/api/dashboard/age-distribution${qs({ tenantId, academicYearId: year })}`);
-  urls.push(`/api/dashboard/grade-analytics${qs({ tenantId, academicYearId: year })}`);
-  urls.push(`/api/dashboard/overview${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
-  urls.push(`/api/orion/alerts${qs({ academicYearId: year, schoolLevelId: levelParam, status: 'active', limit: 3 })}`);
+  // ═══ 2. TABLEAU DE PILOTAGE (PilotageDashboardV2 / FinanceDashboardV2) ═══
+  if (isStaff) {
+    urls.push(`/api/general/consolidated-report${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+    urls.push(`/api/general/weighted-average${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+    urls.push(`/api/students/statistics${qs({ academicYearId: year })}`);
+    if (levelParam) urls.push(`/api/students/statistics${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+    urls.push(`/api/finance/reports/kpi${qs({ tenantId, academicYearId: year })}`);
+    urls.push('/api/finance/payments/today');
+    urls.push(`/api/dashboard/tuition-personalizations${qs({ academicYearId: year })}`);
+    urls.push(`/api/dashboard/grade-evolution${qs({ academicYearId: year })}`);
+    urls.push(`/api/dashboard/hr-overview${qs({ tenantId, academicYearId: year })}`);
+    urls.push(`/api/dashboard/age-distribution${qs({ tenantId, academicYearId: year })}`);
+    urls.push(`/api/dashboard/grade-analytics${qs({ tenantId, academicYearId: year })}`);
+    urls.push(`/api/dashboard/overview${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+    urls.push(`/api/orion/alerts${qs({ academicYearId: year, schoolLevelId: levelParam, status: 'active', limit: 3 })}`);
+    if (levelParam) urls.push(`/api/orion/alerts${qs({ status: 'active', limit: 10 })}`);
+  }
 
-  // ─── Pédagogie (PedagogyModuleDashboard) ───
-  urls.push(`/api/pedagogy/control/dashboard${qs({ academicYearId: year })}`);
-  urls.push(`/api/pedagogy/control/snapshots${qs({ academicYearId: year })}`);
-  urls.push(`/api/pedagogy/orion-advanced/dashboard${qs({ academicYearId: year })}`);
-  urls.push(`/api/pedagogy/orion/kpis${qs({ academicYearId: year })}`);
-  urls.push(`/api/pedagogy/academic-structure/levels${qs({ academicYearId: year })}`);
-  urls.push(`/api/timetables${qs({ academicYearId: year })}`);
-  urls.push(`/api/rooms${qs({ academicYearId: year })}`);
-  urls.push('/api/subjects');
+  // ═══ 3. ORGANISATION PÉDAGOGIQUE (17 sous-onglets) ═══
+  if (isStaff) {
+    // Dashboard du module
+    urls.push(`/api/pedagogy/control/dashboard${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/control/snapshots${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/orion-advanced/dashboard${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/orion/kpis${qs({ academicYearId: year })}`);
+    // Structure académique (onglet + modales)
+    urls.push(`/api/pedagogy/academic-structure/levels${qs({ academicYearId: year, tenant_id: tenantId })}`);
+    urls.push(`/api/pedagogy/academic-structure/cycles${qs({ academicYearId: year, tenant_id: tenantId })}`);
+    urls.push(`/api/pedagogy/academic-structure/classes${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/academic-structure/sections${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/academic-series${qs({ academicYearId: year })}`);
+    // Onglet enseignants + affectations
+    urls.push('/api/teachers');
+    urls.push(`/api/pedagogy/teacher-profiles${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/teacher-class-assignments${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/class-subjects${qs({ academicYearId: year })}`);
+    urls.push(`/api/multigrade${qs({ academicYearId: year, isActive: 'true' })}`);
+    // Onglet matières
+    urls.push(`/api/subjects${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/subjects${qs({ academicYearId: year })}`);
+    if (levelParam) urls.push(`/api/pedagogy/subjects${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+    // Onglet EDT (moteur + édition manuelle)
+    urls.push(`/api/timetables${qs({ academicYearId: year })}`);
+    urls.push(`/api/rooms${qs({ academicYearId: year })}`);
+    urls.push('/api/rooms');
+    if (levelParam) {
+      urls.push(`/api/timetable-engine/config${qs({ schoolLevelId: levelParam, academicYearId: year })}`);
+      urls.push(`/api/timetable-engine/teachers${qs({ schoolLevelId: levelParam })}`);
+      urls.push(`/api/timetable-engine/constraints${qs({ schoolLevelId: levelParam })}`);
+    }
+    urls.push('/api/pedagogy-space/school-identity');
+    // Onglet contrôle (directeur)
+    urls.push(`/api/pedagogy/monthly-plans/pending${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/monthly-plans/pending${qs({ academicYearId: year, status: 'PENDING' })}`);
+    // Onglet matériel pédagogique
+    urls.push(`/api/pedagogy/pedagogical-materials${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/material-returns/school-levels${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/material-returns/teachers-by-level${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/teacher-material-assignments${qs({ academicYearId: year, page: 1, limit: 100 })}`);
+    urls.push(`/api/pedagogy/material-returns/pending${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/material-returns/return-comparison${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/material-returns/history${qs({ academicYearId: year })}`);
+    // Cross-origin (pedagogySpaceService — dashboard directeur + files d'attente)
+    if (apiBase) {
+      urls.push(`${apiBase}/pedagogy-space/director/pedagogy-dashboard${qs({ academicYearId: year })}`);
+      urls.push(`${apiBase}/pedagogy-space/director/pending-cahier-journals${qs({ academicYearId: year, status: 'PENDING' })}`);
+      urls.push(`${apiBase}/pedagogy-space/director/pending-registers${qs({ academicYearId: year, status: 'PENDING' })}`);
+      urls.push(`${apiBase}/pedagogy-space/director/pending-evaluations${qs({ academicYearId: year, status: 'PENDING' })}`);
+      urls.push(`${apiBase}/pedagogy-space/seminar-config${qs({ academicYearId: year })}`);
+      urls.push(`${apiBase}/pedagogy-space/seminar-config/eligible-teachers${qs({ academicYearId: year })}`);
+      urls.push(`${apiBase}/teachers`);
+      urls.push(`${apiBase}/pedagogy/teacher-profiles${qs({ academicYearId: year })}`);
+    }
+  }
 
-  // ─── Finances (FinanceDashboardV2) ───
-  urls.push(`/api/finance/student-accounts${qs({ academicYearId: year, exportAll: 'true' })}`);
-  urls.push(`/api/finance/fee-structures/overrides${qs({ academicYearId: year })}`);
+  // ═══ 4. ESPACE ENSEIGNANT (production FR/EN, devoirs, semainier) ═══
+  if (isTeacher && teacherId) {
+    urls.push(`/api/pedagogy-space/my-classes${qs({ teacherId, academicYearId: year })}`);
+    urls.push(`/api/pedagogy-space/my-classes${qs({ teacherId, academicYearId: year, language: 'FR' })}`);
+    urls.push(`/api/pedagogy-space/my-classes${qs({ teacherId, academicYearId: year, language: 'EN' })}`);
+    urls.push(`/api/pedagogy-space/homeworks${qs({ teacherId, academicYearId: year })}`);
+    urls.push(`/api/pedagogy-space/homeworks${qs({ teacherId, academicYearId: year, taskType: 'HOMEWORK' })}`);
+    urls.push(`/api/pedagogy-space/homeworks${qs({ teacherId, academicYearId: year, taskType: 'LESSON' })}`);
+    urls.push(`/api/pedagogy-space/student-engagement${qs({ teacherId, academicYearId: year })}`);
+    urls.push(`/api/pedagogy-space/activity-stats${qs({ teacherId, academicYearId: year })}`);
+    urls.push(`/api/pedagogy-space/catalogue${qs({ teacherId })}`);
+    urls.push(`/api/pedagogy-space/cahier-textes${qs({ teacherId, academicYearId: year })}`);
+    if (userId) urls.push(`/api/pedagogy-space/seminar-config/my-teacher-id${qs({ userId })}`);
+    if (userId) urls.push(`/api/pedagogy-space/teacher-signature${qs({ userId })}`);
+    urls.push(`/api/pedagogy-space/seminar-config${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/teacher-profiles${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/teacher-class-assignments${qs({ teacherId, academicYearId: year })}`);
+    if (userId) urls.push(`/api/pedagogy/material-returns/my-assignments${qs({ userId, academicYearId: year })}`);
+    const today = new Date().toISOString().slice(0, 10);
+    urls.push(`/api/hr/attendance/my-today${qs({ date: today })}`);
+  }
 
-  // ─── RH (HROverview — le cache-buster _t est retiré par la clé SW) ───
-  urls.push(`/api/hr/overview/dashboard${qs({ tenantId, academicYearId: year })}`);
+  // ═══ 5. ESPACE CENSEUR ═══ (visits/exams/councils : endpoints backend
+  //     inexistants — 404 comptés skip ; sanctions + fraudes couverts)
+  if (isStaff) {
+    urls.push(`/api/discipline/sanctions${qs({ academicYearId: year, schoolLevelId: levelParam, type: 'ACADEMIC' })}`);
+    urls.push(`/api/exam-frauds${qs({ tenantId, academicYearId: year })}`);
+  }
 
-  // ─── Examens ───
-  urls.push('/api/all-classes');
+  // ═══ 6. ÉLÈVES & SCOLARITÉ ═══
+  if (isStaff) {
+    // /api/classes EXIGE schoolLevelId ('ALL' = tous) — StudentsModulePage
+    urls.push(`/api/classes${qs({ academicYearId: year, schoolLevelId: level || 'ALL' })}`);
+    // Liste élèves : variante sans niveau (défaut) + avec niveau
+    urls.push(`/api/students${qs({ academicYearId: year })}`);
+    if (levelParam) urls.push(`/api/students${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+    // Référentiels (sélecteurs + modales d'inscription/transfert)
+    urls.push('/api/all-classes');
+    urls.push(`/api/all-classes${qs({ academicYearId: year })}`);
+    urls.push(`/api/academic-classes${qs({ academicYearId: year })}`);
+    urls.push(`/api/academic-classes${qs({ academicYearId: year, isActive: 'true' })}`);
+    urls.push(`/api/students/enrollments${qs({ academicYearId: year })}`);
+    urls.push('/api/public/schools/list');
+    // Cross-origin (studentsService)
+    if (apiBase) {
+      urls.push(`${apiBase}/students/admissions${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+      urls.push(`${apiBase}/students${qs({ academicYearId: year })}`);
+      urls.push(`${apiBase}/students${qs({ academicYearId: year, includeHistory: 'true' })}`);
+      urls.push(`${apiBase}/students/students-without-physical-class${qs({ academicYearId: year })}`);
+      urls.push(`${apiBase}/students/class-transfers-history${qs({ academicYearId: year })}`);
+      urls.push(`${apiBase}/students/transfers/outgoing`);
+      urls.push(`${apiBase}/students/transfers/incoming`);
+      urls.push(`${apiBase}/students/id-cards/stats${qs({ academicYearId: year })}`);
+    }
+  }
 
-  // ─── Élèves (StudentsModuleDashboard) ───
-  urls.push(`/api/classes${qs({ academicYearId: year, schoolLevelId: level || 'ALL' })}`);
+  // ═══ 7. VIE SCOLAIRE (discipline) ═══
+  if (isStaff) {
+    urls.push(`/api/discipline/rules${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+    urls.push(`/api/discipline/sanctions${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+  }
 
-  // ─── Communication (WhatsAppChat au montage) ───
+  // ═══ 8. ESPACE DIRECTEUR (oversight : risque + décrochage) ═══
+  if (isStaff) {
+    // quarterId résolu en VAGUE 2 depuis la réponse /api/academic-years
+    urls.push(`/api/risk-score/dropout/trends${qs({ tenantId, academicYearId: year })}`);
+  }
+
+  // ═══ 9. FINANCES & ÉCONOMAT (14 sous-onglets) ═══
+  if (hasFinance) {
+    // Dashboard
+    urls.push(`/api/finance/student-accounts${qs({ academicYearId: year, exportAll: 'true' })}`);
+    urls.push(`/api/finance/fee-structures/overrides${qs({ academicYearId: year })}`);
+    // Frais + personnalisations
+    urls.push(`/api/finance/fee-structures${qs({ academicYearId: year })}`);
+    // Comptes élèves + frais généraux
+    urls.push(`/api/finance/student-accounts${qs({ academicYearId: year, page: 1, limit: 50 })}`);
+    urls.push(`/api/finance/student-accounts/general-fees${qs({ academicYearId: year, page: 1, limit: 50 })}`);
+    // Encaissements (transactions) + ventes boutique
+    urls.push(`/api/finance/transactions${qs({ academicYearId: year, page: 1, limit: 25 })}`);
+    urls.push(`/api/finance/transactions${qs({ academicYearId: year, page: 1, limit: 25, feeType: 'GENERAL' })}`);
+    urls.push(`/api/finance/shop-sales${qs({ academicYearId: year })}`);
+    // Multi-caisses
+    urls.push('/api/finance/cash-registers');
+    urls.push(`/api/finance/cash-registers/dashboard${qs({ academicYearId: year })}`);
+    urls.push('/api/finance/cash-registers/transfers?limit=100');
+    // Bilan encaissements + recouvrement
+    urls.push(`/api/finance/collection-summary${qs({ academicYearId: year, page: 1, limit: 50 })}`);
+    urls.push('/api/finance/collection/arrears');
+    urls.push(`/api/finance/collection/reminders${qs({ academicYearId: year })}`);
+    urls.push(`/api/finance/collection/statistics${qs({ academicYearId: year })}`);
+    urls.push(`/api/finance/collection/promises${qs({ academicYearId: year })}`);
+    urls.push(`/api/finance/collection/actions${qs({ academicYearId: year })}`);
+    urls.push(`/api/finance/collection/cases${qs({ academicYearId: year })}`);
+    // Dépenses
+    urls.push(`/api/finance/expenses-v2${qs({ academicYearId: year })}`);
+    urls.push(`/api/finance/expenses-v2/budgets${qs({ academicYearId: year })}`);
+    urls.push(`/api/finance/expenses-v2/monthly-stats${qs({ academicYearId: year })}`);
+    urls.push('/api/finance/expenses/categories');
+    // Trésorerie
+    urls.push(`/api/finance/treasury/daily-closures${qs({ academicYearId: year })}`);
+    // Rapports
+    urls.push(`/api/finance/reports/monthly-encaissements${qs({ academicYearId: year })}`);
+    urls.push(`/api/finance/reports/bilan-periodique${qs({ academicYearId: year })}`);
+    urls.push(`/api/finance/reports/journal-caisse${qs({ academicYearId: year })}`);
+    urls.push(`/api/finance/reports/comparative-year${qs({ academicYearId: year })}`);
+    urls.push(`/api/finance/reports/projection-tresorerie${qs({ academicYearId: year })}`);
+    urls.push(`/api/finance/reports/cash-register-comparative${qs({ academicYearId: year })}`);
+    // Audit
+    urls.push(`/api/finance/anomalies${qs({ limit: 100, academicYearId: year })}`);
+    urls.push(`/api/finance/reports/suspicious-transactions${qs({ academicYearId: year, days: 30, minAmount: 100000 })}`);
+    urls.push(`/api/finance/reports/cash-mismatches${qs({ academicYearId: year })}`);
+    urls.push(`/api/finance/reports/missed-closures${qs({ academicYearId: year, days: 30 })}`);
+    urls.push(`/api/finance/reports/top-accountants${qs({ academicYearId: year, days: 30 })}`);
+    urls.push('/api/finance/audit-logs?limit=50');
+    // Paramétrage
+    urls.push('/api/finance/settings');
+    urls.push('/api/finance/settings/history');
+    urls.push('/api/finance/settings/orion-alerts');
+    urls.push('/api/finance/payment-config');
+    urls.push('/api/billing/feexpay/school-config');
+    // Référentiels communs des onglets finance
+    urls.push('/api/settings/users');
+    // Sélecteurs de modales (payeurs/caisses)
+    if (levelParam) urls.push(`/api/hr/staff${qs({ tenantId, category: 'ADMIN' })}`);
+  }
+
+  // ═══ 10. EXAMENS, NOTES & BULLETINS (11 sous-onglets) ═══
+  {
+    // Référentiels chargés par TOUS les onglets examens
+    urls.push('/api/all-classes');
+    if (year) urls.push(`/api/settings/academic-years/${year}/periods`);
+    if (apiBase) {
+      const evalBase = { academicYearId: year, schoolLevelId: levelParam };
+      // Dashboard + évaluations (enseignants : filtre teacherId)
+      urls.push(`${apiBase}/institutional-exams/evaluations${qs({ ...evalBase, language: 'FR' })}`);
+      urls.push(`${apiBase}/institutional-exams/evaluations${qs({ ...evalBase, language: 'EN' })}`);
+      if (teacherId) {
+        urls.push(`${apiBase}/institutional-exams/evaluations${qs({ academicYearId: year, teacherId, language: 'FR' })}`);
+      }
+      // Validation / registre / bulletins (variantes par statut)
+      urls.push(`${apiBase}/institutional-exams/evaluations${qs({ ...evalBase, status: 'SUBMITTED', language: 'FR' })}`);
+      urls.push(`${apiBase}/institutional-exams/evaluations${qs({ ...evalBase, status: 'VALIDATED', language: 'FR' })}`);
+      // Paramètres d'examen (configuration d'évaluations)
+      urls.push(`${apiBase}/exams/settings${qs({ schoolYearId: year })}`);
+      // Conseils de classe + déverrouillages + audit + critères d'envoi
+      urls.push(`${apiBase}/institutional-exams/councils${qs({ academicYearId: year, schoolLevelId: levelParam, language: 'FR' })}`);
+      urls.push(`${apiBase}/institutional-exams/unlock-requests${qs({ status: 'PENDING', schoolLevelId: levelParam, language: 'FR' })}`);
+      urls.push(`${apiBase}/institutional-exams/audit/logs${qs({ academicYearId: year, schoolLevelId: levelParam, language: 'FR' })}`);
+      urls.push(`${apiBase}/institutional-exams/bulletins/sending-criteria`);
+    }
+    // Statistiques (analytics — /api/exams/dashboard par niveau actif)
+    if (levelParam) {
+      urls.push(`/api/exams/dashboard${qs({ tenantId, academicYearId: year, schoolLevelId: levelParam, language: 'FR' })}`);
+    }
+  }
+
+  // ═══ 11. PERSONNEL, RH & PAIE (16 sous-onglets) ═══
+  if (hasHr) {
+    urls.push(`/api/hr/overview/dashboard${qs({ tenantId, academicYearId: year })}`);
+    urls.push(`/api/hr/overview/analytics${qs({ tenantId, academicYearId: year })}`);
+    // Administration (annuaire + affectations)
+    urls.push('/api/hr/staff?limit=500');
+    urls.push(`/api/hr/staff${qs({ tenantId })}`);
+    urls.push('/api/admin-structure/groups');
+    urls.push(`/api/staff-admin-assignments${qs({ academicYearId: year })}`);
+    urls.push('/api/settings/signatures');
+    // Primes, contrats, congés
+    urls.push(`/api/hr/allowances/types${qs({ tenantId })}`);
+    urls.push(`/api/hr/contracts${qs({ tenantId })}`);
+    urls.push(`/api/hr/contracts/alerts${qs({ tenantId })}`);
+    urls.push(`/api/hr/contracts/settings${qs({ tenantId })}`);
+    urls.push(`/api/hr/evaluations${qs({ tenantId })}`);
+    urls.push(`/api/hr/evaluations/trainings${qs({ tenantId })}`);
+    urls.push(`/api/hr/leaves/requests${qs({ tenantId, academicYearId: year })}`);
+    // CNSS / fiscal
+    urls.push(`/api/hr/taxes/dashboard${qs({ tenantId, academicYearId: year })}`);
+    urls.push(`/api/hr/taxes/staff-fiscal${qs({ tenantId })}`);
+    urls.push(`/api/hr/taxes/report-header${qs({ tenantId, academicYearId: year })}`);
+    urls.push(`/api/hr/taxes/declarations${qs({ tenantId, academicYearId: year, type: 'CNSS' })}`);
+    urls.push(`/api/hr/taxes/declarations${qs({ tenantId, academicYearId: year, type: 'IST' })}`);
+    urls.push(`/api/hr/taxes/declarations${qs({ tenantId, academicYearId: year, type: 'AIB' })}`);
+    urls.push(`/api/hr/taxes/financial-statements${qs({ tenantId, academicYearId: year, type: 'BILAN' })}`);
+    urls.push(`/api/hr/taxes/financial-notes${qs({ tenantId, academicYearId: year })}`);
+    urls.push(`/api/hr/taxes/settings${qs({ tenantId })}`);
+    // Collaborateurs / organigramme
+    urls.push('/api/hr/organigram/tree');
+    urls.push('/api/hr/organigram/stats');
+    // Paie
+    urls.push(`/api/hr/payroll/periods${qs({ tenantId })}`);
+    urls.push(`/api/hr/payroll/statistics${qs({ tenantId, academicYearId: year })}`);
+    urls.push(`/api/hr/payroll/rates/active${qs({ tenantId })}`);
+    // Planning (semaine courante Lundi→Samedi)
+    const now = new Date();
+    const monday = new Date(now);
+    const dow = (now.getDay() + 6) % 7; // 0 = lundi
+    monday.setDate(now.getDate() - dow);
+    const saturday = new Date(monday);
+    saturday.setDate(monday.getDate() + 5);
+    urls.push(`/api/hr/schedules${qs({
+      tenantId,
+      startDate: monday.toISOString().slice(0, 10),
+      endDate: saturday.toISOString().slice(0, 10),
+    })}`);
+    // Recrutement
+    urls.push(`/api/hr/recruitment/jobs${qs({ tenantId })}`);
+    urls.push(`/api/hr/recruitment/candidates${qs({ tenantId })}`);
+    urls.push(`/api/hr/recruitment/interviews${qs({ tenantId })}`);
+    urls.push(`/api/hr/recruitment/tests${qs({ tenantId })}`);
+    urls.push(`/api/hr/recruitment/talent-pool${qs({ tenantId })}`);
+    urls.push(`/api/hr/recruitment/recruiter-profile${qs({ tenantId })}`);
+    urls.push(`/api/hr/recruitment/questionnaires${qs({ tenantId })}`);
+    urls.push(`/api/departments${qs({ tenantId })}`);
+    // Stagiaires + IA RH
+    urls.push(`/api/hr/internships${qs({ tenantId })}`);
+    urls.push(`/api/hr/ia/status${qs({ tenantId })}`);
+    urls.push(`/api/hr/ia/match-candidates${qs({ tenantId })}`);
+    urls.push(`/api/hr/ia/detect-fraud${qs({ tenantId })}`);
+  }
+
+  // ═══ 12. HELM CONNECT (communication : messages, inbox, historique,
+  //      emails planifiés, modèles) ═══
   if (userId) {
     urls.push(`/api/chat/conversations${qs({ userId })}`);
     urls.push(`/api/chat/channels${qs({ userId })}`);
+    urls.push(`/api/chat/live-streams`);
+    urls.push(`/api/chat/voice-channels`);
     urls.push(`/api/chat/v2/notifications/muted-conversations${qs({ userId })}`);
+    urls.push(`/api/chat/profile/${userId}`);
   }
   urls.push('/api/chat/auto-groups');
-  urls.push('/api/chat/live-streams');
-
-  // ─── Cross-origin (axios apiClient → apiBase, ex. https://api.<domaine>/api) ───
-  if (apiBase) {
-    // Pédagogie — dashboard directeur (pedagogySpaceService)
-    urls.push(`${apiBase}/pedagogy-space/director/pedagogy-dashboard${qs({ academicYearId: year })}`);
-    // Examens — evaluations (institutionalExams.service) — FR + EN
-    const evalParams = { academicYearId: year, schoolLevelId: levelParam };
-    urls.push(`${apiBase}/institutional-exams/evaluations${qs({ ...evalParams, language: 'FR' })}`);
-    urls.push(`${apiBase}/institutional-exams/evaluations${qs({ ...evalParams, language: 'EN' })}`);
+  if (isStaff && tenantId) {
+    urls.push(`/api/communication/email-logs-stats${qs({ tenantId })}`);
+    urls.push(`/api/communication/email-logs${qs({ tenantId, page: 1, pageSize: 25 })}`);
+    urls.push(`/api/communication/inbound-emails${qs({ tenantId, page: 1, pageSize: 25 })}`);
+    urls.push('/api/communication/templates');
+    if (apiBase) urls.push(`${apiBase}/communication/scheduled-emails${qs({ tenantId })}`);
   }
 
-  return urls;
+  // ═══ 13. CANTINE / EDUCAST / ACADEMIA SHOP (modules complémentaires) ═══
+  if (isStaff && apiBase) {
+    const mc = `${apiBase}/modules-complementaires`;
+    // Cantine (dashboard Nest = canteen/dashboard ; stats = fallback)
+    urls.push(`${mc}/canteen/dashboard${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/canteen/menus${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/canteen/enrollments${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/canteen/attendance${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/canteen/diets${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/canteen/stocks${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/canteen/suppliers${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/canteen/incidents${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/canteen/payments${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/canteen/settings${qs({ academicYearId: year })}`);
+    // Academia Shop
+    urls.push(`${mc}/shop/stats${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/shop/products${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/shop/categories${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/shop/orders${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/shop/sales${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/shop/stocks${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/shop/suppliers${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/shop/purchase-orders${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/shop/discounts${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/shop/kits${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/shop/deliveries${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/shop/returns${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/shop/settings${qs({ academicYearId: year })}`);
+    // Boutique depuis le module finance (modale de paiement)
+    urls.push(`/api/modules-complementaires/shop/products${qs({ academicYearId: year })}`);
+  }
+  // EduCast (same-origin BFF — flux, favoris, analytics, gains, réglages)
+  urls.push(`/api/modules-complementaires/educast/contents${qs({ academicYearId: year })}`);
+  if (userId) urls.push(`/api/modules-complementaires/educast/favorites${qs({ userId })}`);
+  urls.push(`/api/modules-complementaires/educast/stats-extended${qs({ academicYearId: year })}`);
+  if (userId) urls.push(`/api/modules-complementaires/educast/teacher-earnings${qs({ userId })}`);
+  urls.push('/api/modules-complementaires/educast/settings');
+
+  // ═══ 14. SITE INSTITUTIONNEL (CMS) ═══
+  if (isStaff) {
+    urls.push('/api/tenant-website');
+    urls.push('/api/tenant-website/news');
+    urls.push('/api/tenant-website/events');
+    urls.push('/api/tenant-website/gallery');
+    urls.push('/api/tenant-website/testimonials');
+    urls.push('/api/tenant-website/faq');
+    urls.push('/api/tenant-website/contact');
+    urls.push('/api/tenant-media?limit=100&offset=0');
+    urls.push('/api/tenant-media/folders');
+  }
+
+  // ═══ 15. PARAMÈTRES (bootstrap 23 endpoints + onglets) ═══
+  if (isStaff && tenantId) {
+    urls.push(`/api/settings/general${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/security${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/orion${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/atlas${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/offline-sync${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/history${qs({ tenant_id: tenantId, limit: 50 })}`);
+    urls.push(`/api/settings/pedagogical-structure${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/bilingual/check-migration${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/bilingual/billing-impact${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/communication${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/roles${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/permissions${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/users${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/billing${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/billing/plans`);
+    urls.push(`/api/settings/billing/invoices${qs({ tenant_id: tenantId, limit: 10 })}`);
+    urls.push(`/api/settings/identity/history${qs({ tenant_id: tenantId, limit: 20 })}`);
+    urls.push(`/api/settings/education/structure${qs({ tenant_id: tenantId })}`);
+    urls.push(`/api/settings/school-calendar-config${qs({ tenant_id: tenantId })}`);
+    if (year) {
+      urls.push(`/api/settings/education/classrooms${qs({ academic_year_id: year, tenant_id: tenantId })}`);
+    }
+    urls.push('/api/sync/devices');
+  }
+
+  // ═══ 16. PORTAIL PARENT (enfants + notes + finances) ═══
+  if (isParent) {
+    urls.push(`/api/parent/children${qs({ academicYearId: year })}`);
+    if (userId) urls.push(`/api/parent/children${qs({ parentId: userId, academicYearId: year })}`);
+  }
+
+  // ⭐ v3.6.0 — Déduplication : les buckets STAFF+TEACHER (double casquette)
+  //    partagent des endpoints (all-classes, periods, teacher-profiles…) —
+  //    une URL dupliquée = 1 requête 2G/3G gaspillée pour la même clé de cache.
+  return Array.from(new Set(urls));
 }
 
 /**
- * Pré-cache les données API (KPIs) via le SW — fire-and-forget, non bloquant.
- * Auto-gardé (1×/24 h) + garde de concurrence + flag posé seulement si ≥ 70 %
- * des endpoints ont réellement été cachés (ACK PRECACHE_API_RESULT du SW).
+ * ⭐ v3.6.0 — VAGUE 2 (dynamique) : URLs à paramètre d'ENTITÉ construites en
+ * lisant les listes de la vague 1 (réponses passées par le SW → déjà en
+ * cache). Chaque famille est CAPÉE pour rester raisonnable sur 2G/3G.
+ */
+interface WaveAck {
+  okCount: number;
+  skipCount: number;
+  total: number;
+}
+
+/** GET authentifié côté page (traverse le SW → réponse 200 mise en cache). */
+async function fetchListJson(
+  url: string,
+  headers: Record<string, string>,
+): Promise<any | null> {
+  try {
+    const isCrossOrigin = url.startsWith('http');
+    const res = await fetch(url, {
+      credentials: isCrossOrigin ? 'omit' : 'include',
+      headers: { ...headers, Accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('json')) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Extrait un tableau de façon défensive (data peut être array | {data} | {items} | {evaluations}…). */
+function extractArray(payload: any): any[] {
+  if (Array.isArray(payload)) return payload;
+  if (payload && typeof payload === 'object') {
+    for (const key of ['data', 'items', 'evaluations', 'list', 'results', 'classes', 'timetables', 'children']) {
+      if (Array.isArray(payload[key])) return payload[key];
+    }
+  }
+  return [];
+}
+
+function buildDynamicPrecacheUrls(
+  apiBase: string,
+  ctx: PrecacheSessionContext,
+  headers: Record<string, string>,
+): Promise<string[]> {
+  const year = readAcademicYearId();
+  const level = readSchoolLevelId();
+  const levelParam = level && level !== 'ALL' ? level : null;
+  const { tenantId, teacherId, portalType, role } = ctx;
+  const isTeacher = Boolean(teacherId) || portalType === 'TEACHER';
+  const isParent = portalType === 'PARENT' || role === 'PARENT';
+  const isStaff = !isParent;
+  const urls: string[] = [];
+
+  // Toutes les extractions sont best-effort : liste illisible → famille sautée
+  return (async () => {
+    // 1) EDT : /api/timetables → chaque /api/timetables/{id} (enseignant + parent + pédagogie)
+    try {
+      const timetables = extractArray(await fetchListJson(
+        `/api/timetables${qs({ academicYearId: year })}`, headers));
+      for (const t of timetables.slice(0, 40)) {
+        if (t?.id) urls.push(`/api/timetables/${t.id}`);
+      }
+    } catch { /* famille sautée */ }
+
+    // 2) NOTES : évaluations → /institutional-exams/grades/evaluation/{id}
+    //    (cœur du module Notes — saisie/registre/bulletins hors ligne)
+    if (apiBase) {
+      try {
+        const seen = new Set<string>();
+        const evalParams = { academicYearId: year, schoolLevelId: levelParam };
+        for (const language of ['FR', 'EN']) {
+          const evals = extractArray(await fetchListJson(
+            `${apiBase}/institutional-exams/evaluations${qs({ ...evalParams, language })}`, headers));
+          for (const ev of evals) {
+            const id = ev?.id || ev?.evaluationId;
+            if (id && !seen.has(String(id))) {
+              seen.add(String(id));
+              urls.push(`${apiBase}/institutional-exams/grades/evaluation/${id}`);
+            }
+          }
+        }
+        // Cap : 120 feuilles de notes les plus récentes (2G/3G)
+        const gradeUrls = urls.filter((u) => u.includes('/grades/evaluation/'));
+        if (gradeUrls.length > 120) {
+          for (const u of gradeUrls.slice(120)) urls.splice(urls.indexOf(u), 1);
+        }
+      } catch { /* famille sautée */ }
+    }
+
+    // 3) NIVEAUX : /api/school-levels → plans annuels + config examens + stats par niveau
+    try {
+      const levels = extractArray(await fetchListJson('/api/school-levels', headers));
+      for (const lv of levels.slice(0, 12)) {
+        const code = lv?.code || lv?.levelCode || lv?.level;
+        const id = lv?.schoolLevelId || lv?.id || lv?.uuid;
+        if (code) {
+          urls.push(`/api/pedagogy/annual-plans${qs({ academicYearId: year, classLevel: code })}`);
+          if (apiBase) {
+            urls.push(`${apiBase}/exams/settings/active${qs({ schoolYearId: year, levelCode: code, language: 'FR' })}`);
+          }
+        }
+        if (id && isStaff) {
+          urls.push(`/api/exams/dashboard${qs({ tenantId, academicYearId: year, schoolLevelId: id, language: 'FR' })}`);
+        }
+      }
+    } catch { /* famille sautée */ }
+
+    // 4) TRIMESTRE ACTIF : /api/academic-years → activeQuarterId → risk-score
+    if (isStaff) {
+      try {
+        const years = extractArray(await fetchListJson('/api/academic-years', headers));
+        const active = years.find((y: any) => y?.isActive || y?.is_active) || years[0];
+        const quarterId = active?.activeQuarterId || active?.quarterId;
+        if (quarterId) {
+          urls.push(`/api/risk-score/dashboard${qs({ tenantId, academicYearId: year, quarterId })}`);
+          urls.push(`/api/risk-score/students${qs({ tenantId, academicYearId: year, quarterId, dropoutOnly: 'true' })}`);
+          urls.push(`/api/risk-score/dropout/stats${qs({ tenantId, academicYearId: year, quarterId })}`);
+          urls.push(`/api/risk-score/dropout/students${qs({ tenantId, academicYearId: year, quarterId })}`);
+        }
+      } catch { /* famille sautée */ }
+    }
+
+    // 5) CLASSES de l'ENSEIGNANT : matières disponibles + fiches par classe
+    if (isTeacher && teacherId) {
+      try {
+        const classes = extractArray(await fetchListJson(
+          `/api/pedagogy-space/my-classes${qs({ teacherId, academicYearId: year })}`, headers));
+        for (const c of classes.slice(0, 25)) {
+          if (c?.id) {
+            urls.push(`/api/pedagogy-space/subjects/available${qs({ academicYearId: year, classId: c.id, teacherId })}`);
+            urls.push(`/api/pedagogy-space/fiches${qs({ teacherId, academicYearId: year, classId: c.id })}`);
+          }
+        }
+      } catch { /* famille sautée */ }
+    }
+
+    // 6) ENFANTS du PARENT : endpoints par enfant (aujourd'hui, notes,
+    //    assiduité, bulletins, devoirs, finances) — cap 6 enfants
+    if (isParent) {
+      try {
+        const children = extractArray(await fetchListJson(
+          `/api/parent/children${qs({ academicYearId: year })}`, headers));
+        for (const child of children.slice(0, 6)) {
+          const childId = child?.id || child?.studentId || child?.student?.id;
+          if (!childId) continue;
+          urls.push(`/api/parent/today/${childId}${qs({ academicYearId: year })}`);
+          urls.push(`/api/parent/results/${childId}${qs({ academicYearId: year })}`);
+          urls.push(`/api/parent/attendance/${childId}`);
+          urls.push(`/api/parent/grades/${childId}${qs({ academicYearId: year })}`);
+          urls.push(`/api/parent/homeworks/${childId}${qs({ academicYearId: year })}`);
+          urls.push(`/api/parent/finance/${childId}/breakdown${qs({ academicYearId: year })}`);
+        }
+      } catch { /* famille sautée */ }
+    }
+
+    return urls;
+  })();
+}
+
+/**
+ * Pré-cache les données API (tous les modules) via le SW — fire-and-forget,
+ * non bloquant. Auto-gardé (1×/24 h) + garde de concurrence + flag posé
+ * seulement si ≥ 70 % des endpoints APPLICABLES (hors 403/404) ont été
+ * réellement cachés (ACK PRECACHE_API_RESULT du SW).
  */
 export async function precacheApiData(): Promise<void> {
   if (typeof window === 'undefined') return;
@@ -713,6 +1307,42 @@ export async function precacheApiData(): Promise<void> {
   return inFlightApiRun;
 }
 
+/** Envoie une vague d'URLs au SW et attend son ACK (skip-aware). */
+async function dispatchWaveAndWaitAck(
+  sw: ServiceWorker,
+  urls: string[],
+  headers: Record<string, string>,
+  label: string,
+): Promise<WaveAck | null> {
+  if (!urls.length) return null;
+  const ack: { value: WaveAck | null } = { value: null };
+  const onMessage = (event: MessageEvent) => {
+    const data = event.data as
+      | { type?: string; okCount?: number; skipCount?: number; total?: number }
+      | null;
+    if (data?.type === 'PRECACHE_API_RESULT') {
+      ack.value = {
+        okCount: Number(data.okCount || 0),
+        skipCount: Number(data.skipCount || 0),
+        total: Number(data.total || 0),
+      };
+    }
+  };
+  navigator.serviceWorker.addEventListener('message', onMessage);
+  try {
+    console.log(`[ApiPrecache] Vague ${label} — ${urls.length} endpoints → SW`);
+    sw.postMessage({ type: 'PRECACHE_API', urls, headers });
+
+    const start = Date.now();
+    while (!ack.value && Date.now() - start < API_ACK_TIMEOUT_MS) {
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    return ack.value;
+  } finally {
+    navigator.serviceWorker.removeEventListener('message', onMessage);
+  }
+}
+
 async function runApiPrecache(): Promise<void> {
   const registration = await navigator.serviceWorker.ready;
   const sw = registration.active;
@@ -730,8 +1360,7 @@ async function runApiPrecache(): Promise<void> {
     /* pas d'origine cross-origin → endpoints relatifs seulement */
   }
 
-  const urls = buildApiPrecacheUrls(apiBase);
-  if (!urls.length) return;
+  const ctx = readSessionContext();
 
   // Headers d'authentification — les MÊMES que ceux des appels réels de la
   // page (axios/fetch) → le SW calcule la même identité (tenant|user) → la
@@ -743,44 +1372,43 @@ async function runApiPrecache(): Promise<void> {
   } catch {
     /* sans JWT → endpoints publics seulement */
   }
-  const { tenantId } = readSessionContext();
-  if (tenantId && !headers['X-Tenant-ID']) {
-    headers['X-Tenant-ID'] = tenantId;
+  if (ctx.tenantId && !headers['X-Tenant-ID']) {
+    headers['X-Tenant-ID'] = ctx.tenantId;
   }
 
-  // ACK du SW (wrapper objet : TS ne narrow pas une propriété assignée dans
-  // une closure — contrairement à une variable locale)
-  const ack: { value: { okCount: number; total: number } | null } = { value: null };
-  const onMessage = (event: MessageEvent) => {
-    const data = event.data as { type?: string; okCount?: number; total?: number } | null;
-    if (data?.type === 'PRECACHE_API_RESULT') {
-      ack.value = { okCount: Number(data.okCount || 0), total: Number(data.total || 0) };
-    }
-  };
-  navigator.serviceWorker.addEventListener('message', onMessage);
+  // ─── VAGUE 1 : statique (tous les onglets de tous les modules) ───
+  const staticUrls = buildApiPrecacheUrls(apiBase, ctx);
+  const staticAck = await dispatchWaveAndWaitAck(sw, staticUrls, headers, '1 (statique)');
 
+  // ─── VAGUE 2 : dynamique par entité (notes/EDT/enfants/niveaux/trimestre) ───
+  //    Construite en lisant les listes de la vague 1 (déjà en cache SW).
+  let dynamicAck: WaveAck | null = null;
   try {
-    console.log(`[ApiPrecache] Dispatching ${urls.length} endpoints to SW…`);
-    sw.postMessage({ type: 'PRECACHE_API', urls, headers });
+    const dynamicUrls = await buildDynamicPrecacheUrls(apiBase, ctx, headers);
+    dynamicAck = await dispatchWaveAndWaitAck(sw, dynamicUrls, headers, '2 (dynamique)');
+  } catch {
+    console.warn('[ApiPrecache] Vague 2 (dynamique) — échec non bloquant');
+  }
 
-    const start = Date.now();
-    while (!ack.value && Date.now() - start < API_ACK_TIMEOUT_MS) {
-      await new Promise((r) => setTimeout(r, 1500));
-    }
+  // ─── Flag 24 h : agrégat des 2 vagues, skip-aware ───
+  const okCount = (staticAck?.okCount || 0) + (dynamicAck?.okCount || 0);
+  const skipCount = (staticAck?.skipCount || 0) + (dynamicAck?.skipCount || 0);
+  const total = (staticAck?.total || 0) + (dynamicAck?.total || 0);
+  const applicable = Math.max(total - skipCount, 0);
 
-    const result = ack.value;
-    if (result && result.total > 0 && result.okCount / result.total >= API_MIN_SUCCESS_RATE) {
-      try {
-        localStorage.setItem(API_PRECACHE_TS_KEY, String(Date.now()));
-      } catch { /* localStorage indisponible */ }
-      console.log(`[ApiPrecache] Complete — ${result.okCount}/${result.total} endpoints cached`);
-    } else {
-      // Pas de flag → re-tentative au prochain montage ou au retour du réseau
-      console.warn(
-        `[ApiPrecache] Incomplete (${result ? `${result.okCount}/${result.total}` : 'no ACK'}) — flag non posé`,
-      );
-    }
-  } finally {
-    navigator.serviceWorker.removeEventListener('message', onMessage);
+  if (applicable > 0 && okCount / applicable >= API_MIN_SUCCESS_RATE) {
+    try {
+      localStorage.setItem(API_PRECACHE_TS_KEY, String(Date.now()));
+    } catch { /* localStorage indisponible */ }
+    console.log(
+      `[ApiPrecache] Complete — ${okCount} cachés / ${applicable} applicables ` +
+      `(${skipCount} non applicables au rôle, ${total - skipCount - okCount} en échec)`,
+    );
+  } else {
+    // Pas de flag → re-tentative au prochain montage ou au retour du réseau
+    console.warn(
+      `[ApiPrecache] Incomplete — ${okCount}/${applicable} applicables ` +
+      `(${staticAck ? 'ACK vague 1 ok' : 'ACK vague 1 manquant'}) — flag non posé`,
+    );
   }
 }

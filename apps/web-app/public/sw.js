@@ -8,6 +8,21 @@
  *    sw-site.js et sw-chat.js sont OBSOLÈTES et sont désinstallés par
  *    UniversalSWRegister à la première visite.
  *
+ * v3.6.0 : (exigence « TOUS les modules offline » — couverture exhaustive) :
+ *    (1) PRÉ-CACHE ÉTENDU : le client envoie désormais ~230 endpoints (tous
+ *        les onglets/sous-onglets des 15 modules : pilotage, pédagogie,
+ *        censeur, élèves, vie scolaire, directeur, finances, examens/notes,
+ *        RH, Helm Connect, cantine, EduCast, Shop, CMS, paramètres) + une
+ *        2e VAGUE DYNAMIQUE par entité (notes par évaluation, EDT par
+ *        horaire, enfants du parent, niveaux scolaires).
+ *    (2) ACK PRÉ-CACHE « skip-aware » : les réponses 401/403/404/405/400
+ *        (endpoint non applicable à ce rôle/paramètres) sont comptées
+ *        `skipCount` — elles ne pénalisent NI le taux de réussite NI le flag
+ *        24 h (avant, un rôle sans accès finance faisait échouer tout le
+ *        pré-cache → retries permanents).
+ *    (3) BATCH 6 (au lieu de 4) + API_CACHE_MAX 1200 : volume x6 du cache
+ *    offline (toutes les données des modules, plus seulement les KPI).
+ *
  * v3.5.0 : (retour terrain « KPI faux hors ligne » + « page connexion
  *    indisponible pour /app/pedagogy/academic-structure ») :
  *    (1) INTERCEPTION CROSS-ORIGIN des GET axios vers l'API (api.<domaine>)
@@ -111,7 +126,7 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
-const SW_VERSION = 'v3.5.0';
+const SW_VERSION = 'v3.6.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 const PAGE_CACHE = `ah-pages-${SW_VERSION}`;
 const AUTH_CACHE = 'ah-auth-token'; // ⭐ miroir JWT pour le background sync — JAMAIS purgé
@@ -162,10 +177,11 @@ const RSC_TIMEOUT = 4000;
 //    Requêtes avec cookies mais SANS identité reconnue → réseau direct (pas
 //    de cache — anti-fuite). Requêtes anonymes (site public) → clé URL simple.
 const API_CACHE = 'ah-api';
-// ⭐ v3.5.0 — 400 (pré-cache ~40 endpoints KPI + navigations/visites réelles :
-//    avec 300, le LRU pouvait évicter les entrées pré-cachées au profit des
-//    URLs visitées avec des params différents avant un passage hors ligne).
-const API_CACHE_MAX = 400;
+// ⭐ v3.6.0 — 1200 : pré-cache ~230 endpoints statiques + vague dynamique
+//    (évaluations/notes, EDT, enfants…) + navigations réelles. Avant (400),
+//    le LRU évictait les entrées pré-cachées au profit des visites → pertes
+//    de données hors ligne sur les modules rarement visités.
+const API_CACHE_MAX = 1200;
 const API_TIMEOUT = 8000;
 // ⭐ v3.5.0 — Timeout des GET CROSS-ORIGIN (axios) : 25 s, ALIGNÉ sur le
 //    budget d'axios (30 s) et les cold starts Neon (10-13 s documentés).
@@ -1088,11 +1104,13 @@ self.addEventListener('message', (event) => {
     }
   }
 
-  // ⭐ v3.5.0 — PRÉ-CACHE DES DONNÉES API (KPIs des dashboards) : le client
-  //    envoie la liste des endpoints + ses headers d'authentification ; le SW
-  //    fetch chaque endpoint et l'écrit dans ah-api sous la clé normalisée
-  //    (tenant|user). Hors ligne, les dashboards servent alors les VRAIES
-  //    données sans que l'utilisateur ait visité chaque module en ligne.
+  // ⭐ v3.6.0 — Pré-cache des DONNÉES API (TOUS les modules, pas seulement
+  //    les dashboards) : le client envoie la liste des endpoints + ses
+  //    headers d'authentification ; le SW fetch chaque endpoint et l'écrit
+  //    dans ah-api sous la clé normalisée (tenant|user). Hors ligne, les
+  //    modules servent les VRAIES données sans visite préalable.
+  //    ACK « skip-aware » : 400/401/403/404/405 = endpoint non applicable à
+  //    ce rôle (skipCount) — pas un échec (le flag 24 h reste posable).
   if (event.data && event.data.type === 'PRECACHE_API' && Array.isArray(event.data.urls)) {
     event.waitUntil(
       precacheApiEndpoints(event.data.urls, event.data.headers || {}, event.source),
@@ -1100,7 +1118,7 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// ─── Pré-cache des données API (v3.5.0) ────────────────────────────────
+// ─── Pré-cache des données API (v3.5.0 → v3.6.0 étendu) ────────────────────
 /**
  * Fetch chaque endpoint et l'écrit dans ah-api avec la MÊME clé normalisée
  * que celle que calculera la requête réelle de la page (apiIdentity sur les
@@ -1123,8 +1141,19 @@ async function precacheApiEndpoints(urls, headers, sourceClient) {
   const xtid = headers['x-tenant-id'] || headers['X-Tenant-ID'] || headers['X-Tenant-Id'];
   if (xtid) authHeaders['X-Tenant-ID'] = String(xtid);
 
+  // ⭐ v3.6.0 — Compteurs séparés :
+  //    okCount   → 200 JSON réellement cachés
+  //    skipCount → 400/401/403/404/405 : le serveur a RÉPONDU mais l'endpoint
+  //                n'est pas applicable à ce rôle / ces params (ex. un
+  //                enseignant sur /api/finance/*). CE N'EST PAS UN ÉCHEC —
+  //                sinon un rôle à périmètre restreint faisait échouer tout
+  //                le pré-cache (flag jamais posé → retries permanents).
+  //    (les autres cas — réseau KO, 5xx, timeout, non-JSON — restent échecs)
   let okCount = 0;
-  const BATCH = 4;
+  let skipCount = 0;
+  // ⭐ v3.6.0 — 6 en parallèle (au lieu de 4) : ~230 endpoints + vague
+  //    dynamique à pré-cacher en arrière-plan sans occuper la journée.
+  const BATCH = 6;
   for (let i = 0; i < urls.length; i += BATCH) {
     const batch = urls.slice(i, i + BATCH);
     if (!self.navigator || self.navigator.onLine === false) {
@@ -1154,6 +1183,10 @@ async function precacheApiEndpoints(urls, headers, sourceClient) {
                 okCount++;
               }
             }
+          } else if (res && [400, 401, 403, 404, 405].includes(res.status)) {
+            // ⭐ v3.6.0 — endpoint non applicable (rôle/périmètre/params) → skip
+            try { await res.body?.cancel(); } catch { /* déjà consommé */ }
+            skipCount++;
           }
         } catch {
           /* endpoint échoué — compté comme non-caché, retry au prochain cycle */
@@ -1169,6 +1202,7 @@ async function precacheApiEndpoints(urls, headers, sourceClient) {
       sourceClient.postMessage({
         type: 'PRECACHE_API_RESULT',
         okCount,
+        skipCount,
         total: urls.length,
       });
     } catch {

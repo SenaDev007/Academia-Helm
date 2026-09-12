@@ -357,7 +357,14 @@ function RegistreContent() {
 
 // ═══ REGISTRE DES NOTES — NIVEAU SECONDAIRE ═════════════════════════════════
 //
-// Modèle demandé (une matière × un trimestre) :
+// Deux types de visualisation (même modèle de tableau) :
+//
+//   • VUE PAR MATIÈRE (une matière × un trimestre — lignes = élèves)
+//   • VUE PAR ÉLÈVE   (un élève × un trimestre — lignes = matières,
+//     la colonne « Nom » devient la liste des matières, avec totaux et
+//     moyenne générale en pied de tableau)
+//
+// Modèle des colonnes :
 //
 //   6e / 5e (1er cycle, SANS coefficient) :
 //     N° | Nom et prénom | INTERROGATION [Interrogation écrite 1, 2]
@@ -367,11 +374,13 @@ function RegistreContent() {
 //   4e → Terminale (AVEC coefficient) :
 //     N° | Nom et prénom | INTERROGATION [Interrogation écrite 1, 2]
 //        | Moyenne d'interrogation | DEVOIR SURVEILLÉ [Devoir surveillé 1, 2]
-//        | Coefficient | Note coefficient | Rang | Appréciation | Signature
+//        | MOYENNE | Coefficient | Note coefficient | Rang | Appréciation | Signature
 //
 // Formule officielle (score-entry-schema.service.ts) :
 //   Moyenne d'interrogation = (INT1 + INT2) / 2
-//   Moyenne obtenue         = (Moy_interros + DS1 + DS2) / 3
+//   Moyenne                 = (Moy_interros + DS1 + DS2) / 3
+//   Note coefficient        = Moyenne × Coefficient (4e → Terminale)
+//   Moyenne générale (4e→T) = Σ(note coefficient) / Σ(coefficients)
 // (les notes absentes sont exclues — chaque partie disponible compte pour 1)
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -380,6 +389,76 @@ interface SecondaryRegRow {
   studentName: string;
   gender?: string | null;
   notes: Partial<Record<SecondaryNoteKey, { score: number | null; isAbsent: boolean }>>;
+}
+
+/** Modèle complet d'une matière : notes + moyennes + rangs de tous les élèves. */
+interface SecondarySubjectModel {
+  perStudent: Array<{
+    row: SecondaryRegRow;
+    moyInter: number | null;
+    moyenne: number | null;
+  }>;
+  rankMap: Map<string, number>;
+}
+
+/**
+ * Calcule le modèle d'une matière à partir de ses 4 évaluations typées
+ * (INT1/INT2/DS1/DS2) et du cache des notes — partagé par la vue par
+ * matière et la vue par élève (mêmes calculs, mêmes rangs).
+ */
+function computeSubjectModel(
+  rec: Record<SecondaryNoteKey, any | null>,
+  gradesByEvalId: Map<string, any[]>,
+): SecondarySubjectModel {
+  const studentMap = new Map<string, SecondaryRegRow>();
+  (Object.entries(rec) as Array<[SecondaryNoteKey, any | null]>).forEach(([key, ev]) => {
+    if (!ev) return;
+    (gradesByEvalId.get(ev.id) || []).forEach((student: any) => {
+      if (!studentMap.has(student.studentId)) {
+        studentMap.set(student.studentId, {
+          studentId: student.studentId,
+          studentName: student.studentName || 'Inconnu',
+          gender: student.gender,
+          notes: {},
+        });
+      }
+      studentMap.get(student.studentId)!.notes[key] = {
+        score: student.score ?? null,
+        isAbsent: student.isAbsent ?? false,
+      };
+    });
+  });
+  const perStudent = Array.from(studentMap.values()).map((row) => {
+    const presentValues = (keys: SecondaryNoteKey[]) => keys
+      .map((k) => row.notes[k])
+      .filter((n) => n && !n.isAbsent && typeof n.score === 'number')
+      .map((n) => n!.score as number);
+    const interVals = presentValues(['INT1', 'INT2']);
+    const dsVals = presentValues(['DS1', 'DS2']);
+    const moyInter = interVals.length
+      ? interVals.reduce((a, b) => a + b, 0) / interVals.length
+      : null;
+    // Formule officielle : (Moy_interros + DS1 + DS2) / 3 — chaque partie
+    // disponible compte pour 1 (élève absent à une évaluation exclu).
+    const parts: number[] = [];
+    if (moyInter !== null) parts.push(moyInter);
+    dsVals.forEach((v) => parts.push(v));
+    const moyenne = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
+    return { row, moyInter, moyenne };
+  });
+  // Rang dense par moyenne obtenue (ex æquo gérés)
+  const rankMap = new Map<string, number>();
+  perStudent
+    .filter((p) => p.moyenne !== null)
+    .sort((a, b) => (b.moyenne as number) - (a.moyenne as number))
+    .forEach((p, i, arr) => {
+      if (i > 0 && p.moyenne === arr[i - 1].moyenne) {
+        rankMap.set(p.row.studentId, rankMap.get(arr[i - 1].row.studentId)!);
+      } else {
+        rankMap.set(p.row.studentId, i + 1);
+      }
+    });
+  return { perStudent, rankMap };
 }
 
 function RegistreSecondaireView({
@@ -446,108 +525,184 @@ function RegistreSecondaireView({
   const selectedClassName = classes.find((c: any) => c.id === selectedClassId)?.name || '';
   const isJunior = isJuniorSecondaryClass(selectedClassName);
 
-  // ── Les 4 évaluations typées (INT1/INT2/DS1/DS2) de la matière + trimestre ──
-  const typedEvaluations = useMemo<Record<SecondaryNoteKey, any | null>>(() => {
-    const map: Record<SecondaryNoteKey, any | null> = { INT1: null, INT2: null, DS1: null, DS2: null };
+  // ── Type de vue : par matière (lignes = élèves) ou par élève (lignes = matières) ──
+  const [viewMode, setViewMode] = useState<'matiere' | 'eleve'>('matiere');
+  const [selectedStudentId, setSelectedStudentId] = useState('');
+
+  // ── Les 4 évaluations typées (INT1/INT2/DS1/DS2) de CHAQUE matière du trimestre ──
+  const typedEvalsBySubject = useMemo(() => {
+    const map = new Map<string, Record<SecondaryNoteKey, any | null>>();
     evaluations
-      .filter((ev) => ev.subject?.id === selectedSubjectId && ev.period?.id === selectedPeriodId)
+      .filter((ev) => ev.subject?.id && ev.period?.id === selectedPeriodId)
       .forEach((ev) => {
+        const subjId = ev.subject!.id;
+        if (!map.has(subjId)) {
+          map.set(subjId, { INT1: null, INT2: null, DS1: null, DS2: null });
+        }
         const key = secondaryNoteKey(ev.evaluationType?.code, ev.evaluationType?.name);
-        if (key && !map[key]) map[key] = ev; // la liste est triée desc : la plus récente gagne
+        if (key && !map.get(subjId)![key]) map.get(subjId)![key] = ev; // la plus récente gagne
       });
     return map;
-  }, [evaluations, selectedSubjectId, selectedPeriodId]);
+  }, [evaluations, selectedPeriodId]);
 
-  const hasAnyTypedEvaluation = useMemo(
-    () => Object.values(typedEvaluations).some(Boolean),
-    [typedEvaluations],
-  );
-
-  // ── Élèves + notes (une requête par évaluation typée) ─────────────────────
-  const [rows, setRows] = useState<SecondaryRegRow[]>([]);
+  // ── Notes : un seul chargement par trimestre (toutes les évaluations typées
+  //    de toutes les matières) — les deux vues partagent le même cache ─────────
+  const [gradesByEvalId, setGradesByEvalId] = useState<Map<string, any[]>>(new Map());
   const [sheetLoading, setSheetLoading] = useState(false);
 
   useEffect(() => {
-    const entries = (Object.entries(typedEvaluations) as Array<[SecondaryNoteKey, any | null]>)
-      .filter(([, ev]) => !!ev);
-    if (entries.length === 0) {
-      setRows([]);
+    const evalIds = new Set<string>();
+    typedEvalsBySubject.forEach((rec) => {
+      (Object.values(rec) as Array<any | null>).forEach((ev) => { if (ev) evalIds.add(ev.id); });
+    });
+    if (evalIds.size === 0) {
+      setGradesByEvalId(new Map());
+      setSheetLoading(false);
       return;
     }
     let cancelled = false;
     setSheetLoading(true);
     (async () => {
       try {
-        const sheets = await Promise.all(entries.map(async ([key, ev]) => {
+        const sheets = await Promise.all(Array.from(evalIds).map(async (id) => {
           try {
-            const response = await apiClient.get(`/institutional-exams/grades/evaluation/${ev.id}`);
-            return { key, students: Array.isArray(response.data) ? response.data : [] };
+            const response = await apiClient.get(`/institutional-exams/grades/evaluation/${id}`);
+            return [id, Array.isArray(response.data) ? response.data : []] as [string, any[]];
           } catch {
-            return { key, students: [] as any[] };
+            return [id, []] as [string, any[]];
           }
         }));
         if (cancelled) return;
-        const studentMap = new Map<string, SecondaryRegRow>();
-        sheets.forEach(({ key, students }) => {
-          students.forEach((student: any) => {
-            if (!studentMap.has(student.studentId)) {
-              studentMap.set(student.studentId, {
-                studentId: student.studentId,
-                studentName: student.studentName || 'Inconnu',
-                gender: student.gender,
-                notes: {},
-              });
-            }
-            studentMap.get(student.studentId)!.notes[key] = {
-              score: student.score ?? null,
-              isAbsent: student.isAbsent ?? false,
-            };
-          });
-        });
-        const arr = Array.from(studentMap.values());
-        arr.sort((a, b) => a.studentName.localeCompare(b.studentName, 'fr'));
-        setRows(arr);
+        setGradesByEvalId(new Map(sheets));
       } finally {
         if (!cancelled) setSheetLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [typedEvaluations]);
+  }, [typedEvalsBySubject]);
 
-  // ── Calculs par élève : moyennes, rang, appréciation, note coefficient ─────
-  const model = useMemo(() => {
-    const perStudent = rows.map((row) => {
-      const presentValues = (keys: SecondaryNoteKey[]) => keys
-        .map((k) => row.notes[k])
-        .filter((n) => n && !n.isAbsent && typeof n.score === 'number')
-        .map((n) => n!.score as number);
-      const interVals = presentValues(['INT1', 'INT2']);
-      const dsVals = presentValues(['DS1', 'DS2']);
-      const moyInter = interVals.length
-        ? interVals.reduce((a, b) => a + b, 0) / interVals.length
-        : null;
-      // Formule officielle : (Moy_interros + DS1 + DS2) / 3 — chaque partie
-      // disponible compte pour 1 (élève absent à une évaluation exclu).
-      const parts: number[] = [];
-      if (moyInter !== null) parts.push(moyInter);
-      dsVals.forEach((v) => parts.push(v));
-      const moyenne = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
-      return { row, moyInter, moyenne };
+  // ── Matières du trimestre (celles qui ont au moins une évaluation typée) ──
+  const subjectsWithNotes = useMemo(
+    () => subjects
+      .filter((s) => typedEvalsBySubject.has(s.id))
+      .map((s) => ({ ...s, rec: typedEvalsBySubject.get(s.id)! })),
+    [subjects, typedEvalsBySubject],
+  );
+
+  const selectedSubjectHasNotes = !!selectedSubjectId && typedEvalsBySubject.has(selectedSubjectId);
+  const periodHasNotes = subjectsWithNotes.length > 0;
+
+  // ── Modèle de chaque matière : notes + moyennes + rangs (partagé par les 2 vues) ──
+  const subjectModels = useMemo(() => {
+    const map = new Map<string, SecondarySubjectModel>();
+    subjectsWithNotes.forEach((s) => {
+      map.set(s.id, computeSubjectModel(s.rec, gradesByEvalId));
     });
-    // Rang dense par moyenne obtenue (ex æquo gérés)
-    const rankMap = new Map<string, number>();
-    perStudent
-      .filter((p) => p.moyenne !== null)
-      .sort((a, b) => (b.moyenne as number) - (a.moyenne as number))
-      .forEach((p, i, arr) => {
-        if (i > 0 && p.moyenne === arr[i - 1].moyenne) {
-          rankMap.set(p.row.studentId, rankMap.get(arr[i - 1].row.studentId)!);
-        } else {
-          rankMap.set(p.row.studentId, i + 1);
+    return map;
+  }, [subjectsWithNotes, gradesByEvalId]);
+
+  // ── Vue par matière : modèle de la matière sélectionnée ─────────────────────
+  const model: SecondarySubjectModel = subjectModels.get(selectedSubjectId)
+    || { perStudent: [], rankMap: new Map<string, number>() };
+
+  // ── Vue par élève : élèves du trimestre (union des matières) ────────────────
+  const periodStudents = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; gender?: string | null }>();
+    subjectModels.forEach((m) => {
+      m.perStudent.forEach((p) => {
+        if (!map.has(p.row.studentId)) {
+          map.set(p.row.studentId, { id: p.row.studentId, name: p.row.studentName, gender: p.row.gender });
         }
       });
-    return { perStudent, rankMap };
-  }, [rows]);
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+  }, [subjectModels]);
+
+  // Auto-sélection de l'élève (et garde-fou s'il disparaît)
+  useEffect(() => {
+    if (!periodStudents.find((s) => s.id === selectedStudentId)) {
+      setSelectedStudentId(periodStudents[0]?.id || '');
+    }
+  }, [periodStudents, selectedStudentId]);
+
+  // ── Vue par élève : moyennes générales + rang général ───────────────────────
+  //   6e/5e  : moyenne simple des moyennes de matières
+  //   4e → T : Σ(note coefficient) / Σ(coefficients) — modèle officiel du bulletin
+  const generalAverages = useMemo(() => {
+    const map = new Map<string, number | null>();
+    periodStudents.forEach((st) => {
+      let sumCoef = 0, sumNoteCoef = 0, sumMoy = 0, countMoy = 0;
+      subjectsWithNotes.forEach((s) => {
+        const m = subjectModels.get(s.id)!;
+        const p = m.perStudent.find((x) => x.row.studentId === st.id);
+        if (!p || p.moyenne === null) return;
+        if (isJunior) { sumMoy += p.moyenne; countMoy++; }
+        else { sumCoef += s.coefficient; sumNoteCoef += p.moyenne * s.coefficient; }
+      });
+      if (isJunior) map.set(st.id, countMoy ? sumMoy / countMoy : null);
+      else map.set(st.id, sumCoef ? sumNoteCoef / sumCoef : null);
+    });
+    return map;
+  }, [periodStudents, subjectsWithNotes, subjectModels, isJunior]);
+
+  const generalRankMap = useMemo(() => {
+    const rankMap = new Map<string, number>();
+    periodStudents
+      .map((st) => ({ id: st.id, avg: generalAverages.get(st.id) ?? null }))
+      .filter((x) => x.avg !== null)
+      .sort((a, b) => (b.avg as number) - (a.avg as number))
+      .forEach((x, i, arr) => {
+        if (i > 0 && x.avg === arr[i - 1].avg) rankMap.set(x.id, rankMap.get(arr[i - 1].id)!);
+        else rankMap.set(x.id, i + 1);
+      });
+    return rankMap;
+  }, [periodStudents, generalAverages]);
+
+  // ── Vue par élève : une ligne par matière pour l'élève sélectionné ─────────
+  const studentRows = useMemo(() => {
+    return subjectsWithNotes.map((s) => {
+      const m = subjectModels.get(s.id)!;
+      const p = selectedStudentId
+        ? m.perStudent.find((x) => x.row.studentId === selectedStudentId)
+        : undefined;
+      const moyenne = p?.moyenne ?? null;
+      const noteCoef = !isJunior && moyenne !== null ? moyenne * s.coefficient : null;
+      return {
+        subject: s,
+        notes: p?.row.notes ?? {},
+        moyInter: p?.moyInter ?? null,
+        moyenne,
+        noteCoef,
+        rang: selectedStudentId ? (m.rankMap.get(selectedStudentId) ?? null) : null,
+      };
+    });
+  }, [subjectsWithNotes, subjectModels, selectedStudentId, isJunior]);
+
+  // Totaux du pied de tableau (vue par élève)
+  const studentTotals = useMemo(() => {
+    let sumCoef = 0, sumNoteCoef = 0, sumMoy = 0, countMoy = 0;
+    studentRows.forEach((r) => {
+      if (r.moyenne === null) return;
+      if (isJunior) { sumMoy += r.moyenne; countMoy++; }
+      else { sumCoef += r.subject.coefficient; sumNoteCoef += r.noteCoef ?? 0; }
+    });
+    return {
+      totalCoef: sumCoef,
+      totalNoteCoef: sumNoteCoef,
+      moyenneGenerale: isJunior
+        ? (countMoy ? sumMoy / countMoy : null)
+        : (sumCoef ? sumNoteCoef / sumCoef : null),
+    };
+  }, [studentRows, isJunior]);
+
+  // Stats de classe (vue par élève) — moyennes générales de tous les élèves
+  const generalValues = useMemo(
+    () => Array.from(generalAverages.values()).filter((v): v is number => v !== null),
+    [generalAverages],
+  );
+  const classGeneralAverage = generalValues.length
+    ? generalValues.reduce((a, b) => a + b, 0) / generalValues.length
+    : null;
 
   // ── Coefficient (matière) — affiché pour 4e → Terminale, éditable ─────────
   const [coefficient, setCoefficient] = useState<number>(1);
@@ -581,7 +736,7 @@ function RegistreSecondaireView({
 
   return (
     <div className="space-y-4">
-      {/* Header + sélecteurs classe & matière */}
+      {/* Header + sélecteurs classe & vue */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
           <ClipboardList className="w-5 h-5 text-blue-600" />
@@ -589,6 +744,33 @@ function RegistreSecondaireView({
           <Badge variant="outline" className="text-xs">{levelBadge}</Badge>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* ⭐ Deux types de visualisation : par matière et par élève */}
+          <div className="flex items-center bg-slate-100 rounded-lg p-1" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'matiere'}
+              onClick={() => setViewMode('matiere')}
+              className={cn(
+                'px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5',
+                viewMode === 'matiere' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+              )}
+            >
+              <BookOpen className="w-3.5 h-3.5" /> Vue par matière
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={viewMode === 'eleve'}
+              onClick={() => setViewMode('eleve')}
+              className={cn(
+                'px-3 py-1.5 text-xs font-semibold rounded-md transition-colors flex items-center gap-1.5',
+                viewMode === 'eleve' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700',
+              )}
+            >
+              <Users className="w-3.5 h-3.5" /> Vue par élève
+            </button>
+          </div>
           <select
             value={selectedClassId}
             onChange={(e) => onSelectClass(e.target.value)}
@@ -599,17 +781,31 @@ function RegistreSecondaireView({
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
-          <select
-            value={selectedSubjectId}
-            onChange={(e) => setSelectedSubjectId(e.target.value)}
-            disabled={subjects.length === 0}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm min-w-[180px]"
-          >
-            <option value="">— Matière —</option>
-            {subjects.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
+          {viewMode === 'matiere' ? (
+            <select
+              value={selectedSubjectId}
+              onChange={(e) => setSelectedSubjectId(e.target.value)}
+              disabled={subjects.length === 0}
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm min-w-[180px]"
+            >
+              <option value="">— Matière —</option>
+              {subjects.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          ) : (
+            <select
+              value={selectedStudentId}
+              onChange={(e) => setSelectedStudentId(e.target.value)}
+              disabled={periodStudents.length === 0}
+              className="px-3 py-2 border border-gray-200 rounded-lg text-sm min-w-[200px]"
+            >
+              <option value="">— Élève —</option>
+              {periodStudents.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
@@ -632,7 +828,7 @@ function RegistreSecondaireView({
             </button>
           ))}
           <div className="flex-1" />
-          {!isJunior && selectedSubject && (
+          {!isJunior && viewMode === 'matiere' && selectedSubject && (
             <div className="flex items-center gap-2 pl-2 border-l border-gray-200">
               <label className="text-xs font-semibold text-gray-600 whitespace-nowrap">
                 Coefficient de {selectedSubject.name} :
@@ -683,22 +879,34 @@ function RegistreSecondaireView({
           {/* Titre du registre (document) */}
           <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
             <h2 className="text-lg font-bold text-slate-900">
-              REGISTRE DES NOTES — {selectedSubject?.name || 'Matière'}
+              REGISTRE DES NOTES — {viewMode === 'matiere'
+                ? (selectedSubject?.name || 'Matière')
+                : (periodStudents.find((s) => s.id === selectedStudentId)?.name || 'Élève')}
             </h2>
             <div className="text-sm text-slate-600 mt-1">
+              Vue par {viewMode === 'matiere' ? 'matière' : 'élève'} • {' '}
               Classe : <strong>{selectedClassName}</strong> • {selectedPeriod?.name || 'Trimestre'} • {' '}
               {isJunior ? '1er cycle (sans coefficient)' : 'Coefficient appliqué'}
             </div>
           </div>
 
-          {/* Aucune évaluation typée pour cette matière × trimestre */}
-          {!hasAnyTypedEvaluation ? (
+          {/* Aucune évaluation typée pour la sélection × trimestre */}
+          {viewMode === 'matiere' && !selectedSubjectHasNotes ? (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 flex items-start gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
               <div>
                 Aucune note validée pour <strong>{selectedSubject?.name}</strong> au{' '}
                 <strong>{selectedPeriod?.name}</strong>. Le registre se remplit dès qu'une{' '}
                 Interrogation (1 ou 2) ou un Devoir surveillé (1 ou 2) est validé pour cette matière.
+              </div>
+            </div>
+          ) : viewMode === 'eleve' && !periodHasNotes ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <div>
+                Aucune note validée au <strong>{selectedPeriod?.name}</strong>. Le registre par élève
+                se remplit dès qu'une Interrogation (1 ou 2) ou un Devoir surveillé (1 ou 2) est
+                validé pour une matière de la classe.
               </div>
             </div>
           ) : sheetLoading ? (
@@ -718,7 +926,9 @@ function RegistreSecondaireView({
                   <thead>
                     <tr className="bg-slate-100">
                       <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">N°</th>
-                      <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: '170px' }}>Nom et prénom</th>
+                      <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: viewMode === 'matiere' ? '170px' : '150px' }}>
+                        {viewMode === 'matiere' ? 'Nom et prénom' : 'Matière'}
+                      </th>
                       <th colSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center bg-blue-50">Interrogation</th>
                       <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-20 bg-blue-50">Moyenne d'interrogation</th>
                       <th colSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center bg-indigo-50">Devoir surveillé</th>
@@ -726,6 +936,8 @@ function RegistreSecondaireView({
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-20 bg-emerald-50">Moyenne obtenue</th>
                       ) : (
                         <>
+                          {/* ⭐ 4e → Terminale : MOYENNE avant COEFFICIENT puis NOTE COEFFICIENT */}
+                          <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-20 bg-emerald-50">Moyenne</th>
                           <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-16 bg-amber-50">Coefficient</th>
                           <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-20 bg-emerald-50">Note coefficient</th>
                         </>
@@ -742,127 +954,298 @@ function RegistreSecondaireView({
                     </tr>
                   </thead>
                   <tbody>
-                    {model.perStudent.map((p, idx) => {
-                      const { row, moyInter, moyenne } = p;
-                      const rang = model.rankMap.get(row.studentId);
-                      const appreciation = computeAppreciationSecondaire(moyenne);
-                      const noteCoef = moyenne !== null ? moyenne * coefficient : null;
-                      return (
-                        <tr key={row.studentId} className={cn('hover:bg-slate-50', idx % 2 === 1 && 'bg-slate-50/50')}>
-                          <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">{idx + 1}</td>
-                          <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{row.studentName}</td>
-                          {/* Notes : INT1, INT2 */}
-                          {(['INT1', 'INT2'] as SecondaryNoteKey[]).map((key) => {
-                            const n = row.notes[key];
-                            return (
-                              <td key={key} className={cn(
-                                'border border-slate-300 px-2 py-1 text-center font-bold',
-                                n && !n.isAbsent && typeof n.score === 'number' && n.score < 10 && 'text-rose-600',
-                              )}>
-                                {!n ? '—' : n.isAbsent
-                                  ? <span className="text-red-500 text-[10px] font-bold">ABS</span>
-                                  : fmtNote(n.score)}
-                              </td>
-                            );
-                          })}
-                          {/* Moyenne d'interrogation */}
-                          <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
-                            {moyInter !== null ? fmtNote(moyInter) : '—'}
-                          </td>
-                          {/* Notes : DS1, DS2 */}
-                          {(['DS1', 'DS2'] as SecondaryNoteKey[]).map((key) => {
-                            const n = row.notes[key];
-                            return (
-                              <td key={key} className={cn(
-                                'border border-slate-300 px-2 py-1 text-center font-bold',
-                                n && !n.isAbsent && typeof n.score === 'number' && n.score < 10 && 'text-rose-600',
-                              )}>
-                                {!n ? '—' : n.isAbsent
-                                  ? <span className="text-red-500 text-[10px] font-bold">ABS</span>
-                                  : fmtNote(n.score)}
-                              </td>
-                            );
-                          })}
-                          {isJunior ? (
-                            /* Moyenne obtenue (6e/5e) */
-                            <td className={cn(
-                              'border border-slate-300 px-2 py-1 text-center font-bold bg-emerald-50',
-                              moyenne !== null && moyenne >= 10 ? 'text-emerald-700' : 'text-rose-600',
-                            )}>
-                              {moyenne !== null ? fmtNote(moyenne) : '—'}
+                    {/* ── Cellule de note réutilisable (IE1/IE2/DS1/DS2) ── */}
+                    {viewMode === 'matiere' ? (
+                      /* ═══ VUE PAR MATIÈRE — une ligne par élève ═══ */
+                      model.perStudent.map((p, idx) => {
+                        const { row, moyInter, moyenne } = p;
+                        const rang = model.rankMap.get(row.studentId);
+                        const appreciation = computeAppreciationSecondaire(moyenne);
+                        const noteCoef = moyenne !== null ? moyenne * coefficient : null;
+                        return (
+                          <tr key={row.studentId} className={cn('hover:bg-slate-50', idx % 2 === 1 && 'bg-slate-50/50')}>
+                            <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">{idx + 1}</td>
+                            <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{row.studentName}</td>
+                            {/* Notes : INT1, INT2 */}
+                            {(['INT1', 'INT2'] as SecondaryNoteKey[]).map((key) => {
+                              const n = row.notes[key];
+                              return (
+                                <td key={key} className={cn(
+                                  'border border-slate-300 px-2 py-1 text-center font-bold',
+                                  n && !n.isAbsent && typeof n.score === 'number' && n.score < 10 && 'text-rose-600',
+                                )}>
+                                  {!n ? '—' : n.isAbsent
+                                    ? <span className="text-red-500 text-[10px] font-bold">ABS</span>
+                                    : fmtNote(n.score)}
+                                </td>
+                              );
+                            })}
+                            {/* Moyenne d'interrogation */}
+                            <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
+                              {moyInter !== null ? fmtNote(moyInter) : '—'}
                             </td>
-                          ) : (
-                            <>
-                              {/* Coefficient (4e → Terminale) */}
-                              <td className="border border-slate-300 px-2 py-1 text-center font-bold text-amber-700 bg-amber-50">
-                                {coefficient}
-                              </td>
-                              {/* Note coefficient */}
+                            {/* Notes : DS1, DS2 */}
+                            {(['DS1', 'DS2'] as SecondaryNoteKey[]).map((key) => {
+                              const n = row.notes[key];
+                              return (
+                                <td key={key} className={cn(
+                                  'border border-slate-300 px-2 py-1 text-center font-bold',
+                                  n && !n.isAbsent && typeof n.score === 'number' && n.score < 10 && 'text-rose-600',
+                                )}>
+                                  {!n ? '—' : n.isAbsent
+                                    ? <span className="text-red-500 text-[10px] font-bold">ABS</span>
+                                    : fmtNote(n.score)}
+                                </td>
+                              );
+                            })}
+                            {isJunior ? (
+                              /* Moyenne obtenue (6e/5e) */
                               <td className={cn(
                                 'border border-slate-300 px-2 py-1 text-center font-bold bg-emerald-50',
                                 moyenne !== null && moyenne >= 10 ? 'text-emerald-700' : 'text-rose-600',
                               )}>
-                                {noteCoef !== null ? fmtNote(noteCoef) : '—'}
+                                {moyenne !== null ? fmtNote(moyenne) : '—'}
                               </td>
-                            </>
-                          )}
-                          {/* Rang */}
-                          <td className="border border-slate-300 px-2 py-1 text-center font-bold text-slate-700">
-                            {rang ? formatRang(rang, row.gender) : '—'}
-                          </td>
-                          {/* Appréciation */}
-                          <td className="border border-slate-300 px-2 py-1 text-center font-semibold">
-                            <span className={cn('text-xs', appreciationSecondaireClassName(appreciation))}>
-                              {appreciation}
-                            </span>
-                          </td>
-                          {/* Signature du professeur (vide — signature manuscrite) */}
-                          <td className="border border-slate-300 h-9" />
-                        </tr>
-                      );
-                    })}
-                    {model.perStudent.length === 0 && (
+                            ) : (
+                              <>
+                                {/* Moyenne (4e → Terminale) */}
+                                <td className={cn(
+                                  'border border-slate-300 px-2 py-1 text-center font-bold bg-emerald-50',
+                                  moyenne !== null && moyenne >= 10 ? 'text-emerald-700' : 'text-rose-600',
+                                )}>
+                                  {moyenne !== null ? fmtNote(moyenne) : '—'}
+                                </td>
+                                {/* Coefficient (4e → Terminale) */}
+                                <td className="border border-slate-300 px-2 py-1 text-center font-bold text-amber-700 bg-amber-50">
+                                  {coefficient}
+                                </td>
+                                {/* Note coefficient */}
+                                <td className={cn(
+                                  'border border-slate-300 px-2 py-1 text-center font-bold bg-emerald-50',
+                                  moyenne !== null && moyenne >= 10 ? 'text-emerald-700' : 'text-rose-600',
+                                )}>
+                                  {noteCoef !== null ? fmtNote(noteCoef) : '—'}
+                                </td>
+                              </>
+                            )}
+                            {/* Rang */}
+                            <td className="border border-slate-300 px-2 py-1 text-center font-bold text-slate-700">
+                              {rang ? formatRang(rang, row.gender) : '—'}
+                            </td>
+                            {/* Appréciation */}
+                            <td className="border border-slate-300 px-2 py-1 text-center font-semibold">
+                              <span className={cn('text-xs', appreciationSecondaireClassName(appreciation))}>
+                                {appreciation}
+                              </span>
+                            </td>
+                            {/* Signature du professeur (vide — signature manuscrite) */}
+                            <td className="border border-slate-300 h-9" />
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      /* ═══ VUE PAR ÉLÈVE — une ligne par matière ═══ */
+                      studentRows.map((r, idx) => {
+                        const appreciation = computeAppreciationSecondaire(r.moyenne);
+                        return (
+                          <tr key={r.subject.id} className={cn('hover:bg-slate-50', idx % 2 === 1 && 'bg-slate-50/50')}>
+                            <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">{idx + 1}</td>
+                            {/* La colonne « Nom » devient la liste des matières */}
+                            <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{r.subject.name}</td>
+                            {/* Notes : INT1, INT2 */}
+                            {(['INT1', 'INT2'] as SecondaryNoteKey[]).map((key) => {
+                              const n = r.notes[key];
+                              return (
+                                <td key={key} className={cn(
+                                  'border border-slate-300 px-2 py-1 text-center font-bold',
+                                  n && !n.isAbsent && typeof n.score === 'number' && n.score < 10 && 'text-rose-600',
+                                )}>
+                                  {!n ? '—' : n.isAbsent
+                                    ? <span className="text-red-500 text-[10px] font-bold">ABS</span>
+                                    : fmtNote(n.score)}
+                                </td>
+                              );
+                            })}
+                            {/* Moyenne d'interrogation */}
+                            <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
+                              {r.moyInter !== null ? fmtNote(r.moyInter) : '—'}
+                            </td>
+                            {/* Notes : DS1, DS2 */}
+                            {(['DS1', 'DS2'] as SecondaryNoteKey[]).map((key) => {
+                              const n = r.notes[key];
+                              return (
+                                <td key={key} className={cn(
+                                  'border border-slate-300 px-2 py-1 text-center font-bold',
+                                  n && !n.isAbsent && typeof n.score === 'number' && n.score < 10 && 'text-rose-600',
+                                )}>
+                                  {!n ? '—' : n.isAbsent
+                                    ? <span className="text-red-500 text-[10px] font-bold">ABS</span>
+                                    : fmtNote(n.score)}
+                                </td>
+                              );
+                            })}
+                            {isJunior ? (
+                              /* Moyenne obtenue (6e/5e) */
+                              <td className={cn(
+                                'border border-slate-300 px-2 py-1 text-center font-bold bg-emerald-50',
+                                r.moyenne !== null && r.moyenne >= 10 ? 'text-emerald-700' : 'text-rose-600',
+                              )}>
+                                {r.moyenne !== null ? fmtNote(r.moyenne) : '—'}
+                              </td>
+                            ) : (
+                              <>
+                                {/* Moyenne (4e → Terminale) */}
+                                <td className={cn(
+                                  'border border-slate-300 px-2 py-1 text-center font-bold bg-emerald-50',
+                                  r.moyenne !== null && r.moyenne >= 10 ? 'text-emerald-700' : 'text-rose-600',
+                                )}>
+                                  {r.moyenne !== null ? fmtNote(r.moyenne) : '—'}
+                                </td>
+                                {/* Coefficient de la matière */}
+                                <td className="border border-slate-300 px-2 py-1 text-center font-bold text-amber-700 bg-amber-50">
+                                  {r.subject.coefficient}
+                                </td>
+                                {/* Note coefficient */}
+                                <td className={cn(
+                                  'border border-slate-300 px-2 py-1 text-center font-bold bg-emerald-50',
+                                  r.moyenne !== null && r.moyenne >= 10 ? 'text-emerald-700' : 'text-rose-600',
+                                )}>
+                                  {r.noteCoef !== null ? fmtNote(r.noteCoef) : '—'}
+                                </td>
+                              </>
+                            )}
+                            {/* Rang de l'élève dans la matière */}
+                            <td className="border border-slate-300 px-2 py-1 text-center font-bold text-slate-700">
+                              {r.rang ? formatRang(r.rang, periodStudents.find((s) => s.id === selectedStudentId)?.gender) : '—'}
+                            </td>
+                            {/* Appréciation */}
+                            <td className="border border-slate-300 px-2 py-1 text-center font-semibold">
+                              <span className={cn('text-xs', appreciationSecondaireClassName(appreciation))}>
+                                {appreciation}
+                              </span>
+                            </td>
+                            {/* Signature du professeur (vide — signature manuscrite) */}
+                            <td className="border border-slate-300 h-9" />
+                          </tr>
+                        );
+                      })
+                    )}
+                    {viewMode === 'matiere' && model.perStudent.length === 0 && (
                       <tr>
-                        <td colSpan={isJunior ? 11 : 12} className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm">
+                        <td colSpan={isJunior ? 11 : 13} className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm">
                           Aucun élève avec des notes pour cette matière.
                         </td>
                       </tr>
                     )}
+                    {viewMode === 'eleve' && studentRows.length === 0 && (
+                      <tr>
+                        <td colSpan={isJunior ? 11 : 13} className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm">
+                          Aucune matière avec des notes pour cet élève.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
+                  {/* ── Pied du tableau (vue par élève uniquement) : totaux + moyenne générale ── */}
+                  {viewMode === 'eleve' && studentRows.length > 0 && (
+                    <tfoot>
+                      {!isJunior && (
+                        <>
+                          <tr className="bg-slate-100 font-bold">
+                            <td colSpan={7} className="border border-slate-300 px-2 py-1 text-right uppercase text-slate-700 text-[10px]">Total des coefficients</td>
+                            <td className="border border-slate-300" />
+                            <td className="border border-slate-300 px-2 py-1 text-center text-amber-700">{studentTotals.totalCoef}</td>
+                            <td colSpan={4} className="border border-slate-300" />
+                          </tr>
+                          <tr className="bg-slate-100 font-bold">
+                            <td colSpan={7} className="border border-slate-300 px-2 py-1 text-right uppercase text-slate-700 text-[10px]">Total des notes coefficient</td>
+                            <td colSpan={2} className="border border-slate-300" />
+                            <td className="border border-slate-300 px-2 py-1 text-center text-emerald-700">{fmtNote(studentTotals.totalNoteCoef)}</td>
+                            <td colSpan={3} className="border border-slate-300" />
+                          </tr>
+                        </>
+                      )}
+                      <tr className="bg-slate-200 font-bold">
+                        <td colSpan={7} className="border border-slate-300 px-2 py-1 text-right uppercase text-slate-900 text-[10px]">Moyenne générale</td>
+                        <td className={cn(
+                          'border border-slate-300 px-2 py-1 text-center text-sm',
+                          studentTotals.moyenneGenerale !== null && studentTotals.moyenneGenerale >= 10 ? 'text-emerald-700' : 'text-rose-600',
+                        )}>
+                          {studentTotals.moyenneGenerale !== null ? fmtNote(studentTotals.moyenneGenerale) : '—'}
+                        </td>
+                        <td colSpan={isJunior ? 3 : 5} className="border border-slate-300" />
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
 
               {/* Récapitulatif */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Effectif inscrit aux notes</p>
-                  <p className="text-2xl font-black mt-1 text-slate-800">{model.perStudent.length}</p>
+              {viewMode === 'matiere' ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Effectif inscrit aux notes</p>
+                    <p className="text-2xl font-black mt-1 text-slate-800">{model.perStudent.length}</p>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Ayant composé</p>
+                    <p className="text-2xl font-black mt-1 text-blue-700">{composedCount}</p>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Ont atteint le seuil (10/20)</p>
+                    <p className="text-2xl font-black mt-1 text-emerald-700">{reachedCount}</p>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">% de réussite</p>
+                    <p className="text-2xl font-black mt-1 text-violet-700">
+                      {composedCount > 0 ? ((reachedCount / composedCount) * 100).toFixed(1) : '—'}%
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Ayant composé</p>
-                  <p className="text-2xl font-black mt-1 text-blue-700">{composedCount}</p>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Rang général</p>
+                    <p className="text-2xl font-black mt-1 text-violet-700">
+                      {(() => {
+                        const st = periodStudents.find((s) => s.id === selectedStudentId);
+                        const rang = st ? generalRankMap.get(st.id) : undefined;
+                        return rang ? formatRang(rang, st?.gender) : '—';
+                      })()}
+                    </p>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Moyenne générale</p>
+                    <p className={cn('text-2xl font-black mt-1',
+                      studentTotals.moyenneGenerale !== null && studentTotals.moyenneGenerale >= 10 ? 'text-emerald-700' : 'text-rose-600')}>
+                      {studentTotals.moyenneGenerale !== null ? `${fmtNote(studentTotals.moyenneGenerale)}/20` : '—'}
+                    </p>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Moyenne de la classe</p>
+                    <p className="text-2xl font-black mt-1 text-blue-700">
+                      {classGeneralAverage !== null ? `${fmtNote(classGeneralAverage)}/20` : '—'}
+                    </p>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Plus forte / plus faible</p>
+                    <p className="text-sm font-black mt-2 text-slate-800">
+                      {generalValues.length > 0 ? `${fmtNote(Math.max(...generalValues))} / ${fmtNote(Math.min(...generalValues))}` : '—'}
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">Ont atteint le seuil (10/20)</p>
-                  <p className="text-2xl font-black mt-1 text-emerald-700">{reachedCount}</p>
-                </div>
-                <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-gray-500">% de réussite</p>
-                  <p className="text-2xl font-black mt-1 text-violet-700">
-                    {composedCount > 0 ? ((reachedCount / composedCount) * 100).toFixed(1) : '—'}%
-                  </p>
-                </div>
-              </div>
+              )}
 
               {/* Légende */}
               <div className="bg-gray-50 rounded-xl p-3 text-xs text-gray-600">
-                <p className="font-semibold mb-1">Légende — Registre des notes (Secondaire)</p>
+                <p className="font-semibold mb-1">
+                  Légende — Registre des notes (Secondaire) · {viewMode === 'matiere' ? 'vue par matière' : 'vue par élève'}
+                </p>
                 <ul className="space-y-0.5 ml-4">
                   <li><strong>Moyenne d'interrogation</strong> = (Interrogation écrite 1 + Interrogation écrite 2) / 2</li>
-                  <li><strong>Moyenne obtenue</strong> = (Moyenne d'interrogation + Devoir surveillé 1 + Devoir surveillé 2) / 3 — les notes ABS sont exclues du calcul.</li>
-                  {!isJunior && <li><strong>Note coefficient</strong> = Moyenne obtenue × Coefficient de la matière (modifiable ci-dessus).</li>}
-                  <li><strong>Rang</strong> = classement par moyenne obtenue (ex æquo gérés) · <strong>Appréciation</strong> : ≥16 Très Bien · 14-16 Bien · 12-14 Assez Bien · 10-12 Passable · 8-10 Insuffisant · &lt;8 Faible.</li>
-                  <li><strong className="text-red-600">ABS</strong> = élève absent à l'évaluation concernée.</li>
+                  <li><strong>Moyenne</strong> = (Moyenne d'interrogation + Devoir surveillé 1 + Devoir surveillé 2) / 3 — les notes ABS sont exclues du calcul.</li>
+                  {!isJunior && <li><strong>Note coefficient</strong> = Moyenne × Coefficient de la matière · <strong>Moyenne générale</strong> = Σ(notes coefficient) / Σ(coefficients).</li>}
+                  <li><strong>Rang</strong> = classement par moyenne {viewMode === 'matiere' ? 'obtenue dans la matière' : 'générale de l\'élève'} (ex æquo gérés) · <strong>Appréciation</strong> : ≥16 Très Bien · 14-16 Bien · 12-14 Assez Bien · 10-12 Passable · 8-10 Insuffisant · &lt;8 Faible.</li>
+                  <li><strong className="text-red-600">ABS</strong> = absent à l'évaluation concernée.</li>
                 </ul>
               </div>
             </>

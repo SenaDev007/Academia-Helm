@@ -39,6 +39,8 @@ import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
 import { filterClassesForLevel, matchesLevelLanguage } from '../level-isolation';
+// ⭐ SECONDAIRE — appréciations normalisées (mêmes mentions que la fiche de saisie et le registre)
+import { computeAppreciationSecondaire, appreciationSecondaireClassName } from '@/components/exams/GradingSheet';
 import { cn } from '@/lib/utils';
 import { RichTextEditor } from '@/components/ui/RichTextEditor';
 import { SignatureCanvas } from '@/components/ui/SignatureCanvas';
@@ -78,6 +80,18 @@ interface SubjectScore {
   secondCA?: number | null;  // /20
   exam?: number | null;      // /60
   total?: number | null;     // /100 (somme brute FCA + SCA + Exam)
+  // ⭐ SECONDAIRE — modèle bulletin : Moy Int / Dev1 / Dev2 / Moy / Coef / Moy Coef
+  //    (undefined = aucune donnée pour cette évaluation, null = absent, number = note)
+  int1?: number | null;
+  int2?: number | null;
+  ds1?: number | null;
+  ds2?: number | null;
+  moyInter?: number | null;
+  moyenne?: number | null;
+  coefficient?: number | null;
+  noteCoef?: number | null;
+  subjectRank?: number | null;
+  secHasSlot?: boolean;      // l'élève apparaît dans au moins une fiche de la matière
 }
 
 /**
@@ -257,10 +271,20 @@ interface StudentResult {
   generalAverage: number | null;
   appreciationGlobale: string | null;
   classRank: number;
+  secondaryRecap?: SecondaryRecap | null; // ⭐ SECONDAIRE — récap T3 (T1, T2, moyenne annuelle, passage)
+}
+
+/** Récap du 3e trimestre (bulletin secondaire) : moyennes T1/T2 + moyenne annuelle. */
+interface SecondaryRecap {
+  period1Average: number | null;
+  period2Average: number | null;
+  annualAverage: number | null;
+  annualRank: number | null;
+  decision: string | null;
 }
 
 interface BulletinData {
-  subjects: Array<{ id: string; name: string; code?: string }>;
+  subjects: Array<{ id: string; name: string; code?: string; coefficient?: number }>;
   results: StudentResult[];
   stats: {
     totalStudents: number;
@@ -270,6 +294,100 @@ interface BulletinData {
     failingCount: number;
     passingRate: number;
   };
+}
+
+// ─── Helpers — SECONDAIRE (bulletins) ────────────────────────────────────────
+
+/** 6e/5e = SANS coefficient ; 4e → Terminale = AVEC coefficient. */
+function isJuniorSecondaryClass2(className: string): boolean {
+  const m = (className || '').toUpperCase().trim().match(/(\d+)/);
+  return !!m && (m[1] === '6' || m[1] === '5');
+}
+
+/** Mappe un type d'évaluation vers INT1/INT2/DS1/DS2 (codes ou libellés). */
+function secondaryNoteKey2(code?: string | null, name?: string | null): 'INT1' | 'INT2' | 'DS1' | 'DS2' | null {
+  const c = (code || '').toUpperCase().trim();
+  if (c === 'INT1' || c === 'IE1') return 'INT1';
+  if (c === 'INT2' || c === 'IE2') return 'INT2';
+  if (c === 'DS1') return 'DS1';
+  if (c === 'DS2') return 'DS2';
+  const u = (name || '').toUpperCase().trim();
+  if (u.includes('INTERROGATION') && u.includes('1')) return 'INT1';
+  if (u.includes('INTERROGATION') && u.includes('2')) return 'INT2';
+  if (u.includes('DEVOIR SURVEILL') && u.includes('1')) return 'DS1';
+  if (u.includes('DEVOIR SURVEILL') && u.includes('2')) return 'DS2';
+  return null;
+}
+
+/** Moyennes d'une matière depuis les slots (ABS exclus, chaque partie disponible compte pour 1). */
+function secondaryMoyenneFromSlots(slots: { INT1?: number | null; INT2?: number | null; DS1?: number | null; DS2?: number | null }): {
+  moyInter: number | null;
+  moyenne: number | null;
+} {
+  const interVals = [slots.INT1, slots.INT2].filter((v): v is number => typeof v === 'number');
+  const dsVals = [slots.DS1, slots.DS2].filter((v): v is number => typeof v === 'number');
+  const moyInter = interVals.length ? interVals.reduce((a, b) => a + b, 0) / interVals.length : null;
+  const parts: number[] = [];
+  if (moyInter !== null) parts.push(moyInter);
+  dsVals.forEach((v) => parts.push(v));
+  const moyenne = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null;
+  return { moyInter, moyenne };
+}
+
+/**
+ * Charge les notes des évaluations typées (INT1/INT2/DS1/DS2) d'un trimestre
+ * et calcule la moyenne générale de chaque élève :
+ *   6e/5e  = moyenne simple des moyennes de matières
+ *   4e → T = Σ(note coefficient) / Σ(coefficients)
+ */
+async function computeSecondaryPeriodAverages(
+  periodEvals: any[],
+  isJunior: boolean,
+  coefficientBySubject: Map<string, number>,
+): Promise<Map<string, number | null>> {
+  const gradesByEval = new Map<string, any[]>();
+  await Promise.all(periodEvals.map(async (ev: any) => {
+    try {
+      const r = await apiClient.get(`/institutional-exams/grades/evaluation/${ev.id}`);
+      gradesByEval.set(ev.id, Array.isArray(r.data) ? r.data : []);
+    } catch {
+      gradesByEval.set(ev.id, []);
+    }
+  }));
+
+  // Slots par élève × matière
+  const slotsByStudent = new Map<string, Map<string, { INT1?: number | null; INT2?: number | null; DS1?: number | null; DS2?: number | null }>>();
+  periodEvals.forEach((ev: any) => {
+    const subjId = ev.subject?.id;
+    if (!subjId) return;
+    const secKey = secondaryNoteKey2(ev.evaluationType?.code, ev.evaluationType?.name);
+    if (!secKey) return;
+    (gradesByEval.get(ev.id) || []).forEach((g: any) => {
+      if (!slotsByStudent.has(g.studentId)) slotsByStudent.set(g.studentId, new Map());
+      const subjMap = slotsByStudent.get(g.studentId)!;
+      if (!subjMap.has(subjId)) subjMap.set(subjId, {});
+      subjMap.get(subjId)![secKey] = g.isAbsent ? null : (g.score !== null ? Number(g.score) : null);
+    });
+  });
+
+  // Moyenne générale par élève
+  const out = new Map<string, number | null>();
+  slotsByStudent.forEach((subjMap, studentId) => {
+    let sumCoef = 0, sumNoteCoef = 0, sumMoy = 0, countMoy = 0;
+    subjMap.forEach((slots, subjectId) => {
+      const { moyenne } = secondaryMoyenneFromSlots(slots);
+      if (moyenne === null) return;
+      if (isJunior) { sumMoy += moyenne; countMoy++; }
+      else {
+        const coef = coefficientBySubject.get(subjectId) ?? 1;
+        sumCoef += coef;
+        sumNoteCoef += moyenne * coef;
+      }
+    });
+    if (isJunior) out.set(studentId, countMoy ? sumMoy / countMoy : null);
+    else out.set(studentId, sumCoef ? sumNoteCoef / sumCoef : null);
+  });
+  return out;
 }
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
@@ -320,6 +438,9 @@ function BulletinsContent() {
   const [activeMoyenneTab, setActiveMoyenneTab] = useState<'trimestriel' | 'annuel'>('trimestriel');
 
   const isMaternelle = scopeLevel === 'MATERNELLE';
+  // ⭐ SECONDAIRE — modèle bulletin dédié (Moy Int / Dev1 / Dev2 / Moy / Coef / Moy Coef)
+  const isSecondaire = scopeLevel === 'SECONDAIRE';
+  const isSecondaryTrack = isSecondaire && scopeLang !== 'EN';
 
   // ⭐ Anti-screenshot protection for teachers
   const isTeacher = ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'PEDAGOGIC_COORDINATOR'].includes(user?.role || '');
@@ -410,8 +531,10 @@ function BulletinsContent() {
   const loadBulletins = useCallback(async () => {
     // ⭐ For EN: selectedEvalTypeId is not required (we load all 3 eval types)
     //    For FR: selectedEvalTypeId is required
+    //    ⭐ SECONDAIRE : pas de filtre par type — le bulletin consolide
+    //       Interrogations 1/2 + Devoirs surveillés 1/2 (INT1/INT2/DS1/DS2)
     if (!selectedClassId || !selectedPeriodId || !academicYear?.id) return;
-    if (scopeLang !== 'EN' && !selectedEvalTypeId) return;
+    if (scopeLang !== 'EN' && !isSecondaire && !selectedEvalTypeId) return;
     setLoadingBulletins(true);
     try {
       // ⭐ Step 1: Fetch VALIDATED evaluations (same as registre)
@@ -428,16 +551,22 @@ function BulletinsContent() {
       //            ⭐ V10h : les 2 familles de codes sont acceptées
       //            (FCA/FIRST_CA, SCA/SECOND_CA, EXAM/EXAMINATION) via
       //            enComponentForCode — même robustesse que le récapitulatif.
+      //    For FR secondary: load ALL typed evals (INT1/INT2/DS1/DS2) of the period
       //    For FR: filter by selected eval type ID (single eval per bulletin)
       const filtered = scopeLang === 'EN'
         ? allEvals.filter((ev: any) =>
             ev.period?.id === selectedPeriodId &&
             enComponentForCode(ev.evaluationType?.code || '') !== null
           )
-        : allEvals.filter((ev: any) =>
-            ev.period?.id === selectedPeriodId &&
-            ev.evaluationType?.id === selectedEvalTypeId
-          );
+        : isSecondaire
+          ? allEvals.filter((ev: any) =>
+              ev.period?.id === selectedPeriodId &&
+              secondaryNoteKey2(ev.evaluationType?.code, ev.evaluationType?.name) !== null
+            )
+          : allEvals.filter((ev: any) =>
+              ev.period?.id === selectedPeriodId &&
+              ev.evaluationType?.id === selectedEvalTypeId
+            );
 
       // Filter by language (FR/EN) — for EN, also include subjects with no language set
       const langFiltered = scopeLang
@@ -447,12 +576,24 @@ function BulletinsContent() {
           })
         : filtered;
 
+      // ⭐ SECONDAIRE — 6e/5e SANS coefficient ; 4e → Terminale AVEC coefficient
+      const selectedClassObj = classes.find((c: any) => c.id === selectedClassId);
+      const isJuniorSec = isJuniorSecondaryClass2(selectedClassObj?.name || '');
+      const selectedPeriodNumber = parseInt(
+        (periods.find((p: any) => p.id === selectedPeriodId)?.name || '').match(/(\d+)/)?.[1] || '0', 10
+      );
+
       // ⭐ Step 2: Build subject list (sorted)
-      const subjects: Array<{ id: string; name: string; code?: string }> = [];
+      const subjects: Array<{ id: string; name: string; code?: string; coefficient?: number }> = [];
       const seenSubjectIds = new Set<string>();
       for (const ev of langFiltered) {
         if (ev.subject?.id && !seenSubjectIds.has(ev.subject.id)) {
-          subjects.push({ id: ev.subject.id, name: ev.subject.name, code: ev.subject.code });
+          subjects.push({
+            id: ev.subject.id,
+            name: ev.subject.name,
+            code: ev.subject.code,
+            coefficient: typeof ev.subject.coefficient === 'number' ? ev.subject.coefficient : 1,
+          });
           seenSubjectIds.add(ev.subject.id);
         }
       }
@@ -495,6 +636,32 @@ function BulletinsContent() {
             });
           }
           const student = studentMap.get(grade.studentId)!;
+
+          // ⭐ SECONDAIRE — slots INT1/INT2/DS1/DS2 par matière (le bulletin
+          //    consolide les 4 évaluations : Moy Int = (INT1+INT2)/2,
+          //    Moyenne = (MoyInt + DS1 + DS2)/3, calculées au post-pass)
+          if (isSecondaire && scopeLang !== 'EN') {
+            const existing: SubjectScore = student.subjectScores[subjectId] || {
+              score: null, qualitativeCode: null, isAbsent: false, appreciation: '—',
+            };
+            const val = grade.isAbsent
+              ? null
+              : (grade.score !== null ? Number(grade.score) : null);
+            if (evalCode === 'INT1' || evalCode === 'IE1') existing.int1 = val;
+            else if (evalCode === 'INT2' || evalCode === 'IE2') existing.int2 = val;
+            else if (evalCode === 'DS1') existing.ds1 = val;
+            else if (evalCode === 'DS2') existing.ds2 = val;
+            else {
+              const secKey = secondaryNoteKey2(evalCode, ev.evaluationType?.name);
+              if (secKey === 'INT1') existing.int1 = val;
+              else if (secKey === 'INT2') existing.int2 = val;
+              else if (secKey === 'DS1') existing.ds1 = val;
+              else if (secKey === 'DS2') existing.ds2 = val;
+            }
+            existing.secHasSlot = true;
+            student.subjectScores[subjectId] = existing;
+            continue;
+          }
 
           // ⭐ EN: 3-component accumulation (FCA + SCA + EXAM) per subject
           //    Each grade is stored in its corresponding slot.
@@ -570,6 +737,46 @@ function BulletinsContent() {
 
       // Fill missing subjects + compute averages
       const results = Array.from(studentMap.values());
+
+      // ⭐ SECONDAIRE — post-pass : moyennes par matière + rang par matière
+      //    Moy Int = (INT1+INT2)/2 · Moyenne = (MoyInt+DS1+DS2)/3 ·
+      //    Note coefficient = Moyenne × Coef (4e → Terminale)
+      if (isSecondaire && scopeLang !== 'EN') {
+        for (const student of results) {
+          for (const subject of subjects) {
+            const s = student.subjectScores[subject.id] || { score: null, qualitativeCode: null, isAbsent: false, appreciation: '—' };
+            const { moyInter, moyenne } = secondaryMoyenneFromSlots({
+              INT1: s.int1, INT2: s.int2, DS1: s.ds1, DS2: s.ds2,
+            });
+            s.moyInter = moyInter;
+            s.moyenne = moyenne;
+            s.score = moyenne; // pour les chemins génériques (stats classe)
+            s.isAbsent = s.secHasSlot === true && moyenne === null;
+            const coef = subject.coefficient ?? 1;
+            s.coefficient = isJuniorSec ? null : coef;
+            s.noteCoef = !isJuniorSec && moyenne !== null ? moyenne * coef : null;
+            s.appreciation = computeAppreciationSecondaire(moyenne);
+            student.subjectScores[subject.id] = s;
+          }
+        }
+        // Rang dense par matière (ex æquo gérés)
+        for (const subject of subjects) {
+          const scored = results
+            .map((st) => ({ id: st.id, moyenne: st.subjectScores[subject.id]?.moyenne ?? null }))
+            .filter((x) => x.moyenne !== null)
+            .sort((a, b) => (b.moyenne as number) - (a.moyenne as number));
+          let lastRank = 0;
+          let lastVal: number | null = null;
+          scored.forEach((x, i) => {
+            const r = (i > 0 && x.moyenne === lastVal) ? lastRank : i + 1;
+            lastRank = r;
+            lastVal = x.moyenne;
+            const s = results.find((st) => st.id === x.id)!.subjectScores[subject.id];
+            if (s) s.subjectRank = r;
+          });
+        }
+      }
+
       for (const student of results) {
         for (const subject of subjects) {
           if (!student.subjectScores[subject.id]) {
@@ -603,6 +810,24 @@ function BulletinsContent() {
                 ? (scopeLang === 'EN' ? 'Satisfactory' : 'Satisfaisant')
                 : (scopeLang === 'EN' ? 'Less Satisfactory' : 'Peu Satisfaisant');
           }
+        } else if (isSecondaire && scopeLang !== 'EN') {
+          // ⭐ SECONDAIRE — 6e/5e : moyenne simple des moyennes de matières ;
+          //    4e → T : Σ(note coefficient) / Σ(coefficients)
+          let sumCoef = 0, sumNoteCoef = 0, sumMoy = 0, countMoy = 0;
+          for (const subject of subjects) {
+            const s = student.subjectScores[subject.id];
+            if (!s || s.moyenne === null || s.moyenne === undefined) continue;
+            if (isJuniorSec) { sumMoy += s.moyenne; countMoy++; }
+            else {
+              const coef = s.coefficient ?? subject.coefficient ?? 1;
+              sumCoef += coef;
+              sumNoteCoef += s.noteCoef ?? (s.moyenne * coef);
+            }
+          }
+          student.generalAverage = isJuniorSec
+            ? (countMoy ? sumMoy / countMoy : null)
+            : (sumCoef ? sumNoteCoef / sumCoef : null);
+          student.appreciationGlobale = computeAppreciationSecondaire(student.generalAverage);
         } else if (scopeLang === 'EN') {
           // ⭐ EN: generalAverage is the mean of subject totals (on /100)
           if (validCount > 0) {
@@ -636,6 +861,68 @@ function BulletinsContent() {
           ? validResults.filter(r => (r.generalAverage || 0) >= 50).length
           : validResults.filter(r => (r.generalAverage || 0) >= 10).length;
 
+      // ⭐ SECONDAIRE — récap du 3e trimestre : moyennes T1 + T2 + moyenne
+      //    annuelle (passage). Le tableau reste identique ; le récap s'ajoute
+      //    sous le tableau du T3 uniquement (modèle officiel).
+      if (isSecondaire && scopeLang !== 'EN' && selectedPeriodNumber === 3 && results.length > 0) {
+        const coefficientBySubject = new Map<string, number>(subjects.map((s) => [s.id, s.coefficient ?? 1]));
+        const otherPeriods = periods
+          .filter((p: any) => p.id !== selectedPeriodId)
+          .sort((a: any, b: any) => {
+            const numA = parseInt((a.name || '').match(/(\d+)/)?.[1] || '99', 10);
+            const numB = parseInt((b.name || '').match(/(\d+)/)?.[1] || '99', 10);
+            return numA - numB;
+          })
+          .slice(0, 2); // 1er et 2e trimestre seulement
+        const averagesByPeriod: Array<Map<string, number | null>> = [];
+        for (const p of otherPeriods) {
+          const periodEvals = allEvals.filter((ev: any) =>
+            ev.period?.id === p.id &&
+            secondaryNoteKey2(ev.evaluationType?.code, ev.evaluationType?.name) !== null &&
+            (!scopeLang || !ev.subject?.language || ev.subject.language === scopeLang || ev.subject.language === 'FR')
+          );
+          if (periodEvals.length === 0) {
+            averagesByPeriod.push(new Map());
+            continue;
+          }
+          // eslint-disable-next-line no-await-in-loop
+          const avgs = await computeSecondaryPeriodAverages(periodEvals, isJuniorSec, coefficientBySubject);
+          averagesByPeriod.push(avgs);
+        }
+        const [t1Map, t2Map] = averagesByPeriod;
+        for (const student of results) {
+          const t1 = t1Map?.get(student.id) ?? null;
+          const t2 = t2Map?.get(student.id) ?? null;
+          const annualParts = [t1, t2, student.generalAverage].filter((v): v is number => v !== null);
+          const annualAverage = annualParts.length
+            ? annualParts.reduce((a, b) => a + b, 0) / annualParts.length
+            : null;
+          student.secondaryRecap = {
+            period1Average: t1,
+            period2Average: t2,
+            annualAverage,
+            annualRank: null,
+            decision: annualAverage !== null
+              ? (annualAverage >= 10 ? 'Passe en classe supérieure' : 'Redouble')
+              : null,
+          };
+        }
+        // Rang annuel dense (ex æquo gérés)
+        const ranked = results
+          .map((st) => ({ id: st.id, annual: st.secondaryRecap?.annualAverage ?? null }))
+          .filter((x) => x.annual !== null)
+          .sort((a, b) => (b.annual as number) - (a.annual as number));
+        let lastAnnualRank = 0;
+        let lastAnnualVal: number | null = null;
+        ranked.forEach((x, i) => {
+          const r = (i > 0 && x.annual === lastAnnualVal) ? lastAnnualRank : i + 1;
+          lastAnnualRank = r;
+          lastAnnualVal = x.annual;
+          const st = results.find((s2) => s2.id === x.id);
+          if (st?.secondaryRecap) st.secondaryRecap.annualRank = r;
+        });
+      }
+
       setBulletinData({
         subjects,
         results,
@@ -657,7 +944,7 @@ function BulletinsContent() {
     } finally {
       setLoadingBulletins(false);
     }
-  }, [selectedClassId, selectedPeriodId, selectedEvalTypeId, academicYear?.id, scopeLang, isMaternelle]);
+  }, [selectedClassId, selectedPeriodId, selectedEvalTypeId, academicYear?.id, scopeLang, isMaternelle, isSecondaire, classes, periods]);
 
   useEffect(() => { loadBulletins(); }, [loadBulletins]);
 
@@ -703,6 +990,11 @@ function BulletinsContent() {
         studentBirthDate: student.birthDate ?? null,
         admissionNumber: student.matricule || null,
         isMaternelle,
+        isSecondary: isSecondaryTrack,
+        // ⭐ SECONDAIRE — modèle du bulletin (Moy Int / Dev1 / Dev2 / Moy / Coef / Moy Coef)
+        secJunior: isSecondaryTrack
+          ? isJuniorSecondaryClass2(selectedClassName || '')
+          : undefined,
         // ⭐ EN-specific fields
         scopeLang: scopeLang || null,
         sessionYear: academicYear?.label || null,
@@ -730,8 +1022,32 @@ function BulletinsContent() {
             highestInClass: isEn ? stats?.highest ?? null : undefined,
             lowestInClass: isEn ? stats?.lowest ?? null : undefined,
             subjectPosition: isEn ? stats?.position ?? null : undefined,
+            // ⭐ SECONDAIRE — slots + moyennes + coefficient + rang (modèle CEG)
+            //    (undefined = évaluation sans donnée pour l'élève → clé absente du JSON ;
+            //     null = absent → ABS ; number = note)
+            secInt1: isSecondaryTrack ? sc?.int1 : undefined,
+            secInt2: isSecondaryTrack ? sc?.int2 : undefined,
+            secDs1: isSecondaryTrack ? sc?.ds1 : undefined,
+            secDs2: isSecondaryTrack ? sc?.ds2 : undefined,
+            secMoyInter: isSecondaryTrack ? (sc?.moyInter ?? null) : undefined,
+            secMoyenne: isSecondaryTrack ? (sc?.moyenne ?? null) : undefined,
+            secCoef: isSecondaryTrack ? (sc?.coefficient ?? s.coefficient ?? null) : undefined,
+            secNoteCoef: isSecondaryTrack ? (sc?.noteCoef ?? null) : undefined,
+            secRank: isSecondaryTrack ? (sc?.subjectRank ?? null) : undefined,
+            secHasSlot: isSecondaryTrack ? (sc?.secHasSlot ?? false) : undefined,
           };
         }),
+        // ⭐ SECONDAIRE — totaux + récap T3 (moyennes T1/T2 + moyenne annuelle)
+        secTotalCoef: isSecondaryTrack
+          ? bulletinData!.subjects.reduce((sum, s) => {
+              const sc = student.subjectScores[s.id];
+              return sum + (sc?.moyenne != null ? (sc?.coefficient ?? s.coefficient ?? 1) : 0);
+            }, 0)
+          : undefined,
+        secTotalNotesCoef: isSecondaryTrack
+          ? bulletinData!.subjects.reduce((sum, s) => sum + (student.subjectScores[s.id]?.noteCoef ?? 0), 0)
+          : undefined,
+        secRecap: isSecondaryTrack ? (student.secondaryRecap ?? null) : undefined,
         generalAverage: student.generalAverage,
         classRank: student.classRank,
         classAverage: bulletinData!.stats.classAverage,
@@ -939,8 +1255,8 @@ function BulletinsContent() {
               {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
-          {/* ⭐ EN: le bulletin est consolidé (FCA+SCA+EXAM) — pas besoin de filtre type d'éval */}
-          {scopeLang !== 'EN' && (
+          {/* ⭐ EN / SECONDAIRE : le bulletin est consolidé — pas besoin de filtre type d'éval */}
+          {scopeLang !== 'EN' && !isSecondaire && (
             <div className="flex-1">
               <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Évaluation</label>
               <select value={selectedEvalTypeId} onChange={(e) => setSelectedEvalTypeId(e.target.value)}
@@ -948,6 +1264,13 @@ function BulletinsContent() {
                 <option value="">— Sélectionner —</option>
                 {evaluationTypes.map(t => <option key={t.id} value={t.id}>[{t.code}] {t.name}</option>)}
               </select>
+            </div>
+          )}
+          {isSecondaire && scopeLang !== 'EN' && (
+            <div className="flex-1 self-end">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg py-2.5 px-3 text-xs font-bold text-blue-700">
+                Bulletin trimestriel (Interrogations 1 &amp; 2 + Devoirs surveillés 1 &amp; 2)
+              </div>
             </div>
           )}
           {scopeLang === 'EN' && (
@@ -1064,6 +1387,7 @@ function BulletinsContent() {
                       scopeLang={scopeLang}
                       nextTermStartDate={nextTermStartDateForCard}
                       termEndingDate={termEndingDateForCard}
+                      isSecondaire={isSecondaire}
                     />
                   </div>
                 )}
@@ -1112,7 +1436,7 @@ function BulletinTwoPage({
   student, bulletinData, isMaternelle, school, academicYear,
   selectedPeriodName, selectedClassName, selectedEvalTypeCode, selectedEvalTypeName,
   onGeneratePdf, generatingPdf, canDownload = true, directorSignature, teacherSignature,
-  selectedPeriodId, scopeLang, nextTermStartDate, termEndingDate,
+  selectedPeriodId, scopeLang, nextTermStartDate, termEndingDate, isSecondaire,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
@@ -1132,8 +1456,10 @@ function BulletinTwoPage({
   scopeLang?: string;
   nextTermStartDate?: string | null;
   termEndingDate?: string | null;   // ⭐ V10h — TERM ENDING du Report Book
+  isSecondaire?: boolean;           // ⭐ SECONDAIRE — modèle Moy Int / Dev1 / Dev2 / Moy / Coef / Moy Coef
 }) {
   const isEn = scopeLang === 'EN';
+  const isSecondaryBulletin = !!isSecondaire && !isEn;
   const [page, setPage] = useState<1 | 2>(1);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
   // ⭐ Signature state — initialized from workflow signatures (backend) if available
@@ -1189,6 +1515,7 @@ function BulletinTwoPage({
         </div>
         <div className="text-[10px] text-slate-600 mt-0.5">
           {isEn ? <>Pupil: <strong>{student.studentName}</strong> · Admission N°: {student.matricule || '—'} · Report Card (1st CA + 2nd CA + Exam)</>
+            : isSecondaryBulletin ? <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · Bulletin trimestriel (Interrogations 1 &amp; 2 + Devoirs surveillés 1 &amp; 2)</>
             : <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · {selectedEvalTypeCode} {selectedEvalTypeName}</>}
         </div>
       </div>
@@ -1210,7 +1537,15 @@ function BulletinTwoPage({
       <div className="relative overflow-hidden">
         <div key={page} className="animate-in fade-in slide-in-from-right duration-300">
           {page === 1 ? (
-            isMaternelle ? (
+            isSecondaryBulletin ? (
+              <BulletinSecondairePage1
+                student={student}
+                bulletinData={bulletinData}
+                className={selectedClassName}
+                periodName={selectedPeriodName}
+                academicYearLabel={academicYear?.label}
+              />
+            ) : isMaternelle ? (
               <BulletinMaternellePage1 student={student} bulletinData={bulletinData} />
             ) : scopeLang === 'EN' ? (
               <BulletinAnglophonePage1 student={student} bulletinData={bulletinData} selectedClassName={selectedClassName} termEndingDate={termEndingDate} sessionYear={academicYear?.label} />
@@ -1503,6 +1838,250 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
       </div>
       <p className="text-[9px] text-slate-400 mt-1 italic">
         Le visa du directeur est auto-rempli depuis l'appréciation de l'enseignant mais reste éditable. Modifications enregistrées automatiquement à la sortie de la ligne.
+      </p>
+    </div>
+  );
+}
+
+// ─── Page 1: Bulletin SECONDAIRE — modèle CEG (Moy Int / Dev1 / Dev2 / Moy / Coef / Moy Coef) ──
+//
+// Structure exacte du modèle fourni (bulletin du secondaire) :
+//   En-tête info : Année scolaire | Nom et prénoms | Classe | Effectif | Rang
+//   Tableau : Discipline | Moy Int | Dev1 | Dev2 | Moy | [Coef | Moy Coef] | Rang | Appréciation | Signature
+//   6e/5e : SANS colonnes Coef / Moy Coef — 4e → Terminale : AVEC
+//   Totaux (4e→T) : TOTAL DES COEFFICIENTS / TOTAL DES MOYENNES (= Σ moy×coef)
+//   Synthèse : Moyenne trimestrielle + Rang · Moyenne de la classe / plus faible / plus forte
+//   Récap (3e trimestre UNIQUEMENT) : Moyenne 1er trimestre | Moyenne 2e trimestre |
+//     Moyenne annuelle (passage) | Rang annuel | Décision
+function BulletinSecondairePage1({
+  student,
+  bulletinData,
+  className,
+  periodName,
+  academicYearLabel,
+}: {
+  student: StudentResult;
+  bulletinData: BulletinData;
+  className: string;
+  periodName: string;
+  academicYearLabel?: string;
+}) {
+  const isJunior = isJuniorSecondaryClass2(className || '');
+
+  /** Format d'une note : 15 → « 15.00 », null → « — ». */
+  const fmtS = (n: number | null | undefined): string =>
+    (typeof n === 'number' && !isNaN(n)) ? n.toFixed(2) : '—';
+
+  /** Cellule de note : undefined → « — », null → ABS, number → note colorée. */
+  const noteCell = (n: number | null | undefined, isAbsent: boolean | undefined) => {
+    if (isAbsent) return <span className="text-red-500 text-[8px] font-bold">ABS</span>;
+    if (typeof n !== 'number') return <span className="text-slate-400">—</span>;
+    return <span className={n >= 10 ? 'text-slate-900' : 'text-red-600'}>{n.toFixed(2)}</span>;
+  };
+
+  // Totaux (4e → Terminale) — uniquement les matières où la moyenne existe
+  let totalCoef = 0;
+  let totalNotesCoef = 0;
+  for (const subject of bulletinData.subjects) {
+    const s = student.subjectScores[subject.id];
+    if (!s || s.moyenne === null || s.moyenne === undefined) continue;
+    const coef = s.coefficient ?? subject.coefficient ?? 1;
+    totalCoef += coef;
+    totalNotesCoef += s.noteCoef ?? (s.moyenne * coef);
+  }
+
+  const validAverages = bulletinData.results
+    .map((r) => r.generalAverage)
+    .filter((v): v is number => v !== null);
+  const classAvg = validAverages.length
+    ? validAverages.reduce((a, b) => a + b, 0) / validAverages.length
+    : null;
+  const strongestAvg = validAverages.length ? Math.max(...validAverages) : null;
+  const weakestAvg = validAverages.length ? Math.min(...validAverages) : null;
+
+  const recap = student.secondaryRecap ?? null;
+  const colCount = isJunior ? 8 : 10;
+
+  return (
+    <div className="overflow-x-auto">
+      {/* En-tête d'informations (modèle : Année | Nom | Classe | Effectif | Rang) */}
+      <table className="w-full border-collapse text-[10px] mb-2" style={{ border: '1px solid #0A2A5E' }}>
+        <tbody>
+          <tr>
+            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
+              Année scolaire : <span className="font-bold text-slate-900">{academicYearLabel || '—'}</span>
+            </td>
+            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
+              Trimestre : <span className="font-bold text-slate-900">{periodName || '—'}</span>
+            </td>
+            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
+              Classe : <span className="font-bold text-slate-900">{className || '—'}</span>
+            </td>
+          </tr>
+          <tr>
+            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
+              Nom et prénoms : <span className="font-bold text-slate-900 uppercase">{student.studentName}</span>
+            </td>
+            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
+              Effectif : <span className="font-bold text-slate-900">{bulletinData.results.length}</span>
+              {' '}· Matricule : <span className="font-bold text-slate-900">{student.matricule || '—'}</span>
+            </td>
+            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
+              Rang : <span className="font-bold text-slate-900">
+                {student.classRank ? formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F') : '—'}
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* Tableau des notes (modèle : Discipline | Moy Int | Dev1 | Dev2 | Moy | Coef | Moy Coef | Rang | Appréciation | Signature) */}
+      <table className="w-full border-collapse text-[10px]" style={{ border: '2px solid #0A2A5E' }}>
+        <thead>
+          <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
+            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-left" style={{ minWidth: '110px', borderColor: '#0D3B85' }}>Discipline</th>
+            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-12" style={{ borderColor: '#0D3B85' }}>Moy Int</th>
+            <th className="border px-1 py-1 font-bold uppercase text-center w-10" style={{ borderColor: '#0D3B85' }}>Dev 1</th>
+            <th className="border px-1 py-1 font-bold uppercase text-center w-10" style={{ borderColor: '#0D3B85' }}>Dev 2</th>
+            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-12 bg-emerald-700" style={{ borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}>Moy</th>
+            {!isJunior && (
+              <>
+                <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-10 bg-amber-600" style={{ borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}>Coef</th>
+                <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-12" style={{ borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}>Moy Coef</th>
+              </>
+            )}
+            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-10" style={{ borderColor: '#0D3B85' }}>Rang</th>
+            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '70px', borderColor: '#0D3B85' }}>Appréciation</th>
+            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-14" style={{ borderColor: '#0D3B85' }}>Signature</th>
+          </tr>
+          <tr style={{ backgroundColor: '#0D3B85' }}>
+            <th colSpan={2} className="border px-1 py-0.5 font-bold text-center text-[8px] uppercase" style={{ borderColor: '#114FC4' }}>Devoirs surveillés</th>
+          </tr>
+        </thead>
+        <tbody>
+          {bulletinData.subjects.map((subject, idx) => {
+            const s = student.subjectScores[subject.id];
+            return (
+              <tr key={subject.id} className={idx % 2 === 1 ? 'bg-slate-50/60' : undefined}>
+                <td className="border border-slate-300 px-1 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold text-blue-700 bg-blue-50/50">
+                  {s ? noteCell(s.moyInter, s.isAbsent) : '—'}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold">
+                  {s ? noteCell(s.ds1, s.ds1 === null && s.secHasSlot) : '—'}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold">
+                  {s ? noteCell(s.ds2, s.ds2 === null && s.secHasSlot) : '—'}
+                </td>
+                <td className={cn('border border-slate-300 px-1 py-0.5 text-center font-bold',
+                  s?.moyenne != null && s.moyenne >= 10 ? 'text-emerald-700 bg-emerald-50' : 'text-red-600 bg-emerald-50')}>
+                  {s ? noteCell(s.moyenne, s.isAbsent) : '—'}
+                </td>
+                {!isJunior && (
+                  <>
+                    <td className="border border-slate-300 px-1 py-0.5 text-center font-bold text-amber-700 bg-amber-50">
+                      {s?.coefficient ?? subject.coefficient ?? 1}
+                    </td>
+                    <td className={cn('border border-slate-300 px-1 py-0.5 text-center font-bold',
+                      s?.noteCoef != null && s.moyenne != null && s.moyenne >= 10 ? 'text-emerald-700' : 'text-red-600')}>
+                      {fmtS(s?.noteCoef)}
+                    </td>
+                  </>
+                )}
+                <td className="border border-slate-300 px-1 py-0.5 text-center font-bold text-slate-700">
+                  {s?.subjectRank ? formatRank(s.subjectRank, student.gender === 'FEMALE' || student.gender === 'F') : '—'}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600 text-[9px]">
+                  <span className={appreciationSecondaireClassName(s?.appreciation || '—')}>{s?.appreciation || '—'}</span>
+                </td>
+                {/* Signature du professeur (manuscrite) */}
+                <td className="border border-slate-300 h-7" />
+              </tr>
+            );
+          })}
+
+          {/* Totaux (4e → Terminale uniquement) */}
+          {!isJunior && (
+            <>
+              <tr className="bg-slate-200 font-bold">
+                <td colSpan={5} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-700 text-[9px]">Total des coefficients</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-amber-700">{totalCoef}</td>
+                <td colSpan={4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">—</td>
+              </tr>
+              <tr className="bg-slate-200 font-bold">
+                <td colSpan={5} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-700 text-[9px]">Total des moyennes (Σ moy × coef)</td>
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-emerald-700">{totalNotesCoef.toFixed(2)}</td>
+                <td colSpan={4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">—</td>
+              </tr>
+            </>
+          )}
+          {/* Moyenne trimestrielle */}
+          <tr className="bg-blue-100 font-bold">
+            <td colSpan={isJunior ? 4 : 6} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-900 text-[9px]">Moyenne trimestrielle</td>
+            <td colSpan={isJunior ? 1 : 2} className="border border-slate-300 px-1 py-0.5 text-center text-blue-800 text-xs">
+              {fmtS(student.generalAverage)}
+            </td>
+            <td colSpan={3} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">
+              {student.classRank ? `Rang : ${formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')} / ${bulletinData.results.length}` : '—'}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* Synthèse statistique de la classe */}
+      <div className="mt-2 grid grid-cols-3 gap-2 text-[10px]">
+        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
+          <span className="text-slate-500">Moyenne de la classe : </span>
+          <strong>{fmtS(classAvg)}</strong>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
+          <span className="text-slate-500">Moyenne la plus faible : </span>
+          <strong>{fmtS(weakestAvg)}</strong>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
+          <span className="text-slate-500">Moyenne la plus forte : </span>
+          <strong>{fmtS(strongestAvg)}</strong>
+        </div>
+      </div>
+
+      {/* ⭐ Récap du 3e trimestre : moyennes T1 + T2 + moyenne annuelle (passage) */}
+      {recap && (
+        <div className="mt-2 border-2 border-blue-800 rounded-lg overflow-hidden">
+          <div className="bg-blue-800 text-white text-[10px] font-bold uppercase text-center py-1">
+            Récapitulatif de l'année (3e trimestre)
+          </div>
+          <table className="w-full border-collapse text-[10px]">
+            <tbody>
+              <tr>
+                <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">Moyenne 1er trimestre</td>
+                <td className="border border-slate-300 px-2 py-1 text-center font-bold">{fmtS(recap.period1Average)}</td>
+                <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">Moyenne 2e trimestre</td>
+                <td className="border border-slate-300 px-2 py-1 text-center font-bold">{fmtS(recap.period2Average)}</td>
+              </tr>
+              <tr>
+                <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">Moyenne annuelle</td>
+                <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-800">{fmtS(recap.annualAverage)}</td>
+                <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">Rang annuel</td>
+                <td className="border border-slate-300 px-2 py-1 text-center font-bold">
+                  {recap.annualRank ? formatRank(recap.annualRank, student.gender === 'FEMALE' || student.gender === 'F') : '—'}
+                </td>
+              </tr>
+              <tr>
+                <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">Décision du conseil</td>
+                <td colSpan={3} className={cn('border border-slate-300 px-2 py-1 text-center font-bold',
+                  recap.decision === 'Passe en classe supérieure' ? 'text-emerald-700' : 'text-red-600')}>
+                  {recap.decision || '—'}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="text-[9px] text-slate-400 mt-1 italic">
+        Moy Int = (Interrogation 1 + Interrogation 2) / 2 · Moy = (Moy Int + Devoir surveillé 1 + Devoir surveillé 2) / 3
+        {!isJunior && <> · Moy Coef = Moy × Coefficient · Moyenne trimestrielle = Σ(Moy Coef) / Σ(Coef)</>}
+        {' '}· Les notes ABS sont exclues des calculs. {colCount} colonnes ({isJunior ? '6e/5e — sans coefficient' : '4e → Terminale — avec coefficients'}).
       </p>
     </div>
   );

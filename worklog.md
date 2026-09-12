@@ -10336,3 +10336,29 @@ Stage Summary:
 - Scénario corrigé : offline + clic module → payload RSC précaché (soft nav) ou HTML précaché (hard nav) → module s'affiche avec données du cache API identitaire ; si module inconnu → page sobre qui se recharge SEULE au retour réseau.
 - Re-login offline : logout → offline → mêmes identifiants sur le même portail → session restaurée → app utilisable offline (données = cache API SW ; IDB purgé au logout par design tenant-strict). Mauvais mot de passe → refusé (hash local).
 - Known limitations : Ctrl+F5 offline bypass le SW (page native navigateur — pas corrigeable) ; les modules JAMAIS visités ni pré-cachés (pré-cache < 90 %) tombent sur la page sobre auto-récupérable ; à la reconnexion, la session restaurée peut être révoquée côté serveur → 401 → refresh → re-login en ligne normal.
+
+---
+Task ID: 59
+Agent: Super Z (session principale)
+Task: Module examens secondaire — correction registre 4e→Terminale (colonne Moyenne) + vue par élève + bulletins secondaire (modèle CEG)
+
+Work Log:
+- Reprise session : pull des 3 commits distants (4ce36da04 fiche de saisie + registre par matière, 40dd1a05f offline v3.6.0, 082854799 accents tri) — le travail de la session précédente était poussé mais le sandbox local était en retard.
+- Analyse du modèle de bulletin (2 images VLM : IMG-20260912-WA0015.jpg + bulletin secondaire.jpg — même document CEG 3e A) : Discipline | Moy Int | Dev1 | Dev2 | Moy | Coef | Moy Coef | Rang | Appréciation | Signature + totaux (Σ coef 17, Σ moy×coef 166,61 → moyenne semestrielle 9,80) + stats classe + décision annuelle.
+- REGISTRE (registre/page.tsx) — correction colonne 4e→Terminale : la colonne MOYENNE est désormais ENTRE « Devoir surveillé » et « Coefficient » (moyenne = (MoyInter+DS1+DS2)/3, note coefficient = moyenne × coef) — dans les DEUX vues.
+- REGISTRE — nouvelle VUE PAR ÉLÈVE (toggle « Vue par matière » / « Vue par élève ») : la colonne Nom devient la liste des matières, une ligne par matière (IE1, IE2, MoyInt, DS1, DS2, Moyenne, [Coef, NoteCoef], rang de l'élève dans la matière, appréciation, signature) + tfoot Total des coefficients / Total des notes coefficient / Moyenne générale (Σ(notesCoef)/Σ(coef) en 4e→T, moyenne simple en 6e/5e) + récap KPI (rang général dense, moyenne générale, moyenne de classe, plus forte/plus faible).
+- REGISTRE — refonte du chargement : un seul cache de notes par trimestre (toutes les évaluations typées INT1/INT2/DS1/DS2 de toutes les matières, partagé par les 2 vues) — plus de re-fetch au changement de matière ; computeSubjectModel() mutualise notes + moyennes + rangs denses ex æquo.
+- BULLETINS (bulletins/page.tsx) — piste FR secondaire : chargement consolidé INT1/INT2/DS1/DS2 du trimestre (plus de filtre par type d'évaluation), post-pass moyennes par matière + rang dense par matière, moyenne générale = Σ(noteCoef)/Σ(coef) (4e→T) ou moyenne simple (6e/5e), Subjects étendus (int1/int2/ds1/ds2/moyInter/moyenne/coefficient/noteCoef/subjectRank/secHasSlot).
+- BULLETINS — composant BulletinSecondairePage1 (modèle CEG exact) : en-tête info (Année scolaire | Trimestre | Classe / Nom | Effectif·Matricule | Rang), tableau Discipline | Moy Int | Dev1 | Dev2 | Moy | [Coef | Moy Coef] | Rang | Appréciation | Signature (6e/5e sans Coef/MoyCoef), totaux + moyenne trimestrielle + rang, stats de classe (moyenne/plus faible/plus forte), récap T3 (Moyenne T1, T2, moyenne annuelle, rang annuel, décision passage/redoublement) — affiché UNIQUEMENT au 3e trimestre.
+- BULLETINS — récap T3 : chargement des moyennes générales T1/T2 par élève (computeSecondaryPeriodAverages), moyenne annuelle = (T1+T2+T3)/3 sur les trimestres disponibles, rang annuel dense ex æquo, décision « Passe en classe supérieure » ≥ 10 sinon « Redouble ».
+- BULLETINS — payload PDF étendu (secInt1…secRecap ; undefined = pas d'évaluation, null = ABS, number = note — distinction préservée via JSON) + isSecondary/secJunior/secTotalCoef/secTotalNotesCoef.
+- BACKEND (bulletin-pdf.service.ts) — nouvelle méthode buildHtmlSecondaire (A4 portrait) : en-tête officiel République du Bénin + ministère secondaire, tableau modèle CEG avec ABS/—, totaux avec fallback serveur, récap T3, décision + appréciation Directeur, signatures Titulaire/Directeur + QR ; branch isSecondary && !EN dans generateBulletin, format A4 pour le secondaire.
+- Vérifications : syntaxe transpileModule OK ×3 ; tsc --noResolve filtré : 0 nouvelle erreur (2 TS2322 préexistantes section anglophone + Buffer sans @types/node — vérifiées identiques sur HEAD via git stash).
+
+Stage Summary:
+- ✅ Registre 4e→Terminale : colonne Moyenne entre Devoir surveillé et Coefficient (les deux vues)
+- ✅ Registre : vue par élève (lignes = matières) + vue par matière — même modèle de tableau, totaux et moyenne générale
+- ✅ Bulletins secondaire : 6e/5e sans coefficients, 4e→Terminale avec (Coef + Moy Coef + totaux), T1/T2 même modèle, T3 + récap (T1, T2, moyenne annuelle, passage)
+- ✅ PDF A4 modèle CEG backend avec récap T3 + décision
+- 3 fichiers modifiés (+1466/−206) — commit à pousser (Railway + Vercel auto-déploy)
+- Suivi : tester en production (niveau SECONDAIRE FR : registre 2 vues, bulletin 6e/5e vs 4e→T, T3 récap, PDF)

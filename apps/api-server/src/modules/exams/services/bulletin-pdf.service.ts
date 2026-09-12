@@ -82,7 +82,32 @@ export interface BulletinPdfData {
     subjectPosition?: number | null;
     grade?: string | null;
     remark?: string | null;
+    // ⭐ SECONDAIRE — modèle CEG : Moy Int / Dev1 / Dev2 / Moy / Coef / Moy Coef
+    //    (undefined = aucune donnée, null = absent, number = note)
+    secInt1?: number | null;
+    secInt2?: number | null;
+    secDs1?: number | null;
+    secDs2?: number | null;
+    secMoyInter?: number | null;
+    secMoyenne?: number | null;
+    secCoef?: number | null;
+    secNoteCoef?: number | null;
+    secRank?: number | null;
+    secHasSlot?: boolean;
   }>;
+  // ⭐ SECONDAIRE — 6e/5e sans coefficient (true) vs 4e → Terminale (false)
+  secJunior?: boolean;
+  // ⭐ SECONDAIRE — totaux du tableau (Σ coefficients / Σ notes coefficient)
+  secTotalCoef?: number | null;
+  secTotalNotesCoef?: number | null;
+  // ⭐ SECONDAIRE — récap du 3e trimestre (moyennes T1/T2 + moyenne annuelle + passage)
+  secRecap?: {
+    period1Average: number | null;
+    period2Average: number | null;
+    annualAverage: number | null;
+    annualRank: number | null;
+    decision: string | null;
+  } | null;
   // Stats
   generalAverage: number | null;
   classRank: number;
@@ -144,13 +169,17 @@ export class BulletinPdfService {
       );
 
       // 2. Build HTML — ⭐ branch anglophone si scopeLang === 'EN'
+      //    ⭐ SECONDAIRE FR : modèle CEG (Moy Int / Dev1 / Dev2 / Moy / Coef / Moy Coef)
       const html = data.scopeLang === 'EN'
         ? this.buildHtmlAnglophone(data, qrDataUrl, bulletinId)
-        : this.buildHtml(data, qrDataUrl, bulletinId);
+        : (data.isSecondary
+          ? this.buildHtmlSecondaire(data, qrDataUrl, bulletinId)
+          : this.buildHtml(data, qrDataUrl, bulletinId));
 
       // 3. Generate PDF via Puppeteer
       //    ⭐ V10h — le bulletin anglophone (Report Book, tableau 10 colonnes)
       //    passe en A4 portrait ; le bulletin FR reste en A5 portrait.
+      //    ⭐ SECONDAIRE FR : A4 portrait (tableau 10 colonnes + récap T3).
       const { page } = await this.puppeteerPool.acquirePage();
       try {
         // ⭐ Use 'domcontentloaded' instead of 'networkidle0' — faster, doesn't wait
@@ -160,7 +189,7 @@ export class BulletinPdfService {
         // Small delay to let any inline images (base64 signatures, SVG flag) render
         await new Promise(resolve => setTimeout(resolve, 500));
         const pdfBuffer = await page.pdf({
-          format: data.scopeLang === 'EN' ? 'A4' : 'A5',
+          format: data.scopeLang === 'EN' || data.isSecondary ? 'A4' : 'A5',
           landscape: false,
           printBackground: true,
           margin: { top: '8mm', bottom: '8mm', left: '8mm', right: '8mm' },
@@ -674,6 +703,275 @@ ${page1Content}
 
 ${page2Content}
 
+</div>
+
+</body>
+</html>`;
+  }
+
+  /**
+   * ⭐ SECONDAIRE — Bulletin modèle CEG (piste FR) :
+   *
+   *   Discipline | Moy Int | Dev1 | Dev2 | Moy | [Coef | Moy Coef] | Rang |
+   *   Appréciation | Signature
+   *
+   *   6e / 5e  : SANS colonnes Coef / Moy Coef
+   *   4e → Term : AVEC — TOTAL DES COEFFICIENTS / TOTAL DES MOYENNES
+   *   + Moyenne trimestrielle, stats de classe, récap T3 (T1 + T2 + moyenne
+   *     annuelle pour le passage) et décision. A4 portrait.
+   */
+  private buildHtmlSecondaire(data: BulletinPdfData, qrCode: string, bulletinId: string): string {
+    const ministry = "Ministère des Enseignements Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes";
+
+    // Benin flag as SVG data URL (même drapeau que buildHtml)
+    const beninFlagSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`;
+    const beninFlag = `data:image/svg+xml;base64,${Buffer.from(beninFlagSvg).toString('base64')}`;
+
+    const isJunior = data.secJunior === true;
+    const feminine = data.studentGender === 'FEMALE' || data.studentGender === 'F';
+
+    const fmtSec = (n: number | null | undefined): string =>
+      (typeof n === 'number' && !isNaN(n)) ? n.toFixed(2) : '—';
+
+    // ── Lignes du tableau (une par discipline) ──────────────────────────────
+    const subjectRows = data.subjects.map((s) => {
+      // Note brute : undefined = pas d'évaluation → « — » ; null = absent → ABS
+      const cell = (v: number | null | undefined) =>
+        typeof v === 'number'
+          ? `<span style="color:${v >= 10 ? '#0f172a' : '#dc2626'};font-weight:bold;">${v.toFixed(2)}</span>`
+          : (v === null && s.secHasSlot
+            ? '<span style="color:#dc2626;font-size:8px;font-weight:bold;">ABS</span>'
+            : '<span style="color:#94a3b8;">—</span>');
+      // Moyenne : verte si ≥ 10, rouge sinon
+      const moyCell = (v: number | null | undefined) =>
+        typeof v === 'number'
+          ? `<span style="color:${v >= 10 ? '#059669' : '#dc2626'};font-weight:bold;">${v.toFixed(2)}</span>`
+          : '<span style="color:#94a3b8;">—</span>';
+      const rang = s.secRank ? formatRank(s.secRank, feminine) : '—';
+      return `<tr>
+          <td style="border:1px solid #cbd5e1;padding:3px 2px;font-size:10px;font-weight:600;">${s.name}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;color:#1d4ed8;">${cell(s.secMoyInter)}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secDs1)}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secDs2)}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:11px;background:#ecfdf5;">${moyCell(s.secMoyenne)}</td>
+          ${!isJunior ? `
+          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;color:#b45309;background:#fffbeb;font-weight:bold;">${typeof s.secCoef === 'number' ? s.secCoef : 1}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:11px;background:#ecfdf5;">${moyCell(s.secNoteCoef)}</td>` : ''}
+          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;font-weight:bold;">${rang}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:9px;color:#475569;">${s.appreciation || '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 2px;height:20px;"></td>
+        </tr>`;
+    }).join('');
+
+    // ── Totaux (4e → Terminale uniquement) — avec fallback serveur ──────────
+    let totalCoef = typeof data.secTotalCoef === 'number' ? data.secTotalCoef : null;
+    let totalNotesCoef = typeof data.secTotalNotesCoef === 'number' ? data.secTotalNotesCoef : null;
+    if (!isJunior && (totalCoef === null || totalNotesCoef === null)) {
+      let cSum = 0, nSum = 0;
+      for (const s of data.subjects) {
+        if (typeof s.secMoyenne !== 'number') continue;
+        const coef = typeof s.secCoef === 'number' ? s.secCoef : 1;
+        cSum += coef;
+        nSum += typeof s.secNoteCoef === 'number' ? s.secNoteCoef : s.secMoyenne * coef;
+      }
+      if (totalCoef === null) totalCoef = cSum;
+      if (totalNotesCoef === null) totalNotesCoef = nSum;
+    }
+
+    // ── En-tête du tableau ───────────────────────────────────────────────────
+    const tableHeader = `
+      <tr style="background:#0A2A5E;color:white;">
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;text-align:left;">Discipline</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;">Moy Int</th>
+        <th colspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;">Devoirs surveillés</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;background:#0D3B85;">Moy</th>
+        ${!isJunior ? `
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;background:#0D3B85;">Coef</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;background:#0D3B85;">Moy Coef</th>` : ''}
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;">Rang</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;">Appréciation</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;">Signature</th>
+      </tr>
+      <tr style="background:#0D3B85;color:white;">
+        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Dev 1</th>
+        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Dev 2</th>
+      </tr>`;
+
+    // ── Lignes de totaux + moyenne trimestrielle ────────────────────────────
+    const totalRows = `
+      ${!isJunior ? `
+      <tr style="background:#e2e8f0;font-weight:bold;">
+        <td colspan="5" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Total des coefficients</td>
+        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:10px;color:#b45309;">${totalCoef ?? '—'}</td>
+        <td colspan="4" style="border:1px solid #cbd5e1;"></td>
+      </tr>
+      <tr style="background:#e2e8f0;font-weight:bold;">
+        <td colspan="5" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Total des moyennes (Σ moy × coef)</td>
+        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:10px;color:#059669;">${totalNotesCoef !== null ? totalNotesCoef.toFixed(2) : '—'}</td>
+        <td colspan="4" style="border:1px solid #cbd5e1;"></td>
+      </tr>` : ''}
+      <tr style="background:#dbeafe;font-weight:bold;">
+        <td colspan="${isJunior ? 4 : 6}" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Moyenne trimestrielle</td>
+        <td colspan="${isJunior ? 1 : 2}" style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:11px;color:#0A2A5E;">${fmtSec(data.generalAverage)}</td>
+        <td colspan="3" style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;color:#0A2A5E;">Rang : ${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
+      </tr>`;
+
+    // ── Récap du 3e trimestre (moyennes T1 + T2 + moyenne annuelle + passage) ──
+    const recapBlock = data.secRecap ? `
+      <div style="margin-top:6px;border:2px solid #0A2A5E;border-radius:3px;overflow:hidden;">
+        <div style="background:#0A2A5E;color:white;font-size:9px;font-weight:bold;text-transform:uppercase;text-align:center;padding:3px;">Récapitulatif de l'année (3e trimestre)</div>
+        <table style="width:100%;border-collapse:collapse;font-size:10px;">
+          <tr>
+            <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne 1er trimestre :</td>
+            <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.secRecap.period1Average)}</td>
+            <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne 2e trimestre :</td>
+            <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.secRecap.period2Average)}</td>
+          </tr>
+          <tr>
+            <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne annuelle :</td>
+            <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#0A2A5E;font-size:11px;">${fmtSec(data.secRecap.annualAverage)}</td>
+            <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Rang annuel :</td>
+            <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${data.secRecap.annualRank ? formatRank(data.secRecap.annualRank, feminine) : '—'}</td>
+          </tr>
+          <tr>
+            <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Décision du conseil :</td>
+            <td colspan="3" style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:${(data.secRecap.annualAverage ?? 0) >= 10 ? '#059669' : '#dc2626'};">${data.secRecap.decision || '—'}</td>
+          </tr>
+        </table>
+      </div>` : '';
+
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Bulletin - ${data.studentName}</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; position:relative; }
+.watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-15deg); opacity:0.08; z-index:0; pointer-events:none; }
+.content { position:relative; z-index:1; }
+.header { margin-bottom:5px; padding-bottom:3px; border-bottom:2px solid #0A2A5E; }
+.header-table { width:100%; border-collapse:collapse; }
+.header-table td { vertical-align:middle; padding:2px 4px; }
+.header-left { text-align:center; width:12%; }
+.header-center { text-align:center; width:68%; }
+.header-right { text-align:center; width:20%; }
+.republique { font-size:11px; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; }
+.divider { margin:2px auto; width:50%; }
+.divider-line { height:1px; background:#0A2A5E; }
+.ministere { font-size:8px; font-weight:bold; text-transform:uppercase; letter-spacing:0.3px; line-height:1.3; }
+.school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
+.school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
+.bulletin-title { text-align:center; border:2px solid #0A2A5E; padding:4px 8px; margin-bottom:5px; font-size:11px; font-weight:bold; text-transform:uppercase; color:#0A2A5E; background:#f8fafc; }
+table.notes { width:100%; border-collapse:collapse; }
+table.notes th { color:white; border:1px solid; padding:4px 3px; font-size:8px; text-transform:uppercase; }
+table.notes td { border:1px solid #cbd5e1; padding:3px 2px; }
+table.notes tbody tr:nth-child(even) { background:#f8fafc; }
+.info-table { width:100%; border-collapse:collapse; margin-bottom:5px; border:1px solid #0A2A5E; }
+.info-table td { border:1px solid #cbd5e1; padding:3px 5px; font-size:9px; background:#f8fafc; }
+.footer { margin-top:4px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; padding-top:3px; }
+</style>
+</head>
+<body>
+
+${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="width:400px;height:400px;object-fit:contain;" alt="" />` : ''}
+
+<div class="content">
+
+  <!-- EN-TÊTE OFFICIEL -->
+  <div class="header">
+    <table class="header-table">
+      <tr>
+        <td class="header-left"><img src="${beninFlag}" alt="Drapeau du Bénin" style="width:30px;height:20px;" /></td>
+        <td class="header-center">
+          <div class="republique">République du Bénin</div>
+          <div class="divider"><div class="divider-line"></div></div>
+          <div class="ministere">${ministry}</div>
+          <div class="divider"><div class="divider-line"></div></div>
+          <div class="school-name">${data.schoolName}</div>
+          <div class="school-info">${data.schoolSlogan ? `« ${data.schoolSlogan} » · ` : ''}${data.schoolAddress || ''} · Tél: ${data.schoolPhone || ''} · ${data.schoolEmail || ''}</div>
+        </td>
+        <td class="header-right">${data.schoolLogo ? `<img src="${data.schoolLogo}" style="max-width:35px;max-height:35px;object-fit:contain;" />` : ''}</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- TITRE BULLETIN -->
+  <div class="bulletin-title">Bulletin de notes du ${data.periodName} — ${data.academicYearName}</div>
+
+  <!-- INFOS ÉLÈVE (modèle : Année | Nom | Classe / Effectif | Matricule | Rang) -->
+  <table class="info-table">
+    <tr>
+      <td>Année scolaire : <strong>${data.academicYearName}</strong></td>
+      <td>Nom et prénoms : <strong style="text-transform:uppercase;">${data.studentName}</strong></td>
+      <td>Classe : <strong>${data.className}</strong></td>
+    </tr>
+    <tr>
+      <td>Effectif : <strong>${data.totalStudents}</strong></td>
+      <td>Matricule : <strong>${data.studentMatricule || '—'}</strong></td>
+      <td>Rang : <strong>${formatRank(data.classRank, feminine)}</strong></td>
+    </tr>
+  </table>
+
+  <!-- TABLEAU DES NOTES -->
+  <table class="notes">
+    <thead>${tableHeader}</thead>
+    <tbody>${subjectRows}${totalRows}</tbody>
+  </table>
+
+  <!-- SYNTHÈSE STATISTIQUE -->
+  <div style="margin-top:5px;font-size:9px;">
+    <table style="width:100%;border-collapse:collapse;"><tr>
+      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne de la classe : <strong>${fmtSec(data.classAverage)}</strong></td>
+      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne la plus faible : <strong>${fmtSec(data.lowestAverage)}</strong></td>
+      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne la plus forte : <strong>${fmtSec(data.highestAverage)}</strong></td>
+    </tr></table>
+  </div>
+
+  ${recapBlock}
+
+  <!-- DÉCISIONS + SIGNATURES -->
+  <table style="width:100%;border-collapse:collapse;margin-top:6px;">
+    <tr>
+      <td style="width:60%;vertical-align:top;padding-right:8px;">
+        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:4px;font-size:9px;">
+          <div style="font-weight:bold;text-transform:uppercase;color:#0A2A5E;margin-bottom:2px;">Décision du conseil de classe</div>
+          <div style="font-weight:bold;color:${data.secRecap ? ((data.secRecap.annualAverage ?? 0) >= 10 ? '#059669' : '#dc2626') : '#475569'};">${data.secRecap?.decision || '—'}</div>
+        </div>
+        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:4px;font-size:9px;margin-top:4px;">
+          <div style="font-weight:bold;text-transform:uppercase;color:#0A2A5E;margin-bottom:2px;">Appréciation du Directeur</div>
+          <div style="font-weight:bold;">${data.appreciationGlobale || '—'}</div>
+        </div>
+      </td>
+      <td style="width:40%;vertical-align:bottom;">
+        <table style="width:100%;border-collapse:collapse;">
+          <tr>
+            <td style="width:50%;text-align:center;vertical-align:bottom;padding:4px 2px;">
+              <div style="height:30px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
+              <div style="border-top:1px solid #000;margin-top:3px;padding-top:2px;font-size:8px;font-weight:bold;color:#0A2A5E;">Le Titulaire</div>
+              ${data.teacherName ? `<div style="font-size:7px;color:#1a1a1a;font-weight:600;">${data.teacherName}</div>` : ''}
+            </td>
+            <td style="width:50%;text-align:center;vertical-align:bottom;padding:4px 2px;">
+              <div style="height:30px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
+              <div style="border-top:1px solid #000;margin-top:3px;padding-top:2px;font-size:8px;font-weight:bold;color:#0A2A5E;">Le Directeur</div>
+              ${data.directorName ? `<div style="font-size:7px;color:#1a1a1a;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:7px;color:#64748b;">Visa</div>'}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- QR + MENTION -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
+    <div style="font-size:8px;font-style:italic;color:#475569;">Le parent est prié de vérifier les notes et de contester dans les 48 heures.</div>
+    <div style="text-align:center;">
+      <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
+      <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
+    </div>
+  </div>
+
+  <div class="footer">Document généré par Academia Helm — ${new Date().toLocaleString('fr-FR')} · ID : ${bulletinId}</div>
 </div>
 
 </body>

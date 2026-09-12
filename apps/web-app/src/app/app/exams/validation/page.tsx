@@ -203,6 +203,7 @@ export default function ValidationPage() {
                 groups={grouped}
                 onGroupClick={(g) => setSelectedGroup(g)}
                 isMaternelle={isMaternelle}
+                scopeKey="validation"
                 renderStatusBadge={(g) => (
                   <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap bg-amber-100 text-amber-700">
                     À valider

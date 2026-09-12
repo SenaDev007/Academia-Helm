@@ -389,6 +389,7 @@ export default function TeacherExamsPage() {
       ) : (
         <HierarchicalEvaluationList
           groups={grouped}
+          scopeKey="teacher-exams"
           onGroupClick={(group) => {
             // ⭐ L'enseignant peut ouvrir la fiche pour VISUALISATION même si
             //    l'évaluation a déjà été validée (OPEN_FOR_GRADING), soumise

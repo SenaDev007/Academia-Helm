@@ -37,6 +37,13 @@ interface HierarchicalListProps {
   /** ⭐ V10 — piste linguistique DÉDUITE du niveau (Nursery/Primary → EN) :
    *  libellés de la liste dans la langue du niveau sélectionné. */
   language?: 'FR' | 'EN';
+  /**
+   * ⭐ RETOUR PAR ÉTAPE — Clé de mémoire des trimestres dépliés.
+   * Si fournie, l'état déplié survit au démontage (retour depuis une fiche
+   * de saisie) : l'utilisateur retrouve le trimestre ouvert tel qu'il
+   * l'avait laissé, au lieu de retomber sur la première page de l'onglet.
+   */
+  scopeKey?: string;
 }
 
 interface TrimestreGroup {
@@ -45,6 +52,17 @@ interface TrimestreGroup {
   evaluations: GroupedEvaluation[];
 }
 
+/**
+ * ⭐ RETOUR PAR ÉTAPE — Mémoire des trimestres dépliés par page (module-level).
+ * Quand l'utilisateur quitte la liste (fiche de saisie, validation…) puis
+ * revient via « Retour à la liste », le composant est démonté puis remonté :
+ * sans cette mémoire, tous les trimestres se refermaient et l'utilisateur
+ * retombait sur la « première page » de l'onglet au lieu de l'étape
+ * intermédiaire (le trimestre qu'il avait ouvert, avec ses classes).
+ * La Map vit autant que la session SPA (navigation client-side).
+ */
+const openTrimestresByScope = new Map<string, Set<string>>();
+
 export function HierarchicalEvaluationList({
   groups,
   onGroupClick,
@@ -52,8 +70,12 @@ export function HierarchicalEvaluationList({
   renderStatusBadge,
   isMaternelle,
   language,
+  scopeKey,
 }: HierarchicalListProps) {
-  const [openTrimestres, setOpenTrimestres] = useState<Set<string>>(new Set());
+  // ⭐ Retour par étape : restaurer les trimestres dépliés mémorisés pour ce scope
+  const [openTrimestres, setOpenTrimestres] = useState<Set<string>>(
+    () => (scopeKey && openTrimestresByScope.get(scopeKey)) || new Set<string>(),
+  );
   const isEN = language === 'EN';
   const locale = isEN ? enUS : fr;
 
@@ -91,12 +113,14 @@ export function HierarchicalEvaluationList({
 
   const toggleTrimestre = (periodId: string) => {
     setOpenTrimestres((prev) => {
-      const next = new Set(prev);
+      const next: Set<string> = new Set(prev);
       if (next.has(periodId)) {
         next.delete(periodId);
       } else {
         next.add(periodId);
       }
+      // ⭐ Retour par étape : persister l'état déplié pour ce scope
+      if (scopeKey) openTrimestresByScope.set(scopeKey, next);
       return next;
     });
   };

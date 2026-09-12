@@ -10285,3 +10285,29 @@ Stage Summary:
 - ✅ Fix bascule d'année (Task 40) préservé : injection query des GET inchangée
 - Latent connu (non traité, volontaire) : SchoolLevelEnforcementInterceptor injecte schoolLevelId en body/query avec le même pattern (routes @RequireTenant uniquement) — même classe de bug possible si un DTO ne déclare pas schoolLevelId
 - À faire : commit + déploiement Railway (api-server uniquement ; aucun changement frontend)
+
+---
+Task ID: 42
+Agent: main (Super Z)
+Task: Module Examen — suppression/modification multiples (onglet Évaluations) + navigation par étapes et affichage des classes/élèves (onglet Saisie des notes)
+
+Work Log:
+- Diagnostic BDD prod (read-only, scripts hors dépôt) : getGradingSheet n'acceptait que les statuts ACTIVE/ENROLLED/CONFIRMED/PENDING alors que le flux d'admission pose status=ADMITTED (et RE_ENROLLED à la réinscription) → élèves invisibles dans la fiche de saisie (Maternelle 1 : 3 des 4 inscrits manquaient ; CM1 : 2 manquaient). ClassStudent quasi vide (4 classes seedées seulement) → source enrollment dominante.
+- Constat n°2 : la vue saisie des notes n'affichait QUE les classes avec évaluations programmées (CP seul visible au Primaire) — les autres classes du niveau n'apparaissaient pas.
+- Constat n°3 : « Retour à la liste » démontait la HierarchicalEvaluationList → état d'accordéon perdu → retour direct à la 1ère page (saut de la page intermédiaire).
+- BACKEND grades.service.ts : statuts étendus à ACTIVE/ADMITTED/ENROLLED/PRE_REGISTERED/RE_ENROLLED/VALIDATED/CONFIRMED/PENDING (alignés sur students-lifecycle « élèves de la classe ») + filtre student.isActive=true sur les DEUX sources (ClassStudent + StudentEnrollment).
+- BACKEND evaluations.service.ts update() : résolution code→UUID de evaluationTypeId (le frontend manipule les codes EM1/FIRST_CA issus de school_academic_settings ; un PATCH avec un code cassait la FK P2003).
+- FRONT evaluations/page.tsx : regroupement remonté au niveau page (buildEvaluationGroups avec clé stable) + case à cocher sur chaque carte + barre d'actions groupées (tout sélectionner/désélectionner, modifier en masse, supprimer, annuler).
+- SUPPRESSION MULTIPLE : danger() de confirmation → Promise.allSettled des deleteEvaluation (VALIDATED/LOCKED ignorées, notes → soft-cancel) → toast détaillé + rechargement.
+- MODIFICATION MULTIPLE : modal « Modification multiple » à champs conditionnels (checkbox « appliquer » par champ : type, période, dates, barème, coefficient FR, titre) → PATCH ciblé par évaluation (VALIDATED/LOCKED/CANCELLED ignorées) → toast avec champs appliqués + ignorés.
+- FRONT grades/page.tsx : REFONTE en 3 étapes — Étape 1 Trimestres (périodes officielles + périodes référencées par des évaluations, badge actif/clôturé, compteurs) → Étape 2 Classes du trimestre (TOUTES les classes du niveau via /api/all-classes + isolation linguistique, effectif via /api/students/enrollments, sessions cliquables par classe, classes sans évaluation grisées avec lien vers l'onglet Évaluations) → Étape 3 GradingSheet (Retour à la liste → étape 2 même trimestre ; Retour aux trimestres → étape 1).
+- GradingSheet.tsx : champ key?: string ajouté à GroupedEvaluation (identifiant de sélection).
+- Qualité : tsc web-app projet complet comparé baseline (649 → 652 : +3 erreurs IconToastOptions description — même pattern que les 12 préexistantes du fichier, ignorées au runtime ; 2 erreurs préexistantes corrigées au passage : conflit d'import GroupedEvaluation + subjectByEvalId). Syntaxe backend validée via transpileModule TS. Sélection multiple désactivée visuellement si carte verrouillée côté actions (skip + compteurs).
+- Validation SQL read-only des nouveaux filtres sur la prod : CM1 12→14 élèves (+2), Maternelle 1 4→5 (+1 : AKPOVI Ariel ADMITTED actif ; les 2 élèves de test inactifs restent exclus), autres classes inchangées.
+
+Stage Summary:
+- ✅ Onglet Évaluations : suppression multiple ET modification multiple (mêmes infos appliquées partout, par champs cochés)
+- ✅ Saisie des notes : navigation par étapes (Trimestre → Classe → Fiche) sans saut de page intermédiaire
+- ✅ Saisie des notes : toutes les classes du niveau affichées avec effectifs ; élèves ADMITTED désormais visibles dans les fiches
+- 5 fichiers modifiés, +1100/−216 — commit à pousser (Railway api-server + Vercel web-app)
+- Suivi : tester en production après déploiement (niveau PRIMAIRE FR : CP avec 26 élèves ; niveau MATERNELLE : Maternelle 1/2)

@@ -104,6 +104,24 @@ const BATCH_SIZE = 5; // 5 routes en parallèle
 const FETCH_TIMEOUT_MS = 10000; // 10s par route
 
 /**
+ * Garde anti-répétition : re-pré-cache au plus 1×/24 h (et après chaque
+ * logout/invalidation). Un flag booléen à vie cassait la navigation offline
+ * après chaque déploiement (nouveaux chunks jamais pré-cachés).
+ */
+const PRECACHE_TS_KEY = 'academia_helm_modules_precached_at';
+const PRECACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 h
+
+/** Retourne true si un pré-cache a été fait il y a moins de 24 h. */
+function isPrecacheFresh(): boolean {
+  try {
+    const ts = Number(localStorage.getItem(PRECACHE_TS_KEY) || 0);
+    return ts > 0 && Date.now() - ts < PRECACHE_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Pré-cache tous les modules en demandant au Service Worker de fetcher
  * chaque route + parser le HTML pour extraire et cacher les chunks JS/CSS.
  *
@@ -124,10 +142,9 @@ export async function precacheAllModules(
     return;
   }
 
-  // ⭐ Vérifier si déjà pré-caché pour ce device
-  const precacheKey = 'academia_helm_modules_precached';
-  if (localStorage.getItem(precacheKey) === 'true') {
-    console.log('[ModulePrecache] Already precached — skipping');
+  // ⭐ Vérifier si déjà pré-caché récemment pour ce device (1×/24 h)
+  if (isPrecacheFresh()) {
+    console.log('[ModulePrecache] Fresh (<24 h) — skipping');
     return;
   }
 
@@ -185,13 +202,24 @@ export async function precacheAllModules(
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`[ModulePrecache] Complete — ${completed}/${total} routes dispatched to SW in ${duration}s`);
 
-  // ⭐ Marquer comme pré-caché (le SW continue en arrière-plan)
-  localStorage.setItem(precacheKey, 'true');
+  // ⭐ Marquer comme pré-caché (le SW continue en arrière-plan) — timestamp
+  //    pour re-pré-cacher demain (nouveaux déploiements = nouveaux chunks)
+  try {
+    localStorage.setItem(PRECACHE_TS_KEY, String(Date.now()));
+    localStorage.removeItem('academia_helm_modules_precached'); // legacy
+  } catch {
+    /* localStorage indisponible — le pré-cache se refera au prochain montage */
+  }
 }
 
 /**
  * Invalide le flag de pré-cache (à appeler au logout ou changement de tenant).
  */
 export function invalidateModulePrecache(): void {
-  localStorage.removeItem('academia_helm_modules_precached');
+  try {
+    localStorage.removeItem(PRECACHE_TS_KEY);
+    localStorage.removeItem('academia_helm_modules_precached'); // legacy
+  } catch {
+    /* noop */
+  }
 }

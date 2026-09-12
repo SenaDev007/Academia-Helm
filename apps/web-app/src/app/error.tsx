@@ -25,6 +25,20 @@ import {
   hasExhaustedAutoReloads,
 } from '@/lib/chunk-recovery';
 
+/** Erreur de navigation réseau (payload RSC inaccessible / réseau coupé) ? */
+function isNetworkNavigationError(message?: string): boolean {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return true;
+  const m = (message || '').toLowerCase();
+  return (
+    m.includes('failed to fetch') ||
+    m.includes('network') ||
+    m.includes('load failed') ||
+    m.includes('fetch server response') ||
+    m.includes('503') ||
+    m.includes('rsc')
+  );
+}
+
 export default function Error({
   error,
   reset,
@@ -33,6 +47,8 @@ export default function Error({
   reset: () => void;
 }) {
   const isChunkError = isChunkLoadFailure(error?.message || '');
+  // ⭐ v3.2.0 : échec de navigation hors ligne (payload RSC absent du cache)
+  const isOfflineNav = !isChunkError && isNetworkNavigationError(error?.message);
   // Lecture pure au premier rendu (pas de setState dans un effet — règle
   // react-hooks/set-state-in-effect)
   const [autoReloadBlocked] = useState(hasExhaustedAutoReloads);
@@ -81,6 +97,34 @@ export default function Error({
                 className="bg-gray-200 text-gray-900 px-6 py-3 rounded-md font-semibold hover:bg-gray-300 transition-colors"
               >
                 Réessayer sans recharger
+              </button>
+            </div>
+          </>
+        ) : isOfflineNav ? (
+          <>
+            <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-amber-100 flex items-center justify-center">
+              <WifiOff className="w-8 h-8 text-amber-600" />
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900 mb-3">
+              Page non disponible hors ligne
+            </h1>
+            <p className="text-sm text-slate-600 mb-6">
+              Cette page n&apos;a pas encore été chargée sur cet appareil et le réseau
+              est coupé. Vos données enregistrées restent accessibles — la page
+              sera disponible hors ligne après l&apos;avoir visitée une fois en ligne.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link
+                href="/app"
+                className="inline-flex items-center justify-center gap-2 bg-slate-900 text-white px-6 py-3 rounded-md font-semibold hover:bg-slate-800 transition-colors"
+              >
+                Tableau de bord (hors ligne)
+              </Link>
+              <button
+                onClick={reset}
+                className="bg-gray-200 text-gray-900 px-6 py-3 rounded-md font-semibold hover:bg-gray-300 transition-colors"
+              >
+                Réessayer (une fois reconnecté)
               </button>
             </div>
           </>

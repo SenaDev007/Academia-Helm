@@ -22,6 +22,20 @@ import {
   hasExhaustedAutoReloads,
 } from '@/lib/chunk-recovery';
 
+/** Erreur de navigation réseau (payload RSC inaccessible / réseau coupé) ? */
+function isNetworkNavigationError(message?: string): boolean {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return true;
+  const m = (message || '').toLowerCase();
+  return (
+    m.includes('failed to fetch') ||
+    m.includes('network') ||
+    m.includes('load failed') ||
+    m.includes('fetch server response') ||
+    m.includes('503') ||
+    m.includes('rsc')
+  );
+}
+
 export default function AppModuleError({
   error,
   reset,
@@ -30,6 +44,8 @@ export default function AppModuleError({
   reset: () => void;
 }) {
   const isChunkError = isChunkLoadFailure(error?.message || '');
+  // ⭐ v3.2.0 : échec de navigation hors ligne (payload RSC absent du cache)
+  const isOfflineNav = !isChunkError && isNetworkNavigationError(error?.message);
   // Lecture pure au premier rendu (pas de setState dans un effet)
   const [autoReloadBlocked] = useState(hasExhaustedAutoReloads);
 
@@ -71,6 +87,38 @@ export default function AppModuleError({
               className="inline-flex items-center justify-center gap-2 bg-slate-100 text-slate-700 px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-slate-200 transition"
             >
               Réessayer
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isOfflineNav) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] px-4">
+        <div className="max-w-md w-full text-center">
+          <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-amber-100 flex items-center justify-center">
+            <WifiOff className="w-6 h-6 text-amber-600" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-900 mb-2">Page non disponible hors ligne</h2>
+          <p className="text-sm text-slate-600 mb-4">
+            Cette page n&apos;a pas encore été chargée sur cet appareil. Vos données
+            enregistrées restent accessibles depuis le tableau de bord — la page
+            sera disponible hors ligne après l&apos;avoir visitée une fois en ligne.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <Link
+              href="/app"
+              className="inline-flex items-center justify-center gap-2 bg-[#1A2BA6] text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:opacity-90 transition"
+            >
+              <ArrowLeft className="h-4 w-4" /> Tableau de bord (hors ligne)
+            </Link>
+            <button
+              onClick={reset}
+              className="inline-flex items-center justify-center gap-2 bg-slate-100 text-slate-700 px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-slate-200 transition"
+            >
+              <RefreshCw className="h-4 w-4" /> Réessayer (une fois reconnecté)
             </button>
           </div>
         </div>

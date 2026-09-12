@@ -14,6 +14,8 @@ import './globals.css';
 // ⭐ OFFLINE-FIRST RÉACTIVÉ (sept. 2026) — SW universel + cleanup des anciens SW
 import { ServiceWorkerCleanup } from '@/components/pwa/ServiceWorkerCleanup';
 import { UniversalSWRegister } from '@/components/pwa/UniversalSWRegister';
+// ⭐ v3.2.0 — navigation complète hors ligne (fini le spinner au changement de module)
+import { OfflineNavigation } from '@/components/pwa/OfflineNavigation';
 // OrionWidget — désactivé temporairement, sera réimplémenté selon les specs
 // import OrionWidget from '@/components/OrionWidget';
 import { BRAND } from '@/lib/brand';
@@ -309,6 +311,12 @@ export default function RootLayout({
         {/* ⭐ Offline-first : enregistrer le Service Worker sur TOUTES les pages
             (site public, login, portails, app authentifiée) */}
         <UniversalSWRegister />
+
+        {/* ⭐ v3.2.0 — hors ligne, les clics internes font une navigation
+            complète servie par le SW (cache modules/shell) au lieu de la
+            navigation SPA qui échoue (payload RSC) → fini le spinner infini
+            au changement de module/onglet. En ligne : aucune interception. */}
+        <OfflineNavigation />
 
         {/* CrispChat déplacé vers app/layout-client.tsx — uniquement pour les pages authentifiées */}
         {/* ORION Widget — désactivé temporairement, sera réimplémenté selon les specs */}

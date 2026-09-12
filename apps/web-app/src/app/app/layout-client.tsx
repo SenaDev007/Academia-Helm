@@ -207,15 +207,6 @@ export default function AppLayoutClient({
         }).catch((err) => {
           console.warn('[Bootstrap] Failed to import offline-sync.service:', err);
         });
-        import('@/lib/offline/module-precache.service').then(({ precacheAllModules }) => {
-          precacheAllModules((current, total) => {
-            if (current % 10 === 0 || current === total) {
-              console.log(`[ModulePrecache] Progress: ${current}/${total}`);
-            }
-          });
-        }).catch((err) => {
-          console.warn('[ModulePrecache] Failed to start:', err);
-        });
       }, 5000);
     })();
 
@@ -223,6 +214,39 @@ export default function AppLayoutClient({
     return () => {
       cancelled = true;
       if (bootstrapTimer) clearTimeout(bootstrapTimer);
+    };
+  }, [tenant?.id]);
+
+  // ⭐ PRÉ-CACHE DES MODULES (navigation hors ligne) — v3.2.0 :
+  //    à CHAQUE montage de l'app (plus seulement au 1er bootstrap — les
+  //    utilisateurs existants n'avaient JAMAIS les modules pré-cachés, le
+  //    pré-cache ne se déclenchait qu'au tout premier login du device).
+  //    Auto-gardé par le service (1×/24 h — couvre les nouveaux déploiements).
+  //    Retenté automatiquement au retour du réseau si pas encore fait.
+  useEffect(() => {
+    if (!tenant?.id) return;
+    let cancelled = false;
+    const run = () => {
+      if (cancelled) return;
+      import('@/lib/offline/module-precache.service')
+        .then(({ precacheAllModules }) => {
+          precacheAllModules((current, total) => {
+            if (current % 10 === 0 || current === total) {
+              console.log(`[ModulePrecache] Progress: ${current}/${total}`);
+            }
+          });
+        })
+        .catch((err) => {
+          console.warn('[ModulePrecache] Failed to start:', err);
+        });
+    };
+    // Délai : ne pas concurrencer le bootstrap des données ni le rendu initial
+    const timer = setTimeout(run, 15000);
+    window.addEventListener('online', run);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      window.removeEventListener('online', run);
     };
   }, [tenant?.id]);
 

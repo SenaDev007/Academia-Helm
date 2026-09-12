@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * SERVICE WORKER UNIFIÉ — Academia Helm (v3.1 « offline-first sans page hors-ligne »)
+ * SERVICE WORKER UNIFIÉ — Academia Helm (v3.2 « offline-first sans page hors-ligne »)
  * ============================================================================
  *
  * ⭐ SW UNIQUE à la racine du domaine (scope: '/'). NE PAS enregistrer
@@ -40,7 +40,7 @@
  * ============================================================================
  */
 
-const SW_VERSION = 'v3.1.0';
+const SW_VERSION = 'v3.2.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 const PAGE_CACHE = `ah-pages-${SW_VERSION}`;
 const AUTH_CACHE = 'ah-auth-token'; // ⭐ miroir JWT pour le background sync — JAMAIS purgé
@@ -56,9 +56,37 @@ const AUTH_CACHE = 'ah-auth-token'; // ⭐ miroir JWT pour le background sync �
 //    uniquement via CLEAR_CACHE (dépannage explicite).
 const IMMUTABLE_CACHE = 'ah-static-immutable';
 
+// ⭐ v3.2.0 — CACHE DES PAYLOADS RSC (flight du routeur Next 16).
+//    PROBLÈME (sept. 2026) : la navigation client (changement de module/
+//    onglet) fetch le payload RSC de la route cible (headers `rsc: 1`,
+//    `next-router-prefetch`, param `?_rsc=`). Ces requêtes n'étaient PAS
+//    interceptées → réseau direct → hors ligne : échec → SPINNER INFINI
+//    (« la page tourne ») jusqu'au retour du réseau.
+//    Désormais : en ligne → réponse mise en cache ; hors ligne/réseau KO →
+//    cache servi ; pas de cache → 503 IMMÉDIAT (le routeur déclenche
+//    l'error boundary → UI hors ligne, JAMAIS de spinner infini).
+//    Clés normalisées SANS le param _rsc (le hash varie par build → les
+//    prefetch d'un build restent réutilisables). LRU : max 150 entrées.
+const RSC_CACHE = 'ah-rsc';
+const RSC_CACHE_MAX = 150;
+const RSC_TIMEOUT = 4000;
+
 // ⭐ Shell pré-caché au premier install : l'app PWA démarre hors ligne sans
 //    page de substitution. '/login' couvre la start_url, '/app' l'application.
-const PRECACHE_URLS = ['/app', '/login', '/manifest.json'];
+// ⭐ v3.2.0 : + pages publiques principales → le site public fonctionne hors
+//    ligne dès le premier visite (sinon seules les pages DÉJÀ visitées en
+//    ligne l'étaient — « rien ne fonctionne en mode hors ligne »).
+const PRECACHE_URLS = [
+  '/app',
+  '/login',
+  '/manifest.json',
+  '/', // site institutionnel (racine du sous-domaine école)
+  '/portal',
+  '/tarification',
+  '/modules',
+  '/contact',
+  '/actualites',
+];
 
 // Assets statiques mutables (images, uploads — versionnés, purge à chaque version)
 const STATIC_ASSET_PATTERNS = [
@@ -160,6 +188,7 @@ self.addEventListener('activate', (event) => {
         names
           .filter((name) => name.startsWith('ah-') && !name.startsWith(AUTH_CACHE) &&
             name !== IMMUTABLE_CACHE && // ⭐ chunks immuables JAMAIS purgés
+            name !== RSC_CACHE && // ⭐ payloads RSC — survivent aux mises à jour (LRU)
             !name.endsWith(SW_VERSION))
           .map((name) => caches.delete(name)),
       );
@@ -187,6 +216,16 @@ self.addEventListener('fetch', (event) => {
 
   // Routes interdites → réseau direct
   if (NEVER_INTERCEPT.some((pattern) => pattern.test(pathname))) return;
+
+  // ⭐ v3.2.0 — Requêtes RSC/flight du routeur Next 16 (navigation client) :
+  //    `rsc: 1` (navigation), `next-router-prefetch: 1` (préchargement liens),
+  //    `next-router-segment-prefetch` (segments), `?_rsc=` (clé de cache).
+  //    AVANT : aucune interception → hors ligne, échec réseau direct →
+  //    SPINNER INFINI au changement de module. MAINTENANT : cache + 503 rapide.
+  if (isRscRequest(request, url)) {
+    event.respondWith(handleRsc(request));
+    return;
+  }
 
   // ⭐ Chunks immuables /_next/static/ → cache PERSISTANT + retry réseau
   if (IMMUTABLE_ASSET_PATTERNS.some((pattern) => pattern.test(request.url))) {
@@ -242,6 +281,82 @@ self.addEventListener('fetch', (event) => {
 
   // Tout le reste : pas d'interception (réseau direct)
 });
+
+// ─── Requêtes RSC/flight : cache + fallback offline + échec rapide ───────
+function isRscRequest(request, url) {
+  if (request.method !== 'GET') return false;
+  const h = request.headers;
+  if (h.has('rsc')) return true; // navigation du routeur
+  if (h.has('next-router-prefetch')) return true; // prefetch des <Link>
+  if (h.has('next-router-segment-prefetch')) return true;
+  if (h.has('next-router-state-tree')) return true;
+  if ((h.get('accept') || '').includes('text/x-component')) return true;
+  try {
+    if (url.searchParams.has('_rsc')) return true;
+  } catch {
+    /* URL déjà validée en amont */
+  }
+  return false;
+}
+
+/** Clé de cache normalisée : URL SANS le param _rsc (hash par build). */
+function rscCacheKey(request) {
+  const u = new URL(request.url);
+  u.searchParams.delete('_rsc');
+  return u.toString();
+}
+
+async function handleRsc(request) {
+  const cache = await caches.open(RSC_CACHE);
+  const key = rscCacheKey(request);
+  const offline = !self.navigator || self.navigator.onLine === false;
+
+  if (!offline) {
+    try {
+      const response = await fetchWithTimeout(request, RSC_TIMEOUT);
+      if (response && response.status === 200) {
+        const clone = response.clone();
+        cache.put(new Request(key), clone).then(() => trimRscCache());
+      }
+      return response;
+    } catch {
+      // Réseau KO (connexion instable) → tentative de cache ci-dessous
+    }
+  }
+
+  // Hors ligne (ou réseau KO) → payload en cache ?
+  let cached = null;
+  try {
+    cached = await cache.match(key);
+  } catch {
+    /* cache illisible */
+  }
+  if (cached) return cached;
+
+  // Pas de cache + réseau indisponible → échec RAPIDE (fini le spinner
+  // infini) : le routeur Next déclenche l'error boundary → UI hors ligne.
+  return new Response(
+    JSON.stringify({ error: 'offline', message: 'Page non disponible hors ligne (payload RSC absent du cache)' }),
+    {
+      status: 503,
+      headers: { 'Content-Type': 'application/json', 'X-AH-Offline': '1' },
+    },
+  );
+}
+
+/** LRU simple : garde au plus RSC_CACHE_MAX entrées (ordre d'insertion). */
+async function trimRscCache() {
+  try {
+    const cache = await caches.open(RSC_CACHE);
+    const keys = await cache.keys();
+    if (keys.length > RSC_CACHE_MAX) {
+      const excess = keys.slice(0, keys.length - RSC_CACHE_MAX);
+      await Promise.all(excess.map((k) => cache.delete(k)));
+    }
+  } catch {
+    /* non-bloquant */
+  }
+}
 
 // ─── Chunks immuables : CacheFirst persistant + retry réseau ────────────
 // ⭐ Réseau instable (2G/3G) : le 1er fetch d'un chunk échoue souvent →
@@ -323,10 +438,9 @@ async function handlePublicPageNavigation(request) {
   if (!self.navigator || self.navigator.onLine === false) {
     const cachedExact = await cache.match(request);
     if (cachedExact) return cachedExact;
-    const cachedShell = await cache.match('/login');
-    if (cachedShell) return cachedShell;
-    const cachedApp = await cache.match('/app');
-    if (cachedApp) return cachedApp;
+    // ⭐ v3.2.0 : plus de shell /login|/app pour une page publique non visitée
+    //    (rendre la page de connexion sous /tarification est trompeur) →
+    //    réponse sobre non-bloquante.
     return offlineMinimalResponse(url.pathname);
   }
 
@@ -340,10 +454,6 @@ async function handlePublicPageNavigation(request) {
   } catch {
     const cachedExact = await cache.match(request);
     if (cachedExact) return cachedExact;
-    const cachedShell = await cache.match('/login');
-    if (cachedShell) return cachedShell;
-    const cachedApp = await cache.match('/app');
-    if (cachedApp) return cachedApp;
     return offlineMinimalResponse(url.pathname);
   }
 }

@@ -53,8 +53,13 @@ import { cn } from '@/lib/utils';
 // ─── Pedagogical class ordering ──────────────────────────────────────────────
 const PEDAGOGICAL_ORDER = ['CI', 'CP', 'CE1', 'CE2', 'CM1', 'CM2', '6E', '5E', '4E', '3E', '2NDE', '1ERE', 'TERM'];
 
+// ⭐ Normalise les accents : « 6ème » → « 6EME » (sinon startsWith('6E') échoue
+// sur « 6ÈME » et tout le tri pédagogique du secondaire part en vrille).
+const normalizeFr = (s: string): string =>
+  s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
 const pedagogicalSortIndex = (name: string): number => {
-  const upper = (name || '').toUpperCase().trim();
+  const upper = normalizeFr((name || '').toUpperCase().trim());
   for (const prefix of PEDAGOGICAL_ORDER) {
     if (upper.startsWith(prefix)) return PEDAGOGICAL_ORDER.indexOf(prefix);
   }

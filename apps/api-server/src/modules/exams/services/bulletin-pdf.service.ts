@@ -712,10 +712,12 @@ ${page2Content}
   /**
    * ⭐ SECONDAIRE — Bulletin modèle CEG (piste FR) :
    *
-   *   Discipline | Moy Int | Dev1 | Dev2 | Moy | [Coef | Moy Coef] | Rang |
-   *   Appréciation | Signature
+   *   Discipline | Interrogation écrite [Interrogation écrite 1,
+   *   Interrogation écrite 2] | Moyenne d'interrogation |
+   *   Devoir surveillé [Devoir 1, Devoir 2] | Moyenne |
+   *   [Coefficient | Note coefficient] | Rang | Appréciation | Signature
    *
-   *   6e / 5e  : SANS colonnes Coef / Moy Coef
+   *   6e / 5e  : SANS colonnes Coefficient / Note coefficient
    *   4e → Term : AVEC — TOTAL DES COEFFICIENTS / TOTAL DES MOYENNES
    *   + Moyenne trimestrielle, stats de classe, récap T3 (T1 + T2 + moyenne
    *     annuelle pour le passage) et décision. A4 portrait.
@@ -750,7 +752,9 @@ ${page2Content}
       const rang = s.secRank ? formatRank(s.secRank, feminine) : '—';
       return `<tr>
           <td style="border:1px solid #cbd5e1;padding:3px 2px;font-size:10px;font-weight:600;">${s.name}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;color:#1d4ed8;">${cell(s.secMoyInter)}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secInt1)}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secInt2)}</td>
+          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;color:#1d4ed8;background:#eff6ff;">${cell(s.secMoyInter)}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secDs1)}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secDs2)}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:11px;background:#ecfdf5;">${moyCell(s.secMoyenne)}</td>
@@ -778,42 +782,49 @@ ${page2Content}
       if (totalNotesCoef === null) totalNotesCoef = nSum;
     }
 
-    // ── En-tête du tableau ───────────────────────────────────────────────────
+    // ── En-tête du tableau — colonnes parentes EN HAUT, sous-colonnes en bas :
+    //    Discipline | Interrogation écrite [Int. écrite 1, Int. écrite 2] |
+    //    Moyenne d'interrogation | Devoir surveillé [Devoir 1, Devoir 2] |
+    //    Moyenne | [Coefficient | Note coefficient] | Rang | Appréciation | Signature
     const tableHeader = `
       <tr style="background:#0A2A5E;color:white;">
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;text-align:left;">Discipline</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;">Moy Int</th>
-        <th colspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;">Devoirs surveillés</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;background:#0D3B85;">Moy</th>
+        <th colspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;">Interrogation écrite</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;background:#0D3B85;">Moyenne d'interrogation</th>
+        <th colspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;">Devoir surveillé</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;background:#0D3B85;">Moyenne</th>
         ${!isJunior ? `
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;background:#0D3B85;">Coef</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;background:#0D3B85;">Moy Coef</th>` : ''}
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;">Coefficient</th>
+        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;background:#0D3B85;">Note coefficient</th>` : ''}
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;">Rang</th>
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;">Appréciation</th>
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;">Signature</th>
       </tr>
-      <tr style="background:#0D3B85;color:white;">
-        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Dev 1</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Dev 2</th>
+      <tr style="background:#114FC4;color:white;">
+        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Interrogation écrite 1</th>
+        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Interrogation écrite 2</th>
+        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Devoir 1</th>
+        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Devoir 2</th>
       </tr>`;
 
-    // ── Lignes de totaux + moyenne trimestrielle ────────────────────────────
+    // ── Lignes de totaux + moyenne trimestrielle (colspans : 6e/5e = 10
+    //    colonnes, 4e → Terminale = 12) ───────────────────────────────
     const totalRows = `
       ${!isJunior ? `
       <tr style="background:#e2e8f0;font-weight:bold;">
-        <td colspan="5" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Total des coefficients</td>
+        <td colspan="7" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Total des coefficients</td>
         <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:10px;color:#b45309;">${totalCoef ?? '—'}</td>
         <td colspan="4" style="border:1px solid #cbd5e1;"></td>
       </tr>
       <tr style="background:#e2e8f0;font-weight:bold;">
-        <td colspan="5" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Total des moyennes (Σ moy × coef)</td>
+        <td colspan="7" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Total des moyennes (Σ moy × coef)</td>
         <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:10px;color:#059669;">${totalNotesCoef !== null ? totalNotesCoef.toFixed(2) : '—'}</td>
         <td colspan="4" style="border:1px solid #cbd5e1;"></td>
       </tr>` : ''}
       <tr style="background:#dbeafe;font-weight:bold;">
-        <td colspan="${isJunior ? 4 : 6}" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Moyenne trimestrielle</td>
+        <td colspan="6" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Moyenne trimestrielle</td>
         <td colspan="${isJunior ? 1 : 2}" style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:11px;color:#0A2A5E;">${fmtSec(data.generalAverage)}</td>
-        <td colspan="3" style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;color:#0A2A5E;">Rang : ${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
+        <td colspan="${isJunior ? 3 : 4}" style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;color:#0A2A5E;">Rang : ${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
       </tr>`;
 
     // ── Récap du 3e trimestre (moyennes T1 + T2 + moyenne annuelle + passage) ──
@@ -913,11 +924,13 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </tr>
   </table>
 
-  <!-- TABLEAU DES NOTES -->
-  <table class="notes">
-    <thead>${tableHeader}</thead>
-    <tbody>${subjectRows}${totalRows}</tbody>
-  </table>
+  <!-- TABLEAU DES NOTES (coins arrondis, bordure navy) -->
+  <div style="border:2px solid #0A2A5E;border-radius:4px;overflow:hidden;">
+    <table class="notes">
+      <thead>${tableHeader}</thead>
+      <tbody>${subjectRows}${totalRows}</tbody>
+    </table>
+  </div>
 
   <!-- SYNTHÈSE STATISTIQUE -->
   <div style="margin-top:5px;font-size:9px;">

@@ -181,7 +181,7 @@ function getApiOrigin() {
 // v4.1.1 : au-dessus de v4.1.0 (pré-cache exhaustif) — bump pour que le
 //    correctif API_TIMEOUT 12 s (sélecteurs header) soit bien déployé chez
 //    tous les utilisateurs existants (SW_ACTIVATED → re-pré-cache).
-const SW_VERSION = 'v4.2.1';
+const SW_VERSION = 'v4.3.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -2703,6 +2703,76 @@ async function precacheApiEndpoints(urls, headers, sourceClient) {
  *      les attentes du routeur, celui-ci retombe de toute façon sur la
  *      navigation dure → HTML caché (comportement v3.3).
  */
+/**
+ * ⭐ v4.3.0 — CRAWL DU GRAPHE DE CHUNKS (build Turbopack).
+ * PROBLÈME (retour terrain sept. 2026 : « connexion instable » module
+ * élèves + onglet Enseignants & affectations) : les composants en
+ * next/dynamic(…, { ssr: false }) — StudentsModulePage, dashboards des
+ * portails… — ne figurent PAS dans le HTML pré-rendu : leur chunk est
+ * résolu APRÈS hydratation via les maps de modules du runtime Turbopack
+ * (turbopack-<hash>.js). Hors ligne, ce chunk manquait dans
+ * ah-static-immutable → ChunkLoadError → error boundary « Connexion
+ * instable ». Le HTML initial de /app/students ne référence que ~33
+ * chunks alors que le navigateur en demande 37 (6 paresseux).
+ * CORRECTIF : après le pré-cache des chunks du HTML, on SCANNE le contenu
+ * des chunks pour y trouver les références /_next/static/immutable/chunks
+ * /*.js|css et on pré-cache les chunks découverts en cascade (profondeur
+ * 2, cap anti-dérive). Vérifié en production : le crawl couvre 100 % des
+ * chunks paresseux demandés par le navigateur. Les chunks partagés déjà
+ * en cache ne sont pas re-téléchargés ; un Set « déjà scannés » évite de
+ * relire le même chunk pour chaque route du pré-cache.
+ */
+const CHUNK_REF_REGEX = /immutable\/chunks\/[a-zA-Z0-9][a-zA-Z0-9._-]*\.(?:js|css)/g;
+const CHUNK_CRAWL_DEPTH = 3;
+const CHUNK_CRAWL_MAX_NEW = 80; // par route — anti-dérive 2G/3G
+const scannedChunks = new Set();
+
+async function crawlChunkGraph(staticCache, seedUrls) {
+  const origin = self.location.origin;
+  const queue = [];
+  for (const u of seedUrls) {
+    try {
+      const abs = new URL(u, origin).href;
+      if (!scannedChunks.has(abs)) queue.push(abs);
+    } catch { /* URL invalide — ignorée */ }
+  }
+  let newCached = 0;
+  let frontier = queue;
+  for (let depth = 0; depth < CHUNK_CRAWL_DEPTH; depth++) {
+    const nextFrontier = [];
+    for (const chunkUrl of frontier) {
+      if (newCached >= CHUNK_CRAWL_MAX_NEW) break;
+      // Déjà scanné dans une route précédente → ses refs sont déjà traitées
+      if (scannedChunks.has(chunkUrl)) continue;
+      scannedChunks.add(chunkUrl);
+      let text = null;
+      try {
+        const existing = await staticCache.match(chunkUrl);
+        if (existing) {
+          text = await existing.text();
+        } else {
+          const res = await fetchWithTimeout(new Request(chunkUrl), 8000);
+          if (res && res.ok) {
+            const copy = res.clone();
+            text = await res.text();
+            await staticCache.put(chunkUrl, copy);
+            newCached++;
+          }
+        }
+      } catch { continue; }
+      if (!text) continue;
+      const refs = text.match(CHUNK_REF_REGEX) || [];
+      for (const ref of refs) {
+        const abs = origin + '/_next/static/' + ref;
+        if (!scannedChunks.has(abs)) nextFrontier.push(abs);
+      }
+    }
+    frontier = nextFrontier.filter((u) => !scannedChunks.has(u));
+    if (!frontier.length || newCached >= CHUNK_CRAWL_MAX_NEW) break;
+  }
+  return newCached;
+}
+
 async function precacheModule(routeUrl, sourceClient) {
   let htmlOk = false;
   let rscOk = false;
@@ -2768,6 +2838,16 @@ async function precacheModule(routeUrl, sourceClient) {
             }
           }),
         );
+      }
+
+      // ⭐ v4.3.0 — CRAWL du graphe de chunks : découvre les chunks PARESSEUX
+      //    (dynamic ssr:false) référencés uniquement dans les maps du runtime
+      //    Turbopack — sans cela, l'ouverture du module hors ligne déclenchait
+      //    l'error boundary « Connexion instable » (élèves, affectations…).
+      try {
+        await crawlChunkGraph(staticCache, chunks);
+      } catch {
+        // Non-bloquant — le HTML reste le filet de sécurité
       }
     }
 

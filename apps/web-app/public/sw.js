@@ -19,6 +19,20 @@
  *        « le module s'affiche mais sans ses données ».
  *    (2) L'app complète cette couche côté page : response_cache IndexedDB
  *        (clé par URL, tous formats) + timeout 5 s — cf. data-service.ts.
+ * v3.8.0 : (incident utilisateur « Connexion indisponible pour /app » après
+ *    le déploiement v3.7.0 — CRITIQUE avant démo terrain) :
+ *    (1) CACHE PAGES PERSISTANT : ah-pages n'est PLUS versionné ni purgé —
+ *        comme ah-static-immutable / ah-rsc / ah-api. AVANT : chaque bump de
+ *        version vidait ah-pages-<version> → l'utilisateur qui passait hors
+ *        ligne AVANT la fin du re-pré-cache (~2-3 min en ligne) perdait TOUT,
+ *        y compris le shell /app (page « Connexion indisponible »).
+ *        La fraîcheur est assurée par NetworkFirst EN LIGNE (chaque visite
+ *        rafraîchit l'HTML) ; le HTML ancien reste VALIDE hors ligne car ses
+ *        chunks /_next/static/ immuables ne sont jamais purgés.
+ *    (2) MIGRATION à l'activation : les entrées ah-pages-v3.7.0 (et tout
+ *        ah-pages-*) sont transférées vers ah-pages avant purge — le
+ *        pré-cache existant des utilisateurs n'est PAS perdu.
+ *    (3) LRU 500 entrées (trim après pré-cache) — croissance bornée.
  *
  * v3.6.0 : (exigence « TOUS les modules offline » — couverture exhaustive) :
  *    (1) PRÉ-CACHE ÉTENDU : le client envoie désormais ~230 endpoints (tous
@@ -138,9 +152,13 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
-const SW_VERSION = 'v3.7.0';
+const SW_VERSION = 'v3.8.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
-const PAGE_CACHE = `ah-pages-${SW_VERSION}`;
+// ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
+//    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
+//    car ses chunks immuables survivent aussi. Versionné = rupture offline
+//    à CHAQUE déploiement (retour terrain « Connexion indisponible pour /app »).
+const PAGE_CACHE = 'ah-pages';
 const AUTH_CACHE = 'ah-auth-token'; // ⭐ miroir JWT pour le background sync — JAMAIS purgé
 
 // ⭐ v3.1.0 — CACHE IMMUABLE PERSISTANT (JAMAIS purgé, même à l'activation
@@ -293,6 +311,33 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
+      // ⭐ v3.8.0 — MIGRATION ah-pages-* : les entrées des caches versionnés
+      //    (ah-pages-v3.7.0 et antérieurs) sont TRANSFÉRÉS vers le cache
+      //    persistant ah-pages — le pré-cache offline des utilisateurs
+      //    EXISTANTS n'est pas perdu au déploiement (incident « Connexion
+      //    indisponible pour /app » : purge + re-pré-cache non terminé).
+      try {
+        const allNames = await caches.keys();
+        const legacyPageCaches = allNames.filter(
+          (n) => /^ah-pages-/.test(n) && n !== PAGE_CACHE,
+        );
+        if (legacyPageCaches.length > 0) {
+          const persistent = await caches.open(PAGE_CACHE);
+          for (const legacyName of legacyPageCaches) {
+            const legacy = await caches.open(legacyName);
+            const keys = await legacy.keys();
+            await Promise.all(
+              keys.map(async (req) => {
+                const res = await legacy.match(req);
+                if (res && !(await persistent.match(req))) await persistent.put(req, res);
+              }),
+            );
+          }
+        }
+      } catch {
+        // Migration non-bloquante
+      }
+
       // ⭐ v3.1.0 — MIGRATION : avant de purger les anciens ah-static-*, on
       //    transfère les chunks /_next/static/ (immuables) vers IMMUTABLE_CACHE
       //    pour ne PAS perdre le cache offline des utilisateurs existants.
@@ -323,6 +368,7 @@ self.addEventListener('activate', (event) => {
         names
           .filter((name) => name.startsWith('ah-') && !name.startsWith(AUTH_CACHE) &&
             name !== IMMUTABLE_CACHE && // ⭐ chunks immuables JAMAIS purgés
+            name !== PAGE_CACHE && // ⭐ v3.8.0 — pages HTML JAMAIS purgées (persistant + LRU + NetworkFirst en ligne)
             name !== RSC_CACHE && // ⭐ payloads RSC — survivent aux mises à jour (LRU)
             name !== API_CACHE && // ⭐ v3.3.0 — réponses API GET — survivent (LRU, NetworkFirst en ligne)
             !name.endsWith(SW_VERSION))
@@ -331,11 +377,11 @@ self.addEventListener('activate', (event) => {
       await self.clients.claim();
 
       // ⭐ v3.3.1 — Notifier les pages ouvertes : la version du SW vient de
-      //    changer → les caches versionnés (ah-pages-*) ont été purgés → le
-      //    flag 24 h du pré-cache des modules (localStorage, côté client) est
-      //    désormais PÉRIMÉ et doit être invalidé, sinon l'app n'a plus AUCUN
-      //    module offline jusqu'à l'expiration du flag (symptôme : le shell
-      //    dashboard est servi à la place des modules après un déploiement).
+      //    changer → le flag 24 h du pré-cache des modules (localStorage, côté
+      //    client) est invalidé → la prochaine session en ligne RAFRAÎCHIT les
+      //    entrées du cache persistant ah-pages (v3.8.0 : le cache n'est plus
+      //    purgé, mais le rafraîchissement post-déploiement reste utile pour
+      //    servir le NOUVEAU HTML en ligne et re-remplir RSC/API).
       try {
         const clientList = await self.clients.matchAll({ type: 'window' });
         for (const client of clientList) {
@@ -919,6 +965,23 @@ async function trimApiCache() {
   }
 }
 
+/** ⭐ v3.8.0 — LRU du cache pages PERSISTANT : garde au plus
+ *    PAGE_CACHE_MAX entrées (ordre d'insertion ; les routes récemment
+ *    écrites sont en fin de liste → les plus anciennes sortent d'abord). */
+const PAGE_CACHE_MAX = 500;
+async function trimPageCache() {
+  try {
+    const cache = await caches.open(PAGE_CACHE);
+    const keys = await cache.keys();
+    if (keys.length > PAGE_CACHE_MAX) {
+      const excess = keys.slice(0, keys.length - PAGE_CACHE_MAX);
+      await Promise.all(excess.map((k) => cache.delete(k)));
+    }
+  } catch {
+    /* non-bloquant */
+  }
+}
+
 // ─── Chunks immuables : CacheFirst persistant + retry réseau ────────────
 // ⭐ Réseau instable (2G/3G) : le 1er fetch d'un chunk échoue souvent →
 //    1 RETRY automatique côté SW AVANT de laisser l'erreur remonter au
@@ -1437,6 +1500,11 @@ async function precacheModule(routeUrl, sourceClient) {
       /* client parti — non-bloquant */
     }
   }
+
+  // ⭐ v3.8.0 — le cache pages est PERSISTANT (jamais purgé) → LRU après
+  //    chaque écriture pour borner la croissance (112 routes pré-cachées +
+  //    pages visitées + pages publiques ≈ 150-200 entrées en pratique).
+  if (htmlOk) trimPageCache().catch(() => {});
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

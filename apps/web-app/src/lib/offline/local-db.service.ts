@@ -754,6 +754,51 @@ class LocalDbService {
       }
     });
 
+    // ⭐ V17 — Stores manquants référencés par store-names.ts (URL_TO_STORE) :
+    //    deriveStoreName() mappait ces URLs vers des stores JAMAIS créés →
+    //    localFallback levait NotFoundError → données offline perdues pour
+    //    vie scolaire (attendance), communication (notification/alert),
+    //    finance (invoice), homework, etc.
+    const v17Stores = [
+      'alert',
+      'attendance',
+      'billinginvoice',
+      'canteensetting',
+      'communicationcampaign',
+      'communicationtemplate',
+      'disciplinaryincident',
+      'educastchannel',
+      'homework',
+      'invoice',
+      'meetingagendaitem',
+      'notification',
+      'pedagogicalcontrol',
+      'pedagogicalfile',
+      'pedagogicalworkspace',
+      'position',
+      'scheduledemail',
+      'staffplanning',
+      'studentmovement',
+      'studenttransfer',
+    ];
+    v17Stores.forEach(storeName => {
+      if (!db.objectStoreNames.contains(storeName)) {
+        db.createObjectStore(storeName, { keyPath: 'id' });
+      }
+    });
+    // ⭐ V17 — RESPONSE CACHE : store clé-par-URL pour la couche d'accès
+    //    unifiée (data-service). Cache TOUTES les réponses GET JSON
+    //    (tableaux, agrégats, objets SANS champ id — les stores keyPath
+    //    'id' refusaient ces écritures : DataError « key path did not
+    //    yield a value », cause racine du « pool remplit une base que
+    //    l'interface ne lit pas »).
+    if (!db.objectStoreNames.contains('response_cache')) {
+      const rc = db.createObjectStore('response_cache', { keyPath: 'cacheKey' });
+      rc.createIndex('tenantId', 'tenantId', { unique: false });
+      rc.createIndex('cachedAt', 'cachedAt', { unique: false });
+      rc.createIndex('url', 'url', { unique: false });
+    }
+
   }
 
   /**
@@ -780,6 +825,23 @@ class LocalDbService {
   private async executeSQLiteSchema(): Promise<void> {
     // Le schéma sera chargé depuis un fichier SQL
     // Pour l'instant, placeholder
+  }
+
+  /**
+   * ⭐ V17 — Lecture d'un enregistrement par clé primaire (get).
+   *    Utilisé par la couche d'accès unifiée (response_cache : clé = cacheKey).
+   */
+  async getByKey<T>(storeName: string, key: IDBValidKey): Promise<T | undefined> {
+    await this.ensureInitialized();
+    if (typeof window === 'undefined') {
+      throw new Error('SQLite getByKey not implemented yet');
+    }
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([storeName], 'readonly');
+      const request = transaction.objectStore(storeName).get(key);
+      request.onsuccess = () => resolve(request.result as T | undefined);
+      request.onerror = () => reject(request.error);
+    });
   }
 
   /**
@@ -932,7 +994,7 @@ class LocalDbService {
 // Instance singleton
 export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
-  version: 16, // ⭐ bump 15 → 16 (ajout api_cache store pour fallback générique)
+  version: 17, // ⭐ bump 16 → 17 (stores manquants URL_TO_STORE + response_cache clé-URL)
 });
 
 /**

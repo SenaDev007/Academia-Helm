@@ -1,25 +1,33 @@
 /**
  * ============================================================================
- * OFFLINE-AWARE FETCH - REQUÊTES API AVEC FALLBACK INDEXEDDB
+ * COUCHE D'ACCÈS AUX DONNÉES UNIFIÉE (moteur) — offline-fetch
  * ============================================================================
+ * ⭐ Spécification « Lecture hors ligne par module » (sept. 2026, spec
+ *    mode-hors-ligne §2) : TOUTE lecture de données passe par cette couche
+ *    (via dataService / l'intercepteur global — aucun composant ne doit
+ *    appeler l'API directement).
  *
- * ⭐ OFFLINE-FIRST RÉACTIVÉ (sept. 2026 — spécification « mode hors-ligne ») :
- *    ce fichier avait été temporairement converti en pass-through (commit
- *    cac0a871f) pendant la phase de stabilisation en ligne. Le mode hors-ligne
- *    est de retour :
+ * Comportement de chaque lecture GET :
+ *   1. Tentative réseau AVEC TIMEOUT COURT (5 s par défaut — spec §2.2).
+ *      Le Service Worker (sw.js) sert d'abord sa copie Cache API (ah-api).
+ *   2. Succès → retour des données + écriture dans le cache local IndexedDB
+ *      (response_cache — TOUS formats : tableaux, agrégats, objets sans id).
+ *   3. Hors ligne / timeout / échec réseau → lecture du cache local, JAMAIS
+ *      d'erreur bloquante (spec §2.3) : réponse exacte → réponse du même
+ *      chemin (params les plus proches) → stores entités (filtres tenant).
+ *   4. Les erreurs applicatives 4xx (serveur en ligne qui REFUSE : 403 rôle,
+ *      404, 400 validation) restent propagées — ce ne sont pas des erreurs
+ *      réseau, la lecture locale n'aurait pas de sens.
+ *   5. MUTATIONS : en ligne → serveur ; hors ligne/5xx/réseau → écriture
+ *      locale + outbox synchronisée automatiquement à la reconnexion
+ *      (offlineMutation, spec §5).
  *
- *    1. EN LIGNE (GET) : fetch réseau → succès → mise en cache IndexedDB
- *       pour une utilisation hors ligne future.
- *    2. EN LIGNE (GET) : fetch réseau → échec → fallback IndexedDB si des
- *       données y existent réellement ; sinon l'erreur réseau est propagée
- *       (pas de « page blanche silencieuse »).
- *    3. HORS LIGNE (GET) : lecture depuis IndexedDB ([] si vide — légitime).
- *    4. MUTATIONS (POST/PUT/PATCH/DELETE) : en ligne → serveur ; hors ligne
- *       (ou réseau défaillant) → écriture locale IndexedDB + événement outbox
- *       synchronisé automatiquement à la reconnexion (modèle WhatsApp).
- *
- * PRINCIPE : L'application ne doit JAMAIS crasher ou se bloquer
- * quand la connexion est indisponible.
+ * ⭐ V17 — response_cache : les réponses sont désormais cachées PAR URL
+ *    (clé = tenant|GET|chemin+params-triés) dans un store keyPath 'cacheKey'.
+ *    AVANT : les écritures dans les stores keyPath 'id' échouaient en
+ *    DataError pour toute réponse SANS champ id (agrégats dashboards,
+ *    settings, features…) → « le pool remplit une base que l'interface
+ *    ne lit jamais » (diagnostic utilisateur exact).
  * ============================================================================
  */
 
@@ -47,6 +55,17 @@ interface CacheEntry<T> {
 }
 
 const DEFAULT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+/** ⭐ Spec §2.2 — timeout court sur l'appel réseau (3-5 s recommandé).
+ *    5 s : couvre le SW (Cache API instantané offline) et les réponses
+ *    chaudes, sans faire attendre indéfiniment l'interface sur 2G/3G ou un
+ *    cold start Neon — au-delà, on sert les données locales. */
+const NETWORK_TIMEOUT_MS = 5_000;
+
+/** Événement dispatché quand des données locales (cache) sont servies alors
+ *  que le réseau échouait — permet aux couches supérieures (React Query via
+ *  QueryProvider) de re-déclencher un rafraîchissement au retour du réseau. */
+export const DATA_SERVED_FROM_CACHE_EVENT = 'ah:data-served-from-cache';
 
 /**
  * Wrapper offline-aware pour les requêtes GET API.
@@ -83,31 +102,24 @@ export async function offlineFetch<T = any>(
 
   // Mode networkOnly : toujours fetch, pas de fallback
   if (networkOnly && isOnline) {
-    return await networkFetch<T>(url, fetchOptions);
+    return await networkFetch<T>(url, fetchOptions, NETWORK_TIMEOUT_MS);
   }
 
   // ⭐ HORS LIGNE (v3.3.0) : on tente D'ABORD le « réseau » — le Service
-  //    Worker (sw.js v3.3) sert alors la DERNIÈRE réponse en cache (Cache
+  //    Worker (sw.js) sert alors la DERNIÈRE réponse en cache (Cache
   //    API, clé identitaire tenant/session) : c'est la source offline la
   //    plus fraîche ET au format exact (JSON brut de l'API, sans re-mapping
   //    IDB). Si le SW n'a pas de copie (503 X-AH-Offline) → fallback
-  //    IndexedDB (comportement historique : [] si vide — légitime).
-  //    Avant : retour systématique à localFallback → les réponses sans champ
-  //    `id` (agrégats dashboards, listes de features…) n'étaient JAMAIS en
-  //    cache IDB (put keyPath:'id' échoue) → « aucune donnée hors ligne ».
-  if (!isOnline) {
-    try {
-      return await networkFetch<T>(url, fetchOptions);
-    } catch {
-      return await localFallback<T>(storeName, tenantId);
-    }
-  }
-
-  // EN LIGNE : essayer le réseau, fallback local si échec
+  //    IndexedDB (response_cache puis stores entités).
+  //
+  // ⭐ V17 — l'ancienne double-branche (online ≠ offline) est UNIFIÉE :
+  //    networkFetch (timeout 5 s) → succès → cache local ; échec réseau /
+  //    timeout / hors ligne → cache local, SANS JAMAIS propager d'erreur
+  //    réseau (spec §2.3) — seule une 4xx applicative remonte.
   try {
-    const data = await networkFetch<T>(url, fetchOptions);
+    const data = await networkFetch<T>(url, fetchOptions, NETWORK_TIMEOUT_MS);
 
-    // Mettre en cache les données réussies dans IndexedDB
+    // Mettre en cache les données réussies (response_cache + entités)
     if (!skipCache && data !== null && data !== undefined) {
       cacheResponse(url, storeName, data, tenantId, cacheTTL).catch(() => {
         // Erreur de cache non bloquante
@@ -116,21 +128,35 @@ export async function offlineFetch<T = any>(
 
     return data;
   } catch (networkError) {
-    console.warn(`[OfflineFetch] Network failed for ${url}, falling back to local:`, (networkError as Error).message);
+    // ⭐ Erreurs applicatives 4xx (serveur JOUE et REFUSE) : la lecture
+    //    locale n'aurait pas de sens métier (403 périmètre du rôle, 404,
+    //    400 validation DTO) → on propage pour que l'UI affiche l'état.
+    const status = extractHttpStatus(networkError);
+    if (status !== null && status >= 400 && status < 500) {
+      throw networkError;
+    }
 
-    // ⭐ Fallback vers IndexedDB — MAIS on ne retourne [] silencieusement que si
-    //    on a réellement des données en cache. Sinon on rejette l'erreur réseau
-    //    pour que React Query puisse retry et que l'utilisateur voie qu'il y a
-    //    un problème. C'est la cause principale des "pages blanches qui nécessitent
-    //    plusieurs refresh" — le réseau échouait, le cache était vide, mais on
-    //    retournait quand même [] comme si tout allait bien.
-    const localData = await localFallback<T>(storeName, tenantId);
-    if (hasRealData(localData)) {
+    // ⭐ Réseau KO / timeout / hors ligne / 5xx → lecture locale en cascade,
+    //    SANS erreur bloquante (spec §2.3) :
+    //      1. response_cache — URL exacte (params triés) pour ce tenant
+    //      2. response_cache — même chemin, params les plus proches
+    //      3. stores entités (comportement historique : filtres tenant +
+    //         année active)
+    const localData = await readLocalData<T>(url, storeName, tenantId);
+    if (localData !== null && localData !== undefined) {
+      if (isOnline) {
+        // On vient de servir du local alors qu'on croit être en ligne
+        // (timeout/instabilité) → prévenir pour un rafraîchissement futur.
+        try {
+          window.dispatchEvent(new CustomEvent(DATA_SERVED_FROM_CACHE_EVENT, { detail: { url } }));
+        } catch { /* non-bloquant */ }
+      }
       return localData;
     }
 
-    // Cache vide — propager l'erreur réseau d'origine
-    throw networkError;
+    // Aucune copie locale → [] : état « aucune donnée sur cet appareil »
+    // (légitime, badge hors ligne visible dans l'UI — jamais d'erreur).
+    return [] as unknown as T;
   }
 }
 
@@ -146,6 +172,138 @@ function hasRealData(data: any): boolean {
   return true;
 }
 
+// ─── V17 — response_cache : cache par URL, TOUS formats de réponse ─────────
+
+interface ResponseCacheEntry<T = any> {
+  cacheKey: string;
+  tenantId: string | null;
+  url: string; // chemin + params triés (sans origin — même clé app/BFF)
+  data: T;
+  cachedAt: number;
+  expiresAt: number;
+}
+
+/** Normalise une URL en clé de cache : chemin + params triés, cache-buster
+ *  `_t` retiré (miroir de apiCacheKey du sw.js — même normalisation de part
+ *  et d'autre pour que SW et IDB retrouvent les MÊMES entrées). */
+function normalizeUrlForCache(url: string): { path: string; full: string } {
+  try {
+    const u = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+    u.searchParams.delete('_t');
+    u.searchParams.sort();
+    u.hash = '';
+    return { path: u.pathname, full: u.pathname + (u.search || '') };
+  } catch {
+    const path = url.split('?')[0];
+    return { path, full: url };
+  }
+}
+
+/** Clé du response_cache : tenant + méthode + URL normalisée. */
+function responseCacheKey(url: string, tenantId?: string): string {
+  const { full } = normalizeUrlForCache(url);
+  return `T:${tenantId || 'anon'}|GET|${full}`;
+}
+
+/** Écrit la réponse (tout format) dans response_cache — échec non bloquant. */
+async function writeResponseCache<T>(
+  url: string,
+  data: T,
+  tenantId: string | undefined,
+  cacheTTL: number,
+): Promise<void> {
+  const { full } = normalizeUrlForCache(url);
+  const entry: ResponseCacheEntry<T> = {
+    cacheKey: responseCacheKey(url, tenantId),
+    tenantId: tenantId ?? null,
+    url: full,
+    data,
+    cachedAt: Date.now(),
+    expiresAt: Date.now() + cacheTTL,
+  };
+  await localDb.execute('response_cache', 'put', entry);
+}
+
+/** Lecture EXACTE (même URL normalisée, même tenant). */
+async function readResponseCache<T>(url: string, tenantId?: string): Promise<T | null> {
+  try {
+    const entry = await localDb.getByKey<ResponseCacheEntry<T>>('response_cache', responseCacheKey(url, tenantId));
+    if (!entry) return null;
+    if (entry.expiresAt && entry.expiresAt < Date.now()) {
+      // Entrée périmée : on la sert quand même hors ligne (mieux que rien),
+      // mais on la note pour re-téléchargement — pas d'invalidation en lecture
+      // (l'API a priori plus de fraîcheur, React Query rafraîchira en ligne).
+    }
+    return entry.data;
+  } catch {
+    return null;
+  }
+}
+
+/** Lecture RELAXÉE : même chemin (params ≠, tenant identique), entrée la plus
+ *  récente avec les params les plus proches de la demande (nombre de params
+ *  en commun — priorité à la fraîcheur à égalité).
+ *  Spec §2.3 : hors ligne on sert la meilleure copie locale disponible. */
+async function readResponseCacheRelaxed<T>(url: string, tenantId?: string): Promise<T | null> {
+  try {
+    const { path, full } = normalizeUrlForCache(url);
+    const wanted = new URL(full, 'http://localhost').searchParams;
+    const range = IDBKeyRange.bound(path, path + '\uffff');
+    const entries = await localDb.query<ResponseCacheEntry<T>>('response_cache', (store) =>
+      store.index('url').getAll(range) as IDBRequest<ResponseCacheEntry<T>[]>,
+    );
+    const samePath = entries.filter(
+      (e) => (e.url === path || e.url.startsWith(path + '?')) && (e.tenantId ?? 'anon') === (tenantId || 'anon'),
+    );
+    if (samePath.length === 0) return null;
+    const scoreOf = (e: ResponseCacheEntry): number => {
+      let score = 0;
+      try {
+        const got = new URL(e.url, 'http://localhost').searchParams;
+        got.forEach((value, key) => {
+          if (wanted.get(key) === value) score += 2; // même clé+même valeur
+          else if (wanted.has(key)) score += 0; // même clé, valeur ≠ : ni bonus ni pénalité
+        });
+        // pénalité légère par param supplémentaire non demandé
+        score -= Math.max(0, [...got.keys()].length - [...wanted.keys()].length);
+      } catch { /* ignoré */ }
+      return score;
+    };
+    samePath.sort((a, b) => {
+      const d = scoreOf(b) - scoreOf(a);
+      if (d !== 0) return d;
+      return (b.cachedAt || 0) - (a.cachedAt || 0);
+    });
+    return samePath[0]?.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** ⭐ V17 — Cascade de lecture locale (spec §2.3) :
+ *    1. response_cache URL exacte → 2. response_cache même chemin (params
+ *    proches) → 3. stores entités (filtres tenant + année active).
+ *    Retourne null si AUCUNE donnée locale. */
+async function readLocalData<T>(url: string, storeName: string, tenantId?: string): Promise<T | null> {
+  // 1. réponse exacte (cache chaud — même URL, même tenant)
+  const exact = await readResponseCache<T>(url, tenantId);
+  if (exact !== null && exact !== undefined) return exact;
+
+  // 2. réponse du même chemin, params les plus proches
+  const relaxed = await readResponseCacheRelaxed<T>(url, tenantId);
+  if (relaxed !== null && relaxed !== undefined) return relaxed;
+
+  // 3. stores entités (données du pool / de la sync — filtrées tenant + année)
+  try {
+    const entityData = await localFallback<T>(storeName, tenantId);
+    if (hasRealData(entityData)) return entityData;
+  } catch {
+    // store inexistant → pas de données entités
+  }
+
+  return null;
+}
+
 /**
  * Requête réseau standard avec headers d'authentification
  * ⭐ Ajoute le header X-Offline-Internal pour court-circuiter l'intercepteur
@@ -153,32 +311,68 @@ function hasRealData(data: any): boolean {
  *    patchedFetch → offlineMutation → networkFetch → fetch (= patchedFetch) → ...
  * ⭐ Parse le corps d'erreur JSON pour remonter le message métier du serveur
  *    (ex: validation DTO) au lieu d'un opaque "API error: 400 Bad Request".
+ * ⭐ V17 — TIMEOUT COURT (spec §2.2) : AbortController 5 s par défaut, COMBINÉ
+ *    au signal d'annulation de l'appelant (React Query abort au démontage) —
+ *    on n'attend JAMAIS indéfiniment (2G/3G, cold start Neon : on sert le
+ *    local et l'utilisateur travaille pendant que le réseau se réveille).
+ * ⭐ Headers normalisés via new Headers() — l'ancien spread {...options.headers}
+ *    perdait les headers d'une instance Headers (spread d'itérateur absent).
  */
-async function networkFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(url, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...getClientAuthorizationHeader(),
-      'X-Offline-Internal': 'true', // ⭐ guard de réentrance
-      ...options.headers,
-    },
-  });
+async function networkFetch<T>(url: string, options: RequestInit = {}, timeoutMs = NETWORK_TIMEOUT_MS): Promise<T> {
+  const controller = new AbortController();
+  const outerSignal = options.signal as AbortSignal | null | undefined;
 
-  if (!response.ok) {
-    let message = `API error: ${response.status} ${response.statusText}`;
-    try {
-      const text = await response.text();
-      if (text.trim()) {
-        const parsed = JSON.parse(text);
-        message = parsed?.message || parsed?.error || message;
-      }
-    } catch { /* corps non-JSON — on garde le message HTTP */ }
-    throw new Error(message);
+  // ⭐ Si l'APPELANT fournit son propre signal (pool bootstrap 15 s,
+  //    annulation React Query…), on respecte SON échéance — pas de timeout
+  //    supplémentaire. Sinon : timeout court par défaut (spec §2.2).
+  const onOuterAbort = () => controller.abort();
+  if (outerSignal) {
+    if (outerSignal.aborted) controller.abort();
+    else outerSignal.addEventListener('abort', onOuterAbort, { once: true });
+  }
+  const timer = outerSignal ? null : setTimeout(() => controller.abort(), timeoutMs);
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...getClientAuthorizationHeader(),
+    'X-Offline-Internal': 'true', // ⭐ guard de réentrance
+  };
+  if (options.headers) {
+    const normalized = new Headers(options.headers);
+    normalized.forEach((value, key) => {
+      headers[key] = key === 'x-offline-internal' ? 'true' : value;
+    });
   }
 
-  return response.json();
+  try {
+    const response = await fetch(url, {
+      ...options,
+      credentials: 'include',
+      signal: controller.signal,
+      headers,
+    });
+
+    if (!response.ok) {
+      let message = `API error: ${response.status} ${response.statusText}`;
+      try {
+        const text = await response.text();
+        if (text.trim()) {
+          const parsed = JSON.parse(text);
+          message = parsed?.message || parsed?.error || message;
+        }
+      } catch { /* corps non-JSON — on garde le message HTTP */ }
+      // ⭐ Statut attaché à l'erreur (le message métier remplace souvent
+      //    « API error: 400 … » → le regex seul ne suffit plus)
+      const err = new Error(`${message} (API error: ${response.status})`) as Error & { status?: number };
+      err.status = response.status;
+      throw err;
+    }
+
+    return response.json();
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (outerSignal) outerSignal.removeEventListener('abort', onOuterAbort);
+  }
 }
 
 /**
@@ -288,41 +482,51 @@ async function localFallback<T>(storeName: string, tenantId?: string): Promise<T
 
 /**
  * Cache une réponse API dans IndexedDB
+ * ⭐ V17 — TROIS écritures (spec §2 : la mise à jour du local doit marcher
+ *    pour TOUTES les formes de réponses) :
+ *    (a) response_cache — l'entrée {cacheKey, data} : TOUJOURS (tableaux,
+ *        agrégats, objets sans id — c'est la couche que la lecture relit).
+ *    (b) stores entités — uniquement les TABLEAUX dont les items ont un `id`
+ *        (comportement historique, alimente le filtrage tenant/année et les
+ *        écritures optimistes offline ; les items sans id ne génèrent plus
+ *        de DataError silencieuse — ils sont simplement sautés).
  */
 async function cacheResponse<T>(
-  _url: string,
+  url: string,
   storeName: string,
   data: T,
   tenantId?: string,
-  _cacheTTL?: number
+  cacheTTL?: number
 ): Promise<void> {
+  // (a) response_cache — TOUS formats, clé par URL
   try {
-    // Si la donnée est un tableau, on met chaque élément individuellement
+    await writeResponseCache(url, data, tenantId, cacheTTL ?? DEFAULT_CACHE_TTL);
+  } catch (error) {
+    console.warn(`[OfflineFetch] response_cache write failed for ${url}:`, (error as Error).message);
+  }
+
+  // (b) stores entités — tableaux avec ids uniquement
+  try {
     if (Array.isArray(data)) {
-      if (data.length === 0) return;
+      const withId = data.filter((item: any) => item && typeof item === 'object' && item.id !== undefined && item.id !== null);
+      if (withId.length === 0) return;
 
       // Ajouter tenantId si absent et fourni
       const items = tenantId
-        ? data.map((item: any) => ({
+        ? withId.map((item: any) => ({
             ...item,
             tenantId: item.tenantId || tenantId,
             _cachedAt: new Date().toISOString(),
           }))
-        : data.map((item: any) => ({
+        : withId.map((item: any) => ({
             ...item,
             _cachedAt: new Date().toISOString(),
           }));
 
       await localDb.executeBulk(storeName, 'put', items);
-    } else if (data && typeof data === 'object') {
-      // Donnée unique
-      const item = {
-        ...(data as any),
-        tenantId: (data as any).tenantId || tenantId,
-        _cachedAt: new Date().toISOString(),
-      };
-      await localDb.execute(storeName, 'put', item);
     }
+    // Les réponses OBJETS (agrégats, settings) ne vont PLUS dans les stores
+    // keyPath 'id' — response_cache (a) les couvre sans DataError.
   } catch (error) {
     // Erreur de cache non bloquante
     console.warn(`[OfflineFetch] Cache write failed for ${storeName}:`, (error as Error).message);
@@ -382,10 +586,12 @@ export async function offlineMutation<T = any>(
 }
 
 /**
- * Extrait le statut HTTP d'une erreur lancée par networkFetch.
- * Format : "API error: 400 Bad Request" ou message métier parsé.
+ * Extrait le statut HTTP d'une erreur lancée par networkFetch
+ * (propriété `status` attachée, ou motif « API error: NNN » dans le message).
  */
 function extractHttpStatus(error: unknown): number | null {
+  const status = (error as { status?: number } | null)?.status;
+  if (typeof status === 'number') return status;
   const msg = String((error as Error)?.message || '');
   const match = msg.match(/API error:\s*(\d{3})/);
   if (match) return parseInt(match[1], 10);

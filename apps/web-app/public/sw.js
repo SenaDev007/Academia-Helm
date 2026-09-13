@@ -1,12 +1,24 @@
 /**
  * ============================================================================
- * SERVICE WORKER UNIFIÉ — Academia Helm (v3.5 « offline-first complet »)
+ * SERVICE WORKER UNIFIÉ — Academia Helm (v3.7 « lecture offline par module »)
  * ============================================================================
  *
  * ⭐ SW UNIQUE à la racine du domaine (scope: '/'). NE PAS enregistrer
  *    d'autres service workers au même scope — les anciens sw-offline.js,
  *    sw-site.js et sw-chat.js sont OBSOLÈTES et sont désinstallés par
  *    UniversalSWRegister à la première visite.
+ *
+ * v3.7.0 : (correctif « Lecture hors ligne non fonctionnelle par module » —
+ *    spec dataService/couche unifiée, sept. 2026) :
+ *    (1) FALLBACK OFFLINE PAR CHEMIN (handleApiGet) : hors ligne (ou réseau
+ *        KO), si la clé EXACTE (URL + params + identité) manque, on sert la
+ *        meilleure entrée du MÊME chemin + MÊME identité (params les plus
+ *        proches de la demande). Cause racine : le pré-cache stocke des
+ *        variantes de params précises (schoolLevelId, academicYearId…) alors
+ *        que les pages demandent d'autres combinaisons → clé ≠ → 503 →
+ *        « le module s'affiche mais sans ses données ».
+ *    (2) L'app complète cette couche côté page : response_cache IndexedDB
+ *        (clé par URL, tous formats) + timeout 5 s — cf. data-service.ts.
  *
  * v3.6.0 : (exigence « TOUS les modules offline » — couverture exhaustive) :
  *    (1) PRÉ-CACHE ÉTENDU : le client envoie désormais ~230 endpoints (tous
@@ -126,7 +138,7 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
-const SW_VERSION = 'v3.6.0';
+const SW_VERSION = 'v3.7.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 const PAGE_CACHE = `ah-pages-${SW_VERSION}`;
 const AUTH_CACHE = 'ah-auth-token'; // ⭐ miroir JWT pour le background sync — JAMAIS purgé
@@ -785,8 +797,21 @@ async function handleApiGet(request, timeoutMs = API_TIMEOUT) {
   }
   if (cached) return cached;
 
+  // ⭐ v3.7.0 — FALLBACK PAR CHEMIN (spec « lecture hors ligne par module ») :
+  //    la clé exacte (params complets) manque MAIS le pré-cache/la navigation
+  //    en ligne a très probablement stocké une VARIANTE de params du MÊME
+  //    endpoint pour le MÊME utilisateur (le pré-cache v3.6 envoie ~230
+  //    endpoints avec des combinaisons précises ; les pages en demandent
+  //    d'autres). On sert l'entrée du même chemin dont les params sont les
+  //    plus proches de la demande — STRICTEMENT la même identité (aucune
+  //    fuite cross-tenant : __ah_t identique).
+  //    Un module affiche ainsi SES données (périmètre de filtre le plus
+  //    proche) au lieu d'une page vide.
+  cached = await matchApiByPath(cache, request, identity);
+  if (cached) return cached;
+
   // Pas de cache + réseau indisponible → échec RAPIDE avec corps explicite :
-  // le fetcher de la page (fetchJson → null, offlineFetch → IDB) gère ce 503
+  // le fetcher de la page (dataService → response_cache IDB) gère ce 503
   // proprement — JAMAIS de spinner infini.
   return new Response(
     JSON.stringify({ error: 'offline', message: 'Données non disponibles hors ligne (aucune copie locale)' }),
@@ -795,6 +820,89 @@ async function handleApiGet(request, timeoutMs = API_TIMEOUT) {
       headers: { 'Content-Type': 'application/json', 'X-AH-Offline': '1' },
     },
   );
+}
+
+/** ⭐ v3.7.0 — Meilleure entrée du cache API pour le MÊME chemin + MÊME
+ *    identité, params triés par proximité avec la demande (2 points par
+ *    param identique, pénalité légère par param supplémentaire ; à égalité,
+ *    la réponse la plus récente selon l'en-tête `date` préservé). */
+async function matchApiByPath(cache, request, identity) {
+  try {
+    const reqUrl = new URL(request.url);
+    const wantedPath = reqUrl.pathname;
+    const wanted = new URLSearchParams();
+    reqUrl.searchParams.forEach((value, name) => {
+      if (name !== '_t') wanted.append(name, value);
+    });
+    const wantedIdentityHash = identity === 'ANONYMOUS' ? null : fnv1a(identity);
+
+    const keys = await cache.keys();
+    let bestKey = null;
+    let bestScore = -Infinity;
+    let bestDate = 0;
+    for (const k of keys) {
+      let ku;
+      try {
+        ku = new URL(k.url);
+      } catch {
+        continue;
+      }
+      if (ku.pathname !== wantedPath) continue;
+      const gotIdentityHash = ku.searchParams.get('__ah_t');
+      if ((gotIdentityHash || null) !== (wantedIdentityHash || null)) continue;
+
+      const got = new URLSearchParams();
+      ku.searchParams.forEach((value, name) => {
+        if (name !== '_t' && name !== '__ah_t') got.append(name, value);
+      });
+      let score = 0;
+      let wantedCount = 0;
+      wanted.forEach((value, name) => {
+        wantedCount++;
+        if (got.get(name) === value) score += 2;
+      });
+      let gotCount = 0;
+      got.forEach(() => {
+        gotCount++;
+      });
+      score -= Math.max(0, gotCount - wantedCount);
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestKey = k;
+        try {
+          bestDate = Date.parse((await peekHeader(cache, k, 'date')) || '') || 0;
+        } catch {
+          bestDate = 0;
+        }
+      } else if (score === bestScore && bestKey) {
+        let date = 0;
+        try {
+          date = Date.parse((await peekHeader(cache, k, 'date')) || '') || 0;
+        } catch {
+          date = 0;
+        }
+        if (date > bestDate) {
+          bestDate = date;
+          bestKey = k;
+        }
+      }
+    }
+    if (bestKey) return cache.match(bestKey);
+  } catch {
+    /* non-bloquant */
+  }
+  return null;
+}
+
+/** Lit un en-tête d'une entrée du cache sans consommer le corps. */
+async function peekHeader(cache, key, headerName) {
+  try {
+    const res = await cache.match(key);
+    return res ? res.headers.get(headerName) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** LRU simple : garde au plus API_CACHE_MAX entrées (ordre d'insertion). */

@@ -58,6 +58,24 @@ export default function AppModuleError({
     if (isChunkError) scheduleChunkRecoveryReload();
   }, [isChunkError]);
 
+  // ⭐ v3.7.0 — Auto-guérison : échec de navigation réseau → dès que le
+  //    réseau revient, on RETENTE le rendu du module (les données locales
+  //    sont déjà servies par la couche unifiée dataService — spec « lecture
+  //    hors ligne par module » : une erreur réseau ne bloque jamais
+  //    l'affichage durablement, la page se réaffiche seule à la reconnexion).
+  useEffect(() => {
+    if (!isOfflineNav) return;
+    const onOnline = () => {
+      try {
+        reset();
+      } catch {
+        window.location.reload();
+      }
+    };
+    window.addEventListener('online', onOnline, { once: true });
+    return () => window.removeEventListener('online', onOnline);
+  }, [isOfflineNav, reset]);
+
   if (isChunkError) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] px-4">
@@ -101,11 +119,11 @@ export default function AppModuleError({
           <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-amber-100 flex items-center justify-center">
             <WifiOff className="w-6 h-6 text-amber-600" />
           </div>
-          <h2 className="text-lg font-bold text-slate-900 mb-2">Page non disponible hors ligne</h2>
+          <h2 className="text-lg font-bold text-slate-900 mb-2">Module en attente du réseau</h2>
           <p className="text-sm text-slate-600 mb-4">
-            Cette page n&apos;a pas encore été chargée sur cet appareil. Vos données
-            enregistrées restent accessibles depuis le tableau de bord — la page
-            sera disponible hors ligne après l&apos;avoir visitée une fois en ligne.
+            Connexion interrompue pendant l&apos;ouverture de cette page. Vos données
+            enregistrées restent disponibles — la page se réaffiche automatiquement
+            dès le retour de la connexion.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link

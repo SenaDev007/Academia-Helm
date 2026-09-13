@@ -4,26 +4,28 @@
  * ============================================================================
  *
  * Patche window.fetch pour intercepter automatiquement TOUS les GET /api/*
- * et les faire passer par offlineFetch (qui lit IndexedDB en offline).
+ * et les faire passer par dataService (la COUCHE D'ACCÈS AUX DONNÉES
+ * UNIFIÉE — cf. data-service.ts / offline-fetch.ts).
  *
- * Avantage : aucun composant n'a besoin d'être modifié. Les 110+ fichiers
- * qui font `fetch('/api/...')` directs bénéficient automatiquement du
- * fallback IndexedDB.
+ * ⭐ Spec « Lecture hors ligne par module » §1 : « Aucun composant, page ou
+ *    module ne doit appeler l'API directement » — cet intercepteur EST le
+ *    point de passage obligatoire : les 110+ fichiers qui font
+ *    `fetch('/api/...')` directs bénéficient automatiquement du timeout
+ *    court, du cache local (response_cache) et du fallback IndexedDB,
+ *    SANS modification de leur code.
  *
  * Comportement :
- *   - GET /api/* + store IDB connu → offlineFetch (lit IDB si offline)
- *   - GET /api/* + store IDB inconnu → fetch natif (comportement par défaut)
- *   - POST/PUT/PATCH/DELETE → fetch natif (les mutations offline passent
- *     par l'outbox via offlineMutation, pas par cet intercepteur)
- *   - URLs non /api/* (assets, images, etc.) → fetch natif
+ *   - GET /api/* → dataService.get (timeout 5 s, cache local, fallback)
+ *   - POST/PUT/PATCH/DELETE → dataService.mutate (outbox hors ligne)
+ *   - URLs non /api/* (assets, navigations RSC, images…) → fetch natif
  *
  * ⭐ Important : on ne patche QUE si l'environnement est client (browser).
  *    En SSR, window.fetch n'existe pas.
  * ============================================================================
  */
 
-import { offlineFetch, offlineMutation } from './offline-fetch';
-import { deriveStoreName, getTenantIdForOffline } from './store-names';
+import { dataService } from './data-service';
+import { deriveStoreName } from './store-names';
 import { isTauriEnvironment, tauriSqlFetch, tauriSqlMutation } from './tauri-sql-fetch';
 
 let isInstalled = false;
@@ -137,11 +139,11 @@ export function installGlobalFetchInterceptor(): void {
         }
       }
 
-      // ⭐ WEB : utiliser offlineFetch (lit IDB en offline, cache en online)
+      // ⭐ WEB : dataService.get — la couche unifiée (timeout 5 s, cache
+      //    response_cache, fallback IndexedDB — cf. offline-fetch.ts)
       try {
-        const tenantId = getTenantIdForOffline();
-        const data = await offlineFetch<any>(url, storeName, {
-          tenantId,
+        const data = await dataService.get<any>(url, {
+          storeName,
           fetchOptions: init,
         });
 
@@ -156,24 +158,24 @@ export function installGlobalFetchInterceptor(): void {
           },
         });
       } catch (error) {
-        // ⭐ Si offlineFetch échoue (cache vide + offline) :
-        //    Retourner une 503 explicite au lieu de retomber sur le fetch natif
-        //    (qui va lui-même échouer et crasher l'app).
-        if (!navigator.onLine) {
-          return new Response(
-            JSON.stringify({ error: 'Offline — data not in cache', offline: true }),
-            {
-              status: 503,
-              statusText: 'Offline — data not in cache',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Offline-Empty': 'true',
-              },
+        // ⭐ Erreurs applicatives 4xx (le serveur a répondu et REFUSE —
+        //    ex. 403 périmètre du rôle) : on re-synthétise la réponse pour
+        //    l'appelant AVEC le message métier, sans re-consommer le réseau.
+        //    (Les échecs réseau/timeout ne passent plus ici : dataService
+        //    sert le cache local sans jamais bloquer — spec §2.3.)
+        const message = (error as Error)?.message || 'Request failed';
+        const status = (error as { status?: number })?.status || 502;
+        return new Response(
+          JSON.stringify({ message, error: message }),
+          {
+            status,
+            statusText: 'Error (offline data layer)',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Offline-App-Error': 'true',
             },
-          );
-        }
-        // Si on est online, retomber sur le fetch natif (pour les routes non cachées)
-        return originalFetch.call(window, input, init);
+          },
+        );
       }
     }
 
@@ -208,7 +210,7 @@ export function installGlobalFetchInterceptor(): void {
         }
       }
 
-      // ⭐ WEB : utiliser offlineMutation (IndexedDB + outbox)
+      // ⭐ WEB : dataService.mutate (IndexedDB + outbox hors ligne)
       try {
         // Parse le body de la requête
         let bodyData: any = undefined;
@@ -222,12 +224,10 @@ export function installGlobalFetchInterceptor(): void {
           }
         }
 
-        const tenantId = getTenantIdForOffline();
-        const result = await offlineMutation<any>(
-          url,
+        const result = await dataService.mutate<any>(
           method as 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+          url,
           bodyData,
-          { tenantId },
         );
 
         // ⭐ RESTRICTION REFUSÉE (Fedapay, validation paiement, publication…) :

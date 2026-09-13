@@ -46,6 +46,11 @@ export interface BulletinPdfData {
   isMaternelle: boolean;
   // ⭐ Piste linguistique (FR | EN) — déclenche le layout anglophone si 'EN'
   scopeLang?: 'FR' | 'EN' | null;
+  // ⭐ SECONDAIRE — « Bulletin d'évaluation » (un seul type d'évaluation à la
+  //    fois : Interrogation écrite 1, Devoir surveillé 2, …) : même standard
+  //    graphique que le bulletin trimestriel CEG, mais tableau simple
+  //    Discipline | Note /20 | Rang | Appréciation + moyenne de l'évaluation.
+  isSecondaryEval?: boolean;
   // ⭐ Champs anglophones spécifiques (page 1 + page 2 du bulletin anglophone)
   studentAge?: number | null;
   studentBirthDate?: string | null;
@@ -169,12 +174,16 @@ export class BulletinPdfService {
       );
 
       // 2. Build HTML — ⭐ branch anglophone si scopeLang === 'EN'
+      //    ⭐ SECONDAIRE FR « Bulletin d'évaluation » : tableau simple
+      //    (Discipline | Note /20 | Rang | Appréciation)
       //    ⭐ SECONDAIRE FR : modèle CEG (Moy Int / Dev1 / Dev2 / Moy / Coef / Moy Coef)
       const html = data.scopeLang === 'EN'
         ? this.buildHtmlAnglophone(data, qrDataUrl, bulletinId)
-        : (data.isSecondary
-          ? this.buildHtmlSecondaire(data, qrDataUrl, bulletinId)
-          : this.buildHtml(data, qrDataUrl, bulletinId));
+        : (data.isSecondaryEval
+          ? this.buildHtmlSecondaireEval(data, qrDataUrl, bulletinId)
+          : (data.isSecondary
+            ? this.buildHtmlSecondaire(data, qrDataUrl, bulletinId)
+            : this.buildHtml(data, qrDataUrl, bulletinId)));
 
       // 3. Generate PDF via Puppeteer
       //    ⭐ V10h — le bulletin anglophone (Report Book, tableau 10 colonnes)
@@ -189,7 +198,7 @@ export class BulletinPdfService {
         // Small delay to let any inline images (base64 signatures, SVG flag) render
         await new Promise(resolve => setTimeout(resolve, 500));
         const pdfBuffer = await page.pdf({
-          format: data.scopeLang === 'EN' || data.isSecondary ? 'A4' : 'A5',
+          format: data.scopeLang === 'EN' || data.isSecondary || data.isSecondaryEval ? 'A4' : 'A5',
           landscape: false,
           printBackground: true,
           margin: { top: '8mm', bottom: '8mm', left: '8mm', right: '8mm' },
@@ -500,11 +509,13 @@ export class BulletinPdfService {
       </tr>
       </table>
 
-      <!-- TABLEAU DES NOTES -->
-      <table class="notes">
-        <thead>${tableHeader}</thead>
-        <tbody>${subjectRows}${totalRow}</tbody>
-      </table>
+      <!-- TABLEAU DES NOTES (coins arrondis, bordure navy) -->
+      <div style="border:2px solid #0A2A5E;border-radius:4px;overflow:hidden;">
+        <table class="notes">
+          <thead>${tableHeader}</thead>
+          <tbody>${subjectRows}${totalRow}</tbody>
+        </table>
+      </div>
 
       <!-- SYNTHÈSE -->
       ${data.isMaternelle ? `
@@ -671,7 +682,8 @@ export class BulletinPdfService {
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; position:relative; }
-.watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-15deg); opacity:0.08; z-index:0; pointer-events:none; }
+/* ⭐ Filigrane : logo CENTRÉ et HORIZONTAL (aucune rotation) */
+.watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); opacity:0.08; z-index:0; pointer-events:none; }
 .content { position:relative; z-index:1; }
 .header { margin-bottom:6px; padding-bottom:4px; border-bottom:2px solid #0A2A5E; }
 .header-table { width:100%; border-collapse:collapse; }
@@ -859,7 +871,8 @@ ${page2Content}
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; position:relative; }
-.watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-15deg); opacity:0.08; z-index:0; pointer-events:none; }
+/* ⭐ Filigrane : logo CENTRÉ et HORIZONTAL (aucune rotation) */
+.watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); opacity:0.08; z-index:0; pointer-events:none; }
 .content { position:relative; z-index:1; }
 .header { margin-bottom:5px; padding-bottom:3px; border-bottom:2px solid #0A2A5E; }
 .header-table { width:100%; border-collapse:collapse; }
@@ -943,41 +956,232 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
 
   ${recapBlock}
 
-  <!-- DÉCISIONS + SIGNATURES -->
-  <table style="width:100%;border-collapse:collapse;margin-top:6px;">
+  <!-- ═══ PAGE 2 SECONDAIRE : Appréciation du conseil des professeurs +
+       Appréciation du directeur + signature du DIRECTEUR UNIQUEMENT ═══ -->
+  <div style="border:1px solid #0A2A5E;border-radius:2px;padding:5px;margin-top:6px;width:100%;">
+    <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:3px;">Appréciation du conseil des professeurs</div>
+    ${data.analyseRecommandations
+      ? `<div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:26px;">${data.analyseRecommandations}</div>`
+      : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:10px;"></div>').join('')}
+  </div>
+
+  <div style="border:1px solid #0A2A5E;border-radius:2px;padding:5px;margin-top:4px;width:100%;">
+    <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:3px;">Appréciation du directeur</div>
+    ${(data.directorVisa || data.appreciationGlobale)
+      ? `<div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:26px;">${data.directorVisa || data.appreciationGlobale}</div>`
+      : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:10px;"></div>').join('')}
+  </div>
+
+  <!-- SIGNATURE : DIRECTEUR UNIQUEMENT (modèle officiel secondaire) -->
+  <table style="width:100%;border-collapse:collapse;margin-top:10px;">
     <tr>
-      <td style="width:60%;vertical-align:top;padding-right:8px;">
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:4px;font-size:9px;">
-          <div style="font-weight:bold;text-transform:uppercase;color:#0A2A5E;margin-bottom:2px;">Décision du conseil de classe</div>
-          <div style="font-weight:bold;color:${data.secRecap ? ((data.secRecap.annualAverage ?? 0) >= 10 ? '#059669' : '#dc2626') : '#475569'};">${data.secRecap?.decision || '—'}</div>
-        </div>
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:4px;font-size:9px;margin-top:4px;">
-          <div style="font-weight:bold;text-transform:uppercase;color:#0A2A5E;margin-bottom:2px;">Appréciation du Directeur</div>
-          <div style="font-weight:bold;">${data.appreciationGlobale || '—'}</div>
-        </div>
+      <td style="width:55%;text-align:right;vertical-align:bottom;padding:4px 10px 4px 0;font-size:9px;font-style:italic;color:#475569;">
+        Fait le ${new Date().toLocaleDateString('fr-FR')}
       </td>
-      <td style="width:40%;vertical-align:bottom;">
-        <table style="width:100%;border-collapse:collapse;">
-          <tr>
-            <td style="width:50%;text-align:center;vertical-align:bottom;padding:4px 2px;">
-              <div style="height:30px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
-              <div style="border-top:1px solid #000;margin-top:3px;padding-top:2px;font-size:8px;font-weight:bold;color:#0A2A5E;">Le Titulaire</div>
-              ${data.teacherName ? `<div style="font-size:7px;color:#1a1a1a;font-weight:600;">${data.teacherName}</div>` : ''}
-            </td>
-            <td style="width:50%;text-align:center;vertical-align:bottom;padding:4px 2px;">
-              <div style="height:30px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
-              <div style="border-top:1px solid #000;margin-top:3px;padding-top:2px;font-size:8px;font-weight:bold;color:#0A2A5E;">Le Directeur</div>
-              ${data.directorName ? `<div style="font-size:7px;color:#1a1a1a;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:7px;color:#64748b;">Visa</div>'}
-            </td>
-          </tr>
-        </table>
+      <td style="width:45%;text-align:center;vertical-align:bottom;padding:4px 2px;">
+        <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:95px;object-fit:contain;" />` : ''}</div>
+        <div style="border-top:1px solid #000;margin-top:3px;padding-top:2px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Directeur</div>
+        ${data.directorName ? `<div style="font-size:8px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:7px;color:#64748b;">Nom et signature</div>'}
       </td>
     </tr>
   </table>
 
-  <!-- QR + MENTION -->
+  <!-- QR + MENTION OFFICIELLE -->
   <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
-    <div style="font-size:8px;font-style:italic;color:#475569;">Le parent est prié de vérifier les notes et de contester dans les 48 heures.</div>
+    <div style="font-size:8px;font-style:italic;font-weight:bold;color:#0A2A5E;">Ce bulletin n'est établi qu'une seule fois,<br/>veuillez le conserver précieusement.</div>
+    <div style="text-align:center;">
+      <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
+      <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
+    </div>
+  </div>
+
+  <div class="footer">Document généré par Academia Helm — ${new Date().toLocaleString('fr-FR')} · ID : ${bulletinId}</div>
+</div>
+
+</body>
+</html>`;
+  }
+
+  /**
+   * ⭐ SECONDAIRE — « Bulletin d'évaluation » (piste FR) :
+   *
+   *   Même standard graphique que le bulletin trimestriel CEG (en-tête
+   *   officiel, infos élève, tableau à coins arrondis bordure navy) MAIS
+   *   pour UN SEUL type d'évaluation à la fois (Interrogation écrite 1,
+   *   Devoir surveillé 2, …). Tableau simple :
+   *
+   *     Discipline | Note /20 | Rang | Appréciation
+   *
+   *   … pour toutes les matières, puis en bas :
+   *     Moyenne de l'évaluation + Rang.
+   *   Page 2 : Appréciation du conseil des professeurs + Appréciation du
+   *   directeur + signature du DIRECTEUR UNIQUEMENT + mention officielle.
+   */
+  private buildHtmlSecondaireEval(data: BulletinPdfData, qrCode: string, bulletinId: string): string {
+    const ministry = "Ministère des Enseignements Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes";
+
+    // Benin flag as SVG data URL (même drapeau que buildHtml)
+    const beninFlagSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`;
+    const beninFlag = `data:image/svg+xml;base64,${Buffer.from(beninFlagSvg).toString('base64')}`;
+
+    const feminine = data.studentGender === 'FEMALE' || data.studentGender === 'F';
+
+    const fmtSec = (n: number | null | undefined): string =>
+      (typeof n === 'number' && !isNaN(n)) ? n.toFixed(2) : '—';
+
+    // ── Lignes du tableau (une par discipline) ──────────────────────────────
+    const subjectRows = data.subjects.map((s) => {
+      const noteCell = s.isAbsent
+        ? '<span style="color:#dc2626;font-size:8px;font-weight:bold;">ABS</span>'
+        : (typeof s.score === 'number'
+          ? `<span style="color:${s.score >= 10 ? '#0f172a' : '#dc2626'};font-weight:bold;">${s.score.toFixed(2)}</span>`
+          : '<span style="color:#94a3b8;">—</span>');
+      const rang = s.subjectPosition ? formatRank(s.subjectPosition, feminine) : '—';
+      return `<tr>
+          <td style="border:1px solid #cbd5e1;padding:4px 3px;font-size:10px;font-weight:600;">${s.name}</td>
+          <td style="border:1px solid #cbd5e1;padding:4px 3px;text-align:center;font-size:11px;background:#ecfdf5;">${noteCell}</td>
+          <td style="border:1px solid #cbd5e1;padding:4px 3px;text-align:center;font-size:10px;font-weight:bold;">${rang}</td>
+          <td style="border:1px solid #cbd5e1;padding:4px 3px;text-align:center;font-size:9px;color:#475569;">${s.appreciation || '—'}</td>
+        </tr>`;
+    }).join('');
+
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Bulletin d'évaluation - ${data.studentName}</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; position:relative; }
+/* ⭐ Filigrane : logo CENTRÉ et HORIZONTAL (aucune rotation) */
+.watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); opacity:0.08; z-index:0; pointer-events:none; }
+.content { position:relative; z-index:1; }
+.header { margin-bottom:5px; padding-bottom:3px; border-bottom:2px solid #0A2A5E; }
+.header-table { width:100%; border-collapse:collapse; }
+.header-table td { vertical-align:middle; padding:2px 4px; }
+.header-left { text-align:center; width:12%; }
+.header-center { text-align:center; width:68%; }
+.header-right { text-align:center; width:20%; }
+.republique { font-size:11px; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; }
+.divider { margin:2px auto; width:50%; }
+.divider-line { height:1px; background:#0A2A5E; }
+.ministere { font-size:8px; font-weight:bold; text-transform:uppercase; letter-spacing:0.3px; line-height:1.3; }
+.school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
+.school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
+.bulletin-title { text-align:center; border:2px solid #0A2A5E; padding:4px 8px; margin-bottom:5px; font-size:11px; font-weight:bold; text-transform:uppercase; color:#0A2A5E; background:#f8fafc; }
+table.notes { width:100%; border-collapse:collapse; }
+table.notes th { color:white; border:1px solid #0D3B85; padding:5px 3px; font-size:8px; text-transform:uppercase; }
+table.notes td { border:1px solid #cbd5e1; padding:4px 3px; }
+table.notes tbody tr:nth-child(even) { background:#f8fafc; }
+.info-table { width:100%; border-collapse:collapse; margin-bottom:5px; border:1px solid #0A2A5E; }
+.info-table td { border:1px solid #cbd5e1; padding:3px 5px; font-size:9px; background:#f8fafc; }
+.footer { margin-top:4px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; padding-top:3px; }
+</style>
+</head>
+<body>
+
+${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="width:400px;height:400px;object-fit:contain;" alt="" />` : ''}
+
+<div class="content">
+
+  <!-- EN-TÊTE OFFICIEL -->
+  <div class="header">
+    <table class="header-table">
+      <tr>
+        <td class="header-left"><img src="${beninFlag}" alt="Drapeau du Bénin" style="width:30px;height:20px;" /></td>
+        <td class="header-center">
+          <div class="republique">République du Bénin</div>
+          <div class="divider"><div class="divider-line"></div></div>
+          <div class="ministere">${ministry}</div>
+          <div class="divider"><div class="divider-line"></div></div>
+          <div class="school-name">${data.schoolName}</div>
+          <div class="school-info">${data.schoolSlogan ? `« ${data.schoolSlogan} » · ` : ''}${data.schoolAddress || ''} · Tél: ${data.schoolPhone || ''} · ${data.schoolEmail || ''}</div>
+        </td>
+        <td class="header-right">${data.schoolLogo ? `<img src="${data.schoolLogo}" style="max-width:35px;max-height:35px;object-fit:contain;" />` : ''}</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- TITRE BULLETIN D'ÉVALUATION -->
+  <div class="bulletin-title">Bulletin d'évaluation — ${data.evaluationTypeName || 'Évaluation'}${data.evaluationTypeCode ? ' (' + data.evaluationTypeCode + ')' : ''} — ${data.periodName}</div>
+
+  <!-- INFOS ÉLÈVE (Année | Trimestre | Évaluation / Nom | Effectif·Matricule | Rang) -->
+  <table class="info-table">
+    <tr>
+      <td>Année scolaire : <strong>${data.academicYearName}</strong></td>
+      <td>Trimestre : <strong>${data.periodName}</strong></td>
+      <td>Évaluation : <strong>${data.evaluationTypeName || '—'}${data.evaluationTypeCode ? ' (' + data.evaluationTypeCode + ')' : ''}</strong></td>
+    </tr>
+    <tr>
+      <td>Nom et prénoms : <strong style="text-transform:uppercase;">${data.studentName}</strong></td>
+      <td>Effectif : <strong>${data.totalStudents}</strong> · Matricule : <strong>${data.studentMatricule || '—'}</strong></td>
+      <td>Rang : <strong>${formatRank(data.classRank, feminine)}</strong></td>
+    </tr>
+  </table>
+
+  <!-- TABLEAU DES NOTES (coins arrondis, bordure navy) : Discipline | Note /20 | Rang | Appréciation -->
+  <div style="border:2px solid #0A2A5E;border-radius:4px;overflow:hidden;">
+    <table class="notes">
+      <thead>
+        <tr style="background:#0A2A5E;color:white;">
+          <th style="border:1px solid #0D3B85;padding:5px 4px;font-size:9px;text-transform:uppercase;text-align:left;">Discipline</th>
+          <th style="border:1px solid #0D3B85;padding:5px 4px;font-size:9px;text-transform:uppercase;background:#0D3B85;">Note /20</th>
+          <th style="border:1px solid #0D3B85;padding:5px 4px;font-size:9px;text-transform:uppercase;">Rang</th>
+          <th style="border:1px solid #0D3B85;padding:5px 4px;font-size:9px;text-transform:uppercase;">Appréciation</th>
+        </tr>
+      </thead>
+      <tbody>${subjectRows}
+        <tr style="background:#dbeafe;font-weight:bold;">
+          <td colspan="2" style="border:1px solid #cbd5e1;padding:4px;font-size:9px;text-transform:uppercase;text-align:right;">Moyenne de l'évaluation</td>
+          <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:11px;color:#0A2A5E;">${fmtSec(data.generalAverage)}</td>
+          <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;color:#0A2A5E;">Rang : ${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- SYNTHÈSE STATISTIQUE -->
+  <div style="margin-top:5px;font-size:9px;">
+    <table style="width:100%;border-collapse:collapse;"><tr>
+      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne de la classe : <strong>${fmtSec(data.classAverage)}</strong></td>
+      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne la plus faible : <strong>${fmtSec(data.lowestAverage)}</strong></td>
+      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne la plus forte : <strong>${fmtSec(data.highestAverage)}</strong></td>
+    </tr></table>
+  </div>
+
+  <!-- ═══ PAGE 2 SECONDAIRE : Appréciation du conseil des professeurs +
+       Appréciation du directeur + signature du DIRECTEUR UNIQUEMENT ═══ -->
+  <div style="border:1px solid #0A2A5E;border-radius:2px;padding:5px;margin-top:8px;width:100%;">
+    <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:3px;">Appréciation du conseil des professeurs</div>
+    ${data.analyseRecommandations
+      ? `<div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:26px;">${data.analyseRecommandations}</div>`
+      : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:10px;"></div>').join('')}
+  </div>
+
+  <div style="border:1px solid #0A2A5E;border-radius:2px;padding:5px;margin-top:4px;width:100%;">
+    <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:3px;">Appréciation du directeur</div>
+    ${(data.directorVisa || data.appreciationGlobale)
+      ? `<div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:26px;">${data.directorVisa || data.appreciationGlobale}</div>`
+      : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:10px;"></div>').join('')}
+  </div>
+
+  <!-- SIGNATURE : DIRECTEUR UNIQUEMENT (modèle officiel secondaire) -->
+  <table style="width:100%;border-collapse:collapse;margin-top:10px;">
+    <tr>
+      <td style="width:55%;text-align:right;vertical-align:bottom;padding:4px 10px 4px 0;font-size:9px;font-style:italic;color:#475569;">
+        Fait le ${new Date().toLocaleDateString('fr-FR')}
+      </td>
+      <td style="width:45%;text-align:center;vertical-align:bottom;padding:4px 2px;">
+        <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:95px;object-fit:contain;" />` : ''}</div>
+        <div style="border-top:1px solid #000;margin-top:3px;padding-top:2px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Directeur</div>
+        ${data.directorName ? `<div style="font-size:8px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:7px;color:#64748b;">Nom et signature</div>'}
+      </td>
+    </tr>
+  </table>
+
+  <!-- QR + MENTION OFFICIELLE -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
+    <div style="font-size:8px;font-style:italic;font-weight:bold;color:#0A2A5E;">Ce bulletin n'est établi qu'une seule fois,<br/>veuillez le conserver précieusement.</div>
     <div style="text-align:center;">
       <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
       <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
@@ -1360,7 +1564,8 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; position:relative; }
-.watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-15deg); opacity:0.08; z-index:0; pointer-events:none; }
+/* ⭐ Filigrane : logo CENTRÉ et HORIZONTAL (aucune rotation) */
+.watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); opacity:0.08; z-index:0; pointer-events:none; }
 .content { position:relative; z-index:1; }
 .header { margin-bottom:6px; padding-bottom:4px; border-bottom:2px solid #0A2A5E; }
 .header-table { width:100%; border-collapse:collapse; }

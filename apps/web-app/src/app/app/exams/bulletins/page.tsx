@@ -9,8 +9,12 @@
  *   3. Sélectionner un type d'évaluation (EM1, EM2, EC — secondaire :
  *      Interrogation écrite 1/2, Devoir surveillé 1/2)
  *   4. Les bulletins de tous les élèves s'affichent automatiquement
- *      → pour un élève : toutes les matières, notes du type sélectionné
- *        (même standard que le primaire)
+ *      → pour un élève : toutes les matières, notes du type sélectionné.
+ *      Primaire/Maternelle : carnet (CM/18, CP/02…) ; Secondaire : tableau
+ *      Discipline | Note /20 | Rang | Appréciation + Moyenne de l'évaluation
+ *      (même standard que le bulletin trimestriel) ; page 2 secondaire :
+ *      appréciations conseil des professeurs + directeur, signature du
+ *      directeur UNIQUEMENT + mention « établi qu'une seule fois ».
  *
  * Onglet « Bulletin trimestriel » :
  *   - Secondaire (piste FR) : modèle consolidé CEG — Discipline |
@@ -469,6 +473,60 @@ function BulletinsContent() {
   // ⭐ Workflow signatures — loaded from backend to display in bulletin preview
   const [workflowSignatures, setWorkflowSignatures] = useState<Record<string, { directorSig?: string; teacherSig?: string }>>({});
 
+  // ⭐ Nom du directeur — résolu automatiquement depuis le module RH (onglet
+  //    Administration → staff-admin-assignments) : le directeur affecté au
+  //    niveau scolaire courant (MAT / PRI / SEC / MAT_PRI / ALL), à la piste
+  //    linguistique (FR/EN ou bi-piste) et à l'année en cours (ou permanente).
+  const [directorName, setDirectorName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!effectiveTenantId) return;
+    let cancelled = false;
+    fetch('/api/staff-admin-assignments?isActive=true', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: any[]) => {
+        if (cancelled || !Array.isArray(list) || list.length === 0) return;
+        const DIR_ROLE_PRIORITY = ['DIRECTEUR_GENERAL', 'DIRECTEUR', 'PROVISEUR', 'DIRECTEUR_DES_ETUDES', 'DIRECTEUR_ADJOINT'];
+        const levelToCodes: Record<string, string[]> = {
+          MATERNELLE: ['MAT', 'MAT_PRI', 'ALL'],
+          PRIMAIRE: ['PRI', 'MAT_PRI', 'ALL'],
+          SECONDAIRE: ['SEC', 'ALL'],
+        };
+        const targetCodes = levelToCodes[scopeLevel || ''] || null;
+        if (!targetCodes) return;
+        const candidates = list.filter((a: any) => {
+          if (!a || a.isActive === false) return false;
+          if (!DIR_ROLE_PRIORITY.includes(a.adminRole)) return false;
+          if (!targetCodes.includes(a.schoolLevelCode)) return false;
+          // Piste : null = bi-piste ; sinon la piste doit correspondre
+          const trackCode = a.academicTrack?.code;
+          if (trackCode && scopeLang && trackCode !== scopeLang) return false;
+          // Année : null = permanente (héritée) ; sinon l'année courante
+          if (a.academicYearId && academicYear?.id && a.academicYearId !== academicYear.id) return false;
+          return true;
+        });
+        if (candidates.length === 0) return;
+        candidates.sort((a: any, b: any) => {
+          const pa = DIR_ROLE_PRIORITY.indexOf(a.adminRole);
+          const pb = DIR_ROLE_PRIORITY.indexOf(b.adminRole);
+          if (pa !== pb) return (pa === -1 ? 99 : pa) - (pb === -1 ? 99 : pb);
+          const ya = a.academicYearId ? 0 : 1;
+          const yb = b.academicYearId ? 0 : 1;
+          if (ya !== yb) return ya - yb;
+          return new Date(b.startDate || 0).getTime() - new Date(a.startDate || 0).getTime();
+        });
+        const best: any = candidates[0];
+        if (best?.staff) {
+          const first = (best.staff.firstName || '').trim();
+          const last = (best.staff.lastName || '').trim();
+          const name = [first, last].filter(Boolean).join(' ').trim();
+          if (name) setDirectorName(name);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [effectiveTenantId, scopeLevel, scopeLang, academicYear?.id]);
+
   // Load workflow status to get signatures per student
   useEffect(() => {
     if (!effectiveTenantId || !academicYear?.id || !selectedClassId || !selectedPeriodId) return;
@@ -742,6 +800,11 @@ function BulletinsContent() {
             const score = grade.score !== null ? Number(grade.score) : null;
             // ⭐ En anglophone, les mentions sont basées sur /100 (converties depuis le barème)
             const score100 = score !== null && grade.maxScore ? (score / Number(grade.maxScore || 20)) * 100 : null;
+            // ⭐ Secondaire « Bulletin d'évaluation » : mêmes mentions que le
+            //    bulletin trimestriel (Très Bien → Faible)
+            const frAppreciation = (isSecondaryTrack && !secondaryConsolidated)
+              ? computeAppreciationSecondaire(score)
+              : (score === null ? '—' : score >= 16 ? 'Très Bien' : score >= 14 ? 'Bien' : score >= 12 ? 'Assez Bien' : score >= 10 ? 'Passable' : 'Insuffisant');
             student.subjectScores[subjectId] = {
               score, qualitativeCode: null, isAbsent: false,
               appreciation: scopeLang === 'EN'
@@ -753,7 +816,7 @@ function BulletinsContent() {
                   : score100 >= 50 ? 'Pass'
                   : score100 >= 40 ? 'Weak'
                   : 'Very Weak')
-                : (score === null ? '—' : score >= 16 ? 'Très Bien' : score >= 14 ? 'Bien' : score >= 12 ? 'Assez Bien' : score >= 10 ? 'Passable' : 'Insuffisant'),
+                : frAppreciation,
             };
           }
         }
@@ -761,6 +824,27 @@ function BulletinsContent() {
 
       // Fill missing subjects + compute averages
       const results = Array.from(studentMap.values());
+
+      // ⭐ SECONDAIRE « Bulletin d'évaluation » — rang dense par matière sur la
+      //    note de l'évaluation (ex æquo gérés) : alimente la colonne Rang du
+      //    tableau Discipline | Note /20 | Rang | Appréciation.
+      if (isSecondaryTrack && !secondaryConsolidated) {
+        for (const subject of subjects) {
+          const scored = results
+            .map((st) => ({ id: st.id, note: st.subjectScores[subject.id]?.score ?? null }))
+            .filter((x) => x.note !== null)
+            .sort((a, b) => (b.note as number) - (a.note as number));
+          let lastEvalRank = 0;
+          let lastEvalVal: number | null = null;
+          scored.forEach((x, i) => {
+            const r = (i > 0 && x.note === lastEvalVal) ? lastEvalRank : i + 1;
+            lastEvalRank = r;
+            lastEvalVal = x.note;
+            const s = results.find((st) => st.id === x.id)!.subjectScores[subject.id];
+            if (s) s.subjectRank = r;
+          });
+        }
+      }
 
       // ⭐ SECONDAIRE (Bulletin trimestriel) — post-pass : moyennes par matière
       //    + rang par matière. Moyenne d'interrogation = (INT1+INT2)/2 ·
@@ -868,6 +952,11 @@ function BulletinsContent() {
           }
         } else {
           if (validCount > 0) student.generalAverage = totalScore / validCount;
+          // ⭐ Secondaire « Bulletin d'évaluation » : moyenne de l'évaluation +
+          //    mention du modèle secondaire (Très Bien → Faible)
+          if (isSecondaryTrack && !secondaryConsolidated) {
+            student.appreciationGlobale = computeAppreciationSecondaire(student.generalAverage);
+          }
         }
       }
 
@@ -969,7 +1058,7 @@ function BulletinsContent() {
     } finally {
       setLoadingBulletins(false);
     }
-  }, [selectedClassId, selectedPeriodId, selectedEvalTypeId, academicYear?.id, scopeLang, isMaternelle, secondaryConsolidated, classes, periods]);
+  }, [selectedClassId, selectedPeriodId, selectedEvalTypeId, academicYear?.id, scopeLang, isMaternelle, isSecondaryTrack, secondaryConsolidated, classes, periods]);
 
   useEffect(() => { loadBulletins(); }, [loadBulletins]);
 
@@ -1017,8 +1106,11 @@ function BulletinsContent() {
         isMaternelle,
         // ⭐ SECONDAIRE « Bulletin trimestriel » uniquement — modèle CEG (Interrogation
         //    écrite 1/2 + Devoir surveillé 1/2 + Moyenne + Coefficient + Note coefficient).
-        //    L'onglet « Bulletin d'évaluation » génère le même PDF que le primaire.
         isSecondary: secondaryConsolidated,
+        // ⭐ SECONDAIRE « Bulletin d'évaluation » — même standard graphique que le
+        //    bulletin secondaire MAIS un seul type d'évaluation : tableau
+        //    Discipline | Note /20 | Rang | Appréciation + moyenne de l'évaluation.
+        isSecondaryEval: isSecondaryTrack && !secondaryConsolidated ? true : undefined,
         secJunior: secondaryConsolidated
           ? isJuniorSecondaryClass2(selectedClassName || '')
           : undefined,
@@ -1048,7 +1140,9 @@ function BulletinsContent() {
             remark: isEn ? (enTierFor(sc?.total ?? null)?.label ?? '—') : undefined,
             highestInClass: isEn ? stats?.highest ?? null : undefined,
             lowestInClass: isEn ? stats?.lowest ?? null : undefined,
-            subjectPosition: isEn ? stats?.position ?? null : undefined,
+            subjectPosition: (isEn || (isSecondaryTrack && !secondaryConsolidated))
+              ? (isEn ? (stats?.position ?? null) : (sc?.subjectRank ?? null))
+              : undefined,
             // ⭐ SECONDAIRE (Bulletin trimestriel) — slots + moyennes + coefficient
             //    + rang (modèle CEG). undefined = évaluation sans donnée pour
             //    l'élève → clé absente du JSON ; null = absent → ABS ; number = note
@@ -1425,6 +1519,8 @@ function BulletinsContent() {
                       nextTermStartDate={nextTermStartDateForCard}
                       termEndingDate={termEndingDateForCard}
                       isSecondaire={secondaryConsolidated}
+                      isSecondaryTrack={isSecondaryTrack}
+                      directorName={directorName}
                     />
                   </div>
                 )}
@@ -1475,7 +1571,7 @@ function BulletinTwoPage({
   student, bulletinData, isMaternelle, school, academicYear,
   selectedPeriodName, selectedClassName, selectedEvalTypeCode, selectedEvalTypeName,
   onGeneratePdf, generatingPdf, canDownload = true, directorSignature, teacherSignature,
-  selectedPeriodId, scopeLang, nextTermStartDate, termEndingDate, isSecondaire,
+  selectedPeriodId, scopeLang, nextTermStartDate, termEndingDate, isSecondaire, isSecondaryTrack, directorName,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
@@ -1496,9 +1592,15 @@ function BulletinTwoPage({
   nextTermStartDate?: string | null;
   termEndingDate?: string | null;   // ⭐ V10h — TERM ENDING du Report Book
   isSecondaire?: boolean;           // ⭐ SECONDAIRE « Bulletin trimestriel » (consolidé CEG) — sinon standard primaire
+  isSecondaryTrack?: boolean;       // ⭐ SECONDAIRE piste FR (les 2 onglets) — page 2 modèle secondaire
+  directorName?: string | null;     // ⭐ Nom du directeur résolu depuis le module RH (administration)
 }) {
   const isEn = scopeLang === 'EN';
   const isSecondaryBulletin = !!isSecondaire && !isEn;
+  // ⭐ SECONDAIRE piste FR — « Bulletin d'évaluation » (un seul type d'éval,
+  //    tableau Discipline | Note /20 | Rang | Appréciation) vs « Bulletin
+  //    trimestriel » (consolidé CEG).
+  const isSecondaryEvalMode = !!isSecondaryTrack && !isSecondaire && !isEn;
   const [page, setPage] = useState<1 | 2>(1);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
   // ⭐ Signature state — initialized from workflow signatures (backend) if available
@@ -1555,6 +1657,7 @@ function BulletinTwoPage({
         <div className="text-[10px] text-slate-600 mt-0.5">
           {isEn ? <>Pupil: <strong>{student.studentName}</strong> · Admission N°: {student.matricule || '—'} · Report Card (1st CA + 2nd CA + Exam)</>
             : isSecondaryBulletin ? <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · Bulletin trimestriel (Interrogation écrite 1 &amp; 2 + Devoir surveillé 1 &amp; 2)</>
+            : isSecondaryEvalMode ? <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · Bulletin d'évaluation ({selectedEvalTypeCode ? `${selectedEvalTypeCode} ` : ''}{selectedEvalTypeName})</>
             : <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · {selectedEvalTypeCode} {selectedEvalTypeName}</>}
         </div>
       </div>
@@ -1576,7 +1679,17 @@ function BulletinTwoPage({
       <div className="relative overflow-hidden">
         <div key={page} className="animate-in fade-in slide-in-from-right duration-300">
           {page === 1 ? (
-            isSecondaryBulletin ? (
+            isSecondaryEvalMode ? (
+              <BulletinSecondaireEvalPage1
+                student={student}
+                bulletinData={bulletinData}
+                className={selectedClassName}
+                periodName={selectedPeriodName}
+                academicYearLabel={academicYear?.label}
+                evalTypeName={selectedEvalTypeName}
+                evalTypeCode={selectedEvalTypeCode}
+              />
+            ) : isSecondaryBulletin ? (
               <BulletinSecondairePage1
                 student={student}
                 bulletinData={bulletinData}
@@ -1591,10 +1704,17 @@ function BulletinTwoPage({
             ) : (
               <BulletinPrimairePage1 student={student} bulletinData={bulletinData} />
             )
+          ) : isSecondaryTrack && !isEn ? (
+            <BulletinSecondairePage2
+              student={student}
+              signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }}
+              periodId={selectedPeriodId}
+              directorName={directorName}
+            />
           ) : scopeLang === 'EN' && !isMaternelle ? (
-            <BulletinAnglophonePage2 student={student} bulletinData={bulletinData} signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }} periodId={selectedPeriodId} nextTermStartDate={nextTermStartDate} />
+            <BulletinAnglophonePage2 student={student} bulletinData={bulletinData} signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }} periodId={selectedPeriodId} nextTermStartDate={nextTermStartDate} directorName={directorName} />
           ) : (
-            <BulletinPage2 student={student} isMaternelle={isMaternelle} signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }} periodId={selectedPeriodId} />
+            <BulletinPage2 student={student} isMaternelle={isMaternelle} signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }} periodId={selectedPeriodId} directorName={directorName} />
           )}
         </div>
       </div>
@@ -1640,7 +1760,9 @@ function BulletinMaternellePage1({ student, bulletinData }: { student: StudentRe
         <h4 className="text-xs font-bold text-slate-900 uppercase">Évaluation Sommative Mensuelle</h4>
         <p className="text-[10px] text-slate-500">(à remplir après avoir observé l'enfant)</p>
       </div>
-      <table className="w-full border-collapse text-[10px]" style={{ border: '2px solid #0A2A5E' }}>
+      {/* ⭐ Tableau à coins arrondis (bordure navy) */}
+      <div className="rounded-lg overflow-hidden" style={{ border: '2px solid #0A2A5E' }}>
+      <table className="w-full border-collapse text-[10px]">
         <thead>
           <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
             <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '120px', borderColor: '#0D3B85' }}>Matière</th>
@@ -1691,6 +1813,7 @@ function BulletinMaternellePage1({ student, bulletinData }: { student: StudentRe
           })}
         </tbody>
       </table>
+      </div>
       {/* TS/S/PS Legend */}
       <div className="flex items-center gap-3 mt-2 text-[9px] text-slate-500">
         <span className="font-bold">TS: Très Satisfaisant</span>
@@ -1765,7 +1888,9 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
       <div className="text-center mb-2">
         <h4 className="text-xs font-bold text-slate-900 uppercase">I — Connaissance et Habiletés</h4>
       </div>
-      <table className="w-full border-collapse text-[10px]" style={{ border: '2px solid #0A2A5E' }}>
+      {/* ⭐ Tableau à coins arrondis (bordure navy) */}
+      <div className="rounded-lg overflow-hidden" style={{ border: '2px solid #0A2A5E' }}>
+      <table className="w-full border-collapse text-[10px]">
         <thead>
           <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
             <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-left" style={{ minWidth: '120px', borderColor: '#0D3B85' }}>Champs de formation</th>
@@ -1833,6 +1958,7 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
           </tr>
         </tbody>
       </table>
+      </div>
       {/* Synthèse */}
       <div className="mt-2 space-y-1 text-[10px] text-slate-700">
         <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
@@ -2150,6 +2276,151 @@ function BulletinSecondairePage1({
   );
 }
 
+// ─── Page 1: Bulletin SECONDAIRE « Bulletin d'évaluation » ──────────────────
+//
+// UN SEUL type d'évaluation à la fois (Interrogation écrite 1, Devoir
+// surveillé 2, …). Même standard graphique que le bulletin trimestriel
+// (en-tête d'informations + tableau bordure navy à coins arrondis) mais
+// tableau simple, conforme au modèle officiel :
+//   Discipline | Note /20 | Rang | Appréciation
+// … pour toutes les matières, et en bas du tableau :
+//   Moyenne de l'évaluation + Rang de l'élève.
+function BulletinSecondaireEvalPage1({
+  student,
+  bulletinData,
+  className,
+  periodName,
+  academicYearLabel,
+  evalTypeName,
+  evalTypeCode,
+}: {
+  student: StudentResult;
+  bulletinData: BulletinData;
+  className: string;
+  periodName: string;
+  academicYearLabel?: string;
+  evalTypeName?: string;
+  evalTypeCode?: string;
+}) {
+  const navy = '#0A2A5E';      // colonnes de base (en-tête)
+  const navyAlt = '#0D3B85';   // colonne calculée (Note /20)
+  const feminine = student.gender === 'FEMALE' || student.gender === 'F';
+
+  /** Format d'une note : 15 → « 15.00 », null → « — ». */
+  const fmtS = (n: number | null | undefined): string =>
+    (typeof n === 'number' && !isNaN(n)) ? n.toFixed(2) : '—';
+
+  // Stats de classe (sur la moyenne de l'évaluation)
+  const validAverages = bulletinData.results
+    .map((r) => r.generalAverage)
+    .filter((v): v is number => v !== null);
+  const classAvg = validAverages.length
+    ? validAverages.reduce((a, b) => a + b, 0) / validAverages.length
+    : null;
+  const strongestAvg = validAverages.length ? Math.max(...validAverages) : null;
+  const weakestAvg = validAverages.length ? Math.min(...validAverages) : null;
+
+  return (
+    <div className="overflow-x-auto space-y-2">
+      {/* En-tête d'informations (Année | Trimestre | Évaluation / Nom | Effectif·Matricule | Rang) */}
+      <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${navy}` }}>
+        <table className="w-full border-collapse text-[10px]">
+          <tbody>
+          <tr>
+            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
+              Année scolaire : <span className="font-bold text-slate-900">{academicYearLabel || '—'}</span>
+            </td>
+            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
+              Trimestre : <span className="font-bold text-slate-900">{periodName || '—'}</span>
+            </td>
+            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
+              Évaluation : <span className="font-bold text-slate-900">{evalTypeCode ? `[${evalTypeCode}] ` : ''}{evalTypeName || '—'}</span>
+            </td>
+          </tr>
+          <tr>
+            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
+              Nom et prénoms : <span className="font-bold text-slate-900 uppercase">{student.studentName}</span>
+            </td>
+            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
+              Effectif : <span className="font-bold text-slate-900">{bulletinData.results.length}</span>
+              {' '}· Matricule : <span className="font-bold text-slate-900">{student.matricule || '—'}</span>
+            </td>
+            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
+              Rang : <span className="font-bold text-slate-900">
+                {student.classRank ? formatRank(student.classRank, feminine) : '—'}
+              </span>
+            </td>
+          </tr>
+        </tbody>
+        </table>
+      </div>
+
+      {/* Tableau des notes — Discipline | Note /20 | Rang | Appréciation (coins arrondis) */}
+      <div className="rounded-lg overflow-hidden" style={{ border: `2px solid ${navy}` }}>
+        <table className="w-full border-collapse text-[10px]">
+          <thead>
+            <tr className="text-white" style={{ backgroundColor: navy }}>
+              <th className="border px-2 py-1 font-bold uppercase text-left text-white" style={{ minWidth: '140px', borderColor: navyAlt }}>Discipline</th>
+              <th className="border px-2 py-1 font-bold uppercase text-center w-24 text-white" style={{ borderColor: navyAlt, backgroundColor: navyAlt }}>Note /20</th>
+              <th className="border px-2 py-1 font-bold uppercase text-center w-16 text-white" style={{ borderColor: navyAlt }}>Rang</th>
+              <th className="border px-2 py-1 font-bold uppercase text-center text-white" style={{ minWidth: '110px', borderColor: navyAlt }}>Appréciation</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bulletinData.subjects.map((subject, idx) => {
+              const s = student.subjectScores[subject.id];
+              return (
+                <tr key={subject.id} className={idx % 2 === 1 ? 'bg-slate-50/60' : undefined}>
+                  <td className="border border-slate-300 px-2 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
+                  <td className="border border-slate-300 px-2 py-0.5 text-center font-bold bg-emerald-50/50">
+                    {s && s.isAbsent ? <span className="text-red-500 text-[8px] font-bold">ABS</span>
+                      : s && typeof s.score === 'number'
+                        ? <span className={s.score >= 10 ? 'text-slate-900' : 'text-red-600'}>{s.score.toFixed(2)}</span>
+                        : <span className="text-slate-400">—</span>}
+                  </td>
+                  <td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-slate-700">
+                    {s?.subjectRank ? formatRank(s.subjectRank, feminine) : '—'}
+                  </td>
+                  <td className="border border-slate-300 px-2 py-0.5 text-center text-slate-600 text-[9px]">
+                    <span className={appreciationSecondaireClassName(s?.appreciation || '—')}>{s?.appreciation || '—'}</span>
+                  </td>
+                </tr>
+              );
+            })}
+
+            {/* Moyenne de l'évaluation + Rang */}
+            <tr className="bg-blue-100 font-bold">
+              <td colSpan={2} className="border border-slate-300 px-2 py-0.5 text-right uppercase text-slate-900 text-[9px]">Moyenne de l'évaluation</td>
+              <td className="border border-slate-300 px-2 py-0.5 text-center text-blue-800 text-xs">
+                {fmtS(student.generalAverage)}
+              </td>
+              <td className="border border-slate-300 px-2 py-0.5 text-center text-slate-800 text-[9px]">
+                {student.classRank ? `Rang : ${formatRank(student.classRank, feminine)} / ${bulletinData.results.length}` : '—'}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Synthèse statistique de la classe */}
+      <div className="mt-2 grid grid-cols-3 gap-2 text-[10px]">
+        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
+          <span className="text-slate-500">Moyenne de la classe : </span>
+          <strong>{fmtS(classAvg)}</strong>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
+          <span className="text-slate-500">Moyenne la plus faible : </span>
+          <strong>{fmtS(weakestAvg)}</strong>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
+          <span className="text-slate-500">Moyenne la plus forte : </span>
+          <strong>{fmtS(strongestAvg)}</strong>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page 1: Bulletin Anglophone — modèle Report Book (formulaire + tableau 10 colonnes) ──
 //    Structure exacte du Report Book fourni :
 //      TERM ENDING / NAME OF PUPIL / AGE + CLASS / POSITION + ADMISSION N° /
@@ -2308,13 +2579,14 @@ function BulletinAnglophonePage1({
 //    Headmaster / Parent).
 
 function BulletinAnglophonePage2({
-  student, bulletinData, signatures, periodId, nextTermStartDate,
+  student, bulletinData, signatures, periodId, nextTermStartDate, directorName,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
   signatures: { teacherSig: string | null; directorSig: string | null; parentSig: string | null; setTeacherSig: (v: string | null) => void; setDirectorSig: (v: string | null) => void; setParentSig: (v: string | null) => void };
   periodId?: string;
   nextTermStartDate?: string | null;
+  directorName?: string | null;   // ⭐ Nom du directeur — résolu depuis le module RH
 }) {
   // ⭐ Grille + stats de l'élève
   const tier = enTierFor(student.generalAverage);
@@ -2641,7 +2913,10 @@ function BulletinAnglophonePage2({
             )}
             <div className="border-t border-black mt-1 pt-1">
               <p className="text-[9px] font-bold text-blue-900">Headmaster(mistress)</p>
-              <p className="text-[8px] text-slate-500">Signature</p>
+              {/* ⭐ Nom du directeur — résolu depuis le module RH (administration) */}
+              {directorName
+                ? <p className="text-[8px] font-semibold text-slate-800">{directorName}</p>
+                : <p className="text-[8px] text-slate-500">Signature</p>}
             </div>
           </div>
           <div className="text-center">
@@ -2672,9 +2947,134 @@ function BulletinAnglophonePage2({
 }
 
 
+// ─── Page 2: Bulletin SECONDAIRE — Appréciations (modèle officiel) ──────────
+//
+//   Conformément au modèle officiel du bulletin secondaire :
+//     1. Appréciation du conseil des professeurs
+//     2. Appréciation du directeur
+//     3. Signature : le Directeur UNIQUEMENT (pas de titulaire de classe,
+//        pas de parents) — nom résolu depuis le module RH (administration)
+//     4. Mention : « Ce bulletin n'est établi qu'une seule fois, veuillez le
+//        conserver précieusement. »
+function BulletinSecondairePage2({
+  student,
+  signatures,
+  periodId,
+  directorName,
+}: {
+  student: StudentResult;
+  signatures: { teacherSig: string | null; directorSig: string | null; parentSig: string | null; setTeacherSig: (v: string | null) => void; setDirectorSig: (v: string | null) => void; setParentSig: (v: string | null) => void };
+  periodId?: string;
+  directorName?: string | null;
+}) {
+  // ⭐ Annotations secondaires (auto-save on blur) :
+  //    analyseRecommandations → Appréciation du conseil des professeurs
+  //    directorVisa          → Appréciation du directeur
+  const [conseilAppreciation, setConseilAppreciation] = useState('');
+  const [directeurAppreciation, setDirecteurAppreciation] = useState('');
+  const [savedField, setSavedField] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!student.id || !periodId) return;
+    apiClient.get(`/institutional-exams/bulletins/annotations?studentId=${student.id}&periodId=${periodId}`)
+      .then((res) => {
+        const data = res.data || {};
+        setConseilAppreciation(data.analyseRecommandations || '');
+        setDirecteurAppreciation(data.directorVisa || '');
+      })
+      .catch(() => {});
+  }, [student.id, periodId]);
+
+  const saveAnnotation = async (field: string, value: string) => {
+    if (!student.id || !periodId) return;
+    try {
+      await apiClient.patch('/institutional-exams/bulletins/annotations', {
+        studentId: student.id,
+        periodId,
+        [field]: value,
+      });
+      setSavedField(field);
+      setTimeout(() => setSavedField(null), 2000);
+    } catch {
+      // Silent fail — non-blocking
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* 1 — Appréciation du conseil des professeurs */}
+      <div className="bg-white rounded-lg p-3 border border-slate-200">
+        <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">Appréciation du conseil des professeurs</h4>
+        <textarea
+          value={conseilAppreciation}
+          onChange={(e) => setConseilAppreciation(e.target.value)}
+          onBlur={(e) => saveAnnotation('analyseRecommandations', e.target.value)}
+          rows={4}
+          placeholder="Appréciation du conseil des professeurs…"
+          className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+        />
+        {savedField === 'analyseRecommandations' && <p className="text-[9px] text-emerald-600 mt-1">✓ Enregistré</p>}
+      </div>
+
+      {/* 2 — Appréciation du directeur */}
+      <div className="bg-white rounded-lg p-3 border border-slate-200">
+        <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">Appréciation du directeur</h4>
+        <textarea
+          value={directeurAppreciation}
+          onChange={(e) => setDirecteurAppreciation(e.target.value)}
+          onBlur={(e) => saveAnnotation('directorVisa', e.target.value)}
+          rows={3}
+          placeholder="Appréciation du directeur…"
+          className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+        />
+        {savedField === 'directorVisa' && <p className="text-[9px] text-emerald-600 mt-1">✓ Enregistré</p>}
+      </div>
+
+      {/* 3 — Signature : le Directeur UNIQUEMENT */}
+      <div className="bg-white rounded-lg p-3 border border-slate-200">
+        <h4 className="text-xs font-bold text-slate-900 uppercase mb-3">Signature</h4>
+        <div className="max-w-sm mx-auto text-center">
+          <p className="text-[10px] font-bold text-slate-700 mb-1">Le Directeur</p>
+          <div className="border border-slate-300 rounded-lg p-1 bg-slate-50/50">
+            {signatures.directorSig ? (
+              <div className="flex flex-col items-center">
+                <img src={signatures.directorSig} alt="Signature du Directeur" className="max-h-24 max-w-[280px] object-contain" />
+                <button
+                  type="button"
+                  onClick={() => signatures.setDirectorSig(null)}
+                  className="text-[9px] text-red-500 hover:underline mt-1"
+                >
+                  Effacer et resigner
+                </button>
+              </div>
+            ) : (
+              <SignatureCanvas
+                width={280}
+                height={100}
+                onSignatureChange={signatures.setDirectorSig}
+                placeholder="Signature du Directeur"
+              />
+            )}
+          </div>
+          {directorName && (
+            <p className="text-[10px] font-semibold text-slate-800 mt-1">{directorName}</p>
+          )}
+        </div>
+      </div>
+
+      {/* 4 — Mention officielle (bas de page du modèle) */}
+      <div className="bg-slate-50 rounded-lg p-2 border border-slate-200 text-center">
+        <p className="text-[10px] font-bold italic text-slate-700">
+          Ce bulletin n'est établi qu'une seule fois, veuillez le conserver précieusement.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page 2: Appréciations + Signatures (Maternelle + Primaire) ────────────
 
-function BulletinPage2({ student, isMaternelle, signatures, periodId }: { student: StudentResult; isMaternelle: boolean; signatures: { teacherSig: string | null; directorSig: string | null; parentSig: string | null; setTeacherSig: (v: string | null) => void; setDirectorSig: (v: string | null) => void; setParentSig: (v: string | null) => void }; periodId?: string }) {
+function BulletinPage2({ student, isMaternelle, signatures, periodId, directorName }: { student: StudentResult; isMaternelle: boolean; signatures: { teacherSig: string | null; directorSig: string | null; parentSig: string | null; setTeacherSig: (v: string | null) => void; setDirectorSig: (v: string | null) => void; setParentSig: (v: string | null) => void }; periodId?: string; directorName?: string | null }) {
   // ⭐ Annotation state — loaded from backend + auto-save on blur
   const [assiduite, setAssiduite] = useState('');
   const [discipline, setDiscipline] = useState('');
@@ -2988,6 +3388,8 @@ function BulletinPage2({ student, isMaternelle, signatures, periodId }: { studen
                 />
               )}
             </div>
+            {/* ⭐ Nom du directeur — résolu depuis le module RH (administration) */}
+            {directorName && <p className="text-[10px] font-semibold text-slate-800 mt-1">{directorName}</p>}
           </div>
           <div className="text-center">
             <p className="text-[10px] font-bold text-slate-700 mb-1">Les Parents</p>

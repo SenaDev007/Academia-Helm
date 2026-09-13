@@ -631,12 +631,87 @@ export class BulletinsController {
             }
           }
 
-          // ⭐ 4. Résolution automatique du directeur par niveau scolaire + piste linguistique
-          //    On interroge la table school_directors pour récupérer le nom + la signature
-          //    du directeur configuré pour ce niveau et cette piste (FR/EN).
+          // ⭐ 4. Résolution automatique du directeur — SOURCE PRINCIPALE : le
+          //    module RH (onglet Administration → staff_admin_assignments).
+          //    Le directeur y est affecté par niveau scolaire (MAT / PRI / SEC /
+          //    MAT_PRI / ALL), piste linguistique (FR / EN / null = bi-piste) et
+          //    année (null = permanent). Fallback : table school_directors.
           if (studentSchoolLevelId) {
             // Déterminer la langue : utiliser scopeLang du body, sinon 'FR' par défaut
             const directorLang = (body.scopeLang === 'EN') ? 'EN' : 'FR';
+            try {
+              // 4a. Code du niveau scolaire de l'élève (MAT / MATERNELLE / PRI / …)
+              const levelRow = await this.prisma.schoolLevel.findUnique({
+                where: { id: studentSchoolLevelId },
+                select: { code: true },
+              }).catch(() => null);
+              const levelCode = (levelRow?.code || '').toUpperCase().trim();
+              const targetLevelCodes =
+                ['MAT', 'MATERNELLE'].includes(levelCode) ? ['MAT', 'MAT_PRI', 'ALL'] :
+                ['PRI', 'PRIMAIRE'].includes(levelCode) ? ['PRI', 'MAT_PRI', 'ALL'] :
+                ['SEC', 'SECONDAIRE'].includes(levelCode) ? ['SEC', 'ALL'] :
+                ['MAT_PRI'].includes(levelCode) ? ['MAT_PRI', 'ALL'] : null;
+
+              if (targetLevelCodes) {
+                // 4b. UUID de la piste linguistique (FR/EN) pour filtrer les
+                //     affectations — null = les deux pistes.
+                let trackUuid: string | null = null;
+                const trackRow = await this.prisma.academicTrack.findFirst({
+                  where: { tenantId: resolvedTenantId, code: directorLang },
+                  select: { id: true },
+                }).catch(() => null);
+                trackUuid = trackRow?.id || null;
+
+                // 4c. Affectations actives des postes de direction pour ce niveau
+                //     + cette piste (ou bi-piste) + cette année (ou permanente).
+                const assignments = await this.prisma.staffAdminAssignment.findMany({
+                  where: {
+                    tenantId: resolvedTenantId,
+                    isActive: true,
+                    schoolLevelCode: { in: targetLevelCodes },
+                    adminRole: { in: ['DIRECTEUR_GENERAL', 'DIRECTEUR', 'PROVISEUR', 'DIRECTEUR_DES_ETUDES', 'DIRECTEUR_ADJOINT'] },
+                    OR: [
+                      { academicTrackId: null },
+                      ...(trackUuid ? [{ academicTrackId: trackUuid }] : []),
+                    ],
+                    AND: [
+                      { OR: [{ academicYearId: null }, { academicYearId }] },
+                    ],
+                  },
+                  include: {
+                    staff: { select: { firstName: true, lastName: true, gender: true } },
+                  },
+                  orderBy: { startDate: 'desc' },
+                }).catch(() => []);
+
+                if (Array.isArray(assignments) && assignments.length > 0) {
+                  // 4d. Priorité hiérarchique (même ordre que ADMIN_ROLE_PRIORITY)
+                  const ROLE_PRIORITY = ['DIRECTEUR_GENERAL', 'DIRECTEUR', 'PROVISEUR', 'DIRECTEUR_DES_ETUDES', 'DIRECTEUR_ADJOINT'];
+                  const sorted = [...assignments].sort((a: any, b: any) => {
+                    const pa = ROLE_PRIORITY.indexOf(a.adminRole);
+                    const pb = ROLE_PRIORITY.indexOf(b.adminRole);
+                    if (pa !== pb) return (pa === -1 ? 99 : pa) - (pb === -1 ? 99 : pb);
+                    // Affectation de l'année d'abord, permanente ensuite
+                    const ya = a.academicYearId ? 0 : 1;
+                    const yb = b.academicYearId ? 0 : 1;
+                    if (ya !== yb) return ya - yb;
+                    return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
+                  });
+                  const best: any = sorted[0];
+                  if (best?.staff) {
+                    const last = (best.staff.lastName || '').trim().toUpperCase();
+                    const first = (best.staff.firstName || '').trim();
+                    const civility = best.staff.gender === 'F' ? 'Mme' : (best.staff.gender === 'M' ? 'M.' : '');
+                    directorName = civility ? `${civility} ${last} ${first}`.trim() : `${last} ${first}`.trim();
+                  }
+                }
+              }
+            } catch (rhErr) {
+              // Silent fail — on retombe sur school_directors ci-dessous
+            }
+
+            // 4e. Fallback signature + nom : table school_directors (contient
+            //     les images de signature). Priorité au nom RH résolu ci-dessus.
             try {
               const directorRows: any = await this.prisma.$queryRawUnsafe(
                 `SELECT * FROM school_directors
@@ -646,9 +721,9 @@ export class BulletinsController {
               );
               if (Array.isArray(directorRows) && directorRows.length > 0) {
                 const director = directorRows[0];
-                directorName = director.fullName || null;
                 // ⭐ Priorité : signatureDataUrl (canvas) > signatureUploadedUrl (upload PNG)
                 directorSignature = director.signatureDataUrl || director.signatureUploadedUrl || null;
+                if (!directorName) directorName = director.fullName || null;
               } else {
                 // ⭐ Fallback : si pas de directeur pour cette langue, essayer l'autre langue
                 const fallbackLang = directorLang === 'FR' ? 'EN' : 'FR';
@@ -660,8 +735,8 @@ export class BulletinsController {
                 );
                 if (Array.isArray(fallbackRows) && fallbackRows.length > 0) {
                   const director = fallbackRows[0];
-                  directorName = director.fullName || null;
                   directorSignature = director.signatureDataUrl || director.signatureUploadedUrl || null;
+                  if (!directorName) directorName = director.fullName || null;
                 }
               }
             } catch (dirErr) {

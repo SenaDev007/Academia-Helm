@@ -10446,3 +10446,26 @@ Stage Summary:
 - ✅ Vue stratégique /promoteur offline complète (HTML + KPIs consolidés)
 - ✅ Chat Helm Connect : fils de messages pré-cachés (20 conversations + 10 canaux les plus récents)
 - ⏳ E2E production post-déploiement : login promoteur → SW v4.2 → pré-cache étendu → offline → /promoteur + portails ; création de comptes de test par rôle si nécessaire
+
+---
+Task ID: 59 (v4.2.1 + v4.3.0 — retours terrain : « connexion instable », logo, CRUD, balayage exhaustif)
+Agent: Super Z (session principale)
+Task: Utilisateur : module élèves « connexion instable » + pédagogie onglet affectation + logo/acronyme absents offline (nom complet affiché à la place, persistant après reconnexion) + CRUD complet offline (ajout/modif/suppression) + reparcourir tous les modules onglet par onglet + chargement offline trop brutal
+
+Work Log:
+- Diagnostic « Connexion instable » (module élèves + enseignants/affectations) : le message vient de l'error boundary src/app/app/error.tsx branche isChunkLoadFailure → les composants next/dynamic(..., {ssr:false}) (StudentsModulePage, dashboards des portails secretaire/comptable/secretaire-comptable) ne figurent PAS dans le HTML pré-rendu : leur chunk est résolu après hydratation via les maps du runtime Turbopack → jamais pré-caché → ChunkLoadError hors ligne. MESURÉ en production : HTML /app/students = 33 chunks, navigateur = 37 (6 paresseux)
+- v4.2.1 (d48d4d9) — apiIdentityAsync (CookieStore API Chrome 87+/Safari 15.4+) : les cookies sont attachés au niveau RÉSEAU APRÈS l'interception SW (Cookie = forbidden header) → les fetchs NUS de la page (PilotageTopBar/WhatsAppChat/pages parent) résolvaient ANONYMOUS → clés sans __ah_t → 503 « aucune copie locale » (logo/acronyme manquants, chat vide). Le SW lit désormais les cookies de son origine → MÊME identité T:tenant|U:user que axios/pré-cache — GET (cascade) ET POST (file offline) corrigés. Repli gracieux si API absente
+- v4.3.0 (41165b8) — crawlChunkGraph : après le pré-cache des chunks du HTML, scanne le contenu des chunks pour les refs /_next/static/immutable/chunks/*.{js,css} et pré-cache en cascade (profondeur 3, cap 80/route, Set anti-re-scan). VALIDÉ en production : le crawl couvre 100 % des chunks paresseux (6/6)
+- Fix pages (e882a70 + fb651c8) — 4 crashes de rendu hors ligne révélés par le balayage : parent/results grades.some(q => q.evaluations.some(...)) + quarter.evaluations.length/map (TypeError × 2) ; parent/attendance format(new Date(r.date)) sur date invalide (RangeError → safeFormatDate + filtrage) ; global-library/teacher-library resource.subject/level rendus tels quels (objets peuplés → React #31 → displayValue()). L'error boundary classait tout échec offline en « Module en attente du réseau » (isOfflineNav = !navigator.onLine) — les causes réelles étaient des null-derefs
+- Rebase propre sur le commit tiers 41deac0 (affectations — chargement 60 s + scroll des panneaux)
+- E2E PRODUCTION final (e2e_v43_sweep_crud.py) : login promoteur → purge flags → re-pré-cache v4.3.0 (265-266 chunks immuables) → MODE AVION → balayage 96 routes (toutes les familles de modules + sous-onglets + portails 9 rôles) : 95/96 PASS + le 96e (communication/templates) vérifié stable 4/4 en isolation (flake de timing du balayage)
+- VALIDATIONS CIBLES : module élèves chargé hors ligne sans erreur boundary ✓ ; pédagogie teachers + assignments PASS ✓ ; logo data-URI rendu hors ligne + acronyme « CSP Mon Avenir Plus N'Dali » affiché (identity servie au fetch nu via CookieStore) ✓ ; CRUD offline complet CREATE/UPDATE/DELETE → tous 200 + X-Sync-Status: pending (file + optimiste + replay à la reconnexion) ✓
+- Tests : test_offline_v43_chunks_crud.mjs NOUVEAU 22/22 ✓ (crawl niveau 1+2+idempotence, CookieStore GET/POST nu + repli sans API, DELETE optimiste+outbox+fusion _deleted) ; régressions v40 71/71, v41 71/71, v42 186/186 ✓ ; esbuild transpile des 4 fichiers TS patchés ✓
+- La fluidité du chargement offline est portée par l'identité CookieStore (données servies en ~ms depuis le cache au lieu de spinners 503)
+
+Stage Summary:
+- ✅ « Connexion instable » éliminé : chunks paresseux (dynamic ssr:false) découverts et pré-cachés par crawl du graphe Turbopack
+- ✅ Logo + acronyme de l'école affichés hors ligne (identity + data-URI servis au fetch nu — la persistance après reconnexion était l'état ANONYMOUS périmé du SW v4.2.0, résolu par le bump)
+- ✅ CRUD offline complet : ajout/modification/suppression mis en file (X-Sync-Status: pending), écriture optimiste visible, replay HTTP exact à la reconnexion
+- ✅ Balayage exhaustif : 96 routes de modules/onglets/sous-onglets/portails vérifiées hors ligne en production
+- ⏳ Reco : sur les appareils de test des utilisateurs, recharger l'app EN LIGNE une fois (bump SW v4.3.0 → re-pré-cache automatique ~3-5 min avec le crawl) avant de repasser hors ligne

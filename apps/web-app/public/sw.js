@@ -181,7 +181,7 @@ function getApiOrigin() {
 // v4.1.1 : au-dessus de v4.1.0 (pré-cache exhaustif) — bump pour que le
 //    correctif API_TIMEOUT 12 s (sélecteurs header) soit bien déployé chez
 //    tous les utilisateurs existants (SW_ACTIVATED → re-pré-cache).
-const SW_VERSION = 'v4.2.0';
+const SW_VERSION = 'v4.2.1';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -889,6 +889,71 @@ function apiIdentityCore(request) {
   return { key: 'ANONYMOUS', tenantId: null, userId: null };
 }
 
+/**
+ * ⭐ v4.2.1 — Identité API ASYNCHRONE (CookieStore).
+ * PROBLÈME : les fetchs de la page SANS headers d'auth (WhatsAppChat, pages
+ * parent, hooks React Query nus…) n'exposent PAS le header Cookie au
+ * Service Worker — les cookies sont attachés au niveau RÉSEAU, APRÈS
+ * l'interception (comportement standard des navigateurs : le Cookie est
+ * un forbidden header ajouté après le SW). Résultat : ces requêtes
+ * résolvent l'identité 'ANONYMOUS' → clé de cache SANS suffixe __ah_t →
+ * elles ratent les entrées pré-cachées (clés T:tenant|U:user des requêtes
+ * axios/pré-cache) → 503 « aucune copie locale » hors ligne alors que les
+ * données SONT en cache (constaté : chat « Impossible de charger les
+ * conversations », spinner « Chargement de vos enfants... » parent).
+ * CORRECTIF : CookieStore API (Chrome 87+, Safari 15.4+) — le SW lit les
+ * cookies de SON origine et résout la MÊME identité T:tenant|U:user que
+ * les styles d'appel à headers explicites (axios, bffFetch). Si l'API
+ * est absente (navigateur plus ancien), on retombe sur la résolution
+ * sync (statu quo, aucune régression).
+ */
+async function apiIdentityAsync(request) {
+  const sync = apiIdentityCore(request);
+  // Identité déjà résolue par headers explicites → direct.
+  if (sync && sync.key && sync.key !== 'ANONYMOUS' && sync.tenantId) return sync;
+  try {
+    const cs = self.cookieStore;
+    if (!cs || typeof cs.getAll !== 'function') return sync;
+    const cookies = await cs.getAll();
+    if (!Array.isArray(cookies) || !cookies.length) return sync;
+    let tenantId = (sync && typeof sync === 'object' && sync.tenantId) || null;
+    let userId = (sync && typeof sync === 'object' && sync.userId) || null;
+    for (const ck of cookies) {
+      const name = String((ck && ck.name) || '').toLowerCase();
+      let value = String((ck && ck.value) || '');
+      if (!value) continue;
+      try { value = decodeURIComponent(value); } catch { /* garder brut */ }
+      if (name === 'x-tenant-id' && !tenantId) {
+        tenantId = value;
+      }
+      if ((name === 'academia_token' || name === 'academia_token_jwt') && (!userId || !tenantId)) {
+        const claims = decodeJwtPayload(value);
+        if (claims) {
+          const jt = claims.tenantId || claims.tenant_id ||
+            (claims.tenant && claims.tenant.id) || null;
+          if (jt && !tenantId) tenantId = String(jt);
+          const sub = claims.sub || claims.userId || claims.user_id || null;
+          if (sub && !userId) userId = String(sub);
+        }
+      }
+      if (name === 'academia_session' && (!userId || !tenantId)) {
+        try {
+          const sess = JSON.parse(value);
+          const t = (sess && ((sess.tenant && sess.tenant.id) ||
+            (sess.user && sess.user.tenantId) || sess.tenantId)) || null;
+          if (t && !tenantId) tenantId = String(t);
+          const u = (sess && ((sess.user && sess.user.id) || sess.userId)) || null;
+          if (u && !userId) userId = String(u);
+        } catch { /* session opaque */ }
+      }
+    }
+    if (tenantId || userId) {
+      return { key: 'T:' + (tenantId || '?') + '|U:' + (userId || '?'), tenantId, userId };
+    }
+  } catch { /* CookieStore indisponible → résolution sync */ }
+  return sync;
+}
+
 /** ⭐ v3.5.0 — Clé de cache API : URL SANS le cache-buster `_t` (hrFetch
  *    ajoute ?_t=<timestamp> à chaque GET → sans normalisation, chaque
  *    requête produisait une NOUVELLE clé et ne retrouvait jamais le cache).
@@ -909,7 +974,7 @@ function apiCacheKey(request, identity) {
 }
 
 async function handleApiGet(request, timeoutMs = API_TIMEOUT) {
-  const identityDetails = apiIdentityCore(request);
+  const identityDetails = await apiIdentityAsync(request);
   const identity = identityDetails ? identityDetails.key : null;
   // Contexte de session inconnu (cookies sans identité reconnue) → réseau
   // direct : on ne met PAS en cache et on ne sert JAMAIS depuis le cache.
@@ -2029,7 +2094,7 @@ async function swBroadcast(message) {
 }
 
 async function handleApiMutation(request) {
-  const details = apiIdentityCore(request);
+  const details = await apiIdentityAsync(request);
 
   // Corps non-JSON (FormData, binaire…) : file impossible → réseau honnête.
   const contentType = request.headers.get('content-type') || '';

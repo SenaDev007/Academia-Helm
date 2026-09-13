@@ -268,7 +268,7 @@ function NotesTab({ studentId, academicYearId, child }: { studentId: string; aca
                 <div className="text-left">
                   <h3 className="text-sm font-bold text-slate-900">{quarter.quarterName}</h3>
                   <p className="text-xs text-slate-500">
-                    {quarter.evaluations.length} évaluation{quarter.evaluations.length > 1 ? 's' : ''}
+                    {(quarter.evaluations || []).length} évaluation{(quarter.evaluations || []).length > 1 ? 's' : ''}
                   </p>
                 </div>
               </div>
@@ -277,7 +277,7 @@ function NotesTab({ studentId, academicYearId, child }: { studentId: string; aca
             {/* Quarter content: evaluations */}
             {isExpanded && (
               <div className="border-t border-slate-100 divide-y divide-slate-100">
-                {quarter.evaluations.map((ev) => {
+                {(quarter.evaluations || []).map((ev) => {
                   // Build a GroupedEvaluation for RegistreTable
                   const group: GroupedEvaluation = {
                     classId: child?.classId || '',

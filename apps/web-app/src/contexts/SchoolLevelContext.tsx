@@ -68,7 +68,12 @@ interface SchoolLevelContextType {
   currentLevel: SchoolLevel | null;
   setCurrentLevel: (levelId: string) => void;
   availableLevels: SchoolLevel[];
+  /** ⭐ V19 : true tant qu'aucune confirmation serveur (chargement/retry) —
+   *  le sélecteur affiche « Chargement... » et non le warning rouge. */
   isLoading: boolean;
+  /** ⭐ V19 : liste CONFIRMÉE vide par le serveur (seul cas d'affichage du
+   *  warning rouge « Aucun niveau scolaire »). */
+  isEmpty: boolean;
 }
 
 const SchoolLevelContext = createContext<SchoolLevelContextType | undefined>(undefined);
@@ -99,7 +104,7 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
 
   // ⭐ Chargement via React Query — bénéficie du cache partagé, retry,
   //    refetchOnReconnect et invalidation sur sync-end / session-resumed.
-  const { data: rawLevels, isLoading: levelsLoading } = useSchoolLevelsQuery();
+  const { data: rawLevels, isLoading: levelsLoading, isFetching: levelsFetching, isError: levelsError } = useSchoolLevelsQuery();
 
   /**
    * Invalide toutes les queries TanStack quand le niveau scolaire change.
@@ -350,12 +355,23 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
     }
   }, [currentLevel?.id, invalidateQueriesForLevelChange]);
 
+  // ⭐ V19 — « Chargement... » tant qu'aucune confirmation serveur (cf. le
+  //    même traitement que les années scolaires dans AcademicYearContext) :
+  //    un échec réseau en cours de retry n'est PAS « aucun niveau scolaire ».
+  const rawList = rawLevels ?? [];
+  const loading =
+    levelsLoading ||
+    (levelsFetching && rawList.length === 0) ||
+    (levelsError && rawList.length === 0);
+  const isEmptyConfirmed = !loading && rawList.length === 0;
+
   const value = useMemo<SchoolLevelContextType>(() => ({
     currentLevel,
     setCurrentLevel,
     availableLevels,
-    isLoading: levelsLoading,
-  }), [currentLevel, setCurrentLevel, availableLevels, levelsLoading]);
+    isLoading: loading,
+    isEmpty: isEmptyConfirmed,
+  }), [currentLevel, setCurrentLevel, availableLevels, loading, isEmptyConfirmed]);
 
   return (
     <SchoolLevelContext.Provider value={value}>

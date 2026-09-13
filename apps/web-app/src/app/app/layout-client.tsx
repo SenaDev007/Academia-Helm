@@ -46,6 +46,22 @@ import { SyncModal } from '@/components/offline/SyncModal';
 import ConflictResolutionModal from '@/components/offline/ConflictResolutionModal';
 import { PWAInstallPrompt } from '@/components/pwa/PWAInstallPrompt';
 
+// ⭐ V19 — INSTALLATION PRÉCOCE de l'intercepteur offline : au niveau MODULE
+//    (et non plus seulement dans un useEffect, qui s'exécute APRÈS les effets
+//    des composants enfants). Le flow post-login (PostLoginFlowWrapper →
+//    fetch('/api/academic-years')) et les premiers fetchs des contexts
+//    doivent déjà être routés par la couche d'accès unifiée — sinon les
+//    années scolaires du login partaient en fetch NATIF (pas de cache IDB,
+//    pas de timeout court, pas de fallback hors ligne).
+//    ⚠️ Idempotent (guard isInstalled) et guard SSR (typeof window).
+if (typeof window !== 'undefined') {
+  import('@/lib/offline/global-fetch-interceptor')
+    .then(({ installGlobalFetchInterceptor }) => {
+      installGlobalFetchInterceptor();
+    })
+    .catch(() => { /* le fallback useEffect ci-dessous retentera */ });
+}
+
 export interface AppLayoutClientProps {
   children: React.ReactNode;
   user: User;
@@ -152,6 +168,8 @@ export default function AppLayoutClient({
   //    intercepteur global de fetch + auto-sync + bootstrap IDB + précache modules.
 
   // ⭐ Installer l'intercepteur global de fetch (offline-first pour TOUS les GET /api/*)
+  //    ⭐ V19 : redondant avec l'installation module-level ci-dessus — garde-fou
+  //    si l'import dynamique précoce a échoué (chunk indisponible). Idempotent.
   useEffect(() => {
     import('@/lib/offline/global-fetch-interceptor').then(({ installGlobalFetchInterceptor }) => {
       installGlobalFetchInterceptor();

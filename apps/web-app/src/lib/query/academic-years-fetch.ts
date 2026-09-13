@@ -52,20 +52,93 @@ function mergeYearsAndActive(years: unknown[], activeYear: unknown | null): Acad
 
 /**
  * Fetch unique pour le sélecteur d’année (évite doublon avec /api/academic-years si tenant connu).
+ *
+ * ⭐ V19 — ROBUSTESSE LOGIN (retour utilisateur : « quand on se connecte, les
+ *    années scolaires ne chargent pas à temps — aucune année scolaire dans le
+ *    header à la place du sélecteur ») :
+ *    - les ERREURS sont désormais PROPAGÉES (throw) au lieu d'être avalées en
+ *      `[]` — avant, une 401 transitoire (redémarrage Railway), un timeout ou
+ *      une micro-coupure réseau produisait une liste VIDE « en succès », sans
+ *      AUCUN retry React Query → sélecteur rouge « Aucune année scolaire »
+ *      pendant 2 minutes (staleTime). Désormais : retry ×3 + refetch tant que
+ *      vide (cf. AcademicYearContext) ;
+ *    - SNAPSHOT localStorage : chaque succès persiste la liste (clé par tenant)
+ *      → au login suivant, le sélecteur s'affiche INSTANTANÉMENT avec la
+ *      dernière liste connue (stale-while-revalidate) pendant que le réseau
+ *      rafraîchit — plus jamais d'écran « Aucune année scolaire » au démarrage.
  */
 export async function fetchAcademicYearsSnapshot(tenantId: string | undefined): Promise<AcademicYear[]> {
   if (!tenantId) {
     const res = await fetch('/api/academic-years', { credentials: 'include', cache: 'no-store' });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      // ⭐ V19 : propager (≠ [] silencieux) → React Query RETRYE
+      throw new Error(`Chargement des années scolaires impossible (HTTP ${res.status})`);
+    }
     const data = await res.json();
-    return normalizeFromPublicApi(data);
+    const years = normalizeFromPublicApi(data);
+    persistYearsSnapshot('no-tenant', years);
+    return years;
   }
 
-  const [years, activeYear] = await Promise.all([
-    settingsService.getAcademicYears(tenantId).catch(() => []),
-    settingsService.getActiveAcademicYear(tenantId).catch(() => null),
+  // ⭐ V19 : Promise.allSettled — une erreur RÉSEAU sur la liste principale ne
+  //    doit pas être masquée par le catch(() => []) ; seule l'année ACTIVE
+  //    (endpoint secondaire) reste optionnelle.
+  const [yearsResult, activeYearResult] = await Promise.allSettled([
+    settingsService.getAcademicYears(tenantId),
+    settingsService.getActiveAcademicYear(tenantId),
   ]);
-  return mergeYearsAndActive(years as unknown[], activeYear);
+  if (yearsResult.status === 'rejected') {
+    throw new Error(
+      `Chargement des années scolaires impossible: ${
+        (yearsResult.reason as Error)?.message ?? 'erreur réseau'
+      }`
+    );
+  }
+  const years = yearsResult.value as unknown[];
+  const activeYear = activeYearResult.status === 'fulfilled' ? activeYearResult.value : null;
+
+  const merged = mergeYearsAndActive(years, activeYear);
+  persistYearsSnapshot(tenantId, merged);
+  return merged;
+}
+
+// ─── V19 : snapshot localStorage (affichage instantané au login) ───────────
+
+const SNAPSHOT_PREFIX = 'ah_years_snapshot:';
+const SNAPSHOT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 jours
+
+interface YearsSnapshot {
+  savedAt: number;
+  years: AcademicYear[];
+}
+
+/** Persiste le snapshot des années (appelé à chaque succès de fetch). */
+function persistYearsSnapshot(tenantKey: string, years: AcademicYear[]): void {
+  if (typeof window === 'undefined' || years.length === 0) return;
+  try {
+    const snapshot: YearsSnapshot = { savedAt: Date.now(), years };
+    localStorage.setItem(SNAPSHOT_PREFIX + tenantKey, JSON.stringify(snapshot));
+  } catch {
+    /* quota — non bloquant */
+  }
+}
+
+/**
+ * Relit le snapshot localStorage des années (affichage INSTANTANÉ au montage
+ * du sélecteur, avant la réponse réseau). Null si absent/périmé (> 30 j).
+ */
+export function readAcademicYearsSnapshot(tenantKey: string | undefined): AcademicYear[] | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(SNAPSHOT_PREFIX + (tenantKey ?? 'no-tenant'));
+    if (!raw) return null;
+    const snapshot = JSON.parse(raw) as YearsSnapshot;
+    if (!snapshot?.years?.length) return null;
+    if (Date.now() - (snapshot.savedAt || 0) > SNAPSHOT_MAX_AGE_MS) return null;
+    return snapshot.years;
+  } catch {
+    return null;
+  }
 }
 
 export function academicYearsListFromBootstrapPayload(

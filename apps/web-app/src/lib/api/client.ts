@@ -31,6 +31,19 @@ export const apiClient: AxiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  // ⭐ V18 — OFFLINE-FIRST POUR AXIOS : l'adaptateur 'fetch' est placé EN
+  //    PREMIER (défaut axios : xhr) pour que TOUTES les requêtes de cette
+  //    instance passent par window.fetch — PATCHÉ par l'intercepteur global
+  //    offline (timeout court, cache response_cache, fallback IndexedDB,
+  //    outbox pour les mutations). Sans ça, les modules passant par axios
+  //    (modules complémentaires : Shop, Cantine, Transport, Bibliothèque…,
+  //    services students/classes/pedagogy…) BYPASSAIENT la couche d'accès
+  //    unifiée : hors ligne, leurs écritures échouaient au lieu d'être mises
+  //    en file d'attente avec le badge « en attente de synchronisation ».
+  //    L'adaptateur fetch d'axios résout globalThis.fetch à CHAQUE requête
+  //    (identifiant dynamique) → le patch est bien appliqué.
+  //    xhr/http restent en repli (environnement sans fetch — SSR Node).
+  adapter: ['fetch', 'xhr', 'http'],
 });
 
 /**

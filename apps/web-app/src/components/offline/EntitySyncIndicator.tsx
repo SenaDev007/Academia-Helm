@@ -65,8 +65,8 @@ const STATUS_CONFIG: Record<
     color: 'text-blue-600',
     bg: 'bg-blue-50 border-blue-200',
     dotColor: 'bg-blue-500',
-    label: 'En attente',
-    shortLabel: 'Attente',
+    label: 'En attente de synchronisation',
+    shortLabel: 'En attente',
     description: 'Modification locale en attente de synchronisation',
   },
   CONFLICT: {

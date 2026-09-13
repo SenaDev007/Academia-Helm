@@ -13,6 +13,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import {
   Plus,
   Search,
@@ -356,6 +357,11 @@ export default function StudentsModulePage() {
           body: JSON.stringify(formData),
         });
         if (response.ok) {
+          // ⭐ V18 — sauvegarde HORS LIGNE (file d'attente) : informer l'utilisateur
+          //    que la modification est enregistrée localement et partira à la reconnexion.
+          if (response.headers.get('X-Offline-Mutation') === 'true') {
+            toast.info("Modification enregistrée hors ligne — en attente de synchronisation");
+          }
           // ✅ Reset selectedStudent to avoid stale form data on next "Créer"
           setSelectedStudent(null);
           setIsEditModalOpen(false);
@@ -381,6 +387,11 @@ export default function StudentsModulePage() {
           }),
         });
         if (response.ok) {
+          // ⭐ V18 — création HORS LIGNE (file d'attente) : l'élève est visible
+          //    localement avec le badge « en attente de synchronisation ».
+          if (response.headers.get('X-Offline-Mutation') === 'true') {
+            toast.info("Élève enregistré hors ligne — en attente de synchronisation");
+          }
           setSelectedStudent(null);
           setIsCreateModalOpen(false);
           loadStudents();
@@ -730,7 +741,18 @@ export default function StudentsModulePage() {
                             </span>
                           </td>
                           <td className="px-2 py-3 text-center">
-                            <EntitySyncIndicator variant="dot" status={syncStatuses[student.id] ?? 'UNKNOWN'} />
+                            {syncStatuses[student.id] === 'PENDING' ? (
+                              <EntitySyncIndicator
+                                variant="badge"
+                                status="PENDING"
+                                pendingOperation="CREATE"
+                              />
+                            ) : (
+                              <EntitySyncIndicator
+                                variant="dot"
+                                status={syncStatuses[student.id] ?? 'UNKNOWN'}
+                              />
+                            )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <div className="flex items-center justify-end gap-1">

@@ -41,6 +41,18 @@ interface OutboxEventLocal {
 }
 
 class OutboxService {
+  // ⭐ V18 — Événement DOM dispatché à CHAQUE changement d'état de l'outbox
+  //    (création, sync, échec, conflit) : les hooks UI (useEntitySyncStatus,
+  //    badge « en attente de synchronisation ») se rafraîchissent IMMÉDIATEMENT
+  //    au lieu d'attendre le poll de 60 s.
+  private notifyOutboxChanged(): void {
+    try {
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('outbox-changed'));
+      }
+    } catch { /* non-bloquant */ }
+  }
+
   // ⭐ Entités critiques nécessitant MERGE_FIELDS au lieu de LAST_WRITE_WINS
   private static readonly CRITICAL_ENTITIES: Set<string> = new Set([
     'FINANCE_TRANSACTION', 'STUDENT_ACCOUNT', 'FEE_OVERRIDE', 'FEE_STRUCTURE',
@@ -97,6 +109,9 @@ class OutboxService {
     // Mettre à jour le compteur d'événements en attente
     await this.updatePendingCount(tenantId);
 
+    // ⭐ V18 — prévenir l'UI immédiatement (badge « en attente de sync »)
+    this.notifyOutboxChanged();
+
     return eventId;
   }
 
@@ -131,8 +146,18 @@ class OutboxService {
 
   /**
    * Convertit un événement local en OutboxEvent
+   * ⭐ V18 : inclut `metadata` (requête d'origine { url, method, body } pour
+   * le replay HTTP exact — cf. sync-engine.service.ts pushOutbox).
    */
   private convertToOutboxEvent(event: OutboxEventLocal): OutboxEvent {
+    let parsedMetadata: any = undefined;
+    if (event.metadata !== undefined && event.metadata !== null) {
+      try {
+        parsedMetadata = typeof event.metadata === 'string' ? JSON.parse(event.metadata) : event.metadata;
+      } catch {
+        parsedMetadata = undefined;
+      }
+    }
     return {
       id: event.id,
       tenantId: event.tenantId,
@@ -140,6 +165,7 @@ class OutboxService {
       entityId: event.entityId,
       operation: event.operation,
       payload: typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload,
+      metadata: parsedMetadata,
       localVersion: event.localVersion || Date.now(),
       createdAt: event.createdAt,
       lastAttemptAt: event.lastAttemptAt,
@@ -164,6 +190,7 @@ class OutboxService {
 
     await localDb.execute('outbox_events', 'put', updated);
     await this.updatePendingCount(event.tenantId);
+    this.notifyOutboxChanged();
   }
 
   /**
@@ -183,6 +210,7 @@ class OutboxService {
     };
 
     await localDb.execute('outbox_events', 'put', updated);
+    this.notifyOutboxChanged();
   }
 
   /**
@@ -202,6 +230,7 @@ class OutboxService {
 
     await localDb.execute('outbox_events', 'put', updated);
     await this.updatePendingCount(event.tenantId);
+    this.notifyOutboxChanged();
   }
 
   /**
@@ -219,6 +248,7 @@ class OutboxService {
     };
 
     await localDb.execute('outbox_events', 'put', updated);
+    this.notifyOutboxChanged();
   }
 
   /**

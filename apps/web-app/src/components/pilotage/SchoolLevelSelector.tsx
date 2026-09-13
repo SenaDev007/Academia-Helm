@@ -74,7 +74,7 @@ function accreditationToLevelCode(accreditation: string): string {
 }
 
 export default function SchoolLevelSelector() {
-  const { currentLevel, setCurrentLevel, availableLevels, isLoading } = useSchoolLevel();
+  const { currentLevel, setCurrentLevel, availableLevels, isLoading, isEmpty } = useSchoolLevel();
   const { mode, groups } = useAdminStructureMode();
   const session = useAppSessionOptional();
   const user = session?.user;
@@ -205,7 +205,12 @@ export default function SchoolLevelSelector() {
     return getLevelColor(currentLevel.code);
   }, [currentLevel, isFused]);
 
-  if (isLoading) {
+  // État de chargement
+  // ⭐ V19 : inclut les RETRIES réseau — pendant un échec transitoire (401
+  //    Railway, cold start Neon, 2G), on affiche « Chargement... » au lieu du
+  //    warning rouge. Le warning n'apparaît que si la liste est CONFIRMÉE
+  //    vide par le serveur (cf. SchoolLevelContext.isEmpty).
+  if (isLoading || (!currentLevel && !isEmpty)) {
     return (
       <div className="flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-md">
         <GraduationCap className="w-4 h-4 text-gray-400 animate-pulse" />

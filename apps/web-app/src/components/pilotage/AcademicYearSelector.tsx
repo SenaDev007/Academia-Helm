@@ -19,13 +19,17 @@ import { useAcademicYear } from '@/hooks/useAcademicYear';
 import { useL } from '@/lib/i18n/bilingual';
 
 export default function AcademicYearSelector() {
-  const { currentYear, setCurrentYear, availableYears, isLoading } = useAcademicYear();
+  const { currentYear, setCurrentYear, availableYears, isLoading, isEmpty } = useAcademicYear();
   const [isOpen, setIsOpen] = useState(false);
   // ⭐ Libellés dans la langue du profil
   const L = useL();
 
   // État de chargement
-  if (isLoading) {
+  // ⭐ V19 : inclut les RETRIES réseau (une liste vide NON confirmée n'est pas
+  //    « aucune année » — cf. AcademicYearContext.isEmpty) : pendant un échec
+  //    transitoire (401 Railway, cold start Neon, 2G), on affiche « Chargement... »
+  //    au lieu du warning rouge — les années arrivent dès que le réseau répond.
+  if (isLoading || (!currentYear && !isEmpty)) {
     return (
       <div className="flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-md">
         <Calendar className="w-4 h-4 text-gray-400 animate-pulse" />

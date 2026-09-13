@@ -583,6 +583,14 @@ export interface OutboxEvent {
    * Message d'erreur si échec
    */
   errorMessage?: string;
+  /**
+   * ⭐ Métadonnées additionnelles (V18) :
+   * `metadata.request = { url, method, body }` — requête HTTP d'origine de la
+   * mutation hors ligne. À la reconnexion, le sync engine REJOUE cette requête
+   * vers son endpoint réel (validation DTO + effets de bord serveur) au lieu
+   * d'un INSERT/UPDATE SQL générique.
+   */
+  metadata?: Record<string, any>;
 }
 
 /**

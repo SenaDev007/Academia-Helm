@@ -56,21 +56,52 @@ export function installGlobalFetchInterceptor(): void {
     input: RequestInfo | URL,
     init?: RequestInit,
   ): Promise<Response> {
-    // ⭐ GUARD DE RÉENTRANCE — si l'appelant a posé le header interne, on bypass
-    //    l'intercepteur et on appelle directement originalFetch.
-    //    Cas d'usage : offlineMutation appelle networkFetch qui fait fetch()
+    // ⭐ V18 — INPUT DE TYPE Request (axios fetch-adapter « request-mode ») :
+    //    axios appelle `fetch(new Request(url, options), safeFetchOptions)` —
+    //    method/headers/body sont DANS l'objet Request, pas dans init.
+    //    On les extrait pour que la couche offline voie la vraie requête.
+    //    (Le module complémentaire Shop/Cantine/… et les services axios passent
+    //    désormais par l'adaptateur fetch — spec « toute écriture passe par la
+    //    couche unifiée »).
+    let requestInput: Request | null = null;
+    if (typeof Request !== 'undefined' && input instanceof Request) {
+      requestInput = input;
+    }
+
+    // ⭐ GUARD DE RÉENTRANCE — si l'appelant a posé le header interne (init OU
+    //    Request), on bypass l'intercepteur et on appelle directement originalFetch.
+    //    Cas d'usage : offlineMutation/sync-engine replay → networkFetch → fetch()
     //    avec ce header pour éviter la récursion.
-    if (init?.headers) {
-      const headers = new Headers(init.headers);
-      if (headers.has(INTERNAL_HEADER)) {
-        // Retirer le header avant l'envoi (il ne doit pas partir vers le serveur)
-        const cleanInit = { ...init, headers: undefined };
-        // Recopier les headers sans le header interne
-        const newHeaders = new Headers(headers);
-        newHeaders.delete(INTERNAL_HEADER);
-        cleanInit.headers = newHeaders;
-        return originalFetch.call(window, input, cleanInit);
+    const inputHeaders: Headers | null =
+      init?.headers !== undefined && init?.headers !== null
+        ? new Headers(init.headers)
+        : requestInput
+          ? requestInput.headers
+          : null;
+    if (inputHeaders?.has(INTERNAL_HEADER)) {
+      if (requestInput) {
+        // Reconstruire la requête SANS le header interne (il ne doit pas partir
+        // vers le serveur) — on ne peut pas muter un Request figé.
+        const cloned = requestInput.clone();
+        const cleanHeaders = new Headers(requestInput.headers);
+        cleanHeaders.delete(INTERNAL_HEADER);
+        const hasBody = requestInput.method !== 'GET' && requestInput.method !== 'HEAD';
+        const rebuiltInit: RequestInit = {
+          method: requestInput.method,
+          headers: cleanHeaders,
+          ...(hasBody ? { body: await cloned.text() } : {}),
+          credentials: requestInput.credentials,
+          ...(requestInput.signal ? { signal: requestInput.signal } : {}),
+        };
+        return originalFetch.call(window, requestInput.url, rebuiltInit);
       }
+      // Retirer le header avant l'envoi (il ne doit pas partir vers le serveur)
+      const cleanInit = { ...init, headers: undefined };
+      // Recopier les headers sans le header interne
+      const newHeaders = new Headers(inputHeaders);
+      newHeaders.delete(INTERNAL_HEADER);
+      cleanInit.headers = newHeaders;
+      return originalFetch.call(window, input, cleanInit);
     }
 
     // ⭐ Extraire l'URL
@@ -117,7 +148,25 @@ export function installGlobalFetchInterceptor(): void {
       return originalFetch.call(window, input, init);
     }
 
-    const method = (init?.method || 'GET').toUpperCase();
+    const method = (init?.method || requestInput?.method || 'GET').toUpperCase();
+
+    // ⭐ V18 — Si les headers/body sont portés par l'objet Request (axios
+    //    fetch-adapter), les fusionner dans init pour la couche offline.
+    let effectiveInit = init;
+    if (requestInput && (method !== 'GET') && init?.body === undefined) {
+      try {
+        const bodyText = await requestInput.clone().text();
+        effectiveInit = {
+          ...(init ?? {}),
+          method,
+          body: bodyText || undefined,
+        };
+      } catch {
+        // Corps illisible (stream déjà consommé…) — on continue avec init
+      }
+    } else if (requestInput && init && init.body === undefined) {
+      effectiveInit = { ...init, method };
+    }
 
     // ─── GET : lecture ───
     if (method === 'GET') {
@@ -141,10 +190,12 @@ export function installGlobalFetchInterceptor(): void {
 
       // ⭐ WEB : dataService.get — la couche unifiée (timeout 5 s, cache
       //    response_cache, fallback IndexedDB — cf. offline-fetch.ts)
+      //    ⭐ V18 : effectiveInit inclut les headers/body extraits d'un éventuel
+      //    input Request (axios fetch-adapter).
       try {
         const data = await dataService.get<any>(url, {
           storeName,
-          fetchOptions: init,
+          fetchOptions: effectiveInit ?? init,
         });
 
         const body = JSON.stringify(data);
@@ -212,15 +263,16 @@ export function installGlobalFetchInterceptor(): void {
 
       // ⭐ WEB : dataService.mutate (IndexedDB + outbox hors ligne)
       try {
-        // Parse le body de la requête
+        // Parse le body de la requête (V18 : y compris le corps extrait d'un
+        // input Request — axios fetch-adapter)
         let bodyData: any = undefined;
-        if (init?.body) {
+        if (effectiveInit?.body) {
           try {
-            bodyData = typeof init.body === 'string'
-              ? JSON.parse(init.body)
-              : init.body;
+            bodyData = typeof effectiveInit.body === 'string'
+              ? JSON.parse(effectiveInit.body)
+              : effectiveInit.body;
           } catch {
-            bodyData = init.body;
+            bodyData = effectiveInit.body;
           }
         }
 

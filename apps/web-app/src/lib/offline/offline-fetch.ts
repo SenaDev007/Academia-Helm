@@ -126,7 +126,12 @@ export async function offlineFetch<T = any>(
       });
     }
 
-    return data;
+    // ⭐ V18 — WRITE-THROUGH offline : fusionner les entités LOCALES en attente
+    //    de synchronisation (_isDirty) dans la réponse réseau. Pendant qu'une
+    //    mutation est en file d'outbox (réseau instable, sync pas encore
+    //    repassée), la liste doit refléter la création/modification locale.
+    const mergedOnline = await mergePendingEntities<T>(url, storeName, data, tenantId);
+    return mergedOnline;
   } catch (networkError) {
     // ⭐ Erreurs applicatives 4xx (serveur JOUE et REFUSE) : la lecture
     //    locale n'aurait pas de sens métier (403 périmètre du rôle, 404,
@@ -151,7 +156,11 @@ export async function offlineFetch<T = any>(
           window.dispatchEvent(new CustomEvent(DATA_SERVED_FROM_CACHE_EVENT, { detail: { url } }));
         } catch { /* non-bloquant */ }
       }
-      return localData;
+      // ⭐ V18 — WRITE-THROUGH offline : idem branche réseau — les entités
+      //    _isDirty du store (créées/modifiées hors ligne) fusionnent dans la
+      //    copie locale servie, et les _deleted en sont retirées.
+      const mergedLocal = await mergePendingEntities<T>(url, storeName, localData, tenantId);
+      return mergedLocal;
     }
 
     // Aucune copie locale → [] : état « aucune donnée sur cet appareil »
@@ -185,10 +194,17 @@ interface ResponseCacheEntry<T = any> {
 
 /** Normalise une URL en clé de cache : chemin + params triés, cache-buster
  *  `_t` retiré (miroir de apiCacheKey du sw.js — même normalisation de part
- *  et d'autre pour que SW et IDB retrouvent les MÊMES entrées). */
+ *  et d'autre pour que SW et IDB retrouvent les MÊMES entrées).
+ *  ⭐ V18 : base tolérante — si window.location est absent (tests Node,
+ *  contexte worker…), on utilise une base neutre : l'URL ABSOLUE est quand
+ *  même correctement décomposée, la clé reste le chemin seul. */
 function normalizeUrlForCache(url: string): { path: string; full: string } {
   try {
-    const u = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+    const base =
+      typeof window !== 'undefined' && (window as any).location?.origin
+        ? (window as any).location.origin
+        : 'http://localhost';
+    const u = new URL(url, base);
     u.searchParams.delete('_t');
     u.searchParams.sort();
     u.hash = '';
@@ -277,6 +293,160 @@ async function readResponseCacheRelaxed<T>(url: string, tenantId?: string): Prom
     return samePath[0]?.data ?? null;
   } catch {
     return null;
+  }
+}
+
+/** ⭐ V18 — WRITE-THROUGH OFFLINE : fusion des entités locales en attente.
+ *
+ * Contexte (spéc « création/modification hors ligne + badge en attente de
+ * synchronisation ») : une mutation hors ligne écrit l'entité dans son store
+ * IDB (flag _isDirty) + un événement outbox (offline-business.service). Les
+ * LECTURES suivantes de la même famille d'URL doivent refléter cette écriture :
+ *   - liste (tableau) : remplacer l'item de même id (modif.) / l'ajouter
+ *     en fin de liste (création) ;
+ *   - réponse paginée { data: [...] } / { items: [...] } : idem sur le
+ *     tableau interne + recalage approximatif de `total` ;
+ *   - les entités _deleted (suppression locale en attente) sont RETIRÉES.
+ *
+ * La fusion ne s'applique que si l'URL demandée correspond au MÊME store que
+ * celui des entités dirty (ex: GET /api/students?... ↔ store 'student') —
+ * aucune fuite vers d'autres familles d'entités. Échec non bloquant : en cas
+ * d'erreur IDB on retourne les données d'origine.
+ */
+async function mergePendingEntities<T>(
+  url: string,
+  storeName: string,
+  data: T,
+  tenantId?: string
+): Promise<T> {
+  try {
+    if (data === null || data === undefined) return data;
+
+    // Localiser le tableau cible (réponse liste directe OU paginée)
+    let arr: any[] | null = null;
+    let container: { key: 'data' | 'items'; obj: any } | null = null;
+    if (Array.isArray(data)) {
+      arr = data as any[];
+    } else if (typeof data === 'object' && Array.isArray((data as any)?.data)) {
+      arr = (data as any).data;
+      container = { key: 'data', obj: data as any };
+    } else if (typeof data === 'object' && Array.isArray((data as any)?.items)) {
+      arr = (data as any).items;
+      container = { key: 'items', obj: data as any };
+    }
+    if (!arr) return data;
+
+    // Entités locales du store correspondant à cette famille d'URL
+    let entities: any[] = [];
+    try {
+      entities = await localDb.query<any>(storeName);
+    } catch {
+      return data; // store inexistant — rien à fusionner
+    }
+    if (!Array.isArray(entities) || entities.length === 0) return data;
+
+    // ⭐ TENANT-STRICT : ne fusionner que les entités du tenant courant
+    //    (même convention camelCase/snake_case que localFallback).
+    const tenantOf = (item: any): string | null => {
+      const v = item?.tenantId ?? item?.tenant_id;
+      return v !== undefined && v !== null && v !== '' ? String(v) : null;
+    };
+    const relevant = entities.filter((e) => {
+      if (!e || typeof e !== 'object' || !e.id) return false;
+      if (tenantId && tenantOf(e) !== null && tenantOf(e) !== String(tenantId)) return false;
+      // Uniquement les écritures locales non synchronisées (hors ligne)
+      return e._isDirty === true;
+    });
+    if (relevant.length === 0) {
+      // Pas de dirty — mais des _deleted peuvent devoir être retirés
+      const deletedIds = new Set(
+        entities
+          .filter((e) => e?._deleted === true && (!tenantId || tenantOf(e) === null || tenantOf(e) === String(tenantId)))
+          .map((e) => String(e.id))
+      );
+      if (deletedIds.size === 0) return data;
+      const filtered = arr.filter((item: any) => !item?.id || !deletedIds.has(String(item.id)));
+      if (filtered.length !== arr.length) {
+        if (container) container.obj[container.key] = filtered;
+        else return filtered as unknown as T;
+      }
+      return data;
+    }
+
+    const merged = [...arr];
+    let appended = 0;
+
+    for (const dirty of relevant) {
+      if (dirty._deleted) {
+        // Suppression locale en attente → retirer de la liste
+        const idx = merged.findIndex((item: any) => item?.id && String(item.id) === String(dirty.id));
+        if (idx >= 0) merged.splice(idx, 1);
+        continue;
+      }
+      // Copie publique (sans les champs internes _) pour l'affichage
+      const publicCopy: any = {};
+      for (const [k, v] of Object.entries(dirty)) {
+        if (k.startsWith('_')) continue;
+        publicCopy[k] = v;
+      }
+      const idx = merged.findIndex((item: any) => item?.id && String(item.id) === String(dirty.id));
+      if (idx >= 0) {
+        merged[idx] = publicCopy; // modification → version locale prioritaire
+      } else {
+        merged.push(publicCopy); // création → visible immédiatement (badge PENDING)
+        appended++;
+      }
+    }
+
+    if (container) {
+      container.obj[container.key] = merged;
+      // Recalage approximatif des compteurs de pagination
+      if (typeof container.obj?.total === 'number') {
+        container.obj.total = container.obj.total + appended;
+      }
+      return data;
+    }
+    return merged as unknown as T;
+  } catch (error) {
+    console.warn('[OfflineFetch] mergePendingEntities failed (non-bloquant):', (error as Error).message);
+    return data;
+  }
+}
+
+/** ⭐ V18 — Invalide les entrées response_cache d'une FAMILLE d'URL après une
+ *    mutation (en ligne réussie OU replay de sync) : la prochaine lecture ne
+ *    doit pas servir une copie antérieure à l'écriture. La famille = chemin
+ *    de la mutation sans les segments UUID/action finaux (ex: POST
+ *    /api/students/123 → famille /api/students ; POST /api/finance/payments
+ *    → famille /api/finance/payments). */
+export async function invalidateResponseCacheFamily(requestUrl: string): Promise<void> {
+  try {
+    const { path } = normalizeUrlForCache(requestUrl);
+    const segments = path.split('/').filter(Boolean);
+    // Retirer les segments UUID ou verbes d'action finaux (…/{uuid}, …/{uuid}/archive, …/activate…)
+    while (segments.length > 2) {
+      const last = segments[segments.length - 1];
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(last);
+      const isAction = ['archive', 'restore', 'activate', 'close', 'promote', 'validate', 'admit', 'pre-register', 'generate-credentials', 'duplicate', 'transfer', 'refund', 'resend', 'sign', 'return'].includes(last);
+      if (isUuid || isAction) segments.pop();
+      else break;
+    }
+    const family = '/' + segments.join('/');
+    if (family.length < 2) return;
+
+    const entries = await localDb.query<{ cacheKey: string; url: string }>('response_cache');
+    const stale = entries.filter((e: any) => {
+      const entryPath = String(e.url || '').split('?')[0];
+      return entryPath === family || entryPath.startsWith(family + '/');
+    });
+    for (const e of stale) {
+      await localDb.execute('response_cache', 'delete', e.cacheKey).catch(() => {});
+    }
+    if (stale.length > 0) {
+      console.log(`[OfflineFetch] response_cache invalidated for family ${family} (${stale.length} entrées)`);
+    }
+  } catch {
+    // non-bloquant
   }
 }
 
@@ -505,10 +675,23 @@ async function cacheResponse<T>(
     console.warn(`[OfflineFetch] response_cache write failed for ${url}:`, (error as Error).message);
   }
 
-  // (b) stores entités — tableaux avec ids uniquement
+  // (b) stores entités — tableaux avec ids uniquement, y compris les tableaux
+  //    INTERNES des réponses paginées { data: [...] } / { items: [...] }
+  //    (⭐ V18 : avant, une réponse paginée /api/students ne remplissait JAMAIS
+  //    le store 'student' → les écritures optimistes offline n'avaient aucune
+  //    base locale et updateEntityOffline échouait « Entity not found »).
   try {
-    if (Array.isArray(data)) {
-      const withId = data.filter((item: any) => item && typeof item === 'object' && item.id !== undefined && item.id !== null);
+    const arrayData: any[] | null = Array.isArray(data)
+      ? (data as any[])
+      : typeof data === 'object' && data !== null
+        ? Array.isArray((data as any)?.data)
+          ? (data as any).data
+          : Array.isArray((data as any)?.items)
+            ? (data as any).items
+            : null
+        : null;
+    if (arrayData) {
+      const withId = arrayData.filter((item: any) => item && typeof item === 'object' && item.id !== undefined && item.id !== null);
       if (withId.length === 0) return;
 
       // Ajouter tenantId si absent et fourni
@@ -564,6 +747,10 @@ export async function offlineMutation<T = any>(
         body: body ? JSON.stringify(body) : undefined,
         ...options.fetchOptions,
       });
+      // ⭐ V18 — la mutation en ligne a modifié les données : invalider les
+      //    copies response_cache de la MÊME famille d'URL pour qu'une lecture
+      //    ultérieure sur réseau instable ne serve pas une copie antérieure.
+      invalidateResponseCacheFamily(url).catch(() => {});
       return { data, offline: false };
     } catch (error) {
       // ⭐ Erreurs applicatives (400/401/403/404/409/422) : ne JAMAIS rejouer
@@ -600,6 +787,16 @@ function extractHttpStatus(error: unknown): number | null {
 
 /**
  * Fallback offline pour les mutations : écrit dans IndexedDB + outbox
+ * ⭐ V18 — ÉVÉNEMENTS AVEC REQUÊTE ORIGINALE : chaque événement outbox porte
+ *    désormais `metadata.request = { url, method, body }`. À la reconnexion,
+ *    le sync engine REJOUE la requête HTTP d'origine vers son endpoint réel
+ *    (validation DTO + effets de bord serveur — notifications, numérotation,
+ *    PDF…) au lieu d'un INSERT/UPDATE SQL générique dont les colonnes ne
+ *    correspondent pas au schéma réel.
+ * ⭐ V18 — URLS D'ACTION (/api/{entité}/{id}/archive, /admit, /activate…) :
+ *    traitées comme des MODIFICATIONS locales (merge sur l'entité existante,
+ *    archive → status ARCHIVED) — avant, un POST …/{id}/archive était traité
+ *    comme une CRÉATION et CORROMPAIT l'enregistrement local.
  */
 async function offlineMutationFallback<T = any>(
   url: string,
@@ -615,12 +812,29 @@ async function offlineMutationFallback<T = any>(
       return {
         offline: true,
         error: 'Impossible de sauvegarder hors ligne : identifiant tenant manquant.',
+        restricted: true, // ⭐ informer l'utilisateur plutôt que simuler un succès
       };
     }
 
     // Déterminer le type d'entité et le store depuis l'URL
     const entityType = inferEntityTypeFromUrl(url);
-    const entityId = body?.id || inferIdFromUrl(url) || generateLocalId();
+    const urlId = inferIdFromUrl(url);
+    const entityId = body?.id || urlId || generateLocalId();
+
+    // ⭐ V18 — requête d'origine pour le replay à la reconnexion (cf. sync-engine)
+    const originRequest = { url, method, body: body ?? null };
+
+    // ⭐ V18 — détection d'une URL D'ACTION : /api/{entité}/{uuid}/{action}
+    //    (archive, admit, activate, validate, close…). Le corps de ces requêtes
+    //    n'est PAS l'entité (ex: {reason}) — on MERGE sur l'entité locale au
+    //    lieu de la remplacer, et l'événement outbox porte l'URL d'origine
+    //    pour rejouer l'action exacte.
+    const pathAfterApi = url.replace(/^https?:\/\/[^/]+/i, '').split('?')[0];
+    const actionMatch = pathAfterApi.match(
+      /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/([a-z][a-z0-9-]*)$/i
+    );
+    const isActionUrl = Boolean(actionMatch && urlId && method !== 'DELETE');
+    const actionName = actionMatch?.[1]?.toLowerCase() ?? '';
 
     // ⭐ RESTRICTIONS HORS LIGNE (branchées sept. 2026 — spec mode hors-ligne) :
     //    Fedapay, validation paiement, publication résultats, documents
@@ -645,14 +859,37 @@ async function offlineMutationFallback<T = any>(
 
     let result: any;
 
-    if (method === 'POST') {
-      result = await createEntityOffline(tenantId, entityType, { ...body, id: entityId });
+    if (isActionUrl) {
+      // ─── URL d'action : modification locale de l'entité ciblée ───
+      // archive → status ARCHIVED (cohérent avec l'UI) ; autres actions →
+      // merge des champs du corps sur l'entité locale (upsert V18).
+      const patch: Record<string, any> = { ...(body ?? {}) };
+      if (actionName === 'archive' || actionName === 'soft-delete') {
+        patch.status = 'ARCHIVED';
+      }
+      result = await updateEntityOffline(tenantId, entityType, entityId, patch, {
+        request: originRequest,
+        action: actionName,
+      });
+    } else if (method === 'POST') {
+      result = await createEntityOffline(tenantId, entityType, { ...body, id: entityId }, {
+        request: originRequest,
+      });
     } else if (method === 'PUT' || method === 'PATCH') {
-      result = await updateEntityOffline(tenantId, entityType, entityId, body);
+      result = await updateEntityOffline(tenantId, entityType, entityId, body, {
+        request: originRequest,
+      });
     } else if (method === 'DELETE') {
-      await deleteEntityOffline(tenantId, entityType, entityId);
+      await deleteEntityOffline(tenantId, entityType, entityId, {
+        request: originRequest,
+      });
       result = { id: entityId, deleted: true };
     }
+
+    // ⭐ V18 — la copie locale de la famille d'URL est périmée (l'écriture
+    //    optimiste vient de modifier les données) → invalider pour que la
+    //    prochaine lecture relise la cascade et fusionne les entités dirty.
+    await invalidateResponseCacheFamily(url).catch(() => {});
 
     return { data: result as T, offline: true };
   } catch (fallbackError) {

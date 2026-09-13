@@ -23,6 +23,7 @@
 import { useState, useEffect } from 'react';
 import { localDb } from '@/lib/offline/local-db.service';
 import { outboxService } from '@/lib/offline/outbox.service';
+import { idbStoreForEntityType } from '@/lib/offline/store-names';
 import type { SyncEntityType, OutboxEventStatus } from '@/types';
 
 export type EntitySyncStatus = 'SYNCED' | 'PENDING' | 'CONFLICT' | 'ERROR' | 'UNKNOWN';
@@ -164,7 +165,11 @@ export function useEntitySyncStatus({
       }
 
       // 2. Vérifier les champs internes de l'entité dans IndexedDB
-      const storeName = `${entityType.toLowerCase()}s`;
+      //    ⭐ V18 — store SINGULIER via idbStoreForEntityType (même règle que le
+      //    write-path offline-business.service). AVANT : `${type.toLowerCase()}s`
+      //    (pluriel — ex 'students') ne correspondait à AUCUN store créé : la
+      //    détection _isDirty échouait silencieusement pour TOUTES les entités.
+      const storeName = idbStoreForEntityType(entityType);
       try {
         const entities = await localDb.query<{
           id: string;
@@ -232,11 +237,16 @@ export function useEntitySyncStatus({
     // Écouter les événements de synchronisation pour rafraîchir immédiatement
     const handleSyncEnd = () => checkStatus();
     const handleNetworkChange = () => checkStatus();
+    // ⭐ V18 — 'outbox-changed' : dispatché à CHAQUE écriture/sync outbox → le
+    //    badge « en attente de synchronisation » apparaît IMMÉDIATEMENT après
+    //    une création/modification hors ligne (fini l'attente du poll 60 s).
+    const handleOutboxChange = () => checkStatus();
 
     if (typeof window !== 'undefined') {
       window.addEventListener('sync-end', handleSyncEnd);
       window.addEventListener('online', handleNetworkChange);
       window.addEventListener('offline', handleNetworkChange);
+      window.addEventListener('outbox-changed', handleOutboxChange);
     }
 
     return () => {
@@ -245,6 +255,7 @@ export function useEntitySyncStatus({
         window.removeEventListener('sync-end', handleSyncEnd);
         window.removeEventListener('online', handleNetworkChange);
         window.removeEventListener('offline', handleNetworkChange);
+        window.removeEventListener('outbox-changed', handleOutboxChange);
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -299,7 +310,9 @@ export function useEntitySyncStatusBatch(
         }
 
         // 2. Charger les entités depuis IndexedDB pour vérifier _isDirty
-        const storeName = `${entityType.toLowerCase()}s`;
+        //    ⭐ V18 — store SINGULIER via idbStoreForEntityType (cf. note du hook
+        //    single — AVANT le store pluriel ne matchait aucun store réel).
+        const storeName = idbStoreForEntityType(entityType);
         try {
           const entities = await localDb.query<{
             id: string;
@@ -347,10 +360,13 @@ export function useEntitySyncStatusBatch(
 
     const handleSyncEnd = () => loadStatuses();
     const handleNetworkChange = () => loadStatuses();
+    // ⭐ V18 — idem hook single : rafraîchissement immédiat à chaque changement d'outbox
+    const handleOutboxChange = () => loadStatuses();
 
     if (typeof window !== 'undefined') {
       window.addEventListener('sync-end', handleSyncEnd);
       window.addEventListener('online', handleNetworkChange);
+      window.addEventListener('outbox-changed', handleOutboxChange);
     }
 
     // Rafraîchir toutes les 60 secondes (⭐ était 15s — réduite : le statut est
@@ -362,6 +378,7 @@ export function useEntitySyncStatusBatch(
       if (typeof window !== 'undefined') {
         window.removeEventListener('sync-end', handleSyncEnd);
         window.removeEventListener('online', handleNetworkChange);
+        window.removeEventListener('outbox-changed', handleOutboxChange);
       }
     };
   }, [entityType, tenantId]);

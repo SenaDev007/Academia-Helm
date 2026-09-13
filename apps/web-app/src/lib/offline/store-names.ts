@@ -246,6 +246,45 @@ const URL_TO_STORE: Array<{ pattern: RegExp; store: string }> = [
   { pattern: /\/api\/.+/, store: 'api_cache' },
 ];
 
+// ⭐ V18 — ROUTES MODULES COMPLÉMENTAIRES : les 8 modules (Shop, Cantine,
+//    Transport, Bibliothèque, Infirmerie, EduCast, QHSE…) appellent le BFF via
+//    le préfixe /api/modules-complementaires/<module>/<entité> (client axios →
+//    désormais adapté fetch → intercepteur offline). Ces patterns doivent
+//    résoudre vers les MÊMES stores que idbStoreForEntityType déduit du type
+//    d'entité (inferEntityTypeFromUrl matche le suffixe 'shop/products' etc.)
+//    pour que les écritures optimistes offline fusionnent dans les lectures.
+const MODULES_COMPLEMENTAIRES_STORES: Array<{ pattern: RegExp; store: string }> = [
+  // ─── Academia Shop ───
+  { pattern: /\/api\/modules-complementaires\/shop\/products/, store: 'shopproduct' },
+  { pattern: /\/api\/modules-complementaires\/shop\/categories/, store: 'shopcategory' },
+  { pattern: /\/api\/modules-complementaires\/shop\/orders/, store: 'shoporder' },
+  { pattern: /\/api\/modules-complementaires\/shop\/sales/, store: 'shopsale' },
+  // ─── Cantine ───
+  { pattern: /\/api\/modules-complementaires\/canteen\/menus/, store: 'canteenmenu' },
+  { pattern: /\/api\/modules-complementaires\/canteen\/subscriptions/, store: 'canteensubscription' },
+  { pattern: /\/api\/modules-complementaires\/canteen\/payments/, store: 'canteenpayment' },
+  { pattern: /\/api\/modules-complementaires\/canteen\/attendance/, store: 'canteenattendance' },
+  { pattern: /\/api\/modules-complementaires\/canteen\/settings/, store: 'canteensetting' },
+  // ─── Transport ───
+  { pattern: /\/api\/modules-complementaires\/transport\/vehicles/, store: 'vehicle' },
+  { pattern: /\/api\/modules-complementaires\/transport\/routes/, store: 'route' },
+  // ─── Bibliothèque ───
+  { pattern: /\/api\/modules-complementaires\/library\/books/, store: 'librarybook' },
+  { pattern: /\/api\/modules-complementaires\/library\/loans/, store: 'libraryloan' },
+  // ─── Infirmerie (medical) ───
+  { pattern: /\/api\/modules-complementaires\/medical\/visits/, store: 'infirmaryvisit' },
+  // ─── EduCast ───
+  { pattern: /\/api\/modules-complementaires\/educast\/contents/, store: 'educastcontent' },
+  { pattern: /\/api\/modules-complementaires\/educast\/channels/, store: 'educastchannel' },
+];
+
+// Insérer AVANT le fallback générique (le premier match gagne)
+URL_TO_STORE.splice(
+  URL_TO_STORE.length - 1,
+  0,
+  ...MODULES_COMPLEMENTAIRES_STORES
+);
+
 /**
  * Résout le store IndexedDB à partir d'une URL API.
  * Retourne undefined si l'URL ne correspond à aucun store connu.

@@ -646,6 +646,116 @@ function normalizeToIdbStoreName(type: string): string {
 }
 
 /**
+ * ⭐ V18 — REPLAY HTTP DES MUTATIONS OFFLINE (« écriture locale d'abord »).
+ *
+ * Les mutations hors ligne créées par offlineMutationFallback portent
+ * `metadata.request = { url, method, body }`. À la reconnexion, on REJOUE la
+ * requête HTTP d'origine vers son endpoint réel plutôt que de passer par le
+ * générique /api/sync/push : l'endpoint applique sa validation DTO, ses
+ * effets de bord (notifications, numérotation, PDF, quotas…) et écrit avec
+ * le MAPPING Prisma correct — un INSERT SQL brut échouerait sur les colonnes
+ * (casse, champs calculés, FK) pour la plupart des entités.
+ *
+ * Résultats :
+ *   - 2xx            → markAsSynced + écriture de la réponse serveur dans le
+ *                      store local (_isDirty cleared) + invalidation du
+ *                      response_cache de la famille d'URL ;
+ *   - 4xx (métier)   → markAsFailed + message serveur (l'opération est
+ *                      REFUSÉE : elle ne sera pas rejouée) ;
+ *   - 5xx / réseau   → reste PENDING (rejouée au prochain cycle de sync).
+ *
+ * ⚠️ Le header X-Offline-Internal est posé pour COURT-CIRCUITER l'intercepteur
+ *    global (sinon : replay → patchedFetch → dataService.mutate → re-queue).
+ */
+async function replayOfflineRequest(
+  event: OutboxEvent,
+  tenantId: string,
+): Promise<{ ok: boolean; conflict: boolean; error?: string }> {
+  const request = (event.metadata as any)?.request as
+    | { url: string; method: string; body: any }
+    | undefined;
+  if (!request?.url || !request?.method) {
+    return { ok: false, conflict: false, error: 'metadata.request manquant' };
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(request.url, {
+      method: request.method,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...clientBearerHeaders(),
+        'X-Offline-Internal': 'true', // ⭐ bypass de l'intercepteur global
+        'X-Tenant-ID': tenantId,
+      },
+      ...(request.body !== null && request.body !== undefined
+        ? { body: typeof request.body === 'string' ? request.body : JSON.stringify(request.body) }
+        : {}),
+    });
+  } catch (e: any) {
+    // Réseau KO au moment du replay → PENDING, nouvelle tentative au prochain cycle
+    console.warn(`[SyncEngine] Replay réseau KO (${request.method} ${request.url}): ${e?.message ?? e}`);
+    return { ok: false, conflict: false, error: 'network' };
+  }
+
+  const text = await response.text().catch(() => '');
+  let parsed: any = null;
+  if (text.trim()) {
+    try { parsed = JSON.parse(text); } catch { parsed = null; }
+  }
+
+  if (response.ok) {
+    await outboxService.markAsSynced(event.id);
+
+    // Écrire la réponse serveur dans le store local + clearer _isDirty
+    try {
+      const storeName = idbStoreForEntityType(event.entityType);
+      const entities = await localDb.query<any>(storeName);
+      const local = entities.find((e) => e.id === event.entityId);
+      const serverData =
+        (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.id === event.entityId)
+          ? parsed
+          : Array.isArray(parsed)
+            ? parsed.find((r: any) => r?.id === event.entityId)
+            : null;
+      if (local || serverData) {
+        await localDb.execute(storeName, 'put', {
+          ...(serverData ?? local),
+          id: event.entityId,
+          tenantId: local?.tenantId ?? tenantId,
+          _isDirty: false,
+          _deleted: false,
+          _lastSync: new Date().toISOString(),
+          ...(local ? { _version: (local._version || 1) + 1 } : {}),
+        });
+      }
+    } catch { /* store inexistant — non bloquant */ }
+
+    // Invalider le response_cache de la famille d'URL (données périmées)
+    try {
+      const { invalidateResponseCacheFamily } = await import('./offline-fetch');
+      await invalidateResponseCacheFamily(request.url);
+    } catch { /* non bloquant */ }
+
+    return { ok: true };
+  }
+
+  if (response.status >= 400 && response.status < 500) {
+    // Refus MÉTIER du serveur (validation, 403, 404…) → FAILED avec message
+    const message =
+      parsed?.message || parsed?.error || `Serveur : ${response.status} ${response.statusText}`;
+    await outboxService.markAsFailed(event.id, message);
+    return { ok: false, conflict: false, error: message };
+  }
+
+  // 5xx → probablement transitoire (redémarrage Railway, cold start) →
+  // rester PENDING, le cycle de sync retentera.
+  console.warn(`[SyncEngine] Replay 5xx (${response.status}) pour ${request.url} — restera PENDING`);
+  return { ok: false, conflict: false, error: 'server' };
+}
+
+/**
  * ⭐ Pousse uniquement les changements locaux (outbox) vers Neon.
  *    Ne fait PAS de pull — utile pour envoyer rapidement ses modifications
  *    sans attendre le téléchargement complet des données distantes.
@@ -676,12 +786,40 @@ export async function pushOutbox(
     return { pushed: 0, conflicts: 0, errors: 0 };
   }
 
+  // ⭐ V18 — SPLIT : les événements portant metadata.request (mutations créées
+  //    par l'intercepteur global / offlineMutationFallback) sont REJOUES vers
+  //    leurs endpoints d'origine ; les autres (legacy / desktop SQLite)
+  //    continuent par le batch générique /api/sync/push.
+  const replayable = sortedPending.filter((e) => {
+    const req = (e.metadata as any)?.request;
+    return req && typeof req.url === 'string' && typeof req.method === 'string';
+  });
+  const tableOps = sortedPending.filter((e) => !replayable.includes(e));
+
+  let replayPushed = 0;
+  let replayErrors = 0;
+  let replayConflicts = 0;
+  for (const event of replayable) {
+    const result = await replayOfflineRequest(event, tenantId);
+    if (result.ok) replayPushed++;
+    else if (result.error === 'network' || result.error === 'server') {
+      // Transitoire — l'événement RESTE PENDING : pas compté comme erreur,
+      // il sera retenté au prochain cycle.
+    } else {
+      replayErrors++;
+    }
+  }
+
+  if (tableOps.length === 0) {
+    return { pushed: replayPushed, conflicts: replayConflicts, errors: replayErrors };
+  }
+
   const body = {
     tenantId,
     sqliteSchemaHash: hash,
     sqliteVersion: SQLITE_VERSION,
     device_id: deviceId,
-    operations: sortedPending.map((e) => toBackendOperation(e, deviceId)),
+    operations: tableOps.map((e) => toBackendOperation(e, deviceId)),
   };
 
   const pushRes = await fetchWithAuth(`${SYNC_API}/push`, {
@@ -691,15 +829,20 @@ export async function pushOutbox(
   const pushData = await pushRes.json().catch(() => ({}));
 
   if (!pushRes.ok) {
+    // ⭐ Les replays déjà ackés ne sont pas perdus : on retourne leur compte
+    //    avec l'erreur du batch générique (retenté au prochain cycle).
+    if (replayPushed > 0) {
+      return { pushed: replayPushed, conflicts: replayConflicts, errors: replayErrors + tableOps.length };
+    }
     throw new Error(pushData?.message || pushData?.error || 'Push failed');
   }
 
-  const pushed = pushData.successful_operations ?? 0;
-  const conflicts = pushData.conflicted_operations ?? 0;
-  const errors = pushData.failed_operations ?? 0;
+  const pushed = (pushData.successful_operations ?? 0) + replayPushed;
+  const conflicts = (pushData.conflicted_operations ?? 0) + replayConflicts;
+  const errors = (pushData.failed_operations ?? 0) + replayErrors;
 
   const results = pushData.results || [];
-  const pendingById = new Map(sortedPending.map((e) => [e.id, e]));
+  const pendingById = new Map(tableOps.map((e) => [e.id, e]));
 
   for (const r of results) {
     const eventId = r.operation_id;

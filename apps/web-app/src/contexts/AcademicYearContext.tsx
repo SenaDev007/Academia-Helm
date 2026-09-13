@@ -17,7 +17,7 @@ import { useSearchParams } from 'next/navigation';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { academicYearsKeys } from '@/lib/query/academic-years-keys';
-import { fetchAcademicYearsSnapshot } from '@/lib/query/academic-years-fetch';
+import { fetchAcademicYearsSnapshot, readAcademicYearsSnapshot } from '@/lib/query/academic-years-fetch';
 import { invalidateApiCache } from '@/lib/api/get-cache';
 import type { AcademicYear } from '@/types/academic-year';
 
@@ -56,7 +56,12 @@ interface AcademicYearContextType {
   currentYear: AcademicYear | null;
   setCurrentYear: (yearId: string) => void;
   availableYears: AcademicYear[];
+  /** ⭐ V19 : true tant qu'on n'a PAS encore de liste confirmation serveur —
+   *  le sélecteur affiche « Chargement... » au lieu du warning rouge. */
   isLoading: boolean;
+  /** ⭐ V19 : true si la liste est CONFIRMÉE vide par le serveur (≠ échec
+   *  réseau en cours de retry) — seul ce cas affiche « Aucune année scolaire ». */
+  isEmpty: boolean;
 }
 
 const AcademicYearContext = createContext<AcademicYearContextType | undefined>(undefined);
@@ -76,9 +81,15 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
     data: availableYears = [],
     isLoading,
     isFetching,
+    isError,
   } = useQuery({
     queryKey: academicYearsKeys.snapshot(tenantKey),
     queryFn: () => fetchAcademicYearsSnapshot(effectiveTenantId),
+    // ⭐ V19 — affichage INSTANTANÉ au login : le snapshot localStorage de la
+    //    dernière session sert de données initiales pendant que le réseau
+    //    répond (stale-while-revalidate). Plus de « Aucune année scolaire »
+    //    pendant le chargement.
+    initialData: () => readAcademicYearsSnapshot(tenantKey) ?? undefined,
     staleTime: 2 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
     // ⭐ keepPreviousData : si le fetch échoue (connexion instable), on garde
@@ -87,7 +98,20 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
     //    ci-dessous clear le currentYear + localStorage → l'utilisateur
     //    perd son année scolaire et ne peut plus utiliser l'app.
     placeholderData: keepPreviousData,
-    retry: 2,
+    // ⭐ V19 — ROBUSTESSE : retry renforcé + rejouer tant que la liste est
+    //    VIDE (une école a TOUJOURS au moins une année — un [] est un échec
+    //    déguisé : 401 transitoire Railway, cold start Neon, 2G…).
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1200 * 2 ** attempt, 5000),
+    refetchInterval: (query) => {
+      const list = query.state.data as AcademicYear[] | undefined;
+      return Array.isArray(list) && list.length === 0 ? 5000 : false;
+    },
+    // ⭐ V19 — networkMode 'always' : la queryFn tourne AUSSI hors ligne →
+    //    l'intercepteur offline sert le cache IndexedDB (response_cache) des
+    //    années scolaires au lieu de mettre la query « en pause » (avant :
+    //    offline → isLoading figé → sélecteur rouge).
+    networkMode: 'always',
   });
 
   const [currentYear, setCurrentYearState] = useState<AcademicYear | null>(null);
@@ -267,7 +291,17 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
     }
   }, [currentYear?.id, invalidateQueriesForYearChange]);
 
-  const loading = isLoading || (isFetching && availableYears.length === 0);
+  // ⭐ V19 — « Chargement... » tant qu'on n'a PAS de confirmation serveur :
+  //    (a) premier chargement en cours ; (b) refetch avec liste encore vide ;
+  //    (c) erreur en cours de retry (une école a toujours ≥ 1 année — un []
+  //    est un échec déguisé, PAS un état métier). Le warning rouge « Aucune
+  //    année scolaire » n'apparaît que si la liste est confirmée vide.
+  const loading =
+    isLoading ||
+    (isFetching && availableYears.length === 0) ||
+    (isError && availableYears.length === 0);
+  // ⭐ V19 : vide CONFIRMÉ (réponse serveur ok, liste réellement vide).
+  const isEmptyConfirmed = !loading && availableYears.length === 0;
 
   const value = useMemo<AcademicYearContextType>(
     () => ({
@@ -275,8 +309,9 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
       setCurrentYear,
       availableYears,
       isLoading: loading,
+      isEmpty: isEmptyConfirmed,
     }),
-    [currentYear, setCurrentYear, availableYears, loading]
+    [currentYear, setCurrentYear, availableYears, loading, isEmptyConfirmed]
   );
 
   return <AcademicYearContext.Provider value={value}>{children}</AcademicYearContext.Provider>;

@@ -65,8 +65,13 @@ export async function createEntityOffline<T extends { id?: string; createdAt?: s
 
 /**
  * Met à jour une entité en mode offline-first
+ * ⭐ V18 — UPSERT : si l'entité n'existe pas encore dans le store local (ex:
+ *    liste paginée jamais cachée dans les stores entités, édition d'un élève
+ *    consulté pour la 1re fois hors ligne…), on CRÉE l'enregistrement local
+ *    à partir du corps de la requête (le PUT envoie l'objet complet) au lieu
+ *    d'échouer « Entity not found » — l'écriture n'est jamais perdue.
  */
-export async function updateEntityOffline<T extends Record<string, any> & { id: string }>(
+export async function updateEntityOffline<T extends Record<string, any> & { id?: string }>(
   tenantId: string,
   entityType: SyncEntityType,
   entityId: string,
@@ -75,25 +80,28 @@ export async function updateEntityOffline<T extends Record<string, any> & { id: 
 ): Promise<T> {
   // 1. Récupérer l'entité locale
   const storeName = idbStoreForEntityType(entityType);
-  const entities = await localDb.query<T & { _version: number }>(storeName);
+  const entities = await localDb.query<T & { id: string; _version: number }>(storeName);
   const entity = entities.find((e: any) => e.id === entityId);
 
-  if (!entity) {
-    throw new Error(`Entity ${entityType} with id ${entityId} not found`);
-  }
-
-  // 2. Mettre à jour dans la base locale
+  // 2. Mettre à jour dans la base locale (upsert — cf. commentaire V18)
+  const base = entity ?? {
+    id: entityId,
+    ...(updates as any),
+  };
   const updated = {
-    ...entity,
+    ...base,
     ...updates,
-    _version: ((entity as any)._version || 1) + 1,
+    id: entityId,
+    tenantId,
+    _version: ((entity as any)?._version || 0) + 1,
     _isDirty: true,
     updatedAt: new Date().toISOString(),
   };
 
   await localDb.execute(storeName, 'put', updated);
 
-  // 3. Créer un événement dans l'outbox
+  // 3. Créer un événement dans l'outbox (⭐ V18 : metadata porte la requête
+  //    d'origine { url, method, body } pour un replay exact à la reconnexion)
   await outboxService.createEvent(
     tenantId,
     'UPDATE',

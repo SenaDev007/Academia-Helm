@@ -70,6 +70,11 @@ export type { OfflineReadinessState, OfflineReadinessPhase } from './offline-rea
 const MODULE_ROUTES: string[] = [
   // ─── Racine + portails par rôle ───
   '/app',
+  // ⭐ v4.2.0 — Vue stratégique multi-écoles du promoteur (HORS /app/* :
+  //    la page vit sous /promoteur). Les rôles non stratégiques sont
+  //    redirigés par la page elle-même → réponse redirected → pas cachée
+  //    (aucun gaspillage 2G/3G, aucun empoisonnement du cache).
+  '/promoteur',
   '/app/censeur',
   '/app/comptable',
   '/app/director',
@@ -225,6 +230,63 @@ const HR_ROLES = [
   'DIRECTEUR_MAT_PRI', 'HR_MANAGER', 'PAYROLL_MANAGER', 'SECRETAIRE_COMPTABLE',
   'SCOLARITE', 'admin', 'ADMIN',
 ];
+
+/** ⭐ v4.2.0 — Rôles stratégiques (vue multi-écoles /promoteur). */
+const STRATEGIC_ROLES = [
+  'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SUPER_DIRECTOR',
+  'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_ADMIN', 'SUPER_ADMIN', 'admin',
+];
+
+/** ⭐ v4.2.0 — Alias EN→FR : la DB stocke les libellés FR, mais le front
+ *    reçoit parfois des alias EN (SCHOOL_DIRECTOR, SECRETARY_ACCOUNTANT,
+ *    CENSOR…). Un matching par liste EXACTE ratait ces variantes → le
+ *    pré-cache sautait des familles entières (finance, RH) pour des rôles
+ *    qui y ont pourtant accès. Normalisation AVANT tout test de rôle. */
+const ROLE_ALIASES: Record<string, string> = {
+  PROMOTER: 'PROMOTEUR', SCHOOL_OWNER: 'PROMOTEUR',
+  SCHOOL_DIRECTOR: 'DIRECTEUR', DIRECTOR: 'DIRECTEUR',
+  DEPUTY_DIRECTOR: 'DIRECTEUR', PROVISEUR: 'DIRECTEUR',
+  SECRETARY: 'SECRETAIRE', SECRETARY_ACCOUNTANT: 'SECRETAIRE_COMPTABLE',
+  ACCOUNTANT: 'COMPTABLE', CASHIER: 'CAISSIER',
+  CENSOR: 'CENSEUR', GENERAL_MONITOR: 'SURVEILLANT',
+  TEACHER: 'ENSEIGNANT', HEAD_TEACHER: 'ENSEIGNANT',
+  STUDENT: 'ELEVE', PRINCIPAL: 'DIRECTEUR', BURSAR: 'COMPTABLE',
+};
+
+/** Normalise un rôle : majuscules + alias FR (c.f. getAdminShellForRole). */
+function normalizeRole(rawRole: unknown): string {
+  const r = String(rawRole || '').toUpperCase().trim();
+  return ROLE_ALIASES[r] || r;
+}
+
+/** ⭐ v4.2.0 — Matching tolérant par famille : égalité OU préfixe
+ *    (DIRECTEUR_MATERNELLE, SECRETAIRE_COMPTABLE_SEC, PLATFORM_*…).
+ *    Remplace les `FINANCE_ROLES.includes(role)` exacts. */
+function roleMatches(rawRole: unknown, families: string[]): boolean {
+  const r = normalizeRole(rawRole);
+  if (!r) return false;
+  return families.some((f) => r === f || r.startsWith(f + '_') || r.startsWith(f));
+}
+
+/** ⭐ v4.2.0 — Accès finance (alias + variantes niveau-spécifiques). */
+function hasFinanceAccess(rawRole: unknown): boolean {
+  return roleMatches(rawRole, [
+    ...FINANCE_ROLES, 'PROVISEUR', 'DIRECTOR', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
+    'SECRETARY_ACCOUNTANT', 'ACCOUNTANT', 'CASHIER', 'CAISSIER', 'BURSAR',
+  ]);
+}
+
+/** ⭐ v4.2.0 — Accès RH (idem, tolérant). */
+function hasHrAccess(rawRole: unknown): boolean {
+  return roleMatches(rawRole, [
+    ...HR_ROLES, 'PROVISEUR', 'DIRECTOR', 'SCHOOL_DIRECTOR', 'SECRETARY_ACCOUNTANT',
+  ]);
+}
+
+/** ⭐ v4.2.0 — Vue stratégique /promoteur. */
+function isStrategicRole(rawRole: unknown): boolean {
+  return roleMatches(rawRole, STRATEGIC_ROLES);
+}
 
 /**
  * Garde anti-répétition : re-pré-cache au plus 1×/24 h (et après chaque
@@ -725,14 +787,14 @@ export function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContex
 
   // ─── Buckets par rôle ───
   const isTeacher = Boolean(teacherId) || portalType === 'TEACHER' ||
-    ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'RESP_SECONDAIRE', 'RESP_PRIMAIRE',
-      'RESP_MATERNELLE', 'PEDAGOGIC_COORDINATOR'].includes(String(role));
-  const isParent = portalType === 'PARENT' || role === 'PARENT';
+    roleMatches(role, ['ENSEIGNANT', 'TEACHER', 'RESP', 'PEDAGOGIC_COORDINATOR', 'COORDINATEUR']);
+  const isParent = portalType === 'PARENT' || role === 'PARENT' || role === 'ELEVE';
   // Staff = portail SCHOOL/PLATFORM, ou ni enseignant ni parent (défaut sûr)
   const isStaff = !isParent && (portalType === 'SCHOOL' || portalType === 'PLATFORM' ||
     (!isTeacher || portalType === undefined));
-  const hasFinance = isStaff && FINANCE_ROLES.includes(String(role));
-  const hasHr = isStaff && HR_ROLES.includes(String(role));
+  const hasFinance = isStaff && hasFinanceAccess(role);
+  const hasHr = isStaff && hasHrAccess(role);
+  const isStrategic = isStrategicRole(role);
 
   const urls: string[] = [];
 
@@ -750,6 +812,11 @@ export function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContex
   if (year) urls.push(`/api/settings/academic-years/${year}/periods`);
   urls.push('/api/settings/identity');
   urls.push('/api/settings/users');
+  // ⭐ v4.2.0 — Contexte admin (sidebar + filtrage par niveau des shells
+  //    secrétaire/comptable/censeur/surveillant…) : le hook garde un repli
+  //    localStorage, mais le pré-cache garantit une copie fraîche via le SW
+  //    (les GET en cache:no-store passent quand même par l'intercepteur).
+  if (isStaff) urls.push('/api/staff-admin-assignments/my-context');
   if (isStaff) {
     urls.push('/api/hr/staff?limit=500');
     urls.push(`/api/hr/staff${qs({ category: 'ADMIN' })}`);
@@ -870,6 +937,11 @@ export function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContex
       urls.push(`${apiBase}/pedagogy-space/seminar-config/eligible-teachers${qs({ academicYearId: year })}`);
       urls.push(`${apiBase}/teachers`);
       urls.push(`${apiBase}/pedagogy/teacher-profiles${qs({ academicYearId: year })}`);
+      // ⭐ v4.2.0 — Bibliothèque virtuelle (onglet pédagogie + /app/teacher/
+      //    library qui redirige ici) : axios cross-origin, filtres vides au
+      //    montage = cette URL EXACTE (les clés et l'ordre sont ceux de
+      //    URLSearchParams({level,classLevel,subject,resourceType,search})).
+      urls.push(`${apiBase}/pedagogy/global-library?level=&classLevel=&subject=&resourceType=&search=`);
     }
   }
 
@@ -893,6 +965,12 @@ export function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContex
     if (userId) urls.push(`/api/pedagogy/material-returns/my-assignments${qs({ userId, academicYearId: year })}`);
     const today = new Date().toISOString().slice(0, 10);
     urls.push(`/api/hr/attendance/my-today${qs({ date: today })}`);
+    // ⭐ v4.2.0 — Bibliothèque virtuelle de l'enseignant (/app/teacher/library
+    //    → /app/pedagogy/global-library) : même URL axios cross-origin que
+    //    la section 3 staff (double casquette = dédupliqué par le Set final).
+    if (apiBase) {
+      urls.push(`${apiBase}/pedagogy/global-library?level=&classLevel=&subject=&resourceType=&search=`);
+    }
   }
 
   // ═══ 5. ESPACE CENSEUR ═══ (visits/exams/councils : endpoints backend
@@ -1235,6 +1313,18 @@ export function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContex
   if (isParent) {
     urls.push(`/api/parent/children${qs({ academicYearId: year })}`);
     if (userId) urls.push(`/api/parent/children${qs({ parentId: userId, academicYearId: year })}`);
+    // ⭐ v4.2.0 — Emploi du temps des enfants : la page parent/timetable
+    //    charge la liste des classes (sélecteur enfant) AVANT les EDT —
+    //    cet endpoint était gated staff → sélecteur vide hors ligne.
+    urls.push(`/api/pedagogy/academic-structure/classes${qs({ academicYearId: year })}`);
+  }
+
+  // ═══ 17. ⭐ v4.2.0 — VUE STRATÉGIQUE PROMOTEUR (/promoteur) ═══
+  if (isStrategic) {
+    // KPIs consolidés multi-écoles (PromoterStrategicView — offlineFetch
+    // kpi_cache : servi hors ligne dès qu'il a été lu une fois ; le
+    // pré-cache l'assure même sans visite préalable de la vue).
+    urls.push('/api/analytics/consolidated');
   }
 
   // ⭐ v3.6.0 — Déduplication : les buckets STAFF+TEACHER (double casquette)
@@ -1293,14 +1383,16 @@ export function buildDynamicPrecacheUrls(
   const year = readAcademicYearId();
   const level = readSchoolLevelId();
   const levelParam = level && level !== 'ALL' ? level : null;
-  const { tenantId, teacherId, portalType, role } = ctx;
-  const isTeacher = Boolean(teacherId) || portalType === 'TEACHER';
-  const isParent = portalType === 'PARENT' || role === 'PARENT';
+  const { tenantId, userId, teacherId, portalType, role } = ctx;
+  const isTeacher = Boolean(teacherId) || portalType === 'TEACHER' ||
+    roleMatches(role, ['ENSEIGNANT', 'TEACHER', 'RESP', 'PEDAGOGIC_COORDINATOR', 'COORDINATEUR']);
+  const isParent = portalType === 'PARENT' || role === 'PARENT' || role === 'ELEVE';
   const isStaff = !isParent;
   // ⭐ v4.1.0 — les familles finance/RH de la vague 2 respectent le même
   //    gating par rôle que la vague 1 (pas de gaspillage 2G/3G en 403)
-  const hasFinance = isStaff && FINANCE_ROLES.includes(String(role));
-  const hasHr = isStaff && HR_ROLES.includes(String(role));
+  // ⭐ v4.2.0 — matching tolérant (alias EN + variantes niveau-spécifiques)
+  const hasFinance = isStaff && hasFinanceAccess(role);
+  const hasHr = isStaff && hasHrAccess(role);
   const urls: string[] = [];
 
   // Toutes les extractions sont best-effort : liste illisible → famille sautée
@@ -1393,6 +1485,16 @@ export function buildDynamicPrecacheUrls(
           }
         }
       } catch { /* famille sautée */ }
+      // ⭐ v4.2.0 — DEVOIRS de l'enseignant : liste des élèves rendus par
+      //    devoir (/app/teacher/tasks — détail d'un devoir hors ligne),
+      //    cap 30 devoirs récents.
+      try {
+        const homeworks = extractArray(await fetchListJson(
+          `/api/pedagogy-space/homeworks${qs({ teacherId, academicYearId: year })}`, headers));
+        for (const h of homeworks.slice(0, 30)) {
+          if (h?.id) urls.push(`/api/pedagogy-space/homeworks/${h.id}/students`);
+        }
+      } catch { /* famille sautée */ }
     }
 
     // 6) ENFANTS du PARENT : endpoints par enfant (aujourd'hui, notes,
@@ -1401,6 +1503,13 @@ export function buildDynamicPrecacheUrls(
       try {
         const children = extractArray(await fetchListJson(
           `/api/parent/children${qs({ academicYearId: year })}`, headers));
+        // ⭐ v4.2.0 — Lundi courant (le cahier-journal parent charge la
+        //    semaine en cours au montage : même valeur que getMonday(new Date()))
+        const now = new Date();
+        const dow = (now.getDay() + 6) % 7; // 0 = lundi
+        const monday = new Date(now);
+        monday.setDate(now.getDate() - dow);
+        const mondayStr = monday.toISOString().slice(0, 10);
         for (const child of children.slice(0, 6)) {
           const childId = child?.id || child?.studentId || child?.student?.id;
           if (!childId) continue;
@@ -1410,6 +1519,17 @@ export function buildDynamicPrecacheUrls(
           urls.push(`/api/parent/grades/${childId}${qs({ academicYearId: year })}`);
           urls.push(`/api/parent/homeworks/${childId}${qs({ academicYearId: year })}`);
           urls.push(`/api/parent/finance/${childId}/breakdown${qs({ academicYearId: year })}`);
+          // ⭐ v4.2.0 — Fiche enfant (/app/parent/children/[childId]) :
+          //    l'URL exacte porte parentId + academicYearId (c.f. page).
+          if (userId) urls.push(`/api/parent/children/${childId}${qs({ parentId: userId, academicYearId: year })}`);
+          // ⭐ v4.2.0 — Cahier-journal + semaines disponibles de la classe
+          //    de l'enfant (/app/parent/cahier-journal) — même weekStart que
+          //    la page (lundi courant).
+          const classId = child?.classId || child?.class_id || child?.classe?.id || child?.class?.id;
+          if (classId) {
+            urls.push(`/api/parent/cahier-journal/${classId}${qs({ academicYearId: year, weekStart: mondayStr })}`);
+            urls.push(`/api/parent/weeks/${classId}${qs({ academicYearId: year })}`);
+          }
         }
       } catch { /* famille sautée */ }
     }
@@ -1435,6 +1555,30 @@ export function buildDynamicPrecacheUrls(
         const staffList = extractArray(await fetchListJson('/api/hr/staff?limit=500', headers));
         for (const s of staffList.slice(0, 40)) {
           if (s?.id) urls.push(`/api/hr/contracts/staff/${s.id}/cdd-chain`);
+        }
+      } catch { /* famille sautée */ }
+    }
+
+    // 9) ⭐ v4.2.0 — HELM CONNECT : messages des conversations + canaux.
+    //    La LISTE des conversations est déjà pré-cachée (§12 vague 1), mais
+    //    l'ouverture d'une conversation hors ligne charge son fil — sans
+    //    cette famille, seul un fil déjà OUVERT en ligne avait des messages.
+    //    Cap 20 conversations + 10 canaux (les plus récents en tête de
+    //    liste — tri du backend), URL exacte de WhatsAppChat (limit=100).
+    if (userId) {
+      try {
+        const convs = extractArray(await fetchListJson(
+          `/api/chat/conversations${qs({ userId })}`, headers));
+        for (const c of convs.slice(0, 20)) {
+          const cid = c?.id || c?.conversationId || c?.uuid;
+          if (cid) urls.push(`/api/chat/conversations/${cid}/messages${qs({ userId, limit: 100 })}`);
+        }
+      } catch { /* famille sautée */ }
+      try {
+        const channels = extractArray(await fetchListJson(
+          `/api/chat/channels${qs({ userId })}`, headers));
+        for (const ch of channels.slice(0, 10)) {
+          if (ch?.id) urls.push(`/api/chat/channels/${ch.id}/messages?limit=100`);
         }
       } catch { /* famille sautée */ }
     }

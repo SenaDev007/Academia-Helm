@@ -147,6 +147,10 @@ const SECRETARY_COMPTABLE_ROLES = [
   'SECRETAIRE_COMPTABLE',
   'SECRETAIRE_COMPTABLE_MATERNELLE', 'SECRETAIRE_COMPTABLE_PRIMAIRE',
   'SECRETAIRE_COMPTABLE_SECONDAIRE', 'SECRETAIRE_COMPTABLE_MAT_PRI',
+  // ⭐ v4.2.0 — alias EN (la DB stocke les libellés FR, mais le type
+  //    UserRole du front et certains flux d'import utilisent l'anglais :
+  //    sans lui, le rôle retombait sur l'UI complète partagée).
+  'SECRETARY_ACCOUNTANT',
 ];
 
 /** Comptabilité & finances (hors secrétaires-comptables) */
@@ -365,7 +369,7 @@ export function getAdminShellForRole(role: string | undefined | null): AdminPort
   if (r.startsWith('DIRECTEUR') || r.startsWith('DIRECTOR') || r === 'PROVISEUR') {
     return ADMIN_PORTALS.director.active ? ADMIN_PORTALS.director : null;
   }
-  if (r.startsWith('SECRETAIRE_COMPTABLE')) {
+  if (r.startsWith('SECRETAIRE_COMPTABLE') || r === 'SECRETARY_ACCOUNTANT' || r.startsWith('SECRETARY_ACCOUNTANT_')) {
     return ADMIN_PORTALS['secretaire-comptable'].active ? ADMIN_PORTALS['secretaire-comptable'] : null;
   }
   if (r.startsWith('SECRETAIRE')) {

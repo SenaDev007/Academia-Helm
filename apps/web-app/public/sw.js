@@ -181,7 +181,7 @@ function getApiOrigin() {
 // v4.1.1 : au-dessus de v4.1.0 (pré-cache exhaustif) — bump pour que le
 //    correctif API_TIMEOUT 12 s (sélecteurs header) soit bien déployé chez
 //    tous les utilisateurs existants (SW_ACTIVATED → re-pré-cache).
-const SW_VERSION = 'v4.1.1';
+const SW_VERSION = 'v4.2.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -305,9 +305,12 @@ const IMMUTABLE_ASSET_PATTERNS = [
   /\/_next\/static\//,
 ];
 
-// Pages HTML dont le cache hors-ligne est AUTORISÉ (publiques uniquement)
+// Pages HTML dont le cache hors-ligne est AUTORISÉ (publiques + /promoteur
+// ⭐ v4.2.0 — vue stratégique session-required : les réponses redirigées ne
+// sont jamais cachées → pas d'empoisonnement par la page /login)
 const CACHEABLE_HTML_PATTERNS = [
   /^\/$/, // site institutionnel (racine du sous-domaine)
+  /^\/promoteur(\/|$)/, // ⭐ v4.2.0 — vue stratégique promoteur (session requise : la page redirige les non-stratégiques → la copie n'est PAS cachée)
   /^\/school-portal(\/|$)/, // site institutionnel école
   /^\/login(\/|$)/, // connexion (start_url de l'app PWA)
   /^\/portal(\/|$)/, // sélection de portails

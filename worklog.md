@@ -10418,3 +10418,31 @@ Work Log:
 Stage Summary:
 - ✅ Sélecteurs auto-réparants sur 401 (refresh + retry), erreurs backend ne se déguisent plus en listes vides, timeouts alignés 12 s, bouton « Réessayer » utilisateur
 - ⚠️ À vérifier en production : (1) session > 15 min puis navigation → sélecteurs restent fonctionnels ; (2) réseau coupé → « Chargement... » + Réessayer (plus de rouge trompeur) ; (3) SW nouvelle version actif
+
+---
+Task ID: 58 (v4.2.0 — UI de TOUS les rôles vérifiées et couvertes)
+Agent: Super Z (session principale)
+Task: « Rassure-toi que tout est bien fonctionnel pour l'UI promoteur, directeur, enseignants, parents, secrétaire, secrétaire-comptable, comptable, censeur, surveillant » — audit rôle par rôle de la couverture offline + correctifs
+
+Work Log:
+- ENV : clone rebasé sur origin/main 4d927f9 (commit tiers v4.1.1 : sélecteurs header 401 non rafraîchi + erreurs backend déguisées en listes vides)
+- Cartographie complète des 9 UI (agent Explore ~110 composants) : PROMOTER→PilotageLayout + /promoteur (vue stratégique HORS /app/*) ; SCHOOL_DIRECTOR→shell director (/app/director + oversight + pédagogie/élèves/examens/discipline/finance/RH/communication) ; TEACHER→layout dédié /app/teacher/* (10 routes) ; PARENT→layout dédié /app/parent/* (10 routes) ; SECRETARY→shell secretaire ; SECRETARY_ACCOUNTANT→shell union secretaire-comptable (finance+RH) ; ACCOUNTANT→shell comptable (FinanceDashboardV2) ; CENSEUR→shell censeur (CensorWorkspace) ; SURVEILLANT→shell surveillant (AdminPortalHome)
+- AUDIT par rôle du pré-cache (buildApiPrecacheUrls gating isStaff/isTeacher/isParent + FINANCE_ROLES/HR_ROLES) — LACUNES TROUVÉES ET COMBLÉES :
+  * /promoteur ABSENT des routes HTML pré-cachées ET du matcher SW (navigation offline impossible) → MODULE_ROUTES += /promoteur + CACHEABLE_HTML_PATTERNS += /^\/promoteur(\/|$)/ (les non-stratégiques sont redirigés côté serveur → jamais cachés, pas d'empoisonnement)
+  * /api/analytics/consolidated (KPIs multi-écoles PromoterStrategicView) absent → §17 gated STRATEGIC_ROLES
+  * /api/staff-admin-assignments/my-context absent (sidebar + garde des 6 shells admin — repli localStorage existant mais copie fraîche garantie) → §0 staff
+  * PARENT : fiche enfant /api/parent/children/{id}?parentId=&academicYearId= + cahier-journal {classId}?weekStart=<lundi courant> + weeks {classId} (vague 2, cap 6) + /api/pedagogy/academic-structure/classes (sélecteur EDT, était gated staff) 
+  * CHAT (tous rôles) : messages PAR CONVERSATION /api/chat/conversations/{id}/messages?userId=&limit=100 (cap 20) + canaux /api/chat/channels/{id}/messages?limit=100 (cap 10) — vague 2 famille 9 (avant : seul un fil déjà OUVERT en ligne avait ses messages offline)
+  * ENSEIGNANT : /api/pedagogy-space/homeworks/{id}/students (détail devoir /app/teacher/tasks, cap 30) + bibliothèque virtuelle (URL axios cross-origin EXACTE level=&classLevel=&subject=&resourceType=&search= pour staff ET enseignant)
+  * ALIAS EN→FR : matching par liste EXACTE ratait SECRETARY_ACCOUNTANT (→ famille finance/RH sautée + shell raté = UI complète au lieu du portail dédié) → normalizeRole + ROLE_ALIASES + roleMatches (préfixes niveau-spécifiques DIRECTEUR_*, SECRETAIRE_COMPTABLE_*) appliqués aux buckets vague 1 ET vague 2 ; admin-portal-map : SECRETARY_ACCOUNTANT ajouté à SECRETARY_COMPTABLE_ROLES + fallback getAdminShellForRole
+  * Censeur visits/exams/councils : endpoints backend inexistants (404 online ET offline — CensorWorkspace catch(()=>null) = empty states gracieux, PAS un bug offline) — sanctions type=ACADEMIC + exam-frauds couverts
+- Volumes par rôle (matrice test) : PROMOTEUR 322, DIRECTEUR 321, SECRETAIRE 240, SECRETAIRE_COMPTABLE 321, COMPTABLE 278, CENSEUR 240, SURVEILLANT 240, ENSEIGNANT 59, PARENT 43 URLs (le gating évite le gaspillage 2G/3G — la secrétaire n'a PAS la famille §9 finance, seulement §0 référentiels + §2 KPIs dashboard)
+- sw.js v4.2.0 (bump → SW_ACTIVATED force le re-pré-cache étendu chez les utilisateurs existants)
+- Tests : scripts/test_offline_v42_roles.mjs NOUVEAU — 186/186 ✓ (matrice 9 rôles FR + alias EN + variantes niveau, volumes, gating négatif, /promoteur bundle+SW, vague 2 chat/parent/enseignant avec fetch mocké, getAdminShellForRole 19 assertions) ; régression test_offline_v41_readiness.mjs 71/71 ✓ ; test_sw_v40_interception.mjs 71/71 ✓ ; node --check sw.js ✓ ; esbuild transpile 2 fichiers TS ✓
+
+Stage Summary:
+- ✅ Les 9 UI (promoteur, directeur, enseignant, parent, secrétaire, secrétaire-comptable, comptable, censeur, surveillant) ont chacune leurs routes HTML + endpoints de données pré-cachés selon LEUR portée — navigation + dashboards + sous-onglets + modales offline, avec gating anti-gaspillage
+- ✅ Alias FR/EN et variantes niveau-spécifiques : mêmes comportements quelle que soit la convention de nommage du rôle (DB FR ou front EN)
+- ✅ Vue stratégique /promoteur offline complète (HTML + KPIs consolidés)
+- ✅ Chat Helm Connect : fils de messages pré-cachés (20 conversations + 10 canaux les plus récents)
+- ⏳ E2E production post-déploiement : login promoteur → SW v4.2 → pré-cache étendu → offline → /promoteur + portails ; création de comptes de test par rôle si nécessaire

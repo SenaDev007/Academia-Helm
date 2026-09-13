@@ -47,6 +47,18 @@ const RESOURCE_COLORS: Record<string, string> = {
   LINK: 'text-emerald-500 bg-emerald-50',
 };
 
+/** v4.3.0 — Affichage sur d'un champ API : string telle quelle, objet
+ *  peuple -> name/abbreviation/code, sinon chaine vide (jamais d'objet rendu). */
+function displayValue(v: unknown): string {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string' || typeof v === 'number') return String(v);
+  if (typeof v === 'object') {
+    const o = v as Record<string, any>;
+    return String(o.name ?? o.abbreviation ?? o.code ?? o.label ?? o.title ?? '');
+  }
+  return '';
+}
+
 export function GlobalLibraryHub() {
   const { tenant } = useTenant();
   const tenantId = tenant?.id;
@@ -257,8 +269,11 @@ export function GlobalLibraryHub() {
                     </div>
 
                     <div className="flex flex-wrap gap-2 pt-2">
-                      {resource.level && <Badge className="bg-blue-50 text-blue-700 border-none">{resource.level}</Badge>}
-                      {resource.subject && <Badge className="bg-indigo-50 text-indigo-700 border-none">{resource.subject}</Badge>}
+                      {/* v4.3.0 — null-safety : level/subject peuvent etre des OBJETS
+                          peuples (entite matiere) selon l'API — un objet rendu
+                          directement = React #31 -> error boundary hors ligne. */}
+                      {resource.level && <Badge className="bg-blue-50 text-blue-700 border-none">{displayValue(resource.level)}</Badge>}
+                      {resource.subject && <Badge className="bg-indigo-50 text-indigo-700 border-none">{displayValue(resource.subject)}</Badge>}
                       {resource.language && <Badge className="bg-amber-50 text-amber-700 border-none font-medium">{resource.language}</Badge>}
                     </div>
 

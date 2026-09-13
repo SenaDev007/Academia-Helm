@@ -115,6 +115,17 @@ const monthLabels = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
+/** v4.3.0 — format() sur date valide uniquement (sinon RangeError date-fns). */
+function safeFormatDate(date: unknown): string {
+  try {
+    const d = new Date(date as any);
+    if (!date || Number.isNaN(d.getTime())) return String(date ?? '');
+    return format(d, "EEEE d MMMM yyyy", { locale: fr });
+  } catch {
+    return String(date ?? '');
+  }
+}
+
 export default function ParentAttendancePage() {
   const { user } = useAppSession();
   const { academicYear } = useModuleContext();
@@ -163,6 +174,10 @@ export default function ParentAttendancePage() {
 
     for (const r of records) {
       const d = new Date(r.date);
+      // v4.3.0 — null-safety : une date absente/invalide (reponse partielle
+      // hors ligne) ne doit jamais produire un RangeError date-fns ->
+      // error boundary. On ignore l'enregistrement mal forme.
+      if (!r?.date || Number.isNaN(d.getTime())) continue;
       const trimNum = getTrimesterNumber(d);
       const monthKey = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, '0')}`;
 
@@ -382,7 +397,7 @@ export default function ParentAttendancePage() {
                                     <div className="flex-1 min-w-0">
                                       <div className="flex items-center gap-2 flex-wrap">
                                         <span className="text-sm font-semibold text-slate-900">
-                                          {format(new Date(r.date), "EEEE d MMMM yyyy", { locale: fr })}
+                                          {safeFormatDate(r.date)}
                                         </span>
                                         <span className={cn(
                                           "inline-flex items-center px-2 py-0.5 rounded text-xs font-bold",

@@ -102,7 +102,8 @@ export default function ParentResultsPage() {
       try {
         const res = await fetch(`/api/parent/children?parentId=${user.id}&academicYearId=${academicYear.id}`, { credentials: "include" });
         const data = await res.json();
-        const list = Array.isArray(data) ? data : [];
+        // ⭐ v4.3.0 — réponse hors ligne parfois partielle : filtrer les trimestres non conformes
+      const list = (Array.isArray(data) ? data : []).filter((q: any) => q && typeof q === 'object');
         setChildren(list);
         if (list.length > 0) setSelectedStudent(list[0].id);
       } catch { setChildren([]); }
@@ -190,7 +191,8 @@ function NotesTab({ studentId, academicYearId, child }: { studentId: string; aca
     try {
       const res = await fetch(`/api/parent/grades/${studentId}?academicYearId=${academicYearId}`, { credentials: "include" });
       const data = await res.json();
-      const list = Array.isArray(data) ? data : [];
+      // ⭐ v4.3.0 — réponse hors ligne parfois partielle : filtrer les trimestres non conformes
+      const list = (Array.isArray(data) ? data : []).filter((q: any) => q && typeof q === 'object');
       setGrades(list);
       if (list.length > 0) {
         setExpandedQuarters(new Set([list[0].quarterId]));
@@ -217,7 +219,14 @@ function NotesTab({ studentId, academicYearId, child }: { studentId: string; aca
 
   const isMaternelle = useMemo(() => {
     // Derive from grades data: if any subject has qualitativeCode, it's Maternelle
-    return grades.some(q => q.evaluations.some(ev => ev.subjects.some(s => s.qualitativeCode)));
+    // ⭐ v4.3.0 — null-safety : un trimestre sans évaluations (ou une
+    //    réponse partielle hors ligne) ne doit JAMAIS faire crasher la page
+    //    (error boundary « Module en attente du réseau » constaté en E2E).
+    return (grades || []).some(
+      (q: any) => (q?.evaluations || []).some(
+        (ev: any) => (ev?.subjects || []).some((s: any) => s?.qualitativeCode),
+      ),
+    );
   }, [grades]);
   const isPrimaire = !isMaternelle && child?.schoolLevelCode === 'PRIMAIRE';
   const isSecondaire = child?.schoolLevelCode === 'SECONDAIRE';

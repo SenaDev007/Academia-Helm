@@ -56,11 +56,24 @@ interface CacheEntry<T> {
 
 const DEFAULT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-/** ⭐ Spec §2.2 — timeout court sur l'appel réseau (3-5 s recommandé).
- *    5 s : couvre le SW (Cache API instantané offline) et les réponses
- *    chaudes, sans faire attendre indéfiniment l'interface sur 2G/3G ou un
- *    cold start Neon — au-delà, on sert les données locales. */
-const NETWORK_TIMEOUT_MS = 5_000;
+/** ⭐ V4.0 — L'INTERCEPTION VIT DANS LE SERVICE WORKER (sw.js v4) :
+ *    - timeout COURT (8 s réseau, puis repli cache/IDB) : appliqué PAR LE SW
+ *      sur chaque requête — la couche applicative n'a plus besoin de couper
+ *      court (v3.7-v3.9 coupaient ici à 5 s → lectures ONLINE lentes servaient
+ *      des données locales périmées : régression « comportements online cassés »).
+ *    - les appels partent donc avec un budget GÉNÉREUX ici : soit le SW
+ *      répond (réseau OU repli local) dans son propre délai, soit l'appel
+ *      réellement réseau s'exécute entièrement.
+ *    - le signal d'attente hors ligne est porté par l'en-tête X-Sync-Status
+ *      (SW) / le résultat {offline:true} (offlineMutation) — cf. §5 de la
+ *      spec d'interception réseau. */
+const NETWORK_TIMEOUT_MS = 30_000;
+/** Timeout des MUTATIONS via cette couche (Tauri/services directs) :
+ *    volontairement LONG — une mutation ne doit JAMAIS être mise en file
+ *    « au doute » alors que le serveur est en train de la traiter (risque de
+ *    DOUBLON au replay). Le SW applique le même principe (15 s + file
+ *    seulement sur erreur réseau avérée). */
+const MUTATION_NETWORK_TIMEOUT_MS = 30_000;
 
 /** Événement dispatché quand des données locales (cache) sont servies alors
  *  que le réseau échouait — permet aux couches supérieures (React Query via
@@ -488,7 +501,7 @@ async function readLocalData<T>(url: string, storeName: string, tenantId?: strin
  * ⭐ Headers normalisés via new Headers() — l'ancien spread {...options.headers}
  *    perdait les headers d'une instance Headers (spread d'itérateur absent).
  */
-async function networkFetch<T>(url: string, options: RequestInit = {}, timeoutMs = NETWORK_TIMEOUT_MS): Promise<T> {
+async function networkFetch<T>(url: string, options: RequestInit = {}, timeoutMs = NETWORK_TIMEOUT_MS, meta?: { syncPending?: boolean }): Promise<T> {
   const controller = new AbortController();
   const outerSignal = options.signal as AbortSignal | null | undefined;
 
@@ -550,6 +563,14 @@ async function networkFetch<T>(url: string, options: RequestInit = {}, timeoutMs
       const err = new Error(`${message} (API error: ${response.status})`) as Error & { status?: number };
       err.status = response.status;
       throw err;
+    }
+
+    // ⭐ V4.0 — Signal du Service Worker : si le SW a répondu avec une
+    //    réponse FABRIQUÉE (réseau KO → mutation mise en file), il pose
+    //    X-Sync-Status: pending. On le remonte à l'appelant via `meta`
+    //    (offlineMutation → résultat {offline:true} → badge/état explicite).
+    if (meta && response.headers && response.headers.get('X-Sync-Status') === 'pending') {
+      meta.syncPending = true;
     }
 
     return response.json();
@@ -743,24 +764,40 @@ async function cacheResponse<T>(
  *    Dans ce cas le résultat porte `restricted: true` + `error` (message)
  *    pour que l'UI affiche l'erreur AU LIEU de mettre en file.
  *
- * @returns { data, offline, error, restricted } — offline=true si traitée hors
- *          ligne (badge « en attente de synchronisation » côté UI).
+ * @returns { data, offline, error, restricted, queuedByServiceWorker } —
+ *          offline=true si traitée hors ligne OU mise en file par le SW
+ *          (badge « en attente de synchronisation » côté UI) ;
+ *          queuedByServiceWorker=true lorsque la file appartient au SW
+ *          (replay par Background Sync — propriétaire unique).
  */
 export async function offlineMutation<T = any>(
   url: string,
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   body?: any,
   options: OfflineFetchOptions = {}
-): Promise<{ data?: T; offline: boolean; error?: string; restricted?: boolean }> {
+): Promise<{ data?: T; offline: boolean; error?: string; restricted?: boolean; queuedByServiceWorker?: boolean }> {
   const isOnline = networkDetectionService.isConnected();
 
   if (isOnline) {
     try {
+      // ⭐ V4.0 — meta : si le SERVICE WORKER a intercepté la requête et a
+      //    répondu avec une mutation FABRIQUÉE (réseau KO au moment du fetch
+      //    alors que navigator.onLine était vrai — lie-fi), il pose
+      //    X-Sync-Status: pending. On le remonte en {offline:true} pour que
+      //    les appelants (hooks de mutation, UI paiement…) affichent l'état
+      //    « en attente de synchronisation / validation réseau ».
+      const meta: { syncPending?: boolean } = {};
       const data = await networkFetch<T>(url, {
         method,
         body: body ? JSON.stringify(body) : undefined,
         ...options.fetchOptions,
-      });
+      }, MUTATION_NETWORK_TIMEOUT_MS, meta);
+      if (meta.syncPending) {
+        // La mutation est EN FILE côté SW (outbox + Background Sync) :
+        // pas d'invalidation locale ici — le SW gère la fraîcheur à la
+        // reconnexion (replay + purge de la famille d'URL).
+        return { data, offline: true, queuedByServiceWorker: true };
+      }
       // ⭐ V18 — la mutation en ligne a modifié les données : invalider les
       //    copies response_cache de la MÊME famille d'URL pour qu'une lecture
       //    ultérieure sur réseau instable ne serve pas une copie antérieure.

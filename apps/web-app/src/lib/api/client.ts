@@ -31,19 +31,14 @@ export const apiClient: AxiosInstance = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  // ⭐ V18 — OFFLINE-FIRST POUR AXIOS : l'adaptateur 'fetch' est placé EN
-  //    PREMIER (défaut axios : xhr) pour que TOUTES les requêtes de cette
-  //    instance passent par window.fetch — PATCHÉ par l'intercepteur global
-  //    offline (timeout court, cache response_cache, fallback IndexedDB,
-  //    outbox pour les mutations). Sans ça, les modules passant par axios
-  //    (modules complémentaires : Shop, Cantine, Transport, Bibliothèque…,
-  //    services students/classes/pedagogy…) BYPASSAIENT la couche d'accès
-  //    unifiée : hors ligne, leurs écritures échouaient au lieu d'être mises
-  //    en file d'attente avec le badge « en attente de synchronisation ».
-  //    L'adaptateur fetch d'axios résout globalThis.fetch à CHAQUE requête
-  //    (identifiant dynamique) → le patch est bien appliqué.
-  //    xhr/http restent en repli (environnement sans fetch — SSR Node).
-  adapter: ['fetch', 'xhr', 'http'],
+  // ⭐ V4.0 (rollback de l'approche dataService) : PLUS d'adaptateur 'fetch'
+  //    imposé — axios revient à son comportement d'origine (xhr). Le forçage
+  //    de l'adaptateur fetch (v3.9) avait modifié le comportement ONLINE des
+  //    modules complémentaires (uploads FormData, progression, timeouts) et
+  //    routait les requêtes vers window.fetch patché par l'intercepteur
+  //    applicatif — cette couche applicative est retirée au profit d'une
+  //    interception UNIQUEMENT au niveau du Service Worker (sw.js v4).
+  //    Les GET axios cross-origin restent interceptés par le SW (v3.5+).
 });
 
 /**

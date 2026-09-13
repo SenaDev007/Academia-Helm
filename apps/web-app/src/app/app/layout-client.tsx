@@ -46,21 +46,13 @@ import { SyncModal } from '@/components/offline/SyncModal';
 import ConflictResolutionModal from '@/components/offline/ConflictResolutionModal';
 import { PWAInstallPrompt } from '@/components/pwa/PWAInstallPrompt';
 
-// ⭐ V19 — INSTALLATION PRÉCOCE de l'intercepteur offline : au niveau MODULE
-//    (et non plus seulement dans un useEffect, qui s'exécute APRÈS les effets
-//    des composants enfants). Le flow post-login (PostLoginFlowWrapper →
-//    fetch('/api/academic-years')) et les premiers fetchs des contexts
-//    doivent déjà être routés par la couche d'accès unifiée — sinon les
-//    années scolaires du login partaient en fetch NATIF (pas de cache IDB,
-//    pas de timeout court, pas de fallback hors ligne).
-//    ⚠️ Idempotent (guard isInstalled) et guard SSR (typeof window).
-if (typeof window !== 'undefined') {
-  import('@/lib/offline/global-fetch-interceptor')
-    .then(({ installGlobalFetchInterceptor }) => {
-      installGlobalFetchInterceptor();
-    })
-    .catch(() => { /* le fallback useEffect ci-dessous retentera */ });
-}
+// ⭐ V4.0 (rollback de l'approche dataService) : plus AUCUNE installation
+//    d'intercepteur offline au niveau applicatif — les fetchs des composants
+//    restent NATIFS et l'interception (lecture + écriture) vit entièrement
+//    dans le Service Worker (sw.js v4). L'installation précoce module-level
+//    (v3.9) routait les premiers fetchs post-login vers la couche
+//    applicative — retirée. Le SW contrôle toutes les requêtes dès
+//    l'enregistrement (clients.claim) — y compris académique années/niveaux.
 
 export interface AppLayoutClientProps {
   children: React.ReactNode;
@@ -164,12 +156,14 @@ export default function AppLayoutClient({
     return () => { cancelled = true; };
   }, []);
 
-  // ⭐ OFFLINE-FIRST RÉACTIVÉ (sept. 2026 — spec mode hors-ligne) :
-  //    intercepteur global de fetch + auto-sync + bootstrap IDB + précache modules.
+  // ⭐ OFFLINE-FIRST (v4.0 — interception Service Worker) :
+  //    auto-sync + bootstrap IDB + précache modules. L'interception des
+  //    requêtes vit dans le SW (sw.js v4) en WEB ; window.fetch n'est patché
+  //    QUE dans la webview TAURI (pas de SW là-bas) — l'appel ci-dessous est
+  //    un NO-OP en navigateur web (cf. global-fetch-interceptor.ts).
 
-  // ⭐ Installer l'intercepteur global de fetch (offline-first pour TOUS les GET /api/*)
-  //    ⭐ V19 : redondant avec l'installation module-level ci-dessus — garde-fou
-  //    si l'import dynamique précoce a échoué (chunk indisponible). Idempotent.
+  // ⭐ TAURI : installer l'intercepteur SQLite (no-op en web — le SW
+  //    intercepte tout). Idempotent, dynamique (chunk non critique).
   useEffect(() => {
     import('@/lib/offline/global-fetch-interceptor').then(({ installGlobalFetchInterceptor }) => {
       installGlobalFetchInterceptor();
@@ -177,6 +171,9 @@ export default function AppLayoutClient({
   }, []);
 
   // ⭐ AUTO-SYNC : déclencher push+pull automatiquement au retour du réseau
+  //    (les événements outbox créés PAR LE SW portent metadata.sw → le
+  //    sync-engine applicatif les IGNORE et laisse le replay au SW :
+  //    propriétaire unique, aucun doublon de mutation rejouée.)
   useEffect(() => {
     if (!tenant?.id) return;
     import('@/lib/offline/auto-sync-trigger').then(({ initAutoSyncTrigger }) => {

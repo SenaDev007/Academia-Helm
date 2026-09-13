@@ -797,12 +797,19 @@ export async function pushOutbox(
     return { pushed: 0, conflicts: 0, errors: 0 };
   }
 
-  // ⭐ V18 — SPLIT : les événements portant metadata.request (mutations créées
+  // ⭐ V4.0 — SPLIT : les événements portant metadata.request (mutations créées
   //    par l'intercepteur global / offlineMutationFallback) sont REJOUES vers
   //    leurs endpoints d'origine ; les autres (legacy / desktop SQLite)
   //    continuent par le batch générique /api/sync/push.
+  //    ⭐ V4.0 — PROPRIÉTAIRE UNIQUE : les événements marqués metadata.sw (mis
+  //    en file PAR LE SERVICE WORKER — sw.js v4, interception des écritures)
+  //    sont EXCLUS : leur replay appartient au SW (Background Sync
+  //    'ah-sync-pending' + replay HTTP exact côté SW). Le sync-engine
+  //    applicatif ne les touche plus → AUCUN risque de doublon de mutation.
   const replayable = sortedPending.filter((e) => {
-    const req = (e.metadata as any)?.request;
+    const meta = e.metadata as any;
+    if (meta?.sw) return false; // ⭐ file du SW → replay par le SW uniquement
+    const req = meta?.request;
     return req && typeof req.url === 'string' && typeof req.method === 'string';
   });
   const tableOps = sortedPending.filter((e) => !replayable.includes(e));

@@ -502,15 +502,29 @@ async function networkFetch<T>(url: string, options: RequestInit = {}, timeoutMs
   }
   const timer = outerSignal ? null : setTimeout(() => controller.abort(), timeoutMs);
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...getClientAuthorizationHeader(),
-    'X-Offline-Internal': 'true', // ⭐ guard de réentrance
-  };
+  // ⭐ FIX CRITIQUE 2026-09-13 (401 systémique en production) : les headers
+  //    sont construits dans un objet Headers UNIQUE via .set() — qui normalise
+  //    la casse et REMPLACE la valeur. Avant : un Record mixait
+  //    'Authorization' (base, PascalCase) et 'authorization' (minuscule,
+  //    issus de new Headers(...).forEach qui lowercase les clés) → lors du
+  //    passage ultérieur à new Headers(record), les deux clés étaient
+  //    COMBINÉES en « Bearer t, Bearer t » → token invalide → 401
+  //    Unauthorized sur TOUTES les requêtes passant par la couche offline
+  //    (l'installation module-level de l'intercepteur depuis la V19 rendait
+  //    le bug systématique dès le login).
+  const headers = new Headers();
+  headers.set('Content-Type', 'application/json');
+  const authHeaders: Record<string, string> = getClientAuthorizationHeader() ?? {};
+  for (const [key, value] of Object.entries(authHeaders)) {
+    headers.set(key, value);
+  }
+  headers.set('X-Offline-Internal', 'true'); // ⭐ guard de réentrance
   if (options.headers) {
     const normalized = new Headers(options.headers);
     normalized.forEach((value, key) => {
-      headers[key] = key === 'x-offline-internal' ? 'true' : value;
+      // set() remplace la valeur existante (casse normalisée) — plus aucun
+      // doublon possible, quelle que soit la casse fournie par l'appelant.
+      headers.set(key, value);
     });
   }
 

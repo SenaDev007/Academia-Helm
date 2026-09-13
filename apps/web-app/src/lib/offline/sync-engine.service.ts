@@ -502,16 +502,27 @@ const RETRY_BASE_MS = 1000;
 
 async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
   let lastError: Error | null = null;
+  // ⭐ FIX 2026-09-13 (cf. offline-fetch networkFetch) : headers construits via
+  //    Headers.set() (casse normalisée, remplace) — un spread de record
+  //    mixant 'Authorization' et 'authorization' produisait un token
+  //    « Bearer t, Bearer t » → 401 systémique.
+  const mergedHeaders = new Headers();
+  mergedHeaders.set('Content-Type', 'application/json');
+  const bearerHeaders: Record<string, string> = clientBearerHeaders() ?? {};
+  for (const [key, value] of Object.entries(bearerHeaders)) {
+    mergedHeaders.set(key, value);
+  }
+  if (options.headers) {
+    new Headers(options.headers).forEach((value, key) => {
+      mergedHeaders.set(key, value);
+    });
+  }
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const res = await fetch(url, {
         ...options,
         credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...clientBearerHeaders(),
-          ...options.headers,
-        },
+        headers: mergedHeaders,
       });
       if (res.ok || res.status < 500 || attempt === MAX_RETRIES) return res;
       lastError = new Error(`HTTP ${res.status}`);

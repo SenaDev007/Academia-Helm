@@ -381,6 +381,12 @@ class LocalDbService {
       "messagetarget",
       "messagetemplate",
       "module",
+      // ⭐ FIX 2026-09-13 : stores utilisés par offline-bootstrap.service (put bulk
+      //    data.modules / data.academicTerms) mais jamais créés — la transaction
+      //    IDB levait NotFoundError « object store not found » → bootstrap offline
+      //    complet AVORTÉ (sync_state jamais écrit, prefetch critique jamais lancé).
+      "modules",
+      "academic_terms",
       "monthlyevaluation",
       "monthlysummary",
       "multigradeassignment",
@@ -995,7 +1001,7 @@ class LocalDbService {
 // Instance singleton
 export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
-  version: 18, // ⭐ bump 17 → 18 (+ store 'chat' pour le fallback mutation offline /api/chat/presence) ; v17 = stores manquants URL_TO_STORE + response_cache
+  version: 19, // ⭐ FIX 2026-09-13 : bump 18 → 19 (+ stores 'modules' & 'academic_terms' requis par offline-bootstrap — NotFoundError sinon) ; v18 = + store 'chat' ; v17 = stores URL_TO_STORE + response_cache
 });
 
 /**

@@ -35,11 +35,11 @@ import { Toaster } from '@/components/ui/sonner';
 // Connecté à /sara/guide/stream (GLM 5.2). Aucun accès aux données tenant.
 import InAppSaraGuideWidget from '@/components/ai/InAppSaraGuideWidget';
 import OnboardingTour from '@/components/ai/OnboardingTour';
-// ⭐ Offline-first : bannière hors ligne + badge statut réseau + prompt d'installation PWA + SW offline + modal sync
+// ⭐ Offline-first : bannière hors ligne + prompt d'installation PWA + SW offline + modal sync
+//    (badge statut réseau retiré du layout — cf. commentaire dans le rendu)
 // ⭐ RÉACTIVÉ (sept. 2026) — spécification « mode hors-ligne offline-first » :
 //    lecture intégrale hors ligne + file de mutations + sync auto au retour réseau.
 import OfflineGuard from '@/components/offline/OfflineGuard';
-import { OfflineStatusBadge } from '@/components/offline/OfflineStatusBadge';
 import { OfflineSWRegister } from '@/components/offline/OfflineSWRegister';
 import AppGate from '@/components/auth/AppGate';
 import { SyncModal } from '@/components/offline/SyncModal';
@@ -353,8 +353,9 @@ export default function AppLayoutClient({
       {/* ⭐ Toaster (sonner) — affiche les toast.success/toast.error partout
           dans l'app (sans lui, les notifications sont silencieuses) */}
       <Toaster richColors position="top-right" closeButton />
-      {/* ⭐ Badge statut réseau (en ligne / hors ligne / sync en cours) */}
-      <OfflineStatusBadge />
+      {/* ⭐ Badge statut réseau SUPPRIMÉ (2026-09-13) : rendu sans positionnement,
+          il apparaissait sous le footer de l'app (retour utilisateur). Le statut
+          hors ligne reste visible via la bannière OfflineGuard + SyncModal. */}
       <PWAInstallPrompt appName={tenant?.name || 'Academia Helm'} />
       {/* ⭐ Modal de sync (progression) + résolution de conflits (finance → révision manuelle) */}
       <SyncModal />

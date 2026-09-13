@@ -650,27 +650,11 @@ export function GradingSheet({
     return map;
   }, [rows, secAverageMap]);
 
-  // ═══ SECONDARY — Basculer l'absence d'un élève pour une matière ════════
-  // La fiche secondaire n'a pas de colonne « Présence » (modèle demandé) :
-  // l'absence se gère directement dans la cellule de note (bouton « Abs »).
-  const toggleAbsentSecondaire = (studentId: string, subjectId: string) => {
-    setRows((prev) => prev.map((row) => {
-      if (row.studentId !== studentId) return row;
-      const existing = row.scores[subjectId] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
-      return {
-        ...row,
-        scores: {
-          ...row.scores,
-          [subjectId]: {
-            ...existing,
-            isAbsent: !existing.isAbsent,
-            // Marquer absent efface la note ; revenir conserve l'absence à false
-            ...(existing.isAbsent ? {} : { score: null, cm: null, cp: null, qualitativeCode: null }),
-          },
-        },
-      };
-    }));
-  };
+  // ═══ SECONDARY — Présence par élève (colonne dédiée) ═══════
+  // Même méthode que maternelle/primaire : colonne « Présence » avec
+  // P (présent partout) / A (absent partout) + réglage fin par matière via
+  // la modale (bouton ⚙). Les cellules des matières absentes se verrouillent
+  // et s'affichent en rouge pâle — plus de bouton « Abs » par cellule.
 
   // ── V10f — Chargement des commentaires du Head Teacher par matière ────────
   // (page 2 du broadsheet). Une seule ligne par fiche en base :
@@ -1252,15 +1236,15 @@ export function GradingSheet({
                    * Modèle unique pour TOUTES les évaluations (Interrogation 1/2,
                    * Devoir surveillé 1/2) et TOUTES les classes du secondaire :
                    *
-                   *   N° | Nom et prénom | NOTES OBTENUES (une colonne par
-                   *      |               | matière programmée, /20)
-                   *      |               | Seuil atteint | Rang | Appréciation
+                   *   N° | Nom et prénom | PRÉSENCE | NOTES OBTENUES (une
+                   *      colonne par matière programmée, /20) | Seuil atteint |
+                   *      Rang | Appréciation
                    *
+                   * - Présence : P / A par élève + détail par matière (modale ⚙),
+                   *   exactement comme maternelle et primaire
                    * - Seuil atteint : moyenne des notes saisies ≥ 10/20
                    * - Rang : classement par moyenne (ex æquo gérés)
                    * - Appréciation : mention automatique (Très Bien → Faible)
-                   * - Absence : gérée DANS la cellule de note (bouton « Abs »),
-                   *   pas de colonne Présence (modèle conforme à la demande)
                    * ══════════════════════════════════════════════════════════════
                    */
                   <table className="w-full border-collapse text-xs">
@@ -1268,6 +1252,7 @@ export function GradingSheet({
                       <tr className="bg-slate-100">
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">N°</th>
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase" style={{ minWidth: '180px' }}>Nom et prénom</th>
+                        <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-20">Présence</th>
                         <th colSpan={sortedSubjects.length} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center bg-blue-50">Notes obtenues</th>
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-20 bg-emerald-50">Seuil atteint</th>
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-14 bg-violet-50">Rang</th>
@@ -1299,59 +1284,99 @@ export function GradingSheet({
                               'hover:bg-slate-50 transition-colors',
                               idx % 2 === 1 && 'bg-slate-50/50',
                               !hasAnyScore && 'bg-amber-50/30',
+                              Object.values(row.scores).some(s => s?.isAbsent) && 'bg-red-50/30'
                             )}
                           >
                             <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">{rowNo}</td>
                             <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{row.studentName}</td>
+                            {/* Colonne Présence — identique maternelle/primaire :
+                                P (présent partout) · A (absent partout) · ⚙ détail par matière */}
+                            <td className="border border-slate-300 px-1 py-1 text-center">
+                              {(() => {
+                                const allPresent = !Object.values(row.scores).some((s) => s?.isAbsent);
+                                const allAbsent = sortedSubjects.every((subj) => row.scores[subj.id]?.isAbsent);
+                                const isMixed = !allPresent && !allAbsent;
+                                return (
+                                  <div className="flex gap-0.5 justify-center items-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRows((prev) => prev.map((r) => {
+                                          if (r.studentId !== row.studentId) return r;
+                                          const newScores = { ...r.scores };
+                                          sortedSubjects.forEach((subj) => {
+                                            newScores[subj.id] = { ...newScores[subj.id], isAbsent: false };
+                                          });
+                                          return { ...r, scores: newScores };
+                                        }));
+                                      }}
+                                      title="Présent (toutes matières)"
+                                      className={cn(
+                                        'px-2 py-1 rounded text-xs font-bold transition',
+                                        allPresent ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-emerald-100'
+                                      )}
+                                    >P</button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRows((prev) => prev.map((r) => {
+                                          if (r.studentId !== row.studentId) return r;
+                                          const newScores = { ...r.scores };
+                                          sortedSubjects.forEach((subj) => {
+                                            newScores[subj.id] = { ...newScores[subj.id], isAbsent: true, score: null, qualitativeCode: null };
+                                          });
+                                          return { ...r, scores: newScores };
+                                        }));
+                                      }}
+                                      title="Absent (toutes matières)"
+                                      className={cn(
+                                        'px-2 py-1 rounded text-xs font-bold transition',
+                                        allAbsent ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-red-100'
+                                      )}
+                                    >A</button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPresenceModalStudent(row)}
+                                      title="Détailler la présence par matière"
+                                      className={cn(
+                                        'px-1.5 py-1 rounded text-xs transition',
+                                        isMixed ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-500 hover:bg-amber-100'
+                                      )}
+                                    >
+                                      <Settings2 className="w-3 h-3" />
+                                    </button>
+                                    {isMixed && (
+                                      <span className="text-[9px] font-bold text-amber-600 ml-0.5" title="Présence mixte">⚠</span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                            </td>
                             {/* Notes obtenues — une cellule par matière */}
                             {sortedSubjects.map((subject) => {
                               const score = row.scores[subject.id] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
                               const hasNote = score.score !== null;
                               const cellLocked = isLocked || editMode === 'readonly' || (canAdd && hasNote);
                               return (
-                                <td key={subject.id} className={cn("border border-slate-300 p-0 relative", canAdd && hasNote && "bg-gray-100")}>
-                                  {score.isAbsent ? (
-                                    <button
-                                      type="button"
-                                      disabled={cellLocked}
-                                      onClick={() => toggleAbsentSecondaire(row.studentId, subject.id)}
-                                      title={cellLocked ? 'Élève absent' : 'Cliquer pour marquer comme présent'}
-                                      className={cn(
-                                        'w-full px-1 py-1 text-center text-[10px] font-bold tracking-wider',
-                                        'text-red-600 bg-red-50',
-                                        !cellLocked && 'hover:bg-red-100 cursor-pointer',
-                                        cellLocked && 'cursor-not-allowed',
-                                      )}
-                                    >ABS</button>
-                                  ) : (
-                                    <>
-                                      <input
-                                        type="number"
-                                        step="0.25"
-                                        min="0"
-                                        max="20"
-                                        value={score.score ?? ''}
-                                        onChange={(e) => handleScoreChange(row.studentId, subject.id, e.target.value)}
-                                        disabled={cellLocked}
-                                        placeholder="—"
-                                        className={cn(
-                                          'w-full px-1 py-1 pr-6 text-center text-xs font-bold border-0 bg-transparent',
-                                          'focus:outline-none focus:ring-1 focus:ring-blue-400',
-                                          !cellLocked && score.score !== null && typeof score.score === 'number' &&
-                                            (Number(score.score) < 10 ? 'text-rose-600' : Number(score.score) >= 14 ? 'text-emerald-600' : 'text-slate-900'),
-                                        )}
-                                      />
-                                      {/* ⭐ Toggle absence — discret, dans la cellule (pas de colonne Présence) */}
-                                      {!cellLocked && (
-                                        <button
-                                          type="button"
-                                          onClick={() => toggleAbsentSecondaire(row.studentId, subject.id)}
-                                          title="Marquer l'élève absent à cette évaluation"
-                                          className="absolute top-0.5 right-0.5 text-[8px] font-bold text-slate-300 hover:text-red-500 transition-colors leading-none"
-                                        >Abs</button>
-                                      )}
-                                    </>
-                                  )}
+                                <td key={subject.id} className={cn("border border-slate-300 p-0", canAdd && hasNote && "bg-gray-100")}>
+                                  <input
+                                    type="number"
+                                    step="0.25"
+                                    min="0"
+                                    max="20"
+                                    value={score.isAbsent ? '' : (score.score ?? '')}
+                                    onChange={(e) => handleScoreChange(row.studentId, subject.id, e.target.value)}
+                                    disabled={score.isAbsent || cellLocked}
+                                    placeholder={score.isAbsent ? 'ABS' : '—'}
+                                    title={score.isAbsent ? 'Absent — géré via la colonne Présence' : undefined}
+                                    className={cn(
+                                      'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
+                                      'focus:outline-none focus:ring-1 focus:ring-blue-400',
+                                      score.isAbsent && 'opacity-40 cursor-not-allowed bg-red-50 text-red-600',
+                                      !score.isAbsent && !cellLocked && score.score !== null && typeof score.score === 'number' &&
+                                        (Number(score.score) < 10 ? 'text-rose-600' : Number(score.score) >= 14 ? 'text-emerald-600' : 'text-slate-900'),
+                                    )}
+                                  />
                                 </td>
                               );
                             })}
@@ -1381,7 +1406,7 @@ export function GradingSheet({
                       {filteredRows.length === 0 && (
                         <tr>
                           <td
-                            colSpan={6 + sortedSubjects.length}
+                            colSpan={7 + sortedSubjects.length}
                             className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm"
                           >
                             Aucun élève trouvé.
@@ -1786,7 +1811,7 @@ export function GradingSheet({
                       <li>Saisissez la <strong>note obtenue</strong> sur /20 (ex : 15.5, 12, 8.25) — une colonne par matière programmée.</li>
                       <li><strong className="text-emerald-600">Seuil atteint</strong> = moyenne des notes saisies ≥ 10/20 · <strong className="text-violet-700">Rang</strong> = classement par moyenne (ex æquo gérés).</li>
                       <li><strong>Appréciation</strong> (automatique) : ≥16 Très Bien · 14-16 Bien · 12-14 Assez Bien · 10-12 Passable · 8-10 Insuffisant · &lt;8 Faible.</li>
-                      <li><strong className="text-red-600">ABS</strong> = élève absent — bouton « Abs » dans le coin de la cellule pour marquer/retirer l'absence.</li>
+                      <li><strong className="text-emerald-600">P</strong> = Présent · <strong className="text-red-600">A</strong> = Absent — colonne <strong>Présence</strong> (détail par matière via ⚙) · cellule « ABS » = matière manquée.</li>
                       <li className="text-emerald-700">Notes ≥ 10 : admis (en vert).</li>
                       <li className="text-rose-700">Notes &lt; 10 : échec (en rouge).</li>
                     </ul>

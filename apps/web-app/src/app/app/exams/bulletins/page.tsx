@@ -1396,7 +1396,7 @@ function BulletinsContent() {
           {secondaryConsolidated && (
             <div className="flex-1 self-end">
               <div className="bg-blue-50 border border-blue-200 rounded-lg py-2.5 px-3 text-xs font-bold text-blue-700">
-                Bulletin trimestriel (Interrogation écrite 1 &amp; 2 + Devoir surveillé 1 &amp; 2)
+                Bulletin trimestriel (IE1 &amp; IE2 + DS1 &amp; DS2)
               </div>
             </div>
           )}
@@ -1656,7 +1656,7 @@ function BulletinTwoPage({
         </div>
         <div className="text-[10px] text-slate-600 mt-0.5">
           {isEn ? <>Pupil: <strong>{student.studentName}</strong> · Admission N°: {student.matricule || '—'} · Report Card (1st CA + 2nd CA + Exam)</>
-            : isSecondaryBulletin ? <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · Bulletin trimestriel (Interrogation écrite 1 &amp; 2 + Devoir surveillé 1 &amp; 2)</>
+            : isSecondaryBulletin ? <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · Bulletin trimestriel (IE1 &amp; IE2 + DS1 &amp; DS2)</>
             : isSecondaryEvalMode ? <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · Bulletin d'évaluation ({selectedEvalTypeCode ? `${selectedEvalTypeCode} ` : ''}{selectedEvalTypeName})</>
             : <>Élève: <strong>{student.studentName}</strong> · Matricule: {student.matricule || '—'} · {selectedEvalTypeCode} {selectedEvalTypeName}</>}
         </div>
@@ -2038,7 +2038,7 @@ function BulletinSecondairePage1({
   const isJunior = isJuniorSecondaryClass2(className || '');
   const navy = '#0A2A5E';      // colonnes de base (en-tête row 1)
   const navyAlt = '#0D3B85';    // colonnes calculées (Moyenne d'interrogation, Moyenne, Note coefficient)
-  const navySub = '#114FC4';   // sous-colonnes (Interrogation écrite 1/2, Devoir 1/2)
+  const navySub = '#114FC4';   // sous-colonnes abrégées (IE1/IE2, DS1/DS2)
 
   /** Format d'une note : 15 → « 15.00 », null → « — ». */
   const fmtS = (n: number | null | undefined): string =>
@@ -2109,8 +2109,8 @@ function BulletinSecondairePage1({
         </table>
       </div>
 
-      {/* Tableau des notes — Discipline | Interrogation écrite [Int. 1, Int. 2] |
-          Moyenne d'interrogation | Devoir surveillé [Devoir 1, Devoir 2] | Moyenne |
+      {/* Tableau des notes — Discipline | Interrogation écrite [IE1, IE2] |
+          Moyenne d'interrogation | Devoir surveillé [DS1, DS2] | Moyenne |
           [Coefficient | Note coefficient] | Rang | Appréciation | Signature */}
       <div className="rounded-lg overflow-hidden" style={{ border: `2px solid ${navy}` }}>
         <table className="w-full border-collapse text-[10px]">
@@ -2131,13 +2131,14 @@ function BulletinSecondairePage1({
               <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center text-white" style={{ minWidth: '70px', borderColor: navyAlt }}>Appréciation</th>
               <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-14 text-white" style={{ borderColor: navyAlt }}>Signature</th>
             </tr>
-            {/* Sous-colonnes : Interrogation écrite 1/2 + Devoir 1/2 — TOUJOURS
-                sous leur colonne parente (parent en haut, sous-colonnes en bas) */}
+            {/* Sous-colonnes abrégées IE1/IE2 (Interrogation écrite) + DS1/DS2
+                (Devoir surveillé) — libellés courts pour ne pas coincer le
+                tableau ; TOUJOURS sous leur colonne parente */}
             <tr className="text-white" style={{ backgroundColor: navySub }}>
-              <th className="border px-1 py-0.5 font-bold text-center text-[8px] uppercase text-white min-w-[60px]" style={{ borderColor: navySub }}>Interrogation écrite 1</th>
-              <th className="border px-1 py-0.5 font-bold text-center text-[8px] uppercase text-white min-w-[60px]" style={{ borderColor: navySub }}>Interrogation écrite 2</th>
-              <th className="border px-1 py-0.5 font-bold text-center text-[8px] uppercase text-white min-w-[56px]" style={{ borderColor: navySub }}>Devoir 1</th>
-              <th className="border px-1 py-0.5 font-bold text-center text-[8px] uppercase text-white min-w-[56px]" style={{ borderColor: navySub }}>Devoir 2</th>
+              <th className="border px-1 py-0.5 font-bold text-center text-[9px] uppercase text-white min-w-[36px]" style={{ borderColor: navySub }}>IE1</th>
+              <th className="border px-1 py-0.5 font-bold text-center text-[9px] uppercase text-white min-w-[36px]" style={{ borderColor: navySub }}>IE2</th>
+              <th className="border px-1 py-0.5 font-bold text-center text-[9px] uppercase text-white min-w-[36px]" style={{ borderColor: navySub }}>DS1</th>
+              <th className="border px-1 py-0.5 font-bold text-center text-[9px] uppercase text-white min-w-[36px]" style={{ borderColor: navySub }}>DS2</th>
             </tr>
           </thead>
           <tbody>
@@ -2268,7 +2269,7 @@ function BulletinSecondairePage1({
       )}
 
       <p className="text-[9px] text-slate-400 mt-1 italic">
-        Moyenne d'interrogation = (Interrogation écrite 1 + Interrogation écrite 2) / 2 · Moyenne = (Moyenne d'interrogation + Devoir 1 + Devoir 2) / 3
+        IE = Interrogation écrite · DS = Devoir surveillé · Moyenne d'interrogation = (IE1 + IE2) / 2 · Moyenne = (Moyenne d'interrogation + DS1 + DS2) / 3
         {!isJunior && <> · Note coefficient = Moyenne × Coefficient · Moyenne trimestrielle = Σ(Note coefficient) / Σ(Coefficients)</>}
         {' '}· Les notes ABS sont exclues des calculs. {colCount} colonnes ({isJunior ? '6e/5e — sans coefficient' : '4e → Terminale — avec coefficients'}).
       </p>
@@ -3472,14 +3473,17 @@ function MoyennesTab({
 
         // For each eval type, compute student averages (same pattern as bulletin)
         const evalTypeAverages: Record<string, Record<string, number | null>> = {}; // studentId → { evalTypeId: avg }
+        // ⚠ Hoistée AVANT la boucle des types : la map des notes doit rester
+        // accessible ensuite (noms d'élèves depuis les notes du 1er type) —
+        // corrige le ReferenceError latent evalGradesMap.
+        const evalGradesMap = new Map<string, any[]>();
         for (const [typeId, evals] of evalTypeMap) {
           // Filter by language — ⭐ V10b règle d'isolation stricte (non marqué = FR)
           const langEvals = scopeLang
             ? evals.filter((ev: any) => matchesLevelLanguage(ev.subject, scopeLang))
             : evals;
 
-          // Get grades for each eval
-          const evalGradesMap = new Map<string, any[]>();
+          // Get grades for each eval (map hoistée avant la boucle des types)
           await Promise.all(langEvals.map(async (ev: any) => {
             try {
               const res = await apiClient.get(`/institutional-exams/grades/evaluation/${ev.id}`);

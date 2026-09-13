@@ -794,9 +794,10 @@ ${page2Content}
       if (totalNotesCoef === null) totalNotesCoef = nSum;
     }
 
-    // ── En-tête du tableau — colonnes parentes EN HAUT, sous-colonnes en bas :
-    //    Discipline | Interrogation écrite [Int. écrite 1, Int. écrite 2] |
-    //    Moyenne d'interrogation | Devoir surveillé [Devoir 1, Devoir 2] |
+    // ── En-tête du tableau — colonnes parentes EN HAUT, sous-colonnes ABRÉGÉES
+    //    en bas (IE/DS pour ne pas coincer le tableau dans l'A4) :
+    //    Discipline | Interrogation écrite [IE1, IE2] |
+    //    Moyenne d'interrogation | Devoir surveillé [DS1, DS2] |
     //    Moyenne | [Coefficient | Note coefficient] | Rang | Appréciation | Signature
     const tableHeader = `
       <tr style="background:#0A2A5E;color:white;">
@@ -813,10 +814,10 @@ ${page2Content}
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;">Signature</th>
       </tr>
       <tr style="background:#114FC4;color:white;">
-        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Interrogation écrite 1</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Interrogation écrite 2</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Devoir 1</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:8px;">Devoir 2</th>
+        <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">IE1</th>
+        <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">IE2</th>
+        <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">DS1</th>
+        <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">DS2</th>
       </tr>`;
 
     // ── Lignes de totaux + moyenne trimestrielle (colspans : 6e/5e = 10

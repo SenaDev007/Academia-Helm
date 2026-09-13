@@ -947,10 +947,10 @@ function RegistreSecondaireView({
                       <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-28">Signature du professeur</th>
                     </tr>
                     <tr className="bg-slate-50">
-                      <th className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px] text-center min-w-[70px]">Interrogation écrite 1</th>
-                      <th className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px] text-center min-w-[70px]">Interrogation écrite 2</th>
-                      <th className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px] text-center min-w-[70px]">Devoir surveillé 1</th>
-                      <th className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px] text-center min-w-[70px]">Devoir surveillé 2</th>
+                      <th className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px] text-center min-w-[44px]">IE1</th>
+                      <th className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px] text-center min-w-[44px]">IE2</th>
+                      <th className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px] text-center min-w-[44px]">DS1</th>
+                      <th className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px] text-center min-w-[44px]">DS2</th>
                     </tr>
                   </thead>
                   <tbody>

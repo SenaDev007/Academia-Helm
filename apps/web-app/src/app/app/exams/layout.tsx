@@ -91,7 +91,6 @@ const SUB_MODULE_LABELS_EN: Record<string, string> = {
   registre: 'Grades Register',
   'term-recap': 'Termly Recap',
   bulletins: 'Report Cards',
-  councils: 'Class Councils',
   analytics: 'Statistics',
   audit: 'Audit',
   settings: 'Settings',

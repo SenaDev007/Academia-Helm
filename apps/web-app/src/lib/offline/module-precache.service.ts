@@ -75,7 +75,6 @@ const MODULE_ROUTES: string[] = [
   '/app/exams/analytics',
   '/app/exams/audit',
   '/app/exams/bulletins',
-  '/app/exams/councils',
   '/app/exams/evaluations',
   '/app/exams/grades',
   '/app/exams/recap',

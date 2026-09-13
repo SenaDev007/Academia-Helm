@@ -63,7 +63,7 @@ export function matchesLevelLanguage(
  * linguistique sélectionnés dans le module examen.
  *
  * Utilisé par TOUTES les pages du module (dashboard, évaluations, saisie,
- * validation, registre, bulletins, conseils de classe…) pour garantir que
+ * validation, registre, bulletins…) pour garantir que
  * les tableaux de sélection de classes ne contiennent QUE les classes du
  * niveau/piste courant.
  *

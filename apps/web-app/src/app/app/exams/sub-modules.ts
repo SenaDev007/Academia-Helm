@@ -8,6 +8,7 @@
  * niveau : Nursery/Primary → EN, Maternelle/Primaire/Secondaire → FR.
  * L'onglet "Agrégation & Stats Globales" a été supprimé.
  * L'onglet "Paramétrage" a été renommé en "Paramètres" et refondu.
+ * L'onglet "Conseils de classe" a été supprimé (plus utilisé, tous niveaux).
  * ============================================================================
  */
 
@@ -16,7 +17,6 @@ import {
   FileEdit,
   CheckSquare,
   Calculator,
-  Users,
   FileText,
   BarChart3,
   History,
@@ -77,12 +77,6 @@ export const EXAMS_SUB_MODULES = [
     label: 'Bulletins',
     href: '/app/exams/bulletins',
     icon: FileText
-  },
-  {
-    id: 'councils',
-    label: 'Conseils de classe',
-    href: '/app/exams/councils',
-    icon: Users
   },
   {
     id: 'analytics',

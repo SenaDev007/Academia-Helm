@@ -97,7 +97,6 @@ export const PAGE_NAMES: Record<string, string> = {
   '/app/exams': 'Examens',
   '/app/exams/grades': 'Saisie des notes',
   '/app/exams/evaluations': 'Évaluations',
-  '/app/exams/councils': 'Conseils de classe',
   '/app/exams/validation': 'Validation',
   '/app/exams/audit': 'Audit',
   '/app/exams/analytics': 'Statistiques',

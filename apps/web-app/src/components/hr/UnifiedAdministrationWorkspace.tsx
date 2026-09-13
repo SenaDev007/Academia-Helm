@@ -24,7 +24,10 @@
  *
  *   4. Section "Équipe enseignante" : liste des enseignants du niveau+track
  *      sélectionné, avec :
- *      - Boutons rapides d'affectation à ce niveau (1 clic)
+ *      - Bouton « Modifier » par enseignant → modal (niveau, poste, langues)
+ *      - Bouton « Retirer » par enseignant → désaffectation immédiate (confirm)
+ *        ⭐ Même pattern que l'équipe administrative (Modifier + Supprimer)
+ *      - Bouton « Affecter » pour les enseignants non affectés (affectation 1 clic)
  *      - Toggle FR/EN par enseignant (si bilingue) pour marquer les langues
  *        qu'il enseigne dans ce niveau
  *      - Recherche par nom/matricule/poste
@@ -290,6 +293,19 @@ export default function UnifiedAdministrationWorkspace() {
     position: '',
   });
   const [savingTeacherAssign, setSavingTeacherAssign] = useState(false);
+  // ⭐ État pour le modal de modification d'une affectation enseignant
+  //    (niveau scolaire + poste + langues) — même pattern que l'édition admin
+  const [teacherEditModalOpen, setTeacherEditModalOpen] = useState(false);
+  const [teacherEditForm, setTeacherEditForm] = useState<{
+    staffId: string;
+    staffName: string;
+    schoolLevelId: string;
+    position: string;
+    languages: string[];
+  }>({ staffId: '', staffName: '', schoolLevelId: '', position: '', languages: [] });
+  const [savingTeacherEdit, setSavingTeacherEdit] = useState(false);
+  // ⭐ État pour le retrait immédiat d'une affectation enseignant (bouton Retirer)
+  const [removingTeacherId, setRemovingTeacherId] = useState<string | null>(null);
   // ⭐ État pour l'édition d'une affectation admin existante
   const [editingAssignment, setEditingAssignment] = useState<AdminAssignment | null>(null);
   const [sendingTeacherCredentials, setSendingTeacherCredentials] = useState<string | null>(null);
@@ -1186,6 +1202,91 @@ export default function UnifiedAdministrationWorkspace() {
     return ROLES_BY_UNIT[modalUnit] ?? ROLES_BY_UNIT.ALL;
   }, [modalUnit]);
 
+  // ── Modifier l'affectation d'un enseignant (modal) ────────────────────────
+  //    Même pattern que l'équipe administrative : bouton « Modifier » qui
+  //    ouvre un modal pour changer niveau / poste / langues de l'enseignant.
+  const handleOpenTeacherEdit = (staff: StaffOption) => {
+    const pending = pendingTeacherChanges[staff.id];
+    setTeacherEditForm({
+      staffId: staff.id,
+      staffName: `${staff.firstName} ${staff.lastName}`.trim(),
+      schoolLevelId: (pending?.levelId ?? staff.schoolLevelId) ?? '',
+      position: staff.position ?? '',
+      languages: (pending?.languages ?? staff.assignedLanguages ?? (isBilingual ? ['FR'] : ['FR', 'EN'])) as string[],
+    });
+    setTeacherEditModalOpen(true);
+  };
+
+  const handleTeacherEditSave = async () => {
+    if (!teacherEditForm.staffId) return;
+    if (!teacherEditForm.schoolLevelId) {
+      setError('Veuillez sélectionner un niveau scolaire, ou utilisez « Retirer » pour désaffecter l\'enseignant.');
+      return;
+    }
+    setSavingTeacherEdit(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const updateBody: any = {
+        schoolLevelId: teacherEditForm.schoolLevelId,
+      };
+      if (teacherEditForm.position !== undefined) {
+        updateBody.position = teacherEditForm.position;
+      }
+      if (isBilingual && teacherEditForm.languages.length > 0) {
+        updateBody.assignedLanguages = teacherEditForm.languages;
+      }
+      await authedFetch(`/api/hr/staff/${teacherEditForm.staffId}`, {
+        method: 'PUT',
+        body: updateBody,
+      });
+      setSuccess(`L'affectation de ${teacherEditForm.staffName} a été modifiée avec succès.`);
+      setTeacherEditModalOpen(false);
+      // Annuler tout pending change obsolète pour ce staff (déjà sauvegardé)
+      setPendingTeacherChanges((prev) => {
+        const next = { ...prev };
+        delete next[teacherEditForm.staffId];
+        return next;
+      });
+      await loadData();
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de la modification de l\'affectation.');
+      toast({ variant: 'error', title: 'Échec de la modification', description: err?.message });
+    } finally {
+      setSavingTeacherEdit(false);
+    }
+  };
+
+  // ── Retirer l'affectation d'un enseignant (immédiat, avec confirmation) ───
+  //    Même pattern que « Supprimer » dans l'équipe administrative :
+  //    confirmation → PUT schoolLevelId=null → rechargement.
+  const handleRemoveTeacherAssignment = async (staff: StaffOption) => {
+    const staffName = `${staff.firstName} ${staff.lastName}`.trim();
+    if (!confirm(`Retirer ${staffName} de l'équipe enseignante de ce niveau ?\nLe personnel ne sera plus affecté à ce niveau scolaire.`)) return;
+    setRemovingTeacherId(staff.id);
+    setError(null);
+    setSuccess(null);
+    try {
+      await authedFetch(`/api/hr/staff/${staff.id}`, {
+        method: 'PUT',
+        body: { schoolLevelId: null },
+      });
+      setSuccess(`${staffName} a été retiré(e) de l'équipe enseignante.`);
+      // Annuler tout pending change obsolète pour ce staff (déjà sauvegardé)
+      setPendingTeacherChanges((prev) => {
+        const next = { ...prev };
+        delete next[staff.id];
+        return next;
+      });
+      await loadData();
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors du retrait de l\'affectation.');
+      toast({ variant: 'error', title: 'Échec du retrait', description: err?.message });
+    } finally {
+      setRemovingTeacherId(null);
+    }
+  };
+
   // ── Toggle niveau pour enseignant (affectation rapide) ────────────────────
   const handleToggleTeacherLevel = (staffId: string) => {
     const staff = staffList.find((s) => s.id === staffId);
@@ -1884,7 +1985,9 @@ export default function UnifiedAdministrationWorkspace() {
                                   </p>
                                 </div>
 
-                                {/* Bouton affectation rapide + identifiants */}
+                                {/* Boutons : Identifiants + (Modifier / Retirer si affecté,
+                                    Affecter sinon) — même pattern que l'équipe
+                                    administrative (Modifier + Supprimer) */}
                                 <div className="flex items-center gap-1.5 flex-shrink-0">
                                   <button
                                     type="button"
@@ -1899,29 +2002,49 @@ export default function UnifiedAdministrationWorkspace() {
                                       <Mail className="w-3.5 h-3.5" />
                                     )}
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleTeacherLevel(staff.id)}
-                                    className={cn(
-                                      'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
-                                      isAssignedHere
-                                        ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200'
-                                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                                    )}
-                                    title={isAssignedHere ? 'Retirer de ce niveau' : `Affecter à ${group.label}`}
-                                  >
-                                    {isAssignedHere ? (
-                                      <>
-                                        <CheckCircle2 className="w-3.5 h-3.5" />
-                                        <span className="hidden sm:inline">Affecté</span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Plus className="w-3.5 h-3.5" />
-                                        <span className="hidden sm:inline">Affecter</span>
-                                      </>
-                                    )}
-                                  </button>
+                                  {isAssignedHere ? (
+                                    <>
+                                      {/* ⭐ Modifier — ouvre le modal d'édition de
+                                          l'affectation (niveau, poste, langues),
+                                          comme « Modifier » dans l'équipe admin */}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenTeacherEdit(staff)}
+                                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-100 border border-slate-200 transition-all"
+                                        title="Modifier l'affectation (niveau, poste, langues)"
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                        <span className="hidden sm:inline">Modifier</span>
+                                      </button>
+                                      {/* ⭐ Retirer — désaffecte l'enseignant de ce
+                                          niveau (confirmation), comme « Supprimer »
+                                          dans l'équipe administrative */}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveTeacherAssignment(staff)}
+                                        disabled={removingTeacherId === staff.id}
+                                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200 transition-all disabled:opacity-40"
+                                        title="Retirer l'affectation — l'enseignant ne sera plus affecté à ce niveau"
+                                      >
+                                        {removingTeacherId === staff.id ? (
+                                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        ) : (
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        )}
+                                        <span className="hidden sm:inline">Retirer</span>
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleTeacherLevel(staff.id)}
+                                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 transition-all"
+                                      title={`Affecter à ${group.label}`}
+                                    >
+                                      <Plus className="w-3.5 h-3.5" />
+                                      <span className="hidden sm:inline">Affecter</span>
+                                    </button>
+                                  )}
                                 </div>
                               </div>
 
@@ -2522,6 +2645,144 @@ export default function UnifiedAdministrationWorkspace() {
                 <GraduationCap className="w-4 h-4" />
               )}
               Affecter à l'équipe enseignante
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          ⭐ MODAL : Modifier une affectation enseignant
+          Permet de changer le niveau scolaire, le poste/matière enseignée et
+          les langues (si bilingue) — même pattern que l'édition d'une
+          affectation administrative (bouton « Modifier » de l'équipe admin).
+          ═══════════════════════════════════════════════════════════════════ */}
+      <Dialog open={teacherEditModalOpen} onOpenChange={(open) => {
+        setTeacherEditModalOpen(open);
+        if (!open) {
+          setTeacherEditForm({ staffId: '', staffName: '', schoolLevelId: '', position: '', languages: [] });
+        }
+      }}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Edit3 className="w-4 h-4" style={{ color: PRIMARY }} />
+              Modifier l'affectation — {teacherEditForm.staffName}
+            </DialogTitle>
+            <DialogDescription>
+              Modifiez le niveau scolaire, le poste et les langues enseignées.
+              Pour désaffecter complètement l'enseignant de ce niveau, utilisez le bouton « Retirer ».
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-3">
+            {/* Niveau scolaire */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
+                <School className="w-3.5 h-3.5" /> Niveau scolaire *
+              </label>
+              <select
+                value={teacherEditForm.schoolLevelId}
+                onChange={(e) => setTeacherEditForm((prev) => ({ ...prev, schoolLevelId: e.target.value }))}
+                className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+              >
+                <option value="">— Sélectionner un niveau —</option>
+                {schoolLevels.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name || l.code}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Changez le niveau pour réaffecter l'enseignant à un autre niveau scolaire.
+              </p>
+            </div>
+
+            {/* Poste / matière enseignée */}
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
+                Poste / Matière enseignée
+              </label>
+              <input
+                type="text"
+                value={teacherEditForm.position}
+                onChange={(e) => setTeacherEditForm((prev) => ({ ...prev, position: e.target.value }))}
+                placeholder="Ex: Instituteur(trice) du Primaire, Professeur d'Anglais..."
+                className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+            {/* Langues (si bilingue) */}
+            {isBilingual && (
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
+                  <Globe className="w-3.5 h-3.5" /> Langues enseignées
+                </label>
+                <div className="flex items-center gap-2">
+                  {(['FR', 'EN'] as const).map((lang) => {
+                    const isActive = teacherEditForm.languages.includes(lang);
+                    return (
+                      <button
+                        key={lang}
+                        type="button"
+                        onClick={() => setTeacherEditForm((prev) => ({
+                          ...prev,
+                          languages: isActive
+                            ? prev.languages.filter((l) => l !== lang)
+                            : [...prev.languages, lang],
+                        }))}
+                        className={cn(
+                          'px-3 py-1.5 rounded-lg text-xs font-bold transition-all border',
+                          isActive
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                            : 'bg-white text-blue-500 border-blue-200 hover:bg-blue-50'
+                        )}
+                      >
+                        {lang === 'FR' ? 'Français (FR)' : 'Anglais (EN)'}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Cochez les pistes linguistiques dans lesquelles cet enseignant enseigne.
+                </p>
+              </div>
+            )}
+
+            {/* Info */}
+            <div className="p-3 bg-blue-50/50 border border-blue-100 rounded-xl text-xs text-blue-700 flex gap-2">
+              <Info className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+              <div>
+                <p className="font-bold mb-1">Modification immédiate</p>
+                <p>
+                  Les changements sont enregistrés dès que vous cliquez sur « Enregistrer les modifications ».
+                  L'enseignant apparaîtra dans l'équipe enseignante du niveau sélectionné.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="pt-4 border-t border-slate-100 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setTeacherEditModalOpen(false);
+                setTeacherEditForm({ staffId: '', staffName: '', schoolLevelId: '', position: '', languages: [] });
+              }}
+              disabled={savingTeacherEdit}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={handleTeacherEditSave}
+              disabled={savingTeacherEdit || !teacherEditForm.schoolLevelId}
+              style={{ background: PRIMARY, color: 'white' }}
+            >
+              {savingTeacherEdit ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Edit3 className="w-4 h-4" />
+              )}
+              Enregistrer les modifications
             </Button>
           </DialogFooter>
         </DialogContent>

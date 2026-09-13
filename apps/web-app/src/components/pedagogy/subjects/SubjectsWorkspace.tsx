@@ -89,6 +89,10 @@ const DEFAULT_SUBJECTS_CATALOGUE: Record<
     // ⭐ NOUVEAU : "Éveil scientifique et technologique" pour la Maternelle
     //    (ne pas confondre avec l'EST-05 du Primaire — code distinct)
     { name: 'Éveil scientifique et technologique',              abbreviation: 'ESTM', code: 'ESTM-19' },
+    // ⭐ Ajout 2026-09-13 (demande utilisateur) : certaines écoles enseignent
+    //    l'Anglais et l'Informatique dès la Maternelle
+    { name: 'Anglais',                                           abbreviation: 'ANG',  code: 'ANG-20'  },
+    { name: 'Informatique',                                      abbreviation: 'INFO', code: 'INFO-21' },
   ],
   PRIMAIRE: [
     { name: 'Expression Écrite',                         abbreviation: 'EE',   code: 'EE-01'   },
@@ -100,6 +104,10 @@ const DEFAULT_SUBJECTS_CATALOGUE: Record<
     { name: 'Éducation Artistique (EA) Vivant',          abbreviation: 'EAV',  code: 'EAV-07'  },
     { name: 'Éducation Artistique (EA) Plastique',       abbreviation: 'EAP',  code: 'EAP-08'  },
     { name: 'Éducation Physique et Sportive',            abbreviation: 'EPS',  code: 'EPS-09'  },
+    // ⭐ Ajout 2026-09-13 (demande utilisateur) : certaines écoles enseignent
+    //    l'Anglais et l'Informatique au Primaire
+    { name: 'Anglais',                                   abbreviation: 'ANG',  code: 'ANG-10'  },
+    { name: 'Informatique',                              abbreviation: 'INFO', code: 'INFO-11' },
   ],
   SECONDAIRE: [
     { name: 'Communication Écrite',                      abbreviation: 'CE',   code: 'CE-01'   },
@@ -114,6 +122,9 @@ const DEFAULT_SUBJECTS_CATALOGUE: Record<
     { name: 'Histoire-Géographie',                      abbreviation: 'HG',   code: 'HG-11'   },
     { name: 'Philosophie',                               abbreviation: 'PHILO',code: 'PHILO-12'},
     { name: 'Éducation Physique et Sportive',            abbreviation: 'EPS',  code: 'EPS-13'  },
+    // ⭐ Ajout 2026-09-13 (demande utilisateur) : Informatique au Secondaire
+    //    (l'Anglais existe déjà : ANG-03)
+    { name: 'Informatique',                              abbreviation: 'INFO', code: 'INFO-14' },
   ],
 };
 

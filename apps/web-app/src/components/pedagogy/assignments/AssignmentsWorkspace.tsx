@@ -172,36 +172,36 @@ export default function AssignmentsWorkspace() {
       setTeachersWithPhotos(teachersWithPhotosData || []);
       setMultigradeAssignments(multigradeData || []);
 
-      // Charger TOUTES les classes physiques pour cette année
-      // On utilise pedagogyFetch (proxy) qui n'a pas le guard x-school-level-id
+      // ⭐ FIX PERF (2026-09-14) : l'endpoint /sections retourne TOUTES les
+      // sections de l'année (avec officialClass inclus) en un seul appel.
+      // L'ancien code l'appelait en boucle, UNE FOIS PAR CLASSE OFFICIELLE,
+      // séquentiellement (même URL, même payload, N fois) → 10-15 requêtes
+      // en cascade → plus de 60 secondes d'attente avant l'affichage.
+      // Désormais : 1 seule requête, puis répartition côté client.
       const allPhysicalClasses: PhysicalClass[] = [];
-      for (const ac of activeClasses) {
-        try {
-          const sections = await pedagogyFetch<any[]>(
-            `/api/pedagogy/academic-structure/sections?academicYearId=${academicYear.id}`
-          );
-          if (Array.isArray(sections)) {
-            for (const s of sections) {
-              if (s.officialClass?.id === ac.id) {
-                allPhysicalClasses.push({
-                  id: s.id,
-                  name: s.name,
-                  code: s.code,
-                  officialClassId: ac.id,
-                  schoolLevelId: ac.level?.id || '',
-                  capacity: s.capacity,
-                });
-              }
-            }
+      try {
+        const sections = await pedagogyFetch<any[]>(
+          `/api/pedagogy/academic-structure/sections?academicYearId=${academicYear.id}`
+        );
+        if (Array.isArray(sections)) {
+          for (const s of sections) {
+            const ac = activeClasses.find(c => c.id === s.officialClass?.id);
+            if (!ac) continue;
+            allPhysicalClasses.push({
+              id: s.id,
+              name: s.name,
+              code: s.code,
+              officialClassId: ac.id,
+              schoolLevelId: ac.level?.id || '',
+              capacity: s.capacity,
+            });
           }
-        } catch {
-          // Si l'endpoint sections échoue, on continue sans sections physiques
         }
+      } catch {
+        // Si l'endpoint sections échoue, on continue sans sections physiques
       }
 
-      setAcademicClasses(activeClasses);
       setPhysicalClasses(allPhysicalClasses);
-      setTeachers(teachersData || []);
 
       // Auto-sélectionner la première section physique
       if (allPhysicalClasses.length > 0 && !selectedPhysicalClassId) {
@@ -676,7 +676,11 @@ export default function AssignmentsWorkspace() {
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* ── Panneau gauche : Sections physiques ── */}
-        <div className="lg:col-span-1 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
+        {/* ⭐ FIX UX (2026-09-14) : hauteur bornée + barre de scroll interne —
+            avant, une longue liste de sections étirait toute la page :
+            il fallait descendre tout en bas pour cliquer une section puis
+            remonter pour travailler dans le panneau de droite. */}
+        <div className="lg:col-span-1 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col lg:max-h-[calc(100vh-26rem)]">
           <div className="p-4 border-b border-slate-200">
             <div className="flex items-center gap-2 mb-3">
               <Users className="w-4 h-4" style={{ color: PRIMARY }} />
@@ -694,7 +698,8 @@ export default function AssignmentsWorkspace() {
             </div>
           </div>
 
-          <div className="flex-1 p-2">
+          {/* max-h mobile 60vh ; desktop : borné par le panneau parent (lg:max-h-none) */}
+          <div className="flex-1 min-h-0 p-2 overflow-y-auto max-h-[60vh] lg:max-h-none">
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
@@ -745,7 +750,10 @@ export default function AssignmentsWorkspace() {
         </div>
 
         {/* ── Panneau droit : Détail de la section sélectionnée ── */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
+        {/* ⭐ FIX UX (2026-09-14) : hauteur bornée + scroll interne pour que le
+            panneau reste visible sans étirer la page quand la liste des
+            matières (mode Spécialiste) est longue. */}
+        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col lg:max-h-[calc(100vh-26rem)]">
           {/* Bilingual switch */}
           {isBilingual && (
             <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 mx-4 mt-4 mb-2 self-start">
@@ -795,7 +803,7 @@ export default function AssignmentsWorkspace() {
           </div>
 
           {/* Content */}
-          <div className="flex-1 overflow-y-auto p-4">
+          <div className="flex-1 min-h-0 overflow-y-auto p-4">
             {!selectedPhysicalClass ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Users className="w-12 h-12 text-slate-300 mb-4" />

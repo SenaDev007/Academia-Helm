@@ -1378,7 +1378,11 @@ export default function TeachersAcademicWorkspace() {
         {activeSubTab === 'teachers' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Liste des enseignants (Gauche) */}
-            <div className="rounded-xl border border-slate-200 bg-slate-50/20 flex flex-col">
+            {/* ⭐ FIX UX (2026-09-14) : hauteur bornée + barre de scroll interne —
+                avant, un corps enseignant très long étirait toute la page :
+                il fallait descendre tout en bas pour cliquer un enseignant
+                puis remonter pour consulter la fiche. */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/20 flex flex-col lg:max-h-[calc(100vh-26rem)]">
               <div className="p-4 border-b border-slate-200 bg-slate-50/50 space-y-3">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
@@ -1398,7 +1402,8 @@ export default function TeachersAcademicWorkspace() {
                 </div>
               </div>
 
-              <div className="p-2 space-y-1 bg-white">
+              {/* max-h mobile 60vh ; desktop : borné par le panneau parent (lg:max-h-none) */}
+              <div className="p-2 space-y-1 bg-white flex-1 min-h-0 overflow-y-auto max-h-[60vh] lg:max-h-none">
                 {loading ? (
                   <div className="p-8 text-center space-y-3">
                     <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin mx-auto" style={{ borderColor: PRIMARY, borderTopColor: 'transparent' }} />
@@ -1451,12 +1456,15 @@ export default function TeachersAcademicWorkspace() {
             </div>
 
             {/* Fiche active (Droite) — lg:col-span-2 pour prendre 2/3 de la largeur */}
-            <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
+            {/* ⭐ FIX UX (2026-09-14) : hauteur bornée + scroll interne — le header
+                du profil (nom + actions PDF/email) reste visible, le contenu
+                (KPIs, habilitations, disponibilités…) défile dans la zone dédiée. */}
+            <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col lg:max-h-[calc(100vh-26rem)]">
               {selectedTeacherId ? (
                 activeProfile ? (
-                  <div className="flex flex-col">
+                  <div className="flex flex-col flex-1 min-h-0">
                     {/* Header Profil */}
-                    <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
+                    <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between shrink-0">
                       <div className="flex items-center gap-3">
                         {/* Utiliser l'enseignant enrichi (avec photoUrl) de la liste teachers[],
                             car activeProfile.teacher n'a pas photoUrl (le backend profileInclude
@@ -1547,8 +1555,8 @@ export default function TeachersAcademicWorkspace() {
                       </div>
                     </div>
 
-                    {/* Contenu Profil */}
-                    <div className="p-4 space-y-4 bg-white">
+                    {/* Contenu Profil — zone défilante (header fixe au-dessus) */}
+                    <div className="p-4 space-y-4 bg-white flex-1 min-h-0 overflow-y-auto">
                       {/* KPI Summary Cards */}
                       {(() => {
                         const selectedTeacher = teachers.find(t => t.id === selectedTeacherId) as any;

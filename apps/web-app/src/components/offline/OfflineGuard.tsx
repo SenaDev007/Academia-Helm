@@ -14,6 +14,7 @@
 
 import { ReactNode, useEffect } from 'react';
 import OfflineIndicator from './OfflineIndicator';
+import OfflineReadinessIndicator from './OfflineReadinessIndicator';
 import { networkDetectionService } from '@/lib/offline/network-detection.service';
 import { toast } from 'sonner';
 
@@ -70,6 +71,9 @@ export default function OfflineGuard({ children }: OfflineGuardProps) {
   return (
     <>
       <OfflineIndicator />
+      {/* ⭐ v4.1.0 — Indicateur de préparation hors ligne : pill de
+          progression + toast vert « vous pouvez couper votre connexion » */}
+      <OfflineReadinessIndicator />
       {children}
     </>
   );

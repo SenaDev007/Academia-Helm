@@ -1,12 +1,38 @@
 /**
  * ============================================================================
- * SERVICE WORKER UNIFIÉ — Academia Helm (v3.7 « lecture offline par module »)
+ * SERVICE WORKER UNIFIÉ — Academia Helm (v4.1 « offline exhaustif + visible »)
  * ============================================================================
  *
  * ⭐ SW UNIQUE à la racine du domaine (scope: '/'). NE PAS enregistrer
  *    d'autres service workers au même scope — les anciens sw-offline.js,
  *    sw-site.js et sw-chat.js sont OBSOLÈTES et sont désinstallés par
  *    UniversalSWRegister à la première visite.
+ *
+ * v4.1.0 : (exigence « sous-onglets + modales + sélecteurs couverts ; savoir
+ *    quand on peut couper sa connexion pour économiser son forfait ») :
+ *    (1) PROGRESSION DU PRÉ-CACHE API par batch (message
+ *        PRECACHE_API_PROGRESS toutes les 6 URLs) → module-precache.service
+ *        le relaie au store offline-readiness → OfflineReadinessIndicator :
+ *        pill « Préparation hors ligne · NN % » + toast vert UNE FOIS
+ *        « Données hors ligne prêtes — vous pouvez couper votre connexion ».
+ *    (2) L'inventaire des vagues (côté client, module-precache.service) est
+ *        étendu : §0 RÉFÉRENTIELS CRITIQUES DES MODALES en tête (sélecteurs
+ *        classes/niveaux/périodes/caisses/personnel/comptes élèves —
+ *        l'utilisateur qui coupe après ~1 min peut déjà créer), +
+ *        absences, cahiers de textes, séries d'éducation, taux CNSS/fiscal,
+ *        modèles de contrats, sceaux/signatures, cartes élèves, et les 4
+ *        modules complémentaires manquants (bibliothèque, transport,
+ *        infirmerie, QHSE) + vague 2 : comptes élèves par élève (modale
+ *        paiement), chaînes CDD (RH), validateurs/EDT/séries par niveau.
+ *    (3) Bump v4.0.0 → v4.1.0 : SW_ACTIVATED invalide les flags de pré-cache
+ *        → tous les utilisateurs existants re-téléchargent l'inventaire
+ *        ÉTENDU dès le déploiement (pas d'attente du TTL 24 h).
+ * v4.0.0 : (spec « Correction d'architecture — interception réseau ») :
+ *    interception CENTRALISÉE des lectures (réseau-first + write-through
+ *    IndexedDB + cascade offline exacte → par chemin → stores entités) et
+ *    des écritures (réseau d'abord, échec → outbox + écriture optimiste +
+ *    Background Sync + réponse fabriquée 200 X-Sync-Status: pending ; les
+ *    passerelles de paiement ne sont JAMAIS interceptées ni fabriquées).
  *
  * v3.7.0 : (correctif « Lecture hors ligne non fonctionnelle par module » —
  *    spec dataService/couche unifiée, sept. 2026) :
@@ -152,7 +178,7 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
-const SW_VERSION = 'v4.0.0';
+const SW_VERSION = 'v4.1.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -2553,6 +2579,20 @@ async function precacheApiEndpoints(urls, headers, sourceClient) {
         }
       }),
     );
+
+    // ⭐ v4.1.0 — PROGRESSION par batch (toutes les 6 URLs) → l'indicateur
+    //    utilisateur « Préparation hors ligne · NN % » avance en direct.
+    if (sourceClient && typeof sourceClient.postMessage === 'function') {
+      try {
+        sourceClient.postMessage({
+          type: 'PRECACHE_API_PROGRESS',
+          done: Math.min(i + BATCH, urls.length),
+          total: urls.length,
+        });
+      } catch {
+        /* client parti — non-bloquant */
+      }
+    }
   }
 
   trimApiCache().catch(() => {});

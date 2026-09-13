@@ -41,6 +41,32 @@
  *    Les routes inexistantes de l'ancienne liste (ex. /app/students/enrollments)
  *    ont été retirées (404 au pré-cache = ACK échoué = retries inutiles).
  */
+// ⭐ v4.1.0 — Préparation hors ligne visible (exigence « l'utilisateur doit
+//    savoir quand il peut couper sa connexion pour économiser son forfait ») :
+//    ce service pousse la progression (routes + vagues) vers offline-readiness,
+//    consommé par OfflineReadinessIndicator (pill + toast vert « prêt »).
+import {
+  markRoutesProgress,
+  markWaveProgress,
+  markRunFinished,
+  markInitialReady,
+  resetOfflineReadiness,
+} from './offline-readiness';
+
+// ⭐ v4.1.0 — Ré-export de l'API readiness : les consommateurs (composant,
+//    tests) importent depuis CE module → une seule instance du store en
+//    bundle (service + composant partagent le même état).
+export {
+  markRoutesProgress,
+  markWaveProgress,
+  markRunFinished,
+  markInitialReady,
+  resetOfflineReadiness,
+  getOfflineReadiness,
+  OFFLINE_READINESS_EVENT,
+} from './offline-readiness';
+export type { OfflineReadinessState, OfflineReadinessPhase } from './offline-readiness';
+
 const MODULE_ROUTES: string[] = [
   // ─── Racine + portails par rôle ───
   '/app',
@@ -179,6 +205,27 @@ const MIN_SUCCESS_RATE = 0.9;
 /** ⭐ v3.4.0 — Garde de concurrence (mount + listener online simultanés). */
 let inFlightRun: Promise<void> | null = null;
 
+/** ⭐ v4.1.0 — Rôles avec accès finance (extraits en constante : utilisés par
+ *    la vague 1 ET par la vague 2 dynamique — auparavant en littéral inline
+ *    dupliqué). Gating = ne pas gaspiller la 2G/3G sur des 403. */
+const FINANCE_ROLES = [
+  'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING',
+  'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE',
+  'SECRETAIRE_COMPTABLE', 'ECONOME', 'INTENDANT', 'DIRECTEUR_GENERAL',
+  'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE',
+  'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CFO', 'FINANCE_MANAGER',
+  'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', 'admin', 'ADMIN',
+];
+
+/** ⭐ v4.1.0 — Rôles avec accès RH (idem FINANCE_ROLES). */
+const HR_ROLES = [
+  'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR',
+  'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
+  'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE',
+  'DIRECTEUR_MAT_PRI', 'HR_MANAGER', 'PAYROLL_MANAGER', 'SECRETAIRE_COMPTABLE',
+  'SCOLARITE', 'admin', 'ADMIN',
+];
+
 /**
  * Garde anti-répétition : re-pré-cache au plus 1×/24 h (et après chaque
  * logout/invalidation). Un flag booléen à vie cassait la navigation offline
@@ -275,6 +322,9 @@ export function initModulePrecacheInvalidation(): void {
     if (event.data?.type === 'SW_ACTIVATED') {
       console.log(`[ModulePrecache] SW ${event.data.version} activé — invalidation du flag de pré-cache (caches purgés)`);
       invalidateModulePrecache();
+      // ⭐ v4.1.0 — l'indicateur de préparation repart de zéro : les flags
+      //    viennent d'être purgés → un nouveau run va démarrer
+      resetOfflineReadiness();
     }
   });
 }
@@ -389,6 +439,8 @@ async function runPrecache(
               sw.postMessage({ type: 'PRECACHE_MODULE', url });
               dispatchedTotal++;
               onProgress?.(Math.min(dispatchedTotal, total), total);
+              // ⭐ v4.1.0 — progression visible (indicateur utilisateur)
+              markRoutesProgress(Math.min(dispatchedTotal, total), total);
               // Petite attente pour ne pas saturer le SW
               await new Promise((r) => setTimeout(r, 500));
             } catch (err) {
@@ -447,6 +499,11 @@ async function runPrecache(
         `[ModulePrecache] Succès insuffisant (${okCount}/${total}) — flag NON posé, retry au prochain montage/online`,
       );
     }
+
+    // ⭐ v4.1.0 — readiness : fin du segment ROUTES. L'état « prêt » n'est
+    //    déclaré QUE si les données API sont fraîches aussi (le segment API
+    //    appelle markRunFinished de son côté — le dernier à finir ferme l'état).
+    markRunFinished(successRate >= MIN_SUCCESS_RATE, isApiPrecacheFresh());
   } finally {
     navigator.serviceWorker.removeEventListener('message', onMessage);
   }
@@ -660,7 +717,7 @@ function qs(params: Record<string, string | number | null | undefined>): string 
  *   - STAFF    : tout le reste (admin/direction/promoteur/secrétariat/…)
  *     (FINANCE / RH en sous-gating par rôles — cf. PilotageSidebar)
  */
-function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContext): string[] {
+export function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContext): string[] {
   const year = readAcademicYearId();
   const level = readSchoolLevelId();
   const levelParam = level && level !== 'ALL' ? level : null; // 'ALL' → param omis
@@ -674,23 +731,39 @@ function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContext): str
   // Staff = portail SCHOOL/PLATFORM, ou ni enseignant ni parent (défaut sûr)
   const isStaff = !isParent && (portalType === 'SCHOOL' || portalType === 'PLATFORM' ||
     (!isTeacher || portalType === undefined));
-  const hasFinance = isStaff && [
-    'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING',
-    'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE',
-    'SECRETAIRE_COMPTABLE', 'ECONOME', 'INTENDANT', 'DIRECTEUR_GENERAL',
-    'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE',
-    'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CFO', 'FINANCE_MANAGER',
-    'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', 'admin', 'ADMIN',
-  ].includes(String(role));
-  const hasHr = isStaff && [
-    'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR',
-    'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT',
-    'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE',
-    'DIRECTEUR_MAT_PRI', 'HR_MANAGER', 'PAYROLL_MANAGER', 'SECRETAIRE_COMPTABLE',
-    'SCOLARITE', 'admin', 'ADMIN',
-  ].includes(String(role));
+  const hasFinance = isStaff && FINANCE_ROLES.includes(String(role));
+  const hasHr = isStaff && HR_ROLES.includes(String(role));
 
   const urls: string[] = [];
+
+  // ═══ 0. ⭐ v4.1.0 — RÉFÉRENTIELS CRITIQUES DES MODALES (EN TÊTE) ═══
+  //    Audit « sous-onglets + modales + sélecteurs des modales » : ces
+  //    endpoints servent ~80 % des formulaires de création (sélecteurs de
+  //    classe, niveau, période, caisse, personnel, comptes élèves). Ils
+  //    partent en PREMIER dans le tableau (le SW traite les URLs dans
+  //    l'ordre) : l'utilisateur pressé qui coupe sa connexion après ~1 min
+  //    peut déjà ouvrir n'importe quelle modale et créer — l'écriture passe
+  //    par la file d'attente offline (outbox + Background Sync).
+  urls.push('/api/all-classes');
+  urls.push('/api/school-levels');
+  urls.push('/api/academic-years');
+  if (year) urls.push(`/api/settings/academic-years/${year}/periods`);
+  urls.push('/api/settings/identity');
+  urls.push('/api/settings/users');
+  if (isStaff) {
+    urls.push('/api/hr/staff?limit=500');
+    urls.push(`/api/hr/staff${qs({ category: 'ADMIN' })}`);
+    urls.push(`/api/hr/staff${qs({ category: 'SUPPORT' })}`);
+    urls.push(`/api/hr/staff${qs({ tenantId, status: 'ACTIVE' })}`);
+    urls.push('/api/finance/cash-registers');
+    urls.push(`/api/finance/cash-registers${qs({ isActive: 'true', isOpen: 'true' })}`);
+    urls.push(`/api/finance/cash-registers${qs({ isActive: 'true' })}`);
+    urls.push(`/api/students${qs({ academicYearId: year })}`);
+    urls.push(`/api/finance/student-accounts${qs({ academicYearId: year, exportAll: 'true' })}`);
+    urls.push(`/api/finance/student-accounts${qs({ academicYearId: year, page: 1, limit: 50 })}`);
+    urls.push(`/api/finance/fee-structures${qs({ academicYearId: year })}`);
+    urls.push(`/api/staff-admin-assignments${qs({ isActive: 'true' })}`);
+  }
 
   // ═══ 1. CONTEXTE TRANSVERSE (providers du layout — toutes les pages) ═══
   urls.push('/api/context/bootstrap');
@@ -756,6 +829,16 @@ function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContext): str
     urls.push(`/api/subjects${qs({ academicYearId: year })}`);
     urls.push(`/api/pedagogy/subjects${qs({ academicYearId: year })}`);
     if (levelParam) urls.push(`/api/pedagogy/subjects${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+    // ⭐ v4.1.0 — Cahier de textes (onglet + formulaire) + contrôle direction
+    //    + séries d'éducation (changements de série / admissions)
+    urls.push(`/api/class-diaries${qs({ academicYearId: year })}`);
+    urls.push(`/api/pedagogy/monthly-plans/director-observations${qs({ academicYearId: year })}`);
+    urls.push('/api/education-series');
+    if (levelParam) {
+      // Formulaire cahier de textes : sélecteurs classe/matière par niveau
+      urls.push(`/api/pedagogy/academic-structure/classes${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+      urls.push(`/api/subjects${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
+    }
     // Onglet EDT (moteur + édition manuelle)
     urls.push(`/api/timetables${qs({ academicYearId: year })}`);
     urls.push(`/api/rooms${qs({ academicYearId: year })}`);
@@ -832,6 +915,11 @@ function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContext): str
     urls.push(`/api/academic-classes${qs({ academicYearId: year })}`);
     urls.push(`/api/academic-classes${qs({ academicYearId: year, isActive: 'true' })}`);
     urls.push(`/api/students/enrollments${qs({ academicYearId: year })}`);
+    // ⭐ v4.1.0 — Absences (onglet vie scolaire + modale justification) et
+    //    inscriptions/transferts sans paramètre d'année (variantes exactes)
+    urls.push(`/api/absences${qs({ academicYearId: year })}`);
+    urls.push('/api/absences');
+    urls.push(`/api/academic-classes${qs({ isActive: 'true' })}`);
     urls.push('/api/public/schools/list');
     // Cross-origin (studentsService)
     if (apiBase) {
@@ -891,6 +979,8 @@ function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContext): str
     urls.push('/api/finance/expenses/categories');
     // Trésorerie
     urls.push(`/api/finance/treasury/daily-closures${qs({ academicYearId: year })}`);
+    // ⭐ v4.1.0 — Modale de clôture journalière : aperçu du jour
+    urls.push(`/api/finance/treasury/daily-closures/preview${qs({ academicYearId: year, date: new Date().toISOString().slice(0, 10) })}`);
     // Rapports
     urls.push(`/api/finance/reports/monthly-encaissements${qs({ academicYearId: year })}`);
     urls.push(`/api/finance/reports/bilan-periodique${qs({ academicYearId: year })}`);
@@ -933,6 +1023,10 @@ function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContext): str
       // Validation / registre / bulletins (variantes par statut)
       urls.push(`${apiBase}/institutional-exams/evaluations${qs({ ...evalBase, status: 'SUBMITTED', language: 'FR' })}`);
       urls.push(`${apiBase}/institutional-exams/evaluations${qs({ ...evalBase, status: 'VALIDATED', language: 'FR' })}`);
+      // ⭐ v4.1.0 — Sélecteur matière du formulaire d'évaluation (axios
+      //    backend direct : /subjects?academicYearId&schoolLevelId&language)
+      urls.push(`${apiBase}/subjects${qs({ academicYearId: year, schoolLevelId: levelParam, language: 'FR' })}`);
+      urls.push(`${apiBase}/subjects${qs({ academicYearId: year })}`);
       // Paramètres d'examen (configuration d'évaluations)
       urls.push(`${apiBase}/exams/settings${qs({ schoolYearId: year })}`);
       // Conseils de classe + déverrouillages + audit + critères d'envoi
@@ -962,6 +1056,11 @@ function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContext): str
     urls.push(`/api/hr/contracts${qs({ tenantId })}`);
     urls.push(`/api/hr/contracts/alerts${qs({ tenantId })}`);
     urls.push(`/api/hr/contracts/settings${qs({ tenantId })}`);
+    // ⭐ v4.1.0 — Modales RH : modèles de contrat (éditeur document) +
+    //    taux CNSS/fiscal (wizard d'embauche, déclarations)
+    urls.push('/api/hr/contracts/templates/list');
+    urls.push('/api/hr/cnss/rates/active');
+    urls.push(`/api/hr/payroll/fiscal-rates${qs({ countryCode: 'BJ' })}`);
     urls.push(`/api/hr/evaluations${qs({ tenantId })}`);
     urls.push(`/api/hr/evaluations/trainings${qs({ tenantId })}`);
     urls.push(`/api/hr/leaves/requests${qs({ tenantId, academicYearId: year })}`);
@@ -1043,6 +1142,24 @@ function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContext): str
     urls.push(`${mc}/canteen/incidents${qs({ academicYearId: year })}`);
     urls.push(`${mc}/canteen/payments${qs({ academicYearId: year })}`);
     urls.push(`${mc}/canteen/settings${qs({ academicYearId: year })}`);
+    // ⭐ v4.1.0 — COUVERTURE EXHAUSTIVE des 8 modules complémentaires :
+    //    bibliothèque, transport, infirmerie, QHSE (+ canteen/students et
+    //    shop/pickups) — les MÊMES URLs que useModulesList (axios backend
+    //    direct) pour que les listes ET leurs modales servent hors ligne.
+    const mcRes = (moduleName: string, resources: string[]) => {
+      for (const r of resources) {
+        urls.push(`${mc}/${moduleName}/${r}${qs({ academicYearId: year })}`);
+      }
+    };
+    mcRes('library', ['dashboard', 'stats', 'books', 'loans', 'reservations', 'digital-resources', 'recommendations']);
+    mcRes('transport', ['dashboard', 'stats', 'routes', 'vehicles', 'drivers', 'assignments', 'incidents', 'payments']);
+    mcRes('infirmary', ['dashboard', 'stats', 'visits', 'checkups', 'emergencies', 'authorizations', 'stock', 'vigilance']);
+    mcRes('qhse', ['dashboard', 'stats', 'documents', 'action-plans', 'audits', 'risks', 'alerts', 'incidents', 'hygiene', 'compliance', 'security', 'health']);
+    urls.push(`${mc}/canteen/students${qs({ academicYearId: year })}`);
+    urls.push(`${mc}/shop/pickups${qs({ academicYearId: year })}`);
+    // Variantes à filtre (TransportMaintenance, QHSEPeriodicControls)
+    urls.push(`${mc}/transport/vehicles${qs({ academicYearId: year, maintenance: 'true' })}`);
+    urls.push(`${mc}/qhse/audits${qs({ academicYearId: year, type: 'periodic' })}`);
     // Academia Shop
     urls.push(`${mc}/shop/stats${qs({ academicYearId: year })}`);
     urls.push(`${mc}/shop/products${qs({ academicYearId: year })}`);
@@ -1099,6 +1216,13 @@ function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContext): str
     urls.push(`/api/settings/billing/plans`);
     urls.push(`/api/settings/billing/invoices${qs({ tenant_id: tenantId, limit: 10 })}`);
     urls.push(`/api/settings/identity/history${qs({ tenant_id: tenantId, limit: 20 })}`);
+    // ⭐ v4.1.0 — Modales paramètres : sceaux administratifs, signatures
+    //    électroniques, cartes élèves, tampon (directeurs), tenants dispo
+    urls.push('/api/settings/administrative-seals');
+    urls.push('/api/settings/electronic-signatures');
+    urls.push('/api/settings/identity/card-settings');
+    if (apiBase) urls.push(`${apiBase}/hr/school-directors`);
+    urls.push('/api/auth/available-tenants');
     urls.push(`/api/settings/education/structure${qs({ tenant_id: tenantId })}`);
     urls.push(`/api/settings/school-calendar-config${qs({ tenant_id: tenantId })}`);
     if (year) {
@@ -1161,7 +1285,7 @@ function extractArray(payload: any): any[] {
   return [];
 }
 
-function buildDynamicPrecacheUrls(
+export function buildDynamicPrecacheUrls(
   apiBase: string,
   ctx: PrecacheSessionContext,
   headers: Record<string, string>,
@@ -1173,6 +1297,10 @@ function buildDynamicPrecacheUrls(
   const isTeacher = Boolean(teacherId) || portalType === 'TEACHER';
   const isParent = portalType === 'PARENT' || role === 'PARENT';
   const isStaff = !isParent;
+  // ⭐ v4.1.0 — les familles finance/RH de la vague 2 respectent le même
+  //    gating par rôle que la vague 1 (pas de gaspillage 2G/3G en 403)
+  const hasFinance = isStaff && FINANCE_ROLES.includes(String(role));
+  const hasHr = isStaff && HR_ROLES.includes(String(role));
   const urls: string[] = [];
 
   // Toutes les extractions sont best-effort : liste illisible → famille sautée
@@ -1226,6 +1354,15 @@ function buildDynamicPrecacheUrls(
         if (id && isStaff) {
           urls.push(`/api/exams/dashboard${qs({ tenantId, academicYearId: year, schoolLevelId: id, language: 'FR' })}`);
         }
+        // ⭐ v4.1.0 — Validateurs de fiche pédagogique + EDT par niveau +
+        //    séries d'éducation par niveau (modales de création)
+        if (id) {
+          if (isStaff) {
+            urls.push(`/api/hr/school-directors/by-level${qs({ schoolLevelId: id, language: 'FR' })}`);
+            urls.push(`/api/timetable-engine/teachers${qs({ schoolLevelId: id })}`);
+          }
+          urls.push(`/api/education-series${qs({ levelId: id })}`);
+        }
       }
     } catch { /* famille sautée */ }
 
@@ -1277,8 +1414,42 @@ function buildDynamicPrecacheUrls(
       } catch { /* famille sautée */ }
     }
 
+    // 7) ⭐ v4.1.0 — COMPTES ÉLÈVES PAR ÉLÈVE (modale de paiement offline) :
+    //    NewPaymentModal charge les frais/lignes du compte de l'élève
+    //    préréglé → chaque compte de la page 1 est pré-caché (cap 60).
+    if (hasFinance) {
+      try {
+        const accounts = extractArray(await fetchListJson(
+          `/api/finance/student-accounts${qs({ academicYearId: year, page: 1, limit: 50 })}`, headers));
+        for (const a of accounts.slice(0, 60)) {
+          const sid = a?.studentId || a?.student?.id;
+          if (sid) urls.push(`/api/finance/student-accounts/student/${sid}${qs({ academicYearId: year })}`);
+        }
+      } catch { /* famille sautée */ }
+    }
+
+    // 8) ⭐ v4.1.0 — RH : chaîne CDD par membre du personnel (renouvellement
+    //    de contrat + wizard d'embauche offline) — cap 40.
+    if (hasHr) {
+      try {
+        const staffList = extractArray(await fetchListJson('/api/hr/staff?limit=500', headers));
+        for (const s of staffList.slice(0, 40)) {
+          if (s?.id) urls.push(`/api/hr/contracts/staff/${s.id}/cdd-chain`);
+        }
+      } catch { /* famille sautée */ }
+    }
+
     return urls;
   })();
+}
+
+/**
+ * ⭐ v4.1.0 — État initial de préparation hors ligne (appelé au montage du
+ * composant OfflineReadinessIndicator) : si les flags routes + données API
+ * sont frais (< 24 h), l'app est déjà prête — SILENCIEUSEMENT (pas de toast).
+ */
+export function evaluateOfflineReadinessInitial(): void {
+  if (isPrecacheFresh() && isApiPrecacheFresh()) markInitialReady();
 }
 
 /**
@@ -1306,19 +1477,27 @@ export async function precacheApiData(): Promise<void> {
   return inFlightApiRun;
 }
 
-/** Envoie une vague d'URLs au SW et attend son ACK (skip-aware). */
+/** Envoie une vague d'URLs au SW et attend son ACK (skip-aware).
+ *  ⭐ v4.1.0 — relaie AUSSI la progression par batch (message
+ *  PRECACHE_API_PROGRESS du SW, émis toutes les 6 URLs) vers le store de
+ *  readiness → l'indicateur utilisateur avance en direct. */
 async function dispatchWaveAndWaitAck(
   sw: ServiceWorker,
   urls: string[],
   headers: Record<string, string>,
   label: string,
+  wave: 1 | 2 = 1,
 ): Promise<WaveAck | null> {
   if (!urls.length) return null;
   const ack: { value: WaveAck | null } = { value: null };
   const onMessage = (event: MessageEvent) => {
     const data = event.data as
-      | { type?: string; okCount?: number; skipCount?: number; total?: number }
+      | { type?: string; okCount?: number; skipCount?: number; total?: number; done?: number }
       | null;
+    if (data?.type === 'PRECACHE_API_PROGRESS') {
+      // ⭐ v4.1.0 — progression live de la vague en cours
+      markWaveProgress(wave, Number(data.done || 0), Number(data.total || 0));
+    }
     if (data?.type === 'PRECACHE_API_RESULT') {
       ack.value = {
         okCount: Number(data.okCount || 0),
@@ -1377,14 +1556,18 @@ async function runApiPrecache(): Promise<void> {
 
   // ─── VAGUE 1 : statique (tous les onglets de tous les modules) ───
   const staticUrls = buildApiPrecacheUrls(apiBase, ctx);
-  const staticAck = await dispatchWaveAndWaitAck(sw, staticUrls, headers, '1 (statique)');
+  // ⭐ v4.1.0 — total connu dès le départ → progression de l'indicateur
+  markWaveProgress(1, 0, staticUrls.length);
+  const staticAck = await dispatchWaveAndWaitAck(sw, staticUrls, headers, '1 (statique)', 1);
 
   // ─── VAGUE 2 : dynamique par entité (notes/EDT/enfants/niveaux/trimestre) ───
   //    Construite en lisant les listes de la vague 1 (déjà en cache SW).
   let dynamicAck: WaveAck | null = null;
   try {
     const dynamicUrls = await buildDynamicPrecacheUrls(apiBase, ctx, headers);
-    dynamicAck = await dispatchWaveAndWaitAck(sw, dynamicUrls, headers, '2 (dynamique)');
+    // ⭐ v4.1.0 — total de la vague 2 (parfois vide : best-effort)
+    markWaveProgress(2, 0, dynamicUrls.length);
+    dynamicAck = await dispatchWaveAndWaitAck(sw, dynamicUrls, headers, '2 (dynamique)', 2);
   } catch {
     console.warn('[ApiPrecache] Vague 2 (dynamique) — échec non bloquant');
   }
@@ -1395,7 +1578,8 @@ async function runApiPrecache(): Promise<void> {
   const total = (staticAck?.total || 0) + (dynamicAck?.total || 0);
   const applicable = Math.max(total - skipCount, 0);
 
-  if (applicable > 0 && okCount / applicable >= API_MIN_SUCCESS_RATE) {
+  const flagSet = applicable > 0 && okCount / applicable >= API_MIN_SUCCESS_RATE;
+  if (flagSet) {
     try {
       localStorage.setItem(API_PRECACHE_TS_KEY, String(Date.now()));
     } catch { /* localStorage indisponible */ }
@@ -1410,4 +1594,8 @@ async function runApiPrecache(): Promise<void> {
       `(${staticAck ? 'ACK vague 1 ok' : 'ACK vague 1 manquant'}) — flag non posé`,
     );
   }
+
+  // ⭐ v4.1.0 — readiness : fin du segment API. « Prêt » uniquement si les
+  //    routes sont fraîches aussi (le segment routes ferme l'état de son côté).
+  markRunFinished(isPrecacheFresh(), flagSet);
 }

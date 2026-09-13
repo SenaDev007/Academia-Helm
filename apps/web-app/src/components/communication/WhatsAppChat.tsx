@@ -542,10 +542,14 @@ function getConversationDisplay(conv: ChatConversation, currentUserId: string): 
   avatarUrl?: string;
 } {
   if (conv.type === 'GROUP') {
-    return { name: conv.name || 'Groupe sans nom', subtitle: `${conv.participants.length} membres` };
+    return { name: conv.name || 'Groupe sans nom', subtitle: `${conv.participants?.length ?? 0} membres` };
   }
   // DIRECT: l'autre participant
-  const other = conv.participants.find(p => p.userId !== currentUserId);
+  // ⭐ v3.8.0 — optional chaining : hors ligne, certaines conversations en
+  //    cache local n'ont pas encore `participants` (réponse partielle) →
+  //    `conv.participants.find` faisait crasher TOUT le module Helm Connect
+  //    (« Erreur du module » — TypeError: reading 'userId').
+  const other = conv.participants?.find(p => p.userId !== currentUserId);
   if (!other) return { name: 'Inconnu' };
   // ⭐ Utiliser le roleLabel (ex: "Parent de Awa Dupont", "Collègue enseignant", "Directeur")
   //    c'est plus informatif que juste le role brut

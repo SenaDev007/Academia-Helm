@@ -764,6 +764,7 @@ class LocalDbService {
       'attendance',
       'billinginvoice',
       'canteensetting',
+      'chat', // ⭐ /api/chat/presence → entityType CHAT (offline mutation fallback)
       'communicationcampaign',
       'communicationtemplate',
       'disciplinaryincident',
@@ -994,7 +995,7 @@ class LocalDbService {
 // Instance singleton
 export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
-  version: 17, // ⭐ bump 16 → 17 (stores manquants URL_TO_STORE + response_cache clé-URL)
+  version: 18, // ⭐ bump 17 → 18 (+ store 'chat' pour le fallback mutation offline /api/chat/presence) ; v17 = stores manquants URL_TO_STORE + response_cache
 });
 
 /**

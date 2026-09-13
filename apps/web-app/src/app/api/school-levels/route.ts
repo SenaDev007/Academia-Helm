@@ -67,8 +67,29 @@ export async function GET(request: NextRequest) {
       fetchWithTimeout(bootstrapUrl.toString(), { headers }, 15000),
     ]);
 
-    const response = structureRes.status === 'fulfilled' ? structureRes.value : null;
-    const data = response ? await response.json().catch(() => ({})) : {};
+    // ⭐ FIX 2026-09-14 « sélecteurs header bloqués » : ne JAMAIS masquer un
+    //    échec backend en liste vide « en succès ». Avant : un 401 (JWT expiré
+    //    dans academia_session), un 5xx ou un timeout étaient avalés en []
+    //    200 → le client croyait à un vide CONFIRMÉ → warning rouge trompeur
+    //    « Activez un niveau dans Paramètres » au lieu d'un retry.
+    //    → on propage le statut (401/403/5xx) ; les composants legacy font
+    //    `Array.isArray(d) ? d : []` donc leur comportement est inchangé,
+    //    et le hook du header (fetchSchoolLevels) voit !res.ok → retry.
+    if (structureRes.status === 'rejected') {
+      return NextResponse.json(
+        { error: 'upstream_unavailable', message: 'Structure pédagogique injoignable' },
+        { status: 502 },
+      );
+    }
+    if (!structureRes.value.ok) {
+      return NextResponse.json(
+        { error: 'upstream_error', message: `Structure pédagogique: HTTP ${structureRes.value.status}` },
+        { status: structureRes.value.status },
+      );
+    }
+
+    const response = structureRes.value;
+    const data = await response.json().catch(() => ({}));
     let levels = (data?.levels ?? []) as { id: string; name: string; isEnabled?: boolean }[];
 
     // Scope serveur (Rôles × Pistes × Niveaux) — cf. context.service bootstrap.
@@ -193,8 +214,12 @@ export async function GET(request: NextRequest) {
     //    existe côté backend (les miroirs EN partagent le UUID FR).
     //    ⭐ FIX 2026-09-07 : cette source n'est appelée que sur le chemin
     //    « non restreint » (transverse/ouvert) — le header ALL y est autorisé.
-    for (const level of enabledLevels) {
-      if (!schoolLevelMap[level.name]) {
+    //    ⭐ FIX 2026-09-14 : PARALLÉLISÉE (avant : `for … await` séquentiel —
+    //    jusqu'à 10 s PAR niveau manquant → le BFF dépassait le timeout
+    //    client/SW de 12 s → « Chargement... » prolongé des sélecteurs).
+    const missingLevels = enabledLevels.filter((level) => !schoolLevelMap[level.name]);
+    await Promise.all(
+      missingLevels.map(async (level) => {
         try {
           const slRes = await fetchWithTimeout(
             normalizeApiUrl(`${API_BASE_URL}/school-levels?code=${encodeURIComponent(level.name)}`),
@@ -210,13 +235,19 @@ export async function GET(request: NextRequest) {
             if (match?.id) schoolLevelMap[level.name] = match.id;
           }
         } catch {}
-      }
-    }
+      }),
+    );
 
     return buildScopedLevelsResponse(enabledLevels, schoolLevelMap);
   } catch (error) {
     console.error('Error fetching school levels from structure:', error);
-    return NextResponse.json([], { status: 200 });
+    // ⭐ FIX 2026-09-14 : 502 explicite (plus de [] 200 silencieux — cf. commentaire
+    //    en tête de GET). Le hook du header retrye ; les composants legacy
+    //    (Array.isArray ? : []) gardent leur comportement liste vide.
+    return NextResponse.json(
+      { error: 'internal_error', message: 'Chargement des niveaux scolaires impossible' },
+      { status: 502 },
+    );
   }
 }
 
@@ -246,10 +277,14 @@ function buildScopedLevelsResponse(
     schoolLevelId: map[l.name] || null,
   }));
 
-  // Cache 60s (les niveaux scolaires changent rarement)
+  // ⭐ FIX 2026-09-14 : cache NAVIGATEUR uniquement (private) — cette réponse
+  //    dépend du COMPTE (périmètre restreint) et du tenant : l'ancien
+  //    `public, s-maxage=60` permettait au CDN de servir la réponse d'un AUTRE
+  //    utilisateur du même tenant (scope différent) pendant 60 s → sélecteur
+  //    incomplet/incohérent par intermittence.
   return NextResponse.json(result, {
     headers: {
-      'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+      'Cache-Control': 'private, max-age=30, stale-while-revalidate=60',
     },
   });
 }

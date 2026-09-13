@@ -25,6 +25,7 @@
 'use client';
 
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { authFetch } from '@/lib/api/auth-fetch';
 
 export interface SchoolLevel {
   id: string;
@@ -38,34 +39,28 @@ const LEVELS_SNAPSHOT_KEY = 'ah_school_levels_snapshot';
 const LEVELS_SNAPSHOT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 jours
 
 export async function fetchSchoolLevels(): Promise<SchoolLevel[]> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-  try {
-    const res = await fetch('/api/school-levels', { signal: controller.signal });
-    clearTimeout(timeoutId);
-    if (!res.ok) {
-      // ⭐ V19 : propager l'erreur → retry React Query (≠ [] silencieux figé)
-      throw new Error(`Chargement des niveaux scolaires impossible (HTTP ${res.status})`);
-    }
-    const data = await res.json();
-    const levels = Array.isArray(data) ? data : [];
-    // ⭐ V19 : snapshot localStorage pour l'affichage instantané au prochain login
-    if (typeof window !== 'undefined' && levels.length > 0) {
-      try {
-        localStorage.setItem(
-          LEVELS_SNAPSHOT_KEY,
-          JSON.stringify({ savedAt: Date.now(), levels })
-        );
-      } catch { /* quota — non bloquant */ }
-    }
-    return levels;
-  } catch (err: any) {
-    clearTimeout(timeoutId);
-    // ⭐ V19 : le timeout (abort) est AUSSI une erreur à retryer — plus de
-    //    « succès » avec liste vide qui figeait le sélecteur en rouge.
-    throw err instanceof Error ? err : new Error(String(err));
+  // ⭐ FIX 2026-09-14 « sélecteur niveau bloqué » : authFetch au lieu de fetch nu
+  //    — sur 401 (JWT 15 min expiré), rafraîchit le token et relit UNE fois au
+  //    lieu de renvoyer une liste vide « en succès » qui figeait le sélecteur.
+  //    Timeout 12 s aligné sur le SW et le BFF (le 8 s historique coupait
+  //    AVANT la fin du BFF sur cold start Neon → erreurs en cascade).
+  const res = await authFetch('/api/school-levels', { timeoutMs: 12_000 });
+  if (!res.ok) {
+    // ⭐ V19 : propager l'erreur → retry React Query (≠ [] silencieux figé)
+    throw new Error(`Chargement des niveaux scolaires impossible (HTTP ${res.status})`);
   }
+  const data = await res.json();
+  const levels = Array.isArray(data) ? data : [];
+  // ⭐ V19 : snapshot localStorage pour l'affichage instantané au prochain login
+  if (typeof window !== 'undefined' && levels.length > 0) {
+    try {
+      localStorage.setItem(
+        LEVELS_SNAPSHOT_KEY,
+        JSON.stringify({ savedAt: Date.now(), levels })
+      );
+    } catch { /* quota — non bloquant */ }
+  }
+  return levels;
 }
 
 /** ⭐ V19 : relit le snapshot localStorage (null si absent/périmé). */

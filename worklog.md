@@ -10391,3 +10391,30 @@ Stage Summary:
 - ✅ Paiements : passerelles jamais interceptées, état explicite « en attente de validation réseau » — aucune confirmation automatique sur l'argent
 - ✅ Anti-doublon : timeout → 504 jamais filé ; propriétaire replay unique (SW vs sync-engine partitionnés par metadata.sw) ; push générique filtré
 - ⏳ E2E production post-déploiement : login en ligne → ~2-3 min (pré-cache) → mode avion → navigation 15 modules + création élève (badge/toast) + reconnexion (sync auto) ; paiement en lie-fi → état « en attente de validation réseau »
+
+---
+Task ID: header-selectors-1
+Agent: main (Super Z)
+Task: « Sélecteurs niveau/année du header : disparaissent, affichent "Aucun…", ou restent en chargement — bloque le travail » — diagnostic + correction
+
+Work Log:
+- Chaîne du bug (intermittent, après ~15 min de session ou backend lent) :
+  * JWT d'accès NestJS = 15 min (auth.service.ts) ; cookies = 7 jours ; academia_session (httpOnly) n'est réécrit qu'au login et par la route BFF /api/auth/refresh (jamais appelée par les fetch nus)
+  * Seuls axios (client.ts) et fetchWithAuth (settings.service) rafraîchissent sur 401 ; les fetch React Query NUS des sélecteurs ne le faisaient JAMAIS → après expiration, BFF lit le JWT périmé d'academia_session → 401 backend
+  * BFF /api/school-levels et /api/academic-years ne vérifiaient PAS response.ok → [] statut 200 → « vide confirmé » → rouge trompeur « Activez un niveau dans Paramètres » en boucle refetchInterval 5 s, SANS réparation possible tant qu'aucun appel axios ne passait
+  * /api/academic-years : aucun timeout BFF NI client → « Chargement... » infini si backend pendant
+  * Timeouts désalignés client 8 s / SW 8 s / BFF 15 s + source D séquentielle (10 s/niveau manquant) → le SW jetait la réponse en cours du BFF
+  * Cache-Control public s-maxage=60 sur une réponse USER-SCOPED → risque contamination CDN cross-utilisateur
+- Correctifs (10 fichiers + 1 nouveau) :
+  * tryRefreshAccessToken SINGLE-FLIGHT (promesse partagée — évite les refreshs concurrents qui se révoquent mutuellement le refresh token)
+  * NOUVEAU lib/api/auth-fetch.ts : authFetch() = credentials include + sur 401 → refresh partagé → retry UNE fois + timeout 12 s + erreurs propagées (React Query retry) ; PAS de redirect login (responsabilité axios)
+  * fetchSchoolLevels + fetchAcademicYearsSnapshot (branche sans tenant) → authFetch, timeout 12 s
+  * BFF school-levels : statut backend propagé (401/403/5xx/502 au lieu de [] 200 — composants legacy Array.isArray?:[] inchangés) + source D PARALLÉLISÉE + Cache-Control private max-age=30
+  * BFF academic-years : fetchWithTimeout 15 s + statut propagé + 502 explicite + private no-store
+  * sw.js : API_TIMEOUT 8→12 s (aligné client/BFF, même logique que CROSS_API_TIMEOUT) + bump version
+  * Contextes : retry() exposé (refetch) ; sélecteurs : bouton « Réessayer » sur états rouge ET chargement
+- Vérifications : parse 11/11 fichiers 0 diagnostic (vs baseline HEAD, scripts/verify_selectors_fix.js) ; node --check sw.js ✓ ; narrowing PromiseSettledResult validé (test strict isolé) ; tsc sémantique avec worktree baseline + stubs externes (scripts/semantic_check_selectors.js) : 23 erreurs working tree = 23 baseline → ZÉRO nouvelle erreur réelle
+
+Stage Summary:
+- ✅ Sélecteurs auto-réparants sur 401 (refresh + retry), erreurs backend ne se déguisent plus en listes vides, timeouts alignés 12 s, bouton « Réessayer » utilisateur
+- ⚠️ À vérifier en production : (1) session > 15 min puis navigation → sélecteurs restent fonctionnels ; (2) réseau coupé → « Chargement... » + Réessayer (plus de rouge trompeur) ; (3) SW nouvelle version actif

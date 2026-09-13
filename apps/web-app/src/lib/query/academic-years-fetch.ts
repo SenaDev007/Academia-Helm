@@ -5,6 +5,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import * as settingsService from '@/services/settings.service';
 import type { AcademicYear } from '@/types/academic-year';
 import { academicYearsKeys } from '@/lib/query/academic-years-keys';
+import { authFetch } from '@/lib/api/auth-fetch';
 import type { SettingsBootstrapPayload } from '@/lib/query/fetch-settings-bootstrap';
 
 function mapRawToAcademicYear(y: {
@@ -69,7 +70,11 @@ function mergeYearsAndActive(years: unknown[], activeYear: unknown | null): Acad
  */
 export async function fetchAcademicYearsSnapshot(tenantId: string | undefined): Promise<AcademicYear[]> {
   if (!tenantId) {
-    const res = await fetch('/api/academic-years', { credentials: 'include', cache: 'no-store' });
+    // ⭐ FIX 2026-09-14 « sélecteur année bloqué » : authFetch (retry 401 via
+    //    refresh token) + timeout 12 s (l'ancien fetch nu n'avait NI l'un NI
+    //    l'autre → 401 → [] « succès » figé, ou requête pendante → chargement
+    //    infini du sélecteur).
+    const res = await authFetch('/api/academic-years', { timeoutMs: 12_000, cache: 'no-store' });
     if (!res.ok) {
       // ⭐ V19 : propager (≠ [] silencieux) → React Query RETRYE
       throw new Error(`Chargement des années scolaires impossible (HTTP ${res.status})`);

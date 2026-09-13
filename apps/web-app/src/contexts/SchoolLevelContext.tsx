@@ -74,6 +74,10 @@ interface SchoolLevelContextType {
   /** ⭐ V19 : liste CONFIRMÉE vide par le serveur (seul cas d'affichage du
    *  warning rouge « Aucun niveau scolaire »). */
   isEmpty: boolean;
+  /** ⭐ FIX 2026-09-14 : rechargement manuel (bouton « Réessayer » du
+   *  sélecteur) — donne à l'utilisateur une action immédiate au lieu
+   *  d'attendre le refetchInterval automatique. */
+  retry: () => void;
 }
 
 const SchoolLevelContext = createContext<SchoolLevelContextType | undefined>(undefined);
@@ -104,7 +108,13 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
 
   // ⭐ Chargement via React Query — bénéficie du cache partagé, retry,
   //    refetchOnReconnect et invalidation sur sync-end / session-resumed.
-  const { data: rawLevels, isLoading: levelsLoading, isFetching: levelsFetching, isError: levelsError } = useSchoolLevelsQuery();
+  const { data: rawLevels, isLoading: levelsLoading, isFetching: levelsFetching, isError: levelsError, refetch: refetchLevels } = useSchoolLevelsQuery();
+
+  // ⭐ FIX 2026-09-14 : rechargement manuel exposé au sélecteur (bouton
+  //    « Réessayer ») — React Query dédup si un fetch est déjà en cours.
+  const retryLevels = useCallback(() => {
+    refetchLevels();
+  }, [refetchLevels]);
 
   /**
    * Invalide toutes les queries TanStack quand le niveau scolaire change.
@@ -371,7 +381,8 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
     availableLevels,
     isLoading: loading,
     isEmpty: isEmptyConfirmed,
-  }), [currentLevel, setCurrentLevel, availableLevels, loading, isEmptyConfirmed]);
+    retry: retryLevels,
+  }), [currentLevel, setCurrentLevel, availableLevels, loading, isEmptyConfirmed, retryLevels]);
 
   return (
     <SchoolLevelContext.Provider value={value}>

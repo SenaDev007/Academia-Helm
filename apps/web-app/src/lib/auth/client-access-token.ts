@@ -281,6 +281,17 @@ export function clearRecentlyLoggedOutFlag(): void {
 }
 
 /**
+ * ⭐ FIX 2026-09-14 « sélecteurs header bloqués » — SINGLE-FLIGHT :
+ *    Plusieurs couches peuvent vouloir rafraîchir le token EN MÊME TEMPS
+ *    (intercepteur axios, fetchWithAuth des services, authFetch des sélecteurs
+ *    React Query du header). Deux POST /api/auth/refresh concurrents avec le
+ *    même refreshToken sont dangereux : si le backend fait une rotation, le
+ *    second refresh échoue → déconnexion intempestive de l'utilisateur.
+ *    → On partage la MÊME promesse entre tous les appelants.
+ */
+let refreshInFlight: Promise<boolean> | null = null;
+
+/**
  * Renouvelle l’access token via le refresh stocké (en ligne uniquement).
  * Utilisé quand le JWT court a expiré mais que l’utilisateur peut rester dans l’app.
  *
@@ -300,45 +311,57 @@ export async function tryRefreshAccessToken(): Promise<boolean> {
   const rt = localStorage.getItem('refreshToken')?.trim();
   if (!rt) return false;
 
-  try {
-    const res = await fetch('/api/auth/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ refreshToken: rt }),
-      cache: 'no-store',
-      signal: AbortSignal.timeout(10_000), // ⭐ 10s max — plus de refresh pendant indéfiniment
-    });
-    if (!res.ok) return false;
+  // ⭐ Single-flight : si un refresh est déjà en cours (axios ou autre appelant),
+  //    on attend SON résultat au lieu d'en lancer un doublon concurrent.
+  if (refreshInFlight) return refreshInFlight;
 
-    const data = (await res.json()) as {
-      accessToken?: string;
-      refreshToken?: string;
-    };
-    if (!data.accessToken?.trim()) return false;
-
-    // Update localStorage (used by hrFetch / getClientAuthorizationHeader)
-    localStorage.setItem('accessToken', data.accessToken.trim());
-    if (data.refreshToken?.trim()) {
-      localStorage.setItem('refreshToken', data.refreshToken.trim());
-    }
-
-    // ⭐ P2 — Miroir du NOUVEAU token dans Cache API pour le SW.
-    //    tryRefreshAccessToken() est appelé quand l'access token court a
-    //    expiré — le SW DOIT utiliser le token frais, pas l'ancien.
-    mirrorTokenToCacheApi(data.accessToken.trim());
-
-    // Update the academia_token cookie (used by Axios / getClientToken)
+  refreshInFlight = (async () => {
     try {
-      const { setClientToken } = await import('@/lib/auth/session-client');
-      setClientToken(data.accessToken.trim());
-    } catch {
-      // Cookie update is best-effort
-    }
+      const res = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ refreshToken: rt }),
+        cache: 'no-store',
+        signal: AbortSignal.timeout(10_000), // ⭐ 10s max — plus de refresh pendant indéfiniment
+      });
+      if (!res.ok) return false;
 
-    return true;
-  } catch {
-    return false;
+      const data = (await res.json()) as {
+        accessToken?: string;
+        refreshToken?: string;
+      };
+      if (!data.accessToken?.trim()) return false;
+
+      // Update localStorage (used by hrFetch / getClientAuthorizationHeader)
+      localStorage.setItem('accessToken', data.accessToken.trim());
+      if (data.refreshToken?.trim()) {
+        localStorage.setItem('refreshToken', data.refreshToken.trim());
+      }
+
+      // ⭐ P2 — Miroir du NOUVEAU token dans Cache API pour le SW.
+      //    tryRefreshAccessToken() est appelé quand l'access token court a
+      //    expiré — le SW DOIT utiliser le token frais, pas l'ancien.
+      mirrorTokenToCacheApi(data.accessToken.trim());
+
+      // Update the academia_token cookie (used by Axios / getClientToken)
+      try {
+        const { setClientToken } = await import('@/lib/auth/session-client');
+        setClientToken(data.accessToken.trim());
+      } catch {
+        // Cookie update is best-effort
+      }
+
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  try {
+    return await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
   }
 }
 

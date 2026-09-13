@@ -178,7 +178,10 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
-const SW_VERSION = 'v4.1.0';
+// v4.1.1 : au-dessus de v4.1.0 (pré-cache exhaustif) — bump pour que le
+//    correctif API_TIMEOUT 12 s (sélecteurs header) soit bien déployé chez
+//    tous les utilisateurs existants (SW_ACTIVATED → re-pré-cache).
+const SW_VERSION = 'v4.1.1';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -238,7 +241,16 @@ const API_CACHE = 'ah-api';
 //    le LRU évictait les entrées pré-cachées au profit des visites → pertes
 //    de données hors ligne sur les modules rarement visités.
 const API_CACHE_MAX = 1200;
-const API_TIMEOUT = 8000;
+// ⭐ v4.0.1 — 12 s (avant : 8 s). Le timeout same-origin coupait les appels
+//    BFF AVANT leur fin réelle : /api/school-levels (structure + bootstrap +
+//    3 sources + source D) et /api/academic-years peuvent légitimement
+//    dépasser 8 s sur cold start Neon / redémarrage Railway. Le SW jetait
+//    alors une réponse réseau EN COURS (le BFF continuait de courir côté
+//    serveur) et servait le cache/503 → les sélecteurs du header passaient
+//    en « Chargement... »/rouge par intermittence. 12 s = aligné sur le
+//    timeout client (authFetch 12 s) et sous le budget BFF (15 s), même
+//    logique que CROSS_API_TIMEOUT ci-dessous.
+const API_TIMEOUT = 12000;
 // ⭐ v3.5.0 — Timeout des GET CROSS-ORIGIN (axios) : 25 s, ALIGNÉ sur le
 //    budget d'axios (30 s) et les cold starts Neon (10-13 s documentés).
 //    Le 8 s du same-origin est trop court ici : couper un appel axios à 8 s

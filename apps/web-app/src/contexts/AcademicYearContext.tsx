@@ -62,6 +62,9 @@ interface AcademicYearContextType {
   /** ⭐ V19 : true si la liste est CONFIRMÉE vide par le serveur (≠ échec
    *  réseau en cours de retry) — seul ce cas affiche « Aucune année scolaire ». */
   isEmpty: boolean;
+  /** ⭐ FIX 2026-09-14 : rechargement manuel (bouton « Réessayer » du
+   *  sélecteur) — action immédiate au lieu d'attendre le refetchInterval. */
+  retry: () => void;
 }
 
 const AcademicYearContext = createContext<AcademicYearContextType | undefined>(undefined);
@@ -82,6 +85,7 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
     isLoading,
     isFetching,
     isError,
+    refetch: refetchYears,
   } = useQuery({
     queryKey: academicYearsKeys.snapshot(tenantKey),
     queryFn: () => fetchAcademicYearsSnapshot(effectiveTenantId),
@@ -113,6 +117,12 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
     //    offline → isLoading figé → sélecteur rouge).
     networkMode: 'always',
   });
+
+  // ⭐ FIX 2026-09-14 : rechargement manuel exposé au sélecteur (bouton
+  //    « Réessayer ») — React Query dédup si un fetch est déjà en cours.
+  const retryYears = useCallback(() => {
+    refetchYears();
+  }, [refetchYears]);
 
   const [currentYear, setCurrentYearState] = useState<AcademicYear | null>(null);
   const availableYearsRef = useRef<AcademicYear[]>([]);
@@ -310,8 +320,9 @@ export function AcademicYearProvider({ children }: { children: ReactNode }) {
       availableYears,
       isLoading: loading,
       isEmpty: isEmptyConfirmed,
+      retry: retryYears,
     }),
-    [currentYear, setCurrentYear, availableYears, loading, isEmptyConfirmed]
+    [currentYear, setCurrentYear, availableYears, loading, isEmptyConfirmed, retryYears]
   );
 
   return <AcademicYearContext.Provider value={value}>{children}</AcademicYearContext.Provider>;

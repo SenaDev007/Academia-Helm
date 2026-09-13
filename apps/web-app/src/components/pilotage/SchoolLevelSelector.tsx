@@ -20,7 +20,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { ChevronDown, GraduationCap, AlertCircle, GitMerge, Lock } from 'lucide-react';
+import { ChevronDown, GraduationCap, AlertCircle, GitMerge, Lock, RefreshCw } from 'lucide-react';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useAdminStructureMode } from '@/hooks/useAdminStructureMode';
 import { useAppSessionOptional } from '@/contexts/AppSessionContext';
@@ -74,7 +74,7 @@ function accreditationToLevelCode(accreditation: string): string {
 }
 
 export default function SchoolLevelSelector() {
-  const { currentLevel, setCurrentLevel, availableLevels, isLoading, isEmpty } = useSchoolLevel();
+  const { currentLevel, setCurrentLevel, availableLevels, isLoading, isEmpty, retry } = useSchoolLevel();
   const { mode, groups } = useAdminStructureMode();
   const session = useAppSessionOptional();
   const user = session?.user;
@@ -215,6 +215,16 @@ export default function SchoolLevelSelector() {
       <div className="flex items-center space-x-2 px-3 py-2 bg-gray-50 rounded-md">
         <GraduationCap className="w-4 h-4 text-gray-400 animate-pulse" />
         <span className="text-sm text-gray-500">{L("Chargement...", "Loading...")}</span>
+        {/* ⭐ FIX 2026-09-14 : action manuelle pendant un chargement prolongé
+            (erreur en retry) — l'utilisateur n'est plus bloqué sans action. */}
+        <button
+          type="button"
+          onClick={retry}
+          title={L("Relancer le chargement", "Reload")}
+          className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+        </button>
       </div>
     );
   }
@@ -230,6 +240,17 @@ export default function SchoolLevelSelector() {
       >
         <AlertCircle className="w-4 h-4 text-red-600" />
         <span className="text-sm text-red-700 font-medium">{L("Aucun niveau scolaire", "No school level")}</span>
+        {/* ⭐ FIX 2026-09-14 : bouton « Réessayer » — le rouge n'était pas
+            cliquable : l'utilisateur restait bloqué sans aucune action. */}
+        <button
+          type="button"
+          onClick={retry}
+          title={L("Réessayer le chargement", "Retry loading")}
+          className="flex items-center gap-1 px-2 py-0.5 text-xs text-red-700 bg-red-100 hover:bg-red-200 border border-red-300 rounded transition-colors"
+        >
+          <RefreshCw className="w-3 h-3" />
+          {L("Réessayer", "Retry")}
+        </button>
       </div>
     );
   }

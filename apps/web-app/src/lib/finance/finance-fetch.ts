@@ -87,7 +87,23 @@ async function networkRequest<T>(
     }
     if (!text.trim()) return null as T;
     try {
-      return JSON.parse(text) as T;
+      const parsed = JSON.parse(text) as T;
+      // ⭐ V4.0 (spec §6 — paiements) : le Service Worker a répondu avec une
+      //    mutation FABRIQUÉE (réseau KO → file de mutations) → X-Sync-Status:
+      //    pending. On attache le flag au résultat pour que l'UI FINANCIÈRE
+      //    affiche « en attente de validation réseau » au lieu d'une
+      //    confirmation identique à un paiement réellement enregistré.
+      //    (Aucune confirmation automatique sur l'argent.)
+      if (
+        res.headers &&
+        res.headers.get('X-Sync-Status') === 'pending' &&
+        parsed &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed)
+      ) {
+        (parsed as any).syncPending = true;
+      }
+      return parsed;
     } catch {
       throw new Error('Réponse invalide du serveur');
     }

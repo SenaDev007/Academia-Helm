@@ -744,6 +744,18 @@ export default function NewPaymentModal({
         });
 
         // Le résultat contient { transaction, shopSale, totalAmount, feeAmount, shopAmount }
+        // ⭐ V4.0 (spec §6 — paiements) : X-Sync-Status: pending → la mutation
+        //    est EN FILE côté Service Worker (réseau KO). JAMAIS une confirmation
+        //    identique à un paiement réellement enregistré côté serveur : état
+        //    explicite « en attente de validation réseau », pas de reçu affiché
+        //    (le numéro de reçu et le PDF n'existent pas encore côté serveur).
+        if ((result as any)?.syncPending) {
+          toast({
+            title: '⏳ En attente de validation réseau',
+            description: `Réseau indisponible — l'encaissement de ${formatCurrency(feeAmountTotal)} est enregistré sur cet appareil et sera transmis au serveur à la reconnexion. Le reçu sera généré après validation.`,
+          });
+          onSuccess();
+        } else {
         const tx = result?.transaction;
         if (tx?.id) {
           setReceipt({
@@ -768,6 +780,7 @@ export default function NewPaymentModal({
           toast({ title: 'Paiement enregistré', description: 'Le reçu est en cours de génération.' });
           onSuccess();
         }
+        } // fin du else syncPending (multi-action)
       } else {
         // ─── Paiement standard (frais uniquement) ───
         const result = await financeService.createTransaction({
@@ -787,7 +800,15 @@ export default function NewPaymentModal({
         });
         // Le backend renvoie la transaction avec receiptNumber + createdAt
         // + déclenche la génération PDF en fire-and-forget
-        if (result?.id) {
+        // ⭐ V4.0 (spec §6 — paiements) : X-Sync-Status: pending → en file côté
+        //    Service Worker — état explicite, JAMAIS un faux « reçu généré ».
+        if ((result as any)?.syncPending) {
+          toast({
+            title: '⏳ En attente de validation réseau',
+            description: `Réseau indisponible — le paiement de ${formatCurrency(feeAmountTotal)} est enregistré sur cet appareil et sera transmis au serveur à la reconnexion. Le reçu sera généré après validation.`,
+          });
+          onSuccess();
+        } else if (result?.id) {
           setReceipt({
             id: result.id,
             receiptNumber: result.receiptNumber || '—',

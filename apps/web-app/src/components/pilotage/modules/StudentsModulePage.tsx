@@ -357,9 +357,10 @@ export default function StudentsModulePage() {
           body: JSON.stringify(formData),
         });
         if (response.ok) {
-          // ⭐ V18 — sauvegarde HORS LIGNE (file d'attente) : informer l'utilisateur
-          //    que la modification est enregistrée localement et partira à la reconnexion.
-          if (response.headers.get('X-Offline-Mutation') === 'true') {
+          // ⭐ V4.0 (spec §5 — signal de statut) : le Service Worker a mis la
+          //    sauvegarde EN FILE (X-Sync-Status: pending) — informer
+          //    l'utilisateur que la modification partira à la reconnexion.
+          if (response.headers.get('X-Sync-Status') === 'pending') {
             toast.info("Modification enregistrée hors ligne — en attente de synchronisation");
           }
           // ✅ Reset selectedStudent to avoid stale form data on next "Créer"
@@ -387,9 +388,10 @@ export default function StudentsModulePage() {
           }),
         });
         if (response.ok) {
-          // ⭐ V18 — création HORS LIGNE (file d'attente) : l'élève est visible
-          //    localement avec le badge « en attente de synchronisation ».
-          if (response.headers.get('X-Offline-Mutation') === 'true') {
+          // ⭐ V4.0 (spec §5) : création mise EN FILE par le Service Worker
+          //    (X-Sync-Status: pending) — l'élève est visible localement avec
+          //    le badge « en attente de synchronisation ».
+          if (response.headers.get('X-Sync-Status') === 'pending') {
             toast.info("Élève enregistré hors ligne — en attente de synchronisation");
           }
           setSelectedStudent(null);

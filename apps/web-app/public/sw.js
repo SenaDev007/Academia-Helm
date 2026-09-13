@@ -152,7 +152,7 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
-const SW_VERSION = 'v3.8.0';
+const SW_VERSION = 'v4.0.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -221,6 +221,16 @@ const API_TIMEOUT = 8000;
 //    axios attendre jusqu'à 30 s).
 const CROSS_API_TIMEOUT = 25000;
 
+// ⭐ V4.0 — INTERCEPTION DES ÉCRITURES (spec « Correction d'architecture —
+//    Interception réseau (Service Worker) », §4) : timeout RÉSEAU des
+//    mutations. Volontairement GÉNÉREUX (15 s > cold start Neon 10-13 s) :
+//    une mutation ne doit être mise en file QUE sur échec réseau AVÉRÉ —
+//    couper trop tôt une mutation que le serveur EST EN TRAIN DE TRAITER
+//    provoquerait un DOUBLON au replay (v3.9 coupait à 5 s : source de
+//    comportements online cassés). Hors ligne déclaré (navigator.onLine
+//    false) → file IMMÉDIATE sans attendre.
+const SW_MUTATION_TIMEOUT = 15000;
+
 // ⭐ Shell pré-caché au premier install : l'app PWA démarre hors ligne sans
 //    page de substitution. '/login' couvre la start_url, '/app' l'application.
 // ⭐ v3.2.0 : + pages publiques principales → le site public fonctionne hors
@@ -282,6 +292,15 @@ const NEVER_INTERCEPT = [
   //    sessions, files d'attente). Les AUTRES /api/* GET passent désormais par
   //    handleApiGet (NetworkFirst + cache identitaire + fallback offline).
   /^\/api\/(auth|admin-auth|school-auth|portal\/auth|sync|webhooks?|billing\/webhook|health|monitoring)(\/|$)/,
+  // ⭐ V4.0 — PASSERELLES DE PAIEMENT EXTERNES (Fedapay/FeexPay) : JAMAIS
+  //    interceptées, ni en lecture ni en écriture. L'argent passe par des
+  //    transactions externes qui ne peuvent être « rejouées » localement —
+  //    spec §6 : aucune confirmation automatique sur l'argent. Hors ligne,
+  //    ces appels échouent honnêtement (l'UI affiche l'erreur réseau).
+  /^\/api\/(finance\/payments\/(fedapay|feexpay)|billing\/(feexpay|fedapay))(\/|$)/,
+  // ⭐ V4.0 — Génération de documents / exports / téléchargements binaires :
+  //    réponses non-JSON (PDF, XLSX, ZIP…) — ni cachables ni « fabricables ».
+  /\/(export|receipt\.pdf|download|\/pdf)(\/|$|\?)/,
   /^\/platform\//, // back-office admin
   /^\/patronat(\/|$)/,
   /^\/saisiemaster(\/|$)/,
@@ -398,9 +417,35 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const { request } = event;
 
-  // Uniquement GET, même origine
-  if (request.method !== 'GET') return;
+  // ⭐ V4.0 — ÉCRITURES (POST/PUT/PATCH/DELETE) : interception réseau-puis-file
+  //    (spec §4) — AVANT le retour anticipé « GET uniquement » d'avant v4.
+  //    Les mutations vers /api/* (app same-origin OU API cross-origin) passent
+  //    par handleApiMutation : réseau d'abord, réponse réelle passée telle
+  //    quelle ; échec réseau → file de mutations IndexedDB + Background Sync
+  //    + réponse FABRIQUÉE (200 + X-Sync-Status: pending) pour que le flux du
+  //    composant continue (redirection, confirmation) SANS modification de son
+  //    code. Les passerelles de paiement et documents binaires sont déjà
+  //    exclus par NEVER_INTERCEPT (honnêteté sur l'argent — spec §6).
+  if (request.method !== 'GET') {
+    if (request.method !== 'POST' && request.method !== 'PUT' && request.method !== 'PATCH' && request.method !== 'DELETE') {
+      return; // HEAD/OPTIONS… → réseau direct
+    }
+    let mutationUrl;
+    try {
+      mutationUrl = new URL(request.url);
+    } catch {
+      return;
+    }
+    const mutationIsSameOrigin = mutationUrl.origin === self.location.origin;
+    const mutationIsApiOrigin = mutationUrl.origin === getApiOrigin();
+    if (!mutationIsSameOrigin && !mutationIsApiOrigin) return;
+    if (!mutationUrl.pathname.startsWith('/api/')) return;
+    if (NEVER_INTERCEPT.some((pattern) => pattern.test(mutationUrl.pathname))) return;
+    event.respondWith(handleApiMutation(request));
+    return;
+  }
 
+  // Uniquement GET, même origine
   let url;
   try {
     url = new URL(request.url);
@@ -687,6 +732,19 @@ function decodeJwtPayload(jwt) {
 }
 
 function apiIdentity(request) {
+  const details = apiIdentityCore(request);
+  return details ? details.key : null;
+}
+
+/**
+ * ⭐ V4.0 — Identité DÉTAILLÉE (mêmes règles que apiIdentity — clé identitaire
+ *    anti-fuite cross-tenant), mais expose aussi tenantId/userId extraits des
+ *    claims JWT / cookies pour :
+ *    - taguer les entités écrites dans IndexedDB (filtre tenant strict) ;
+ *    - construire les clés response_cache (T:tenant|GET|chemin) ;
+ *    - créer les événements outbox SW (replay groupé par tenant).
+ */
+function apiIdentityCore(request) {
   let tenantId = null;
   let userId = null;
   let rawMaterial = false;
@@ -762,7 +820,13 @@ function apiIdentity(request) {
   }
 
   // ⭐ Identité normalisée (tenant|user) — stable d'un style d'appel à l'autre
-  if (tenantId || userId) return 'T:' + (tenantId || '?') + '|U:' + (userId || '?');
+  if (tenantId || userId) {
+    return {
+      key: 'T:' + (tenantId || '?') + '|U:' + (userId || '?'),
+      tenantId,
+      userId,
+    };
+  }
 
   // Fallback matériau brut (session opaque sans JSON parsable) : la clé
   // restera propre à ce style d'appel (comportement v3.4) — cache-on-visit
@@ -777,11 +841,11 @@ function apiIdentity(request) {
         .filter((p) => /token|session|tenant|auth/.test((p.split('=')[0] || '').toLowerCase()));
       if (identityPairs.length) parts.push('cookie:' + identityPairs.join('&'));
     }
-    if (parts.length) return parts.join('|');
+    if (parts.length) return { key: parts.join('|'), tenantId, userId };
   }
 
   if (cookieHeader) return null;
-  return 'ANONYMOUS';
+  return { key: 'ANONYMOUS', tenantId: null, userId: null };
 }
 
 /** ⭐ v3.5.0 — Clé de cache API : URL SANS le cache-buster `_t` (hrFetch
@@ -804,7 +868,8 @@ function apiCacheKey(request, identity) {
 }
 
 async function handleApiGet(request, timeoutMs = API_TIMEOUT) {
-  const identity = apiIdentity(request);
+  const identityDetails = apiIdentityCore(request);
+  const identity = identityDetails ? identityDetails.key : null;
   // Contexte de session inconnu (cookies sans identité reconnue) → réseau
   // direct : on ne met PAS en cache et on ne sert JAMAIS depuis le cache.
   if (identity === null) return fetch(request);
@@ -826,6 +891,13 @@ async function handleApiGet(request, timeoutMs = API_TIMEOUT) {
             .then((copy) => cache.put(new Request(key), copy))
             .then(() => trimApiCache())
             .catch(() => {});
+          // ⭐ V4.0 — WRITE-THROUGH INDEXEDDB (spec §2.3 : « en parallèle
+          //    mettre à jour la table IndexedDB correspondante ») : la
+          //    réponse alimente response_cache (par URL, tout format) ET
+          //    les stores d'entités (tableaux avec id — pool + navigation).
+          //    Hors ligne, la cascade IDB sert ces données aux variantes
+          //    de params jamais visitées + fusionne les écritures en attente.
+          swWriteThroughIdb(request, response, identityDetails.tenantId).catch(() => {});
         }
       }
       return response;
@@ -841,7 +913,7 @@ async function handleApiGet(request, timeoutMs = API_TIMEOUT) {
   } catch {
     /* cache illisible */
   }
-  if (cached) return cached;
+  if (cached) return swServeOfflineCachedResponse(cached, request, identityDetails.tenantId);
 
   // ⭐ v3.7.0 — FALLBACK PAR CHEMIN (spec « lecture hors ligne par module ») :
   //    la clé exacte (params complets) manque MAIS le pré-cache/la navigation
@@ -854,11 +926,20 @@ async function handleApiGet(request, timeoutMs = API_TIMEOUT) {
   //    Un module affiche ainsi SES données (périmètre de filtre le plus
   //    proche) au lieu d'une page vide.
   cached = await matchApiByPath(cache, request, identity);
-  if (cached) return cached;
+  if (cached) return swServeOfflineCachedResponse(cached, request, identityDetails.tenantId);
+
+  // ⭐ V4.0 — CASCADE INDEXEDDB (spec §2.4 : « lire la table IndexedDB
+  //    correspondante et fabriquer une réponse HTTP valide ») :
+  //    1. response_cache — URL exacte (params triés) pour ce tenant
+  //    2. response_cache — même chemin, params les plus proches
+  //    3. stores d'entités (mapping ROUTE_TABLES) : filtres tenant + année
+  //       active, _deleted retirés, fusion des entités _isDirty en attente
+  //       → réponse fabriquée au format JSON attendu par l'API.
+  const idbResponse = await swIdbFallbackForGet(request, identityDetails.tenantId);
+  if (idbResponse) return idbResponse;
 
   // Pas de cache + réseau indisponible → échec RAPIDE avec corps explicite :
-  // le fetcher de la page (dataService → response_cache IDB) gère ce 503
-  // proprement — JAMAIS de spinner infini.
+  // le composant gère ce 503 proprement — JAMAIS de spinner infini.
   return new Response(
     JSON.stringify({ error: 'offline', message: 'Données non disponibles hors ligne (aucune copie locale)' }),
     {
@@ -1224,6 +1305,1099 @@ function fetchWithTimeout(request, timeoutMs) {
   });
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   V4.0 — INTERCEPTION RÉSEAU PAR LE SERVICE WORKER
+   Spec « Correction d'architecture — Interception réseau (Service Worker) »
+   ══════════════════════════════════════════════════════════════════════════
+
+   PRINCIPE : les composants appellent fetch('/api/…') exactement comme
+   avant — AUCUN code applicatif n'est modifié pour la donnée. Le SW se place
+   entre chaque fetch et le réseau et décide, de façon CENTRALISÉE :
+
+   LECTURES (GET — cf. handleApiGet ci-dessus) :
+     réseau (timeout) → succès : réponse réelle + mise à jour IndexedDB ;
+     échec/timeout : cascade cache Cache API → response_cache IDB → stores
+     d'entités, avec réponse JSON FABRIQUÉE au format de l'API réelle.
+
+   ÉCRITURES (POST/PUT/PATCH/DELETE — handleApiMutation) :
+     réseau d'abord → réponse réelle passée telle quelle ;
+     échec réseau → file de mutations IndexedDB (outbox_events) +
+     Background Sync + réponse fabriquée (200 + X-Sync-Status: pending).
+
+   ══════════════════════════════════════════════════════════════════════
+   §3 — MAPPING CENTRALISÉ ROUTE → TABLE LOCALE
+   ══════════════════════════════════════════════════════════════════════
+   Un seul point de configuration : chaque route API → sa table (object
+   store) IndexedDB. Toute évolution future de la portée hors ligne (ajout
+   d'un module) se fait en AJOUTANT UNE LIGNE ICI — jamais dans les
+   composants. Miroir de src/lib/offline/store-names.ts (URL_TO_STORE),
+   les stores sont créés par local-db.service.ts (DB 'academia-helm-local').
+   Le premier match gagne ; '/api/.*' non mappé → 'api_cache' générique. */
+const ROUTE_TABLES = [
+  // ─── Élèves & Scolarité ───
+  [/^\/api\/students(\/|$)/, 'student', /\/(statistics|stats|transfers|documents|id-cards|admissions|movements|abandons|guardians)(\/|$)/],
+  [/^\/api\/students\/.*\/guardians/, 'guardian'],
+  [/^\/api\/all-classes/, 'class'],
+  [/^\/api\/classes/, 'class'],
+  [/^\/api\/class-students/, 'classstudent'],
+  [/^\/api\/class-subjects/, 'classsubject'],
+  [/^\/api\/subjects/, 'subject'],
+  [/^\/api\/school-levels/, 'schoollevel'],
+  [/^\/api\/attendance/, 'attendance'],
+  [/^\/api\/absences/, 'absence'],
+  [/^\/api\/disciplinary/, 'disciplinaryincident'],
+  [/^\/api\/incidents/, 'incident'],
+  [/^\/api\/homeworks/, 'homework'],
+  [/^\/api\/homework-entries/, 'homeworkentry'],
+  [/^\/api\/students\/transfers/, 'studenttransfer'],
+  [/^\/api\/students\/documents/, 'studentdocument'],
+  [/^\/api\/students\/id-cards/, 'studentidcard'],
+  [/^\/api\/students\/admissions/, 'admission'],
+  [/^\/api\/students\/movements/, 'studentmovement'],
+
+  // ─── Personnel, RH & Paie ───
+  [/^\/api\/hr\/staff/, 'staff', /recruit/],
+  [/^\/api\/hr\/teachers/, 'teacher'],
+  [/^\/api\/teachers/, 'teacher'],
+  [/^\/api\/hr\/contracts/, 'contract'],
+  [/^\/api\/hr\/leaves/, 'leaverequest'],
+  [/^\/api\/hr\/allowances/, 'staffallowance'],
+  [/^\/api\/hr\/overtime/, 'overtimerecord'],
+  [/^\/api\/hr\/attendance/, 'staffattendance'],
+  [/^\/api\/hr\/evaluations/, 'staffevaluation'],
+  [/^\/api\/hr\/documents/, 'staffdocument'],
+  [/^\/api\/hr\/school-directors/, 'schooldirectors'],
+  [/^\/api\/hr\/payroll/, 'salaryslip'],
+  [/^\/api\/hr\/salary-payments/, 'salarypayment'],
+  [/^\/api\/hr\/positions/, 'position'],
+  [/^\/api\/hr\/collaborators/, 'staff'],
+  [/^\/api\/hr\/planning/, 'staffplanning'],
+
+  // ─── Finances & Économat ───
+  [/^\/api\/finance\/fee-structures\/overrides/, 'feeoverride'],
+  [/^\/api\/finance\/fee-structures/, 'feestructure'],
+  [/^\/api\/finance\/fee-configurations/, 'feeconfiguration'],
+  [/^\/api\/finance\/fee-definitions/, 'feedefinition'],
+  [/^\/api\/finance\/fee-regimes/, 'feeregime'],
+  [/^\/api\/finance\/payments/, 'payment'],
+  [/^\/api\/finance\/invoices/, 'invoice'],
+  [/^\/api\/finance\/expenses/, 'financeexpense'],
+  [/^\/api\/finance\/transactions/, 'financetransaction'],
+  [/^\/api\/finance\/student-accounts/, 'studentaccount'],
+  [/^\/api\/finance\/treasury/, 'treasurymovement'],
+  [/^\/api\/finance\/tuition-installments/, 'tuitioninstallment'],
+  [/^\/api\/finance\/tuition-payments/, 'tuitionpayment'],
+  [/^\/api\/finance\/payment-plans/, 'paymentplan'],
+  [/^\/api\/finance\/cash-registers/, 'cashregister'],
+  [/^\/api\/finance\/collection-cases/, 'collectioncase'],
+  [/^\/api\/finance\/collection-reminders/, 'collectionreminder'],
+  [/^\/api\/finance\/arrears/, 'feearrear'],
+
+  // ─── Organisation pédagogique ───
+  [/^\/api\/pedagogy\/teacher-profiles/, 'teacheracademicprofile'],
+  [/^\/api\/pedagogy\/teacher-availabilities/, 'teacheravailability'],
+  [/^\/api\/pedagogy\/teacher-class-assignments/, 'teacherclassassignment'],
+  [/^\/api\/pedagogy\/academic-structure/, 'academicclass'],
+  [/^\/api\/pedagogy-space\/my-classes/, 'teacherclassassignment'],
+  [/^\/api\/class-diaries/, 'classdiary'],
+  [/^\/api\/lesson-plans/, 'lessonplan'],
+  [/^\/api\/lesson-journals/, 'lessonjournal'],
+  [/^\/api\/pedagogical-files/, 'pedagogicalfile'],
+  [/^\/api\/timetables/, 'timetable'],
+  [/^\/api\/pedagogy\/materials/, 'pedagogicalmaterial'],
+  [/^\/api\/pedagogy\/daily-logs/, 'dailylog'],
+  [/^\/api\/pedagogy\/class-logs/, 'classlog'],
+  [/^\/api\/pedagogy\/subjects/, 'subject'],
+  [/^\/api\/pedagogy\/teachers/, 'teacher'],
+  [/^\/api\/pedagogy\/timetables/, 'timetable'],
+  [/^\/api\/pedagogy\/academic-levels/, 'academiclevel'],
+  [/^\/api\/pedagogy\/academic-series/, 'academicseries'],
+  [/^\/api\/pedagogy\/academic-cycles/, 'academiccycle'],
+  [/^\/api\/pedagogy\/rooms/, 'room'],
+  [/^\/api\/pedagogy\/control/, 'pedagogicalcontrol'],
+  [/^\/api\/pedagogy\/weekly-reports/, 'weeklyreport'],
+
+  // ─── Examens, Notes & Bulletins ───
+  [/^\/api\/exams(\/|$)/, 'exam', /bulletin/],
+  [/^\/api\/grades/, 'grade'],
+  [/^\/api\/exam-candidates/, 'examcandidate'],
+  [/^\/api\/exam-results/, 'examresult'],
+  [/^\/api\/exam-scores/, 'examscore'],
+  [/^\/api\/exam-sessions/, 'examsession'],
+  [/^\/api\/exam-compositions/, 'examcomposition'],
+  [/^\/api\/exam-deliberations/, 'examdeliberation'],
+  [/^\/api\/report-cards/, 'reportcard'],
+  [/^\/api\/evaluations/, 'evaluation'],
+  [/^\/api\/student-period-averages/, 'studentperiodaverage'],
+  [/^\/api\/student-subject-averages/, 'studentsubjectaverage'],
+
+  // ─── Communication ───
+  [/^\/api\/messages/, 'message'],
+  [/^\/api\/announcements/, 'announcement'],
+  [/^\/api\/notifications/, 'notification'],
+  [/^\/api\/alerts/, 'alert'],
+  [/^\/api\/meetings/, 'meeting'],
+  [/^\/api\/meeting-participants/, 'meetingparticipant'],
+  [/^\/api\/meeting-agenda-items/, 'meetingagendaitem'],
+  [/^\/api\/meetings\/minutes/, 'meetingminutes'],
+  [/^\/api\/meetings\/decisions/, 'meetingdecision'],
+  [/^\/api\/communication\/templates/, 'communicationtemplate'],
+  [/^\/api\/communication\/automations/, 'automationrule'],
+  [/^\/api\/communication\/campaigns/, 'communicationcampaign'],
+  [/^\/api\/communication\/scheduled/, 'scheduledemail'],
+  [/^\/api\/communication\/channels/, 'communicationchannel'],
+  [/^\/api\/communication\/inbox/, 'inboundemail'],
+
+  // ─── Paramètres / Settings ───
+  [/^\/api\/settings\/identity/, 'tenantidentityprofile'],
+  [/^\/api\/settings\/bilingual/, 'settingsbilingual'],
+  [/^\/api\/settings\/academic/, 'schoolacademicsettings'],
+  [/^\/api\/settings\/communication/, 'settingscommunication'],
+  [/^\/api\/settings\/security/, 'securitysettings'],
+  [/^\/api\/settings\/features/, 'tenantfeature'],
+  [/^\/api\/settings\/history/, 'settingshistory'],
+  [/^\/api\/academic-years/, 'academicyear'],
+
+  // ─── ORION / Dashboards (agrégats) ───
+  [/^\/api\/(orion|dashboard)\//, 'orion_cache'],
+
+  // ─── Cantine ───
+  [/^\/api\/canteen\/menus/, 'canteenmenu'],
+  [/^\/api\/canteen\/settings/, 'canteensetting'],
+  [/^\/api\/canteen\/subscriptions/, 'canteensubscription'],
+  [/^\/api\/canteen\/payments/, 'canteenpayment'],
+  [/^\/api\/canteen\/attendance/, 'canteenattendance'],
+
+  // ─── Transport ───
+  [/^\/api\/transport\/vehicles/, 'vehicle'],
+  [/^\/api\/transport\/routes/, 'route'],
+  [/^\/api\/transport\/drivers/, 'transportdriver'],
+  [/^\/api\/transport\/assignments/, 'transportassignment'],
+  [/^\/api\/transport\/trips/, 'transporttrip'],
+  [/^\/api\/transport\/settings/, 'transportsetting'],
+
+  // ─── Infirmerie / QHSE ───
+  [/^\/api\/infirmary\/visits/, 'infirmaryvisit'],
+  [/^\/api\/infirmary\/medical-records/, 'infirmarymedicalrecord'],
+  [/^\/api\/infirmary\/medication-stocks/, 'infirmarymedicationstock'],
+  [/^\/api\/infirmary\/settings/, 'infirmarysetting'],
+  [/^\/api\/qhse\/audits/, 'qhseaudit'],
+  [/^\/api\/qhse\/incidents/, 'qhseincident'],
+  [/^\/api\/qhse\/risks/, 'qhserisk'],
+  [/^\/api\/qhse\/action-plans/, 'qhseactionplan'],
+
+  // ─── EduCast / Boutique / Bibliothèque ───
+  [/^\/api\/educast\/contents/, 'educastcontent'],
+  [/^\/api\/educast\/channels/, 'educastchannel'],
+  [/^\/api\/educast\/playlists/, 'educastplaylist'],
+  [/^\/api\/shop\/products/, 'shopproduct'],
+  [/^\/api\/shop\/categories/, 'shopcategory'],
+  [/^\/api\/shop\/orders/, 'shoporder'],
+  [/^\/api\/shop\/sales/, 'shopsale'],
+  [/^\/api\/library\/books/, 'librarybook'],
+  [/^\/api\/library\/loans/, 'libraryloan'],
+  [/^\/api\/library\/reservations/, 'libraryreservation'],
+
+  // ─── Modules complémentaires (BFF /api/modules-complementaires/<module>/…) ───
+  [/^\/api\/modules-complementaires\/shop\/products/, 'shopproduct'],
+  [/^\/api\/modules-complementaires\/shop\/categories/, 'shopcategory'],
+  [/^\/api\/modules-complementaires\/shop\/orders/, 'shoporder'],
+  [/^\/api\/modules-complementaires\/shop\/sales/, 'shopsale'],
+  [/^\/api\/modules-complementaires\/canteen\/menus/, 'canteenmenu'],
+  [/^\/api\/modules-complementaires\/canteen\/subscriptions/, 'canteensubscription'],
+  [/^\/api\/modules-complementaires\/canteen\/payments/, 'canteenpayment'],
+  [/^\/api\/modules-complementaires\/canteen\/attendance/, 'canteenattendance'],
+  [/^\/api\/modules-complementaires\/canteen\/settings/, 'canteensetting'],
+  [/^\/api\/modules-complementaires\/transport\/vehicles/, 'vehicle'],
+  [/^\/api\/modules-complementaires\/transport\/routes/, 'route'],
+  [/^\/api\/modules-complementaires\/library\/books/, 'librarybook'],
+  [/^\/api\/modules-complementaires\/library\/loans/, 'libraryloan'],
+  [/^\/api\/modules-complementaires\/medical\/visits/, 'infirmaryvisit'],
+  [/^\/api\/modules-complementaires\/educast\/contents/, 'educastcontent'],
+  [/^\/api\/modules-complementaires\/educast\/channels/, 'educastchannel'],
+
+  // ─── Billing ───
+  [/^\/api\/billing\/subscriptions/, 'subscription'],
+  [/^\/api\/billing\/invoices/, 'billinginvoice'],
+
+  // ─── Fallback générique (routes /api/* non mappées) ───
+  [/^\/api\//, 'api_cache'],
+];
+
+/** Résout la table locale d'une route (§3). null si pas une route API. */
+function routeTable(pathname) {
+  for (const [pattern, store, exclude] of ROUTE_TABLES) {
+    if (pattern.test(pathname)) {
+      if (exclude && exclude.test(pathname)) continue;
+      return store;
+    }
+  }
+  return null;
+}
+
+/** Type d'entité (SyncEntityType) inféré de l'URL — pour les événements
+ *  outbox (miroir de inferEntityTypeFromUrl applicatif). */
+function inferEntityType(pathname) {
+  const KEY_MAP = {
+    'students/guardians': 'GUARDIAN',
+    'students': 'STUDENT',
+    'hr/staff': 'STAFF', 'hr/teachers': 'TEACHER', 'hr/contracts': 'CONTRACT',
+    'hr/leaves': 'LEAVE_REQUEST', 'hr/allowances': 'STAFF_ALLOWANCE',
+    'hr/overtime': 'OVERTIME_RECORD', 'hr/attendance': 'STAFF_ATTENDANCE',
+    'hr/evaluations': 'STAFF_EVALUATION', 'hr/documents': 'STAFF_DOCUMENT',
+    'hr/collaborators': 'STAFF',
+    'teachers': 'TEACHER',
+    'classes': 'CLASS', 'class-students': 'CLASS_STUDENT', 'class-subjects': 'CLASS_SUBJECT',
+    'subjects': 'SUBJECT', 'school-levels': 'SCHOOL_LEVEL', 'academic-years': 'ACADEMIC_YEAR',
+    'exams': 'EXAM', 'grades': 'GRADE', 'exam-candidates': 'EXAM_CANDIDATE',
+    'exam-results': 'EXAM_RESULT', 'exam-scores': 'EXAM_SCORE', 'exam-sessions': 'EXAM_SESSION',
+    'exam-compositions': 'EXAM_COMPOSITION', 'exam-deliberations': 'EXAM_DELIBERATION',
+    'report-cards': 'REPORT_CARD', 'evaluations': 'EVALUATION',
+    'payments': 'PAYMENT', 'invoices': 'INVOICE',
+    'finance/fee-structures': 'FEE_STRUCTURE', 'finance/transactions': 'FINANCE_TRANSACTION',
+    'finance/expenses': 'EXPENSE',
+    'attendance': 'ATTENDANCE', 'absences': 'ABSENCE', 'homeworks': 'HOMEWORK',
+    'incidents': 'INCIDENT', 'class-diaries': 'CLASS_DIARY', 'lesson-plans': 'LESSON_PLAN',
+    'shop/products': 'SHOP_PRODUCT', 'shop/categories': 'SHOP_CATEGORY',
+    'shop/orders': 'SHOP_ORDER', 'shop/sales': 'SHOP_SALE',
+    'educast/contents': 'EDUCAST_CONTENT', 'educast/channels': 'EDUCAST_CHANNEL',
+    'canteen/menus': 'CANTEEN_MENU', 'canteen/payments': 'CANTEEN_PAYMENT',
+    'canteen/subscriptions': 'CANTEEN_SUBSCRIPTION', 'canteen/attendance': 'CANTEEN_ATTENDANCE',
+    'transport/vehicles': 'VEHICLE', 'transport/routes': 'ROUTE',
+    'infirmary/visits': 'INFIRMARY_VISIT', 'library/books': 'LIBRARY_BOOK',
+    'messages': 'MESSAGE', 'notifications': 'NOTIFICATION', 'announcements': 'ANNOUNCEMENT',
+  };
+  const sortedKeys = Object.keys(KEY_MAP).sort((a, b) => b.length - a.length);
+  for (const key of sortedKeys) {
+    if (pathname.toLowerCase().includes(key)) return KEY_MAP[key];
+  }
+  const segments = pathname.replace(/^\/api\//, '').split('/');
+  const first = segments[0]?.replace(/-/g, '_').toUpperCase() || 'STUDENT';
+  return first;
+}
+
+// ─── §3 helpers : accès IndexedDB depuis le SW ────────────────────────────
+
+/** ⭐ V4.0 — Ouverture SANS version : la base 'academia-helm-local' est gérée
+ *    par l'applicatif (local-db.service — version courante 19, évolutive).
+ *    L'ANCIEN code du SW ouvrait avec version 15 → VersionError systématique
+ *    dès que l'app avait migré la base (>15) → TOUTE la couche IDB du SW
+ *    était morte en prod. Sans version : ouverture au niveau EXISTANT,
+ *    aucun onupgradeneeded, compatible avec TOUTE future migration. */
+function swOpenIdb() {
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(SW_DB_NAME);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function swIdbRequest(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function swIdbGetAll(storeName) {
+  const db = await swOpenIdb();
+  if (!db || !db.objectStoreNames.contains(storeName)) return [];
+  try {
+    return (await swIdbRequest(db.transaction([storeName], 'readonly').objectStore(storeName).getAll())) || [];
+  } catch {
+    return [];
+  }
+}
+
+async function swIdbPut(storeName, value) {
+  const db = await swOpenIdb();
+  if (!db || !db.objectStoreNames.contains(storeName)) return false;
+  try {
+    await swIdbRequest(db.transaction([storeName], 'readwrite').objectStore(storeName).put(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function swIdbGetByKey(storeName, key) {
+  const db = await swOpenIdb();
+  if (!db || !db.objectStoreNames.contains(storeName)) return undefined;
+  try {
+    return await swIdbRequest(db.transaction([storeName], 'readonly').objectStore(storeName).get(key));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Normalisation d'URL en clé de cache (miroir de normalizeUrlForCache
+ *  applicatif — MÊME normalisation de part et d'autre). */
+function swNormalizeUrl(url) {
+  try {
+    const u = new URL(url, self.location.origin);
+    u.searchParams.delete('_t');
+    u.searchParams.sort();
+    u.hash = '';
+    return { path: u.pathname, full: u.pathname + (u.search || '') };
+  } catch {
+    const path = url.split('?')[0];
+    return { path, full: url };
+  }
+}
+
+function swResponseCacheKey(url, tenantId) {
+  const { full } = swNormalizeUrl(url);
+  return 'T:' + (tenantId || 'anon') + '|GET|' + full;
+}
+
+// ─── §2.3 — Write-through IndexedDB après un GET réseau réussi ────────────
+
+const SW_RESPONSE_TTL = 5 * 60 * 1000; // 5 min (miroir DEFAULT_CACHE_TTL)
+
+async function swWriteThroughIdb(request, response, tenantId) {
+  const clone = response.clone();
+  const text = await clone.text().catch(() => null);
+  if (text === null) return;
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return;
+  }
+  const { path, full } = swNormalizeUrl(request.url);
+
+  // (a) response_cache — TOUS formats (agrégats, settings, tableaux…)
+  await swIdbPut('response_cache', {
+    cacheKey: swResponseCacheKey(request.url, tenantId),
+    tenantId: tenantId ?? null,
+    url: full,
+    data,
+    cachedAt: Date.now(),
+    expiresAt: Date.now() + SW_RESPONSE_TTL,
+  }).catch(() => {});
+
+  // (b) stores d'entités — tableaux (direct, {data:[…]} ou {items:[…]}) avec id
+  const store = routeTable(path);
+  if (!store || store === 'orion_cache') return; // agrégats → response_cache seul
+  const arr = Array.isArray(data) ? data
+    : (data && typeof data === 'object' && Array.isArray(data.data)) ? data.data
+    : (data && typeof data === 'object' && Array.isArray(data.items)) ? data.items
+    : null;
+  if (!arr) return;
+  const withId = arr.filter((item) => item && typeof item === 'object' && item.id !== undefined && item.id !== null);
+  if (withId.length === 0) return;
+  for (const item of withId) {
+    await swIdbPut(store, {
+      ...item,
+      tenantId: item.tenantId || tenantId || null,
+      _cachedAt: new Date().toISOString(),
+    }).catch(() => {});
+  }
+}
+
+// ─── Fusion des entités en attente dans les lectures servies hors ligne ────
+
+function swPublicCopy(entity) {
+  const copy = {};
+  for (const [k, v] of Object.entries(entity || {})) {
+    if (k.startsWith('_')) continue;
+    copy[k] = v;
+  }
+  return copy;
+}
+
+function swTenantOf(item) {
+  const v = item?.tenantId ?? item?.tenant_id;
+  return v !== undefined && v !== null && v !== '' ? String(v) : null;
+}
+
+/** Fusion (v3.9 portée dans le SW) : liste tableau OU paginée {data|items},
+ *  entités _isDirty ajoutées/remplacées, _deleted retirées, total recalé.
+ *  Tenant-strict. */
+async function swMergePendingEntities(storeName, data, tenantId) {
+  try {
+    if (data === null || data === undefined) return data;
+    let arr = null;
+    let container = null;
+    if (Array.isArray(data)) {
+      arr = data;
+    } else if (typeof data === 'object' && Array.isArray(data.data)) {
+      arr = data.data; container = { key: 'data', obj: data };
+    } else if (typeof data === 'object' && Array.isArray(data.items)) {
+      arr = data.items; container = { key: 'items', obj: data };
+    }
+    if (!arr) return data;
+
+    const entities = await swIdbGetAll(storeName);
+    if (!Array.isArray(entities) || entities.length === 0) return data;
+
+    const relevant = entities.filter((e) => {
+      if (!e || typeof e !== 'object' || !e.id) return false;
+      if (tenantId && swTenantOf(e) !== null && swTenantOf(e) !== String(tenantId)) return false;
+      return e._isDirty === true;
+    });
+    const deletedIds = new Set(
+      entities
+        .filter((e) => e?._deleted === true && (!tenantId || swTenantOf(e) === null || swTenantOf(e) === String(tenantId)))
+        .map((e) => String(e.id))
+    );
+
+    const merged = [...arr.filter((item) => !item?.id || !deletedIds.has(String(item.id)))];
+    let appended = 0;
+    for (const dirty of relevant) {
+      if (dirty._deleted) continue; // déjà retiré ci-dessus
+      const pub = swPublicCopy(dirty);
+      const idx = merged.findIndex((item) => item?.id && String(item.id) === String(dirty.id));
+      if (idx >= 0) merged[idx] = pub;
+      else { merged.push(pub); appended++; }
+    }
+    if (container) {
+      container.obj[container.key] = merged;
+      if (typeof container.obj?.total === 'number') container.obj.total = container.obj.total + appended;
+      return data;
+    }
+    return merged;
+  } catch {
+    return data;
+  }
+}
+
+/** Réponse servie depuis le cache (exact ou par-chemin) : parse + fusion des
+ *  entités en attente (le composant voit SES créations hors ligne) puis
+ *  re-sérialisation. Hors JSON → réponse intacte. */
+async function swServeOfflineCachedResponse(cachedResponse, request, tenantId) {
+  try {
+    const ct = cachedResponse.headers.get('content-type') || '';
+    if (!ct.includes('json')) return cachedResponse;
+    const text = await cachedResponse.text();
+    if (!text.trim()) return cachedResponse;
+    const data = JSON.parse(text);
+    const { path } = swNormalizeUrl(request.url);
+    const store = routeTable(path);
+    let out = data;
+    if (store && store !== 'orion_cache') {
+      out = await swMergePendingEntities(store, data, tenantId);
+    }
+    return new Response(JSON.stringify(out), {
+      status: cachedResponse.status,
+      statusText: cachedResponse.statusText,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-AH-Offline': '1',
+      },
+    });
+  } catch {
+    return cachedResponse;
+  }
+}
+
+// ─── §2.4 — Cascade IndexedDB pour les GET hors ligne ─────────────────────
+
+let swActiveYearCache = null;
+async function swGetActiveAcademicYearId() {
+  if (swActiveYearCache && Date.now() - swActiveYearCache.readAt < 60000) {
+    return swActiveYearCache.yearId;
+  }
+  let yearId = null;
+  try {
+    const years = await swIdbGetAll('local_academic_year');
+    yearId = years[0]?.id ?? null;
+    if (!yearId) {
+      const pulled = await swIdbGetAll('academicyear');
+      const active = pulled.find((y) => y && (y.isActive === true || y.is_active === true));
+      yearId = active?.id ?? null;
+    }
+  } catch {
+    yearId = null;
+  }
+  swActiveYearCache = { yearId, readAt: Date.now() };
+  return yearId;
+}
+
+/** Lecture IDB : (1) response_cache exacte, (2) response_cache même chemin
+ *  (params proches), (3) stores d'entités → réponse fabriquée. null si rien. */
+async function swIdbFallbackForGet(request, tenantId) {
+  const { path, full } = swNormalizeUrl(request.url);
+  const store = routeTable(path);
+
+  // (1) réponse exacte pour ce tenant
+  const exactEntry = await swIdbGetByKey('response_cache', swResponseCacheKey(request.url, tenantId));
+  if (exactEntry && exactEntry.data !== undefined && exactEntry.data !== null) {
+    let out = exactEntry.data;
+    if (store && store !== 'orion_cache') {
+      out = await swMergePendingEntities(store, out, tenantId);
+    }
+    return new Response(JSON.stringify(out), {
+      status: 200,
+      statusText: 'OK (offline IDB)',
+      headers: { 'Content-Type': 'application/json', 'X-AH-Offline': '1' },
+    });
+  }
+
+  // (2) même chemin, params les plus proches, même tenant
+  try {
+    const db = await swOpenIdb();
+    if (db && db.objectStoreNames.contains('response_cache')) {
+      const entries = await swIdbRequest(
+        db.transaction(['response_cache'], 'readonly').objectStore('response_cache').getAll()
+      ).catch(() => []);
+      const samePath = (entries || []).filter(
+        (e) => e && e.data !== undefined && (e.url === path || String(e.url || '').startsWith(path + '?'))
+          && (e.tenantId ?? 'anon') === (tenantId || 'anon')
+      );
+      if (samePath.length > 0) {
+        const wanted = new URL(full, 'http://localhost').searchParams;
+        const scoreOf = (e) => {
+          let score = 0;
+          try {
+            const got = new URL(e.url, 'http://localhost').searchParams;
+            got.forEach((value, key) => {
+              if (wanted.get(key) === value) score += 2;
+            });
+            score -= Math.max(0, [...got.keys()].length - [...wanted.keys()].length);
+          } catch { /* ignoré */ }
+          return score;
+        };
+        samePath.sort((a, b) => (scoreOf(b) - scoreOf(a)) || ((b.cachedAt || 0) - (a.cachedAt || 0)));
+        let out = samePath[0].data;
+        if (store && store !== 'orion_cache') {
+          out = await swMergePendingEntities(store, out, tenantId);
+        }
+        return new Response(JSON.stringify(out), {
+          status: 200,
+          statusText: 'OK (offline IDB path)',
+          headers: { 'Content-Type': 'application/json', 'X-AH-Offline': '1' },
+        });
+      }
+    }
+  } catch {
+    /* non bloquant */
+  }
+
+  // (3) stores d'entités → fabrication d'une réponse liste
+  if (!store) return null;
+  let entities = await swIdbGetAll(store);
+  if (!Array.isArray(entities) || entities.length === 0) return null;
+
+  // Filtres : _deleted, tenant-strict, année active
+  let filtered = entities.filter((item) => !item?._deleted);
+  if (tenantId) {
+    filtered = filtered.filter((item) => swTenantOf(item) === null || swTenantOf(item) === String(tenantId));
+  } else {
+    filtered = filtered.filter((item) => swTenantOf(item) === null);
+  }
+  const activeYearId = await swGetActiveAcademicYearId();
+  if (activeYearId) {
+    filtered = filtered.filter((item) => {
+      const year = item?.academicYearId ?? item?.academic_year_id;
+      if (year === undefined || year === null || year === '') return true;
+      return String(year) === String(activeYearId);
+    });
+  }
+  if (filtered.length === 0) return null;
+
+  // Copies publiques (champs internes _ masqués — spec §2.4 : même format JSON)
+  const publicList = filtered.map((item) => swPublicCopy(item));
+  return new Response(JSON.stringify(publicList), {
+    status: 200,
+    statusText: 'OK (offline entity store)',
+    headers: { 'Content-Type': 'application/json', 'X-AH-Offline': '1' },
+  });
+}
+
+// ─── §4 — Interception des ÉCRITURES (POST/PUT/PATCH/DELETE) ──────────────
+
+/** Famille d'URL d'une mutation (chemin sans les segments UUID/action
+ *  finaux — miroir de invalidateResponseCacheFamily applicatif). */
+function swUrlFamily(url) {
+  const { path } = swNormalizeUrl(url);
+  const segments = path.split('/').filter(Boolean);
+  const ACTIONS = ['archive', 'restore', 'activate', 'close', 'promote', 'validate', 'admit',
+    'pre-register', 'generate-credentials', 'duplicate', 'transfer', 'refund', 'resend', 'sign', 'return'];
+  while (segments.length > 2) {
+    const last = segments[segments.length - 1];
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(last);
+    const isAction = ACTIONS.includes(last);
+    if (isUuid || isAction) segments.pop();
+    else break;
+  }
+  return '/' + segments.join('/');
+}
+
+/** Purge la famille d'URL dans le cache API (Cache API) + response_cache
+ *  (IDB) — après une mutation RÉUSSIE (en ligne ou au replay) : la prochaine
+ *  lecture ne doit pas servir une copie antérieure à l'écriture. */
+async function swInvalidateCacheFamily(url) {
+  const family = swUrlFamily(url);
+  if (family.length < 2) return;
+  try {
+    const cache = await caches.open(API_CACHE);
+    const keys = await cache.keys();
+    await Promise.all(
+      keys.map(async (k) => {
+        try {
+          const ku = new URL(k.url);
+          if (ku.pathname === family || ku.pathname.startsWith(family + '/')) {
+            await cache.delete(k);
+          }
+        } catch { /* clé illisible */ }
+      })
+    );
+  } catch { /* non bloquant */ }
+  try {
+    const db = await swOpenIdb();
+    if (db && db.objectStoreNames.contains('response_cache')) {
+      const entries = await swIdbRequest(
+        db.transaction(['response_cache'], 'readonly').objectStore('response_cache').getAll()
+      ).catch(() => []);
+      const tx = db.transaction(['response_cache'], 'readwrite');
+      const os = tx.objectStore('response_cache');
+      for (const e of entries || []) {
+        const entryPath = String(e?.url || '').split('?')[0];
+        if (entryPath === family || entryPath.startsWith(family + '/')) {
+          try { os.delete(e.cacheKey); } catch { /* ignoré */ }
+        }
+      }
+    }
+  } catch { /* non bloquant */ }
+}
+
+function swUuid() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/** Diffusion d'un message à toutes les pages ouvertes (pont applicatif :
+ *  OfflineSWRegister traduit OUTBOX_CHANGED en événement DOM
+ *  'outbox-changed' → badge « en attente de synchronisation » immédiat). */
+async function swBroadcast(message) {
+  try {
+    const clients = await self.clients.matchAll({ includeUncontrolled: true });
+    clients.forEach((client) => {
+      try { client.postMessage(message); } catch { /* client parti */ }
+    });
+  } catch { /* non bloquant */ }
+}
+
+async function handleApiMutation(request) {
+  const details = apiIdentityCore(request);
+
+  // Corps non-JSON (FormData, binaire…) : file impossible → réseau honnête.
+  const contentType = request.headers.get('content-type') || '';
+  if (contentType && !contentType.includes('application/json')) {
+    return fetch(request);
+  }
+
+  // Session inconnue (anti-fuite) ou anonyme : réseau honnête (pas de file).
+  if (!details || details.key === null || !details.tenantId) {
+    return fetch(request);
+  }
+
+  // ⭐ Lire le corps AVANT la tentative réseau (un Request ne peut être lu
+  //    qu'une fois — le clone préserve la requête pour la mise en file).
+  let bodyText = null;
+  try {
+    bodyText = await request.clone().text();
+  } catch { /* corps illisible → restera null */ }
+
+  const offline = !self.navigator || self.navigator.onLine === false;
+
+  if (!offline) {
+    try {
+      // ⭐ §4.1 — réseau d'abord, timeout GÉNÉREUX (cf. SW_MUTATION_TIMEOUT) :
+      //    une erreur HTTP (4xx/5xx) N'EST PAS un échec réseau — la réponse
+      //    réelle du serveur est passée telle quelle au composant (§4.2).
+      const response = await fetchWithTimeout(request, SW_MUTATION_TIMEOUT);
+      if (response && response.status >= 200 && response.status < 300) {
+        swInvalidateCacheFamily(request.url).catch(() => {});
+      }
+      return response;
+    } catch (error) {
+      // ⭐ ANTI-DOUBLON (politique 504 du module finance) : un TIMEOUT est
+      //    AMBIGU — la requête a été ENVOYÉE, le serveur a pu la committer
+      //    avant notre abandon. Mettre en file + rejouer créerait un DOUBLON
+      //    (ex: encaissement enregistré 2×). → réponse 504 HONNÊTE, l'UI
+      //    affiche l'erreur, l'utilisateur vérifie et relance lui-même.
+      //    Seule une ERREUR RÉSEAU (fetch jamais parti / connexion refusée —
+      //    TypeError) est sûre à mettre en file (§4.3).
+      if (error && error.message === 'Timeout') {
+        return new Response(
+          JSON.stringify({
+            message: "Délai d'attente dépassé. Le serveur a mis trop de temps à répondre — l'opération n'a PAS été mise en file (risque de doublon). Vérifiez l'état de la donnée puis réessayez.",
+            offline: false,
+            timeout: true,
+          }),
+          {
+            status: 504,
+            statusText: 'Gateway Timeout',
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
+      }
+      // Réseau KO (offline réel / connexion impossible) → mise en file (§4.3)
+    }
+  }
+
+  return swQueueMutation(request, details, bodyText);
+}
+
+/** §4.3 — Échec réseau : enregistrement dans la file de mutations
+ *  (outbox_events — même format que l'applicatif → badges/outbox UI lisibles)
+ *  + écriture optimiste dans le store d'entités + Background Sync + réponse
+ *  fabriquée qui IMITE un succès (X-Sync-Status: pending) pour que le code
+ *  existant poursuive son flux normal (redirection, confirmation). */
+async function swQueueMutation(request, details, bodyText) {
+  const url = request.url;
+  const method = request.method;
+  const { path } = swNormalizeUrl(url);
+  const tenantId = details.tenantId;
+
+  let body = null;
+  if (bodyText && bodyText.trim()) {
+    try { body = JSON.parse(bodyText); } catch { body = null; }
+  }
+
+  const entityType = inferEntityType(path);
+  const store = routeTable(path);
+
+  // ID de l'entité : corps → URL → généré localement
+  const urlUuidMatch = url.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  const urlId = urlUuidMatch ? urlUuidMatch[0] : null;
+  const entityId = (body && typeof body === 'object' && body.id) || urlId || swUuid();
+
+  // URLs d'action /{uuid}/archive|admit|activate… → modification locale
+  const actionMatch = path.match(
+    /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/([a-z][a-z0-9-]*)$/i
+  );
+  const isActionUrl = Boolean(actionMatch && urlId && method !== 'DELETE');
+  const actionName = actionMatch?.[1]?.toLowerCase() ?? '';
+
+  const operation = method === 'POST' ? 'CREATE' : method === 'DELETE' ? 'DELETE' : 'UPDATE';
+
+  // ─── Écriture optimiste dans le store d'entités (v3.9 portée au SW) ───
+  //    L'entité créée/modifiée hors ligne est VISIBLE dans les listes (la
+  //    fusion des _isDirty l'injecte dans les lectures servies hors ligne).
+  let optimisticEntity = null;
+  if (store && store !== 'orion_cache' && store !== 'api_cache') {
+    try {
+      if (isActionUrl) {
+        const patch = { ...(body ?? {}) };
+        if (actionName === 'archive' || actionName === 'soft-delete') patch.status = 'ARCHIVED';
+        const existing = await swIdbGetByKey(store, entityId);
+        optimisticEntity = {
+          ...(existing ?? {}),
+          ...patch,
+          id: entityId,
+          tenantId: existing?.tenantId ?? tenantId,
+          _isDirty: true,
+          _deleted: false,
+          updatedAt: new Date().toISOString(),
+        };
+        await swIdbPut(store, optimisticEntity);
+      } else if (method === 'POST') {
+        optimisticEntity = {
+          ...(body ?? {}),
+          id: entityId,
+          tenantId,
+          _isDirty: true,
+          _deleted: false,
+          createdAt: (body && body.createdAt) || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        await swIdbPut(store, optimisticEntity);
+      } else if (method === 'PUT' || method === 'PATCH') {
+        const existing = await swIdbGetByKey(store, entityId);
+        optimisticEntity = {
+          ...(existing ?? {}),
+          ...(body ?? {}),
+          id: entityId,
+          tenantId: existing?.tenantId ?? tenantId,
+          _isDirty: true,
+          updatedAt: new Date().toISOString(),
+        };
+        await swIdbPut(store, optimisticEntity);
+      } else if (method === 'DELETE') {
+        const existing = await swIdbGetByKey(store, entityId);
+        if (existing) {
+          optimisticEntity = {
+            ...existing,
+            _deleted: true,
+            _isDirty: true,
+            updatedAt: new Date().toISOString(),
+          };
+          await swIdbPut(store, optimisticEntity);
+        }
+      }
+    } catch { /* store absent — l'événement outbox reste la source de vérité */ }
+  }
+
+  // ─── Événement outbox (format IDENTIQUE à OutboxService.createEvent) ───
+  //    metadata.sw marque la PROPRIÉTÉ du replay par le SW (le sync-engine
+  //    applicatif ignore ces événements — jamais de double-replay) ;
+  //    metadata.request conserve la requête ORIGINALE (URL, méthode, corps,
+  //    en-tête Authorization capturé) pour un replay HTTP EXACT.
+  const auth = request.headers.get('authorization');
+  const nowIso = new Date().toISOString();
+  const eventId = swUuid();
+  const queued = await swIdbPut('outbox_events', {
+    id: eventId,
+    tenantId,
+    userId: details.userId ?? undefined,
+    entityType,
+    entityId,
+    operation,
+    payload: JSON.stringify(body ?? { id: entityId }),
+    metadata: JSON.stringify({
+      request: {
+        url,
+        method,
+        body: body ?? null,
+        auth: auth || null,
+      },
+      sw: 'v4',
+      action: isActionUrl ? actionName : undefined,
+    }),
+    status: 'PENDING',
+    priority: 0,
+    retryCount: 0,
+    maxRetries: 10,
+    attemptCount: 0,
+    localVersion: Date.now(),
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    conflictStrategy: 'LAST_WRITE_WINS',
+  });
+
+  // ⭐ HONNÊTETÉ : si la file est INACCESSIBLE (IDB indisponible / store
+  //    absent), la mutation N'EST PAS sauvegardée → on ne fabrique PAS un
+  //    succès qui serait un mensonge silencieux : erreur 503 explicite.
+  if (!queued) {
+    return new Response(
+      JSON.stringify({
+        message: 'Hors ligne : impossible d\'enregistrer l\'opération sur cet appareil (stockage local indisponible). Réessayez une fois la connexion rétablie.',
+        offline: true,
+      }),
+      {
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: { 'Content-Type': 'application/json', 'X-AH-Offline': '1' },
+      },
+    );
+  }
+
+  // ─── Background Sync : replay automatique à la reconnexion ───
+  try { await self.registration.sync.register('ah-sync-pending'); } catch { /* SW sans sync */ }
+
+  // ─── Notifier les pages ouvertes (badge immédiat) ───
+  swBroadcast({ type: 'OUTBOX_CHANGED', reason: 'queued', eventId });
+
+  // ─── Réponse FABRIQUÉE (§4.3 + §5) : imite un succès pour que le flux du
+  //    composant continue ; l'en-tête X-Sync-Status: pending est LE signal
+  //    que les composants voulant afficher le badge doivent vérifier.
+  const responseBody = method === 'DELETE'
+    ? JSON.stringify({ id: entityId, deleted: true })
+    : JSON.stringify(
+        optimisticEntity
+          ? swPublicCopy(optimisticEntity)
+          : { id: entityId, ...(body && typeof body === 'object' ? body : {}), offline: true }
+      );
+  return new Response(responseBody, {
+    status: 200,
+    statusText: 'OK (offline - queued)', // ⚠️ ByteString : ASCII uniquement (pas de tiret cadratin)
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Sync-Status': 'pending',
+      'X-Offline-Mutation': 'true',
+      'X-AH-Offline': '1',
+    },
+  });
+}
+
+// ─── §4.3 — Replay des mutations SW à la reconnexion (Background Sync) ─────
+
+/** Réponse serveur écrite dans le store local + _isDirty cleared (miroir du
+ *  replayOfflineRequest du sync-engine applicatif). */
+async function swApplyServerEntityResponse(event, parsed) {
+  try {
+    const entityType = event.entityType;
+    const storeName = swIdbStoreForEntityType(entityType);
+    if (!storeName) return;
+    const local = await swIdbGetByKey(storeName, event.entityId);
+    const serverData =
+      parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.id === event.entityId
+        ? parsed
+        : Array.isArray(parsed)
+          ? parsed.find((r) => r?.id === event.entityId)
+          : null;
+    if (local || serverData) {
+      await swIdbPut(storeName, {
+        ...(serverData ?? local),
+        id: event.entityId,
+        tenantId: local?.tenantId ?? event.tenantId,
+        _isDirty: false,
+        _deleted: false,
+        _lastSync: new Date().toISOString(),
+        ...(local ? { _version: (local._version || 1) + 1 } : {}),
+      });
+    }
+  } catch { /* non bloquant */ }
+}
+
+/** Miroir de idbStoreForEntityType applicatif : STUDENT → 'student',
+ *  TEACHER_CLASS_ASSIGNMENT → 'teacherclassassignment'. */
+function swIdbStoreForEntityType(entityType) {
+  let name = String(entityType || '').toLowerCase();
+  name = name.replace(/[_\-\s]+/g, '');
+  if (name.endsWith('ies') && name.length > 3) name = name.slice(0, -3) + 'y';
+  else if (name.endsWith('ses') && name.length > 3) name = name.slice(0, -2);
+  else if (name.endsWith('xes') && name.length > 3) name = name.slice(0, -2);
+  else if (name.endsWith('s') && !name.endsWith('ss') && name.length > 1) name = name.slice(0, -1);
+  return name;
+}
+
+async function swUpdateOutboxEvent(db, eventId, patch) {
+  try {
+    const tx = db.transaction(['outbox_events'], 'readwrite');
+    const store = tx.objectStore('outbox_events');
+    const getReq = store.get(eventId);
+    getReq.onsuccess = () => {
+      const event = getReq.result;
+      if (!event) return;
+      store.put({ ...event, ...patch });
+    };
+  } catch { /* non bloquant */ }
+}
+
+/** ⭐ PROPRIÉTAIRE UNIQUE : rejoue UNIQUEMENT les événements marqués
+ *  metadata.sw (créés par le SW — cf. swQueueMutation). Les événements créés
+ *  par la couche applicative restent au sync-engine applicatif. */
+async function swReplayPendingMutations() {
+  const db = await swOpenIdb();
+  if (!db || !db.objectStoreNames.contains('outbox_events')) return { replayed: 0, failed: 0, stillPending: 0 };
+
+  let all = [];
+  try {
+    all = await swIdbRequest(db.transaction(['outbox_events'], 'readonly').objectStore('outbox_events').getAll());
+  } catch {
+    return { replayed: 0, failed: 0, stillPending: 0 };
+  }
+
+  const now = Date.now();
+  const candidates = [];
+  for (const e of all || []) {
+    if (!e || (e.status !== 'PENDING' && e.status !== 'SYNCING')) continue;
+    let meta = null;
+    try { meta = typeof e.metadata === 'string' ? JSON.parse(e.metadata) : e.metadata; } catch { meta = null; }
+    if (!meta || !meta.sw || !meta.request) continue; // pas à nous
+    if (e.status === 'SYNCING') {
+      const lastAttempt = Date.parse(e.lastAttemptAt || e.updatedAt || '') || 0;
+      if (now - lastAttempt < 120000) continue; // replay en cours → pas de doublon
+    }
+    candidates.push({ event: e, meta });
+  }
+  if (candidates.length === 0) return { replayed: 0, failed: 0, stillPending: 0 };
+
+  candidates.sort((a, b) => new Date(a.event.createdAt).getTime() - new Date(b.event.createdAt).getTime());
+
+  // Token miroir (fallback si l'en-tête Authorization n'a pas été capturé)
+  const authToken = await swGetAuthToken();
+
+  let replayed = 0;
+  let failed = 0;
+  let stillPending = 0;
+
+  for (const { event, meta } of candidates) {
+    const req = meta.request;
+    await swUpdateOutboxEvent(db, event.id, {
+      status: 'SYNCING',
+      lastAttemptAt: new Date().toISOString(),
+      attemptCount: (event.attemptCount || 0) + 1,
+    });
+
+    let sameOrigin = true;
+    try { sameOrigin = new URL(req.url).origin === self.location.origin; } catch { sameOrigin = true; }
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (req.auth) headers['Authorization'] = req.auth;
+    else if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+    if (event.tenantId) headers['X-Tenant-ID'] = event.tenantId;
+
+    try {
+      // ⭐ fetch initié PAR LE SW : ne passe PAS par notre propre fetch
+      //    handler → pas d'auto-interception ni de récursion.
+      const response = await fetch(req.url, {
+        method: req.method,
+        credentials: sameOrigin ? 'include' : 'omit',
+        headers,
+        ...(req.body !== null && req.body !== undefined
+          ? { body: typeof req.body === 'string' ? req.body : JSON.stringify(req.body) }
+          : {}),
+      });
+
+      if (response.ok) {
+        const text = await response.text().catch(() => '');
+        let parsed = null;
+        if (text.trim()) { try { parsed = JSON.parse(text); } catch { parsed = null; } }
+        await swApplyServerEntityResponse(event, parsed);
+        await swUpdateOutboxEvent(db, event.id, {
+          status: 'SYNCED',
+          syncedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        await swInvalidateCacheFamily(req.url);
+        replayed++;
+      } else if (response.status >= 400 && response.status < 500) {
+        // Refus MÉTIER du serveur (validation DTO, 403, 404…) → FAILED définitif
+        const text = await response.text().catch(() => '');
+        let msg = 'Serveur : ' + response.status;
+        try {
+          const parsed = JSON.parse(text);
+          msg = parsed?.message || parsed?.error || msg;
+        } catch { /* corps non-JSON */ }
+        await swUpdateOutboxEvent(db, event.id, {
+          status: 'FAILED',
+          errorMessage: msg,
+          updatedAt: new Date().toISOString(),
+        });
+        failed++;
+      } else {
+        // 5xx → transitoire (redémarrage Railway, cold start) → PENDING
+        await swUpdateOutboxEvent(db, event.id, { status: 'PENDING', updatedAt: new Date().toISOString() });
+        stillPending++;
+      }
+    } catch {
+      // Réseau encore KO → PENDING (nouvelle tentative au prochain sync)
+      await swUpdateOutboxEvent(db, event.id, { status: 'PENDING', updatedAt: new Date().toISOString() });
+      stillPending++;
+    }
+  }
+
+  // Notifier les pages (rafraîchissement des badges + invalidation queries)
+  swBroadcast({
+    type: 'OUTBOX_SYNCED',
+    replayed,
+    failed,
+    stillPending,
+    source: 'sw',
+  });
+
+  // Re-armaison si des événements restent en attente (le SW peut être tué —
+  // Background Sync re-firera de toute façon à la prochaine connectivité).
+  if (stillPending > 0) {
+    try { await self.registration.sync.register('ah-sync-pending'); } catch { /* non critique */ }
+  }
+
+  return { replayed, failed, stillPending };
+}
+
 // ─── MESSAGE : update manuelle + pré-cache de module ─────────────────────
 self.addEventListener('message', (event) => {
   if (event.data === 'SKIP_WAITING' || event.data?.type === 'SKIP_WAITING') {
@@ -1285,6 +2459,21 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'PRECACHE_API' && Array.isArray(event.data.urls)) {
     event.waitUntil(
       precacheApiEndpoints(event.data.urls, event.data.headers || {}, event.source),
+    );
+  }
+
+  // ⭐ V4.0 — TRIGGER_SYNC : la page (pont OfflineSWRegister, événement
+  //    window 'online') demande au SW de rejouer sa file de mutations
+  //    (utile quand Background Sync n'est pas supporté/retarde — iOS, Safari).
+  if (event.data && event.data.type === 'TRIGGER_SYNC') {
+    event.waitUntil(
+      (async () => {
+        try {
+          await swReplayPendingMutations();
+        } catch {
+          /* non-critique */
+        }
+      })(),
     );
   }
 });
@@ -1515,7 +2704,6 @@ async function precacheModule(routeUrl, sourceClient) {
 // client-access-token.ts (cache 'ah-auth-token') et sync-engine.service.ts
 // (endpoint '/api/sync/push', batch 50).
 const SW_DB_NAME = 'academia-helm-local';
-const SW_DB_VERSION = 15;
 const SW_OUTBOX_STORE = 'outbox_events';
 const SW_AUTH_CACHE_NAME = 'ah-auth-token';
 const SW_AUTH_TOKEN_URL = '/__sw_auth_token__';
@@ -1535,17 +2723,16 @@ async function swGetAuthToken() {
   }
 }
 
+// ⭐ V4.0 — ouverture SANS version (l'app gère le schéma, version 18 —
+//    l'ancienne ouverture versionnée (15) levait VersionError dès que l'app
+//    avait migré la base : la couche IDB du SW était morte en production).
 function swOpenLocalDB() {
   return new Promise((resolve, reject) => {
     try {
-      const req = indexedDB.open(SW_DB_NAME, SW_DB_VERSION);
+      const req = indexedDB.open(SW_DB_NAME);
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
       req.onblocked = () => reject(new Error('IDB open blocked'));
-      req.onupgradeneeded = (event) => {
-        // Le SW ne modifie JAMAIS le schéma IDB — abandon propre si migration
-        event.target.transaction && event.target.transaction.abort();
-      };
     } catch (err) {
       reject(err);
     }
@@ -1564,8 +2751,20 @@ function swReadPendingEvents(db, limit = 500) {
       const req = store.getAll();
       req.onsuccess = () => {
         const all = req.result || [];
+        // ⭐ V4.0 — LEGACY UNIQUEMENT : les événements portant
+        //    metadata.request (SW OU couche applicative) sont rejoués par
+        //    replay HTTP EXACT (swReplayPendingMutations pour les .sw ;
+        //    sync-engine.service pour les autres) — les POUSSER AUSSI par
+        //    le batch générique /api/sync/push créerait des DOUBLONS
+        //    (défaut de la v3.9 : double-push silencieux masqué par les
+        //    échecs de colonnes du INSERT générique).
         const pending = all
-          .filter((e) => e && e.status === 'PENDING')
+          .filter((e) => {
+            if (!e || e.status !== 'PENDING') return false;
+            let meta = null;
+            try { meta = typeof e.metadata === 'string' ? JSON.parse(e.metadata) : e.metadata; } catch { meta = null; }
+            return !(meta && meta.request);
+          })
           .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
           .slice(0, limit);
         resolve(pending);
@@ -1750,6 +2949,36 @@ async function swPushOutboxFromIDB() {
 }
 
 self.addEventListener('sync', (event) => {
+  // ⭐ V4.0 — FILE DU SW (mutations interceptées par handleApiMutation) :
+  //    replay HTTP EXACT des événements metadata.sw, PUIS push générique
+  //    legacy (événements sans metadata.request), PUIS notification des
+  //    clients (pull + MAJ UI).
+  if (event.tag === 'ah-sync-pending') {
+    event.waitUntil(
+      (async () => {
+        try {
+          await swReplayPendingMutations();
+        } catch {
+          // Non-critique — retry au prochain event
+        }
+        try {
+          await swPushOutboxFromIDB();
+        } catch {
+          // Non-critique — retry au prochain event
+        }
+        try {
+          const clients = await self.clients.matchAll({ includeUncontrolled: true });
+          clients.forEach((client) => {
+            client.postMessage({ type: 'BACKGROUND_SYNC_TRIGGER', source: 'sw' });
+          });
+        } catch {
+          // Non-critique
+        }
+      })(),
+    );
+    return;
+  }
+
   if (event.tag === 'sync-outbox') {
     event.waitUntil(
       (async () => {

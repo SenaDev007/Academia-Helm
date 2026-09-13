@@ -8,9 +8,13 @@
  *   2. Classe physique (Class/section) = CE1 A, CE1 B…
  *   3. Affectation = TeacherClassAssignment lié à une classe physique
  *
- * ► MATERNELLE / PRIMAIRE : Modèle "Titulaire Unique"
+ * ► MATERNELLE / PRIMAIRE : Modèle "Titulaire Unique + Spécialistes itinérants"
  *   - 1 titulaire par SECTION PHYSIQUE (ex: CE1 A, CE1 B)
- *   - Le titulaire gère TOUTES les matières de sa section
+ *   - Le titulaire gère toutes les matières de sa section, SAUF les matières
+ *     « itinérantes » (Anglais, Informatique) dans les écoles NON bilingues :
+ *     un professeur spécialiste les assure en parcourant toutes les classes de
+ *     la maternelle au CM2, comme au secondaire.
+ *     ⭐ 2026-09-13 — écoles CS & Mon Avenir Plus (anglais/informatique simples)
  *
  * ► SECONDAIRE : Modèle "Spécialiste"
  *   - 1 enseignant par matière, par section physique
@@ -80,6 +84,29 @@ const isHomeroomLevel = (levelName?: string): boolean => {
   return n.includes('MATERN') || n.includes('PRIMA') || n.includes('PRIM');
 };
 
+// ── ⭐ Matières « itinérantes » (Anglais / Informatique) ─────────────────────
+// Écoles NON bilingues (maternel/primaire) : un enseignant spécialiste parcourt
+// toutes les classes (maternelle → CM2) pour ces matières, exactement comme un
+// professeur du secondaire. Détection : code ANG-*/INFO-* (catalogue suggéré),
+// avec repli sur le nom exact « Anglais » / « Informatique » (création manuelle).
+const ITINERANT_EXACT_NAMES = new Set(['anglais', 'english', 'informatique', 'computer science']);
+
+const isItinerantSubject = (subject?: { name?: string; code?: string } | null): boolean => {
+  if (!subject) return false;
+  const code = (subject.code || '').toUpperCase().trim();
+  if (code.startsWith('ANG-') || code.startsWith('INFO-')) return true;
+  return ITINERANT_EXACT_NAMES.has((subject.name || '').toLowerCase().trim());
+};
+
+/** Famille de matière itinérante ('anglais' | 'informatique') — apparie les
+ *  enregistrements Subject distincts par niveau (ex: ANG-20 maternel ↔ ANG-10 primaire). */
+const subjectFamily = (name?: string): string => {
+  const n = (name || '').toLowerCase();
+  if (n.includes('anglais') || n.includes('english')) return 'anglais';
+  if (n.includes('informatique') || n.includes('computer')) return 'informatique';
+  return n.trim();
+};
+
 const CANONICAL_CLASS_ORDER = [
   'maternelle 1', 'maternelle 2',
   'ci', 'cp', 'ce1', 'ce2', 'cm1', 'cm2',
@@ -117,10 +144,13 @@ export default function AssignmentsWorkspace() {
   // Selection — selectedPhysicalClassId is the PRIMARY selection
   const [selectedPhysicalClassId, setSelectedPhysicalClassId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [modal, setModal] = useState<'none' | 'assign-homeroom' | 'assign-teacher' | 'confirm-remove'>('none');
+  const [modal, setModal] = useState<'none' | 'assign-homeroom' | 'assign-teacher' | 'confirm-remove' | 'assign-itinerant' | 'confirm-remove-itinerant'>('none');
   const [removingAssignmentId, setRemovingAssignmentId] = useState<string | null>(null);
   const [activeSubject, setActiveSubject] = useState<ClassSubject | null>(null);
   const [selectedTeacherInModal, setSelectedTeacherInModal] = useState<string | null>(null);
+  // ⭐ Spécialistes itinérants (Anglais / Informatique — écoles non bilingues)
+  const [activeItinerantSubject, setActiveItinerantSubject] = useState<ClassSubject | null>(null);
+  const [itinerantApplyAll, setItinerantApplyAll] = useState(true);
 
   // --- Loaders ---
 
@@ -248,26 +278,42 @@ export default function AssignmentsWorkspace() {
     });
   }, [filteredPhysicalClasses, academicClasses]);
 
-  // Titulaire actuel = l'enseignant assigné aux matières de la section physique
+  // ⭐ Séparation matières régulières / itinérantes (Anglais, Informatique).
+  //    Maternel/primaire en école NON bilingue uniquement — sinon tout reste
+  //    « régulier » et le comportement historique (titulaire unique) est inchangé.
+  const itinerantActive = isHomeroom && !isBilingual;
+  const itinerantSubjects = useMemo(
+    () => (itinerantActive ? classSubjects.filter(cs => isItinerantSubject(cs.subject)) : []),
+    [classSubjects, itinerantActive],
+  );
+  const regularSubjects = useMemo(
+    () => (itinerantActive ? classSubjects.filter(cs => !isItinerantSubject(cs.subject)) : classSubjects),
+    [classSubjects, itinerantActive],
+  );
+
+  // Titulaire actuel = l'enseignant assigné aux matières RÉGULIÈRES de la section
+  // (hors Anglais/Informatique confiés à un spécialiste itinérant — sinon le prof
+  // d'anglais risquerait d'apparaître comme titulaire de la section).
   // On accepte les affectations avec le bon classId OU sans classId (anciennes, rétro-compat)
   const currentHomeroom = useMemo(() => {
-    if (!isHomeroom || classSubjects.length === 0 || !selectedPhysicalClassId) return null;
+    if (!isHomeroom || regularSubjects.length === 0 || !selectedPhysicalClassId) return null;
     // Chercher une affectation qui correspond à cette section (classId match OU classId NULL)
-    for (const cs of classSubjects) {
+    for (const cs of regularSubjects) {
       const assign = (cs.assignments || []).find(a => a.classId === selectedPhysicalClassId || !a.classId);
       if (assign?.teacher) return assign.teacher;
     }
     return null;
-  }, [isHomeroom, classSubjects, selectedPhysicalClassId]);
+  }, [isHomeroom, regularSubjects, selectedPhysicalClassId]);
 
-  const homeroomFullyAssigned = isHomeroom && classSubjects.length > 0 &&
-    classSubjects.every(cs => (cs.assignments || []).some(a => a.classId === selectedPhysicalClassId || !a.classId));
+  const homeroomFullyAssigned = isHomeroom && regularSubjects.length > 0 &&
+    regularSubjects.every(cs => (cs.assignments || []).some(a => a.classId === selectedPhysicalClassId || !a.classId));
 
   // --- Actions ---
 
-  /** MATERNELLE/PRIMAIRE : affecter le titulaire à TOUTES les matières de la section physique */
+  /** MATERNELLE/PRIMAIRE : affecter le titulaire aux matières RÉGULIÈRES de la
+   *  section physique (hors matières itinérantes confiées à un spécialiste). */
   const handleAssignHomeroom = async (teacherId: string) => {
-    if (!academicYear?.id || classSubjects.length === 0 || !selectedPhysicalClassId) return;
+    if (!academicYear?.id || regularSubjects.length === 0 || !selectedPhysicalClassId) return;
     setBulkAssigning(true);
     try {
       // 1. ⭐ FIX désaffectation croisée (2026-09-10) : supprimer UNIQUEMENT les
@@ -278,7 +324,7 @@ export default function AssignmentsWorkspace() {
       //    « quelques instants » après leur affectation.
       //    Les lignes classId null (legacy) sont incluses car elles s'affichent
       //    pour cette section (même logique que currentHomeroom).
-      const sectionAssignments = classSubjects.flatMap(cs =>
+      const sectionAssignments = regularSubjects.flatMap(cs =>
         (cs.assignments || []).filter(a => a.classId === selectedPhysicalClassId || !a.classId)
       );
       for (const a of sectionAssignments) {
@@ -290,7 +336,7 @@ export default function AssignmentsWorkspace() {
       //    que TOUTES les matières sont persistées, pas seulement une partie)
       let created = 0;
       let failed = 0;
-      for (const cs of classSubjects) {
+      for (const cs of regularSubjects) {
         try {
           await pedagogyFetch(`/api/pedagogy/teacher-class-assignments`, {
             method: 'POST',
@@ -321,7 +367,7 @@ export default function AssignmentsWorkspace() {
       } else {
         toast({
           title: '⚠️ Affectation partielle',
-          description: `${created} matière(s) affectée(s), ${failed} échec(s) sur ${classSubjects.length}. Réessayez pour compléter.`,
+          description: `${created} matière(s) affectée(s), ${failed} échec(s) sur ${regularSubjects.length}. Réessayez pour compléter.`,
           variant: 'destructive',
         });
       }
@@ -341,7 +387,7 @@ export default function AssignmentsWorkspace() {
       // handleAssignHomeroom — ne supprimer que les affectations de CETTE
       // section physique, sinon « Retirer » vidait TOUTES les sections de la
       // classe officielle (CE1 A, CE1 B…).
-      const sectionAssignments = classSubjects.flatMap(cs =>
+      const sectionAssignments = regularSubjects.flatMap(cs =>
         (cs.assignments || []).filter(a => a.classId === selectedPhysicalClassId || !a.classId)
       );
       for (const a of sectionAssignments) {
@@ -387,6 +433,189 @@ export default function AssignmentsWorkspace() {
       toast({ title: 'Succès', description: 'Affectation retirée.' });
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ⭐ SPÉCIALISTES ITINÉRANTS (Anglais / Informatique — écoles non bilingues)
+  // Un professeur spécialiste (ex: « Professeur d'anglais » du module Personnel)
+  // parcourt toutes les classes de la maternelle au CM2, comme au secondaire.
+  // Affectation au niveau CLASSE OFFICIELLE (classId omis → toutes les sections).
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** Qualification d'un enseignant pour une matière itinérante :
+   *  habilitation du profil académique, ou poste/spécialité RH correspondant
+   *  (ex: « Professeur d'anglais »). Retourné comme libellé de badge, ou null. */
+  const itinerantQualification = (
+    t: TeacherProfile,
+    subject?: { id: string; name: string } | null,
+  ): string | null => {
+    if (!subject) return null;
+    if ((t.subjectQualifications || []).some(q => q.subjectId === subject.id)) return 'Qualifié';
+    const twp = teachersWithPhotos.find(x => x.id === t.teacher.id);
+    const pos = `${twp?.position || ''}`.toLowerCase();
+    const spec = `${twp?.specialization || ''}`.toLowerCase();
+    const fam = subjectFamily(subject.name);
+    const posMatch = fam === 'anglais'
+      ? pos.includes('anglais') || pos.includes('english')
+      : pos.includes('informatique') || pos.includes('computer');
+    if (posMatch) return twp?.position || 'Spécialiste';
+    const specMatch = fam === 'anglais'
+      ? spec.includes('anglais') || spec.includes('english')
+      : spec.includes('informatique') || spec.includes('computer');
+    if (specMatch) return 'Spécialiste';
+    return null;
+  };
+
+  /** Résout, pour chaque classe maternel+primaire active, le ClassSubject de la
+   *  famille de la matière itinérante (apparie les enregistrements Subject
+   *  distincts par niveau : ex ANG-20 maternel ↔ ANG-10 primaire, via le nom). */
+  const resolveItinerantTargets = useCallback(async (
+    sourceSubjectId: string,
+    sourceSubjectName: string,
+  ): Promise<Array<{ officialClass: AcademicClass; cs: ClassSubject }>> => {
+    if (!academicYear?.id) return [];
+    const family = subjectFamily(sourceSubjectName);
+    const homeroomClasses = academicClasses.filter(ac => isHomeroomLevel(ac.level?.name) && ac.isActive !== false);
+    const targets: Array<{ officialClass: AcademicClass; cs: ClassSubject }> = [];
+    for (const oc of homeroomClasses) {
+      let subjectsOfClass: ClassSubject[];
+      if (oc.id === selectedOfficialClass?.id) {
+        subjectsOfClass = classSubjects;
+      } else {
+        try {
+          subjectsOfClass = (await pedagogyFetch<ClassSubject[]>(
+            `/api/pedagogy/class-subjects/${oc.id}?academicYearId=${academicYear.id}`,
+          )) || [];
+        } catch {
+          subjectsOfClass = [];
+        }
+      }
+      const target = subjectsOfClass.find(cs =>
+        cs.subject?.id === sourceSubjectId
+        || (isItinerantSubject(cs.subject) && subjectFamily(cs.subject?.name) === family),
+      );
+      if (target) targets.push({ officialClass: oc, cs: target });
+    }
+    return targets;
+  }, [academicClasses, academicYear?.id, selectedOfficialClass?.id, classSubjects]);
+
+  /** Affecter un enseignant spécialiste itinérant (cette classe OU maternelle → CM2) */
+  const handleAssignItinerant = async (teacherId: string) => {
+    if (!activeItinerantSubject || !academicYear?.id) return;
+    setBulkAssigning(true);
+    try {
+      // 1. Classes cibles : toutes (maternelle → CM2) ou juste la classe officielle courante
+      let targets: Array<{ officialClass: AcademicClass; cs: ClassSubject }>;
+      if (itinerantApplyAll) {
+        targets = await resolveItinerantTargets(
+          activeItinerantSubject.subject.id,
+          activeItinerantSubject.subject.name,
+        );
+      } else {
+        targets = selectedOfficialClass
+          ? [{ officialClass: selectedOfficialClass, cs: activeItinerantSubject }]
+          : [];
+      }
+
+      // 2. Pour chaque classe : rétro-correction (on remplace l'existant, y compris
+      //    l'ancienne affectation du titulaire sur cette matière) puis création
+      //    au niveau classe officielle (classId OMIS → visible pour toutes les
+      //    sections). Séquentiel — évite le rate limit et garantit la persistance.
+      let created = 0;
+      let failed = 0;
+      for (const { cs } of targets) {
+        for (const a of cs.assignments || []) {
+          await pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {});
+        }
+        try {
+          await pedagogyFetch(`/api/pedagogy/teacher-class-assignments`, {
+            method: 'POST',
+            body: {
+              academicYearId: academicYear.id,
+              teacherId,
+              classSubjectId: cs.id,
+              // ⭐ classId volontairement omis : affectation « toutes sections »
+            },
+          });
+          created++;
+        } catch {
+          failed++;
+        }
+      }
+
+      await loadClassSubjects();
+      setModal('none');
+      setSearch('');
+      setSelectedTeacherInModal(null);
+
+      const homeroomClassCount = academicClasses.filter(ac => isHomeroomLevel(ac.level?.name)).length;
+      const withoutSubject = itinerantApplyAll ? Math.max(0, homeroomClassCount - targets.length) : 0;
+
+      if (created > 0 && failed === 0) {
+        toast({
+          title: '✅ Spécialiste affecté',
+          description: itinerantApplyAll
+            ? `${activeItinerantSubject.subject.name} : l'enseignant parcourt ${created} classe(s) de la maternelle au CM2.`
+              + (withoutSubject > 0 ? ` ${withoutSubject} classe(s) sans cette matière au programme.` : '')
+            : `${activeItinerantSubject.subject.name} — spécialiste affecté à ${selectedOfficialClass?.name}.`,
+        });
+      } else if (created === 0 && failed === 0) {
+        toast({
+          title: '⚠️ Aucune classe concernée',
+          description: "Aucune classe n'a cette matière à son programme. Ajoutez-la d'abord dans l'onglet « Matières & programmes ».",
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: '⚠️ Affectation partielle',
+          description: `${created} classe(s) affectée(s), ${failed} échec(s). Réessayez pour compléter.`,
+          variant: 'destructive',
+        });
+      }
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || "Impossible d'affecter le spécialiste.", variant: 'destructive' });
+    } finally {
+      setBulkAssigning(false);
+    }
+  };
+
+  /** Retirer l'enseignant spécialiste d'une matière itinérante (cette classe ou partout) */
+  const handleRemoveItinerant = async (everywhere: boolean) => {
+    if (!activeItinerantSubject || !academicYear?.id) return;
+    setBulkAssigning(true);
+    try {
+      let targets: ClassSubject[];
+      if (everywhere) {
+        const resolved = await resolveItinerantTargets(
+          activeItinerantSubject.subject.id,
+          activeItinerantSubject.subject.name,
+        );
+        targets = resolved.map(r => r.cs);
+      } else {
+        targets = [activeItinerantSubject];
+      }
+
+      let removed = 0;
+      for (const cs of targets) {
+        for (const a of cs.assignments || []) {
+          await pedagogyFetch(`/api/pedagogy/teacher-class-assignments/${a.id}`, { method: 'DELETE' }).catch(() => {});
+          removed++;
+        }
+      }
+
+      await loadClassSubjects();
+      setModal('none');
+      toast({
+        title: 'Spécialiste retiré',
+        description: everywhere
+          ? `Affectation retirée dans ${targets.length} classe(s) (maternelle → CM2).`
+          : `L'enseignant spécialiste a été retiré de ${selectedOfficialClass?.name}.`,
+      });
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+    } finally {
+      setBulkAssigning(false);
     }
   };
 
@@ -556,7 +785,9 @@ export default function AssignmentsWorkspace() {
                 </div>
                 <p className="text-xs text-slate-500 font-semibold uppercase tracking-wider mt-0.5">
                   {isHomeroom
-                    ? '★ Mode Titulaire — 1 enseignant pour toutes les matières'
+                    ? (itinerantSubjects.length > 0
+                        ? '★ Mode Titulaire + spécialistes itinérants (Anglais, Informatique)'
+                        : '★ Mode Titulaire — 1 enseignant pour toutes les matières')
                     : '🎓 Mode Spécialiste — 1 enseignant par matière'}
                 </p>
               </div>
@@ -612,12 +843,18 @@ export default function AssignmentsWorkspace() {
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 flex items-start gap-3">
                   <Info className="w-4 h-4 text-slate-500 mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="text-xs font-bold text-slate-800">Modèle Titulaire Unique</p>
+                    <p className="text-xs font-bold text-slate-800">
+                      {itinerantSubjects.length > 0 ? 'Modèle Titulaire + Spécialistes itinérants' : 'Modèle Titulaire Unique'}
+                    </p>
                     <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed font-medium">
-                      Un seul enseignant titulaire gère l'ensemble des matières de la section
+                      Un seul enseignant titulaire gère les {regularSubjects.length} matières de la section
                       <strong> {selectedPhysicalClass.name}</strong>.
-                      Définissez-le ici — il sera automatiquement affecté
-                      à toutes les {classSubjects.length} matières.
+                      {itinerantSubjects.length > 0 && (
+                        <> Les matières <strong>{itinerantSubjects.map(cs => cs.subject.name).join(' et ')}</strong> sont
+                          assurées par un enseignant spécialiste qui parcourt toutes les classes de la
+                          maternelle au CM2 (comme au secondaire).</>
+                      )}
+                      Définissez le titulaire ci-dessous.
                     </p>
                   </div>
                 </div>
@@ -668,7 +905,7 @@ export default function AssignmentsWorkspace() {
                     ) : (
                       <button
                         onClick={() => { setSearch(''); setSelectedTeacherInModal(null); setModal('assign-homeroom'); }}
-                        disabled={bulkAssigning || classSubjects.length === 0}
+                        disabled={bulkAssigning || regularSubjects.length === 0}
                         className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg text-white shadow-sm transition hover:opacity-95 disabled:opacity-50"
                         style={{ backgroundColor: PRIMARY }}
                       >
@@ -679,14 +916,78 @@ export default function AssignmentsWorkspace() {
                   </div>
                 </div>
 
-                {/* Liste des matières */}
-                {classSubjects.length > 0 && (
+                {/* ⭐ Matières confiées à un enseignant spécialiste itinérant
+                    (Anglais / Informatique — école non bilingue) */}
+                {itinerantSubjects.length > 0 && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-4">
+                    <div className="flex items-start gap-3 mb-3">
+                      <GraduationCap className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs font-bold text-amber-900">
+                          Matières avec enseignant spécialiste itinérant
+                        </p>
+                        <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed font-medium">
+                          École non bilingue : ces matières sont assurées par un professeur
+                          spécialiste qui parcourt toutes les classes de la maternelle au CM2
+                          (comme au secondaire), et non par le titulaire de la section.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {itinerantSubjects.map(cs => {
+                        const assignment = (cs.assignments || []).find(a => a.classId === selectedPhysicalClassId || !a.classId);
+                        return (
+                          <div key={cs.id} className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-white">
+                            <div>
+                              <p className="font-bold text-slate-800 text-sm">{cs.subject.name}</p>
+                              <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+                                Coeff. {cs.coefficient} · {formatWeeklyDurationWithSuffix(cs.weeklyHours)}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {assignment ? (
+                                <>
+                                  <span className="text-xs font-bold text-slate-700">
+                                    {assignment.teacher.lastName} {assignment.teacher.firstName}
+                                  </span>
+                                  <button
+                                    onClick={() => { setActiveItinerantSubject(cs); setItinerantApplyAll(true); setSelectedTeacherInModal(null); setSearch(''); setModal('assign-itinerant'); }}
+                                    className="text-[10px] font-semibold text-blue-600 hover:underline"
+                                  >
+                                    Remplacer
+                                  </button>
+                                  <button
+                                    onClick={() => { setActiveItinerantSubject(cs); setModal('confirm-remove-itinerant'); }}
+                                    className="text-[10px] font-semibold text-red-600 hover:underline"
+                                  >
+                                    Retirer
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  onClick={() => { setActiveItinerantSubject(cs); setItinerantApplyAll(true); setSelectedTeacherInModal(null); setSearch(''); setModal('assign-itinerant'); }}
+                                  className="flex items-center gap-1 text-[10px] font-bold px-2.5 py-1.5 rounded-lg text-white shadow-sm"
+                                  style={{ backgroundColor: ACCENT }}
+                                >
+                                  <UserPlus className="w-3 h-3" /> Affecter un spécialiste
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Liste des matières du titulaire */}
+                {regularSubjects.length > 0 && (
                   <div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                      {classSubjects.length} matière(s) de cette section
+                      {regularSubjects.length} matière(s) de cette section
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {classSubjects.map(cs => (
+                      {regularSubjects.map(cs => (
                         <span key={cs.id} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-slate-100 border border-slate-200 text-[10px] font-semibold text-slate-700">
                           {cs.subject.name}
                         </span>
@@ -799,7 +1100,10 @@ export default function AssignmentsWorkspace() {
             <Info className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
             <p className="text-xs text-blue-800">
               Sélectionnez l'enseignant titulaire pour la section <strong>{selectedPhysicalClass?.name}</strong>.
-              Il sera affecté à toutes les {classSubjects.length} matières de cette section.
+              Il sera affecté aux {regularSubjects.length} matières
+              {itinerantSubjects.length > 0
+                ? `, hors ${itinerantSubjects.map(cs => cs.subject.name).join(' et ')} (spécialiste itinérant).`
+                : ' de cette section.'}
             </p>
           </div>
 
@@ -957,6 +1261,203 @@ export default function AssignmentsWorkspace() {
         </div>
       </FormModal>
 
+      {/* ⭐ Modal: Assign Itinerant Specialist (Anglais / Informatique — école non bilingue) */}
+      <FormModal
+        title={`Affecter un spécialiste — ${activeItinerantSubject?.subject?.name || ''}`}
+        isOpen={modal === 'assign-itinerant'}
+        onClose={() => { setModal('none'); setSearch(''); setSelectedTeacherInModal(null); }}
+        onConfirm={async () => {
+          if (bulkAssigning || !selectedTeacherInModal) return;
+          await handleAssignItinerant(selectedTeacherInModal);
+        }}
+        size="large"
+        actions={
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => { setModal('none'); setSearch(''); setSelectedTeacherInModal(null); }}
+              disabled={bulkAssigning}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            >
+              Annuler
+            </button>
+            <button
+              type="submit"
+              form="modal-form"
+              disabled={bulkAssigning || !selectedTeacherInModal}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              style={{ backgroundColor: bulkAssigning ? '#94a3b8' : PRIMARY }}
+            >
+              {bulkAssigning ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Affectation...
+                </>
+              ) : (
+                'Confirmer'
+              )}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+            <Info className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+            <p className="text-xs text-amber-800">
+              L'enseignant spécialiste assure <strong>{activeItinerantSubject?.subject?.name}</strong> comme au
+              secondaire : il parcourt les classes concernées, indépendamment du titulaire de section.
+            </p>
+          </div>
+
+          {/* Portée de l'affectation */}
+          <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={itinerantApplyAll}
+              onChange={(e) => setItinerantApplyAll(e.target.checked)}
+              className="mt-0.5 w-4 h-4"
+              style={{ accentColor: ACCENT }}
+            />
+            <span>
+              <span className="block text-xs font-bold text-slate-800">
+                Affecter à toutes les classes (maternelle → CM2)
+              </span>
+              <span className="block text-[11px] text-slate-500 mt-0.5 font-medium">
+                {itinerantApplyAll
+                  ? 'Une seule action : toutes les classes de maternelle et de primaire ayant cette matière au programme.'
+                  : `Affectation limitée à la classe ${selectedOfficialClass?.name || ''} (toutes ses sections).`}
+              </span>
+            </span>
+          </label>
+
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Rechercher un enseignant..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-white focus:outline-none focus:border-slate-400"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            {eligibleTeachers.length === 0 ? (
+              <p className="text-center text-xs text-slate-400 py-6">Aucun enseignant disponible.</p>
+            ) : (
+              eligibleTeachers
+                .filter(t => {
+                  if (!search) return true;
+                  const s = search.toLowerCase();
+                  return `${t.teacher.lastName} ${t.teacher.firstName}`.toLowerCase().includes(s)
+                    || (t.teacher.matricule || '').toLowerCase().includes(s);
+                })
+                .sort((a, b) => {
+                  const aq = itinerantQualification(a, activeItinerantSubject?.subject) ? 1 : 0;
+                  const bq = itinerantQualification(b, activeItinerantSubject?.subject) ? 1 : 0;
+                  return bq - aq;
+                })
+                .map(t => {
+                  const isSelected = selectedTeacherInModal === t.teacher.id;
+                  const photoUrl = getTeacherPhoto(t.teacher.id);
+                  const qual = itinerantQualification(t, activeItinerantSubject?.subject);
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => setSelectedTeacherInModal(t.teacher.id)}
+                      disabled={bulkAssigning}
+                      className={cn(
+                        'w-full flex items-center gap-3 p-3 rounded-lg border transition-all text-left disabled:opacity-50',
+                        isSelected
+                          ? 'border-amber-500 bg-amber-50 ring-1 ring-amber-200'
+                          : 'border-slate-200 hover:border-slate-400 hover:bg-slate-50',
+                      )}
+                    >
+                      {photoUrl ? (
+                        <img src={photoUrl} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600">
+                          {t.teacher.firstName?.[0]}{t.teacher.lastName?.[0]}
+                        </div>
+                      )}
+                      <div>
+                        <p className="font-bold text-slate-800 text-sm">
+                          {t.teacher.lastName} {t.teacher.firstName}
+                          {qual && (
+                            <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide bg-amber-100 text-amber-700 border border-amber-200 align-middle">
+                              <Star className="w-2.5 h-2.5" /> {qual}
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-medium">
+                          {t.teacher.matricule} · {t.maxWeeklyHours}h/sem max
+                        </p>
+                      </div>
+                      {isSelected && <CheckCircle2 className="w-4 h-4 ml-auto" style={{ color: PRIMARY }} />}
+                    </button>
+                  );
+                })
+            )}
+          </div>
+        </div>
+      </FormModal>
+
+      {/* ⭐ Modal: Remove Itinerant Specialist (cette classe ou partout) */}
+      <FormModal
+        title={`Retirer le spécialiste — ${activeItinerantSubject?.subject?.name || ''}`}
+        isOpen={modal === 'confirm-remove-itinerant'}
+        onClose={() => setModal('none')}
+        onConfirm={() => { /* Actions personnalisées ci-dessous */ }}
+        size="md"
+        actions={
+          <div className="flex justify-end gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setModal('none')}
+              disabled={bulkAssigning}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              onClick={() => handleRemoveItinerant(false)}
+              disabled={bulkAssigning}
+              className="px-4 py-2 text-sm font-medium text-red-700 bg-white border border-red-300 rounded-lg hover:bg-red-50 disabled:opacity-50"
+            >
+              Cette classe uniquement
+            </button>
+            <button
+              type="button"
+              onClick={() => handleRemoveItinerant(true)}
+              disabled={bulkAssigning}
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              style={{ backgroundColor: bulkAssigning ? '#94a3b8' : '#dc2626' }}
+            >
+              {bulkAssigning && <Loader2 className="w-4 h-4 animate-spin" />}
+              Retirer partout (maternelle → CM2)
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">
+            Voulez-vous retirer l'enseignant spécialiste de{' '}
+            <strong>{activeItinerantSubject?.subject?.name}</strong> ?
+          </p>
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 space-y-1.5">
+            <p>
+              <strong>Cette classe uniquement</strong> : retire l'affectation pour{' '}
+              {selectedOfficialClass?.name} (toutes ses sections).
+            </p>
+            <p>
+              <strong>Retirer partout</strong> : supprime l'affectation dans toutes les classes de la
+              maternelle au CM2.
+            </p>
+          </div>
+        </div>
+      </FormModal>
+
       {/* Modal: Confirm Remove */}
       <ConfirmModal
         title="Confirmer la suppression"
@@ -973,7 +1474,7 @@ export default function AssignmentsWorkspace() {
       >
         <p className="text-sm text-slate-600">
           {isHomeroom
-            ? `Voulez-vous vraiment retirer le titulaire de la section ${selectedPhysicalClass?.name} ? Toutes les affectations de matières seront supprimées.`
+            ? `Voulez-vous vraiment retirer le titulaire de la section ${selectedPhysicalClass?.name} ? Ses affectations sur les ${regularSubjects.length} matières de la classe seront supprimées${itinerantSubjects.length > 0 ? ' — les spécialistes itinérants (Anglais, Informatique) ne sont pas touchés' : ''}.`
             : 'Voulez-vous vraiment retirer cette affectation ?'}
         </p>
       </ConfirmModal>

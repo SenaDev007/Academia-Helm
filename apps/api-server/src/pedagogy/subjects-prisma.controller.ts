@@ -73,11 +73,13 @@ export class SubjectsPrismaController {
     //    (query OU header x-school-level-id du sélecteur global) est résolu
     //    avec tolérance (UUID school_levels / education_levels / composites)
     //    et ne peut qu'affiner dans le périmètre (AccessScopeGuard).
+    const rawHeaderLevel = req?.headers?.['x-school-level-id'];
+    const headerLevel = Array.isArray(rawHeaderLevel) ? rawHeaderLevel[0] : rawHeaderLevel;
     const effectiveLevel = await resolveEffectiveLevelFilter(
       this.prisma,
       tenantId,
       schoolLevelId,
-      req?.headers?.['x-school-level-id'],
+      headerLevel,
     );
     return this.subjectsService.findAllSubjects(tenantId, {
       academicYearId,

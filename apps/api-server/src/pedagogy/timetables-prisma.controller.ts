@@ -89,11 +89,13 @@ export class TimetablesPrismaController {
     // ⭐ 2026-09-15 : scope niveau — un directeur ne voit que les emplois du
     //    temps de son périmètre ; le promoteur voit tout. Filtre explicite
     //    (query OU header du sélecteur global) résolu avec tolérance UUID.
+    const rawHeaderLevel = req?.headers?.['x-school-level-id'];
+    const headerLevel = Array.isArray(rawHeaderLevel) ? rawHeaderLevel[0] : rawHeaderLevel;
     const effectiveLevel = await resolveEffectiveLevelFilter(
       this.prisma,
       tenantId,
       schoolLevelId,
-      req?.headers?.['x-school-level-id'],
+      headerLevel,
     );
     return this.timetablesService.findAllTimetables(tenantId, {
       academicYearId,

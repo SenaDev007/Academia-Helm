@@ -58,11 +58,13 @@ export class TeachersPrismaController {
     //    enseignants de son périmètre ; le promoteur voit tout. Le filtre
     //    explicite (query OU header du sélecteur global) est résolu avec
     //    tolérance UUID et ne peut qu'affiner dans le périmètre.
+    const rawHeaderLevel = req?.headers?.['x-school-level-id'];
+    const headerLevel = Array.isArray(rawHeaderLevel) ? rawHeaderLevel[0] : rawHeaderLevel;
     const effectiveLevel = await resolveEffectiveLevelFilter(
       this.prisma,
       tenantId,
       schoolLevelId,
-      req?.headers?.['x-school-level-id'],
+      headerLevel,
     );
     return this.teachersService.findAllTeachers(tenantId, {
       schoolLevelId: effectiveLevel,

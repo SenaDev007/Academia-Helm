@@ -149,7 +149,8 @@ export class AcademicStructurePrismaController {
     //    les libellés Module 2 (level.name) — le promoteur qui choisit
     //    « Maternelle » ne voit que les classes Maternelle.
     try {
-      const headerLevel = (req?.headers?.['x-school-level-id'] || '').toString().trim();
+      const rawHeaderLevel = req?.headers?.['x-school-level-id'];
+      const headerLevel = (Array.isArray(rawHeaderLevel) ? rawHeaderLevel[0] : rawHeaderLevel || '').trim();
       if (headerLevel && headerLevel.toUpperCase() !== 'ALL') {
         const resolved = await resolveSchoolLevelFilter(this.prisma, tenantId, headerLevel);
         if (resolved && resolved.length === 1) {
@@ -218,7 +219,8 @@ export class AcademicStructurePrismaController {
     //    filtre explicite (affinage dans le périmètre serveur).
     let explicitLevel: string | undefined;
     try {
-      const headerLevel = (req?.headers?.['x-school-level-id'] || '').toString().trim();
+      const rawHeaderLevel = req?.headers?.['x-school-level-id'];
+      const headerLevel = (Array.isArray(rawHeaderLevel) ? rawHeaderLevel[0] : rawHeaderLevel || '').trim();
       if (headerLevel && headerLevel.toUpperCase() !== 'ALL') {
         const resolved = await resolveSchoolLevelFilter(this.prisma, tenantId, headerLevel);
         if (resolved && resolved.length === 1) explicitLevel = resolved[0];

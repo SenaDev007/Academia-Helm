@@ -78,6 +78,18 @@ interface TeacherProfile {
   assignedLanguages?: string[] | null;
 }
 
+// ⭐ Sujet du catalogue (GET /api/subjects) — utilisé pour proposer les matières
+// itinérantes qui ne sont pas encore au programme de la classe sélectionnée.
+interface CatalogSubject {
+  id: string;
+  name: string;
+  code: string;
+  abbreviation?: string | null;
+  language?: string | null;
+  schoolLevelId?: string;
+  schoolLevel?: { id: string; name?: string; code?: string; label?: string } | null;
+}
+
 const isHomeroomLevel = (levelName?: string): boolean => {
   if (!levelName) return false;
   const n = levelName.toUpperCase();
@@ -151,6 +163,16 @@ export default function AssignmentsWorkspace() {
   // ⭐ Spécialistes itinérants (Anglais / Informatique — écoles non bilingues)
   const [activeItinerantSubject, setActiveItinerantSubject] = useState<ClassSubject | null>(null);
   const [itinerantApplyAll, setItinerantApplyAll] = useState(true);
+  // ⭐ Catalogue des matières du tenant — pour combler les classes dont le
+  //    programme ne contient pas encore la matière itinérante (scénario :
+  //    « la matière Anglais existe pour le niveau Maternelle mais n'a jamais
+  //    été affectée aux classes Maternelle 1 / Maternelle 2 »).
+  const [catalogSubjects, setCatalogSubjects] = useState<CatalogSubject[]>([]);
+  const [addingProgramSubjectId, setAddingProgramSubjectId] = useState<string | null>(null);
+  // Classes maternel/primaire sans la matière itinérante au programme (modal)
+  const [itinerantGaps, setItinerantGaps] = useState<Array<{ officialClass: AcademicClass; candidate: CatalogSubject | null }>>([]);
+  const [itinerantGapsLoading, setItinerantGapsLoading] = useState(false);
+  const [itinerantAutoAdd, setItinerantAutoAdd] = useState(true);
 
   // --- Loaders ---
 
@@ -158,12 +180,18 @@ export default function AssignmentsWorkspace() {
     if (!academicYear?.id) return;
     setLoading(true);
     try {
-      const [classesData, teachersData, teachersWithPhotosData, multigradeData] = await Promise.all([
+      const [classesData, teachersData, teachersWithPhotosData, multigradeData, catalogData] = await Promise.all([
         pedagogyFetch<AcademicClass[]>(`/api/pedagogy/academic-structure/classes?academicYearId=${academicYear.id}`),
         pedagogyFetch<TeacherProfile[]>(`/api/pedagogy/teacher-profiles?academicYearId=${academicYear.id}`),
         pedagogyFetch<any[]>(`/api/teachers`),
         // Charger les affectations multigrade pour pré-remplir les titulaires
         pedagogyFetch<any[]>(`/api/multigrade?academicYearId=${academicYear.id}&isActive=true`).catch(() => []),
+        // ⭐ Catalogue des matières (même appel que l'onglet « Matières &
+        //    programmes ») — sert à proposer les matières itinérantes
+        //    (Anglais / Informatique) absentes du programme des classes.
+        pedagogyFetch<CatalogSubject[]>(
+          `/api/subjects?academicYearId=${academicYear.id}${isBilingual ? `&language=${currentTrack}` : ''}`
+        ).catch(() => []),
       ]);
 
       const activeClasses = (classesData || []).filter(c => c.isActive !== false);
@@ -171,6 +199,7 @@ export default function AssignmentsWorkspace() {
       setTeachers(teachersData || []);
       setTeachersWithPhotos(teachersWithPhotosData || []);
       setMultigradeAssignments(multigradeData || []);
+      setCatalogSubjects(Array.isArray(catalogData) ? catalogData : []);
 
       // ⭐ FIX PERF (2026-09-14) : l'endpoint /sections retourne TOUTES les
       // sections de l'année (avec officialClass inclus) en un seul appel.
@@ -212,6 +241,10 @@ export default function AssignmentsWorkspace() {
     } finally {
       setLoading(false);
     }
+  // ⚠ isBilingual/currentTrack sont lus au chargement seulement : le catalogue
+  // n'est exploité qu'en école NON bilingue (sinon itinerantActive = false),
+  // donc inutile de recharger tout l'espace quand la piste change.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [academicYear?.id]);
 
   useEffect(() => {
@@ -307,6 +340,156 @@ export default function AssignmentsWorkspace() {
 
   const homeroomFullyAssigned = isHomeroom && regularSubjects.length > 0 &&
     regularSubjects.every(cs => (cs.assignments || []).some(a => a.classId === selectedPhysicalClassId || !a.classId));
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ⭐ MATIÈRES ITINÉRANTES ABSENTES DU PROGRAMME (2026-09-15)
+  // Scénatoire terrain : l'école crée la matière « Anglais » pour le niveau
+  // Maternelle dans l'onglet « Matières & programmes » (le Subject existe)
+  // MAIS l'affectation matière → classes (class_subjects) n'est jamais faite.
+  // Résultat : la carte « spécialiste itinérant » ne s'affiche jamais pour
+  // ces classes → IMPOSSIBLE d'affecter l'enseignant d'anglais, sans aucun
+  // indice sur la cause. On prévoit ce scénario : on propose d'ajouter la
+  // matière au programme DIRECTEMENT depuis cet onglet.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** Libellé normalisé du niveau d'une matière du catalogue. */
+  const catalogSubjectLevel = (s: CatalogSubject): string =>
+    `${s.schoolLevel?.name || ''} ${s.schoolLevel?.code || ''} ${s.schoolLevel?.label || ''}`.toUpperCase();
+
+  /** La matière du catalogue est-elle créée pour le niveau de la classe ? */
+  const catalogSubjectMatchesClassLevel = (s: CatalogSubject, classLevelName?: string): boolean => {
+    const lv = (classLevelName || '').toUpperCase();
+    const isMaternel = lv.includes('MATERN');
+    const isPrim = lv.includes('PRIMA') || lv.includes('PRIM');
+    const sl = catalogSubjectLevel(s);
+    if (isMaternel) return sl.includes('MATERN');
+    if (isPrim) return sl.includes('PRIMA') || sl.includes('PRIM');
+    return true; // niveau indéterminé → pas de filtrage
+  };
+
+  /** Matières itinérantes du catalogue (Anglais / Informatique) absentes du
+   *  programme de la classe officielle sélectionnée — une proposition par
+   *  famille, uniquement si une matière de la famille existe AU BON NIVEAU. */
+  const missingItinerantSubjects = useMemo(() => {
+    if (!itinerantActive || !selectedOfficialClass) return [];
+    const coveredFamilies = new Set(
+      classSubjects
+        .filter(cs => isItinerantSubject(cs.subject))
+        .map(cs => subjectFamily(cs.subject?.name)),
+    );
+    const out: CatalogSubject[] = [];
+    const seen = new Set<string>();
+    for (const s of catalogSubjects) {
+      if (!isItinerantSubject(s)) continue;
+      const fam = subjectFamily(s.name);
+      if (coveredFamilies.has(fam) || seen.has(fam)) continue;
+      // Une seule proposition par famille : la matière créée pour le niveau de
+      // la classe (ex : ANG-20 « Maternelle » pour Maternelle 1). Si aucune
+      // matière de la famille n'existe à ce niveau, on ne propose rien —
+      // l'école doit d'abord la créer dans « Matières & programmes ».
+      if (!catalogSubjectMatchesClassLevel(s, selectedOfficialClass.level?.name)) continue;
+      seen.add(fam);
+      out.push(s);
+    }
+    return out;
+  }, [itinerantActive, selectedOfficialClass, classSubjects, catalogSubjects]);
+
+  /** Retrouve, dans le catalogue, la matière itinérante d'une famille pour le
+   *  niveau d'une classe (repli : primaire/maternelle, jamais secondaire). */
+  const findCatalogItinerantSubject = useCallback((family: string, classLevelName?: string): CatalogSubject | null => {
+    const candidates = catalogSubjects.filter(
+      s => isItinerantSubject(s) && subjectFamily(s.name) === family,
+    );
+    if (candidates.length === 0) return null;
+    const byLevel = candidates.find(s => catalogSubjectMatchesClassLevel(s, classLevelName));
+    if (byLevel) return byLevel;
+    return candidates.find(s => {
+      const sl = catalogSubjectLevel(s);
+      return sl.includes('PRIMA') || sl.includes('PRIM') || sl.includes('MATERN');
+    }) || null;
+  }, [catalogSubjects]);
+
+  /** Classes maternel/primaire dont le programme ne contient PAS la matière
+   *  itinérante active (avec, pour chacune, la matière candidate du catalogue
+   *  à ajouter). Utilisé par le modal « Affecter un spécialiste ». */
+  const computeItinerantGaps = useCallback(async (): Promise<Array<{ officialClass: AcademicClass; candidate: CatalogSubject | null }>> => {
+    if (!academicYear?.id || !activeItinerantSubject?.subject) return [];
+    const family = subjectFamily(activeItinerantSubject.subject.name);
+    if (!family) return [];
+    const homeroomClasses = academicClasses.filter(ac => isHomeroomLevel(ac.level?.name) && ac.isActive !== false);
+    const gaps: Array<{ officialClass: AcademicClass; candidate: CatalogSubject | null }> = [];
+    for (const oc of homeroomClasses) {
+      let subjectsOfClass: ClassSubject[];
+      if (oc.id === selectedOfficialClass?.id) {
+        subjectsOfClass = classSubjects;
+      } else {
+        try {
+          subjectsOfClass = (await pedagogyFetch<ClassSubject[]>(
+            `/api/pedagogy/class-subjects/${oc.id}?academicYearId=${academicYear.id}`,
+          )) || [];
+        } catch {
+          subjectsOfClass = [];
+        }
+      }
+      const hasIt = subjectsOfClass.some(cs =>
+        cs.subject?.id === activeItinerantSubject.subject?.id
+        || (isItinerantSubject(cs.subject) && subjectFamily(cs.subject?.name) === family),
+      );
+      if (!hasIt) {
+        gaps.push({ officialClass: oc, candidate: findCatalogItinerantSubject(family, oc.level?.name) });
+      }
+    }
+    return gaps;
+  }, [academicClasses, academicYear?.id, selectedOfficialClass?.id, classSubjects, activeItinerantSubject, findCatalogItinerantSubject]);
+
+  // Calculer les classes sans la matière quand le modal s'ouvre (portée « toutes
+  // les classes » uniquement). Annulé si le modal se referme.
+  useEffect(() => {
+    if (modal !== 'assign-itinerant' || !itinerantApplyAll) {
+      setItinerantGaps([]);
+      return;
+    }
+    let cancelled = false;
+    setItinerantGapsLoading(true);
+    computeItinerantGaps()
+      .then(gaps => { if (!cancelled) setItinerantGaps(gaps); })
+      .catch(() => { if (!cancelled) setItinerantGaps([]); })
+      .finally(() => { if (!cancelled) setItinerantGapsLoading(false); });
+    return () => { cancelled = true; };
+  }, [modal, itinerantApplyAll, computeItinerantGaps]);
+
+  /** Ajouter une matière itinérante du catalogue au programme de la classe
+   *  officielle sélectionnée (2 h/semaine, coefficient 1 — modifiable ensuite
+   *  dans l'onglet « Matières & programmes »). */
+  const handleAddItinerantToProgram = async (subject: CatalogSubject) => {
+    if (!academicYear?.id || !selectedOfficialClass?.id) return;
+    setAddingProgramSubjectId(subject.id);
+    try {
+      await pedagogyFetch(`/api/pedagogy/class-subjects`, {
+        method: 'POST',
+        body: {
+          classId: selectedOfficialClass.id,
+          subjectId: subject.id,
+          weeklyHours: 120,
+          coefficient: 1,
+          academicYearId: academicYear.id,
+        },
+      });
+      await loadClassSubjects();
+      toast({
+        title: '✅ Matière ajoutée au programme',
+        description: `${subject.name} fait maintenant partie du programme de ${selectedOfficialClass.name}. Vous pouvez lui affecter un enseignant spécialiste.`,
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Erreur',
+        description: e.message || "Impossible d'ajouter la matière au programme.",
+        variant: 'destructive',
+      });
+    } finally {
+      setAddingProgramSubjectId(null);
+    }
+  };
 
   // --- Actions ---
 
@@ -505,7 +688,41 @@ export default function AssignmentsWorkspace() {
     if (!activeItinerantSubject || !academicYear?.id) return;
     setBulkAssigning(true);
     try {
-      // 1. Classes cibles : toutes (maternelle → CM2) ou juste la classe officielle courante
+      // 0. ⭐ COMBLER LES MANQUES (2026-09-15) : en portée « toutes les classes »,
+      //    si des classes maternel/primaire n'ont pas la matière au programme et
+      //    qu'une matière correspondante existe au catalogue (bon niveau), on
+      //    l'ajoute automatiquement à leur programme AVANT l'affectation.
+      //    Avant : le système se contentait d'avertir « X classe(s) sans cette
+      //    matière au programme » et l'utilisateur n'avait AUCUN moyen d'agir
+      //    depuis cet onglet (scénario : Anglais créé pour Maternelle mais
+      //    jamais affecté aux classes Maternelle 1 / Maternelle 2).
+      let addedToProgram = 0;
+      if (itinerantApplyAll && itinerantAutoAdd && itinerantGaps.length > 0) {
+        for (const gap of itinerantGaps) {
+          if (!gap.candidate) continue;
+          try {
+            await pedagogyFetch(`/api/pedagogy/class-subjects`, {
+              method: 'POST',
+              body: {
+                classId: gap.officialClass.id,
+                subjectId: gap.candidate.id,
+                weeklyHours: 120,
+                coefficient: 1,
+                academicYearId: academicYear.id,
+              },
+            });
+            addedToProgram++;
+          } catch {
+            // Échec silencieux — la classe restera sans la matière et sera
+            // comptée dans « sans cette matière au programme » du toast final.
+          }
+        }
+      }
+
+      // 1. Classes cibles : toutes (maternelle → CM2) ou juste la classe officielle courante.
+      //    NB : les liens créés à l'étape 0 concernent d'AUTRES classes que la
+      //    classe sélectionnée (le modal n'est ouvert que depuis une classe qui
+      //    a déjà la matière) → resolveItinerantTargets les récupère en frais.
       let targets: Array<{ officialClass: AcademicClass; cs: ClassSubject }>;
       if (itinerantApplyAll) {
         targets = await resolveItinerantTargets(
@@ -557,13 +774,18 @@ export default function AssignmentsWorkspace() {
           title: '✅ Spécialiste affecté',
           description: itinerantApplyAll
             ? `${activeItinerantSubject.subject.name} : l'enseignant parcourt ${created} classe(s) de la maternelle au CM2.`
-              + (withoutSubject > 0 ? ` ${withoutSubject} classe(s) sans cette matière au programme.` : '')
+              + (addedToProgram > 0 ? ` Matière ajoutée au programme de ${addedToProgram} classe(s).` : '')
+              + (withoutSubject > 0
+                ? ` ${withoutSubject} classe(s) sans cette matière au programme — utilisez « Ajouter au programme » sur ces classes ou l'onglet « Matières & programmes ».`
+                : '')
             : `${activeItinerantSubject.subject.name} — spécialiste affecté à ${selectedOfficialClass?.name}.`,
         });
       } else if (created === 0 && failed === 0) {
         toast({
           title: '⚠️ Aucune classe concernée',
-          description: "Aucune classe n'a cette matière à son programme. Ajoutez-la d'abord dans l'onglet « Matières & programmes ».",
+          description: addedToProgram > 0
+            ? `La matière a été ajoutée au programme de ${addedToProgram} classe(s) mais l'affectation de l'enseignant a échoué. Réessayez.`
+            : "Aucune classe n'a cette matière à son programme. Ajoutez-la d'abord via « Ajouter au programme » ou dans l'onglet « Matières & programmes ».",
           variant: 'destructive',
         });
       } else {
@@ -992,6 +1214,54 @@ export default function AssignmentsWorkspace() {
                   </div>
                 )}
 
+                {/* ⭐ MATIÈRES ITINÉRANTES ABSENTES DU PROGRAMME (2026-09-15)
+                    Scénario : « Anglais » a été créée pour le niveau Maternelle
+                    dans « Matières & programmes » mais jamais affectée aux
+                    classes → aucune carte spécialiste ci-dessus → impasse.
+                    On propose de l'ajouter au programme SANS quitter l'onglet. */}
+                {itinerantActive && missingItinerantSubjects.length > 0 && (
+                  <div className="rounded-lg border border-dashed border-amber-400 bg-amber-50/40 p-4">
+                    <div className="flex items-start gap-3 mb-3">
+                      <Plus className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs font-bold text-amber-900">
+                          Matières itinérantes à ajouter au programme
+                        </p>
+                        <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed font-medium">
+                          Ces matières existent dans votre catalogue (onglet « Matières &amp; programmes »)
+                          mais ne sont pas encore au programme de <strong>{selectedOfficialClass?.name}</strong>.
+                          Ajoutez-les pour pouvoir affecter un enseignant spécialiste itinérant.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {missingItinerantSubjects.map(subject => (
+                        <div key={subject.id} className="flex items-center justify-between gap-3 p-3 rounded-lg border border-amber-200 bg-white">
+                          <div>
+                            <p className="font-bold text-slate-800 text-sm">{subject.name}</p>
+                            <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+                              {subject.code}
+                              {subject.schoolLevel?.name ? ` · niveau ${subject.schoolLevel.name}` : ''}
+                              {' '}· 2h/semaine · coeff. 1
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleAddItinerantToProgram(subject)}
+                            disabled={addingProgramSubjectId === subject.id}
+                            className="flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1.5 rounded-lg text-white shadow-sm disabled:opacity-60"
+                            style={{ backgroundColor: addingProgramSubjectId === subject.id ? '#94a3b8' : ACCENT }}
+                          >
+                            {addingProgramSubjectId === subject.id
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <Plus className="w-3 h-3" />}
+                            Ajouter au programme
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Liste des matières du titulaire */}
                 {regularSubjects.length > 0 && (
                   <div>
@@ -1341,6 +1611,49 @@ export default function AssignmentsWorkspace() {
               </span>
             </span>
           </label>
+
+          {/* ⭐ CLASSES SANS LA MATIÈRE AU PROGRAMME (2026-09-15)
+              On liste les classes concernées et on propose d'ajouter
+              automatiquement la matière à leur programme — avant, ces classes
+              étaient seulement comptées dans un toast d'avertissement. */}
+          {itinerantApplyAll && (itinerantGapsLoading || itinerantGaps.length > 0) && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 space-y-2">
+              <p className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5" />
+                Classes sans « {activeItinerantSubject?.subject?.name} » au programme
+              </p>
+              {itinerantGapsLoading ? (
+                <p className="text-[11px] text-amber-700 font-medium flex items-center gap-1.5">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Vérification des programmes…
+                </p>
+              ) : (
+                <>
+                  <p className="text-[11px] text-amber-700 leading-relaxed font-medium">
+                    {itinerantGaps.map(g => `${g.officialClass.name}${g.candidate ? '' : ' (matière absente du catalogue pour ce niveau)'}`).join(', ')}
+                  </p>
+                  <label className="flex items-start gap-2.5 p-2.5 rounded-lg border border-amber-200 bg-white cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={itinerantAutoAdd}
+                      onChange={(e) => setItinerantAutoAdd(e.target.checked)}
+                      className="mt-0.5 w-4 h-4"
+                      style={{ accentColor: ACCENT }}
+                    />
+                    <span>
+                      <span className="block text-xs font-bold text-slate-800">
+                        Ajouter automatiquement la matière à leur programme
+                      </span>
+                      <span className="block text-[10px] text-slate-500 mt-0.5 font-medium">
+                        {itinerantAutoAdd
+                          ? `La matière sera créée dans le programme de ${itinerantGaps.filter(g => g.candidate).length} classe(s) (2h/semaine, coeff. 1), puis l'enseignant y sera affecté.`
+                          : 'Sans cette option, ces classes resteront sans la matière — vous pourrez l\'ajouter plus tard classe par classe.'}
+                      </span>
+                    </span>
+                  </label>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />

@@ -57,7 +57,7 @@ import {
   Loader2, AlertCircle, CheckCircle2, Trash2, Upload, Pen, School,
   Stamp, Plus, Mail, UserCheck, Eraser, FileSignature, X, Globe,
   ShieldCheck, Calendar, Send, GraduationCap, Search, Filter,
-  Baby, BookOpen, Users, Edit3, Info, RefreshCw,
+  Baby, BookOpen, Users, Edit3, Info, RefreshCw, UserMinus,
 } from 'lucide-react';
 import { useBilingual, type LanguageTrack } from '@/contexts/BilingualContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -306,6 +306,12 @@ export default function UnifiedAdministrationWorkspace() {
   const [savingTeacherEdit, setSavingTeacherEdit] = useState(false);
   // ⭐ État pour le retrait immédiat d'une affectation enseignant (bouton Retirer)
   const [removingTeacherId, setRemovingTeacherId] = useState<string | null>(null);
+  // ⭐ Modals de confirmation personnalisés — remplacent les confirm() génériques
+  //    du navigateur (visuels pauvres, bloquants, non stylés) :
+  //    - Supprimer une affectation de l'équipe administrative
+  //    - Retirer un enseignant de l'équipe enseignante
+  const [deleteAssignmentConfirm, setDeleteAssignmentConfirm] = useState<AdminAssignment | null>(null);
+  const [removeTeacherConfirm, setRemoveTeacherConfirm] = useState<{ staff: StaffOption; groupLabel: string } | null>(null);
   // ⭐ État pour l'édition d'une affectation admin existante
   const [editingAssignment, setEditingAssignment] = useState<AdminAssignment | null>(null);
   const [sendingTeacherCredentials, setSendingTeacherCredentials] = useState<string | null>(null);
@@ -674,8 +680,19 @@ export default function UnifiedAdministrationWorkspace() {
   };
 
   // ── Supprimer une affectation admin ───────────────────────────────────────
-  const handleDelete = async (assignmentId: string) => {
-    if (!confirm('Supprimer cette affectation ? Le staff perdra ce poste administratif.')) return;
+  //    ⭐ Confirm() générique remplacé par un modal personnalisé : le clic ouvre
+  //    deleteAssignmentConfirm (avec le contexte complet du poste), et la
+  //    validation dans le modal déclenche handleDeleteConfirmed.
+  const handleDelete = (assignmentId: string) => {
+    const a = assignments.find((x) => x.id === assignmentId);
+    if (!a) return;
+    setDeleteAssignmentConfirm(a);
+  };
+
+  const handleDeleteConfirmed = async () => {
+    if (!deleteAssignmentConfirm) return;
+    const assignmentId = deleteAssignmentConfirm.id;
+    setDeleteAssignmentConfirm(null);
     setDeleting(assignmentId);
     setError(null);
     setSuccess(null);
@@ -1260,9 +1277,19 @@ export default function UnifiedAdministrationWorkspace() {
   // ── Retirer l'affectation d'un enseignant (immédiat, avec confirmation) ───
   //    Même pattern que « Supprimer » dans l'équipe administrative :
   //    confirmation → PUT schoolLevelId=null → rechargement.
-  const handleRemoveTeacherAssignment = async (staff: StaffOption) => {
+  //    ⭐ Confirm() générique remplacé par un modal personnalisé : le clic ouvre
+  //    removeTeacherConfirm (avec le contexte enseignant + niveau), et la
+  //    validation dans le modal déclenche handleRemoveTeacherConfirmed.
+  //    Toujours PUT schoolLevelId=null → rechargement.
+  const handleRemoveTeacherAssignment = (staff: StaffOption, groupLabel: string) => {
+    setRemoveTeacherConfirm({ staff, groupLabel });
+  };
+
+  const handleRemoveTeacherConfirmed = async () => {
+    if (!removeTeacherConfirm) return;
+    const staff = removeTeacherConfirm.staff;
     const staffName = `${staff.firstName} ${staff.lastName}`.trim();
-    if (!confirm(`Retirer ${staffName} de l'équipe enseignante de ce niveau ?\nLe personnel ne sera plus affecté à ce niveau scolaire.`)) return;
+    setRemoveTeacherConfirm(null);
     setRemovingTeacherId(staff.id);
     setError(null);
     setSuccess(null);
@@ -2017,11 +2044,12 @@ export default function UnifiedAdministrationWorkspace() {
                                         <span className="hidden sm:inline">Modifier</span>
                                       </button>
                                       {/* ⭐ Retirer — désaffecte l'enseignant de ce
-                                          niveau (confirmation), comme « Supprimer »
-                                          dans l'équipe administrative */}
+                                          niveau via le modal de confirmation
+                                          personnalisé (comme « Supprimer »
+                                          dans l'équipe administrative) */}
                                       <button
                                         type="button"
-                                        onClick={() => handleRemoveTeacherAssignment(staff)}
+                                        onClick={() => handleRemoveTeacherAssignment(staff, group.label)}
                                         disabled={removingTeacherId === staff.id}
                                         className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-200 transition-all disabled:opacity-40"
                                         title="Retirer l'affectation — l'enseignant ne sera plus affecté à ce niveau"
@@ -2863,6 +2891,167 @@ export default function UnifiedAdministrationWorkspace() {
               onClick={() => setStampModal((prev) => ({ ...prev, open: false }))}
             >
               Fermer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          MODAL DE CONFIRMATION PERSONNALISÉ — Supprimer une affectation admin
+          (remplace le confirm() générique du navigateur)
+          ════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={!!deleteAssignmentConfirm} onOpenChange={(open) => { if (!open) setDeleteAssignmentConfirm(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Trash2 className="w-5 h-5 text-red-600" />
+              Supprimer l'affectation administrative
+            </DialogTitle>
+            <DialogDescription>
+              Confirmez la suppression du poste administratif ci-dessous.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteAssignmentConfirm && (() => {
+            const a = deleteAssignmentConfirm;
+            const staffName = a.staff ? `${a.staff.firstName} ${a.staff.lastName}`.trim() : 'Membre du personnel';
+            const roleLabel = ADMIN_ROLE_LABELS[a.adminRole as AdminRole] || String(a.adminRole);
+            const unitLabel = ADMIN_UNIT_LABELS[LEVEL_CODE_TO_UNIT[a.schoolLevelCode] || 'ALL'] || a.schoolLevelCode || 'Tous les niveaux';
+            const initials = `${a.staff?.firstName?.[0] ?? ''}${a.staff?.lastName?.[0] ?? ''}`.toUpperCase() || '—';
+            const formatDate = (d: string) => {
+              try { return new Date(d).toLocaleDateString('fr-FR'); } catch { return d; }
+            };
+            return (
+              <div className="space-y-4">
+                {/* Carte du poste concerné */}
+                <div className="rounded-xl border border-red-200 bg-red-50/50 p-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-xs font-bold shrink-0">
+                      {initials}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-gray-900 text-sm truncate">{staffName}</p>
+                      {a.staff?.email && (
+                        <p className="text-xs text-gray-500 truncate">{a.staff.email}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-white/70 rounded-lg px-2.5 py-1.5">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Poste</p>
+                      <p className="font-semibold text-gray-800">{roleLabel}</p>
+                    </div>
+                    <div className="bg-white/70 rounded-lg px-2.5 py-1.5">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Niveau</p>
+                      <p className="font-semibold text-gray-800">{unitLabel}</p>
+                    </div>
+                    <div className="col-span-2 bg-white/70 rounded-lg px-2.5 py-1.5">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Période</p>
+                      <p className="font-semibold text-gray-800">
+                        Du {formatDate(a.startDate)}
+                        {a.endDate ? ` au ${formatDate(a.endDate)}` : ' — en cours'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                {/* Impact */}
+                <div className="flex items-start gap-2.5 rounded-lg bg-gray-50 border border-gray-200 p-3">
+                  <AlertCircle className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    Le staff perdra ce poste administratif (rôle, niveau et signature associés).
+                    Son compte personnel et son dossier RH ne sont pas supprimés — l'affectation
+                    pourra être recréée à tout moment.
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteAssignmentConfirm(null)}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={handleDeleteConfirmed}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              <Trash2 className="w-4 h-4" />
+              Supprimer l'affectation
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          MODAL DE CONFIRMATION PERSONNALISÉ — Retirer un enseignant de l'équipe
+          (remplace le confirm() générique du navigateur)
+          ════════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={!!removeTeacherConfirm} onOpenChange={(open) => { if (!open) setRemoveTeacherConfirm(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <UserMinus className="w-5 h-5 text-red-600" />
+              Retirer l'enseignant de l'équipe
+            </DialogTitle>
+            <DialogDescription>
+              Confirmez le retrait de l'affectation de niveau ci-dessous.
+            </DialogDescription>
+          </DialogHeader>
+
+          {removeTeacherConfirm && (() => {
+            const { staff, groupLabel } = removeTeacherConfirm;
+            const staffName = `${staff.firstName} ${staff.lastName}`.trim();
+            const initials = `${staff.firstName?.[0] ?? ''}${staff.lastName?.[0] ?? ''}`.toUpperCase() || '—';
+            return (
+              <div className="space-y-4">
+                {/* Carte de l'enseignant concerné */}
+                <div className="rounded-xl border border-red-200 bg-red-50/50 p-4 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold shrink-0">
+                      {initials}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-gray-900 text-sm truncate">{staffName}</p>
+                      <p className="text-xs text-gray-500 truncate">
+                        {staff.position || 'Enseignant'}
+                        {staff.employeeNumber ? ` · ${staff.employeeNumber}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bg-white/70 rounded-lg px-2.5 py-1.5 text-xs">
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Équipe concernée</p>
+                    <p className="font-semibold text-gray-800">Équipe enseignante — {groupLabel}</p>
+                  </div>
+                </div>
+                {/* Impact */}
+                <div className="flex items-start gap-2.5 rounded-lg bg-gray-50 border border-gray-200 p-3">
+                  <AlertCircle className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    L'enseignant ne sera plus affecté au niveau <strong>{groupLabel}</strong>.
+                    Il conservera son compte personnel, son dossier RH et ses qualifications —
+                    il pourra être réaffecté à tout moment via le bouton « Affecter ».
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRemoveTeacherConfirm(null)}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={handleRemoveTeacherConfirmed}
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              <UserMinus className="w-4 h-4" />
+              Retirer de l'équipe
             </Button>
           </DialogFooter>
         </DialogContent>

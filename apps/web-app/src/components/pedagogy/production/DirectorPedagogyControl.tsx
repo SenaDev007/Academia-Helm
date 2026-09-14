@@ -3241,11 +3241,13 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
   const [saving, setSaving] = useState(false);
   const [sendingToTeacher, setSendingToTeacher] = useState(false);
   const [hasBeenSent, setHasBeenSent] = useState(false); // ⭐ Track si notification déjà envoyée
-  const [directorSignature, setDirectorSignature] = useState<string | null>(fiche.directorSignature || null);
   const [directorGeneralObservation, setDirectorGeneralObservation] = useState<string>(fiche.directorObservation || "");
   const [sectionObservations, setSectionObservations] = useState<Record<string, string>>({});
   // ⭐ Modale de confirmation professionnelle personnalisée (remplace window.confirm)
   const [confirmModal, setConfirmModal] = useState<{ open: boolean; action: "VALIDATED" | "REJECTED" | null }>({ open: false, action: null });
+  // ⭐ 2026-09-15 : état directorSignature SUPPRIMÉ — plus aucune signature sur
+  //    les fiches pédagogiques (décision utilisateur). La validation ne requiert
+  //    plus de signature, et aucune signature n'est envoyée au backend.
 
   useEffect(() => {
     let existing = fiche.directorSectionObservations;
@@ -3271,7 +3273,6 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
         body: JSON.stringify({
           directorSectionObservations: sectionObservations,
           directorObservation: directorGeneralObservation,
-          directorSignature,
           // Pas d'action → sauvegarde simple sans changer le statut
         }),
       });
@@ -3280,7 +3281,7 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
         throw new Error(`HTTP ${res.status}: ${errText.substring(0, 200)}`);
       }
       toast.success("✅ Observations enregistrées", {
-        description: "Vos observations et signature sont sauvegardées. Vous pouvez valider plus tard.",
+        description: "Vos observations sont sauvegardées. Vous pouvez valider plus tard.",
       });
     } catch (err: any) {
       toast.error("Erreur lors de la sauvegarde", { description: err.message });
@@ -3292,11 +3293,8 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
   // ⭐ handleValidate — validation/rejet AVEC notification automatique côté backend
   //    Ouvre d'abord la modale de confirmation professionnelle personnalisée.
   //    Si confirmée, envoie la requête PUT avec action='VALIDATED'/'REJECTED'.
+  //    ⭐ 2026-09-15 : plus d'exigence de signature (supprimée des fiches).
   const openConfirmModal = (action: "VALIDATED" | "REJECTED") => {
-    if (action === "VALIDATED" && !directorSignature) {
-      toast.error("Signature obligatoire", { description: "Vous devez signer avant de valider la fiche." });
-      return;
-    }
     setConfirmModal({ open: true, action });
   };
 
@@ -3313,7 +3311,6 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
         body: JSON.stringify({
           directorSectionObservations: sectionObservations,
           directorObservation: directorGeneralObservation,
-          directorSignature,
           action,
           validatedBy: userId,
         }),
@@ -3324,7 +3321,7 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
       }
       toast.success(action === "VALIDATED" ? "✅ Fiche validée" : "Fiche rejetée", {
         description: action === "VALIDATED"
-          ? "L'enseignant recevra une notification (email + WhatsApp + SMS) avec votre décision et votre signature. Utilisez le bouton 'Envoyer à l'enseignant' pour renvoyer la notification si besoin."
+          ? "L'enseignant recevra une notification (email + WhatsApp + SMS) avec votre décision et vos observations. Utilisez le bouton 'Envoyer à l'enseignant' pour renvoyer la notification si besoin."
           : "L'enseignant a été notifié du rejet.",
       });
       // ⭐ Marquer comme envoyé (notification auto déclenchée par le backend)
@@ -3380,7 +3377,7 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
         message: "Vous êtes sur le point de valider cette fiche pédagogique.",
         details: [
           "L'enseignant sera notifié immédiatement (email + WhatsApp + SMS)",
-          "La version validée avec votre signature et vos observations sera envoyée",
+          "La version validée avec vos observations sera envoyée",
           "L'enseignant verra la fiche comme « Validée » dans son espace pédagogique",
           "Vous pourrez re-notifier l'enseignant via le bouton « Envoyer à l'enseignant »",
         ],
@@ -3482,12 +3479,12 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
               </button>
               <button
                 onClick={() => openConfirmModal("VALIDATED")}
-                disabled={saving || !directorSignature}
+                disabled={saving}
                 className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
-                title={!directorSignature ? "Signature obligatoire" : "Valider la fiche"}
+                title="Valider la fiche"
               >
                 {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                {directorSignature ? "Valider" : "Signature requise"}
+                Valider
               </button>
             </>
           )}
@@ -3510,10 +3507,8 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
       <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3"><h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">II- Déroulement</h3>{deroulement.length > 0 ? (<div className="overflow-x-auto"><table className="w-full border-collapse text-xs"><thead><tr className="bg-slate-100"><th className="border border-slate-300 px-2 py-1 text-left w-12">N°</th><th className="border border-slate-300 px-2 py-1 text-left">Consignes</th><th className="border border-slate-300 px-2 py-1 text-left">Résultats</th></tr></thead><tbody>{deroulement.map((step: any, idx: number) => (<tr key={idx}><td className="border border-slate-300 px-2 py-1 text-center font-bold">{idx + 1}</td><td className="border border-slate-300 px-2 py-1">{step.consignes || step.activiteEnseignant ? <div dangerouslySetInnerHTML={{ __html: step.consignes || step.activiteEnseignant }} /> : <span className="text-slate-300">—</span>}</td><td className="border border-slate-300 px-2 py-1">{step.resultats || step.activiteEleves ? <div dangerouslySetInnerHTML={{ __html: step.resultats || step.activiteEleves }} /> : <span className="text-slate-300">—</span>}</td></tr>))}</tbody></table></div>) : <p className="text-sm text-slate-400 italic">Aucune étape.</p>}{renderObs("deroulement", "Observation — Déroulement")}</div>
       <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3"><h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">III- Retour et projection</h3>{renderField("Objectivation", (fiche as any).objectivation)}{renderField("Évaluation", (fiche as any).evalRetour || fiche.evaluation)}{renderField("Projection", (fiche as any).projection)}{renderField("Référence", fiche.reference)}{renderObs("retour_projection", "Observation — Retour et projection")}</div>
       <div className="bg-white border-2 border-red-300 rounded-xl p-4 space-y-3"><h3 className="text-sm font-bold text-red-700 uppercase">Observation générale du directeur</h3><RichTextEditor value={directorGeneralObservation} onChange={(html) => setDirectorGeneralObservation(html)} disabled={saving || isAlreadyValidated} placeholder="Observations générales..." minHeight="100px" /></div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300">
-        <div className="space-y-2"><div className="text-sm font-bold text-slate-800">Le Maître / La Maîtresse</div>{fiche.teacherSignature ? <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2"><img src={fiche.teacherSignature} alt="Sig" className="max-h-24 mx-auto" /></div> : <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center text-xs text-slate-400 italic">Non signé</div>}</div>
-        <div className="space-y-2"><div className="flex items-center justify-between"><div><div className="text-sm font-bold text-slate-800">Le Directeur</div><div className="text-xs text-slate-500">{isAlreadyValidated ? "" : "(obligatoire)"}</div></div>{directorSignature && <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full">Signé</span>}</div>{directorSignature ? <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2 relative"><img src={directorSignature} alt="Sig" className="max-h-24 mx-auto" />{!isAlreadyValidated && <button type="button" onClick={() => setDirectorSignature(null)} className="absolute top-1 right-1 text-xs text-red-500">Effacer</button>}</div> : <SignatureCanvas width={400} height={120} disabled={saving || isAlreadyValidated} placeholder="Signature (obligatoire)" onSignatureChange={(data) => setDirectorSignature(data)} />}</div>
-      </div>
+      {/* ⭐ 2026-09-15 : SECTION SIGNATURE SUPPRIMÉE — les fiches pédagogiques
+          ne comportent aucune signature (décision utilisateur). */}
 
     </div>
   );

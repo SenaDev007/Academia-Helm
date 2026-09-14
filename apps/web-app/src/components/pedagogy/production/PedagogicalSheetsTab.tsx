@@ -37,8 +37,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
-import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
-import { useAppSession } from "@/contexts/AppSessionContext";
+// ⭐ 2026-09-15 : SignatureCanvas + useAppSession retirés — plus aucune
+//    signature sur les fiches pédagogiques, et le user connecté n'est plus
+//    affiché (le contexte signature a été supprimé).
 
 interface PedagogicalSheetsTabProps {
   tenantId: string;
@@ -156,7 +157,6 @@ const SHEET_TYPE_CONFIG: Record<string, {
 };
 
 export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahierJournalId, initialClassId, initialLessonDay, initialSheetType, initialMatiere, initialFicheId }: PedagogicalSheetsTabProps) {
-  const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [fiches, setFiches] = useState<any[]>([]);
@@ -174,14 +174,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   const [loadingPreviousYears, setLoadingPreviousYears] = useState(false);
   const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
-  // ⭐ États pour les noms résolus (titulaire + directeur)
-  const [teacherName, setTeacherName] = useState<string>("");
-  const [directorInfo, setDirectorInfo] = useState<{
-    fullName: string;
-    gender: string | null;
-    signatureDataUrl: string | null;
-    signatureUploadedUrl: string | null;
-  } | null>(null);
+  // ⭐ 2026-09-15 : états teacherName/directorInfo retirés — ils ne servaient
+  //    qu'à la section signature (supprimée des fiches pédagogiques).
 
   const emptyForm: any = {
     classId: "", sheetType: "MATH",
@@ -208,9 +202,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     boysCount: 0, girlsCount: 0, totalStudents: 0,
     boysPresent: 0, girlsPresent: 0, totalPresent: 0,
     boysAbsent: 0, girlsAbsent: 0, totalAbsent: 0,
-    // Signatures
-    teacherSignature: null as string | null,
-    directorSignature: null as string | null,
+    // ⭐ 2026-09-15 : champs teacherSignature/directorSignature retirés —
+    //    plus de signature sur les fiches pédagogiques.
   };
   const [form, setForm] = useState<any>(emptyForm);
 
@@ -318,71 +311,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   useEffect(() => { loadClasses(); }, [loadClasses]);
   useEffect(() => { loadFiches(); }, [loadFiches]);
 
-  // ⭐ Résoudre le VRAI titulaire de la classe + le directeur dès que la classe change
-  //    (même si c'est le promoteur qui est connecté, on doit afficher le titulaire réel)
-  useEffect(() => {
-    if (!selectedClassId) {
-      setTeacherName("");
-      setDirectorInfo(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      // 1. Récupérer le titulaire de la classe via TeacherClassAssignment
-      try {
-        const res = await fetch(`/api/pedagogy/teacher-class-assignments?classId=${encodeURIComponent(selectedClassId)}`, { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          const assignments = Array.isArray(data) ? data : (data?.items || []);
-          const firstAssignment = assignments[0];
-          if (firstAssignment && !cancelled) {
-            const firstName = firstAssignment.teacherFirstName || firstAssignment.teacher?.firstName || '';
-            const lastName = firstAssignment.teacherLastName || firstAssignment.teacher?.lastName || '';
-            const gender = firstAssignment.teacherGender || firstAssignment.teacher?.gender || null;
-            const civility = gender === 'F' ? 'Mme' : (gender === 'M' ? 'M.' : '');
-            const name = (lastName || firstName) ? `${civility} ${(lastName || '').toUpperCase()} ${firstName}`.trim() : '';
-            setTeacherName(name);
-          } else if (!cancelled) {
-            // Fallback sur le user connecté
-            setTeacherName(user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '');
-          }
-        }
-      } catch {
-        if (!cancelled) {
-          setTeacherName(user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '');
-        }
-      }
-
-      // 2. Récupérer le directeur depuis school_directors (par niveau scolaire de la classe)
-      try {
-        // D'abord récupérer le schoolLevelId de la classe sélectionnée
-        const cls = classes.find(c => c.classId === selectedClassId);
-        const schoolLevelId = cls?.schoolLevelId || cls?.school_level_id;
-        if (schoolLevelId) {
-          const dirRes = await fetch(`/api/hr/school-directors/by-level?schoolLevelId=${encodeURIComponent(schoolLevelId)}&language=FR`, { credentials: 'include' });
-          let dirData = null;
-          if (dirRes.ok) {
-            dirData = await dirRes.json();
-          } else {
-            // Fallback EN
-            const dirRes2 = await fetch(`/api/hr/school-directors/by-level?schoolLevelId=${encodeURIComponent(schoolLevelId)}&language=EN`, { credentials: 'include' });
-            if (dirRes2.ok) dirData = await dirRes2.json();
-          }
-          if (!cancelled && dirData) {
-            setDirectorInfo({
-              fullName: dirData.fullName || '',
-              gender: dirData.gender || null,
-              signatureDataUrl: dirData.signatureDataUrl || null,
-              signatureUploadedUrl: dirData.signatureUploadedUrl || null,
-            });
-          }
-        }
-      } catch {
-        // Silent fail — directorInfo reste null
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selectedClassId, classes, user]);
+  // ⭐ 2026-09-15 : l'effet de résolution titulaire/directeur a été retiré —
+  //    il ne servait qu'à la section signature (supprimée des fiches pédagogiques).
 
   // ⭐ Synchroniser form.classId quand selectedClassId change (programmation ou manuel)
   //    Sans ça, le bouton "Créer fiche" échoue car form.classId est vide
@@ -406,9 +336,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     }
   }, [selectedClassId, classes]);
 
-  // ⭐ Construire le label "Directeur" ou "Directrice" selon le genre
-  const directorLabel = directorInfo?.gender === 'F' ? 'La Directrice' : 'Le Directeur';
-  const directorDisplayName = directorInfo?.fullName || 'Nom du directeur';
+  // ⭐ 2026-09-15 : directorLabel/directorDisplayName retirés — ils ne servaient
+  //    qu'à la section signature (supprimée des fiches pédagogiques).
 
   // ⭐ Pré-remplissage automatique quand l'utilisateur clique sur "Préparer la fiche"
   //    pour [jour] [matière] depuis le cahier journal.
@@ -474,6 +403,23 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   // === CRUD ===
   const handleCreateOrUpdate = async () => {
     if (!form.classId || !form.sheetType) { toast.error("Veuillez sélectionner une classe et un type de fiche"); return; }
+    // ⭐ FIX 2026-09-15 (anti-vide) : refuser d'enregistrer une fiche
+    //    entièrement vide — au lieu de perséder du vide dans la base.
+    const stripHtml = (html: string) => (html || "").replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").trim();
+    const hasAnyContent =
+      stripHtml(form.titre).length > 0 ||
+      stripHtml(form.cours).length > 0 ||
+      stripHtml(form.competence).length > 0 ||
+      stripHtml(form.contenu).length > 0 ||
+      stripHtml(form.objectivation).length > 0 ||
+      (Array.isArray(form.deroulement) && form.deroulement.some((s: any) =>
+        stripHtml(s.consignes).length > 0 || stripHtml(s.resultats).length > 0));
+    if (!hasAnyContent) {
+      toast.error("Aucun contenu à enregistrer", {
+        description: "Vous n'avez rien renseigné dans cette fiche pédagogique. Remplissez au moins un champ (titre, compétences, contenu, déroulement…) avant d'enregistrer.",
+      });
+      return;
+    }
     setSaving(true);
     try {
       const url = editingFiche ? `/api/pedagogy-space/fiches/${editingFiche.id}` : "/api/pedagogy-space/fiches";
@@ -831,68 +777,9 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
             </section>
           )}
 
-          {/* Signatures (SignatureCanvas) */}
-          <section className="border-t-2 border-slate-300 pt-4">
-            <h3 className="text-sm font-bold text-slate-900 uppercase mb-3">Signatures</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-sm font-bold text-slate-800">Le Maître / La Maîtresse</div>
-                    <div className="text-xs text-slate-500">
-                      {/* ⭐ Afficher le VRAI titulaire de la classe (résolu via TeacherClassAssignment) */}
-                      {teacherName || (user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '')}
-                    </div>
-                  </div>
-                  {form.teacherSignature && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full"><CheckCircle2 className="h-3 w-3" /> Signé</span>}
-                </div>
-                {form.teacherSignature ? (
-                  <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2"><img src={form.teacherSignature} alt="" className="max-h-24 mx-auto" /></div>
-                ) : (
-                  <SignatureCanvas width={400} height={120} disabled={isReadOnly} placeholder="Signature" onSignatureChange={d => setForm({ ...form, teacherSignature: d })} />
-                )}
-                {form.teacherSignature && !isReadOnly && <button type="button" onClick={() => setForm({ ...form, teacherSignature: null })} className="text-xs text-red-500 hover:underline">Effacer</button>}
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    {/* ⭐ Label dynamique : "Le Directeur" ou "La Directrice" selon le genre */}
-                    <div className="text-sm font-bold text-slate-800">{directorLabel} / La Directrice</div>
-                    <div className="text-xs text-slate-500">
-                      {form.status === 'VALIDATED'
-                        ? `${directorDisplayName} — Signature et cachet`
-                        : `${directorDisplayName} — Signature disponible après validation`}
-                    </div>
-                  </div>
-                  {form.status === 'VALIDATED' && (form.directorSignature || directorInfo?.signatureDataUrl || directorInfo?.signatureUploadedUrl) && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full"><CheckCircle2 className="h-3 w-3" /> Signé</span>}
-                  {form.status !== 'VALIDATED' && <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-bold rounded-full">En attente</span>}
-                </div>
-                {/* ⭐ Signature du directeur : affichée SEULEMENT si la fiche est VALIDATED.
-                    Avant validation (DRAFT/SUBMITTED/REJECTED), l'enseignant ne voit pas
-                    la signature du directeur — seulement un placeholder "En attente de validation".
-                    Une fois le directeur valide, l'enseignant voit la version avec les 2 signatures. */}
-                {form.status === 'VALIDATED' ? (
-                  <>
-                    {form.directorSignature ? (
-                      <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2"><img src={form.directorSignature} alt="" className="max-h-24 mx-auto" /></div>
-                    ) : (directorInfo?.signatureDataUrl || directorInfo?.signatureUploadedUrl) ? (
-                      <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-2"><img src={directorInfo.signatureDataUrl || directorInfo.signatureUploadedUrl || ''} alt="" className="max-h-24 mx-auto" /></div>
-                    ) : (
-                      <div className="border-2 border-dashed border-slate-300 rounded-xl p-2 h-[120px] flex items-center justify-center text-slate-400 text-xs">Signature du directeur non disponible</div>
-                    )}
-                  </>
-                ) : (
-                  <div className="border-2 border-dashed border-amber-300 bg-amber-50/30 rounded-xl p-2 h-[120px] flex items-center justify-center text-amber-600 text-xs font-medium">
-                    {form.status === 'SUBMITTED'
-                      ? 'Fiche soumise — en attente de validation du directeur'
-                      : form.status === 'REJECTED'
-                      ? 'Fiche rejetée — à corriger et resoumettre'
-                      : 'La signature du directeur apparaîtra après validation'}
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
+          {/* ⭐ 2026-09-15 : SECTION SIGNATURE SUPPRIMÉE — les fiches pédagogiques
+              ne comportent aucune signature (décision utilisateur). Les observations
+              du directeur ci-dessus restent affichées. */}
         </div>
       </div>
     );

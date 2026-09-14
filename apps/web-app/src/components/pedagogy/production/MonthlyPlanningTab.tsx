@@ -394,7 +394,7 @@ export function MonthlyPlanningTab({
   //    saveRef.current pointait encore sur l'ANCIEN state (stale closure) et le
   //    POST /save partait SANS la cellule venant d'être saisie → "enregistré"
   //    affiché mais rien de persisté → données perdues au rechargement.
-  const saveRef = useRef<(overrideCells?: MonthlyPlanCell[]) => Promise<unknown>>(async () => {});
+  const saveRef = useRef<(overrideCells?: MonthlyPlanCell[]) => Promise<boolean>>(async () => false);
   // ⭐ FIX ANOMALIE 2 : garde anti-écrasement — pendant qu'une cellule est en
   //    cours d'édition, un chargement (même silencieux) ne doit JAMAIS écraser
   //    l'état local, sinon la saisie de l'enseignant disparaît sous ses yeux.
@@ -496,9 +496,26 @@ export function MonthlyPlanningTab({
   //    code envoyait donc l'ANCIEN state `cells` : la nouvelle saisie n'était
   //    JAMAIS persistée (« bien enregistré » affiché, données perdues au
   //    rechargement). On passe désormais toujours la liste à jour explicitement.
-  const handleSave = useCallback(async (overrideCells?: MonthlyPlanCell[]) => {
-    if (!academicYearId) return;
-    const cellsToSave = overrideCells ?? cells;
+  const handleSave = useCallback(async (overrideCells?: MonthlyPlanCell[]): Promise<boolean> => {
+    if (!academicYearId) return false;
+    // ⭐ FIX 2026-09-15 (circular JSON) : le bouton principal utilisait
+    //    `onClick={handleSave}` → React injectait l'événement de clic comme
+    //    `overrideCells` → JSON.stringify remontait event.target (le <button>)
+    //    → __reactFiber → stateNode → CYCLE → « Converting circular structure
+    //    to JSON ». On n'accepte désormais qu'une VRAIE liste de cellules.
+    const cellsToSave = Array.isArray(overrideCells) ? overrideCells : cells;
+    // ⭐ FIX 2026-09-15 (anti-vide) : rien de renseigné → rien à enregistrer.
+    //    On refuse la sauvegarde avec un message clair au lieu d'enregistrer du vide.
+    const hasContent = (c: MonthlyPlanCell) => {
+      const text = (c.content || "").replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").trim();
+      return text.length > 0;
+    };
+    if (!cellsToSave.some(hasContent)) {
+      toast.error("Aucun contenu à enregistrer", {
+        description: "Vous n'avez renseigné aucune cellule de la planification. Remplissez au moins une cellule avant d'enregistrer.",
+      });
+      return false;
+    }
     setSaving(true);
     try {
       await pedagogyFetch<{ saved: number; updated: number; skipped: number }>(
@@ -519,8 +536,10 @@ export function MonthlyPlanningTab({
       //    édition en cours grâce au garde editingCellKeyRef). C'est ce qui
       //    garantit que les données restent visibles après rechargement.
       await loadPlan(true);
+      return true;
     } catch (e: any) {
       toast.error("Échec de la sauvegarde: " + e.message);
+      return false;
     } finally {
       setSaving(false);
     }
@@ -543,8 +562,16 @@ export function MonthlyPlanningTab({
     }
     setSubmitting(true);
     try {
-      // ⭐ Save all cells BEFORE submitting (silently — no toast)
-      await saveRef.current();
+      // ⭐ Save all cells BEFORE submitting (silently — no toast).
+      //    ⭐ FIX 2026-09-15 : si la sauvegarde échoue OU si rien n'est rempli
+      //    (garde anti-vide de handleSave), on ANNULE la soumission — avant,
+      //    on soumettait quand même alors que rien n'était persisté.
+      const savedOk = await saveRef.current();
+      if (!savedOk) {
+        setShowSignatureModal(false);
+        setPendingSignature(null);
+        return;
+      }
 
       // ⭐ Build URL with explicit validation
       const params = new URLSearchParams({
@@ -827,7 +854,7 @@ export function MonthlyPlanningTab({
                 Proposer
               </button>
               <button
-                onClick={handleSave}
+                onClick={() => handleSave()}
                 disabled={saving || isReadOnly}
                 className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-sm font-bold"
               >

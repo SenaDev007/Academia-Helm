@@ -36,10 +36,19 @@ interface AttendanceTabProps {
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
+// ⭐ FIX 2026-09-15 : date locale (YYYY-MM-DD) au lieu de toISOString() qui
+//    convertit en UTC — entre 00h00 et 00h59 heure locale (UTC+1, Bénin),
+//    toISOString() renvoyait LA VEILLE → l'appel était enregistré sur le
+//    mauvais jour et n'apparaissait pas dans la bonne colonne du registre.
+function todayLocalISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function AttendanceTab({ tenantId, academicYearId, schoolLevelId, teacherId }: AttendanceTabProps) {
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [date, setDate] = useState(todayLocalISO());
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

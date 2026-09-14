@@ -1328,19 +1328,8 @@ export class PedagogicalSpaceService {
         return '';
       })()}
 
-      <!-- ═══ SIGNATURES ═══ -->
-      <div style="margin-top:15px;display:flex;justify-content:space-between;gap:20px;">
-        <div style="text-align:center;width:45%;">
-          ${fiche.teacherSignature ? `<img src="${fiche.teacherSignature}" style="max-height:40px;max-width:120px;object-fit:contain;" />` : '<div style="height:40px;"></div>'}
-          <div style="border-top:2px solid #0A2A5E;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Maître / La Maîtresse</div>
-          <div style="font-size:8px;color:#64748b;margin-top:1px;">${teacherName}</div>
-        </div>
-        <div style="text-align:center;width:45%;">
-          ${fiche.status === 'VALIDATED' && fiche.directorSignature ? `<img src="${fiche.directorSignature}" style="max-height:40px;max-width:120px;object-fit:contain;" />` : '<div style="height:40px;border:1px dashed #cbd5e1;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#94a3b8;">En attente de validation</div>'}
-          <div style="border-top:2px solid #0A2A5E;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Directeur / La Directrice</div>
-          <div style="font-size:8px;color:#64748b;margin-top:1px;">${fiche.status === 'VALIDATED' ? 'Validé' : '—'}</div>
-        </div>
-      </div>
+      <!-- ═══ 2026-09-15 : BLOC SIGNATURES SUPPRIMÉ — les fiches pédagogiques
+           ne comportent aucune signature (décision utilisateur) ═══ -->
 
       <!-- ═══ FOOTER ═══ -->
       <div style="margin-top:15px;border-top:1px solid #e2e8f0;padding-top:5px;text-align:center;font-size:8px;color:#94a3b8;">
@@ -1414,6 +1403,7 @@ export class PedagogicalSpaceService {
         classId,
         date: { gte: monthStart, lte: monthEnd },
       },
+      orderBy: { updatedAt: 'asc' },
       include: {
         student: {
           select: {
@@ -1469,20 +1459,23 @@ export class PedagogicalSpaceService {
       if (Array.isArray(raw)) studentsData = raw;
     }
 
+    // Inscriptions actives de la classe (servent à l'initialisation ET à
+    // l'union ci-dessous)
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: {
+        tenantId, academicYearId, classId,
+        status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED'] },
+      },
+      include: {
+        student: {
+          select: { id: true, firstName: true, lastName: true, gender: true },
+        },
+      },
+      orderBy: { student: { lastName: 'asc' } },
+    });
+
     // Si studentsData est vide, initialiser depuis les inscriptions
     if (studentsData.length === 0) {
-      const enrollments = await this.prisma.studentEnrollment.findMany({
-        where: {
-          tenantId, academicYearId, classId,
-          status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED'] },
-        },
-        include: {
-          student: {
-            select: { id: true, firstName: true, lastName: true, gender: true },
-          },
-        },
-        orderBy: { student: { lastName: 'asc' } },
-      });
       studentsData = enrollments.map((e, idx) => ({
         studentId: e.student?.id,
         numero: idx + 1,
@@ -1498,6 +1491,32 @@ export class PedagogicalSpaceService {
         observation: '',
         nbDemiJournees: 0,
       }));
+    } else {
+      // ⭐ FIX 2026-09-15 (inscription en cours de mois) : ajouter à studentsData
+      //    les élèves inscrits qui n'y figurent pas encore — sinon leurs appels
+      //    étaient IGNORÉS silencieusement (la boucle de reconstruction ne
+      //    parcourt que les élèves présents dans studentsData).
+      const known = new Set(studentsData.map((s: any) => s.studentId));
+      let numero = studentsData.length;
+      for (const e of enrollments) {
+        if (!e.student?.id || known.has(e.student.id)) continue;
+        numero++;
+        studentsData.push({
+          studentId: e.student.id,
+          numero,
+          nom: e.student.lastName || '',
+          prenom: e.student.firstName || '',
+          sexe: (e.student.gender || '').toUpperCase() === 'FEMALE' ? 'F'
+            : (e.student.gender || '').toUpperCase() === 'MALE' ? 'M' : 'M',
+          absences: [],
+          motif: '',
+          totalPresencesPossibles: 0,
+          totalAbsences: 0,
+          totalPresenceEffectif: 0,
+          observation: '',
+          nbDemiJournees: 0,
+        });
+      }
     }
 
     // ⭐ 6. Reconstruire les absences pour chaque élève à partir de tous les
@@ -1522,9 +1541,29 @@ export class PedagogicalSpaceService {
     //   - Total Absences (par élève) = somme des absences de chaque jour (0, 1, ou 2)
     //   - Total Présence Effective = Total Présence Possible - Total Absences
     const recordsByStudent = new Map<string, typeof allRecords>();
+    // ⭐ FIX 2026-09-15 (déduplication) : des enregistrements hérités existent
+    //    en DOUBLON pour un même (élève, jour) — l'ancien code stockait la date
+    //    à 00:00 UTC (new Date("YYYY-MM-DD")), le code actuel à midi local
+    //    (anti-fuseau) → le findFirst du save ne voyait pas le record minuit et
+    //    créait un doublon. La synchro voyait alors DEUX statuts pour la même
+    //    case → marque non déterministe (ordre de lecture). On déduplique par
+    //    (élève, jour local) en gardant le record le plus récent (updatedAt).
+    const deduped: { studentId: string; date: Date; amStatus: string; pmStatus: string; eveningStatus: string; late: boolean; updatedAt: Date }[] = [];
+    const seenDay = new Map<string, number>();
     for (const r of allRecords) {
+      const d = r.date as unknown as Date;
+      const localKey = `${r.studentId}|${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const prevIdx = seenDay.get(localKey);
+      if (prevIdx !== undefined) {
+        deduped[prevIdx] = r as any; // orderBy updatedAt asc → le dernier gagne
+      } else {
+        seenDay.set(localKey, deduped.length);
+        deduped.push(r as any);
+      }
+    }
+    for (const r of deduped) {
       const arr = recordsByStudent.get(r.studentId) || [];
-      arr.push(r);
+      arr.push(r as any);
       recordsByStudent.set(r.studentId, arr);
     }
 
@@ -3178,6 +3217,41 @@ export class PedagogicalSpaceService {
   // migration manuelle. Le client Prisma sera régénéré au prochain déploiement.
   // ===========================================================================
 
+  /// Résout le VRAI titulaire d'une section physique : l'enseignant affecté à
+  /// une matière RÉGULIÈRE de la classe (hors spécialistes itinérants
+  /// Anglais/Informatique, qui parcourent plusieurs classes).
+  /// Retourne null si aucun titulaire n'est trouvé.
+  private async resolveSectionTitulaire(
+    tenantId: string,
+    classId: string,
+  ): Promise<{ teacherId: string; firstName: string; lastName: string; gender: string | null } | null> {
+    try {
+      const rows: any = await this.prisma.$queryRawUnsafe(
+        `SELECT tca."teacherId", t."firstName", t."lastName", t."gender"
+         FROM teacher_class_assignments tca
+         JOIN class_subjects cs ON cs."id" = tca."classSubjectId"
+         JOIN subjects s ON s."id" = cs."subjectId"
+         LEFT JOIN teachers t ON t."id" = tca."teacherId"
+         WHERE tca."classId" = $1 AND tca."tenantId" = $2
+           AND NOT (UPPER(s."code") LIKE 'ANG-%' OR UPPER(s."code") LIKE 'INFO-%'
+                    OR LOWER(s."name") IN ('anglais','english','informatique','computer science'))
+         LIMIT 1`,
+        classId, tenantId,
+      );
+      if (Array.isArray(rows) && rows.length > 0 && rows[0].teacherId) {
+        return {
+          teacherId: rows[0].teacherId,
+          firstName: rows[0].firstName || '',
+          lastName: rows[0].lastName || '',
+          gender: rows[0].gender || null,
+        };
+      }
+    } catch {
+      // silent — pas de titulaire résolu
+    }
+    return null;
+  }
+
   /// Récupère ou crée une entrée du cahier journal pour une classe × semaine.
   async getOrCreateCahierJournal(
     tenantId: string,
@@ -3191,16 +3265,40 @@ export class PedagogicalSpaceService {
     const endDate = new Date(startDate);
     endDate.setDate(endDate.getDate() + 4); // vendredi
 
-    // Vérifier si une entrée existe
+    // ⭐ FIX 2026-09-15 (nom du titulaire) : le chemin « entrée existante »
+    //    retournait un SELECT * SANS les champs teacherFirstName/
+    //    teacherLastName/teacherGender — le frontend affichait donc le nom du
+    //    USER CONNECTÉ (ex: promoteur) au lieu du titulaire de la classe.
+    //    Désormais on enrichit avec le JOIN teachers (comme le chemin création)
+    //    + repli sur le VRAI titulaire si le teacherId stocké n'est pas un
+    //    Teacher (journaux créés avant le fix resolvedTeacherId, avec l'id
+    //    utilisateur du promoteur comme teacherId).
     const existing: any = await this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "cahier_journal_entries"
-       WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "classId" = $3 AND "weekStartDate" = $4
+      `SELECT cj.*, c."name" as "classNameResolved", c."schoolLevelId" as "schoolLevelId",
+        sl."code" as "schoolLevelCode", sl."name" as "schoolLevelName",
+        t."firstName" as "teacherFirstName", t."lastName" as "teacherLastName", t."gender" as "teacherGender"
+       FROM "cahier_journal_entries" cj
+       LEFT JOIN classes c ON c."id" = cj."classId"
+       LEFT JOIN school_levels sl ON sl."id" = c."schoolLevelId"
+       LEFT JOIN teachers t ON t."id" = cj."teacherId"
+       WHERE cj."tenantId" = $1 AND cj."academicYearId" = $2 AND cj."classId" = $3 AND cj."weekStartDate" = $4
        LIMIT 1`,
       tenantId, academicYearId, classId, startDate,
     );
 
     if (existing && existing.length > 0) {
-      return existing[0];
+      const row = existing[0];
+      // ⭐ Repli : teacherId non résolu en Teacher (journaux légués) → on
+      //    résout le vrai titulaire de la classe pour l'affichage du Visa.
+      if (!row.teacherFirstName && !row.teacherLastName) {
+        const titulaire = await this.resolveSectionTitulaire(tenantId, classId);
+        if (titulaire) {
+          row.teacherFirstName = titulaire.firstName;
+          row.teacherLastName = titulaire.lastName;
+          row.teacherGender = titulaire.gender;
+        }
+      }
+      return row;
     }
 
     // ⭐ FIX : Si l'utilisateur n'est pas un Teacher (ex: promoteur),
@@ -3208,23 +3306,18 @@ export class PedagogicalSpaceService {
     //    Le teacherId stocké doit être celui du titulaire réel, pas celui
     //    du promoteur connecté. Sinon le "Visa du Titulaire" affiche
     //    le nom du promoteur au lieu du titulaire de la classe.
+    //    ⭐ 2026-09-15 : utilise resolveSectionTitulaire (exclut les
+    //    spécialistes itinérants Anglais/Informatique — avant, LIMIT 1
+    //    pouvait renvoyer le prof d'anglais au lieu du titulaire).
     let resolvedTeacherId = teacherId;
     const directTeacher = await this.prisma.teacher.findFirst({
       where: { id: teacherId, tenantId },
       select: { id: true },
     }).catch(() => null);
     if (!directTeacher) {
-      // L'utilisateur n'est pas un Teacher — chercher le titulaire de la classe
-      const tca: any = await this.prisma.$queryRawUnsafe(
-        `SELECT tca."teacherId", t."firstName", t."lastName", t."gender"
-         FROM teacher_class_assignments tca
-         LEFT JOIN teachers t ON t."id" = tca."teacherId"
-         WHERE tca."classId" = $1 AND tca."tenantId" = $2
-         LIMIT 1`,
-        classId, tenantId,
-      ).catch(() => []);
-      if (Array.isArray(tca) && tca.length > 0 && tca[0].teacherId) {
-        resolvedTeacherId = tca[0].teacherId;
+      const titulaire = await this.resolveSectionTitulaire(tenantId, classId);
+      if (titulaire) {
+        resolvedTeacherId = titulaire.teacherId;
       }
     }
 
@@ -5917,6 +6010,26 @@ export class PedagogicalSpaceService {
   }
 
   /// Met à jour un registre d'appel.
+  /** Calcule la structure des semaines d'un mois (lun-ven) — même algorithme
+   *  que syncAttendanceToRegister : map dateStr(YYYY-MM-DD local) → { weekInMonth, dayInWeek }. */
+  private static computeMonthCells(year: number, month: number): Map<string, { weekInMonth: number; dayInWeek: number }> {
+    const cells = new Map<string, { weekInMonth: number; dayInWeek: number }>();
+    const daysInMonth = new Date(year, month, 0).getDate();
+    let currentWeek = 1;
+    let lastDow = -1;
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(year, month - 1, day);
+      const dow = d.getDay(); // 0=dim, 1=lun, ..., 5=ven
+      if (dow < 1 || dow > 5) continue;
+      if (lastDow === 5 && dow === 1) currentWeek++;
+      if (currentWeek > 5) continue;
+      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      cells.set(dateStr, { weekInMonth: currentWeek, dayInWeek: dow });
+      lastDow = dow;
+    }
+    return cells;
+  }
+
   async updateAttendanceRegister(
     tenantId: string,
     registerId: string,
@@ -5928,6 +6041,77 @@ export class PedagogicalSpaceService {
     );
     if (!existing || existing.length === 0) {
       throw new NotFoundException('Registre non trouvé');
+    }
+
+    // ⭐ FIX 2026-09-15 (fusion appel → registre — anti-écrasement) :
+    //    Le registre est éditable manuellement ET synchronisé depuis les appels.
+    //    Problème observé en production : une session front-end périmée (chargée
+    //    AVANT un appel enregistré depuis une autre session/onglet) écrasait
+    //    les marques d'absence issues de l'appel lors de son « Enregistrer ».
+    //    Désormais, avant de persister studentsData, on FUSIONNE : pour chaque
+    //    cellule (semaine, jour) couverte par un AttendanceRecord, la marque
+    //    dérivée de l'appel est AUTORITAIRE (elle remplace la marque envoyée) ;
+    //    les cellules sans appel conservent les marques manuelles.
+    if (data.studentsData !== undefined && existing[0].classId) {
+      try {
+        const reg = existing[0];
+        const month = Number(reg.month);
+        const year = Number(reg.year);
+        const monthStart = new Date(year, month - 1, 1);
+        const monthEnd = new Date(year, month, 0, 23, 59, 59);
+        const records = await this.prisma.attendanceRecord.findMany({
+          where: { tenantId, classId: reg.classId, date: { gte: monthStart, lte: monthEnd } },
+          orderBy: { updatedAt: 'asc' },
+        });
+        if (records.length > 0) {
+          const cells = PedagogicalSpaceService.computeMonthCells(year, month);
+          // studentId → Map("semaine|jour" → marque dérivée de l'appel)
+          // ⭐ Déduplication (élève × jour local) : garder le record le plus
+          //    récent (doublons hérités minuit vs midi — voir syncAttendanceToRegister).
+          const recordMarks = new Map<string, Map<string, string>>();
+          for (const r of records) {
+            const d: Date = r.date as unknown as Date;
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            const cell = cells.get(dateStr);
+            if (!cell) continue; // week-end
+            const am = r.amStatus || 'PRESENT';
+            const pm = r.pmStatus || 'PRESENT';
+            let marked = '';
+            if (am === 'ABSENT' && pm === 'ABSENT') marked = '+';
+            else if (am === 'ABSENT') marked = '-';
+            else if (pm === 'ABSENT') marked = '|';
+            else if (am === 'EXCUSED' || pm === 'EXCUSED') marked = 'E';
+            if (!recordMarks.has(r.studentId)) recordMarks.set(r.studentId, new Map());
+            recordMarks.get(r.studentId).set(`${cell.weekInMonth}|${cell.dayInWeek}`, marked);
+          }
+          const incoming = Array.isArray(data.studentsData) ? data.studentsData : [];
+          for (const student of incoming) {
+            const marks = recordMarks.get(student.studentId);
+            if (!marks) continue; // aucun appel pour cet élève → marques manuelles intactes
+            // Retirer les marques manuelles des cellules couvertes par un appel,
+            // puis réinjecter les marques autoritaires de l'appel.
+            const absences = (Array.isArray(student.absences) ? student.absences : [])
+              .filter((a: any) => !marks.has(`${a.week}|${a.day}`));
+            for (const [cellKey, marked] of marks.entries()) {
+              if (!marked) continue; // appel PRÉSENT → case vide
+              const [week, day] = cellKey.split('|').map(Number);
+              absences.push({ week, day, marked });
+            }
+            student.absences = absences;
+            // Recalculer les totaux de l'élève (système demi-jours)
+            const totalAbsences = absences.reduce(
+              (sum: number, a: any) => sum + (a.marked === '+' ? 2 : (a.marked === '-' || a.marked === '|' ? 1 : 0)), 0);
+            student.totalAbsences = totalAbsences;
+            const poss = Number(student.totalPresencesPossibles) || Number(student.nbDemiJournees) || 0;
+            student.totalPresenceEffectif = poss - totalAbsences;
+          }
+        }
+      } catch (mergeErr) {
+        // Non-bloquant : on persiste les données envoyées telles quelles.
+        this.logger.warn(
+          `[updateAttendanceRegister] Fusion appel→registre non-bloquante: ${(mergeErr as Error).message}`,
+        );
+      }
     }
 
     const updates: string[] = [];
@@ -6463,10 +6647,10 @@ export class PedagogicalSpaceService {
       throw new BadRequestException(`La fiche doit être en statut SUBMITTED pour la valider/rejeter (actuel: ${fiche.status}). Utilisez le mode sauvegarde (sans action) pour modifier les observations.`);
     }
 
-    // ⭐ Si VALIDATED, la signature du directeur est obligatoire
-    if (body.action === 'VALIDATED' && !body.directorSignature) {
-      throw new BadRequestException('La signature du directeur est obligatoire pour valider');
-    }
+    // ⭐ 2026-09-15 : CONTRAINTE SIGNATURE SUPPRIMÉE — les fiches pédagogiques
+    //    ne comportent plus aucune signature (décision utilisateur). La
+    //    validation s'appuie uniquement sur les observations du directeur.
+    //    (Anciennement : `La signature du directeur est obligatoire pour valider`)
 
     // ⭐ Construction dynamique de la requête UPDATE selon le mode (save-only vs validate/reject)
     if (body.action) {

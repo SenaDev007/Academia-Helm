@@ -514,6 +514,20 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   // === Sauvegarde ===
   const handleSave = async () => {
     if (!journal) return;
+    // ⭐ FIX 2026-09-15 (anti-vide) : si aucune cellule de la grille n'est
+    //    renseignée ET qu'il n'y a ni observations ni signature, on refuse
+    //    l'enregistrement avec un message clair — au lieu d'enregistrer du vide.
+    const stripHtml = (html: string) => (html || "").replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").trim();
+    const hasGridContent = Object.values(entries).some(dayMap =>
+      Object.values(dayMap || {}).some(v => stripHtml(String(v || "")).length > 0)
+    );
+    const hasObservations = stripHtml(observations).length > 0;
+    if (!hasGridContent && !hasObservations && !teacherSignature) {
+      toast.error("Aucun contenu à enregistrer", {
+        description: "Vous n'avez rien renseigné dans le cahier journal (ni séances, ni observations). Renseignez au moins une cellule avant d'enregistrer.",
+      });
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}`, {

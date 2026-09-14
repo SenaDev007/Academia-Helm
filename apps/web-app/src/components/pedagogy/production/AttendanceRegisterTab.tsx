@@ -200,7 +200,9 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState<string | null>(null); // null | 'pdf'
   const [showAppelModal, setShowAppelModal] = useState(false);
-  const [appelDate, setAppelDate] = useState(new Date().toISOString().split("T")[0]);
+  // ⭐ FIX 2026-09-15 : date locale (voir AttendanceTab) — toISOString()
+  //    renvoyait la veille entre 00h00 et 00h59 heure locale (UTC+1).
+  const [appelDate, setAppelDate] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`);
   const [appelSaving, setAppelSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"register" | "evaluation" | "summary" | "settings">("register");
   // ⭐ Modal de confirmation professionnel (remplace window.confirm)
@@ -758,9 +760,24 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
         )}
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* ⭐ Bouton Appel — ouvre un modal pour marquer les présences/absences */}
+          {/* ⭐ Bouton Appel — ouvre un modal pour marquer les présences/absences.
+              ⭐ FIX 2026-09-15 : si le registre affiché n'est pas le mois
+              courant, la date du modal est initialisée au 1er jour ouvré du
+              mois affiché (au lieu de "aujourd'hui" qui n'apparaîtrait jamais
+              dans ce registre). */}
           {activeTab === "register" && register && (
-            <button onClick={() => setShowAppelModal(true)}
+            <button onClick={() => {
+              const now = new Date();
+              const isCurrentMonth = selectedMonth === now.getMonth() + 1 && selectedYear === now.getFullYear();
+              if (isCurrentMonth) {
+                setAppelDate(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`);
+              } else {
+                const first = new Date(selectedYear, selectedMonth - 1, 1);
+                while (first.getDay() < 1 || first.getDay() > 5) first.setDate(first.getDate() + 1);
+                setAppelDate(`${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, "0")}-${String(first.getDate()).padStart(2, "0")}`);
+              }
+              setShowAppelModal(true);
+            }}
               className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700">
               <CalendarCheck className="h-4 w-4" />
               Faire l'appel

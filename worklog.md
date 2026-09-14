@@ -10529,3 +10529,24 @@ Stage Summary:
 - ✅ Filtrage offline validé E2E en production sur les deux familles de sélecteurs : params d'URL (classe, statut, recherche, matière…) ET scope header (niveau) avec réconciliation des deux saveurs d'UUID
 - ✅ Jamais de fausse donnée : autre année demandée → 503, champ invisible → superset, conflit de filtre → exclusion de la source
 - Reco terrain : après ce déploiement, recharger l'app UNE fois en ligne (bump SW v4.4.2 → re-pré-cache ~3-5 min) puis couper le réseau et jouer les sélecteurs
+
+---
+Task ID: 62
+Agent: Super Z (session principale)
+Task: Filtrage par niveau scolaire — directeurs et enseignants ne doivent voir que le contenu de leur niveau (retour utilisateur) : pédagogie (matières/programmes, enseignants, affectations, emplois du temps) scopé par périmètre ; directeur du secondaire sans Planification annuelle ; Espace Pédagogique du secondaire limité à Cahier de Texte + Matériel (+ suivi élèves) ; enseignants secondaires sans cahier journal/fiches/semainier. Seul le promoteur voit tout.
+
+Work Log:
+- Diagnostic (2 agents Explore + DB Neon) : le scope serveur se résout DÉJÀ pour les directeurs (StaffAdminAssignment DIRECTEUR/MAT_PRI actif + suffixe de rôle DIRECTEUR_MAT_PRI → MAT+PRI ; enseignants via Teacher.schoolLevelId) MAIS les 7 services de listes pédagogie ne l'appliquaient JAMAIS (schoolLevelId = simple filtre optionnel client) et pedagogyFetch n'envoyait pas le header x-school-level-id
+- Backend : nouveau helper scope-where.applyLevelScope (injecte { in: levelIds } si pas de filtre explicite ; no-op transverse) + resolveEffectiveLevelFilter (query OU header, tolérance UUID school_levels/education_levels/miroirs EN/composites via resolveSchoolLevelFilter) ; scopés : subjects, teachers, timetables, sections (Class.schoolLevelId), classes (AcademicClass → mapping EDUCATION_CODE_TO_PEDAGOGY sur level.name), teacher-profiles + multigrade (via relation teacher), documents soumis + semainiers + stats (validation direction) — 17 fichiers backend
+- Frontend : pedagogyFetch envoie x-school-level-id (réplique exacte axios : UUID school_levels prioritaire, ALL réservé transverse) ; Espace Pédagogie FR+EN : Cahier de Semaine → maternellePrimaireOnly + fallback robuste isSecondaryLevel (accréditations/scope quand aucun niveau sélectionné) ; Validation Direction FR+EN : semainier réservé MAT/PRI, registres EN alignés FR, cartes filtrées ; Planification annuelle masquée secondaire-only : onglets pédagogie (hook useVisiblePedagogyTabs substitué dans les 15 pages), sidebar portail enseignant, gardes URL directe pedagogy+teacher ; nouveaux hooks useSecondaryOnlyUser (périmètre réactif /api/school-levels + fallback) et usePedagogyTabs — 25 fichiers frontend
+- Nettoyage variables devenues inutilisées (userRole/user/useAppSession) dans les 15 pages ; hooks hissés avant tout early-return (règle des hooks) ; anomalie d'affichage bash investiguée (faux positif « syntaxe invalide » teacher/layout.tsx — fichier sain, [m avalé par l'affichage)
+- Tests : transpilation ciblée 17 backend + 25 frontend ✓ ; 30+ assertions fonctionnelles ✓ ; régressions SW v4.1 (71), v4.3 (22), v4.4 (63) toutes ✓ (sw.js non modifié) ; imports inutilisés restants tous préexistants (Next 15 ne linte plus au build)
+- Commit c1de61715 poussé sur origin/main (rebase propre sur 98b6d627c arrivé en cours de travail)
+
+Stage Summary:
+- ✅ Directeur MAT_PRI (aganimathieu6@gmail.com) : ne voit que Maternelle+Primaire dans matières, enseignants, affectations, emplois du temps, classes/sections, multigrades, profils — le promoteur voit tout
+- ✅ Directeur/enseignant du secondaire : périmètre SECONDAIRE uniquement (même mécanique — rôle DIRECTEUR_SEC/Teacher SECONDAIRE) ; sans Planification annuelle (onglet + sidebar + URL directe) ; Espace Pédagogique limité à Mes Classes, Appel, Cahier de Texte, Matériel
+- ✅ Le sélecteur de niveau du header affine désormais réellement les listes pédagogie (header résolu avec tolérance UUID double-saveur)
+- ✅ Offline intact : SW clé par __ah_lvl + fallback filtre schoolLevelId déjà en place (v4.4.x), pré-cache sans header = variantes de périmètre
+- ⚠️ E2E production limité au compte promoteur (mots de passe directeur/enseignants inconnus) : non-régression transverse + filtre explicite vérifiés ; le scoping restreint est validé par tests statiques + régression SW
+- Reco : à la prochaine connexion du directeur (aganimathieu6@gmail.com), vérifier que le module Pédagogie ne montre plus que Maternelle+Primaire ; pour créer un directeur du secondaire, passer par RH → affectation admin DIRECTEUR/SEC (le rôle User est synchronisé en DIRECTEUR_SEC automatiquement)

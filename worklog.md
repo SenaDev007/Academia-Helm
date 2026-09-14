@@ -10573,3 +10573,25 @@ Stage Summary:
 - ✅ Soumission → directeur : la vue directeur affiche les mêmes formats maternelle (pas le modèle primaire) + observations par section + exports PDF dédiés
 - ✅ Anti-vide maternelle, duplication cross-year, matching domaines→fiches dans « Fiches à préparer », non-régression primaire (recto/verso inchangés)
 - Périmètre FR uniquement (piste anglophone = composants EN séparés, hors scope de ces modèles officiels FR)
+
+---
+Task ID: 63 (suite — validation E2E production post-déploiement)
+Agent: Super Z (session principale)
+Task: Validation E2E production des formats maternelle (commit ed1c6d6bd — Railway + Vercel auto-déployés)
+
+Work Log:
+- Déploiements vérifiés : Railway (API) redéployé après ~10 min de build (premier passage = ancien code, second passage = nouveau code actif) ; Vercel (frontend) OK ; health 200 en 0,3s
+- E2E production (compte de recette promoteur cspeb, scripts/e2e_maternelle_prod2.cjs — Bearer token + x-tenant-id, base https://api.academiahelm.com/api) :
+  1. Login recette ✓ (role PROMOTEUR)
+  2. Année active 2026-2027 récupérée ✓
+  3. my-classes : 7 classes — Maternelle 1 détectée avec schoolLevelCode=MATERNELLE ✓
+  4. getOrCreateCahierJournal (semaine du 14/09) : réponse enrichie niveau=MATERNELLE ✓ (clé de bascule de la grille domaines côté enseignant ET directeur)
+  5. POST /fiches sheetType=DOMAINE + maternelleContent → 201 : relecture domainNumber=4, rangement persistés dans la colonne JSONB ✓
+  6. GET /director/fiches/:id → schoolLevelCode=MATERNELLE + classNameResolved=Maternelle 1 ✓ (JOIN school_levels déployé — le directeur verra le format maternelle)
+  7. GET /fiches/:id/export-pdf → 219 Ko, contenu vérifié par pdftotext : « ÉCOLE MATERNELLE — CSPEB-Eveil d'Afrique Education », badge DOMAINE, FICHE DE, Domaine du, Composante/Date/Sous-composante, ACTIVITÉS D'APPRENTISSAGE N°, DÉROULEMENT (Consignes | Résultats Attendus + INTRODUCTION), RÉALISATION — Construction de nouveaux savoirs, RETOUR ET PROJECTION, RANGEMENT, Notes personnelles ✓
+  8. Fiche de test supprimée (nettoyage) ✓
+- Scripts persistés (hors dépôt) : e2e_maternelle_prod2.cjs + e2e_fiche_maternelle.pdf (capture de contrôle)
+
+Stage Summary:
+- ✅ Formats maternelle déployés et validés de bout en bout en production : détection niveau → cahier journal domaines → fiche DOMAINE/DOMAINE_2 avec maternelleContent → vue directeur maternelle → export PDF maternelle conforme
+- Reste (queue utilisateur) : vérification visuelle navigateur (grille + formulaires) côté enseignant et directeur ; éventuelles retouches cosmétiques

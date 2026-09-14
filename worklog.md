@@ -10469,3 +10469,20 @@ Stage Summary:
 - ✅ CRUD offline complet : ajout/modification/suppression mis en file (X-Sync-Status: pending), écriture optimiste visible, replay HTTP exact à la reconnexion
 - ✅ Balayage exhaustif : 96 routes de modules/onglets/sous-onglets/portails vérifiées hors ligne en production
 - ⏳ Reco : sur les appareils de test des utilisateurs, recharger l'app EN LIGNE une fois (bump SW v4.3.0 → re-pré-cache automatique ~3-5 min avec le crawl) avant de repasser hors ligne
+
+---
+Task ID: 60
+Agent: Super Z (session principale)
+Task: Retour utilisateur pédagogie — « onglet enseignant et affectation, sous-onglet affectation par classe : tu as réduit la hauteur des panneaux gauche/droit pour les barres de scroll ; je veux que la hauteur par défaut soit LE DOUBLE de ce que tu as fait, même s'il y a des barres de scroll »
+
+Work Log:
+- ENV : worktree propre sur origin/main ebc8f258 (v4.3.0) ; commit concerné identifié = 41deac0 (fix affectations — scroll des panneaux) qui avait borné les panneaux à lg:max-h-[calc(100vh-26rem)] et les listes gauches mobiles à max-h-[60vh] dans les 2 sous-onglets « Profils & Disponibilités » et « Affectations par Classe »
+- AssignmentsWorkspace.tsx (Affectations par Classe) : panneau gauche « Sections physiques » ET panneau droit « Détail de la section » → lg:max-h-[calc(200vh-52rem)] (= 2 × calc(100vh − 26rem)) ; liste gauche mobile max-h-[60vh] → max-h-[120vh] ; barres de scroll internes CONSERVÉES (overflow-y-auto + min-h-0 inchangés — le scroll n'apparaît désormais qu'au-delà du double)
+- TeachersAcademicWorkspace.tsx (Profils & Disponibilités, même onglet) : panneau gauche « Corps Enseignant » ET panneau droit « Fiche profil » → mêmes doublages pour cohérence de l'onglet entier
+- Hors périmètre (inchangés volontairement) : max-h-[60vh] de ManualTimetablesEditor (emplois du temps) et ProductionWorkspace (production) — autres onglets, pas concernés par le retour ; max-h-[80vh] de la modale enseignant
+- Validation : scripts/_check_panels_double_height.js — transpilation TSX 2/2 OK, 0 diagnostic ; 4× calc(200vh-52rem) + 2× max-h-[120vh] présents, 0 ancienne valeur restante
+
+Stage Summary:
+- ✅ Hauteur par défaut des panneaux gauche/droit DOUBLÉE dans les sous-onglets « Profils & Disponibilités » et « Affectations par Classe » : sur un écran 768 px les panneaux passent de ~352 px à ~704 px avant apparition du scroll interne ; sur 1080p ils peuvent atteindre ~1328 px
+- ✅ Barres de scroll conservées : au-delà du double, le contenu défile toujours dans le panneau (comportement identique, seuil doublé)
+- Reco : vérifier en production après déploiement — pédagogie → enseignants & affectations → les 2 sous-onglets, cartes visiblement plus hautes d'emblée

@@ -1381,8 +1381,10 @@ export default function TeachersAcademicWorkspace() {
             {/* ⭐ FIX UX (2026-09-14) : hauteur bornée + barre de scroll interne —
                 avant, un corps enseignant très long étirait toute la page :
                 il fallait descendre tout en bas pour cliquer un enseignant
-                puis remonter pour consulter la fiche. */}
-            <div className="rounded-xl border border-slate-200 bg-slate-50/20 flex flex-col lg:max-h-[calc(100vh-26rem)]">
+                puis remonter pour consulter la fiche.
+                ⭐ RETOUR UTILISATEUR (2026-09-14) : hauteur par défaut DOUBLÉE
+                (2 × calc(100vh − 26rem)) — les panneaux étaient trop tassés. */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/20 flex flex-col lg:max-h-[calc(200vh-52rem)]">
               <div className="p-4 border-b border-slate-200 bg-slate-50/50 space-y-3">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
@@ -1402,8 +1404,8 @@ export default function TeachersAcademicWorkspace() {
                 </div>
               </div>
 
-              {/* max-h mobile 60vh ; desktop : borné par le panneau parent (lg:max-h-none) */}
-              <div className="p-2 space-y-1 bg-white flex-1 min-h-0 overflow-y-auto max-h-[60vh] lg:max-h-none">
+              {/* max-h mobile 120vh (doublé) ; desktop : borné par le panneau parent (lg:max-h-none) */}
+              <div className="p-2 space-y-1 bg-white flex-1 min-h-0 overflow-y-auto max-h-[120vh] lg:max-h-none">
                 {loading ? (
                   <div className="p-8 text-center space-y-3">
                     <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin mx-auto" style={{ borderColor: PRIMARY, borderTopColor: 'transparent' }} />
@@ -1458,8 +1460,10 @@ export default function TeachersAcademicWorkspace() {
             {/* Fiche active (Droite) — lg:col-span-2 pour prendre 2/3 de la largeur */}
             {/* ⭐ FIX UX (2026-09-14) : hauteur bornée + scroll interne — le header
                 du profil (nom + actions PDF/email) reste visible, le contenu
-                (KPIs, habilitations, disponibilités…) défile dans la zone dédiée. */}
-            <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col lg:max-h-[calc(100vh-26rem)]">
+                (KPIs, habilitations, disponibilités…) défile dans la zone dédiée.
+                ⭐ RETOUR UTILISATEUR (2026-09-14) : hauteur par défaut DOUBLÉE
+                (2 × calc(100vh − 26rem)) — davantage de contenu visible d'emblée. */}
+            <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col lg:max-h-[calc(200vh-52rem)]">
               {selectedTeacherId ? (
                 activeProfile ? (
                   <div className="flex flex-col flex-1 min-h-0">

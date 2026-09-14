@@ -679,8 +679,10 @@ export default function AssignmentsWorkspace() {
         {/* ⭐ FIX UX (2026-09-14) : hauteur bornée + barre de scroll interne —
             avant, une longue liste de sections étirait toute la page :
             il fallait descendre tout en bas pour cliquer une section puis
-            remonter pour travailler dans le panneau de droite. */}
-        <div className="lg:col-span-1 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col lg:max-h-[calc(100vh-26rem)]">
+            remonter pour travailler dans le panneau de droite.
+            ⭐ RETOUR UTILISATEUR (2026-09-14) : hauteur par défaut DOUBLÉE
+            (2 × calc(100vh − 26rem)) — les panneaux étaient trop tassés. */}
+        <div className="lg:col-span-1 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col lg:max-h-[calc(200vh-52rem)]">
           <div className="p-4 border-b border-slate-200">
             <div className="flex items-center gap-2 mb-3">
               <Users className="w-4 h-4" style={{ color: PRIMARY }} />
@@ -698,8 +700,8 @@ export default function AssignmentsWorkspace() {
             </div>
           </div>
 
-          {/* max-h mobile 60vh ; desktop : borné par le panneau parent (lg:max-h-none) */}
-          <div className="flex-1 min-h-0 p-2 overflow-y-auto max-h-[60vh] lg:max-h-none">
+          {/* max-h mobile 120vh (doublé) ; desktop : borné par le panneau parent (lg:max-h-none) */}
+          <div className="flex-1 min-h-0 p-2 overflow-y-auto max-h-[120vh] lg:max-h-none">
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
@@ -752,8 +754,10 @@ export default function AssignmentsWorkspace() {
         {/* ── Panneau droit : Détail de la section sélectionnée ── */}
         {/* ⭐ FIX UX (2026-09-14) : hauteur bornée + scroll interne pour que le
             panneau reste visible sans étirer la page quand la liste des
-            matières (mode Spécialiste) est longue. */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col lg:max-h-[calc(100vh-26rem)]">
+            matières (mode Spécialiste) est longue.
+            ⭐ RETOUR UTILISATEUR (2026-09-14) : hauteur par défaut DOUBLÉE
+            (2 × calc(100vh − 26rem)) — davantage de contenu visible d'emblée. */}
+        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col lg:max-h-[calc(200vh-52rem)]">
           {/* Bilingual switch */}
           {isBilingual && (
             <div className="flex items-center gap-2 bg-slate-100 rounded-xl p-1 mx-4 mt-4 mb-2 self-start">

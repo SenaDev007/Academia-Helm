@@ -30,10 +30,26 @@ export class DatabaseTriggersBootstrapService {
 
   private getModule1TriggerStatements(): string[] {
     return [
+      // ⭐ FIX 2026-09-14 : bypass contrôlé — la suppression définitive d'un élève
+      //    (StudentsLifecycleService.deleteStudent, réservée aux statuts
+      //    PRE_REGISTERED/ADMITTED sans paiements) pose le flag transaction-local
+      //    app.allow_student_delete='true' DANS la même transaction que le DELETE.
+      //    Aucune autre voie ne peut le poser. Pattern identique à
+      //    app.allow_transaction_delete (finance) — voir getFinanceTriggerStatements().
+      //    ⚠ Ce bootstrap ré-applique les triggers à CHAQUE démarrage : toute
+      //    modification du function doit être faite ICI ET dans la migration
+      //    20260914100000_student_delete_guc_escape (les deux doivent rester
+      //    synchronisées).
       `CREATE OR REPLACE FUNCTION prevent_student_delete()
 RETURNS TRIGGER AS $$
+DECLARE
+  allow_delete text;
 BEGIN
-  RAISE EXCEPTION 'Suppression physique interdite. Utiliser is_active = false ou status = WITHDRAWN';
+  allow_delete := current_setting('app.allow_student_delete', true);
+  IF allow_delete IS NOT NULL AND allow_delete = 'true' THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'Suppression physique interdite. Utiliser is_active = false ou status = WITHDRAWN. La suppression définitive passe exclusivement par le service applicatif (POST /students/delete-student).';
 END;
 $$ LANGUAGE plpgsql`,
       `DROP TRIGGER IF EXISTS trg_prevent_student_delete ON "students"`,

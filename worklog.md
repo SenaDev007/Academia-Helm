@@ -10510,3 +10510,22 @@ Stage Summary:
 - ✅ La bibliothèque globale devrait recharger ses données (le 400 backend est corrigé — à vérifier post-déploiement Railway)
 - ⏳ E2E production post-déploiement : login → attendre SW v4.4 + re-pré-cache (SW_ACTIVATED invalide les flags 24 h) → mode avion → jouer les sélecteurs niveau/classe dans élèves/finances/examens/pédagogie
 - Reco : recharger l'app EN LIGNE une fois après déploiement (bump SW → re-pré-cache ~3-5 min) avant de repasser hors ligne
+
+---
+Task ID: 61 (suite — v4.4.1 + v4.4.2, E2E production 24/24)
+Agent: Super Z (session principale)
+Task: Suite et validation terrain des filtres hors ligne v4.4.0
+
+Work Log:
+- v4.4.1 (7eb6be46) — la cascade IndexedDB (swIdbFallbackForGet) servait les entités de l'année ACTIVE pour une AUTRE année demandée : (2) fallback par chemin n'élit plus que les entrées de la bonne année, (3) stores d'entités sautés si année demandée ≠ année active → 503 honnête
+- v4.4.2 (b171835) — E2E production : une variante SANS année dans sa clé (ex. /api/students?limit=500, scopée implicitement à l'année active par header serveur) passait l'éligibilité → 200 non filtré (554 Ko). Règle « année implicite = année active » appliquée à swFilteredApiFallback + matchApiByPath + cascade IDB (2). AU PASSAGE : crash corrigé dans le tie-break d'égalité de couverture (best.c.exactPins — la propriété .c n'existe pas après spread) → exception silencieuse → réponse non filtrée dès que deux variantes de même taille coexistaient
+- E2E production final (scripts sandbox e2e_v44_filters_prod.cjs — Playwright chromium, login BFF promoteur + réplication persistClientSession, attente flags pré-cache, context.setOffline) : 24/24 ✓
+  * pré-cache v4.4.2 complet en ~2 min (flags api + modules posés)
+  * global-library : PLUS de 400 en ligne (fix backend Railway déployé — bibliothèque vide pour ce tenant mais l'endpoint répond 200)
+  * MODE AVION : classId → élèves de la classe 1ERE-D uniquement + total recalculé ; niveau header UUID school_levels ET UUID éducation → même résultat (réconciliation d'alias) ; classId+status combinés ; année inexistante → 503 ; finance comptes élèves filtrés par classe (total ≤ large) ; évaluations cross-origin filtrées par classe ; bibliothèque 200 ; UI /app/students rendue sans « Connexion instable »
+- Tests finaux : v44 63 ✓ (dont 2 nouveaux cas implicit-active-year), v40 71 ✓, v41 71 ✓, v42 186 ✓, v43 22 ✓
+
+Stage Summary:
+- ✅ Filtrage offline validé E2E en production sur les deux familles de sélecteurs : params d'URL (classe, statut, recherche, matière…) ET scope header (niveau) avec réconciliation des deux saveurs d'UUID
+- ✅ Jamais de fausse donnée : autre année demandée → 503, champ invisible → superset, conflit de filtre → exclusion de la source
+- Reco terrain : après ce déploiement, recharger l'app UNE fois en ligne (bump SW v4.4.2 → re-pré-cache ~3-5 min) puis couper le réseau et jouer les sélecteurs

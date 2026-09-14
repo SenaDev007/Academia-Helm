@@ -34,9 +34,11 @@ import {
   FileText, Loader2, Plus, Save, RefreshCw, Send, Trash2,
   ChevronLeft, Clock, CheckCircle2, XCircle, BookOpen, Sigma,
   FlaskConical, Users, Palette, Download, History, Copy, Dumbbell,
+  Blocks, Shapes,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
+import { useAppSession } from "@/contexts/AppSessionContext";
 // ⭐ 2026-09-15 : SignatureCanvas + useAppSession retirés — plus aucune
 //    signature sur les fiches pédagogiques, et le user connecté n'est plus
 //    affiché (le contexte signature a été supprimé).
@@ -66,6 +68,39 @@ const SHEET_TYPES = [
   { type: "ES", label: "Éducation Sociale", icon: Users, color: "bg-amber-100 text-amber-700 border-amber-200", headerBg: "bg-amber-600", sectionBorder: "border-amber-300" },
   { type: "EA", label: "Éducation Artistique", icon: Palette, color: "bg-pink-100 text-pink-700 border-pink-200", headerBg: "bg-pink-600", sectionBorder: "border-pink-300" },
   { type: "EPS", label: "Éducation Physique et Sportive", icon: Dumbbell, color: "bg-cyan-100 text-cyan-700 border-cyan-200", headerBg: "bg-cyan-600", sectionBorder: "border-cyan-300" },
+] as const;
+
+// ⭐ 2026-09-15 MATERNELLE — 2 seuls formats de fiches pédagogiques pour les
+//    classes de maternelle (conformes aux modèles officiels fournis) :
+//      - DOMAINE   : fiche « Domaine » — le numéro du domaine est renseigné
+//                    par l'enseignante (ex: 1, 3, IV…)
+//      - DOMAINE_2 : fiche « Domaine 2 » — DOMAINE II (Expression corporelle)
+//    NB : le DÉROULEMENT de DOMAINE est un tableau 2 colonnes
+//    (Consignes | Résultats Attendus) ; celui de DOMAINE_2 un tableau
+//    5 colonnes (Plan | Durée | Description des activités | Formation
+//    Evolution | Dosage). Les deux se terminent par RÉALISATION, RETOUR ET
+//    PROJECTION, RANGEMENT et Notes personnelles.
+// ⭐ Libellés lisibles des colonnes de la grille maternelle (clés entries)
+const MAT_KEY_LABELS: Record<string, string> = {
+  dom1_sante: "Éducation pour la santé",
+  dom2_corporelle: "Expression corporelle",
+  pre_lecture: "Pré-lecture",
+  pre_ecriture: "Pré-écriture",
+  pre_mathematiques: "Pré-mathématiques",
+  obs_dom: "Observations",
+  dom3_sensorielle: "Éducation sensorielle",
+  dom3_travaux_manuels: "Travaux manuels",
+  dom4_emotionnelle: "Expression émotionnelle",
+  dom4_plastique: "Expression plastique",
+  dom5_comm_orale: "Communication orale",
+  dom5_conte: "Conte",
+  dom5_poesie_chant: "Poésie chant comptine",
+  dom5_act_libres: "Activités libres",
+};
+
+const MATERNELLE_SHEET_TYPES = [
+  { type: "DOMAINE", label: "Domaine", sub: "N° du domaine à renseigner par l'enseignante", icon: Blocks, color: "bg-indigo-100 text-indigo-700 border-indigo-200", headerBg: "bg-indigo-600", sectionBorder: "border-indigo-300" },
+  { type: "DOMAINE_2", label: "Domaine 2", sub: "Fiche dédiée au DOMAINE II", icon: Shapes, color: "bg-teal-100 text-teal-700 border-teal-200", headerBg: "bg-teal-600", sectionBorder: "border-teal-300" },
 ] as const;
 
 const STATUS_CONFIG = {
@@ -157,6 +192,7 @@ const SHEET_TYPE_CONFIG: Record<string, {
 };
 
 export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahierJournalId, initialClassId, initialLessonDay, initialSheetType, initialMatiere, initialFicheId }: PedagogicalSheetsTabProps) {
+  const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [fiches, setFiches] = useState<any[]>([]);
@@ -204,8 +240,64 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     boysAbsent: 0, girlsAbsent: 0, totalAbsent: 0,
     // ⭐ 2026-09-15 : champs teacherSignature/directorSignature retirés —
     //    plus de signature sur les fiches pédagogiques.
+    // ⭐ 2026-09-15 MATERNELLE — contenu structuré des fiches DOMAINE/DOMAINE_2
+    //    (persisté dans la colonne JSONB maternelleContent).
+    maternelle: {
+      ficheDe: "", domainNumber: "", domaineDu: "",
+      composante: "", sousComposante: "", activiteNumero: "",
+      theme: "", titre: "", section: "", duree: "", materiel: "",
+      competence: "", capacite: "", habiletes: "", strategies: "",
+      // DOMAINE_2 — tableau 5 colonnes
+      der5: [] as Array<{ plan: string; duree: string; description: string; formationEvolution: string; dosage: string }>,
+      // DOMAINE — tableau 2 colonnes (Consignes | Résultats Attendus) avec INTRODUCTION
+      deroulementIntro: {
+        miseEnSituation: { consignes: "", resultats: "" },
+        acquisAnterieurs: { consignes: "", resultats: "" },
+        annonceApprentissage: { consignes: "", resultats: "" },
+      },
+      // DOMAINE_2 — INTRODUCTION en 3 zones
+      intro: { miseEnSituation: "", acquisAnterieurs: "", annonceApprentissage: "" },
+      // RÉALISATION (+ sous-structure DOMAINE_2)
+      realisation: "", situationProbleme: "", questionComprehension: "",
+      activites: { a1: "", nb2: "", a2: "", nb3: "", a3: "" },
+      // RETOUR ET PROJECTION
+      retour: "", evaluation: "", connexion: "", projection: "",
+      // RANGEMENT + Notes personnelles
+      rangement: "", notesPersonnelles: "",
+    },
   };
   const [form, setForm] = useState<any>(emptyForm);
+
+  // ⭐ 2026-09-15 MATERNELLE : la classe sélectionnée est-elle une classe de
+  //    maternelle ? (my-classes renvoie schoolLevelCode/schoolLevelName)
+  //    → seuls les 2 formats maternelle (DOMAINE | DOMAINE_2) s'affichent.
+  const selectedClassInfo = classes.find(c => c.classId === selectedClassId);
+  const isMaternelleClass =
+    (selectedClassInfo?.schoolLevelCode || "").toUpperCase() === "MATERNELLE" ||
+    (selectedClassInfo?.schoolLevelName || "").toLowerCase() === "maternelle";
+  const sheetTypesForClass: readonly any[] = isMaternelleClass ? MATERNELLE_SHEET_TYPES : SHEET_TYPES;
+
+  // ⭐ MATERNELLE : lecture/écriture des champs imbriqués de form.maternelle
+  const getMat = (path: string): any => {
+    let v: any = form.maternelle;
+    for (const k of path.split(".")) v = (v || {})[k];
+    return v ?? "";
+  };
+  const setMat = (path: string, value: any) => setForm((p: any) => {
+    const mat = { ...(p.maternelle || {}) };
+    const keys = path.split(".");
+    let obj: any = mat;
+    for (let i = 0; i < keys.length - 1; i++) {
+      obj[keys[i]] = { ...(obj[keys[i]] || {}) };
+      obj = obj[keys[i]];
+    }
+    obj[keys[keys.length - 1]] = value;
+    return { ...p, maternelle: mat };
+  });
+  // ⭐ MATERNELLE (DOMAINE_2) : lignes du tableau DÉROULEMENT 5 colonnes
+  const addDer5Row = () => setMat("der5", [...(form.maternelle?.der5 || []), { plan: "", duree: "", description: "", formationEvolution: "", dosage: "" }]);
+  const updateDer5Row = (idx: number, field: string, val: string) => setMat("der5", (form.maternelle?.der5 || []).map((r: any, i: number) => i === idx ? { ...r, [field]: val } : r));
+  const removeDer5Row = (idx: number) => setMat("der5", (form.maternelle?.der5 || []).filter((_: any, i: number) => i !== idx));
 
   // === Chargement ===
   const loadClasses = useCallback(async () => {
@@ -366,10 +458,21 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     }
     if (initialMatiere) {
       // Mettre le nom de la matière dans le champ "titre" ou "cours"
+      // ⭐ MATERNELLE : pour les fiches DOMAINE/DOMAINE_2, remplir le champ
+      //    Titre du contenu maternelle avec le libellé lisible du domaine.
+      const isMatType = initialSheetType === "DOMAINE" || initialSheetType === "DOMAINE_2";
+      const matLabel = MAT_KEY_LABELS[initialMatiere] || initialMatiere.charAt(0).toUpperCase() + initialMatiere.slice(1);
       setForm((p: any) => ({
         ...p,
         cours: p.cours || initialMatiere.charAt(0).toUpperCase() + initialMatiere.slice(1),
-        titre: p.titre || `Fiche ${initialMatiere}`,
+        titre: p.titre || `Fiche ${matLabel}`,
+        ...(isMatType ? {
+          maternelle: {
+            ...p.maternelle,
+            titre: p.maternelle?.titre || matLabel,
+            domainNumber: p.maternelle?.domainNumber || (initialSheetType === "DOMAINE_2" ? "" : p.maternelle?.domainNumber || ""),
+          },
+        } : {}),
       }));
     }
     // Ouvrir automatiquement le formulaire
@@ -420,13 +523,43 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       });
       return;
     }
+    // ⭐ MATERNELLE : anti-vide sur le contenu structuré maternelleContent
+    const isMaternelleFiche = isMaternelleClass || form.sheetType === "DOMAINE" || form.sheetType === "DOMAINE_2";
+    if (isMaternelleFiche) {
+      const m = form.maternelle || {};
+      const str = (v: any) => stripHtml(String(v ?? ""));
+      const matHasContent =
+        [m.domaineDu, m.composante, m.sousComposante, m.theme, m.titre, m.section, m.duree, m.materiel,
+         m.competence, m.capacite, m.habiletes, m.strategies, m.realisation, m.situationProbleme,
+         m.questionComprehension, m.retour, m.evaluation, m.connexion, m.projection, m.rangement,
+         m.notesPersonnelles, m.intro?.miseEnSituation, m.intro?.acquisAnterieurs, m.intro?.annonceApprentissage,
+         m.activites?.a1, m.activites?.a2, m.activites?.a3, m.activites?.nb2, m.activites?.nb3]
+          .some((v: any) => str(v).length > 0)
+        || (Array.isArray(m.der5) && m.der5.some((r: any) => Object.values(r || {}).some((v: any) => String(v || "").trim().length > 0)))
+        || Object.values(m.deroulementIntro || {}).some((cell: any) =>
+          str(cell?.consignes).length > 0 || str(cell?.resultats).length > 0);
+      if (!matHasContent) {
+        toast.error("Aucun contenu à enregistrer", {
+          description: "Vous n'avez rien renseigné dans cette fiche maternelle. Remplissez au moins un champ (thème, composante, déroulement, réalisation…) avant d'enregistrer.",
+        });
+        return;
+      }
+    }
     setSaving(true);
     try {
       const url = editingFiche ? `/api/pedagogy-space/fiches/${editingFiche.id}` : "/api/pedagogy-space/fiches";
       const method = editingFiche ? "PUT" : "POST";
-      const body = editingFiche
+      const body: any = editingFiche
         ? { ...form }
         : { ...form, academicYearId, teacherId, cahierJournalId: cahierJournalId || undefined };
+      // ⭐ MATERNELLE : miroir des champs clés dans les colonnes de liste +
+      //    contenu structuré complet dans maternelleContent (JSONB).
+      if (isMaternelleFiche) {
+        body.titre = form.maternelle?.titre || form.titre || "";
+        body.duree = form.maternelle?.duree || form.duree || "";
+        body.competence = form.maternelle?.competence || "";
+        body.maternelleContent = form.maternelle;
+      }
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(body) });
       if (!res.ok) throw new Error("Erreur de sauvegarde");
       toast.success(editingFiche ? "✅ Fiche mise à jour" : "✅ Fiche créée");
@@ -452,12 +585,30 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
 
   const handleEdit = (fiche: any) => {
     setEditingFiche(fiche);
+    // ⭐ MATERNELLE : parser maternelleContent (JSONB ou string) et fusionner
+    //    avec les défauts pour que les objets imbriqués existent toujours.
+    let mc: any = {};
+    if (fiche.maternelleContent) {
+      try { mc = typeof fiche.maternelleContent === "string" ? JSON.parse(fiche.maternelleContent) : fiche.maternelleContent; } catch { mc = {}; }
+    }
     setForm({
       ...emptyForm, ...fiche,
       lessonDate: fiche.lessonDate ? formatDate(fiche.lessonDate) : "",
       adminDate: fiche.adminDate ? formatDate(fiche.adminDate) : "",
       deroulement: Array.isArray(fiche.deroulement) ? fiche.deroulement :
         (typeof fiche.deroulement === "string" ? JSON.parse(fiche.deroulement || "[]") : []),
+      maternelle: {
+        ...emptyForm.maternelle, ...mc,
+        der5: Array.isArray(mc.der5) ? mc.der5 : [],
+        deroulementIntro: {
+          ...emptyForm.maternelle.deroulementIntro, ...(mc.deroulementIntro || {}),
+          miseEnSituation: { ...emptyForm.maternelle.deroulementIntro.miseEnSituation, ...(mc.deroulementIntro?.miseEnSituation || {}) },
+          acquisAnterieurs: { ...emptyForm.maternelle.deroulementIntro.acquisAnterieurs, ...(mc.deroulementIntro?.acquisAnterieurs || {}) },
+          annonceApprentissage: { ...emptyForm.maternelle.deroulementIntro.annonceApprentissage, ...(mc.deroulementIntro?.annonceApprentissage || {}) },
+        },
+        intro: { ...emptyForm.maternelle.intro, ...(mc.intro || {}) },
+        activites: { ...emptyForm.maternelle.activites, ...(mc.activites || {}) },
+      },
     });
     setShowForm(true);
   };
@@ -492,6 +643,420 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   if (showForm) {
     // ⭐ Badge de statut affiché dans la barre d'actions
     const formStatus = STATUS_CONFIG[form.status as keyof typeof STATUS_CONFIG];
+    // ⭐ 2026-09-15 MATERNELLE — formulaire dédié aux fiches DOMAINE | DOMAINE_2
+    //    (structure conforme aux modèles officiels de la maternelle : ÉCOLE
+    //    MATERNELLE, FICHE DE, DOMAINE [n°], Domaine du, Composante, Date,
+    //    Sous-composante, ACTIVITÉS D'APPRENTISSAGE N°, champs, DÉROULEMENT,
+    //    INTRODUCTION, RÉALISATION, RETOUR ET PROJECTION, RANGEMENT,
+    //    Notes personnelles).
+    const isMaternelleFicheForm = isMaternelleClass || form.sheetType === "DOMAINE" || form.sheetType === "DOMAINE_2";
+    if (isMaternelleFicheForm) {
+      const matType = MATERNELLE_SHEET_TYPES.find(t => t.type === form.sheetType) || MATERNELLE_SHEET_TYPES[0];
+      const isDom2 = form.sheetType === "DOMAINE_2";
+      return (
+        <div className="space-y-4">
+          {/* Barre d'actions */}
+          <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <button onClick={() => { setShowForm(false); setEditingFiche(null); setForm(emptyForm); }}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg">
+              <ChevronLeft className="h-4 w-4" /> Retour à la liste
+            </button>
+            <div className="flex items-center gap-2">
+              {formStatus && form.status !== 'DRAFT' && (
+                <span className={cn("flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold uppercase", formStatus.color)}>
+                  <formStatus.icon className="h-3.5 w-3.5" /> {formStatus.label}
+                </span>
+              )}
+              <div className="text-sm font-semibold text-slate-700">{editingFiche ? "Modifier la fiche maternelle" : "Nouvelle fiche maternelle"}</div>
+            </div>
+            <button onClick={handleCreateOrUpdate} disabled={saving || isReadOnly}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              title={isReadOnly ? "Fiche en lecture seule (statut: " + form.status + ")" : undefined}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {editingFiche ? "Mettre à jour" : "Créer la fiche"}
+            </button>
+          </div>
+
+          {/* Sélection du format de fiche maternelle */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <label className="block text-xs font-bold text-slate-700 uppercase mb-3">Format de fiche pédagogique maternelle</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {MATERNELLE_SHEET_TYPES.map((t) => {
+                const Icon = t.icon;
+                return (
+                  <button key={t.type} type="button"
+                    onClick={() => setForm((p: any) => ({ ...p, sheetType: t.type }))}
+                    className={cn("flex items-center gap-3 p-3 border-2 rounded-lg text-left transition-all",
+                      form.sheetType === t.type ? t.color : "bg-white text-slate-500 border-slate-200 hover:border-slate-300")}>
+                    <Icon className="h-6 w-6 shrink-0" />
+                    <div>
+                      <div className="text-sm font-bold">{t.label}</div>
+                      <div className="text-[11px] opacity-75">{t.sub}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* === Document — Modèle officiel maternelle === */}
+          <div className="bg-white rounded-xl border-2 border-slate-800 p-6 space-y-6">
+            {/* En-tête ÉCOLE MATERNELLE */}
+            <div className="text-center border-b-2 pb-4 rounded-t-lg -mx-6 -mt-6 px-6 py-3 bg-slate-800">
+              <h2 className="text-lg font-bold text-white uppercase tracking-wide">ÉCOLE MATERNELLE</h2>
+              <div className="text-xs text-slate-300 mt-0.5">
+                Fiche pédagogique — {isDom2 ? "DOMAINE II" : "DOMAINE"} · {form.className || classes.find(c => c.classId === form.classId)?.className || "—"}
+              </div>
+            </div>
+
+            {/* FICHE DE + DOMAINE [n°] + Domaine du */}
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="text-xs font-bold text-slate-700 whitespace-nowrap">FICHE DE :</label>
+                <input type="text" value={getMat("ficheDe")} onChange={e => setMat("ficheDe", e.target.value)} disabled={isReadOnly}
+                  placeholder="Nom de l'enseignante" className="flex-1 min-w-[220px] px-3 py-1.5 border-b-2 border-slate-300 focus:border-indigo-500 outline-none text-sm bg-transparent" />
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="inline-flex items-center gap-2 bg-indigo-600 text-white font-bold text-sm px-4 py-1.5 rounded-md">DOMAINE</span>
+                {!isDom2 ? (
+                  <input type="text" value={getMat("domainNumber")} onChange={e => setMat("domainNumber", e.target.value)} disabled={isReadOnly}
+                    placeholder="N° du domaine (à renseigner)" className="w-28 px-3 py-1.5 border-2 border-indigo-300 rounded-md text-center text-sm font-bold focus:border-indigo-500 outline-none" />
+                ) : (
+                  <span className="px-3 py-1.5 bg-slate-100 border-2 border-slate-300 rounded-md text-sm font-bold text-slate-700">II</span>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Domaine du :</label>
+                <textarea value={getMat("domaineDu")} onChange={e => setMat("domaineDu", e.target.value)} disabled={isReadOnly} rows={2}
+                  placeholder="Intitulé du domaine…" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 outline-none" />
+              </div>
+            </div>
+
+            {/* Composante / Date / Sous-composante / Activité N° */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Composante :</label>
+                <input type="text" value={getMat("composante")} onChange={e => setMat("composante", e.target.value)} disabled={isReadOnly}
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Date :</label>
+                <input type="date" value={form.lessonDate || ""} onChange={e => setForm({ ...form, lessonDate: e.target.value })} disabled={isReadOnly}
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Sous-composante :</label>
+                <input type="text" value={getMat("sousComposante")} onChange={e => setMat("sousComposante", e.target.value)} disabled={isReadOnly}
+                  className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm" />
+              </div>
+              <div className="flex items-end gap-2">
+                <span className="inline-flex items-center h-[38px] bg-indigo-600 text-white font-bold text-xs px-3 rounded-md whitespace-nowrap">
+                  {isDom2 ? "ACTIVITÉ D'APPRENTISSAGE N°" : "ACTIVITÉS D'APPRENTISSAGE N°"}
+                </span>
+                <input type="text" value={getMat("activiteNumero")} onChange={e => setMat("activiteNumero", e.target.value)} disabled={isReadOnly}
+                  className="flex-1 min-w-[60px] px-3 py-1.5 border-2 border-indigo-300 rounded-md text-center text-sm font-bold focus:border-indigo-500 outline-none" />
+              </div>
+            </div>
+
+            {/* Champs pédagogiques */}
+            <section className="border-l-4 border-slate-300 pl-4">
+              <h3 className="text-sm font-bold text-slate-900 uppercase mb-3 bg-slate-100 px-3 py-2 rounded-lg">Champs de la fiche</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                {[
+                  { label: "Thème :", key: "theme" },
+                  { label: "Titre :", key: "titre" },
+                  { label: "Section :", key: "section" },
+                  { label: "Durée :", key: "duree" },
+                  { label: isDom2 ? "Matériels :" : "Matériel :", key: "materiel" },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">{f.label}</label>
+                    <input type="text" value={getMat(f.key)} onChange={e => setMat(f.key, e.target.value)} disabled={isReadOnly}
+                      className="w-full px-3 py-1.5 border-b border-slate-300 focus:border-indigo-500 outline-none text-sm bg-transparent" />
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-3">
+                {[
+                  { label: "Compétence :", key: "competence" },
+                  { label: isDom2 ? "Capacités :" : "Capacité :", key: "capacite" },
+                  { label: "Habilités :", key: "habiletes" },
+                  { label: "Stratégies D'ens/Apprent/Eval :", key: "strategies" },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">{f.label}</label>
+                    <RichTextEditor value={getMat(f.key)} onChange={html => setMat(f.key, html)} disabled={isReadOnly} minHeight="60px" />
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* ⭐ Observation du directeur — Champs */}
+            {(() => {
+              let obs = form.directorSectionObservations;
+              if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch { obs = {}; } }
+              const val = (obs as any)?.en_tete;
+              if (!val || !String(val).trim()) return null;
+              return (
+                <div className="p-2 bg-red-50 border border-red-300 rounded-lg">
+                  <div className="text-[10px] font-bold text-red-700 uppercase mb-1">Observation du Directeur — Champs de la fiche</div>
+                  <div className="text-xs text-red-800 font-semibold whitespace-pre-wrap">{String(val)}</div>
+                </div>
+              );
+            })()}
+
+            {/* DÉROULEMENT */}
+            <section className="border-l-4 border-slate-300 pl-4">
+              <h3 className="text-sm font-bold text-slate-900 uppercase mb-3 bg-slate-100 px-3 py-2 rounded-lg">DÉROULEMENT</h3>
+
+              {isDom2 ? (
+                /* DOMAINE 2 — Tableau 5 colonnes : Plan | Durée | Description des activités | Formation Evolution | Dosage */
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-[11px] text-slate-500">Tableau du déroulement — 5 colonnes</div>
+                    {!isReadOnly && (
+                      <button type="button" onClick={addDer5Row} className="flex items-center gap-1 px-2 py-1 text-xs bg-indigo-50 text-indigo-600 rounded hover:bg-indigo-100">
+                        <Plus className="h-3 w-3" /> Ajouter une ligne
+                      </button>
+                    )}
+                  </div>
+                  <div className="overflow-x-auto border border-slate-300 rounded-lg">
+                    <table className="w-full border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-100">
+                          <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Plan</th>
+                          <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-20">Durée</th>
+                          <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase">Description des activités</th>
+                          <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-40">Formation Evolution</th>
+                          <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Dosage</th>
+                          {!isReadOnly && <th className="border border-slate-300 px-2 py-2 w-10"></th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(form.maternelle?.der5 || []).map((row: any, idx: number) => (
+                          <tr key={idx}>
+                            <td className="border border-slate-300 p-1"><input type="text" value={row.plan || ""} onChange={e => updateDer5Row(idx, "plan", e.target.value)} disabled={isReadOnly} className="w-full px-1 py-1 text-center bg-transparent outline-none" /></td>
+                            <td className="border border-slate-300 p-1"><input type="text" value={row.duree || ""} onChange={e => updateDer5Row(idx, "duree", e.target.value)} disabled={isReadOnly} className="w-full px-1 py-1 text-center bg-transparent outline-none" /></td>
+                            <td className="border border-slate-300 p-1"><input type="text" value={row.description || ""} onChange={e => updateDer5Row(idx, "description", e.target.value)} disabled={isReadOnly} className="w-full px-1 py-1 bg-transparent outline-none" /></td>
+                            <td className="border border-slate-300 p-1"><input type="text" value={row.formationEvolution || ""} onChange={e => updateDer5Row(idx, "formationEvolution", e.target.value)} disabled={isReadOnly} className="w-full px-1 py-1 bg-transparent outline-none" /></td>
+                            <td className="border border-slate-300 p-1"><input type="text" value={row.dosage || ""} onChange={e => updateDer5Row(idx, "dosage", e.target.value)} disabled={isReadOnly} className="w-full px-1 py-1 text-center bg-transparent outline-none" /></td>
+                            {!isReadOnly && (
+                              <td className="border border-slate-300 px-1 py-1 text-center">
+                                <button type="button" onClick={() => removeDer5Row(idx)} className="text-red-500 hover:bg-red-50 rounded p-1"><Trash2 className="h-3 w-3" /></button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                        {(!form.maternelle?.der5 || form.maternelle.der5.length === 0) && (
+                          <tr><td colSpan={isReadOnly ? 5 : 6} className="border border-slate-300 px-4 py-4 text-center text-slate-400 text-xs italic">Aucune ligne. Cliquez sur « Ajouter une ligne ».</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                /* DOMAINE — Tableau 2 colonnes : Consignes | Résultats Attendus — avec INTRODUCTION */
+                <div className="overflow-x-auto border border-slate-300 rounded-lg">
+                  <table className="w-full border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-left">Consignes :</th>
+                        <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-left w-[38%]">Résultats Attendus :</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td colSpan={2} className="border border-slate-300 px-3 py-1.5 font-bold text-slate-700 bg-indigo-50 text-[11px] uppercase tracking-wide">INTRODUCTION</td></tr>
+                      {[
+                        { label: "Mise en situation :", key: "miseEnSituation" },
+                        { label: "Prise en compte des acquis antérieurs :", key: "acquisAnterieurs" },
+                        { label: "Annonce de l'apprentissage du jour :", key: "annonceApprentissage" },
+                      ].map(row => (
+                        <tr key={row.key} className="align-top">
+                          <td className="border border-slate-300 p-1">
+                            <div className="text-[11px] font-bold text-slate-600 mb-1">{row.label}</div>
+                            <RichTextEditor value={getMat(`deroulementIntro.${row.key}.consignes`)} onChange={html => setMat(`deroulementIntro.${row.key}.consignes`, html)} disabled={isReadOnly} minHeight="60px" />
+                          </td>
+                          <td className="border border-slate-300 p-0">
+                            <RichTextEditor value={getMat(`deroulementIntro.${row.key}.resultats`)} onChange={html => setMat(`deroulementIntro.${row.key}.resultats`, html)} disabled={isReadOnly} minHeight="76px" />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+
+            {/* ⭐ Observation du directeur — Déroulement */}
+            {(() => {
+              let obs = form.directorSectionObservations;
+              if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch { obs = {}; } }
+              const val = (obs as any)?.deroulement;
+              if (!val || !String(val).trim()) return null;
+              return (
+                <div className="p-2 bg-red-50 border border-red-300 rounded-lg">
+                  <div className="text-[10px] font-bold text-red-700 uppercase mb-1">Observation du Directeur — Déroulement</div>
+                  <div className="text-xs text-red-800 font-semibold whitespace-pre-wrap">{String(val)}</div>
+                </div>
+              );
+            })()}
+
+            {/* INTRODUCTION — DOMAINE_2 (3 zones côte à côte) */}
+            {isDom2 && (
+              <section className="border-l-4 border-slate-300 pl-4">
+                <h3 className="text-sm font-bold text-slate-900 uppercase mb-3 bg-slate-100 px-3 py-2 rounded-lg">INTRODUCTION</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  {[
+                    { label: "Mise en situation", key: "miseEnSituation" },
+                    { label: "Prise en compte des acquis antérieurs", key: "acquisAnterieurs" },
+                    { label: "Annonce de l'apprentissage du jour", key: "annonceApprentissage" },
+                  ].map(z => (
+                    <div key={z.key} className="border border-slate-300 rounded-lg overflow-hidden">
+                      <div className="bg-indigo-50 text-indigo-800 text-[11px] font-bold px-2 py-1.5 border-b border-slate-300">{z.label}</div>
+                      <RichTextEditor value={getMat(`intro.${z.key}`)} onChange={html => setMat(`intro.${z.key}`, html)} disabled={isReadOnly} minHeight="90px" />
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* RÉALISATION — Construction de nouveaux savoirs */}
+            <section className="border-l-4 border-slate-300 pl-4">
+              <h3 className="text-sm font-bold text-slate-900 uppercase mb-3 bg-slate-100 px-3 py-2 rounded-lg">
+                RÉALISATION — Construction de nouveaux savoirs
+              </h3>
+              <RichTextEditor value={getMat("realisation")} onChange={html => setMat("realisation", html)} disabled={isReadOnly} minHeight="100px" />
+
+              {/* DOMAINE_2 — Suite : Situation problème, Question de compréhension, Activités 1-3 */}
+              {isDom2 && (
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Situation problème :</label>
+                    <RichTextEditor value={getMat("situationProbleme")} onChange={html => setMat("situationProbleme", html)} disabled={isReadOnly} minHeight="60px" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Question de compréhension :</label>
+                    <RichTextEditor value={getMat("questionComprehension")} onChange={html => setMat("questionComprehension", html)} disabled={isReadOnly} minHeight="60px" />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    {[
+                      { label: "Activité n° 1", key: "a1", nbKey: null as string | null },
+                      { label: "Activité n° 2", key: "a2", nbKey: "nb2" },
+                      { label: "Activité n° 3", key: "a3", nbKey: "nb3" },
+                    ].map(a => (
+                      <div key={a.key} className="border border-slate-300 rounded-lg overflow-hidden">
+                        <div className="bg-indigo-50 text-indigo-800 text-[11px] font-bold px-2 py-1.5 border-b border-slate-300">{a.label}</div>
+                        <RichTextEditor value={getMat(`activites.${a.key}`)} onChange={html => setMat(`activites.${a.key}`, html)} disabled={isReadOnly} minHeight="80px" />
+                        {a.nbKey && (
+                          <div className="px-2 py-1.5 border-t border-slate-200 flex items-center gap-2 bg-slate-50">
+                            <span className="text-[11px] font-bold text-slate-600">NB :</span>
+                            <input type="text" value={getMat(`activites.${a.nbKey}`)} onChange={e => setMat(`activites.${a.nbKey}`, e.target.value)} disabled={isReadOnly}
+                              className="flex-1 text-xs bg-transparent outline-none border-b border-slate-300 focus:border-indigo-500" />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {/* ⭐ Observation du directeur — Réalisation */}
+            {(() => {
+              let obs = form.directorSectionObservations;
+              if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch { obs = {}; } }
+              const val = (obs as any)?.realisation;
+              if (!val || !String(val).trim()) return null;
+              return (
+                <div className="p-2 bg-red-50 border border-red-300 rounded-lg">
+                  <div className="text-[10px] font-bold text-red-700 uppercase mb-1">Observation du Directeur — Réalisation</div>
+                  <div className="text-xs text-red-800 font-semibold whitespace-pre-wrap">{String(val)}</div>
+                </div>
+              );
+            })()}
+
+            {/* RETOUR ET PROJECTION */}
+            <section className="border-l-4 border-slate-300 pl-4">
+              <h3 className="text-sm font-bold text-slate-900 uppercase mb-3 bg-slate-100 px-3 py-2 rounded-lg">RETOUR ET PROJECTION</h3>
+              <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-2">
+                {[
+                  { label: "Retour :", key: "retour" },
+                  { label: "Evaluation :", key: "evaluation" },
+                  { label: "Connexion :", key: "connexion" },
+                  { label: "Projection :", key: "projection" },
+                ].map(f => (
+                  <div key={f.key} className="contents">
+                    <div className="flex items-start pt-2"><label className="text-xs font-bold text-slate-700">{f.label}</label></div>
+                    <RichTextEditor value={getMat(f.key)} onChange={html => setMat(f.key, html)} disabled={isReadOnly} minHeight="56px" />
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            {/* ⭐ Observation du directeur — Retour et projection */}
+            {(() => {
+              let obs = form.directorSectionObservations;
+              if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch { obs = {}; } }
+              const val = (obs as any)?.retour_projection;
+              if (!val || !String(val).trim()) return null;
+              return (
+                <div className="p-2 bg-red-50 border border-red-300 rounded-lg">
+                  <div className="text-[10px] font-bold text-red-700 uppercase mb-1">Observation du Directeur — Retour et projection</div>
+                  <div className="text-xs text-red-800 font-semibold whitespace-pre-wrap">{String(val)}</div>
+                </div>
+              );
+            })()}
+
+            {/* RANGEMENT */}
+            <section className="border-l-4 border-slate-300 pl-4">
+              <h3 className="text-sm font-bold text-slate-900 uppercase mb-3 bg-slate-100 px-3 py-2 rounded-lg">RANGEMENT</h3>
+              <RichTextEditor value={getMat("rangement")} onChange={html => setMat("rangement", html)} disabled={isReadOnly} minHeight="60px" />
+            </section>
+
+            {/* ⭐ Observation du directeur — Rangement */}
+            {(() => {
+              let obs = form.directorSectionObservations;
+              if (typeof obs === 'string') { try { obs = JSON.parse(obs); } catch { obs = {}; } }
+              const val = (obs as any)?.rangement;
+              if (!val || !String(val).trim()) return null;
+              return (
+                <div className="p-2 bg-red-50 border border-red-300 rounded-lg">
+                  <div className="text-[10px] font-bold text-red-700 uppercase mb-1">Observation du Directeur — Rangement</div>
+                  <div className="text-xs text-red-800 font-semibold whitespace-pre-wrap">{String(val)}</div>
+                </div>
+              );
+            })()}
+
+            {/* Notes personnelles */}
+            <div className="flex items-center gap-3 border-t-2 border-slate-200 pt-4">
+              <label className="text-xs font-bold text-slate-700 whitespace-nowrap">Notes personnelles :</label>
+              <input type="text" value={getMat("notesPersonnelles")} onChange={e => setMat("notesPersonnelles", e.target.value)} disabled={isReadOnly}
+                className="flex-1 px-2 py-1 border-b border-slate-300 focus:border-indigo-500 outline-none text-sm bg-transparent" />
+            </div>
+
+            {/* ⭐ Observation générale du directeur */}
+            {(form.status === 'VALIDATED' || form.status === 'REJECTED' || form.status === 'SUBMITTED') && (form.directorObservation || (form.status === 'REJECTED' && form.rejectionReason)) && (
+              <section className="border-l-4 border-red-400 pl-4">
+                <h3 className="text-sm font-bold text-red-700 uppercase mb-3 bg-red-100 px-3 py-2 rounded-lg">
+                  Observation générale du Directeur
+                </h3>
+                {form.directorObservation && (
+                  <div className="text-sm text-red-900 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <div dangerouslySetInnerHTML={{ __html: form.directorObservation }} />
+                  </div>
+                )}
+                {form.status === 'REJECTED' && form.rejectionReason && (
+                  <div className="mt-2 p-2 bg-red-100 border border-red-300 rounded">
+                    <div className="text-[10px] font-bold text-red-700 uppercase mb-0.5">Motif du rejet</div>
+                    <div className="text-xs text-red-800 font-semibold">{form.rejectionReason}</div>
+                  </div>
+                )}
+              </section>
+            )}
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="space-y-4">
         {/* Barre d'actions */}
@@ -802,7 +1367,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
           <label className="text-xs font-semibold text-slate-500 uppercase">Type de fiche</label>
           <select value={filterType} onChange={e => setFilterType(e.target.value)} className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm min-w-[200px]">
             <option value="">Tous les types</option>
-            {SHEET_TYPES.map(t => <option key={t.type} value={t.type}>{t.label}</option>)}
+            {sheetTypesForClass.map((t: any) => <option key={t.type} value={t.type}>{t.label}</option>)}
           </select>
         </div>
         <div className="flex-1" />
@@ -825,6 +1390,13 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               ...emptyForm,
               classId: selectedClassId,
               className: cls?.className || "",
+              // ⭐ MATERNELLE : type par défaut = DOMAINE (n° à renseigner)
+              sheetType: isMaternelleClass ? "DOMAINE" : emptyForm.sheetType,
+              // ⭐ MATERNELLE : pré-remplir « FICHE DE » avec le nom du user connecté
+              maternelle: {
+                ...emptyForm.maternelle,
+                ficheDe: user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() : "",
+              },
               boysCount: cls?.boys || 0,
               girlsCount: cls?.girls || 0,
               totalStudents: cls?.totalStudents || 0,
@@ -862,7 +1434,9 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       {!loading && fiches.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {fiches.map(fiche => {
-            const st = SHEET_TYPES.find(t => t.type === fiche.sheetType);
+            const st = sheetTypesForClass.find((t: any) => t.type === fiche.sheetType)
+              || (fiche.sheetType === "DOMAINE" || fiche.sheetType === "DOMAINE_2"
+                ? MATERNELLE_SHEET_TYPES.find(t => t.type === fiche.sheetType) : undefined);
             const status = STATUS_CONFIG[fiche.status as keyof typeof STATUS_CONFIG];
             const Icon = st?.icon || FileText;
             return (
@@ -873,7 +1447,16 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                   </div>
                   {status && <div className={cn("flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase", status.color)}><status.icon className="h-3 w-3" />{status.label}</div>}
                 </div>
-                <div className="text-xs text-slate-500 mb-2">{formatDateFR(fiche.lessonDate || fiche.createdAt)} — SAN°{fiche.san || "—"}</div>
+                <div className="text-xs text-slate-500 mb-2">
+                  {formatDateFR(fiche.lessonDate || fiche.createdAt)}
+                  {fiche.sheetType === "DOMAINE" || fiche.sheetType === "DOMAINE_2"
+                    ? (() => {
+                        let mc: any = fiche.maternelleContent;
+                        if (typeof mc === "string") { try { mc = JSON.parse(mc); } catch { mc = {}; } }
+                        return ` — Domaine ${mc?.domainNumber || (fiche.sheetType === "DOMAINE_2" ? "II" : "—")}`;
+                      })()
+                    : ` — SAN°${fiche.san || "—"}`}
+                </div>
                 <div className="text-sm font-medium text-slate-800 line-clamp-2 mb-2">{fiche.titre || fiche.contenu?.replace(/<[^>]*>/g, '').substring(0, 80) || "—"}</div>
                 <div className="flex items-center gap-2 text-xs text-slate-500 mb-3"><span>{fiche.className || "—"}</span><span>•</span><span>{fiche.totalStudents || 0} élèves</span></div>
                 <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
@@ -892,6 +1475,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                         // ⭐ Nom du fichier : Fiche pédagogique [matière] [jour] [date] période [date] à [date]
                         const SHEET_LABELS: Record<string, string> = {
                           MATH: 'Mathematiques', FRANCAIS: 'Francais', EST: 'EST', ES: 'Education Sociale', EA: 'Education Artistique', EPS: 'Education Physique et Sportive',
+                          DOMAINE: 'Domaine', DOMAINE_2: 'Domaine 2',
                         };
                         const matiere = SHEET_LABELS[fiche.sheetType] || fiche.sheetType || 'Fiche';
                         const days = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];

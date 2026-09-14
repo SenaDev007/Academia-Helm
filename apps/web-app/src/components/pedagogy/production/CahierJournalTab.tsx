@@ -69,6 +69,40 @@ const DAYS = [
   { id: 5, key: "vendredi", label: "VENDREDI" },
 ] as const;
 
+// ⭐ 2026-09-15 MATERNELLE — Domaines de la grille cahier journal maternelle
+//    (ordre et libellés EXACTS du modèle officiel fourni par l'école) :
+//      DATE | DOMAINE I (Éducation pour la santé) | DOMAINE II (Expression
+//      corporelle) | DOMAINE [n° à renseigner] : Pré-lecture, Pré-écriture,
+//      Pré-mathématiques, Observations | DOMAINE III : Éducation sensorielle,
+//      Travaux manuels | DOMAINE IV : Expression émotionnelle, Expression
+//      plastique | DOMAINE V : Communication orale, Conte, Poésie chant
+//      comptine, Activités libres.
+const MAT_DOMAIN_GROUPS = [
+  { title: "DOMAINE I", subs: [{ key: "dom1_sante", label: "Éducation pour la santé" }] },
+  { title: "DOMAINE II", subs: [{ key: "dom2_corporelle", label: "Expression corporelle" }] },
+  { title: "DOMAINE", subs: [
+    { key: "pre_lecture", label: "Pré-lecture" },
+    { key: "pre_ecriture", label: "Pré-écriture" },
+    { key: "pre_mathematiques", label: "Pré-mathématiques" },
+    { key: "obs_dom", label: "Observations" },
+  ] },
+  { title: "DOMAINE III", subs: [
+    { key: "dom3_sensorielle", label: "Éducation sensorielle" },
+    { key: "dom3_travaux_manuels", label: "Travaux manuels" },
+  ] },
+  { title: "DOMAINE IV", subs: [
+    { key: "dom4_emotionnelle", label: "Expression émotionnelle" },
+    { key: "dom4_plastique", label: "Expression plastique" },
+  ] },
+  { title: "DOMAINE V", subs: [
+    { key: "dom5_comm_orale", label: "Communication orale" },
+    { key: "dom5_conte", label: "Conte" },
+    { key: "dom5_poesie_chant", label: "Poésie chant comptine" },
+    { key: "dom5_act_libres", label: "Activités libres" },
+  ] },
+] as const;
+const MAT_FLAT_SUBS: Array<{ key: string; label: string }> = MAT_DOMAIN_GROUPS.flatMap(g => g.subs as any);
+
 const STATUS_CONFIG = {
   DRAFT: { label: "Brouillon", color: "bg-slate-100 text-slate-600", icon: Clock },
   SUBMITTED: { label: "Soumis", color: "bg-blue-100 text-blue-700", icon: Send },
@@ -664,6 +698,15 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   const isReadOnly = journal && (journal.status === "SUBMITTED" || journal.status === "VALIDATED");
   const statusConfig = journal ? STATUS_CONFIG[journal.status as keyof typeof STATUS_CONFIG] : null;
 
+  // ⭐ 2026-09-15 MATERNELLE : grille par DOMAINES (I à V) au lieu de la grille
+  //    par matières — détection via le niveau de la classe (getOrCreateCahierJournal
+  //    renvoie schoolLevelCode, sinon repli sur la liste des classes).
+  const isMaternelleJournal =
+    (journal?.schoolLevelCode || "").toUpperCase() === "MATERNELLE" ||
+    (journal?.schoolLevelName || "").toLowerCase() === "maternelle" ||
+    (selectedClass?.schoolLevelCode || "").toUpperCase() === "MATERNELLE" ||
+    (selectedClass?.schoolLevelName || "").toLowerCase() === "maternelle";
+
   return (
     <div className="space-y-4">
       {/* === En-tête : classe + semaine + actions === */}
@@ -755,10 +798,16 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
       {/* === En-tête du document === */}
       {!loading && journal && (
         <div className="bg-white border-2 border-slate-800 rounded-xl p-6 print:shadow-none">
-          {dynamicSubjects.length === 0 && (
+          {!isMaternelleJournal && dynamicSubjects.length === 0 && (
             <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
               <strong>Aucune matière configurée pour cette classe.</strong> L'administration de l'école
               doit d'abord configurer les matières dans le module Matières (table class_subjects).
+            </div>
+          )}
+          {isMaternelleJournal && (
+            <div className="mb-4 p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-sm text-indigo-700">
+              <strong>Cahier journal maternelle.</strong> La grille suit les domaines d'activités de la
+              maternelle (DOMAINE I à V), conformément au modèle officiel.
             </div>
           )}
           <div className="flex items-start justify-between mb-4">
@@ -781,6 +830,67 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
             </div>
           </div>
 
+          {/* === MATERNELLE — GRILLE PAR DOMAINES (modèle officiel) === */}
+          {isMaternelleJournal && (
+            <div className="overflow-x-auto border border-slate-300 rounded-lg mb-6">
+              <table className="w-full border-collapse min-w-[1400px]">
+                <thead>
+                  {/* Ligne 1 : DATE + titres de domaines fusionnés */}
+                  <tr className="bg-slate-100">
+                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase w-20 sticky left-0 bg-slate-100 z-10">
+                      DATE
+                    </th>
+                    {MAT_DOMAIN_GROUPS.map((g: any) => (
+                      <th key={g.title} colSpan={g.subs.length} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase bg-indigo-50">
+                        {g.title}
+                      </th>
+                    ))}
+                  </tr>
+                  {/* Ligne 2 : sous-colonnes */}
+                  <tr className="bg-slate-50">
+                    {MAT_FLAT_SUBS.map((s) => (
+                      <th key={s.key} className="border border-slate-300 px-1 py-2 text-[10px] font-semibold text-slate-600">
+                        {s.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {DAYS.map((day) => (
+                    <tr key={day.key} className="hover:bg-slate-50">
+                      <td className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase bg-slate-50 sticky left-0 z-10">
+                        {day.label}
+                        <div className="text-[10px] text-slate-400 mt-1 font-normal">
+                          {formatDateFR(formatDate(new Date(weekStart.getTime() + (day.id - 1) * 86400000)))}
+                        </div>
+                      </td>
+                      {MAT_FLAT_SUBS.map((s) => (
+                        <td key={s.key} className="border border-slate-300 p-0 align-top">
+                          <RichTextEditor
+                            value={getEntry(day.key, s.key)}
+                            onChange={(html) => updateEntry(day.key, s.key, html)}
+                            disabled={isReadOnly}
+                            placeholder="—"
+                            minHeight="96px"
+                          />
+                          {/* ⭐ Observation du directeur (en rouge, sous la colonne Observations du DOMAINE) */}
+                          {s.key === "obs_dom" && getEntry(day.key, "directorObservation") && (
+                            <div className="p-2 bg-red-50 border-t-2 border-red-300">
+                              <div className="text-[9px] font-bold text-red-600 uppercase mb-1">Observation du Directeur</div>
+                              <div className="text-xs text-red-800 font-semibold whitespace-pre-wrap">{getEntry(day.key, "directorObservation")}</div>
+                            </div>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* === PRIMAIRE — Pages recto/verso par matières === */}
+          {!isMaternelleJournal && (<>
           {/* === PAGE 1 (RECTO) === JOURS | COLONNES GROUPÉES | OBSERVATIONS */}
           <div className="mb-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Page 1 — Recto</div>
           <div className="overflow-x-auto border border-slate-300 rounded-lg mb-6">
@@ -915,6 +1025,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
             </table>
           </div>
 
+          </>)}
+
           {/* === OBSERVATIONS GLOBALES (bas de page) === */}
           {/* ⭐ Observations générales de la semaine */}
           {/*    En rouge quand le cahier journal est VALIDATED/REJECTED (observation du directeur) */}
@@ -925,14 +1037,16 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
             )}>
               {isReadOnly && (journal?.status === 'VALIDATED' || journal?.status === 'REJECTED')
                 ? "Observation générale du Directeur"
-                : "Observations générales de la semaine"}
+                : isMaternelleJournal
+                  ? "OBSERVATIONS"
+                  : "Observations générales de la semaine"}
             </label>
             <textarea
               value={observations}
               onChange={(e) => setObservations(e.target.value)}
               disabled={isReadOnly}
               rows={3}
-              placeholder="Observations générales sur la semaine..."
+              placeholder={isMaternelleJournal ? "Observations de la semaine (zone OBSERVATIONS du cahier journal maternelle)..." : "Observations générales sur la semaine..."}
               className={cn(
                 "w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400",
                 isReadOnly && (journal?.status === 'VALIDATED' || journal?.status === 'REJECTED')

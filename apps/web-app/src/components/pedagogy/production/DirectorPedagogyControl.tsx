@@ -81,7 +81,38 @@ const SHEET_TYPE_LABELS: Record<string, { label: string; icon: any; color: strin
   ES: { label: "Éducation Sociale", icon: Users, color: "bg-amber-100 text-amber-700" },
   EA: { label: "Éducation Artistique", icon: Palette, color: "bg-pink-100 text-pink-700" },
   EPS: { label: "Éducation Physique et Sportive", icon: Activity, color: "bg-cyan-100 text-cyan-700" },
+  // ⭐ 2026-09-15 MATERNELLE — 2 formats de fiches dédiés
+  DOMAINE: { label: "Domaine (n° à renseigner)", icon: FileText, color: "bg-indigo-100 text-indigo-700" },
+  DOMAINE_2: { label: "Domaine 2", icon: FileText, color: "bg-teal-100 text-teal-700" },
 };
+
+// ⭐ 2026-09-15 MATERNELLE — Domaines de la grille cahier journal maternelle
+//    (ordre et libellés EXACTS du modèle officiel — identiques à CahierJournalTab).
+const MAT_DOMAIN_GROUPS = [
+  { title: "DOMAINE I", subs: [{ key: "dom1_sante", label: "Éducation pour la santé" }] },
+  { title: "DOMAINE II", subs: [{ key: "dom2_corporelle", label: "Expression corporelle" }] },
+  { title: "DOMAINE", subs: [
+    { key: "pre_lecture", label: "Pré-lecture" },
+    { key: "pre_ecriture", label: "Pré-écriture" },
+    { key: "pre_mathematiques", label: "Pré-mathématiques" },
+    { key: "obs_dom", label: "Observations" },
+  ] },
+  { title: "DOMAINE III", subs: [
+    { key: "dom3_sensorielle", label: "Éducation sensorielle" },
+    { key: "dom3_travaux_manuels", label: "Travaux manuels" },
+  ] },
+  { title: "DOMAINE IV", subs: [
+    { key: "dom4_emotionnelle", label: "Expression émotionnelle" },
+    { key: "dom4_plastique", label: "Expression plastique" },
+  ] },
+  { title: "DOMAINE V", subs: [
+    { key: "dom5_comm_orale", label: "Communication orale" },
+    { key: "dom5_conte", label: "Conte" },
+    { key: "dom5_poesie_chant", label: "Poésie chant comptine" },
+    { key: "dom5_act_libres", label: "Activités libres" },
+  ] },
+];
+const MAT_FLAT_SUBS: Array<{ key: string; label: string }> = MAT_DOMAIN_GROUPS.flatMap(g => g.subs);
 
 const MONTH_NAMES = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
                      "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
@@ -2581,6 +2612,88 @@ function CahierJournalDirectorDetail({
     </div>
   );
 
+
+  // ⭐ 2026-09-15 MATERNELLE — Grille par DOMAINES (lecture seule) + colonne
+  //    OBS. DIRECTEUR, conformes au modèle officiel de la maternelle.
+  const isMaternelleJournal =
+    (journal.schoolLevelCode || "").toUpperCase() === "MATERNELLE" ||
+    (journal.schoolLevelName || "").toLowerCase() === "maternelle";
+
+  const renderMaternellePage = () => (
+    <div className="mb-6">
+      <div className="mb-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+        Grille maternelle — Domaines I à V
+      </div>
+      <div className="overflow-x-auto border border-slate-300 rounded-lg">
+        <table className="w-full border-collapse min-w-[1500px]">
+          <thead>
+            {/* Ligne 1 : DATE + titres de domaines fusionnés */}
+            <tr className="bg-slate-100">
+              <th rowSpan={2} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase w-20 sticky left-0 bg-slate-100 z-10">
+                DATE
+              </th>
+              {MAT_DOMAIN_GROUPS.map((g) => (
+                <th key={g.title} colSpan={g.subs.length} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase bg-indigo-50">
+                  {g.title}
+                </th>
+              ))}
+              <th rowSpan={2} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top bg-amber-50" style={{ minWidth: "140px" }}>
+                OBS. DIRECTEUR <span className="text-red-600">(rouge)</span>
+              </th>
+            </tr>
+            {/* Ligne 2 : sous-colonnes */}
+            <tr className="bg-slate-50">
+              {MAT_FLAT_SUBS.map((s) => (
+                <th key={s.key} className="border border-slate-300 px-1 py-2 text-[10px] font-semibold text-slate-600">
+                  {s.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {CJ_DAYS.map((day) => {
+              const weekStart = new Date(journal.weekStartDate);
+              const dayDate = new Date(weekStart.getTime() + (day.id - 1) * 86400000);
+              return (
+                <tr key={day.key} className="hover:bg-slate-50">
+                  <td className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase bg-slate-50 sticky left-0 z-10">
+                    {day.label}
+                    <div className="text-[10px] text-slate-400 mt-1 font-normal">
+                      {dayDate.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
+                    </div>
+                  </td>
+                  {MAT_FLAT_SUBS.map((s) => {
+                    const content = getEntry(day.key, s.key);
+                    return (
+                      <td key={s.key} className="border border-slate-300 px-2 py-1 text-xs text-slate-700 align-top" style={{ minHeight: "60px" }}>
+                        {content ? (
+                          <div dangerouslySetInnerHTML={{ __html: content }} />
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                  {/* ⭐ Colonne observation directeur (éditable, texte rouge) */}
+                  <td className="border border-slate-300 p-0 bg-red-50/30">
+                    <textarea
+                      value={directorObservations[day.key] || ''}
+                      onChange={(e) => setDirectorObservations(prev => ({ ...prev, [day.key]: e.target.value }))}
+                      disabled={saving}
+                      placeholder="Observation du directeur..."
+                      className="w-full h-full px-2 py-1 text-xs text-red-700 font-semibold border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-red-400 resize-none"
+                      style={{ minHeight: "60px" }}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
   const isAlreadyValidated = journal.status === 'VALIDATED';
   const isAlreadyRejected = journal.status === 'REJECTED';
 
@@ -2774,8 +2887,10 @@ function CahierJournalDirectorDetail({
         </div>
       </div>
 
-      {/* ⭐ Pages 1 + 2 (Recto + Verso) */}
-      {columnsToUse.length === 0 ? (
+      {/* ⭐ Pages 1 + 2 (Recto + Verso) — OU grille maternelle par domaines */}
+      {isMaternelleJournal ? (
+        renderMaternellePage()
+      ) : columnsToUse.length === 0 ? (
         <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-center text-sm text-slate-500">
           Aucune matière configurée pour cette classe.
         </div>
@@ -3398,6 +3513,264 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
         confirmLabel: "✗ Rejeter la fiche",
         confirmClass: "bg-red-600 hover:bg-red-700",
       };
+
+
+  // ⭐ 2026-09-15 MATERNELLE — Vue dédiée aux fiches DOMAINE | DOMAINE_2
+  //    (structure conforme aux modèles officiels de la maternelle).
+  const isMaternelleFiche = fiche.sheetType === 'DOMAINE' || fiche.sheetType === 'DOMAINE_2'
+    || ((fiche.schoolLevelCode || '').toUpperCase() === 'MATERNELLE' && fiche.maternelleContent);
+  if (isMaternelleFiche) {
+    const isDom2F = fiche.sheetType === 'DOMAINE_2';
+    let mc: any = fiche.maternelleContent;
+    if (typeof mc === 'string') { try { mc = JSON.parse(mc); } catch { mc = {}; } }
+    mc = mc || {};
+    const matTitle = isDom2F ? 'DOMAINE II' : `DOMAINE ${mc.domainNumber ? mc.domainNumber : '(n° à renseigner)'}`;
+    const der5 = Array.isArray(mc.der5) ? mc.der5 : [];
+    const dIntro = mc.deroulementIntro || {};
+    const intro = mc.intro || {};
+    const act = mc.activites || {};
+
+    return (
+      <div className="space-y-4">
+        {/* ⭐ Modale de confirmation personnalisée */}
+        {confirmModal.open && confirmModal.action && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+              <div className={cn("px-6 py-4 border-b", confirmModal.color === "emerald" ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200")}>
+                <div className="flex items-center gap-3">
+                  {confirmModalConfig.icon}
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-900">{confirmModalConfig.title}</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Action de validation direction</p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-6 space-y-3">
+                <p className="text-sm text-slate-700 font-medium">{confirmModalConfig.message}</p>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                  <strong>ℹ️ Fiche :</strong> {fiche.classNameResolved || "—"} · {matTitle} · {fmt(fiche.lessonDate)}
+                </div>
+              </div>
+              <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+                <button onClick={() => setConfirmModal({ open: false, action: null })} disabled={saving}
+                  className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200 rounded-lg disabled:opacity-50">Annuler</button>
+                <button onClick={handleValidate} disabled={saving}
+                  className={cn("flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-semibold disabled:opacity-50", confirmModalConfig.confirmClass)}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {confirmModalConfig.confirmLabel}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Barre d'actions (identique) */}
+        <div className="flex flex-wrap justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-3">
+          <button onClick={onBack} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg"><ChevronRight className="w-4 h-4 rotate-180" /> Retour</button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {isAlreadyValidated && <span className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-sm font-bold">✓ Validé</span>}
+            {isAlreadyRejected && <span className="px-3 py-2 bg-red-100 text-red-700 rounded-lg text-sm font-bold">✗ Rejeté</span>}
+            {!isAlreadyValidated && !isAlreadyRejected && (
+              <>
+                <button onClick={handleSave} disabled={saving}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50"
+                  title="Enregistrer les observations sans valider">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Enregistrer
+                </button>
+                <button onClick={() => openConfirmModal("REJECTED")} disabled={saving}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />} Rejeter
+                </button>
+                <button onClick={() => openConfirmModal("VALIDATED")} disabled={saving}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                  title="Valider la fiche">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Valider
+                </button>
+              </>
+            )}
+            {(isAlreadyValidated || isAlreadyRejected) && (
+              <button onClick={handleSendToTeacher} disabled={sendingToTeacher}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50"
+                title="Envoyer/Renvoyer la notification à l'enseignant">
+                {sendingToTeacher ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {hasBeenSent ? "Renvoyer à l'enseignant" : "Envoyer à l'enseignant"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* En-tête */}
+        <div className="bg-white border-2 border-slate-800 rounded-xl p-4 text-center">
+          <h2 className="text-lg font-bold text-slate-900 uppercase">École Maternelle — Fiche {matTitle}</h2>
+          <div className="text-sm text-slate-600 mt-1">Classe : <strong>{fiche.classNameResolved || "—"}</strong> · Enseignant : {fiche.teacherFirstName} {fiche.teacherLastName}</div>
+          <div className="text-xs text-slate-500 mt-1">Date : <strong>{fmt(fiche.lessonDate)}</strong> · Statut : <strong>{fiche.status}</strong></div>
+        </div>
+
+        {/* Identification */}
+        <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">Identification</h3>
+          {renderField("FICHE DE", mc.ficheDe)}
+          {renderField("Domaine du", mc.domaineDu)}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
+            {renderField("Composante", mc.composante)}
+            {renderField("Sous-composante", mc.sousComposante)}
+            {renderField(isDom2F ? "Activité d'apprentissage n°" : "Activités d'apprentissage n°", mc.activiteNumero)}
+            {renderField("Thème", mc.theme)}
+            {renderField("Titre", mc.titre)}
+            {renderField("Section", mc.section)}
+            {renderField("Durée", mc.duree)}
+            {renderField(isDom2F ? "Matériels" : "Matériel", mc.materiel)}
+          </div>
+          {renderObs("en_tete", "Observation — En-tête et champs")}
+        </div>
+
+        {/* Champs pédagogiques */}
+        <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">Champs de la fiche</h3>
+          {renderField("Compétence", mc.competence)}
+          {renderField(isDom2F ? "Capacités" : "Capacité", mc.capacite)}
+          {renderField("Habilités", mc.habiletes)}
+          {renderField("Stratégies D'ens/Apprent/Eval", mc.strategies)}
+        </div>
+
+        {/* DÉROULEMENT */}
+        <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">Déroulement</h3>
+          {isDom2F ? (
+            der5.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-100">
+                      <th className="border border-slate-300 px-2 py-1 text-left w-16">Plan</th>
+                      <th className="border border-slate-300 px-2 py-1 text-left w-20">Durée</th>
+                      <th className="border border-slate-300 px-2 py-1 text-left">Description des activités</th>
+                      <th className="border border-slate-300 px-2 py-1 text-left w-40">Formation Evolution</th>
+                      <th className="border border-slate-300 px-2 py-1 text-left w-16">Dosage</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {der5.map((r: any, i: number) => (
+                      <tr key={i}>
+                        <td className="border border-slate-300 px-2 py-1 text-center font-bold">{r.plan || "—"}</td>
+                        <td className="border border-slate-300 px-2 py-1 text-center">{r.duree || "—"}</td>
+                        <td className="border border-slate-300 px-2 py-1">{r.description ? <div dangerouslySetInnerHTML={{ __html: r.description }} /> : <span className="text-slate-300">—</span>}</td>
+                        <td className="border border-slate-300 px-2 py-1">{r.formationEvolution ? <div dangerouslySetInnerHTML={{ __html: r.formationEvolution }} /> : <span className="text-slate-300">—</span>}</td>
+                        <td className="border border-slate-300 px-2 py-1 text-center">{r.dosage || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="text-sm text-slate-400 italic">Aucune ligne de déroulement.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100">
+                    <th className="border border-slate-300 px-2 py-1 text-left">Consignes</th>
+                    <th className="border border-slate-300 px-2 py-1 text-left w-[38%]">Résultats attendus</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td colSpan={2} className="border border-slate-300 px-2 py-1 font-bold bg-indigo-50 text-[11px] uppercase">Introduction</td></tr>
+                  {[
+                    { label: "Mise en situation", cell: dIntro.miseEnSituation },
+                    { label: "Prise en compte des acquis antérieurs", cell: dIntro.acquisAnterieurs },
+                    { label: "Annonce de l'apprentissage du jour", cell: dIntro.annonceApprentissage },
+                  ].map((row, i) => (
+                    <tr key={i} className="align-top">
+                      <td className="border border-slate-300 px-2 py-1">
+                        <div className="font-bold text-slate-600 mb-0.5">{row.label} :</div>
+                        {row.cell?.consignes ? <div dangerouslySetInnerHTML={{ __html: row.cell.consignes }} /> : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="border border-slate-300 px-2 py-1">
+                        {row.cell?.resultats ? <div dangerouslySetInnerHTML={{ __html: row.cell.resultats }} /> : <span className="text-slate-300">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {renderObs("deroulement", "Observation — Déroulement")}
+        </div>
+
+        {/* INTRODUCTION (DOMAINE_2) */}
+        {isDom2F && (
+          <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3">
+            <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">Introduction</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {[
+                { label: "Mise en situation", val: intro.miseEnSituation },
+                { label: "Prise en compte des acquis antérieurs", val: intro.acquisAnterieurs },
+                { label: "Annonce de l'apprentissage du jour", val: intro.annonceApprentissage },
+              ].map(z => (
+                <div key={z.label}>
+                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1">{z.label}</label>
+                  <div className="text-sm text-slate-800 min-h-[40px] p-2 bg-slate-50 rounded border border-slate-200">
+                    {z.val ? <div dangerouslySetInnerHTML={{ __html: z.val }} /> : <span className="text-slate-300">—</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* RÉALISATION */}
+        <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">Réalisation — Construction de nouveaux savoirs</h3>
+          {renderField("Construction de nouveaux savoirs", mc.realisation)}
+          {isDom2F && (
+            <>
+              {renderField("Situation problème", mc.situationProbleme)}
+              {renderField("Question de compréhension", mc.questionComprehension)}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {[
+                  { label: "Activité n° 1", val: act.a1, nb: null },
+                  { label: "Activité n° 2", val: act.a2, nb: act.nb2 },
+                  { label: "Activité n° 3", val: act.a3, nb: act.nb3 },
+                ].map(a => (
+                  <div key={a.label}>
+                    <label className="block text-xs font-bold text-slate-600 uppercase mb-1">{a.label}</label>
+                    <div className="text-sm text-slate-800 min-h-[40px] p-2 bg-slate-50 rounded border border-slate-200">
+                      {a.val ? <div dangerouslySetInnerHTML={{ __html: a.val }} /> : <span className="text-slate-300">—</span>}
+                      {a.nb && <div className="mt-1 text-xs text-slate-600"><b>NB :</b> {a.nb}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {renderObs("realisation", "Observation — Réalisation")}
+        </div>
+
+        {/* RETOUR ET PROJECTION */}
+        <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">Retour et projection</h3>
+          {renderField("Retour", mc.retour)}
+          {renderField("Evaluation", mc.evaluation)}
+          {renderField("Connexion", mc.connexion)}
+          {renderField("Projection", mc.projection)}
+          {renderObs("retour_projection", "Observation — Retour et projection")}
+        </div>
+
+        {/* RANGEMENT + Notes personnelles */}
+        <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">Rangement</h3>
+          {renderField("Rangement", mc.rangement)}
+          {renderObs("rangement", "Observation — Rangement")}
+          {renderField("Notes personnelles", mc.notesPersonnelles)}
+        </div>
+
+        {/* Observation générale du directeur */}
+        <div className="bg-white border-2 border-red-300 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-bold text-red-700 uppercase">Observation générale du directeur</h3>
+          <RichTextEditor value={directorGeneralObservation} onChange={(html) => setDirectorGeneralObservation(html)} disabled={saving || isAlreadyValidated} placeholder="Observations générales..." minHeight="100px" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

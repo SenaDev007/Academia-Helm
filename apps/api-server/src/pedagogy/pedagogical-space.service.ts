@@ -938,7 +938,12 @@ export class PedagogicalSpaceService {
       fiche.logoUrl = logoDataUrl;
     }
 
-    const html = this.buildFichePdfHtml(fiche, teacherName);
+    // ⭐ 2026-09-15 : fiches MATERNELLE (DOMAINE | DOMAINE_2) — format
+    //    dédié conforme aux modèles officiels de la maternelle.
+    const isMaternelleFiche = fiche.sheetType === 'DOMAINE' || fiche.sheetType === 'DOMAINE_2';
+    const html = isMaternelleFiche
+      ? this.buildMaternelleFichePdfHtml(fiche, teacherName)
+      : this.buildFichePdfHtml(fiche, teacherName);
     const { page } = await this.puppeteerPool.acquirePage();
     try {
       await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
@@ -979,7 +984,8 @@ export class PedagogicalSpaceService {
       const teacherName = fiche.teacherFirstName || fiche.teacherLastName
         ? `${fiche.teacherGender === 'F' ? 'Mme' : 'M.'} ${(fiche.teacherLastName || '').toUpperCase()} ${fiche.teacherFirstName || ''}`.trim()
         : '—';
-      combinedHtml += `<div class="fiche-page">${this.buildFichePdfHtml(fiche, teacherName, true)}</div>`;
+      const isMatFiche = fiche.sheetType === 'DOMAINE' || fiche.sheetType === 'DOMAINE_2';
+      combinedHtml += `<div class="fiche-page">${isMatFiche ? this.buildMaternelleFichePdfHtml(fiche, teacherName, true) : this.buildFichePdfHtml(fiche, teacherName, true)}</div>`;
     }
 
     combinedHtml += `</body></html>`;
@@ -1341,6 +1347,287 @@ export class PedagogicalSpaceService {
       ${!embedded ? `</body></html>` : ''}
     `;
 
+    return content;
+  }
+
+  // ===========================================================================
+  // ⭐ FICHES PÉDAGOGIQUES MATERNELLE — Export PDF
+  //    2 formats conformes aux modèles officiels fournis par l'école :
+  //      - DOMAINE   : fiche « Domaine » (n° renseigné par l'enseignante)
+  //      - DOMAINE_2 : fiche « Domaine 2 » (DOMAINE II fixe)
+  //    Contenu structuré dans la colonne JSONB maternelleContent.
+  // ===========================================================================
+
+  /** Parse la colonne maternelleContent (JSONB ou string JSON). */
+  private parseMaternelleContent(raw: any): any {
+    if (!raw) return {};
+    if (typeof raw === 'string') { try { return JSON.parse(raw); } catch { return {}; } }
+    return raw;
+  }
+
+  /** Construit le HTML PDF d'une fiche pédagogique MATERNELLE (DOMAINE | DOMAINE_2). */
+  private buildMaternelleFichePdfHtml(fiche: any, teacherName: string, embedded: boolean = false): string {
+    const mc = this.parseMaternelleContent(fiche.maternelleContent);
+    const isDom2 = fiche.sheetType === 'DOMAINE_2';
+    const strip = (html: string) => (html || '').replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim() || '—';
+
+    const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+    const lessonDate = fiche.lessonDate ? new Date(fiche.lessonDate) : null;
+    const lessonDateStr = lessonDate
+      ? `${dayNames[lessonDate.getDay()]} ${lessonDate.getDate()}/${lessonDate.getMonth() + 1}/${lessonDate.getFullYear()}`
+      : (mc.date || '—');
+
+    // ⭐ Filigrane : acronyme de l'école
+    const schoolAcronym = fiche.schoolAcronym || (fiche.schoolName || '').substring(0, 3).toUpperCase() || '';
+    const watermark = schoolAcronym
+      ? `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-45deg);font-size:120px;font-weight:bold;color:#e2e8f0;opacity:0.10;z-index:0;pointer-events:none;white-space:nowrap;letter-spacing:8px;">${schoolAcronym}</div>`
+      : '';
+
+    // Couleurs
+    const C = '#0A2A5E';      // bleu école (bandes)
+    const BORDER = '#cbd5e1'; // bordures tableaux
+
+    // — En-tête école + titre —
+    const header = `
+      <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid ${C};padding-bottom:8px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          ${fiche.logoUrl ? `<img src="${fiche.logoUrl}" style="max-height:60px;max-width:60px;object-fit:contain;" />` : ''}
+          <div>
+            <div style="font-size:14px;font-weight:bold;color:${C};">ÉCOLE MATERNELLE — ${fiche.schoolAcronym || fiche.schoolName || 'Academia Helm'}</div>
+            <div style="font-size:9px;color:#64748b;">${fiche.classNameResolved || fiche.className || '—'} · ${fiche.academicYearName || 'Année scolaire'}</div>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:11px;font-weight:bold;color:${C};background:#dbeafe;padding:4px 10px;border-radius:4px;border:1px solid #3b82f6;">FICHE PÉDAGOGIQUE</div>
+          <div style="font-size:9px;color:#64748b;margin-top:3px;">${isDom2 ? 'DOMAINE II' : 'DOMAINE'}</div>
+        </div>
+      </div>`;
+
+    // — Bloc identification —
+    const ficheDe = mc.ficheDe || teacherName;
+    const domainBadge = isDom2
+      ? `<span style="display:inline-block;background:${C};color:white;font-weight:bold;font-size:10px;padding:3px 10px;border-radius:3px;">DOMAINE II</span>`
+      : `<span style="display:inline-block;background:${C};color:white;font-weight:bold;font-size:10px;padding:3px 10px;border-radius:3px;">DOMAINE</span>
+         <span style="display:inline-block;min-width:30px;border-bottom:2px solid ${C};text-align:center;font-size:10px;padding:0 6px;">${mc.domainNumber ? strip(mc.domainNumber) : ''}</span>`;
+
+    const identification = `
+      <div style="font-size:9px;margin-bottom:4px;"><b>FICHE DE :</b> <span style="border-bottom:1px dotted #94a3b8;">${strip(ficheDe)}</span></div>
+      <div style="font-size:10px;margin-bottom:6px;">${domainBadge}</div>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:6px;font-size:9px;">
+        <tr>
+          <td style="border:1px solid ${BORDER};padding:5px;background:#f8fafc;font-weight:bold;width:14%;">Domaine du :</td>
+          <td style="border:1px solid ${BORDER};padding:5px;width:36%;">${strip(mc.domaineDu)}</td>
+          <td style="border:1px solid ${BORDER};padding:5px;background:#f8fafc;font-weight:bold;width:14%;">Date :</td>
+          <td style="border:1px solid ${BORDER};padding:5px;">${lessonDateStr}</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid ${BORDER};padding:5px;background:#f8fafc;font-weight:bold;">Composante :</td>
+          <td style="border:1px solid ${BORDER};padding:5px;">${strip(mc.composante)}</td>
+          <td style="border:1px solid ${BORDER};padding:5px;background:#f8fafc;font-weight:bold;">Sous-composante :</td>
+          <td style="border:1px solid ${BORDER};padding:5px;">${strip(mc.sousComposante)}</td>
+        </tr>
+        <tr>
+          <td style="border:1px solid ${BORDER};padding:5px;background:#f8fafc;font-weight:bold;" colspan="2">${isDom2 ? 'Activit\u00e9 d\'apprentissage n\u00b0' : 'ACTIVITES D\'APPRENTISSAGE N\u00b0'} :</td>
+          <td style="border:1px solid ${BORDER};padding:5px;" colspan="2">${strip(mc.activiteNumero)}</td>
+        </tr>
+      </table>`;
+
+    // — Champs pédagogiques —
+    const fieldRow = (label: string, val: any) =>
+      `<tr><td style="border:1px solid ${BORDER};padding:5px;width:30%;font-weight:bold;background:#f8fafc;font-size:9px;">${label}</td><td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${strip(val)}</td></tr>`;
+    const champs = `
+      <table style="width:100%;border-collapse:collapse;font-size:9px;margin-bottom:8px;">
+        ${fieldRow('Thème', mc.theme)}
+        ${fieldRow('Titre', mc.titre)}
+        ${fieldRow('Section', mc.section)}
+        ${fieldRow('Durée', mc.duree)}
+        ${fieldRow(isDom2 ? 'Matériels' : 'Matériel', mc.materiel)}
+        ${fieldRow('Compétence', mc.competence)}
+        ${fieldRow(isDom2 ? 'Capacités' : 'Capacité', mc.capacite)}
+        ${fieldRow('Habilités', mc.habiletes)}
+        ${fieldRow("Stratégies D'ens/Apprent/Eval", mc.strategies)}
+      </table>`;
+
+    // — DÉROULEMENT —
+    let deroulementHtml = '';
+    if (isDom2) {
+      // Tableau 5 colonnes : Plan | Durée | Description des activités | Formation Evolution | Dosage
+      const rows = (Array.isArray(mc.der5) ? mc.der5 : [])
+        .map((r: any) => `<tr>
+          <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;text-align:center;">${strip(r.plan)}</td>
+          <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;text-align:center;">${strip(r.duree)}</td>
+          <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${strip(r.description)}</td>
+          <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${strip(r.formationEvolution)}</td>
+          <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;text-align:center;">${strip(r.dosage)}</td>
+        </tr>`).join('');
+      if (rows) {
+        deroulementHtml = `
+        <div style="margin-bottom:8px;">
+          <div style="font-size:11px;font-weight:bold;color:white;background:${C};padding:4px 8px;border-radius:3px 3px 0 0;">DÉROULEMENT</div>
+          <table style="width:100%;border-collapse:collapse;border:1px solid ${C};border-top:none;">
+            <thead><tr style="background:#dbeafe;">
+              <th style="border:1px solid ${BORDER};padding:5px;font-size:8px;width:8%;">Plan</th>
+              <th style="border:1px solid ${BORDER};padding:5px;font-size:8px;width:10%;">Durée</th>
+              <th style="border:1px solid ${BORDER};padding:5px;font-size:8px;">Description des activités</th>
+              <th style="border:1px solid ${BORDER};padding:5px;font-size:8px;width:18%;">Formation Evolution</th>
+              <th style="border:1px solid ${BORDER};padding:5px;font-size:8px;width:10%;">Dosage</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+      }
+    } else {
+      // Tableau 2 colonnes : Consignes | Résultats Attendus — avec INTRODUCTION
+      const intro = mc.deroulementIntro || {};
+      const introRow = (label: string, cell: any) => `<tr>
+        <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;"><b>${label} :</b> ${strip(cell?.consignes)}</td>
+        <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;width:38%;">${strip(cell?.resultats)}</td>
+      </tr>`;
+      deroulementHtml = `
+      <div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:${C};padding:4px 8px;border-radius:3px 3px 0 0;">DÉROULEMENT</div>
+        <table style="width:100%;border-collapse:collapse;border:1px solid ${C};border-top:none;">
+          <thead><tr style="background:#dbeafe;">
+            <th style="border:1px solid ${BORDER};padding:5px;font-size:8px;text-align:left;">Consignes :</th>
+            <th style="border:1px solid ${BORDER};padding:5px;font-size:8px;text-align:left;width:38%;">Résultats Attendus :</th>
+          </tr></thead>
+          <tbody>
+            <tr><td colspan="2" style="border:1px solid ${BORDER};padding:4px 5px;font-size:9px;font-weight:bold;background:#eff6ff;">INTRODUCTION</td></tr>
+            ${introRow('Mise en situation', intro.miseEnSituation)}
+            ${introRow('Prise en compte des acquis antérieurs', intro.acquisAnterieurs)}
+            ${introRow("Annonce de l'apprentissage du jour", intro.annonceApprentissage)}
+          </tbody>
+        </table>
+      </div>`;
+    }
+
+    // — INTRODUCTION (DOMAINE_2 — 3 zones) —
+    let introHtml = '';
+    if (isDom2 && mc.intro) {
+      introHtml = `
+      <div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:${C};padding:4px 8px;border-radius:3px 3px 0 0;">INTRODUCTION</div>
+        <table style="width:100%;border-collapse:collapse;border:1px solid ${C};border-top:none;">
+          <tr>
+            <td style="border:1px solid ${BORDER};padding:5px;font-size:8px;font-weight:bold;background:#dbeafe;vertical-align:top;width:33%;">Mise en situation<br><span style="font-weight:normal;font-size:9px;color:#1e293b;">${strip(mc.intro.miseEnSituation)}</span></td>
+            <td style="border:1px solid ${BORDER};padding:5px;font-size:8px;font-weight:bold;background:#dbeafe;vertical-align:top;width:34%;">Prise en compte des acquis antérieurs<br><span style="font-weight:normal;font-size:9px;color:#1e293b;">${strip(mc.intro.acquisAnterieurs)}</span></td>
+            <td style="border:1px solid ${BORDER};padding:5px;font-size:8px;font-weight:bold;background:#dbeafe;vertical-align:top;width:33%;">Annonce de l'apprentissage du jour<br><span style="font-weight:normal;font-size:9px;color:#1e293b;">${strip(mc.intro.annonceApprentissage)}</span></td>
+          </tr>
+        </table>
+      </div>`;
+    }
+
+    // — RÉALISATION (+ sous-structure DOMAINE_2) —
+    let realisationHtml = `
+      <div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:${C};padding:4px 8px;border-radius:3px 3px 0 0;">RÉALISATION — Construction de nouveaux savoirs</div>
+        <div style="border:1px solid ${C};border-top:none;padding:5px;font-size:9px;min-height:30px;">${strip(mc.realisation)}</div>
+      </div>`;
+    if (isDom2) {
+      const act = mc.activites || {};
+      realisationHtml += `
+      <div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:${C};padding:4px 8px;border-radius:3px 3px 0 0;">SUITE DE LA RÉALISATION</div>
+        <table style="width:100%;border-collapse:collapse;font-size:9px;border:1px solid ${C};border-top:none;">
+          <tr><td style="border:1px solid ${BORDER};padding:5px;width:30%;font-weight:bold;background:#f8fafc;">Situation problème :</td><td style="border:1px solid ${BORDER};padding:5px;">${strip(mc.situationProbleme)}</td></tr>
+          <tr><td style="border:1px solid ${BORDER};padding:5px;font-weight:bold;background:#f8fafc;">Question de compréhension :</td><td style="border:1px solid ${BORDER};padding:5px;">${strip(mc.questionComprehension)}</td></tr>
+        </table>
+        <table style="width:100%;border-collapse:collapse;border:1px solid ${C};border-top:none;margin-top:4px;">
+          <tr style="background:#dbeafe;">
+            <th style="border:1px solid ${BORDER};padding:5px;font-size:8px;width:33%;">Activité n° 1</th>
+            <th style="border:1px solid ${BORDER};padding:5px;font-size:8px;width:33%;">Activité n° 2</th>
+            <th style="border:1px solid ${BORDER};padding:5px;font-size:8px;width:33%;">Activité n° 3</th>
+          </tr>
+          <tr style="vertical-align:top;">
+            <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${strip(act.a1)}</td>
+            <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${strip(act.a2)}${act.nb2 ? `<br><b>NB :</b> ${strip(act.nb2)}` : ''}</td>
+            <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${strip(act.a3)}${act.nb3 ? `<br><b>NB :</b> ${strip(act.nb3)}` : ''}</td>
+          </tr>
+        </table>
+      </div>`;
+    }
+
+    // — RETOUR ET PROJECTION —
+    const retourRow = (label: string, val: any) =>
+      `<tr><td style="border:1px solid ${BORDER};padding:5px;width:22%;font-weight:bold;background:#f8fafc;font-size:9px;">${label}</td><td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${strip(val)}</td></tr>`;
+    const retourHtml = `
+      <div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:${C};padding:4px 8px;border-radius:3px 3px 0 0;">RETOUR ET PROJECTION</div>
+        <table style="width:100%;border-collapse:collapse;border:1px solid ${C};border-top:none;">
+          ${retourRow('Retour', mc.retour)}
+          ${retourRow('Evaluation', mc.evaluation)}
+          ${retourRow('Connexion', mc.connexion)}
+          ${retourRow('Projection', mc.projection)}
+        </table>
+      </div>`;
+
+    // — RANGEMENT + Notes personnelles —
+    const rangementHtml = `
+      <div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:${C};padding:4px 8px;border-radius:3px 3px 0 0;">RANGEMENT</div>
+        <div style="border:1px solid ${C};border-top:none;padding:5px;font-size:9px;min-height:24px;">${strip(mc.rangement)}</div>
+      </div>
+      <div style="font-size:9px;margin-bottom:8px;"><b>Notes personnelles :</b> <span style="border-bottom:1px dotted #94a3b8;">${strip(mc.notesPersonnelles)}</span></div>`;
+
+    // — Observations du directeur —
+    let sectionObs = fiche.directorSectionObservations;
+    if (typeof sectionObs === 'string') { try { sectionObs = JSON.parse(sectionObs); } catch { sectionObs = {}; } }
+    const maternelleSectionLabels: Record<string, string> = {
+      en_tete: 'En-tête et champs',
+      deroulement: 'Déroulement',
+      realisation: 'Réalisation',
+      retour_projection: 'Retour et projection',
+      rangement: 'Rangement',
+    };
+    let sectionObsHtml = '';
+    if (sectionObs && typeof sectionObs === 'object') {
+      for (const [key, val] of Object.entries(sectionObs)) {
+        if (val && String(val).trim()) {
+          sectionObsHtml += `<tr><td style="border:1px solid #fca5a5;padding:4px;width:30%;font-weight:bold;background:#fef2f2;color:#dc2626;font-size:9px;">${maternelleSectionLabels[key] || key}</td><td style="border:1px solid #fca5a5;padding:4px;color:#dc2626;font-size:9px;">${String(val)}</td></tr>`;
+        }
+      }
+    }
+    const hasGeneralObs = fiche.directorObservation && String(fiche.directorObservation).trim();
+    const hasRejectionReason = fiche.status === 'REJECTED' && fiche.rejectionReason;
+    const directorHtml = (sectionObsHtml || hasGeneralObs || hasRejectionReason) ? `
+      <div style="margin-top:10px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:#dc2626;padding:4px 8px;border-radius:3px 3px 0 0;">OBSERVATIONS DU DIRECTEUR</div>
+        <div style="border:1px solid #fca5a5;border-top:none;border-radius:0 0 3px 3px;padding:8px;">
+          ${sectionObsHtml ? `<table style="width:100%;border-collapse:collapse;font-size:9px;margin-bottom:6px;">${sectionObsHtml}</table>` : ''}
+          ${hasGeneralObs ? `<div style="font-size:9px;font-weight:bold;color:#dc2626;margin-bottom:2px;">Observation générale</div><div style="font-size:9px;color:#dc2626;padding:4px;background:#fef2f2;border:1px solid #fca5a5;border-radius:3px;">${String(fiche.directorObservation).replace(/<[^>]*>/g, '')}</div>` : ''}
+          ${hasRejectionReason ? `<div style="font-size:9px;font-weight:bold;color:#dc2626;margin-top:4px;">Motif du rejet</div><div style="font-size:9px;color:#dc2626;padding:4px;background:#fee2e2;border:1px solid #fecaca;border-radius:3px;">${fiche.rejectionReason}</div>` : ''}
+        </div>
+      </div>` : '';
+
+    const content = `
+      ${!embedded ? `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1e293b; font-size:10px; padding: 8mm; line-height:1.4; position:relative; }
+        .content { position:relative; z-index:1; }
+        @page { margin: 10mm; }
+      </style></head><body>` : ''}
+
+      ${watermark}
+
+      <div class="content">
+        ${header}
+        ${identification}
+        ${champs}
+        ${deroulementHtml}
+        ${introHtml}
+        ${realisationHtml}
+        ${retourHtml}
+        ${rangementHtml}
+      </div>
+
+      ${directorHtml}
+
+      <div style="margin-top:15px;border-top:1px solid #e2e8f0;padding-top:5px;text-align:center;font-size:8px;color:#94a3b8;">
+        Fiche pédagogique ${isDom2 ? 'Domaine 2' : 'Domaine'} · Maternelle · générée par Academia Helm · ${new Date().toLocaleDateString('fr-FR')} · ${fiche.classNameResolved || fiche.className || ''}
+      </div>
+
+      ${!embedded ? `</body></html>` : ''}
+    `;
     return content;
   }
 
@@ -4479,9 +4766,14 @@ export class PedagogicalSpaceService {
       entries = typeof journal.entries === 'string' ? JSON.parse(journal.entries) : (journal.entries || {});
     } catch { entries = {}; }
 
+    // ⭐ 2026-09-15 : clés réservées (pas des matières) — colonne
+    //    observations (recto), observation du directeur, et obs_dom (colonne
+    //    Observations du groupe DOMAINE dans la grille maternelle).
+    const RESERVED_ENTRY_KEYS = new Set(['observations', 'directorObservation', 'obs_dom']);
     for (const jour of Object.keys(parJour)) {
       const dayEntries = entries[jour] || {};
       for (const [matiereKey, matiereContent] of Object.entries(dayEntries)) {
+        if (RESERVED_ENTRY_KEYS.has(matiereKey)) continue;
         // Une matière est "planifiée" si son contenu n'est pas vide
         const content = typeof matiereContent === 'string' ? matiereContent.trim() : '';
         if (!content) continue;
@@ -4534,6 +4826,14 @@ export class PedagogicalSpaceService {
    */
   private mapMatiereKeyToSheetType(matiereKey: string): string | null {
     const k = (matiereKey || '').toLowerCase().trim();
+    // ⭐ 2026-09-15 MATERNELLE — clés de la grille cahier journal maternelle :
+    //    chaque colonne = un domaine d'activité. DOMAINE_2 (Expression
+    //    corporelle) a sa fiche dédiée ; toutes les autres colonnes utilisent
+    //    la fiche « Domaine » (n° à renseigner par l'enseignante).
+    if (k === 'dom2_corporelle') return 'DOMAINE_2';
+    if (k.startsWith('dom') || k === 'pre_lecture' || k === 'pre_ecriture' || k === 'pre_mathematiques') {
+      return 'DOMAINE';
+    }
     if (k.includes('francais') || k.includes('français') || k.includes('lecture')
       || k.includes('dictee') || k.includes('grammaire') || k.includes('conjugaison') || k.includes('vocabulaire')
       || k.includes('orthographe') || k.includes('expression')) {
@@ -5423,6 +5723,12 @@ export class PedagogicalSpaceService {
       // ⭐ Phases spécifiques au français
       phase_introductive: 'phase_introductive', phase_systematisation: 'phase_systematisation', phase_application: 'phase_application',
       app_col1: 'app_col1', app_col2: 'app_col2', app_col3: 'app_col3',
+      // ⭐ FICHES MATERNELLE (DOMAINE | DOMAINE_2) — contenu structuré complet
+      //    (en-tête ÉCOLE MATERNELLE, Domaine du, Composante, Activités
+      //    d'apprentissage, DÉROULEMENT, RÉALISATION, RETOUR ET PROJECTION,
+      //    RANGEMENT, Notes personnelles). Colonne posée par la migration
+      //    20260915090000_add_maternelle_content_to_fiches.
+      maternelleContent: 'maternelleContent',
       // ⭐ Lien structurel vers le cahier journal (null si fiche créée hors cahier journal)
       //    ⚠️ Si la colonne n'existe pas en DB (migration non faite), le INSERT va planter.
       //    On l'ajoute quand même : si la migration est faite, ça marche ; sinon, le
@@ -5434,7 +5740,7 @@ export class PedagogicalSpaceService {
     for (const [key, col] of Object.entries(fieldMap)) {
       if (data[key] !== undefined && data[key] !== null) {
         fields.push(`"${col}"`);
-        if (key === 'deroulement') {
+        if (key === 'deroulement' || key === 'maternelleContent') {
           placeholders.push(`$${paramIdx++}::jsonb`);
           params.push(JSON.stringify(data[key]));
         } else if (key === 'lessonDate' || key === 'adminDate') {
@@ -5456,15 +5762,21 @@ export class PedagogicalSpaceService {
         ...params,
       );
     } catch (insertErr: any) {
-      // ⭐ Si la colonne cahierJournalId n'existe pas (migration non faite),
-      //    on retente sans ce champ.
+      // ⭐ Si une colonne optionnelle n'existe pas encore en DB (migration non
+      //    faite — erreur 42703 « column does not exist »), on retente sans ces
+      //    colonnes : cahierJournalId (202607xx) et maternelleContent (20260915).
       if (insertErr.code === 'P2010' || (insertErr.message && insertErr.message.includes('42703'))) {
-        // Retirer cahierJournalId des fields/placeholders/params
-        const idx = fields.indexOf('"cahierJournalId"');
-        if (idx >= 0) {
-          fields.splice(idx, 1);
-          placeholders.splice(idx, 1);
-          params.splice(idx, 1);
+        let retryNeeded = false;
+        for (const optionalCol of ['cahierJournalId', 'maternelleContent']) {
+          const idx = fields.indexOf(`"${optionalCol}"`);
+          if (idx >= 0) {
+            fields.splice(idx, 1);
+            placeholders.splice(idx, 1);
+            params.splice(idx, 1);
+            retryNeeded = true;
+          }
+        }
+        if (retryNeeded) {
           await this.prisma.$executeRawUnsafe(
             `INSERT INTO "primary_pedagogical_fiches" (${fields.join(', ')}) VALUES (${placeholders.join(', ')})`,
             ...params,
@@ -5514,6 +5826,8 @@ export class PedagogicalSpaceService {
       objectivation: 'string', evalRetour: 'string', projection: 'string',
       phase_introductive: 'string', phase_systematisation: 'string', phase_application: 'string',
       app_col1: 'string', app_col2: 'string', app_col3: 'string',
+      // ⭐ FICHES MATERNELLE (DOMAINE | DOMAINE_2) — contenu structuré complet
+      maternelleContent: 'jsonb',
       status: 'string', submittedAt: 'date', validatedAt: 'date',
       validatedBy: 'string', rejectionReason: 'string',
       // ⭐ Lien structurel vers le cahier journal
@@ -5546,13 +5860,19 @@ export class PedagogicalSpaceService {
         ...params,
       );
     } catch (updateErr: any) {
-      // ⭐ Si la colonne cahierJournalId n'existe pas (migration non faite), on retente sans
+      // ⭐ Si une colonne optionnelle n'existe pas (migration non faite), on retente sans
+      //    (cahierJournalId — 202607xx ; maternelleContent — 20260915)
       if (updateErr.code === 'P2010' || (updateErr.message && updateErr.message.includes('42703'))) {
-        // Retirer la ligne "cahierJournalId" des updates + le param correspondant
-        const idx = updates.findIndex(u => u.startsWith('"cahierJournalId"'));
-        if (idx >= 0) {
-          updates.splice(idx, 1);
-          params.splice(idx, 1);
+        let retryNeeded = false;
+        for (const optionalCol of ['cahierJournalId', 'maternelleContent']) {
+          const idx = updates.findIndex(u => u.startsWith(`"${optionalCol}"`));
+          if (idx >= 0) {
+            updates.splice(idx, 1);
+            params.splice(idx, 1);
+            retryNeeded = true;
+          }
+        }
+        if (retryNeeded) {
           // Recalculer les indices des placeholders
           let newParamIdx = 1;
           const newUpdates = updates.map(u => u.replace(/\$(\d+)/g, () => `$${newParamIdx++}`));
@@ -5731,26 +6051,55 @@ export class PedagogicalSpaceService {
 
     // Copier tous les champs pédagogiques (contenu, deroulement, evaluation, etc.)
     // mais reset les champs admin (dates, signatures, statut)
-    await this.prisma.$executeRawUnsafe(
-      `INSERT INTO "primary_pedagogical_fiches"
-        ("id", "tenantId", "academicYearId", "teacherId", "classId", "subjectId",
-         "sheetType", "schoolName", "className", "academicYearLabel", "trimester", "weekNumber",
-         "competence", "habilete", "prealable", "contenu", "methodes", "moyensDidactiques",
-         "deroulement", "evaluation", "reference",
-         "status", "originalSheetId", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6,
-               $7, $8, $9, $10, $11, $12,
-               $13, $14, $15, $16, $17, $18,
-               $19, $20, $21,
-               'DRAFT', $22, NOW(), NOW())`,
+    // ⭐ 2026-09-15 : maternelleContent copié aussi (fiches DOMAINE / DOMAINE_2).
+    //    La colonne peut ne pas exister (migration non faite) → INSERT résilient
+    //    avec repli sans cette colonne.
+    const insertParams = [
       newId, tenantId, targetAcademicYearId, newTeacherId, newClassId, src.subjectId,
       src.sheetType || null, src.schoolName || null, src.className || null,
       targetYear[0].name, src.trimester || null, src.weekNumber || null,
       src.competence || null, src.habilete || null, src.prealable || null,
       src.contenu || null, src.methodes || null, src.moyensDidactiques || null,
       src.deroulement || null, src.evaluation || null, src.reference || null,
+      src.maternelleContent ? JSON.stringify(src.maternelleContent) : null,
       sourceFicheId, // originalSheetId — traçabilité
-    );
+    ];
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO "primary_pedagogical_fiches"
+          ("id", "tenantId", "academicYearId", "teacherId", "classId", "subjectId",
+           "sheetType", "schoolName", "className", "academicYearLabel", "trimester", "weekNumber",
+           "competence", "habilete", "prealable", "contenu", "methodes", "moyensDidactiques",
+           "deroulement", "evaluation", "reference", "maternelleContent",
+           "status", "originalSheetId", "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4, $5, $6,
+                 $7, $8, $9, $10, $11, $12,
+                 $13, $14, $15, $16, $17, $18,
+                 $19, $20, $21, $22::jsonb,
+                 'DRAFT', $23, NOW(), NOW())`,
+        ...insertParams,
+      );
+    } catch (dupErr: any) {
+      // Colonne maternelleContent absente (migration non faite) → INSERT classique
+      if (dupErr.code === 'P2010' || (dupErr.message && dupErr.message.includes('42703'))) {
+        await this.prisma.$executeRawUnsafe(
+          `INSERT INTO "primary_pedagogical_fiches"
+            ("id", "tenantId", "academicYearId", "teacherId", "classId", "subjectId",
+             "sheetType", "schoolName", "className", "academicYearLabel", "trimester", "weekNumber",
+             "competence", "habilete", "prealable", "contenu", "methodes", "moyensDidactiques",
+             "deroulement", "evaluation", "reference",
+             "status", "originalSheetId", "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4, $5, $6,
+                   $7, $8, $9, $10, $11, $12,
+                   $13, $14, $15, $16, $17, $18,
+                   $19, $20, $21,
+                   'DRAFT', $22, NOW(), NOW())`,
+          ...insertParams.slice(0, 21).concat([sourceFicheId]),
+        );
+      } else {
+        throw dupErr;
+      }
+    }
 
     this.logger.log(
       `Fiche dupliquée: ${sourceFicheId} → ${newId} (année ${targetYear[0].name}, teacher ${newTeacherId})`,
@@ -7913,11 +8262,17 @@ export class PedagogicalSpaceService {
 
   /// Récupère le détail d'un cahier journal (vue direction).
   async getCahierJournalDetail(tenantId: string, journalId: string) {
+    // ⭐ 2026-09-15 : JOIN school_levels — le frontend directeur détecte les classes
+    //    MATERNELLE pour afficher la grille cahier journal maternelle (domaines
+    //    I à V) au lieu de la grille par matières.
     const result: any = await this.prisma.$queryRawUnsafe(
       `SELECT DISTINCT ON (cj.id) cj.*, c."name" as "classNameResolved",
+              c."schoolLevelId" as "schoolLevelId",
+              sl."name" as "schoolLevelName", sl."code" as "schoolLevelCode",
               tca_t."firstName" as "teacherFirstName", tca_t."lastName" as "teacherLastName", tca_t."gender" as "teacherGender"
        FROM "cahier_journal_entries" cj
        LEFT JOIN "classes" c ON c."id" = cj."classId"
+       LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
        LEFT JOIN teacher_class_assignments tca ON tca."classId" = cj."classId" AND tca."tenantId" = cj."tenantId"
        LEFT JOIN "teachers" tca_t ON tca_t."id" = tca."teacherId"
        WHERE cj."id" = $1 AND cj."tenantId" = $2
@@ -7932,11 +8287,16 @@ export class PedagogicalSpaceService {
 
   /// Récupère le détail d'une fiche pédagogique (vue direction).
   async getPedagogicalFicheDetail(tenantId: string, ficheId: string) {
+    // ⭐ 2026-09-15 : JOIN school_levels — le frontend directeur détecte les
+    //    fiches des classes MATERNELLE pour afficher le format maternelle.
     const result: any = await this.prisma.$queryRawUnsafe(
       `SELECT DISTINCT ON (pf.id) pf.*, c."name" as "classNameResolved",
+              c."schoolLevelId" as "schoolLevelId",
+              sl."name" as "schoolLevelName", sl."code" as "schoolLevelCode",
               tca_t."firstName" as "teacherFirstName", tca_t."lastName" as "teacherLastName", tca_t."gender" as "teacherGender"
        FROM "primary_pedagogical_fiches" pf
        LEFT JOIN "classes" c ON c."id" = pf."classId"
+       LEFT JOIN "school_levels" sl ON sl."id" = c."schoolLevelId"
        LEFT JOIN teacher_class_assignments tca ON tca."classId" = pf."classId" AND tca."tenantId" = pf."tenantId"
        LEFT JOIN "teachers" tca_t ON tca_t."id" = tca."teacherId"
        WHERE pf."id" = $1 AND pf."tenantId" = $2
@@ -9009,31 +9369,106 @@ td.name{text-align:left;font-weight:bold;}
     </table>`;
 
     // ═══ GRILLE HEBDOMADAIRE ═══
+    // ⭐ 2026-09-15 MATERNELLE : grille par DOMAINES (conforme au modèle officiel
+    //    de la maternelle — DOMAINE I à V avec sous-colonnes) au lieu de la
+    //    grille par matières.
+    const isMaternelleJournal = (j.schoolLevelCode || '').toUpperCase() === 'MATERNELLE';
     html += '<div style="margin-bottom:8px;">';
     html += '<div style="font-size:11px;font-weight:bold;color:white;background:#0A2A5E;padding:4px 8px;border-radius:3px 3px 0 0;">GRILLE HEBDOMADAIRE</div>';
     html += '<table style="width:100%;border-collapse:collapse;border:1px solid #0A2A5E;border-top:none;">';
-    html += '<thead><tr style="background:#dbeafe;">';
-    html += '<th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:10%;">JOURS</th>';
-    for (const subj of subjects) {
-      html += `<th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">${subj.replace(/_/g, ' ')}</th>`;
-    }
-    html += '<th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">OBSERVATIONS</th>';
-    html += '</tr></thead><tbody>';
-    for (const day of DAYS) {
-      const dayEntries = entries[day.key] || {};
-      html += `<tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;font-size:9px;">${day.label}</td>`;
+    if (isMaternelleJournal) {
+      // ── Domaines de la grille maternelle (ordre exact du modèle officiel) ──
+      const MAT_DOMAIN_GROUPS: Array<{ title: string; isDate?: boolean; subs?: Array<{ key: string; label: string }> }> = [
+        { title: 'DATE', isDate: true },
+        { title: 'DOMAINE I', subs: [{ key: 'dom1_sante', label: 'Éducation pour la santé' }] },
+        { title: 'DOMAINE II', subs: [{ key: 'dom2_corporelle', label: 'Expression corporelle' }] },
+        { title: 'DOMAINE', subs: [
+          { key: 'pre_lecture', label: 'Pré-lecture' },
+          { key: 'pre_ecriture', label: 'Pré-écriture' },
+          { key: 'pre_mathematiques', label: 'Pré-mathématiques' },
+          { key: 'obs_dom', label: 'Observations' },
+        ] },
+        { title: 'DOMAINE III', subs: [
+          { key: 'dom3_sensorielle', label: 'Éducation sensorielle' },
+          { key: 'dom3_travaux_manuels', label: 'Travaux manuels' },
+        ] },
+        { title: 'DOMAINE IV', subs: [
+          { key: 'dom4_emotionnelle', label: 'Expression émotionnelle' },
+          { key: 'dom4_plastique', label: 'Expression plastique' },
+        ] },
+        { title: 'DOMAINE V', subs: [
+          { key: 'dom5_comm_orale', label: 'Communication orale' },
+          { key: 'dom5_conte', label: 'Conte' },
+          { key: 'dom5_poesie_chant', label: 'Poésie chant comptine' },
+          { key: 'dom5_act_libres', label: 'Activités libres' },
+        ] },
+      ];
+      const flatSubs: Array<{ key: string; label: string }> = [];
+      for (const g of MAT_DOMAIN_GROUPS) {
+        if (g.isDate) continue;
+        for (const s of g.subs || []) flatSubs.push(s);
+      }
+      // Ligne 1 : DATE (rowspan 2) + titres de domaines fusionnés
+      html += '<thead><tr style="background:#dbeafe;">';
+      html += `<th rowspan="2" style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:7%;">DATE</th>`;
+      for (const g of MAT_DOMAIN_GROUPS) {
+        if (g.isDate) continue;
+        html += `<th colspan="${(g.subs || []).length}" style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">${g.title}</th>`;
+      }
+      html += '</tr>';
+      // Ligne 2 : sous-colonnes
+      html += '<tr style="background:#eff6ff;">';
+      for (const s of flatSubs) {
+        html += `<th style="border:1px solid #cbd5e1;padding:4px;font-size:7px;">${s.label}</th>`;
+      }
+      html += '</tr></thead><tbody>';
+      for (const day of DAYS) {
+        const dayEntries = entries[day.key] || {};
+        html += `<tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;font-size:9px;">${day.label}</td>`;
+        for (const s of flatSubs) {
+          html += `<td style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">${strip(dayEntries[s.key] || '')}</td>`;
+        }
+        html += `</tr>`;
+      }
+      html += '</tbody></table></div>';
+      // Observations du directeur par jour (si présentes) — en rouge
+      const hasDirectorObs = DAYS.some(d => (entries[d.key] || {})['directorObservation']);
+      if (hasDirectorObs) {
+        html += '<div style="margin-bottom:8px;">';
+        html += '<div style="font-size:11px;font-weight:bold;color:white;background:#dc2626;padding:4px 8px;border-radius:3px 3px 0 0;">OBSERVATIONS DU DIRECTEUR (par jour)</div>';
+        html += '<table style="width:100%;border-collapse:collapse;border:1px solid #fca5a5;border-top:none;">';
+        for (const day of DAYS) {
+          const obs = (entries[day.key] || {})['directorObservation'];
+          if (obs) {
+            html += `<tr><td style="border:1px solid #fca5a5;padding:4px;width:12%;font-weight:bold;background:#fef2f2;font-size:8px;color:#dc2626;">${day.label}</td><td style="border:1px solid #fca5a5;padding:4px;font-size:8px;color:#dc2626;">${strip(obs)}</td></tr>`;
+          }
+        }
+        html += '</table></div>';
+      }
+    } else {
+      html += '<thead><tr style="background:#dbeafe;">';
+      html += '<th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:10%;">JOURS</th>';
       for (const subj of subjects) {
-        const val = dayEntries[subj] || '';
-        html += `<td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(val)}</td>`;
+        html += `<th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">${subj.replace(/_/g, ' ')}</th>`;
       }
-      html += `<td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(dayEntries['observations'] || '')}`;
-      // ⭐ Observation du directeur (en rouge, sous l'observation de l'enseignant)
-      if (dayEntries['directorObservation']) {
-        html += `<div style="margin-top:4px;padding:3px;background:#fef2f2;border:1px solid #fca5a5;border-radius:3px;"><div style="font-size:7px;font-weight:bold;color:#dc2626;text-transform:uppercase;margin-bottom:2px;">Observation du Directeur</div><div style="font-size:8px;color:#dc2626;">${strip(dayEntries['directorObservation'])}</div></div>`;
+      html += '<th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">OBSERVATIONS</th>';
+      html += '</tr></thead><tbody>';
+      for (const day of DAYS) {
+        const dayEntries = entries[day.key] || {};
+        html += `<tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;font-size:9px;">${day.label}</td>`;
+        for (const subj of subjects) {
+          const val = dayEntries[subj] || '';
+          html += `<td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(val)}</td>`;
+        }
+        html += `<td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(dayEntries['observations'] || '')}`;
+        // ⭐ Observation du directeur (en rouge, sous l'observation de l'enseignant)
+        if (dayEntries['directorObservation']) {
+          html += `<div style="margin-top:4px;padding:3px;background:#fef2f2;border:1px solid #fca5a5;border-radius:3px;"><div style="font-size:7px;font-weight:bold;color:#dc2626;text-transform:uppercase;margin-bottom:2px;">Observation du Directeur</div><div style="font-size:8px;color:#dc2626;">${strip(dayEntries['directorObservation'])}</div></div>`;
+        }
+        html += `</td></tr>`;
       }
-      html += `</td></tr>`;
+      html += '</tbody></table></div>';
     }
-    html += '</tbody></table></div>';
 
     // ═══ OBSERVATIONS GÉNÉRALES ═══
     if (j.observations) {

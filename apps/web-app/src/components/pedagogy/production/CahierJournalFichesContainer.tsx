@@ -443,6 +443,11 @@ function StatusBadge({ status }: { status: string }) {
  */
 function mapMatiereToSheetType(matiere: string): string {
   const m = (matiere || '').toLowerCase().trim();
+  // ⭐ 2026-09-15 MATERNELLE — clés de la grille par domaines :
+  //    DOMAINE_2 (Expression corporelle) a sa fiche dédiée ; toutes les
+  //    autres colonnes → fiche « Domaine » (n° à renseigner par l'enseignante).
+  if (m === 'dom2_corporelle') return 'DOMAINE_2';
+  if (m.startsWith('dom') || m === 'pre_lecture' || m === 'pre_ecriture' || m === 'pre_mathematiques') return 'DOMAINE';
   // Français
   if (m === 'français' || m === 'francais' || m === 'fran\u00e7ais') return 'FRANCAIS';
   // Mathématiques
@@ -460,6 +465,25 @@ function mapMatiereToSheetType(matiere: string): string {
   // Default: pas de correspondance → laisse l'utilisateur choisir
   return '';
 }
+
+// ⭐ 2026-09-15 MATERNELLE — libellés lisibles des colonnes de la grille
+//    par domaines (utilisés dans les cartes « Préparer la fiche »).
+const MATIERE_LABELS: Record<string, string> = {
+  dom1_sante: "Éducation pour la santé",
+  dom2_corporelle: "Expression corporelle",
+  pre_lecture: "Pré-lecture",
+  pre_ecriture: "Pré-écriture",
+  pre_mathematiques: "Pré-mathématiques",
+  obs_dom: "Observations",
+  dom3_sensorielle: "Éducation sensorielle",
+  dom3_travaux_manuels: "Travaux manuels",
+  dom4_emotionnelle: "Expression émotionnelle",
+  dom4_plastique: "Expression plastique",
+  dom5_comm_orale: "Communication orale",
+  dom5_conte: "Conte",
+  dom5_poesie_chant: "Poésie chant comptine",
+  dom5_act_libres: "Activités libres",
+};
 
 // ─── Liste des matières planifiées + boutons "Préparer la fiche" ────────────
 
@@ -632,7 +656,7 @@ function FichesAPreparer({
                         <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
                       )}
                       <span className="font-medium text-slate-700 truncate capitalize">
-                        {m.matiere.replace(/_/g, " ")}
+                        {MATIERE_LABELS[m.matiere] || m.matiere.replace(/_/g, " ")}
                       </span>
                     </div>
                     {m.fichePreparede ? (
@@ -763,7 +787,7 @@ function FichesLieesJournal({
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
               <div className="min-w-0">
                 <div className="font-medium text-slate-700 truncate">
-                  {fiche.sheetType || fiche.competence || 'Fiche'}
+                  {fiche.sheetType === 'DOMAINE_2' ? 'Domaine 2' : fiche.sheetType === 'DOMAINE' ? 'Domaine' : fiche.sheetType || fiche.competence || 'Fiche'}
                 </div>
                 {fiche.lessonDate && (
                   <div className="text-[10px] text-slate-400">
@@ -793,6 +817,7 @@ function FichesLieesJournal({
                     // ⭐ Nom du fichier : Fiche pédagogique [matière] [jour] [date] période [date] à [date]
                     const SHEET_LABELS: Record<string, string> = {
                       MATH: 'Mathematiques', FRANCAIS: 'Francais', EST: 'EST', ES: 'Education Sociale', EA: 'Education Artistique', EPS: 'Education Physique et Sportive',
+                      DOMAINE: 'Domaine', DOMAINE_2: 'Domaine 2',
                     };
                     const matiere = SHEET_LABELS[fiche.sheetType] || fiche.sheetType || 'Fiche';
                     const days = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];

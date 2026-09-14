@@ -836,10 +836,44 @@ export class StudentsLifecycleController {
    * (sans paiements) peuvent être supprimés.
    */
   @Post('delete-student')
+  @Roles(...MANAGEMENT_ROLES)
   async deleteStudent(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Body() body: { studentId: string },
   ) {
-    return this.lifecycle.deleteStudent(tenantId, body.studentId);
+    return this.lifecycle.deleteStudent(tenantId, body.studentId, user?.id);
+  }
+
+  /**
+   * ⭐ POST /students/repair-enrollment
+   * Réparation idempotente d'une inscription interrompue (connexion perdue
+   * entre preRegister et admit). Complète UNIQUEMENT ce qui manque :
+   *   - enrollment manquant → recréé
+   *   - classe officielle / type d'inscription → mis à jour (+ section physique
+   *     ré-assignée selon la règle « section unique »)
+   *   - matricule manquant → généré
+   *   - statut PRE_REGISTERED/PENDING → ADMITTED
+   *   - dossier académique / identifiant global / token public → créés si absents
+   *   - compte financier → créé ou recalculé (imputations des frais)
+   * Body: { studentId, academicYearId, schoolLevelId?, academicClassId?, enrollmentType? }
+   */
+  @Post('repair-enrollment')
+  @Roles(...MANAGEMENT_ROLES)
+  async repairEnrollment(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: {
+      studentId: string;
+      academicYearId: string;
+      schoolLevelId?: string;
+      academicClassId?: string;
+      enrollmentType?: string;
+    },
+  ) {
+    if (!body?.studentId || !body?.academicYearId) {
+      throw new BadRequestException('studentId et academicYearId sont requis');
+    }
+    return this.lifecycle.repairEnrollment(tenantId, body, user?.id);
   }
 }

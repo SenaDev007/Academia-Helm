@@ -637,10 +637,47 @@ class StudentsService {
     success: boolean;
     studentId: string;
     message: string;
+    details?: { transfers: number; breakdowns: number; accounts: number };
   }> {
     return apiFetch(`${BASE_URL}/delete-student`, {
       method: "POST",
       body: { studentId },
+    });
+  }
+
+  /**
+   * ⭐ Réparation idempotente d'une inscription interrompue (fix 2026-09-14).
+   * Le wizard d'inscription est une orchestration en 3 appels (preRegister →
+   * admit → guardians) ; si la connexion tombe en cours de route, l'élève
+   * reste incomplet (pas de matricule, pas de compte financier, statut bloqué).
+   * Cet endpoint complète UNIQUEMENT ce qui manque — sans rien détruire.
+   * Backend : POST /students/repair-enrollment
+   */
+  async repairEnrollment(data: {
+    studentId: string;
+    academicYearId: string;
+    schoolLevelId?: string;
+    academicClassId?: string;
+    enrollmentType?: string;
+  }): Promise<{
+    student: any;
+    repair: {
+      matricule?: string;
+      matriculeGenerated: boolean;
+      statusFixed: boolean;
+      academicClassUpdated: boolean;
+      physicalClassResolved?: string | null;
+      academicRecordCreated: boolean;
+      accountCreated: boolean;
+      accountRecalculated: boolean;
+      breakdownsCount: number;
+      actions: string[];
+    };
+  }> {
+    return apiFetch(`${BASE_URL}/repair-enrollment`, {
+      method: "POST",
+      body: data,
+      timeout: 60000,
     });
   }
 

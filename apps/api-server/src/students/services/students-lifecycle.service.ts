@@ -467,6 +467,320 @@ export class StudentsLifecycleService {
     });
   }
 
+  /**
+   * ⭐ RÉPARATION D'UNE INSCRIPTION INTERROMPUE (fix 2026-09-14).
+   *
+   * Le wizard « Nouvelle inscription » est une orchestration frontend en 3
+   * appels (preRegister → admit → guardians). Si la connexion tombe entre
+   * deux appels, l'élève reste dans un état incomplet :
+   *   - sans matricule (admit non exécuté),
+   *   - sans dossier académique (StudentAcademicRecord),
+   *   - sans identifiant global (StudentIdentifier),
+   *   - sans compte financier ou avec un compte sans imputations,
+   *   - ou bloqué au statut PRE_REGISTERED.
+   *
+   * Cette méthode est IDEMPOTENTE : elle ne fait que COMPLÉTER ce qui manque,
+   * sans jamais détruire ce qui existe déjà. Appelée depuis le modal
+   * « Éditer / Compléter l'inscription » — elle remplace l'ancien appel
+   * changeClass() qui envoyait un UUID AcademicClass là où le backend attend
+   * un UUID de classe physique (échec silencieux systématique).
+   */
+  async repairEnrollment(tenantId: string, data: {
+    studentId: string;
+    academicYearId: string;
+    schoolLevelId?: string;
+    /** Classe OFFICIELLE (AcademicClass) sélectionnée dans le wizard d'édition */
+    academicClassId?: string;
+    /** NEW (frais d'inscription) ou REPEAT (frais de réinscription) */
+    enrollmentType?: string;
+  }, userId?: string) {
+    const report: {
+      matricule?: string;
+      matriculeGenerated: boolean;
+      statusFixed: boolean;
+      academicClassUpdated: boolean;
+      physicalClassResolved?: string | null;
+      academicRecordCreated: boolean;
+      accountCreated: boolean;
+      accountRecalculated: boolean;
+      breakdownsCount: number;
+      actions: string[];
+    } = {
+      matriculeGenerated: false,
+      statusFixed: false,
+      academicClassUpdated: false,
+      academicRecordCreated: false,
+      accountCreated: false,
+      accountRecalculated: false,
+      breakdownsCount: 0,
+      actions: [],
+    };
+
+    const student = await this.prisma.student.findFirst({
+      where: { id: data.studentId, tenantId },
+      include: {
+        studentEnrollments: { where: { academicYearId: data.academicYearId } },
+      },
+    });
+    if (!student) throw new NotFoundException('Élève non trouvé');
+
+    // Résolution du niveau (miroir bilingue / multi-tables — même règle que preRegister)
+    const schoolLevelId = data.schoolLevelId || student.schoolLevelId;
+    if (schoolLevelId && schoolLevelId !== 'ALL') {
+      const resolvedIds = await resolveSchoolLevelFilter(this.prisma, tenantId, schoolLevelId);
+      if (resolvedIds && resolvedIds.length > 0) {
+        data = { ...data, schoolLevelId: resolvedIds[0] };
+      }
+    }
+    const effectiveLevelId = (data.schoolLevelId && data.schoolLevelId !== 'ALL')
+      ? data.schoolLevelId
+      : student.schoolLevelId;
+
+    // ── 1. Enrollment manquant (connexion tombée entre les 2 creates de preRegister) ──
+    let enrollment = student.studentEnrollments?.[0] ?? null;
+    if (!enrollment) {
+      enrollment = await this.prisma.studentEnrollment.create({
+        data: {
+          tenantId,
+          academicYearId: data.academicYearId,
+          schoolLevelId: effectiveLevelId,
+          studentId: student.id,
+          academicClassId: data.academicClassId ?? null,
+          enrollmentType: data.enrollmentType || 'NEW',
+          enrollmentDate: new Date(),
+          status: ENROLLMENT_STATUS.PRE_REGISTERED,
+        },
+      });
+      report.actions.push('inscription recréée (elle manquait suite à l\'interruption)');
+      await this.logAudit(tenantId, student.id, 'REPAIR_CREATE_ENROLLMENT', userId, null, {
+        enrollmentId: enrollment.id,
+      });
+    }
+
+    // ── 2. Classe officielle + type d'inscription ──────────────────────────
+    const patch: any = {};
+    if (data.academicClassId && data.academicClassId !== enrollment.academicClassId) {
+      patch.academicClassId = data.academicClassId;
+    }
+    if (data.enrollmentType && data.enrollmentType !== enrollment.enrollmentType) {
+      patch.enrollmentType = data.enrollmentType;
+    }
+    if (Object.keys(patch).length > 0) {
+      await this.prisma.studentEnrollment.update({
+        where: { id: enrollment.id },
+        data: patch,
+      });
+      if (patch.academicClassId) {
+        report.academicClassUpdated = true;
+        report.actions.push('classe officielle mise à jour');
+      }
+      if (patch.enrollmentType) {
+        report.actions.push(`type d'inscription → ${patch.enrollmentType}`);
+      }
+    }
+
+    // Classe physique : ré-assigner si elle ne correspond plus à la classe officielle
+    if (data.academicClassId) {
+      const currentClass = enrollment.classId
+        ? await this.prisma.class.findUnique({
+            where: { id: enrollment.classId },
+            select: { id: true, officialClassId: true },
+          })
+        : null;
+      const classMismatch = !currentClass || currentClass.officialClassId !== data.academicClassId;
+      if (classMismatch) {
+        // Même règle que preRegister : section unique → assignation auto ;
+        // plusieurs sections → classe physique retirée (affectation manuelle)
+        const physicalSections = await this.prisma.class.findMany({
+          where: {
+            tenantId,
+            academicYearId: data.academicYearId,
+            officialClassId: data.academicClassId,
+          },
+          select: { id: true, name: true },
+        });
+        const newPhysicalClassId = physicalSections.length === 1 ? physicalSections[0].id : null;
+        if (newPhysicalClassId !== enrollment.classId) {
+          await this.prisma.studentEnrollment.update({
+            where: { id: enrollment.id },
+            data: { classId: newPhysicalClassId },
+          });
+          report.physicalClassResolved = newPhysicalClassId;
+          report.actions.push(newPhysicalClassId
+            ? 'section physique ré-affectée automatiquement'
+            : 'section physique retirée (plusieurs sections possibles — affectation manuelle)');
+          // Tracer le changement pour l'historique
+          try {
+            await this.prisma.classTransfer.create({
+              data: {
+                tenantId,
+                academicYearId: data.academicYearId,
+                schoolLevelId: effectiveLevelId,
+                studentId: student.id,
+                fromClassId: enrollment.classId,
+                toClassId: newPhysicalClassId,
+                transferDate: new Date(),
+                reason: 'Réparation d\'inscription interrompue',
+                approvedBy: userId,
+                transferType: enrollment.classId ? 'CLASS_CHANGE' : 'INITIAL_ASSIGNMENT',
+              },
+            });
+          } catch {}
+        }
+      }
+    }
+
+    // ── 3. Matricule manquant → génération (même mécanique que admit) ─────
+    if (!student.matricule) {
+      const schoolCode = await this.matriculeService.getSchoolCode(tenantId);
+      const enrollmentYear = await this.matriculeService.getEnrollmentYearFromAcademicYear(data.academicYearId);
+      const matricule = await this.prisma.$transaction(async (tx) =>
+        this.matriculeService.generateInTransaction(tx, tenantId, schoolCode, enrollmentYear),
+      );
+      await this.prisma.student.update({
+        where: { id: student.id },
+        data: {
+          matricule,
+          enrollmentYear,
+          studentCode: matricule,
+          currentAcademicYearId: data.academicYearId,
+        },
+      });
+      report.matricule = matricule;
+      report.matriculeGenerated = true;
+      report.actions.push(`matricule ${matricule} généré`);
+    }
+
+    // ── 4. Statut PRE_REGISTERED/PENDING → ADMITTED + dossier académique ──
+    const currentEnrollment = await this.prisma.studentEnrollment.findUnique({
+      where: { id: enrollment.id },
+    });
+    if (['PRE_REGISTERED', 'PENDING'].includes(currentEnrollment?.status ?? '')) {
+      await this.prisma.studentEnrollment.update({
+        where: { id: enrollment.id },
+        data: { status: ENROLLMENT_STATUS.ADMITTED },
+      });
+      report.statusFixed = true;
+      report.actions.push('statut porté à ADMITTED');
+
+      // Historique institutionnel (comme admit)
+      await this.logHistory(
+        tenantId,
+        student.id,
+        data.academicYearId,
+        currentEnrollment?.classId ?? null,
+        'ADMITTED',
+        'Réparation d\'inscription interrompue (complétion automatique)',
+        userId,
+      );
+    }
+
+    // Dossier académique — upsert idempotent (comme admit)
+    const existingRecord = await this.prisma.studentAcademicRecord.findUnique({
+      where: {
+        studentId_academicYearId: {
+          studentId: student.id,
+          academicYearId: data.academicYearId,
+        },
+      },
+    });
+    if (!existingRecord) {
+      await this.prisma.studentAcademicRecord.create({
+        data: {
+          tenantId,
+          studentId: student.id,
+          academicYearId: data.academicYearId,
+          schoolLevelId: effectiveLevelId,
+          enrollmentStatus: 'ADMITTED',
+        },
+      });
+      report.academicRecordCreated = true;
+      report.actions.push('dossier académique créé');
+    }
+
+    // Identifiant global (AH-STU-…) si manquant — best-effort
+    const existingIdentifier = await this.prisma.studentIdentifier.findFirst({
+      where: { studentId: student.id },
+    });
+    if (!existingIdentifier) {
+      try {
+        await this.studentIdentifierService.generateGlobalMatricule(tenantId, student.id, 'BJ', userId);
+        report.actions.push('identifiant global généré');
+      } catch (e) {
+        this.logger.warn(`Identifiant global non créé (réparation) pour ${student.id}: ${(e as Error).message}`);
+      }
+    }
+
+    // Token de vérification publique — best-effort, non bloquant
+    try {
+      await this.publicVerificationService.generateVerificationToken(
+        tenantId,
+        student.id,
+        data.academicYearId,
+      );
+    } catch (e) {
+      this.logger.warn(`Token non créé (réparation) pour ${student.id}: ${(e as Error).message}`);
+    }
+
+    // ── 5. Compte financier + imputations ──────────────────────────────────
+    //    - aucun compte → getOrCreate (crée compte + imputations)
+    //    - compte SANS imputations, ou classe/type/niveau changés → recalculate
+    const account = await this.prisma.studentAccount.findUnique({
+      where: {
+        studentId_academicYearId: {
+          studentId: student.id,
+          academicYearId: data.academicYearId,
+        },
+      },
+      include: { breakdowns: true },
+    });
+    const needsRecalc =
+      !account ||
+      account.breakdowns.length === 0 ||
+      report.academicClassUpdated ||
+      !!report.physicalClassResolved ||
+      !!patch.enrollmentType;
+    if (!account) {
+      const { account: created } = await this.studentAccountService.getOrCreate(
+        tenantId,
+        student.id,
+        data.academicYearId,
+      );
+      report.accountCreated = true;
+      report.breakdownsCount = created?.breakdowns?.length ?? 0;
+      report.actions.push('compte financier créé avec ses imputations');
+    } else if (needsRecalc) {
+      const updated = await this.studentAccountService.recalculate(
+        student.id,
+        tenantId,
+        data.academicYearId,
+      );
+      report.accountRecalculated = true;
+      report.breakdownsCount = (updated as any)?.breakdowns?.length ?? 0;
+      report.actions.push('compte financier recalculé (imputations des frais)');
+    } else {
+      report.breakdownsCount = account.breakdowns.length;
+    }
+
+    await this.logAudit(tenantId, student.id, 'REPAIR_ENROLLMENT', userId, null, {
+      academicYearId: data.academicYearId,
+      ...report,
+    });
+
+    const result = await this.prisma.student.findUnique({
+      where: { id: student.id },
+      include: {
+        studentEnrollments: {
+          where: { academicYearId: data.academicYearId },
+          include: { class: true, academicClass: true, academicYear: true },
+        },
+        schoolLevel: true,
+      },
+    });
+
+    return { student: result, repair: report };
+  }
+
   /** Réinscription : nouvel enrollment, historique conservé, vérification arriérés */
   async reEnroll(tenantId: string, data: {
     studentId: string;
@@ -2055,12 +2369,14 @@ export class StudentsLifecycleService {
   async deleteStudent(
     tenantId: string,
     studentId: string,
-  ): Promise<{ success: boolean; studentId: string; message: string }> {
+    userId?: string,
+  ): Promise<{ success: boolean; studentId: string; message: string; details?: any }> {
     // 1. Vérifier que l'élève existe et appartient au tenant
     const student = await this.prisma.student.findFirst({
       where: { id: studentId, tenantId },
       include: {
         studentEnrollments: true,
+        studentAccounts: { include: { breakdowns: true } },
       },
     });
 
@@ -2069,6 +2385,7 @@ export class StudentsLifecycleService {
     }
 
     // 2. Vérifier le statut — seuls PRE_REGISTERED et ADMITTED sont supprimables
+    //    (élèves dont le processus d'inscription n'a pas été finalisé/validé).
     const deletableStatuses = ['PRE_REGISTERED', 'ADMITTED'];
     const hasNonDeletable = student.studentEnrollments.some(
       (e) => !deletableStatuses.includes(e.status),
@@ -2079,12 +2396,9 @@ export class StudentsLifecycleService {
       );
     }
 
-    // 3. Vérifier qu'il n'y a pas de transactions (paiements)
-    const account = await this.prisma.studentAccount.findFirst({
-      where: { studentId },
-      include: { breakdowns: true },
-    });
-    if (account) {
+    // 3. Vérifier qu'il n'y a pas de transactions (paiements) sur AUCUN compte
+    //    (un élève peut avoir un compte par année académique).
+    for (const account of student.studentAccounts) {
       const hasPayments = account.breakdowns.some(
         (b) => Number(b.paidAmount) > 0,
       );
@@ -2095,44 +2409,67 @@ export class StudentsLifecycleService {
       }
     }
 
-    // 4. Suppression en cascade (best-effort pour chaque table)
+    // 4. Suppression physique — le trigger trg_prevent_student_delete bloque
+    //    tout DELETE direct ; le service pose le drapeau transaction-local
+    //    app.allow_student_delete APRÈS les garde-fous ci-dessus (migration
+    //    20260914100000). Toute suppression hors de ce chemin reste interdite.
     this.logger.log(
       `🗑️ Suppression définitive de l'élève ${student.firstName} ${student.lastName} (${studentId})`,
     );
 
-    // Désactiver les tokens de vérification publique
+    // Désactiver les tokens de vérification publique (best-effort, hors transaction)
     try {
       await this.publicVerificationService.deactivateTokensForStudent(studentId);
     } catch {}
 
-    // Supprimer les account_breakdowns (si compte existe)
-    if (account) {
-      try {
-        await this.prisma.accountBreakdown.deleteMany({
-          where: { studentAccountId: account.id },
-        });
-        await this.prisma.studentAccount.delete({
-          where: { id: account.id },
-        });
-      } catch (e) {
-        this.logger.warn(`Erreur suppression compte: ${(e as Error).message}`);
-      }
-    }
+    const deleted = await this.prisma.$transaction(async (tx) => {
+      // FK RESTRICT : student_transfer_requests bloque le DELETE → on purge
+      // les demandes de transfert (résidus sans valeur pour un dossier abrogé).
+      const transfers = await tx.studentTransferRequest.deleteMany({
+        where: { studentId },
+      });
 
-    // Supprimer l'élève (cascade automatique pour enrollments, photos, guardians, etc.)
-    await this.prisma.student.delete({
-      where: { id: studentId },
+      // Comptes financiers + imputations (cascade DB, mais explicite pour
+      // remonter les compteurs dans la réponse)
+      const breakdowns = await tx.accountBreakdown.deleteMany({
+        where: { studentAccount: { studentId } },
+      });
+      const accounts = await tx.studentAccount.deleteMany({
+        where: { studentId },
+      });
+
+      // ⭐ Drapeau GUC transaction-local — honoré par le trigger
+      await tx.$executeRawUnsafe(
+        `SELECT set_config('app.allow_student_delete', 'true', true)`,
+      );
+
+      try {
+        await tx.student.delete({ where: { id: studentId } });
+      } catch (e: any) {
+        // Message explicite si une autre contrainte bloque malgré tout
+        if (e?.code === 'P2003') {
+          throw new BadRequestException(
+            `Des données liées empêchent la suppression (contrainte: ${e?.meta?.field_name ?? 'inconnue'}). Contactez le support avec le matricule de l'élève.`,
+          );
+        }
+        throw e;
+      }
+
+      return { transfers: transfers.count, breakdowns: breakdowns.count, accounts: accounts.count };
     });
 
     // Audit log (sur le tenant, pas sur l'élève qui est supprimé)
     this.logger.log(
-      `✅ Élève ${studentId} supprimé définitivement avec toutes ses données`,
+      `✅ Élève ${studentId} supprimé définitivement — ` +
+      `${deleted.accounts} compte(s) financier(s), ${deleted.breakdowns} imputation(s), ` +
+      `${deleted.transfers} demande(s) de transfert supprimés en cascade`,
     );
 
     return {
       success: true,
       studentId,
-      message: `Élève ${student.firstName} ${student.lastName} supprimé définitivement.`,
+      message: `Élève ${student.firstName} ${student.lastName} supprimé définitivement (avec inscription, dossier, compte financier et données liées).`,
+      details: deleted,
     };
   }
 }

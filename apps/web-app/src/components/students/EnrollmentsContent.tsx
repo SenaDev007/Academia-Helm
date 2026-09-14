@@ -244,6 +244,13 @@ export default function EnrollmentsContent() {
   const [bulkTargetYear, setBulkTargetYear] = useState<string>('');
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
 
+  // ⭐ Modal personnalisé de suppression définitive d'un élève (fix 2026-09-14 —
+  //    remplace les confirm()/prompt() génériques du navigateur)
+  const [deleteTarget, setDeleteTarget] = useState<Enrollment | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isDeletingStudent, setIsDeletingStudent] = useState(false);
+
   // ⭐ Modals personnalisés pour actions multiples (remplacent confirm()/prompt())
   const [bulkModal, setBulkModal] = useState<{
     type: 'confirm' | 'danger' | 'warning';
@@ -636,32 +643,36 @@ export default function EnrollmentsContent() {
   };
 
   // ⭐ Suppression définitive d'un élève (uniquement si PRE_REGISTERED ou ADMITTED)
-  const handleDeleteStudent = async (enrollment: Enrollment) => {
-    if (!confirm(
-      `Êtes-vous sûr de vouloir supprimer définitivement ${enrollment.student.firstName} ${enrollment.student.lastName} ?\n\n` +
-      `Cette action est IRRÉVERSIBLE et supprimera :\n` +
-      `• L'inscription et le dossier académique\n` +
-      `• Le compte financier (s'il n'y a pas de paiements)\n` +
-      `• Les photos, responsables, et toutes les données liées\n\n` +
-      `Tapez "SUPPRIMER" pour confirmer :`
-    )) return;
+  //    → ouvre un MODAL PERSONNALISÉ (confirm()/prompt() natifs remplacés,
+  //      fix 2026-09-14). Le modal affiche le contexte complet de l'élève et
+  //      exige la saisie de « SUPPRIMER » — le même niveau de sécurité qu'avant.
+  const handleDeleteStudent = (enrollment: Enrollment) => {
+    setDeleteTarget(enrollment);
+    setDeleteConfirmText('');
+    setDeleteError(null);
+  };
 
-    const input = prompt('Confirmez la suppression en tapant SUPPRIMER :');
-    if (input !== 'SUPPRIMER') {
-      toast({ title: 'Suppression annulée', variant: 'info' });
-      return;
-    }
-
+  // Confirmation effective — appelée par le modal personnalisé
+  const handleDeleteStudentConfirmed = async () => {
+    if (!deleteTarget) return;
+    setIsDeletingStudent(true);
+    setDeleteError(null);
     try {
-      const result = await studentsService.deleteStudent(enrollment.student.id);
+      const result = await studentsService.deleteStudent(deleteTarget.student.id);
       toast({
         title: '✅ Élève supprimé',
         description: result.message,
         variant: 'success',
       });
+      setDeleteTarget(null);
       loadData();
     } catch (e: any) {
-      toast({ title: 'Erreur', description: e.message, variant: 'error' });
+      // L'erreur est affichée DANS le modal — la secrétaire voit précisément
+      // pourquoi la suppression a échoué (avant : toast furtif + impression
+      // que « l'élève revient » alors que rien n'avait été supprimé).
+      setDeleteError(e.message || 'La suppression a échoué. Réessayez.');
+    } finally {
+      setIsDeletingStudent(false);
     }
   };
 
@@ -1977,10 +1988,35 @@ export default function EnrollmentsContent() {
                     throw new Error(`Échec de l'upload de la photo: ${photoErr?.message || 'Erreur inconnue'}`);
                   }
                 }
-                // Changement de classe
-                if (data.classId && data.classId !== editEnrollment.class?.id) {
-                  await studentsService.changeClass(editEnrollment.student.id, academicYear.id, data.classId)
-                    .catch((e: any) => console.warn('changeClass:', e?.message));
+                // ⭐ FIX 2026-09-14 « modification ne complète pas le dossier » :
+                //    L'ancien code appelait changeClass(data.classId) avec un UUID
+                //    AcademicClass là où le backend attend un UUID de classe
+                //    PHYSIQUE → violation FK avalée par un .catch() silencieux :
+                //    la classe n'était jamais changée.
+                //    Désormais on appelle l'endpoint idempotent repair-enrollment
+                //    qui : met à jour la classe officielle, ré-affecte la section
+                //    physique (règle « section unique »), génère le matricule
+                //    manquant, passe le statut PRE_REGISTERED → ADMITTED, crée le
+                //    dossier académique manquant et le compte financier avec ses
+                //    imputations (cas des inscriptions interrompues par la connexion).
+                const repair = await studentsService.repairEnrollment({
+                  studentId: editEnrollment.student.id,
+                  academicYearId: academicYear.id,
+                  schoolLevelId:
+                    (editEnrollment as any).schoolLevelId ||
+                    schoolLevel?.schoolLevelId ||
+                    (schoolLevel?.id && schoolLevel.id !== 'ALL' ? schoolLevel.id : undefined) ||
+                    editEnrollment.student.schoolLevelId ||
+                    undefined,
+                  academicClassId: data.classId || undefined,
+                  enrollmentType: data.enrollmentType,
+                });
+                if (repair?.repair?.actions?.length) {
+                  toast({
+                    title: '🔧 Inscription complétée',
+                    description: repair.repair.actions.join(' · '),
+                    variant: 'success',
+                  });
                 }
                 // Guardians — distinguer nouveaux (POST) vs existants (PUT)
                 // ⭐ Avant : on appelait addGuardians (POST) pour chaque guardian,
@@ -2082,6 +2118,187 @@ export default function EnrollmentsContent() {
           onClose={() => setPostFlow(null)}
           onRefresh={loadData}
         />
+      )}
+
+      {/* ⭐ MODAL PERSONNALISÉ — Suppression définitive d'un élève
+          (fix 2026-09-14 : remplace les confirm()/prompt() génériques.
+          Contexte complet de l'élève + confirmation par saisie « SUPPRIMER » +
+          affichage de l'erreur DANS le modal si la suppression échoue). */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isDeletingStudent) {
+              setDeleteTarget(null);
+              setDeleteError(null);
+            }
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl border-2 border-red-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-200 max-h-[90vh] flex flex-col"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-student-modal-title"
+          >
+            {/* Header */}
+            <div className="bg-red-50 px-6 py-5 border-b border-red-200 flex items-start gap-4 shrink-0">
+              <div className="shrink-0 w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center">
+                <ShieldAlert className="w-6 h-6 text-red-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 id="delete-student-modal-title" className="text-lg font-bold text-slate-900 leading-tight">
+                  Supprimer définitivement l'élève
+                </h2>
+                <p className="text-xs font-semibold text-slate-500 mt-0.5">
+                  Suppression physique en base de données — irréversible
+                </p>
+              </div>
+              {!isDeletingStudent && (
+                <button
+                  onClick={() => { setDeleteTarget(null); setDeleteError(null); }}
+                  className="shrink-0 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-white/60 transition-colors"
+                  aria-label="Fermer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-5 space-y-4 overflow-y-auto">
+              {(() => {
+                const s = deleteTarget.student;
+                const fullName = `${s.firstName} ${s.lastName}`.trim();
+                const initials = `${s.firstName?.[0] ?? ''}${s.lastName?.[0] ?? ''}`.toUpperCase() || '—';
+                const statusLabel: Record<string, string> = {
+                  PRE_REGISTERED: 'Pré-inscrit',
+                  ADMITTED: 'Admis',
+                };
+                return (
+                  <>
+                    {/* Carte élève */}
+                    <div className="rounded-xl border border-red-200 bg-red-50/50 p-4 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold shrink-0">
+                          {initials}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-gray-900 text-sm truncate">{fullName}</p>
+                          <p className="text-xs text-gray-500 truncate">
+                            {s.matricule || s.studentCode || 'sans matricule'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-white/70 rounded-lg px-2.5 py-1.5">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Classe</p>
+                          <p className="font-semibold text-gray-800 text-xs">
+                            {deleteTarget.academicClass?.name || deleteTarget.class?.name || 'Non affectée'}
+                          </p>
+                        </div>
+                        <div className="bg-white/70 rounded-lg px-2.5 py-1.5">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Statut</p>
+                          <p className="font-semibold text-gray-800 text-xs">
+                            {statusLabel[deleteTarget.status] || deleteTarget.status}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Impact détaillé */}
+                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                        Seront supprimés définitivement
+                      </p>
+                      <ul className="space-y-1.5 text-xs text-slate-700">
+                        <li className="flex items-center gap-2"><Trash2 className="w-3.5 h-3.5 text-red-500 shrink-0" />L'inscription et le dossier académique de l'année</li>
+                        <li className="flex items-center gap-2"><Trash2 className="w-3.5 h-3.5 text-red-500 shrink-0" />Le compte financier et ses imputations (aucun paiement enregistré)</li>
+                        <li className="flex items-center gap-2"><Trash2 className="w-3.5 h-3.5 text-red-500 shrink-0" />Les photos, responsables (parents/tuteurs) et toutes les données liées</li>
+                      </ul>
+                    </div>
+
+                    {/* Cas d'usage — inscription interrompue */}
+                    <div className="flex items-start gap-2.5 rounded-lg bg-blue-50 border border-blue-200 p-3">
+                      <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+                      <p className="text-xs text-blue-800 leading-relaxed">
+                        Ce bouton sert notamment à <strong>reprendre une inscription interrompue</strong>
+                        (connexion instable) : supprimez le dossier incomplet puis refaites
+                        l'inscription. Pour un élève déjà validé, utilisez plutôt le retrait.
+                      </p>
+                    </div>
+                  </>
+                );
+              })()}
+
+              {/* Erreur — affichée dans le modal pour être lue calmement */}
+              {deleteError && (
+                <div className="flex items-start gap-2.5 rounded-lg bg-red-50 border border-red-300 p-3">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <div className="text-xs text-red-700">
+                    <p className="font-bold">La suppression a échoué</p>
+                    <p className="leading-relaxed mt-0.5">{deleteError}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Confirmation par saisie */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider">
+                  Pour confirmer, tapez : <span className="text-red-600">SUPPRIMER</span>
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  autoFocus
+                  disabled={isDeletingStudent}
+                  placeholder="SUPPRIMER"
+                  className={`w-full px-3 py-2 text-sm border-2 rounded-lg focus:outline-none focus:ring-2 transition-colors ${
+                    deleteConfirmText.trim() === 'SUPPRIMER'
+                      ? 'border-red-500 focus:ring-red-500 bg-red-50'
+                      : 'border-slate-300 focus:ring-blue-500'
+                  }`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && deleteConfirmText.trim() === 'SUPPRIMER' && !isDeletingStudent) {
+                      handleDeleteStudentConfirmed();
+                    }
+                  }}
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Le bouton de confirmation sera activé uniquement quand vous aurez tapé le texte exact.
+                </p>
+              </div>
+
+              {/* Avertissement irréversibilité */}
+              <div className="bg-red-50 text-red-800 rounded-lg p-3 border border-red-200 text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div>
+                  <strong>Action irréversible.</strong> Les données supprimées ne peuvent pas
+                  être récupérées. La saisie du texte de confirmation est obligatoire.
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
+              <button
+                onClick={() => { setDeleteTarget(null); setDeleteError(null); }}
+                disabled={isDeletingStudent}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors disabled:opacity-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleDeleteStudentConfirmed}
+                disabled={deleteConfirmText.trim() !== 'SUPPRIMER' || isDeletingStudent}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+              >
+                {isDeletingStudent ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                {isDeletingStudent ? 'Suppression...' : 'Supprimer définitivement'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ⭐ MODAL personnalisé pour actions multiples (remplace confirm()/prompt()) */}

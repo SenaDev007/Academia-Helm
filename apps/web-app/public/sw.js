@@ -178,10 +178,18 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
-// v4.1.1 : au-dessus de v4.1.0 (pré-cache exhaustif) — bump pour que le
-//    correctif API_TIMEOUT 12 s (sélecteurs header) soit bien déployé chez
-//    tous les utilisateurs existants (SW_ACTIVATED → re-pré-cache).
-const SW_VERSION = 'v4.3.0';
+// v4.4.0 : FILTRES HORS LIGNE — les sélecteurs (niveau, classe, statut,
+//    onglets filtrés, recherche, pagination) fonctionnent sans réseau :
+//    (1) la clé de cache intègre le scope header (x-school-level-id →
+//    __ah_lvl, x-academic-year-id → __ah_year) : changer de niveau ne
+//    ressert PLUS la donnée du niveau précédent ;
+//    (2) sur miss hors ligne, swFilteredApiFallback sert la VARIANTE ÉLARGIE
+//    du même endpoint (pré-cache sans filtre / 'ALL') puis FILTRE côté SW
+//    selon les params demandés (classId, schoolLevelId — double saveur
+//    d'UUID réconciliée par index d'alias —, status, taskType, category,
+//    codes level/classLevel/subject, search, plages de dates, pagination).
+//    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
+const SW_VERSION = 'v4.4.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -240,7 +248,9 @@ const API_CACHE = 'ah-api';
 //    (évaluations/notes, EDT, enfants…) + navigations réelles. Avant (400),
 //    le LRU évictait les entrées pré-cachées au profit des visites → pertes
 //    de données hors ligne sur les modules rarement visités.
-const API_CACHE_MAX = 1200;
+// ⭐ v4.4.0 : 1200 → 1600 — les clés enrichies __ah_lvl/__ah_year créent des
+//    variantes par niveau en plus des variantes élargies du pré-cache.
+const API_CACHE_MAX = 1600;
 // ⭐ v4.0.1 — 12 s (avant : 8 s). Le timeout same-origin coupait les appels
 //    BFF AVANT leur fin réelle : /api/school-levels (structure + bootstrap +
 //    3 sources + source D) et /api/academic-years peuvent légitimement
@@ -958,13 +968,41 @@ async function apiIdentityAsync(request) {
  *    ajoute ?_t=<timestamp> à chaque GET → sans normalisation, chaque
  *    requête produisait une NOUVELLE clé et ne retrouvait jamais le cache).
  *    ⚠️ PAS de fragment (#) — le constructeur Request SUPPRIME les fragments
- *    d'URL → on utilise un query param (préservé dans request.url). */
+ *    d'URL → on utilise un query param (préservé dans request.url).
+ * ⭐ v4.4.0 — Le scope NIVEAU (header x-school-level-id) fait partie de
+ *    l'identité LOGIQUE de la réponse : le sélecteur de niveau du header
+ *    change le SANS changer l'URL → sans cette clé enrichie, la donnée du
+ *    niveau précédent était servie pour le nouveau niveau (sélecteur
+ *    « qui ne fonctionne pas »). Idem année (x-academic-year-id).
+ *    Pseudo-params __ah_lvl / __ah_year : présents UNIQUEMENT dans la clé de
+ *    cache, jamais dans l'URL réelle. Omis quand la valeur est 'ALL'/vide ou
+ *    déjà portée par l'URL (pas de double entrée) — le pré-cache (sans ces
+ *    headers) continue de produire les variantes ÉLARGIES sans pseudo-params,
+ *    qui servent de sources au filtrage hors ligne. */
 function apiCacheKey(request, identity) {
   let base;
   try {
     const u = new URL(request.url);
     u.searchParams.delete('_t');
     u.searchParams.sort(); // ordre stable des params → même clé quel que soit l'ordre
+    try {
+      const lvl = (request.headers.get('x-school-level-id') || '').trim();
+      if (
+        lvl &&
+        lvl.toUpperCase() !== 'ALL' &&
+        u.searchParams.get('schoolLevelId') !== lvl &&
+        u.searchParams.get('levelId') !== lvl
+      ) {
+        u.searchParams.set('__ah_lvl', lvl);
+      }
+      const yr = (request.headers.get('x-academic-year-id') || '').trim();
+      if (yr && u.searchParams.get('academicYearId') !== yr) {
+        u.searchParams.set('__ah_year', yr);
+      }
+      u.searchParams.sort();
+    } catch {
+      /* headers illisibles → clé sans scope header */
+    }
     base = u.toString();
   } catch {
     base = request.url;
@@ -1020,6 +1058,17 @@ async function handleApiGet(request, timeoutMs = API_TIMEOUT) {
     /* cache illisible */
   }
   if (cached) return swServeOfflineCachedResponse(cached, request, identityDetails.tenantId);
+
+  // ⭐ v4.4.0 — FILTRAGE HORS LIGNE (spec « sélecteurs/filtres offline ») :
+  //    la clé exacte manque (ex. ?classId=X jamais visité en ligne, ou
+  //    sélecteur de niveau changé via header) → chercher une VARIANTE ÉLARGIE
+  //    du même endpoint (le pré-cache stocke les variantes sans filtre ou
+  //    'ALL'), puis FILTRER côté SW selon les params demandés (classId,
+  //    schoolLevelId, status, taskType, category, codes level/classLevel/
+  //    subject, search, pagination…). Les réponses agrégats (KPI, stats)
+  //    n'ont pas de tableau → null → cascade classique ci-dessous.
+  cached = await swFilteredApiFallback(cache, request, identity, identityDetails.tenantId);
+  if (cached) return cached;
 
   // ⭐ v3.7.0 — FALLBACK PAR CHEMIN (spec « lecture hors ligne par module ») :
   //    la clé exacte (params complets) manque MAIS le pré-cache/la navigation
@@ -1084,6 +1133,23 @@ async function matchApiByPath(cache, request, identity) {
       const gotIdentityHash = ku.searchParams.get('__ah_t');
       if ((gotIdentityHash || null) !== (wantedIdentityHash || null)) continue;
 
+      // ⭐ v4.4.0 — Année différente → JAMAIS servie telle quelle (une
+      //    autre année = un autre dataset : servir 2026 pour une demande
+      //    2025 serait une fausse donnée). L'année demandée = param URL ou
+      //    header x-academic-year-id ; l'année de la variante = param ou
+      //    pseudo-param __ah_year.
+      const gotYear =
+        ku.searchParams.get('academicYearId') || ku.searchParams.get('__ah_year');
+      let wantedYear = wanted.get('academicYearId');
+      if (!wantedYear) {
+        try {
+          wantedYear = (request.headers.get('x-academic-year-id') || '').trim() || null;
+        } catch {
+          wantedYear = null;
+        }
+      }
+      if (wantedYear && gotYear && gotYear !== wantedYear) continue;
+
       const got = new URLSearchParams();
       ku.searchParams.forEach((value, name) => {
         if (name !== '_t' && name !== '__ah_t') got.append(name, value);
@@ -1126,6 +1192,533 @@ async function matchApiByPath(cache, request, identity) {
     /* non-bloquant */
   }
   return null;
+}
+
+// ─── v4.4.0 — FILTRES HORS LIGNE : variante élargie + filtrage ──────────────
+//
+// Problème résolu : changer un sélecteur (niveau, classe, statut, onglet
+// filtré…) hors ligne déclenche un GET dont les params diffèrent des clés
+// pré-cachées → miss → données vides ou non filtrées. Solution : servir la
+// VARIANTE ÉLARGIE du même endpoint (pré-cache : sans filtre / 'ALL' / plus
+// grande couverture) puis appliquer les filtres demandés AU SW, comme le
+// ferait le serveur, sur le tableau de la réponse.
+
+/** Params de couverture/pagination : jamais un critère d'éligibilité —
+ *  ils servent au découpage final et à la préférence de source (la plus
+ *  large couverture gagne). */
+const OFFLINE_COVERAGE_PARAMS = new Set([
+  'page', 'limit', 'offset', 'size', 'exportAll', 'sortBy', 'sort',
+  'sortOrder', 'order', 'orderBy', '_t', '__ah_t', '__ah_lvl', '__ah_year',
+]);
+
+/** Params qui doivent être IDENTIQUES entre la demande et la source
+ *  (contexte de données, pas des filtres affichables). */
+const OFFLINE_MUST_MATCH_PARAMS = new Set([
+  'academicYearId', 'tenantId', 'parentId', 'schoolYearId', 'year',
+]);
+
+/** Params de filtre reconnus → chaînes de résolution du champ sur l'item
+ *  ('*' = n'importe quel élément du tableau). */
+const OFFLINE_FILTER_RESOLVERS = {
+  classId: ['classId', 'class.id', 'section.id', 'academicClassId',
+    'studentEnrollments.*.class.id', 'student.studentEnrollments.*.class.id',
+    'enrollments.*.classId', 'enrollments.*.class.id', 'student.enrollments.*.class.id'],
+  status: ['status'],
+  taskType: ['taskType'],
+  category: ['category'],
+  feeType: ['feeType', 'allocations.*.accountBreakdown.feeStructure.feeType'],
+  teacherId: ['teacherId', 'teacher.id'],
+  subjectId: ['subjectId', 'subject.id'],
+  studentId: ['studentId', 'student.id'],
+  periodId: ['periodId', 'period.id'],
+  quarterId: ['quarterId', 'quarter.id'],
+  language: ['language', 'class.language'],
+  regimeType: ['regimeType'],
+  type: ['type'],
+  month: ['month'],
+  // Bibliothèque globale (codes / noms — valeurs string ou objets peuplés)
+  level: ['level.code', 'level'],
+  classLevel: ['classLevel.code', 'classLevel'],
+  subject: ['subject.name', 'subject'],
+  resourceType: ['resourceType'],
+  series: ['series'],
+};
+
+/** Champs explorés par le filtre de recherche textuelle. */
+const OFFLINE_SEARCH_FIELDS = [
+  'name', 'title', 'label', 'firstName', 'lastName', 'fullName', 'code',
+  'matricule', 'email', 'description', 'className', 'studentName',
+];
+
+/** Résout un chemin ('studentEnrollments.*.class.id') sur un item → valeurs. */
+function swResolvePath(item, path) {
+  const parts = path.split('.');
+  let values = [item];
+  for (const p of parts) {
+    const next = [];
+    if (p === '*') {
+      for (const v of values) {
+        if (Array.isArray(v)) {
+          for (const e of v) if (e != null) next.push(e);
+        }
+      }
+    } else {
+      for (const v of values) {
+        if (v && typeof v === 'object' && v[p] != null) next.push(v[p]);
+      }
+    }
+    values = next;
+    if (!values.length) return [];
+  }
+  return values;
+}
+
+/** Égalité tolérante : string directe, ou objet peuplé (id/code/name). */
+function swFilterValueEquals(v, value) {
+  if (v == null) return false;
+  if (typeof v === 'object') {
+    for (const k of ['id', 'code', 'name', 'uuid']) {
+      if (v[k] != null && String(v[k]).toLowerCase() === String(value).toLowerCase()) return true;
+    }
+    return false;
+  }
+  return String(v).toLowerCase() === String(value).toLowerCase();
+}
+
+function swItemMatchesSearch(item, q) {
+  const needle = String(q || '').trim().toLowerCase();
+  if (!needle) return true;
+  for (const f of OFFLINE_SEARCH_FIELDS) {
+    for (const v of swResolvePath(item, f)) {
+      if (typeof v === 'string' && v.toLowerCase().includes(needle)) return true;
+    }
+  }
+  return false;
+}
+
+/** Index d'alias de niveaux : UUID éducation ↔ UUID school_levels ↔ code,
+ *  construit depuis le /api/school-levels en cache (mémo 2 min). */
+let swLevelAliasMemo = null;
+async function swGetLevelIndex(cache, identity) {
+  const identityHash = identity === 'ANONYMOUS' ? null : fnv1a(identity);
+  if (
+    swLevelAliasMemo &&
+    Date.now() - swLevelAliasMemo.readAt < 120000 &&
+    swLevelAliasMemo.identityHash === (identityHash || null)
+  ) {
+    return swLevelAliasMemo.index;
+  }
+  let index = null;
+  try {
+    const keys = await cache.keys();
+    for (const k of keys) {
+      let ku;
+      try {
+        ku = new URL(k.url);
+      } catch {
+        continue;
+      }
+      if (ku.pathname !== '/api/school-levels') continue;
+      const gotHash = ku.searchParams.get('__ah_t');
+      if ((gotHash || null) !== (identityHash || null)) continue;
+      const res = await cache.match(k);
+      if (!res) continue;
+      const text = await res.text();
+      if (!text.trim()) continue;
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        continue;
+      }
+      const rows = Array.isArray(data) ? data : Array.isArray(data && data.data) ? data.data : [];
+      if (!rows.length) continue;
+      const byAlias = new Map();
+      for (const r of rows) {
+        const codes = new Set();
+        for (const c of [r && r.code, r && r.levelCode, r && r.level && r.level.code]) {
+          if (c) codes.add(String(c).toUpperCase());
+        }
+        if (!codes.size) continue;
+        for (const a of [r.id, r.schoolLevelId, r.educationLevelId]) {
+          if (a) byAlias.set(String(a).toLowerCase(), codes);
+        }
+        for (const c of codes) {
+          if (!byAlias.has(c.toLowerCase())) byAlias.set(c.toLowerCase(), codes);
+        }
+      }
+      index = { byAlias };
+      break;
+    }
+  } catch {
+    index = null;
+  }
+  swLevelAliasMemo = { index, identityHash: identityHash || null, readAt: Date.now() };
+  return index;
+}
+
+/** Valeur de niveau (UUID éducation OU school_levels, code, composite
+ *  'MAT_PRI') → ensemble de codes canoniques ; null = inconnu. */
+function swCanonicalLevelCodes(value, levelIndex) {
+  const v = String(value == null ? '' : value).trim();
+  if (!v) return null;
+  const direct = levelIndex && levelIndex.byAlias.get(v.toLowerCase());
+  if (direct) return new Set(direct);
+  const upper = v.toUpperCase();
+  if (upper.includes('_')) {
+    const parts = upper.split('_').filter(Boolean);
+    const codes = new Set();
+    if (levelIndex) {
+      for (const cs of levelIndex.byAlias.values()) {
+        for (const c of cs) {
+          for (const p of parts) {
+            if (c.startsWith(p)) codes.add(c);
+          }
+        }
+      }
+    }
+    if (codes.size) return codes;
+    return new Set(parts);
+  }
+  // Code direct (ex. 'PRIMAIRE') non résolu par l'index → lui-même
+  if (/^[A-Z][A-Z_-]*$/.test(upper) && !/^[0-9a-f]{8}-/i.test(v)) return new Set([upper]);
+  return null;
+}
+
+/** L'item porte-t-il une quelconque information de niveau ? */
+function swItemHasLevelInfo(item) {
+  const chains = [
+    'schoolLevelId', 'schoolLevel.id', 'schoolLevel.code', 'levelId', 'level.id',
+    'level', 'classLevel', 'class.schoolLevelId', 'class.schoolLevel.id',
+    'class.schoolLevel.code', 'class.level.id',
+    'studentEnrollments.*.class.schoolLevelId',
+    'student.studentEnrollments.*.class.schoolLevelId',
+  ];
+  for (const c of chains) {
+    if (swResolvePath(item, c).length) return true;
+  }
+  return false;
+}
+
+/** L'item appartient-il au niveau demandé (double saveur d'UUID gérée par
+ *  l'index d'alias ; composite 'MAT_PRI' = union de niveaux). */
+function swItemMatchesLevel(item, wantedValue, levelIndex) {
+  const wanted = swCanonicalLevelCodes(wantedValue, levelIndex);
+  const rawValues = [];
+  const itemCodes = new Set();
+  const chains = [
+    'schoolLevelId', 'schoolLevel.id', 'schoolLevel.code', 'levelId', 'level.id',
+    'level', 'classLevel', 'class.schoolLevelId', 'class.schoolLevel.id',
+    'class.schoolLevel.code', 'class.level.id',
+    'studentEnrollments.*.class.schoolLevelId',
+    'student.studentEnrollments.*.class.schoolLevelId',
+  ];
+  for (const c of chains) {
+    for (const v of swResolvePath(item, c)) {
+      if (typeof v === 'object') {
+        if (v.code || v.levelCode) itemCodes.add(String(v.code || v.levelCode).toUpperCase());
+        if (v.id) rawValues.push(String(v.id));
+      } else {
+        rawValues.push(String(v));
+        itemCodes.add(String(v).toUpperCase());
+      }
+    }
+  }
+  if (!rawValues.length && !itemCodes.size) return true; // pas d'info → ne pas exclure
+  if (wanted) {
+    for (const raw of rawValues) {
+      const cs = levelIndex && levelIndex.byAlias.get(raw.toLowerCase());
+      if (cs && [...cs].some((c) => wanted.has(c))) return true;
+    }
+    for (const c of itemCodes) {
+      if (wanted.has(c)) return true;
+      for (const w of wanted) {
+        if (c.startsWith(w) || w.startsWith(c)) return true; // MAT ↔ MATERNELLE
+      }
+    }
+    return false;
+  }
+  // Valeur inconnue (hors index) → comparaison brute uniquement
+  const wv = String(wantedValue).toLowerCase();
+  return rawValues.some((r) => r.toLowerCase() === wv);
+}
+
+function swItemMatchesFilter(item, param, value, levelIndex) {
+  if (param === 'search' || param === 'q') return swItemMatchesSearch(item, value);
+  if (param === 'schoolLevelId' || param === 'levelId') return swItemMatchesLevel(item, value, levelIndex);
+  const chain = OFFLINE_FILTER_RESOLVERS[param];
+  if (!chain) return true; // param inconnu → superset servi (pas de faux vide)
+  for (const path of chain) {
+    for (const v of swResolvePath(item, path)) {
+      if (swFilterValueEquals(v, value)) return true;
+    }
+  }
+  return false;
+}
+
+/** Au moins un item résout-il le champ de ce param ? (sinon on ne filtre
+ *  pas : superset plutôt qu'un faux vide quand le champ est invisible.) */
+function swFilterIsResolvable(items, param) {
+  if (param === 'search' || param === 'q') {
+    return items.some((it) => OFFLINE_SEARCH_FIELDS.some((f) => swResolvePath(it, f).length > 0));
+  }
+  if (param === 'schoolLevelId' || param === 'levelId') {
+    return items.some((it) => swItemHasLevelInfo(it));
+  }
+  const chain = OFFLINE_FILTER_RESOLVERS[param];
+  if (!chain) return false;
+  return items.some((it) =>
+    chain.some((path) => swResolvePath(it, path).length > 0),
+  );
+}
+
+/** Filtre par plage de dates (startDate/endDate/dateFrom/dateTo sur les
+ *  champs date ISO de l'item). */
+function swItemMatchesDateRange(item, from, to) {
+  const fields = ['date', 'createdAt', 'paymentDate', 'paidAt', 'dueDate', 'startDate', 'evaluationDate'];
+  let checked = false;
+  for (const f of fields) {
+    for (const v of swResolvePath(item, f)) {
+      if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(v)) continue;
+      checked = true;
+      if (from && v.slice(0, from.length) < from) return false;
+      if (to && v.slice(0, to.length) > to) return false;
+    }
+  }
+  if (!checked) return true; // aucune date visible → ne pas exclure
+  return true;
+}
+
+/** Localise le tableau d'items dans l'enveloppe (array, {data}, {items},
+ *  {results}, {content}… y compris imbriqué un niveau). */
+function swLocateArray(data) {
+  if (Array.isArray(data)) return { kind: 'root', pathToContainer: [], arrayKey: null };
+  if (data && typeof data === 'object') {
+    for (const key of ['data', 'items', 'results', 'content', 'classes', 'resources', 'students', 'evaluations', 'list']) {
+      if (Array.isArray(data[key])) return { kind: 'prop', pathToContainer: [], arrayKey: key };
+    }
+    for (const key of Object.keys(data)) {
+      const v = data[key];
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        for (const k2 of ['data', 'items', 'results', 'content']) {
+          if (Array.isArray(v[k2])) return { kind: 'prop', pathToContainer: [key], arrayKey: k2 };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** ⭐ v4.4.0 — Cœur du filtrage hors ligne. Retourne une Response filtrée,
+ *  ou null (cascade classique : matchApiByPath → IDB → 503). */
+async function swFilteredApiFallback(cache, request, identity, tenantId) {
+  try {
+    const reqUrl = new URL(request.url);
+    const wanted = {};
+    reqUrl.searchParams.forEach((v, n) => {
+      // Valeur vide ignorée (la bibliothèque sérialise TOUS les filtres, même
+      // vides : ?level=&classLevel=&subject=… — un filtre vide n'en est pas un)
+      if (n !== '_t' && n !== '__ah_t' && v !== '') wanted[n] = v;
+    });
+    const lvlHeader = (request.headers.get('x-school-level-id') || '').trim();
+    let wantedLevel =
+      lvlHeader && lvlHeader.toUpperCase() !== 'ALL'
+        ? lvlHeader
+        : wanted.schoolLevelId || wanted.levelId || null;
+    // 'ALL' (URL ou header) = demande NON scopée → aucun filtrage de niveau
+    if (wantedLevel && wantedLevel.toUpperCase() === 'ALL') wantedLevel = null;
+    const yrHeader = (request.headers.get('x-academic-year-id') || '').trim();
+    const wantedYear = yrHeader || wanted.academicYearId || null;
+
+    const identityHash = identity === 'ANONYMOUS' ? null : fnv1a(identity);
+    const keys = await cache.keys();
+
+    // 1) Candidats : même chemin + même identité
+    const candidates = [];
+    for (const k of keys) {
+      let ku;
+      try {
+        ku = new URL(k.url);
+      } catch {
+        continue;
+      }
+      if (ku.pathname !== reqUrl.pathname) continue;
+      const gotHash = ku.searchParams.get('__ah_t');
+      if ((gotHash || null) !== (identityHash || null)) continue;
+      const params = {};
+      ku.searchParams.forEach((v, n) => {
+        if (n === '_t' || n === '__ah_t' || n === '__ah_lvl' || n === '__ah_year') return;
+        if (v === '') return; // filtre vide = pas un pin
+        params[n] = v;
+      });
+      // 'ALL' (URL ou pseudo-param) = source NON scopée → cLevel null
+      const rawCLevel =
+        ku.searchParams.get('__ah_lvl') || params.schoolLevelId || params.levelId || null;
+      const cLevel = rawCLevel && rawCLevel.toUpperCase() !== 'ALL' ? rawCLevel : null;
+      const cYear = ku.searchParams.get('__ah_year') || params.academicYearId || null;
+      candidates.push({ key: k, params, cLevel, cYear });
+    }
+    if (!candidates.length) return null;
+
+    const levelIndex = await swGetLevelIndex(cache, identity);
+
+    // 2) Éligibilité : aucun param en conflit avec la demande
+    const eligible = [];
+    for (const c of candidates) {
+      let ok = true;
+      let exactPins = 0;
+      if (wantedYear && c.cYear && c.cYear !== wantedYear) ok = false; // autre année → autre dataset
+      if (ok && wantedLevel && c.cLevel) {
+        const wc = swCanonicalLevelCodes(wantedLevel, levelIndex);
+        const cc = swCanonicalLevelCodes(c.cLevel, levelIndex);
+        const same =
+          wc && cc
+            ? [...wc].some((x) => cc.has(x))
+            : String(c.cLevel).toLowerCase() === String(wantedLevel).toLowerCase();
+        if (!same) ok = false; // source déjà scoped à un autre niveau
+      }
+      if (ok) {
+        for (const name of Object.keys(wanted)) {
+          const value = wanted[name];
+          if (OFFLINE_COVERAGE_PARAMS.has(name)) continue;
+          if (name === 'schoolLevelId' || name === 'levelId') continue; // géré via wantedLevel
+          const gotVal = c.params[name];
+          if (gotVal === undefined) continue; // absent → filtrable par le SW
+          if (gotVal === value) {
+            exactPins++;
+            continue;
+          }
+          ok = false; // épinglé différemment (filtre OU contexte) → conflit
+          break;
+        }
+      }
+      if (ok) eligible.push({ ...c, exactPins });
+    }
+    if (!eligible.length) return null;
+
+    // 3) Source : la variante éligible au tableau le plus LARGE (couverture
+    //    réelle), à égalité la plus récente / la plus précise
+    let best = null;
+    for (const c of eligible) {
+      const res = await cache.match(c.key);
+      if (!res) continue;
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('json')) continue;
+      const text = await res.text();
+      if (!text.trim()) continue;
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        continue;
+      }
+      const loc = swLocateArray(data);
+      if (!loc) continue; // agrégat/objet → pas filtrable ici
+      const date = Date.parse(res.headers.get('date') || '') || 0;
+      const breadth = loc.kind === 'root' ? data.length : data[loc.arrayKey].length;
+      if (
+        !best ||
+        breadth > best.breadth ||
+        (breadth === best.breadth && c.exactPins > best.c.exactPins) ||
+        (breadth === best.breadth && c.exactPins === best.c.exactPins && date > best.date)
+      ) {
+        best = { ...c, data, loc, breadth, date };
+      }
+    }
+    if (!best) return null;
+
+    // 4) Fusion des entités créées hors ligne (sur la liste COMPLÈTE)
+    let out = best.data;
+    try {
+      const { path } = swNormalizeUrl(request.url);
+      const store = routeTable(path);
+      if (store && store !== 'orion_cache') {
+        out = await swMergePendingEntities(store, best.data, tenantId);
+      }
+    } catch {
+      out = best.data;
+    }
+    const loc = swLocateArray(out);
+    if (!loc) return null;
+    let arr = loc.kind === 'root' ? out : out[loc.arrayKey];
+
+    // 5) Filtres à appliquer : params demandés NON déjà épinglés dans la source
+    const filters = [];
+    if (wantedLevel && !best.cLevel && !(wanted.schoolLevelId || wanted.levelId)) {
+      filters.push({ name: 'schoolLevelId', value: wantedLevel }); // niveau du HEADER
+    }
+    const dateRange = { from: null, to: null };
+    for (const name of Object.keys(wanted)) {
+      const value = wanted[name];
+      if (OFFLINE_COVERAGE_PARAMS.has(name)) continue;
+      if (OFFLINE_MUST_MATCH_PARAMS.has(name)) continue;
+      if (name === 'schoolLevelId' || name === 'levelId') {
+        if (!best.cLevel) filters.push({ name, value });
+        continue;
+      }
+      if (name === 'startDate' || name === 'dateFrom') {
+        dateRange.from = value;
+        continue;
+      }
+      if (name === 'endDate' || name === 'dateTo') {
+        dateRange.to = value;
+        continue;
+      }
+      if (best.params[name] !== undefined) continue; // déjà épinglé identique
+      filters.push({ name, value });
+    }
+
+    const applied = [];
+    for (const f of filters) {
+      if (!swFilterIsResolvable(arr, f.name)) continue; // champ invisible → superset
+      arr = arr.filter((it) => swItemMatchesFilter(it, f.name, f.value, levelIndex));
+      applied.push(f.name);
+    }
+    if (dateRange.from || dateRange.to) {
+      arr = arr.filter((it) => swItemMatchesDateRange(it, dateRange.from, dateRange.to));
+      applied.push('dateRange');
+    }
+
+    // 6) Pagination (découpage dans la source la plus large disponible)
+    const page = parseInt(wanted.page || '1', 10) || 1;
+    const limit = parseInt(wanted.limit || '0', 10) || 0;
+    const offset = parseInt(wanted.offset || '0', 10) || 0;
+    let finalArr = arr;
+    if (limit > 0 && (wanted.page !== undefined || wanted.offset !== undefined)) {
+      const start = offset > 0 ? offset : (page - 1) * limit;
+      finalArr = arr.slice(start, start + limit);
+    }
+
+    // 7) Reconstruction de l'enveloppe + totaux
+    if (loc.kind === 'root') {
+      out = finalArr;
+    } else {
+      let container = out;
+      for (const p of loc.pathToContainer) container = container[p];
+      container[loc.arrayKey] = finalArr;
+      if (container && typeof container === 'object') {
+        if (typeof container.total === 'number') container.total = arr.length;
+        if (typeof container.totalPages === 'number' && limit > 0) {
+          container.totalPages = Math.max(1, Math.ceil(arr.length / limit));
+        }
+        if (container.pagination && typeof container.pagination === 'object') {
+          if (typeof container.pagination.total === 'number') container.pagination.total = arr.length;
+          if (typeof container.pagination.totalItems === 'number') container.pagination.totalItems = arr.length;
+        }
+      }
+    }
+
+    return new Response(JSON.stringify(out), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-AH-Offline': '1',
+        'X-AH-Offline-Filtered': applied.length ? applied.join(',') : 'broad-source',
+      },
+    });
+  } catch {
+    return null; // non-bloquant → cascade classique
+  }
 }
 
 /** Lit un en-tête d'une entrée du cache sans consommer le corps. */

@@ -1109,6 +1109,10 @@ export function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContex
       urls.push(`${apiBase}/exams/settings${qs({ schoolYearId: year })}`);
       // Conseils de classe + déverrouillages + audit + critères d'envoi
       urls.push(`${apiBase}/institutional-exams/councils${qs({ academicYearId: year, schoolLevelId: levelParam, language: 'FR' })}`);
+      // ⭐ v4.4.0 — Variante SANS statut : source ÉLARGIE pour le filtrage
+      //    hors ligne des onglets APPROVED/REJECTED (le SW filtre par
+      //    item.status depuis cette liste complète).
+      urls.push(`${apiBase}/institutional-exams/unlock-requests${qs({ schoolLevelId: levelParam, language: 'FR' })}`);
       urls.push(`${apiBase}/institutional-exams/unlock-requests${qs({ status: 'PENDING', schoolLevelId: levelParam, language: 'FR' })}`);
       urls.push(`${apiBase}/institutional-exams/audit/logs${qs({ academicYearId: year, schoolLevelId: levelParam, language: 'FR' })}`);
       urls.push(`${apiBase}/institutional-exams/bulletins/sending-criteria`);
@@ -1482,8 +1486,16 @@ export function buildDynamicPrecacheUrls(
           if (c?.id) {
             urls.push(`/api/pedagogy-space/subjects/available${qs({ academicYearId: year, classId: c.id, teacherId })}`);
             urls.push(`/api/pedagogy-space/fiches${qs({ teacherId, academicYearId: year, classId: c.id })}`);
+            // ⭐ v4.4.0 — Sélecteur de classe hors ligne (production) :
+            //    registre d'appel + cahier de textes par classe.
+            urls.push(`/api/pedagogy-space/monthly-summaries${qs({ academicYearId: year, classId: c.id })}`);
+            urls.push(`/api/pedagogy-space/cahier-textes${qs({ teacherId, academicYearId: year, classId: c.id })}`);
           }
         }
+        // ⭐ v4.4.0 — Variante SANS classId (toutes les classes de
+        //    l'enseignant) : source ÉLARGIE — le SW filtre par item.classId
+        //    quand un sélecteur change hors ligne.
+        urls.push(`/api/pedagogy-space/cahier-textes${qs({ teacherId, academicYearId: year })}`);
       } catch { /* famille sautée */ }
       // ⭐ v4.2.0 — DEVOIRS de l'enseignant : liste des élèves rendus par
       //    devoir (/app/teacher/tasks — détail d'un devoir hors ligne),
@@ -1493,6 +1505,20 @@ export function buildDynamicPrecacheUrls(
           `/api/pedagogy-space/homeworks${qs({ teacherId, academicYearId: year })}`, headers));
         for (const h of homeworks.slice(0, 30)) {
           if (h?.id) urls.push(`/api/pedagogy-space/homeworks/${h.id}/students`);
+        }
+      } catch { /* famille sautée */ }
+    }
+
+    // 5-b) CLASSES de l'ÉTABLISSEMENT (staff) : affectations par classe —
+    //      le sous-onglet « Affectations par Classe » charge
+    //      /api/pedagogy/class-subjects/{classId} (param de CHEMIN, non
+    //      filtrable par le SW) → pré-cache par classe, cap 40 (2G/3G).
+    if (isStaff) {
+      try {
+        const classes = extractArray(await fetchListJson(
+          `/api/classes${qs({ academicYearId: year, schoolLevelId: 'ALL' })}`, headers));
+        for (const c of classes.slice(0, 40)) {
+          if (c?.id) urls.push(`/api/pedagogy/class-subjects/${c.id}${qs({ academicYearId: year })}`);
         }
       } catch { /* famille sautée */ }
     }

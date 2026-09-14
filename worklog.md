@@ -10486,3 +10486,27 @@ Stage Summary:
 - ✅ Hauteur par défaut des panneaux gauche/droit DOUBLÉE dans les sous-onglets « Profils & Disponibilités » et « Affectations par Classe » : sur un écran 768 px les panneaux passent de ~352 px à ~704 px avant apparition du scroll interne ; sur 1080p ils peuvent atteindre ~1328 px
 - ✅ Barres de scroll conservées : au-delà du double, le contenu défile toujours dans le panneau (comportement identique, seuil doublé)
 - Reco : vérifier en production après déploiement — pédagogie → enseignants & affectations → les 2 sous-onglets, cartes visiblement plus hautes d'emblée
+
+---
+Task ID: 61 (v4.4.0 — filtres/sélecteurs hors ligne)
+Agent: Super Z (session principale)
+Task: Utilisateur : « le mode offline fonctionne (onglets, modules, données) MAIS les sélecteurs — filtres niveau, classe et autres — ne fonctionnent pas hors ligne. Vérifier pour que les filtres fonctionnent aussi en offline. »
+
+Work Log:
+- CAUSES RACINES (2) : (1) les filtres qui changent l'URL (?classId=X) tombaient sur matchApiByPath qui sert la variante la plus proche SANS filtrer → données non filtrées/vides ; (2) le sélecteur de NIVEAU du header n'est PAS dans l'URL (header x-school-level-id injecté par l'intercepteur axios) → même clé de cache pour deux niveaux → la donnée du niveau précédent resservie (le sélecteur « ne fait rien »).
+- sw.js v4.4.0 :
+  * apiCacheKey intègre le scope header : x-school-level-id → pseudo-param __ah_lvl, x-academic-year-id → __ah_year (uniquement dans la CLÉ, jamais l'URL réelle ; omis si 'ALL'/vide/déjà en paramètre URL — le pré-cache sans headers continue de produire les variantes élargies)
+  * swFilteredApiFallback (avant matchApiByPath) : sur miss hors ligne → candidats même chemin + même identité → éligibilité (année différente ou filtre épinglé différent = conflit, jamais servi) → source au tableau le plus LARGE (couverture réelle, pas le score de proximité) → fusion entités _isDirty → FILTRAGE côté SW des params demandés (classId via classId/class.id/studentEnrollments[].class.id/student.studentEnrollments[].class.id, status, taskType, category, feeType, teacherId, subjectId, periodId, quarterId, language, regimeType, month, codes level/classLevel/subject/resourceType/series, search sous-chaîne insensible casse, plages startDate/endDate) → pagination (page/limit/offset) → enveloppes reconstruites (array, {data,total}, {items}, imbriqué) + totaux/pagination recalculés → en-têtes X-AH-Offline: 1 + X-AH-Offline-Filtered
+  * DOUBLE SAVEUR d'UUID niveaux réconciliée : index d'alias construit depuis /api/school-levels en cache (UUID education ↔ UUID school_levels ↔ code, mémo 2 min) + composite 'MAT_PRI' = union de niveaux + préfixes MAT↔MATERNELLE
+  * Garde-fous : champ invisible → superset servi (jamais de faux vide) ; année différente → 503 (matchApiByPath disqualifie aussi les autres années désormais) ; valeurs vides ignorées (bibliothèque sérialise tous les filtres, même vides) ; 'ALL' = non scopé partout ; aucune écriture retour (les réponses filtrées ne polluent pas le LRU)
+  * API_CACHE_MAX 1200 → 1600 (variantes par niveau des clés enrichies)
+- module-precache.service.ts : variantes sources ajoutées — unlock-requests SANS statut (onglets APPROVED/REJECTED filtrés par item.status) ; enseignant : monthly-summaries + cahier-textes par classe + cahier-textes global (source élargie) ; staff : /api/pedagogy/class-subjects/{classId} par classe (cap 40 — param de CHEMIN non filtrable par le SW, sous-onglet « Affectations par Classe »)
+- BUG BACKEND PRÉEXISTANT corrigé (global-library) : GET /api/pedagogy/global-library renvoyait 400 PERMANENT en production (même en ligne, avec ou sans params) — PrismaClientValidationError « contains [object Function] » : filters.search reçu comme FONCTION au runtime. Blindage double : contrôleur ne transmet que les vraies chaînes non vides + service typeof string avant le where (level/classLevel/series/subject/language/resourceType/search + garde isPublished null)
+- Tests : scripts/test_offline_v44_filters.mjs NOUVEAU (61 ✓) — clé enrichie, helpers (résolution chemins/wildcards, égalité objets, index alias, dates), intégration par le VRAI handler fetch (classId, niveau header UUID éducation ET school_levels, composite, classId+status, search, pagination, classe inconnue → vide honnête, champ invisible → superset, classes source ALL, évaluations cross-origin, bibliothèque codes + params vides, autre année → 503, agrégat servi tel quel, pas de write-back, isolation tenant) ; harnais vm enrichi de Headers (toCacheableCopy silencieusement avalé par .catch dans les harnais précédents) ; assertions SW_VERSION des suites v42/v43 assouplies (≥)
+- Régressions : v40 71/71 ✓, v41 71/71 ✓, v42 186/186 ✓, v43 22/22 ✓ ; node --check sw.js ✓ ; transpilation 3 fichiers TS modifiés 0 diagnostic ✓
+
+Stage Summary:
+- ✅ Hors ligne, changer un sélecteur (niveau via header, classe, statut, matière, recherche, pagination) sert les DONNÉES FILTRÉES depuis la variante élargie pré-cachée — plus jamais la donnée du niveau/classe précédente ni une liste vide
+- ✅ La bibliothèque globale devrait recharger ses données (le 400 backend est corrigé — à vérifier post-déploiement Railway)
+- ⏳ E2E production post-déploiement : login → attendre SW v4.4 + re-pré-cache (SW_ACTIVATED invalide les flags 24 h) → mode avion → jouer les sélecteurs niveau/classe dans élèves/finances/examens/pédagogie
+- Reco : recharger l'app EN LIGNE une fois après déploiement (bump SW → re-pré-cache ~3-5 min) avant de repasser hors ligne

@@ -196,7 +196,7 @@ console.log('\n[2] Alias — libellés EN équivalents aux FR (finance/RH/strat�
 console.log('\n[3] Vue stratégique /promoteur — route HTML + pattern SW + gating');
 {
   const sw = fs.readFileSync(path.join(WEB, 'public/sw.js'), 'utf8');
-  check('SW_VERSION = v4.2.0', sw.includes("SW_VERSION = 'v4.3.0'"));
+  check('SW_VERSION ≥ v4.2.0', /SW_VERSION = 'v4.[4-9].0'/.test(sw) || sw.includes("SW_VERSION = 'v4.3.0'"));
   check('SW : pattern /promoteur cachable', /\/\^\\\/promoteur\(\\\/\|\$\)\//.test(sw));
   // La liste de routes est interne : vérifier via le bundle transpilé
   // (esbuild CJS émet les littéraux en guillemets doubles)

@@ -32,18 +32,35 @@ export class GlobalLibraryPrismaService {
   }) {
     const where: any = {};
 
-    if (filters?.level) where.level = filters.level;
-    if (filters?.classLevel) where.classLevel = filters.classLevel;
-    if (filters?.series) where.series = filters.series;
-    if (filters?.subject) where.subject = filters.subject;
-    if (filters?.language) where.language = filters.language;
-    if (filters?.resourceType) where.resourceType = filters.resourceType;
-    if (filters?.isPublished !== undefined) where.isPublished = filters.isPublished;
+    // ⭐ v4.4.0 — Blindage : en production, `filters.search` a déjà été reçu
+    //    comme FONCTION (String.prototype.search quand la query est
+    //    transformée en chaîne) → PrismaClientValidationError « contains
+    //    [object Function] » = 400 PERMANENT sur la bibliothèque (même en
+    //    ligne, avec ou sans paramètres). On ne garde que les vraies chaînes.
+    const clean = (v: unknown): string | undefined =>
+      typeof v === 'string' && v.trim() ? v.trim() : undefined;
+    const fLevel = clean(filters?.level);
+    const fClassLevel = clean(filters?.classLevel);
+    const fSeries = clean(filters?.series);
+    const fSubject = clean(filters?.subject);
+    const fLanguage = clean(filters?.language);
+    const fResourceType = clean(filters?.resourceType);
+    const fSearch = clean(filters?.search);
 
-    if (filters?.search) {
+    if (fLevel) where.level = fLevel;
+    if (fClassLevel) where.classLevel = fClassLevel;
+    if (fSeries) where.series = fSeries;
+    if (fSubject) where.subject = fSubject;
+    if (fLanguage) where.language = fLanguage;
+    if (fResourceType) where.resourceType = fResourceType;
+    if (filters?.isPublished !== undefined && filters?.isPublished !== null) {
+      where.isPublished = filters.isPublished;
+    }
+
+    if (fSearch) {
       where.OR = [
-        { title: { contains: filters.search, mode: 'insensitive' } },
-        { description: { contains: filters.search, mode: 'insensitive' } },
+        { title: { contains: fSearch, mode: 'insensitive' } },
+        { description: { contains: fSearch, mode: 'insensitive' } },
       ];
     }
 

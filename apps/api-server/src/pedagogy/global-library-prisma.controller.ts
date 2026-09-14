@@ -37,7 +37,16 @@ export class GlobalLibraryPrismaController {
    */
   @Get()
   async findAll(@TenantId() tenantId: string, @Query() query: any) {
-    return this.libraryService.findAllResources(tenantId, query);
+    // ⭐ v4.4.0 — Ne transmettre au service que de VRAIES chaînes non vides :
+    //    en production la query a déjà été reçue transformée (valeur-fonction
+    //    sur search → 400 Prisma permanent). Blindage quel que soit le runtime.
+    const cleanQuery: Record<string, string> = {};
+    if (query && typeof query === 'object') {
+      for (const [k, v] of Object.entries(query)) {
+        if (typeof v === 'string' && v.trim()) cleanQuery[k] = v.trim();
+      }
+    }
+    return this.libraryService.findAllResources(tenantId, cleanQuery);
   }
 
   /**

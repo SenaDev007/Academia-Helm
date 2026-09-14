@@ -264,6 +264,7 @@ async function main() {
       [`/api/school-levels`, LEVELS],
       [`/api/students?academicYearId=${YEAR}`, STUDENTS_BROAD],
       [`/api/students?academicYearId=${YEAR}&classId=${CLASS_B}`, { data: [STUDENTS_BROAD.data[1]], total: 1, page: 1, limit: 50, totalPages: 1 }],
+      [`/api/students?limit=500`, STUDENTS_BROAD],
       [`/api/classes?academicYearId=${YEAR}&schoolLevelId=ALL`, { data: [{ id: CLASS_A, schoolLevelId: SL_SEC }, { id: CLASS_B, schoolLevelId: SL_PRI }], pagination: { total: 2 } }],
       [`/institutional-exams/evaluations?academicYearId=${YEAR}&language=FR`, EVALS_BROAD],
       [`/pedagogy/global-library?level=&classLevel=&subject=&resourceType=&search=`, LIBRARY_BROAD],
@@ -296,7 +297,7 @@ async function main() {
     // réutilise le cache rempli en ligne
     const ahApi = ctx.sandbox.caches; // même instance
     const ctxOff = buildSwContext({
-      idb: makeMockIdb({}), cachesApi: ahApi,
+      idb: makeMockIdb({ local_academic_year: [{ id: YEAR }] }), cachesApi: ahApi,
       fetchImpl: async () => { throw new TypeError('Failed to fetch'); }, onLine: false,
     });
     const off = ctxOff.handlers;
@@ -412,6 +413,17 @@ async function main() {
     {
       const r = await driveFetch(off, new Request(`${OFF}/api/students?academicYearId=year-other`, { headers: auth }));
       check('année différente → 503 (pas de fausse donnée)', r.response.status === 503);
+    }
+
+    // 4.12-bis — Variante SANS année (scope implicite année ACTIVE via header)
+    {
+      const r = await driveFetch(off, new Request(`${OFF}/api/students?limit=500&academicYearId=00000000-0000-0000-0000-000000000000`, { headers: auth }));
+      check('variante sans année + autre année demandée → 503 (implicite = année active)', r.response.status === 503, `status=${r.response.status}`);
+    }
+    {
+      const r = await driveFetch(off, new Request(`${OFF}/api/students?limit=500&academicYearId=${YEAR}`, { headers: auth }));
+      const body = await r.response.json();
+      check('variante sans année + année ACTIVE demandée → servie', r.response.status === 200 && body.data.length === 3, `status=${r.response.status}`);
     }
 
     // 4.13 — Agrégat (statistiques) : servi tel quel par matchApiByPath

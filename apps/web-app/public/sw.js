@@ -178,6 +178,9 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
+// v4.4.2 : une variante SANS année dans sa clé est implicitement scopée à
+//    l année ACTIVE (header serveur) → exclue quand une AUTRE année est
+//    demandée, dans swFilteredApiFallback, matchApiByPath ET la cascade IDB.
 // v4.4.1 : garde année étendue à la cascade IndexedDB (swIdbFallbackForGet
 //    n'entend plus servir les entités de l'année ACTIVE quand une AUTRE
 //    année est demandée — 503 honnête au lieu d'une fausse donnée).
@@ -192,7 +195,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.4.1';
+const SW_VERSION = 'v4.4.2';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -1152,6 +1155,12 @@ async function matchApiByPath(cache, request, identity) {
         }
       }
       if (wantedYear && gotYear && gotYear !== wantedYear) continue;
+      // ⭐ v4.4.2 — variante sans année = implicitement année ACTIVE : une
+      //    autre année demandée ne doit pas être servie par cette variante.
+      if (wantedYear && !gotYear) {
+        const activeYr = await swGetActiveAcademicYearId();
+        if (activeYr && wantedYear !== activeYr) continue;
+      }
 
       const got = new URLSearchParams();
       ku.searchParams.forEach((value, name) => {
@@ -1564,6 +1573,11 @@ async function swFilteredApiFallback(cache, request, identity, tenantId) {
     if (!candidates.length) return null;
 
     const levelIndex = await swGetLevelIndex(cache, identity);
+    // ⭐ v4.4.2 — Année active locale : une variante SANS année dans sa clé est
+    //    implicitement scopée à l'année ACTIVE (le serveur scope par header
+    //    x-academic-year-id / année active) → si une AUTRE année est demandée,
+    //    c'est un conflit, pas une source valide.
+    const activeYearId = await swGetActiveAcademicYearId();
 
     // 2) Éligibilité : aucun param en conflit avec la demande
     const eligible = [];
@@ -1571,6 +1585,8 @@ async function swFilteredApiFallback(cache, request, identity, tenantId) {
       let ok = true;
       let exactPins = 0;
       if (wantedYear && c.cYear && c.cYear !== wantedYear) ok = false; // autre année → autre dataset
+      // ⭐ v4.4.2 — variante sans année = implicitement année ACTIVE
+      if (ok && wantedYear && !c.cYear && activeYearId && wantedYear !== activeYearId) ok = false;
       if (ok && wantedLevel && c.cLevel) {
         const wc = swCanonicalLevelCodes(wantedLevel, levelIndex);
         const cc = swCanonicalLevelCodes(c.cLevel, levelIndex);
@@ -1622,8 +1638,8 @@ async function swFilteredApiFallback(cache, request, identity, tenantId) {
       if (
         !best ||
         breadth > best.breadth ||
-        (breadth === best.breadth && c.exactPins > best.c.exactPins) ||
-        (breadth === best.breadth && c.exactPins === best.c.exactPins && date > best.date)
+        (breadth === best.breadth && c.exactPins > best.exactPins) ||
+        (breadth === best.breadth && c.exactPins === best.exactPins && date > best.date)
       ) {
         best = { ...c, data, loc, breadth, date };
       }
@@ -2565,13 +2581,18 @@ async function swIdbFallbackForGet(request, tenantId) {
         (e) => e && e.data !== undefined && (e.url === path || String(e.url || '').startsWith(path + '?'))
           && (e.tenantId ?? 'anon') === (tenantId || 'anon')
       );
-      // ⭐ v4.4.0 — écarter les entrées d'une AUTRE année que celle demandée
+      // ⭐ v4.4.0/v4.4.2 — écarter les entrées d'une AUTRE année que celle
+      //    demandée ; une entrée SANS année est implicitement scopée à
+      //    l'année ACTIVE (header serveur) → exclue si autre année demandée.
       const yearOf = (u) => {
         try { return new URL(u, 'http://localhost').searchParams.get('academicYearId') || null; } catch { return null; }
       };
-      const yearOk = samePath.filter(
-        (e) => !requestedYear || !yearOf(e.url) || yearOf(e.url) === requestedYear,
-      );
+      const activeYearForPath = requestedYear ? await swGetActiveAcademicYearId() : null;
+      const yearOk = samePath.filter((e) => {
+        if (!requestedYear) return true;
+        const ey = yearOf(e.url) || activeYearForPath;
+        return !ey || ey === requestedYear;
+      });
       // Aucune entrée de l'année demandée → on ne sert RIEN de ce chemin
       // (retour à la cascade → 503 honnête plutôt qu'une fausse donnée).
       const servable = requestedYear ? yearOk : samePath;

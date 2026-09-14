@@ -178,6 +178,9 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
+// v4.4.1 : garde année étendue à la cascade IndexedDB (swIdbFallbackForGet
+//    n'entend plus servir les entités de l'année ACTIVE quand une AUTRE
+//    année est demandée — 503 honnête au lieu d'une fausse donnée).
 // v4.4.0 : FILTRES HORS LIGNE — les sélecteurs (niveau, classe, statut,
 //    onglets filtrés, recherche, pagination) fonctionnent sans réseau :
 //    (1) la clé de cache intègre le scope header (x-school-level-id →
@@ -189,7 +192,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.4.0';
+const SW_VERSION = 'v4.4.1';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -2524,6 +2527,19 @@ async function swIdbFallbackForGet(request, tenantId) {
   const { path, full } = swNormalizeUrl(request.url);
   const store = routeTable(path);
 
+  // ⭐ v4.4.0 — Année demandée (param URL ou header x-academic-year-id).
+  //    Utilisée pour ne JAMAIS servir les données de l'année ACTIVE quand
+  //    une autre année est demandée (les stores IDB et le fallback par
+  //    chemin reconstruisent selon l'année active).
+  let requestedYear = null;
+  try {
+    requestedYear = new URL(request.url).searchParams.get('academicYearId')
+      || (request.headers.get('x-academic-year-id') || '').trim()
+      || null;
+  } catch {
+    requestedYear = null;
+  }
+
   // (1) réponse exacte pour ce tenant
   const exactEntry = await swIdbGetByKey('response_cache', swResponseCacheKey(request.url, tenantId));
   if (exactEntry && exactEntry.data !== undefined && exactEntry.data !== null) {
@@ -2549,7 +2565,17 @@ async function swIdbFallbackForGet(request, tenantId) {
         (e) => e && e.data !== undefined && (e.url === path || String(e.url || '').startsWith(path + '?'))
           && (e.tenantId ?? 'anon') === (tenantId || 'anon')
       );
-      if (samePath.length > 0) {
+      // ⭐ v4.4.0 — écarter les entrées d'une AUTRE année que celle demandée
+      const yearOf = (u) => {
+        try { return new URL(u, 'http://localhost').searchParams.get('academicYearId') || null; } catch { return null; }
+      };
+      const yearOk = samePath.filter(
+        (e) => !requestedYear || !yearOf(e.url) || yearOf(e.url) === requestedYear,
+      );
+      // Aucune entrée de l'année demandée → on ne sert RIEN de ce chemin
+      // (retour à la cascade → 503 honnête plutôt qu'une fausse donnée).
+      const servable = requestedYear ? yearOk : samePath;
+      if (servable.length > 0) {
         const wanted = new URL(full, 'http://localhost').searchParams;
         const scoreOf = (e) => {
           let score = 0;
@@ -2562,8 +2588,8 @@ async function swIdbFallbackForGet(request, tenantId) {
           } catch { /* ignoré */ }
           return score;
         };
-        samePath.sort((a, b) => (scoreOf(b) - scoreOf(a)) || ((b.cachedAt || 0) - (a.cachedAt || 0)));
-        let out = samePath[0].data;
+        servable.sort((a, b) => (scoreOf(b) - scoreOf(a)) || ((b.cachedAt || 0) - (a.cachedAt || 0)));
+        let out = servable[0].data;
         if (store && store !== 'orion_cache') {
           out = await swMergePendingEntities(store, out, tenantId);
         }
@@ -2580,6 +2606,12 @@ async function swIdbFallbackForGet(request, tenantId) {
 
   // (3) stores d'entités → fabrication d'une réponse liste
   if (!store) return null;
+  // ⭐ v4.4.0 — Le magasin d'entités est filtré par l'année ACTIVE : si une
+  //    AUTRE année est demandée, servir ces entités serait une fausse donnée.
+  if (requestedYear) {
+    const activeYearForGuard = await swGetActiveAcademicYearId();
+    if (activeYearForGuard && requestedYear !== activeYearForGuard) return null;
+  }
   let entities = await swIdbGetAll(store);
   if (!Array.isArray(entities) || entities.length === 0) return null;
 

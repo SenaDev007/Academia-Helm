@@ -304,7 +304,7 @@ async function main() {
 
   // ─── [4] Version + patterns ──────────────────────────────────────────────
   console.log('\n[4] Version SW + patterns');
-  check('SW_VERSION ≥ v4.3.0', /SW_VERSION = 'v4.[4-9].0'/.test(SW_SOURCE) || SW_SOURCE.includes("SW_VERSION = 'v4.3.0'"));
+  check('SW_VERSION ≥ v4.3.0', /SW_VERSION = 'v4\.[4-9]\.[0-9]+'/.test(SW_SOURCE) || SW_SOURCE.includes("SW_VERSION = 'v4.3.0'"));
   check('crawl : CHUNK_REF_REGEX + profondeur 3', SW_SOURCE.includes('CHUNK_REF_REGEX') && SW_SOURCE.includes('CHUNK_CRAWL_DEPTH = 3'));
   check('crawl branché dans precacheModule', /precacheModule[\s\S]{0,4000}crawlChunkGraph\(staticCache, chunks\)/.test(SW_SOURCE));
   check('apiIdentityAsync utilisée par GET + mutation', SW_SOURCE.includes('await apiIdentityAsync(request)'));

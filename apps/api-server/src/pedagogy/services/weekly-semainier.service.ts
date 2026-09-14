@@ -12,6 +12,8 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
+import { AccessScope } from '../../common/context/access-scope.service';
+import { applyLevelScope } from '../../common/context/scope-where';
 
 @Injectable()
 export class WeeklySemainierService {
@@ -589,6 +591,7 @@ export class WeeklySemainierService {
     academicYearId: string,
     schoolLevelId?: string,
     status?: 'SOUMIS' | 'VALIDATED',
+    scope?: AccessScope,
   ) {
     const where: any = {
       tenantId,
@@ -599,6 +602,8 @@ export class WeeklySemainierService {
     if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
+    // ⭐ 2026-09-15 : périmètre niveau serveur (validation des semainiers).
+    applyLevelScope(where, scope);
 
     return this.prisma.weeklySemainier.findMany({
       where,

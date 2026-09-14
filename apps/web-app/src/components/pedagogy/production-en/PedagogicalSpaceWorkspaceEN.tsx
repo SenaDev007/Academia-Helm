@@ -29,6 +29,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useAppSession } from "@/contexts/AppSessionContext";
+import { getUserScope } from "@/lib/auth/user-scope";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -78,7 +79,10 @@ const ALL_TABS = [
   //    Same submission workflow: DRAFT → SUBMITTED → VALIDATED / REJECTED.
   { id: 'monthly-planning', label: 'Scheme of Work', icon: CalendarClock, description: 'Term-based scheme', secondaryOnly: false, maternellePrimaireOnly: true },
   { id: 'cahier-journal', label: 'Weekly Record of Work', icon: FileSpreadsheet, description: 'Weekly records + catalogue', secondaryOnly: false, maternellePrimaireOnly: true },
-  { id: 'weekly', label: 'Weekly Log', icon: CalendarDays, description: 'Institutional monitoring', secondaryOnly: false, maternellePrimaireOnly: false },
+  // ⭐ 2026-09-15 : Weekly Log (Cahier de Semaine) réservé MATERNELLE/PRIMAIRE —
+  //    au secondaire, l'espace pédagogique se limite à Mes Classes, Attendance,
+  //    Text Log et Materials.
+  { id: 'weekly', label: 'Weekly Log', icon: CalendarDays, description: 'Institutional monitoring', secondaryOnly: false, maternellePrimaireOnly: true },
   // ⭐ FIX ANOMALIE 4 : 'tasks' tab REMOVED — Assignments & Tracking is already
   //    a standalone module (teacher sidebar /app/teacher/tasks + pedagogy module
   //    /app/pedagogy/tasks). It must NOT be duplicated as a sub-tab here.
@@ -123,7 +127,7 @@ export function PedagogicalSpaceWorkspaceEN({
   // et MASQUER les onglets Cahier Journal / Fiches / Registre (maternelle/primaire uniquement).
   // schoolLevel.code peut être 'MATERNELLE', 'PRIMAIRE', 'SECONDAIRE', 'COLLEGE', 'LYCEE'
   const schoolLevelCode = (schoolLevel?.code || '').toUpperCase();
-  const isSecondaryLevel =
+  let isSecondaryLevel =
     schoolLevelCode.includes('SECOND') ||
     schoolLevelCode.includes('COLLEGE') ||
     schoolLevelCode.includes('LYCEE');
@@ -141,6 +145,25 @@ export function PedagogicalSpaceWorkspaceEN({
   ]);
   const userRole = (user?.role || '').toUpperCase();
   const hasGlobalAccess = GLOBAL_ACCESS_ROLES.has(userRole);
+
+  // ⭐ 2026-09-15 — fallback robuste : pas de niveau sélectionné (contexte en
+  //    cours de chargement, enseignant sans sélecteur) → déduire du périmètre
+  //    SERVEUR (accréditations user, sinon scope bootstrap) : si TOUTES les
+  //    valeurs sont secondaires → filtrage secondaire. Un directeur MAT_PRI
+  //    ('ALL' → MATERNELLE+PRIMAIRE) n'est PAS secondaire.
+  if (!isSecondaryLevel && !schoolLevelCode && !hasGlobalAccess) {
+    const accreditations = (user as any)?.accreditations as string[] | undefined;
+    const scope = getUserScope();
+    const scopeCodes: string[] =
+      (Array.isArray(accreditations) && accreditations.length > 0
+        ? accreditations.map(String)
+        : (scope && scope.allLevels === false ? scope.levelCodes : undefined)) || [];
+    if (scopeCodes.length > 0) {
+      isSecondaryLevel = scopeCodes.every((c) =>
+        /SECOND|COLLEGE|LYCEE/i.test(String(c)),
+      );
+    }
+  }
 
   // ⭐ Filtrer les onglets visibles selon le niveau scolaire :
   //    - secondaryOnly=true → visible seulement si isSecondaryLevel (ou accès global)

@@ -52,6 +52,7 @@ export class PedagogicalDirectorController {
   @Get('documents/submitted')
   async getSubmittedDocuments(
     @GetTenant() tenant: any,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId: string,
     @Query('schoolLevelId') schoolLevelId?: string,
     @Query('documentType') documentType?: string,
@@ -59,12 +60,14 @@ export class PedagogicalDirectorController {
     @Query('teacherId') teacherId?: string,
     @Query('classId') classId?: string,
   ) {
+    // ⭐ 2026-09-15 : scope niveau serveur — un directeur restreint ne voit que
+    //    les documents soumis de son périmètre ; le promoteur voit tout.
     return this.documentService.findSubmittedDocuments(tenant.id, academicYearId, schoolLevelId, {
       documentType,
       status,
       teacherId,
       classId,
-    });
+    }, user?.scope);
   }
 
   /**
@@ -276,11 +279,13 @@ export class PedagogicalDirectorController {
   @Get('semainier/submitted')
   async getSubmittedSemainiers(
     @GetTenant() tenant: any,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId: string,
     @Query('schoolLevelId') schoolLevelId?: string,
     @Query('status') status?: 'SOUMIS' | 'VALIDATED',
   ) {
-    return this.semainierService.findSubmittedSemainiers(tenant.id, academicYearId, schoolLevelId, status);
+    // ⭐ 2026-09-15 : scope niveau serveur (validation des semainiers).
+    return this.semainierService.findSubmittedSemainiers(tenant.id, academicYearId, schoolLevelId, status, user?.scope);
   }
 
   /**
@@ -314,11 +319,13 @@ export class PedagogicalDirectorController {
   @Get('documents/stats')
   async getDocumentStats(
     @GetTenant() tenant: any,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId: string,
     @Query('schoolLevelId') schoolLevelId?: string,
     @Query('teacherId') teacherId?: string,
   ) {
-    return this.documentService.getDocumentStats(tenant.id, academicYearId, schoolLevelId, teacherId);
+    // ⭐ 2026-09-15 : scope niveau serveur (stats de validation direction).
+    return this.documentService.getDocumentStats(tenant.id, academicYearId, schoolLevelId, teacherId, user?.scope);
   }
 
   // ============================================================================

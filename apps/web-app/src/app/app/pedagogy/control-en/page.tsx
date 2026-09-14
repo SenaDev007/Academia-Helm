@@ -9,14 +9,12 @@
 'use client';
 
 import { ModuleContainer } from '@/components/modules/blueprint';
-import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
-import { useAppSession } from '@/contexts/AppSessionContext';
+import { useVisiblePedagogyTabs } from '@/hooks/usePedagogyTabs';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { DirectorPedagogyControlEN } from '@/components/pedagogy/production-en/DirectorPedagogyControlEN';
 
 export default function ControlENPage() {
-  const { user } = useAppSession();
-  const userRole = user?.role || '';
+  const pedagogyVisibleTabs = useVisiblePedagogyTabs();
 
   const { academicYear } = useModuleContext();
 
@@ -30,7 +28,7 @@ export default function ControlENPage() {
         icon: 'shieldCheck'
       }}
       subModules={{
-        modules: getVisiblePedagogyTabs(userRole).map((tab) => {
+        modules: pedagogyVisibleTabs.map((tab) => {
           const Icon = tab.icon;
           return {
             id: tab.id,

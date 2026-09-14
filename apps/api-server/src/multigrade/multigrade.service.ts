@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { v4 as uuidv4 } from 'uuid';
+import { AccessScope } from '../common/context/access-scope.service';
 
 /**
  * ============================================================================
@@ -32,11 +33,18 @@ export class MultigradeService {
     teacherId?: string;
     schoolLevelId?: string;
     isActive?: boolean;
-  }) {
+  }, scope?: AccessScope) {
     const where: any = { tenantId };
     if (filters?.academicYearId) where.academicYearId = filters.academicYearId;
     if (filters?.teacherId) where.teacherId = filters.teacherId;
     if (filters?.isActive !== undefined) where.isActive = filters.isActive;
+    // ⭐ 2026-09-15 : périmètre niveau serveur — MultigradeAssignment n'a pas de
+    //    colonne schoolLevelId : on filtre via la relation `teacher`
+    //    (Teacher.schoolLevelId). Un directeur MAT_PRI ne voit que les groupes
+    //    multigrades de ses niveaux ; le promoteur (scope transverse) voit tout.
+    if (scope && scope.resolved && !scope.allLevels) {
+      where.teacher = { schoolLevelId: { in: scope.levelIds } };
+    }
 
     const assignments = await this.prisma.multigradeAssignment.findMany({
       where,

@@ -5,6 +5,9 @@ import {
   Loader2, RefreshCw, Calendar, BookOpen, FileDown, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
+// ⭐ 2026-09-15 : filtrage par niveau — la Planification annuelle (Maternelle +
+//    CI à CM2) est réservée aux enseignants MATERNELLE/PRIMAIRE.
+import { useSecondaryOnlyUser } from '@/hooks/useSecondaryOnlyUser';
 // ⭐ P4-final : page bilingue (piste EN → anglais)
 import { useL } from '@/lib/i18n/bilingual';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
@@ -101,6 +104,24 @@ export default function TeacherAnnualPlanningPage() {
   //    (Anciennement : getVisiblePedagogyTabs(userRole) qui greffait tout le
   //    module pédagogie — Dashboard, Structure académique, Matières, etc.)
   const { academicYear } = useModuleContext();
+  // ⭐ 2026-09-15 : réservée MATERNELLE/PRIMAIRE — un enseignant du SEUL
+  //    secondaire n'y a pas accès (sidebar masquée + garde URL directe).
+  const isSecondaryOnly = useSecondaryOnlyUser();
+
+  if (isSecondaryOnly) {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center space-y-4 rounded-xl border-2 border-dashed bg-gray-50/50 p-12 text-center border-slate-200">
+        <Calendar className="h-12 w-12 text-slate-300" />
+        <div className="max-w-sm space-y-2">
+          <h2 className="text-xl font-bold text-slate-900">Fonctionnalité non disponible</h2>
+          <p className="text-slate-500 text-sm">
+            La planification annuelle concerne les classes de la Maternelle et du Primaire
+            (Maternelle, CI à CM2). Elle n&apos;est pas applicable au niveau Secondaire.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <TeacherAnnualPlanningContent />

@@ -6,6 +6,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { AccessScope } from '../common/context/access-scope.service';
 
 @Injectable()
 export class TeacherAcademicProfilePrismaService {
@@ -19,10 +20,18 @@ export class TeacherAcademicProfilePrismaService {
     availabilities: true,
   };
 
-  async findAllProfiles(tenantId: string, academicYearId: string) {
+  async findAllProfiles(tenantId: string, academicYearId: string, scope?: AccessScope) {
     if (!academicYearId) return [];
+    const where: any = { tenantId, academicYearId };
+    // ⭐ 2026-09-15 : périmètre niveau serveur — TeacherAcademicProfile n'a pas
+    //    de colonne schoolLevelId : on filtre via la relation `teacher`
+    //    (Teacher.schoolLevelId). Un directeur MAT_PRI ne voit que les profils
+    //    des enseignants de ses niveaux ; le promoteur (scope transverse) voit tout.
+    if (scope && scope.resolved && !scope.allLevels) {
+      where.teacher = { schoolLevelId: { in: scope.levelIds } };
+    }
     return this.prisma.teacherAcademicProfile.findMany({
-      where: { tenantId, academicYearId },
+      where,
       include: this.profileInclude,
       orderBy: { teacher: { lastName: 'asc' } },
     });

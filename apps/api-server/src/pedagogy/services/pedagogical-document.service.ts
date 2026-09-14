@@ -11,6 +11,8 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../../common/utils/prisma-helpers';
+import { AccessScope } from '../../common/context/access-scope.service';
+import { applyLevelScope } from '../../common/context/scope-where';
 
 @Injectable()
 export class PedagogicalDocumentService {
@@ -336,6 +338,7 @@ export class PedagogicalDocumentService {
       teacherId?: string;
       classId?: string;
     },
+    scope?: AccessScope,
   ) {
     const where: any = {
       tenantId,
@@ -346,6 +349,9 @@ export class PedagogicalDocumentService {
     if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
+    // ⭐ 2026-09-15 : périmètre niveau serveur — un directeur MAT_PRI ne valide
+    //    que les documents de ses niveaux ; le promoteur voit tout.
+    applyLevelScope(where, scope);
     if (filters?.documentType) {
       where.documentType = filters.documentType;
     }
@@ -417,6 +423,7 @@ export class PedagogicalDocumentService {
     academicYearId: string,
     schoolLevelId?: string,
     teacherId?: string,
+    scope?: AccessScope,
   ) {
     const where: any = {
       tenantId,
@@ -426,6 +433,8 @@ export class PedagogicalDocumentService {
     if (schoolLevelId && schoolLevelId !== 'ALL') {
       where.schoolLevelId = schoolLevelId;
     }
+    // ⭐ 2026-09-15 : périmètre niveau serveur (stats de validation direction).
+    applyLevelScope(where, scope);
     if (teacherId) {
       where.teacherId = teacherId;
     }

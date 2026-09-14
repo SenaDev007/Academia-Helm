@@ -13,6 +13,7 @@ import {
   Body,
   Param,
   Query,
+  Req,
   UseGuards,
   Res,
   BadRequestException,
@@ -21,6 +22,8 @@ import { TimetablesPrismaService } from './timetables-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { resolveEffectiveLevelFilter } from '../common/context/scope-where';
 import { CreateTimetableDto } from './dto/create-timetable.dto';
 import { UpdateTimetableDto } from './dto/update-timetable.dto';
 import { CreateTimetableEntryDto, UpdateTimetableEntryDto } from './dto/create-timetable-entry.dto';
@@ -77,15 +80,26 @@ export class TimetablesPrismaController {
   @Get()
   async findAll(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Req() req: any,
     @Query('academicYearId') academicYearId?: string,
     @Query('schoolLevelId') schoolLevelId?: string,
     @Query('isActive') isActive?: string,
   ) {
+    // ⭐ 2026-09-15 : scope niveau — un directeur ne voit que les emplois du
+    //    temps de son périmètre ; le promoteur voit tout. Filtre explicite
+    //    (query OU header du sélecteur global) résolu avec tolérance UUID.
+    const effectiveLevel = await resolveEffectiveLevelFilter(
+      this.prisma,
+      tenantId,
+      schoolLevelId,
+      req?.headers?.['x-school-level-id'],
+    );
     return this.timetablesService.findAllTimetables(tenantId, {
       academicYearId,
-      schoolLevelId,
+      schoolLevelId: effectiveLevel,
       isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined,
-    });
+    }, user?.scope);
   }
 
   @Get(':id')

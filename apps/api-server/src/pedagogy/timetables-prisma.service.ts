@@ -12,6 +12,8 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException }
 import { PrismaService } from '../database/prisma.service';
 import { PedagogicalAuditService } from './services/pedagogical-audit.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { AccessScope } from '../common/context/access-scope.service';
+import { applyLevelScope } from '../common/context/scope-where';
 
 
 export interface TimetableConflict {
@@ -500,7 +502,8 @@ export class TimetablesPrismaService {
       academicYearId?: string;
       schoolLevelId?: string;
       isActive?: boolean;
-    }
+    },
+    scope?: AccessScope,
   ) {
     const where: any = {
       tenantId,
@@ -513,6 +516,10 @@ export class TimetablesPrismaService {
     if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }
+
+    // ⭐ 2026-09-15 : périmètre niveau serveur — un directeur MAT_PRI ne voit que
+    //    les emplois du temps de ses niveaux ; le promoteur voit tout.
+    applyLevelScope(where, scope);
 
     if (filters?.isActive !== undefined) {
       where.isActive = filters.isActive;

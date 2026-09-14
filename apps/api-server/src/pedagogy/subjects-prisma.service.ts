@@ -11,6 +11,8 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { AccessScope } from '../common/context/access-scope.service';
+import { applyLevelScope } from '../common/context/scope-where';
 
 @Injectable()
 export class SubjectsPrismaService {
@@ -251,7 +253,8 @@ export class SubjectsPrismaService {
       academicTrackId?: string;
       language?: string;
       search?: string;
-    }
+    },
+    scope?: AccessScope,
   ) {
     // ⚠️ NE PAS appeler syncSubjectsFromSettings ici !
     // Avant, cette méthode re-créait automatiquement les matières par défaut
@@ -273,6 +276,12 @@ export class SubjectsPrismaService {
     if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }
+
+    // ⭐ 2026-09-15 : périmètre niveau serveur (directeurs/enseignants restreints
+    //    à leurs niveaux — ex. directeur MAT_PRI ne voit que Maternelle+Primaire).
+    //    No-op pour le promoteur (scope transverse) ; un filtre explicite client
+    //    est conservé tel quel (périmètre déjà validé par le AccessScopeGuard).
+    applyLevelScope(where, scope);
 
     if (filters?.academicTrackId) {
       where.academicTrackId = filters.academicTrackId;

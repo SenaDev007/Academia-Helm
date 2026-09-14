@@ -20,11 +20,77 @@
 
 import { ForbiddenException } from '@nestjs/common';
 import { AccessScope } from './access-scope.service';
+import { resolveSchoolLevelFilter } from './resolve-school-level';
 
 /** Filtre niveau sur un where Prisma (champ schoolLevelId par défaut) */
 export function levelWhere(scope: AccessScope, field = 'schoolLevelId') {
   if (!scope.resolved || scope.allLevels) return undefined;
   return { [field]: { in: scope.levelIds } };
+}
+
+/**
+ * ⭐ 2026-09-15 — Résout le FILTRE DE NIVEAU EFFECTIF d'une requête liste
+ * pédagogie : query param `schoolLevelId` en priorité, sinon le header
+ * `x-school-level-id` (envoyé par pedagogyFetch / axios selon le sélecteur
+ * de niveau global). Toute valeur passe par resolveSchoolLevelFilter
+ * (tolérance UUID school_levels / UUID education_levels / miroirs EN /
+ * composites MAT_PRI) → un UUID school_levels prêt pour le where Prisma.
+ *
+ * @returns undefined si pas de filtre (sentinelles 'ALL'/vides) ou valeur
+ *          composite multi-niveaux (on laisse alors le périmètre serveur
+ *          s'appliquer via applyLevelScope) ; sinon l'UUID school_levels.
+ */
+export async function resolveEffectiveLevelFilter(
+  prisma: any,
+  tenantId: string,
+  explicitQuery?: string | null,
+  headerValue?: string | null,
+): Promise<string | undefined> {
+  const query = (explicitQuery || '').trim();
+  const header = (headerValue || '').trim();
+  const candidate =
+    query && query.toUpperCase() !== 'ALL'
+      ? query
+      : header && header.toUpperCase() !== 'ALL'
+        ? header
+        : undefined;
+  if (!candidate) return undefined;
+  try {
+    const resolved = await resolveSchoolLevelFilter(prisma, tenantId, candidate);
+    if (!resolved || resolved.length === 0) return candidate; // inconnu → comportement historique
+    // Multi-niveaux (composite MAT_PRI…) → pas de filtre simple : le scope
+    // serveur (applyLevelScope) appliquera le périmètre complet.
+    return resolved.length === 1 ? resolved[0] : undefined;
+  } catch {
+    return candidate;
+  }
+}
+
+/**
+ * ⭐ Filtre niveau PÉDAGOGIE (2026-09-15) — application du périmètre serveur
+ * sur un where Prisma EXISTANT (mutation), pour les listes du module pédagogie
+ * (matières, enseignants, affectations, emplois du temps, sections).
+ *
+ * Règles :
+ *   - Compte transverse (promoteur, plateforme…) ou scope non résolu → no-op
+ *     (le promoteur voit TOUS les niveaux).
+ *   - Filtre explicite client déjà présent dans le where → CONSERVÉ tel quel
+ *     (le AccessScopeGuard global a déjà validé qu'il est dans le périmètre,
+ *     avec la tolérance UUID education_levels / miroirs EN / composites —
+ *     cf. resolve-school-level.ts ; le client ne peut pas élargir).
+ *   - Aucun filtre (y compris sentinelle 'ALL' non posée dans le where) →
+ *     injection du périmètre complet { in: levelIds } : un directeur MAT_PRI
+ *     ne voit QUE les matières/enseignants/EDT de ses niveaux, un directeur
+ *     SEC uniquement le secondaire.
+ */
+export function applyLevelScope(
+  where: Record<string, any>,
+  scope: AccessScope | undefined | null,
+  field = 'schoolLevelId',
+): void {
+  if (!scope || !scope.resolved || scope.allLevels) return;
+  if (where[field]) return; // filtre explicite (déjà validé par le guard)
+  where[field] = { in: scope.levelIds };
 }
 
 /**

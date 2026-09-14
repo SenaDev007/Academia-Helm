@@ -30,7 +30,7 @@ import {
   useInvalidatePedagogyDashboard,
 } from '@/hooks/usePedagogyDashboardQueries';
 import { useDirectorPedagogyDashboard } from '@/lib/query/pedagogy-hooks';
-import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
+import { useVisiblePedagogyTabs } from '@/hooks/usePedagogyTabs';
 import ParentTasksView from '@/components/pedagogy/tasks/ParentTasksView';
 import { cn } from '@/lib/utils';
 
@@ -180,6 +180,7 @@ function Section({ title, subtitle, children, delay = 0 }: {
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════════════
 export function PedagogyModuleDashboard() {
+  const pedagogyVisibleTabs = useVisiblePedagogyTabs();
   const searchParams = useSearchParams();
   const { user, tenant } = useAppSession();
   const { academicYear } = useModuleContext();
@@ -226,8 +227,7 @@ export function PedagogyModuleDashboard() {
     return <ParentTasksView />;
   }
 
-  const userRole = user?.role || '';
-  const shortcuts = getVisiblePedagogyTabs(userRole).filter((tab) => tab.id !== 'dashboard').slice(0, 8);
+  const shortcuts = pedagogyVisibleTabs.filter((tab) => tab.id !== 'dashboard').slice(0, 8);
 
   const isLoading = isLoadingQueries || isLoadingDirector;
 

@@ -16,6 +16,7 @@ import {
 import { TeacherAcademicProfilePrismaService } from './teacher-academic-profile-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateTeacherProfileDto } from './dto/create-teacher-profile.dto';
 import { UpdateTeacherProfileDto } from './dto/update-teacher-profile.dto';
 import {
@@ -33,9 +34,15 @@ export class TeacherAcademicProfilePrismaController {
   @Get()
   async findAllProfiles(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId: string,
   ) {
-    return this.service.findAllProfiles(tenantId, academicYearId);
+    // ⭐ 2026-09-15 : scope niveau serveur — un directeur MAT_PRI ne voit que
+    //    les profils académiques des enseignants de son périmètre (via
+    //    Teacher.schoolLevelId) ; le promoteur voit tout. Un enseignant
+    //    consultant la liste retrouve toujours SON propre profil (son niveau
+    //    est dans son propre périmètre).
+    return this.service.findAllProfiles(tenantId, academicYearId, user?.scope);
   }
 
   @Get('by-teacher/:teacherId')

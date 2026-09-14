@@ -11,6 +11,8 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { AccessScope } from '../common/context/access-scope.service';
+import { applyLevelScope } from '../common/context/scope-where';
 
 @Injectable()
 export class TeachersPrismaService {
@@ -121,7 +123,8 @@ export class TeachersPrismaService {
       /// Langue (FR/EN) — si fournie, filtre les teachers dont assignedLanguages
       /// inclut cette langue. Si null/non fourni, pas de filtre.
       language?: string;
-    }
+    },
+    scope?: AccessScope,
   ) {
     const where: any = {
       tenantId,
@@ -165,6 +168,11 @@ export class TeachersPrismaService {
     if (filters?.schoolLevelId && filters.schoolLevelId !== 'ALL') {
       where.schoolLevelId = filters.schoolLevelId;
     }
+
+    // ⭐ 2026-09-15 : périmètre niveau serveur — un directeur MAT_PRI ne voit que
+    //    les enseignants de ses niveaux ; le promoteur voit tout. Filtre explicite
+    //    client conservé (périmètre déjà validé par le AccessScopeGuard).
+    applyLevelScope(where, scope);
 
     if (filters?.departmentId) {
       where.departmentId = filters.departmentId;

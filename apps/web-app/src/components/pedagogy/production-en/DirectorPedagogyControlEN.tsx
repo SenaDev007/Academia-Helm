@@ -64,13 +64,14 @@ interface DirectorPedagogyControlProps {
 //    et Évaluations Mensuelles sont réservés aux niveaux MATERNELLE + PRIMAIRE.
 //    Un directeur affecté au SECONDAIRE ne voit PAS ces onglets dans son espace
 //    de validation direction. Le PROMOTEUR et les rôles plateforme ont accès à TOUT.
-//    ⭐ Cahier du Semainier est visible pour TOUS les niveaux (maternelle + primaire
-//       + secondaire) car le semainier est une responsabilité transverse.
+//    ⭐ 2026-09-15 : Attendance Registers et Cahier du Semainier réservés
+//       MATERNELLE + PRIMAIRE (alignement avec la version FR — au secondaire,
+//       la validation pédagogique se limite aux éléments du niveau).
 const TABS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, maternellePrimaireOnly: false },
   { id: "scheme-of-work", label: "Scheme of Work", icon: BookOpen, maternellePrimaireOnly: true },
   { id: "weekly-record", label: "Weekly Record", icon: FileSpreadsheet, maternellePrimaireOnly: true },
-  { id: "registres", label: "Attendance Registers", icon: ClipboardList, maternellePrimaireOnly: false },
+  { id: "registres", label: "Attendance Registers", icon: ClipboardList, maternellePrimaireOnly: true },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
@@ -295,7 +296,7 @@ function DashboardTab({ tenantId, academicYearId, refreshKey, onNavigate, isSeco
   //    on masque les cartes pour Cahiers Journal, Registres, Évaluations
   //    (ces fonctionnalités sont réservées Maternelle + Primaire).
   const VISIBLE_CARDS = isSecondaryLevel && !hasGlobalAccess
-    ? cards.filter(card => !card.tab || !['cahier-journal', 'registres', 'evaluations'].includes(card.tab as string))
+    ? cards.filter(card => !card.tab || !['cahier-journal', 'registres', 'evaluations', 'seminaire'].includes(card.tab as string))
     : cards;
 
   return (

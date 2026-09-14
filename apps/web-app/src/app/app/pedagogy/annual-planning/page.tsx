@@ -11,8 +11,8 @@ import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
 import { ModuleContainer } from '@/components/modules/blueprint';
-import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
-import { useAppSession } from '@/contexts/AppSessionContext';
+import { useVisiblePedagogyTabs } from '@/hooks/usePedagogyTabs';
+import { useSecondaryOnlyUser } from '@/hooks/useSecondaryOnlyUser';
 
 // ═══════════════════════════════════════════════════════════════════
 //  CONSTANTES — Structure exacte des tableaux (conforme aux PDFs)
@@ -160,9 +160,27 @@ const MATERNELLE_MONTH_WEEKS: Record<string, string[]> = {
 };
 
 export default function AnnualPlanningPage() {
-  const { user } = useAppSession();
-  const userRole = user?.role || '';
+  const pedagogyVisibleTabs = useVisiblePedagogyTabs();
   const { academicYear } = useModuleContext();
+  // ⭐ 2026-09-15 : la Planification annuelle (Maternelle + CI à CM2) est
+  //    réservée aux niveaux MATERNELLE/PRIMAIRE — un directeur ou enseignant
+  //    du SEUL secondaire n'y a pas accès (onglet masqué + garde URL directe).
+  const isSecondaryOnly = useSecondaryOnlyUser();
+
+  if (isSecondaryOnly) {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center space-y-4 rounded-xl border-2 border-dashed bg-gray-50/50 p-12 text-center border-slate-200">
+        <Calendar className="h-12 w-12 text-slate-300" />
+        <div className="max-w-sm space-y-2">
+          <h2 className="text-xl font-bold text-slate-900">Fonctionnalité non disponible</h2>
+          <p className="text-slate-500 text-sm">
+            La planification annuelle concerne les classes de la Maternelle et du Primaire
+            (Maternelle, CI à CM2). Elle n&apos;est pas applicable au niveau Secondaire.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <ModuleContainer
@@ -174,7 +192,7 @@ export default function AnnualPlanningPage() {
         icon: 'clipboard',
       }}
       subModules={{
-        modules: getVisiblePedagogyTabs(userRole).map((tab) => {
+        modules: pedagogyVisibleTabs.map((tab) => {
           const Icon = tab.icon;
           return { id: tab.id, label: tab.label, href: tab.path, icon: <Icon className="w-4 h-4" /> };
         }),

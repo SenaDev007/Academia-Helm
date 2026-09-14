@@ -152,6 +152,10 @@ export interface PedagogySubmoduleTab {
   icon: any;
   /** Roles explicitly allowed to see this tab. If undefined, visible to all. */
   roles?: readonly string[];
+  /** ⭐ 2026-09-15 : onglet réservé aux niveaux MATERNELLE + PRIMAIRE —
+   *  masqué pour un utilisateur restreint au SEUL secondaire (directeur du
+   *  secondaire, enseignant du secondaire). Le promoteur voit tout. */
+  maternellePrimaireOnly?: boolean;
 }
 
 export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
@@ -236,6 +240,10 @@ export const PEDAGOGY_SUBMODULE_TABS: readonly PedagogySubmoduleTab[] = [
     labelEn: 'Annual Planning',
     path: '/app/pedagogy/annual-planning',
     icon: ClipboardList,
+    // ⭐ 2026-09-15 : la planification annuelle couvre les classes Maternelle
+    //  + CI à CM2 (CLASS_LEVELS du module) — réservée MATERNELLE/PRIMAIRE.
+    //  Le directeur/enseignant du secondaire ne voit pas cet onglet.
+    maternellePrimaireOnly: true,
     roles: [
       'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN',
       'director', 'admin', 'TEACHER', 'TEACHER_RESP',
@@ -360,7 +368,19 @@ export function tabMatchesRole(tab: PedagogySubmoduleTab, userRole: string | und
 /**
  * Filtre la liste des onglets visibles pour un rôle donné.
  * Utilisé par la page pédagogie et par le dashboard (shortcuts).
+ *
+ * ⭐ 2026-09-15 : option `secondaryOnly` — lorsque l'utilisateur est restreint
+ * au SEUL secondaire (directeur du secondaire, enseignant du secondaire),
+ * les onglets maternellePrimaireOnly (ex. Planification annuelle) sont
+ * masqués. Le promoteur (rôle transverse) n'est jamais considéré
+ * secondaire-only → il voit tout.
  */
-export function getVisiblePedagogyTabs(userRole: string | undefined | null): PedagogySubmoduleTab[] {
-  return PEDAGOGY_SUBMODULE_TABS.filter((tab) => tabMatchesRole(tab, userRole));
+export function getVisiblePedagogyTabs(
+  userRole: string | undefined | null,
+  opts?: { secondaryOnly?: boolean },
+): PedagogySubmoduleTab[] {
+  return PEDAGOGY_SUBMODULE_TABS.filter((tab) => {
+    if (opts?.secondaryOnly && tab.maternellePrimaireOnly) return false;
+    return tabMatchesRole(tab, userRole);
+  });
 }

@@ -8,6 +8,8 @@ import { PrismaService } from '../database/prisma.service';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 import { randomUUID as cryptoRandomUUID } from 'crypto';
 import { BilingualStructureService } from '../bilingual-structure/bilingual-structure.service';
+import { AccessScope } from '../common/context/access-scope.service';
+import { applyLevelScope } from '../common/context/scope-where';
 
 export interface DuplicateStructureResult {
   fromAcademicYearId: string;
@@ -1169,10 +1171,24 @@ export class AcademicStructurePrismaService {
 
   /**
    * Liste toutes les sections (Class) d'une année scolaire, groupées par AcademicClass.
+   * ⭐ 2026-09-15 : scope niveau serveur — un directeur restreint (ex. MAT_PRI)
+   *    ne voit que les sections de son périmètre (Class.schoolLevelId).
+   *    `explicitSchoolLevelId` : filtre affinant (header du sélecteur global,
+   *    déjà résolu en UUID school_levels et validé par le AccessScopeGuard).
    */
-  async findAllClassSections(tenantId: string, academicYearId: string) {
+  async findAllClassSections(
+    tenantId: string,
+    academicYearId: string,
+    scope?: AccessScope,
+    explicitSchoolLevelId?: string,
+  ) {
+    const where: any = { tenantId, academicYearId };
+    if (explicitSchoolLevelId) {
+      where.schoolLevelId = explicitSchoolLevelId;
+    }
+    applyLevelScope(where, scope);
     return this.prisma.class.findMany({
-      where: { tenantId, academicYearId },
+      where,
       include: {
         officialClass: {
           select: {
@@ -1429,7 +1445,8 @@ export class AcademicStructurePrismaService {
   async findAllClasses(
     tenantId: string,
     academicYearId: string,
-    filters?: { levelId?: string; cycleId?: string; isActive?: boolean; includeInactive?: boolean }
+    filters?: { levelId?: string; cycleId?: string; isActive?: boolean; includeInactive?: boolean; schoolLevelCode?: string },
+    scope?: AccessScope,
   ) {
     await this.syncAcademicClassesFromEducationSettings(tenantId, academicYearId);
     await this.syncAcademicClassLanguageTracksFromBilingualSettings(tenantId, academicYearId);
@@ -1444,6 +1461,24 @@ export class AcademicStructurePrismaService {
     const where: Record<string, unknown> = { tenantId, academicYearId };
     if (filters?.levelId) where.levelId = filters.levelId;
     if (filters?.cycleId) where.cycleId = filters.cycleId;
+    // ⭐ 2026-09-15 : périmètre niveau serveur — l'AcademicClass n'a pas de
+    //    colonne schoolLevelId (abstraction pédagogique) : on filtre via la
+    //    relation `level` (pedagogy_academic_levels) en mappant les codes du
+    //    périmètre (MATERNELLE/PRIMAIRE/SECONDAIRE) vers les libellés Module 2
+    //    ('Maternelle'/'Primaire'/'Secondaire' — EDUCATION_CODE_TO_PEDAGOGY).
+    //    No-op pour le promoteur (scope transverse).
+    //    Priorité : filtre explicite du sélecteur global (schoolLevelCode) >
+    //    périmètre serveur complet.
+    if (filters?.schoolLevelCode && EDUCATION_CODE_TO_PEDAGOGY[filters.schoolLevelCode]) {
+      where.level = { name: EDUCATION_CODE_TO_PEDAGOGY[filters.schoolLevelCode].name };
+    } else if (scope && scope.resolved && !scope.allLevels && !where.levelId) {
+      const scopeLevelNames = (scope.levelCodes || [])
+        .map((c) => EDUCATION_CODE_TO_PEDAGOGY[c]?.name)
+        .filter((n): n is string => !!n);
+      if (scopeLevelNames.length > 0) {
+        where.level = { name: { in: scopeLevelNames } };
+      }
+    }
     // ⭐ Par défaut, ne retourner QUE les classes actives (isActive=true).
     //    Une classe est désactivée quand son EducationGrade.isEnabled=false
     //    (propagé par syncAcademicClassesFromEducationSettings).

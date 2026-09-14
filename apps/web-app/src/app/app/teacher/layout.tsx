@@ -45,6 +45,9 @@ import { useL } from "@/lib/i18n/bilingual";
 // import { SyncButton } from "@/components/header/SyncButton";
 // ⭐ V3-4: notifications Helm Connect pour enseignants (absences justifiées / évaluations / bulletins)
 import NotificationDropdown from "@/components/notifications/NotificationDropdown";
+// ⭐ 2026-09-15 : filtrage par niveau — la Planification annuelle (classes
+//    Maternelle + CI à CM2) est réservée aux enseignants MATERNELLE/PRIMAIRE.
+import { useSecondaryOnlyUser } from "@/hooks/useSecondaryOnlyUser";
 
 const TEACHER_MODULES = [
   { path: "/app/teacher", label: "Dashboard", labelEn: "Dashboard", icon: LayoutDashboard, desc: "Cours du jour, classes assignées", descEn: "Today's lessons, assigned classes" },
@@ -69,6 +72,9 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   // ⭐ P4-final : libellés dans la langue du profil (piste EN → anglais)
   const L = useL();
+  // ⭐ 2026-09-15 : hook AVANT tout early-return (règle des hooks) — filtrage
+  //    par niveau : la Planification annuelle est réservée MATERNELLE/PRIMAIRE.
+  const isSecondaryOnly = useSecondaryOnlyUser();
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -96,7 +102,12 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   }
 
   const teacherName = user ? `${user.firstName} ${user.lastName}`.trim() : L("Enseignant", "Teacher");
-  const activeModule = TEACHER_MODULES.find((m) => pathname === m.path || (m.path !== "/app/teacher" && pathname.startsWith(m.path)));
+  // ⭐ 2026-09-15 : un enseignant affecté au SEUL secondaire ne voit pas la
+  //    Planification annuelle (fonctionnalité Maternelle + Primaire).
+  const visibleTeacherModules = TEACHER_MODULES.filter(
+    (m) => !isSecondaryOnly || m.path !== "/app/teacher/annual-planning",
+  );
+  const activeModule = visibleTeacherModules.find((m) => pathname === m.path || (m.path !== "/app/teacher" && pathname.startsWith(m.path)));
   const currentModuleLabel = activeModule ? L(activeModule.label, activeModule.labelEn) : L("Portail Enseignant", "Teacher Portal");
 
   return (

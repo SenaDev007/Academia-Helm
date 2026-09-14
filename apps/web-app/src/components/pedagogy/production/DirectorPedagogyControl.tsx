@@ -69,7 +69,7 @@ const TABS = [
   { id: "cahier-journal", label: "Cahiers Journal & Fiches", icon: FileSpreadsheet, maternellePrimaireOnly: true },
   { id: "registres", label: "Registres d'Appel", icon: ClipboardList, maternellePrimaireOnly: true },
   { id: "evaluations", label: "Évaluations Mensuelles", icon: BookOpen, maternellePrimaireOnly: true },
-  { id: "seminaire", label: "Cahier du Semainier", icon: CalendarDays, maternellePrimaireOnly: false },
+  { id: "seminaire", label: "Cahier du Semainier", icon: CalendarDays, maternellePrimaireOnly: true },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
@@ -288,7 +288,7 @@ function DashboardTab({ tenantId, academicYearId, refreshKey, onNavigate, isSeco
   //    on masque les cartes pour Cahiers Journal, Registres, Évaluations
   //    (ces fonctionnalités sont réservées Maternelle + Primaire).
   const VISIBLE_CARDS = isSecondaryLevel && !hasGlobalAccess
-    ? cards.filter(card => !card.tab || !['cahier-journal', 'registres', 'evaluations'].includes(card.tab as string))
+    ? cards.filter(card => !card.tab || !['cahier-journal', 'registres', 'evaluations', 'seminaire'].includes(card.tab as string))
     : cards;
 
   return (

@@ -13,6 +13,7 @@ import {
   Body,
   Param,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { AcademicStructurePrismaService } from './academic-structure-prisma.service';
@@ -27,6 +28,7 @@ import { UpdateAcademicClassDto } from './dto/update-academic-class.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { resolveSchoolLevelFilter } from '../common/context/resolve-school-level';
 
 @Controller('pedagogy/academic-structure')
 @UseGuards(JwtAuthGuard)
@@ -122,6 +124,8 @@ export class AcademicStructurePrismaController {
   @Get('classes')
   async findAllClasses(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Req() req: any,
     @Query('academicYearId') academicYearId: string,
     @Query('levelId') levelId?: string,
     @Query('cycleId') cycleId?: string,
@@ -140,7 +144,26 @@ export class AcademicStructurePrismaController {
       filters.includeInactive = true;
     }
     // Default: filters.isActive stays undefined → service applies isActive=true
-    return this.service.findAllClasses(tenantId, academicYearId, filters);
+    // ⭐ 2026-09-15 : header du sélecteur global (x-school-level-id) résolu en
+    //    CODE de niveau (MATERNELLE/PRIMAIRE/SECONDAIRE) pour le mapping vers
+    //    les libellés Module 2 (level.name) — le promoteur qui choisit
+    //    « Maternelle » ne voit que les classes Maternelle.
+    try {
+      const headerLevel = (req?.headers?.['x-school-level-id'] || '').toString().trim();
+      if (headerLevel && headerLevel.toUpperCase() !== 'ALL') {
+        const resolved = await resolveSchoolLevelFilter(this.prisma, tenantId, headerLevel);
+        if (resolved && resolved.length === 1) {
+          const sl = await this.prisma.schoolLevel.findUnique({
+            where: { id: resolved[0] },
+            select: { code: true },
+          });
+          if (sl?.code) filters.schoolLevelCode = sl.code;
+        }
+      }
+    } catch { /* résolution best-effort */ }
+    // ⭐ 2026-09-15 : scope niveau serveur — un directeur ne voit que les
+    //    classes de son périmètre ; le promoteur voit tout.
+    return this.service.findAllClasses(tenantId, academicYearId, filters, user?.scope);
   }
 
   @Post('classes')
@@ -186,10 +209,24 @@ export class AcademicStructurePrismaController {
   @Get('sections')
   async findAllSections(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Req() req: any,
     @Query('academicYearId') academicYearId: string,
   ) {
     if (!academicYearId) return [];
-    return this.service.findAllClassSections(tenantId, academicYearId);
+    // ⭐ 2026-09-15 : header du sélecteur global résolu avec tolérance UUID →
+    //    filtre explicite (affinage dans le périmètre serveur).
+    let explicitLevel: string | undefined;
+    try {
+      const headerLevel = (req?.headers?.['x-school-level-id'] || '').toString().trim();
+      if (headerLevel && headerLevel.toUpperCase() !== 'ALL') {
+        const resolved = await resolveSchoolLevelFilter(this.prisma, tenantId, headerLevel);
+        if (resolved && resolved.length === 1) explicitLevel = resolved[0];
+      }
+    } catch { /* résolution best-effort */ }
+    // ⭐ 2026-09-15 : scope niveau serveur — les sections physiques sont
+    //    filtrées par le périmètre du directeur (Class.schoolLevelId).
+    return this.service.findAllClassSections(tenantId, academicYearId, user?.scope, explicitLevel);
   }
 
   /** POST /sections — crée une nouvelle section (ex : « CE1 A ») */

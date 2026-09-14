@@ -7,13 +7,11 @@
 'use client';
 
 import { ModuleContainer } from '@/components/modules/blueprint';
-import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
-import { useAppSession } from '@/contexts/AppSessionContext';
+import { useVisiblePedagogyTabs } from '@/hooks/usePedagogyTabs';
 import SubjectsWorkspace from '@/components/pedagogy/subjects/SubjectsWorkspace';
 
 export default function SubjectsPage() {
-  const { user } = useAppSession();
-  const userRole = user?.role || '';
+  const pedagogyVisibleTabs = useVisiblePedagogyTabs();
 
   return (
     <ModuleContainer
@@ -23,7 +21,7 @@ export default function SubjectsPage() {
         icon: 'bookOpen',
       }}
       subModules={{
-        modules: getVisiblePedagogyTabs(userRole).map((tab) => {
+        modules: pedagogyVisibleTabs.map((tab) => {
           const Icon = tab.icon;
           return {
             id: tab.id,

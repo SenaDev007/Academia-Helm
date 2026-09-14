@@ -7,8 +7,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { formatGradeLabel } from '@/lib/utils';
 import { pedagogyFetch, academicStructureUrl } from '@/lib/pedagogy/academic-structure-client';
-import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
-import { useAppSession } from '@/contexts/AppSessionContext';
+import { useVisiblePedagogyTabs } from '@/hooks/usePedagogyTabs';
 
 interface ClassDiary {
   id: string;
@@ -41,8 +40,7 @@ const emptyForm = {
 };
 
 export default function ClassDiariesPage() {
-  const { user } = useAppSession();
-  const userRole = user?.role || '';
+  const pedagogyVisibleTabs = useVisiblePedagogyTabs();
 
   const { academicYear, schoolLevel } = useModuleContext();
   const { toast } = useToast();
@@ -183,7 +181,7 @@ export default function ClassDiariesPage() {
           ),
         }}
         subModules={{
-          modules: getVisiblePedagogyTabs(userRole).map((tab) => {
+          modules: pedagogyVisibleTabs.map((tab) => {
             const Icon = tab.icon;
             return { id: tab.id, label: tab.label, href: tab.path, icon: <Icon className="w-4 h-4" /> };
           }),

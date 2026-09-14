@@ -29,6 +29,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useAppSession } from "@/contexts/AppSessionContext";
+import { getUserScope } from "@/lib/auth/user-scope";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
@@ -77,7 +78,11 @@ const ALL_TABS = [
   //    Terminologie : SA (Situation d'Apprentissage), Séquence, U (Unité), D (Dossier)
   { id: 'monthly-planning', label: 'Planification mensuelle', icon: CalendarClock, description: 'Planif auto + édition', secondaryOnly: false, maternellePrimaireOnly: true },
   { id: 'cahier-journal', label: 'Cahier Journal & Fiches Pédagogiques', icon: FileSpreadsheet, description: 'Grille hebdo + fiches par jour', secondaryOnly: false, maternellePrimaireOnly: true },
-  { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel', secondaryOnly: false, maternellePrimaireOnly: false },
+  // ⭐ 2026-09-15 : Cahier de Semaine réservé MATERNELLE/PRIMAIRE — au
+  //    secondaire, l'espace pédagogique se limite à Mes Classes, Appel,
+  //    Cahier de Texte et Matériel (cahier du semainier = suivi institutionnel
+  //    des classes primaires).
+  { id: 'weekly', label: 'Cahier de Semaine', icon: CalendarDays, description: 'Monitoring institutionnel', secondaryOnly: false, maternellePrimaireOnly: true },
   // ⭐ FIX ANOMALIE 4 : onglet 'tasks' (Travaux & Suivi) RETIRÉ de l'Espace Pédagogique —
   //    « Travaux dirigés » est déjà un module à part entière (sidebar enseignant
   //    /app/teacher/tasks ET module pédagogie /app/pedagogy/tasks). Il ne doit
@@ -120,10 +125,10 @@ export function PedagogicalSpaceWorkspace({
 
   // ⭐ Déterminer si le niveau scolaire actif est "Secondaire"
   // pour afficher/masquer l'onglet "Cahier de Texte" (secondaire uniquement)
-  // et MASQUER les onglets Cahier Journal / Fiches / Registre (maternelle/primaire uniquement).
+  // et MASQUER les onglets Cahier Journal / Fiches / Registre / Semaine (maternelle/primaire uniquement).
   // schoolLevel.code peut être 'MATERNELLE', 'PRIMAIRE', 'SECONDAIRE', 'COLLEGE', 'LYCEE'
   const schoolLevelCode = (schoolLevel?.code || '').toUpperCase();
-  const isSecondaryLevel =
+  let isSecondaryLevel =
     schoolLevelCode.includes('SECOND') ||
     schoolLevelCode.includes('COLLEGE') ||
     schoolLevelCode.includes('LYCEE');
@@ -141,6 +146,25 @@ export function PedagogicalSpaceWorkspace({
   ]);
   const userRole = (user?.role || '').toUpperCase();
   const hasGlobalAccess = GLOBAL_ACCESS_ROLES.has(userRole);
+
+  // ⭐ 2026-09-15 — fallback robuste : pas de niveau sélectionné (contexte en
+  //    cours de chargement, enseignant sans sélecteur, niveau 'ALL' du
+  //    périmètre multi-niveaux) → déduire du périmètre SERVEUR : si toutes les
+  //    valeurs disponibles (accréditations user, sinon scope bootstrap) sont
+  //    secondaires, on applique le filtrage secondaire. Un directeur MAT_PRI
+  //    ('ALL' → codes MATERNELLE+PRIMAIRE) n'est PAS secondaire.
+  if (!isSecondaryLevel && !schoolLevelCode && !hasGlobalAccess) {
+    const accreditations = (user as any)?.accreditations as string[] | undefined;
+    const scopeCodes: string[] =
+      (Array.isArray(accreditations) && accreditations.length > 0
+        ? accreditations.map(String)
+        : (getUserScope()?.allLevels === false ? getUserScope()?.levelCodes : undefined)) || [];
+    if (scopeCodes.length > 0) {
+      isSecondaryLevel = scopeCodes.every((c) =>
+        /SECOND|COLLEGE|LYCEE/i.test(String(c)),
+      );
+    }
+  }
 
   // ⭐ Filtrer les onglets visibles selon le niveau scolaire :
   //    - secondaryOnly=true → visible seulement si isSecondaryLevel (ou accès global)

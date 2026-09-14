@@ -13,8 +13,7 @@ import {
 import { useModuleContext } from '@/hooks/useModuleContext';
 import Link from 'next/link';
 import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
-import { getVisiblePedagogyTabs } from '@/components/pedagogy/pedagogy-tabs';
-import { useAppSession } from '@/contexts/AppSessionContext';
+import { useVisiblePedagogyTabs } from '@/hooks/usePedagogyTabs';
 import {
   BarChart3,
   AlertTriangle,
@@ -66,8 +65,7 @@ interface OrionDashboard {
 }
 
 export default function OrionPedagogyPage() {
-  const { user } = useAppSession();
-  const userRole = user?.role || '';
+  const pedagogyVisibleTabs = useVisiblePedagogyTabs();
 
   const { academicYear } = useModuleContext();
   const [dashboard, setDashboard] = useState<OrionDashboard | null>(null);
@@ -121,7 +119,7 @@ export default function OrionPedagogyPage() {
         icon: 'sparkles',
       }}
       subModules={{
-        modules: getVisiblePedagogyTabs(userRole).map((tab) => {
+        modules: pedagogyVisibleTabs.map((tab) => {
           const Icon = tab.icon;
           return { id: tab.id, label: tab.label, href: tab.path, icon: <Icon className="w-4 h-4" /> };
         }),

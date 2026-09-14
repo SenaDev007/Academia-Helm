@@ -13,12 +13,16 @@ import {
   Body,
   Param,
   Query,
+  Req,
   UseGuards,
   Logger,
 } from '@nestjs/common';
 import { SubjectsPrismaService } from './subjects-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { PrismaService } from '../database/prisma.service';
+import { resolveEffectiveLevelFilter } from '../common/context/scope-where';
 import { CreateSubjectDto } from './dto/create-subject.dto';
 import { UpdateSubjectDto } from './dto/update-subject.dto';
 
@@ -26,7 +30,10 @@ import { UpdateSubjectDto } from './dto/update-subject.dto';
 @UseGuards(JwtAuthGuard)
 export class SubjectsPrismaController {
   private readonly logger = new Logger(SubjectsPrismaController.name);
-  constructor(private readonly subjectsService: SubjectsPrismaService) {}
+  constructor(
+    private readonly subjectsService: SubjectsPrismaService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Post()
   async create(
@@ -53,19 +60,32 @@ export class SubjectsPrismaController {
   @Get()
   async findAll(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Req() req: any,
     @Query('academicYearId') academicYearId?: string,
     @Query('schoolLevelId') schoolLevelId?: string,
     @Query('academicTrackId') academicTrackId?: string,
     @Query('language') language?: string,
     @Query('search') search?: string,
   ) {
+    // ⭐ 2026-09-15 : scope niveau — un directeur MAT_PRI ne voit que les
+    //    matières de son périmètre ; le promoteur voit tout. Le filtre explicite
+    //    (query OU header x-school-level-id du sélecteur global) est résolu
+    //    avec tolérance (UUID school_levels / education_levels / composites)
+    //    et ne peut qu'affiner dans le périmètre (AccessScopeGuard).
+    const effectiveLevel = await resolveEffectiveLevelFilter(
+      this.prisma,
+      tenantId,
+      schoolLevelId,
+      req?.headers?.['x-school-level-id'],
+    );
     return this.subjectsService.findAllSubjects(tenantId, {
       academicYearId,
-      schoolLevelId,
+      schoolLevelId: effectiveLevel,
       academicTrackId,
       language,
       search,
-    });
+    }, user?.scope);
   }
 
   @Get(':id')

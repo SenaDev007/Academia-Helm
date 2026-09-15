@@ -10644,3 +10644,24 @@ Stage Summary:
 - ✅ La préparation des fiches pédagogiques maternelle s'appuie sur les mêmes matières dynamiques (sélecteur + auto-remplissage du n° de domaine, de l'intitulé et du format)
 - ✅ Migration transparente des anciennes saisies (clés dom*_*) + rapprochement fiches↔matières par subjectId
 - ✅ Bonus : correction du bug latent du PDF cahier journal maternelle (schoolLevelCode jamais résolu)
+
+---
+Task ID: 66
+Agent: Super Z (session principale)
+Task: MATERNELLE — cahier journal au MODÈLE OFFICIEL FIXE (demande utilisateur) : reproduction EXACTE du tableau papier (domaines I→V, 14 sous-colonnes, 2 pages, zones OBSERVATIONS) — suppression de la colonne « AUTRES MATIÈRES », matières non paramétrées = colonnes du modèle affichées telles quelles ; matières paramétrées liées dynamiquement (fusion multi-matières) ; n° de domaine des fiches attribué automatiquement sur toutes les voies.
+
+Work Log:
+- Demande utilisateur : domaine III = pré-lecture, pré-écriture, pré-mathématiques, observations, éducation sensorielle, travaux manuels (6 sous-colonnes) ; SUPPRIMER la colonne « autre matière » (groupe AUTRES MATIÈRES de la grille dynamique) ; reproduire EXACTEMENT le tableau du modèle même si une matière n'est pas paramétrée ; fiche choisie automatiquement selon le domaine où se trouve la matière (éducation → domaine 1, expression corporelle → domaine 2, etc.)
+- NOUVEAU lib/pedagogy/maternelle-domaines.ts : structure officielle FIXE (recto : DATE + DOMAINE I + DOMAINE II + « DOMAINE » 4 sous-colonnes ; verso : « III » 2 sous-colonnes + DOMAINE IV + DOMAINE V — fidèle au papier), resolveDomaineForMatiere (exact puis inclusion la-plus-longue-d'abord), bindDynamicSubjectsToColumns MULTI-matières (fusion : les 2 matières santé sur la colonne D1, Éveil scientifique sur « Observations » D3, Expression orale sur « Communication orale » D5), buildMaternelleEntryKeyResolver (colonne liée → écrit sous le nom de matière — compatibilité rapprochement fiches/matères planifiées ; lecture avec replis ; « Observations » → obs_dom)
+- NOUVEAU CahierJournalMaternelleGrid.tsx : reproduction EXACTE (en-têtes 2 lignes avec fusions rowSpan/colSpan, LUNDI→VENDREDI, RichTextEditor par cellule, badge vert ↳ matières liées, pieds de page OBSERVATIONS vertical + zone non titrée, observation directeur en rouge) — tableau TOUJOURS affiché tel quel, aucune colonne créée pour les matières hors domaines
+- CahierJournalTab : grille fixe quand maternelle (détection journal.schoolLevelCode API || my-classes) ; garde anti-vide GLOBAL (grille || observations || signature) ; signatures masquées pour maternelle (le modèle n'en a pas) ; zone droite du pied dans entries.__footerRight__
+- DirectorPedagogyControl : renderMaternellePage remplacé par la grille fixe en lecture seule + section « Observations du directeur — par jour » ; backend de la tâche 65 conservé intégralement (matching subjectId, PDF, migration legacy)
+- maternelle-domains.ts : domPre.roman "" → "III" (n° auto pour pré-lecture/écriture/math) ; PedagogicalSheetsTab : effet initialMatiere auto-résout n° romain + Domaine du AUSSI depuis « Préparer la fiche » (noms de matières ET libellés de colonnes), DOMAINE_2 → « II »
+- Migration doublon 20260915100000 retirée (la 20260915090000 couvre la colonne) + enregistrement _prisma_migrations nettoyé sur Neon ; schema.prisma reverté au pattern raw-SQL-only
+- Tests (scripts/test_maternelle_domaines.ts, hors dépôt) : 30/30 OK dont les 9 matières réelles de Maternelle 1 production (8/14 colonnes liées, 6 affichées vides, aucune matière perdue, aucune colonne « autre matière ») ; transpile TS 8 fichiers sans erreur
+
+Stage Summary:
+- ✅ Cahier journal maternelle = modèle papier EXACT côté enseignant ET directeur (plus de colonne « autre matière ») ; matières de « Matières et programmes » liées dynamiquement avec fusion
+- ✅ N° de domaine + format de fiche attribués automatiquement sur toutes les voies (sélecteur, « Préparer la fiche », libellés de colonnes)
+- ✅ Compatibilité données : écriture sous noms de matières (backend tâche 65 inchangé), lecture avec repli (grille dynamique historique + libellés), obs_dom
+- Reste : vérification navigateur production post-déploiement (grille + fiches)

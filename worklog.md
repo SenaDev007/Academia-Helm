@@ -10595,3 +10595,23 @@ Work Log:
 Stage Summary:
 - ✅ Formats maternelle déployés et validés de bout en bout en production : détection niveau → cahier journal domaines → fiche DOMAINE/DOMAINE_2 avec maternelleContent → vue directeur maternelle → export PDF maternelle conforme
 - Reste (queue utilisateur) : vérification visuelle navigateur (grille + formulaires) côté enseignant et directeur ; éventuelles retouches cosmétiques
+
+---
+Task ID: 64
+Agent: Super Z (session principale)
+Task: CSPEB — purge des données de test du module Finance (onglets Encaissement et Multi-caisses)
+
+Work Log:
+- Demande utilisateur : « dans le module finance, onglet encaissement, il y a encore des données de test qui s'affichent toujours (…) Pareil pour l'onglet multi-caisses, les caisses gardent encore les données de test. »
+- Diagnostic (scripts/cspeb_finance_diag*.py, sandbox) : finance_transactions = 0 pour le tenant CSPEB (59b8c348, purge Task 29 intacte) — les « données de test » de l'onglet Encaissements venaient de la « Section Ventes Boutique » (ShopSalesSection, lien Boutique ↔ Finance) : 2 ventes E2E restantes VTE-2026-00001 (3000 F, T-shirt) et VTE-2026-00002 (6000 F, 4 cahiers) au profit de l'élève de test AKPOVI TOHOU Sèhomie (CSPEBE-E-26-005) — le nettoyage Task 33 avait reversé les finance_transactions mais LAISSÉ ces shop_sales ; côté Multi-caisses : 7 caisses créées les 05-06/07/2026 par l'utilisateur testeur 51486213… (supprimé depuis de la table users), soldes 0, zéro transaction/transfert/mouvement.
+- Vérifications préalables : compte élève AKPOVI déjà propre (3000 dû / 0 payé — Task 29 respectée) ; garde-fous = finance_transactions / cash_register_transactions / cash_register_transfers / finance_expenses tous à 0 sur le tenant ; FK cash_registers en ON DELETE SET NULL côté transactions/dépenses ; seuls triggers présents = set_updated_at (inoffensifs) ; autres tenants (CSP-MAP 662 transactions POINT réelles, Le Palmares) hors périmètre et intacts.
+- Purge exécutée (scripts/purge-finance-test-task64.py — dry-run puis --execute, UNE transaction atomique, rollback sur erreur) : shop_sale_items ×5 → shop_stock_movements OUT ×5 (reason=SALE + MULTI_ACTION_SALE:<saleId>) → shop_stocks restaurés +1 par produit (T-shirt 47→48, 4 cahiers 19→20) → shop_sales ×2 → cash_registers ×7 → 2 entrées financial_audit_logs PURGE_TEST_DATA signées du promoteur (pattern Task 29).
+- Backup complet AVANT purge : cspeb_backup_finance_test_avant_purge.json (copie sandbox download/ + régénérable par le script en dry-run).
+- Vérification post-purge : shop_sales = 0, cash_registers = 0, mouvements liés = 0, stocks = valeurs initiales, compte AKPOVI inchangé (3000/0/3000), CSP-MAP intact (662 transactions), Le Palmares intact (2 ventes, 3 transactions).
+- Conservé volontairement : catalogue produits boutique + stocks initiaux et frais généraux GENERAL (Uniforme 3000 / T-Shirt 3000 / Fournitures 2000 — seed Task 33 voulu pour les frais à la carte), clôtures journalières AUTO (cron système, hors des 2 onglets concernés).
+
+Stage Summary:
+- ✅ Onglet Encaissements : les 2 ventes boutique de test n'apparaîtront plus (section vide — les encaissements réels arriveront avec les paiements de l'école).
+- ✅ Onglet Multi-caisses : les 7 caisses de test supprimées — l'école recréera ses caisses réelles depuis l'UI (modèles prédéfinis disponibles : principale, accueil, comptabilité, boutique…).
+- ⚠️ Reco : recharger l'app EN LIGNE une fois (le SW network-first sert les données fraîches ; le cache IndexedDB hors ligne peut encore montrer les anciennes listes jusqu'au rechargement) ; noter que tout paiement CASH nécessite une caisse ouverte → créer les caisses réelles AVANT les premiers encaissements.
+- Reste en file (repéré au diagnostic, non demandé) : 2 produits boutique « Uniforme » en doublon (dont 1 inactif sans prix, créés 07/09) ; 195 clôtures journalières AUTO à 0 dans Clôture & Trésorerie (cron, cosmétique).

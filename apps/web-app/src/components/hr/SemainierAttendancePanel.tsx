@@ -115,7 +115,14 @@ export function SemainierAttendancePanel({ date, onMark, attendanceData, disable
 
   // ⭐ Récupérer le statut d'un enseignant depuis attendanceData (rapport JSON)
   //    ou depuis staff (API HR)
+  // ⭐ 2026-09-15 — INTÉGRATION CAHIER ↔ RH : si l'enseignant a AUTO-POINTÉ
+  //    côté RH (markedByRole='SELF'), son statut PRIME sur le JSONB du rapport
+  //    (qui peut contenir un ancien pointage semainier antérieur à
+  //    l'auto-pointage). Le backend fait de même dans la sync (skippedSelf).
   const getStaffStatus = (s: any): string | null => {
+    if (s.markedByRole === 'SELF' && s.status) {
+      return s.status;
+    }
     if (attendanceData && onMark) {
       // Mode rapport quotidien : chercher dans attendanceData
       const entry = attendanceData.find((a: any) => a.teacherId === s.teacherId || a.teacherId === s.staffId);

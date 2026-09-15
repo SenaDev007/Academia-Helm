@@ -16,7 +16,7 @@ import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RecordAttendanceDto, RecordOvertimeDto, UpdateAttendanceDto,
-         SelfCheckInDto, SemainierCheckInDto, SelfCheckOutDto } from './dto/index';
+         SelfCheckInDto, SemainierCheckInDto, SelfCheckOutDto, SelfOvertimeDto } from './dto/index';
 import { Request } from 'express';
 
 @Controller('hr/attendance')
@@ -281,5 +281,84 @@ export class AttendancePrismaController {
     if (!tid) throw new BadRequestException('Tenant ID requis');
     const date = dateParam ? new Date(dateParam) : new Date();
     return this.attendanceService.getDailyStaffAttendances(tid, date);
+  }
+
+  // ===========================================================================
+  // ⭐ 2026-09-15 — MODULE PRÉSENCE ENSEIGNANT (self-service, portail teacher)
+  //
+  // Le Staff est TOUJOURS résolu par l'email de l'utilisateur connecté :
+  // un enseignant ne peut consulter/ déclarer que pour LUI-MÊME.
+  // Utilisé par /app/teacher/presence (Ma présence / Heures supplémentaires).
+  // ===========================================================================
+
+  /**
+   * ⭐ Historique des présences de l'utilisateur connecté.
+   * Filtres optionnels : startDate, endDate, academicYearId, limit (défaut 60).
+   */
+  @Get('my-history')
+  async getMyAttendanceHistory(
+    @GetTenant() tenant: any,
+    @CurrentUser() user: any,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('limit') limitParam?: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback ?? user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!user?.email) throw new BadRequestException('Utilisateur non authentifié');
+
+    const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+    return this.attendanceService.getMyAttendanceHistory(tid, user.email, {
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+      academicYearId,
+      limit: Number.isFinite(limit) ? limit : undefined,
+    });
+  }
+
+  /**
+   * ⭐ Heures supplémentaires de l'utilisateur connecté (validées + en attente).
+   */
+  @Get('my-overtime')
+  async getMyOvertime(
+    @GetTenant() tenant: any,
+    @CurrentUser() user: any,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('validated') validated?: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback ?? user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!user?.email) throw new BadRequestException('Utilisateur non authentifié');
+
+    return this.attendanceService.getMyOvertime(tid, user.email, {
+      academicYearId,
+      validated: validated !== undefined ? validated === 'true' : undefined,
+    });
+  }
+
+  /**
+   * ⭐ L'utilisateur connecté déclare SES heures supplémentaires.
+   * La validation/rejet reste du ressort de la direction (module RH → Présences).
+   */
+  @Post('my-overtime')
+  async declareMyOvertime(
+    @GetTenant() tenant: any,
+    @CurrentUser() user: any,
+    @Body() data: SelfOvertimeDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback ?? user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!user?.email) throw new BadRequestException('Utilisateur non authentifié');
+
+    return this.attendanceService.declareMyOvertime(tid, user.email, {
+      date: data.date,
+      hours: data.hours,
+      reason: data.reason,
+      academicYearId: data.academicYearId,
+    });
   }
 }

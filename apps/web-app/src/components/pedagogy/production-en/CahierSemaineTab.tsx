@@ -947,7 +947,20 @@ function CahierSemainierContent({ configs, currentUserId, academicYearId, tenant
         body: JSON.stringify(dailyReport),
       });
       if (!res.ok) throw new Error("Erreur");
-      toast.success("✅ Rapport quotidien enregistré");
+      // ⭐ 2026-09-15 — SYNCHRONISATION CAHIER ↔ RH : le backend propage le
+      //    pointage vers staff_attendances (module RH → Présences) et renvoie
+      //    un résumé rhSync — on l'affiche au semainier.
+      const saved: any = await res.json().catch(() => null);
+      const rhSync = saved?.rhSync;
+      if (rhSync && typeof rhSync.synced === "number" && (rhSync.synced > 0 || rhSync.skippedSelf > 0)) {
+        const parts: string[] = [];
+        if (rhSync.synced > 0) parts.push(`${rhSync.synced} teacher(s) synced with the HR module (Attendance tab)`);
+        if (rhSync.skippedSelf > 0) parts.push(`${rhSync.skippedSelf} teacher self check-in(s) preserved`);
+        if (rhSync.skippedNoStaff > 0) parts.push(`${rhSync.skippedNoStaff} without HR staff record (not synced)`);
+        toast.success("✅ Daily report saved", { description: parts.join(" • ") });
+      } else {
+        toast.success("✅ Daily report saved");
+      }
     } catch (e: any) {
       toast.error("Erreur", { description: e.message });
     }

@@ -73,7 +73,9 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
   useEffect(() => { loadAttendance(); }, [loadAttendance]);
 
   // === Action : Pointer ma présence ===
-  const handleCheckIn = async () => {
+  // ⭐ 2026-09-15 : statut paramétrable — PRESENT (par défaut) ou LATE
+  //    (« Je suis en retard ») — le DTO SelfCheckInDto accepte les deux.
+  const handleCheckIn = async (status: "PRESENT" | "LATE" = "PRESENT") => {
     setSaving(true);
     try {
       // 1. Demander la position GPS
@@ -89,7 +91,7 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
         credentials: "include",
         body: JSON.stringify({
           date: targetDate,
-          status: "PRESENT",
+          status,
           latitude: pos.latitude,
           longitude: pos.longitude,
           accuracy: pos.accuracy,
@@ -116,7 +118,9 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
         return;
       }
 
-      toast.success("✅ Présence enregistrée", {
+      toast.success(status === 'LATE'
+        ? "⏰ Retard enregistré"
+        : "✅ Présence enregistrée", {
         description: `Pointé à ${new Date(data.checkIn).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} • Distance école: ${data.geoDistance?.toFixed(0)}m`,
       });
       loadAttendance();
@@ -211,17 +215,28 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
             <p className="font-semibold mb-0.5">{L("Vous n'avez pas encore pointé votre présence aujourd'hui.", "You haven't checked in yet today.")}</p>
             <p className="text-xs">{L("Cliquez sur le bouton ci-dessous en arrivant à l'école. La vérification GPS est automatique.", "Tap the button below when you arrive at school. GPS verification is automatic.")}</p>
           </div>
-          <button
-            onClick={handleCheckIn}
-            disabled={saving || geoLoading}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition"
-          >
-            {saving || geoLoading ? (
-              <><Loader2 className="h-5 w-5 animate-spin" /> {L("Vérification GPS en cours...", "GPS verification in progress...")}</>
-            ) : (
-              <><MapPin className="h-5 w-5" /> 🎯 {L("Pointer ma présence", "Check in my attendance")}</>
-            )}
-          </button>
+          <div className="grid grid-cols-1 sm:grid-cols-[2fr_1fr] gap-2">
+            <button
+              onClick={() => handleCheckIn("PRESENT")}
+              disabled={saving || geoLoading}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition"
+            >
+              {saving || geoLoading ? (
+                <><Loader2 className="h-5 w-5 animate-spin" /> {L("Vérification GPS en cours...", "GPS verification in progress...")}</>
+              ) : (
+                <><MapPin className="h-5 w-5" /> 🎯 {L("Pointer ma présence", "Check in my attendance")}</>
+              )}
+            </button>
+            {/* ⭐ 2026-09-15 : déclaration de retard au pointage (statut LATE) */}
+            <button
+              onClick={() => handleCheckIn("LATE")}
+              disabled={saving || geoLoading}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-amber-500 text-white rounded-lg text-sm font-bold hover:bg-amber-600 disabled:opacity-50 transition"
+              title={L("Vous arrivez en retard — la présence sera enregistrée avec le statut « Retard »", "You are arriving late — attendance will be recorded as \"Late\"")}
+            >
+              <Clock className="h-5 w-5" /> {L("En retard", "Late")}
+            </button>
+          </div>
           {geoError && (
             <div className="bg-rose-50 border border-rose-200 rounded-lg p-2 text-xs text-rose-700 flex items-start gap-2">
               <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
@@ -240,7 +255,9 @@ export function MyAttendanceCard({ date }: MyAttendanceCardProps) {
           <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
             <div className="flex items-center gap-2 text-emerald-700 font-bold text-sm mb-1">
               <CheckCircle2 className="h-4 w-4" />
-              {L("Présence pointée à", "Attendance checked in at")} {attendance.checkIn ? new Date(attendance.checkIn).toLocaleTimeString(L("fr-FR", "en-GB"), { hour: '2-digit', minute: '2-digit' }) : '—'}
+              {attendance.status === 'LATE'
+                ? L("Retard pointé à", "Late check-in at")
+                : L("Présence pointée à", "Attendance checked in at")} {attendance.checkIn ? new Date(attendance.checkIn).toLocaleTimeString(L("fr-FR", "en-GB"), { hour: '2-digit', minute: '2-digit' }) : '—'}
             </div>
             {attendance.geoDistance != null && (
               <p className="text-xs text-emerald-600">

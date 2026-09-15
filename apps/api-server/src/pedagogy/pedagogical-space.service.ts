@@ -10620,7 +10620,7 @@ td.name{text-align:left;font-weight:bold;}
     return created[0];
   }
 
-  async updateDailyReport(tenantId: string, reportId: string, data: any) {
+  async updateDailyReport(tenantId: string, reportId: string, data: any, markingUser?: { id?: string; email?: string }) {
     const updates: string[] = [];
     const params: any[] = [];
     let paramIdx = 1;
@@ -10652,7 +10652,171 @@ td.name{text-align:left;font-weight:bold;}
       `SELECT * FROM "weekly_seminar_daily_report" WHERE "id" = $1`,
       reportId,
     );
-    return updated[0];
+
+    // ⭐ 2026-09-15 — SYNCHRONISATION CAHIER DE SEMAINE → MODULE RH :
+    //    quand le rapport journalier contient un pointage d'enseignants
+    //    (teacherAttendance), on l'écrit AUSSI dans staff_attendances (RH —
+    //    onglet Présences) avec markedByRole='SEMINARIER'. La direction et le
+    //    promoteur voient ainsi les présences marquées par le semainier dans
+    //    le module RH, avec la provenance. NON BLOQUANT : une erreur de sync
+    //    ne fait jamais échouer la sauvegarde du rapport.
+    let rhSync: any = null;
+    if (data.teacherAttendance !== undefined) {
+      rhSync = await this.syncTeacherAttendanceToRh(tenantId, reportId, markingUser?.id || null)
+        .catch((err: any) => {
+          this.logger.warn(`syncTeacherAttendanceToRh échouée (non bloquant) — rapport ${reportId}: ${err.message}`);
+          return { synced: 0, skippedSelf: 0, skippedNoStaff: 0, errors: [err.message] };
+        });
+    }
+
+    return { ...updated[0], rhSync };
+  }
+
+  /**
+   * ⭐ 2026-09-15 — SYNCHRONISATION CAHIER DU SEMAINIER → MODULE RH
+   *    (staff_attendances — onglet Présences du module Personnel RH).
+   *
+   * Principe : « staff_attendances » (RH) est la SOURCE DE VÉRITÉ unique de la
+   * présence des enseignants. Le JSONB teacherAttendance du rapport journalier
+   * reste le document officiel du semainier (motif, observation, remplacement),
+   * mais chaque sauvegarde propage les statuts vers le RH :
+   *
+   *   1. Résolution teacherId (table teachers) → Staff (rapprochement par email,
+   *      même mécanisme que GET /hr/attendance/daily-staff). Les enseignants
+   *      sans fiche Staff ne sont PAS synchronisés (skippedNoStaff) — le JSONB
+   *      garde l'information.
+   *   2. ⭐ MUTUAL EXCLUSION : si l'enseignant a déjà AUTO-POINTÉ sa présence
+   *      (markedByRole='SELF', GPS vérifié), le semainier ne peut PAS l'écraser
+   *      → l'entrée est ignorée (skippedSelf). Réciproquement, l'enseignant ne
+   *      peut pas se marquer si le semainier l'a déjà fait (selfCheckIn).
+   *   3. Sinon : upsert avec markedByRole='SEMINARIER' + markedBy=userId (traça-
+   *      bilité), status du pointage, notes = motif | observation | remplacement.
+   *   4. Le statut côté RH est visible en temps réel dans le panneau de pointage
+   *      (badge AUTO-POINTÉ + cadenas) via getDailyStaffAttendances (JOIN réparé).
+   */
+  async syncTeacherAttendanceToRh(tenantId: string, reportId: string, markedByUserId: string | null) {
+    const reports: any = await this.prisma.$queryRawUnsafe(
+      `SELECT "id", "date", "academicYearId", "teacherAttendance"
+       FROM "weekly_seminar_daily_report" WHERE "id" = $1 AND "tenantId" = $2`,
+      reportId, tenantId,
+    );
+    if (!reports || reports.length === 0) {
+      return { synced: 0, skippedSelf: 0, skippedNoStaff: 0, errors: ['Rapport introuvable'] };
+    }
+    const report = reports[0];
+
+    // Parser le JSONB — 2 formats coexistent :
+    //   a) tableau front  : [{ teacherId, name, status, motif, observation, replacement }]
+    //   b) objet sync RH  : { _source: 'RH', summary, staff: [...] } (sync-from-rh)
+    let ta: any = report.teacherAttendance;
+    if (typeof ta === 'string') {
+      try { ta = JSON.parse(ta); } catch { ta = null; }
+    }
+    if (!ta) return { synced: 0, skippedSelf: 0, skippedNoStaff: 0, errors: [] };
+    const entries: any[] = Array.isArray(ta)
+      ? ta
+      : (Array.isArray(ta.staff) ? ta.staff : []);
+    if (entries.length === 0) return { synced: 0, skippedSelf: 0, skippedNoStaff: 0, errors: [] };
+
+    // ── 1. Résolution teacherId → Staff (rapprochement par email) ──
+    //    Format front : entry.teacherId = id table teachers → JOIN staff par email.
+    //    Format sync RH : entry.staffId = id table staff (déjà résolu) → pas de
+    //    rapprochement nécessaire (ces entrées viennent DE staff_attendances).
+    const teacherIds = [...new Set(entries.map((e: any) => e.teacherId).filter(Boolean))] as string[];
+    const teacherRows: any = teacherIds.length > 0
+      ? await this.prisma.$queryRawUnsafe(
+          `SELECT t.id AS "teacherId", s.id AS "staffId", s."schoolLevelId"
+           FROM "teachers" t
+           LEFT JOIN "staff" s ON s."email" = t."email" AND s."tenantId" = t."tenantId"
+           WHERE t."tenantId" = $1 AND t.id = ANY($2::text[])`,
+          tenantId, teacherIds,
+        )
+      : [];
+    const staffMap = new Map<string, any>();
+    for (const row of (teacherRows as any[])) staffMap.set(row.teacherId, row);
+
+    const reportDate = report.date ? new Date(report.date) : new Date();
+    const academicYearId = report.academicYearId;
+
+    let synced = 0;
+    let skippedSelf = 0;
+    let skippedNoStaff = 0;
+    const errors: string[] = [];
+
+    for (const entry of entries) {
+      const status = entry.status;
+      if (!status) continue;
+
+      // Résoudre le staff cible (formats front / RH)
+      let staffId: string | null = null;
+      let schoolLevelId: string | null = null;
+      if (entry.teacherId) {
+        const row = staffMap.get(entry.teacherId);
+        if (row && row.staffId) { staffId = row.staffId; schoolLevelId = row.schoolLevelId; }
+      } else if (entry.staffId) {
+        const direct: any = await this.prisma.$queryRawUnsafe(
+          `SELECT id, "schoolLevelId" FROM "staff" WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
+          entry.staffId, tenantId,
+        );
+        if (direct && direct.length > 0) { staffId = direct[0].id; schoolLevelId = direct[0].schoolLevelId; }
+      }
+      if (!staffId) { skippedNoStaff++; continue; }
+
+      try {
+        // Notes combinées : motif | observation | remplacement (document semainier)
+        const notesParts: string[] = [];
+        if (entry.motif) notesParts.push(`Motif: ${entry.motif}`);
+        if (entry.observation) notesParts.push(`Observation: ${entry.observation}`);
+        if (entry.replacement) notesParts.push(`Remplacement: ${entry.replacement}`);
+        const notes = notesParts.length > 0 ? notesParts.join(' | ') : null;
+
+        const existing: any = await this.prisma.$queryRawUnsafe(
+          `SELECT id, "markedByRole" FROM "staff_attendances"
+           WHERE "staffId" = $1 AND date = $2::date AND "tenantId" = $3 LIMIT 1`,
+          staffId, reportDate, tenantId,
+        );
+
+        // ⭐ MUTUAL EXCLUSION : l'auto-pointage (SELF) prime sur le semainier
+        if (existing && existing.length > 0 && existing[0].markedByRole === 'SELF') {
+          skippedSelf++;
+          continue;
+        }
+
+        if (existing && existing.length > 0) {
+          await this.prisma.$executeRawUnsafe(
+            `UPDATE "staff_attendances"
+             SET status = $1,
+                 notes = COALESCE($2, notes),
+                 "markedBy" = $3,
+                 "markedByRole" = 'SEMINARIER',
+                 "updatedAt" = NOW()
+             WHERE id = $4`,
+            status, notes, markedByUserId, existing[0].id,
+          );
+        } else {
+          const newId = crypto.randomUUID();
+          await this.prisma.$executeRawUnsafe(
+            `INSERT INTO "staff_attendances"
+               ("id", "tenantId", "academicYearId", "schoolLevelId", "staffId", "date",
+                "status", "notes", "markedBy", "markedByRole", "createdAt", "updatedAt")
+             VALUES ($1, $2, $3, $4, $5, $6::date, $7, $8, $9, 'SEMINARIER', NOW(), NOW())`,
+            newId, tenantId, academicYearId, schoolLevelId, staffId, reportDate,
+            status, notes, markedByUserId,
+          );
+        }
+        synced++;
+      } catch (err: any) {
+        errors.push(`${entry.name || entry.teacherId || staffId}: ${err.message}`);
+      }
+    }
+
+    this.logger.log(
+      `✅ Sync cahier de semaine → RH (rapport ${reportId}) : ${synced} synchronisé(s), ` +
+      `${skippedSelf} auto-pointage(s) préservé(s), ${skippedNoStaff} sans fiche Staff` +
+      (errors.length > 0 ? `, ${errors.length} erreur(s)` : '')
+    );
+
+    return { synced, skippedSelf, skippedNoStaff, errors };
   }
 
   // ===========================================================================

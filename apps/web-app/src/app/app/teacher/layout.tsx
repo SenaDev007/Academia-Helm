@@ -30,7 +30,7 @@ import {
   LayoutDashboard, BookOpen, CalendarDays, Users, Library,
   Video, ClipboardList, MessageSquare, Loader2, GraduationCap,
   FileEdit,
-  BarChart3, Building2, LogOut, Menu, X,
+  BarChart3, Building2, LogOut, Menu, X, CalendarCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
@@ -51,6 +51,7 @@ import { useSecondaryOnlyUser } from "@/hooks/useSecondaryOnlyUser";
 
 const TEACHER_MODULES = [
   { path: "/app/teacher", label: "Dashboard", labelEn: "Dashboard", icon: LayoutDashboard, desc: "Cours du jour, classes assignées", descEn: "Today's lessons, assigned classes" },
+  { path: "/app/teacher/presence", label: "Présence & Absences", labelEn: "Attendance & Leaves", icon: CalendarCheck, desc: "Pointer ma présence, heures sup, congés et absences", descEn: "Check in, overtime, leaves and absences" },
   { path: "/app/teacher/timetable", label: "Emploi du Temps", labelEn: "Timetable", icon: CalendarDays, desc: "Mon emploi du temps", descEn: "My timetable" },
   { path: "/app/teacher/annual-planning", label: "Planification annuelle", labelEn: "Annual Planning", icon: ClipboardList, desc: "Planification pédagogique officielle (CI à CM2 + Maternelle)", descEn: "Official pedagogical planning (CI to CM2 + Maternelle)" },
   { path: "/app/teacher/pedagogy", label: "Espace Pédagogique", labelEn: "Pedagogy Space", icon: BookOpen, desc: "Cahier journal, fiches, registre d'appel, cahier de texte, devoirs", descEn: "Daily log, lesson sheets, attendance register, textbook, homework" },

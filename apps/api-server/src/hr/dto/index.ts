@@ -532,6 +532,35 @@ export class RecordOvertimeDto {
   @IsOptional() @IsString() tenantId?: string;
 }
 
+/**
+ * ⭐ 2026-09-15 — Self-service heures sup (module présence enseignant) :
+ *    l'enseignant connecté déclare SES heures supplémentaires.
+ *    Le staffId est résolu côté serveur par email — jamais fourni par le client.
+ */
+export class SelfOvertimeDto {
+  @IsDateString() date: string;
+  @IsNumber() @Min(0.5) @Type(() => Number) hours: number;
+  @IsOptional() @IsString() reason?: string;
+  @IsOptional() @IsUUID() academicYearId?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+/**
+ * ⭐ 2026-09-15 — Self-service congés/absences (module présence enseignant) :
+ *    l'enseignant connecté crée SA demande de congé/absence.
+ *    Le staffId est résolu côté serveur par email — jamais fourni par le client.
+ */
+export class SelfCreateLeaveRequestDto {
+  @IsIn(['ANNUAL', 'SICK', 'MATERNITY', 'PATERNITY', 'UNPAID', 'EXCEPTIONAL']) type: string;
+  @IsDateString() startDate: string;
+  @IsDateString() endDate: string;
+  @IsOptional() @IsString() reason?: string;
+  @IsOptional() @IsUUID() academicYearId?: string;
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
 // ─── Contract Template DTOs ──────────────────────────────────────────────────
 
 export class CreateContractTemplateDto {

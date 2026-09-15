@@ -15,7 +15,8 @@ import { LeavesPrismaService } from './leaves-prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
-import { CreateLeaveRequestDto, ProcessLeaveRequestDto } from './dto';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { CreateLeaveRequestDto, ProcessLeaveRequestDto, SelfCreateLeaveRequestDto } from './dto';
 
 @Controller('hr/leaves')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -103,5 +104,93 @@ export class LeavesPrismaController {
   ) {
     const tid = tenant?.id ?? tenantIdFallback;
     return this.leavesService.calculateLeaveBalance(staffId, tid);
+  }
+
+  // ===========================================================================
+  // ⭐ 2026-09-15 — MODULE PRÉSENCE ENSEIGNANT (self-service congés/absences)
+  //
+  // Le Staff est TOUJOURS résolu par l'email de l'utilisateur connecté :
+  // un enseignant ne voit/crée/annule que SES propres demandes.
+  // Utilisé par /app/teacher/presence → onglet "Congés & Absences".
+  // ===========================================================================
+
+  /**
+   * ⭐ Les demandes de congé de l'utilisateur connecté.
+   */
+  @Get('my-requests')
+  async findMyLeaveRequests(
+    @GetTenant() tenant: any,
+    @CurrentUser() user: any,
+    @Query('academicYearId') academicYearId?: string,
+    @Query('status') status?: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback ?? user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!user?.email) throw new BadRequestException('Utilisateur non authentifié');
+
+    return this.leavesService.findMyLeaveRequests(tid, user.email, {
+      academicYearId,
+      status,
+    });
+  }
+
+  /**
+   * ⭐ L'utilisateur connecté crée SA demande de congé/absence.
+   * L'approbation/rejet reste du côté direction (module RH → Congés & Absences) ;
+   * à l'approbation, le backend génère les présences ABSENT correspondantes.
+   */
+  @Post('my-requests')
+  async createMyLeaveRequest(
+    @GetTenant() tenant: any,
+    @CurrentUser() user: any,
+    @Body() data: SelfCreateLeaveRequestDto,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback ?? user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!user?.email) throw new BadRequestException('Utilisateur non authentifié');
+
+    return this.leavesService.createMyLeaveRequest(tid, user.email, {
+      type: data.type,
+      startDate: data.startDate,
+      endDate: data.endDate,
+      reason: data.reason,
+      academicYearId: data.academicYearId,
+    });
+  }
+
+  /**
+   * ⭐ L'utilisateur connecté annule SA demande (PENDING uniquement).
+   * Vérification de propriété côté service.
+   */
+  @Put('my-requests/:id/cancel')
+  async cancelMyLeaveRequest(
+    @GetTenant() tenant: any,
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback ?? user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!user?.email) throw new BadRequestException('Utilisateur non authentifié');
+
+    return this.leavesService.cancelMyLeaveRequest(tid, user.email, id);
+  }
+
+  /**
+   * ⭐ Le solde de congés de l'utilisateur connecté (2,5 j/mois depuis l'embauche).
+   */
+  @Get('my-balance')
+  async getMyLeaveBalance(
+    @GetTenant() tenant: any,
+    @CurrentUser() user: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback ?? user?.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!user?.email) throw new BadRequestException('Utilisateur non authentifié');
+
+    return this.leavesService.getMyLeaveBalance(tid, user.email);
   }
 }

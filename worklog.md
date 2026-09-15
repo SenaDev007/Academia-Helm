@@ -10713,3 +10713,27 @@ Stage Summary:
 - ✅ Onglet Encaissement → modal Nouveau paiement : « Espèces » désormais VISIBLE comme méthode par défaut (et Fedapay visible aussi) ; caisse Accueil présélectionnée automatiquement (si ouverte).
 - ✅ Correctif systémique : tous les sélecteurs de l'app avec items à markup complexe affichent désormais leur libellé (avant : placeholder trompeur).
 - Reco terrain : recharger l'app ; ouvrir Finance > Encaissement > Nouveau paiement → vérifier « Espèces » affiché + caisse « ACCUEIL — Caisse d'accueil » présélectionnée ; tester un encaissement espèces (la caisse Accueil part dans le payload).
+
+---
+Task ID: 68
+Agent: Super Z (session principale)
+Task: Intégration présence enseignants : cahier de semaine (Pédagogie) ↔ module Personnel RH (Présences / Congés & Absences / heures sup) + module « Présence & Absences » dans l'UI enseignant (auto-pointage, retard, congés, heures sup)
+
+Work Log:
+- DIAGNOSTIC (read-only, Neon) : le pointage du cahier de semaine vivait UNIQUEMENT dans le JSONB weekly_seminar_daily_report.teacherAttendance (le pont RH legacy semainier-check-in n'était plus appelé) ; staff_attendances / leave_requests / overtime_records VIDES ; 7/7 enseignants CSPEB MAT/PRIM rattachés à une fiche Staff par email (2 maternelle Le Palmares + 1 La Gaîté sans fiche → non synchronisés, JSONB conservé)
+- BACKEND — RH (staff_attendances = source de vérité unique) :
+  * attendance-prisma.service.ts getDailyStaffAttendances — LEFT JOIN staff_attendances RÉPARÉ (via staff rapproché par email) : statut réel + markedByRole + checkIn/checkOut/heures → le panneau semainier affiche badges AUTO-POINTÉ + cadenas en temps réel
+  * findStaffAttendances réécrit en SQL brut → colonnes d'audit (markedByRole, checkIn, checkOut, geoVerified) enfin exposées au module RH
+  * NOUVEAU self-service enseignant (Staff résolu par email du user connecté — anti-usurpation) : GET my-history (60 derniers pointages), GET my-overtime, POST my-overtime (déclarer ses heures sup) ; DTOs SelfOvertimeDto + SelfCreateLeaveRequestDto
+  * leaves : GET my-requests, POST my-requests (créer SA demande), PUT my-requests/:id/cancel (annulation PENDING avec vérification de PROPRIÉTÉ), GET my-balance (solde 2,5 j/mois)
+- BACKEND — SYNCHRO CAHIER → RH : pedagogical-space.service.ts updateDailyReport lance syncTeacherAttendanceToRh après chaque sauvegarde (non bloquant, try/catch) : parse teacherAttendance (2 formats : tableau front + objet sync RH), résolution teacherId→Staff par email (ANY text[]) puis upsert staff_attendances markedByRole='SEMINARIER' + markedBy=userId + notes=motif|observation|remplacement ; MUTUAL EXCLUSION préservée (SELF intouchable par le semainier — skippedSelf) ; réponse {…rapport, rhSync:{synced,skippedSelf,skippedNoStaff,errors}} ; contrôleur passe @CurrentUser
+- FRONTEND — PORTAIL ENSEIGNANT : NOUVEAU module « Présence & Absences » (/app/teacher/presence, nav CalendarCheck en 2e position) : TeacherPresenceWorkspace 3 onglets bilingues — Ma présence (MyAttendanceCard + stats perso + historique avec SOURCE auto-pointé/semainier/direction), Heures supplémentaires (déclarer + suivi validation), Congés & Absences (solde + nouvelle demande + suivi + annulation) ; garde « sans fiche personnel » avec message explicite
+- FRONTEND — MyAttendanceCard : bouton « En retard » au pointage (statut LATE du DTO SelfCheckInDto) + libellé « Retard pointé à » ; SemainierAttendancePanel : priorité du statut SELF (RH) sur le JSONB (anti-écrasement d'affichage) ; CahierSemaineTab FR+EN : toast de synchro « N enseignant(s) synchronisé(s) avec le module RH • X auto-pointage(s) préservé(s) • Y sans fiche »
+- FRONTEND — VUE DIRECTION/PROMOTEUR : AttendanceWorkspace colonne « Marqué par » (Enseignant (auto) / Semainier / Direction-RH + heure d'arrivée + GPS ✓) + statuts HALF_DAY/MISSION colorés
+- VALIDATION : 15 fichiers transpilés sans erreur (bun) + 8 fichiers frontend VALIDÉS SWC/Turbopack (check_syntax_swc.js — standard depuis l'incident Vercel) ; requêtes SQL testées read-only sur Neon (JOIN réparé 7 enseignants, résolution ANY 5/5, rapport réel du 14/09 6 entrées format front) ; consommateurs des endpoints modifiés tous recensés et mis à jour (mobile non concerné)
+
+Stage Summary:
+- ✅ Cahier de semaine ↔ RH synchronisés : chaque sauvegarde du rapport propage les pointages vers staff_attendances (SEMINARIER) ; direction + promoteur suivent tout dans le module RH avec la provenance
+- ✅ Module « Présence & Absences » enseignant : auto-pointage GPS (+ retard), historique complet (toutes sources), heures sup, demandes de congé/absence avec workflow d'approbation direction (génération auto des présences ABSENT à l'approbation — existant)
+- ✅ Mutual exclusion stricte dans les deux sens (SELF vs SEMINARIER) + anti-usurpation (résolution Staff par email serveur)
+- Reste : validation navigateur production post-déploiement (pointage semainier → vérif onglet RH Présences ; auto-pointage enseignant ; demande de congé E2E)

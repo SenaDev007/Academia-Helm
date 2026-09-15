@@ -109,6 +109,15 @@ export class AttendancePrismaService {
 
   /**
    * Récupère les présences d'un membre du personnel
+   *
+   * ⭐ 2026-09-15 — INTÉGRATION CAHIER DE SEMAINE ↔ RH :
+   *    Réécrit en SQL brut pour inclure les colonnes d'audit (markedByRole,
+   *    checkIn, checkOut, geoVerified) qui existent en base mais PAS dans le
+   *    modèle Prisma StaffAttendance. Le module RH (onglet Présences) peut
+   *    ainsi afficher la PROVENANCE de chaque pointage :
+   *      SELF      = auto-pointage enseignant (GPS)
+   *      SEMINARIER= marqué depuis le cahier de semaine (semainier)
+   *      ADMIN     = enregistré par la direction/RH
    */
   async findStaffAttendances(staffId: string, tenantId: string, filters?: {
     academicYearId?: string;
@@ -116,31 +125,38 @@ export class AttendancePrismaService {
     endDate?: Date;
     status?: string;
   }) {
-    const where: any = {
-      staffId,
-      tenantId,
-    };
+    const where: string[] = ['sa."staffId" = $1', 'sa."tenantId" = $2'];
+    const params: any[] = [staffId, tenantId];
+    let idx = 3;
 
     if (filters?.academicYearId) {
-      where.academicYearId = filters.academicYearId;
+      where.push(`sa."academicYearId" = $${idx++}`);
+      params.push(filters.academicYearId);
     }
-    if (filters?.startDate || filters?.endDate) {
-      where.date = {};
-      if (filters.startDate) {
-        where.date.gte = filters.startDate;
-      }
-      if (filters.endDate) {
-        where.date.lte = filters.endDate;
-      }
+    if (filters?.startDate) {
+      where.push(`sa.date >= $${idx++}::date`);
+      params.push(filters.startDate);
+    }
+    if (filters?.endDate) {
+      where.push(`sa.date <= $${idx++}::date`);
+      params.push(filters.endDate);
     }
     if (filters?.status) {
-      where.status = filters.status;
+      where.push(`sa.status = $${idx++}`);
+      params.push(filters.status);
     }
 
-    return this.prisma.staffAttendance.findMany({
-      where,
-      orderBy: { date: 'desc' },
-    });
+    return this.prisma.$queryRawUnsafe(
+      `SELECT sa."id", sa."tenantId", sa."academicYearId", sa."schoolLevelId",
+              sa."staffId", sa.date, sa."checkIn", sa."checkOut", sa.status,
+              sa."hoursWorked", sa.notes, sa."markedBy", sa."markedByRole",
+              sa."geoVerified", sa."geoDistance", sa."checkOutMethod",
+              sa."createdAt", sa."updatedAt"
+       FROM "staff_attendances" sa
+       WHERE ${where.join(' AND ')}
+       ORDER BY sa.date DESC`,
+      ...params,
+    );
   }
 
   /**
@@ -831,6 +847,15 @@ export class AttendancePrismaService {
   /**
    * ⭐ Récupère la liste des présences staff pour une date donnée.
    * Utilisé par le semainier pour voir/marquer tous les enseignants du jour.
+   *
+   * ⭐ 2026-09-15 — INTÉGRATION CAHIER DE SEMAINE ↔ RH :
+   *    On réintègre le LEFT JOIN avec "staff_attendances" (via le staff
+   *    rapproché par email) afin de renvoyer le STATUT RÉEL de présence :
+   *    - Les enseignants auto-pointés (markedByRole='SELF') apparaissent avec
+   *      leur statut + badge AUTO-POINTÉ + cadenas côté SemainierAttendancePanel ;
+   *    - Les enseignants marqués par le semainier (sync du cahier de semaine
+   *      vers staff_attendances) apparaissent avec leur statut SEMINARIER ;
+   *    - Les enseignants non marqués gardent status=null / markedByRole='NONE'.
    */
   async getDailyStaffAttendances(tenantId: string, date: Date) {
     // ⭐ Récupérer TOUS les enseignants actifs depuis la table `teachers`
@@ -866,15 +891,21 @@ export class AttendancePrismaService {
               t."assignedLanguages",
               sl.code AS "schoolLevelCode", sl.name AS "schoolLevelName",
               s."roleType" AS "staffRoleType",
-              s."employeeNumber" AS "staffEmployeeNumber"
+              s."employeeNumber" AS "staffEmployeeNumber",
+              sa.id AS "attendanceId", sa.status AS "attendanceStatus",
+              sa."checkIn", sa."checkOut", sa."markedByRole",
+              sa."hoursWorked", sa.notes AS "attendanceNotes",
+              sa."geoVerified", sa."geoDistance"
        FROM "teachers" t
        LEFT JOIN "school_levels" sl ON sl.id = t."schoolLevelId"
        LEFT JOIN "staff" s ON s."email" = t."email" AND s."tenantId" = t."tenantId"
+       LEFT JOIN "staff_attendances" sa
+              ON sa."staffId" = s."id" AND sa."tenantId" = t."tenantId" AND sa.date = $2::date
        WHERE t."tenantId" = $1
          AND t.status = 'active'
          AND sl.code IN ('MATERNELLE', 'PRIMAIRE')
        ORDER BY t."lastName" ASC, t."firstName" ASC`,
-      tenantId,
+      tenantId, date,
     ) as any[];
 
     // ⭐ LOG de vérification : identifier les staff non-enseignant qui sont
@@ -893,9 +924,10 @@ export class AttendancePrismaService {
     }
 
     return records.map((r: any) => ({
-      id: null,
+      id: r.attendanceId || null,
       staffId: r.teacherId,
       teacherId: r.teacherId,
+      linkedStaffId: r.attendanceId ? null : null, // staff résolu par email (JOIN SQL)
       staffName: `${r.firstName} ${r.lastName}`,
       matricule: r.teacherMatricule,
       // ⭐ roleType : 'TEACHER' par défaut, mais si le staff a un rôle différent
@@ -907,15 +939,130 @@ export class AttendancePrismaService {
       schoolLevelName: r.schoolLevelName,
       assignedLanguages: r.assignedLanguages,
       date: date.toISOString().split('T')[0],
-      checkIn: null,
-      checkOut: null,
-      status: null,
-      hoursWorked: null,
-      markedByRole: 'NONE',
-      geoVerified: false,
-      geoDistance: null,
-      notes: null,
+      // ⭐ Statut RÉEL depuis staff_attendances (RH) — null si non marqué
+      checkIn: r.checkIn || null,
+      checkOut: r.checkOut || null,
+      status: r.attendanceStatus || null,
+      hoursWorked: r.hoursWorked ?? null,
+      markedByRole: r.markedByRole || 'NONE',
+      geoVerified: r.geoVerified || false,
+      geoDistance: r.geoDistance ?? null,
+      notes: r.attendanceNotes || null,
     }));
+  }
+
+  // ============================================================================
+  // ⭐ 2026-09-15 — MODULE PRÉSENCE ENSEIGNANT (self-service)
+  //
+  // Endpoints dédiés au portail enseignant (/app/teacher/presence) :
+  //   - GET  my-history : historique de SES présences (30-60 derniers jours)
+  //   - GET  my-overtime : SES heures supplémentaires (validées + en attente)
+  //   - POST my-overtime : déclarer SES heures supplémentaires (validation RH)
+  //
+  // Le Staff est résolu par l'email de l'utilisateur connecté — jamais par un
+  // staffId fourni par le client (anti-usurpation d'identité).
+  // ============================================================================
+
+  /**
+   * ⭐ Historique des présences de l'utilisateur connecté (résolu par email).
+   * Utilisé par le module présence enseignant — jamais pour un autre staff.
+   */
+  async getMyAttendanceHistory(
+    tenantId: string,
+    userEmail: string,
+    filters?: { academicYearId?: string; startDate?: Date; endDate?: Date; limit?: number },
+  ) {
+    const staff = await this.resolveStaffByUserEmail(userEmail, tenantId);
+    if (!staff) {
+      return { staff: null, attendances: [], message: 'Aucune fiche personnel active trouvée pour votre compte — contactez la direction pour être rattaché(e) au module RH.' };
+    }
+
+    const where: string[] = ['sa."staffId" = $1', 'sa."tenantId" = $2'];
+    const params: any[] = [staff.id, tenantId];
+    let idx = 3;
+    if (filters?.academicYearId) {
+      where.push(`sa."academicYearId" = $${idx++}`);
+      params.push(filters.academicYearId);
+    }
+    if (filters?.startDate) {
+      where.push(`sa.date >= $${idx++}::date`);
+      params.push(filters.startDate);
+    }
+    if (filters?.endDate) {
+      where.push(`sa.date <= $${idx++}::date`);
+      params.push(filters.endDate);
+    }
+    // LIMIT borné côté serveur (1..180) — entier sanitisé, pas d'injection possible
+    const limit = filters?.limit && filters.limit > 0 && filters.limit <= 180 ? Math.floor(filters.limit) : 60;
+
+    const attendances = await this.prisma.$queryRawUnsafe(
+      `SELECT sa."id", sa.date, sa."checkIn", sa."checkOut", sa.status,
+              sa."hoursWorked", sa.notes, sa."markedByRole", sa."geoVerified", sa."geoDistance"
+       FROM "staff_attendances" sa
+       WHERE ${where.join(' AND ')}
+       ORDER BY sa.date DESC
+       LIMIT ${limit}`,
+      ...params,
+    );
+
+    return {
+      staff: { id: staff.id, staffName: `${staff.firstName} ${staff.lastName}`, roleType: staff.roleType },
+      attendances,
+    };
+  }
+
+  /**
+   * ⭐ Heures supplémentaires de l'utilisateur connecté (résolu par email).
+   */
+  async getMyOvertime(
+    tenantId: string,
+    userEmail: string,
+    filters?: { academicYearId?: string; validated?: boolean },
+  ) {
+    const staff = await this.resolveStaffByUserEmail(userEmail, tenantId);
+    if (!staff) {
+      return { staff: null, overtimes: [], message: 'Aucune fiche personnel active trouvée pour votre compte.' };
+    }
+    const overtimes = await this.findStaffOvertime(staff.id, tenantId, {
+      academicYearId: filters?.academicYearId,
+      validated: filters?.validated,
+    });
+    return {
+      staff: { id: staff.id, staffName: `${staff.firstName} ${staff.lastName}` },
+      overtimes,
+    };
+  }
+
+  /**
+   * ⭐ L'utilisateur connecté déclare SES heures supplémentaires.
+   * Le staffId est résolu côté serveur (par email) — impossible de déclarer
+   * pour quelqu'un d'autre. La validation reste du côté direction/RH
+   * (PUT /hr/attendance/overtime/:id/process dans l'onglet Présences du RH).
+   */
+  async declareMyOvertime(
+    tenantId: string,
+    userEmail: string,
+    data: { date: string | Date; hours: number; reason?: string; academicYearId?: string },
+  ) {
+    const staff = await this.resolveStaffByUserEmail(userEmail, tenantId);
+    if (!staff) {
+      throw new BadRequestException(
+        `Aucune fiche personnel active trouvée pour l'email ${userEmail}. ` +
+        `Contactez la direction pour être rattaché(e) au module RH.`
+      );
+    }
+    if (!data.hours || data.hours <= 0) {
+      throw new BadRequestException('Le nombre d\'heures doit être supérieur à 0.');
+    }
+    return this.recordOvertime({
+      tenantId,
+      academicYearId: data.academicYearId,
+      schoolLevelId: staff.schoolLevelId || undefined,
+      staffId: staff.id,
+      date: data.date,
+      hours: data.hours,
+      reason: data.reason,
+    });
   }
 }
 

@@ -614,4 +614,143 @@ export class LeavesPrismaService {
       },
     });
   }
+
+  // ============================================================================
+  // ⭐ 2026-09-15 — MODULE PRÉSENCE ENSEIGNANT (self-service congés/absences)
+  //
+  // Endpoints dédiés au portail enseignant (/app/teacher/presence → onglet
+  // "Congés & Absences") :
+  //   - GET  my-requests          : SES demandes (PENDING/APPROVED/REJECTED…)
+  //   - POST my-requests          : créer SA demande de congé/absence
+  //   - PUT  my-requests/:id/cancel : annuler SA demande (PENDING uniquement)
+  //   - GET  my-balance           : SON solde de congés
+  //
+  // Le Staff est résolu par l'email de l'utilisateur connecté — jamais par un
+  // staffId fourni par le client (anti-usurpation d'identité).
+  // L'approbation/rejet reste du ressort de la direction (module RH →
+  // Congés & Absences) ; à l'APPROBATION, le backend génère déjà les lignes
+  // staff_attendances ABSENT pour chaque jour du congé.
+  // ============================================================================
+
+  /**
+   * Résout le Staff actif lié à l'email de l'utilisateur connecté.
+   */
+  private async resolveStaffByEmail(email: string, tenantId: string) {
+    return this.prisma.staff.findFirst({
+      where: { email, tenantId, status: 'ACTIVE' },
+      select: { id: true, firstName: true, lastName: true, email: true, schoolLevelId: true, roleType: true, hireDate: true },
+    });
+  }
+
+  /**
+   * ⭐ Les demandes de congé de l'utilisateur connecté (par email).
+   */
+  async findMyLeaveRequests(
+    tenantId: string,
+    userEmail: string,
+    filters?: { academicYearId?: string; status?: string },
+  ) {
+    const staff = await this.resolveStaffByEmail(userEmail, tenantId);
+    if (!staff) {
+      return { staff: null, requests: [], message: 'Aucune fiche personnel active trouvée pour votre compte — contactez la direction pour être rattaché(e) au module RH.' };
+    }
+
+    const where: any = { staffId: staff.id, tenantId };
+    if (filters?.academicYearId) where.academicYearId = filters.academicYearId;
+    if (filters?.status) where.status = filters.status;
+
+    const requests = await this.prisma.leaveRequest.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        staff: { select: { id: true, firstName: true, lastName: true, position: true } },
+      },
+    });
+
+    return {
+      staff: { id: staff.id, staffName: `${staff.firstName} ${staff.lastName}` },
+      requests,
+    };
+  }
+
+  /**
+   * ⭐ L'utilisateur connecté crée SA demande de congé/absence.
+   * Le staffId est résolu côté serveur (par email) — impossible de créer
+   * une demande pour quelqu'un d'autre.
+   */
+  async createMyLeaveRequest(
+    tenantId: string,
+    userEmail: string,
+    data: { type: string; startDate: string | Date; endDate: string | Date; reason?: string; academicYearId?: string },
+  ) {
+    const staff = await this.resolveStaffByEmail(userEmail, tenantId);
+    if (!staff) {
+      throw new BadRequestException(
+        `Aucune fiche personnel active trouvée pour l'email ${userEmail}. ` +
+        `Contactez la direction pour être rattaché(e) au module RH.`
+      );
+    }
+
+    this.logger.log(
+      `✅ Self-service congé — ${staff.firstName} ${staff.lastName} (staffId=${staff.id}) ` +
+      `type=${data.type}`
+    );
+
+    return this.createLeaveRequest({
+      tenantId,
+      academicYearId: data.academicYearId,
+      schoolLevelId: staff.schoolLevelId ?? undefined,
+      staffId: staff.id,
+      type: data.type,
+      startDate: data.startDate,
+      endDate: data.endDate,
+      reason: data.reason,
+    });
+  }
+
+  /**
+   * ⭐ L'utilisateur connecté annule SA demande (PENDING uniquement).
+   * Vérifie la PROPRIÉTÉ : on ne peut annuler que ses propres demandes.
+   */
+  async cancelMyLeaveRequest(tenantId: string, userEmail: string, requestId: string) {
+    const staff = await this.resolveStaffByEmail(userEmail, tenantId);
+    if (!staff) {
+      throw new BadRequestException('Aucune fiche personnel active trouvée pour votre compte.');
+    }
+
+    const request = await this.prisma.leaveRequest.findFirst({
+      where: { id: requestId, tenantId },
+    });
+    if (!request) {
+      throw new NotFoundException(`Demande de congé ${requestId} introuvable`);
+    }
+    if (request.staffId !== staff.id) {
+      throw new BadRequestException('Vous ne pouvez annuler que vos propres demandes.');
+    }
+    if (request.status !== 'PENDING') {
+      throw new BadRequestException(
+        `Cette demande est déjà ${request.status} — seule une demande en attente peut être annulée.`
+      );
+    }
+
+    return this.prisma.leaveRequest.update({
+      where: { id: requestId },
+      data: { ...prismaUpdateDefaults(), status: 'CANCELLED' },
+    });
+  }
+
+  /**
+   * ⭐ Le solde de congés de l'utilisateur connecté (par email).
+   */
+  async getMyLeaveBalance(tenantId: string, userEmail: string) {
+    const staff = await this.resolveStaffByEmail(userEmail, tenantId);
+    if (!staff) {
+      return { staff: null, balance: null, message: 'Aucune fiche personnel active trouvée pour votre compte.' };
+    }
+    const balance = await this.calculateLeaveBalance(staff.id, tenantId);
+    return {
+      staff: { id: staff.id, staffName: `${staff.firstName} ${staff.lastName}`, hireDate: staff.hireDate },
+      balance,
+    };
+  }
 }

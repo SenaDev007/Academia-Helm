@@ -1587,8 +1587,11 @@ export class PedagogicalSpaceController {
     @TenantId() tenantId: string,
     @Param('id') id: string,
     @Body() body: any,
+    @CurrentUser() user: any,
   ) {
-    return this.service.updateDailyReport(tenantId, id, body);
+    // ⭐ 2026-09-15 : l'utilisateur est transmis pour la traçabilité de la
+    //    synchronisation cahier de semaine → module RH (markedBy).
+    return this.service.updateDailyReport(tenantId, id, body, user);
   }
 
   // ===========================================================================

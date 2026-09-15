@@ -430,6 +430,11 @@ export function AttendanceWorkspace() {
                     <tr className="border-b border-slate-100 bg-slate-50/50">
                       <th className="px-5 py-3 text-slate-500 font-semibold">Date</th>
                       <th className="px-5 py-3 text-slate-500 font-semibold">Statut</th>
+                      {/* ⭐ 2026-09-15 — Intégration cahier de semaine ↔ RH :
+                          provenance du pointage (auto-pointage enseignant /
+                          cahier du semainier / direction) pour le suivi
+                          direction + promoteur */}
+                      <th className="px-5 py-3 text-slate-500 font-semibold">Marqué par</th>
                       <th className="px-5 py-3 text-slate-500 font-semibold">Heures</th>
                       <th className="px-5 py-3 text-slate-500 font-semibold">Notes</th>
                     </tr>
@@ -437,7 +442,7 @@ export function AttendanceWorkspace() {
                   <tbody className="divide-y divide-slate-100">
                     {attendances.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="text-center py-6 text-slate-400">Aucun enregistrement de présence</td>
+                        <td colSpan={5} className="text-center py-6 text-slate-400">Aucun enregistrement de présence</td>
                       </tr>
                     ) : (
                       attendances.map((att) => (
@@ -450,13 +455,36 @@ export function AttendanceWorkspace() {
                               'px-2 py-0.5 rounded-full text-xs font-bold uppercase',
                               att.status === 'PRESENT' && 'bg-emerald-50 text-emerald-700 border border-emerald-100',
                               att.status === 'ABSENT' && 'bg-rose-50 text-rose-700 border border-rose-100',
-                              att.status === 'LATE' && 'bg-amber-50 text-amber-700 border border-amber-100'
+                              att.status === 'LATE' && 'bg-amber-50 text-amber-700 border border-amber-100',
+                              att.status === 'HALF_DAY' && 'bg-blue-50 text-blue-700 border border-blue-100',
+                              att.status === 'MISSION' && 'bg-purple-50 text-purple-700 border border-purple-100'
                             )}>
-                              {att.status === 'PRESENT' ? 'Présent' : att.status === 'ABSENT' ? 'Absent' : att.status === 'LATE' ? 'En retard' : att.status}
+                              {att.status === 'PRESENT' ? 'Présent' : att.status === 'ABSENT' ? 'Absent' : att.status === 'LATE' ? 'En retard' : att.status === 'HALF_DAY' ? 'Demi-journée' : att.status === 'MISSION' ? 'Mission' : att.status}
                             </span>
                           </td>
+                          <td className="px-5 py-3.5">
+                            {att.markedByRole === 'SELF' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                <CheckCircle2 className="h-3 w-3" /> Enseignant (auto)
+                              </span>
+                            ) : att.markedByRole === 'SEMINARIER' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-purple-50 text-purple-700 border border-purple-100">
+                                <UserCheck className="h-3 w-3" /> Semainier
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-slate-50 text-slate-600 border border-slate-200">
+                                Direction / RH
+                              </span>
+                            )}
+                            {att.checkIn && (
+                              <p className="text-[10px] text-slate-400 mt-0.5">
+                                Arrivée {new Date(att.checkIn).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                                {att.geoVerified ? ' • GPS ✓' : ''}
+                              </p>
+                            )}
+                          </td>
                           <td className="px-5 py-3.5 text-slate-600">{att.hoursWorked || 0} h</td>
-                          <td className="px-5 py-3.5 text-slate-500 max-w-[200px] truncate">{att.notes || '-'}</td>
+                          <td className="px-5 py-3.5 text-slate-500 max-w-[200px] truncate" title={att.notes || ''}>{att.notes || '-'}</td>
                         </tr>
                       ))
                     )}

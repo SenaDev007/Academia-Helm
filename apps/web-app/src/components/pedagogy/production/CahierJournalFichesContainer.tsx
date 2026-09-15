@@ -46,6 +46,10 @@ import { PedagogicalSheetsTab } from "./PedagogicalSheetsTab";
 import { CatalogueTab } from "./CatalogueTab";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useAppSession } from "@/contexts/AppSessionContext";
+import {
+  mapMatiereNameToSheetType,
+  MAT_LEGACY_LABELS as MAT_MATIERE_LABELS,
+} from "@/lib/pedagogy/maternelle-domains";
 
 type SubTab = "cahier" | "fiches" | "catalogue";
 
@@ -441,11 +445,17 @@ function StatusBadge({ status }: { status: string }) {
  * Cette fonction fait la correspondance pour que quand on clique "Préparer la fiche"
  * pour une matière, le bon type de fiche soit pré-sélectionné.
  */
-function mapMatiereToSheetType(matiere: string): string {
+/**
+ * ⭐ MATERNELLE — MATIÈRES DYNAMIQUES : mappe une matière du cahier journal
+ * vers le type de fiche pédagogique maternelle. Les matières sont désormais
+ * les NOMS des matières configurées dans « Matières & programmes » (clés du
+ * cahier journal) + les anciennes clés legacy (dom1_sante…).
+ * Unifie la logique backend mapMatiereKeyToSheetType(key, isMaternelle=true).
+ */
+function mapMatiereToSheetType(matiere: string, isMaternelle = false): string {
+  if (isMaternelle) return mapMatiereNameToSheetType(matiere);
   const m = (matiere || '').toLowerCase().trim();
-  // ⭐ 2026-09-15 MATERNELLE — clés de la grille par domaines :
-  //    DOMAINE_2 (Expression corporelle) a sa fiche dédiée ; toutes les
-  //    autres colonnes → fiche « Domaine » (n° à renseigner par l'enseignante).
+  // ⭐ Clés legacy maternelle (journaux créés avant les matières dynamiques)
   if (m === 'dom2_corporelle') return 'DOMAINE_2';
   if (m.startsWith('dom') || m === 'pre_lecture' || m === 'pre_ecriture' || m === 'pre_mathematiques') return 'DOMAINE';
   // Français
@@ -466,24 +476,10 @@ function mapMatiereToSheetType(matiere: string): string {
   return '';
 }
 
-// ⭐ 2026-09-15 MATERNELLE — libellés lisibles des colonnes de la grille
-//    par domaines (utilisés dans les cartes « Préparer la fiche »).
-const MATIERE_LABELS: Record<string, string> = {
-  dom1_sante: "Éducation pour la santé",
-  dom2_corporelle: "Expression corporelle",
-  pre_lecture: "Pré-lecture",
-  pre_ecriture: "Pré-écriture",
-  pre_mathematiques: "Pré-mathématiques",
-  obs_dom: "Observations",
-  dom3_sensorielle: "Éducation sensorielle",
-  dom3_travaux_manuels: "Travaux manuels",
-  dom4_emotionnelle: "Expression émotionnelle",
-  dom4_plastique: "Expression plastique",
-  dom5_comm_orale: "Communication orale",
-  dom5_conte: "Conte",
-  dom5_poesie_chant: "Poésie chant comptine",
-  dom5_act_libres: "Activités libres",
-};
+// ⭐ Libellés lisibles des anciennes colonnes de la grille maternelle (clés
+//    legacy — les nouvelles clés sont directement les noms des matières
+//    configurées, affichés tels quels).
+const MATIERE_LABELS: Record<string, string> = { ...MAT_MATIERE_LABELS };
 
 // ─── Liste des matières planifiées + boutons "Préparer la fiche" ────────────
 
@@ -551,6 +547,11 @@ function FichesAPreparer({
   }
 
   if (!data) return null;
+
+  // ⭐ MATERNELLE : l'API /fiches indique si le cahier journal est maternelle
+  //    (grille par domaines, fiches DOMAINE/DOMAINE_2, matières = matières
+  //    configurées dans « Matières & programmes »).
+  const isMaternelle = !!data.isMaternelle;
 
   const days = ["lundi", "mardi", "mercredi", "jeudi", "vendredi"];
   const dayLabels: Record<string, string> = {
@@ -669,7 +670,7 @@ function FichesAPreparer({
                             onViewFiche(m.ficheId);
                           } else {
                             // Fallback : si pas de ficheId, on bascule vers l'onglet fiches
-                            onPrepareFiche(day, m.matiere, mapMatiereToSheetType(m.matiere));
+                            onPrepareFiche(day, m.matiere, mapMatiereToSheetType(m.matiere, isMaternelle));
                           }
                         }}
                         className="text-[10px] font-bold text-blue-600 hover:underline ml-2"
@@ -678,7 +679,7 @@ function FichesAPreparer({
                       </a>
                     ) : (
                       <button
-                        onClick={() => onPrepareFiche(day, m.matiere, mapMatiereToSheetType(m.matiere))}
+                        onClick={() => onPrepareFiche(day, m.matiere, mapMatiereToSheetType(m.matiere, isMaternelle))}
                         className="flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded ml-2"
                       >
                         <Plus className="h-3 w-3" />

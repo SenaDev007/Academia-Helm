@@ -3585,6 +3585,11 @@ export class PedagogicalSpaceService {
           row.teacherGender = titulaire.gender;
         }
       }
+      // ⭐ MATERNELLE : matières dynamiques — la grille par DOMAINES est
+      //    construite depuis les matières configurées dans l'onglet
+      //    « Matières & programmes » (matGroups dans la réponse), et les
+      //    anciennes clés (dom1_sante…) sont migrées vers les noms de matières.
+      await this.enrichMaternelleJournal(row);
       return row;
     }
 
@@ -3631,7 +3636,52 @@ export class PedagogicalSpaceService {
        WHERE cj."id" = $1`,
       id,
     );
+    await this.enrichMaternelleJournal(created[0]);
     return created[0];
+  }
+
+  /// ⭐ MATERNELLE — enrichit un cahier journal avec les matières dynamiques :
+  ///    - matGroups : la grille par DOMAINES construite depuis les matières
+  ///      configurées pour la classe (Matières & programmes) ;
+  ///    - matSubjects : la liste des matières configurées ;
+  ///    - migration idempotente des anciennes clés (dom1_sante, pre_lecture…)
+  ///      vers les noms des matières (persistée immédiatement si nécessaire).
+  ///    Sans effet sur les classes non maternelle.
+  private async enrichMaternelleJournal(row: any) {
+    if (!row || (row.schoolLevelCode || '').toString().toUpperCase() !== 'MATERNELLE') return;
+    try {
+      const subjects = await this.getMaternelleSubjectsForClass(
+        row.tenantId, row.academicYearId, row.classId,
+      );
+      const groups = this.buildMaternelleGroups(subjects);
+      if (groups.length === 0) {
+        // Aucune matière configurée → l'appelant affichera le modèle officiel
+        // par défaut + un bandeau invitant à configurer les matières.
+        row.matGroups = [];
+        row.matSubjects = [];
+        return;
+      }
+      let finalGroups = groups;
+      if (row.entries) {
+        let parsed: any = {};
+        try {
+          parsed = typeof row.entries === 'string' ? JSON.parse(row.entries || '{}') : (row.entries || {});
+        } catch { parsed = {}; }
+        const migrated = this.migrateMaternelleEntries(parsed, groups);
+        finalGroups = migrated.groups;
+        if (migrated.changed) {
+          await this.prisma.$executeRawUnsafe(
+            `UPDATE "cahier_journal_entries" SET "entries" = $1::jsonb, "updatedAt" = NOW() WHERE "id" = $2`,
+            JSON.stringify(migrated.entries), row.id,
+          ).catch(() => null);
+          row.entries = migrated.entries;
+        }
+      }
+      row.matGroups = finalGroups;
+      row.matSubjects = subjects;
+    } catch (err: any) {
+      this.logger.warn(`enrichMaternelleJournal: ${err.message}`);
+    }
   }
 
   /// Liste les cahiers journal d'un enseignant.
@@ -4619,6 +4669,301 @@ export class PedagogicalSpaceService {
   }
 
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // ⭐ 2026-09-15 MATERNELLE — MATIÈRES DYNAMIQUES (Matières & programmes)
+  //
+  // La grille du cahier journal maternelle ET la préparation des fiches
+  // pédagogiques (DOMAINE / DOMAINE_2) doivent être construites à partir des
+  // matières réellement configurées pour la classe dans le module Pédagogie
+  // → onglet « Matières & programmes » (tables class_subjects / subjects),
+  // et NON plus à partir de domaines codés en dur.
+  //
+  // Chaque matière configurée est classée dans son DOMAINE officiel
+  // (I → V + groupe « DOMAINE [n° à renseigner] » pour pré-lecture /
+  // pré-écriture / pré-mathématiques) par correspondance de nom,
+  // insensible à la casse et aux accents.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /// Définition des domaines officiels de la maternelle :
+  /// titre du groupe, mots-clés de classement des matières (normalisés),
+  /// clés legacy de l'ancienne grille codée en dur, ordre pédagogique
+  /// des sous-colonnes du groupe « DOMAINE [n° à renseigner] ».
+  private static readonly MAT_DOMAIN_DEFS = [
+    {
+      key: 'dom1', title: 'DOMAINE I', hint: null as string | null,
+      keywords: ['sante', 'hygiene'],
+      legacyKeys: ['dom1_sante'],
+      order: null as Record<string, number> | null,
+    },
+    {
+      key: 'dom2', title: 'DOMAINE II', hint: null as string | null,
+      keywords: ['corporelle', 'psychomotrice', 'motricite'],
+      legacyKeys: ['dom2_corporelle'],
+      order: null as Record<string, number> | null,
+    },
+    {
+      key: 'domPre', title: 'DOMAINE', hint: "N° à renseigner par l'enseignante",
+      keywords: ['pre-lecture', 'pre lecture', 'pre-ecriture', 'pre ecriture', 'pre-math', 'pre math'],
+      legacyKeys: ['pre_lecture', 'pre_ecriture', 'pre_mathematiques'],
+      order: { 'pre-lecture': 1, 'pre-ecriture': 2, 'pre-math': 3 } as Record<string, number>,
+    },
+    {
+      key: 'dom3', title: 'DOMAINE III', hint: null as string | null,
+      keywords: ['sensorielle', 'eveil', 'travaux manuels', 'scientifique', 'manuelle'],
+      legacyKeys: ['dom3_sensorielle', 'dom3_travaux_manuels'],
+      order: null as Record<string, number> | null,
+    },
+    {
+      key: 'dom4', title: 'DOMAINE IV', hint: null as string | null,
+      keywords: ['emotionnelle', 'plastique', 'dessin', 'peinture', 'coloriage'],
+      legacyKeys: ['dom4_emotionnelle', 'dom4_plastique'],
+      order: null as Record<string, number> | null,
+    },
+    {
+      key: 'dom5', title: 'DOMAINE V', hint: null as string | null,
+      keywords: ['orale', 'conte', 'poesie', 'chant', 'comptine', 'activites libres', 'langage'],
+      legacyKeys: ['dom5_comm_orale', 'dom5_conte', 'dom5_poesie_chant', 'dom5_act_libres'],
+      order: null as Record<string, number> | null,
+    },
+  ];
+
+  /// Libellés des anciennes colonnes codées en dur (migration + orphelins).
+  private static readonly MAT_LEGACY_LABELS: Record<string, string> = {
+    dom1_sante: 'Éducation pour la santé',
+    dom2_corporelle: 'Expression corporelle',
+    pre_lecture: 'Pré-lecture',
+    pre_ecriture: 'Pré-écriture',
+    pre_mathematiques: 'Pré-mathématiques',
+    dom3_sensorielle: 'Éducation sensorielle',
+    dom3_travaux_manuels: 'Travaux manuels',
+    dom4_emotionnelle: 'Expression émotionnelle',
+    dom4_plastique: 'Expression plastique',
+    dom5_comm_orale: 'Communication orale',
+    dom5_conte: 'Conte',
+    dom5_poesie_chant: 'Poésie chant comptine',
+    dom5_act_libres: 'Activités libres',
+  };
+
+  /// Normalise un libellé de matière : minuscules + suppression des accents.
+  /// Les matières étant saisies librement par l'école dans l'onglet
+  /// « Matières & programmes », la correspondance doit tolérer
+  /// « Éducation pour la santé », « education pour la sante », etc.
+  private normalizeFrText(s: string): string {
+    return (s || '')
+      .toString()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
+  /// Classe une matière (par son nom) dans son domaine officiel maternelle.
+  /// Retourne la définition du domaine ou null si aucune correspondance.
+  private matchMaternelleDomain(subjectName: string) {
+    const n = this.normalizeFrText(subjectName);
+    if (!n) return null;
+    for (const def of PedagogicalSpaceService.MAT_DOMAIN_DEFS) {
+      if (def.keywords.some((k: string) => n.includes(k))) return def;
+    }
+    return null;
+  }
+
+  /// Récupère les matières configurées pour une classe maternelle depuis
+  /// le module Pédagogie → onglet « Matières & programmes »
+  /// (class_subjects → subjects), filtrées par la piste linguistique de
+  /// la classe (une classe FR ne voit pas les matières EN et réciproquement).
+  private async getMaternelleSubjectsForClass(
+    tenantId: string,
+    academicYearId: string,
+    classId: string,
+  ): Promise<Array<{ subjectId: string; subjectName: string }>> {
+    if (!classId || !academicYearId) return [];
+    try {
+      const cls: any = await this.prisma.$queryRawUnsafe(
+        `SELECT id, "officialClassId", language FROM classes WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
+        classId, tenantId,
+      );
+      if (!cls || cls.length === 0) return [];
+      const classLang = (cls[0].language || '').toString().trim().toUpperCase();
+      const langFilter = classLang === 'FR' || classLang === 'EN';
+      const academicClassId = cls[0].officialClassId || null;
+
+      const rows: any = langFilter
+        ? await this.prisma.$queryRawUnsafe(
+            `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName"
+             FROM subjects s
+             INNER JOIN class_subjects cs ON cs."subjectId" = s."id"
+             WHERE cs."tenantId" = $1 AND cs."academicYearId" = $2
+               AND (cs."academicClassId" = $3 OR cs."classId" = $4)
+               AND (s."language" IS NULL OR s."language" = '' OR s."language" = $5)
+             ORDER BY s."name"`,
+            tenantId, academicYearId, academicClassId, classId, classLang,
+          )
+        : await this.prisma.$queryRawUnsafe(
+            `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName"
+             FROM subjects s
+             INNER JOIN class_subjects cs ON cs."subjectId" = s."id"
+             WHERE cs."tenantId" = $1 AND cs."academicYearId" = $2
+               AND (cs."academicClassId" = $3 OR cs."classId" = $4)
+             ORDER BY s."name"`,
+            tenantId, academicYearId, academicClassId, classId,
+          );
+      return (rows || []).map((r: any) => ({ subjectId: r.subjectId, subjectName: r.subjectName }));
+    } catch (err: any) {
+      this.logger.warn(`getMaternelleSubjectsForClass: ${err.message}`);
+      return [];
+    }
+  }
+
+  /// Construit la grille du cahier journal maternelle à partir des matières
+  /// configurées : chaque matière devient une sous-colonne dans son DOMAINE
+  /// officiel (I → V), la colonne Observations est placée dans le groupe
+  /// « DOMAINE [n° à renseigner] » (modèle officiel). Les matières non
+  /// rattachables à un domaine connu vont dans « AUTRES MATIÈRES ».
+  /// Retourne [] si aucune matière n'est configurée (l'appelant décide du repli).
+  private buildMaternelleGroups(subjects: Array<{ subjectId: string; subjectName: string }>) {
+    const byDomain: Record<string, Array<{ key: string; label: string; subjectId: string; weight: number }>> = {};
+    const others: Array<{ key: string; label: string; subjectId: string; weight: number }> = [];
+
+    for (const s of subjects) {
+      const def = this.matchMaternelleDomain(s.subjectName);
+      if (!def) {
+        others.push({ key: s.subjectName, label: s.subjectName, subjectId: s.subjectId, weight: 90 });
+        continue;
+      }
+      const n = this.normalizeFrText(s.subjectName);
+      let weight = 50;
+      if (def.order) {
+        const orderKey = Object.keys(def.order).find(k => n.includes(k));
+        weight = orderKey ? def.order[orderKey] : 50;
+      }
+      (byDomain[def.key] = byDomain[def.key] || []).push({
+        key: s.subjectName, label: s.subjectName, subjectId: s.subjectId, weight,
+      });
+    }
+
+    const groups: Array<{
+      key: string; title: string; hint: string | null;
+      subs: Array<{ key: string; label: string; subjectId: string | null; weight: number }>;
+    }> = [];
+    let hasDomPre = false;
+
+    for (const def of PedagogicalSpaceService.MAT_DOMAIN_DEFS) {
+      const subs = byDomain[def.key] || [];
+      if (subs.length === 0) continue;
+      subs.sort((a, b) => (a.weight - b.weight) || a.label.localeCompare(b.label, 'fr'));
+      const groupSubs: Array<{ key: string; label: string; subjectId: string | null; weight: number }> = [...subs];
+      if (def.key === 'domPre') {
+        // ⭐ Colonne Observations — position exacte du modèle officiel
+        //    (dernière sous-colonne du groupe « DOMAINE [n° à renseigner] »).
+        groupSubs.push({ key: 'obs_dom', label: 'Observations', subjectId: null, weight: 99 });
+        hasDomPre = true;
+      }
+      groups.push({ key: def.key, title: def.title, hint: def.hint, subs: groupSubs });
+    }
+
+    if (others.length > 0) {
+      others.sort((a, b) => a.label.localeCompare(b.label, 'fr'));
+      groups.push({ key: 'autres', title: 'AUTRES MATIÈRES', hint: null, subs: others });
+    }
+    // ⭐ Pas de matières « pré-apprentissages » configurées → la colonne
+    //    Observations devient un groupe autonome en fin de grille.
+    if (!hasDomPre && groups.length > 0) {
+      groups.push({
+        key: 'obs', title: 'OBSERVATIONS', hint: null,
+        subs: [{ key: 'obs_dom', label: 'Observations', subjectId: null, weight: 99 }],
+      });
+    }
+    return groups;
+  }
+
+  /// Migre les clés legacy (dom1_sante, pre_lecture, …) des cahiers journal
+  /// maternelle créés AVANT l'introduction des matières dynamiques, vers les
+  /// nouvelles clés (= noms des matières configurées). Idempotent : les clés
+  /// legacy sont retirées après migration. Les contenus orphelins (domaine
+  /// sans matière configurée) sont conservés et exposés en « AUTRES MATIÈRES »
+  /// afin de ne jamais perdre une saisie enseignante.
+  private migrateMaternelleEntries(
+    entries: Record<string, any>,
+    groups: Array<{ key: string; title: string; hint: string | null; subs: Array<{ key: string; label: string; subjectId: string | null; weight: number }> }>,
+  ): { entries: Record<string, any>; changed: boolean; groups: typeof groups } {
+    const legacyToDomain: Record<string, string> = {};
+    for (const def of PedagogicalSpaceService.MAT_DOMAIN_DEFS) {
+      for (const lk of def.legacyKeys) legacyToDomain[lk] = def.key;
+    }
+    let changed = false;
+    let extendedGroups = groups;
+    const out: Record<string, any> = {};
+
+    for (const [day, dayEntriesRaw] of Object.entries(entries || {})) {
+      const dayEntries = dayEntriesRaw || {};
+      const newDay: Record<string, any> = {};
+      const legacyByDomain: Record<string, Array<{ key: string; content: string }>> = {};
+
+      for (const [k, v] of Object.entries(dayEntries)) {
+        const content = typeof v === 'string' ? v : '';
+        if (legacyToDomain[k] && content.trim()) {
+          (legacyByDomain[legacyToDomain[k]] = legacyByDomain[legacyToDomain[k]] || []).push({ key: k, content });
+        } else {
+          newDay[k] = v;
+        }
+      }
+
+      for (const [domain, items] of Object.entries(legacyByDomain)) {
+        const targetGroup = groups.find(g => g.key === domain);
+        const targetSubs = (targetGroup?.subs || []).filter(s => s.subjectId);
+        if (targetSubs.length > 0) {
+          const target = targetSubs[0].key;
+          const merged = items.map(i => i.content).filter(c => c.trim()).join('<br/>');
+          newDay[target] = newDay[target] && String(newDay[target]).trim()
+            ? `${newDay[target]}<br/>${merged}`
+            : merged;
+        } else {
+          // Orphelin : aucune matière configurée pour ce domaine → on garde
+          // le contenu sous sa clé legacy, affiché en « AUTRES MATIÈRES ».
+          for (const item of items) newDay[item.key] = item.content;
+        }
+      }
+
+      // Quelque chose a-t-il changé pour ce jour ?
+      const beforeKeys = Object.keys(dayEntries);
+      const afterKeys = Object.keys(newDay);
+      if (
+        beforeKeys.length !== afterKeys.length ||
+        beforeKeys.some(k => !afterKeys.includes(k)) ||
+        afterKeys.some(k => !beforeKeys.includes(k))
+      ) changed = true;
+
+      out[day] = newDay;
+    }
+
+    // Étendre « AUTRES MATIÈRES » avec les colonnes orphelines éventuelles
+    const orphanKeys = new Set<string>();
+    for (const dayEntries of Object.values(out)) {
+      for (const k of Object.keys(dayEntries || {})) {
+        if (legacyToDomain[k]) orphanKeys.add(k);
+      }
+    }
+    if (orphanKeys.size > 0) {
+      const orphanSubs = Array.from(orphanKeys).map(k => ({
+        key: k,
+        label: PedagogicalSpaceService.MAT_LEGACY_LABELS[k] || k.replace(/_/g, ' '),
+        subjectId: null,
+        weight: 95,
+      }));
+      const autresIdx = extendedGroups.findIndex(g => g.key === 'autres');
+      if (autresIdx >= 0) {
+        extendedGroups = extendedGroups.map((g, i) =>
+          i === autresIdx ? { ...g, subs: [...g.subs, ...orphanSubs] } : g,
+        );
+      } else {
+        extendedGroups = [...extendedGroups, { key: 'autres', title: 'AUTRES MATIÈRES', hint: null, subs: orphanSubs }];
+      }
+    }
+
+    return { entries: out, changed, groups: extendedGroups };
+  }
+
   /**
    * ⭐ Récupère toutes les fiches pédagogiques rattachées à un cahier journal.
    *    Utilise le nouveau champ structurel `cahierJournalId` (préféré) +
@@ -4627,15 +4972,33 @@ export class PedagogicalSpaceService {
    *    Retourne : { parJour: { lundi: [...], mardi: [...], ... }, fiches: [...], stats }
    */
   async getFichesForCahierJournal(tenantId: string, journalId: string) {
-    // ─── 1. Charger le cahier journal ───
+    // ─── 1. Charger le cahier journal (+ niveau scolaire) ───
+    //    ⭐ JOIN school_levels : nécessaire pour savoir si la classe est
+    //    MATERNELLE → les matières planifiées (clés = noms des matières
+    //    configurées) doivent être rapprochées des fiches DOMAINE/DOMAINE_2.
     const journalRows: any = await this.prisma.$queryRawUnsafe(
-      `SELECT * FROM "cahier_journal_entries" WHERE "id" = $1 AND "tenantId" = $2`,
+      `SELECT cje.*, sl."code" as "schoolLevelCode", sl."name" as "schoolLevelName"
+       FROM "cahier_journal_entries" cje
+       LEFT JOIN classes c ON c."id" = cje."classId"
+       LEFT JOIN school_levels sl ON sl."id" = c."schoolLevelId"
+       WHERE cje."id" = $1 AND cje."tenantId" = $2`,
       journalId, tenantId,
     );
     if (!journalRows || journalRows.length === 0) {
       throw new NotFoundException('Cahier journal non trouvé');
     }
     const journal = journalRows[0];
+    const isMaternelleJournal = (journal.schoolLevelCode || '').toString().toUpperCase() === 'MATERNELLE';
+
+    // ⭐ MATERNELLE : résoudre les matières de la classe (noms → subjectId)
+    //    pour un rapprochement précis matières planifiées ↔ fiches.
+    let subjectIdByMatiereName = new Map<string, string>();
+    if (isMaternelleJournal) {
+      const matSubjects = await this.getMaternelleSubjectsForClass(
+        tenantId, journal.academicYearId, journal.classId,
+      );
+      subjectIdByMatiereName = new Map(matSubjects.map(s => [s.subjectName, s.subjectId]));
+    }
 
     // ⭐ Détection : la colonne "cahierJournalId" existe-t-elle sur primary_pedagogical_fiches ?
     //    Si la migration prisma db push n'a pas été exécutée, la colonne n'existe pas
@@ -4779,11 +5142,19 @@ export class PedagogicalSpaceService {
         if (!content) continue;
         // Cherche si une fiche existe pour cette matière ce jour
         const fichesForDay = parJour[jour] || [];
+        // ⭐ MATERNELLE : la clé matière = le NOM de la matière configurée
+        //    (Matières & programmes) → rapprochement prioritaire par subjectId,
+        //    puis par type de fiche (DOMAINE / DOMAINE_2).
+        const matSubjectId = subjectIdByMatiereName.get(matiereKey);
         const matchingFiche = fichesForDay.find((f: any) => {
-          // Match par subjectId si dispo, sinon par sheetType (le key matière est mappé
-          // vers un sheetType dans le frontend via SUBJECT_GROUPS)
+          if (isMaternelleJournal) {
+            if (matSubjectId && f.subjectId && f.subjectId === matSubjectId) return true;
+            const expectedSheetType = this.mapMatiereKeyToSheetType(matiereKey, true);
+            return !!expectedSheetType && f.sheetType === expectedSheetType;
+          }
+          // PRIMAIRE : match par subjectId si dispo, sinon par sheetType
           return (f.subjectId && f.subjectId === matiereKey)
-            || (f.sheetType && this.mapMatiereKeyToSheetType(matiereKey) === f.sheetType);
+            || (f.sheetType && this.mapMatiereKeyToSheetType(matiereKey, false) === f.sheetType);
         });
         matieresPlanifiees[jour].push({
           matiere: matiereKey,
@@ -4806,6 +5177,10 @@ export class PedagogicalSpaceService {
       weekEndDate: journal.weekEndDate,
       className: journal.className,
       status: journal.status,
+      // ⭐ Indique au frontend si la grille est maternelle (fiches DOMAINE /
+      //    DOMAINE_2, matières = domaines d'activités) — utile pour mapper
+      //    correctement matière → type de fiche.
+      isMaternelle: isMaternelleJournal,
       fiches: allFiches,
       parJour,
       matieresPlanifiees,
@@ -4823,13 +5198,48 @@ export class PedagogicalSpaceService {
    * Helper : mappe une clé matière du cahier journal vers un sheetType de fiche.
    * Le cahier journal utilise des clés comme "francais", "anglais", "mathematiques", etc.
    * On devine le sheetType correspondant.
+   *
+   * ⭐ MATERNELLE (isMaternelle=true) : les clés sont désormais les NOMS des
+   * matières configurées dans l'onglet « Matières & programmes » (ex : « Éducation
+   * pour la santé et l'environnement », « Expression corporelle »), plus les
+   * anciennes clés legacy (dom1_sante…). Toutes les matières maternelle →
+   * fiche « DOMAINE », sauf Expression corporelle → fiche « DOMAINE 2 ».
    */
-  private mapMatiereKeyToSheetType(matiereKey: string): string | null {
+  private mapMatiereKeyToSheetType(matiereKey: string, isMaternelle = false): string | null {
     const k = (matiereKey || '').toLowerCase().trim();
     // ⭐ 2026-09-15 MATERNELLE — clés de la grille cahier journal maternelle :
-    //    chaque colonne = un domaine d'activité. DOMAINE_2 (Expression
-    //    corporelle) a sa fiche dédiée ; toutes les autres colonnes utilisent
-    //    la fiche « Domaine » (n° à renseigner par l'enseignante).
+    //    chaque colonne = une matière configurée (ou une clé legacy d'un
+    //    domaine d'activité). DOMAINE_2 (Expression corporelle) a sa fiche
+    //    dédiée ; toutes les autres colonnes utilisent la fiche « Domaine »
+    //    (n° à renseigner par l'enseignante).
+    if (isMaternelle) {
+      const n = this.normalizeFrText(matiereKey);
+      if (n.includes('corporelle')) return 'DOMAINE_2';
+      if (k === 'dom2_corporelle') return 'DOMAINE_2';
+      if (k.startsWith('dom') || k === 'pre_lecture' || k === 'pre_ecriture' || k === 'pre_mathematiques') {
+        return 'DOMAINE';
+      }
+      // Noms de matières dynamiques : pré-apprentissages, santé, sensorielle,
+      // éveil, plastique, orale, conte, poésie… → fiche « Domaine ».
+      if (
+        n.includes('pre-lecture') || n.includes('pre lecture')
+        || n.includes('pre-ecriture') || n.includes('pre ecriture')
+        || n.includes('pre-math') || n.includes('pre math')
+        || n.includes('sante') || n.includes('hygiene')
+        || n.includes('sensorielle') || n.includes('eveil') || n.includes('travaux manuels')
+        || n.includes('scientifique') || n.includes('manuelle')
+        || n.includes('emotionnelle') || n.includes('plastique')
+        || n.includes('dessin') || n.includes('peinture') || n.includes('coloriage')
+        || n.includes('orale') || n.includes('conte') || n.includes('poesie')
+        || n.includes('chant') || n.includes('comptine') || n.includes('activites libres')
+        || n.includes('langage')
+      ) {
+        return 'DOMAINE';
+      }
+      // Matière maternelle non reconnue → fiche « Domaine » par défaut
+      // (les 2 formats officiels maternelle couvrent toutes les matières).
+      return 'DOMAINE';
+    }
     if (k === 'dom2_corporelle') return 'DOMAINE_2';
     if (k.startsWith('dom') || k === 'pre_lecture' || k === 'pre_ecriture' || k === 'pre_mathematiques') {
       return 'DOMAINE';
@@ -8282,6 +8692,10 @@ export class PedagogicalSpaceService {
     if (!result || result.length === 0) {
       throw new NotFoundException('Cahier journal non trouvé');
     }
+    // ⭐ MATERNELLE : matières dynamiques — le directeur voit exactement la
+    //    même grille par DOMAINES que l'enseignant (matières configurées dans
+    //    « Matières & programmes » + migration des anciennes clés).
+    await this.enrichMaternelleJournal(result[0]);
     return result[0];
   }
 
@@ -9248,8 +9662,12 @@ td.name{text-align:left;font-weight:bold;}
     format: string,
   ): Promise<Buffer> {
     // ⭐ Requête enrichie : journal + identité école + titulaire + année scolaire + effectif
+    //    ⭐ FIX 2026-09-15 : JOIN school_levels manquant → schoolLevelCode n'était
+    //    jamais résolu et le PDF d'un cahier journal maternelle rendait la
+    //    grille primaire au lieu de la grille par domaines.
     const journal: any = await this.prisma.$queryRawUnsafe(
       `SELECT cje.*, c."name" as "classNameResolved",
+        sl."code" as "schoolLevelCode", sl."name" as "schoolLevelName",
         tca_t."firstName" as "titularFirstName", tca_t."lastName" as "titularLastName", tca_t."gender" as "titularGender",
         tip."schoolName", tip."schoolAcronym", tip."logoUrl",
         ay."name" as "academicYearName",
@@ -9258,6 +9676,7 @@ td.name{text-align:left;font-weight:bold;}
            AND se."status" = 'ACTIVE') as "totalStudents"
        FROM "cahier_journal_entries" cje
        LEFT JOIN classes c ON c."id" = cje."classId"
+       LEFT JOIN school_levels sl ON sl."id" = c."schoolLevelId"
        LEFT JOIN teacher_class_assignments tca ON tca."classId" = cje."classId" AND tca."tenantId" = cje."tenantId"
        LEFT JOIN teachers tca_t ON tca_t."id" = tca."teacherId"
        LEFT JOIN "tenant_identity_profiles" tip ON tip."tenantId" = cje."tenantId" AND tip."isActive" = true
@@ -9377,46 +9796,50 @@ td.name{text-align:left;font-weight:bold;}
     html += '<div style="font-size:11px;font-weight:bold;color:white;background:#0A2A5E;padding:4px 8px;border-radius:3px 3px 0 0;">GRILLE HEBDOMADAIRE</div>';
     html += '<table style="width:100%;border-collapse:collapse;border:1px solid #0A2A5E;border-top:none;">';
     if (isMaternelleJournal) {
-      // ── Domaines de la grille maternelle (ordre exact du modèle officiel) ──
-      const MAT_DOMAIN_GROUPS: Array<{ title: string; isDate?: boolean; subs?: Array<{ key: string; label: string }> }> = [
-        { title: 'DATE', isDate: true },
-        { title: 'DOMAINE I', subs: [{ key: 'dom1_sante', label: 'Éducation pour la santé' }] },
-        { title: 'DOMAINE II', subs: [{ key: 'dom2_corporelle', label: 'Expression corporelle' }] },
-        { title: 'DOMAINE', subs: [
-          { key: 'pre_lecture', label: 'Pré-lecture' },
-          { key: 'pre_ecriture', label: 'Pré-écriture' },
-          { key: 'pre_mathematiques', label: 'Pré-mathématiques' },
-          { key: 'obs_dom', label: 'Observations' },
-        ] },
-        { title: 'DOMAINE III', subs: [
-          { key: 'dom3_sensorielle', label: 'Éducation sensorielle' },
-          { key: 'dom3_travaux_manuels', label: 'Travaux manuels' },
-        ] },
-        { title: 'DOMAINE IV', subs: [
-          { key: 'dom4_emotionnelle', label: 'Expression émotionnelle' },
-          { key: 'dom4_plastique', label: 'Expression plastique' },
-        ] },
-        { title: 'DOMAINE V', subs: [
-          { key: 'dom5_comm_orale', label: 'Communication orale' },
-          { key: 'dom5_conte', label: 'Conte' },
-          { key: 'dom5_poesie_chant', label: 'Poésie chant comptine' },
-          { key: 'dom5_act_libres', label: 'Activités libres' },
-        ] },
-      ];
+      // ── Grille par DOMAINES — MATIÈRES DYNAMIQUES ──
+      // ⭐ 2026-09-15 : les sous-colonnes proviennent des matières configurées
+      //    pour la classe dans le module Pédagogie → « Matières & programmes »
+      //    (class_subjects → subjects). Repli sur le modèle officiel par défaut
+      //    si aucune matière n'est configurée.
+      const matSubjects = await this.getMaternelleSubjectsForClass(
+        tenantId, j.academicYearId, j.classId,
+      );
+      const dynamicGroups = this.buildMaternelleGroups(matSubjects);
+      let matGroups: Array<{ key: string; title: string; hint: string | null; subs: Array<{ key: string; label: string; subjectId: string | null; weight: number }> }>;
+      if (dynamicGroups.length > 0) {
+        matGroups = dynamicGroups;
+        // Migration en mémoire des anciennes clés (dom1_sante…) pour ne rien perdre
+        const migrated = this.migrateMaternelleEntries(entries as any, matGroups);
+        Object.assign(entries, migrated.entries);
+        matGroups = migrated.groups;
+      } else {
+        // Repli : modèle officiel par défaut (aucune matière configurée)
+        matGroups = PedagogicalSpaceService.MAT_DOMAIN_DEFS.map(def => ({
+          key: def.key,
+          title: def.title,
+          hint: def.hint,
+          subs: def.legacyKeys.map(lk => ({
+            key: lk,
+            label: PedagogicalSpaceService.MAT_LEGACY_LABELS[lk] || lk,
+            subjectId: null,
+            weight: 50,
+          })).concat(def.key === 'domPre'
+            ? [{ key: 'obs_dom', label: 'Observations', subjectId: null, weight: 99 }]
+            : []),
+        }));
+      }
       const flatSubs: Array<{ key: string; label: string }> = [];
-      for (const g of MAT_DOMAIN_GROUPS) {
-        if (g.isDate) continue;
-        for (const s of g.subs || []) flatSubs.push(s);
+      for (const g of matGroups) {
+        for (const s of g.subs || []) flatSubs.push({ key: s.key, label: s.label });
       }
       // Ligne 1 : DATE (rowspan 2) + titres de domaines fusionnés
       html += '<thead><tr style="background:#dbeafe;">';
       html += `<th rowspan="2" style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:7%;">DATE</th>`;
-      for (const g of MAT_DOMAIN_GROUPS) {
-        if (g.isDate) continue;
-        html += `<th colspan="${(g.subs || []).length}" style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">${g.title}</th>`;
+      for (const g of matGroups) {
+        html += `<th colspan="${(g.subs || []).length}" style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">${g.title}${g.hint ? ` <span style="font-weight:normal;">(${g.hint})</span>` : ''}</th>`;
       }
       html += '</tr>';
-      // Ligne 2 : sous-colonnes
+      // Ligne 2 : sous-colonnes (matières configurées)
       html += '<tr style="background:#eff6ff;">';
       for (const s of flatSubs) {
         html += `<th style="border:1px solid #cbd5e1;padding:4px;font-size:7px;">${s.label}</th>`;

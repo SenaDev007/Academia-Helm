@@ -35,6 +35,11 @@ import {
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  flattenMatGroups,
+  MAT_DEFAULT_GROUPS,
+  type MatGroup,
+} from "@/lib/pedagogy/maternelle-domains";
+import {
   useDirectorPedagogyDashboard,
   usePendingCahierJournals, usePendingFiches, usePendingRegisters,
   usePendingEvaluations,
@@ -86,33 +91,11 @@ const SHEET_TYPE_LABELS: Record<string, { label: string; icon: any; color: strin
   DOMAINE_2: { label: "Domaine 2", icon: FileText, color: "bg-teal-100 text-teal-700" },
 };
 
-// ⭐ 2026-09-15 MATERNELLE — Domaines de la grille cahier journal maternelle
-//    (ordre et libellés EXACTS du modèle officiel — identiques à CahierJournalTab).
-const MAT_DOMAIN_GROUPS = [
-  { title: "DOMAINE I", subs: [{ key: "dom1_sante", label: "Éducation pour la santé" }] },
-  { title: "DOMAINE II", subs: [{ key: "dom2_corporelle", label: "Expression corporelle" }] },
-  { title: "DOMAINE", subs: [
-    { key: "pre_lecture", label: "Pré-lecture" },
-    { key: "pre_ecriture", label: "Pré-écriture" },
-    { key: "pre_mathematiques", label: "Pré-mathématiques" },
-    { key: "obs_dom", label: "Observations" },
-  ] },
-  { title: "DOMAINE III", subs: [
-    { key: "dom3_sensorielle", label: "Éducation sensorielle" },
-    { key: "dom3_travaux_manuels", label: "Travaux manuels" },
-  ] },
-  { title: "DOMAINE IV", subs: [
-    { key: "dom4_emotionnelle", label: "Expression émotionnelle" },
-    { key: "dom4_plastique", label: "Expression plastique" },
-  ] },
-  { title: "DOMAINE V", subs: [
-    { key: "dom5_comm_orale", label: "Communication orale" },
-    { key: "dom5_conte", label: "Conte" },
-    { key: "dom5_poesie_chant", label: "Poésie chant comptine" },
-    { key: "dom5_act_libres", label: "Activités libres" },
-  ] },
-];
-const MAT_FLAT_SUBS: Array<{ key: string; label: string }> = MAT_DOMAIN_GROUPS.flatMap(g => g.subs);
+// ⭐ 2026-09-15 MATERNELLE — MATIÈRES DYNAMIQUES : la grille par DOMAINES
+//    est identique à celle de l'enseignant — les sous-colonnes sont les
+//    matières configurées pour la classe dans « Matières & programmes »,
+//    transmises par l'API cahier journal (journal.matGroups). Repli sur le
+//    modèle officiel par défaut si l'API ne les renvoie pas.
 
 const MONTH_NAMES = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
                      "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
@@ -2615,14 +2598,25 @@ function CahierJournalDirectorDetail({
 
   // ⭐ 2026-09-15 MATERNELLE — Grille par DOMAINES (lecture seule) + colonne
   //    OBS. DIRECTEUR, conformes au modèle officiel de la maternelle.
+  //    ⭐ MATIÈRES DYNAMIQUES : sous-colonnes = matières configurées pour la
+  //    classe dans « Matières & programmes » (journal.matGroups — l'API cahier
+  //    journal directeur reconstruit la même grille que l'enseignant, avec la
+  //    migration des anciennes clés). Repli sur le modèle officiel par défaut.
   const isMaternelleJournal =
     (journal.schoolLevelCode || "").toUpperCase() === "MATERNELLE" ||
     (journal.schoolLevelName || "").toLowerCase() === "maternelle";
 
+  // Grille maternelle : priorité aux groupes dynamiques de l'API
+  const matGroups: MatGroup[] =
+    Array.isArray(journal.matGroups) && journal.matGroups.length > 0
+      ? (journal.matGroups as MatGroup[])
+      : MAT_DEFAULT_GROUPS;
+  const matFlatSubs = flattenMatGroups(matGroups);
+
   const renderMaternellePage = () => (
     <div className="mb-6">
       <div className="mb-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
-        Grille maternelle — Domaines I à V
+        Grille maternelle — Domaines I à V (matières configurées)
       </div>
       <div className="overflow-x-auto border border-slate-300 rounded-lg">
         <table className="w-full border-collapse min-w-[1500px]">
@@ -2632,18 +2626,23 @@ function CahierJournalDirectorDetail({
               <th rowSpan={2} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase w-20 sticky left-0 bg-slate-100 z-10">
                 DATE
               </th>
-              {MAT_DOMAIN_GROUPS.map((g) => (
-                <th key={g.title} colSpan={g.subs.length} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase bg-indigo-50">
+              {matGroups.map((g) => (
+                <th key={g.key} colSpan={g.subs.length} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase bg-indigo-50">
                   {g.title}
+                  {g.hint && (
+                    <span className="block text-[9px] font-medium text-indigo-400 normal-case mt-0.5">
+                      {g.hint}
+                    </span>
+                  )}
                 </th>
               ))}
               <th rowSpan={2} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top bg-amber-50" style={{ minWidth: "140px" }}>
                 OBS. DIRECTEUR <span className="text-red-600">(rouge)</span>
               </th>
             </tr>
-            {/* Ligne 2 : sous-colonnes */}
+            {/* Ligne 2 : sous-colonnes (matières configurées) */}
             <tr className="bg-slate-50">
-              {MAT_FLAT_SUBS.map((s) => (
+              {matFlatSubs.map((s) => (
                 <th key={s.key} className="border border-slate-300 px-1 py-2 text-[10px] font-semibold text-slate-600">
                   {s.label}
                 </th>
@@ -2662,7 +2661,7 @@ function CahierJournalDirectorDetail({
                       {dayDate.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
                     </div>
                   </td>
-                  {MAT_FLAT_SUBS.map((s) => {
+                  {matFlatSubs.map((s) => {
                     const content = getEntry(day.key, s.key);
                     return (
                       <td key={s.key} className="border border-slate-300 px-2 py-1 text-xs text-slate-700 align-top" style={{ minHeight: "60px" }}>

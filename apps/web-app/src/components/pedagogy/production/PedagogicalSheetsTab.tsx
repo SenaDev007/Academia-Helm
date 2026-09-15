@@ -42,6 +42,10 @@ import { useAppSession } from "@/contexts/AppSessionContext";
 // ⭐ 2026-09-15 : SignatureCanvas + useAppSession retirés — plus aucune
 //    signature sur les fiches pédagogiques, et le user connecté n'est plus
 //    affiché (le contexte signature a été supprimé).
+import {
+  getMaternelleDomainInfo,
+  normalizeFrText as normalizeMatiereName,
+} from "@/lib/pedagogy/maternelle-domains";
 
 interface PedagogicalSheetsTabProps {
   tenantId: string;
@@ -268,6 +272,13 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   };
   const [form, setForm] = useState<any>(emptyForm);
 
+  // ⭐ MATERNELLE — MATIÈRES DYNAMIQUES : matières configurées pour la classe
+  //    sélectionnée (module Pédagogie → « Matières & programmes »), chargées
+  //    via /subjects/available. Utilisées par le sélecteur « Matière » du
+  //    formulaire DOMAINE/DOMAINE_2 pour que la préparation des fiches
+  //    pédagogiques tienne compte des matières réellement paramétrées.
+  const [matSubjects, setMatSubjects] = useState<any[]>([]);
+
   // ⭐ 2026-09-15 MATERNELLE : la classe sélectionnée est-elle une classe de
   //    maternelle ? (my-classes renvoie schoolLevelCode/schoolLevelName)
   //    → seuls les 2 formats maternelle (DOMAINE | DOMAINE_2) s'affichent.
@@ -276,6 +287,50 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     (selectedClassInfo?.schoolLevelCode || "").toUpperCase() === "MATERNELLE" ||
     (selectedClassInfo?.schoolLevelName || "").toLowerCase() === "maternelle";
   const sheetTypesForClass: readonly any[] = isMaternelleClass ? MATERNELLE_SHEET_TYPES : SHEET_TYPES;
+
+  // ⭐ MATERNELLE : chargement des matières de la classe (dynamiques).
+  //    Uniquement pour les classes maternelle (le sélecteur matière ne
+  //    concerne que les fiches DOMAINE / DOMAINE_2).
+  useEffect(() => {
+    if (!isMaternelleClass || !selectedClassId) { setMatSubjects([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/pedagogy-space/subjects/available?academicYearId=${academicYearId}&classId=${selectedClassId}&teacherId=${teacherId}`,
+          { credentials: "include" },
+        );
+        const data = await res.json();
+        if (!cancelled) setMatSubjects(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setMatSubjects([]);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMaternelleClass, selectedClassId, academicYearId, teacherId]);
+
+  // ⭐ MATERNELLE : quand on vient de « Préparer la fiche » (initialMatiere =
+  //    nom de la matière du cahier journal), sélectionner automatiquement la
+  //    matière correspondante du sélecteur (subjectId + n° du domaine) dès
+  //    que les matières sont chargées. Ne remplit que les champs vides.
+  useEffect(() => {
+    if (!isMaternelleClass || !initialMatiere || matSubjects.length === 0) return;
+    const subj = matSubjects.find((s: any) => s.subjectName === initialMatiere)
+      || matSubjects.find((s: any) => normalizeMatiereName(s.subjectName) === normalizeMatiereName(initialMatiere));
+    if (!subj) return;
+    const info = getMaternelleDomainInfo(subj.subjectName);
+    setForm((p: any) => ({
+      ...p,
+      subjectId: p.subjectId || subj.subjectId,
+      maternelle: {
+        ...p.maternelle,
+        domainNumber: p.maternelle?.domainNumber || info.roman || "",
+        domaineDu: p.maternelle?.domaineDu || info.domainLabel || "",
+      },
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matSubjects, initialMatiere, isMaternelleClass]);
 
   // ⭐ MATERNELLE : lecture/écriture des champs imbriqués de form.maternelle
   const getMat = (path: string): any => {
@@ -711,6 +766,59 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
 
             {/* FICHE DE + DOMAINE [n°] + Domaine du */}
             <div className="space-y-3">
+              {/* ⭐ MATIÈRE (dynamique — « Matières & programmes ») */}
+              <div className="p-3 bg-indigo-50/60 border border-indigo-200 rounded-lg">
+                <label className="block text-xs font-bold text-indigo-800 mb-1.5">
+                  Matière / Domaine d'activité
+                  <span className="ml-2 font-normal text-indigo-400">— matières configurées dans Pédagogie → Matières &amp; programmes</span>
+                </label>
+                {matSubjects.length > 0 ? (
+                  <select
+                    value={form.subjectId || ""}
+                    onChange={(e) => {
+                      const subj = matSubjects.find((s: any) => s.subjectId === e.target.value);
+                      if (!subj) {
+                        // Désélection — on vide le rattachement matière
+                        setForm((p: any) => ({ ...p, subjectId: "" }));
+                        return;
+                      }
+                      const info = getMaternelleDomainInfo(subj.subjectName);
+                      setForm((p: any) => ({
+                        ...p,
+                        subjectId: subj.subjectId,
+                        cours: p.cours || subj.subjectName,
+                        titre: p.titre || subj.subjectName,
+                        // ⭐ Format auto : Expression corporelle → DOMAINE II
+                        sheetType: info.domainKey === "dom2" ? "DOMAINE_2" : (p.sheetType === "DOMAINE_2" && info.domainKey !== "dom2" ? "DOMAINE" : p.sheetType),
+                        maternelle: {
+                          ...p.maternelle,
+                          titre: p.maternelle?.titre || subj.subjectName,
+                          // N° romain auto (I→V) ; vide pour le groupe
+                          // « DOMAINE [n° à renseigner] » (l'enseignante complète)
+                          domainNumber: info.domainKey === "dom2"
+                            ? p.maternelle?.domainNumber
+                            : (info.roman || p.maternelle?.domainNumber || ""),
+                          domaineDu: p.maternelle?.domaineDu || info.domainLabel || subj.subjectName,
+                        },
+                      }));
+                    }}
+                    disabled={isReadOnly}
+                    className="w-full px-3 py-2 bg-white border border-indigo-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-indigo-400 outline-none"
+                  >
+                    <option value="">— Sélectionner la matière (optionnel) —</option>
+                    {matSubjects.map((s: any) => (
+                      <option key={s.subjectId} value={s.subjectId}>
+                        {s.subjectName}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                    Aucune matière configurée pour cette classe — l'administration doit d'abord
+                    paramétrer les matières dans le module Pédagogie → « Matières &amp; programmes ».
+                  </div>
+                )}
+              </div>
               <div className="flex flex-wrap items-center gap-3">
                 <label className="text-xs font-bold text-slate-700 whitespace-nowrap">FICHE DE :</label>
                 <input type="text" value={getMat("ficheDe")} onChange={e => setMat("ficheDe", e.target.value)} disabled={isReadOnly}

@@ -10615,3 +10615,32 @@ Stage Summary:
 - ✅ Onglet Multi-caisses : les 7 caisses de test supprimées — l'école recréera ses caisses réelles depuis l'UI (modèles prédéfinis disponibles : principale, accueil, comptabilité, boutique…).
 - ⚠️ Reco : recharger l'app EN LIGNE une fois (le SW network-first sert les données fraîches ; le cache IndexedDB hors ligne peut encore montrer les anciennes listes jusqu'au rechargement) ; noter que tout paiement CASH nécessite une caisse ouverte → créer les caisses réelles AVANT les premiers encaissements.
 - Reste en file (repéré au diagnostic, non demandé) : 2 produits boutique « Uniforme » en doublon (dont 1 inactif sans prix, créés 07/09) ; 195 clôtures journalières AUTO à 0 dans Clôture & Trésorerie (cron, cosmétique).
+---
+Task ID: 65
+Agent: Super Z (session principale)
+Task: MATERNELLE — MATIÈRES DYNAMIQUES : le cahier journal maternelle et la création/préparation des fiches pédagogiques doivent récupérer les matières de façon dynamique depuis le module Pédagogie → onglet « Matières & programmes » (class_subjects → subjects), et non plus depuis une grille de domaines codée en dur.
+
+Work Log:
+- Diagnostic DB (diag_maternelle_matiieres.cjs) : Maternelle 1/2 ont 9 matières FR configurées (Expression corporelle, Expression orale, Expression plastique, Pré-lecture, Pré-écriture, Pré-mathématique, Éducation pour la santé et l'environnement, Éducation à des réflexions de santé, Éveil scientifique et technologique) + matières EN liées (filtrées par la piste de la classe)
+- Backend (pedagogical-space.service.ts) :
+  * Helpers : normalizeFrText (minuscules + sans accents), matchMaternelleDomain (classement matière → DOMAINE I→V par mots-clés), getMaternelleSubjectsForClass (class_subjects + filtre langue classe), buildMaternelleGroups (grille par domaines, colonne Observations dans « DOMAINE [n° à renseigner] », ordre pédagogique pré-lecture→écriture→math, « AUTRES MATIÈRES » pour les non rattachées), migrateMaternelleEntries (idempotente, orphelins conservés en AUTRES MATIÈRES)
+  * getOrCreateCahierJournal + getCahierJournalDetail (directeur) : enrichMaternelleJournal → matGroups/matSubjects dans la réponse + migration legacy persistée (dom1_sante → nom de matière)
+  * getFichesForCahierJournal : JOIN school_levels, rapprochement matières planifiées ↔ fiches par subjectId puis sheetType, réponse enrichie isMaternelle
+  * mapMatiereKeyToSheetType(key, isMaternelle) : noms de matières dynamiques + clés legacy → DOMAINE/DOMAINE_2 (primaire inchangé)
+  * exportCahierJournal : FIX latent — le JOIN school_levels manquait → schoolLevelCode jamais résolu → le PDF maternelle rendait la grille PRIMAIRE ; désormais grille PDF dynamique (matières configurées, repli modèle officiel) + migration en mémoire
+- Frontend :
+  * Nouveau module partagé lib/pedagogy/maternelle-domains.ts (miroir exact du backend) : buildMaternelleGroupsFromSubjects, MAT_DEFAULT_GROUPS (repli), mapMatiereNameToSheetType, getMaternelleDomainInfo (n° romain I→V), MAT_LEGACY_LABELS
+  * CahierJournalTab : grille maternelle construite depuis journal.matGroups (API) → buildMaternelleGroupsFromSubjects(dynamicSubjects) → MAT_DEFAULT_GROUPS ; bandeaux adaptés (avertissement si aucune matière configurée)
+  * DirectorPedagogyControl : même grille dynamique côté directeur (journal.matGroups)
+  * CahierJournalFichesContainer : mapMatiereToSheetType(matiere, isMaternelle) + cartes « Préparer la fiche » par noms de matières (libellés legacy conservés)
+  * PedagogicalSheetsTab : sélecteur « Matière / Domaine d'activité » (subjects/available) — auto-remplit le n° romain (III pour Éveil scientifique…), « Domaine du », le titre, et bascule le format (Expression corporelle → DOMAINE_2) ; subjectId persisté sur la fiche (rapprochement précis) ; résolution auto depuis « Préparer la fiche » (initialMatiere)
+- Vérifications : transpile TS 6 fichiers OK ; test du classement sur les vraies matières production (test_domaines_maternelle.cjs) : 9/9 classées, ordre pédagogique respecté
+- E2E production (e2e_matieres_dynamiques_maternelle.cjs — 26/26 OK) : login recette → getOrCreateCahierJournal (matGroups 6 groupes, 9 matières) → round-trip entrées par NOMS de matières + obs_dom → migration legacy dom1_sante→« Éducation à des réflexions de santé » + dom5_conte→« Expression orale… » (clés supprimées) → POST fiche DOMAINE avec subjectId → fichePreparede rapproché par subjectId → isMaternelle → export PDF 233 Ko → nettoyage
+- Validation navigateur (agent-browser) : grille = [DATE | DOMAINE I (2 matières santé) | DOMAINE II (Expression corporelle) | DOMAINE N° à renseigner (Pré-lecture, Pré-écriture, Pré-mathématique, Observations) | DOMAINE III (Éveil) | DOMAINE IV (Expression plastique) | DOMAINE V (Expression orale)] ; fiche : sélecteur matière → auto « III » (Éveil scientifique), « Domaine du » rempli, bascule auto DOMAINE_2 (badge II + tableau 5 colonnes) pour Expression corporelle ; captures + contrôle VLM (aucun défaut visuel)
+- Commit 122ada821 poussé → Railway + Vercel auto-déployés
+
+Stage Summary:
+- ✅ Le cahier journal maternelle affiche désormais les MATIÈRES réellement configurées dans « Matières & programmes », classées automatiquement dans leurs DOMAINES officiels (I→V) — côté enseignant ET directeur, y compris l'export PDF
+- ✅ La préparation des fiches pédagogiques maternelle s'appuie sur les mêmes matières dynamiques (sélecteur + auto-remplissage du n° de domaine, de l'intitulé et du format)
+- ✅ Migration transparente des anciennes saisies (clés dom*_*) + rapprochement fiches↔matières par subjectId
+- ✅ Bonus : correction du bug latent du PDF cahier journal maternelle (schoolLevelCode jamais résolu)

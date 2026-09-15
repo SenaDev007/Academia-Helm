@@ -145,7 +145,7 @@ function PageHeader({ columns }: { columns: MaternellePageColumn[] }) {
               <th key={`h2-${i}-${j}`} className="border border-slate-400 px-2 py-2 text-[10px] font-semibold text-slate-600 leading-tight">
                 {sc.label}
               </th>
-            )),
+            ))
           ),
         )}
       </tr>

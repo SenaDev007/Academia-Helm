@@ -34,7 +34,7 @@ import {
   FileText, Loader2, Plus, Save, RefreshCw, Send, Trash2,
   ChevronLeft, Clock, CheckCircle2, XCircle, BookOpen, Sigma,
   FlaskConical, Users, Palette, Download, History, Copy, Dumbbell,
-  Blocks, Shapes,
+  Blocks, Shapes, Languages,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
@@ -72,6 +72,14 @@ const SHEET_TYPES = [
   { type: "ES", label: "Éducation Sociale", icon: Users, color: "bg-amber-100 text-amber-700 border-amber-200", headerBg: "bg-amber-600", sectionBorder: "border-amber-300" },
   { type: "EA", label: "Éducation Artistique", icon: Palette, color: "bg-pink-100 text-pink-700 border-pink-200", headerBg: "bg-pink-600", sectionBorder: "border-pink-300" },
   { type: "EPS", label: "Éducation Physique et Sportive", icon: Dumbbell, color: "bg-cyan-100 text-cyan-700 border-cyan-200", headerBg: "bg-cyan-600", sectionBorder: "border-cyan-300" },
+  // ⭐ 2026-09-15 — MODÈLE STANDARD pour l'ANGLAIS et l'INFORMATIQUE enseignés
+  //    comme matières par un enseignant SPÉCIALISÉ (écoles non bilingues).
+  //    Même structure que la fiche standard du primaire : éléments de
+  //    planification + activités préliminaires + déroulement + retour et
+  //    projection — la matière (Anglais ou Informatique) est celle de
+  //    l'enseignant spécialisé (son espace pédagogique ne contient que SA
+  //    matière).
+  { type: "STANDARD", label: "Anglais / Informatique (fiche standard)", icon: Languages, color: "bg-violet-100 text-violet-700 border-violet-200", headerBg: "bg-violet-600", sectionBorder: "border-violet-300" },
 ] as const;
 
 // ⭐ 2026-09-15 MATERNELLE — 2 seuls formats de fiches pédagogiques pour les
@@ -191,6 +199,15 @@ const SHEET_TYPE_CONFIG: Record<string, {
     ibisFields: [
       { label: "Annoncer l'objet d'apprentissage (titre de l'activité physique et sportive)", key: "ibis_1", placeholder: "Ex: Annoncer le titre de l'activité physique à apprendre (course, saut, jeu collectif...)" },
       { label: "Pré-conception", key: "ibis_2", placeholder: "Ex: Demander aux enfants s'ils connaissent l'activité à partir du titre, recueillir leurs représentations..." },
+    ],
+  },
+  // ⭐ 2026-09-15 — FICHE STANDARD (Anglais / Informatique — enseignant
+  //    spécialisé des écoles non bilingues) : structure standard du primaire.
+  STANDARD: {
+    ibisTitle: "Activités préliminaires",
+    ibisFields: [
+      { label: "Rappel de la leçon précédente", key: "ibis_1", placeholder: "Ex: Questions orales, révision du vocabulaire/de la notion de la séance précédente..." },
+      { label: "Vocabulaire / notions nouvelles de la séance", key: "ibis_2", placeholder: "Ex: Nouveaux mots, expressions ou termes techniques à faire acquérir (anglais) / notions et manipulations préalables (informatique)..." },
     ],
   },
 };

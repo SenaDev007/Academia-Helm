@@ -458,6 +458,11 @@ function mapMatiereToSheetType(matiere: string, isMaternelle = false): string {
   // ⭐ Clés legacy maternelle (journaux créés avant les matières dynamiques)
   if (m === 'dom2_corporelle') return 'DOMAINE_2';
   if (m.startsWith('dom') || m === 'pre_lecture' || m === 'pre_ecriture' || m === 'pre_mathematiques') return 'DOMAINE';
+  // ⭐ 2026-09-15 — FICHE STANDARD pour l'anglais et l'informatique enseignés
+  //    comme matières par un enseignant spécialisé (écoles non bilingues).
+  //    Ces vérifications AVANT les autres branches : « informatique » ne doit
+  //    plus tomber dans EST, et « anglais » doit trouver son modèle standard.
+  if (m.includes('anglais') || m.includes('english') || m.includes('informatique') || m.includes('computer')) return 'STANDARD';
   // Français
   if (m === 'français' || m === 'francais' || m === 'fran\u00e7ais') return 'FRANCAIS';
   // Mathématiques
@@ -818,7 +823,7 @@ function FichesLieesJournal({
                     // ⭐ Nom du fichier : Fiche pédagogique [matière] [jour] [date] période [date] à [date]
                     const SHEET_LABELS: Record<string, string> = {
                       MATH: 'Mathematiques', FRANCAIS: 'Francais', EST: 'EST', ES: 'Education Sociale', EA: 'Education Artistique', EPS: 'Education Physique et Sportive',
-                      DOMAINE: 'Domaine', DOMAINE_2: 'Domaine 2',
+                      DOMAINE: 'Domaine', DOMAINE_2: 'Domaine 2', STANDARD: 'Anglais-Informatique',
                     };
                     const matiere = SHEET_LABELS[fiche.sheetType] || fiche.sheetType || 'Fiche';
                     const days = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];

@@ -68,7 +68,28 @@ export function SaisieMasterWorkspace() {
   const [exporting, setExporting] = useState(false);
   const [exportingZip, setExportingZip] = useState(false);
 
-  const allSubjects = classes.flatMap(c => c.subjects || []);
+  // ⭐ Matières de la CLASSE SÉLECTIONNÉE uniquement (et non plus toutes les
+  //    classes confondues). Clarification utilisateur (2026-09-15) : dans les
+  //    écoles non bilingues, l'enseignant SPÉCIALISÉ (Anglais / Informatique)
+  //    ne voit que SA matière pour la saisie des notes — my-classes ne renvoie
+  //    déjà que les matières affectées à l'enseignant pour chaque classe.
+  const selectedClass = classes.find(c => c.classId === selectedClassId);
+  const allSubjects: any[] = selectedClass?.subjects || [];
+
+  // ⭐ Rabattre la matière sélectionnée quand elle n'appartient pas à la classe
+  //    courante + présélection automatique quand l'enseignant n'a qu'une seule
+  //    matière (spécialiste) — évite la saisie sur « toutes les matières ».
+  useEffect(() => {
+    if (!selectedClassId) return;
+    const subs: any[] = classes.find(c => c.classId === selectedClassId)?.subjects || [];
+    if (selectedSubjectId && !subs.some(s => s.subjectId === selectedSubjectId)) {
+      setSelectedSubjectId("");
+    }
+    if (!selectedSubjectId && subs.length === 1) {
+      setSelectedSubjectId(subs[0].subjectId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClassId, classes]);
 
   if (!academicYear?.id) {
     return (
@@ -229,7 +250,6 @@ export function SaisieMasterWorkspace() {
     }
   };
 
-  const selectedClass = classes.find(c => c.classId === selectedClassId);
   const currentEval = evaluations[activeEval];
   const hasEvaluations = Object.keys(evaluations).length > 0;
 

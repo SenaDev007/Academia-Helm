@@ -932,6 +932,11 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
           </div>
 
           {/* === PAGE 2 (VERSO) === COLONNES GROUPÉES (suite) */}
+          {/* ⭐ Masquée quand il n'y a pas de colonne verso — ex. enseignant
+              spécialisé (Anglais / Informatique) : une seule matière → une
+              seule colonne sur le recto, pas de page verso vide. */}
+          {VERSO_COLUMNS.length > 0 && (
+          <>
           <div className="mb-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Page 2 — Verso</div>
           <div className="overflow-x-auto border border-slate-300 rounded-lg mb-6">
             <table className="w-full border-collapse min-w-[900px]">
@@ -986,6 +991,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
               </tbody>
             </table>
           </div>
+          </>
+          )}
 
           {/* === OBSERVATIONS GLOBALES (bas de page) === */}
           {/* ⭐ Observations générales de la semaine */}
@@ -1257,10 +1264,9 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
           )}
 
           {/* === PIED DE PAGE — Signatures (comme Registre d'appel) === */}
-          {/* ⚠️ MATERNELLE : pas de section signatures sur le cahier journal
-              maternelle — le modèle officiel n'en comporte pas. */}
-          {!isMaternelleClass && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300">
+          {/* ⭐ 2026-09-15 : section signatures également pour la MATERNELLE
+              (demande utilisateur — même pied de page que les autres classes). */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 mt-6 border-t-2 border-slate-300">
             {/* Signature Directeur */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -1348,7 +1354,6 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
               )}
             </div>
           </div>
-          )}
         </div>
       )}
 

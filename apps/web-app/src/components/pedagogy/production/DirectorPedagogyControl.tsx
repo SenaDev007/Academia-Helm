@@ -89,6 +89,8 @@ const SHEET_TYPE_LABELS: Record<string, { label: string; icon: any; color: strin
   ES: { label: "Éducation Sociale", icon: Users, color: "bg-amber-100 text-amber-700" },
   EA: { label: "Éducation Artistique", icon: Palette, color: "bg-pink-100 text-pink-700" },
   EPS: { label: "Éducation Physique et Sportive", icon: Activity, color: "bg-cyan-100 text-cyan-700" },
+  // ⭐ 2026-09-15 — fiche standard pour l'anglais / l'informatique (spécialiste)
+  STANDARD: { label: "Anglais / Informatique (fiche standard)", icon: FileText, color: "bg-violet-100 text-violet-700" },
   // ⭐ 2026-09-15 MATERNELLE — 2 formats de fiches dédiés
   DOMAINE: { label: "Domaine (n° à renseigner)", icon: FileText, color: "bg-indigo-100 text-indigo-700" },
   DOMAINE_2: { label: "Domaine 2", icon: FileText, color: "bg-teal-100 text-teal-700" },
@@ -3314,6 +3316,7 @@ const SHEET_TYPE_HEADERS: Record<string, { label: string; bg: string }> = {
   ES: { label: "ÉDUCATION SOCIALE", bg: "bg-amber-50 border-amber-300" },
   EA: { label: "ÉDUCATION ARTISTIQUE", bg: "bg-pink-50 border-pink-300" },
   EPS: { label: "ÉDUCATION PHYSIQUE ET SPORTIVE", bg: "bg-cyan-50 border-cyan-300" },
+  STANDARD: { label: "ANGLAIS / INFORMATIQUE", bg: "bg-violet-50 border-violet-300" },
 };
 
 function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: { fiche: any; userId: string; onBack: () => void; onValidated: () => void; }) {

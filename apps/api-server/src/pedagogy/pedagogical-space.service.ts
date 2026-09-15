@@ -1081,6 +1081,16 @@ export class PedagogicalSpaceService {
           { label: 'Pré-conception', key: 'ibis_2' },
         ],
       },
+      // ⭐ 2026-09-15 — FICHE STANDARD (Anglais / Informatique — enseignant
+      //    spécialisé des écoles non bilingues) : structure standard du primaire.
+      STANDARD: {
+        label: 'Anglais / Informatique', color: '#5b21b6', bg: '#ede9fe', border: '#8b5cf6',
+        ibisTitle: 'Activités préliminaires',
+        ibisFields: [
+          { label: 'Rappel de la leçon précédente', key: 'ibis_1' },
+          { label: 'Vocabulaire / notions nouvelles de la séance', key: 'ibis_2' },
+        ],
+      },
     };
     const typeConfig = SHEET_TYPE_CONFIG[fiche.sheetType] || { label: fiche.sheetType || '—', color: '#0A2A5E', bg: '#f1f5f9', border: '#cbd5e1', ibisTitle: 'Section spécifique', ibisFields: [] };
     const typeLabel = typeConfig.label;
@@ -5244,6 +5254,14 @@ export class PedagogicalSpaceService {
     if (k.startsWith('dom') || k === 'pre_lecture' || k === 'pre_ecriture' || k === 'pre_mathematiques') {
       return 'DOMAINE';
     }
+    // ⭐ 2026-09-15 — FICHE STANDARD pour l'anglais et l'informatique enseignés
+    //    comme matières par un enseignant SPÉCIALISÉ (écoles non bilingues).
+    //    Ces vérifications AVANT les autres branches : « informatique » ne doit
+    //    plus tomber dans EST (ancien comportement accidentel), et « anglais »
+    //    doit trouver son modèle standard au lieu de null.
+    if (k.includes('anglais') || k.includes('english') || k.includes('informatique') || k.includes('computer')) {
+      return 'STANDARD';
+    }
     if (k.includes('francais') || k.includes('français') || k.includes('lecture')
       || k.includes('dictee') || k.includes('grammaire') || k.includes('conjugaison') || k.includes('vocabulaire')
       || k.includes('orthographe') || k.includes('expression')) {
@@ -5253,8 +5271,7 @@ export class PedagogicalSpaceService {
       || k.includes('mesure') || k.includes('geometrie')) {
       return 'MATH';
     }
-    if (k.includes('est') || k.includes('science') || k.includes('technologie')
-      || k.includes('informatique')) {
+    if (k.includes('est') || k.includes('science') || k.includes('technologie')) {
       return 'EST';
     }
     if (k.includes('eps') || k.includes('sport') || k.includes('education physique')
@@ -7574,6 +7591,7 @@ export class PedagogicalSpaceService {
     const sheetTypeLabels: Record<string, string> = {
       MATH: 'Mathématiques', FRANCAIS: 'Français', EST: 'Éduc. Scientifique & Tech.',
       ES: 'Éducation Sociale', EA: 'Éducation Artistique', EPS: 'Éducation Physique et Sportive',
+      STANDARD: 'Anglais / Informatique (fiche standard)',
     };
     const dateLabel = lessonDate ? new Date(lessonDate).toLocaleDateString('fr-FR') : '—';
     const actionLabel = action === 'VALIDATED' ? 'validée' : 'rejetée';
@@ -8344,8 +8362,12 @@ export class PedagogicalSpaceService {
     // correspondant à la piste linguistique de l'enseignant connecté.
     // Ex : un enseignant FR ne doit pas voir les matières "English Language" (EN).
     let teacherLanguages: string[] = [];
+    // ⭐ Profil Teacher résolu (null pour un promoteur/directeur sans profil) —
+    //    utilisé à l'étape 1b pour restreindre les matières aux affectations.
+    let resolvedTeacherProfileId: string | null = null;
     if (teacherId) {
       const { teacherId: resolvedTid } = await this.resolveTeacherId(tenantId, teacherId);
+      resolvedTeacherProfileId = resolvedTid;
       const tid = resolvedTid || teacherId;
       const teacher: any = await this.prisma.$queryRawUnsafe(
         `SELECT "assignedLanguages" FROM teachers WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
@@ -8405,6 +8427,55 @@ export class PedagogicalSpaceService {
     // ⭐ Recalculer langFilterActive après avoir potentiellement récupéré la
     //    piste linguistique de la classe
     const langFilterFinal = teacherLanguages.length > 0;
+
+    // ─── Étape 1b : ⭐ ENSEIGNANT AFFECTÉ — matières LIMITÉES à ses affectations
+    //
+    // Clarification utilisateur (2026-09-15) : dans les écoles NON bilingues
+    // qui font l'anglais / l'informatique comme matière, l'enseignant
+    // SPÉCIALISÉ ne doit voir, dans son espace pédagogique (cahier journal +
+    // fiches pédagogiques), QUE SA matière — pas toutes les matières de la
+    // classe. Le titulaire, affecté à toutes les matières régulières de sa
+    // section, continue de les voir toutes.
+    //
+    // Source de vérité : teacher_class_assignments —
+    //   (a) tca.classId = section physique (titulaire / enseignant par section)
+    //   (b) tca.classId IS NULL + cs.academicClassId = classe officielle
+    //       (spécialiste itinérant « toutes sections » : Anglais, Informatique)
+    //
+    // L'affectation explicite PRIME sur le filtre linguistique : un spécialiste
+    // d'anglais doit voir « Anglais » même si la matière est marquée EN.
+    // Sans aucune affectation sur cette classe (promoteur, directeur,
+    // enseignant non encore affecté) → comportement inchangé (étapes 2+).
+    if (resolvedTeacherProfileId && (physicalClassId || academicClassId)) {
+      const conds1b: string[] = [];
+      const params1b: any[] = [tenantId, academicYearId];
+      let p1b = 3;
+      if (physicalClassId) {
+        conds1b.push(`tca."classId" = $${p1b++}`);
+        params1b.push(physicalClassId);
+      }
+      if (academicClassId) {
+        conds1b.push(`(tca."classId" IS NULL AND cs."academicClassId" = $${p1b++})`);
+        params1b.push(academicClassId);
+      }
+      const assignedSubjects: any = await this.prisma.$queryRawUnsafe(
+        `SELECT DISTINCT s."id" as "subjectId", s."name" as "subjectName", s."code" as "subjectCode",
+                cs."coefficient", cs."weeklyHours"
+         FROM "teacher_class_assignments" tca
+         INNER JOIN "class_subjects" cs ON cs."id" = tca."classSubjectId"
+         INNER JOIN "subjects" s ON s."id" = cs."subjectId"
+         WHERE tca."tenantId" = $1 AND tca."academicYearId" = $2
+           AND (${conds1b.join(' OR ')})
+         ORDER BY s."name"`,
+        ...params1b,
+      );
+      if (assignedSubjects && assignedSubjects.length > 0) {
+        this.logger.log(
+          `[getAvailableSubjectsForClass] Enseignant affecté — ${assignedSubjects.length} matière(s) restreinte(s) à ses affectations (classe ${physicalClassId || academicClassId})`,
+        );
+        return assignedSubjects;
+      }
+    }
 
     // ─── Étape 2 : chercher les matières via academicClassId (source principale)
     // C'est le cas normal : les class_subjects sont rattachés à l'AcademicClass.

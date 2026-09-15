@@ -183,11 +183,27 @@ export class EvaluationsService {
           select: { id: true },
         });
         if (teacher) {
-          // ⭐ Au lieu de filtrer uniquement par teacherId (qui peut être null
-          // pour les évaluations créées avant le fix), on filtre aussi par
-          // les classes assignées à l'enseignant via TeacherClassAssignment.
-          // Ça permet à l'enseignant de voir TOUTES les évaluations de SES classes,
-          // même celles où teacherId n'a pas été assigné.
+          // ⭐ Clarification utilisateur (2026-09-15) : l'enseignant SPÉCIALISÉ
+          // (ex : Anglais / Informatique dans les écoles non bilingues) ne doit
+          // voir, pour la saisie des notes, QUE les évaluations de SA matière —
+          // pas toutes les évaluations de ses classes.
+          //
+          // On construit donc les couples (classe × matière) que l'enseignant
+          // enseigne VRAIMENT depuis ses TeacherClassAssignment :
+          //   - a.classId = section physique (titulaire : toutes ses matières)
+          //   - a.classId NULL + cs.academicClassId (spécialiste itinérant
+          //     « toutes sections » : Anglais, Informatique)
+          // Le titulaire, affecté à toutes les matières régulières de sa
+          // section, continue de voir toutes les évaluations de sa classe.
+          //
+          // On garde DEUX filets de sécurité :
+          //   1. teacherId direct (évaluations où il est explicitement assigné) ;
+          //   2. les évaluations de ses classes SANS enseignant assigné
+          //      (teacherId null — personne d'autre ne les verrait sinon).
+          //
+          // ⚠️ Côté directeur / promoteur (pas de filtre teacherId ici), toutes
+          // les matières restent visibles : le calcul des notes et des moyennes
+          // tient compte de l'anglais et de l'informatique.
           const teacherAssignments = await this.prisma.teacherClassAssignment.findMany({
             where: { tenantId, academicYearId, teacherId: teacher.id },
             select: { classId: true, classSubjectId: true },
@@ -198,13 +214,70 @@ export class EvaluationsService {
               .filter(Boolean) as string[]
           ));
 
-          if (teacherClassIds.length > 0) {
-            // L'enseignant a des classes assignées → filtrer par ses classes
-            // OU par teacherId (pour les évaluations où il est directement assigné)
-            where.OR = [
-              { teacherId: teacher.id },
-              { classId: { in: teacherClassIds } },
-            ];
+          if (teacherAssignments.length > 0) {
+            // Résoudre les ClassSubject des affectations (subjectId + classes)
+            const csIds = Array.from(new Set(teacherAssignments.map((a) => a.classSubjectId)));
+            const classSubjects = await this.prisma.classSubject.findMany({
+              where: { id: { in: csIds } },
+              select: { id: true, subjectId: true, classId: true, academicClassId: true },
+            });
+            const csById = new Map(classSubjects.map((cs) => [cs.id, cs]));
+
+            // ⭐ Résoudre les SECTIONS PHYSIQUES des classes officielles
+            //    impliquées : les affectations itinérantes (classId NULL) sont
+            //    posées au niveau de l'AcademicClass, mais les évaluations
+            //    référencent les classes physiques (CE1 A, CE1 B…) — sans cette
+            //    résolution, le spécialiste ne verrait pas les évaluations de
+            //    sa matière créées pour une section précise.
+            const academicClassIds = Array.from(new Set(
+              classSubjects.map((cs) => cs.academicClassId).filter(Boolean) as string[]
+            ));
+            const physicalSections = academicClassIds.length > 0
+              ? await this.prisma.academicClass.findMany({
+                  where: { id: { in: academicClassIds } },
+                  select: { id: true, physicalClasses: { select: { id: true } } },
+                })
+              : [];
+            const sectionsByAcademic = new Map<string, string[]>();
+            for (const ac of physicalSections) {
+              sectionsByAcademic.set(ac.id, (ac.physicalClasses || []).map((pc) => pc.id));
+            }
+
+            // Couples (classId candidat × subjectId) — couvre sections physiques
+            // ET classes officielles (les évaluations référencent les deux).
+            const pairConditions: any[] = [];
+            for (const a of teacherAssignments) {
+              const cs = csById.get(a.classSubjectId);
+              if (!cs) continue;
+              const cids = new Set<string>();
+              if (a.classId) cids.add(a.classId);
+              if (cs.classId) cids.add(cs.classId);
+              if (cs.academicClassId) {
+                cids.add(cs.academicClassId);
+                for (const sid of sectionsByAcademic.get(cs.academicClassId) || []) {
+                  cids.add(sid);
+                }
+              }
+              for (const cid of cids) {
+                pairConditions.push({ AND: [{ classId: cid }, { subjectId: cs.subjectId }] });
+              }
+            }
+
+            if (pairConditions.length > 0 || teacherClassIds.length > 0) {
+              where.OR = [
+                // (1) Évaluations où l'enseignant est directement assigné
+                { teacherId: teacher.id },
+                // (2) Évaluations correspondant à SES couples (classe × matière)
+                ...pairConditions,
+                // (3) Évaluations de ses classes SANS enseignant assigné
+                ...(teacherClassIds.length > 0
+                  ? [{ AND: [{ teacherId: null }, { classId: { in: teacherClassIds } }] }]
+                  : []),
+              ];
+            } else {
+              // Affectations sans classe résolue → filtrer par teacherId uniquement
+              where.teacherId = teacher.id;
+            }
           } else {
             // Pas d'assignations → filtrer par teacherId uniquement
             where.teacherId = teacher.id;

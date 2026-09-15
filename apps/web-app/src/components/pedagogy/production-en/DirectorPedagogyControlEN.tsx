@@ -83,6 +83,8 @@ const SHEET_TYPE_LABELS: Record<string, { label: string; icon: any; color: strin
   ES: { label: "Éducation Sociale", icon: Users, color: "bg-amber-100 text-amber-700" },
   EA: { label: "Éducation Artistique", icon: Palette, color: "bg-pink-100 text-pink-700" },
   EPS: { label: "Éducation Physique et Sportive", icon: Activity, color: "bg-cyan-100 text-cyan-700" },
+  // ⭐ 2026-09-15 — fiche standard pour l'anglais / l'informatique (spécialiste)
+  STANDARD: { label: "Anglais / Informatique (fiche standard)", icon: FileText, color: "bg-violet-100 text-violet-700" },
 };
 
 const MONTH_NAMES = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",

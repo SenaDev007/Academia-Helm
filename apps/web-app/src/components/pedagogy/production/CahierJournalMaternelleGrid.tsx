@@ -28,7 +28,6 @@
  */
 
 import { Fragment } from "react";
-import { NotebookPen } from "lucide-react";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import {
   MATERNELLE_RECTO_COLUMNS,
@@ -275,34 +274,8 @@ export function CahierJournalMaternelleGrid({
   onObservationsRightChange,
   getDirectorObservation,
 }: CahierJournalMaternelleGridProps) {
-  const boundColumns = subjectBinding ? subjectBinding.size : 0;
-  const boundMatieres = subjectBinding
-    ? Array.from(subjectBinding.values()).reduce((s, arr) => s + arr.length, 0)
-    : 0;
-
   return (
-    <div className="space-y-6">
-      {/* ⭐ Bandeau informatif : liaison dynamique avec le module Matières et programmes */}
-      <div className="flex items-start gap-2 p-2.5 bg-blue-50/60 border border-blue-100 rounded-lg text-[11px] text-blue-800">
-        <NotebookPen className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-        <p>
-          <strong>Modèle officiel maternelle</strong> — le tableau s&apos;affiche exactement comme le
-          modèle papier, même si une matière n&apos;est pas paramétrée.
-          {subjectBinding && (
-            <>
-              {" "}Les matières du module <strong>Pédagogie → Matières et programmes</strong> sont
-              récupérées dynamiquement et liées aux colonnes correspondantes
-              {boundMatieres > 0 ? (
-                <> — <strong>{boundMatieres} matière(s) liée(s) sur {boundColumns} colonne(s)</strong>
-                {" "}(badge vert sous la colonne ; les matières fusionnées pour l&apos;évaluation sont regroupées).</>
-              ) : (
-                <> — aucune matière paramétrée ne correspond aux colonnes du modèle pour le moment.</>
-              )}
-            </>
-          )}
-        </p>
-      </div>
-
+    <div className="space-y-6 mb-8">
       {/* ═══ PAGE 1 — RECTO ═══ */}
       <div>
         <div className="mb-1.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
@@ -356,15 +329,25 @@ export function CahierJournalMaternelleGrid({
           weekStart={weekStart}
           getDirectorObservation={getDirectorObservation}
         />
-        {/* Pied de page droite : zone non titrée (lignes d'écriture du modèle) */}
-        <div className="mt-2 border border-slate-300 rounded-lg overflow-hidden">
+        {/* ⭐ Pied de page droite : zone OBSERVATIONS (libellé vertical, comme la
+            page recto — précise la nature de la zone et la sépare clairement de
+            la section « Travaux & Suivi de la semaine » qui suit) */}
+        <div className="mt-2 flex overflow-hidden border border-slate-300 rounded-lg min-h-[110px]">
+          <div className="flex items-center justify-center w-10 bg-slate-100 border-r border-slate-300">
+            <span
+              className="text-[10px] font-bold text-slate-600 uppercase tracking-[0.2em]"
+              style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
+            >
+              Observations
+            </span>
+          </div>
           <textarea
             value={observationsRight}
             onChange={e => onObservationsRightChange(e.target.value)}
             disabled={isReadOnly}
             rows={4}
-            placeholder="…"
-            className="w-full px-3 py-2 text-xs border-0 focus:outline-none focus:ring-1 focus:ring-blue-300 disabled:bg-slate-50 resize-y"
+            placeholder="Observations…"
+            className="flex-1 px-3 py-2 text-xs border-0 focus:outline-none focus:ring-1 focus:ring-blue-300 disabled:bg-slate-50 resize-y min-w-0"
           />
         </div>
       </div>

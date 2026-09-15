@@ -25,12 +25,8 @@ import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  buildMaternelleGroupsFromSubjects,
-  flattenMatGroups,
-  MAT_DEFAULT_GROUPS,
-  type MatGroup,
-} from "@/lib/pedagogy/maternelle-domains";
+import { CahierJournalMaternelleGrid } from "./CahierJournalMaternelleGrid";
+import { bindDynamicSubjectsToColumns, buildMaternelleEntryKeyResolver, type DynamicSubject } from "@/lib/pedagogy/maternelle-domaines";
 
 interface CahierJournalTabProps {
   tenantId: string;
@@ -62,6 +58,8 @@ interface CahierJournalTabProps {
     weekEndDate?: string;
     className?: string;
     classId?: string;
+    /** ⭐ true si la classe sélectionnée est une classe MATERNELLE */
+    isMaternelle?: boolean;
   }) => void;
 }
 
@@ -74,20 +72,6 @@ const DAYS = [
   { id: 4, key: "jeudi", label: "JEUDI" },
   { id: 5, key: "vendredi", label: "VENDREDI" },
 ] as const;
-
-// ⭐ 2026-09-15 MATERNELLE — MATIÈRES DYNAMIQUES :
-//    la grille suit TOUJOURS la structure officielle par DOMAINES (I à V,
-//    modèle officiel maternelle), mais les sous-colonnes sont désormais les
-//    MATIÈRES réellement configurées pour la classe dans le module Pédagogie
-//    → onglet « Matières & programmes » (récupérées dynamiquement) :
-//      1. `journal.matGroups` renvoyé par l'API cahier journal (source
-//         principale — inclut la migration des anciennes clés dom1_sante…) ;
-//      2. sinon, construction locale depuis /subjects/available ;
-//      3. sinon, repli sur le modèle officiel par défaut (le temps que
-//         l'école configure ses matières).
-//    Chaque matière est classée dans son domaine (santé → DOMAINE I,
-//    expression corporelle → DOMAINE II, pré-lecture/écriture/math →
-//    DOMAINE [n° à renseigner], etc.) — voir lib/pedagogy/maternelle-domains.ts.
 
 const STATUS_CONFIG = {
   DRAFT: { label: "Brouillon", color: "bg-slate-100 text-slate-600", icon: Clock },
@@ -310,6 +294,46 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
     return [];
   };
 
+  // ⭐ MATERNELLE — détection (déclarée AVANT loadJournal car utilisée dans ses
+  //    dépendances). Priorité : niveau renvoyé par l'API cahier journal
+  //    (getOrCreateCahierJournal — enrichMaternelleJournal), sinon niveau de la
+  //    classe sélectionnée (my-classes).
+  //    Le cahier journal maternelle suit le MODÈLE OFFICIEL : tableau fixe par
+  //    domaines (I → V) reproduit EXACTEMENT, même si une matière n'est pas
+  //    paramétrée. Les matières paramétrées (module Pédagogie → Matières et
+  //    programmes) sont récupérées DYNAMIQUEMENT et liées aux colonnes
+  //    correspondantes — elles ne créent JAMAIS de colonne supplémentaire
+  //    (pas de colonne « autre matière »).
+  const maternelleSelectedClass = classes.find(c => c.classId === selectedClassId);
+  const selectedClassLevelCode = ((maternelleSelectedClass as any)?.schoolLevelCode || "").toUpperCase();
+  const selectedClassLevelName = ((maternelleSelectedClass as any)?.schoolLevelName || "").toLowerCase();
+  // ⭐ Niveau renvoyé par l'API cahier journal (enrichMaternelleJournal — clé
+  //    de bascule fiable dès que le journal est chargé) OU niveau de la classe.
+  const journalLevelCode = ((journal as any)?.schoolLevelCode || "").toUpperCase();
+  const journalLevelName = ((journal as any)?.schoolLevelName || "").toLowerCase();
+  const isMaternelleClass =
+    journalLevelCode.includes("MATERNELLE") ||
+    journalLevelName === "maternelle" ||
+    selectedClassLevelCode.includes("MATERNELLE") ||
+    selectedClassLevelName === "maternelle";
+  // ⭐ Liaison dynamique multi-matières (matières « fusionnées » pour l'évaluation
+  //    regroupées sur la même colonne du modèle) + résolveur de clés d'entrée :
+  //    colonne liée → nom de la matière principale (compatibilité backend :
+  //    matières planifiées, rapprochement des fiches par subjectId), colonne non
+  //    liée → libellé de la colonne du modèle, « Observations » → obs_dom.
+  const maternelleSubjectBinding: Map<string, DynamicSubject[]> = isMaternelleClass
+    ? bindDynamicSubjectsToColumns(dynamicSubjects)
+    : new Map<string, DynamicSubject[]>();
+  const maternelleEntryKeyResolver = buildMaternelleEntryKeyResolver(maternelleSubjectBinding);
+
+  // ⭐ Pied de page droite du modèle maternelle (zone non titrée, lignes d'écriture)
+  //    Stockée dans les entries du journal sous une clé réservée (ignorée par le
+  //    backend qui n'itère que sur les jours lundi→vendredi).
+  const maternelleFooterRight = (entries as any).__footerRight__ || "";
+  const updateMaternelleFooterRight = (value: string) => {
+    setEntries(prev => ({ ...prev, __footerRight__: value }));
+  };
+
   // === Chargement du cahier journal ===
   const loadJournal = useCallback(async () => {
     if (!selectedClassId) return;
@@ -340,6 +364,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
         weekEndDate: data.weekEndDate,
         className: data.classNameResolved || data.className,
         classId: selectedClassId,
+        isMaternelle: isMaternelleClass,
       });
     } catch (e: any) {
       toast.error("Erreur lors du chargement", { description: e.message });
@@ -348,7 +373,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
     } finally {
       setLoading(false);
     }
-  }, [academicYearId, teacherId, selectedClassId, weekStart, classes, onJournalLoaded]);
+  }, [academicYearId, teacherId, selectedClassId, weekStart, classes, onJournalLoaded, isMaternelleClass]);
 
   useEffect(() => {
     if (selectedClassId) loadJournal();
@@ -534,20 +559,25 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   // === Sauvegarde ===
   const handleSave = async () => {
     if (!journal) return;
-    // ⭐ FIX 2026-09-15 (anti-vide) : si aucune cellule de la grille n'est
-    //    renseignée ET qu'il n'y a ni observations ni signature, on refuse
+
+    // ⭐ FIX anti-vide (tous niveaux) : si aucune cellule de la grille n'est
+    //    renseignée ET qu'il n'y a ni observations (zone OBSERVATIONS ou zone
+    //    non titrée du modèle maternelle) ni signature, on refuse
     //    l'enregistrement avec un message clair — au lieu d'enregistrer du vide.
     const stripHtml = (html: string) => (html || "").replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").trim();
-    const hasGridContent = Object.values(entries).some(dayMap =>
-      Object.values(dayMap || {}).some(v => stripHtml(String(v || "")).length > 0)
+    const hasGridContent = Object.values(entries).some((dayMap: any) =>
+      Object.values(dayMap || {}).some(v => stripHtml(String(v || "")).length > 0),
     );
-    const hasObservations = stripHtml(observations).length > 0;
+    const hasObservations =
+      stripHtml(observations).length > 0 ||
+      (isMaternelleClass && stripHtml(maternelleFooterRight).length > 0);
     if (!hasGridContent && !hasObservations && !teacherSignature) {
       toast.error("Aucun contenu à enregistrer", {
         description: "Vous n'avez rien renseigné dans le cahier journal (ni séances, ni observations). Renseignez au moins une cellule avant d'enregistrer.",
       });
       return;
     }
+
     setSaving(true);
     try {
       const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}`, {
@@ -571,6 +601,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
         className: journal.classNameResolved || journal.className,
         status: journal.status,
         classId: selectedClassId,
+        isMaternelle: isMaternelleClass,
       });
       loadJournal();
     } catch (e: any) {
@@ -684,37 +715,6 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   const isReadOnly = journal && (journal.status === "SUBMITTED" || journal.status === "VALIDATED");
   const statusConfig = journal ? STATUS_CONFIG[journal.status as keyof typeof STATUS_CONFIG] : null;
 
-  // ⭐ 2026-09-15 MATERNELLE : grille par DOMAINES (I à V) au lieu de la grille
-  //    par matières — détection via le niveau de la classe (getOrCreateCahierJournal
-  //    renvoie schoolLevelCode, sinon repli sur la liste des classes).
-  const isMaternelleJournal =
-    (journal?.schoolLevelCode || "").toUpperCase() === "MATERNELLE" ||
-    (journal?.schoolLevelName || "").toLowerCase() === "maternelle" ||
-    (selectedClass?.schoolLevelCode || "").toUpperCase() === "MATERNELLE" ||
-    (selectedClass?.schoolLevelName || "").toLowerCase() === "maternelle";
-
-  // ⭐ MATERNELLE — MATIÈRES DYNAMIQUES : construction de la grille par
-  //    domaines depuis les matières configurées dans « Matières & programmes ».
-  //    Priorité : matGroups de l'API cahier journal (déjà migré + orphelins),
-  //    puis construction locale depuis /subjects/available, puis modèle
-  //    officiel par défaut.
-  const matGroups: MatGroup[] = (() => {
-    if (!isMaternelleJournal) return [];
-    if (Array.isArray(journal?.matGroups) && journal.matGroups.length > 0) {
-      return journal.matGroups as MatGroup[];
-    }
-    if (dynamicSubjects.length > 0) {
-      return buildMaternelleGroupsFromSubjects(dynamicSubjects);
-    }
-    return MAT_DEFAULT_GROUPS;
-  })();
-  const matFlatSubs = flattenMatGroups(matGroups);
-  // Aucune matière configurée pour cette classe maternelle ?
-  const matSubjectsVides =
-    isMaternelleJournal &&
-    dynamicSubjects.length === 0 &&
-    (!Array.isArray(journal?.matSubjects) || journal.matSubjects.length === 0);
-
   return (
     <div className="space-y-4">
       {/* === En-tête : classe + semaine + actions === */}
@@ -806,24 +806,13 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
       {/* === En-tête du document === */}
       {!loading && journal && (
         <div className="bg-white border-2 border-slate-800 rounded-xl p-6 print:shadow-none">
-          {!isMaternelleJournal && dynamicSubjects.length === 0 && (
+          {/* ⚠️ Avertissement « aucune matière configurée » — PRIMAIRE uniquement.
+              Le cahier journal MATERNELLE s'affiche TOUJOURS (tableau fixe du modèle
+              officiel) même si aucune matière n'est paramétrée. */}
+          {!isMaternelleClass && dynamicSubjects.length === 0 && (
             <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
               <strong>Aucune matière configurée pour cette classe.</strong> L'administration de l'école
               doit d'abord configurer les matières dans le module Matières (table class_subjects).
-            </div>
-          )}
-          {isMaternelleJournal && matSubjectsVides && (
-            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
-              <strong>Aucune matière configurée pour cette classe de maternelle.</strong> La
-              grille affiche le modèle officiel par défaut. L'administration de l'école doit d'abord
-              configurer les matières de la classe dans le module Pédagogie → onglet « Matières &amp; programmes ».
-            </div>
-          )}
-          {isMaternelleJournal && !matSubjectsVides && (
-            <div className="mb-4 p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-sm text-indigo-700">
-              <strong>Cahier journal maternelle.</strong> La grille suit la structure officielle
-              par domaines d'activités (DOMAINE I à V) ; les matières affichées sont celles
-              configurées pour cette classe dans le module Pédagogie → « Matières &amp; programmes ».
             </div>
           )}
           <div className="flex items-start justify-between mb-4">
@@ -846,72 +835,24 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
             </div>
           </div>
 
-          {/* === MATERNELLE — GRILLE PAR DOMAINES (matières dynamiques) === */}
-          {isMaternelleJournal && (
-            <div className="overflow-x-auto border border-slate-300 rounded-lg mb-6">
-              <table className="w-full border-collapse min-w-[1400px]">
-                <thead>
-                  {/* Ligne 1 : DATE + titres de domaines fusionnés */}
-                  <tr className="bg-slate-100">
-                    <th rowSpan={2} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase w-20 sticky left-0 bg-slate-100 z-10">
-                      DATE
-                    </th>
-                    {matGroups.map((g) => (
-                      <th key={g.key} colSpan={g.subs.length} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase bg-indigo-50">
-                        {g.title}
-                        {g.hint && (
-                          <span className="block text-[9px] font-medium text-indigo-400 normal-case mt-0.5">
-                            {g.hint}
-                          </span>
-                        )}
-                      </th>
-                    ))}
-                  </tr>
-                  {/* Ligne 2 : sous-colonnes (matières configurées) */}
-                  <tr className="bg-slate-50">
-                    {matFlatSubs.map((s) => (
-                      <th key={s.key} className="border border-slate-300 px-1 py-2 text-[10px] font-semibold text-slate-600">
-                        {s.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {DAYS.map((day) => (
-                    <tr key={day.key} className="hover:bg-slate-50">
-                      <td className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase bg-slate-50 sticky left-0 z-10">
-                        {day.label}
-                        <div className="text-[10px] text-slate-400 mt-1 font-normal">
-                          {formatDateFR(formatDate(new Date(weekStart.getTime() + (day.id - 1) * 86400000)))}
-                        </div>
-                      </td>
-                      {matFlatSubs.map((s) => (
-                        <td key={s.key} className="border border-slate-300 p-0 align-top">
-                          <RichTextEditor
-                            value={getEntry(day.key, s.key)}
-                            onChange={(html) => updateEntry(day.key, s.key, html)}
-                            disabled={isReadOnly}
-                            placeholder="—"
-                            minHeight="96px"
-                          />
-                          {/* ⭐ Observation du directeur (en rouge, sous la colonne Observations du DOMAINE) */}
-                          {s.key === "obs_dom" && getEntry(day.key, "directorObservation") && (
-                            <div className="p-2 bg-red-50 border-t-2 border-red-300">
-                              <div className="text-[9px] font-bold text-red-600 uppercase mb-1">Observation du Directeur</div>
-                              <div className="text-xs text-red-800 font-semibold whitespace-pre-wrap">{getEntry(day.key, "directorObservation")}</div>
-                            </div>
-                          )}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* === PRIMAIRE — Pages recto/verso par matières === */}
-          {!isMaternelleJournal && (<>
+          {/* ═══ MATERNELLE — MODÈLE OFFICIEL (domaines I → V, reproduction exacte) ═══ */}
+          {isMaternelleClass ? (
+            <CahierJournalMaternelleGrid
+              weekStart={weekStart}
+              entries={entries}
+              updateEntry={updateEntry}
+              getEntry={getEntry}
+              isReadOnly={!!isReadOnly}
+              subjectBinding={maternelleSubjectBinding}
+              entryKeyResolver={maternelleEntryKeyResolver}
+              observationsLeft={observations}
+              onObservationsLeftChange={setObservations}
+              observationsRight={maternelleFooterRight}
+              onObservationsRightChange={updateMaternelleFooterRight}
+              getDirectorObservation={(dayKey) => getEntry(dayKey, "directorObservation")}
+            />
+          ) : (
+          <>
           {/* === PAGE 1 (RECTO) === JOURS | COLONNES GROUPÉES | OBSERVATIONS */}
           <div className="mb-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Page 1 — Recto</div>
           <div className="overflow-x-auto border border-slate-300 rounded-lg mb-6">
@@ -1046,8 +987,6 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
             </table>
           </div>
 
-          </>)}
-
           {/* === OBSERVATIONS GLOBALES (bas de page) === */}
           {/* ⭐ Observations générales de la semaine */}
           {/*    En rouge quand le cahier journal est VALIDATED/REJECTED (observation du directeur) */}
@@ -1058,16 +997,14 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
             )}>
               {isReadOnly && (journal?.status === 'VALIDATED' || journal?.status === 'REJECTED')
                 ? "Observation générale du Directeur"
-                : isMaternelleJournal
-                  ? "OBSERVATIONS"
-                  : "Observations générales de la semaine"}
+                : "Observations générales de la semaine"}
             </label>
             <textarea
               value={observations}
               onChange={(e) => setObservations(e.target.value)}
               disabled={isReadOnly}
               rows={3}
-              placeholder={isMaternelleJournal ? "Observations de la semaine (zone OBSERVATIONS du cahier journal maternelle)..." : "Observations générales sur la semaine..."}
+              placeholder="Observations générales sur la semaine..."
               className={cn(
                 "w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400",
                 isReadOnly && (journal?.status === 'VALIDATED' || journal?.status === 'REJECTED')
@@ -1076,6 +1013,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
               )}
             />
           </div>
+          </>
+          )}
 
           {/* === TRAVAUX & SUIVI LIÉS AU CAHIER JOURNAL (Phase 4c) === */}
           {/*    Affiche les HomeworkEntry rattachés à ce cahier journal (devoirs, leçons,
@@ -1318,6 +1257,9 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
           )}
 
           {/* === PIED DE PAGE — Signatures (comme Registre d'appel) === */}
+          {/* ⚠️ MATERNELLE : pas de section signatures sur le cahier journal
+              maternelle — le modèle officiel n'en comporte pas. */}
+          {!isMaternelleClass && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-6 border-t-2 border-slate-300">
             {/* Signature Directeur */}
             <div className="space-y-2">
@@ -1406,6 +1348,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
               )}
             </div>
           </div>
+          )}
         </div>
       )}
 

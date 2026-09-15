@@ -60,7 +60,12 @@ export const MAT_DOMAIN_DEFS = [
     keywords: ["pre-lecture", "pre lecture", "pre-ecriture", "pre ecriture", "pre-math", "pre math"],
     legacyKeys: ["pre_lecture", "pre_ecriture", "pre_mathematiques"],
     domainLabel: null,
-    roman: "",
+    // ⭐ 2026-09-15 (demande utilisateur) : les pré-lecture / pré-écriture /
+    //    pré-mathématiques / observations / éducation sensorielle / travaux
+    //    manuels appartiennent toutes au DOMAINE III — le numéro de domaine de
+    //    la fiche est désormais ATTRIBUTÉ AUTOMATIQUEMENT (« III ») au lieu
+    //    d'être laissé à la saisie de l'enseignante.
+    roman: "III",
     order: { "pre-lecture": 1, "pre-ecriture": 2, "pre-math": 3 } as Record<string, number>,
   },
   {

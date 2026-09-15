@@ -34,11 +34,14 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
+// ⭐ MATERNELLE — modèle officiel FIXE (domaines I → V) : grille du cahier journal
+//    côté directeur + liaison dynamique des matières paramétrées aux colonnes
 import {
-  flattenMatGroups,
-  MAT_DEFAULT_GROUPS,
-  type MatGroup,
-} from "@/lib/pedagogy/maternelle-domains";
+  bindDynamicSubjectsToColumns,
+  buildMaternelleEntryKeyResolver,
+  type DynamicSubject,
+} from "@/lib/pedagogy/maternelle-domaines";
+import { CahierJournalMaternelleGrid } from "./CahierJournalMaternelleGrid";
 import {
   useDirectorPedagogyDashboard,
   usePendingCahierJournals, usePendingFiches, usePendingRegisters,
@@ -2596,99 +2599,61 @@ function CahierJournalDirectorDetail({
   );
 
 
-  // ⭐ 2026-09-15 MATERNELLE — Grille par DOMAINES (lecture seule) + colonne
-  //    OBS. DIRECTEUR, conformes au modèle officiel de la maternelle.
-  //    ⭐ MATIÈRES DYNAMIQUES : sous-colonnes = matières configurées pour la
-  //    classe dans « Matières & programmes » (journal.matGroups — l'API cahier
-  //    journal directeur reconstruit la même grille que l'enseignant, avec la
-  //    migration des anciennes clés). Repli sur le modèle officiel par défaut.
+  // ⭐ 2026-09-15 MATERNELLE — MODÈLE OFFICIEL FIXE : reproduction EXACTE du
+  //    tableau du modèle papier (domaines I → V, 14 sous-colonnes, 2 pages
+  //    recto/verso, zones OBSERVATIONS en pied) — le tableau s'affiche tel quel
+  //    MÊME SI une matière n'est pas paramétrée ; les matières configurées
+  //    (module Pédagogie → « Matières et programmes ») sont récupérées
+  //    DYNAMIQUEMENT et LIÉES aux colonnes correspondantes (badge vert) sans
+  //    jamais créer de colonne supplémentaire (plus de colonne « autre matière »).
+  //    La grille est en lecture seule côté directeur ; l'observation du
+  //    directeur se saisit par jour dans la section dédiée ci-dessous.
   const isMaternelleJournal =
     (journal.schoolLevelCode || "").toUpperCase() === "MATERNELLE" ||
     (journal.schoolLevelName || "").toLowerCase() === "maternelle";
 
-  // Grille maternelle : priorité aux groupes dynamiques de l'API
-  const matGroups: MatGroup[] =
-    Array.isArray(journal.matGroups) && journal.matGroups.length > 0
-      ? (journal.matGroups as MatGroup[])
-      : MAT_DEFAULT_GROUPS;
-  const matFlatSubs = flattenMatGroups(matGroups);
+  // Liaison dynamique multi-matières + résolveur de clés d'entrée (compatibilité
+  // avec les saisies effectuées sous les noms de matières de la grille dynamique)
+  const maternelleSubjectBinding: Map<string, DynamicSubject[]> = isMaternelleJournal
+    ? bindDynamicSubjectsToColumns(dynamicSubjects)
+    : new Map<string, DynamicSubject[]>();
+  const maternelleEntryKeyResolver = buildMaternelleEntryKeyResolver(maternelleSubjectBinding);
+  const maternelleFooterRight = (entries as any).__footerRight__ || "";
 
   const renderMaternellePage = () => (
-    <div className="mb-6">
-      <div className="mb-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
-        Grille maternelle — Domaines I à V (matières configurées)
-      </div>
-      <div className="overflow-x-auto border border-slate-300 rounded-lg">
-        <table className="w-full border-collapse min-w-[1500px]">
-          <thead>
-            {/* Ligne 1 : DATE + titres de domaines fusionnés */}
-            <tr className="bg-slate-100">
-              <th rowSpan={2} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase w-20 sticky left-0 bg-slate-100 z-10">
-                DATE
-              </th>
-              {matGroups.map((g) => (
-                <th key={g.key} colSpan={g.subs.length} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase bg-indigo-50">
-                  {g.title}
-                  {g.hint && (
-                    <span className="block text-[9px] font-medium text-indigo-400 normal-case mt-0.5">
-                      {g.hint}
-                    </span>
-                  )}
-                </th>
-              ))}
-              <th rowSpan={2} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top bg-amber-50" style={{ minWidth: "140px" }}>
-                OBS. DIRECTEUR <span className="text-red-600">(rouge)</span>
-              </th>
-            </tr>
-            {/* Ligne 2 : sous-colonnes (matières configurées) */}
-            <tr className="bg-slate-50">
-              {matFlatSubs.map((s) => (
-                <th key={s.key} className="border border-slate-300 px-1 py-2 text-[10px] font-semibold text-slate-600">
-                  {s.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {CJ_DAYS.map((day) => {
-              const weekStart = new Date(journal.weekStartDate);
-              const dayDate = new Date(weekStart.getTime() + (day.id - 1) * 86400000);
-              return (
-                <tr key={day.key} className="hover:bg-slate-50">
-                  <td className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase bg-slate-50 sticky left-0 z-10">
-                    {day.label}
-                    <div className="text-[10px] text-slate-400 mt-1 font-normal">
-                      {dayDate.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
-                    </div>
-                  </td>
-                  {matFlatSubs.map((s) => {
-                    const content = getEntry(day.key, s.key);
-                    return (
-                      <td key={s.key} className="border border-slate-300 px-2 py-1 text-xs text-slate-700 align-top" style={{ minHeight: "60px" }}>
-                        {content ? (
-                          <div dangerouslySetInnerHTML={{ __html: content }} />
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                  {/* ⭐ Colonne observation directeur (éditable, texte rouge) */}
-                  <td className="border border-slate-300 p-0 bg-red-50/30">
-                    <textarea
-                      value={directorObservations[day.key] || ''}
-                      onChange={(e) => setDirectorObservations(prev => ({ ...prev, [day.key]: e.target.value }))}
-                      disabled={saving}
-                      placeholder="Observation du directeur..."
-                      className="w-full h-full px-2 py-1 text-xs text-red-700 font-semibold border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-red-400 resize-none"
-                      style={{ minHeight: "60px" }}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+    <div className="mb-6 space-y-4">
+      <CahierJournalMaternelleGrid
+        weekStart={new Date(journal.weekStartDate)}
+        entries={entries}
+        updateEntry={() => { /* lecture seule côté directeur */ }}
+        getEntry={getEntry}
+        isReadOnly
+        subjectBinding={maternelleSubjectBinding}
+        entryKeyResolver={maternelleEntryKeyResolver}
+        observationsLeft={journal.observations || ""}
+        onObservationsLeftChange={() => { /* lecture seule côté directeur */ }}
+        observationsRight={maternelleFooterRight}
+        onObservationsRightChange={() => { /* lecture seule côté directeur */ }}
+        getDirectorObservation={(dayKey) => getEntry(dayKey, "directorObservation")}
+      />
+      {/* ⭐ Observations du directeur par jour (texte rouge, éditables) */}
+      <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3">
+        <h3 className="text-sm font-bold text-red-700 uppercase">Observations du directeur — par jour</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {CJ_DAYS.map((day) => (
+            <div key={day.key} className="space-y-1">
+              <label className="text-xs font-bold text-slate-600 uppercase">{day.label}</label>
+              <textarea
+                value={directorObservations[day.key] || ''}
+                onChange={(e) => setDirectorObservations(prev => ({ ...prev, [day.key]: e.target.value }))}
+                disabled={saving}
+                placeholder="Observation du directeur..."
+                rows={3}
+                className="w-full px-2 py-1.5 text-xs text-red-700 font-semibold border border-red-200 rounded-lg bg-red-50/30 focus:outline-none focus:ring-1 focus:ring-red-400 resize-none"
+              />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

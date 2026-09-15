@@ -515,8 +515,18 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       // Mettre le nom de la matière dans le champ "titre" ou "cours"
       // ⭐ MATERNELLE : pour les fiches DOMAINE/DOMAINE_2, remplir le champ
       //    Titre du contenu maternelle avec le libellé lisible du domaine.
+      //    ⭐ 2026-09-15 (demande utilisateur) : le NUMÉRO du domaine est
+      //    attribué AUTOMATIQUEMENT — le système vérifie dans quel domaine se
+      //    trouve la matière (nom configuré ou libellé de colonne du cahier
+      //    journal) : éducation → I, expression corporelle → II, pré-lecture/
+      //    pré-écriture/pré-mathématiques/observations/éducation sensorielle/
+      //    travaux manuels → III, expression émotionnelle/plastique → IV,
+      //    communication orale/conte/poésie chant comptine/activités libres → V.
       const isMatType = initialSheetType === "DOMAINE" || initialSheetType === "DOMAINE_2";
       const matLabel = MAT_KEY_LABELS[initialMatiere] || initialMatiere.charAt(0).toUpperCase() + initialMatiere.slice(1);
+      const domInfo = getMaternelleDomainInfo(initialMatiere);
+      const autoRoman = domInfo.roman || "";
+      const autoDomaineDu = domInfo.domainLabel || "";
       setForm((p: any) => ({
         ...p,
         cours: p.cours || initialMatiere.charAt(0).toUpperCase() + initialMatiere.slice(1),
@@ -525,7 +535,9 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
           maternelle: {
             ...p.maternelle,
             titre: p.maternelle?.titre || matLabel,
-            domainNumber: p.maternelle?.domainNumber || (initialSheetType === "DOMAINE_2" ? "" : p.maternelle?.domainNumber || ""),
+            domainNumber: p.maternelle?.domainNumber
+              || (initialSheetType === "DOMAINE_2" ? "II" : (autoRoman || p.maternelle?.domainNumber || "")),
+            domaineDu: p.maternelle?.domaineDu || autoDomaineDu || "",
           },
         } : {}),
       }));

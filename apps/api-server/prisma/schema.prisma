@@ -16848,6 +16848,16 @@ model PrimaryPedagogicalFiche {
   // Signatures
   teacherSignature   String?
   directorSignature  String?
+  // ⭐ Contenu spécifique MATERNELLE (fiches « domaine » 1/3/4/5 et « domaine 2 »)
+  //    JSON : { matiereColumn, domaineNumber, format, ficheDe, domaineDu,
+  //    composante, sousComposante, activiteNumero, theme, titre, section, duree,
+  //    materiel, competence, capacite, habiletes, strategies, intro,
+  //    deroulementRows, realisation, comprehension, retour, rangement,
+  //    notesPersonnelles }
+  //    matiereColumn = libellé de la colonne du cahier journal maternelle
+  //    (ex: « Pré lecture ») — sert de correspondance précise entre la fiche et
+  //    la matière planifiée dans le cahier journal.
+  maternelleContent Json?
   // ⭐ Observations du directeur (validation direction)
   //    directorObservation : observation générale (texte riche HTML)
   //    directorSectionObservations : observations par section (JSON)

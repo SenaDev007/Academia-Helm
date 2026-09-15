@@ -10737,3 +10737,23 @@ Stage Summary:
 - ✅ Module « Présence & Absences » enseignant : auto-pointage GPS (+ retard), historique complet (toutes sources), heures sup, demandes de congé/absence avec workflow d'approbation direction (génération auto des présences ABSENT à l'approbation — existant)
 - ✅ Mutual exclusion stricte dans les deux sens (SELF vs SEMINARIER) + anti-usurpation (résolution Staff par email serveur)
 - Reste : validation navigateur production post-déploiement (pointage semainier → vérif onglet RH Présences ; auto-pointage enseignant ; demande de congé E2E)
+
+---
+Task ID: 68 (suite — E2E production)
+Agent: Super Z (session principale)
+Task: Validation E2E production de l'intégration présence cahier de semaine ↔ RH
+
+Work Log:
+- Déploiement vérifié : 4 nouvelles routes self-service → 401 (guard actif) sur api.academiahelm.com — commit 285de4f48 actif
+- Compte de recette complet créé (User ENSEIGNANT + Staff ACTIVE + Teacher active, email commun — 3 INSERT idempotents) : recette.presence@cspeb.test / Presence2026!
+- E2E 1 — Enseignant lecture : my-history 200 (staff résolu par email « Présence RECETTE », 0 pointage), my-overtime 200, my-requests 200, my-balance 200 {earned 0, taken 0, pending 0, balance 0}
+- E2E 2 — Heures sup : POST my-overtime 201 (1,5 h « E2E test presence integration ») → GET my-overtime : VISIBLE statut PENDING → nettoyage DELETE admin (promoteur) 200
+- E2E 3 — Congé/absence : POST my-requests 201 EXCEPTIONAL 20/12/2026 statut PENDING → PUT my-requests/:id/cancel 200 → CANCELLED (auto-nettoyage + suppression physique)
+- E2E 4 — daily-staff (JOIN réparé) : 8 enseignants listés au 14/09, 0 statut avant sync
+- E2E 5 — SYNCHRO CŒUR : promoteur PUT seminar-daily-report (corps IDENTIQUE → JSONB inchangé) → rhSync = {synced:6, skippedSelf:0, skippedNoStaff:0, errors:[]} → 6 staff_attendances créées : Saliou AKPAKI PRESENT, Aurore AKPOVI LATE (« Observation: En retard »), Bienvenu CHABI ABSENT (« Motif: Malade »), Favour EMMANUEL HALF_DAY, Queen EZE MISSION, Elodie YAROU PRESENT — toutes markedByRole=SEMINARIER → daily-staff après sync : 6/8 statuts remplis (badge/cadenas alimentés)
+- NETTOYAGE : overtime + leave + 6 staff_attendances supprimés, JSONB du rapport vérifié IDENTIQUE, compte de recette supprimé (teachers=1, staff=1, users=1, aucun résidu)
+
+Stage Summary:
+- ✅ Intégration validée E2E en production : pointage semainier → staff_attendances (RH) → visibilité direction/promoteur avec provenance ; self-service enseignant (historique, heures sup, congés avec annulation) conforme
+- ✅ Notes riches propagées (motif d'absence, observation retard/demi-journée/mission) ; mutual exclusion prête (aucun SELF en base aujourd'hui — table repartie vide)
+- Scripts persistés (hors dépôt) : diag_presence_rh, validate_presence_sql, check_presence_deploy, create_presence_test_account, e2e_presence_integration

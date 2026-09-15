@@ -26,6 +26,28 @@ interface SelectContextType {
 
 const SelectContext = createContext<SelectContextType | null>(null);
 
+/**
+ * ⭐ FIX 2026-09-15 : extraction RÉCURSIVE du libellé d'un SelectItem.
+ * Avant, seuls les children de type « string » ou « string[] » étaient
+ * enregistrés dans le labelMap — un item avec markup complexe (ex :
+ * <span className="flex items-center gap-2"><Icône/><span>Espèces</span></span>)
+ * n'était JAMAIS enregistré, et le SelectValue continuait d'afficher le
+ * placeholder alors même qu'une valeur était sélectionnée (ex : méthode
+ * « Espèces » par défaut dans le modal Nouveau paiement du module Finance).
+ * La descente récursive dans props.children fait ressortir tout le texte
+ * (les icônes SVG ne contribuent aucun texte — seul le libellé ressort).
+ */
+function extractItemLabel(node: React.ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') return '';
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(extractItemLabel).join('');
+  if (React.isValidElement(node)) {
+    return extractItemLabel((node.props as any)?.children);
+  }
+  return '';
+}
+
 export interface SelectProps {
   children: React.ReactNode;
   value?: string;
@@ -37,6 +59,13 @@ export interface SelectProps {
 export function Select({ children, value: controlledValue, defaultValue, onValueChange, name }: SelectProps) {
   const [internalValue, setInternalValue] = React.useState(defaultValue || '');
   const [open, setOpen] = useState(false);
+  // ⭐ FIX 2026-09-15 : labelMap est une ref (non réactive) — sans ce compteur
+  //    de version, l'enregistrement d'un libellé (qui arrive APRÈS le rendu
+  //    initial, via les effets de SelectContent/SelectItem) ne re-render pas
+  //    le Select : le SelectValue resterait bloqué sur le placeholder.
+  //    Le bump ne se produit QUE quand un libellé change réellement (guard
+  //    d'égalité dans registerItem) — aucune boucle de rendu possible.
+  const [, setLabelMapVersion] = useState(0);
   const value = controlledValue !== undefined ? controlledValue : internalValue;
   const contentRef = useRef<HTMLDivElement>(null);
   const labelMap = useRef<Record<string, string>>({});
@@ -50,7 +79,11 @@ export function Select({ children, value: controlledValue, defaultValue, onValue
   };
 
   const registerItem = React.useCallback((itemValue: string, label: string) => {
+    if (!itemValue || !label) return;
+    // Déjà enregistré à l'identique → aucun re-rendu (évite les boucles)
+    if (labelMap.current[itemValue] === label) return;
     labelMap.current[itemValue] = label;
+    setLabelMapVersion((v) => v + 1);
   }, []);
 
   return (
@@ -164,30 +197,34 @@ export interface SelectContentProps {
 export function SelectContent({ children }: SelectContentProps) {
   const context = useContext(SelectContext);
 
+  // ⭐ FIX 2026-09-15 : l'enregistrement value→label se fait désormais en
+  //    POST-RENDER (useEffect) et non plus pendant le render — un effet de
+  //    bord pendant le render est interdit, et le bump de version du
+  //    labelMap y déclencherait le warning React « Cannot update a component
+  //    while rendering a different component ». L'effet tourne à chaque
+  //    rendu (children identité neuve à chaque render parent) mais le guard
+  //    d'égalité de registerItem le rend inactif une fois le libellé posé.
+  //    On couvre ainsi l'état FERMÉ (items jamais montés — analyse statique
+  //    des props children) et l'état OUVERT (les SelectItem montés
+  //    s'enregistrent aussi eux-mêmes via leur propre effet).
+  useEffect(() => {
+    if (!context) return;
+    React.Children.forEach(children, (child) => {
+      if (React.isValidElement(child) && (child.type as any)?.displayName === 'SelectItem') {
+        const itemValue = (child.props as any).value;
+        const label = extractItemLabel((child.props as any).children);
+        if (itemValue && label) {
+          context.registerItem(itemValue, label);
+        }
+      }
+    });
+  });
+
   if (!context) {
     return null;
   }
 
   if (!context.open) {
-    // Même quand fermé, on enregistre les items pour le labelMap
-    // afin que SelectValue puisse afficher le libellé au prochain rendu
-    React.Children.forEach(children, (child) => {
-      if (React.isValidElement(child) && (child.type as any)?.displayName === 'SelectItem') {
-        const itemValue = (child.props as any).value;
-        const itemChildren = (child.props as any).children;
-        if (itemValue && itemChildren) {
-          // Le label est le texte des children (peut être string ou ReactNode)
-          const label = typeof itemChildren === 'string'
-            ? itemChildren
-            : Array.isArray(itemChildren)
-              ? itemChildren.map(c => typeof c === 'string' ? c : '').join('')
-              : '';
-          if (label) {
-            context.registerItem(itemValue, label);
-          }
-        }
-      }
-    });
     return null;
   }
 
@@ -198,24 +235,10 @@ export function SelectContent({ children }: SelectContentProps) {
     >
       {React.Children.map(children, (child, index) => {
         if (React.isValidElement(child) && (child.type as any)?.displayName === 'SelectItem') {
-          // Enregistrer le mapping value → label
-          const itemValue = (child.props as any).value;
-          const itemChildren = (child.props as any).children;
-          if (itemValue && itemChildren) {
-            const label = typeof itemChildren === 'string'
-              ? itemChildren
-              : Array.isArray(itemChildren)
-                ? itemChildren.map(c => typeof c === 'string' ? c : '').join('')
-                : '';
-            if (label) {
-              context.registerItem(itemValue, label);
-            }
-          }
-
           return React.cloneElement(child, {
             key: index,
             onClick: () => {
-              context.onValueChange(itemValue);
+              context.onValueChange((child.props as any).value);
             },
           } as any);
         }
@@ -239,13 +262,11 @@ export function SelectItem({ value, children, onClick, className, ...props }: Se
   const isSelected = context?.value === value;
 
   // Enregistrer le mapping value → label à chaque rendu
+  // ⭐ FIX 2026-09-15 : extraction récursive — les items avec markup complexe
+  //    (icône + libellé dans des <span>) s'enregistrent désormais aussi.
   useEffect(() => {
-    if (context && value && children) {
-      const label = typeof children === 'string'
-        ? children
-        : Array.isArray(children)
-          ? children.map(c => typeof c === 'string' ? c : '').join('')
-          : '';
+    if (context && value) {
+      const label = extractItemLabel(children);
       if (label) {
         context.registerItem(value, label);
       }

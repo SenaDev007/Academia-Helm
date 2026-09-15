@@ -198,6 +198,30 @@ export default function NewPaymentModal({
       .catch(() => setOpenCashRegisters([]));
   }, [refreshTrigger, canUsePromoterCaisse]);
 
+  // ⭐ FIX 2026-09-15 (demande utilisateur) : la caisse d'ACCUEIL est
+  //    présélectionnée par défaut dans le sélecteur Caisse — c'est la caisse
+  //    du secrétariat où transitent la majorité des encaissements courants
+  //    (code ACCUEIL — « Caisse d'accueil » dans les prédéfinis Multi-caisses).
+  //    Garde-fous :
+  //    - on ne remplace JAMAIS un choix déjà fait par l'utilisateur
+  //      (cashRegisterId déjà défini, y compris après « Nouveau paiement »
+  //      qui le réinitialise à '' → la caisse Accueil se re-sélectionne) ;
+  //    - si l'école n'a pas de caisse d'accueil OUVERTE, on ne présélectionne
+  //      rien du tout (comportement inchangé — « — Aucune caisse — ») ;
+  //    - aucun impact sur Fedapay : le flux en ligne n'envoie pas de
+  //      cashRegisterId (la caisse ONLINE est auto-assignée côté backend).
+  useEffect(() => {
+    if (cashRegisterId) return;
+    if (!openCashRegisters.length) return;
+    const normalize = (s: string) => (s || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().trim();
+    const accueil = openCashRegisters.find(
+      (r: any) => normalize(r.code) === 'accueil' || normalize(r.name).includes('accueil')
+    );
+    if (accueil) setCashRegisterId(accueil.id);
+  }, [openCashRegisters, cashRegisterId]);
+
   // Charge les niveaux scolaires activés
   useEffect(() => {
     fetch('/api/school-levels')
@@ -1194,7 +1218,7 @@ export default function NewPaymentModal({
               )}
             </Label>
             <Select
-              value={cashRegisterId || '_none'}
+              value={paymentMethod === 'FEDAPAY' ? '_none' : (cashRegisterId || '_none')}
               onValueChange={(v) => setCashRegisterId(v === '_none' ? '' : v)}
               disabled={paymentMethod === 'FEDAPAY' || paymentMethod === 'FEDAPAY'}
             >

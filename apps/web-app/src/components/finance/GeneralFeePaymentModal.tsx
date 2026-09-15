@@ -107,6 +107,23 @@ export default function GeneralFeePaymentModal({
       .catch(() => setOpenCashRegisters([]));
   }, [refreshTrigger, canUsePromoterCaisse]);
 
+  // ⭐ FIX 2026-09-15 (cohérence avec NewPaymentModal) : la caisse d'ACCUEIL
+  //    est présélectionnée par défaut (code ACCUEIL — « Caisse d'accueil »
+  //    des prédéfinis Multi-caisses). On ne remplace jamais un choix déjà
+  //    fait par l'utilisateur ; sans caisse d'accueil ouverte, on ne
+  //    présélectionne rien (comportement inchangé).
+  useEffect(() => {
+    if (cashRegisterId) return;
+    if (!openCashRegisters.length) return;
+    const normalize = (s: string) => (s || '')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().trim();
+    const accueil = openCashRegisters.find(
+      (r: any) => normalize(r.code) === 'accueil' || normalize(r.name).includes('accueil')
+    );
+    if (accueil) setCashRegisterId(accueil.id);
+  }, [openCashRegisters, cashRegisterId]);
+
   useEffect(() => {
     fetch('/api/school-levels')
       .then((r) => r.json())

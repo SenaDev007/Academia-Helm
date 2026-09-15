@@ -10688,3 +10688,28 @@ Stage Summary:
 - ✅ Build Vercel réparé (3646211e4) + vérificateur syntaxique SWC fiable pour l'avenir
 - ✅ E2E production complet : grille modèle officiel exacte (enseignant + directeur), plus de colonne « autre matière », matières dynamiques liées avec fusion, n° de domaine attribué automatiquement (III pour pré-lecture ; II pour expression corporelle avec bascule du format), 2 catégories de fiches seules affichées
 - ⚠️ Note outillage : Bun.Transpiler/esbuild trop permissifs — TOUJOURS valider avec scripts/check_syntax_swc.js avant tout push frontend
+
+---
+Task ID: 67
+Agent: Super Z (session principale)
+Task: Finance > Encaissement > Modal « Nouveau paiement » — caisse Accueil sélectionnée par défaut + méthode de paiement sélectionnée mais invisible
+
+Work Log:
+- Reproduit le diagnostic depuis le retour utilisateur : (1) sélecteur Caisse s'ouvre sur « — Aucune caisse — » alors que la caisse d'accueil est la plus courante ; (2) « Méthode de paiement » affiche « Sélectionner... » bien que CASH (Espèces) soit la valeur par défaut — sélectionné mais invisible.
+- CAUSE RACINE (bug 2) : le Select custom (components/ui/select.tsx) n'enregistrait dans son labelMap que les SelectItem dont les children sont une string ou un string[] — l'item du modal a un markup complexe (<span className="flex items-center gap-2">{isFedapay && <Logo/>}<span>{label}</span></span>) → children = élément unique → label JAMAIS enregistré → SelectValue retombe sur le placeholder. De plus, l'enregistrement se faisait PENDANT le render de SelectContent (effet de bord interdit) et le labelMap (ref non réactive) ne re-renderait pas le SelectValue.
+- FIX select.tsx (bibliothèque UI — corrige TOUS les sélecteurs de l'app) :
+  * extractItemLabel() : extraction RÉCURSIVE du texte d'un ReactNode arbitraire (string/number/array/élément → descente dans props.children ; les icônes SVG ne contribuent aucun texte) ;
+  * registerItem : guard d'égalité + bump setLabelMapVersion → le Select re-rend et le SelectValue affiche le libellé dès l'enregistrement (plus de dépendance à un re-rendu du parent) ;
+  * l'enregistrement de SelectContent passe en POST-RENDER (useEffect, état fermé = analyse statique des props children ; état ouvert = les SelectItem s'enregistrent aussi via leur propre effet) — fini l'effet de bord pendant le render (warning React impossible) ;
+  * SelectValue inchangé (lit labelMap).
+- FIX NewPaymentModal.tsx (caisse Accueil par défaut — demande utilisateur) :
+  * useEffect : dès que les caisses ouvertes sont chargées et que cashRegisterId est vide, présélectionne la caisse code ACCUEIL ou nom contenant « accueil » (normalisation sans accents/casse). Ne remplace JAMAIS un choix utilisateur ; sans caisse d'accueil ouverte → comportement inchangé ; ré-appliqué automatiquement après « Nouveau paiement » (reset à ''). Aucun impact Fedapay (le flux en ligne n'envoie pas cashRegisterId — caisse ONLINE auto-assignée backend).
+  * Affichage : quand paymentMethod = FEDAPAY, le trigger Caisse montre « Caisse Paiements en Ligne (automatique) » au lieu de la caisse présélectionnée (cohérent avec l'aide affichée) ; le choix cashRegisterId est conservé en arrière-plan si retour aux espèces.
+- FIX GeneralFeePaymentModal.tsx : même présélection Accueil (cohérence des deux modals d'encaissement).
+- Tests (scripts/test_select_labels.mjs, persisté hors dépôt) : mini-moteur de rendu React qui exécute RÉELLEMENT les hooks (useState/useEffect/useRef/useContext) sur le VRAI select.tsx transpilé — 8/8 ✓ : Espèces affiché pour CASH par défaut (le bug), Fedapay affiché après changement, aucune boucle de rendu, caisses tableau mixte préservées, régressions (string, placeholder valeur inconnue, number) OK.
+- Validation : tsc 762 lignes = baseline (0 nouvelle) ; eslint 3 fichiers = 1 erreur react-hooks/refs PRÉ-EXISTANTE sur select.tsx (vérifiée identique sur HEAD via git stash), modals clean ; scripts/check_syntax_swc.js recréé (perdu au reset sandbox) + copié au dépôt scripts/ — parseur @swc/core = référence next build Turbopack → 3 fichiers ✓.
+
+Stage Summary:
+- ✅ Onglet Encaissement → modal Nouveau paiement : « Espèces » désormais VISIBLE comme méthode par défaut (et Fedapay visible aussi) ; caisse Accueil présélectionnée automatiquement (si ouverte).
+- ✅ Correctif systémique : tous les sélecteurs de l'app avec items à markup complexe affichent désormais leur libellé (avant : placeholder trompeur).
+- Reco terrain : recharger l'app ; ouvrir Finance > Encaissement > Nouveau paiement → vérifier « Espèces » affiché + caisse « ACCUEIL — Caisse d'accueil » présélectionnée ; tester un encaissement espèces (la caisse Accueil part dans le payload).

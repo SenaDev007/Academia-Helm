@@ -10665,3 +10665,26 @@ Stage Summary:
 - ✅ N° de domaine + format de fiche attribués automatiquement sur toutes les voies (sélecteur, « Préparer la fiche », libellés de colonnes)
 - ✅ Compatibilité données : écriture sous noms de matières (backend tâche 65 inchangé), lecture avec repli (grille dynamique historique + libellés), obs_dom
 - Reste : vérification navigateur production post-déploiement (grille + fiches)
+
+---
+Task ID: 66 (suite — fix build + validation E2E production)
+Agent: Super Z (session principale)
+Task: Correction de l'échec de build Vercel (commits 9e210ee/8256b3c) + validation E2E navigateur de la grille modèle officiel et de la sélection automatique du type de fiche
+
+Work Log:
+- ÉCHEC DE BUILD détecté (log Vercel utilisateur) : Turbopack « Expected a semicolon » sur CahierJournalMaternelleGrid.tsx:148 — virgule finale dans une expression parenthésée `(expr,)` (branche else du map de la ligne 2 d'en-tête). Bun.Transpiler ET esbuild tolèrent cette syntaxe → faux négatif de la vérif précédente ; Node et SWC la rejettent
+- FIX : virgule retirée (commit 3646211e4) ; NOUVEAU vérificateur de référence scripts/check_syntax_swc.js (@swc/core = LE parseur de next build Turbopack) — testé sur le pattern défaillant : reproduit exactement l'erreur Vercel ; les 7 fichiers modifiés revalidés ✓
+- E2E production (navigateur agent-browser, compte recette.promoteur@cspeb.test, tenant CSPEB, Maternelle 1, semaine du 14/09/2026) :
+  1. Grille enseignant EN LIGNE = modèle papier EXACT : Recto [DATE | DOMAINE I (Education pour la santé) | DOMAINE II (Expression corporelle) | DOMAINE (Pré lecture · Pré écriture · Pré mathématiques · Observations)] + Verso [III (Education sensorielle · Travaux manuels) | DOMAINE IV (Expression émotionnelle · Expression plastique) | DOMAINE V (Communication orale · Conte · Poésie chant comptine · Activités libres)] — AUCUNE colonne « AUTRES MATIÈRES », bandeau « Modèle officiel maternelle » ✓
+  2. Liaison dynamique (9 matières production) : badges verts ↳ sous colonnes liées — « Éducation pour la santé et l'environnement (+1) » (2 matières santé FUSIONNÉES), « Éveil scientifique et technologique » → colonne Observations, « Expression orale (langage, comptine…) » → Communication orale ; 6 colonnes non liées affichées vides (Education sensorielle, Travaux manuels, Expression émotionnelle, Conte, Poésie chant comptine, Activités libres) ✓
+  3. Saisie « Reconnaissance des lettres A et B » dans lundi × Pré-lecture → Enregistrer → PUT 200 → bascule auto vers Fiches ; API fiches : matieresPlanifiees.lundi = [Pré-lecture] ✓
+  4. Bouton « Préparer » → formulaire : Maternelle 1 pré-sélectionnée, matière Pré-lecture sélectionnée, N° de domaine « III » AUTO-REMPLI, « Domaine du » présent, en-tête ÉCOLE MATERNELLE, format DOMAINE (générique) avec DEROULEMENT Consignes | Résultats Attendus ✓
+  5. Bascule matière → « Expression corporelle » : passage AUTOMATIQUE au format DOMAINE 2 (badge DOMAINE II) avec tableau 5 colonnes Plan | Durée | Description des activités | Formation Evolution | Dosage ✓
+  6. Filtre de types de fiches : uniquement « Domaine » et « Domaine 2 » pour les classes maternelles ✓
+  7. Soumission au directeur → vue directeur : MÊME grille modèle officiel (lecture seule), section « Observations du directeur — par jour », contenu de l'enseignante visible ✓
+- Nettoyage : journal repassé REJECTED + entries vidées (0 matières planifiées vérifié) ; captures : download/mat-cj-model-officiel-recto.png, mat-cj-model-officiel-verso.png, mat-fiche-domaine-auto-III.png, mat-fiche-domaine2-auto.png, mat-directeur-modele-officiel.png
+
+Stage Summary:
+- ✅ Build Vercel réparé (3646211e4) + vérificateur syntaxique SWC fiable pour l'avenir
+- ✅ E2E production complet : grille modèle officiel exacte (enseignant + directeur), plus de colonne « autre matière », matières dynamiques liées avec fusion, n° de domaine attribué automatiquement (III pour pré-lecture ; II pour expression corporelle avec bascule du format), 2 catégories de fiches seules affichées
+- ⚠️ Note outillage : Bun.Transpiler/esbuild trop permissifs — TOUJOURS valider avec scripts/check_syntax_swc.js avant tout push frontend

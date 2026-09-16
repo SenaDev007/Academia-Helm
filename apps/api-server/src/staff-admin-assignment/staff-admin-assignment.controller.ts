@@ -316,7 +316,7 @@ export class StaffAdminAssignmentController {
     @TenantId() tenantId: string,
   ) {
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT sa.module, sa."grantedAt", s.id AS "staffId",
+      `SELECT sa.module, sa."granted_at" AS "grantedAt", s.id AS "staffId",
               s."firstName", s."lastName", s.email, s.position, s."roleType"
        FROM staff_accreditations sa
        JOIN staff s ON s.id = sa."staffId"

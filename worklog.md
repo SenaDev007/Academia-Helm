@@ -10922,3 +10922,28 @@ Work Log:
 Stage Summary:
 - ✅ Mécanisme complet de la boucle identifié et coupé à ses 3 étages : (1) DataError → re-téléchargement perpétuel [078525a96], (2) timeout SW 8 s → shell périmé (mauvaise page) [efa010ecb], (3) timer 20 s → reload qui tue les téléchargements et relance la boucle [efa010ecb]
 - En attente : build Vercel (078525a96 + efa010ecb) → E2E post-déploiement complet : login secrétaire, timings, clic modules, simulation connexion lente (blocage réseau), vérification DataError disparu
+
+---
+Task ID: 73 (suite 2 — pipeline Vercel bloqué + validation dev locale)
+Agent: main (Super Z)
+Task: Validation des correctifs + investigation déploiement (les symptômes persistaient car le build n'était pas sorti)
+
+Work Log:
+- CONSTAT : 2h30 après mes pushes (078525a96 20:34, efa010ecb 21:17), la production sert TOUJOURS le build du 20:12 (SW v4.4.2, canary ah_school_identity_cache absent)
+- DÉCOUVERTE MAJEURE : audit-v1 (6bf79aba5, poussé 18:52 par la session parallèle) N'EST PAS DÉPLOYÉ NON PLUS — les nouvelles routes BFF /api/school-directors et /api/finance/reports renvoient 404 HTML (pas de route handler) ; le marqueur /app/teacher/presence (285de4f48, 15/09) répond 200 → le pipeline Vercel est bloqué/depuis audit-v1 (18:52), ce n'est PAS mon code
+- Vérifications locales exhaustives pour écarter un break de build :
+  * transpile TS 7/7 fichiers OK (check_syntax_task73.js)
+  * node --check sw.js OK + test comportemental du script de recovery (pas de timer, garde n<2)
+  * next dev (Turbopack) : /, /login, /tarification, /portal 200 ; pages audit-v1 (/app/exams/analytics, /app/exams/audit, /app/finance/treasury) compilent sans erreur ; routes BFF audit-v1 compilent (500 runtime dev attendu) ; 0 « Failed to compile »
+  * build prod local impossible : sandbox 3,9 GB OOM (pas de swap) — mais dev compile tout ce qui a changé
+- VALIDATION FONCTIONNELLE DEV (env .env.local → API production, login réel recette.sec-comptable@cspeb.test) :
+  * Login → /app/secretaire-comptable → « Tableau de bord » rendu immédiatement (Fix C actif — plus de spinner plein écran année scolaire)
+  * CONSOLE : 0 DataError (Fix A actif — bootstrap modules sans id ne crashe plus)
+  * Le prefetch critique différé s'est exécuté APRÈS le rendu (rooms/timetables/teachers via BFF 200 — Fix B actif)
+- Nettoyage : .env.local/.env.development supprimés (clés prod), dev server arrêté, git propre
+- API Railway saine (health 200, 226 ms)
+
+Stage Summary:
+- ✅ Tous les correctifs Task 73 VALIDÉS en dev contre l'API production (DataError disparu, shell immédiat, préchargements différés, SW v4.5.0 avec timer 20s supprimé)
+- ⛔ BLOCAGE EXTERNE : pipeline Vercel cassé depuis 18:52 (audit-v1) — les builds échouent ou sont coincés ; à vérifier dans le dashboard Vercel (Deployments) : build de 6bf79aba5 en échec/en attente → Retry, sinon annuler le build bloqué pour débloquer la file (1 build simultané en Hobby)
+- L'utilisateur voit donc encore l'ANCIEN code (boucle complète) — le soulagement nécessite le déploiement des 3 commits déjà poussés (6bf79aba5, 078525a96, efa010ecb)

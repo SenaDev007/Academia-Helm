@@ -10899,3 +10899,26 @@ Work Log:
 Stage Summary:
 - ✅ Les 6 causes racine identifiées et corrigées : le portail admin s'affiche maintenant immédiatement (pattern promoteur), la préparation hors-ligne se fait discrètement en arrière-plan après le premier rendu, et le crash IndexedDB qui provoquait la boucle de re-téléchargement est réparé
 - En attente : E2E post-déploiement (login secrétaire → timings sélecteur niveau + stabilité rechargement + absence DataError)
+
+---
+Task ID: 73 (suite — retour utilisateur : boucle de rechargement)
+Agent: main (Super Z)
+Task: « le modal de chargement des données ne finit pas, la préparation hors ligne ne finit pas, l'application se recharge en boucle, je clique sur un module ça affiche toujours le tableau de bord — tous portails — au commit dbd1750 ça allait »
+
+Work Log:
+- Vérification déploiement : le commit 078525a96 (Task 73) n'était PAS encore servi par Vercel après 50 min (canary ah_school_identity_cache absent du build en ligne) — l'utilisateur testait donc l'ANCIEN build (6bf79aba5, déployé 20:12) avec TOUS les bugs d'origine (DataError + concurrence + blocage AdminPortalShell)
+- Reproduction navigateur sur le build ancien : DataError offline-bootstrap TOUJOURS actif (chunk 327mh7jcf1hib = ancien code), navigation /app/students stable MAIS connexion sandbox rapide (pas de saturation)
+- Analyse sw.js v4.4.2 (167 KB) — mécanisme de la BOUCLE confirmé dans le code :
+  1. handleAppShellNavigation : HTML_TIMEOUT = 8 s → sur connexion école lente/saturée (téléchargements offline en arrière-plan), le HTML de navigation dépasse 8 s → le SW abandonne le réseau et sert le SHELL /app en cache (= page d'accueil/tableau de bord) POUR UNE AUTRE ROUTE → « je clique sur un module, ça affiche toujours le tableau de bord »
+  2. shellWithRecoveryScript : timer 20 s qui recharge la page tant que navigator.onLine → chaque reload TUE les téléchargements offline en cours → ils redémarrent (flags jamais posés à cause du DataError) → saturation persistante → timeout → shell → reload : BOUCLE SANS FIN → « c'est la boucle et ça ne cesse pas »
+  3. Le modal SyncModal overlay + pill offline « ne finissent pas » : pull 696 tables sur connexion lente = plusieurs minutes, tué par chaque reload, relancé au montage suivant
+- Correctifs SW (commit efa010ecb) :
+  * HTML_TIMEOUT 8 s → 30 s (pire cas Neon cold start 10-13 s + marge connexion lente) — en ligne on attend le VRAI HTML de la BONNE route au lieu de servir une page périmée
+  * shellWithRecoveryScript : timer 20 s SUPPRIMÉ — rechargement uniquement sur l'événement 'online' réel (transition hors-ligne → en-ligne), garde max 2/URL/onglet conservée ; le shell ne se sert plus qu'en vrai hors-ligne ou échec réseau franc
+  * SW_VERSION v4.4.2 → v4.5.0 — propagation immédiate (sw.js max-age=0 must-revalidate + SKIP_WAITING + registration.update() au retour d'onglet)
+- Vérifié : error.tsx déjà sécurisé par audit-v1 (session parallèle) — scheduleChunkRecoveryReload max 2/60 s sans purge de cache ; offlineMinimalResponse ne recharge que sur événement 'online' (sûr) ; node --check sw.js OK ; test comportemental du script de recovery extrait (pas de timer, garde n<2)
+- Push efa010ecb → nouveau build Vercel déclenché (les deux commits partiront ensemble)
+
+Stage Summary:
+- ✅ Mécanisme complet de la boucle identifié et coupé à ses 3 étages : (1) DataError → re-téléchargement perpétuel [078525a96], (2) timeout SW 8 s → shell périmé (mauvaise page) [efa010ecb], (3) timer 20 s → reload qui tue les téléchargements et relance la boucle [efa010ecb]
+- En attente : build Vercel (078525a96 + efa010ecb) → E2E post-déploiement complet : login secrétaire, timings, clic modules, simulation connexion lente (blocage réseau), vérification DataError disparu

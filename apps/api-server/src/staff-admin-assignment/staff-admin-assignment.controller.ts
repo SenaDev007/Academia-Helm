@@ -169,9 +169,11 @@ export class StaffAdminAssignmentController {
     this.logger.log(`my-context: user=${user.email}, staff=${staff.id}, role=${adminRole}, levels=${schoolLevelCodes.join(',')}`);
 
     // ⭐ Récupérer les accréditations supplémentaires (modules accordés par le promoteur)
+    //    ⚠ FIX 2026-09-16 : forme SPREAD (paramètres variadiques) — la forme
+    //    tableau `[tenantId, staffId]` faisait échouer la requête (P2010).
     const accreditations = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT module FROM staff_accreditations WHERE "tenantId" = $1 AND "staffId" = $2 AND "isActive" = true`,
-      [tenantId, staff.id],
+      tenantId, staff.id,
     );
     const extraModules = accreditations.map(a => a.module);
 
@@ -320,7 +322,7 @@ export class StaffAdminAssignmentController {
        JOIN staff s ON s.id = sa."staffId"
        WHERE sa."tenantId" = $1 AND sa."isActive" = true
        ORDER BY s."lastName" ASC, s."firstName" ASC, sa.module ASC`,
-      [tenantId],
+      tenantId,
     );
     return rows;
   }
@@ -337,7 +339,7 @@ export class StaffAdminAssignmentController {
   ) {
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT * FROM staff_accreditations WHERE "tenantId" = $1 AND "staffId" = $2 AND "isActive" = true`,
-      [tenantId, staffId],
+      tenantId, staffId,
     );
     return rows;
   }
@@ -366,7 +368,7 @@ export class StaffAdminAssignmentController {
     // ⭐ Vérifier que le staff appartient bien à ce tenant (anti cross-tenant)
     const staff = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT id, "firstName", "lastName" FROM staff WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
-      [staffId, tenantId],
+      staffId, tenantId,
     );
     if (!staff || staff.length === 0) {
       throw new BadRequestException('Membre du personnel introuvable dans votre établissement.');
@@ -377,7 +379,7 @@ export class StaffAdminAssignmentController {
       `INSERT INTO staff_accreditations (id, "tenantId", "staffId", module, granted_by, "isActive")
        VALUES ($1, $2, $3, $4, $5, true)
        ON CONFLICT ("tenantId", "staffId", module) DO UPDATE SET "isActive" = true, "updatedAt" = now()`,
-      [id, tenantId, staffId, body.module, user?.id || '00000000-0000-0000-0000-000000000000'],
+      id, tenantId, staffId, body.module, user?.id || '00000000-0000-0000-0000-000000000000',
     );
 
     this.logger.log(
@@ -401,7 +403,7 @@ export class StaffAdminAssignmentController {
     await this.prisma.$executeRawUnsafe(
       `UPDATE staff_accreditations SET "isActive" = false, "updatedAt" = now()
        WHERE "tenantId" = $1 AND "staffId" = $2 AND module = $3`,
-      [tenantId, staffId, module],
+      tenantId, staffId, module,
     );
     this.logger.log(`Accreditation revoked: staff=${staffId}, module=${module}`);
     return { success: true };

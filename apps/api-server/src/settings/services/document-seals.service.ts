@@ -249,7 +249,7 @@ export class DocumentSealsService {
              FROM school_directors
              WHERE "tenantId" = $1 AND "schoolLevelId" = $2 AND "language" = $3 AND "isActive" = true
              LIMIT 1`,
-            [tenantId, schoolLevelId, l],
+            tenantId, schoolLevelId, l,
           );
           return rows?.[0] ?? null;
         };
@@ -275,7 +275,7 @@ export class DocumentSealsService {
              AND a."adminRole" = ANY($2::text[])
            ORDER BY a."adminRole" ASC
            LIMIT 1`,
-          [tenantId, DIRECTOR_ROLE_CODES],
+          tenantId, DIRECTOR_ROLE_CODES,
         );
         if (rows?.[0]) {
           holderName = `${rows[0].firstName ?? ''} ${rows[0].lastName ?? ''}`.trim() || null;
@@ -360,7 +360,7 @@ export class DocumentSealsService {
              ELSE 2
            END ASC
          LIMIT 1`,
-        [tenantId, ACCOUNTANT_ROLE_CODES, levelCode ?? ''],
+        tenantId, ACCOUNTANT_ROLE_CODES, levelCode ?? '',
       );
 
       const row = rows?.[0];

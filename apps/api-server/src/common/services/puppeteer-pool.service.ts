@@ -47,6 +47,10 @@ interface PageWrapper {
 export class PuppeteerPoolService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PuppeteerPoolService.name);
   private browser: any = null;
+  // ⭐ 2026-09-16 — Récupération « browser is already running » : processus
+  //    Chrome zombie (CDP déconnecté mais processus vivant) qui verrouille le
+  //    userDataDir. On le garde pour pouvoir le tuer au relancement.
+  private staleProcess: any = null;
   private puppeteerCore: any = null;
   private sparticuzChromium: any = null;
   private activePages: Set<any> = new Set();
@@ -187,11 +191,40 @@ export class PuppeteerPoolService implements OnModuleInit, OnModuleDestroy {
       this.logger.log('Launching local Chromium browser instance...');
     }
 
-    const browser = await this.puppeteerCore.launch(launchOptions);
+    // ⭐ 2026-09-16 — AUTO-RÉCUPÉRATION « The browser is already running » :
+    //    quand le websocket CDP se coupe (pression mémoire) mais que le
+    //    processus Chrome SURVIT, il garde le verrou singleton du userDataDir
+    //    → chaque relancement échoue et TOUS les exports PDF restent bloqués
+    //    jusqu'au redémarrage du conteneur. Récupération : tuer le processus
+    //    zombie traqué, puis relancer UNE FOIS avec un userDataDir frais.
+    let browser: any;
+    try {
+      browser = await this.puppeteerCore.launch(launchOptions);
+    } catch (err: any) {
+      const msg = String(err?.message || '');
+      if (!/already running/i.test(msg)) throw err;
+      this.logger.warn(
+        'Chromium zombie détecté (userDataDir verrouillé) — kill du processus obsolète et relance avec un userDataDir frais',
+      );
+      try { this.staleProcess?.kill?.('SIGKILL'); } catch {}
+      this.staleProcess = null;
+      await new Promise((r) => setTimeout(r, 400));
+      const freshDir = path.join(os.tmpdir(), `academia-puppeteer-pool-${Date.now()}`);
+      launchOptions.args = (launchOptions.args || []).map((a: string) =>
+        a.startsWith('--user-data-dir=') ? `--user-data-dir=${freshDir}` : a,
+      );
+      browser = await this.puppeteerCore.launch(launchOptions);
+    }
 
     // Handle unexpected browser disconnection
     browser.on('disconnected', () => {
       this.logger.warn('Shared browser disconnected, will re-launch on next request');
+      // ⭐ Garder le processus pour pouvoir le tuer au prochain lancement
+      //    (sinon il verrouille le userDataDir — cf. auto-récupération ci-dessus)
+      try {
+        const proc = this.browser?.process?.();
+        if (proc) this.staleProcess = proc;
+      } catch {}
       this.browser = null;
       this.activePages.clear();
     });

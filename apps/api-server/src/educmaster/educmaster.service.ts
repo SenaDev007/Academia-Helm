@@ -62,8 +62,10 @@ export class EducMasterService {
         matricule: student.studentCode,
         lastName: student.lastName,
         firstName: student.firstName,
-        birthDate: student.birthDate ? student.birthDate.toISOString().split('T')[0] : '',
-        birthPlace: student.birthPlace || '',
+        // ⭐ FIX 2026-09-16 — champs réels du modèle Student : dateOfBirth/placeOfBirth
+        //    (birthDate/birthPlace n'existent pas → colonnes toujours vides)
+        birthDate: student.dateOfBirth ? student.dateOfBirth.toISOString().split('T')[0] : '',
+        birthPlace: student.placeOfBirth || '',
         gender: student.gender || '',
         class: enrollment?.class?.name || '',
         guardianName: guardian ? `${guardian.firstName} ${guardian.lastName}` : '',

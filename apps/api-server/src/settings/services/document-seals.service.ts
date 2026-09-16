@@ -34,7 +34,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../database/prisma.service';
+import { PrismaService } from '../../database/prisma.service';
 import { StampsSignaturesService } from './stamps-signatures.service';
 import * as fs from 'fs/promises';
 import * as path from 'path';

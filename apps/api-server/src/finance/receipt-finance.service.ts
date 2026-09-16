@@ -254,10 +254,29 @@ export class ReceiptFinanceService {
       const receiptUrl = `${publicUrl}/api/finance/transactions/${tx.id}/receipt.pdf`;
 
       // 9. Mettre à jour la transaction avec receiptUrl
-      await this.prisma.financeTransaction.update({
-        where: { id: tx.id },
-        data: { receiptUrl },
-      });
+      // ⭐ FIX 2026-09-16 — l'écriture receiptUrl ne doit JAMAIS faire échouer
+      //    la génération/consultation d'un reçu : le trigger SQL
+      //    lock_transaction_after_closure refuse tout UPDATE d'une transaction
+      //    dont la journée est clôturée (clôture de caisse), ce qui renvoyait
+      //    un 500 « Reçu introuvable » sur Visualiser / Télécharger / Email
+      //    d'un encaissement déjà clôturé. L'URL étant déterministe
+      //    ({publicUrl}/api/finance/transactions/{id}/receipt.pdf), on ne
+      //    persiste que si la valeur change réellement, et en mode dégradé
+      //    silencieux (warning) — le PDF reste généré et servi normalement.
+      if ((tx.receiptUrl || '') !== receiptUrl) {
+        await this.prisma.financeTransaction
+          .update({ where: { id: tx.id }, data: { receiptUrl } })
+          .catch((err: any) => {
+            const msg = String(err?.message || '');
+            if (msg.includes('Transaction locked after daily closure')) {
+              this.logger.warn(
+                `Reçu ${tx.receiptNumber} : receiptUrl non persisté (journée clôturée) — le PDF reste servi.`,
+              );
+            } else {
+              this.logger.warn(`Reçu ${tx.receiptNumber} : receiptUrl non persisté (${msg}).`);
+            }
+          });
+      }
 
       this.logger.log(`Reçu généré: ${tx.receiptNumber} → ${filePath}`);
 

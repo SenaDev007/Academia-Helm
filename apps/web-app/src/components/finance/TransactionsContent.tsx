@@ -45,7 +45,10 @@ export default function TransactionsContent() {
   //    sur les transactions ayant au moins une allocation vers un frais
   //    général (feeType=GENERAL) et affiche la part imputée.
   const [subTab, setSubTab] = useState<'all' | 'general'>('all');
-  // ⭐ whatsappMenuId state removed — WhatsApp dropdown is no longer rendered (button is grayed out)
+  // ⭐ 2026-09-16 — WhatsApp RÉACTIVÉ : dropdown 2 options (lien wa.me + API auto),
+  //    même pattern que StudentAccountsContent. Reste disponible aux côtés de
+  //    Helm Connect (l'utilisateur peut choisir son canal d'envoi).
+  const [whatsappMenuId, setWhatsappMenuId] = useState<string | null>(null);
   const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
   const { toast } = useToast();
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -456,6 +459,18 @@ export default function TransactionsContent() {
                           onClick={async () => {
                             try {
                               const res = await fetch(financeService.getReceiptPdfUrl(t.id));
+                              // ⭐ FIX 2026-09-16 — ne pas nourrir le preview avec une
+                              //    réponse d'erreur JSON (ex-500 trigger clôture) :
+                              //    message clair au lieu d'un PDF illisible.
+                              if (!res.ok) {
+                                const j: any = await res.json().catch(() => null);
+                                toast({
+                                  title: 'Reçu indisponible',
+                                  description: j?.message || `Erreur serveur (HTTP ${res.status})`,
+                                  variant: 'destructive',
+                                });
+                                return;
+                              }
                               const blob = await res.blob();
                               const url = URL.createObjectURL(blob);
                               setPreviewDoc({ filePath: url, fileName: `recu-${t.receiptNumber || t.id}.pdf`, mimeType: 'application/pdf' });
@@ -491,18 +506,60 @@ export default function TransactionsContent() {
                         >
                           <GmailIcon className="w-3.5 h-3.5" />
                         </Button>
-                        {/* ⭐ WhatsApp button — GRAYED OUT (replaced by Helm Connect below)
-                              Per user request: "Tu vas masquer le bouton WhatsApp qui est là
-                              pour le moment, tu vas le masquer ou bien il faut le griser." */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          disabled
-                          className="h-7 w-7 opacity-30 cursor-not-allowed"
-                          title="WhatsApp désactivé — utilisez Helm Connect"
-                        >
-                          <WhatsAppIcon className="w-3.5 h-3.5 grayscale" />
-                        </Button>
+                        {/* ⭐ 2026-09-16 — WhatsApp RÉACTIVÉ (demande promoteur) : dropdown
+                            avec 2 options (lien wa.me + envoi API auto), même pattern que
+                            StudentAccountsContent. Complémentaire de Helm Connect ci-dessous. */}
+                        <div className="relative">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
+                            onClick={() => setWhatsappMenuId(whatsappMenuId === t.id ? null : t.id)}
+                            title="Envoyer par WhatsApp"
+                          >
+                            <WhatsAppIcon className="w-3.5 h-3.5" />
+                          </Button>
+                          {whatsappMenuId === t.id && (
+                            <div className="absolute right-0 top-8 z-50 bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-full sm:w-[180px]">
+                              <button
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-emerald-50 flex items-center gap-2"
+                                onClick={async () => {
+                                  setWhatsappMenuId(null);
+                                  try {
+                                    const data = await financeService.getWhatsAppLink(t.id);
+                                    if (data?.url) {
+                                      window.open(data.url, '_blank');
+                                      toast({ title: 'WhatsApp ouvert', description: 'Cliquez sur Envoyer dans WhatsApp.' });
+                                    } else {
+                                      toast({ title: 'Pas de téléphone', description: 'Aucun numéro de parent trouvé.', variant: 'destructive' });
+                                    }
+                                  } catch (e: any) {
+                                    toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
+                                  }
+                                }}
+                              >
+                                <WhatsAppIcon className="w-3.5 h-3.5" />
+                                Envoi rapide (lien)
+                              </button>
+                              <button
+                                className="w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 flex items-center gap-2"
+                                onClick={async () => {
+                                  setWhatsappMenuId(null);
+                                  try {
+                                    const r = await financeService.resendReceipt(t.id, ['whatsapp']);
+                                    const s = r?.channels?.whatsapp;
+                                    if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason, variant: 'destructive' });
+                                    else if (s?.status === 'failed') toast({ title: 'Échec d\'envoi', description: s.error || 'Échec de l\'envoi', variant: 'destructive' });
+                                    else toast({ title: 'Reçu envoyé', description: `WhatsApp envoyé${s?.to ? ` à ${s.to}` : ''}` });
+                                  } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
+                                }}
+                              >
+                                <WhatsAppIcon className="w-3.5 h-3.5 opacity-60" />
+                                Envoi auto (API)
+                              </button>
+                            </div>
+                          )}
+                        </div>
                         {/* ⭐ Helm Connect button — REPLACES the SMS button
                               Sends the receipt PDF + the same WhatsApp template wording
                               directly to the parent's Helm Connect chat account. */}

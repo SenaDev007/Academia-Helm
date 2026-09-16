@@ -17,14 +17,29 @@ export async function GET(
   try {
     const { id } = await params;
     const headers = await getProxyAuthHeaders(request);
+    // ⭐ FIX 2026-09-16 — timeout porté de 15s à 60s : la génération d'un reçu
+    //    passe par Puppeteer (acquisition pool + rendu HTML→PDF + écriture
+    //    disque). Sur un backend en cold start ou un pool Chrome fraîchement
+    //    relancé, 15s provoquaient « impossible de télécharger le fichier ».
+    //    C'est une action explicite de l'utilisateur : on peut se permettre
+    //    d'attendre plus longtemps qu'un appel API classique.
     const r = await fetchWithTimeout(
       normalizeApiUrl(`${API_URL}/finance/transactions/${id}/receipt.pdf`),
       { headers },
-    15000);
+      60_000,
+    );
     if (!r.ok) {
       const text = await r.text().catch(() => '');
+      // ⭐ FIX 2026-09-16 — remonter le VRAI message backend (ex-clôture de
+      //    caisse) au lieu du « Reçu introuvable » générique qui induisait en
+      //    erreur : le reçu existe, c'est sa génération/consultation qui échouait.
+      let detail = text.substring(0, 300);
+      try {
+        const j = JSON.parse(text);
+        detail = String(j?.message || j?.detail || detail);
+      } catch { /* réponse non-JSON */ }
       return NextResponse.json(
-        { message: 'Reçu introuvable', detail: text.substring(0, 200) },
+        { message: 'Reçu indisponible', detail },
         { status: r.status },
       );
     }

@@ -1214,6 +1214,13 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
                                 setPreviewLoading(true);
                                 try {
                                   const res = await fetch(financeService.getReceiptPdfUrl(t.id));
+                                  // ⭐ FIX 2026-09-16 — même garde que TransactionsContent :
+                                  //    ne pas nourrir le preview avec une erreur JSON (500).
+                                  if (!res.ok) {
+                                    const j: any = await res.json().catch(() => null);
+                                    toast({ title: 'Reçu indisponible', description: j?.message || `Erreur serveur (HTTP ${res.status})`, variant: 'destructive' });
+                                    return;
+                                  }
                                   const blob = await res.blob();
                                   const url = URL.createObjectURL(blob);
                                   setPreviewDoc({ filePath: url, fileName: `recu-${t.receiptNumber || t.id}.pdf`, mimeType: 'application/pdf' });

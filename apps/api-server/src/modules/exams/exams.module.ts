@@ -25,9 +25,11 @@ import { BulletinPdfService } from './services/bulletin-pdf.service';
 import { ExamsSpecConfigController } from './exams-spec-config.controller';
 import { ExamsLockController } from './exams-lock.controller';
 import { UnlockRequestsController } from './unlock-requests.controller';
+// ⭐ 2026-09-16 — Cachets/signatures automatiques sur les bulletins
+import { SettingsModule } from '../../settings/settings.module';
 
 @Module({
-  imports: [DatabaseModule, UsersModule, AuditLogsModule, ExamsGradesModule, CommonModule, CommunicationModule],
+  imports: [DatabaseModule, UsersModule, AuditLogsModule, ExamsGradesModule, CommonModule, CommunicationModule, SettingsModule],
   controllers: [
     ExamsDashboardController,
     EvaluationsController,

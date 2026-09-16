@@ -19,9 +19,13 @@
  */
 
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
 import { EmailService } from '../communication/services/email.service';
+// ⭐ 2026-09-16 — Cachets + signature du directeur appliqués automatiquement
+//    sur le PDF du cahier journal (même moteur que RH > Administration).
+import { DocumentSealsService } from '../settings/services/document-seals.service';
 import { WhatsAppService } from '../communication/services/whatsapp.service';
 import { SmsService } from '../communication/services/sms.service';
 import { NotificationService } from '../notifications/notification.service';
@@ -37,6 +41,12 @@ export class PedagogicalSpaceService {
     private readonly whatsappService: WhatsAppService,
     private readonly smsService: SmsService,
     private readonly notificationService: NotificationService,
+    // ⭐ FIX 2026-09-16 : configService était UTILISÉ (résolution du logo dans
+    //    exportFichePdf / exportCahierJournal) mais jamais injecté → crash
+    //    "Cannot read properties of undefined" à l'export PDF.
+    private readonly configService: ConfigService,
+    // ⭐ 2026-09-16 — cachets + signature directeur automatiques (cahier journal)
+    private readonly documentSealsService: DocumentSealsService,
   ) {}
 
   // ===========================================================================
@@ -9739,6 +9749,7 @@ td.name{text-align:left;font-weight:bold;}
     const journal: any = await this.prisma.$queryRawUnsafe(
       `SELECT cje.*, c."name" as "classNameResolved",
         sl."code" as "schoolLevelCode", sl."name" as "schoolLevelName",
+        c."schoolLevelId" as "classSchoolLevelId",
         tca_t."firstName" as "titularFirstName", tca_t."lastName" as "titularLastName", tca_t."gender" as "titularGender",
         tip."schoolName", tip."schoolAcronym", tip."logoUrl",
         ay."name" as "academicYearName",
@@ -9786,6 +9797,26 @@ td.name{text-align:left;font-weight:bold;}
     const teacherName = firstName || lastName
       ? `${j.titularGender === 'F' ? 'Mme' : 'M.'} ${(lastName || '').toUpperCase()} ${firstName}`.trim()
       : '—';
+
+    // ⭐ 2026-09-16 — CACHETS + SIGNATURE DU DIRECTEUR (application automatique) :
+    //    cachet circulaire nominatif (mention DIRECTEUR), cachet rectangulaire
+    //    (nom + poste) et signature — résolus depuis school_directors /
+    //    staff_admin_assignements / signature persistée du flux « Lien
+    //    signature » RH. Même moteur de génération que RH > Administration.
+    //    Non bloquant : le PDF est généré sans cachets en cas d'échec.
+    let directorSeals: any = null;
+    try {
+      directorSeals = await this.documentSealsService.getDirectorSeals(
+        tenantId, j.classSchoolLevelId || null, 'FR',
+      );
+    } catch {
+      directorSeals = null;
+    }
+    // Signature effective : celle dessinée par le directeur à la validation
+    // (j.directorSignature) PRIME ; sinon la signature officielle persistée.
+    const directorSignatureEffective =
+      (j.status === 'VALIDATED' && j.directorSignature) || directorSeals?.signatureDataUrl || null;
+    const directorNameForJournal = j.directorName || directorSeals?.holderName || null;
 
     // ⭐ Résoudre le logo
     let logoUrl = '';
@@ -9987,17 +10018,32 @@ td.name{text-align:left;font-weight:bold;}
     }
 
     // ═══ SIGNATURES ═══
+    // ⭐ 2026-09-16 — Zone directeur enrichie : signature + cachet circulaire
+    //    nominatif (DIRECTEUR) + cachet rectangulaire (nom + poste) appliqués
+    //    automatiquement — superposition style document officiel.
+    const dirCirc = directorSeals?.nominativeCircularDataUrl || null;
+    const dirRect = directorSeals?.nominativeRectangularDataUrl || null;
+    const dirSig = directorSignatureEffective;
+    const dirZoneHeight = 86;
+    const directorZoneHtml = `
+      <div style="text-align:center;width:45%;">
+        <div style="position:relative;width:100%;height:${dirZoneHeight}px;">
+          ${dirCirc ? `<img src="${dirCirc}" style="position:absolute;left:0;top:2px;height:80px;width:80px;max-width:58%;object-fit:contain;opacity:0.92;" />` : ''}
+          ${dirSig ? `<img src="${dirSig}" style="position:absolute;right:8%;top:10px;max-height:42px;max-width:70%;object-fit:contain;z-index:2;" />` : ''}
+          ${dirRect ? `<img src="${dirRect}" style="position:absolute;right:0;bottom:0;max-height:28px;max-width:88%;object-fit:contain;opacity:0.95;z-index:3;" />` : ''}
+          ${!dirSig && !dirCirc && j.status !== 'VALIDATED' ? '<div style="position:absolute;inset:0;border:1px dashed #cbd5e1;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#94a3b8;">En attente de validation</div>' : ''}
+        </div>
+        <div style="border-top:2px solid #0A2A5E;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Directeur / La Directrice</div>
+        <div style="font-size:8px;color:#64748b;margin-top:1px;">${j.status === 'VALIDATED' ? (directorNameForJournal || 'Validé') : (directorNameForJournal || '—')}</div>
+      </div>`;
+
     html += `<div style="margin-top:15px;display:flex;justify-content:space-between;gap:20px;">
       <div style="text-align:center;width:45%;">
         ${j.teacherSignature ? `<img src="${j.teacherSignature}" style="max-height:40px;max-width:120px;object-fit:contain;" />` : '<div style="height:40px;"></div>'}
         <div style="border-top:2px solid #0A2A5E;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Maître / La Maîtresse</div>
         <div style="font-size:8px;color:#64748b;margin-top:1px;">${teacherName}</div>
       </div>
-      <div style="text-align:center;width:45%;">
-        ${j.status === 'VALIDATED' && j.directorSignature ? `<img src="${j.directorSignature}" style="max-height:40px;max-width:120px;object-fit:contain;" />` : '<div style="height:40px;border:1px dashed #cbd5e1;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#94a3b8;">En attente de validation</div>'}
-        <div style="border-top:2px solid #0A2A5E;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Directeur / La Directrice</div>
-        <div style="font-size:8px;color:#64748b;margin-top:1px;">${j.status === 'VALIDATED' ? 'Validé' : '—'}</div>
-      </div>
+      ${directorZoneHtml}
     </div>`;
 
     // ═══ FOOTER ═══

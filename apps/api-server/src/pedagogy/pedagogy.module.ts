@@ -91,9 +91,11 @@ import { SaisieMasterController } from './saisiemaster.controller';
 
 // ⭐ Bilingual structure service — auto-création de la structure EN (Nursery/Primary)
 import { BilingualStructureService } from '../bilingual-structure/bilingual-structure.service';
+// ⭐ 2026-09-16 — Cachets/signatures automatiques sur les cahiers journaux
+import { SettingsModule } from '../settings/settings.module';
 
 @Module({
-  imports: [DatabaseModule, CommunicationModule],
+  imports: [DatabaseModule, CommunicationModule, SettingsModule],
   controllers: [
     SubjectsPrismaController,
     TeachersPrismaController,

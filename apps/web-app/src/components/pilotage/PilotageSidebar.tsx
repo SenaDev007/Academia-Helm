@@ -502,14 +502,23 @@ export default function PilotageSidebar({
 
   const mainModules = useMemo(
     () => MAIN_MODULES.filter((m) => {
+      const moduleKey = pathToModuleKey(m.path);
       const featureOk = !m.featureCode || loading || enabledSet.has(m.featureCode);
       const roleOk = !m.roles || !user?.role || (m.roles as string[]).includes(user.role);
       const accredOk = filterModuleByVisibility(m.path, moduleVisibility);
       // ⭐ Filtrage par contexte admin (rôle + niveau scolaire strict)
-      const adminOk = hasModuleAccess(adminContext, pathToModuleKey(m.path));
+      const adminOk = hasModuleAccess(adminContext, moduleKey);
       // ⭐ Filtrage par niveau Secondaire activé (Vie Scolaire, Censeur, Directeur)
       const secondaryOk = !m.requiresSecondary || secondaryEnabled;
-      return featureOk && roleOk && accredOk && adminOk && secondaryOk;
+      // ⭐ 2026-09-16 — ACCRÉDITATION PROMOTEUR : un module explicitement
+      //    accordé (RH > Administration → Accréditations, table
+      //    staff_accreditations, exposé via my-context.extraModules) débloque
+      //    l'accès MÊME si le rôle de base ne voit pas ce module (ex: donner
+      //    Finance à un Directeur, RH à un enseignant). La feature doit rester
+      //    activée côté tenant, et le périmètre de niveau (AccessScopeGuard)
+      //    continue de s'appliquer sur les données.
+      const promoted = moduleKey !== 'dashboard' && !!adminContext?.extraModules?.includes(moduleKey);
+      return featureOk && secondaryOk && adminOk && (promoted || (roleOk && accredOk));
     }),
     [enabledSet, loading, user?.role, moduleVisibility, adminContext, secondaryEnabled],
   );

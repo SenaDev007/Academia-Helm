@@ -318,6 +318,30 @@ export default function UnifiedAdministrationWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // ── ⭐ 2026-09-16 — ACCRÉDITATIONS (promoteur → modules supplémentaires) ──
+  //    Le promoteur peut donner à N'IMPORTE QUEL staff l'accès à des modules
+  //    qu'il ne voit pas normalement (ex: Finance à un Directeur). Persisté
+  //    dans staff_accreditations, exposé au staff via my-context.extraModules.
+  const [accredOverview, setAccredOverview] = useState<
+    Array<{
+      module: string;
+      staffId: string;
+      firstName?: string;
+      lastName?: string;
+      position?: string | null;
+      grantedAt?: string;
+    }>
+  >([]);
+  const [accredLoading, setAccredLoading] = useState(false);
+  const [accredStaffId, setAccredStaffId] = useState<string>('');
+  const [accredSaving, setAccredSaving] = useState<string | null>(null); // `${staffId}:${module}`
+
+  const isPromoterLike =
+    !!sessionUser &&
+    ['PROMOTEUR', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER', 'SUPER_DIRECTOR'].includes(
+      sessionUser.role as string,
+    );
+
   // ── États données ─────────────────────────────────────────────────────────
   const [adminGroups, setAdminGroups] = useState<AdminGroup[]>([]);
   const [adminMode, setAdminMode] = useState<'SEPARATE' | 'FUSED_MATERNELLE_PRIMAIRE'>('SEPARATE');
@@ -454,6 +478,55 @@ export default function UnifiedAdministrationWorkspace() {
   }, [tenantId, academicYearId]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // ── ⭐ 2026-09-16 — ACCRÉDITATIONS : chargement + toggle ──────────────────
+  const loadAccreditations = useCallback(async () => {
+    if (!tenantId || !isPromoterLike) return;
+    setAccredLoading(true);
+    try {
+      const rows = await authedFetch<any[]>(
+        '/api/staff-admin-assignments/accreditations/overview',
+      );
+      setAccredOverview(Array.isArray(rows) ? rows : []);
+    } catch {
+      setAccredOverview([]);
+    } finally {
+      setAccredLoading(false);
+    }
+  }, [tenantId, isPromoterLike]);
+
+  useEffect(() => { loadAccreditations(); }, [loadAccreditations]);
+
+  /** Accorde / retire une accréditation de module à un staff. */
+  const toggleAccreditation = useCallback(
+    async (staffId: string, module: string, currentlyGranted: boolean) => {
+      const staff = staffList.find((s) => s.id === staffId);
+      const staffLabel = staff ? `${staff.firstName || ''} ${staff.lastName || ''}`.trim() : 'ce membre';
+      setAccredSaving(`${staffId}:${module}`);
+      setError(null);
+      try {
+        if (currentlyGranted) {
+          await authedFetch(
+            `/api/staff-admin-assignments/${staffId}/accreditations/${module}`,
+            { method: 'DELETE' },
+          );
+          toast({ variant: 'success', title: `Accréditation retirée`, description: `${staffLabel} ne verra plus ce module dans son interface.` });
+        } else {
+          await authedFetch(
+            `/api/staff-admin-assignments/${staffId}/accreditations`,
+            { method: 'POST', body: { module } },
+          );
+          toast({ variant: 'success', title: `Accréditation accordée`, description: `${staffLabel} verra désormais ce module dans son interface (au prochain rechargement de sa session).` });
+        }
+        await loadAccreditations();
+      } catch (e: any) {
+        toast({ variant: 'error', title: 'Erreur', description: e.message || 'Opération impossible' });
+      } finally {
+        setAccredSaving(null);
+      }
+    },
+    [staffList, loadAccreditations],
+  );
 
   // ── Affectations admin filtrées par unité + piste linguistique ────────────
   const getAssignmentsForUnit = useCallback(
@@ -2122,6 +2195,182 @@ export default function UnifiedAdministrationWorkspace() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════
+          ⭐ 2026-09-16 — SECTION : Accréditations & périmètres supplémentaires
+          Le promoteur donne à N'IMPORTE QUEL membre du personnel l'accès à des
+          modules qu'il ne voit pas normalement dans son interface (ex: Finance
+          à un Directeur). Le module apparaît dans la sidebar du staff accrédité
+          (my-context.extraModules) — son périmètre de niveau scolaire reste
+          appliqué côté données (AccessScopeGuard).
+          ═══════════════════════════════════════════════════════════════════ */}
+      {isPromoterLike && (() => {
+        const ACCREDITATION_MODULES: Array<{ key: string; label: string }> = [
+          { key: 'finance', label: 'Finances & Économat' },
+          { key: 'hr', label: 'Personnel RH' },
+          { key: 'pedagogy', label: 'Organisation Pédagogique' },
+          { key: 'exams', label: 'Examens & Bulletins' },
+          { key: 'students', label: 'Élèves' },
+          { key: 'communication', label: 'Helm Connect' },
+          { key: 'discipline', label: 'Vie Scolaire' },
+          { key: 'censeur', label: 'Espace Censeur' },
+          { key: 'director', label: 'Espace Directeur' },
+          { key: 'settings', label: 'Paramètres' },
+        ];
+        // Modules déjà accordés au staff sélectionné
+        const selectedAccreds = accredOverview.filter((r) => r.staffId === accredStaffId);
+        const grantedForSelected = new Set(selectedAccreds.map((r) => r.module));
+        // Vue groupée : staffId → modules (pour la liste récapitulative)
+        const grouped = new Map<string, { label: string; modules: string[]; position?: string | null }>();
+        for (const row of accredOverview) {
+          const label = `${row.firstName || ''} ${row.lastName || ''}`.trim() || '—';
+          const entry = grouped.get(row.staffId) || { label, modules: [], position: row.position };
+          if (!entry.modules.includes(row.module)) entry.modules.push(row.module);
+          grouped.set(row.staffId, entry);
+        }
+        const selectedStaff = staffList.find((s) => s.id === accredStaffId);
+
+        return (
+          <Card className="p-5 border-t-4" style={{ borderTopColor: '#7C3AED' }}>
+            <div className="flex items-start justify-between gap-3 mb-1">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-violet-600" />
+                <h3 className="text-sm font-bold text-gray-900">
+                  Accréditations & périmètres supplémentaires
+                </h3>
+              </div>
+              <button
+                onClick={() => loadAccreditations()}
+                className="p-1.5 hover:bg-gray-100 rounded-lg"
+                title="Recharger"
+              >
+                <RefreshCw className={cn('w-4 h-4 text-gray-400', accredLoading && 'animate-spin')} />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              Accordez à un membre du personnel l'accès à des modules qu'il ne voit pas dans son interface.
+              Le module apparaît dans son menu après rechargement de sa session — son périmètre de niveau scolaire reste appliqué aux données.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-[minmax(0,320px)_1fr] gap-5">
+              {/* Sélecteur de staff */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">
+                  Membre du personnel
+                </label>
+                <select
+                  value={accredStaffId}
+                  onChange={(e) => setAccredStaffId(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                >
+                  <option value="">Sélectionner un membre…</option>
+                  {staffList.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {`${s.firstName || ''} ${s.lastName || ''}`.trim()} {s.position ? `— ${s.position}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {selectedStaff && (
+                  <div className="mt-3 p-3 rounded-xl bg-violet-50 border border-violet-100 text-xs text-violet-700 space-y-1">
+                    <p className="font-semibold">
+                      {grantedForSelected.size > 0
+                        ? `${grantedForSelected.size} module(s) accordé(s)`
+                        : 'Aucun module supplémentaire accordé'}
+                    </p>
+                    <p className="text-[11px] text-violet-500">
+                      Cochez les modules à débloquer pour {`${selectedStaff.firstName || ''} ${selectedStaff.lastName || ''}`.trim()}.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Chips des modules */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">
+                  Modules à débloquer
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {ACCREDITATION_MODULES.map((m) => {
+                    const granted = grantedForSelected.has(m.key);
+                    const busy = accredSaving === `${accredStaffId}:${m.key}`;
+                    return (
+                      <button
+                        key={m.key}
+                        onClick={() => accredStaffId && toggleAccreditation(accredStaffId, m.key, granted)}
+                        disabled={!accredStaffId || busy}
+                        title={granted ? `Retirer l'accès à « ${m.label} »` : `Donner accès à « ${m.label} »`}
+                        className={cn(
+                          'inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all',
+                          granted
+                            ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
+                            : 'bg-white text-gray-600 border-gray-200 hover:border-violet-300 hover:text-violet-700',
+                          (!accredStaffId || busy) && 'opacity-50 cursor-not-allowed',
+                        )}
+                      >
+                        {busy ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : granted ? (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        ) : (
+                          <Plus className="w-3.5 h-3.5" />
+                        )}
+                        {m.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {!accredStaffId && (
+                  <p className="text-[11px] text-gray-400 mt-2 italic">
+                    Sélectionnez d'abord un membre du personnel.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Récapitulatif des accréditations actives */}
+            {grouped.size > 0 && (
+              <div className="mt-5 pt-4 border-t border-gray-100">
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">
+                  Accréditations actives ({accredOverview.length})
+                </h4>
+                <div className="space-y-1.5">
+                  {[...grouped.entries()].map(([sid, info]) => (
+                    <div key={sid} className="flex flex-wrap items-center gap-2 text-xs">
+                      <button
+                        onClick={() => setAccredStaffId(sid)}
+                        className="font-semibold text-gray-700 hover:text-violet-700 underline decoration-dotted underline-offset-2"
+                      >
+                        {info.label}
+                      </button>
+                      <span className="text-gray-300">→</span>
+                      {info.modules.map((mod) => (
+                        <span
+                          key={mod}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100 font-semibold"
+                        >
+                          {ACCREDITATION_MODULES.find((m) => m.key === mod)?.label || mod}
+                          <button
+                            onClick={() => toggleAccreditation(sid, mod, true)}
+                            disabled={accredSaving === `${sid}:${mod}`}
+                            className="text-violet-400 hover:text-rose-600 transition-colors"
+                            title="Retirer"
+                          >
+                            {accredSaving === `${sid}:${mod}` ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-3 h-3" />
+                            )}
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+        );
+      })()}
+
+      {/* ═══════════════════════════════════════════════════════════════════════
           ⭐ SECTION : Cachets & Tampons générés
           Affiche les cachets institutionnels (circulaire) + nominatifs générés
           pour le niveau sélectionné. Permet de visualiser le rendu.
@@ -2200,8 +2449,17 @@ export default function UnifiedAdministrationWorkspace() {
                         ? `${a.staff.firstName || ''} ${a.staff.lastName || ''}`.trim()
                         : '—';
                       const holderRole = roleLabelMap[a.adminRole] || a.adminRole;
-                      const roleSlug = holderRole.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-                      const nominativeUrl = `/api/settings/stamps/asset?type=signature&signature_id=nominative_${levelFolder}_${roleSlug}`;
+                      // ⭐ 2026-09-16 — FIX : slug identique au backend (NFD, accents
+                      //    retirés) + type=nominative_rectangular (avant : type=signature
+                      //    → l'asset route cherchait dans uploads/tenant-signatures au
+                      //    lieu de uploads/tenant-stamps/<level>/nominative/ → 404).
+                      const roleSlug = (holderRole || 'role')
+                        .toLowerCase()
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, '')
+                        .replace(/[^a-z0-9]+/g, '-')
+                        .replace(/^-+|-+$/g, '');
+                      const nominativeUrl = `/api/settings/stamps/asset?type=nominative_rectangular&signature_id=nominative_${levelFolder}_${roleSlug}&_t=${stampVersion}`;
                       return (
                         <StampPreviewCard
                           key={a.id}
@@ -2218,7 +2476,7 @@ export default function UnifiedAdministrationWorkspace() {
                       <StampPreviewCard
                         title={`${sessionUser.firstName || ''} ${sessionUser.lastName || ''}`}
                         subtitle="PROMOTEUR"
-                        url={`/api/settings/stamps/asset?type=signature&signature_id=nominative_${levelFolder}_promoteur`}
+                        url={`/api/settings/stamps/asset?type=nominative_rectangular&signature_id=nominative_${levelFolder}_promoteur&_t=${stampVersion}`}
                         description="Cachet nominatif du promoteur"
                         stampVersion={stampVersion}
                       />

@@ -82,6 +82,12 @@ agent-ctx/
 tool-results/
 upload/
 
+# ⭐ 2026-09-16 — La route BFF du flux « Lien signature » vit dans un dossier
+#    nommé upload/ (URL /api/settings/signature/upload/:token) — ne pas ignorer.
+!apps/web-app/src/app/api/settings/signature/upload/
+!apps/web-app/src/app/api/settings/signature/upload/**
+
+
 # Download folder — generated artifacts only, not tracked in git
 download/
 

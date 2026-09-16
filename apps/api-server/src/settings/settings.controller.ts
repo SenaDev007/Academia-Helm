@@ -1307,6 +1307,7 @@ export class SettingsController {
       throw new BadRequestException('signatureDataUrl doit être une data URL base64 (data:image/png;base64,...)');
     }
     const ext = base64Match[1] === 'jpeg' ? 'jpg' : base64Match[1];
+    void ext; // (extension source — le fichier est écrit en .png, cf. 3b)
     const buffer = Buffer.from(base64Match[2], 'base64');
 
     // 3. Generate or update the signature via the existing service
@@ -1314,34 +1315,25 @@ export class SettingsController {
     //    The signature image is stored as a file on disk (via the existing
     //    svgToPng path pattern, but we upload the raw PNG buffer instead).
     try {
-      // Save the PNG buffer to the signatures directory
       const fs = await import('fs/promises');
       const path = await import('path');
       const SIGNATURES_DIR = 'uploads/tenant-signatures';
       const dir = path.join(process.cwd(), SIGNATURES_DIR, tokenData.tenantId);
       await fs.mkdir(dir, { recursive: true });
-      // ⭐ FIX : nettoyer le role du filename pour retirer les caractères
-      //    spéciaux (slash, espace, accent) qui cassent le filesystem.
-      //    AVANT : role = "Directeur / Directrice" → filename =
-      //    "signature-Directeur/Directrice-1234567.png" → le / créait un
-      //    sous-dossier et l'écriture échouait avec "Échec de
-      //    l'enregistrement de la signature".
-      //    APRÈS : roleSlug = "directeur-directrice" → filename =
-      //    "signature-directeur-directrice-1234567.png" (plat, valide).
-      const roleSlug = (tokenData.role || 'role')
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '') // retire les accents
-        .replace(/[^a-z0-9]+/g, '-')    // remplace tout non-alphanumérique par -
-        .replace(/^-+|-+$/g, '');       // retire les - en début/fin
-      const fileName = `signature-${roleSlug}-${Date.now()}.${ext}`;
-      const filePath = path.join(dir, fileName);
-      await fs.writeFile(filePath, buffer);
-      const signatureUrl = `${SIGNATURES_DIR}/${tokenData.tenantId}/${fileName}`;
 
-      // 4. Upsert the tenant_signatures row (create or update by role + level)
-      //    generateSignature already does this — but it generates its own SVG.
-      //    Instead, we directly upsert the DB row with our uploaded URL.
+      // ⭐ 2026-09-16 — FIX PERSISTANCE/REUTILISATION :
+      //    AVANT : le fichier était écrit sous "signature-<roleSlug>-<ts>.png"
+      //    alors que la route d'asset GET /settings/stamps/asset?type=signature
+      //    &signature_id=<row.id> construit le chemin "<row.id>.png" → l'aperçu
+      //    dans RH > Administration renvoyait 404 juste après l'upload (et les
+      //    documents ne pouvaient pas réutiliser le fichier par convention).
+      //    APRÈS : on upsert D'ABORD la ligne (pour obtenir/mettre à jour le
+      //    row.id), puis on écrit le fichier sous "<row.id>.<ext>" — MÊME
+      //    convention que generateSignature. La signature est ainsi
+      //    persistée, prévisualisable et réutilisable sur les documents
+      //    (bulletins, cahiers journaux, reçus).
+
+      // 3a. Upsert the tenant_signatures row (create or update by role + level)
       const existing = tokenData.educationLevelId
         ? await this.prisma.tenantSignature.findFirst({
             where: { tenantId: tokenData.tenantId, role: tokenData.role, educationLevelId: tokenData.educationLevelId },
@@ -1350,29 +1342,47 @@ export class SettingsController {
             where: { tenantId: tokenData.tenantId, role: tokenData.role, educationLevelId: null },
           });
 
+      let rowId: string;
       if (existing) {
+        rowId = existing.id;
         await this.prisma.tenantSignature.update({
           where: { id: existing.id },
           data: {
-            signatureUrl,
             holderFirstName: tokenData.holderFirstName,
             holderLastName: tokenData.holderLastName,
             generatedAt: new Date(),
           },
         });
       } else {
-        await this.prisma.tenantSignature.create({
+        const created = await this.prisma.tenantSignature.create({
           data: {
             tenantId: tokenData.tenantId,
             role: tokenData.role,
             holderFirstName: tokenData.holderFirstName,
             holderLastName: tokenData.holderLastName,
             educationLevelId: tokenData.educationLevelId || null,
-            signatureUrl,
             generatedAt: new Date(),
           } as any,
         });
+        rowId = created.id;
       }
+
+      // 3b. Écrire le fichier sous "<rowId>.png" (convention de
+      //     generateSignature : l'asset route sert <signature_id>.png).
+      //     Le canvas exporte du PNG ; si le buffer est JPEG/WebP (import),
+      //     on conserve l'extension réelle pour l'URL mais l'asset route
+      //     regarde <rowId>.png — on écrit donc TOUJOURS .png (les
+      //     navigateurs et Puppeteer rendent par contenu, pas extension).
+      const fileName = `${rowId}.png`;
+      const filePath = path.join(dir, fileName);
+      await fs.writeFile(filePath, buffer);
+      const signatureUrl = `${SIGNATURES_DIR}/${tokenData.tenantId}/${fileName}`;
+
+      // 3c. Mettre à jour la ligne avec l'URL définitive
+      await this.prisma.tenantSignature.update({
+        where: { id: rowId },
+        data: { signatureUrl, generatedAt: new Date() },
+      });
 
       // 5. Mark the token as used
       await this.signatureTokenService.markUsed(token);

@@ -24,6 +24,9 @@ import * as QRCode from 'qrcode';
 import { PrismaService } from '../database/prisma.service';
 import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
 import { MatriculeGeneratorService } from '../common/services/matricule-generator.service';
+// ⭐ 2026-09-16 — Nom du trésorier (comptable / secrétaire-comptable paramétré
+//    dans RH > Administration) + cachet comptable + signature — automatiques
+import { DocumentSealsService } from '../settings/services/document-seals.service';
 
 @Injectable()
 export class ReceiptFinanceService {
@@ -34,6 +37,7 @@ export class ReceiptFinanceService {
     private readonly puppeteerPool: PuppeteerPoolService,
     private readonly matriculeGenerator: MatriculeGeneratorService,
     private readonly configService: ConfigService,
+    private readonly documentSealsService: DocumentSealsService,
   ) {}
 
   /**
@@ -85,12 +89,18 @@ export class ReceiptFinanceService {
 
     // Récupérer la classe de l'élève pour cette année
     let className = '—';
+    let studentSchoolLevelId: string | null = null;
     if (tx?.studentAccount?.studentId && tx?.academicYearId) {
       const enrollment = await this.prisma.studentEnrollment.findFirst({
         where: { studentId: tx.studentAccount.studentId, academicYearId: tx.academicYearId },
-        include: { class: { select: { name: true, code: true } } },
-      });
+        // ⭐ 2026-09-16 — schoolLevelId ajouté (résolution du trésorier par niveau)
+        select: {
+          schoolLevelId: true,
+          class: { select: { name: true, code: true } },
+        },
+      }).catch(() => null as any);
       className = enrollment?.class?.name || '—';
+      studentSchoolLevelId = enrollment?.schoolLevelId || null;
     }
 
     if (!tx) {
@@ -188,6 +198,20 @@ export class ReceiptFinanceService {
     const verifyUrl = `${publicUrl}/api/receipt/verify?token=${verificationToken}`;
     const qrCodeDataUrl = await QRCode.toDataURL(verifyUrl, { width: 120, margin: 1 });
 
+    // ⭐ 4.bis 2026-09-16 — TRÉSORIER (comptable / secrétaire-comptable) :
+    //    résolution dynamique du titulaire paramétré dans RH > Administration
+    //    (staff_admin_assignements — par niveau : maternelle / primaire /
+    //    secondaire), + cachet nominatif + signature. Même moteur de génération
+    //    que le module Personnel. Non bloquant : sans cachet si échec.
+    let treasurer: any = null;
+    try {
+      treasurer = await this.documentSealsService.getAccountantSeals(
+        tenantId, studentSchoolLevelId,
+      );
+    } catch {
+      treasurer = null;
+    }
+
     // 5. Construire le HTML du reçu
     const html = this.buildReceiptHTML({
       tx,
@@ -203,6 +227,7 @@ export class ReceiptFinanceService {
       amountAppliedToArrears,
       totalArrearsRemaining,
       linkedShopSale,
+      treasurer,
     });
 
     // 6. Convertir en PDF via Puppeteer
@@ -259,8 +284,11 @@ export class ReceiptFinanceService {
     amountAppliedToArrears?: number;
     totalArrearsRemaining?: number;
     linkedShopSale?: any;
+    // ⭐ 2026-09-16 — Trésorier résolu dynamiquement (RH > Administration) :
+    //    nom + cachet nominatif + signature (peut être null)
+    treasurer?: any;
   }): string {
-    const { tx, branding, qrCodeDataUrl, verificationToken, totalDue, totalPaidAfter, balanceAfter, breakdownsByType, className, openArrears = [], amountAppliedToArrears = 0, totalArrearsRemaining = 0, linkedShopSale = null } = params;
+    const { tx, branding, qrCodeDataUrl, verificationToken, totalDue, totalPaidAfter, balanceAfter, breakdownsByType, className, openArrears = [], amountAppliedToArrears = 0, totalArrearsRemaining = 0, linkedShopSale = null, treasurer = null } = params;
     const student = tx.studentAccount?.student;
     const studentName = student ? `${student.lastName} ${student.firstName}` : '—';
     const matricule = student?.matricule || '—';
@@ -614,8 +642,16 @@ export class ReceiptFinanceService {
       <div class="qr-label">Scannez pour vérifier l'authenticité</div>
     </div>
     <div class="stamp">
+      ${treasurer?.holderName ? `
+      <div style="font-weight:700;">${treasurer.holderRole || 'Le Trésorier'}</div>
+      <div style="font-size:10px;color:#475569;margin-top:1px;">${treasurer.holderName}</div>
+      <div style="position:relative;width:190px;height:92px;margin-top:4px;">
+        ${treasurer.nominativeCircularDataUrl ? `<img src="${treasurer.nominativeCircularDataUrl}" style="position:absolute;left:0;top:2px;height:88px;width:88px;object-fit:contain;opacity:0.92;" />` : ''}
+        ${treasurer.signatureDataUrl ? `<img src="${treasurer.signatureDataUrl}" style="position:absolute;right:10%;top:12px;max-height:44px;max-width:60%;object-fit:contain;z-index:2;" />` : ''}
+        ${treasurer.nominativeRectangularDataUrl ? `<img src="${treasurer.nominativeRectangularDataUrl}" style="position:absolute;right:0;bottom:0;max-height:30px;max-width:85%;object-fit:contain;opacity:0.95;z-index:3;" />` : ''}
+      </div>` : `
       <div>Le comptable</div>
-      <div class="stamp-line">Signature & cachet</div>
+      <div class="stamp-line">Signature &amp; cachet</div>`}
     </div>
   </div>
 

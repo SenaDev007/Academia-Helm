@@ -284,10 +284,52 @@ export class StaffAdminAssignmentController {
   // ═══════════════════════════════════════════════════════════════════════
 
   /**
+   * Modules accréditables — alignés sur les clés de pathToModuleKey du
+   * front (hooks/useAdminContext) qui pilotent le gating de la sidebar :
+   * un module ici = un module débloqué dans le menu du staff accrédité.
+   */
+  static readonly ACCREDITATION_MODULES = [
+    'finance',      // Finances & Économat
+    'hr',           // Personnel RH
+    'pedagogy',     // Espace Pédagogique / Organisation Pédagogique
+    'exams',        // Examens & Bulletins
+    'students',     // Élèves
+    'communication',// Helm Connect
+    'discipline',   // Vie Scolaire
+    'censeur',      // Espace Censeur
+    'director',     // Espace Directeur
+    'settings',     // Paramètres
+  ];
+
+  /**
+   * GET /staff-admin-assignments/accreditations/overview
+   * ⭐ 2026-09-16 — Vue d'ensemble des accréditations ACTIVES du tenant
+   *    (avec noms des staff) pour l'UI d'administration RH.
+   *    Déclarée AVANT @Get(':id') pour ne pas être capturée par :id.
+   */
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
+  @Roles('PROMOTEUR', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER', 'SUPER_DIRECTOR')
+  @Get('accreditations/overview')
+  async accreditationsOverview(
+    @TenantId() tenantId: string,
+  ) {
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT sa.module, sa."grantedAt", s.id AS "staffId",
+              s."firstName", s."lastName", s.email, s.position, s."roleType"
+       FROM staff_accreditations sa
+       JOIN staff s ON s.id = sa."staffId"
+       WHERE sa."tenantId" = $1 AND sa."isActive" = true
+       ORDER BY s."lastName" ASC, s."firstName" ASC, sa.module ASC`,
+      [tenantId],
+    );
+    return rows;
+  }
+
+  /**
    * GET /staff-admin-assignments/:staffId/accreditations
    * Liste les accréditations (modules supplémentaires) d'un staff.
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard)
   @Get(':staffId/accreditations')
   async listAccreditations(
     @TenantId() tenantId: string,
@@ -302,10 +344,13 @@ export class StaffAdminAssignmentController {
 
   /**
    * POST /staff-admin-assignments/:staffId/accreditations
-   * Accorde un module supplémentaire à un staff (promoteur only).
-   * Body: { module: 'finance' | 'hr' | 'communication' | 'settings' }
+   * Accorde un module supplémentaire à un staff (promoteur / direction only).
+   * Body: { module } — voir ACCREDITATION_MODULES.
+   * ⭐ 2026-09-16 : liste étendue (10 modules) + vérification (a) rôle promoteur
+   *    via @Roles, (b) staffId appartient bien au tenant.
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
+  @Roles('PROMOTEUR', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER', 'SUPER_DIRECTOR')
   @Post(':staffId/accreditations')
   async grantAccreditation(
     @TenantId() tenantId: string,
@@ -313,9 +358,18 @@ export class StaffAdminAssignmentController {
     @Param('staffId') staffId: string,
     @Body() body: { module: string },
   ) {
-    const VALID_MODULES = ['finance', 'hr', 'communication', 'settings', 'discipline', 'censeur'];
+    const VALID_MODULES = StaffAdminAssignmentController.ACCREDITATION_MODULES;
     if (!body.module || !VALID_MODULES.includes(body.module)) {
       throw new BadRequestException(`Module invalide. Valeurs acceptées: ${VALID_MODULES.join(', ')}`);
+    }
+
+    // ⭐ Vérifier que le staff appartient bien à ce tenant (anti cross-tenant)
+    const staff = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, "firstName", "lastName" FROM staff WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
+      [staffId, tenantId],
+    );
+    if (!staff || staff.length === 0) {
+      throw new BadRequestException('Membre du personnel introuvable dans votre établissement.');
     }
 
     const id = crypto.randomUUID();
@@ -326,15 +380,18 @@ export class StaffAdminAssignmentController {
       [id, tenantId, staffId, body.module, user?.id || '00000000-0000-0000-0000-000000000000'],
     );
 
-    this.logger.log(`Accreditation granted: staff=${staffId}, module=${body.module}, by=${user?.id}`);
-    return { id, success: true };
+    this.logger.log(
+      `Accreditation granted: staff=${staff[0].firstName} ${staff[0].lastName} (${staffId}), module=${body.module}, by=${user?.id}`,
+    );
+    return { id, success: true, module: body.module };
   }
 
   /**
    * DELETE /staff-admin-assignments/:staffId/accreditations/:module
-   * Retire un module supplémentaire d'un staff (promoteur only).
+   * Retire un module supplémentaire d'un staff (promoteur / direction only).
    */
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
+  @Roles('PROMOTEUR', 'PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'PLATFORM_OWNER', 'SUPER_DIRECTOR')
   @Delete(':staffId/accreditations/:module')
   async revokeAccreditation(
     @TenantId() tenantId: string,

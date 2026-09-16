@@ -140,6 +140,13 @@ export interface BulletinPdfData {
   teacherSignature?: string | null;
   directorSignature?: string | null;
   parentSignature?: string | null;
+  // ⭐ 2026-09-16 — Cachets nominatifs automatiques du directeur (data-URL) :
+  //    circulaire (mention DIRECTEUR au centre) + rectangulaire (nom + poste).
+  //    Appliqués sur toutes les variantes (maternelle / primaire / secondaire / EN).
+  directorSeals?: {
+    nominativeCircularDataUrl?: string | null;
+    nominativeRectangularDataUrl?: string | null;
+  } | null;
 }
 
 /**
@@ -213,6 +220,34 @@ export class BulletinPdfService {
       this.logger.error('Error generating bulletin PDF:', error);
       throw new InternalServerErrorException('Erreur lors de la génération du bulletin PDF');
     }
+  }
+
+  /**
+   * ⭐ 2026-09-16 — Zone de signature + CACHETS officiels du directeur.
+   *
+   * Rendu superposé (style bulletin officiel béninois) :
+   *   - Cachet circulaire nominatif (mention DIRECTEUR au centre) à gauche ;
+   *   - Signature manuscrite au centre-droit, par-dessus ;
+   *   - Cachet nominatif rectangulaire (nom + poste) en bas à droite.
+   *
+   * Les 3 images sont des data-URL transparentes (PNG effet encre) générées
+   * par le même moteur que RH > Administration. Toutes optionnelles : la zone
+   * se dégrade proprement si un élément manque.
+   */
+  private renderDirectorSealsZone(
+    data: BulletinPdfData,
+    baseHeight: number,
+  ): string {
+    const height = Math.max(baseHeight, 62) + (data.directorSeals?.nominativeCircularDataUrl ? 14 : 0);
+    const circular = data.directorSeals?.nominativeCircularDataUrl || null;
+    const rectangular = data.directorSeals?.nominativeRectangularDataUrl || null;
+    const signature = data.directorSignature || null;
+    const circularSize = Math.round(height * 0.92);
+    return `<div style="position:relative;width:100%;height:${height}px;">
+  ${circular ? `<img src="${circular}" style="position:absolute;left:0;top:${Math.round(height * 0.02)}px;height:${circularSize}px;width:${circularSize}px;max-width:62%;object-fit:contain;opacity:0.92;" />` : ''}
+  ${signature ? `<img src="${signature}" style="position:absolute;right:6%;top:${Math.round(height * 0.1)}px;max-height:${Math.round(height * 0.5)}px;max-width:72%;object-fit:contain;z-index:2;" />` : ''}
+  ${rectangular ? `<img src="${rectangular}" style="position:absolute;right:0;bottom:0;max-height:${Math.round(height * 0.34)}px;max-width:88%;object-fit:contain;opacity:0.95;z-index:3;" />` : ''}
+</div>`;
   }
 
   private buildHtml(data: BulletinPdfData, qrCode: string, bulletinId: string): string {
@@ -388,7 +423,7 @@ export class BulletinPdfService {
                 <div style="font-size:7px;color:#64748b;">Signature</div>
               </td>
               <td style="width:34%;text-align:center;vertical-align:bottom;padding:5px 2px;">
-                <div style="height:30px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
+                ${this.renderDirectorSealsZone(data, 30)}
                 <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">Le (la) Directeur(trice)</div>
                 ${data.directorName ? `<div style="font-size:7px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:7px;color:#64748b;margin-top:1px;">Visa</div>'}
               </td>
@@ -462,7 +497,7 @@ export class BulletinPdfService {
                 <div style="font-size:7px;color:#64748b;">Signature et nom</div>
               </td>
               <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 2px;">
-                <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:85px;object-fit:contain;" />` : ''}</div>
+                ${this.renderDirectorSealsZone(data, 35)}
                 <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">VISA du Directeur</div>
                 ${data.directorName ? `<div style="font-size:7px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:7px;color:#64748b;margin-top:1px;">Visa</div>'}
               </td>
@@ -583,7 +618,7 @@ export class BulletinPdfService {
               ${data.teacherName ? `<div style="font-size:9px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.teacherName}</div>` : '<div style="font-size:8px;color:#64748b;margin-top:1px;">Signature</div>'}
             </td>
             <td style="width:34%;text-align:center;vertical-align:bottom;padding:10px 3px;">
-              <div style="height:50px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:50px;max-width:100px;object-fit:contain;" />` : ''}</div>
+              ${this.renderDirectorSealsZone(data, 50)}
               ${data.directorVisa ? `<div style="font-size:9px;color:#dc2626;font-style:italic;margin-top:2px;">${data.directorVisa}</div>` : ''}
               <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:10px;font-weight:bold;color:#0A2A5E;">Le (la) Directeur(trice)</div>
               ${data.directorName ? `<div style="font-size:9px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:8px;color:#64748b;margin-top:1px;">Visa</div>'}
@@ -659,7 +694,7 @@ export class BulletinPdfService {
               <div style="font-size:8px;color:#64748b;">Signature et nom</div>
             </td>
             <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 3px;">
-              <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:90px;object-fit:contain;" />` : ''}</div>
+              ${this.renderDirectorSealsZone(data, 35)}
               ${data.directorVisa ? `<div style="font-size:8px;color:#dc2626;font-style:italic;margin-top:2px;">${data.directorVisa}</div>` : ''}
               <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:10px;font-weight:bold;color:#0A2A5E;">VISA du Directeur</div>
               ${data.directorName ? `<div style="font-size:9px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:8px;color:#64748b;margin-top:1px;">Visa</div>'}
@@ -1538,7 +1573,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
               ${data.teacherName ? `<div style="font-size:8px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.teacherName}</div>` : '<div style="font-size:7px;color:#64748b;margin-top:1px;">Signature</div>'}
             </td>
             <td style="width:34%;text-align:center;vertical-align:bottom;padding:6px 3px;">
-              <div style="height:35px;">${data.directorSignature ? `<img src="${data.directorSignature}" style="max-height:35px;max-width:80px;object-fit:contain;" />` : ''}</div>
+              ${this.renderDirectorSealsZone(data, 35)}
               <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Headmaster(mistress)</div>
               ${data.directorName ? `<div style="font-size:8px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.directorName}</div>` : '<div style="font-size:7px;color:#64748b;">Signature</div>'}
             </td>

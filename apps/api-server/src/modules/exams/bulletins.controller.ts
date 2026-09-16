@@ -5,6 +5,9 @@ import {
 import { BulletinsService } from './services/bulletins.service';
 import { BulletinPdfService } from './services/bulletin-pdf.service';
 import { PrismaService } from '../../database/prisma.service';
+// ⭐ 2026-09-16 — Cachets (circulaire nominatif + rectangulaire) et signature
+//    du directeur appliqués automatiquement sur TOUS les bulletins.
+import { DocumentSealsService } from '../../settings/services/document-seals.service';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -22,6 +25,7 @@ export class BulletinsController {
     private readonly bulletinsService: BulletinsService,
     private readonly pdfService: BulletinPdfService,
     private readonly prisma: PrismaService,
+    private readonly documentSealsService: DocumentSealsService,
   ) {}
 
   @Get('class/:classId')
@@ -527,8 +531,33 @@ export class BulletinsController {
     // 2. RÉCUPÉRATION DES DONNÉES DU BULLETIN
     const bulletinData = await this.bulletinsService.getBulletinFullData(tenantId, academicYearId, periodId, studentId);
 
+    // ⭐ 2026-09-16 — Cachets + signature du directeur appliqués automatiquement
+    //    (cachet circulaire nominatif DIRECTEUR + cachet rectangulaire nom/poste
+    //    + signature — même moteur que RH > Administration). Non bloquant.
+    let directorSeals: {
+      nominativeCircularDataUrl: string | null;
+      nominativeRectangularDataUrl: string | null;
+    } = { nominativeCircularDataUrl: null, nominativeRectangularDataUrl: null };
+    try {
+      const enrollment = await this.prisma.studentEnrollment.findFirst({
+        where: { studentId, academicYearId, tenantId },
+        select: { schoolLevelId: true },
+      }).catch(() => null);
+      const seals = await this.documentSealsService.getDirectorSeals(
+        tenantId, enrollment?.schoolLevelId ?? null, 'FR',
+      );
+      directorSeals = {
+        nominativeCircularDataUrl: seals.nominativeCircularDataUrl,
+        nominativeRectangularDataUrl: seals.nominativeRectangularDataUrl,
+      };
+      (bulletinData as any).directorName = (bulletinData as any).directorName || seals.holderName;
+      (bulletinData as any).directorSignature = (bulletinData as any).directorSignature || seals.signatureDataUrl;
+    } catch {
+      // Silent fail — bulletin généré sans cachets
+    }
+
     // 3. GÉNÉRATION DU PDF
-    const buffer = await this.pdfService.generateBulletin(bulletinData);
+    const buffer = await this.pdfService.generateBulletin({ ...bulletinData, directorSeals } as any);
 
     res.set({
       'Content-Type': 'application/pdf',
@@ -749,6 +778,32 @@ export class BulletinsController {
       }
     }
 
+    // ⭐ 2026-09-16 — CACHETS & SIGNATURE OFFICIELS DU DIRECTEUR (automatiques) :
+    //    - Cachet circulaire nominatif (mention DIRECTEUR au centre) ;
+    //    - Cachet nominatif rectangulaire (nom + poste) ;
+    //    - Signature (school_directors, sinon signature persistée du flux
+    //      « Lien signature » RH > Administration).
+    //    Même moteur de génération que le module Personnel (effet encre PNG).
+    //    Non bloquant : en cas d'échec, le bulletin est généré sans cachets.
+    const directorLang = (body.scopeLang === 'EN') ? 'EN' : 'FR';
+    let directorSeals: {
+      nominativeCircularDataUrl: string | null;
+      nominativeRectangularDataUrl: string | null;
+    } = { nominativeCircularDataUrl: null, nominativeRectangularDataUrl: null };
+    try {
+      const seals = await this.documentSealsService.getDirectorSeals(
+        resolvedTenantId, studentSchoolLevelId, directorLang,
+      );
+      if (seals.holderName && !directorName) directorName = seals.holderName;
+      if (!directorSignature && seals.signatureDataUrl) directorSignature = seals.signatureDataUrl;
+      directorSeals = {
+        nominativeCircularDataUrl: seals.nominativeCircularDataUrl,
+        nominativeRectangularDataUrl: seals.nominativeRectangularDataUrl,
+      };
+    } catch {
+      // Silent fail — le bulletin reste généré sans cachets
+    }
+
     // Fusionner les données du frontend avec le branding + teacherName résolu
     const pdfData = {
       ...body,
@@ -769,6 +824,8 @@ export class BulletinsController {
       //    Priorité au backend si trouvé, sinon fallback sur ce que le frontend a envoyé
       directorName: directorName || body.directorName || null,
       directorSignature: directorSignature || body.directorSignature || null,
+      // ⭐ 2026-09-16 — Cachets nominatifs automatiques (data-URL) du directeur
+      directorSeals,
     };
 
     const buffer = await this.pdfService.generateBulletin(pdfData);

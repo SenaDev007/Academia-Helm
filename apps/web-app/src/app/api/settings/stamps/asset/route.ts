@@ -1,7 +1,12 @@
 /**
  * Proxy API — Fichier image d'un cachet ou de la signature
- * GET /api/settings/stamps/asset?type=circular|rectangular|oval|signature
+ * GET /api/settings/stamps/asset?type=circular|rectangular|oval|signature|nominative_circular|nominative_rectangular
  * Retourne le PNG en stream (proxy vers le backend).
+ *
+ * ⭐ 2026-09-16 — FIX : la whitelist n'acceptait pas les types nominatifs
+ *    (nominative_circular / nominative_rectangular) alors que le backend
+ *    StampsSignaturesService.getAssetPath les gère → le modal « Cachet » de
+ *    RH > Administration et la grille des cachets nominatifs renvoyaient 400.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,13 +16,15 @@ import { getProxyAuthHeaders } from '@/lib/api/proxy-auth';
 
 const API_BASE_URL = getApiBaseUrlForRoutes();
 
+const ALLOWED_TYPES = ['circular', 'rectangular', 'oval', 'signature', 'nominative_circular', 'nominative_rectangular'];
+
 export async function GET(request: NextRequest) {
   try {
     const headers = await getProxyAuthHeaders(request);
     const type = request.nextUrl?.searchParams?.get('type');
-    if (!type || !['circular', 'rectangular', 'oval', 'signature'].includes(type)) {
+    if (!type || !ALLOWED_TYPES.includes(type)) {
       return NextResponse.json(
-        { error: 'Paramètre type requis: circular, rectangular, oval ou signature' },
+        { error: `Paramètre type requis: ${ALLOWED_TYPES.join(', ')}` },
         { status: 400 }
       );
     }

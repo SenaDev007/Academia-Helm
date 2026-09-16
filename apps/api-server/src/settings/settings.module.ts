@@ -23,6 +23,9 @@ import { RolesPermissionsBootstrapService } from './services/roles-permissions-b
 import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
 import { StampsSignaturesService } from './services/stamps-signatures.service';
+// ⭐ 2026-09-16 — Cachets/signatures automatiques sur les documents (bulletins,
+//    cahiers journaux, reçus) — même moteur de génération que RH > Administration
+import { DocumentSealsService } from './services/document-seals.service';
 import { SignatureTokenService } from './services/signature-token.service';
 import { GeolocationService } from '../hr/geolocation.service';
 import { DatabaseModule } from '../database/database.module';
@@ -83,6 +86,7 @@ import { BilingualStructureService } from '../bilingual-structure/bilingual-stru
     AdministrativeSealsService,
     ElectronicSignaturesService,
     SealGenerationService,
+    DocumentSealsService,
   ],
   exports: [
     RolesPermissionsBootstrapService,
@@ -110,6 +114,7 @@ import { BilingualStructureService } from '../bilingual-structure/bilingual-stru
     AdministrativeSealsService,
     ElectronicSignaturesService,
     SealGenerationService,
+    DocumentSealsService,
   ],
 })
 export class SettingsModule {}

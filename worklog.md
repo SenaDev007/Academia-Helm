@@ -10874,3 +10874,28 @@ Stage Summary:
 - ✅ 34 anomalies P0 corrigées — les 6 modules majeurs sont fonctionnels de bout en bout sur les flux quotidiens
 - ⚠️ P1 restants documentés (§3 du rapport) : Cantine écriture (7 payloads mismatch), EduCast (feed 401 + upload triple cassé + 17 composants orphelins), RH déclarations fiscales sur staff.salary (TODO), Examens « Modifier avec notes » / « Rejeter » (cancel définitif), granularité déverrouillage, ORION élèves non branché, 3 actions sans UI, code mort
 - Recommandation clôture V1 : arbitrer Cantine/EduCast (réparer ou masquer), vrai flux « Rejeter », brancher les actions sans UI si attendues
+
+---
+Task ID: 73
+Agent: main (Super Z)
+Task: Lenteurs + instabilité des portails admin (secrétaire, secrétaire comptable, comptable, directeur…) — « boucle de chargement (téléchargement des données en local, préparation du mode hors ligne), ça recharge la page à chaque fois, sélecteur niveau scolaire lent… suivre le même pattern que l'UI promoteur »
+
+Work Log:
+- CONTEXTE : reprise après 91 commits de la session parallèle (tasks 62-72 : audit CRUD 34 P0, fix inscriptions « non affectés », cachets v2) → pull + revue de l'état offline-first v4.x RÉACTIVÉ (SW 167 KB, pré-cache 112 routes, bootstrap IDB)
+- DIAGNOSTIC E2E production (comptes test créés sur CSPEB : recette.sec-comptable / recette.comptable / recette.directeur @cspeb.test + scripts /home/z/my-project/scripts/measure_admin_ui_chain.js + diag_sync_bootstrap.js + navigateur agent-browser) :
+  * RC1 — CRASH DataError systématique : /api/sync/bootstrap renvoie 18 modules SANS champ id → executeBulk('modules') sur store keyPath 'id' → « DataError: key path did not yield a value » → les flags offline_ready/offline_last_bootstrap_at ne sont JAMAIS posés → re-téléchargement complet à chaque session (boucle signalée par l'utilisateur)
+  * RC2 — SyncModal OVERLAY PLEIN ÉCRAN bloquant 5 s après le login (« Téléchargement initial des données de l'école… ») pendant que le pull télécharge les tables de sync (students?limit=500 = 3,2 s !, teachers 2,4 s…) → concurrence directe avec les requêtes UI critiques
+  * RC3 — Pré-cache 112 routes + KPI API + bundle Paramètres (23 requêtes) lancés dès le montage → ~160 requêtes dans les 15 premières secondes
+  * RC4 — AdminPortalShell bloquait TOUTE l'UI sur academicYear (spinner plein écran ~1-2 s) alors que PilotageLayout (promoteur) s'affiche immédiatement — LE pattern demandé
+  * RC5 — /api/settings/identity = 218 KB (logo base64) à CHAQUE chargement (~1,3 s) pour la sidebar
+- CORRECTIFS (7 fichiers, commit 078525a96) :
+  * Fix A — offline-bootstrap.service.ts : safePut/safePutBulk (isolation try/catch PAR collection — un store en échec n'interrompt plus le bootstrap) + modules sanitizés (id = featureCode fallback tenantId:index) + filtrage des lignes sans clé → le bootstrap RÉUSSIT, les flags sont posés, plus de boucle
+  * Fix B — layout-client.tsx + post-login-flow.service.ts : bootstrap offline (18 s), pré-cache modules (15 s), bootstrap IDB post-login (12 s) couplés à requestIdleCallback (timeout 8 s) ; offlineSyncService.bootstrap(tenantId, {background: true}) → modal MINIMISÉ d'office (pastille discrète au lieu de l'overlay)
+  * Fix C — AdminPortalShell.tsx : suppression du blocage plein écran sur l'année scolaire (render immédiat de sidebar + topbar + sélecteurs — pattern PilotageLayout/promoteur) ; Loader2 retiré des imports
+  * Fix D — useSchoolIdentity.ts : cache localStorage 12 h (stale-while-revalidate, purge sur user-context-reset) → nom/logo école instantanés
+  * Fix E — SettingsBootstrapPrefetch.tsx : rafale 23 requêtes différée 80 ms → idle 8 s (AcademicYearContext fait ses propres 2 requêtes au montage)
+- VALIDATION : transpile TypeScript 7/7 fichiers OK (scripts/check_syntax_task73.js) ; push → déploiement Vercel en cours
+
+Stage Summary:
+- ✅ Les 6 causes racine identifiées et corrigées : le portail admin s'affiche maintenant immédiatement (pattern promoteur), la préparation hors-ligne se fait discrètement en arrière-plan après le premier rendu, et le crash IndexedDB qui provoquait la boucle de re-téléchargement est réparé
+- En attente : E2E post-déploiement (login secrétaire → timings sélecteur niveau + stabilité rechargement + absence DataError)

@@ -195,7 +195,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.4.2';
+const SW_VERSION = 'v4.5.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -368,8 +368,19 @@ const NEVER_INTERCEPT = [
   /^\/manifest.*\.webmanifest$/, // manifests dynamiques (toujours frais)
 ];
 
-// ⭐ Timeouts : Neon cold start = 10-13 s → 8 s HTML avant fallback shell
-const HTML_TIMEOUT = 8000;
+// ⭐ v4.5.0 (Task 73 — boucle de rechargement signalée en production) :
+//    8 s → 30 s pour les navigations /app/*. Sur connexion école lente ou
+//    saturée (téléchargements hors-ligne en arrière-plan), le HTML mettait
+//    > 8 s → le SW servait le SHELL /app en cache (page d'accueil = tableau
+//    de bord) POUR UNE AUTRE ROUTE (« je clique sur un module, ça affiche
+//    toujours le tableau de bord ») + script de rechargement auto 20 s →
+//    chaque reload tuait les téléchargements en cours → ils redémarraient →
+//    saturation → timeout → shell → reload : BOUCLE SANS FIN.
+//    30 s = au-dessus du pire cas Neon cold start (10-13 s) + marge lente ;
+//    en ligne on attend le VRAI HTML de la BONNE route plutôt que de
+//    servir une page périmée. Le shell ne reste qu'en vrai hors-ligne
+//    (navigator.onLine === false) ou échec réseau franc.
+const HTML_TIMEOUT = 30000;
 
 // ─── INSTALL : pré-cache du shell hors ligne ──────────────────────────────
 self.addEventListener('install', (event) => {
@@ -1830,9 +1841,15 @@ function isAppNavigation(pathname) {
 }
 
 /** Injecte dans le HTML du shell un script de rechargement de la vraie route
- *  au retour du réseau (+ retry différé si le serveur était juste en train de
- *  se réveiller — Neon cold start). Garde anti-boucle : max 2 rechargements
- *  auto par URL et par session onglet (sessionStorage). */
+ *  au retour du réseau. Garde anti-boucle : max 2 rechargements auto par URL
+ *  et par session onglet (sessionStorage).
+ *  ⭐ v4.5.0 (Task 73 — boucle de rechargement production) : le TIMER 20 s
+ *  est SUPPRIMÉ. En ligne-lente, il rechargeait la page en boucle (chaque
+ *  reload tuait les téléchargements hors-ligne en cours → redémarrage →
+ *  saturation réseau → timeout HTML → shell → reload → …) : « l'application
+ *  se recharge à nouveau, c'est la boucle et ça ne cesse pas ». On ne
+ *  recharge désormais QUE sur l'événement 'online' réel (transition
+ *  hors-ligne → en-ligne), jamais sur timer. */
 async function shellWithRecoveryScript(shellResponse) {
   try {
     const html = await shellResponse.clone().text();
@@ -1842,7 +1859,7 @@ async function shellWithRecoveryScript(shellResponse) {
       'try{n=Number(sessionStorage.getItem(k)||0)}catch(e){}' +
       'if(n<2){try{sessionStorage.setItem(k,String(n+1))}catch(e){}' +
       'window.addEventListener("online",function(){location.reload()});' +
-      'setTimeout(function(){if(navigator.onLine){location.reload()}},20000);}' +
+      '}' +
       '}catch(e){}})();</' + 'script>';
     const patched = html.includes('</body>')
       ? html.replace('</body>', script + '</body>')

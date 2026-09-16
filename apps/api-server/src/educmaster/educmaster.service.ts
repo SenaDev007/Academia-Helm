@@ -14,7 +14,10 @@ export class EducMasterService {
       where: {
         tenantId,
         isActive: true,
-        enrollments: {
+        // ⭐ FIX 2026-09-16 — la relation s'appelle studentEnrollments sur le
+        //    modèle Student (« enrollments » n'existe pas → 400 Prisma sur TOUT
+        //    l'endpoint d'export).
+        studentEnrollments: {
           some: {
             academicYearId,
             status: 'ACTIVE',
@@ -22,7 +25,7 @@ export class EducMasterService {
         },
       },
       include: {
-        enrollments: {
+        studentEnrollments: {
           where: { academicYearId },
           include: {
             class: true,
@@ -55,7 +58,7 @@ export class EducMasterService {
     ];
 
     students.forEach(student => {
-      const enrollment = student.enrollments[0];
+      const enrollment = student.studentEnrollments[0];
       const guardian = student.studentGuardians[0]?.guardian;
 
       worksheet.addRow({

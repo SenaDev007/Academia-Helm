@@ -610,15 +610,17 @@ export class BulletinsController {
     if (body.studentMatricule && resolvedTenantId && academicYearId) {
       try {
         // 1. Trouver l'élève par matricule
-        // ⭐ FIX 2026-09-16 — le modèle Prisma Student expose dateOfBirth (et NON
-        //    birthDate) : le select précédent `birthDate: true` déclenchait une
+        // ⭐ FIX 2026-09-16 — le modèle Prisma Student n'expose NI birthDate NI
+        //    admissionNumber (champs réels : dateOfBirth ; admissionNumber vit
+        //    sur le modèle Admission) : le select précédent déclenchait une
         //    PrismaClientValidationError « Unknown argument » avalée par le
-        //    .catch(() => null) → élève JAMAIS résolu → nom de l'enseignant,
-        //    directeur, signature et cachets nominatifs jamais injectés dans
-        //    les bulletins générés via generate-pdf.
+        //    .catch(() => null) → élève JAMAIS résolu → âge, nom de
+        //    l'enseignant, directeur, signature et cachets nominatifs jamais
+        //    injectés dans les bulletins générés via generate-pdf. Le numéro
+        //    d'admission retombe sur le matricule (comportement affiché).
         const student = await this.prisma.student.findFirst({
           where: { matricule: body.studentMatricule, tenantId: resolvedTenantId },
-          select: { id: true, dateOfBirth: true, admissionNumber: true },
+          select: { id: true, dateOfBirth: true },
         }).catch(() => null);
 
         // ⭐ Résolution de l'âge à partir de la date de naissance
@@ -629,9 +631,6 @@ export class BulletinsController {
           const mDiff = now.getMonth() - birth.getMonth();
           if (mDiff < 0 || (mDiff === 0 && now.getDate() < birth.getDate())) age--;
           if (age >= 0 && age < 150) studentAge = age;
-        }
-        if (student?.admissionNumber) {
-          admissionNumber = student.admissionNumber;
         }
 
         if (student) {

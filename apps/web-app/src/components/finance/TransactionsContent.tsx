@@ -49,6 +49,9 @@ export default function TransactionsContent() {
   //    même pattern que StudentAccountsContent. Reste disponible aux côtés de
   //    Helm Connect (l'utilisateur peut choisir son canal d'envoi).
   const [whatsappMenuId, setWhatsappMenuId] = useState<string | null>(null);
+  // ⭐ PERF 2026-09-16 — feedback instantané : spinner sur le bouton Visualiser
+  //    pendant le chargement du PDF (anti double-clic inclus).
+  const [viewingId, setViewingId] = useState<string | null>(null);
   const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
   const { toast } = useToast();
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -456,7 +459,10 @@ export default function TransactionsContent() {
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
+                          disabled={viewingId !== null}
                           onClick={async () => {
+                            if (viewingId) return;
+                            setViewingId(t.id);
                             try {
                               const res = await fetch(financeService.getReceiptPdfUrl(t.id));
                               // ⭐ FIX 2026-09-16 — ne pas nourrir le preview avec une
@@ -476,11 +482,15 @@ export default function TransactionsContent() {
                               setPreviewDoc({ filePath: url, fileName: `recu-${t.receiptNumber || t.id}.pdf`, mimeType: 'application/pdf' });
                             } catch (e: any) {
                               toast({ title: 'Erreur', description: 'Impossible de charger le reçu', variant: 'destructive' });
+                            } finally {
+                              setViewingId(null);
                             }
                           }}
                           title="Visualiser le reçu"
                         >
-                          <Eye className="w-3.5 h-3.5 text-slate-600" />
+                          {viewingId === t.id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                            : <Eye className="w-3.5 h-3.5 text-slate-600" />}
                         </Button>
                         <a
                           href={financeService.getReceiptPdfUrl(t.id)}

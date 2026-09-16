@@ -10018,23 +10018,24 @@ td.name{text-align:left;font-weight:bold;}
     }
 
     // ═══ SIGNATURES ═══
-    // ⭐ 2026-09-16 — Zone directeur enrichie : signature + cachet circulaire
-    //    nominatif (DIRECTEUR) + cachet rectangulaire (nom + poste) appliqués
-    //    automatiquement — superposition style document officiel.
+    // ⭐ 2026-09-16 (v2 — exigence promoteur) — Zone directeur en PILE VERTICALE
+    //    STRICTE : signature (remplace l'affichage du nom) → cachet circulaire
+    //    nominatif (DIRECTEUR) → cachet rectangulaire (nom + poste)
+    //    RIGOUREUSEMENT en dessous du circulaire. Le nom n'est plus affiché en
+    //    texte : il figure déjà dans le cachet nominatif rectangulaire.
     const dirCirc = directorSeals?.nominativeCircularDataUrl || null;
     const dirRect = directorSeals?.nominativeRectangularDataUrl || null;
     const dirSig = directorSignatureEffective;
-    const dirZoneHeight = 86;
     const directorZoneHtml = `
       <div style="text-align:center;width:45%;">
-        <div style="position:relative;width:100%;height:${dirZoneHeight}px;">
-          ${dirCirc ? `<img src="${dirCirc}" style="position:absolute;left:0;top:2px;height:80px;width:80px;max-width:58%;object-fit:contain;opacity:0.92;" />` : ''}
-          ${dirSig ? `<img src="${dirSig}" style="position:absolute;right:8%;top:10px;max-height:42px;max-width:70%;object-fit:contain;z-index:2;" />` : ''}
-          ${dirRect ? `<img src="${dirRect}" style="position:absolute;right:0;bottom:0;max-height:28px;max-width:88%;object-fit:contain;opacity:0.95;z-index:3;" />` : ''}
-          ${!dirSig && !dirCirc && j.status !== 'VALIDATED' ? '<div style="position:absolute;inset:0;border:1px dashed #cbd5e1;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#94a3b8;">En attente de validation</div>' : ''}
+        <div style="width:100%;text-align:center;line-height:0;">
+          ${dirSig ? `<img src="${dirSig}" style="display:block;margin:0 auto 1px;max-height:40px;max-width:85%;object-fit:contain;" />` : ''}
+          ${dirCirc ? `<img src="${dirCirc}" style="display:block;margin:0 auto;height:74px;width:74px;object-fit:contain;opacity:0.92;" />` : ''}
+          ${dirRect ? `<img src="${dirRect}" style="display:block;margin:2px auto 0;max-height:31px;max-width:98px;object-fit:contain;opacity:0.95;" />` : ''}
+          ${!dirSig && !dirCirc && j.status !== 'VALIDATED' ? '<div style="height:50px;border:1px dashed #cbd5e1;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#94a3b8;">En attente de validation</div>' : ''}
         </div>
         <div style="border-top:2px solid #0A2A5E;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Directeur / La Directrice</div>
-        <div style="font-size:8px;color:#64748b;margin-top:1px;">${j.status === 'VALIDATED' ? (directorNameForJournal || 'Validé') : (directorNameForJournal || '—')}</div>
+        ${dirRect ? '' : `<div style="font-size:8px;color:#64748b;margin-top:1px;">${j.status === 'VALIDATED' ? (directorNameForJournal || 'Validé') : (directorNameForJournal || '—')}</div>`}
       </div>`;
 
     html += `<div style="margin-top:15px;display:flex;justify-content:space-between;gap:20px;">

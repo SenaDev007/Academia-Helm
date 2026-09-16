@@ -71,7 +71,9 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
   const [unblockReason, setUnblockReason] = useState('');
   const [unblockModal, setUnblockModal] = useState<string | null>(null);
   const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  // ⭐ PERF 2026-09-16 — feedback instantané : spinner sur le bouton Visualiser
+  //    du reçu (remplace l'ancien état booléen jamais affiché).
+  const [viewingTxId, setViewingTxId] = useState<string | null>(null);
   const [whatsappMenuId, setWhatsappMenuId] = useState<string | null>(null);
 
   // ⭐ ÉDITION / SUPPRESSION D'UN ENCAISSEMENT (sept. 2026 — PROMOTEUR
@@ -1210,8 +1212,10 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
+                              disabled={viewingTxId !== null}
                               onClick={async () => {
-                                setPreviewLoading(true);
+                                if (viewingTxId) return;
+                                setViewingTxId(t.id);
                                 try {
                                   const res = await fetch(financeService.getReceiptPdfUrl(t.id));
                                   // ⭐ FIX 2026-09-16 — même garde que TransactionsContent :
@@ -1227,12 +1231,14 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
                                 } catch (e: any) {
                                   toast({ title: 'Erreur', description: 'Impossible de charger le reçu', variant: 'destructive' });
                                 } finally {
-                                  setPreviewLoading(false);
+                                  setViewingTxId(null);
                                 }
                               }}
                               title="Visualiser le reçu"
                             >
-                              <Eye className="w-3.5 h-3.5 text-slate-600" />
+                              {viewingTxId === t.id
+                                ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                                : <Eye className="w-3.5 h-3.5 text-slate-600" />}
                             </Button>
                             <a
                               href={financeService.getReceiptPdfUrl(t.id)}

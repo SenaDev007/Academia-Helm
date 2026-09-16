@@ -28,6 +28,13 @@ import { MatriculeGeneratorService } from '../common/services/matricule-generato
 //    dans RH > Administration) + cachet comptable + signature — automatiques
 import { DocumentSealsService } from '../settings/services/document-seals.service';
 
+/**
+ * ⭐ PERF 2026-09-16 — version de maquette du PDF de reçu (suffixe -vN dans le
+ * nom de fichier) : incrémenter à chaque changement de mise en page (cachets,
+ * piles verticales…) pour forcer UNE seule régénération puis re-cacher.
+ */
+const RECEIPT_CONTENT_VERSION = 2;
+
 @Injectable()
 export class ReceiptFinanceService {
   private readonly logger = new Logger(ReceiptFinanceService.name);
@@ -64,6 +71,17 @@ export class ReceiptFinanceService {
     transactionId: string,
     tenantId: string,
   ): Promise<{ filePath: string; receiptUrl: string; pdfBuffer: Buffer }> {
+    // ⭐ PERF 2026-09-16 — FAST PATH (cache disque versionné) : Visualiser /
+    //    Télécharger / Envoyer par mail ne régénèrent PLUS le PDF à chaque
+    //    clic — chaque consultation repartait d'un rendu Puppeteer complet
+    //    (~2-5 s : requêtes DB + QR + logo via HTTP + networkidle0). Le reçu
+    //    étant un document financier immuable (transaction verrouillée après
+    //    clôture journalière), on sert le fichier déjà généré ; le suffixe
+    //    -v{N} garantit qu'un changement de maquette régénère UNE fois puis
+    //    re-cache les consultations suivantes (quasi instantanées).
+    const cached = await this.tryServeCachedReceipt(transactionId, tenantId);
+    if (cached) return cached;
+
     // 1. Charger la transaction avec toutes les infos nécessaires
     const tx = await this.prisma.financeTransaction.findUnique({
       where: { id: transactionId },
@@ -233,7 +251,12 @@ export class ReceiptFinanceService {
     // 6. Convertir en PDF via Puppeteer
     const { page } = await this.puppeteerPool.acquirePage();
     try {
-      await page.setContent(html, { waitUntil: 'networkidle0' });
+      // ⭐ PERF 2026-09-16 — domcontentloaded + court délai (pattern bulletin) :
+      //    toutes les images (QR, cachets, signature, logo, filigrane) sont
+      //    désormais des data-URL inline — plus AUCUN trafic réseau à attendre,
+      //    networkidle0 faisait perdre 1-2 s par reçu.
+      await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await new Promise(resolve => setTimeout(resolve, 300));
       const pdfBuffer: Buffer = await page.pdf({
         format: 'A4',
         printBackground: true,
@@ -242,13 +265,22 @@ export class ReceiptFinanceService {
       // Puppeteer v25 retourne Uint8Array — convertir en Buffer
       const buf = Buffer.isBuffer(pdfBuffer) ? pdfBuffer : Buffer.from(pdfBuffer);
 
-      // 7. Stocker le fichier
+      // 7. Stocker le fichier (suffixe -v{N} = version de maquette)
       const yearDir = tx.academicYearId;
       const dir = path.join(process.cwd(), 'uploads', 'receipts', tenantId, yearDir);
       fs.mkdirSync(dir, { recursive: true });
-      const fileName = `receipt-${tx.receiptNumber.replace(/[/\\?%*:|"<>]/g, '-')}.pdf`;
+      const fileName = this.receiptFileName(tx.receiptNumber);
       const filePath = path.join(dir, fileName);
       fs.writeFileSync(filePath, buf);
+      // Nettoyage best-effort des versions de maquette antérieures du même reçu
+      try {
+        const prefix = `receipt-${String(tx.receiptNumber || 'x').replace(/[/\\?%*:|"<>]/g, '-')}-`;
+        for (const f of fs.readdirSync(dir)) {
+          if (f.startsWith(prefix) && f !== fileName && /-v\d+\.pdf$/.test(f)) {
+            fs.unlinkSync(path.join(dir, f));
+          }
+        }
+      } catch {}
 
       // 8. URL publique (servie par /api/receipts/{filename})
       const receiptUrl = `${publicUrl}/api/finance/transactions/${tx.id}/receipt.pdf`;
@@ -663,11 +695,10 @@ export class ReceiptFinanceService {
     <div class="stamp">
       ${treasurer?.holderName ? `
       <div style="font-weight:700;">${treasurer.holderRole || 'Le Trésorier'}</div>
-      <div style="font-size:10px;color:#475569;margin-top:1px;">${treasurer.holderName}</div>
-      <div style="position:relative;width:190px;height:92px;margin-top:4px;">
-        ${treasurer.nominativeCircularDataUrl ? `<img src="${treasurer.nominativeCircularDataUrl}" style="position:absolute;left:0;top:2px;height:88px;width:88px;object-fit:contain;opacity:0.92;" />` : ''}
-        ${treasurer.signatureDataUrl ? `<img src="${treasurer.signatureDataUrl}" style="position:absolute;right:10%;top:12px;max-height:44px;max-width:60%;object-fit:contain;z-index:2;" />` : ''}
-        ${treasurer.nominativeRectangularDataUrl ? `<img src="${treasurer.nominativeRectangularDataUrl}" style="position:absolute;right:0;bottom:0;max-height:30px;max-width:85%;object-fit:contain;opacity:0.95;z-index:3;" />` : ''}
+      <div style="width:190px;margin:3px auto 0;text-align:center;line-height:0;">
+        ${treasurer.signatureDataUrl ? `<img src="${treasurer.signatureDataUrl}" style="display:block;margin:0 auto 2px;max-height:44px;max-width:85%;object-fit:contain;z-index:2;" />` : ''}
+        ${treasurer.nominativeCircularDataUrl ? `<img src="${treasurer.nominativeCircularDataUrl}" style="display:block;margin:0 auto;height:80px;width:80px;object-fit:contain;opacity:0.92;" />` : ''}
+        ${treasurer.nominativeRectangularDataUrl ? `<img src="${treasurer.nominativeRectangularDataUrl}" style="display:block;margin:2px auto 0;max-height:34px;max-width:106px;object-fit:contain;opacity:0.95;" />` : ''}
       </div>` : `
       <div>Le comptable</div>
       <div class="stamp-line">Signature &amp; cachet</div>`}
@@ -694,6 +725,49 @@ export class ReceiptFinanceService {
   }
 
   /**
+   * Nom de fichier du PDF de reçu, suffixé par la version de maquette.
+   */
+  private receiptFileName(receiptNumber: string): string {
+    const safe = String(receiptNumber || 'x').replace(/[/\\?%*:|"<>]/g, '-');
+    return `receipt-${safe}-v${RECEIPT_CONTENT_VERSION}.pdf`;
+  }
+
+  /**
+   * ⭐ PERF 2026-09-16 — Sert le PDF déjà généré SANS repasser par Puppeteer.
+   * Retourne null si le PDF de la version de maquette courante est absent
+   * (l'appelant régénère alors une fois puis re-cache). NB : on ne teste PAS
+   * tx.receiptUrl — pour les journées clôturées ce champ peut rester null à
+   * vie (trigger lock) alors que le fichier v{N} existe bien sur le disque.
+   */
+  private async tryServeCachedReceipt(
+    transactionId: string,
+    tenantId: string,
+  ): Promise<{ filePath: string; receiptUrl: string; pdfBuffer: Buffer } | null> {
+    try {
+      const tx = await this.prisma.financeTransaction.findUnique({
+        where: { id: transactionId },
+        select: { receiptNumber: true, academicYearId: true },
+      });
+      if (!tx?.receiptNumber || !tx?.academicYearId) return null;
+      const filePath = path.join(
+        process.cwd(), 'uploads', 'receipts', tenantId, tx.academicYearId,
+        this.receiptFileName(tx.receiptNumber),
+      );
+      if (!fs.existsSync(filePath)) return null;
+      const pdfBuffer = fs.readFileSync(filePath);
+      const publicUrl = this.configService.get<string>('APP_PUBLIC_URL') || 'https://api.academiahelm.com';
+      this.logger.log(`Reçu ${tx.receiptNumber} servi depuis le cache disque (v${RECEIPT_CONTENT_VERSION})`);
+      return {
+        filePath,
+        receiptUrl: `${publicUrl}/api/finance/transactions/${transactionId}/receipt.pdf`,
+        pdfBuffer,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Récupère le branding de l'école (réutilise le pattern admission-notification).
    */
   async getTenantBranding(tenantId: string) {
@@ -709,12 +783,12 @@ export class ReceiptFinanceService {
         },
       });
       if (profile?.schoolName) {
-        // Construire l'URL du logo comme le module RH
-        const apiBaseUrl = this.configService.get<string>('APP_PUBLIC_URL')
-          || 'https://api.academiahelm.com';
-        const logoUrl = profile.logoUrl
-          ? `${apiBaseUrl}/api/tenants/${tenantId}/logo`
-          : null;
+        // ⭐ PERF 2026-09-16 — logo INLINE (data-URL) : l'URL HTTP
+        //    /api/tenants/{id}/logo forçait un aller-retour réseau PENDANT le
+        //    rendu Puppeteer (networkidle0 l'attendait → +1-2 s par reçu).
+        //    data-URL → servi tel quel ; http(s) → fetch + base64 (fallback :
+        //    URL brute) ; chemin fichier → lecture disque + base64.
+        const logoUrl = await this.resolveInlineLogo(profile.logoUrl);
 
         return {
           schoolName: profile.schoolName,
@@ -731,6 +805,41 @@ export class ReceiptFinanceService {
       return { schoolName: tenant?.name || 'Établissement' };
     } catch {
       return { schoolName: 'Établissement' };
+    }
+  }
+
+  /**
+   * ⭐ PERF 2026-09-16 — Résout le logo en data-URL inline pour le HTML
+   * Puppeteer (aucune requête réseau pendant le rendu). Best-effort :
+   * renvoie la valeur brute en cas d'échec.
+   */
+  private async resolveInlineLogo(raw: string | null | undefined): Promise<string | null> {
+    if (!raw) return null;
+    if (raw.startsWith('data:')) return raw;
+    try {
+      if (/^https?:\/\//.test(raw)) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 5000);
+        try {
+          const r = await fetch(raw, { signal: ctrl.signal });
+          if (r.ok) {
+            const ct = r.headers.get('content-type') || 'image/png';
+            const buf = Buffer.from(await r.arrayBuffer());
+            return `data:${ct};base64,${buf.toString('base64')}`;
+          }
+        } finally {
+          clearTimeout(timer);
+        }
+        return raw; // fallback : laisser le navigateur la charger
+      }
+      // Chemin fichier relatif (uploads/…)
+      const abs = path.join(process.cwd(), String(raw).replace(/^\/+/, ''));
+      const buf = await fs.promises.readFile(abs);
+      const ext = path.extname(abs).toLowerCase().replace('.', '') || 'png';
+      const mime = ext === 'jpg' ? 'jpeg' : ext === 'svg' ? 'svg+xml' : ext;
+      return `data:image/${mime};base64,${buf.toString('base64')}`;
+    } catch {
+      return raw;
     }
   }
 

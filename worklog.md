@@ -10778,3 +10778,24 @@ Stage Summary:
 - ✅ Cachets automatiques : bulletins (tous niveaux + EN), cahiers journaux (visa directeur enrichi + nom), reçus (trésorier dynamique par niveau + cachet comptable) — même moteur de génération que RH > Administration
 - ✅ 3 correctifs de robustesse bonus : import path, requêtes raw spread, pool Puppeteer auto-récupérant (tous les exports PDF protégés)
 - Reste : recette visuelle navigateur des rendus (position/taille des cachets sur les documents), EN de la section accréditations si piste anglophone
+
+---
+Task ID: 69-C (hotfix finance)
+Agent: Super Z (session principale)
+Task: Module Finance > Encaissements — bouton Visualiser en erreur 500 « Transaction locked after daily closure », Télécharger cassé, check Envoyer par mail, réactivation du bouton WhatsApp
+
+Work Log:
+- DIAGNOSTIC : generateForTransaction() fait un UPDATE receiptUrl (cosmétique, URL déterministe) à CHAQUE consultation de reçu → le trigger lock_transaction_after_closure refuse tout UPDATE d'une transaction dont la journée est clôturée (clôture AUTO quotidienne) → 500 backend → BFF « Reçu introuvable » (erreur utilisateur reproduite au caractère près). Impact : TOUS les reçus de journées clôturées = tous les reçus de plus d'un jour ; email parti sans pièce jointe (erreur PDF avalée)
+- Localisation données réelles : tenant CSP Mon Avenir Plus N'Dali (e0aaa032…) — 662 paiements, clôtures AUTO 10-14/09 ; transactions verrouillées CSPMON-REC-26-753/754/755 (10/09) + CSPMON-REC-25-748..752 (08/09, receiptUrl null)
+- FIX RACINE receipt-finance.service.ts : update receiptUrl conditionnel (skip si inchangée — l'URL est déterministe) + non-fatal (.catch → warning « PDF reste servi ») → le PDF est toujours généré et servi même journée clôturée ; corrige aussi le canal email (pdfBuffer désormais disponible → pièce jointe restaurée)
+- FIX BFF /api/finance/transactions/[id]/receipt.pdf : timeout 15s → 60s (génération Puppeteer à froid = cause possible de « impossible de télécharger le fichier ») + remonte le VRAI message backend au lieu de « Reçu introuvable » générique
+- FIX FRONTEND : Visualiser (TransactionsContent + StudentAccountsContent) vérifie res.ok → toast « Reçu indisponible » clair au lieu de nourrir le preview avec une erreur JSON
+- WHATSAPP RÉACTIVÉ (TransactionsContent) : dropdown 2 options — Envoi rapide (lien wa.me) + Envoi auto (API) — même pattern que StudentAccountsContent ; état whatsappMenuId restauré ; Helm Connect conservé à côté
+- VALIDATION : syntaxe SWC (3 fichiers front) + bun build (service) OK ; commit 9a6c08f0b poussé
+- E2E PRODUCTION (compte recette promoteur temporaire sur tenant e0aaa032) : AVANT deploy — Cas A (jour clôturé, receiptUrl présent) 500 backend + 500 BFF « Reçu introuvable » (repro exacte) ; APRÈS deploy (polling, ~143 s) — Cas A : 200 PDF valide 1,20 Mo (backend 2,9 s + BFF 4,0 s) ; Cas B (receiptUrl null, update bloqué par trigger) : 200 PDF valide + receiptUrl non persisté (dégradé prévu) ; whatsapp-link 200 ; POST resend [email] 201 skip propre (parent sans email — aucun envoi réel) ; nettoyage compte test effectué
+
+Stage Summary:
+- ✅ Visualiser / Télécharger / Email des reçus réparés pour TOUTES les transactions (y compris journées clôturées par la clôture AUTO quotidienne)
+- ✅ WhatsApp réactivé dans l'onglet Encaissements (dropdown lien + API) aux côtés de Helm Connect et Email
+- ✅ Messages d'erreur explicites (BFF remonte la vraie cause, frontend toast propre) + timeout BFF 60s
+- Scripts persistés (hors dépôt) : e2e_recu_cloture_20260916.js (repro/verify/cleanup), wait_recu_fix_deploy.js

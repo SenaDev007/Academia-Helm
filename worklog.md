@@ -10850,3 +10850,4 @@ Stage Summary:
 - ✅ Triple défense déployée : lecture auto-réparante + write-path + garde-fou sync (plus aucune nouvelle occurrence possible)
 - 1 cas restant légitime : Zakiath (Palmares, ADMITTED sans classe) — action école : l'affecter via Éditer/inscrire
 - À faire : commit + push → auto-déploiement Railway, puis E2E post-déploiement (vérifier la dérivation lecture sur une ligne test)
+- E2E POST-DÉPLOIEMENT (17/09, uptime Railway reset constaté après push 7cf191b4d) : neutralisation temporaire d'academicClassId sur l'élève test AGLOSSI Mariano (CSPEB, CE1) → GET /students/enrollments renvoie academicClass DÉRIVÉ (b76636fc/CE1) + ligne re-persistée automatiquement en base + calcul frontal « non affecté » = NON + classe finale identique (CE1) → ✅✅✅ auto-réparation lecture/persistance/affichage validées en production (script e2e_task71_auto_repair.js)

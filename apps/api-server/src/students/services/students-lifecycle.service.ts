@@ -1090,10 +1090,25 @@ export class StudentsLifecycleService {
     });
     if (!enrollment) throw new NotFoundException('Inscription non trouvée');
 
+    // Vérifier que la nouvelle classe existe et appartient au tenant
+    // ⭐ 2026-09-17 — également chargée pour son officialClassId (backfill
+    //    de la classe officielle si l'inscription n'en a pas encore).
+    const newPhysicalClass = await this.prisma.class.findFirst({
+      where: { id: data.newClassId, tenantId },
+    });
+    if (!newPhysicalClass) throw new NotFoundException('Nouvelle classe non trouvée');
+
     const previousClassId = enrollment.classId;
+    const updateData: { classId: string; academicClassId?: string } = { classId: data.newClassId };
+    // ⭐ 2026-09-17 — Anomalie « non affectés » : backfill de la classe OFFICIELLE
+    //    dès qu'on pose une classe PHYSIQUE et que academicClassId manque
+    //    (inscriptions issues du sync hors-ligne sans academicClassId).
+    if (!enrollment.academicClassId && newPhysicalClass.officialClassId) {
+      updateData.academicClassId = newPhysicalClass.officialClassId;
+    }
     const updatedEnrollment = await this.prisma.studentEnrollment.update({
       where: { id: enrollment.id },
-      data: { classId: data.newClassId },
+      data: updateData,
     });
 
     // ⭐ Créer un enregistrement ClassTransfer pour l'historique
@@ -1170,9 +1185,17 @@ export class StudentsLifecycleService {
     if (!physicalClass) throw new NotFoundException('Classe physique non trouvée');
 
     const previousClassId = enrollment.classId;
+    const updateData: { classId: string; academicClassId?: string } = { classId: data.physicalClassId };
+    // ⭐ 2026-09-17 — Anomalie « non affectés » (onglet Inscriptions) : backfill
+    //    de la classe OFFICIELLE dès qu'on affecte une classe PHYSIQUE et que
+    //    academicClassId manque. Sans cela, l'onglet Inscriptions considère
+    //    l'élève « non affecté » bien qu'il ait une section physique.
+    if (!enrollment.academicClassId && physicalClass.officialClassId) {
+      updateData.academicClassId = physicalClass.officialClassId;
+    }
     const updatedEnrollment = await this.prisma.studentEnrollment.update({
       where: { id: enrollment.id },
-      data: { classId: data.physicalClassId },
+      data: updateData,
     });
 
     // ⭐ Créer un ClassTransfer de type INITIAL_ASSIGNMENT (ou CLASS_CHANGE si déjà affecté)
@@ -2058,7 +2081,7 @@ export class StudentsLifecycleService {
 
   /** Liste de toutes les inscriptions (enrollments) */
   async getEnrollments(tenantId: string, params: { academicYearId?: string, schoolLevelId?: string }) {
-    return this.prisma.studentEnrollment.findMany({
+    const enrollments = await this.prisma.studentEnrollment.findMany({
       where: {
         tenantId,
         ...(params.academicYearId && { academicYearId: params.academicYearId }),
@@ -2084,6 +2107,77 @@ export class StudentsLifecycleService {
       },
       orderBy: { enrollmentDate: 'desc' },
     });
+
+    // ⭐ 2026-09-17 — Anomalie « Élèves non affectés » (onglet Inscriptions) :
+    //    des inscriptions créées via la synchronisation hors-ligne (Tauri/SQLite
+    //    ou ancien outbox web) arrivent avec une classe PHYSIQUE (classId) mais
+    //    SANS classe OFFICIELLE (academicClassId NULL). L'onglet Inscriptions
+    //    groupe par classe officielle → ces élèves s'affichaient « non affectés »
+    //    alors qu'ils ont une classe valide (ex: 6ème, 4ème).
+    //    Auto-réparation : dériver la classe officielle depuis Class.officialClassId
+    //    (chaque classe physique est liée à sa classe officielle), l'exposer dans
+    //    la réponse ET la persister (best-effort, idempotent) pour que stats,
+    //    exports et PDF de listes deviennent cohérents aussi.
+    const toRepair = enrollments.filter((e) => !e.academicClassId && e.classId);
+    if (toRepair.length > 0) {
+      const physicalClasses = await this.prisma.class.findMany({
+        where: {
+          id: { in: [...new Set(toRepair.map((e) => e.classId!))] },
+          tenantId,
+        },
+        select: { id: true, officialClassId: true },
+      });
+      const officialIds = [
+        ...new Set(
+          physicalClasses
+            .map((c) => c.officialClassId)
+            .filter((v): v is string => !!v),
+        ),
+      ];
+      const officialClasses = officialIds.length
+        ? await this.prisma.academicClass.findMany({
+            where: { id: { in: officialIds }, tenantId },
+            include: { level: true, cycle: true, series: true },
+          })
+        : [];
+      const officialById = new Map(officialClasses.map((c) => [c.id, c]));
+      const officialByPhysicalId = new Map(
+        physicalClasses
+          .filter((c) => c.officialClassId)
+          .map((c) => [c.id, c.officialClassId!]),
+      );
+      for (const e of toRepair) {
+        const officialId = officialByPhysicalId.get(e.classId!);
+        const official = officialId ? officialById.get(officialId) : undefined;
+        if (official) {
+          (e as any).academicClassId = official.id;
+          (e as any).academicClass = official;
+        }
+      }
+      // Persistance best-effort — ne doit JAMAIS faire échouer le GET
+      const repairedIds = toRepair
+        .map((e) => ({ id: e.id, academicClassId: (e as any).academicClassId as string | undefined }))
+        .filter((r) => !!r.academicClassId);
+      if (repairedIds.length > 0) {
+        try {
+          await this.prisma.$transaction(
+            repairedIds.map((r) =>
+              this.prisma.studentEnrollment.update({
+                where: { id: r.id },
+                data: { academicClassId: r.academicClassId! },
+              }),
+            ),
+          );
+          this.logger.log(
+            `✅ Backfill academicClassId : ${repairedIds.length} inscription(s) réparée(s) (classe physique → classe officielle)`,
+          );
+        } catch (err: any) {
+          this.logger.warn(`Backfill academicClassId échoué (non bloquant) : ${err?.message ?? err}`);
+        }
+      }
+    }
+
+    return enrollments;
   }
 
   /** Historique unifié : admissions, réinscriptions, transferts */

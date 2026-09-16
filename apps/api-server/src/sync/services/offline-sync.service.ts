@@ -453,6 +453,13 @@ export class OfflineSyncService {
 
     // Créer l'enregistrement
     const payload = { ...operation.payload, tenantId };
+    // ⭐ 2026-09-17 — Anomalie « Élèves non affectés » (onglet Inscriptions) :
+    //    les payloads hors-ligne (Tauri SQLite / ancien outbox) peuvent contenir
+    //    une classe PHYSIQUE (classId) sans classe OFFICIELLE (academicClassId).
+    //    L'onglet Inscriptions groupe par classe officielle → ces élèves
+    //    s'affichaient « non affectés » alors qu'ils ont une classe.
+    //    → On dérive academicClassId depuis Class.officialClassId à l'insertion.
+    await this.deriveAcademicClassId(tx, payload, tableName);
     const created = await tx[this.getModelName(tableName)].create({
       data: this.sanitizePayload(payload, tableName),
     });
@@ -502,6 +509,10 @@ export class OfflineSyncService {
 
     // Pas de conflit : appliquer la mise à jour
     const payload = { ...operation.payload, tenantId };
+    // ⭐ 2026-09-17 — Même garde-fou que l'INSERT : si l'UPDATE pose une classe
+    //    physique sans classe officielle, on dérive academicClassId (clé de
+    //    groupement de l'onglet Inscriptions) depuis Class.officialClassId.
+    await this.deriveAcademicClassId(tx, payload, tableName);
     const updated = await tx[this.getModelName(tableName)].update({
       where: { id: operation.record_id },
       data: this.sanitizePayload(payload, tableName, true), // true = isUpdate
@@ -796,6 +807,45 @@ export class OfflineSyncService {
         return Promise.resolve([]);
       }
     });
+  }
+
+  /**
+   * ⭐ 2026-09-17 — Dérive academicClassId depuis la classe physique (sync hors-ligne).
+   *
+   * Les inscriptions créées hors-ligne (Tauri SQLite / ancien outbox web) peuvent
+   * référencer une classe PHYSIQUE (classId) sans classe OFFICIELLE
+   * (academicClassId). Or l'onglet Inscriptions du module Élèves groupe
+   * EXCLUSIVEMENT par classe officielle : ces élèves s'affichaient « non
+   * affectés » alors qu'ils avaient une classe valide (ex: 6ème, 4ème).
+   *
+   * Règle : payload.classId présent + academicClassId absent/null →
+   * recopier Class.officialClassId quand il existe. Mutations in-place du
+   * payload ; ne fait rien pour les autres tables.
+   */
+  private async deriveAcademicClassId(tx: any, payload: any, tableName: string): Promise<void> {
+    // ⛔ Uniquement la table des inscriptions — d'autres tables ont aussi un
+    //    champ classId (absences, affectations enseignants…), y injecter
+    //    academicClassId ferait échouer le create/update Prisma (champ inconnu).
+    if (tableName !== 'student_enrollments') return;
+    if (
+      !payload ||
+      payload.academicClassId ||
+      !payload.classId ||
+      typeof payload.classId !== 'string'
+    ) {
+      return;
+    }
+    try {
+      const physical = await tx.class.findUnique({
+        where: { id: payload.classId },
+        select: { officialClassId: true },
+      });
+      if (physical?.officialClassId) {
+        payload.academicClassId = physical.officialClassId;
+      }
+    } catch {
+      // Ne jamais bloquer la synchronisation pour ce garde-fou
+    }
   }
 
   /**

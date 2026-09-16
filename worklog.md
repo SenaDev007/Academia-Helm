@@ -10824,3 +10824,29 @@ Stage Summary:
 - ✅ Boutons Finance réactifs : 2e clic et suivants ~400 ms (-94 %) via cache disque versionné ; spinner immédiat
 - ✅ Bug historique bulletins réparé (signature/enseignant/directeur jamais résolus — 2 champs Prisma inexistants)
 - ⚠️ Données à compléter côté école : le trésorier CSP Mon Avenir Plus n'a pas de signature persistée (flux « Lien signature » RH) → le reçu affiche les 2 cachets sans signature (dégradation propre prévue)
+
+---
+Task ID: 71
+Agent: main (Super Z)
+Task: Anomalie signalée par le promoteur — « ça liste des élèves en disant non affecté » dans le module Élèves, onglet Inscriptions (« pareil pour toutes les écoles »)
+
+Work Log:
+- ⚠️ SAV sandbox : l'arborescence locale était revenue à 3206c7ed5 (11/09) alors que origin/main = b3015f230 (16/09, cachets v2 + fixes reçus présents) → stash + fast-forward + réapplication propre des correctifs du jour (fusion automatique sans conflit, bun build OK ×2)
+- DIAGNOSTIC (scripts /home/z/my-project/scripts/diag_inscription_*.js, contre prod Neon + API + BFF + navigateur) :
+  * Le frontal (EnrollmentsContent.unassignedEnrollments) marque « non affecté » toute inscription sans academicClassId (classe OFFICIELLE) — même si elle possède une classe PHYSIQUE (classId) ; l'arbre ne groupe que par AcademicClass
+  * CSPEB : 0 orphelin (vérifié API directe + chaîne BFF cookies + navigateur agent-browser → aucune section « non affectés ») ; La Gaité : 0 ; Sainte-Thérèse : 0 inscription
+  * CSP Mon Avenir Plus N'Dali : 10 FAUX « non affectés » (Grâce SOSSA, Moussa KONE, Aïcha DIALLO, Ismaël BAKARY, Fatima ABDOULAYE → 6ème ; ADJO, BIENVENU, GBAGUIDI, HOUNKPATIN, TOSSOU → 4ème) — créés le 2026-09-12 00:07-00:12 via le moteur de sync hors-ligne (audit_logs CREATE/sync ×56) : payloads locaux avec classId mais SANS academicClassId
+  * Le Palmares Plus : 1 orphelin LÉGITIME (Zakiath ASSIAHME, ADMITTED, aucune classe — l'école doit l'affecter)
+  * Les classes physiques « 6ème »/« 4ème » de Mon Avenir sont liées (officialClassId) à des classes officielles ACTIVES → réparation déterministe possible
+- RÉPARATION DONNÉES (production, script repair_inscription_academic_classid.js) : UPDATE student_enrollments SET academicClassId = classes.officialClassId WHERE academicClassId IS NULL AND classId IS NOT NULL → 10/10 réparés, 0 faux « non affecté » restant (updatedAt non touché pour ne pas perturber la détection de conflits du sync)
+- FIX 1 — LECTURE AUTO-RÉPARANTE (students-lifecycle.service.ts getEnrollments) : après le findMany, pour toute inscription classId sans academicClassId → dérivation de la classe officielle via Class.officialClassId (batch 2 requêtes), exposition dans la réponse (academicClass + academicClassId dérivés) ET persistance best-effort idempotente ($transaction d'updates, try/catch jamais bloquant) → stats/exports/PDF de listes deviennent cohérents aussi
+- FIX 2 — WRITE-PATH (assignPhysicalClass + changeClass) : dès qu'on pose une classe PHYSIQUE et que academicClassId manque → backfill depuis physicalClass.officialClassId
+- FIX 3 — SOURCE (offline-sync.service.ts handleInsert/handleUpdate) : garde-fou deriveAcademicClassId(tx, payload, tableName) — réservé à student_enrollments (⛔ sinon le champ inconnu casserait le create Prisma des autres tables ayant classId) — recopie officialClassId quand le payload hors-ligne a classId sans academicClassId
+- Validation : bun build --target=node --no-bundle exit 0 sur les 2 fichiers (après rebasage sur b3015f230)
+
+Stage Summary:
+- ✅ Cause racine : inscriptions synchronisées hors-ligne (Tauri/SQLite ou ancien outbox web) sans classe officielle → affichées « non affectés » malgré une classe physique valide
+- ✅ 10 élèves de Mon Avenir réparés en base (immédiat, avant même le déploiement)
+- ✅ Triple défense déployée : lecture auto-réparante + write-path + garde-fou sync (plus aucune nouvelle occurrence possible)
+- 1 cas restant légitime : Zakiath (Palmares, ADMITTED sans classe) — action école : l'affecter via Éditer/inscrire
+- À faire : commit + push → auto-déploiement Railway, puis E2E post-déploiement (vérifier la dérivation lecture sur une ligne test)

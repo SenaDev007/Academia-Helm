@@ -318,15 +318,18 @@ export class BulletinPdfService {
         // ⭐ Primaire — Carnet de correspondance exact column order:
         // Champs | Note min | CM/18 | Maîtrise min (Oui/Non) | CP/02 | Total/20 | Seuil réussite (Oui/Non) | Appréciation
         // NO Visa Directeur column in the table (it's in the signatures section below)
-        const scoreNum = !s.isAbsent && s.score !== null ? Number(s.score) : null;
+        // ⭐ FIX 2026-09-16 — `!= null` couvre AUSSI undefined (champ absent du
+        //    payload) : `s.score !== null` était VRAI pour undefined →
+        //    s.score.toFixed() → TypeError → 500 « Erreur lors de la génération »
+        const scoreNum = !s.isAbsent && s.score != null ? Number(s.score) : null;
         const cm = scoreNum !== null ? Math.min(18, Math.round(scoreNum * 0.9 * 10) / 10) : null;
         const cp = scoreNum !== null ? Math.round((scoreNum - (cm || 0)) * 10) / 10 : null;
         const scoreVal = s.isAbsent
           ? '<span style="color:red;font-size:8px;font-weight:bold">ABS</span>'
-          : s.score !== null
-            ? `<span style="color:${s.score >= 10 ? '#059669' : '#dc2626'};font-weight:bold">${s.score.toFixed(2)}</span>`
+          : s.score != null
+            ? `<span style="color:${s.score >= 10 ? '#059669' : '#dc2626'};font-weight:bold">${Number(s.score).toFixed(2)}</span>`
             : '—';
-        const reached = !s.isAbsent && s.score !== null && s.score >= 10;
+        const reached = !s.isAbsent && s.score != null && s.score >= 10;
         // ⭐ Use "Oui"/"Non" text instead of ✓ to avoid font rendering issues in PDF
         const yes = '<strong style="color:#059669">Oui</strong>';
         const no = '<strong style="color:#dc2626">Non</strong>';
@@ -335,11 +338,11 @@ export class BulletinPdfService {
           <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;color:#94a3b8;">10</td>
           <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cm !== null ? cm.toFixed(1) : '—'}</td>
           <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;">${!reached && s.score !== null ? no : ''}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;">${!reached && s.score != null ? no : ''}</td>
           <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cp !== null ? cp.toFixed(1) : '—'}</td>
           <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:10px;font-weight:bold;">${scoreVal}</td>
           <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;">${!reached && s.score !== null ? no : ''}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;">${!reached && s.score != null ? no : ''}</td>
           <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:9px;color:#64748b;">${s.appreciation}</td>
         </tr>`;
       }
@@ -383,7 +386,7 @@ export class BulletinPdfService {
     // Total General row (Primaire only) — column order matches carnet (NO Visa Directeur column):
     // Champs(colspan=2) | CM | Maîtrise(empty colspan=2) | CP | Total | Seuil(empty colspan=2) | Appréciation
     const totalRow = !data.isMaternelle ? (() => {
-      const validScores = data.subjects.filter(s => !s.isAbsent && s.score !== null).map(s => Number(s.score));
+      const validScores = data.subjects.filter(s => !s.isAbsent && s.score != null).map(s => Number(s.score));
       const totalScore = validScores.reduce((sum, v) => sum + v, 0);
       const totalCm = validScores.reduce((sum, v) => sum + Math.min(18, Math.round(v * 0.9 * 10) / 10), 0);
       const totalCp = validScores.reduce((sum, v) => sum + Math.round((v - Math.min(18, Math.round(v * 0.9 * 10) / 10)) * 10) / 10, 0);
@@ -414,13 +417,13 @@ export class BulletinPdfService {
         <div style="margin-top:4px;font-size:9px;">
           <table style="width:100%;border-collapse:collapse;"><tr>
             <td style="background:#f8fafc;padding:1px 3px;font-size:9px;">Moyenne obtenue :</td>
-            <td style="background:#f8fafc;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;color:#0A2A5E;">${data.generalAverage !== null ? data.generalAverage.toFixed(2) : '—'}/20</td>
+            <td style="background:#f8fafc;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;color:#0A2A5E;">${this.fmt2(data.generalAverage)}/20</td>
           </tr><tr>
             <td style="background:#f8fafc;padding:1px 3px;font-size:9px;">Plus forte moyenne :</td>
-            <td style="background:#f8fafc;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;">${data.highestAverage !== null ? data.highestAverage.toFixed(2) : '—'}/20</td>
+            <td style="background:#f8fafc;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;">${this.fmt2(data.highestAverage)}/20</td>
           </tr><tr>
             <td style="background:#f8fafc;padding:1px 3px;font-size:9px;">Plus faible moyenne :</td>
-            <td style="background:#f8fafc;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;">${data.lowestAverage !== null ? data.lowestAverage.toFixed(2) : '—'}/20</td>
+            <td style="background:#f8fafc;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;">${this.fmt2(data.lowestAverage)}/20</td>
           </tr><tr>
             <td style="background:#ecfdf5;padding:1px 3px;font-size:9px;font-weight:bold;">Seuil réussite (10/20) atteint :</td>
             <td style="background:#ecfdf5;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#dc2626'};">${(data.generalAverage || 0) >= 10 ? 'OUI' : 'NON'}</td>
@@ -478,10 +481,10 @@ export class BulletinPdfService {
         <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
           <table style="width:100%;border-collapse:collapse;"><tr>
             <td style="font-size:9px;padding:3px 0;">Nombre de matières évaluées :</td>
-            <td style="font-size:9px;text-align:right;font-weight:bold;padding:3px 0;">${data.subjects.filter(s => !s.isAbsent && s.score !== null).length}</td>
+            <td style="font-size:9px;text-align:right;font-weight:bold;padding:3px 0;">${data.subjects.filter(s => !s.isAbsent && s.score != null).length}</td>
           </tr><tr>
             <td style="font-size:9px;padding:3px 0;">Nombre de compétences max. + min. atteintes :</td>
-            <td style="font-size:9px;text-align:right;font-weight:bold;padding:3px 0;">${data.subjects.filter(s => !s.isAbsent && s.score !== null && s.score >= 10).length}</td>
+            <td style="font-size:9px;text-align:right;font-weight:bold;padding:3px 0;">${data.subjects.filter(s => !s.isAbsent && s.score != null && s.score >= 10).length}</td>
           </tr><tr>
             <td style="font-size:9px;font-weight:bold;padding:3px 0;">Seuil de réussite globale atteint :</td>
             <td style="font-size:9px;text-align:right;font-weight:bold;padding:3px 0;">
@@ -592,13 +595,13 @@ export class BulletinPdfService {
       <div style="margin-top:6px;font-size:10px;">
         <table style="width:100%;border-collapse:collapse;"><tr>
           <td style="background:#f8fafc;padding:3px 5px;font-size:10px;">Moyenne obtenue :</td>
-          <td style="background:#f8fafc;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;color:#0A2A5E;">${data.generalAverage !== null ? data.generalAverage.toFixed(2) : '—'}/20</td>
+          <td style="background:#f8fafc;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;color:#0A2A5E;">${this.fmt2(data.generalAverage)}/20</td>
         </tr><tr>
           <td style="background:#f8fafc;padding:3px 5px;font-size:10px;">Plus forte moyenne :</td>
-          <td style="background:#f8fafc;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;">${data.highestAverage !== null ? data.highestAverage.toFixed(2) : '—'}/20</td>
+          <td style="background:#f8fafc;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;">${this.fmt2(data.highestAverage)}/20</td>
         </tr><tr>
           <td style="background:#f8fafc;padding:3px 5px;font-size:10px;">Plus faible moyenne :</td>
-          <td style="background:#f8fafc;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;">${data.lowestAverage !== null ? data.lowestAverage.toFixed(2) : '—'}/20</td>
+          <td style="background:#f8fafc;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;">${this.fmt2(data.lowestAverage)}/20</td>
         </tr><tr>
           <td style="background:#ecfdf5;padding:3px 5px;font-size:10px;font-weight:bold;">Seuil réussite (10/20) atteint :</td>
           <td style="background:#ecfdf5;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#dc2626'};">${(data.generalAverage || 0) >= 10 ? 'OUI' : 'NON'}</td>
@@ -677,10 +680,10 @@ export class BulletinPdfService {
       <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
         <table style="width:100%;border-collapse:collapse;"><tr>
           <td style="font-size:10px;padding:4px 0;">Nombre de matières évaluées :</td>
-          <td style="font-size:10px;text-align:right;font-weight:bold;padding:4px 0;">${data.subjects.filter(s => !s.isAbsent && s.score !== null).length}</td>
+          <td style="font-size:10px;text-align:right;font-weight:bold;padding:4px 0;">${data.subjects.filter(s => !s.isAbsent && s.score != null).length}</td>
         </tr><tr>
           <td style="font-size:10px;padding:4px 0;">Nombre de compétences max. + min. atteintes :</td>
-          <td style="font-size:10px;text-align:right;font-weight:bold;padding:4px 0;">${data.subjects.filter(s => !s.isAbsent && s.score !== null && s.score >= 10).length}</td>
+          <td style="font-size:10px;text-align:right;font-weight:bold;padding:4px 0;">${data.subjects.filter(s => !s.isAbsent && s.score != null && s.score >= 10).length}</td>
         </tr><tr>
           <td style="font-size:10px;font-weight:bold;padding:4px 0;">Seuil de réussite globale atteint :</td>
           <td style="font-size:10px;text-align:right;font-weight:bold;padding:4px 0;color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#dc2626'};">
@@ -1260,6 +1263,16 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
 
 </body>
 </html>`;
+  }
+
+  /**
+   * ⭐ FIX 2026-09-16 — Formatage défensif des moyennes : accepte number,
+   * string numérique, null OU undefined (l'ancien `x !== null ? x.toFixed(2)`
+   * explosait sur undefined / string → 500 sur tout le bulletin primaire).
+   */
+  private fmt2(n: any): string {
+    const v = typeof n === 'number' ? n : Number(n);
+    return Number.isFinite(v) ? v.toFixed(2) : '—';
   }
 
   /**

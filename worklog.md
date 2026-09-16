@@ -10799,3 +10799,28 @@ Stage Summary:
 - ✅ WhatsApp réactivé dans l'onglet Encaissements (dropdown lien + API) aux côtés de Helm Connect et Email
 - ✅ Messages d'erreur explicites (BFF remonte la vraie cause, frontend toast propre) + timeout BFF 60s
 - Scripts persistés (hors dépôt) : e2e_recu_cloture_20260916.js (repro/verify/cleanup), wait_recu_fix_deploy.js
+
+---
+Task ID: 70
+Agent: Super Z (session principale)
+Task: (1) Réactivité boutons Finance Encaissements + (2) cachets en PILE VERTICALE stricte (rectangulaire RIGOUREUSEMENT sous le circulaire) sur TOUS les documents + nom remplacé par la signature récupérée
+
+Work Log:
+- CACHETS v2 (exigence promoteur) : renderDirectorSealsZone refondu en pile verticale — signature manuscrite en tête (remplace le nom affiché) → cachet circulaire nominatif → cachet rectangulaire RIGOUREUSEMENT en dessous ; helper renderDirectorNameLine (fallback nom UNIQUEMENT si cachet rectangulaire absent) — 7 zones bulletins (maternelle/primaire/single-col/secondaire×2/EN)
+- Cahier journal : zone directeur remontée en pile verticale identique (pedagogical-space.service)
+- Reçu finance : pile trésorier verticale, nom supprimé (déjà dans le cachet nominatif)
+- PERF réactivité : chaque clic Visualiser/Télécharger/Email régénérait le PDF Puppeteer (~2-6 s) → FAST PATH cache disque versionné (suffixe -v{N}, RECEIPT_CONTENT_VERSION=2 : changement de maquette = UNE régénération puis re-cache) + setContent domcontentloaded+300ms (vs networkidle0) + logo inline data-URL (plus d'aller-retour HTTP pendant le rendu) + nettoyage versions antérieures ; spinner + anti double-clic sur Visualiser (TransactionsContent + StudentAccountsContent, état per-transaction)
+- BUG RACINE bulletins (découvert en E2E) : generate-pdf sélectionnait birthDate ET admissionNumber sur le modèle Student — AUCUN des deux n'existe (réels : dateOfBirth ; admissionNumber vit sur Admission) → PrismaClientValidationError avalée par .catch(() => null) → élève JAMAIS résolu → âge, enseignant, directeur, signature et cachets nominatifs jamais injectés depuis toujours. Fix : select { id, dateOfBirth }. Même famille : fmt2 défensif + != null (payload score/generalAverage undefined/string → 500), export EducMaster (birthDate/birthPlace → dateOfBirth/placeOfBirth ; relation enrollments → studentEnrollments, 400 sur tout l'endpoint)
+- E2E production (tenants CSP Mon Avenir Plus N'Dali + CSPEB, comptes recette) :
+  * Réactivité : A#1=6969 ms (régénération, browser froid post-déploiement) → A#2=445 ms / A#3=381 ms (-94 %) ; CAS B receiptUrl null : 2065 → 436 ms ; whatsapp-link 200 (non-régression)
+  * Bulletin CM2 : 201, signature 400×120 (Léontine DEVO) + circulaire 1400×1400 + rectangulaire 1680×600 embarquées, enseignant « CHABI Bienvenu » résolu, âge élève résolu (EN : AGE 6)
+  * Cahier journal : 200, même pile complète
+  * VLM captures : reçu (circulaire → rectangulaire strictement empilés, nom uniquement dans le cachet) ; bulletin p2 (signature en tête, circulaire, rectangulaire strictement dessous, aucun nom texte, aucun défaut) ; journal (idem)
+- Commits : ee23312f5→793ef02cf (piles + cache + spinner) → 1b25547e9 (robustesse payload bulletin) → a48fc4058 (birthDate) → 73040a479 (admissionNumber + educmaster)
+- Captures : download/70-recu-csp-cachets-p1.png, 70-bulletin-cm2-cachets-p2.png, 70-cahier-journal-cachets-p1.png (+ PDF sources)
+
+Stage Summary:
+- ✅ Pile verticale stricte signature → circulaire → rectangulaire sur bulletins (FR/EN/maternelle/primaire/secondaire), cahiers journaux et reçus ; nom masqué (dans le cachet nominatif)
+- ✅ Boutons Finance réactifs : 2e clic et suivants ~400 ms (-94 %) via cache disque versionné ; spinner immédiat
+- ✅ Bug historique bulletins réparé (signature/enseignant/directeur jamais résolus — 2 champs Prisma inexistants)
+- ⚠️ Données à compléter côté école : le trésorier CSP Mon Avenir Plus n'a pas de signature persistée (flux « Lien signature » RH) → le reçu affiche les 2 cachets sans signature (dégradation propre prévue)

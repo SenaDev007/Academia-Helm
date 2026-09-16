@@ -36,7 +36,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Brain, School, Users, GraduationCap, Shield,
   Wallet, UserCog, MessageSquare, CalendarDays, ClipboardCheck, Receipt,
-  Building2, LogOut, Menu, X, Loader2, Lock,
+  Building2, LogOut, Menu, X, Lock,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -217,14 +217,17 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
     );
   }
 
-  // ─── Année scolaire obligatoire (dashboards métier) ───────────────────────
-  if (!academicYear?.id) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className={cn('h-8 w-8 animate-spin', theme.spinner)} />
-      </div>
-    );
-  }
+  // ─── Année scolaire : PLUS DE BLOCAGE PLEIN ÉCRAN (Task 73 — 2026-09-17) ──
+  // AVANT : `if (!academicYear?.id) return <spinner plein écran>` → TOUTE
+  // l'UI (sidebar + topbar + sélecteurs année/niveau/piste) attendait la
+  // requête année scolaire (~1-2 s en production) avant même de s'afficher.
+  // Le promoteur (PilotageLayout) n'a JAMAIS eu ce blocage : sa topbar et son
+  // sélecteur de niveau s'affichent immédiatement, le label d'année arrive
+  // quand il arrive. C'est LE pattern demandé (« suivre le même pattern que
+  // l'UI promoteur ») : on rend le shell tout de suite ; les dashboards
+  // (children) gèrent déjà leur propre état de chargement par requête.
+  // L'année reste lisible via academicYear?.label || '' (sidebar) — vide
+  // pendant ~1 s, jamais de rideau.
 
   const userName = user ? `${user.firstName} ${user.lastName}`.trim() : L(config.roleLabel, config.roleLabelEn);
   // Photo de profil si le payload de session la transporte (sinon initiales).

@@ -62,17 +62,31 @@ class OfflineSyncService {
    *
    *    Retourne true uniquement si le bootstrap a réussi — layout-client
    *    ne pose le flag « déjà bootstrappé » qu'après succès (retry si échec).
+   *
+   * ⭐ Task 73 (2026-09-17) — `background: true` : le téléchargement initial se
+   *    fait SANS l'overlay plein écran bloquant (la progression reste visible via
+   *    la petite carte minimisée en bas à droite + la pill « Préparation hors
+   *    ligne »). C'est le mode par défaut pour le bootstrap automatique au login :
+   *    les secrétaires/comptables/directeurs voyaient un « rideau de chargement »
+   *    (« Téléchargement initial des données de l'école… ») en concurrence avec
+   *    les requêtes critiques de l'UI (sélecteur de niveau, dashboards) — on veut
+   *    le pattern du promoteur : l'app répond D'ABORD, le hors-ligne se prépare
+   *    DISCRÈTEMENT ensuite.
    */
-  async bootstrap(tenantId: string): Promise<boolean> {
+  async bootstrap(tenantId: string, options?: { background?: boolean }): Promise<boolean> {
     if (this.hasBootstrapped) {
       console.log('[Sync] Already bootstrapped, skipping');
       return true;
     }
 
-    console.log('[Sync] Bootstrap: pulling ALL data for tenant', tenantId);
+    const background = options?.background === true;
+
+    console.log('[Sync] Bootstrap: pulling ALL data for tenant', tenantId, background ? '(background — non bloquant)' : '');
     setSyncModalState({
       isVisible: true,
-      isMinimized: false, // ⭐ reset : à l'ouverture, le modal est en mode full
+      // ⭐ Mode background → minimisé d'office : petite carte discrète au lieu
+      //    de l'overlay plein écran avec fond flouté.
+      isMinimized: background,
       phase: 'pull',
       message: 'Téléchargement initial des données de l\'école…',
       pushed: 0,

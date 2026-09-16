@@ -42,6 +42,43 @@ class OfflineBootstrapService {
   private bootstrapPromise: Promise<boolean> | null = null;
 
   /**
+   * ⭐ FIX 2026-09-17 (Task 73) — put isolé : une collection en échec ne doit
+   * jamais interrompre le reste du bootstrap (les flags offline_ready doivent
+   * pouvoir être posés dès que le cœur est sauvé).
+   */
+  private async safePut(storeName: string, items: any[]): Promise<void> {
+    try {
+      for (const item of items) {
+        await localDb.execute(storeName, 'put', item);
+      }
+    } catch (err) {
+      console.warn(`[Bootstrap] Store « ${storeName} » ignoré (données inattendues) :`, (err as Error)?.message);
+    }
+  }
+
+  /**
+   * ⭐ FIX 2026-09-17 (Task 73) — bulk put isolé + filtrage des lignes sans
+   * clé : on écarte silencieusement les lignes dont l'id est absent (la clé
+   * keyPath 'id' des stores IndexedDB ne peut pas les accueillir).
+   */
+  private async safePutBulk(storeName: string, rows: any[]): Promise<void> {
+    try {
+      const storable = (rows || []).filter(
+        (r) => r && typeof r === 'object' && r.id !== undefined && r.id !== null,
+      );
+      const skipped = (rows || []).length - storable.length;
+      if (skipped > 0) {
+        console.warn(`[Bootstrap] Store « ${storeName} » : ${skipped} ligne(s) sans id ignorée(s)`);
+      }
+      if (storable.length > 0) {
+        await localDb.executeBulk(storeName, 'put', storable);
+      }
+    } catch (err) {
+      console.warn(`[Bootstrap] Store « ${storeName} » ignoré (données inattendues) :`, (err as Error)?.message);
+    }
+  }
+
+  /**
    * Vérifie si l'application est prête pour le mode offline
    */
   async isOfflineReady(): Promise<boolean> {
@@ -103,35 +140,49 @@ class OfflineBootstrapService {
       const data: BootstrapData = await res.json();
 
       // 1. Sauvegarder dans les stores individuels
-      await localDb.execute('user_profile_cache', 'put', { id: data.user.id, ...data.user });
-      if (data.roles) await localDb.executeBulk('roles_cache', 'put', data.roles);
+      //    ⭐ FIX 2026-09-17 (Task 73 — lenteurs UI admin) : chaque collection est
+      //    isolée (try/catch par bloc) — une forme de données inattendue ne doit
+      //    JAMAIS faire échouer le bootstrap ENTIER (avant : un seul try/catch →
+      //    le crash DataError sur `modules` empêchait les flags `offline_ready`
+      //    d'être posés → re-bootstrap complet à CHAQUE chargement de page =
+      //    « boucle de chargement » signalée par le promoteur).
+      await this.safePut('user_profile_cache', [{ id: data.user.id, ...data.user }]);
+      if (data.roles) await this.safePutBulk('roles_cache', data.roles);
       if (data.permissions) {
-        await localDb.execute('permissions_cache', 'put', {
+        await this.safePut('permissions_cache', [{
           id: data.user.id,
           list: data.permissions,
           signature: OfflineSecurityService.signPermissions(data.permissions, data.user.id),
-        });
+        }]);
       }
-      if (data.tenant) await localDb.execute('local_tenant_context', 'put', { id: data.tenant.id, ...data.tenant });
-      if (data.academicYear) await localDb.execute('local_academic_year', 'put', { id: data.academicYear.id, ...data.academicYear });
-      if (data.academicTerms) await localDb.executeBulk('local_academic_term', 'put', data.academicTerms);
+      if (data.tenant) await this.safePut('local_tenant_context', [{ id: data.tenant.id, ...data.tenant }]);
+      if (data.academicYear) await this.safePut('local_academic_year', [{ id: data.academicYear.id, ...data.academicYear }]);
+      if (data.academicTerms) await this.safePutBulk('local_academic_term', data.academicTerms);
 
       // 2. Mettre à jour l'état global de sync
-      await localDb.execute('sync_state', 'put', {
+      await this.safePut('sync_state', [{
         tenantId,
         lastSyncTimestamp: new Date().toISOString(),
         lastSyncSuccess: true,
         updatedAt: new Date().toISOString(),
-      });
+      }]);
 
       // 3. Sauvegarder les modules et configurations
+      //    ⭐ FIX 2026-09-17 : les lignes de feature-flags du backend n'ont PAS
+      //    de champ `id` (clé : featureCode) → DataError « key path did not
+      //    yield a value » sur le store `modules` (keyPath 'id'). On dérive un
+      //    id stable = featureCode (fallback tenantId+index).
       if (data.modules) {
-        await localDb.executeBulk('modules', 'put', data.modules);
+        const modules = data.modules.map((m: any, i: number) => ({
+          ...m,
+          id: m?.id ?? m?.featureCode ?? `${tenantId}:module:${i}`,
+        }));
+        await this.safePutBulk('modules', modules);
       }
 
       // 4. Sauvegarder les termes académiques
       if (data.academicTerms) {
-        await localDb.executeBulk('academic_terms', 'put', data.academicTerms);
+        await this.safePutBulk('academic_terms', data.academicTerms);
       }
 
       // 5. Marquer le device comme offline-ready

@@ -47,8 +47,18 @@ export function SettingsBootstrapPrefetch() {
 
   useEffect(() => {
     if (!effectiveTenantId || !roleNeedsSettings) return;
-    /** Court délai pour laisser localStorage/cookies alignés après redirection login (Bearer pour le proxy). */
-    const t = window.setTimeout(() => {
+    /** ⭐ Task 73 (2026-09-17 — lenteurs UI admin) : le bundle Paramètres (≈ 23
+     *  requêtes : general, security, orion, atlas, billing, users, roles…) est
+     *  un PRÉFETCH pour une page que l'utilisateur ne visitera peut-être pas
+     *  tout de suite. AVANT : délai 80 ms → la rafale partait PENDANT le
+     *  chargement initial et concurrençait les requêtes critiques (année
+     *  scolaire, sélecteur de niveau, KPI dashboards) — visible surtout sur
+     *  les connexions écoles lentes. APRÈS : différé à l'idle navigateur
+     *  (min. 8 s) — l'UI est déjà interactive, le préchauffage se fait discret.
+     *  NB : AcademicYearContext fait ses PROPRES requêtes au montage (2 appels
+     *  académiques) — il n'attendait de toute façon pas ce préfetch.
+     */
+    const run = () => {
       void queryClient
         .prefetchQuery({
           queryKey: settingsKeys.bootstrap(effectiveTenantId),
@@ -63,7 +73,14 @@ export function SettingsBootstrapPrefetch() {
             hydrateAcademicYearsFromBootstrap(queryClient, effectiveTenantId, data);
           }
         });
-    }, 80);
+    };
+    const t = window.setTimeout(() => {
+      if ('requestIdleCallback' in window) {
+        (window as any).requestIdleCallback(run, { timeout: 8000 });
+      } else {
+        run();
+      }
+    }, 8000);
     return () => clearTimeout(t);
   }, [effectiveTenantId, queryClient, roleNeedsSettings]);
 

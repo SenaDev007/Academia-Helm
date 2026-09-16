@@ -191,10 +191,19 @@ export default function AppLayoutClient({
   //    s'était connecté sur cet appareil, on purge son cache (aucune donnée
   //    cross-tenant ne doit rester servable offline) et on relance un bootstrap
   //    complet pour l'école courante.
+  //    ⭐ Task 73 (2026-09-17 — lenteurs UI admin) : le bootstrap de DONNÉES est
+  //    désormais (a) DIFFÉRÉ jusqu'à ce que l'app soit utilisable (idle navigateur
+  //    + délai minimum 18 s — avant : 5 s, pile quand le sélecteur de niveau, les
+  //    contextes et les dashboards chargent → saturation de la bande passante
+  //    sur connexion école → « tout est lent ») et (b) NON BLOQUANT (modal
+  //    minimisé d'office : petite pastille au lieu de l'overlay plein écran
+  //    « Téléchargement initial des données de l'école… »). Pattern promoteur :
+  //    l'UI répond D'ABORD, le hors-ligne se prépare discrètement ensuite.
   useEffect(() => {
     if (!tenant?.id) return;
     let cancelled = false;
     let bootstrapTimer: ReturnType<typeof setTimeout> | null = null;
+    let idleHandle: number | null = null;
 
     (async () => {
       // 1. Cohérence tenant du cache local (lecture légère IDB ; purge si autre école)
@@ -215,10 +224,16 @@ export default function AppLayoutClient({
       // 2. Bootstrap si pas encore fait pour CE tenant
       const bootstrapKey = `academia_helm_bootstrapped_${tenant.id}`;
       if (localStorage.getItem(bootstrapKey) === 'true') return;
-      bootstrapTimer = setTimeout(() => {
+
+      // ⭐ Task 73 — planification idle : minimum 18 s PUIS créneau libre du
+      //    navigateur (requestIdleCallback, fallback setTimeout). Le téléchargement
+      //    massif (tables de sync) ne concurrence plus le premier rendu.
+      const startBootstrap = () => {
+        if (cancelled) return;
         import('@/lib/offline/offline-sync.service').then(({ offlineSyncService }) => {
           // ⭐ Flag posé SEULEMENT après un bootstrap réussi (sinon retry au prochain mount)
-          offlineSyncService.bootstrap(tenant.id).then((ok) => {
+          // ⭐ background: true → modal minimisé (pastille), jamais d'overlay bloquant
+          offlineSyncService.bootstrap(tenant.id, { background: true }).then((ok) => {
             if (ok) {
               localStorage.setItem(bootstrapKey, 'true');
             } else {
@@ -228,13 +243,25 @@ export default function AppLayoutClient({
         }).catch((err) => {
           console.warn('[Bootstrap] Failed to import offline-sync.service:', err);
         });
-      }, 5000);
+      };
+
+      bootstrapTimer = setTimeout(() => {
+        if (cancelled) return;
+        if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+          idleHandle = (window as any).requestIdleCallback(startBootstrap, { timeout: 8000 });
+        } else {
+          startBootstrap();
+        }
+      }, 18000);
     })();
 
-    // Cleanup : annule le flag ET le timer de bootstrap (IIFE async)
+    // Cleanup : annule le flag ET les timers de bootstrap (IIFE async)
     return () => {
       cancelled = true;
       if (bootstrapTimer) clearTimeout(bootstrapTimer);
+      if (idleHandle !== null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+        (window as any).cancelIdleCallback(idleHandle);
+      }
     };
   }, [tenant?.id]);
 
@@ -250,9 +277,15 @@ export default function AppLayoutClient({
   //    ⭐ v3.5.0 : + PRÉ-CACHE DES DONNÉES API (KPIs de tous les dashboards) —
   //    hors ligne, les modules affichent les VRAIES données sans visite
   //    préalable en ligne (exigence offline-first, retour terrain sept. 2026).
+  //    ⭐ Task 73 (2026-09-17) : le délai 15 s est désormais couplé à
+  //    requestIdleCallback — le pré-cache ne démarre que si le navigateur est
+  //    réellement inactif (sinon il attend un créneau, timeout 8 s). Sur
+  //    connexion école lente, les 112 routes ne volent plus la bande passante
+  //    des requêtes encore en cours (sélecteur niveau, KPIs dashboards).
   useEffect(() => {
     if (!tenant?.id) return;
     let cancelled = false;
+    let idleHandle: number | null = null;
     const run = () => {
       if (cancelled) return;
       import('@/lib/offline/module-precache.service')
@@ -279,12 +312,26 @@ export default function AppLayoutClient({
         });
     };
     // Délai : ne pas concurrencer le bootstrap des données ni le rendu initial
-    const timer = setTimeout(run, 15000);
-    window.addEventListener('online', run);
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        idleHandle = (window as any).requestIdleCallback(run, { timeout: 8000 });
+      } else {
+        run();
+      }
+    }, 15000);
+    const runDirect = () => {
+      // Retour de réseau : lancement direct (cas hors-ligne → online, l'UI est déjà prête)
+      run();
+    };
+    window.addEventListener('online', runDirect);
     return () => {
       cancelled = true;
       clearTimeout(timer);
-      window.removeEventListener('online', run);
+      if (idleHandle !== null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+        (window as any).cancelIdleCallback(idleHandle);
+      }
+      window.removeEventListener('online', runDirect);
     };
   }, [tenant?.id]);
 

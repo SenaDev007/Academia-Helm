@@ -223,10 +223,28 @@ export async function executePostLoginFlow(
         await Promise.all(offlineTasks);
 
         // ⭐ OFFLINE-FIRST RÉACTIVÉ (sept. 2026) — bootstrap IDB si pas déjà fait
+        //    ⭐ Task 73 (2026-09-17 — lenteurs UI admin) : DIFFÉRÉ à l'idle du
+        //    navigateur (min. 12 s) — avant, le prefetch critique du bootstrap
+        //    (students?limit=500 ≈ 3 s, teachers?limit=200, classes…) tirait
+        //    PENDANT l'écran de chargement post-login et volait la bande
+        //    passante des requêtes UI critiques (année scolaire, sélecteur de
+        //    niveau, KPI dashboards) → « tout est lent » sur connexion école.
+        //    Le flag offline_ready est posé à la fin du bootstrap → si
+        //    l'utilisateur ferme l'onglet avant, la tentative sera refaite au
+        //    prochain chargement (comportement attendu).
         if (tenant?.id && isOnline) {
-          import('@/lib/offline/offline-bootstrap.service').then(({ offlineBootstrapService }) => {
-            void offlineBootstrapService.ensureBootstrapped(tenant!.id);
-          }).catch(() => { /* non-critical */ });
+          const startBootstrap = () => {
+            import('@/lib/offline/offline-bootstrap.service').then(({ offlineBootstrapService }) => {
+              void offlineBootstrapService.ensureBootstrapped(tenant!.id);
+            }).catch(() => { /* non-critical */ });
+          };
+          setTimeout(() => {
+            if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+              (window as any).requestIdleCallback(startBootstrap, { timeout: 8000 });
+            } else {
+              startBootstrap();
+            }
+          }, 12000);
         }
 
         return { isOnline, pendingOperations };

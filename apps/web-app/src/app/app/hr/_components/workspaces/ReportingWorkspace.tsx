@@ -41,13 +41,20 @@ export function ReportingWorkspace() {
 
   const snapshot = data?.snapshot || {};
   const evolution = data?.evolution || [];
-  const distribution = data?.distribution || {};
+  // ⭐ V1 audit — le backend /hr/overview/analytics renvoie distribution
+  //    sous forme de tableau [{ roleType, count }] (hr-kpi.service
+  //    getStaffDistribution), pas d'objet { teachers, admin, support }.
+  const distributionRaw: any[] = Array.isArray(data?.distribution) ? data.distribution : [];
+  const roleCount = (types: string[]) =>
+    distributionRaw
+      .filter((d: any) => types.includes(String(d?.roleType ?? '').toUpperCase()))
+      .reduce((sum: number, d: any) => sum + (Number(d?.count) || 0), 0);
 
   // Map distribution data for Recharts
   const distributionData = [
-    { name: 'Enseignants', count: distribution.teachers || snapshot.totalTeachers || 0 },
-    { name: 'Administratif', count: distribution.admin || snapshot.totalAdmin || 0 },
-    { name: 'Appui', count: distribution.support || 0 },
+    { name: 'Enseignants', count: roleCount(['TEACHER']) || snapshot.totalTeachers || 0 },
+    { name: 'Administratif', count: roleCount(['ADMIN', 'ADMINISTRATION', 'DIRECTION']) || snapshot.totalAdmin || 0 },
+    { name: 'Appui', count: roleCount(['SUPPORT', 'STAFF', 'OTHER', 'SERVICE', 'TECHNICAL']) },
   ];
 
   return (
@@ -73,7 +80,7 @@ export function ReportingWorkspace() {
             <span className="p-2 rounded-lg bg-blue-50 text-blue-600"><Award className="h-5 w-5" /></span>
           </div>
           <div>
-            <h3 className="text-2xl font-black text-slate-900">{formatCurrency(snapshot.cnssContributions)}</h3>
+            <h3 className="text-2xl font-black text-slate-900">{formatCurrency(snapshot.cnssCharges ?? snapshot.cnssContributions ?? 0)}</h3>
             <p className="text-xs text-slate-500 mt-1">Part patronale & salariale consolidée</p>
           </div>
         </div>
@@ -110,7 +117,7 @@ export function ReportingWorkspace() {
                   <XAxis dataKey="month" tickLine={false} tick={{ fontSize: 10, fill: '#64748B' }} />
                   <YAxis tickFormatter={(v: any) => formatCurrency(v)} tickLine={false} tick={{ fontSize: 10, fill: '#64748B' }} />
                   <Tooltip formatter={(value) => [formatCurrency(value as any), 'Masse Salariale']} />
-                  <Area type="monotone" dataKey="amount" stroke={PRIMARY} strokeWidth={2.5} fillOpacity={1} fill="url(#colorPayroll)" />
+                  <Area type="monotone" dataKey="total" stroke={PRIMARY} strokeWidth={2.5} fillOpacity={1} fill="url(#colorPayroll)" />
                 </AreaChart>
               </ResponsiveContainer>
             )}

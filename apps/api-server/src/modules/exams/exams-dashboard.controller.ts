@@ -65,6 +65,22 @@ export class ExamsDashboardController {
     return this.dashboardService.getPendingAlerts(tenantId, academicYearId, schoolLevelId, language);
   }
 
+  /**
+   * ⭐ V1 audit — GET /institutional-exams/dashboard/performance-by-level
+   * Statistiques de performance (moyenne, taux de réussite, élèves à risque)
+   * par niveau scolaire — données réelles StudentPeriodAverage + Evaluation.
+   * Remplace l'appel cassé /api/exams/dashboard de l'onglet Statistiques.
+   */
+  @Get('performance-by-level')
+  @Permissions('exams.read', 'exams.manage')
+  async getPerformanceByLevel(
+    @TenantId() tenantId: string,
+    @AcademicYearId() academicYearId: string,
+    @Query('language') language?: string,
+  ) {
+    return this.dashboardService.getPerformanceByLevel(tenantId, academicYearId, language);
+  }
+
   @Get('orion-insights')
   @Permissions('exams.read', 'exams.manage')
   async getOrionInsights(

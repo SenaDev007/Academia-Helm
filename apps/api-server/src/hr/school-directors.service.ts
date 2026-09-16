@@ -37,13 +37,17 @@ export class SchoolDirectorsService {
 
   async getDirectors(tenantId: string) {
     // ⭐ Jointure avec staff pour récupérer les infos à jour (si staffId défini)
+    //    staffUserId (→ staff."userId") : permet à la route BFF
+    //    /api/school-directors de matcher la fiche du directeur CONNECTÉ
+    //    (chargement de sa signature dans la Validation Direction pédagogique).
     return this.prisma.$queryRawUnsafe<any[]>(`
       SELECT sd.*, sl.code AS "schoolLevelCode", sl.name AS "schoolLevelName",
              s."firstName" AS "staffFirstName",
              s."lastName" AS "staffLastName",
              s."email" AS "staffEmail",
              s."phone" AS "staffPhone",
-             s."position" AS "staffPosition"
+             s."position" AS "staffPosition",
+             s."userId" AS "staffUserId"
       FROM school_directors sd
       LEFT JOIN school_levels sl ON sl.id = sd."schoolLevelId"
       LEFT JOIN staff s ON s.id = sd."staffId"

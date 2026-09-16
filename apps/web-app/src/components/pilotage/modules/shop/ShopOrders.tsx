@@ -338,26 +338,41 @@ function OrderStatCard({ label, count, color, icon: Icon }: any) {
 }
 
 function OrderRow({ id, orderId, name, student, date, itemCount, total, status, actionLoading, onStatusChange }: any) {
+  // ⭐ V1 audit — alignement sur l'enum Prisma ShopOrderStatus :
+  //    PENDING | CONFIRMED | PREPARING | READY | DELIVERED | CANCELLED.
+  //    Avant, le <select> envoyait des minuscules (et « shipped », valeur
+  //    inexistante) → erreur Prisma à chaque changement de statut.
+  const normalizeStatus = (raw: any): string => {
+    const s = String(raw ?? '').toUpperCase();
+    return ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'DELIVERED', 'CANCELLED'].includes(s)
+      ? s
+      : 'PENDING';
+  };
   const statusColors: any = {
-    'À préparer': 'bg-rose-50 text-rose-600 border-rose-100',
-    'Payé': 'bg-blue-50 text-blue-600 border-blue-100',
-    'Confirmé': 'bg-amber-50 text-amber-600 border-amber-100',
-    'Prêt': 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    PENDING: 'bg-amber-50 text-amber-600 border-amber-100',
+    CONFIRMED: 'bg-blue-50 text-blue-600 border-blue-100',
+    PREPARING: 'bg-rose-50 text-rose-600 border-rose-100',
+    READY: 'bg-violet-50 text-violet-600 border-violet-100',
+    DELIVERED: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    CANCELLED: 'bg-gray-50 text-gray-600 border-gray-100',
+    // alias historiques (affichage des statuts déjà normalisés en minuscule)
     pending: 'bg-amber-50 text-amber-600 border-amber-100',
     confirmed: 'bg-blue-50 text-blue-600 border-blue-100',
-    shipped: 'bg-rose-50 text-rose-600 border-rose-100',
+    preparing: 'bg-rose-50 text-rose-600 border-rose-100',
+    ready: 'bg-violet-50 text-violet-600 border-violet-100',
     delivered: 'bg-emerald-50 text-emerald-600 border-emerald-100',
     cancelled: 'bg-gray-50 text-gray-600 border-gray-100',
   };
   const statusLabel: any = {
-    pending: 'En attente',
-    confirmed: 'Confirmée',
-    shipped: 'Expédiée',
-    delivered: 'Livrée',
-    cancelled: 'Annulée',
+    PENDING: 'En attente',
+    CONFIRMED: 'Confirmée',
+    PREPARING: 'En préparation',
+    READY: 'Prête',
+    DELIVERED: 'Livrée',
+    CANCELLED: 'Annulée',
   };
-  const displayStatus = statusLabel[status] ?? status;
-  const statusValue = ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'].includes(status) ? status : 'pending';
+  const displayStatus = statusLabel[status] ?? statusLabel[normalizeStatus(status)] ?? status;
+  const statusValue = normalizeStatus(status);
 
   return (
     <TableRow className="hover:bg-slate-50">
@@ -391,11 +406,12 @@ function OrderRow({ id, orderId, name, student, date, itemCount, total, status, 
             disabled={actionLoading === orderId}
             className={`px-3 py-1.5 rounded-md text-xs font-medium border ${statusColors[statusValue] ?? 'bg-gray-50 text-gray-500 border-gray-100'} outline-none disabled:opacity-50`}
           >
-            <option value="pending">En attente</option>
-            <option value="confirmed">Confirmée</option>
-            <option value="shipped">Expédiée</option>
-            <option value="delivered">Livrée</option>
-            <option value="cancelled">Annulée</option>
+            <option value="PENDING">En attente</option>
+            <option value="CONFIRMED">Confirmée</option>
+            <option value="PREPARING">En préparation</option>
+            <option value="READY">Prête</option>
+            <option value="DELIVERED">Livrée</option>
+            <option value="CANCELLED">Annulée</option>
           </select>
         ) : (
           <Badge variant="outline" className={`text-xs ${statusColors[status] ?? 'bg-gray-50 text-gray-500 border-gray-100'}`}>

@@ -1411,10 +1411,15 @@ export default function CashRegistersContent() {
                                       credentials: 'include',
                                       body: JSON.stringify({ action: 'alert_promoter', cashRegisterId: r.id, balance: r.currentBalance }),
                                     });
-                                    if (res.ok) {
-                                      toast({ title: '✅ Alerte envoyée', description: 'Le promoteur a été notifié.' });
+                                    const payload = await res.json().catch(() => ({} as { success?: boolean; message?: string }));
+                                    if (res.ok && payload?.success) {
+                                      toast({ title: '✅ Alerte envoyée', description: payload?.message || 'Le promoteur a été notifié.' });
                                     } else {
-                                      toast({ title: 'Erreur', description: 'Échec de l\'envoi', variant: 'destructive' });
+                                      toast({
+                                        title: 'Alerte non envoyée',
+                                        description: payload?.message || 'Échec de l\'envoi',
+                                        variant: 'destructive',
+                                      });
                                     }
                                   } catch {
                                     toast({ title: 'Erreur', variant: 'destructive' });

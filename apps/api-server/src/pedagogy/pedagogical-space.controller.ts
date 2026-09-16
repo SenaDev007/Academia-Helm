@@ -700,6 +700,26 @@ export class PedagogicalSpaceController {
     return this.service.getPedagogicalFiches(tenantId, teacherId, academicYearId, sheetType, classId, user);
   }
 
+  // ⭐ ROUTE SPÉCIFIQUE AVANT PARAMÉTRÉE — ordre critique :
+  //    « fiches/previous-years » doit être déclaré AVANT « fiches/:id », sinon
+  //    NestJS capture la requête avec :id = 'previous-years' → NotFoundException.
+  //    (Bug détecté lors de l'audit CRUD V1 — cross-year reuse cassé.)
+  @Get('fiches/previous-years')
+  async getPreviousYearFiches(
+    @TenantId() tenantId: string,
+    @Query('currentAcademicYearId') currentAcademicYearId: string,
+    @Query('classId') classId?: string,
+    @Query('subjectId') subjectId?: string,
+    @Query('schoolLevelId') schoolLevelId?: string,
+  ) {
+    if (!currentAcademicYearId) {
+      throw new BadRequestException('currentAcademicYearId est requis');
+    }
+    return this.service.getPreviousYearFiches(
+      tenantId, currentAcademicYearId, classId, subjectId, schoolLevelId,
+    );
+  }
+
   @Get('fiches/:id')
   async getPedagogicalFiche(
     @TenantId() tenantId: string,
@@ -742,26 +762,6 @@ export class PedagogicalSpaceController {
     @Param('id') id: string,
   ) {
     return this.service.submitPedagogicalFiche(tenantId, id);
-  }
-
-  // ⭐ CROSS-YEAR REUSE : lister les fiches des années précédentes
-  //    pour la même classe + matière (ou même schoolLevel + matière).
-  //    Permet à un enseignant de retrouver les fiches de l'année précédente
-  //    et de les dupliquer vers l'année courante.
-  @Get('fiches/previous-years')
-  async getPreviousYearFiches(
-    @TenantId() tenantId: string,
-    @Query('currentAcademicYearId') currentAcademicYearId: string,
-    @Query('classId') classId?: string,
-    @Query('subjectId') subjectId?: string,
-    @Query('schoolLevelId') schoolLevelId?: string,
-  ) {
-    if (!currentAcademicYearId) {
-      throw new BadRequestException('currentAcademicYearId est requis');
-    }
-    return this.service.getPreviousYearFiches(
-      tenantId, currentAcademicYearId, classId, subjectId, schoolLevelId,
-    );
   }
 
   // ⭐ CROSS-YEAR REUSE : dupliquer une fiche d'une année précédente vers l'année courante

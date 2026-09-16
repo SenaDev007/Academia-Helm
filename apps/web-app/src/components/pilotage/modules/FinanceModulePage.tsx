@@ -77,8 +77,24 @@ export default function FinanceModulePage() {
 
   const loadFinanceStats = async () => {
     try {
-      const res = await fetch(`/api/finance/stats?academicYearId=${academicYear?.id}`);
-      if (res.ok) setStats(await res.json());
+      // ⭐ V1 audit — l'ancien appel /api/finance/stats ne correspondait à
+      //    AUCUNE route BFF ni backend (404 avalé → KPI de tête du module
+      //    jamais affichés). On branche le KPI réel /finance/reports/kpi
+      //    (finance-reports.controller.ts:68) et on mappe les champs :
+      //    totalRevenue←totalEncaissement, recoveryRate←tauxRecouvrement,
+      //    totalExpenses←totalDepenses, criticalArrears←totalDue-totalPaid.
+      const res = await fetch(`/api/finance/reports/kpi?academicYearId=${academicYear?.id}`, {
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const kpi = await res.json();
+        setStats({
+          totalRevenue: Number(kpi.totalEncaissement ?? 0),
+          recoveryRate: Number(kpi.tauxRecouvrement ?? 0),
+          totalExpenses: Number(kpi.totalDepenses ?? 0),
+          criticalArrears: Math.max(0, Number(kpi.totalDue ?? 0) - Number(kpi.totalPaid ?? 0)),
+        });
+      }
     } catch (e) {
       console.error(e);
     }

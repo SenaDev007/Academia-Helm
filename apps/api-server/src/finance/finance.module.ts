@@ -49,6 +49,8 @@ import { TenantPaymentConfigController } from './tenant-payment-config.controlle
 // ⭐ FedaPay supprimé — seul FedaPay est conservé comme passerelle de paiement
 import { FedapayService } from './fedapay.service';
 import { FedapayController } from './fedapay.controller';
+import { FeexPayController } from './feexpay.controller';
+import { FeexPayService } from './feexpay.service';
 import { PaymentInitiationService } from './payment-initiation.service';
 import { ReceiptNotificationService } from './receipt-notification.service';
 import { FinanceOrionService } from './finance-orion.service';
@@ -140,6 +142,10 @@ import { ParentProvisioningModule } from '../students/parent-provisioning.module
     MultiActionPaymentController,
     // ⭐ Promoter Eligibility — élèves "paiement direct au fondateur"
     PromoterEligibilityController,
+    // ⭐ V1 audit — FeexPayController n'était enregistré dans AUCUN module
+    //    Nest → ses endpoints (finance/payments/feexpay/*) renvoyaient 404 au
+    //    runtime alors que les routes BFF correspondantes existent.
+    FeexPayController,
   ],
   providers: [
     FeesPrismaService,
@@ -162,6 +168,7 @@ import { ParentProvisioningModule } from '../students/parent-provisioning.module
     ArrearAccumulationService,
     TenantPaymentConfigService,
     FedapayService,
+    FeexPayService,
     PaymentInitiationService,
     // Module 4 - Frais & Priorité de Paiement
     PaymentAllocationService,

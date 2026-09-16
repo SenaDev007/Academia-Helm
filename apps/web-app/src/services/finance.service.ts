@@ -761,8 +761,13 @@ class FinanceService {
   }
 
   // --- Treasury aliases (page uses getTreasuryClosures etc.) ---
-  async getTreasuryClosures(academicYearId: string): Promise<any> {
-    return financeFetch(`/api/finance/treasury/daily-closures?academicYearId=${academicYearId}`);
+  // ⭐ V1 audit — from/to transmis : la page Trésorerie calcule filterFrom/
+  //    filterTo mais ne les passait pas au service → filtre période sans effet.
+  async getTreasuryClosures(academicYearId: string, from?: string, to?: string): Promise<any> {
+    const qs = new URLSearchParams({ academicYearId });
+    if (from) qs.set('from', from);
+    if (to) qs.set('to', to);
+    return financeFetch(`/api/finance/treasury/daily-closures?${qs.toString()}`);
   }
 
   async createTreasuryClosure(data: any): Promise<any> {

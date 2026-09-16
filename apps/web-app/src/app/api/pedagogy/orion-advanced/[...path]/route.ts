@@ -51,3 +51,16 @@ export async function GET(
   const { path } = await params;
   return forward(request, path ?? [], 'GET');
 }
+
+// ⭐ POST exposé pour « Lancer l'analyse » (page ORION pédagogie) :
+//    POST /api/pedagogy/orion-advanced/analyze → backend
+//    orion-pedagogy-advanced.controller.ts:70 @Post('analyze').
+//    Avant, seule la méthode GET était exportée → 405 Method Not Allowed
+//    systématique sur le bouton.
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  const { path } = await params;
+  return forward(request, path ?? [], 'POST');
+}

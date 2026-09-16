@@ -25,10 +25,10 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules } from '../layout';
 import { useExamScope } from '../layout';
+import { institutionalExamsService } from '@/services/institutional-exams.service';
 
 const LEVEL_LABELS: Record<string, string> = {
   MATERNELLE: 'Maternelle',
@@ -55,7 +55,6 @@ export default function AnalyticsPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
   const { academicYear, tenant } = useModuleContext();
-  const { availableLevels } = useSchoolLevel();
   const [loading, setLoading] = useState(true);
   const [performances, setPerformances] = useState<LevelPerformance[]>([]);
   const [insights, setInsights] = useState<OrionInsight[]>([]);
@@ -75,64 +74,51 @@ export default function AnalyticsPage() {
   async function fetchAnalytics() {
     try {
       setLoading(true);
-      const realLevels = availableLevels.filter((l: any) => l.id !== 'ALL' && l.isActive);
-      const results: LevelPerformance[] = [];
+      // ⭐ V1 audit — l'ancien appel /api/exams/dashboard était triple cassé :
+      //    route BFF inexistante (captée par /api/exams/[id]), proxy sans
+      //    forwarding d'auth (401) et tables legacy jamais alimentées →
+      //    l'onglet affichait des zéros en silence. On appelle désormais le
+      //    nouvel endpoint performance-by-level (données réelles
+      //    StudentPeriodAverage + Evaluation, scope niveau + piste).
+      const rows: any[] = await institutionalExamsService.getPerformanceByLevel(
+        academicYear!.id,
+        scopeLang || undefined,
+      );
+      const results: LevelPerformance[] = (rows || []).map((d: any) => ({
+        levelCode: d.levelCode,
+        levelLabel: LEVEL_LABELS[d.levelCode] || d.levelLabel || d.levelCode,
+        average: Number(d.average ?? 0),
+        passRate: Number(d.passRate ?? 0),
+        studentsAtRisk: Number(d.studentsAtRisk ?? 0),
+      }));
+
+      const collectedInsights: OrionInsight[] = [];
       let totalPassRate = 0;
       let totalStudentsAtRisk = 0;
       let totalExams = 0;
       let totalAverage = 0;
-      const collectedInsights: OrionInsight[] = [];
+      for (const r of results) {
+        totalPassRate += r.passRate;
+        totalStudentsAtRisk += r.studentsAtRisk;
+        totalAverage += r.average;
+        totalExams += Number((rows.find((d: any) => d.levelCode === r.levelCode) as any)?.totalExams ?? 0);
 
-      for (const level of realLevels) {
-        try {
-          const params = new URLSearchParams({
-            tenantId: tenant!.id,
-            academicYearId: academicYear!.id,
-            schoolLevelId: level.id,
-            ...(scopeLang ? { language: scopeLang } : {}),
+        // Générer des insights basés sur les données réelles
+        if (r.average > 0 && r.average < 8) {
+          collectedInsights.push({
+            type: 'ALERT',
+            title: `Chute de performance — ${r.levelLabel}`,
+            message: `La moyenne du niveau ${r.levelLabel} est de ${r.average.toFixed(2)}/20, en dessous du seuil critique de 8/20. Une analyse pédagogique est requise.`,
+            badge: 'Analyse Requise',
           });
-          // Récupérer les KPI dashboard
-          const res = await fetch(`/api/exams/dashboard?${params.toString()}`, { credentials: 'include' });
-          if (res.ok) {
-            const data = await res.json();
-            const avg = data?.generalAverage ?? data?.averageScore ?? 0;
-            const passRate = data?.successRate ?? data?.passRate ?? 0;
-            const studentsAtRisk = data?.studentsAtRisk ?? data?.lowAveragesCount ?? 0;
-            const examsCount = data?.plannedCount ?? data?.totalExams ?? 0;
-
-            results.push({
-              levelCode: level.code,
-              levelLabel: LEVEL_LABELS[level.code] || level.label || level.code,
-              average: avg,
-              passRate,
-              studentsAtRisk,
-            });
-
-            totalPassRate += passRate;
-            totalStudentsAtRisk += studentsAtRisk;
-            totalExams += examsCount;
-            totalAverage += avg;
-
-            // Générer des insights basés sur les données réelles
-            if (avg > 0 && avg < 8) {
-              collectedInsights.push({
-                type: 'ALERT',
-                title: `Chute de performance — ${LEVEL_LABELS[level.code] || level.code}`,
-                message: `La moyenne du niveau ${LEVEL_LABELS[level.code] || level.code} est de ${avg.toFixed(2)}/20, en dessous du seuil critique de 8/20. Une analyse pédagogique est requise.`,
-                badge: 'Analyse Requise',
-              });
-            }
-            if (passRate >= 80) {
-              collectedInsights.push({
-                type: 'SUCCESS',
-                title: `Taux de réussite élevé — ${LEVEL_LABELS[level.code] || level.code}`,
-                message: `Le niveau ${LEVEL_LABELS[level.code] || level.code} affiche un taux de réussite de ${passRate.toFixed(1)}%, supérieur à l'objectif de 80%.`,
-                badge: 'Impact Positif',
-              });
-            }
-          }
-        } catch (err) {
-          // Skip level on error
+        }
+        if (r.passRate >= 80) {
+          collectedInsights.push({
+            type: 'SUCCESS',
+            title: `Taux de réussite élevé — ${r.levelLabel}`,
+            message: `Le niveau ${r.levelLabel} affiche un taux de réussite de ${r.passRate.toFixed(1)}%, supérieur à l'objectif de 80%.`,
+            badge: 'Impact Positif',
+          });
         }
       }
 

@@ -110,7 +110,10 @@ export function HROverview() {
   const snapshot = data?.snapshot || { totalStaff: 0, totalTeachers: 0, totalAdmin: 0, monthlyPayroll: 0, cnssCharges: 0, leaveCount: 0 };
   const evolution = data?.evolution || [];
   const orionAlerts = data?.orionAlerts || [];
-  const pendingSignatureCount = data?.kpi?.pendingSignatureStaff || 0;
+  // ⭐ V1 audit — le backend expose snapshot.pendingSignatureContracts (contrats
+  //    non signés, calculés dans hr-kpi.service). L'ancienne lecture
+  //    data.kpi.pendingSignatureStaff n'existait pas dans la réponse → KPI figé à 0.
+  const pendingSignatureCount = snapshot.pendingSignatureContracts ?? 0;
 
   const kpis = [
     { label: 'Effectif Total', value: snapshot.totalStaff, subValue: `${snapshot.totalTeachers} ens. · ${snapshot.totalAdmin} admin`, icon: Users },

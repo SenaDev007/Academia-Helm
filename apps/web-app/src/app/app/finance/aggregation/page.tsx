@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useModuleContext } from '@/hooks/useModuleContext';
-import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { Loader2, TrendingUp, TrendingDown, Wallet, AlertCircle, BarChart3 } from 'lucide-react';
 import { AggregationPageShell } from '@/components/aggregation/AggregationPageShell';
 import { FINANCE_SUBMODULE_TABS } from '@/components/finance/finance-tabs';
@@ -26,7 +25,6 @@ interface LevelFinanceStats {
 
 export default function FinanceAggregationPage() {
   const { academicYear, tenant } = useModuleContext();
-  const { availableLevels } = useSchoolLevel();
   const [stats, setStats] = useState<LevelFinanceStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,60 +39,34 @@ export default function FinanceAggregationPage() {
     try {
       setLoading(true);
       setError(null);
-      // Récupérer les stats pour chaque niveau scolaire activé
-      const realLevels = availableLevels.filter((l: any) => l.id !== 'ALL' && l.isActive);
-      const results: LevelFinanceStats[] = [];
-
-      for (const level of realLevels) {
-        try {
-          const params = new URLSearchParams({
-            tenantId: tenant!.id,
-            academicYearId: academicYear!.id,
-            schoolLevelId: level.id,
-          });
-          const res = await fetch(`/api/finance/reports?${params.toString()}`, { credentials: 'include' });
-          if (res.ok) {
-            const data = await res.json();
-            results.push({
-              levelId: level.id,
-              levelCode: level.code,
-              levelLabel: LEVEL_LABELS[level.code] || level.label || level.code,
-              totalEncaissements: data?.totalPaid ?? data?.totalEncaissements ?? 0,
-              totalRecouvrements: data?.totalRecovered ?? 0,
-              totalDecaissements: data?.totalExpenses ?? 0,
-              tresorerie: (data?.totalPaid ?? 0) - (data?.totalExpenses ?? 0),
-              impayes: data?.totalDue ?? data?.totalUnpaid ?? 0,
-            });
-          } else {
-            // Fallback si l'endpoint n'existe pas
-            results.push({
-              levelId: level.id,
-              levelCode: level.code,
-              levelLabel: LEVEL_LABELS[level.code] || level.label || level.code,
-              totalEncaissements: 0,
-              totalRecouvrements: 0,
-              totalDecaissements: 0,
-              tresorerie: 0,
-              impayes: 0,
-            });
-          }
-        } catch {
-          results.push({
-            levelId: level.id,
-            levelCode: level.code,
-            levelLabel: LEVEL_LABELS[level.code] || level.label || level.code,
-            totalEncaissements: 0,
-            totalRecouvrements: 0,
-            totalDecaissements: 0,
-            tresorerie: 0,
-            impayes: 0,
-          });
-        }
+      // ⭐ V1 audit — l'ancienne boucle appelait GET /api/finance/reports
+      //    ?tenantId&schoolLevelId (racine inexistante côté BFF ET backend)
+      //    → fallbacks silencieux → 0 FCFA partout. On appelle désormais le
+      //    nouvel endpoint by-level (une requête, réponse déjà par niveau).
+      const params = new URLSearchParams({ academicYearId: academicYear!.id });
+      if (tenant?.id) params.set('tenantId', tenant.id);
+      const res = await fetch(`/api/finance/reports?${params.toString()}`, {
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        throw new Error(`Erreur ${res.status}`);
       }
-
+      const data = await res.json();
+      const rows: any[] = Array.isArray(data) ? data : [];
+      const results: LevelFinanceStats[] = rows.map((d: any) => ({
+        levelId: d.levelId,
+        levelCode: d.levelCode,
+        levelLabel: LEVEL_LABELS[d.levelCode] || d.levelLabel || d.levelCode,
+        totalEncaissements: Number(d.totalPaid ?? d.totalEncaissement ?? 0),
+        totalRecouvrements: 0,
+        totalDecaissements: Number(d.totalDepenses ?? d.totalExpenses ?? 0),
+        tresorerie: Number(d.soldeNet ?? 0),
+        impayes: Math.max(0, Number(d.totalDue ?? 0) - Number(d.totalPaid ?? 0)),
+      }));
       setStats(results);
     } catch (e: any) {
       setError(e?.message || 'Erreur lors du chargement');
+      setStats([]);
     } finally {
       setLoading(false);
     }

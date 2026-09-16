@@ -8,7 +8,7 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 
 @Injectable()
@@ -44,6 +44,21 @@ export class GradesService {
     });
 
     if (!evaluation) throw new NotFoundException('Evaluation not found');
+
+    // ⭐ V1 audit — garde-fou de statut : le verrouillage des notes n'était
+    //    garanti que côté frontend (isLocked). Une fois l'évaluation SUBMITTED
+    //    (en attente de validation) ou VALIDATED (verrouillée), toute écriture
+    //    directe de notes doit être refusée côté serveur.
+    //    (PLANNED/DRAFT/OPEN_FOR_GRADING restent bien sûr autorisés.)
+    if (evaluation.status === 'SUBMITTED' || evaluation.status === 'VALIDATED') {
+      throw new BadRequestException(
+        `Les notes ne peuvent plus être modifiées : l'évaluation est ${evaluation.status === 'VALIDATED' ? 'validée (verrouillée)' : 'soumise à validation'}. ${
+          evaluation.status === 'SUBMITTED'
+            ? "Utilisez « Annuler la soumission » ou une demande de déverrouillage."
+            : "Une demande de déverrouillage est nécessaire."
+        }`
+      );
+    }
 
     // ⭐ Vérifier que tous les students existent avant d'upsert
     // (évite l'erreur P2003 si un studentId vient de StudentEnrollment mais

@@ -75,6 +75,19 @@ export class HrKpiService {
       },
     });
 
+    // 4. Contrats en attente de signature — ⭐ V1 audit : le KPI « En attente
+    //    signature » du dashboard RH lisait data.kpi.pendingSignatureStaff qui
+    //    n'existait JAMAIS dans la réponse (toujours 0). On calcule ici le vrai
+    //    nombre : contrats non résiliés, non annulés, jamais signés (signedAt null).
+    const pendingSignatureContracts = await this.prisma.contract.count({
+      where: {
+        tenantId,
+        signedAt: null,
+        terminatedAt: null,
+        status: { in: ['DRAFT', 'PENDING', 'ACTIVE'] },
+      },
+    });
+
     return {
       totalStaff,
       totalTeachers,
@@ -82,6 +95,7 @@ export class HrKpiService {
       monthlyPayroll,
       cnssCharges,
       leaveCount,
+      pendingSignatureContracts,
       calculatedAt: new Date(),
     };
   }

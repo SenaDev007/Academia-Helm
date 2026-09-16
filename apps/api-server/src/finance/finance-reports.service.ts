@@ -96,6 +96,61 @@ export class FinanceReportsService {
   }
 
   /**
+   * ⭐ V1 audit — KPI consolidés PAR NIVEAU SCOLAIRE.
+   * Utilisé par la page « Agrégation & Bilan Global » (Finance) qui appelait
+   * auparavant GET /finance/reports (racine inexistante) → 0 FCFA partout.
+   * Réutilise getKpi avec un scope synthétique mono-niveau par itération.
+   */
+  async getKpiByLevel(tenantId: string, academicYearId: string) {
+    const levels = await this.prisma.schoolLevel.findMany({
+      where: { tenantId, isActive: true },
+      select: { id: true, code: true, name: true },
+      orderBy: { code: 'asc' },
+    });
+
+    const results = [];
+    for (const level of levels) {
+      const scope = {
+        resolved: true,
+        transverse: false,
+        isTeacher: false,
+        isAdmin: true,
+        levelCodes: [level.code],
+        levelIds: [level.id],
+        allLevels: false,
+        trackCodes: [],
+        trackIds: [],
+        allTracks: true,
+        locale: 'fr' as const,
+      } as AccessScope;
+
+      try {
+        const kpi = await this.getKpi(tenantId, academicYearId, scope);
+        results.push({
+          levelId: level.id,
+          levelCode: level.code,
+          levelLabel: level.name,
+          ...kpi,
+        });
+      } catch {
+        // un niveau en erreur ne doit pas casser l'agrégation globale
+        results.push({
+          levelId: level.id,
+          levelCode: level.code,
+          levelLabel: level.name,
+          totalDue: 0,
+          totalPaid: 0,
+          totalEncaissement: 0,
+          totalDepenses: 0,
+          soldeNet: 0,
+          tauxRecouvrement: 0,
+        });
+      }
+    }
+    return results;
+  }
+
+  /**
    * ⭐ Statistiques du jour : encaissements et dépenses pour aujourd'hui.
    * Utilisé par le tableau de bord ("Recette du jour").
    */

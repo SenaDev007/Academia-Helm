@@ -35,11 +35,18 @@ interface UnlockRequest {
   reason: string;
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   requestedById: string;
+  // ⭐ V1 audit — le backend (unlock-requests.controller.ts:88-92) renvoie
+  //    requestedBy*/reviewedBy* (et NON requester*/reviewer* comme avant).
+  //    On accepte les deux formes pour robustesse.
   requesterFirstName?: string;
   requesterLastName?: string;
+  requestedByFirstName?: string;
+  requestedByLastName?: string;
   reviewedById?: string;
   reviewerFirstName?: string;
   reviewerLastName?: string;
+  reviewedByFirstName?: string;
+  reviewedByLastName?: string;
   reviewComment?: string;
   reviewedAt?: string;
   createdAt: string;
@@ -77,7 +84,11 @@ export default function UnlockRequestsPage() {
       );
       const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
 
-      const params = new URLSearchParams({ status: filter });
+      // ⭐ V1 audit — « Toutes » ne doit PAS envoyer status=ALL au backend :
+      //    le controller filtre alors ur.status='ALL' (valeur inexistante)
+      //    → liste vide garantie. On n'envoie le filtre que s'il est réel.
+      const params = new URLSearchParams();
+      if (filter !== 'ALL') params.set('status', filter);
       if (schoolLevelUuid) params.set('schoolLevelId', schoolLevelUuid);
       // ⭐ V10b — Isolation par piste linguistique : les demandes de
       // déverrouillage des évaluations de l'AUTRE piste (ex. Nursery EN
@@ -261,7 +272,7 @@ export default function UnlockRequestsPage() {
                             </div>
                             <p className="text-xs text-gray-400 mt-1 flex items-center gap-2">
                               <User className="w-3 h-3" />
-                              Demandé par {req.requesterFirstName || ''} {req.requesterLastName || 'Enseignant'}
+                              Demandé par {req.requesterFirstName || req.requestedByFirstName || ''} {req.requesterLastName || req.requestedByLastName || 'Enseignant'}
                               {' · '}
                               {format(new Date(req.createdAt), 'dd MMM yyyy à HH:mm', { locale: fr })}
                             </p>
@@ -309,7 +320,7 @@ export default function UnlockRequestsPage() {
                         {req.reviewComment && req.status !== 'PENDING' && (
                           <div className="mt-2 p-2 rounded-lg bg-gray-50">
                             <p className="text-xs font-medium text-gray-500 mb-1">
-                              Réponse de {req.reviewerFirstName || ''} {req.reviewerLastName || 'Administration'} :
+                              Réponse de {req.reviewerFirstName || req.reviewedByFirstName || ''} {req.reviewerLastName || req.reviewedByLastName || 'Administration'} :
                             </p>
                             <p className="text-sm text-gray-600">{req.reviewComment}</p>
                           </div>

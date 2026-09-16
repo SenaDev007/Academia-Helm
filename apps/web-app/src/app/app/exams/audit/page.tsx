@@ -39,6 +39,9 @@ export default function AuditPage() {
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // ⭐ V1 audit — les badges de filtre (TOUTES/GRADES/EVALUATIONS/LOCKS)
+  //    étaient purement décoratifs (aucun onClick). Filtre client branché.
+  const [entityFilter, setEntityFilter] = useState<'ALL' | 'GRADES' | 'EVALUATIONS' | 'LOCKS'>('ALL');
 
   // ⭐ V10b — Résolution du niveau sélectionné (isolation des logs d'audit)
   const activeLevel = useMemo(() => {
@@ -81,6 +84,50 @@ export default function AuditPage() {
     return <Activity className="w-4 h-4 text-gray-500" />;
   };
 
+  // ⭐ V1 audit — filtrage par entité (côté client, sur les logs chargés)
+  const filteredLogs = useMemo(() => {
+    const et = (l: any) => String(l?.entityType ?? '').toUpperCase();
+    const act = (l: any) => String(l?.action ?? '').toUpperCase();
+    switch (entityFilter) {
+      case 'GRADES':
+        return logs.filter((l) => et(l).includes('GRADE') && !et(l).includes('LOCK') && !act(l).includes('LOCK'));
+      case 'EVALUATIONS':
+        return logs.filter((l) => et(l).includes('EVALUATION'));
+      case 'LOCKS':
+        return logs.filter((l) => et(l).includes('LOCK') || act(l).includes('LOCK'));
+      default:
+        return logs;
+    }
+  }, [logs, entityFilter]);
+
+  // ⭐ V1 audit — export des logs (avant : bouton sans onClick). CSV généré
+  //    côté client, aucune dépendance externe.
+  const handleExportCsv = () => {
+    const header = ['Date', 'Action', 'Utilisateur', 'Entité', 'ID Entité', 'Détails', 'Raison'];
+    const escape = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const rowsCsv = filteredLogs.map((l: any) =>
+      [
+        format(new Date(l.createdAt), 'dd/MM/yyyy HH:mm:ss'),
+        l.action,
+        l.performedBy?.firstName
+          ? `${l.performedBy.firstName} ${l.performedBy.lastName ?? ''}`.trim()
+          : l.performedById || 'Système',
+        l.entityType,
+        l.entityId,
+        JSON.stringify(l.newValue ?? {}),
+        (l as any).reason ?? '',
+      ].map(escape).join(';'),
+    );
+    const csv = '\uFEFF' + [header.map(escape).join(';'), ...rowsCsv].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audit-academique-${format(new Date(), 'yyyyMMdd-HHmm')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <ModuleContainer
       header={{
@@ -100,12 +147,29 @@ export default function AuditPage() {
                <div className="flex items-center space-x-2 text-sm text-gray-500 font-medium">
                   <Filter className="w-4 h-4" />
                   <span>Filtrer par entité :</span>
-                  <Badge variant="outline" className="bg-blue-50 text-blue-600 border-blue-100 cursor-pointer">TOUTES</Badge>
-                  <Badge variant="outline" className="cursor-pointer hover:bg-gray-50">GRADES</Badge>
-                  <Badge variant="outline" className="cursor-pointer hover:bg-gray-50">EVALUATIONS</Badge>
-                  <Badge variant="outline" className="cursor-pointer hover:bg-gray-50">LOCKS</Badge>
+                  {([
+                    { key: 'ALL', label: 'TOUTES' },
+                    { key: 'GRADES', label: 'GRADES' },
+                    { key: 'EVALUATIONS', label: 'EVALUATIONS' },
+                    { key: 'LOCKS', label: 'LOCKS' },
+                  ] as const).map((f) => (
+                    <Badge
+                      key={f.key}
+                      variant="outline"
+                      onClick={() => setEntityFilter(f.key)}
+                      className={`cursor-pointer select-none transition-colors ${
+                        entityFilter === f.key
+                          ? 'bg-blue-50 text-blue-600 border-blue-100'
+                          : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      {f.label}
+                    </Badge>
+                  ))}
                </div>
-               <Button variant="ghost" size="sm" className="text-gray-400">Exporter en PDF</Button>
+               <Button variant="ghost" size="sm" className="text-gray-400" onClick={handleExportCsv} disabled={filteredLogs.length === 0}>
+                  Exporter en CSV
+               </Button>
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
@@ -121,7 +185,7 @@ export default function AuditPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {logs.map((log) => (
+                  {filteredLogs.map((log) => (
                     <TableRow key={log.id} className="hover:bg-gray-50/50 transition-colors">
                       <TableCell className="text-sm font-medium text-gray-500">
                         {format(new Date(log.createdAt), 'dd/MM HH:mm:ss')}
@@ -151,11 +215,13 @@ export default function AuditPage() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {logs.length === 0 && !loading && (
+                  {filteredLogs.length === 0 && !loading && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center py-20 text-gray-400">
                         <History className="w-12 h-12 mx-auto mb-2 opacity-20" />
-                        Aucun log d'audit pour le moment.
+                        {entityFilter === 'ALL'
+                          ? 'Aucun log d\'audit pour le moment.'
+                          : 'Aucun log pour ce filtre.'}
                       </TableCell>
                     </TableRow>
                   )}

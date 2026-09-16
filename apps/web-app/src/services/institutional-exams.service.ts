@@ -68,6 +68,25 @@ export const institutionalExamsService = {
   },
 
   /**
+   * ⭐ V1 audit — Statistiques de performance par niveau scolaire
+   * (moyenne, taux de réussite, élèves à risque) — onglet Statistiques
+   * du module Examens. Remplace l'appel historique /api/exams/dashboard
+   * (route BFF inexistante + tables legacy jamais alimentées).
+   */
+  async getPerformanceByLevel(academicYearId: string, language?: string) {
+    if (!networkDetectionService.isConnected()) return [];
+    try {
+      const response = await apiClient.get(`/institutional-exams/dashboard/performance-by-level`, {
+        params: { academicYearId, ...(language ? { language } : {}) },
+      });
+      return response.data;
+    } catch (error: any) {
+      if (error.isOffline) return [];
+      throw error;
+    }
+  },
+
+  /**
    * EVALUATIONS — avec fallback offline
    */
   async getEvaluations(params: any) {

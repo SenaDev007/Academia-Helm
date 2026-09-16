@@ -77,6 +77,23 @@ export class FinanceReportsController {
   }
 
   /**
+   * ⭐ V1 audit — GET /finance/reports/by-level
+   * KPI consolidés par niveau scolaire (page « Agrégation & Bilan Global »).
+   * Avant : la page appelait GET /finance/reports (racine) qui n'existait ni
+   * côté BFF ni côté backend → 0 FCFA affiché partout en silence.
+   */
+  @Get('by-level')
+  async getKpiByLevel(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    this.assertReportsAccess(user);
+    if (!academicYearId) return [];
+    return this.service.getKpiByLevel(tenantId, academicYearId);
+  }
+
+  /**
    * ⭐ GET /finance/reports/today
    * Renvoie le total des encaissements du jour (depuis finance_transactions)
    * + compte de paiements + total des dépenses du jour.

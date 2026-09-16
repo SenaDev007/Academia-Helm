@@ -759,7 +759,7 @@ export default function StudentsModulePage() {
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <div className="flex items-center justify-end gap-1">
                               <a
-                                href={`/app/students/${student.id}/dossier`}
+                                href={`/app/students?tab=dossiers&studentId=${student.id}`}
                                 className="text-blue-600 hover:text-blue-900 p-1"
                                 title="Dossier"
                               >

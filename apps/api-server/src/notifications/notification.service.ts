@@ -738,4 +738,83 @@ export class NotificationService {
       );
     }
   }
+
+  /**
+   * ⭐ Finance — Multi-caisses : notifie les promoteurs / super-directeurs
+   * qu'une caisse présente un solde négatif.
+   *
+   * Déclenché par le bouton « Alerter le promoteur » (CashRegistersContent).
+   * Historiquement, le backend se contentait d'un console.log + faux succès ;
+   * on crée désormais de vraies notifications in-app (priorité HIGH).
+   *
+   * Fire-and-forget — ne doit jamais bloquer l'action appelante.
+   */
+  async notifyPromotersCashAlert(params: {
+    tenantId: string;
+    cashRegisterId?: string;
+    cashRegisterName?: string;
+    balance?: number;
+  }): Promise<{ notified: number }> {
+    try {
+      const recipients = await this.prisma.user.findMany({
+        where: {
+          tenantId: params.tenantId,
+          role: { in: ['PROMOTER', 'SUPER_DIRECTOR'] },
+          status: 'active',
+        },
+        select: { id: true },
+      });
+      if (recipients.length === 0) {
+        this.logger.warn(
+          `notifyPromotersCashAlert: aucun destinataire (PROMOTER/SUPER_DIRECTOR actif) pour tenant ${params.tenantId}`,
+        );
+        return { notified: 0 };
+      }
+
+      const name = params.cashRegisterName || 'Caisse';
+      const balanceTxt =
+        typeof params.balance === 'number'
+          ? ` — solde actuel : ${params.balance.toLocaleString('fr-FR')} FCFA`
+          : '';
+      const title = 'Alerte : solde de caisse négatif';
+      const body = `La caisse « ${name} » présente un solde négatif${balanceTxt}. Merci de vérifier la situation de trésorerie dans le module Finances.`;
+
+      const results = await Promise.all(
+        recipients.map((u) =>
+          this.create({
+            tenantId: params.tenantId,
+            recipientId: u.id,
+            type: 'CASH_REGISTER_ALERT',
+            title,
+            body,
+            priority: 'HIGH',
+            data: {
+              url: '/app/finance/cash-registers',
+              cashRegisterId: params.cashRegisterId,
+              balance: params.balance,
+            },
+            relatedEntityType: 'CashRegister',
+            relatedEntityId: params.cashRegisterId,
+          }).catch((e) => {
+            this.logger.error(
+              `notifyPromotersCashAlert: create notif failed for user ${u.id}: ${e.message}`,
+            );
+            return null;
+          }),
+        ),
+      );
+
+      const notified = results.filter(Boolean).length;
+      this.logger.log(
+        `notifyPromotersCashAlert: ${notified}/${recipients.length} notification(s) créée(s) (caisse ${params.cashRegisterId || 'n/a'})`,
+      );
+      return { notified };
+    } catch (err: any) {
+      this.logger.error(
+        `notifyPromotersCashAlert failed: ${err.message}`,
+        err.stack,
+      );
+      return { notified: 0 };
+    }
+  }
 }

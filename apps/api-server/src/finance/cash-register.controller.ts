@@ -31,6 +31,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { NotificationService } from '../notifications/notification.service';
 import {
   CashRegisterService,
   CreateCashRegisterDto,
@@ -42,7 +43,10 @@ import {
 @Controller('finance/cash-registers')
 @UseGuards(JwtAuthGuard)
 export class CashRegisterController {
-  constructor(private readonly service: CashRegisterService) {}
+  constructor(
+    private readonly service: CashRegisterService,
+    private readonly notificationService: NotificationService,
+  ) {}
 
   /**
    * POST /finance/cash-registers
@@ -108,11 +112,42 @@ export class CashRegisterController {
     @Body() body: { action: string; cashRegisterId?: string; balance?: number },
   ) {
     if (body.action === 'alert_promoter') {
-      console.log(`[Alert Promoter] tenant=${tenantId}, cashRegisterId=${body.cashRegisterId}, balance=${body.balance}`);
-      // ⭐ TODO : implémenter l'envoi d'une notification réelle (email/Push) au promoteur.
-      //    Pour l'instant, on log l'action et on retourne un succès — le toast frontend
-      //    affiche "Le promoteur a été notifié."
-      return { success: true, message: 'Alerte envoyée au promoteur', action: 'alert_promoter' };
+      // Résout le nom de la caisse (best-effort) pour un message explicite.
+      let cashRegisterName: string | undefined;
+      if (body.cashRegisterId) {
+        try {
+          const register = await this.service.findOne(body.cashRegisterId, tenantId);
+          cashRegisterName = register?.name || undefined;
+        } catch {
+          // caisse introuvable — on notifie quand même avec le nom générique
+        }
+      }
+
+      // ⭐ Notification in-app réelle aux PROMOTER / SUPER_DIRECTOR actifs du tenant
+      //    (remplace l'ancien console.log + faux succès).
+      const { notified } = await this.notificationService.notifyPromotersCashAlert({
+        tenantId,
+        cashRegisterId: body.cashRegisterId,
+        cashRegisterName,
+        balance: typeof body.balance === 'number' ? body.balance : undefined,
+      });
+
+      if (notified > 0) {
+        return {
+          success: true,
+          notified,
+          message: `Alerte envoyée au promoteur (${notified} notification${notified > 1 ? 's' : ''})`,
+          action: 'alert_promoter',
+        };
+      }
+      // Aucun destinataire actif trouvé : on le dit honnêtement plutôt que
+      // d'afficher un faux succès.
+      return {
+        success: false,
+        message:
+          'Aucun promoteur actif trouvé pour cette école — vérifiez les comptes utilisateurs (rôle PROMOTER/SUPER_DIRECTOR).',
+        action: 'alert_promoter',
+      };
     }
     return { success: false, message: `Action inconnue: ${body.action}` };
   }

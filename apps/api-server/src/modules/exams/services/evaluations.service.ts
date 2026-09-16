@@ -26,13 +26,46 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { NotificationService } from '../../../notifications/notification.service';
+import { AcademicAuditService } from './academic-audit.service';
 
 @Injectable()
 export class EvaluationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationService: NotificationService,
+    private readonly academicAuditService: AcademicAuditService,
   ) {}
+
+  /**
+   * ⭐ V1 audit — trace d'audit académique fire-and-forget : alimente
+   *    academic_audit_logs (onglet Audit du module Examens, vide depuis
+   *    la création car logAction n'était appelé nulle part).
+   *    Ne doit JAMAIS bloquer l'opération métier.
+   */
+  private traceAudit(
+    tenantId: string,
+    academicYearId: string | null | undefined,
+    action: string,
+    evaluationId: string,
+    oldValue: any,
+    newValue: any,
+    performedById?: string,
+  ) {
+    this.academicAuditService
+      .logAction(tenantId, {
+        academicYearId: academicYearId ?? undefined,
+        entityType: 'EVALUATION',
+        entityId: evaluationId,
+        action,
+        oldValue: oldValue ?? undefined,
+        newValue: newValue ?? undefined,
+        performedById: performedById ?? undefined,
+      })
+      .catch((e: any) => {
+        // silencieux — l'audit ne doit pas casser le flux métier
+        console.warn(`[AcademicAudit] échec log ${action} eval=${evaluationId}: ${e?.message}`);
+      });
+  }
 
   /**
    * ⭐ V10e — Résolution d'un type d'évaluation PAR NIVEAU.
@@ -769,6 +802,16 @@ export class EvaluationsService {
 
     if (!evaluation) throw new NotFoundException('Évaluation non trouvée');
 
+    // ⭐ V1 audit — idempotence : GradingSheet « Enregistrer et valider »
+    //    appelle POST /:id/open APRÈS la sauvegarde des notes. Au 2e passage
+    //    (re-validation, correction après retour), l'évaluation est déjà
+    //    OPEN_FOR_GRADING et le 400 « doit être en statut PLANNED ou DRAFT »
+    //    bloquait le workflow alors que les notes étaient déjà sauvées.
+    //    → on accepte désormais OPEN_FOR_GRADING comme no-op (réponse 200).
+    if (evaluation.status === 'OPEN_FOR_GRADING') {
+      return evaluation;
+    }
+
     if (evaluation.status !== 'PLANNED' && evaluation.status !== 'DRAFT') {
       throw new BadRequestException(
         `L'évaluation doit être en statut PLANNED ou DRAFT pour être ouverte. Statut actuel: ${evaluation.status}`
@@ -892,7 +935,7 @@ export class EvaluationsService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const updatedEval = await tx.evaluation.update({
         where: { id },
         data: {
@@ -910,6 +953,14 @@ export class EvaluationsService {
 
       return updatedEval;
     });
+
+    // ⭐ V1 audit — trace la validation (notes verrouillées)
+    this.traceAudit(
+      tenantId, (evaluation as any).academicYearId, 'GRADE_VALIDATE', id,
+      { status: evaluation.status }, { status: 'VALIDATED' }, validatedBy,
+    );
+
+    return result;
   }
 
   /**
@@ -943,6 +994,12 @@ export class EvaluationsService {
         ...(reason ? { description: `[ANNULÉE — ${reason}] ${evaluation.description || ''}` } : {}),
       },
     });
+
+    // ⭐ V1 audit — trace l'annulation/rejet avec son motif
+    this.traceAudit(
+      tenantId, (evaluation as any).academicYearId, 'GRADE_REJECT', id,
+      { status: evaluation.status }, { status: 'CANCELLED', reason: reason ?? null }, undefined,
+    );
 
     return updated;
   }

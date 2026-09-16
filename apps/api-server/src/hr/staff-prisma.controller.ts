@@ -273,6 +273,29 @@ export class StaffPrismaController {
 
   // ─── CRUD ──────────────────────────────────────────────────────────────────
 
+
+  // ⭐ ROUTE SPÉCIFIQUE AVANT PARAMÉTRÉE — ordre critique : si
+  //    @Get('promoter-status') est déclaré APRÈS @Get(':id'), NestJS
+  //    capture la requête avec :id = 'promoter-status' → 404 systématique.
+  //    (Audit CRUD V1 — même famille de bug que fiches/previous-years.)
+
+  /**
+   * Récupère l'état du PROMOTEUR (actif/inactif) pour le toggle frontend.
+   *
+   * ⚠️ Doit rester déclarée AVANT @Get(':id') — cf. commentaire CRUD ci-dessus.
+   */
+  @Get('promoter-status')
+  async getPromoterStatus(
+    @GetTenant() tenant: any,
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis');
+    }
+    return this.staffService.getPromoterStatus(tid);
+  }
+
   @Get(':id')
   async findStaffById(
     @GetTenant() tenant: any,
@@ -548,20 +571,6 @@ export class StaffPrismaController {
     return this.staffService.togglePromoter(tid, body.active);
   }
 
-  /**
-   * Récupère l'état du PROMOTEUR (actif/inactif) pour le toggle frontend.
-   */
-  @Get('promoter-status')
-  async getPromoterStatus(
-    @GetTenant() tenant: any,
-    @Query('tenantId') tenantIdFallback?: string,
-  ) {
-    const tid = tenant?.id ?? tenantIdFallback;
-    if (!tid) {
-      throw new BadRequestException('Tenant ID requis');
-    }
-    return this.staffService.getPromoterStatus(tid);
-  }
 
   /**
    * Synchronise tous les enseignants RH existants avec le module Pédagogie.

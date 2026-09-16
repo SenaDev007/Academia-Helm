@@ -72,7 +72,9 @@ export default function TreasuryPage() {
       const params: Record<string, string> = { academicYearId: academicYear.id };
       if (filterFrom) params.from = filterFrom;
       if (filterTo) params.to = filterTo;
-      const data = await financeService.getTreasuryClosures(academicYear.id);
+      // ⭐ V1 audit — la période (filterFrom/filterTo) est désormais réellement
+      //    transmise au service : avant, elle était calculée puis ignorée.
+      const data = await financeService.getTreasuryClosures(academicYear.id, filterFrom || undefined, filterTo || undefined);
       setClosures(Array.isArray(data) ? data : []);
     } catch {
       setClosures([]);

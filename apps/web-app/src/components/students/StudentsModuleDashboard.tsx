@@ -49,7 +49,11 @@ const SUB_MODULES = [
   { id: 'admissions', label: 'Admissions & cycle de vie', labelEn: 'Admissions & lifecycle', description: 'Pré-inscription, admission, réinscription, affectation classe, transfert', descriptionEn: 'Pre-registration, admission, re-enrolment, class assignment, transfer', icon: UserPlus, color: 'blue' },
   { id: 'dossiers', label: 'Identité & Dossiers', labelEn: 'Identity & Files', description: 'Tableau des élèves, dossier, parents, contacts', descriptionEn: 'Student table, file, parents, contacts', icon: User, color: 'indigo' },
   { id: 'movements', label: 'Historique & Mouvements', labelEn: 'History & Movements', description: 'Traçabilité, dossier académique consolidé', descriptionEn: 'Traceability, consolidated academic record', icon: History, color: 'slate' },
-  { id: 'compliance', label: 'Documents & Conformité', labelEn: 'Documents & Compliance', description: 'Carte scolaire, QR, certificats, conformité', descriptionEn: 'School ID card, QR, certificates, compliance', icon: CreditCard, color: 'violet' },
+  // ⭐ V1 audit — id « compliance » : l'onglet correspondant a été retiré du
+  //    module (aucun case dans StudentsModulePage) → la carte tombait sur la
+  //    table de secours sans onglet actif. On pointe désormais sur « cards »
+  //    (Cartes Scolaires : carte, QR, certificats).
+  { id: 'cards', label: 'Documents & Conformité', labelEn: 'Documents & Compliance', description: 'Carte scolaire, QR, certificats, conformité', descriptionEn: 'School ID card, QR, certificates, compliance', icon: CreditCard, color: 'violet' },
   { id: 'educmaster', label: 'Interopérabilité nationale', labelEn: 'National interoperability', description: 'Export EDUCMASTER, format officiel, logs', descriptionEn: 'EDUCMASTER export, official format, logs', icon: Share2, color: 'amber' },
   { id: 'analytics', label: 'Analyse ORION & Stats', labelEn: 'ORION Analytics & Stats', description: 'Statistiques avancées, détection d\'anomalies', descriptionEn: 'Advanced statistics, anomaly detection', icon: BookOpen, color: 'emerald' },
 ];

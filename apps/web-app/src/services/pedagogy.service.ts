@@ -161,7 +161,10 @@ class PedagogyService {
 
   async updateSubject(id: string, data: any): Promise<any> {
     try {
-      return await apiFetch(`/subjects/${id}`, { method: 'PATCH', body: data });
+      // ⭐ V1 audit — le backend SubjectsPrismaController n'expose que
+      //    @Put(':id') : la méthode PATCH produisait un 405 systématique,
+      //    plaçant silencieusement la mise à jour en mode hors-ligne.
+      return await apiFetch(`/subjects/${id}`, { method: 'PUT', body: data });
     } catch (e) {
       console.error('[pedagogyService.updateSubject] API failed, falling back to offline:', e);
       const tenantId = getTenantId();

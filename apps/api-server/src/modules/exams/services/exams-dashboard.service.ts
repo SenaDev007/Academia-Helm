@@ -300,4 +300,72 @@ export class ExamsDashboardService {
 
     return insights;
   }
+
+  /**
+   * ⭐ V1 audit — Statistiques de performance PAR NIVEAU SCOLAIRE.
+   * Onglet Statistiques du module Examens : l'ancien appel frontend
+   * /api/exams/dashboard était triple cassé (route BFF inexistante, proxy
+   * sans auth → 401, tables legacy jamais alimentées). Cette méthode
+   * s'appuie sur les DONNÉES RÉELLES du flux evaluations/grades :
+   * StudentPeriodAverage (moyennes générales calculées) + Evaluation.
+   */
+  async getPerformanceByLevel(tenantId: string, academicYearId: string, language?: string) {
+    const levels = await this.prisma.schoolLevel.findMany({
+      where: { tenantId, isActive: true },
+      select: { id: true, code: true, name: true },
+      orderBy: { code: 'asc' },
+    });
+
+    const alertThreshold = await this.getAlertThreshold(tenantId, academicYearId);
+    const results = [];
+
+    for (const level of levels) {
+      const baseWhere = {
+        tenantId,
+        academicYearId,
+        class: this.classWhere(level.id, language),
+      };
+      try {
+        const [avgAgg, totalStudents, atRiskCount, passingCount, totalExams] = await Promise.all([
+          this.prisma.studentPeriodAverage.aggregate({
+            where: baseWhere,
+            _avg: { generalAverage: true },
+          }).catch(() => ({ _avg: { generalAverage: null } })),
+          this.prisma.studentPeriodAverage.count({ where: baseWhere }).catch(() => 0),
+          this.prisma.studentPeriodAverage
+            .count({ where: { ...baseWhere, generalAverage: { lt: alertThreshold } } })
+            .catch(() => 0),
+          this.prisma.studentPeriodAverage
+            .count({ where: { ...baseWhere, generalAverage: { gte: 10 } } })
+            .catch(() => 0),
+          this.prisma.evaluation.count({
+            where: { tenantId, academicYearId, class: this.classWhere(level.id, language) },
+          }).catch(() => 0),
+        ]);
+
+        const average = Number(avgAgg._avg?.generalAverage ?? 0);
+        results.push({
+          levelId: level.id,
+          levelCode: level.code,
+          levelLabel: level.name,
+          average,
+          passRate: totalStudents > 0 ? Math.round((passingCount / totalStudents) * 100) : 0,
+          studentsAtRisk: atRiskCount,
+          totalExams,
+        });
+      } catch {
+        // un niveau en erreur ne doit pas casser la vue globale
+        results.push({
+          levelId: level.id,
+          levelCode: level.code,
+          levelLabel: level.name,
+          average: 0,
+          passRate: 0,
+          studentsAtRisk: 0,
+          totalExams: 0,
+        });
+      }
+    }
+    return results;
+  }
 }

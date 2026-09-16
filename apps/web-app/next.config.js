@@ -87,6 +87,16 @@ const nextConfig = {
 
   // ✅ Optimisation des bundles
   experimental: {
+    // ⭐ Task 73 (2026-09-16) — OOM du build Vercel (conteneur ~4 Go) :
+    // les builds échouent en SIGKILL depuis audit-v1 (6bf79aba5, 18:52) —
+    // chunks du 13-15/09 encore servis en production + routes BFF d'audit-v1
+    // en 404 (le domaine est resté sur un redeploy de l'ancien build).
+    // Cause : Next 16 lance 4 workers de génération statique par défaut
+    // (build/index.js getNumberOfWorkers) — chacun charge l'app complète →
+    // pic mémoire > 4 Go. On force 1 worker (build plus lent mais viable).
+    cpus: 1,
+    // ⭐ Task 73 — webpack : mode mémoire optimisé (build --webpack)
+    webpackMemoryOptimizations: true,
     // ✅ Reduce initial JS bundle by tree-shaking
     optimizePackageImports: [
       // ✅ Tree-shaking optimisé pour réduire le bundle et la mémoire de build

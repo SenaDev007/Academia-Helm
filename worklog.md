@@ -10947,3 +10947,21 @@ Stage Summary:
 - ✅ Tous les correctifs Task 73 VALIDÉS en dev contre l'API production (DataError disparu, shell immédiat, préchargements différés, SW v4.5.0 avec timer 20s supprimé)
 - ⛔ BLOCAGE EXTERNE : pipeline Vercel cassé depuis 18:52 (audit-v1) — les builds échouent ou sont coincés ; à vérifier dans le dashboard Vercel (Deployments) : build de 6bf79aba5 en échec/en attente → Retry, sinon annuler le build bloqué pour débloquer la file (1 build simultané en Hobby)
 - L'utilisateur voit donc encore l'ANCIEN code (boucle complète) — le soulagement nécessite le déploiement des 3 commits déjà poussés (6bf79aba5, 078525a96, efa010ecb)
+
+---
+Task ID: 73 (suite 3 — mitigation OOM build Vercel)
+Agent: main (Super Z)
+
+Work Log:
+- CONFIRMATION du blocage : 3h après audit-v1 et 2h après mes commits, la production sert toujours un REDEPLOY de l'ancien build (dpl_4HqMyVjEqA8Jghdg3DUbEafetG6c, chunks du 13-15/09, sw.js last-modified 20:12 = redeploy) — routes BFF d'audit-v1 (/api/school-directors, /api/finance/reports) en 404 HTML → les builds échouent depuis 18:52
+- Reproduction sandbox : cgroup 4 Go (identique au conteneur Vercel) — next build tué en SIGKILL à ~2,2-3,3 Go selon bundler ; signature « Next.js build worker exited with code: null and signal: SIGKILL / Retrying 1/3 » ; causes identifiées : 4 workers de génération statique par défaut (build/index.js getNumberOfWorkers) + process de bundling principal trop gros pour 4 Go depuis la croissance de l'app
+- MITIGATION poussée (commit 2c837f366) :
+  * vercel.json buildCommand : cross-env NODE_OPTIONS=--max-old-space-size=3072 next build --webpack (webpack mature + heap réduit ; dev utilise déjà --webpack ; next-pwa désactivé sur Vercel, sw.js manuel v4.5.0 gère la PWA)
+  * next.config.js : experimental.cpus=1 (génération statique mono-worker) + webpackMemoryOptimizations=true (sérialisation + cache disque)
+  * invalide turopackMemoryEvictionMode retirée (clé non reconnue en 16.3.5)
+- Limites : le sandbox tue tout process > ~2,2 Go (overhead infra) → impossible de COMPLÉTER le build localement pour preuve absolue ; la validation finale se fera sur le builder Vercel
+
+Stage Summary:
+- ✅ 6 commits poussés au total (078525a96 correctifs perf, efa010ecb SW v4.5.0 anti-boucle, 2aee0ae46/090a8f5b8 worklog, 2c837f366 mitigation OOM build) — tous validés syntaxiquement et fonctionnellement en dev contre l'API production
+- ⏳ En attente : build Vercel avec la nouvelle commande (webpack + 1 worker + heap 3072) — si échec persistant : consulter l'erreur exacte dans le dashboard Vercel (Deployments) et/ou relever le plan (8 Go build en Pro)
+- Les symptômes de l'utilisateur (boucle, modal sans fin, rechargements, « toujours le tableau de bord ») = l'ANCIEN build encore servi ; le soulagement complet exige la sortie du déploiement

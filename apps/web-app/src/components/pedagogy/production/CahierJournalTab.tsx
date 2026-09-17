@@ -125,6 +125,45 @@ function formatDateFR(dateStr: string): string {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+// ─── ⭐ FEATURE « Fiche à préparer » — bouton toggle par cellule ────────────
+//     L'enseignant marque la matière de ce jour comme nécessitant une fiche
+//     pédagogique. Compact : icône + libellé, état ambre quand actif.
+function FicheAPreparerToggle({
+  active,
+  onToggle,
+  disabled,
+}: {
+  active: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      disabled={disabled}
+      title={
+        active
+          ? "Fiche pédagogique à préparer pour cette séance (cliquer pour retirer)"
+          : "Marquer cette séance comme fiche pédagogique à préparer"
+      }
+      className={[
+        "absolute top-1 right-1 z-20 flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all",
+        active
+          ? "bg-amber-100 border-amber-400 text-amber-800 shadow-sm"
+          : "bg-white/80 border-slate-200 text-slate-400 hover:text-amber-700 hover:border-amber-300",
+        disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
+      ].join(" ")}
+    >
+      <ClipboardList className="h-3 w-3" />
+      {active ? "Fiche à préparer" : "Fiche"}
+    </button>
+  );
+}
+
 export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialClassId, onJournalSaved, onJournalSubmitted, onJournalLoaded }: CahierJournalTabProps) {
   const { academicYear } = useModuleContext();
   const { user } = useAppSession();
@@ -133,6 +172,14 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   const [weekStart, setWeekStart] = useState<Date>(getMondayOfWeek(new Date()));
   const [journal, setJournal] = useState<any>(null);
   const [entries, setEntries] = useState<Record<string, Record<string, string>>>({});
+  // ⭐ 2026-09-18 — FEATURE « Fiche à préparer » : l'enseignant marque une
+  //    matière d'un jour comme nécessitant une fiche pédagogique (ex : civisme,
+  //    morale…). Les flags sont persistés dans entries sous la clé top-level
+  //    __fichesAPreparer__ : { lundi: { "Civisme": true, ... }, ... }.
+  //    → le backend cible EXACTEMENT ces (jour, matière) pour le décompte des
+  //    fiches à préparer, et l'enregistrement bascule vers l'onglet Fiches avec
+  //    le détail jour par jour + le total de la semaine.
+  const [fichesAPreparer, setFichesAPreparer] = useState<Record<string, Record<string, boolean>>>({});
   const [observations, setObservations] = useState("");
   const [directorName, setDirectorName] = useState("");
   const [directorNameState, setDirectorNameState] = useState("");
@@ -377,6 +424,23 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
       const data = await res.json();
       setJournal(data);
       setEntries(parseEntries(data.entries));
+      // ⭐ Restaurer les flags « fiche à préparer » depuis la clé réservée
+      const parsed = parseEntries(data.entries);
+      const rawFlags = (parsed as any).__fichesAPreparer__;
+      setFichesAPreparer(
+        rawFlags && typeof rawFlags === "object"
+          ? Object.fromEntries(
+              Object.entries(rawFlags)
+                .filter(([, dayMap]) => dayMap && typeof dayMap === "object")
+                .map(([day, dayMap]) => [
+                  day,
+                  Object.fromEntries(
+                    Object.entries(dayMap as Record<string, unknown>).filter(([, v]) => !!v),
+                  ) as Record<string, boolean>,
+                ]),
+            )
+          : {},
+      );
       setObservations(data.observations || "");
       setDirectorName(data.directorName || "");
       // ⭐ Charger les signatures existantes
@@ -604,12 +668,22 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
 
     setSaving(true);
     try {
+      // ⭐ FEATURE « Fiche à préparer » : les flags sont persistés dans entries
+      //    sous la clé réservée __fichesAPreparer__ (clé top-level — jamais
+      //    itérée comme un jour par le backend ni par la grille).
+      const payloadEntries: Record<string, any> = { ...entries };
+      const flags = buildFichesAPreparerPayload();
+      if (Object.keys(flags).length > 0) {
+        payloadEntries.__fichesAPreparer__ = flags;
+      } else {
+        delete payloadEntries.__fichesAPreparer__;
+      }
       const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          entries,
+          entries: payloadEntries,
           observations,
           directorName,
           teacherSignature,
@@ -617,7 +691,11 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
         }),
       });
       if (!res.ok) throw new Error("Erreur de sauvegarde");
-      toast.success("✅ Cahier journal enregistré");
+      const fichesCount = countFichesAPreparer();
+      toast.success(
+        "✅ Cahier journal enregistré" +
+          (fichesCount > 0 ? ` — ${fichesCount} fiche(s) à préparer` : ""),
+      );
       // ⭐ Déclencher la bascule vers le sous-onglet Fiches (si le parent écoute)
       onJournalSaved?.(journal.id, {
         weekStartDate: journal.weekStartDate,
@@ -626,6 +704,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
         status: journal.status,
         classId: selectedClassId,
         isMaternelle: isMaternelleClass,
+        fichesAPreparerCount: fichesCount,
       });
       loadJournal();
     } catch (e: any) {
@@ -732,6 +811,45 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   const getEntry = (dayKey: string, subjectKey: string): string => {
     return entries[dayKey]?.[subjectKey] || "";
   };
+
+  // ─── ⭐ FEATURE « Fiche à préparer » (2026-09-18) ───────────────────────────
+  //     L'enseignant marque une matière d'un jour : « cette séance nécessite
+  //     une fiche pédagogique à préparer ». Les flags sont enregistrés dans
+  //     entries.__fichesAPreparer__ et lus par le backend pour cibler les
+  //     (jour, matière) exacts dans le décompte des fiches.
+  const isFicheAPreparer = (dayKey: string, subjectKey: string): boolean =>
+    !!fichesAPreparer[dayKey]?.[subjectKey];
+
+  const toggleFicheAPreparer = (dayKey: string, subjectKey: string) => {
+    setFichesAPreparer((prev) => {
+      const dayMap = { ...(prev[dayKey] || {}) };
+      if (dayMap[subjectKey]) {
+        delete dayMap[subjectKey];
+      } else {
+        dayMap[subjectKey] = true;
+      }
+      const next = { ...prev, [dayKey]: dayMap };
+      if (Object.keys(dayMap).length === 0) delete next[dayKey];
+      return next;
+    });
+  };
+
+  /** Nettoie les flags : retire les jours non-standard et vide le résidu. */
+  const buildFichesAPreparerPayload = (): Record<string, Record<string, boolean>> => {
+    const DAYS_KEYS = new Set(["lundi", "mardi", "mercredi", "jeudi", "vendredi"]);
+    const out: Record<string, Record<string, boolean>> = {};
+    for (const [day, dayMap] of Object.entries(fichesAPreparer)) {
+      if (!DAYS_KEYS.has(day)) continue;
+      const filtered = Object.fromEntries(
+        Object.entries(dayMap || {}).filter(([, v]) => !!v),
+      );
+      if (Object.keys(filtered).length > 0) out[day] = filtered;
+    }
+    return out;
+  };
+
+  const countFichesAPreparer = (): number =>
+    Object.values(buildFichesAPreparerPayload()).reduce((s, m) => s + Object.keys(m).length, 0);
 
   const selectedClass = classes.find(c => c.classId === selectedClassId);
   const weekEnd = new Date(weekStart);
@@ -874,6 +992,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
               observationsRight={maternelleFooterRight}
               onObservationsRightChange={updateMaternelleFooterRight}
               getDirectorObservation={(dayKey) => getEntry(dayKey, "directorObservation")}
+              isFicheAPreparer={isFicheAPreparer}
+              onToggleFicheAPreparer={toggleFicheAPreparer}
             />
           ) : (
           <>
@@ -922,7 +1042,13 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                     {RECTO_COLUMNS.map((col) => {
                       const key = getColumnKey(col);
                       return (
-                        <td key={key} className="border border-slate-300 p-0">
+                        <td key={key} className="border border-slate-300 p-0 relative">
+                          {/* ⭐ FEATURE : marquer la matière comme fiche à préparer */}
+                          <FicheAPreparerToggle
+                            active={isFicheAPreparer(day.key, key)}
+                            onToggle={() => toggleFicheAPreparer(day.key, key)}
+                            disabled={!!isReadOnly}
+                          />
                           <RichTextEditor
                             value={getEntry(day.key, key)}
                             onChange={(html) => updateEntry(day.key, key, html)}
@@ -999,7 +1125,13 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                     {VERSO_COLUMNS.map((col) => {
                       const key = getColumnKey(col);
                       return (
-                        <td key={key} className="border border-slate-300 p-0">
+                        <td key={key} className="border border-slate-300 p-0 relative">
+                          {/* ⭐ FEATURE : marquer la matière comme fiche à préparer */}
+                          <FicheAPreparerToggle
+                            active={isFicheAPreparer(day.key, key)}
+                            onToggle={() => toggleFicheAPreparer(day.key, key)}
+                            disabled={!!isReadOnly}
+                          />
                           <RichTextEditor
                             value={getEntry(day.key, key)}
                             onChange={(html) => updateEntry(day.key, key, html)}

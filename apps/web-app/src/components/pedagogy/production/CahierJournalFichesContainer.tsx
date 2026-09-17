@@ -66,6 +66,14 @@ export function CahierJournalFichesContainer({
 }: CahierJournalFichesContainerProps) {
   const [subTab, setSubTab] = useState<SubTab>("cahier");
   const [currentJournalId, setCurrentJournalId] = useState<string | null>(null);
+  // ⭐ FIX (2026-09-18 — régression "la bascule ne montre plus les fiches à préparer") :
+  //    les sous-onglets sont TOUJOURS montés (CSS hidden — commit 150d9bc19) et
+  //    FichesAPreparer/FichesBadge/FichesLieesJournal ne se rechargent que quand
+  //    journalId CHANGE. Or après un enregistrement, le journalId reste LE MÊME
+  //    → les données restaient STALE ("0/0 matières" alors que l'API retourne
+  //    les vraies valeurs). journalRefreshKey est incrémenté à CHAQUE
+  //    enregistrement/soumission et passé aux consommateurs → re-fetch forcé.
+  const [journalRefreshKey, setJournalRefreshKey] = useState(0);
   // ⭐ Niveau scolaire actif + rôle pour restreindre le Catalogue aux enseignants
   //    Maternelle/Primaire (le Secondaire n'a pas de cahier journal ni fiches).
   const { schoolLevel } = useModuleContext();
@@ -103,6 +111,7 @@ export function CahierJournalFichesContainer({
   const handleJournalSaved = useCallback(
     (journalId: string, meta?: any) => {
       setCurrentJournalId(journalId);
+      setJournalRefreshKey((k) => k + 1);
       if (meta) {
         setCurrentJournalMeta(meta);
         // ⭐ Récupérer le classId pour le passer à PedagogicalSheetsTab
@@ -111,7 +120,9 @@ export function CahierJournalFichesContainer({
       // ⭐ Bascule automatique vers sous-onglet Fiches
       setSubTab("fiches");
       toast.success("Cahier journal enregistré", {
-        description: "Vérifiez maintenant les fiches pédagogiques à préparer.",
+        description: meta?.fichesAPreparerCount
+          ? `${meta.fichesAPreparerCount} fiche(s) pédagogique(s) à préparer — vérifiez l'onglet Fiches Pédagogiques.`
+          : "Vérifiez maintenant les fiches pédagogiques à préparer.",
       });
     },
     [],
@@ -120,6 +131,7 @@ export function CahierJournalFichesContainer({
   const handleJournalSubmitted = useCallback(
     (journalId: string, meta?: any) => {
       setCurrentJournalId(journalId);
+      setJournalRefreshKey((k) => k + 1);
       if (meta) {
         setCurrentJournalMeta(meta);
         if (meta.classId) setCurrentClassId(meta.classId);
@@ -205,6 +217,7 @@ export function CahierJournalFichesContainer({
             <FichesBadge
               tenantId={tenantId}
               journalId={currentJournalId}
+              refreshKey={journalRefreshKey}
             />
           )}
         </button>
@@ -269,6 +282,7 @@ export function CahierJournalFichesContainer({
             {currentJournalId && (
               <FichesLieesJournal
                 journalId={currentJournalId}
+                refreshKey={journalRefreshKey}
                 onViewFiche={handleViewFiche}
                 weekStartDate={currentJournalMeta?.weekStartDate}
                 weekEndDate={currentJournalMeta?.weekEndDate}
@@ -299,6 +313,7 @@ export function CahierJournalFichesContainer({
                 <FichesAPreparer
                   tenantId={tenantId}
                   journalId={currentJournalId}
+                  refreshKey={journalRefreshKey}
                   onPrepareFiche={handlePrepareFicheFor}
                   onViewFiche={handleViewFiche}
                   onCreateFreeFiche={() => {
@@ -355,9 +370,11 @@ export function CahierJournalFichesContainer({
 function FichesBadge({
   tenantId,
   journalId,
+  refreshKey = 0,
 }: {
   tenantId: string;
   journalId: string;
+  refreshKey?: number;
 }) {
   const [stats, setStats] = useState<{
     totalFiches: number;
@@ -367,7 +384,7 @@ function FichesBadge({
   const loadStats = useCallback(async () => {
     try {
       const res = await apiClient.get(
-        `/pedagogy-space/cahier-journal/${journalId}/fiches`,
+        `/pedagogy-space/cahier-journal/${journalId}/fiches?_r=${refreshKey}`,
       );
       const data = res.data?.stats;
       if (data) {
@@ -379,11 +396,13 @@ function FichesBadge({
     } catch {
       // silent fail
     }
-  }, [journalId]);
+  }, [journalId, refreshKey]);
 
   useEffect(() => {
     loadStats();
   }, [loadStats]);
+  // ⭐ 2026-09-18 : refreshKey change après chaque enregistrement du cahier
+  //    journal → loadStats est recréé → ce useEffect re-fetch le badge.
 
   // ⭐ Écouter l'event 'fiche:saved' pour mettre à jour le badge automatiquement
   useEffect(() => {
@@ -491,12 +510,15 @@ const MATIERE_LABELS: Record<string, string> = { ...MAT_MATIERE_LABELS };
 function FichesAPreparer({
   tenantId,
   journalId,
+  refreshKey = 0,
   onPrepareFiche,
   onViewFiche,
   onCreateFreeFiche,
 }: {
   tenantId: string;
   journalId: string;
+  /** ⭐ Incrémenté à chaque enregistrement du cahier journal → re-fetch */
+  refreshKey?: number;
   onPrepareFiche: (day: string, matiere: string, sheetType?: string) => void;
   /** ⭐ Callback pour le bouton "Voir la fiche" (ouvre la fiche existante en édition) */
   onViewFiche?: (ficheId: string) => void;
@@ -509,8 +531,10 @@ function FichesAPreparer({
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // ⭐ cache-bust : le journal vient d'être enregistré (même journalId) —
+      //    on force la relecture côté BFF/navigateur.
       const res = await apiClient.get(
-        `/pedagogy-space/cahier-journal/${journalId}/fiches`,
+        `/pedagogy-space/cahier-journal/${journalId}/fiches?_r=${refreshKey}`,
       );
       setData(res.data);
     } catch (e: any) {
@@ -520,7 +544,7 @@ function FichesAPreparer({
     } finally {
       setLoading(false);
     }
-  }, [journalId]);
+  }, [journalId, refreshKey]);
 
   useEffect(() => {
     load();
@@ -569,6 +593,13 @@ function FichesAPreparer({
 
   const stats = data.stats || {};
   const toutesFichesPreparees = stats.toutesFichesPreparees;
+  // ⭐ FEATURE « Fiche à préparer » : décompte par jour + total semaine, et
+  //    distinction marquage explicite (flags) vs matières sans fiche (historique).
+  const parJourManquantes: Record<string, number> = stats.fichesManquantesParJour || {};
+  const joursAvecFiches = days.filter(
+    (d) => (parJourManquantes[d] || 0) > 0 || (data.matieresPlanifiees?.[d] || []).length > 0,
+  );
+  const isModeMarquage = !!data.hasExplicitFichesAPreparer;
 
   return (
     <div className="space-y-3">
@@ -590,11 +621,42 @@ function FichesAPreparer({
           <p className="text-sm font-bold">
             {toutesFichesPreparees
               ? "Toutes les fiches pédagogiques sont préparées ✨"
-              : `${stats.totalFichesManquantes || 0} fiche(s) pédagogique(s) à préparer`}
+              : `${stats.totalFichesManquantes || 0} fiche(s) pédagogique(s) à préparer ${
+                  isModeMarquage ? "— matières marquées dans le cahier journal" : "cette semaine"
+                }`}
           </p>
           <p className="text-xs opacity-80">
             {stats.totalFichesPreparees || 0} / {stats.totalMatieresPlanifiees || 0} matières ont leur fiche · {stats.totalFiches || 0} fiche(s) au total
           </p>
+          {/* ⭐ Décompte par jour (demande promoteur : « pour chaque jour le nombre
+              de fiches chaque jour et le nombre total pour la semaine ») */}
+          {joursAvecFiches.length > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {joursAvecFiches.map((d) => {
+                const manquantes = parJourManquantes[d] || 0;
+                const total = (data.matieresPlanifiees?.[d] || []).length;
+                return (
+                  <span
+                    key={d}
+                    className={cn(
+                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold",
+                      manquantes > 0
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-emerald-100 text-emerald-700",
+                    )}
+                    title={`${manquantes} fiche(s) à préparer le ${dayLabels[d]}`}
+                  >
+                    {dayLabels[d]}
+                    <span className="font-black">{manquantes}</span>
+                    <span className="opacity-60">/{total}</span>
+                  </span>
+                );
+              })}
+              <span className="ml-1 text-[10px] font-bold uppercase tracking-wide opacity-70">
+                Total semaine : {stats.totalFichesManquantes || 0}
+              </span>
+            </div>
+          )}
         </div>
         {/* ⭐ Bouton "Créer une fiche libre" — ouvre le formulaire sans pré-remplissage */}
         {onCreateFreeFiche && (
@@ -715,11 +777,14 @@ function FichesAPreparer({
  */
 function FichesLieesJournal({
   journalId,
+  refreshKey = 0,
   onViewFiche,
   weekStartDate,
   weekEndDate,
 }: {
   journalId: string;
+  /** ⭐ Incrémenté à chaque enregistrement du cahier journal → re-fetch */
+  refreshKey?: number;
   onViewFiche: (ficheId: string) => void;
   weekStartDate?: string;
   weekEndDate?: string;
@@ -731,7 +796,7 @@ function FichesLieesJournal({
     setLoading(true);
     try {
       const res = await apiClient.get(
-        `/pedagogy-space/cahier-journal/${journalId}/fiches`,
+        `/pedagogy-space/cahier-journal/${journalId}/fiches?_r=${refreshKey}`,
       );
       // Les fiches liées sont dans res.data.fichesLiees ou res.data.fiches
       const data = res.data;
@@ -742,7 +807,7 @@ function FichesLieesJournal({
     } finally {
       setLoading(false);
     }
-  }, [journalId]);
+  }, [journalId, refreshKey]);
 
   useEffect(() => {
     load();

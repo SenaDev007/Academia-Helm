@@ -28,6 +28,7 @@
  */
 
 import { Fragment } from "react";
+import { ClipboardList } from "lucide-react";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import {
   MATERNELLE_RECTO_COLUMNS,
@@ -85,6 +86,11 @@ export interface CahierJournalMaternelleGridProps {
   onObservationsRightChange: (value: string) => void;
   /** Observation du directeur par jour (affichée en rouge sous la ligne du jour) */
   getDirectorObservation?: (dayKey: string) => string;
+  /** ⭐ FEATURE « Fiche à préparer » (2026-09-18) : la cellule (jour × matière)
+   *  est-elle marquée comme nécessitant une fiche pédagogique ? */
+  isFicheAPreparer?: (dayKey: string, subjectKey: string) => boolean;
+  /** ⭐ Toggle du flag « fiche à préparer » (jour × matière) */
+  onToggleFicheAPreparer?: (dayKey: string, subjectKey: string) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -94,6 +100,43 @@ export interface CahierJournalMaternelleGridProps {
 /** Retire le HTML pour tester si un contenu est réellement vide */
 function stripHtml(html: string | undefined | null): string {
   return (html || "").replace(/<br\s*\/?>/gi, " ").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").trim();
+}
+
+// ── ⭐ Toggle « Fiche à préparer » (identique visuellement à celui du primaire) ──
+function MaternelleFicheToggle({
+  active,
+  onToggle,
+  disabled,
+}: {
+  active: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={e => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      disabled={disabled}
+      title={
+        active
+          ? "Fiche pédagogique à préparer pour cette activité (cliquer pour retirer)"
+          : "Marquer cette activité comme fiche pédagogique à préparer"
+      }
+      className={cn(
+        "absolute top-1 right-1 z-20 flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all",
+        active
+          ? "bg-amber-100 border-amber-400 text-amber-800 shadow-sm"
+          : "bg-white/80 border-slate-200 text-slate-400 hover:text-amber-700 hover:border-amber-300",
+        disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
+      )}
+    >
+      <ClipboardList className="h-3 w-3" />
+      {active ? "Fiche à préparer" : "Fiche"}
+    </button>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,6 +209,8 @@ function JournalPage({
   entryKeyResolver,
   weekStart,
   getDirectorObservation,
+  isFicheAPreparer,
+  onToggleFicheAPreparer,
 }: {
   columns: MaternellePageColumn[];
   entries: Record<string, Record<string, string>>;
@@ -176,6 +221,8 @@ function JournalPage({
   entryKeyResolver?: (columnLabel: string) => string[];
   weekStart: Date;
   getDirectorObservation?: (dayKey: string) => string;
+  isFicheAPreparer?: (dayKey: string, subjectKey: string) => boolean;
+  onToggleFicheAPreparer?: (dayKey: string, subjectKey: string) => void;
 }) {
   // Aplatit les colonnes de la page en cellules (libellé de sous-colonne)
   const flatColumns: string[] = columns.flatMap(col =>
@@ -217,8 +264,17 @@ function JournalPage({
                   {flatColumns.map(colLabel => {
                     const bound = subjectBinding?.get(colLabel);
                     const writeKey = keysFor(colLabel)[0];
+                    const ficheFlagActive = !!(isFicheAPreparer && onToggleFicheAPreparer && isFicheAPreparer(day.key, writeKey));
                     return (
-                      <td key={colLabel} className="border border-slate-400 p-0 align-top">
+                      <td key={colLabel} className="border border-slate-400 p-0 align-top relative">
+                        {/* ⭐ FEATURE : marquer l'activité comme fiche à préparer */}
+                        {isFicheAPreparer && onToggleFicheAPreparer && (
+                          <MaternelleFicheToggle
+                            active={ficheFlagActive}
+                            onToggle={() => onToggleFicheAPreparer(day.key, writeKey)}
+                            disabled={isReadOnly}
+                          />
+                        )}
                         <RichTextEditor
                           value={readEntry(day.key, colLabel)}
                           onChange={html => updateEntry(day.key, writeKey, html)}
@@ -273,6 +329,8 @@ export function CahierJournalMaternelleGrid({
   observationsRight,
   onObservationsRightChange,
   getDirectorObservation,
+  isFicheAPreparer,
+  onToggleFicheAPreparer,
 }: CahierJournalMaternelleGridProps) {
   return (
     <div className="space-y-6 mb-8">
@@ -291,6 +349,8 @@ export function CahierJournalMaternelleGrid({
           entryKeyResolver={entryKeyResolver}
           weekStart={weekStart}
           getDirectorObservation={getDirectorObservation}
+          isFicheAPreparer={isFicheAPreparer}
+          onToggleFicheAPreparer={onToggleFicheAPreparer}
         />
         {/* Pied de page gauche : zone OBSERVATIONS (libellé vertical comme le modèle) */}
         <div className="mt-2 flex overflow-hidden border border-slate-300 rounded-lg min-h-[110px]">
@@ -328,6 +388,8 @@ export function CahierJournalMaternelleGrid({
           entryKeyResolver={entryKeyResolver}
           weekStart={weekStart}
           getDirectorObservation={getDirectorObservation}
+          isFicheAPreparer={isFicheAPreparer}
+          onToggleFicheAPreparer={onToggleFicheAPreparer}
         />
         {/* ⭐ Pied de page droite : zone OBSERVATIONS (libellé vertical, comme la
             page recto — précise la nature de la zone et la sépare clairement de

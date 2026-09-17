@@ -5207,13 +5207,37 @@ export class PedagogicalSpaceService {
     //    observations (recto), observation du directeur, et obs_dom (colonne
     //    Observations du groupe DOMAINE dans la grille maternelle).
     const RESERVED_ENTRY_KEYS = new Set(['observations', 'directorObservation', 'obs_dom']);
+
+    // ⭐ 2026-09-18 — FEATURE « Fiche à préparer » : l'enseignant peut MARQUER
+    //    explicitement (jour × matière) les séances nécessitant une fiche
+    //    pédagogique (bouton « Fiche à préparer » dans la grille du cahier
+    //    journal). Les flags sont persistés dans entries.__fichesAPreparer__ :
+    //    { lundi: { "Civisme": true }, mardi: { ... } }.
+    //    Quand AU MOINS UN flag existe, le décompte cible EXACTEMENT ces
+    //    (jour, matière) — sinon comportement historique (toutes les matières
+    //    non vides sont considérées planifiées).
+    const rawFlags = (entries as any).__fichesAPreparer__;
+    const fichesAPreparer: Record<string, Record<string, boolean>> =
+      rawFlags && typeof rawFlags === 'object' && !Array.isArray(rawFlags) ? rawFlags : null;
+    const hasExplicitFlags =
+      fichesAPreparer !== null &&
+      Object.values(fichesAPreparer).some(
+        (dayMap: any) => dayMap && typeof dayMap === 'object' && Object.values(dayMap).some(Boolean),
+      );
+
     for (const jour of Object.keys(parJour)) {
       const dayEntries = entries[jour] || {};
+      const flaggedForDay = hasExplicitFlags ? fichesAPreparer[jour] || {} : null;
       for (const [matiereKey, matiereContent] of Object.entries(dayEntries)) {
         if (RESERVED_ENTRY_KEYS.has(matiereKey)) continue;
-        // Une matière est "planifiée" si son contenu n'est pas vide
-        const content = typeof matiereContent === 'string' ? matiereContent.trim() : '';
-        if (!content) continue;
+        if (hasExplicitFlags) {
+          // ⭐ Mode ciblé : seules les matières MARQUÉES comptent
+          if (!flaggedForDay || !flaggedForDay[matiereKey]) continue;
+        } else {
+          // Mode historique : une matière est "planifiée" si son contenu n'est pas vide
+          const content = typeof matiereContent === 'string' ? matiereContent.trim() : '';
+          if (!content) continue;
+        }
         // Cherche si une fiche existe pour cette matière ce jour
         const fichesForDay = parJour[jour] || [];
         // ⭐ MATERNELLE : la clé matière = le NOM de la matière configurée
@@ -5238,12 +5262,48 @@ export class PedagogicalSpaceService {
       }
     }
 
+    // ⭐ FEATURE : les flags peuvent pointer une matière d'un jour qui n'est pas
+    //    (encore) dans les entries journalières vides (l'enseignant marque sans
+    //    remplir le contenu, ou la clé d'écriture diffère) — on les ajoute pour
+    //    que le décompte « à préparer » soit EXHAUSTIF par rapport au marquage.
+    if (hasExplicitFlags) {
+      for (const [jour, dayMap] of Object.entries(fichesAPreparer)) {
+        if (!matieresPlanifiees[jour]) continue;
+        const existing = new Set(matieresPlanifiees[jour].map((m: any) => m.matiere));
+        for (const matiereKey of Object.keys(dayMap || {})) {
+          if (!dayMap[matiereKey] || existing.has(matiereKey) || RESERVED_ENTRY_KEYS.has(matiereKey)) continue;
+          const fichesForDay = parJour[jour] || [];
+          const matSubjectId = subjectIdByMatiereName.get(matiereKey);
+          const matchingFiche = fichesForDay.find((f: any) => {
+            if (isMaternelleJournal) {
+              if (matSubjectId && f.subjectId && f.subjectId === matSubjectId) return true;
+              const expectedSheetType = this.mapMatiereKeyToSheetType(matiereKey, true);
+              return !!expectedSheetType && f.sheetType === expectedSheetType;
+            }
+            return (f.subjectId && f.subjectId === matiereKey)
+              || (f.sheetType && this.mapMatiereKeyToSheetType(matiereKey, false) === f.sheetType);
+          });
+          matieresPlanifiees[jour].push({
+            matiere: matiereKey,
+            fichePreparede: !!matchingFiche,
+            ficheId: matchingFiche?.id,
+          });
+        }
+      }
+    }
+
     // ─── 6. Stats ───
     const totalMatieresPlanifiees = Object.values(matieresPlanifiees).reduce((s, arr) => s + arr.length, 0);
     const totalFichesPreparees = Object.values(matieresPlanifiees).reduce(
       (s, arr) => s + arr.filter(m => m.fichePreparede).length, 0,
     );
     const totalFichesManquantes = totalMatieresPlanifiees - totalFichesPreparees;
+    // ⭐ FEATURE : décompte des fiches à préparer PAR JOUR (demande promoteur :
+    //    « pour chaque jour le nombre de fiches, et le nombre total pour la semaine »)
+    const fichesManquantesParJour: Record<string, number> = {};
+    for (const [jour, arr] of Object.entries(matieresPlanifiees)) {
+      fichesManquantesParJour[jour] = arr.filter(m => !m.fichePreparede).length;
+    }
 
     return {
       journalId,
@@ -5258,12 +5318,17 @@ export class PedagogicalSpaceService {
       fiches: allFiches,
       parJour,
       matieresPlanifiees,
+      // ⭐ FEATURE « Fiche à préparer » : true si l'enseignant a marqué
+      //    explicitement des matières (mode ciblé) — le frontend adapte le
+      //    libellé (« fiches à préparer marquées » vs « matières sans fiche »).
+      hasExplicitFichesAPreparer: hasExplicitFlags,
       stats: {
         totalFiches: allFiches.length,
         totalMatieresPlanifiees,
         totalFichesPreparees,
         totalFichesManquantes,
         toutesFichesPreparees: totalFichesManquantes === 0,
+        fichesManquantesParJour,
       },
     };
   }

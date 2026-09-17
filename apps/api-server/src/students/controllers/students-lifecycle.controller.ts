@@ -50,10 +50,21 @@ export class StudentsLifecycleController {
   @Get('enrollments')
   async getEnrollments(
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Query('academicYearId') academicYearId?: string,
     @Query('schoolLevelId') schoolLevelId?: string,
   ) {
-    return this.lifecycle.getEnrollments(tenantId, { academicYearId, schoolLevelId });
+    // ⭐ 2026-09-18 — Anomalie « Élèves non affectés » (onglet Inscriptions) :
+    //    /pedagogy/academic-structure/classes applique le SCOPE niveau serveur
+    //    (applyLevelScope — un SECRETAIRE_COMPTABLE_SEC ne voit que les classes
+    //    Secondaire) mais GET /students/enrollments ne l'appliquait PAS →
+    //    l'onglet Inscriptions groupait les inscriptions (TOUS niveaux) sur
+    //    les classes du SEUL périmètre du rôle → tous les élèves des autres
+    //    niveaux s'affichaient « Élèves non affectés » (ex: 424/683 pour un
+    //    sec-comptable Secondaire de N'Dali). On passe le scope au service pour
+    //    la même règle que les listes élèves (P3 : le périmètre serveur
+    //    s'applique PARTOUT, listes et KPIs restent cohérents).
+    return this.lifecycle.getEnrollments(tenantId, { academicYearId, schoolLevelId }, user?.scope);
   }
 
   @Post('pre-register')

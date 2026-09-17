@@ -11,6 +11,7 @@ import { StudentAccountService } from '../../finance/student-account.service';
 import { StudentCountVerifierService } from '../../billing/services/student-count-verifier.service';
 import { StudentIdentifierService } from './student-identifier.service';
 import { resolveSchoolLevelFilter } from '../../common/context/resolve-school-level';
+import { applyLevelScope } from '../../common/context/scope-where';
 
 const ENROLLMENT_STATUS = {
   PRE_REGISTERED: 'PRE_REGISTERED',
@@ -2080,14 +2081,28 @@ export class StudentsLifecycleService {
   }
 
   /** Liste de toutes les inscriptions (enrollments) */
-  async getEnrollments(tenantId: string, params: { academicYearId?: string, schoolLevelId?: string }) {
+  async getEnrollments(
+    tenantId: string,
+    params: { academicYearId?: string; schoolLevelId?: string },
+    scope?: import('../../common/context/access-scope.service').AccessScope,
+  ) {
+    // ⭐ 2026-09-18 — Anomalie « Élèves non affectés » (onglet Inscriptions) :
+    //    appliquer le SCOPE niveau serveur (même règle que les classes
+    //    académiques et les listes élèves — P3). Sans ce filtre, un rôle à
+    //    périmètre restreint (ex: SECRETAIRE_COMPTABLE_SEC) recevait TOUTES
+    //    les inscriptions du tenant alors que sa liste de classes ne couvre
+    //    que son périmètre → l'onglet Inscriptions affichait les élèves des
+    //    autres niveaux en « Élèves non affectés ». applyLevelScope est un
+    //    no-op pour les comptes transverses (promoteur, allLevels).
+    const where: Record<string, any> = {
+      tenantId,
+      ...(params.academicYearId && { academicYearId: params.academicYearId }),
+      // Ignorer 'ALL' qui signifie "tous les niveaux" (pas un UUID valide)
+      ...(params.schoolLevelId && params.schoolLevelId !== 'ALL' && { schoolLevelId: params.schoolLevelId }),
+    };
+    applyLevelScope(where, scope);
     const enrollments = await this.prisma.studentEnrollment.findMany({
-      where: {
-        tenantId,
-        ...(params.academicYearId && { academicYearId: params.academicYearId }),
-        // Ignorer 'ALL' qui signifie "tous les niveaux" (pas un UUID valide)
-        ...(params.schoolLevelId && params.schoolLevelId !== 'ALL' && { schoolLevelId: params.schoolLevelId }),
-      },
+      where,
       include: {
         student: {
           include: {

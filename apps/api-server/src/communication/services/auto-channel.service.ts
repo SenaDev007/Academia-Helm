@@ -1,46 +1,57 @@
 /**
  * ============================================================================
- * AUTO CHANNEL SERVICE — Création automatique des canaux officiels (V6, spec §6)
+ * AUTO CHANNEL SERVICE — Canaux officiels (V6, spec §6) — révisé Task 77
  * ============================================================================
  *
- * « Les différents canaux doivent être créés de façon automatique pour les
- *  écoles, de façon dynamique. »
+ * ⭐ TASK 77 (retour promoteur) — ALIGNEMENT SPÉCIFICATION :
+ *   1. Les canaux officiels ne sont plus créés en bloc « à la hâte » : chaque
+ *      canal n'existe que si le MODULE MÉTIER correspondant est ACTIVÉ pour
+ *      le tenant (table tenant_features). Un canal sans module actif derrière
+ *      est une coquille vide (ex : « Transport scolaire » alors qu'aucune
+ *      école ne gère le transport des élèves).
+ *   2. « Calendrier scolaire » et « Informations pédagogiques » sont RETIRÉS
+ *      des canaux auto-créés (demande explicite promoteur — pas de module
+ *      source, canaux restés vides). L'administration peut toujours créer
+ *      manuellement un canal (bouton « + Nouveau canal »).
+ *   3. AUTO-RETRAIT : à chaque sync, les canaux système (createdBy='system')
+ *      retirés de la liste courante OU dont le module a été désactivé, et
+ *      SANS message, sont supprimés proprement (abonnements + messages +
+ *      conversation miroir + canal) — purge automatique partout.
  *
- * À l'activation d'un établissement (onboarding), puis périodiquement
- * (HelmConnectBootstrapService) et à l'ouverture de la section Canaux
- * (POST /chat/auto-channels/sync), ce service garantit l'existence des 6
- * canaux officiels de diffusion :
- *
- *   📢 Direction            — communiqués de la direction
- *   📚 Vie scolaire         — discipline, absences, vie quotidienne
- *   🚌 Transport scolaire   — horaires et infos transport
- *   💰 Finance              — échéances, frais de scolarité
- *   📖 Informations pédagogiques — conseils aux élèves/parents
- *   📅 Calendrier scolaire  — événements, vacances, examens
- *
- * + ABONNEMENT AUTOMATIQUE : tous les utilisateurs actifs du tenant sont
- *   abonnés (idempotent — index unique (channelId,userId)). Les nouveaux
- *   comptes créés ensuite sont rattrapés par la sync périodique.
- *
- * Idempotent : appelable autant de fois que nécessaire (aucun doublon).
- * ============================================================================
+ * Canaux officiels selon les modules activés :
+ *   📢 Direction      — TOUJOURS (cœur institutionnel)
+ *   📚 Vie scolaire   — TOUJOURS (discipline/absences = modules cœur)
+ *   🚌 Transport      — seulement si feature TRANSPORT activée
+ *   💰 Finance        — seulement si feature FINANCE activée
  */
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 
-/** Canaux officiels créés automatiquement pour chaque établissement. */
-export const DEFAULT_OFFICIAL_CHANNELS: ReadonlyArray<{
+interface OfficialChannelDef {
   name: string;
   description: string;
-}> = [
-  { name: 'Direction', description: 'Communiqués officiels de la direction de l\u2019établissement.' },
-  { name: 'Vie scolaire', description: 'Discipline, absences et vie quotidienne de l\u2019établissement.' },
-  { name: 'Transport scolaire', description: 'Horaires, itinéraires et informations du transport scolaire.' },
-  { name: 'Finance', description: 'Échéances de paiement, frais de scolarité et informations financières.' },
-  { name: 'Informations pédagogiques', description: 'Conseils pédagogiques et informations destinées aux élèves et parents.' },
-  { name: 'Calendrier scolaire', description: 'Événements, vacances, examens et dates importantes de l\u2019année scolaire.' },
+  /** Feature qui doit être ACTIVÉE pour que le canal existe (null = toujours). */
+  requiresFeature?: string | null;
+}
+
+/** Canaux officiels — conditionnels aux modules activés (Task 77). */
+export const DEFAULT_OFFICIAL_CHANNELS: ReadonlyArray<OfficialChannelDef> = [
+  { name: 'Direction', description: 'Communiqués officiels de la direction de l\u2019établissement.', requiresFeature: null },
+  { name: 'Vie scolaire', description: 'Discipline, absences et vie quotidienne de l\u2019établissement.', requiresFeature: null },
+  { name: 'Finance', description: 'Échéances de paiement, frais de scolarité et informations financières.', requiresFeature: 'FINANCE' },
+  { name: 'Transport scolaire', description: 'Horaires, itinéraires et informations du transport scolaire.', requiresFeature: 'TRANSPORT' },
 ];
+
+/**
+ * ⭐ TASK 77 — Modules DIFFÉRÉS : features actives en base mais dont le module
+ * métier n'est PAS encore livré dans l'app (masqués « temporairement » dans la
+ * sidebar : Transport, Bibliothèque, Infirmerie, QHSE — aucune école ne gère
+ * encore ces fonctions). Le canal correspondant n'est pas créé tant que le
+ * module n'est pas sorti : retirer l'entrée de cet ensemble le jour où le
+ * module est livré → le canal apparaîtra automatiquement à la sync suivante.
+ */
+const DEFERRED_CHANNEL_MODULES = new Set<string>(['TRANSPORT']);
 
 @Injectable()
 export class AutoChannelService {
@@ -56,12 +67,29 @@ export class AutoChannelService {
     created: number;
     existing: number;
     subscribed: number;
+    retired: number;
     channels: Array<{ id: string; name: string; isOfficial: boolean }>;
   }> {
     let created = 0;
     let existing = 0;
     let subscribed = 0;
+    let retired = 0;
     const channels: Array<{ id: string; name: string; isOfficial: boolean }> = [];
+
+    // 0. ⭐ Task 77 — features activées du tenant : un canal officiel n'existe
+    //    que si son module métier est actif (ex : Transport si TRANSPORT).
+    const enabledFeatures = new Set<string>(
+      (await this.prisma.$queryRawUnsafe<Array<{ featureCode: string }>>(
+        `SELECT "featureCode" FROM "tenant_features"
+         WHERE "tenantId" = $1 AND "isEnabled" = true AND "status" = 'ACTIVE'`,
+        tenantId,
+      )).map(r => r.featureCode),
+    );
+    const activeDefs = DEFAULT_OFFICIAL_CHANNELS.filter(
+      def =>
+        !def.requiresFeature ||
+        (enabledFeatures.has(def.requiresFeature) && !DEFERRED_CHANNEL_MODULES.has(def.requiresFeature)),
+    );
 
     // 1. Récupérer les utilisateurs actifs du tenant (pour l'abonnement auto)
     const activeUserIds: string[] = (await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
@@ -80,7 +108,7 @@ export class AutoChannelService {
     const existingByName = new Map(existingChannels.map(c => [c.name.toLowerCase(), c]));
 
     // 3. Créer les canaux manquants + marquer officiels les homonymes manuels
-    for (const def of DEFAULT_OFFICIAL_CHANNELS) {
+    for (const def of activeDefs) {
       const key = def.name.toLowerCase();
       const found = existingByName.get(key);
       if (found) {
@@ -139,10 +167,47 @@ export class AutoChannelService {
       subscribed = Number(result) || 0;
     }
 
+    // ⭐ Task 77 — AUTO-RETRAIT des canaux officiels obsolètes : canaux
+    //    système (createdBy='system', isOfficial=true) dont le nom n'est plus
+    //    dans la liste courante (Calendrier scolaire, Informations
+    //    pédagogiques…) OU dont le module a été désactivé, et SANS AUCUN
+    //    message → suppression propre (abonnés + messages + conversation
+    //    miroir + canal). Un canal avec des messages n'est jamais supprimé
+    //    (contenu préservé — l'admin peut le supprimer manuellement).
+    {
+      const activeNames = activeDefs.map(d => d.name.toLowerCase());
+      const systemChannels: Array<{ id: string; name: string; msgs: number }> =
+        await this.prisma.$queryRawUnsafe<any[]>(
+          `SELECT c."id", c."name",
+                  (SELECT count(*)::int FROM "chat_messages" m WHERE m."conversationId" = c."id") AS msgs
+           FROM "chat_channels" c
+           WHERE c."tenantId" = $1 AND c."isOfficial" = true AND c."createdBy" = 'system'`,
+          tenantId,
+        );
+      for (const ch of systemChannels) {
+        if (activeNames.includes(ch.name.toLowerCase())) continue;
+        if (ch.msgs > 0) continue; // contenu existant — ne pas toucher
+        await this.prisma.$executeRawUnsafe(
+          `DELETE FROM "chat_channel_subscribers" WHERE "channelId" = $1`, ch.id,
+        );
+        await this.prisma.$executeRawUnsafe(
+          `DELETE FROM "chat_messages" WHERE "conversationId" = $1`, ch.id,
+        );
+        await this.prisma.$executeRawUnsafe(
+          `DELETE FROM "chat_conversations" WHERE "id" = $1`, ch.id,
+        );
+        await this.prisma.$executeRawUnsafe(
+          `DELETE FROM "chat_channels" WHERE "id" = $1`, ch.id,
+        );
+        retired++;
+        this.logger.log(`ensureDefaultChannels: retrait du canal obsolète « ${ch.name} » (tenant ${tenantId})`);
+      }
+    }
+
     this.logger.log(
-      `ensureDefaultChannels tenant=${tenantId}: ${created} créé(s), ${existing} existant(s), ${subscribed} nouvel(s) abonnement(s), ${activeUserIds.length} utilisateur(s) actif(s)`,
+      `ensureDefaultChannels tenant=${tenantId}: ${created} créé(s), ${existing} existant(s), ${retired} retiré(s), ${subscribed} nouvel(s) abonnement(s), ${activeUserIds.length} utilisateur(s) actif(s)`,
     );
-    return { created, existing, subscribed, channels };
+    return { created, existing, subscribed, retired, channels };
   }
 
   /**

@@ -73,8 +73,8 @@ export class HelmConnectBootstrapService implements OnModuleInit {
    */
   async syncTenant(tenantId: string): Promise<{
     tenantId: string;
-    channels: { created: number; existing: number; subscribed: number };
-    groups: { created: number; updated: number; skipped: number; total: number } | { message: string };
+    channels: { created: number; existing: number; subscribed: number; retired: number };
+    groups: { created: number; updated: number; skipped: number; purged: number; total: number } | { message: string };
   }> {
     // 1. Canaux officiels + abonnement automatique des utilisateurs actifs
     const channels = await this.autoChannelService.ensureDefaultChannels(tenantId);

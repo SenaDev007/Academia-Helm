@@ -69,9 +69,14 @@ export async function POST(
   }
 
   // Standard JSON body
-  let body: any;
+  // ⭐ Task 77 — tolérer les POST SANS body (sync canaux/communautés :
+  //    le frontend envoie Content-Type: application/json sans body →
+  //    request.json() throwait → 400 « Invalid request body » →
+  //    « Synchronisation échouée » dans Helm Connect). Body vide → {}.
+  let body: any = {};
   try {
-    body = await request.json();
+    const raw = await request.text();
+    if (raw && raw.trim()) body = JSON.parse(raw);
   } catch (e: any) {
     return NextResponse.json(
       { error: 'Invalid request body — expected JSON', details: e.message },
@@ -94,7 +99,14 @@ export async function PUT(
 ) {
   const { path } = await params;
   const pathStr = path ? path.join('/') : '';
-  const body = await request.json();
+  // ⭐ Task 77 — PUT sans body toléré (même correctif que POST)
+  let body: any = {};
+  try {
+    const raw = await request.text();
+    if (raw && raw.trim()) body = JSON.parse(raw);
+  } catch {
+    body = {};
+  }
   const headers = await getProxyAuthHeaders(request);
   const response = await fetch(
     nestControllerUrl(`chat${pathStr ? '/' + pathStr : ''}`),

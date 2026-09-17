@@ -57,6 +57,7 @@ export class AutoGroupService {
     created: number;
     updated: number;
     skipped: number;
+    purged: number;
     total: number;
   }> {
     this.logger.log(`syncAutoGroups: tenant=${tenantId}, year=${academicYearId}`);
@@ -95,21 +96,15 @@ export class AutoGroupService {
         else if (result === 'updated') updated++;
         else skipped++;
 
-        // 4. Create SUBJECT groups (one per subject × class)
-        for (const subject of subjects) {
-          const subjectGroupName = `${subject.name} — ${cls.name}`;
-          const subjectParticipants = await this.getSubjectParticipants(tenantId, cls.id, subject.id);
-          const subjectResult = await this.createOrUpdateAutoGroup(tenantId, academicYearId, {
-            groupType: 'SUBJECT',
-            name: subjectGroupName,
-            description: `Matière: ${subject.name}, Classe: ${cls.name}`,
-            classId: cls.id,
-            subjectId: subject.id,
-          }, subjectParticipants);
-          if (subjectResult === 'created') created++;
-          else if (subjectResult === 'updated') updated++;
-          else skipped++;
-        }
+        // ⭐ TASK 77 — PLUS DE GROUPES « Matière × Classe » AUTO-CRÉÉS.
+        //    La spécification §4 (groupes scolaires automatiques) demande :
+        //    classes, enseignants par matière, personnel, parents par niveau,
+        //    conseil pédagogique. Les conversations pédagogiques liées à une
+        //    matière (§8) sont créées PAR L'ENSEIGNANT à la demande — pas en
+        //    bloc (l'ancienne génération avait créé ~950 groupes vides
+        //    « Vocabulaire systématique — 3ème » etc., jamais utilisés).
+        //    Les groupes SUBJECT existants vides sont purgés par
+        //    purgeEmptySubjectGroups() ci-dessous.
       }
 
       // 5. Create ROLE groups
@@ -200,13 +195,59 @@ export class AutoGroupService {
       // 6. Sync members for all auto groups (update existing conversations)
       await this.syncAllMembers(tenantId, academicYearId);
 
+      // ⭐ TASK 77 — purge des groupes SUBJECT auto-créés devenus obsolètes
+      //    (génération supprimée ci-dessus) : uniquement les groupes VIDES
+      //    (aucun message) — un groupe avec de l'activité est conservé.
+      const purged = await this.purgeEmptySubjectGroups(tenantId);
+
       const total = created + updated + skipped;
-      this.logger.log(`syncAutoGroups complete: ${created} created, ${updated} updated, ${skipped} skipped, ${total} total`);
-      return { created, updated, skipped, total };
+      this.logger.log(`syncAutoGroups complete: ${created} created, ${updated} updated, ${skipped} skipped, ${purged} purged, ${total} total`);
+      return { created, updated, skipped, purged, total };
     } catch (e: any) {
       this.logger.error(`syncAutoGroups failed: ${e.message}`, e.stack);
       throw e;
     }
+  }
+
+  /**
+   * ⭐ TASK 77 — Purge des groupes SUBJECT auto-créés (génération supprimée
+   * de syncAutoGroups). Supprime UNIQUEMENT les groupes vides : chat_auto_groups
+   * + conversation + participants. Idempotent — les groupes purgés ne
+   * reviennent plus (plus de génération).
+   */
+  async purgeEmptySubjectGroups(tenantId: string): Promise<number> {
+    // Groupes SUBJECT sans aucun message (conversation miroir vide)
+    const emptySubjectGroups: Array<{ id: string; conversationId: string }> =
+      await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT g."id", g."conversationId"
+         FROM "chat_auto_groups" g
+         WHERE g."tenantId" = $1 AND g."groupType" = 'SUBJECT'
+           AND (
+             g."conversationId" IS NULL
+             OR NOT EXISTS (SELECT 1 FROM "chat_messages" m WHERE m."conversationId" = g."conversationId")
+           )`,
+        tenantId,
+      );
+    for (const grp of emptySubjectGroups) {
+      if (grp.conversationId) {
+        await this.prisma.$executeRawUnsafe(
+          `DELETE FROM "chat_participants" WHERE "conversationId" = $1`, grp.conversationId,
+        );
+        await this.prisma.$executeRawUnsafe(
+          `DELETE FROM "chat_messages" WHERE "conversationId" = $1`, grp.conversationId,
+        );
+        await this.prisma.$executeRawUnsafe(
+          `DELETE FROM "chat_conversations" WHERE "id" = $1`, grp.conversationId,
+        );
+      }
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM "chat_auto_groups" WHERE "id" = $1`, grp.id,
+      );
+    }
+    if (emptySubjectGroups.length > 0) {
+      this.logger.log(`purgeEmptySubjectGroups: ${emptySubjectGroups.length} groupe(s) Matière×Classe vide(s) supprimé(s) (tenant ${tenantId})`);
+    }
+    return emptySubjectGroups.length;
   }
 
   /**

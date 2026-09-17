@@ -1899,13 +1899,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     return () => { socket.off('channel:message', listener); };
   }, [socket, currentUserId, channels]);
 
-  // ⭐ V6 (spec §6) — AUTO-SYNC DES CANAUX OFFICIELS : à la première ouverture
+  // ⭐ Task 77 — AUTO-SYNC DES CANAUX OFFICIELS : à la première ouverture
   //    de la section Canaux (une fois par session), on appelle
-  //    POST /chat/auto-channels/sync qui garantit l'existence des 6 canaux
-  //    officiels (Direction, Vie scolaire, Transport, Finance, Infos
-  //    pédagogiques, Calendrier scolaire) + l'abonnement automatique de
-  //    l'utilisateur. Côté serveur, la même sync tourne au démarrage puis
-  //    toutes les 6 h pour tous les tenants.
+  //    POST /chat/auto-channels/sync qui garantit les canaux officiels LIÉS
+  //    AUX MODULES ACTIVÉS (Direction, Vie scolaire, Finance si actif,
+  //    Transport seulement quand le module sera livré) + l'abonnement
+  //    automatique de l'utilisateur + le retrait des canaux obsolètes vides.
+  //    Côté serveur, la même sync tourne au démarrage puis toutes les 6 h.
   const [canauxSyncing, setCanauxSyncing] = useState(false);
   const [canauxSyncMessage, setCanauxSyncMessage] = useState<string | null>(null);
   const syncAutoChannels = useCallback(async () => {
@@ -1914,6 +1914,7 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       const res = await fetch('/api/chat/auto-channels/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}), // ⭐ Task 77 — POST sans body → 400 BFF
         credentials: 'include',
       });
       if (res.ok) {
@@ -3143,6 +3144,8 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       const res = await fetch('/api/chat/auto-groups/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}), // ⭐ Task 77 — POST sans body → 400 BFF
+        credentials: 'include',
       });
       if (res.ok) {
         const data = await res.json().catch(() => ({}));

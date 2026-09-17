@@ -1,103 +1,132 @@
 /**
- * Offline Navigation — navigation hors ligne SANS rechargement brutal
+ * Offline Navigation — navigation hors ligne SANS rechargement brutal (v3)
  * ============================================================================
  *
  * ⭐ PROBLÈME (retour promoteur, sept. 2026) : « lorsqu'on passe en mode
  *    offline et qu'on passe d'un onglet à un autre, le rechargement est trop
  *    brutal et ça se répète un certain moment avant de se stabiliser ».
  *
- *    CAUSE : la version précédente convertissait TOUT clic de lien interne
- *    en navigation COMPLÈTE (location.assign) dès que navigator.onLine ===
- *    false → chaque changement de module rechargeait toute l'app (flash
- *    blanc, re-bootstrap complet, requêtes tuées en vol).
+ *    CAUSE : la v1 convertissait TOUT clic de lien interne en navigation
+ *    COMPLÈTE (location.assign) dès que navigator.onLine === false → chaque
+ *    changement de module rechargeait toute l'app (flash blanc, re-bootstrap
+ *    complet, requêtes tuées en vol). La v2 (clic synthétique re-dispatché
+ *    après consultation du SW) échouait : React n'applique pas son handler au
+ *    clic synthétique → le navigateur suivait le href nativement → rechargement.
  *
- * ⭐ NOUVELLE STRATÉGIE (v2) — demander au Service Worker ce qui est
- *    disponible en cache, PUIS décider :
+ * ⭐ STRATÉGIE v3 — CARTE DE CACHE PRÉ-CALCULÉE (aucune interception dans le
+ *    cas commun) : le Cache Storage est PARTAGÉ entre la page et le Service
+ *    Worker — la page lit elle-même l'état des caches (RSC + HTML) pour tous
+ *    les liens internes visibles, AVANT tout clic :
  *
- *    1. Payload RSC en cache (route déjà visitée / pré-cachée)
- *       → laisser la navigation SPA de next/link se faire NORMALEMENT.
- *         Le SW sert le payload RSC (handleRsc → cache) : transition
- *         instantanée, AUCUN rechargement. C'est le cas des modules déjà
- *         visités — exactement le scenario « modules passés » du promoteur.
+ *    1. Payload RSC en cache (route visitée / pré-cachée) → AUCUNE
+ *       interception : le clic original traverse normalement, next/link fait
+ *       la navigation SPA (le SW sert le payload RSC depuis son cache) —
+ *       transition instantanée, AUCUN rechargement. C'est le cas des
+ *       « modules passés » du promoteur.
  *
- *    2. Pas de RSC mais HTML de la route en cache (pré-cache module)
- *       → navigation complète : le SW sert le HTML depuis PAGE_CACHE
- *         (~1-2 s) et le module fonctionne hors ligne avec ses données
- *         IndexedDB. C'est le seul cas où le rechargement reste utile.
+ *    2. Pas de RSC mais HTML en cache (pré-cache module) → interception :
+ *       navigation complète servie par le SW (PAGE_CACHE) — le module
+ *       fonctionne hors ligne avec ses données IndexedDB (~1-2 s).
  *
- *    3. Ni l'un ni l'autre → laisser la navigation SPA : le SW renvoie un
- *       503 RAPIDE → le routeur déclenche l'error boundary → UI gracieuse
- *       « Module en attente du réseau » avec auto-réaffichage au retour du
- *       réseau (app/error.tsx). JAMAIS de spinner infini, JAMAIS de boucle.
+ *    3. Ni l'un ni l'autre → AUCUNE interception : la navigation SPA échoue
+ *       vite (503 RSC du SW) → error boundary gracieuse « Module en attente
+ *       du réseau » avec réaffichage auto à la reconnexion.
  *
- *    Le round-trip message vers le SW est LOCAL (quelques ms). Si le SW ne
- *    répond pas sous 250 ms (pas de contrôleur, SW ancien), on laisse la
- *    navigation SPA se faire (comportement 3 — le plus sûr).
+ *    La carte est rafraîchie : au passage hors-ligne, à l'apparition de
+ *    nouveaux liens (MutationObserver, debounce), et périodiquement hors
+ *    ligne (le cache RSC s'enrichit à chaque navigation réussie).
  *
- * ⚙️ Détails techniques :
- *    - Listener en CAPTURE sur document (avant le handler de React) ;
- *      preventDefault + stopPropagation court-circuitent le temps du
- *      round-trip, puis un clic synthétique re-dispatché (flag skipNext)
- *      relance la navigation SPA si la décision est « RSC » ou « aucun ».
- *    - Respecte les clics modifiés (ctrl/cmd/shift/alt), target=_blank,
- *      attribut download, ancres pures (#), protocoles externes et liens
- *      d'une autre origine.
+ * ⚙️ Respecte les clics modifiés (ctrl/cmd/shift/alt), target=_blank,
+ *    attribut download, ancres pures (#), protocoles externes et liens
+ *    d'une autre origine — dans tous ces cas : aucune interception.
  */
 
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 /** Protocoles non navigables en interne. */
 const SKIP_PROTOCOLS = /^(mailto|tel|sms|javascript|blob|data):/i;
 
-/** Délai max d'attente de la réponse du SW (ms). */
-const SW_REPLY_TIMEOUT_MS = 250;
+/** Intervalle de rafraîchissement de la carte pendant l'hors-ligne. */
+const OFFLINE_REFRESH_MS = 20_000;
 
-type CacheDecision = 'rsc' | 'html' | 'none';
+/** Debounce du MutationObserver. */
+const MUTATION_DEBOUNCE_MS = 1000;
 
-/** Demande au SW si la route a un payload RSC / un HTML en cache. */
-function askServiceWorker(href: string): Promise<CacheDecision> {
-  return new Promise((resolve) => {
-    if (typeof navigator === 'undefined' || !navigator.serviceWorker?.controller) {
-      resolve('none');
-      return;
+/** hrefs (normalisés, sans #) avec payload RSC en cache → navigation SPA. */
+const rscReadyUrls = new Set<string>();
+/** hrefs avec HTML en cache mais SANS RSC → navigation complète via SW. */
+const htmlOnlyUrls = new Set<string>();
+
+/** Normalise un href interne en clé comparable (origin + pathname + search sans _rsc, sans hash). */
+function normalizeHref(href: string): string | null {
+  try {
+    const u = new URL(href, window.location.href);
+    if (u.origin !== window.location.origin) return null;
+    u.hash = '';
+    u.searchParams.delete('_rsc');
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
+/** Réplique la cascade du SW : match exact PUIS ignoreSearch. */
+async function cacheHas(cache: Cache, key: string, ignoreSearch: boolean): Promise<boolean> {
+  try {
+    if (await cache.match(key)) return true;
+    if (ignoreSearch) {
+      const loose = await cache.match(key, { ignoreSearch: true });
+      return !!loose;
     }
-    let settled = false;
-    const done = (d: CacheDecision) => {
-      if (settled) return;
-      settled = true;
-      navigator.serviceWorker.removeEventListener('message', onMsg);
-      clearTimeout(timer);
-      resolve(d);
-    };
-    const onMsg = (event: MessageEvent) => {
-      if (event.data?.type === 'AH_HAS_ROUTE_CACHE_RESULT' && event.data?.href === href) {
-        done(event.data.hasRsc ? 'rsc' : event.data.hasHtml ? 'html' : 'none');
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** Calcule l'état des caches pour tous les liens internes de la page. */
+async function refreshCacheMap(): Promise<void> {
+  if (typeof window === 'undefined' || !('caches' in window)) return;
+  try {
+    const anchors = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'));
+    const hrefs = Array.from(
+      new Set(
+        anchors
+          .map((a) => normalizeHref(a.getAttribute('href') || ''))
+          .filter((h): h is string => !!h),
+      ),
+    );
+    if (hrefs.length === 0) return;
+
+    const rscCache = await caches.open('ah-rsc');
+    const pageCache = await caches.open('ah-pages');
+
+    for (const href of hrefs) {
+      // Ne PAS écraser une décision RSC déjà prise (le HTML peut arriver après)
+      if (rscReadyUrls.has(href)) continue;
+      const hasRsc = await cacheHas(rscCache, href, true);
+      if (hasRsc) {
+        rscReadyUrls.add(href);
+        htmlOnlyUrls.delete(href);
+        continue;
       }
-    };
-    const timer = setTimeout(() => done('none'), SW_REPLY_TIMEOUT_MS);
-    navigator.serviceWorker.addEventListener('message', onMsg);
-    try {
-      navigator.serviceWorker.controller.postMessage({ type: 'AH_HAS_ROUTE_CACHE', href });
-    } catch {
-      done('none');
+      if (htmlOnlyUrls.has(href)) continue;
+      const hasHtml = await cacheHas(pageCache, href, true);
+      if (hasHtml) htmlOnlyUrls.add(href);
     }
-  });
+  } catch {
+    /* Cache Storage indisponible — la carte reste vide : aucune interception */
+  }
 }
 
 export function OfflineNavigation() {
-  useEffect(() => {
-    // Flag : le prochain clic (synthétique, re-dispatché par nous) ne doit
-    // PAS être intercepté — c'est la navigation SPA voulue.
-    let skipNext = false;
+  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mutationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const onClick = async (e: MouseEvent) => {
-      // Clic re-dispatché par nous → laisser passer la navigation SPA
-      if (skipNext) {
-        skipNext = false;
-        return;
-      }
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
       // En ligne : le routeur SPA fonctionne — ne rien intercepter
       if (typeof navigator !== 'undefined' && navigator.onLine) return;
 
@@ -128,36 +157,74 @@ export function OfflineNavigation() {
         return;
       }
 
-      // ⭐ Temporiser le temps du round-trip SW (local, ~ms)
+      const key = normalizeHref(href);
+      if (!key) return;
+
+      // ⭐ RSC en cache → NE PAS intercepter : next/link fait la navigation
+      //    SPA (fluide, aucun rechargement — cas des modules visités).
+      if (rscReadyUrls.has(key)) return;
+
+      // ⭐ Inconnu (pas encore consulté) → ne pas intercepter non plus :
+      //    la navigation SPA tente ; en cas d'échec, le SW renvoie un 503
+      //    RAPIDE → error boundary gracieuse (jamais de spinner infini).
+      if (!htmlOnlyUrls.has(key)) return;
+
+      // ⭐ HTML en cache mais PAS de RSC → navigation complète servie par
+      //    le SW depuis PAGE_CACHE : le module fonctionne hors ligne avec
+      //    ses données IndexedDB.
       e.preventDefault();
       e.stopPropagation();
-
-      const decision = await askServiceWorker(url.href);
-
-      if (decision === 'html') {
-        // HTML en cache mais pas de RSC → navigation complète servie par le
-        // SW (PAGE_CACHE) : le module fonctionne hors ligne avec ses données.
-        window.location.assign(url.href);
-        return;
-      }
-
-      // 'rsc' (payload en cache → SPA instantanée) ou 'none' (error boundary
-      // gracieux) : re-dispatcher le clic pour que next/link navigue
-      // normalement en SPA.
-      skipNext = true;
-      anchor.dispatchEvent(
-        new MouseEvent('click', {
-          bubbles: true,
-          cancelable: true,
-          button: 0,
-          view: window,
-        }),
-      );
+      window.location.assign(url.href);
     };
 
     // CAPTURE : avant le handler de React (next/link)
     document.addEventListener('click', onClick, true);
-    return () => document.removeEventListener('click', onClick, true);
+
+    // ─── Construction / rafraîchissement de la carte de cache ───────────
+    const startOfflineRefresh = () => {
+      void refreshCacheMap();
+      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+      refreshTimerRef.current = setInterval(() => {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          void refreshCacheMap();
+        } else if (refreshTimerRef.current) {
+          clearInterval(refreshTimerRef.current);
+          refreshTimerRef.current = null;
+        }
+      }, OFFLINE_REFRESH_MS);
+    };
+
+    const onOffline = () => startOfflineRefresh();
+    const onOnline = () => {
+      // La carte est caduque en ligne (réseau direct) — vidée au prochain offline
+      if (refreshTimerRef.current) {
+        clearInterval(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+    };
+
+    // Carte initiale (au montage — couvre le cas « déjà hors ligne au load »)
+    void refreshCacheMap();
+    window.addEventListener('offline', onOffline);
+    window.addEventListener('online', onOnline);
+    if (typeof navigator !== 'undefined' && !navigator.onLine) startOfflineRefresh();
+
+    // Nouveaux liens (rendus différés, listes chargées…) → rafraîchir (debounce)
+    const observer = new MutationObserver(() => {
+      if (typeof navigator !== 'undefined' && navigator.onLine) return;
+      if (mutationDebounceRef.current) clearTimeout(mutationDebounceRef.current);
+      mutationDebounceRef.current = setTimeout(() => void refreshCacheMap(), MUTATION_DEBOUNCE_MS);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      document.removeEventListener('click', onClick, true);
+      window.removeEventListener('offline', onOffline);
+      window.removeEventListener('online', onOnline);
+      observer.disconnect();
+      if (refreshTimerRef.current) clearInterval(refreshTimerRef.current);
+      if (mutationDebounceRef.current) clearTimeout(mutationDebounceRef.current);
+    };
   }, []);
 
   return null;

@@ -11070,3 +11070,33 @@ Stage Summary:
 - ✅ Bug racine « Synchronisation échouée » réparé (BFF POST sans body) — toute la chaîne canaux/communautés/annonces répond désormais
 - ✅ Conception auto-réparante : même une recréation par l'ancien code est purgée à la sync suivante
 - Note pour le promoteur : les groupes Parents (Parents d'élèves, Parents-{niveau}) et Enseignants apparaîtront automatiquement dès que les parents/enseignants auront des comptes utilisateurs — la sync est déclenchable manuellement (bouton Re-sync dans Communautés)
+
+---
+Task ID: 78 (partie 1 — commit c7455695a, déploiements en cours)
+Agent: main (Super Z)
+Task: Trois retours promoteur — (1) UX hors ligne (rechargements brutaux répétés au changement d'onglet offline, modules qui disparaissent offline, pas de rechargement au retour du réseau) ; (2) « aucune évaluation supprimable » au nettoyage des évaluations tests du module Examens ; (3) Helm Connect non multi-tenant strict (un secrétaire comptable de Mon Avenir Plus visible chez CSPEB) + composition des canaux non conforme (personnel administratif mélangé avec l'équipe pédagogique, groupes classes/parents invisibles)
+
+Work Log:
+- REPRODUCTION E2E offline (navigateur réel, compte recette.promoteur@cspeb.test, émulation offline CDP) :
+  * CAUSE RACINE rechargements brutaux = OfflineNavigation (layout racine) : TOUT clic de lien interne offline → window.location.assign (navigation complète) → flash blanc + re-bootstrap à chaque changement de module
+  * Navigation offline vers route non pré-cachée (ex. fiche élève /app/students/<id>) → rechargement + ÉJECTION vers /login (shell /app empoisonné : cache.add de l'install suivait la 302 du middleware → HTML de LOGIN caché sous la clé /app pour les installs anonymes)
+  * Le payload RSC offline répond 200 depuis le cache (vérifié fetch direct) → la navigation SPA est possible, l'interception était contre-productive
+- CORRECTIFS OFFLINE (7 fichiers web + sw.js v4.6.0) :
+  1. OfflineNavigation v2 : round-trip message SW (AH_HAS_ROUTE_CACHE) → RSC en cache = navigation SPA SANS rechargement ; HTML seul en cache = navigation complète ; rien = error boundary gracieuse (503 rapide du SW)
+  2. sw.js v4.6.0 : install = fetch manuel, jamais de réponse redirectée cachée (anti-empoisonnement) ; self-heal activate (entrée /app dont res.url ≠ /app supprimée) ; handler AH_HAS_ROUTE_CACHE ; RSC_TIMEOUT 4s→8s ; clé shell propre /app (sans query) écrite en ligne pour que le fallback offline trouve le VRAI shell
+  3. chunk-recovery v2 + script inline pré-hydratation (layout.tsx) : JAMAIS de reload auto offline (le réseau est coupé, recharger ne résout rien) → reload UNIQUE programmé sur l'événement 'online' (garde sessionStorage)
+  4. useEnabledFeatureCodes : snapshot localStorage (30 j) de la dernière liste réussie → fallback offline = snapshot (la sidebar garde Cantine/EduCast/Shop/CMS…) au lieu de 6 codes par défaut
+  5. NetworkRecovery (nouveau composant, layout /app) : 'online' → debounce 2,5 s + sonde GET /api/auth/me → 'ah:network-restored' (features + contexte admin se re-fetchent) + rechargement propre UNIQUE si app dégradée (flag __ah_degraded_nav posé par error.tsx ; garde 3 min)
+  6. app/error.tsx : flag dégradé + data-ah-offline-error + message « l'application se rechargera à la reconnexion »
+  7. useAdminContext : refresh sur 'ah:network-restored'
+- EXAMENS : API evaluations.service.remove() — VALIDATED désormais supprimable (annulation auto si notes = workflow « annulez-la d'abord » automatisé ; hard delete sinon), seul LOCKED (délibération) protégé ; UI suppression unitaire + multiple alignées
+- PURGE DB exécutée (scripts/purge_cspeb_evaluations.js --confirm, transaction) : 100 évaluations « TEST First CA » + 330 notes + 44 grade_validation_batches supprimés de CSPEB (100% titrées TEST vérifié avant) ; évaluations restantes : 0
+- HELM CONNECT :
+  * Fuite multi-tenant = GET /chat/search-users (includeOtherTenants ACTIVÉ par défaut côté contrôleur ET demandé =true par le sélecteur « nouvelle conversation » du frontend) → listait les users de TOUTES les écoles. Corrigé : filtre tenant TOUJOURS appliqué (param ignoré), sendInvitation garde tenant sur recipientId, frontend =false
+  * Composition des groupes (auto-group.service.ts) : « Personnel administratif » (STAFF/ALL_STAFF) = UNIQUEMENT staff.roleType ADMIN/ADMINISTRATION mappé aux users par email (module Personnel = référence — enseignants exclus, avant tout y était mélangé) ; « Administration » (ROLE) = direction et cadres (rôles users) — descriptions distinctes ; groupes de CLASSE : + membres ADMINISTRATION (spec §4 : élèves/enseignants/prof principal/administration/parents) → le promoteur voit enfin les groupes de classes dans Communautés
+- VALIDATIONS locales : SWC 10/10 fichiers web OK ; bun build 4/4 fichiers API OK ; node --check sw.js OK + vérifs comportementales (plus de cache.add en code, garde redirected, handler, version v4.6.0)
+- Déploiements : push c7455695a → Vercel (poll SW v4.6.0) + Railway (poll uptime reset) en cours
+
+Stage Summary:
+- ⏳ En attente des déploiements Vercel + Railway pour validation E2E production (navigation offline sans reload, sidebar complète offline, recharge à la reconnexion, suppression évaluations dans l'UI, search-users CSPEB sans utilisateur Mon Avenir Plus, sync auto-groups avec nouvelles compositions)
+- ✅ Purge DB des évaluations tests CSPEB DÉJÀ exécutée (100 évaluations, 330 notes, 44 lots de validation)

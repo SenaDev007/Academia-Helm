@@ -323,12 +323,13 @@ export default function RootLayout({
             (site public, login, portails, app authentifiée) */}
         <UniversalSWRegister />
 
-        {/* ⭐ v3.2.0 → v2 (sept. 2026, retour promoteur « rechargement trop
-            brutal hors ligne ») : hors ligne, les clics internes demandent
-            D'ABORD au SW ce qui est en cache — payload RSC en cache →
-            navigation SPA normale (AUCUN rechargement, modules visités
-            fluides) ; HTML seul en cache → navigation complète servie par
-            le SW ; rien → error boundary gracieuse (jamais de spinner). */}
+        {/* ⭐ v3 (sept. 2026, retour promoteur « rechargement trop brutal hors
+            ligne ») : la page lit le Cache Storage (partagé avec le SW) pour
+            classifier les liens AVANT tout clic — payload RSC en cache →
+            AUCUNE interception (navigation SPA fluide, modules visités sans
+            rechargement) ; HTML seul en cache → navigation complète servie
+            par le SW ; rien → navigation SPA tentée, error boundary gracieuse
+            en cas d'échec (jamais de spinner infini). */}
         <OfflineNavigation />
 
         {/* CrispChat déplacé vers app/layout-client.tsx — uniquement pour les pages authentifiées */}

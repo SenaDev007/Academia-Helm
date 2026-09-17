@@ -1,7 +1,7 @@
 {
   "framework": "nextjs",
-  "buildCommand": "cross-env NODE_OPTIONS=\"--max-old-space-size=3072\" next build --webpack",
-  "installCommand": "npm install",
+  "buildCommand": "NODE_OPTIONS=--max-old-space-size=4096 next build --webpack",
+  "installCommand": "npm install --include=dev",
   "outputDirectory": ".next",
   "regions": [
     "cdg1"

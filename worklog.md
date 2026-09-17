@@ -11014,3 +11014,29 @@ Stage Summary:
 - ✅ Production sert enfin tasks 71→74 : perf portails (pattern promoteur), SW v4.5.0 anti-boucle, suppression Bibliothèque/ORION du portail enseignant, sync offline réparée, périmètre tenant strict, audit-v1 34 P0
 - ✅ Régression signalée (« données non chargées, dashboard zéro, logo/acronyme absents après 2 min ») VALIDÉE RÉSOLUE en E2E navigateur sur le nouveau build
 - ⏳ Reste : rebuild APK mobile pour livrer les 7 correctifs sync offline mobile (« 0 sur 1 terminé ») ; E2E offline sur device (modification offline → reconnexion → vérif base distante) ; surveiller les prochains builds (si un override Build Command existe dans le dashboard Vercel, le synchroniser avec vercel.json)
+
+---
+Task ID: 76
+Agent: main (Super Z)
+Task: « Pourquoi tous les modules principaux ne s'affichent plus pour le promoteur ? » — régression post-déploiement du portail promoteur
+
+Work Log:
+- REPRODUCTION (100 %) : compte de test recette.promoteur@cspeb.test + reproduction EXACTE de la condition du vrai promoteur (staff PROMOTER/ADMIN + assignment adminRole='PROMOTEUR' @ MAT_PRI active — scripts create_recette_promoteur.js + reproduce_promoter_condition.js) → sidebar réduite à « Tableau de pilotage » seul dans Modules principaux
+- ROOT CAUSE : le vrai promoteur (Erhel DEGBE, salumerhel2036@gmail.com) a une assignment adminRole='PROMOTEUR' (orthographe FRANÇAISE, créée le 31/08) alors que hasModuleAccess() (useAdminContext.ts:122) testait UNIQUEMENT 'PROMOTER' (anglaise) → pas de correspondance + schoolLevelCodes=['MATERNELLE','PRIMAIRE'] non vide → ROLE_MODULES['PROMOTEUR'] inexistant → fallback ['dashboard'] → tous les modules masqués
+- Pourquoi maintenant : bug LATENT depuis le 31/08, masqué par des réponses my-context dégradées/obsolètes (l'ancien SW v4.4.2 servait parfois le shell HTML au lieu du JSON → contexte vide → fail-open) ; le déploiement du SW v4.5.0 (Task 75) sert désormais le vrai JSON → bug révélé. Mon compte de test initial (sans assignment) voyait tout car fail-open — d'où la nécessité de reproduire la condition exacte en base
+- Convention du codebase vérifiée : l'API NestJS accepte partout les DEUX orthographes (@Roles('PROMOTEUR', 'PROMOTER', ...)) — cf. commit 5f71eb32e qui avait déjà corrigé la même classe de bug sur les arrays de rôles. Mobile : aucun check adminRole mono-orthographe (sain)
+- CORRECTIF (commit 189d36229, apps/web-app/src/hooks/useAdminContext.ts) :
+  * PROMOTER_ADMIN_ROLES = ['PROMOTER', 'PROMOTEUR'] → accès complet inconditionnel dans hasModuleAccess
+  * filet de sécurité : ROLE_MODULES['PROMOTER'] = ['*'] et ROLE_MODULES['PROMOTEUR'] = ['*']
+  * getSchoolLevelFilter : le promoteur n'est JAMAIS filtré par niveau scolaire, même si son assignment porte un schoolLevelCode (ex: MAT_PRI) — corrige aussi le filtrage de données latent
+- VALIDATION :
+  * 10/10 tests unitaires (bun, test_hasModuleAccess.ts sur le vrai fichier) : vrai promoteur PROMOTEUR@MAT_PRI → tous modules visibles + aucun filtre de niveau ; promoteur anglais idem ; sec-comptable inchangé (dashboard/students/finance/exams + filtre niveaux) ; directeur + accréditation finance → finance visible, communication caché ; null → fail-open
+  * SWC OK (check_syntax_swc.js)
+  * E2E production post-déploiement (build ~11 min) : sidebar du compte repro = TOUS les modules principaux (Tableau de pilotage, Organisation Pédagogique, Espace Censeur, Élèves & Scolarité, Vie Scolaire, Espace Directeur, Finances & Économat, Examens, Personnel RH & Paie, Helm Connect) ALORS QUE my-context renvoie toujours adminRole=PROMOTEUR + levels non vides (condition du bug inchangée, désormais gérée) ; navigation /app/students OK (Gestion des Élèves & Scolarité complète) ; capture scripts/canaries/promoter-sidebar-fixed.png
+- Compte de test : recette.promoteur@cspeb.test / Promoteur2026! — assignment PROMOTEUR@MAT_PRI conservée volontairement (canary de régression miroir exact du compte réel)
+
+Stage Summary:
+- ✅ Root cause identifiée et corrigée : orthographe 'PROMOTEUR' (fr) vs check 'PROMOTER' (en) → promoteur avec assignment masqué de tous les modules sauf dashboard
+- ✅ Fix en production, validé E2E sur la condition exacte du vrai promoteur (les deux orthographes + exemption du filtre de niveau + filet de sécurité ROLE_MODULES ['*'])
+- ✅ Non-régression prouvée : périmètres sec-comptable / directeur / accréditations / fail-open inchangés
+- Note : le vrai promoteur doit recharger la page (les chunks sont hachés — un simple F5 suffit, pas de purge de cache nécessaire)

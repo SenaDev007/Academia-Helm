@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../network/api_client.dart';
 import '../network/api_config.dart';
 import '../network/api_result.dart';
+// ⭐ FIX Task 74 : purge des données locales (Hive) au logout — isolation tenant
+import '../offline/offline_service.dart';
 import 'auth_state.dart';
 import 'token_storage.dart';
 import '../enums/user_role.dart' show PortalType;
@@ -509,6 +511,16 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 
     await TokenStorage.clearTokens();
     _cachedAccessToken = null;
+
+    // ⭐ FIX Task 74 (isolation tenant) : purger les données locales cache
+    //    (Hive) après un logout programmatique (401/session expirée) — le
+    //    même traitement que SecureLogoutService. Best-effort : ne bloque
+    //    jamais la déconnexion.
+    try {
+      await OfflineService.instance.clearAllLocalData();
+    } catch (_) {
+      // Non critique
+    }
 
     state = const AsyncValue<AuthState>.data(
       AuthState.unauthenticated(),

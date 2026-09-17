@@ -54,27 +54,27 @@ class ConnectivityService {
   /// Utilise un Future pour vérifier la connectivité en temps réel,
   /// mais retourne le dernier statut connu si la vérification échoue.
   ///
-  /// ⛔ OFFLINE-FIRST DÉSACTIVÉ — retourne toujours true pour forcer le mode
-  ///    online. Le mode offline sera réactivé ultérieurement.
+  /// ⭐ FIX Task 74 : RESTAURATION de la vraie détection — le retour codé en dur
+  ///    `return true` désactivait tout le mode offline (BaseCrudService ne
+  ///    plaçait jamais les mutations dans l'outbox de façon proactive, et la
+  ///    reconnexion ne redéclenchait pas la sync). L'utilisateur attend un mode
+  ///    hors-ligne fonctionnel : écrits en local → rejoués au retour du réseau.
   Future<bool> get isConnected async {
-    return true; // ⛔ OFFLINE désactivé — toujours online
-    // try {
-    //   final results = await _connectivity.checkConnectivity();
-    //   _isConnected = results.any((r) => r != ConnectivityResult.none);
-    //   return _isConnected;
-    // } catch (e) {
-    //   // En cas d'erreur, retourner le dernier statut connu
-    //   return _isConnected;
-    // }
+    try {
+      final results = await _connectivity.checkConnectivity();
+      _isConnected = results.any((r) => r != ConnectivityResult.none);
+      return _isConnected;
+    } catch (e) {
+      // En cas d'erreur, retourner le dernier statut connu
+      return _isConnected;
+    }
   }
 
   /// Retourne le dernier statut de connectivité connu (sans vérification).
-  /// ⛔ OFFLINE-FIRST DÉSACTIVÉ — toujours true
-  bool get isConnectedSync => true; // _isConnected;
+  bool get isConnectedSync => _isConnected;
 
   /// Alias for [isConnectedSync] — `true` when the device is online.
-  /// ⛔ OFFLINE-FIRST DÉSACTIVÉ — toujours true
-  bool get isOnline => true; // _isConnected;
+  bool get isOnline => _isConnected;
 
   /// Stream des changements de connectivité.
   Stream<bool> get onConnectivityChanged => _connectivityController.stream;

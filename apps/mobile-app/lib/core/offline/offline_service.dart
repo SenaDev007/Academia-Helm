@@ -264,6 +264,18 @@ class OfflineService {
       }
     });
 
+    // ⭐ FIX Task 74 : si l'app démarre DÉJÀ en ligne avec des événements en
+    //    attente (app fermée hors ligne puis rouverte avec le réseau revenu),
+    //    aucun événement 'onConnectivityChanged' ne sera émis → il faut tenter
+    //    la sync immédiatement au démarrage.
+    if (await _connectivityService.isConnected && _outboxBox.isNotEmpty) {
+      _syncOutbox().catchError((e) {
+        if (kDebugMode) {
+          debugPrint('[OfflineService] Sync au démarrage échouée : $e');
+        }
+      });
+    }
+
     if (kDebugMode) {
       debugPrint('[OfflineService] Initialisé');
     }
@@ -737,8 +749,12 @@ class OfflineService {
     }
 
     // Construire l'instance Dio pour les requêtes de synchronisation
+    // ⭐ FIX Task 74 : ApiConfig.baseUrl (BFF plat, SANS /v1 — le backend Nest
+    //    n'expose aucune route versionnée). Avant : versionedBaseUrl →
+    //    https://academiahelm.com/api/v1/... → 404 systématique → AUCUNE
+    //    modification offline n'était jamais synchronisée (« 0 sur 1 terminé »).
     final dio = Dio(BaseOptions(
-      baseUrl: ApiConfig.versionedBaseUrl,
+      baseUrl: ApiConfig.baseUrl,
       connectTimeout: ApiConfig.connectTimeout,
       receiveTimeout: ApiConfig.receiveTimeout,
       headers: <String, dynamic>{
@@ -750,12 +766,22 @@ class OfflineService {
     ));
 
     // Exécuter la méthode HTTP appropriée
+    // ⭐ FIX Task 74 : sanitariser le payload avant envoi — les métadonnées
+    //    internes du cache local (_isDirty, _version, _lastSync, _deleted…)
+    //    et le tenantId/tenant_id (résolu côté serveur depuis le JWT) seraient
+    //    rejetés par le ValidationPipe NestJS (whitelist + forbidNonWhitelisted)
+    //    → 400 « property X should not exist » → sync en échec permanent.
+    //    Les champs métier (createdAt/updatedAt compris) sont conservés.
+    final payload = <String, dynamic>{}..addAll(event.payload);
+    payload.removeWhere(
+        (key, _) => key.startsWith('_') || key == 'tenantId' || key == 'tenant_id');
+
     switch (event.operation) {
       case SyncOperationType.create:
-        await dio.post<dynamic>(endpoint, data: event.payload);
+        await dio.post<dynamic>(endpoint, data: payload);
         break;
       case SyncOperationType.update:
-        await dio.patch<dynamic>(endpoint, data: event.payload);
+        await dio.patch<dynamic>(endpoint, data: payload);
         break;
       case SyncOperationType.delete:
         await dio.delete<dynamic>(endpoint);
@@ -982,8 +1008,40 @@ class OfflineService {
   // ─── Utilitaires ─────────────────────────────────────────────────────────
 
   /// Récupère le tenant ID courant.
+  ///
+  /// ⭐ FIX Task 74 : la clé 'tenant_id' n'était JAMAIS écrite dans le secure
+  ///    storage (le tenant est persisté par TokenStorage.persistSession sous
+  ///    'ah_tenant_data' au format JSON). Résultat : getTenantId() retournait
+  ///    toujours null → les écritures offline (outbox) étaient SAUTÉES dans
+  ///    BaseCrudService (`!isConnected && tenantId != null`).
+  ///    Ordre de résolution :
+  ///      1. 'ah_tenant_data' (TokenStorage — source canonique, écrite au login)
+  ///      2. 'tenant_id' (clé historique, garde rétrocompatibilité)
+  ///      3. 'ah_selected_tenant_id' (AHConstants)
   Future<String?> getTenantId() async {
-    return await _secureStorage.read(key: 'tenant_id');
+    // 1. Source canonique : données de session persistées par TokenStorage
+    final tenantJson = await _secureStorage.read(key: 'ah_tenant_data');
+    if (tenantJson != null && tenantJson.isNotEmpty) {
+      try {
+        final tenant = jsonDecode(tenantJson);
+        if (tenant is Map<String, dynamic>) {
+          final id = tenant['id'];
+          if (id is String && id.isNotEmpty) return id;
+        }
+      } catch (_) {
+        // JSON corrompu — continuer vers les fallbacks
+      }
+    }
+
+    // 2. Clé historique (rétrocompatibilité)
+    final legacy = await _secureStorage.read(key: 'tenant_id');
+    if (legacy != null && legacy.isNotEmpty) return legacy;
+
+    // 3. Sélection explicite persistée (AHConstants.selectedTenantIdKey)
+    final selected = await _secureStorage.read(key: 'ah_selected_tenant_id');
+    if (selected != null && selected.isNotEmpty) return selected;
+
+    return null;
   }
 
   /// Génère un UUID v4.
@@ -1010,6 +1068,10 @@ class OfflineService {
 
     // Fermer et supprimer les boxes de collections
     // Hive v2.2.3 n'expose pas openBoxes — on utilise une liste de boxes connues
+    // ⭐ FIX Task 74 (isolation tenant) : la liste couvre désormais TOUTES les
+    //    collections écrites par la sync descendante (SyncDeltaService) —
+    //    sinon des données d'une école restaient sur l'appareil après une
+    //    déconnexion (fuite inter-tenants sur appareils partagés).
     const knownBoxNames = <String>[
       'ah_settings',
       'ah_cache',
@@ -1028,18 +1090,57 @@ class OfflineService {
       'ah_exams',
       'ah_hr',
       'ah_communication',
+      // ⭐ Boxes remplies par la sync descendante (tables /sync/pull)
+      'ah_student_enrollments',
+      'ah_guardians',
+      'ah_student_guardians',
+      'ah_admissions',
+      'ah_school_levels',
+      'ah_subjects',
+      'ah_schedules',
+      'ah_student_accounts',
+      'ah_finance_transactions',
+      'ah_fee_structures',
+      'ah_fee_arrears',
+      'ah_fee_installments',
+      'ah_recovery_reminders',
+      'ah_finance_expenses',
+      'ah_evaluations',
+      'ah_report_cards',
+      'ah_report_card_items',
+      'ah_quarters',
+      'ah_attendance_records',
+      'ah_attendance_registers',
+      'ah_staff',
+      'ah_announcements',
+      // ⭐ Boxes pédagogiques (écrites hors ligne via outbox)
+      'ah_cahier_journal',
+      'ah_pedagogical_fiches',
+      'ah_homework_entries',
+      'ah_pedagogical_task_students',
     ];
     for (final boxName in knownBoxNames) {
       if (boxName.startsWith('ah_') && boxName != 'ah_outbox' && boxName != 'ah_cache') {
-        if (Hive.isBoxOpen(boxName)) {
-          try {
-            final collectionBox = Hive.box(boxName);
-            await collectionBox.clear();
-          } catch (_) {
-            // Ignorer les erreurs
-          }
+        // ⭐ Ouvrir la box si nécessaire pour pouvoir la vider (une box fermée
+        //    ne serait jamais purgée → données résiduelles).
+        try {
+          final collectionBox = await Hive.openBox(boxName);
+          await collectionBox.clear();
+        } catch (_) {
+          // Ignorer les erreurs (box illisible)
         }
       }
+    }
+
+    // ⭐ FIX Task 74 (changement d'école) : purger le timestamp de la dernière
+    //    sync descendante — à la prochaine connexion (autre école ou même
+    //    école), une sync COMPLÈTE est refaite au lieu d'un delta calculé
+    //    depuis l'horizon d'une session précédente.
+    try {
+      await _secureStorage.delete(key: 'last_sync_at');
+      await _secureStorage.delete(key: 'last_sync_token');
+    } catch (_) {
+      // Non critique
     }
 
     if (kDebugMode) {

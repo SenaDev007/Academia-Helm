@@ -722,7 +722,11 @@ class BaseCrudService {
   }
 
   Future<String?> _getTenantId() async {
-    return await _secureStorage.read(key: 'tenant_id');
+    // ⭐ FIX Task 74 : déléguer à OfflineService.getTenantId() qui résout le
+    //    tenant depuis 'ah_tenant_data' (TokenStorage, écrite au login) avec
+    //    fallbacks. Avant : lecture directe de 'tenant_id' (clé jamais écrite)
+    //    → toujours null → les fallbacks offline (outbox) étaient morts.
+    return await _offlineService.getTenantId();
   }
 
   // ─── Cache en mémoire ───────────────────────────────────────────────────

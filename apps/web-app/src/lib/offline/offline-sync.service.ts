@@ -220,8 +220,12 @@ class OfflineSyncService {
       const deviceId = this.getDeviceId();
 
       // ⭐ Afficher la PASTILLE seulement s'il y a des pending events
+      //    FIX Task 74 : compter uniquement les événements du TENANT connecté
+      //    (avant : comptage tous tenants → pastille affichée pour 1 événement
+      //    d'une autre école pendant que le push de CE tenant en trouvait 0
+      //    → « 0 sur 1 terminé » sans synchronisation réelle).
       const { outboxService } = await import('./outbox.service');
-      const pendingCount = await outboxService.getPendingCount();
+      const pendingCount = await outboxService.getPendingCount(tenantId);
       if (pendingCount > 0) {
         setSyncModalState({
           isVisible: true,

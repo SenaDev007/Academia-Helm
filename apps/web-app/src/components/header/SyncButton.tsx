@@ -29,6 +29,11 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { networkDetectionService } from "@/lib/offline/network-detection.service";
 import { setSyncModalState, addSyncOperation } from "@/components/offline/SyncModal";
+// ⭐ FIX Task 74 : résolution tenant unifiée — localStorage 'session' n'est
+//    JAMAIS écrit par l'app (le tenant vit dans le cookie x-tenant-id posé par
+//    setServerSession). Sans ce fallback, tenantId = '' → « Session requise »
+//    alors que l'utilisateur est connecté → sync jamais déclenchée.
+import { getTenantIdForOffline } from "@/lib/offline/store-names";
 
 export function SyncButton() {
   const [isOnline, setIsOnline] = useState(networkDetectionService.isConnected());
@@ -67,7 +72,11 @@ export function SyncButton() {
   const checkPendingCount = useCallback(async () => {
     try {
       const { outboxService } = await import('@/lib/offline/outbox.service');
-      const pending = await outboxService.getPendingCount();
+      // ⭐ FIX Task 74 : badge scopé au tenant connecté (cookie x-tenant-id
+      //    en priorité) — avant, le badge comptait les événements de TOUTES
+      //    les écoles alors que le push ne prenait que ceux du tenant résolu.
+      const tenantId = getTenantIdForOffline();
+      const pending = await outboxService.getPendingCount(tenantId);
       setPendingCount(pending);
     } catch {
       // Outbox pas encore initialisé
@@ -87,14 +96,12 @@ export function SyncButton() {
     setError(null);
 
     // ⭐ Lire les opérations pending depuis l'outbox
+    //    FIX Task 74 : résolution tenant robuste (cookie x-tenant-id d'abord,
+    //    puis localStorage session en fallback — jamais l'inverse).
     let pendingOps: any[] = [];
     try {
       const { outboxService } = await import('@/lib/offline/outbox.service');
-      let tid = '';
-      try {
-        const session = JSON.parse(localStorage.getItem('session') || '{}');
-        tid = session?.tenant?.id || session?.tenantId || '';
-      } catch {}
+      const tid = getTenantIdForOffline() || '';
       if (tid) pendingOps = await outboxService.getPendingEvents(tid, 50);
     } catch {}
 
@@ -119,11 +126,9 @@ export function SyncButton() {
     try {
       const { syncEngine } = await import('@/lib/offline/sync-engine.service');
 
-      let tenantId = '';
-      try {
-        const session = JSON.parse(localStorage.getItem('session') || '{}');
-        tenantId = session?.tenant?.id || session?.tenantId || '';
-      } catch {}
+      // ⭐ FIX Task 74 : même résolution robuste que offlineSyncService
+      //    (cookie x-tenant-id → localStorage session).
+      const tenantId = getTenantIdForOffline() || '';
 
       if (!tenantId) {
         setSyncModalState({ isVisible: false });
@@ -231,11 +236,8 @@ export function SyncButton() {
 
     try {
       const { syncEngine } = await import('@/lib/offline/sync-engine.service');
-      let tenantId = '';
-      try {
-        const session = JSON.parse(localStorage.getItem('session') || '{}');
-        tenantId = session?.tenant?.id || session?.tenantId || '';
-      } catch {}
+      // ⭐ FIX Task 74 : résolution tenant robuste (cookie d'abord)
+      const tenantId = getTenantIdForOffline() || '';
 
       if (!tenantId) {
         toast.info("Session requise", { description: "Connectez-vous pour envoyer." });

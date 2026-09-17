@@ -132,13 +132,25 @@ class OutboxService {
   }
 
   /**
-   * ⭐ Retourne le nombre d'événements PENDING (tous tenants confondus).
+   * ⭐ Retourne le nombre d'événements PENDING.
    *    Utilisé par le SyncButton pour afficher un badge.
+   *
+   *    FIX Task 74 (périmètre tenant) : accepte un tenantId optionnel.
+   *    - Avec tenantId : ne compte QUE les événements du tenant connecté
+   *      (cohérent avec getPendingEvents(tenantId) utilisé par le push).
+   *    - Sans tenantId : compte tous les tenants (rétrocompatibilité).
+   *
+   *    Avant le fix : le badge comptait TOUTES les écoles (getPendingCount()
+   *    sans filtre) tandis que le push ne trouvait que les événements du
+   *    tenant résolu → symptôme « badge 1 modification / sync 0 sur 1 ».
    */
-  async getPendingCount(): Promise<number> {
+  async getPendingCount(tenantId?: string): Promise<number> {
     try {
       const events = await localDb.query<OutboxEventLocal>('outbox_events');
-      return events.filter(e => e.status === 'PENDING').length;
+      if (!tenantId) {
+        return events.filter(e => e.status === 'PENDING').length;
+      }
+      return events.filter(e => e.tenantId === tenantId && e.status === 'PENDING').length;
     } catch {
       return 0;
     }

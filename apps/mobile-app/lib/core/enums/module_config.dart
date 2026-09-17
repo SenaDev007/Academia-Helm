@@ -429,12 +429,14 @@ const qhseModule = ModuleConfig(
 // ─── Mobile-only modules (not in web sidebar) ───────────────────────────
 
 /// ORION IA — mobile-only separate module (embedded in dashboards on web)
+/// ⛔ Task 74 : retiré du portail ENSEIGNANT (suppression demandée par le
+///    promoteur — module réservé à la direction / l'école).
 const orionModule = ModuleConfig(
   id: 'orion',
   label: 'ORION IA',
   icon: 'brain',
   route: '/orion',
-  portals: [PortalType.school, PortalType.teacher],
+  portals: [PortalType.school],
   subTabs: [
     SubTab(id: 'orion-dashboard', label: 'Tableau de bord', icon: 'layout-dashboard', route: '/orion'),
     SubTab(id: 'orion-analysis', label: 'Analyses', icon: 'bar-chart', route: '/orion'),

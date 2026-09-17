@@ -13,7 +13,7 @@ import { useSchoolIdentity } from "@/hooks/useSchoolIdentity";
 import Link from "next/link";
 import {
   BookOpen, Users, CalendarDays, ClipboardList, Video,
-  Library, MessageSquare, BarChart3, GraduationCap,
+  MessageSquare, GraduationCap,
   Clock, FileText, CheckCircle2, Building2, Loader2, FileEdit,
   AlertCircle, CalendarRange,
 } from "lucide-react";
@@ -69,8 +69,6 @@ export default function TeacherDashboardPage() {
     { href: "/app/teacher/tasks", label: L("Travaux & Suivi", "Tasks & Tracking"), icon: ClipboardList, desc: L("Tâches assignées, suivi pédagogique", "Assigned tasks, pedagogical follow-up"), color: "bg-amber-50 text-amber-700 border-amber-200" },
     { href: "/app/teacher/exams", label: L("Examens & Notes", "Exams & Grades"), icon: FileEdit, desc: L("Mes évaluations, saisie des notes, bulletins", "My assessments, grade entry, report cards"), color: "bg-rose-50 text-rose-700 border-rose-200" },
     { href: "/app/teacher/educast", label: "EduCast", icon: Video, desc: L("Vidéos pédagogiques, podcasts", "Educational videos, podcasts"), color: "bg-pink-50 text-pink-700 border-pink-200" },
-    { href: "/app/teacher/library", label: L("Bibliothèque", "Library"), icon: Library, desc: L("Ressources pédagogiques", "Teaching resources"), color: "bg-slate-50 text-slate-700 border-slate-200" },
-    { href: "/app/teacher/orion", label: "ORION", icon: BarChart3, desc: L("Alertes pédagogiques", "Pedagogical alerts"), color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
     { href: "/app/teacher/communication", label: "Helm Connect", icon: MessageSquare, desc: L("Communiquez. Collaborez. Restez connectés.", "Communicate. Collaborate. Stay connected."), color: "bg-teal-50 text-teal-700 border-teal-200" },
   ];
 

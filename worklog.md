@@ -10965,3 +10965,30 @@ Stage Summary:
 - ✅ 6 commits poussés au total (078525a96 correctifs perf, efa010ecb SW v4.5.0 anti-boucle, 2aee0ae46/090a8f5b8 worklog, 2c837f366 mitigation OOM build) — tous validés syntaxiquement et fonctionnellement en dev contre l'API production
 - ⏳ En attente : build Vercel avec la nouvelle commande (webpack + 1 worker + heap 3072) — si échec persistant : consulter l'erreur exacte dans le dashboard Vercel (Deployments) et/ou relever le plan (8 Go build en Pro)
 - Les symptômes de l'utilisateur (boucle, modal sans fin, rechargements, « toujours le tableau de bord ») = l'ANCIEN build encore servi ; le soulagement complet exige la sortie du déploiement
+
+---
+Task ID: 74
+Agent: main (Super Z)
+Task: Suppression des modules Bibliothèque + ORION de l'UI enseignants ; vérification du périmètre tenant du téléchargement local et de la sync ; correction du bug « 0 sur 1 terminé » (modifications offline jamais synchronisées au retour du réseau)
+
+Work Log:
+- Suppression UI enseignants (web) : entrées TEACHER_MODULES (layout.tsx), cartes d'accès rapide (page.tsx), pages /app/teacher/library (redirection) et /app/teacher/orion (placeholder), composant mort components/library/LibraryWorkspace.tsx (aucun import), prompt Sara (api/public/sara/chat/stream/route.ts) mis à jour ; icônes inutilisées retirées des imports
+- Mobile : orionModule.portals — retrait de PortalType.teacher (module réservé direction/école) ; Bibliothèque déjà absente des listes actives mobile
+- Audit périmètre tenant : backend NestJS /sync/pull + /sync/pull VÉRIFIÉ strictement scopé au JWT (@TenantId, body ignoré, injection WHERE/INSERT) ; web : cookie x-tenant-id posé par setServerSession ✓ ; incohérences corrigées côté client (voir ci-dessous)
+- ROOT CAUSE « 0 sur 1 terminé » (mobile — surface offline active) :
+  1. offline_service._syncEvent utilisait ApiConfig.versionedBaseUrl (https://academiahelm.com/api/v1/...) → route /v1 INEXISTANTE → 404 systématique → AUCUNE modification offline synchronisée → FIX : ApiConfig.baseUrl
+  2. OfflineService.init() jamais appelé → l'écouteur de reconnexion (rejeu de l'outbox) n'existait pas → FIX : initialisation dans main.dart + sync immédiate au démarrage si outbox non vide
+  3. getTenantId() lisait 'tenant_id' (clé jamais écrite ; le tenant vit dans 'ah_tenant_data' via TokenStorage.persistSession) → null → écritures offline sautées → FIX : résolution multi-sources (ah_tenant_data → tenant_id → ah_selected_tenant_id), délégation depuis BaseCrudService
+  4. SyncDeltaService appelait GET /sync/delta — endpoint INEXISTANT côté Nest (pull/push/status/tables/schema-hash seulement) + token lu sous 'access_token' (mauvaise clé) + pas de X-Tenant-Id → FIX : réécriture sur POST /sync/pull (tables mobile ~28, last_sync_at delta, X-Tenant-Id + Bearer), marge anti-décalage horloge de 5 s, mapping tables snake_case pluriel → boxes ah_*
+  5. ConnectivityService.isConnected codé en dur `return true` (offline-first désactivé) → mutations jamais mises en outbox de façon proactive → FIX : vraie détection restaurée
+  6. core/api/client.dart (utilisé par ConfigService) : baseUrl sans préfixe /api + token sous 'auth_token' (clé jamais écrite) → 404/401 permanents → FIX : baseUrl BFF + clés canoniques TokenStorage + X-Tenant-Id + refresh sécurisé (null-safe)
+  7. Payload replay : métadonnées internes (_isDirty, _version…) + tenantId rejetés par le ValidationPipe Nest (forbidNonWhitelisted) → FIX : sanitarisation avant envoi
+- Isolation tenant au logout : clearAllLocalData() n'était JAMAIS appelé (données de l'école conservées sur l'appareil) → FIX : purge branchée dans SecureLogoutService (étape 3, renommée isolation) + auth_notifier.logout() ; liste des boxes purgées étendue aux ~20 boxes delta ; last_sync_at purgé (re-téléchargement complet à la reconnexion)
+- Web (cohérence du compteur « badge 1 / push 0 ») : outboxService.getPendingCount(tenantId?) désormais scopé tenant ; performSync compte pour le tenant résolu ; SyncButton résout le tenant via getTenantIdForOffline (cookie x-tenant-id EN PREMIER — localStorage 'session' n'est jamais écrit) aux 3 endroits
+- Vérifications : SWC/Turbopack 7/7 fichiers web OK (check_syntax_swc.js) ; équilibrage délimiteurs 9/9 fichiers Dart OK (Flutter indisponible dans la sandbox — tarball 4 Ko, download échoué ; `dart analyze` à faire en CI/local)
+
+Stage Summary:
+- ✅ Modules Bibliothèque + ORION retirés définitivement de l'UI enseignants (web + mobile)
+- ✅ Téléchargement local + sync désormais strictement limités à l'école connectée : backend JWT-scopé (vérifié), X-Tenant-Id envoyé partout (web + mobile), outbox/badge/compteur scopés tenant, purge complète au logout
+- ✅ Chaîne offline mobile réparée de bout en bout (7 root causes corrigées) : modifications hors ligne → outbox Hive → rejeu au retour du réseau sur les VRAIS endpoints BFF → écriture dans Neon
+- ⏳ E2E post-déploiement à faire : test modification offline → coupure réseau → rétablissement → vérifier la modification dans la base distante + rebuild de l'app mobile (APK) pour livrer les correctifs

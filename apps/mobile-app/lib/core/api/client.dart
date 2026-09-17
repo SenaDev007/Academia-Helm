@@ -6,6 +6,8 @@
 /// Uses Dio for HTTP requests with JWT authentication.
 /// ============================================================================
 
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -14,9 +16,15 @@ class ApiClient {
   late final Dio _dio;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
+  /// ⭐ FIX Task 74 : base par défaut = BFF `https://academiahelm.com/api`
+  ///    (même base que core/network/api_client.dart — le backend NestJS expose
+  ///    des routes plates sous /api, AUCUNE route /v1 ni racine sans préfixe).
+  ///    Avant : `https://api.academiahelm.com` (sans /api) → toutes les
+  ///    requêtes de ConfigService (bootstrap, features, permissions)
+  ///    échouaient en 404.
   static const String _baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://api.academiahelm.com',
+    defaultValue: 'https://academiahelm.com/api',
   );
 
   ApiClient._() {
@@ -55,19 +63,46 @@ class ApiClient {
         options.path.contains('/auth/forgot-password');
 
     if (!skipAuth) {
-      final token = await _secureStorage.read(key: 'auth_token');
+      // ⭐ FIX Task 74 : clé 'ah_access_token' (TokenStorage — écrite au login).
+      //    Avant : 'auth_token' (clé jamais écrite) → requêtes non authentifiées.
+      final token = await _secureStorage.read(key: 'ah_access_token') ??
+          await _secureStorage.read(key: 'auth_token');
       if (token != null) {
         options.headers['Authorization'] = 'Bearer $token';
       }
     }
 
     // Add tenant header if available
-    final tenantId = await _secureStorage.read(key: 'tenant_id');
+    // ⭐ FIX Task 74 : résolution du tenant depuis 'ah_tenant_data'
+    //    (persisté par TokenStorage.persistSession) avec fallbacks —
+    //    garantit que les requêtes partent POUR l'école connectée.
+    final tenantId = await _resolveTenantId();
     if (tenantId != null) {
       options.headers['X-Tenant-Id'] = tenantId;
     }
 
     handler.next(options);
+  }
+
+  /// Résout le tenant connecté.
+  /// Sources : 'ah_tenant_data' (TokenStorage) → 'tenant_id' → 'ah_selected_tenant_id'.
+  Future<String?> _resolveTenantId() async {
+    final tenantJson = await _secureStorage.read(key: 'ah_tenant_data');
+    if (tenantJson != null && tenantJson.isNotEmpty) {
+      try {
+        final tenant = jsonDecode(tenantJson);
+        if (tenant is Map<String, dynamic>) {
+          final id = tenant['id'];
+          if (id is String && id.isNotEmpty) return id;
+        }
+      } catch (_) {}
+    }
+    final legacy = await _secureStorage.read(key: 'tenant_id');
+    if (legacy != null && legacy.isNotEmpty) return legacy;
+    final selected =
+        await _secureStorage.read(key: 'ah_selected_tenant_id');
+    if (selected != null && selected.isNotEmpty) return selected;
+    return null;
   }
 
   Future<void> _onError(
@@ -76,20 +111,31 @@ class ApiClient {
   ) async {
     // If 401, attempt token refresh
     if (err.response?.statusCode == 401) {
-      final refreshToken = await _secureStorage.read(key: 'refresh_token');
+      // ⭐ FIX Task 74 : refresh token lu depuis 'ah_refresh_token' (TokenStorage)
+      final refreshToken =
+          await _secureStorage.read(key: 'ah_refresh_token') ??
+              await _secureStorage.read(key: 'refresh_token');
       if (refreshToken != null) {
         try {
           final response = await _dio.post('/auth/refresh', data: {
             'refreshToken': refreshToken,
           });
 
-          final newToken = response.data['token'] as String;
-          final newRefreshToken = response.data['refreshToken'] as String?;
-          await _secureStorage.write(key: 'auth_token', value: newToken);
-          if (newRefreshToken != null) {
-            await _secureStorage.write(
-                key: 'refresh_token', value: newRefreshToken);
+          final rawData = response.data;
+          final Map<String, dynamic> refreshData = rawData is Map<String, dynamic>
+              ? rawData
+              : const <String, dynamic>{};
+          final newToken = (refreshData['accessToken'] ??
+              refreshData['token']) as String?;
+          if (newToken == null || newToken.isEmpty) {
+            throw Exception('Réponse refresh sans token');
           }
+          final newRefreshToken =
+              refreshData['refreshToken'] as String? ?? refreshToken;
+          // ⭐ Écrire dans les clés canoniques TokenStorage
+          await _secureStorage.write(key: 'ah_access_token', value: newToken);
+          await _secureStorage.write(
+              key: 'ah_refresh_token', value: newRefreshToken);
 
           // Retry the original request
           err.requestOptions.headers['Authorization'] = 'Bearer $newToken';
@@ -97,9 +143,8 @@ class ApiClient {
           handler.resolve(retryResponse);
           return;
         } catch (_) {
-          // Refresh failed — clear tokens and reject
-          await _secureStorage.delete(key: 'auth_token');
-          await _secureStorage.delete(key: 'refresh_token');
+          // Refresh failed — reject (les clés canoniques restent intactes :
+          // c'est AuthInterceptor qui gère le logout global)
         }
       }
     }

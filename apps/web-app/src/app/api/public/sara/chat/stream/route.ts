@@ -139,7 +139,7 @@ function buildInAppUIContext(
 
   const uiModules: Record<string, string> = {
     admin: `MODULES ADMIN : Élèves (/app/students), Pédagogie (/app/pedagogy), Examens (/app/exams), Finance (/app/finance), RH (/app/hr), Communication (/app/communication), QHSE (/app/qhse), ORION (/app/orion), ATLAS (/app/atlas), Paramètres (/app/settings)`,
-    teacher: `MODULES ENSEIGNANT : Tableau de bord, Notes & Évaluations (/app/teacher/grades), EDT (/app/teacher/timetable), Bibliothèque péda (/app/teacher/library), Communication parents (/app/teacher/communication), Absences (/app/teacher/attendance), Sara Compose (/app/teacher/sara-compose)`,
+    teacher: `MODULES ENSEIGNANT : Tableau de bord, Notes & Évaluations (/app/teacher/grades), EDT (/app/teacher/timetable), Planification annuelle (/app/teacher/annual-planning), Espace Pédagogique (/app/teacher/pedagogy), Examens & Notes (/app/teacher/exams), EduCast (/app/teacher/educast), Communication parents (/app/teacher/communication), Absences (/app/teacher/attendance), Sara Compose (/app/teacher/sara-compose)`,
     parent: `MODULES PARENT : Tableau de bord, Notes & Bulletins (/app/parent/grades), Absences (/app/parent/attendance), Paiements (/app/parent/payments — Wave, MTN, Moov), Messages (/app/parent/messages), Calendrier (/app/parent/calendar)`,
     promoter: `MODULES PROMOTEUR : Dashboard multi-campus (/patronat/dashboard), Écoles (/patronat/schools), Billing (/patronat/billing), Analytics (/patronat/analytics), ORION multi-campus (/patronat/orion)`,
     platform: `MODULES PLATFORM : Dashboard (/platform), Tenants (/platform/tenants), Users (/platform/users), Monitoring (/platform/monitoring), Features (/platform/features), RBAC (/platform/rbac)`,
@@ -147,7 +147,7 @@ function buildInAppUIContext(
 
   const adaptationRules: Record<string, string> = {
     admin: `RÈGLE UI ADMIN : Parle des modules admin complets. Tu peux mentionner ORION et ATLAS. Vocabulaire : "votre école", "vos élèves".`,
-    teacher: `RÈGLE UI ENSEIGNANT : Ne mentionne JAMAIS les modules admin (RH, Finance globale, Paramètres). Concentre-toi sur : notes, EDT, bibliothèque, communication parents, absences, Sara Compose. Vocabulaire : "vos classes", "vos élèves", "votre EDT".`,
+    teacher: `RÈGLE UI ENSEIGNANT : Ne mentionne JAMAIS les modules admin (RH, Finance globale, Paramètres). Concentre-toi sur : notes, EDT, planification, espace pédagogique, communication parents, absences, Sara Compose. Vocabulaire : "vos classes", "vos élèves", "votre EDT".`,
     parent: `RÈGLE UI PARENT : Ne mentionne JAMAIS les modules admin. Concentre-toi sur : notes de l'enfant, paiements en ligne, absences, messages, calendrier. Mentionne toujours Wave, MTN Money, Moov Money pour les paiements. Vocabulaire : "votre enfant", "vos factures".`,
     promoter: `RÈGLE UI PROMOTEUR : Parle de la vision multi-campus. Concentre-toi sur : établissements, billing, analytics, ROI. Vocabulaire : "vos établissements", "votre groupe scolaire".`,
     platform: `RÈGLE UI PLATFORM : Parle de l'admin technique. Concentre-toi sur : tenants, users, monitoring, feature flags, RBAC. Vocabulaire technique.`,

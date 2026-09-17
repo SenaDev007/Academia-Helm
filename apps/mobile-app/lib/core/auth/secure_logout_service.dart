@@ -4,6 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../network/api_client.dart';
 import '../network/api_config.dart';
+import '../offline/offline_service.dart';
+import '../sync/sync_delta_service.dart';
 import 'logout_state.dart';
 import 'auth_notifier.dart';
 import 'token_storage.dart';
@@ -16,8 +18,8 @@ import 'token_storage.dart';
 ///    is handled by the caller.
 /// 2. **Server session invalidation** — Calls `/auth/logout` API endpoint
 ///    (best-effort, don't fail if network error).
-/// 3. **Offline data preservation** — Preserve the Hive offline data
-///    (don't clear it). Only clear auth-related data.
+/// 3. **Offline data isolation** — ⭐ FIX Task 74 : purge the Hive offline
+///    data (tenant isolation — nothing from this school stays on the device).
 /// 4. **App context cleanup** — Clear tokens from TokenStorage, clear
 ///    SharedPreferences session data, invalidate all Riverpod providers,
 ///    dispatch reset events for orion/permissions/user-context.
@@ -97,11 +99,11 @@ class SecureLogoutService {
       await _invalidateServerSession();
       completedSteps.add(LogoutStep.serverInvalidation);
 
-      // ── Step 3: Offline data preservation ───────────────────────────
+      // ── Step 3: Offline data isolation (purge inter-tenants) ──────
       onProgress(const LogoutProgress(
         currentStep: LogoutStep.offlinePreservation,
         progress: 0.4,
-        message: 'Préservation des données hors-ligne…',
+        message: 'Effacement des données locales de l\u2019école…',
       ));
 
       await _preserveOfflineData();
@@ -160,14 +162,26 @@ class SecureLogoutService {
     }
   }
 
-  // ── Step 3: Offline Data Preservation ──────────────────────────────
+  // ── Step 3: Offline Data Isolation ─────────────────────────────────
 
-  /// Preserves Hive offline data. Only clears auth-related keys from
-  /// secure storage, not the entire Hive database.
+  /// ⭐ FIX Task 74 (isolation tenant) : PURGE des données locales au lieu
+  ///    de les « préserver ». Le cache Hive contient les données de l'école
+  ///    connectée (élèves, finances, notes…) sans contrôle d'accès local :
+  ///    le conserver après déconnexion l'expose au prochain utilisateur du
+  ///    même appareil. La sync descendante refait un téléchargement complet
+  ///    à la reconnexion (last_sync_at purgé) — le confort est préservé.
   Future<void> _preserveOfflineData() async {
-    // Hive data is preserved — we don't clear it.
-    // Only auth-related keys in secure storage are targeted.
-    // This is handled in Step 4.
+    try {
+      // Arrêter le worker de sync descendante avant la purge.
+      SyncDeltaService.instance.stop();
+    } catch (_) {
+      // Non critique
+    }
+    try {
+      await OfflineService.instance.clearAllLocalData();
+    } catch (_) {
+      // Non critique — la purge est best-effort, le logout doit continuer.
+    }
   }
 
   // ── Step 4: App Context Cleanup ────────────────────────────────────

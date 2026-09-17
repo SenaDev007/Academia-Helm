@@ -344,10 +344,24 @@ export function idbStoreForEntityType(entityType: string): string {
 }
 
 /**
- * Récupère le tenantId depuis localStorage ou les cookies.
+ * Récupère le tenantId depuis les cookies ou localStorage.
+ *
+ * ⭐ FIX Task 74 : le cookie `x-tenant-id` (posé par setServerSession à CHAQUE
+ *    login — source fraîche et fiable) est désormais consulté EN PREMIER.
+ *    La clé localStorage 'session' n'est jamais écrite par l'app actuelle et
+ *    ne peut contenir qu'un résidu d'une ancienne version (tenant périmé) :
+ *    elle reste en fallback ultime uniquement.
  */
 export function getTenantIdForOffline(): string | undefined {
   if (typeof window === 'undefined') return undefined;
+
+  // 1. Cookie x-tenant-id — source canonique (rafraîchie à chaque login)
+  const match = document.cookie.match(/(?:^|.*;\s*)x-tenant-id\s*=\s*([^;]*).*$/);
+  if (match && match[1] && decodeURIComponent(match[1]).length > 0) {
+    return decodeURIComponent(match[1]);
+  }
+
+  // 2. Fallback : localStorage session (anciennes versions de l'app)
   try {
     const session = localStorage.getItem('session');
     if (session) {
@@ -355,7 +369,6 @@ export function getTenantIdForOffline(): string | undefined {
       return parsed.tenantId || parsed.tenant?.id || undefined;
     }
   } catch {}
-  const match = document.cookie.match(/(?:^|.*;\s*)x-tenant-id\s*=\s*([^;]*).*$/);
-  if (match && match[1]) return decodeURIComponent(match[1]);
+
   return undefined;
 }

@@ -12,6 +12,13 @@ import 'core/router/app_router.dart';
 import 'core/widgets/ah_logo_circle.dart';
 // ⭐ V3-4: Helm Connect mobile push notifications (Examens/Absences/Discipline)
 import 'core/services/push_notification_service.dart';
+// ⭐ FIX Task 74 : services offline — l'outbox (écritures hors ligne) et la
+//    sync descendante doivent être initialisés au démarrage. Avant :
+//    OfflineService.init() n'était JAMAIS appelé → l'écouteur de reconnexion
+//    (qui rejoue l'outbox vers le serveur) n'existait pas → les modifications
+//    faites hors ligne n'étaient jamais synchronisées au retour du réseau.
+import 'core/offline/offline_service.dart';
+import 'core/sync/sync_delta_service.dart';
 
 /// Background message handler for Firebase Messaging.
 /// MUST be a top-level function (not a class method or closure)
@@ -96,6 +103,19 @@ class _AcademiaHelmAppState extends ConsumerState<AcademiaHelmApp> {
         DeviceOrientation.portraitUp,
         DeviceOrientation.portraitDown,
       ]);
+
+      // ⭐ FIX Task 74 : initialiser les services offline APRÈS Hive —
+      //    (a) OfflineService.init() ouvre les boxes + enregistre l'écouteur
+      //        de reconnexion qui REJOUE l'outbox vers le serveur
+      //    (b) SyncDeltaService.start() lance la sync descendante (delta toutes
+      //        les 60s + sync immédiate au retour de connexion)
+      //    Les deux sont non-bloquants : en cas d'échec l'app démarre quand même.
+      try {
+        await OfflineService.instance.init();
+        SyncDeltaService.instance.start();
+      } catch (e) {
+        debugPrint('⚠️ Offline services init failed (non-blocking): $e');
+      }
 
       // ⭐ V3-4: Initialize push notifications (FCM + local notifications + register token)
       try {

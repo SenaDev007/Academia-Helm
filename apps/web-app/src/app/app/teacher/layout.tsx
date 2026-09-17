@@ -7,14 +7,16 @@
  *
  * Sidebar spécifique pour les enseignants avec accès à :
  *   1. Dashboard
- *   2. Espace Pédagogique (cahier journal, fiches, registre, cahier de texte, devoirs)
- *   3. Emploi du Temps (le sien)
- *   4. Mes Classes (élèves, suivi)
- *   5. Bibliothèque
+ *   2. Présence & Absences (pointage, heures sup, congés)
+ *   3. Espace Pédagogique (cahier journal, fiches, registre, cahier de texte, devoirs)
+ *   4. Emploi du Temps (le sien)
+ *   5. Mes Classes (élèves, suivi)
  *   6. EduCast (vidéos pédagogiques)
  *   7. Travaux & Suivi
  *   8. Communication (chat)
- *   9. ORION (alertes pédagogiques)
+ *
+ * ⛔ Modules SUPPRIMÉS (Task 74) : Bibliothèque et ORION — retirés
+ *    définitivement du portail enseignant à la demande du promoteur.
  *
  * Pas d'accès aux : Finances, RH, Paramètres, Administration générale
  * ============================================================================
@@ -27,10 +29,10 @@ import { useSchoolIdentity } from "@/hooks/useSchoolIdentity";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard, BookOpen, CalendarDays, Users, Library,
-  Video, ClipboardList, MessageSquare, Loader2, GraduationCap,
+  LayoutDashboard, BookOpen, CalendarDays,
+  Video, ClipboardList, MessageSquare, Loader2,
   FileEdit,
-  BarChart3, Building2, LogOut, Menu, X, CalendarCheck,
+  Building2, LogOut, Menu, X, CalendarCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
@@ -57,9 +59,7 @@ const TEACHER_MODULES = [
   { path: "/app/teacher/pedagogy", label: "Espace Pédagogique", labelEn: "Pedagogy Space", icon: BookOpen, desc: "Cahier journal, fiches, registre d'appel, cahier de texte, devoirs", descEn: "Daily log, lesson sheets, attendance register, textbook, homework" },
   { path: "/app/teacher/tasks", label: "Travaux & Suivi", labelEn: "Tasks & Tracking", icon: ClipboardList, desc: "Tâches assignées et suivi", descEn: "Assigned tasks and follow-up" },
   { path: "/app/teacher/exams", label: "Examens & Notes", labelEn: "Exams & Grades", icon: FileEdit, desc: "Mes évaluations et saisie de notes", descEn: "My assessments and grade entry" },
-  { path: "/app/teacher/library", label: "Bibliothèque", labelEn: "Library", icon: Library, desc: "Ressources et documents", descEn: "Resources and documents" },
   { path: "/app/teacher/educast", label: "EduCast", labelEn: "EduCast", icon: Video, desc: "Vidéos et contenus pédagogiques", descEn: "Educational videos and content" },
-  { path: "/app/teacher/orion", label: "ORION", labelEn: "ORION", icon: BarChart3, desc: "Alertes et analyses pédagogiques", descEn: "Pedagogical alerts and analytics" },
   { path: "/app/teacher/communication", label: "Helm Connect", labelEn: "Helm Connect", icon: MessageSquare, desc: "Communiquez. Collaborez. Restez connectés.", descEn: "Communicate. Collaborate. Stay connected." },
 ];
 

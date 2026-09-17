@@ -10992,3 +10992,25 @@ Stage Summary:
 - ✅ Téléchargement local + sync désormais strictement limités à l'école connectée : backend JWT-scopé (vérifié), X-Tenant-Id envoyé partout (web + mobile), outbox/badge/compteur scopés tenant, purge complète au logout
 - ✅ Chaîne offline mobile réparée de bout en bout (7 root causes corrigées) : modifications hors ligne → outbox Hive → rejeu au retour du réseau sur les VRAIS endpoints BFF → écriture dans Neon
 - ⏳ E2E post-déploiement à faire : test modification offline → coupure réseau → rétablissement → vérifier la modification dans la base distante + rebuild de l'app mobile (APK) pour livrer les correctifs
+
+---
+Task ID: 75
+Agent: main (Super Z)
+Task: Pipeline Vercel bloqué (« cross-env: command not found », exit 127) + régression production « données/logo/acronyme non chargés après 2 min de connexion » — déblocage et validation E2E post-déploiement
+
+Work Log:
+- Forensique git : 6947f1d = fin tâche 62 (14/09) ; dernier déploiement réussi ≈ ae225cc76 (tâche 71) ; pipeline Vercel bloqué depuis audit-v1 → les correctifs tasks 73/74 (perf portails pattern promoteur, SW v4.5.0 anti-boucle, sync offline, périmètre tenant, 34 P0) n'étaient PAS servis — production confirmée sur SW v4.4.2 par canari
+- ROOT CAUSE build reproduite en sandbox (npm 11.17.0 / node 24, identique au builder Vercel CLI 59.16) : la nouvelle image Vercel exécute `npm install` avec NODE_ENV=production → npm ≥11 omet les devDependencies par défaut (docs npm : omit = 'dev' si NODE_ENV=production) → les 516 paquets dev sont prunés du cache de build → cross-env (devDep) absent → exit 127 sur toutes les commandes de build (vercel.json ET package.json). next étant en dependencies, seule la résolution de cross-env explosait. Vérifié expérimentalement : `npm install --include=dev` restaure les devDeps même sous NODE_ENV=production
+- Correctif (commit a99203459) : apps/web-app/vercel.json — installCommand `npm install --include=dev` ; buildCommand sans cross-env `NODE_OPTIONS=--max-old-space-size=4096 next build --webpack` (heap 3072→4096 pour la machine 8 Go) ; package.json inchangé (cross-env conservé pour dev local Windows)
+- DÉPLOIEMENT : push a99203459 → build Vercel RÉUSSI (~5 min) → production passe à SW v4.5.0 (canari sw.js sous-domaine tenant : 200, 168 976 o, v4.5.0)
+- E2E post-déploiement (compte recette.sec-comptable@cspeb.test, scripts measure_admin_ui_chain.js + diag_sync_bootstrap.js + navigateur agent-browser) :
+  * Chaîne API complète 200 : login 1,8 s ; auth/me 567 ms ; academic-years 624 ms ; context/bootstrap 769 ms ; settings academic-years 397/475 ms ; school-levels (sélecteur niveau) 657 ms ; features 585 ms ; identity 218 KB 1 318 ms (logo — mis en cache 12 h côté client après 1er chargement, Fix D) ; consolidated-report 662 ms ; students/statistics 430 ms ; finance KPI/payments <600 ms
+  * Navigateur réel : portail /app/secretaire-comptable rendu immédiatement — dashboard PLEIN de données réelles (Effectifs 98, Impayés/Arriérés 3 914 000 F CFA, Alertes actives 1, Effectif total 95), logo école rendu (data-URL 1024×1024), identité complète en sidebar (nom école + année + utilisateur + rôle), SW v4.5.0 inscrit et ACTIVÉ (scope /), 0 DataError IndexedDB, rechargement propre = 0 message console
+  * /api/sync/status 200 (service sync sain) ; les 2 erreurs 404 d'inscription SW vues au 1er chargement étaient transitoires (fenêtre rollout CDN ~1 min après déploiement) — absentes au rechargement
+- Note résiduelle : /api/sync/bootstrap renvoie toujours modules[] sans champ id — neutralisé côté client (Fix A task 73 : sanitarisation ids avant écriture IDB) ; amélioration API (renvoyer id) optionnelle plus tard
+
+Stage Summary:
+- ✅ Pipeline Vercel DÉBLOQUÉ (root cause : npm ≥11 + NODE_ENV=production omet devDeps → cross-env absent) — build et déploiement réussis
+- ✅ Production sert enfin tasks 71→74 : perf portails (pattern promoteur), SW v4.5.0 anti-boucle, suppression Bibliothèque/ORION du portail enseignant, sync offline réparée, périmètre tenant strict, audit-v1 34 P0
+- ✅ Régression signalée (« données non chargées, dashboard zéro, logo/acronyme absents après 2 min ») VALIDÉE RÉSOLUE en E2E navigateur sur le nouveau build
+- ⏳ Reste : rebuild APK mobile pour livrer les 7 correctifs sync offline mobile (« 0 sur 1 terminé ») ; E2E offline sur device (modification offline → reconnexion → vérif base distante) ; surveiller les prochains builds (si un override Build Command existe dans le dashboard Vercel, le synchroniser avec vercel.json)

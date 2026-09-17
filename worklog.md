@@ -11131,3 +11131,19 @@ Stage Summary:
 - ✅ Budget requêtes fresh login ~56→~35 (<50) ; LCP landing libéré ; ~35 Ko gz (chunk partagé) + ~160 Ko gz (chat) + ~170 Ko gz (xlsx/zip/qr) + ~730 Ko images 1er écran économisés
 - ✅ Bugs bonus : 404 orion silencieux (7 chemins), import framer mort, 20 deps mortes
 - ⚠️ ACTIONS UTILISATEUR : (1) URGENT certificat wildcard expiré (Vercel/Cloudflare) ; (2) bypass cache Cloudflare sur /sw.js ; (3) GTMetrix par rôle à consigner dans docs/PERF-GTMETRIX-CHARGEMENT.md §6
+
+---
+Task ID: perf-gt-1b
+Agent: Super Z (principal)
+Task: Validation post-déploiement du chantier GTMetrix (commit 6f21bd4dc — déployé Vercel en ~4 min, dpl_9zjhDpnGKW395uWf8rXb75CSaFYq)
+
+Work Log:
+- Rebase sur les 8 commits distants (offline v4.1 + fiches pédagogiques 77/78) : fusion manuelle layout-client (architecture offline v4 PRÉSERVÉE : OfflineGuard/NetworkRecovery/OfflineSWRegister/ConflictResolutionModal statiques ; SyncModal dynamic) ; conflits médias résolus (suppressions maintenues, fichiers physiquement retirés) ; SettingsBootstrapPrefetch = fusion triple gagnante (liste noire rôles enseignant/parent + différé idle 8 s + variante core 5 appels) ; doc coordination mise à jour pour sw.js v4.1 (API_TIMEOUT 12 s / CROSS 25 s NetworkFirst + cache identitaire)
+- Navigateur réel (agent-browser/Chrome 153) sur le NOUVEAU déploiement : LCP landing www = 1 668 ms (AVANT ≥ 6 300 ms — plancher artificiel 6 s supprimé) ; FCP 492 ms ; loadEvent 997 ms ; LCP /login = 1 796 ms → cibles spec < 2,5 s ATTEINTES sur les 2 écrans publics
+- Poids initial landing : 441 Ko brotli/31 fichiers (l'offline v4.1 du chantier parallèle ajoute du code partagé — compensation partielle par mes retraits) ; HTML 95 Ko
+- Captures : download/gtmetrix-landing-apres.png, download/gtmetrix-login-apres.png
+- Scripts persistés : scripts/gtmetrix_probe.sh, gtmetrix_wait_deploy.sh, gtmetrix_xlsx_dynamic.py, gtmetrix_media_purge.py, check_syntax_swc.js (+ typescript 5.9 sandbox), checker/
+
+Stage Summary:
+- ✅ Chantier déployé et validé navigateur : LCP landing ÷3,8 (6,3 s → 1,67 s), login 1,8 s
+- 🔴 Reste bloqué côté utilisateur : certificat wildcard *.academiahelm.com expiré → parcours navigateur des 6 rôles (sous-domaines écoles) impossible à valider depuis le sandbox tant que le certificat n'est pas re-émis (Vercel/Cloudflare) ; ensuite GTMetrix par rôle à consigner dans docs/PERF-GTMETRIX-CHARGEMENT.md §6

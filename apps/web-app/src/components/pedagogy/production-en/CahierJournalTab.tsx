@@ -210,7 +210,10 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   //   - ÉDUCATION SOCIALE : Morale, Civisme, Histoire, Géographie
   //   - ÉDUCATION ARTISTIQUE : Chant, Poésie, Dessin, Compte, Couture, Atelier,
   //     Art dramatique, Éducation artistique plastique, Éducation artistique vivante
-  // Les matières non listées dans un groupe restent individuelles.
+  // ⭐ 2026-09-17 (demande promoteur) : « Éducation Artistique (EA) Plastique » et
+  //    « Éducation Artistique (EA) Vivant » (noms réels en base) doivent être des
+  //    SOUS-MATIÈRES de « Éducation artistique » — matching normalisé (casse +
+  //    accents + parenthèses + vivant/vivante).
   const SUBJECT_GROUPS: { groupName: string; subjects: string[] }[] = [
     {
       groupName: "Français",
@@ -219,7 +222,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
         "Communication orale", "Orthographe", "Lecture", "Vocabulaire",
         "Expression écrite", "Graphisme", "Écriture", "Combinatoire",
         "Dictee", "Exercices Structuraux", "Communication Orale",
-        "Expression Ecrite",
+        "Expression Ecrite", "Conte", "Récitation",
       ],
     },
     {
@@ -236,9 +239,25 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
         "Art dramatique", "Éducation artistique plastique",
         "Éducation artistique vivante", "Education artistique plastique",
         "Education artistique vivante", "Poesie",
+        // ⭐ Noms réels en base (Matières & programmes)
+        "Éducation Artistique (EA) Plastique", "Éducation Artistique (EA) Vivant",
+        "Education Artistique (EA) Plastique", "Education Artistique (EA) Vivant",
+        "Éducation artistique plastique (EA)", "Éducation artistique vivante (EA)",
+        "Éducation artistique vivant", "Education artistique vivant",
       ],
     },
   ];
+
+  // ⭐ 2026-09-17 — Normalisation robuste pour le matching des groupes
+  //    (minuscules + accents + parenthèses « (EA) » + espaces réduits).
+  const normalizeSubjectForGroup = (s: string): string =>
+    (s || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\([^)]*\)/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
 
   // Type pour une colonne du tableau (groupée ou individuelle)
   type TableColumn =
@@ -250,11 +269,11 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
     const used = new Set<string>(); // subjectIds déjà placés dans un groupe
     const result: TableColumn[] = [];
 
-    // 1. Parcourir les groupes définis
+    // 1. Parcourir les groupes définis (matching normalisé)
     for (const group of SUBJECT_GROUPS) {
       const matchingSubjects = dynamicSubjects.filter((s: any) => {
-        const name = (s.subjectName || "").trim().toLowerCase();
-        return group.subjects.some(g => g.trim().toLowerCase() === name);
+        const name = normalizeSubjectForGroup(s.subjectName || "");
+        return group.subjects.some(g => normalizeSubjectForGroup(g) === name);
       });
       if (matchingSubjects.length > 0) {
         result.push({ type: "group", groupName: group.groupName, subjects: matchingSubjects });

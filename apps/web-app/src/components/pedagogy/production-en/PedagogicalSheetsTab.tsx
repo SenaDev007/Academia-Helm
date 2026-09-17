@@ -198,6 +198,14 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     schoolName: "", className: "", academicYearLabel: "",
     san: "", sequence: "", lessonDate: formatDate(new Date().toISOString()),
     cours: "", titre: "", duree: "",
+    // ⭐ 2026-09-17 — EN-TÊTE CONFORME AUX MODÈLES OFFICIELS (captures école) :
+    //   MATH : Fn°, DOSSIER N°, THEME, Thème (sous-thème SA), Séance N°
+    //   ES/EST/EA/EPS/STANDARD : Fn°, THEME, Séance N°
+    //   FRANÇAIS : Matière spécifique (Dictée, Vocabulaire, Expression écrite…),
+    //             Unité N°, Étape N°
+    //   (persistés en base — migration 20260917100000)
+    fn: "", dossier: "", theme: "", saTheme: "", seance: "",
+    unite: "", etape: "", matiereSpecifique: "",
     // I- Éléments de planification (7 champs — tous RichTextEditor)
     competence: "", habilete: "", prealable: "", contenu: "",
     methodes: "", moyensDidactiques: "", evaluation: "",
@@ -608,26 +616,149 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               FICHE DE {form.sheetType === "MATH" ? "MATHÉMATIQUE" : form.sheetType === "FRANCAIS" ? "FRANÇAIS" : sheetType?.label.toUpperCase()}
             </h2>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-            {[
-              { label: "SAN°", key: "san" }, { label: "Séquence N°", key: "sequence" },
-              { label: "Date", key: "lessonDate", type: "date" }, { label: "Cours", key: "cours" },
-              { label: "Titre", key: "titre" }, { label: "Durée", key: "duree" },
-            ].map(f => (
-              <div key={f.key}>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">{f.label}</label>
-                <input type={f.type || "text"} value={form[f.key] || ""} onChange={e => setForm({ ...form, [f.key]: e.target.value })} disabled={isReadOnly}
+          {/* ⭐ 2026-09-17 — EN-TÊTE OFFICIEL PAR TYPE (captures modèles école) */}
+          {form.sheetType === "FRANCAIS" ? (
+            <>
+              {/* FRANÇAIS — champ « Matière spécifique » JUSTE APRÈS l'en-tête :
+                  Vocabulaire thématique, Dictée, Expression écrite, Grammaire… */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Matière spécifique <span className="font-normal text-slate-400">(Vocabulaire, Dictée, Expression écrite, Grammaire, Conjugaison…)</span>
+                </label>
+                <input type="text" list="fr-mat-spec-sug-en" value={form.matiereSpecifique || ""} disabled={isReadOnly}
+                  onChange={e => setForm({ ...form, matiereSpecifique: e.target.value })}
+                  placeholder="Ex : Vocabulaire thématique, Dictée, Expression écrite, Lecture…"
+                  className="w-full px-3 py-2 border-2 border-emerald-300 rounded-lg text-sm font-semibold bg-emerald-50/40" />
+                <datalist id="fr-mat-spec-sug-en">
+                  {["Vocabulaire thématique", "Vocabulaire", "Dictée", "Expression écrite", "Expression orale",
+                    "Grammaire", "Conjugaison", "Lecture", "Orthographe", "Communication orale",
+                    "Exercices structuraux", "Graphisme", "Écriture", "Combinatoire", "Conte", "Récitation", "Poésie"].map(s => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                {[
+                  { label: "Cours", key: "cours" }, { label: "Durée", key: "duree" },
+                  { label: "Unité N°", key: "unite" }, { label: "Étape N°", key: "etape" },
+                  { label: "Date", key: "lessonDate", type: "date" },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">{f.label}</label>
+                    <input type={f.type || "text"} value={form[f.key] || ""} onChange={e => setForm({ ...form, [f.key]: e.target.value })} disabled={isReadOnly}
+                      className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                  </div>
+                ))}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Classe</label>
+                  <div className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-medium bg-slate-50">
+                    {form.className || classes.find(c => c.classId === form.classId)?.className || "—"}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Titre</label>
+                <input type="text" value={form.titre || ""} onChange={e => setForm({ ...form, titre: e.target.value })} disabled={isReadOnly}
                   className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
               </div>
-            ))}
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Classe</label>
-              {/* ⭐ Classe pré-remplie depuis la sélection (read-only) */}
-              <div className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-medium bg-slate-50">
-                {form.className || classes.find(c => c.classId === form.classId)?.className || "—"}
+            </>
+          ) : form.sheetType === "MATH" ? (
+            <>
+              {/* MATH — modèle officiel « dossiers » :
+                  Fn°/Cours/SA/Séquence/Séance/Durée/Date/Classe → DOSSIER N° + THEME →
+                  Thème (sous-thème SA) → Titre */}
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                {[
+                  { label: "Fn°", key: "fn", placeholder: "N° de la fiche" },
+                  { label: "Cours", key: "cours", placeholder: "Ex : CM1" },
+                  { label: "SA N°", key: "san", placeholder: "Ex : 1" },
+                  { label: "Séquence N°", key: "sequence", placeholder: "Ex : 0" },
+                  { label: "Séance N°", key: "seance", placeholder: "Ex : 0" },
+                  { label: "Durée", key: "duree", placeholder: "Ex : 60 min" },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">{f.label}</label>
+                    <input type="text" value={form[f.key] || ""} onChange={e => setForm({ ...form, [f.key]: e.target.value })} disabled={isReadOnly}
+                      placeholder={f.placeholder} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                  </div>
+                ))}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Date</label>
+                  <input type="date" value={form.lessonDate || ""} onChange={e => setForm({ ...form, lessonDate: e.target.value })} disabled={isReadOnly}
+                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Classe</label>
+                  <div className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-medium bg-slate-50">
+                    {form.className || classes.find(c => c.classId === form.classId)?.className || "—"}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+              <div className="grid grid-cols-2 md:grid-cols-[160px_1fr] gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">DOSSIER N°</label>
+                  <input type="text" value={form.dossier || ""} onChange={e => setForm({ ...form, dossier: e.target.value })} disabled={isReadOnly}
+                    placeholder="Ex : 1" className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">THEME</label>
+                  <input type="text" value={form.theme || ""} onChange={e => setForm({ ...form, theme: e.target.value })} disabled={isReadOnly}
+                    placeholder="Ex : La coopérative agricole" className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Thème <span className="font-normal text-slate-400">(sous-thème de la SA)</span></label>
+                <input type="text" value={form.saTheme || ""} onChange={e => setForm({ ...form, saTheme: e.target.value })} disabled={isReadOnly}
+                  placeholder="Ex : L'organisation de la production" className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Titre</label>
+                <input type="text" value={form.titre || ""} onChange={e => setForm({ ...form, titre: e.target.value })} disabled={isReadOnly}
+                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+              </div>
+            </>
+          ) : (
+            <>
+              {/* ES / EST / EA / EPS / STANDARD — modèle officiel :
+                  Fn°/Cours/SA/Séance/Durée/Date/Classe → THEME → Titre */}
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                {[
+                  { label: "Fn°", key: "fn", placeholder: "N° de la fiche" },
+                  { label: "Cours", key: "cours", placeholder: "Ex : CM1" },
+                  { label: "SA N°", key: "san", placeholder: "Ex : 6" },
+                  { label: "Séance N°", key: "seance", placeholder: "Ex : 7" },
+                  { label: "Durée", key: "duree", placeholder: "Ex : 60 min" },
+                ].map(f => (
+                  <div key={f.key}>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">{f.label}</label>
+                    <input type="text" value={form[f.key] || ""} onChange={e => setForm({ ...form, [f.key]: e.target.value })} disabled={isReadOnly}
+                      placeholder={f.placeholder} className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                  </div>
+                ))}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Date</label>
+                  <input type="date" value={form.lessonDate || ""} onChange={e => setForm({ ...form, lessonDate: e.target.value })} disabled={isReadOnly}
+                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Classe</label>
+                  <div className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-medium bg-slate-50">
+                    {form.className || classes.find(c => c.classId === form.classId)?.className || "—"}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">THEME</label>
+                <input type="text" value={form.theme || ""} onChange={e => setForm({ ...form, theme: e.target.value })} disabled={isReadOnly}
+                  placeholder="Ex : Élaboration de documents présentant quelques aspects géographiques du Bénin" className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Titre</label>
+                <input type="text" value={form.titre || ""} onChange={e => setForm({ ...form, titre: e.target.value })} disabled={isReadOnly}
+                  className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm" />
+              </div>
+            </>
+          )}
 
           {/* I- Éléments de planification (7 champs RichTextEditor) */}
           <section className="border-l-4 border-slate-300 pl-4">

@@ -1244,29 +1244,83 @@ export class PedagogicalSpaceService {
         </div>
       </div>
 
-      <!-- ═══ INFO GÉNÉRALES ═══ -->
-      <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:9px;">
-        <tr>
-          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:12%;">SAN°</td>
-          <td style="border:1px solid #cbd5e1;padding:5px;width:20%;">${fiche.san || '—'}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:12%;">Date</td>
-          <td style="border:1px solid #cbd5e1;padding:5px;width:20%;">${lessonDateStr}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:12%;">Durée</td>
-          <td style="border:1px solid #cbd5e1;padding:5px;">${fiche.duree || fiche.adminDuree || '—'} min</td>
-        </tr>
-        <tr>
-          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;">Classe</td>
-          <td style="border:1px solid #cbd5e1;padding:5px;">${fiche.classNameResolved || fiche.className || '—'}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;">Effectif</td>
-          <td style="border:1px solid #cbd5e1;padding:5px;">${fiche.totalStudents || '—'} élèves</td>
-          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;">Enseignant</td>
-          <td style="border:1px solid #cbd5e1;padding:5px;">${teacherName}</td>
-        </tr>
-        <tr>
-          <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;">Titre</td>
-          <td colspan="5" style="border:1px solid #cbd5e1;padding:5px;font-weight:600;">${strip(fiche.titre)}</td>
-        </tr>
-      </table>
+      <!-- ═══ EN-TÊTE OFFICIEL — STRUCTURE PAR TYPE DE FICHE (2026-09-17) ═══ -->
+      ${(() => {
+        // Cellules utilitaires (libellé 15% / valeur 18%)
+        const cell = (label: string, value: any, wide = false, bold = false) =>
+          `<td style="border:1px solid #cbd5e1;padding:4px 5px;background:#f8fafc;font-weight:bold;width:${wide ? '18%' : '15%'};font-size:9px;">${label}</td>
+           <td style="border:1px solid #cbd5e1;padding:4px 5px;font-size:9px;${bold ? 'font-weight:600;' : ''}">${value}</td>`;
+        const row = (cells: string) => `<tr>${cells}</tr>`;
+        const fullRow = (label: string, value: any, bold = false) =>
+          `<tr><td style="border:1px solid #cbd5e1;padding:4px 5px;background:#f8fafc;font-weight:bold;width:15%;font-size:9px;">${label}</td><td colspan="5" style="border:1px solid #cbd5e1;padding:4px 5px;font-size:9px;${bold ? 'font-weight:600;' : ''}">${value === '—' ? '' : value}</td></tr>`;
+
+        const ficheFn = fiche.fn || '—';
+        const ficheCours = fiche.cours || '—';
+        const ficheTheme = fiche.theme ? strip(fiche.theme) : '—';
+        const ficheSaTheme = fiche.saTheme ? strip(fiche.saTheme) : '—';
+        const ficheSeance = fiche.seance || '—';
+        const ficheDuree = fiche.duree || fiche.adminDuree || '—';
+        const className = fiche.classNameResolved || fiche.className || '—';
+
+        let headerRows = '';
+
+        if (fiche.sheetType === 'MATH') {
+          // Modèle officiel MATH (curriculum « dossiers ») :
+          //   Fn° | FICHE DE MATHEMATIQUE : {titre} | Cours
+          //   DOSSIER N° … THEME …
+          //   SA N° … Thème (sous-thème) …
+          //   Séquence N° … Séance N° … Durée … Date …
+          //   Titre …
+          headerRows =
+            row(cell('Fn°', ficheFn) + cell('Cours', ficheCours) + cell('Classe', className)) +
+            fullRow('DOSSIER N°', fiche.dossier || '—', false) +
+            fullRow('THEME', ficheTheme, true) +
+            row(cell('SA N°', fiche.san || '—') + cell('Thème', ficheSaTheme === '—' ? '' : ficheSaTheme) + cell('Séquence N°', fiche.sequence || '—')) +
+            row(cell('Séance N°', ficheSeance) + cell('Durée', ficheDuree) + cell('Date', lessonDateStr)) +
+            fullRow('Titre', strip(fiche.titre), true);
+        } else if (fiche.sheetType === 'FRANCAIS') {
+          // Modèle officiel FRANÇAIS :
+          //   [Français | Matière spécifique] (juste après l'en-tête)
+          //   Cours … Durée … Unité N° … Étape N° … Date …
+          //   Titre …
+          const matiereSpec = fiche.matiereSpecifique ? strip(fiche.matiereSpecifique) : '';
+          headerRows =
+            (matiereSpec
+              ? row(`<td colspan="1" style="border:1px solid #cbd5e1;padding:4px 5px;background:${typeConfig.bg};font-weight:bold;font-size:9px;color:${typeConfig.color};">Matière</td><td colspan="5" style="border:1px solid #cbd5e1;padding:4px 5px;font-size:10px;font-weight:bold;">${matiereSpec}</td>`)
+              : '') +
+            row(cell('Cours', ficheCours) + cell('Durée', ficheDuree) + cell('Date', lessonDateStr)) +
+            row(cell('Unité N°', fiche.unite || '—') + cell('Étape N°', fiche.etape || '—') + cell('Classe', className)) +
+            fullRow('Titre', strip(fiche.titre), true);
+        } else {
+          // Modèle officiel ES / EST / EA / EPS / STANDARD :
+          //   Fn° | FICHE … | Cours
+          //   THEME …
+          //   SA N° … Séance N° … Durée … Date …
+          //   Titre …
+          headerRows =
+            row(cell('Fn°', ficheFn) + cell('Cours', ficheCours) + cell('Classe', className)) +
+            fullRow('THEME', ficheTheme, true) +
+            row(cell('SA N°', fiche.san || '—') + cell('Séance N°', ficheSeance) + cell('Durée', ficheDuree)) +
+            row(cell('Date', lessonDateStr) + cell('Effectif', `${fiche.totalStudents || '—'} élèves`) + cell('Enseignant', teacherName)) +
+            fullRow('Titre', strip(fiche.titre), true);
+        }
+
+        return `<table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:9px;">${headerRows}</table>`;
+      })()}
+
+      <!-- ═══ EFFECTIFS / ENSEIGNANT (commun, hors modèles MATH/FRANÇAIS déjà couverts) ═══ -->
+      ${(() => {
+        const needsMetaRow = fiche.sheetType === 'MATH' || fiche.sheetType === 'FRANCAIS';
+        if (!needsMetaRow) return '';
+        return `<table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:9px;">
+          <tr>
+            <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:15%;">Effectif</td>
+            <td style="border:1px solid #cbd5e1;padding:5px;width:18%;">${fiche.totalStudents || '—'} élèves</td>
+            <td style="border:1px solid #cbd5e1;padding:5px;background:#f8fafc;font-weight:bold;width:15%;">Enseignant</td>
+            <td style="border:1px solid #cbd5e1;padding:5px;">${teacherName}</td>
+          </tr>
+        </table>`;
+      })()}
 
       <!-- ═══ I — ÉLÉMENTS DE PLANIFICATION ═══ -->
       <div style="margin-bottom:8px;">
@@ -6155,6 +6209,14 @@ export class PedagogicalSpaceService {
       directorSignature: 'directorSignature',
       // ⭐ Nouveaux champs (structure conforme aux PDFs)
       san: 'san', sequence: 'sequence', cours: 'cours', titre: 'titre', duree: 'duree',
+      // ⭐ 2026-09-17 — EN-TÊTE CONFORME AUX MODÈLES OFFICIELS (captures école) :
+      //    MATH : Fn°, DOSSIER N°, THEME, Thème (sous-thème SA), Séance N°
+      //    ES/EST/EA/EPS/STANDARD : Fn°, THEME, Séance N°
+      //    FRANÇAIS : Matière spécifique (Vocabulaire thématique, Dictée,
+      //    Expression écrite…), Unité N°, Étape N°
+      //    (colonnes posées par la migration 20260917100000)
+      fn: 'fn', dossier: 'dossier', theme: 'theme', saTheme: 'saTheme', seance: 'seance',
+      unite: 'unite', etape: 'etape', matiereSpecifique: 'matiereSpecifique',
       ibis_1: 'ibis_1', ibis_2: 'ibis_2', ibis_3: 'ibis_3', ibis_4: 'ibis_4', ibis_5: 'ibis_5',
       objectivation: 'objectivation', evalRetour: 'evalRetour', projection: 'projection',
       // ⭐ Phases spécifiques au français
@@ -6201,10 +6263,15 @@ export class PedagogicalSpaceService {
     } catch (insertErr: any) {
       // ⭐ Si une colonne optionnelle n'existe pas encore en DB (migration non
       //    faite — erreur 42703 « column does not exist »), on retente sans ces
-      //    colonnes : cahierJournalId (202607xx) et maternelleContent (20260915).
+      //    colonnes : cahierJournalId (202607xx), maternelleContent (20260915)
+      //    et les champs d'en-tête officiels (20260917 — fn, dossier, theme,
+      //    saTheme, seance, unite, etape, matiereSpecifique).
       if (insertErr.code === 'P2010' || (insertErr.message && insertErr.message.includes('42703'))) {
         let retryNeeded = false;
-        for (const optionalCol of ['cahierJournalId', 'maternelleContent']) {
+        for (const optionalCol of [
+          'cahierJournalId', 'maternelleContent',
+          'fn', 'dossier', 'theme', 'saTheme', 'seance', 'unite', 'etape', 'matiereSpecifique',
+        ]) {
           const idx = fields.indexOf(`"${optionalCol}"`);
           if (idx >= 0) {
             fields.splice(idx, 1);
@@ -6259,6 +6326,12 @@ export class PedagogicalSpaceService {
       teacherSignature: 'string', directorSignature: 'string',
       // ⭐ Nouveaux champs (structure conforme aux PDFs)
       san: 'string', sequence: 'string', cours: 'string', titre: 'string', duree: 'string',
+      // ⭐ 2026-09-17 — EN-TÊTE CONFORME AUX MODÈLES OFFICIELS (captures école)
+      //    MATH : Fn°, DOSSIER N°, THEME, Thème (sous-thème SA), Séance N°
+      //    ES/EST/EA/EPS/STANDARD : Fn°, THEME, Séance N°
+      //    FRANÇAIS : Matière spécifique, Unité N°, Étape N°
+      fn: 'string', dossier: 'string', theme: 'string', saTheme: 'string', seance: 'string',
+      unite: 'string', etape: 'string', matiereSpecifique: 'string',
       ibis_1: 'string', ibis_2: 'string', ibis_3: 'string', ibis_4: 'string', ibis_5: 'string',
       objectivation: 'string', evalRetour: 'string', projection: 'string',
       phase_introductive: 'string', phase_systematisation: 'string', phase_application: 'string',
@@ -6298,10 +6371,14 @@ export class PedagogicalSpaceService {
       );
     } catch (updateErr: any) {
       // ⭐ Si une colonne optionnelle n'existe pas (migration non faite), on retente sans
-      //    (cahierJournalId — 202607xx ; maternelleContent — 20260915)
+      //    (cahierJournalId — 202607xx ; maternelleContent — 20260915 ;
+      //     champs d'en-tête officiels — 20260917)
       if (updateErr.code === 'P2010' || (updateErr.message && updateErr.message.includes('42703'))) {
         let retryNeeded = false;
-        for (const optionalCol of ['cahierJournalId', 'maternelleContent']) {
+        for (const optionalCol of [
+          'cahierJournalId', 'maternelleContent',
+          'fn', 'dossier', 'theme', 'saTheme', 'seance', 'unite', 'etape', 'matiereSpecifique',
+        ]) {
           const idx = updates.findIndex(u => u.startsWith(`"${optionalCol}"`));
           if (idx >= 0) {
             updates.splice(idx, 1);
@@ -6491,6 +6568,11 @@ export class PedagogicalSpaceService {
     // ⭐ 2026-09-15 : maternelleContent copié aussi (fiches DOMAINE / DOMAINE_2).
     //    La colonne peut ne pas exister (migration non faite) → INSERT résilient
     //    avec repli sans cette colonne.
+    // ⭐ 2026-09-17 : les champs d'EN-TÊTE sont copiés aussi (structure officielle) :
+    //    fn, dossier, theme, saTheme, seance, unite, etape, matiereSpecifique
+    //    + champs existants san, sequence, cours, titre, duree, ibis_1..5,
+    //    phases du français, phase d'application, retour et projection —
+    //    avant, la duplication PERDAIT tout l'en-tête de la fiche (gap corrigé).
     const insertParams = [
       newId, tenantId, targetAcademicYearId, newTeacherId, newClassId, src.subjectId,
       src.sheetType || null, src.schoolName || null, src.className || null,
@@ -6499,6 +6581,15 @@ export class PedagogicalSpaceService {
       src.contenu || null, src.methodes || null, src.moyensDidactiques || null,
       src.deroulement || null, src.evaluation || null, src.reference || null,
       src.maternelleContent ? JSON.stringify(src.maternelleContent) : null,
+      // ⭐ En-tête (structure officielle) — copie intégrale
+      src.fn || null, src.dossier || null, src.theme || null, src.saTheme || null,
+      src.seance || null, src.unite || null, src.etape || null, src.matiereSpecifique || null,
+      src.san || null, src.sequence || null, src.cours || null, src.titre || null, src.duree || null,
+      src.ibis_1 || null, src.ibis_2 || null, src.ibis_3 || null, src.ibis_4 || null, src.ibis_5 || null,
+      src.phase_introductive || null, src.phase_systematisation || null, src.phase_application || null,
+      src.app_col1 || null, src.app_col2 || null, src.app_col3 || null,
+      src.objectivation || null, src.evalRetour || null, src.projection || null,
+      src.lessonDate || null,
       sourceFicheId, // originalSheetId — traçabilité
     ];
     try {
@@ -6508,17 +6599,43 @@ export class PedagogicalSpaceService {
            "sheetType", "schoolName", "className", "academicYearLabel", "trimester", "weekNumber",
            "competence", "habilete", "prealable", "contenu", "methodes", "moyensDidactiques",
            "deroulement", "evaluation", "reference", "maternelleContent",
+           "fn", "dossier", "theme", "saTheme", "seance", "unite", "etape", "matiereSpecifique",
+           "san", "sequence", "cours", "titre", "duree",
+           "ibis_1", "ibis_2", "ibis_3", "ibis_4", "ibis_5",
+           "phase_introductive", "phase_systematisation", "phase_application",
+           "app_col1", "app_col2", "app_col3",
+           "objectivation", "evalRetour", "projection", "lessonDate",
            "status", "originalSheetId", "createdAt", "updatedAt")
          VALUES ($1, $2, $3, $4, $5, $6,
                  $7, $8, $9, $10, $11, $12,
                  $13, $14, $15, $16, $17, $18,
                  $19, $20, $21, $22::jsonb,
-                 'DRAFT', $23, NOW(), NOW())`,
+                 $23, $24, $25, $26, $27, $28, $29, $30,
+                 $31, $32, $33, $34, $35,
+                 $36, $37, $38, $39, $40,
+                 $41, $42, $43,
+                 $44, $45, $46,
+                 $47, $48, $49, $50::date,
+                 'DRAFT', $51, NOW(), NOW())`,
         ...insertParams,
       );
     } catch (dupErr: any) {
-      // Colonne maternelleContent absente (migration non faite) → INSERT classique
+      // ⭐ Repli résilient : si des colonnes n'existent pas encore (migration
+      //    non faite), on retente en retirant TOUTES les colonnes optionnelles
+      //    une à une puis sans elles (maternelleContent 20260915, champs
+      //    d'en-tête officiels 20260917, phases 2026xxxx).
       if (dupErr.code === 'P2010' || (dupErr.message && dupErr.message.includes('42703'))) {
+        // Construction dynamique : on ne garde que les colonnes SURES (présentes
+        // depuis l'origine de la table + la base actuelle de la prod).
+        const safeInsertParams = [
+          newId, tenantId, targetAcademicYearId, newTeacherId, newClassId, src.subjectId,
+          src.sheetType || null, src.schoolName || null, src.className || null,
+          targetYear[0].name, src.trimester || null, src.weekNumber || null,
+          src.competence || null, src.habilete || null, src.prealable || null,
+          src.contenu || null, src.methodes || null, src.moyensDidactiques || null,
+          src.deroulement || null, src.evaluation || null, src.reference || null,
+          sourceFicheId,
+        ];
         await this.prisma.$executeRawUnsafe(
           `INSERT INTO "primary_pedagogical_fiches"
             ("id", "tenantId", "academicYearId", "teacherId", "classId", "subjectId",
@@ -6531,7 +6648,7 @@ export class PedagogicalSpaceService {
                    $13, $14, $15, $16, $17, $18,
                    $19, $20, $21,
                    'DRAFT', $22, NOW(), NOW())`,
-          ...insertParams.slice(0, 21).concat([sourceFicheId]),
+          ...safeInsertParams,
         );
       } else {
         throw dupErr;

@@ -30,7 +30,7 @@ interface ConflictItem {
   detected_at: string;
 }
 
-export default function ConflictResolutionModal() {
+export function ConflictResolutionModal() {
   const [conflicts, setConflicts] = useState<ConflictItem[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [resolving, setResolving] = useState<string | null>(null);
@@ -195,3 +195,13 @@ export default function ConflictResolutionModal() {
     </div>
   );
 }
+
+// ⭐ FIX (2026-09-18 — React #130 en production) : export DEFAULT conservé en
+// plus de l'export nommé. Le commit perf 6f21bd4dc a converti l'import dans
+// layout-client.tsx en import NOMMÉ ({ ConflictResolutionModal }) alors que ce
+// module n'exportait qu'en default → au bundling SWC, l'identifiant compilait
+// vers undefined → Minified React error #130 sur TOUTES les pages /app/* dès
+// l'hydratation (écran « Une erreur s'est produite » au login). Avec les DEUX
+// exports, les deux styles d'import restent valides — défense contre un futur
+// codemod qui rebasculerait le style d'import.
+export default ConflictResolutionModal;

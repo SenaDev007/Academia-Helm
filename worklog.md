@@ -11040,3 +11040,33 @@ Stage Summary:
 - ✅ Fix en production, validé E2E sur la condition exacte du vrai promoteur (les deux orthographes + exemption du filtre de niveau + filet de sécurité ROLE_MODULES ['*'])
 - ✅ Non-régression prouvée : périmètres sec-comptable / directeur / accréditations / fail-open inchangés
 - Note : le vrai promoteur doit recharger la page (les chunks sont hachés — un simple F5 suffit, pas de purge de cache nécessaire)
+
+---
+Task ID: 77
+Agent: main (Super Z)
+Task: Helm Connect ne répond pas aux spécifications — canaux créés « à la hâte » (calendrier scolaire, informations pédagogiques, transport alors que le module transport n'est pas activé), groupes/canaux parents de la spéc. absents, « c'est ce qui n'était pas demandé qui figure »
+
+Work Log:
+- ÉTAT DES LIEUX (production, inspection DB + code + E2E navigateur promoteur) :
+  * 6 canaux officiels créés inconditionnellement le 04/09 pour chaque tenant (Direction, Vie scolaire, Transport scolaire, Finance, Informations pédagogiques, Calendrier scolaire) — quasi vides (1 message de test au total)
+  * 1 736 groupes auto « Matière × Classe » (SUBJECT) créés en bloc (952 CSPEB + 784 autre école) — NON demandés par la spéc. §4 ; la §8 prévoit des conversations pédagogiques créées PAR L'ENSEIGNANT à la demande
+  * ROOT CAUSE « ça ne fonctionne pas » : la route BFF /api/chat/* rejetait tout POST SANS body (400 « Invalid request body — expected JSON ») → les sync canaux/communautés déclenchées par l'UI échouaient systématiquement (« Synchronisation échouée — réessayez plus tard. » dans Communautés) — vérifié E2E
+  * Groupes conformes spéc. §4 déjà générés côté code : classes, rôles (Enseignants/Administration/Parents d'élèves), Parents-{niveau}, Enseignants de {matière}, conseil pédagogique — les groupes parents/niveaux n'apparaissent pas car AUCUN parent n'a encore de compte utilisateur (condition de données, pas de code) ; ils apparaîtront dynamiquement à l'onboarding des parents
+- CORRECTIFS (commit 9386c6a01, 6 fichiers) :
+  1. BFF chat/[[...path]]/route.ts : POST/PUT sans body tolérés (body vide → {}) ; body explicite {} ajouté aux 2 appels sync du frontend (ceinture et bretelles)
+  2. auto-channel.service.ts : canaux conditionnels aux modules ACTIVÉS — Direction + Vie scolaire (toujours), Finance (si feature FINANCE), Transport scolaire (si feature TRANSPORT ET module livré — DEFERRED_CHANNEL_MODULES car le module est masqué dans l'UI tant qu'aucune école ne gère le transport) ; Calendrier scolaire + Informations pédagogiques RETIRÉS (demande explicite, pas de module source) ; AUTO-RETRAIT à chaque sync des canaux système obsolètes VIDES (abonnements + messages + conversation miroir + canal)
+  3. auto-group.service.ts : génération SUBJECT supprimée (spéc. §4 = classes/enseignants-par-matière/personnel/parents-par-niveau/conseil) ; purgeEmptySubjectGroups() purge les groupes vides résiduels à chaque sync (idempotent, auto-réparant)
+  4. helm-connect-bootstrap.service.ts + chat.controller.ts : types de retour (retired/purged) + messages de sync actualisés + doccomments corrigés
+- PURGE PRODUCTION exécutée (5 tenants, miroir exact du nouveau code, scripts purge_helm_connect.js + purge_helm_connect_bulk.js) : canaux Transport/Calendrier/Infos-pédago supprimés partout (15 canaux conservés = Direction/Vie scolaire/Finance × 5 écoles) ; 1 736 groupes SUBJECT vides purgés ; messages de test supprimés ; previews réinitialisés. État final DB : 15 canaux, 97 groupes (72 CLASS + 15 ROLE + 5 COUNCIL + 5 STAFF), 113 conversations, 0 message
+- VALIDATION : SWC 2/2 fichiers web OK ; bun 4/4 fichiers API OK ; déploiements surveillés — nouveau BFF web confirmé à 12:31 (canary POST sans body : 400 → 401) ; nouvelle API Railway confirmée à 12:31 (uptime reset + sync authentifiée : « Canaux: 0 créé(s), 3 déjà en place, 0 retiré(s)… 19 mise(s) à jour »)
+- E2E production post-déploiement (session promoteur recette.promoteur@cspeb.test, captures hc-canaux-apres.png / hc-communautes-apres.png) :
+  * Section Canaux : 3 canaux OFFICIELS (Finance, Vie scolaire, Direction, 36 abonnés chacun) — Transport/Calendrier/Infos-pédago DISPARUS ; message de sync complet et succès (plus d'échec)
+  * Section Communautés : sync OK (« 0 communauté(s) créée(s), 19 mise(s) à jour ») ; plus de prolifération Matières (catégorie vide pour le promoteur) ; visibilité par rôle correcte (promoter voit Conseil pédagogique/Personnel administratif/Administration ; les enseignants verront leurs classes + Enseignants ; les parents verront Parents + classes de leurs enfants)
+  * Annonces : endpoint 200, UI complète (ciblage école/niveau/classe/enseignants/parents/groupe, priorité, programmation, expiration, pièces jointes, confirmation obligatoire, stats de lecture) — conforme spéc. §5, prête à l'emploi
+
+Stage Summary:
+- ✅ Canaux illégitimes supprimés définitivement + création désormais conditionnelle aux modules activés/livrés (Transport reviendra automatiquement quand le module sera livré) + auto-retrait des canaux obsolètes vides à chaque sync
+- ✅ 1 736 groupes « Matière × Classe » créés à la hâte purgés et plus générés (spéc. §8 : création par l'enseignant à la demande)
+- ✅ Bug racine « Synchronisation échouée » réparé (BFF POST sans body) — toute la chaîne canaux/communautés/annonces répond désormais
+- ✅ Conception auto-réparante : même une recréation par l'ancien code est purgée à la sync suivante
+- Note pour le promoteur : les groupes Parents (Parents d'élèves, Parents-{niveau}) et Enseignants apparaîtront automatiquement dès que les parents/enseignants auront des comptes utilisateurs — la sync est déclenchable manuellement (bouton Re-sync dans Communautés)

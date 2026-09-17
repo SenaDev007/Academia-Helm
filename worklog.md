@@ -11165,3 +11165,16 @@ Stage Summary:
 - ✅ Anomalie corrigée et vérifiée en production : la cause était une régression du chantier perf du 17/09, invisible au build (ignoreBuildErrors).
 - 🔴 Reco forte : remettre typescript.ignoreBuildErrors à false (ou CI tsc) — cette classe de bug (import nommé sans export) est exactement ce que tsc attrape.
 - Repéré au passage (non bloquant, à traiter séparément) : /~partytown/partytown-sw.js 404 en console (G12).
+---
+Task ID: 69
+Agent: Super Z (session principale)
+Task: Cahier journal → fiches pédagogiques — bascule/décompte réparés + feature « Fiche à préparer » (promoteur ET enseignant)
+
+Work Log:
+- Reproduction production : la bascule fonctionnait mais données STALE (« 0/0 matières ») — cause : commit 150d9bc19 (sous-onglets toujours montés CSS hidden → jamais de re-fetch après save, journalId inchangé).
+- Fix : journalRefreshKey incrémenté à chaque save/submit, propagé à FichesAPreparer/FichesBadge/FichesLieesJournal.
+- Feature : toggle « 📋 Fiche » par cellule (primaire recto/verso + maternelle domaines I-V), flags dans entries.__fichesAPreparer__, backend ciblé (matieresPlanifiees = flags uniquement dès qu'au moins un marquage), stats fichesManquantesParJour, bandeau enrichi (total + puces/jour + total semaine), toast avec décompte.
+- Validation : SWC + tsc 0 erreur ; commit 9e2f873b4 ; E2E production : 2 cellules marquées → save → bascule ✓ bandeau « 2 fiches à préparer » ✓ Lundi 2/2 ✓ Total semaine 2 ✓ (capture download/fix69-fiche-a-preparer-flow.png) ; journaux de test nettoyés.
+
+Stage Summary:
+- ✅ Régression (staleness) corrigée + feature « Fiche à préparer » livrée et vérifiée E2E.

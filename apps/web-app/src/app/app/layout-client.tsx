@@ -41,6 +41,12 @@ import OnboardingTour from '@/components/ai/OnboardingTour';
 //    lecture intégrale hors ligne + file de mutations + sync auto au retour réseau.
 import OfflineGuard from '@/components/offline/OfflineGuard';
 import { OfflineSWRegister } from '@/components/offline/OfflineSWRegister';
+// ⭐ (sept. 2026 — retour promoteur « l'application ne recharge plus au
+//    retour de la connexion ») : sonde de connectivité au retour réseau →
+//    événement 'ah:network-restored' (re-fetch features/contexte/identité)
+//    + rechargement propre unique si l'app est dégradée (navigation
+//    hors ligne échouée).
+import NetworkRecovery from '@/components/offline/NetworkRecovery';
 import AppGate from '@/components/auth/AppGate';
 import { SyncModal } from '@/components/offline/SyncModal';
 import ConflictResolutionModal from '@/components/offline/ConflictResolutionModal';
@@ -339,6 +345,12 @@ export default function AppLayoutClient({
     <>
     {/* ⭐ OFFLINE-FIRST RÉACTIVÉ — SW offline (Background Sync + cache API) */}
     <OfflineSWRegister />
+    {/* ⭐ RETOUR DE CONNEXION — sonde de connectivité réelle (debounce
+        2,5 s + GET /api/auth/me) → 'ah:network-restored' (re-fetch des
+        données à fetch classique) + rechargement propre UNIQUE si une
+        navigation hors ligne a échoué (app dégradée). Monté dans le layout
+        /app : c'est là que vivent les données métier. */}
+    <NetworkRecovery />
     {/* ⭐ TAURI : AppGate remplace le middleware côté client (résolution tenant + validation session) */}
     <AppGate>
     <SessionManagerProvider>

@@ -195,7 +195,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.5.0';
+const SW_VERSION = 'v4.6.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -230,7 +230,14 @@ const RSC_CACHE = 'ah-rsc';
 // ⭐ v3.4.0 — 250 (121 routes de modules pré-cachées + navigations normales :
 //    avec 150, le LRU évictait les entrées de modules au profit des visites).
 const RSC_CACHE_MAX = 250;
-const RSC_TIMEOUT = 4000;
+// ⭐ v4.6.0 (retour promoteur « rechargements brutaux hors ligne ») :
+//    4 s → 8 s. Sur connexion école lente (2G/3G), un payload RSC léger
+//    peut légitimement dépasser 4 s (cold start Neon, file de téléchargements
+//    hors-ligne) → 503 fallacieux → error boundary alors que la réponse
+//    allait arriver. 8 s = moitié du budget API (12 s), le routeur affiche
+//    son état de chargement natif pendant l'attente (pas de spinner infini
+//    — le cache sert toujours en fallback si présent).
+const RSC_TIMEOUT = 8000;
 
 // ⭐ v3.3.0 — CACHE DES RÉPONSES API GET (lecture hors ligne).
 //    PROBLÈME (sept. 2026, retour terrain) : hors ligne, après un changement
@@ -388,7 +395,28 @@ self.addEventListener('install', (event) => {
     caches
       .open(PAGE_CACHE)
       .then((cache) =>
-        Promise.allSettled(PRECACHE_URLS.map((url) => cache.add(new Request(url, { cache: 'reload' })))),
+        // ⭐ v4.6.0 — ANTI-EMPOISONNEMENT du shell /app :
+        //    `cache.add()` suit les redirections (302) : installé depuis la
+        //    page /login AVANT toute session, la requête /app était
+        //    redirigée par le middleware vers /login → le HTML de CONNEXION
+        //    était caché sous la clé /app → toute navigation hors ligne vers
+        //    un module non pré-caché servait la page de LOGIN (éjection de
+        //    l'utilisateur hors de l'app !). Désormais : fetch manuel,
+        //    on ne cache UNE réponse que si elle est 200 ET non-redirigée
+        //    (res.redirected === false) — la requête de la page courante
+        //    doit vraiment rendre CE qu'on demande.
+        Promise.allSettled(
+          PRECACHE_URLS.map(async (url) => {
+            try {
+              const res = await fetch(new Request(url, { cache: 'reload' }));
+              if (res.ok && !res.redirected) {
+                await cache.put(new Request(url), res);
+              }
+            } catch {
+              /* hors ligne à l'install — l'entrée sera créée à la 1re visite */
+            }
+          }),
+        ),
       )
       .then(() => self.skipWaiting()),
   );
@@ -398,6 +426,22 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
+      // ⭐ v4.6.0 — SELF-HEAL ANTI-EMPOISONNEMENT : les entrées /app écrites
+      //    par l'ANCIEN install (cache.add qui suivait la 302 → /login)
+      //    portent l'URL FINALE du login dans response.url. On les supprime :
+      //    elles n'ont jamais dû exister (le vrai shell /app sera re-caché à
+      //    la prochaine navigation authentifiée — clé propre sans query, cf.
+      //    handleAppShellNavigation). Les copies écrites par toCacheableCopy
+      //    ont response.url === '' (Response reconstruit) → non touchées.
+      try {
+        const pages = await caches.open(PAGE_CACHE);
+        const shellRes = await pages.match('/app');
+        if (shellRes && shellRes.url && !shellRes.url.endsWith('/app')) {
+          await pages.delete('/app');
+          console.warn('[SW] Entrée /app empoisonnée supprimée (final url:', shellRes.url + ')');
+        }
+      } catch { /* non-bloquant */ }
+
       // ⭐ v3.8.0 — MIGRATION ah-pages-* : les entrées des caches versionnés
       //    (ah-pages-v3.7.0 et antérieurs) sont TRANSFÉRÉS vers le cache
       //    persistant ah-pages — le pré-cache offline des utilisateurs
@@ -1905,8 +1949,20 @@ async function handleAppShellNavigation(request) {
       //    ⚠️ PAS de cache des réponses REDIRIGÉES (session expirée → le
       //    middleware renvoie la page login : l'embarquer sous la clé du
       //    module empoisonnerait le cache offline).
+      //    ⭐ v4.6.0 — SHELL PROPRE : pour /app exactement, on écrit AUSSI
+      //    la clé SANS query («/app») — c'est celle que le fallback shell
+      //    (matchRouteCache('/app')) consulte hors ligne. Avant, seule la
+      //    clé avec ?tenant=… était écrite → le fallback tombait sur
+      //    l'entrée du pré-cache d'install (potentiellement empoisonnée
+      //    par le HTML de login de l'ancien cache.add).
       toCacheableCopy(networkResponse)
-        .then((copy) => cache.put(request, copy))
+        .then((copy) => {
+          const writes = [cache.put(request, copy)];
+          if (url.pathname === '/app' || url.pathname === '/app/') {
+            writes.push(cache.put(new Request(url.origin + '/app'), copy.clone()));
+          }
+          return Promise.all(writes);
+        })
         .catch(() => {});
       return networkResponse;
     }
@@ -3194,6 +3250,41 @@ self.addEventListener('message', (event) => {
           .map((n) => caches.delete(n)),
       );
     });
+  }
+
+  // ⭐ v4.6.0 — CONSULTATION DE CACHE POUR LA NAVIGATION HORS LIGNE :
+  //    OfflineNavigation (capture des clics) demande si la route cible a un
+  //    payload RSC et/ou un HTML en cache AVANT de choisir entre navigation
+  //    SPA (fluide, aucun rechargement) et navigation complète (fallback).
+  //    Réponse : { type: 'AH_HAS_ROUTE_CACHE_RESULT', href, hasRsc, hasHtml }.
+  if (event.data && event.data.type === 'AH_HAS_ROUTE_CACHE' && typeof event.data.href === 'string') {
+    event.waitUntil(
+      (async () => {
+        let hasRsc = false;
+        let hasHtml = false;
+        try {
+          const u = new URL(event.data.href, self.location.origin);
+          if (u.origin === self.location.origin) {
+            const rscCache = await caches.open(RSC_CACHE);
+            hasRsc = !!(await matchRouteCache(rscCache, rscCacheKey(u.toString())));
+            if (!hasRsc) {
+              const pageCache = await caches.open(PAGE_CACHE);
+              hasHtml = !!(await matchRouteCache(pageCache, u.pathname));
+            }
+          }
+        } catch { /* consultation best-effort */ }
+        try {
+          if (event.source && typeof event.source.postMessage === 'function') {
+            event.source.postMessage({
+              type: 'AH_HAS_ROUTE_CACHE_RESULT',
+              href: event.data.href,
+              hasRsc,
+              hasHtml,
+            });
+          }
+        } catch { /* client parti — non-bloquant */ }
+      })(),
+    );
   }
 
   // ⭐ PRÉ-CACHE DE MODULE — le client demande au SW de fetcher une route

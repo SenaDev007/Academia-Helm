@@ -108,11 +108,22 @@ export class AutoGroupService {
       }
 
       // 5. Create ROLE groups
+      //    ⭐ (sept. 2026 — retour promoteur « faire la part des choses au
+      //    niveau de chaque canal ») — DEUX communautés DISTINCTES :
+      //    • « Administration » : direction et cadres administratifs (rôles
+      //      users : promoteur, directeurs, censeur, SG…) — instance de
+      //      décision de l'établissement (Communautés → Administration,
+      //      structure finale de la spéc.) ;
+      //    • « Personnel administratif » : personnel administratif INSCRIT
+      //      DANS LE MODULE PERSONNEL (staff.roleType ADMIN/ADMINISTRATION,
+      //      mappé sur comptes users par email) — les enseignants en sont
+      //      EXCLUS (avant : ALL_STAFF mélangeait tout le personnel →
+      //      « tu les as tous mélangés dans les différents canaux »).
       const roleGroups: AutoGroupConfig[] = [
         { groupType: 'ROLE', name: 'Enseignants', roleType: 'TEACHERS', description: 'Tous les enseignants de l\'établissement' },
-        { groupType: 'ROLE', name: 'Administration', roleType: 'ADMINISTRATION', description: 'Personnel administratif' },
+        { groupType: 'ROLE', name: 'Administration', roleType: 'ADMINISTRATION', description: 'Direction et cadres administratifs — instance de décision de l\'établissement' },
         { groupType: 'ROLE', name: 'Parents d\'élèves', roleType: 'PARENTS', description: 'Tous les parents d\'élèves' },
-        { groupType: 'STAFF', name: 'Personnel administratif', roleType: 'ALL_STAFF', description: 'Tout le personnel' },
+        { groupType: 'STAFF', name: 'Personnel administratif', roleType: 'ALL_STAFF', description: 'Personnel administratif (module Personnel — administration & services, hors enseignants)' },
       ];
 
       for (const config of roleGroups) {
@@ -252,10 +263,22 @@ export class AutoGroupService {
 
   /**
    * ⭐ V3-12: Get participants for a class group (teacher + students + parents).
+   * ⭐ (sept. 2026 — spéc. §4) : le groupe de classe inclut AUSSI
+   *    l'administration (élèves + enseignants + professeur principal +
+   *    administration + parents-tuteurs). Avant, les comptes admin
+   *    n'étaient pas membres → le promoteur/directeur ne VOYAIT AUCUN
+   *    groupe de classe dans Communautés (« on ne voit rien de tout ça »).
    */
   private async getClassParticipants(tenantId: string, classId: string): Promise<string[]> {
     const participantIds: string[] = [];
     try {
+      // 0. Administration (spéc. §4) : direction + cadres — membres du
+      //    groupe de classe, la communauté de la classe peut joindre
+      //    l'administration et inversement.
+      const adminIds = await this.getRoleParticipants(tenantId, 'ADMINISTRATION');
+      participantIds.push(...adminIds);
+
+      // 1. Professeur principal → compte user
       // Get the class's main teacher → find their user ID
       const cls = await this.prisma.class.findUnique({
         where: { id: classId },
@@ -352,6 +375,33 @@ export class AutoGroupService {
    */
   private async getRoleParticipants(tenantId: string, roleType: string): Promise<string[]> {
     try {
+      // ⭐ (sept. 2026 — retour promoteur) : « Personnel administratif »
+      //    (roleType ALL_STAFF) = UNIQUEMENT le personnel administratif du
+      //    MODULE PERSONNEL (staff.roleType ADMIN/ADMINISTRATION), mappé sur
+      //    les comptes users actifs par email. AVANT : l'ensemble
+      //    « rôles admin + rôles enseignants » y était mélangé — le groupe
+      //    « Personnel administratif » affichait aussi l'équipe pédagogique
+      //    (« tu as mis tout le personnel administratif comme équipe
+      //    pédagogique, tu les as tous mélangés »). Le module Personnel
+      //    (RH) fait référence : tout y est correctement paramétré.
+      if (roleType === 'ALL_STAFF') {
+        const rows: Array<{ id: string }> = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+          `SELECT u.id
+           FROM "users" u
+           JOIN LATERAL (
+             SELECT 1 FROM "staff" s
+             WHERE s."tenantId" = $1
+               AND UPPER(COALESCE(s."roleType", '')) IN ('ADMIN', 'ADMINISTRATION')
+               AND s."email" IS NOT NULL AND u."email" IS NOT NULL
+               AND LOWER(s."email") = LOWER(u."email")
+             LIMIT 1
+           ) staff_match ON true
+           WHERE u."tenantId" = $1 AND u."status" = 'active'`,
+          tenantId,
+        );
+        return rows.map(r => r.id);
+      }
+
       const ROLE_SETS: Record<string, string[]> = {
         TEACHERS: [
           'ENSEIGNANT', 'TEACHER', 'TEACHER_RESP', 'PROFESSEUR', 'PROF', 'INSTITUTEUR', 'INSTITUTRICE',

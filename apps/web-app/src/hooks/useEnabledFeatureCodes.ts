@@ -18,7 +18,8 @@ interface FeatureItem {
   status?: string;
 }
 
-/** Modules activés par défaut — utilisés comme fallback en cas d'erreur API */
+/** Modules activés par défaut — utilisés comme fallback ULTIME en cas
+ *  d'erreur API ET d'absence de snapshot (première utilisation). */
 const DEFAULT_ENABLED_CODES = new Set([
   'STUDENTS',
   'FINANCE',
@@ -27,6 +28,47 @@ const DEFAULT_ENABLED_CODES = new Set([
   'HR_PAYROLL',
   'COMMUNICATION',
 ]);
+
+/** ⭐ (sept. 2026 — retour promoteur « tous les modules disparaissent hors
+ *  ligne ») — SNAPSHOT de la dernière liste d'features RÉUSSIE. Hors ligne
+ *  (cache SW manquant + échec réseau), le fallback était la liste des 6
+ *  modules par défaut ci-dessus → la sidebar PERDAIT les modules
+ *  supplémentaires réellement activés (Cantine, EduCast, Academia Shop,
+ *  CMS…). Désormais on relit le dernier état connu (30 jours) : la sidebar
+ *  hors ligne = la sidebar en ligne. */
+const FEATURES_SNAPSHOT_KEY = 'ah_features_snapshot';
+const FEATURES_SNAPSHOT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 jours
+
+interface FeatureSnapshot {
+  savedAt: number;
+  features: FeatureItem[];
+}
+
+function readFeaturesSnapshot(): FeatureItem[] | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(FEATURES_SNAPSHOT_KEY);
+    if (!raw) return null;
+    const snap = JSON.parse(raw) as FeatureSnapshot;
+    if (!Array.isArray(snap?.features) || snap.features.length === 0) return null;
+    if (Date.now() - (snap.savedAt || 0) > FEATURES_SNAPSHOT_MAX_AGE_MS) return null;
+    return snap.features;
+  } catch {
+    return null;
+  }
+}
+
+function writeFeaturesSnapshot(features: FeatureItem[]): void {
+  if (typeof window === 'undefined' || features.length === 0) return;
+  try {
+    localStorage.setItem(
+      FEATURES_SNAPSHOT_KEY,
+      JSON.stringify({ savedAt: Date.now(), features } satisfies FeatureSnapshot),
+    );
+  } catch {
+    /* quota — non bloquant */
+  }
+}
 
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 2000;
@@ -66,10 +108,11 @@ export function useEnabledFeatureCodes() {
         //    vers les modules par défaut (sinon la sidebar tombe à 4 modules —
         //    seuls ceux sans featureCode — hors ligne, cf. retour terrain).
         if (arr.length === 0) {
-          console.warn('[useEnabledFeatureCodes] Empty feature list after retries — using defaults (fail-open)');
+          console.warn('[useEnabledFeatureCodes] Empty feature list after retries — using snapshot/defaults (fail-open)');
           setError(true);
+          const snap = readFeaturesSnapshot();
           setList(
-            Array.from(DEFAULT_ENABLED_CODES).map((code) => ({
+            snap ?? Array.from(DEFAULT_ENABLED_CODES).map((code) => ({
               featureCode: code,
               isEnabled: true,
               status: 'ACTIVE',
@@ -77,6 +120,9 @@ export function useEnabledFeatureCodes() {
           );
           return;
         }
+        // ⭐ Snapshot : persister la dernière liste RÉUSSIE (fallback hors
+        //    ligne — cf. en-tête du fichier).
+        writeFeaturesSnapshot(arr);
         setList(arr);
       })
       .catch((err) => {
@@ -90,12 +136,14 @@ export function useEnabledFeatureCodes() {
           setTimeout(() => fetchFeatures(), RETRY_DELAY_MS);
           return;
         }
-        // FAIL-OPEN : après épuisement des retries (ou hors ligne), utiliser les
-        // modules par défaut plutôt que de verrouiller l'utilisateur hors de l'app
-        console.warn('[useEnabledFeatureCodes] All retries failed, using default enabled features (fail-open)');
+        // FAIL-OPEN : après épuisement des retries (ou hors ligne), la
+        // cascade est : SNAPSHOT de la dernière liste réussie (sidebar
+        // identique à celle en ligne) PUIS défauts (première utilisation).
+        console.warn('[useEnabledFeatureCodes] All retries failed — using snapshot/defaults (fail-open)');
         setError(true);
+        const snap = readFeaturesSnapshot();
         setList(
-          Array.from(DEFAULT_ENABLED_CODES).map((code) => ({
+          snap ?? Array.from(DEFAULT_ENABLED_CODES).map((code) => ({
             featureCode: code,
             isEnabled: true,
             status: 'ACTIVE',
@@ -108,6 +156,20 @@ export function useEnabledFeatureCodes() {
 
   useEffect(() => {
     fetchFeatures();
+  }, [fetchFeatures]);
+
+  // ⭐ (sept. 2026 — retour promoteur « au retour de la connexion, il faut
+  //    recharger avant que les données ne se chargent ») : au retour du
+  //    réseau CONFIRMÉ (NetworkRecovery émet 'ah:network-restored' après
+  //    une sonde de connectivité réussie), on RE-FETCH les features : la
+  //    sidebar se met à jour sans rechargement manuel de la page.
+  useEffect(() => {
+    const onNetworkRestored = () => {
+      retryCountRef.current = 0;
+      fetchFeatures();
+    };
+    window.addEventListener('ah:network-restored', onNetworkRestored);
+    return () => window.removeEventListener('ah:network-restored', onNetworkRestored);
   }, [fetchFeatures]);
 
   // Réagir aux changements depuis la page Paramètres (toggle module) pour mettre à jour la sidebar

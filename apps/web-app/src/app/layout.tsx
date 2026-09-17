@@ -244,10 +244,14 @@ export default function RootLayout({
             interceptés AVANT le montage React (sinon page blanche), avec
             garde anti-boucle (max 2 reloads / 60 s, sessionStorage partagé
             avec src/lib/chunk-recovery.ts). Logique dupliquée volontairement :
-            ce script doit être inline et autonome (pas d'import de module). */}
+            ce script doit être inline et autonome (pas d'import de module).
+            ⭐ v2 (sept. 2026) : HORS LIGNE → JAMAIS de reload immédiat (le
+            réseau est coupé, recharger ne sert à rien — c'était la source
+            des « rechargements brutaux répétés ») : on programme un reload
+            UNIQUE au retour du réseau ('online', max 1/session onglet). */}
         <Script id="chunk-load-recovery" strategy="beforeInteractive">
           {`(function(){try{
-  var KEY='ah_chunk_reload_state',WIN=60000,MAX=2,DELAY=600,scheduled=false;
+  var KEY='ah_chunk_reload_state',WIN=60000,MAX=2,DELAY=600,scheduled=false,OK='1';
   function isMsg(m){if(!m)return false;m=(''+m).toLowerCase();
     return m.indexOf('failed to load chunk')>-1||m.indexOf('loading chunk')>-1||
       m.indexOf('loading css chunk')>-1||m.indexOf('chunkloaderror')>-1||
@@ -258,7 +262,14 @@ export default function RootLayout({
   function can(){var s=read();if(!s)return true;if(Date.now()-s.t>WIN)return true;return s.n<MAX;}
   function mark(){try{var p=read(),e=!p||Date.now()-p.t>WIN;
     sessionStorage.setItem(KEY,JSON.stringify({t:Date.now(),n:e?1:p.n+1}));}catch(e2){}}
-  function recover(){if(scheduled)return;if(!can())return;scheduled=true;mark();
+  function reloadOnceOnline(){try{
+    if(sessionStorage.getItem('ah_chunk_online_reload')===OK)return;
+    sessionStorage.setItem('ah_chunk_online_reload',OK);}catch(e){}
+    window.addEventListener('online',function(){
+      setTimeout(function(){try{location.reload();}catch(e3){}},DELAY);},{once:true});}
+  function recover(){if(scheduled)return;
+    if(!navigator.onLine){reloadOnceOnline();return;}
+    if(!can())return;scheduled=true;mark();
     setTimeout(function(){try{location.reload();}catch(e3){}},DELAY);}
   function onErr(e){
     try{
@@ -312,10 +323,12 @@ export default function RootLayout({
             (site public, login, portails, app authentifiée) */}
         <UniversalSWRegister />
 
-        {/* ⭐ v3.2.0 — hors ligne, les clics internes font une navigation
-            complète servie par le SW (cache modules/shell) au lieu de la
-            navigation SPA qui échoue (payload RSC) → fini le spinner infini
-            au changement de module/onglet. En ligne : aucune interception. */}
+        {/* ⭐ v3.2.0 → v2 (sept. 2026, retour promoteur « rechargement trop
+            brutal hors ligne ») : hors ligne, les clics internes demandent
+            D'ABORD au SW ce qui est en cache — payload RSC en cache →
+            navigation SPA normale (AUCUN rechargement, modules visités
+            fluides) ; HTML seul en cache → navigation complète servie par
+            le SW ; rien → error boundary gracieuse (jamais de spinner). */}
         <OfflineNavigation />
 
         {/* CrispChat déplacé vers app/layout-client.tsx — uniquement pour les pages authentifiées */}

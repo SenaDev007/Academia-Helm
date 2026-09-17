@@ -1691,9 +1691,19 @@ export class ChatService {
     //    ⭐ ALSO search guardians table — parents may not have a users entry
     //    (they exist only in guardians with userId=NULL).
     //    We search both tables and merge results.
-    const tenantFilter = options.includeOtherTenants === false
-      ? `AND u."tenantId" = $1`
-      : '';
+    //
+    // ⭐ (sept. 2026 — retour promoteur « un secrétaire comptable d'une autre
+    //    école apparaît dans Helm Connect de CSPEB ») — ISOLEMENT
+    //    MULTI-TENANT STRICT (spéc. §20 : « chaque école a son espace
+    //    complètement indépendant, les données de communication ne
+    //    circulent JAMAIS entre les écoles »). L'option includeOtherTenants
+    //    (activée PAR DÉFAUT avant ce correctif, et demandée =true par le
+    //    sélecteur « nouvelle conversation » du frontend) listait les
+    //    utilisateurs de TOUTES les écoles de la plateforme — noms, emails,
+    //    rôles — une fuite de données inter-établissements. Le filtre tenant
+    //    est désormais TOUJOURS appliqué ; le paramètre est accepté pour
+    //    compatibilité mais ignoré.
+    const tenantFilter = `AND u."tenantId" = $1`;
 
     // Part 1: Search in users table (teachers, admin, etc.)
     //    ⭐ V6.1 : + téléphone enseignant (teachers.phone via email) +
@@ -1984,6 +1994,23 @@ export class ChatService {
   ): Promise<{ id: string; status: string }> {
     if (!data.recipientId && !data.recipientEmail) {
       throw new BadRequestException('Either recipientId or recipientEmail is required');
+    }
+
+    // ⭐ (sept. 2026 — isolation multi-tenant stricte, spéc. §20) : une
+    //    invitation par recipientId ne peut cibler qu'un utilisateur du
+    //    MÊME tenant que l'expéditeur. L'invitation par email reste possible
+    //    (adresse externe saisie manuellement — pas de données exposées).
+    if (data.recipientId) {
+      const recipient: any = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT id, "tenantId" FROM "users" WHERE id = $1 LIMIT 1`,
+        data.recipientId,
+      );
+      const sameTenant = recipient.length > 0 && recipient[0].tenantId === senderTenantId;
+      if (!sameTenant) {
+        throw new BadRequestException(
+          'Impossible d\u2019inviter un utilisateur d\u2019une autre école (isolation multi-établissements).',
+        );
+      }
     }
 
     // Vérifier qu'il n'y a pas déjà une invitation en attente

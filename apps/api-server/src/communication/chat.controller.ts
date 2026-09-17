@@ -13,7 +13,8 @@
  *   POST   /chat/conversations/:id/messages/attachment            — envoie un fichier (audio/doc/image)
  *   POST   /chat/conversations/:id/mark-read                      — marque comme lu
  *   GET    /chat/unread-count                                     — nombre de messages non lus par conv
- *   GET    /chat/search-users?q=...&includeOtherTenants=true      — recherche d'utilisateurs
+ *   GET    /chat/search-users?q=...                             — recherche d'utilisateurs (STRICTEMENT du tenant courant —
+ *                                                                 spéc. §20 isolation multi-établissements, sept. 2026)
  *   POST   /chat/invitations                                      — envoie une invitation
  *   GET    /chat/invitations/pending                              — invitations reçues en attente
  *   POST   /chat/invitations/:id/accept                           — accepte une invitation
@@ -551,8 +552,13 @@ export class ChatController {
   ) {
     if (!userId) throw new BadRequestException('userId is required');
     if (!query) throw new BadRequestException('q (query) is required');
+    // ⭐ (sept. 2026 — isolation multi-tenant stricte, spéc. §20) : le
+    //    paramètre includeOtherTenants est IGNORÉ — la recherche ne renvoie
+    //    QUE les utilisateurs du tenant courant (retour promoteur : un
+    //    personnel d'une autre école apparaissait dans Helm Connect de
+    //    CSPEB). Conservé dans la signature pour compatibilité des clients.
+    void includeOtherTenants;
     return this.chatService.searchUsers(tenantId, userId, query, {
-      includeOtherTenants: includeOtherTenants !== 'false',
       limit: limit ? parseInt(limit, 10) : 20,
     });
   }

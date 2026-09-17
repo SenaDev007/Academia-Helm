@@ -784,26 +784,29 @@ export default function EvaluationsPage() {
 
   /**
    * ⭐ SUPPRESSION MULTIPLE : supprime toutes les évaluations des sessions
-   * sélectionnées (les VALIDATED/LOCKED sont ignorées, comme en suppression
-   * unitaire ; les évaluations avec notes sont annulées — pas effacées).
+   * sélectionnées. ⭐ (sept. 2026 — retour promoteur) : les VALIDÉES sont
+   * désormais supprimables (l'API les annule si elles portent des notes —
+   * workflow « annuler d'abord » automatisé) ; seules les VERROUILLÉES
+   * (délibération) sont ignorées.
    */
   const handleBulkDelete = async () => {
     const allIds = selectedGroups.flatMap((g) => g.evaluationIds);
     const deletableIds = allIds.filter((id) => {
       const ev = evaluations.find((e) => e.id === id);
-      return ev && !['VALIDATED', 'LOCKED'].includes(ev.status);
+      return ev && ev.status !== 'LOCKED';
     });
     const skipped = allIds.length - deletableIds.length;
 
     if (deletableIds.length === 0) {
-      toastWarning('Aucune évaluation supprimable dans la sélection (validées ou verrouillées).');
+      toastWarning('Aucune évaluation supprimable dans la sélection (verrouillées par délibération).');
       return;
     }
 
     const classNames = Array.from(new Set(selectedGroups.map((g) => g.className))).join(', ');
     const ok = await danger(
       `Supprimer ${deletableIds.length} évaluation(s) sur ${selectedGroups.length} classe(s) ?\n\nClasses : ${classNames}` +
-        (skipped > 0 ? `\n\n⚠ ${skipped} évaluation(s) validée(s)/verrouillée(s) seront ignorées.` : ''),
+        (skipped > 0 ? `\n\n⚠ ${skipped} évaluation(s) verrouillée(s) seront ignorées.` : '') +
+        `\n\n⚠ Les évaluations VALIDÉES portant des notes seront ANNULÉES (conservées dans l'historique) ; les autres seront définitivement supprimées.`,
       'Suppression multiple',
       'Cette action est irréversible. Les évaluations contenant des notes seront annulées (conservées dans l\u2019historique).'
     );
@@ -1332,8 +1335,10 @@ export default function EvaluationsPage() {
       actions.push({ label: 'Annuler', icon: XCircle, onClick: () => handleCancel(group), color: 'text-orange-600 hover:bg-orange-50' });
     }
 
-    // Supprimer — possible seulement si pas validée/verrouillée
-    if (!['VALIDATED', 'LOCKED'].includes(status)) {
+    // Supprimer — ⭐ (sept. 2026) : possible aussi pour VALIDATED (l'API
+    // annule les évaluations validées portant des notes — workflow « annuler
+    // d'abord » automatisé) ; seul LOCKED (délibération) reste protégé.
+    if (status !== 'LOCKED') {
       actions.push({ label: 'Supprimer', icon: Trash2, onClick: () => handleDelete(group), color: 'text-red-600 hover:bg-red-50' });
     }
 

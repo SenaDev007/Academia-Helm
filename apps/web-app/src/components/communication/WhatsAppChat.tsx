@@ -9778,8 +9778,14 @@ function NewChatModal({
     const timeout = setTimeout(async () => {
       setLoading(true);
       try {
+        // ⭐ (sept. 2026 — isolation multi-tenant stricte, spéc. §20) : plus
+        //    de includeOtherTenants=true — le sélecteur « nouvelle
+        //    conversation » ne doit lister QUE les membres de l'école
+        //    courante (retour promoteur : un personnel d'une autre école
+        //    apparaissait chez CSPEB). L'API ignore désormais ce paramètre,
+        //    on ne l'envoie plus.
         const res = await fetch(
-          `/api/chat/search-users?userId=${currentUserId}&q=${encodeURIComponent(query)}&includeOtherTenants=true`,
+          `/api/chat/search-users?userId=${currentUserId}&q=${encodeURIComponent(query)}&includeOtherTenants=false`,
           { credentials: 'include' }
         );
         if (res.ok) setResults(await res.json());

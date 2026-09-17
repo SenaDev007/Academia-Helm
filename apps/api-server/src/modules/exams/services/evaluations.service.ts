@@ -772,9 +772,17 @@ export class EvaluationsService {
 
     if (!evaluation) throw new NotFoundException('Évaluation non trouvée');
 
-    if (evaluation.status === 'VALIDATED' || evaluation.status === 'LOCKED') {
+    // ⭐ (sept. 2026 — retour promoteur « aucune évaluation supprimable dans
+    //    la sélection ») : les évaluations VALIDÉES sont désormais supprimables
+    //    — le workflow manuel suggéré (« Annulez-la d'abord ») est automatisé :
+    //    avec notes → CANCELLED (conservée dans l'historique, comportement
+    //    inchangé) ; sans note → suppression définitive. Seules les évaluations
+    //    LOCKED (verrouillées par délibération/conseil — acte officiel) restent
+    //    protégées : leur suppression passe par un déblocage explicite
+    //    (exam_unlock_requests).
+    if (evaluation.status === 'LOCKED') {
       throw new BadRequestException(
-        `Impossible de supprimer une évaluation ${evaluation.status}. Annulez-la d'abord.`
+        `Impossible de supprimer une évaluation verrouillée (délibération). Débloquez-la d'abord via une demande de déblocage.`
       );
     }
 

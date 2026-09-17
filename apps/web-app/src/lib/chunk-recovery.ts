@@ -21,6 +21,16 @@
  *      - déploiement récent → le HTML frais référence les nouveaux chunks ;
  *      - réseau instable    → nouvelle tentative de chargement (le SW sert
  *        le chunk depuis son cache s'il l'a déjà).
+ *
+ * ⭐ v2 (sept. 2026 — retour promoteur « rechargements brutaux répétés hors
+ *    ligne avant de se stabiliser ») : HORS LIGNE (navigator.onLine ===
+ *    false), un rechargement NE PEUT RIEN résoudre — le réseau est coupé,
+ *    le chunk manquant restera manquant. On ne recharge donc JAMAIS
+ *    automatiquement hors ligne : l'UI d'erreur s'affiche (gracieuse), et
+ *    un rechargement unique est programmé au RETOUR RÉEL du réseau
+ *    (événement 'online'). Fini la boucle « 2 reloads / 60 s » qui
+ *    recommençait à chaque fenêtre expirée pendant que l'utilisateur
+ *    naviguait hors ligne.
  */
 
 'use client';
@@ -117,14 +127,39 @@ function markReload(): void {
 
 let scheduled = false;
 
+/** ⭐ v2 — Rechargement unique au retour du réseau (transition hors-ligne →
+ *  en-ligne réelle). Garde : max 1 par session onglet (sessionStorage) pour
+ *  ne pas recharger en boucle si la connexion flappe. */
+function scheduleOnlineReload(delayMs: number): void {
+  try {
+    if (sessionStorage.getItem('ah_chunk_online_reload') === '1') return;
+    sessionStorage.setItem('ah_chunk_online_reload', '1');
+  } catch {
+    /* sessionStorage indisponible (Safari privé) — on tente quand même */
+  }
+  window.addEventListener(
+    'online',
+    () => {
+      setTimeout(() => window.location.reload(), delayMs);
+    },
+    { once: true },
+  );
+}
+
 /**
  * Programme un rechargement AUTOMATIQUE si la garde anti-boucle l'autorise.
  * Retourne true si le reload a été programmé, false sinon (garde active :
  * l'appelant doit alors afficher l'UI d'erreur avec bouton manuel).
+ * ⭐ v2 : HORS LIGNE → JAMAIS de reload immédiat (voir en-tête) — on
+ * programme plutôt le reload unique au retour du réseau.
  */
 export function scheduleChunkRecoveryReload(delayMs: number = RELOAD_DELAY_MS): boolean {
   if (typeof window === 'undefined') return false;
   if (scheduled) return true; // déjà programmé
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    scheduleOnlineReload(delayMs);
+    return false; // l'appelant affiche l'UI d'erreur — pas de reload immédiat
+  }
   if (!canAutoReload()) return false;
   scheduled = true;
   markReload();
@@ -152,6 +187,19 @@ export function recoverFromChunkError(error: { message?: string } | null | undef
   if (!isChunkLoadFailure(error?.message)) return false;
   scheduleChunkRecoveryReload();
   return true;
+}
+
+/**
+ * ⭐ v2 — L'app est-elle en mode « rechargement différé au retour réseau » ?
+ * (utile pour l'affichage : « la page se rechargera à la reconnexion »).
+ */
+export function isOnlineReloadScheduled(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return sessionStorage.getItem('ah_chunk_online_reload') === '1';
+  } catch {
+    return false;
+  }
 }
 
 /**

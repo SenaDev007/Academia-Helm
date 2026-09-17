@@ -106,6 +106,17 @@ export function useAdminContext() {
     refresh();
   }, [refresh]);
 
+  // ⭐ (sept. 2026 — retour promoteur « au retour de la connexion, il faut
+  //    recharger avant que les données ne se chargent ») : NetworkRecovery
+  //    émet 'ah:network-restored' APRÈS une sonde de connectivité réussie —
+  //    on rafraîchit alors le contexte admin (rôles/niveaux/accréditations)
+  //    sans rechargement manuel de la page.
+  useEffect(() => {
+    const onNetworkRestored = () => refresh();
+    window.addEventListener('ah:network-restored', onNetworkRestored);
+    return () => window.removeEventListener('ah:network-restored', onNetworkRestored);
+  }, [refresh]);
+
   return { context, loading, refresh };
 }
 

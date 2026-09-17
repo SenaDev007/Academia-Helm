@@ -58,6 +58,21 @@ export default function AppModuleError({
     if (isChunkError) scheduleChunkRecoveryReload();
   }, [isChunkError]);
 
+  // ⭐ (sept. 2026 — NetworkRecovery) : marquer l'app comme DÉGRADÉE quand
+  //    une navigation hors ligne a échoué (error boundary actif). Au retour
+  //    CONFIRMÉ du réseau, NetworkRecovery déclenche UN rechargement propre
+  //    (garde 3 min) — « l'application se recharge au retour de la
+  //    connexion » — au lieu de rester figée ici avec des données vides.
+  //    Le flag est nettoyé au démontage (reset réussi → plus dégradé).
+  useEffect(() => {
+    if (isOfflineNav || isChunkError) {
+      try { (window as any).__ah_degraded_nav = true; } catch { /* noop */ }
+    }
+    return () => {
+      try { (window as any).__ah_degraded_nav = false; } catch { /* noop */ }
+    };
+  }, [isOfflineNav, isChunkError]);
+
   // ⭐ v3.7.0 — Auto-guérison : échec de navigation réseau → dès que le
   //    réseau revient, on RETENTE le rendu du module (les données locales
   //    sont déjà servies par la couche unifiée dataService — spec « lecture
@@ -114,7 +129,7 @@ export default function AppModuleError({
 
   if (isOfflineNav) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh] px-4">
+      <div data-ah-offline-error="true" className="flex items-center justify-center min-h-[60vh] px-4">
         <div className="max-w-md w-full text-center">
           <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-amber-100 flex items-center justify-center">
             <WifiOff className="w-6 h-6 text-amber-600" />
@@ -124,6 +139,9 @@ export default function AppModuleError({
             Connexion interrompue pendant l&apos;ouverture de cette page. Vos données
             enregistrées restent disponibles — la page se réaffiche automatiquement
             dès le retour de la connexion.
+          </p>
+          <p className="text-xs text-slate-500 mb-4">
+            L&apos;application se rechargera proprement dès que la connexion sera rétablie.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link

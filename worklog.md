@@ -11147,3 +11147,21 @@ Work Log:
 Stage Summary:
 - ✅ Chantier déployé et validé navigateur : LCP landing ÷3,8 (6,3 s → 1,67 s), login 1,8 s
 - 🔴 Reste bloqué côté utilisateur : certificat wildcard *.academiahelm.com expiré → parcours navigateur des 6 rôles (sous-domaines écoles) impossible à valider depuis le sandbox tant que le certificat n'est pas re-émis (Vercel/Cloudflare) ; ensuite GTMetrix par rôle à consigner dans docs/PERF-GTMETRIX-CHARGEMENT.md §6
+---
+Task ID: 68
+Agent: Super Z (session principale)
+Task: Login impossible — « Une erreur s'est produite » (Minified React error #130) après bascule UI enseignant → secrétaire-comptable, persistante au login
+
+Work Log:
+- Reproduction E2E production (agent-browser, csp-mon-avenir-plus-ndali) : compte secrétaire-comptable double-casquette narcissedougla94@gmail.com (SECRETAIRE_COMPTABLE_SEC + profil enseignant CSPMON-P-26-00002 — scénario exact de l'utilisateur ; mot de passe temporaire via DB, hash sauvegardé puis restauré) → login portail École → /app → écran « Une erreur s'est produite », React #130 reproduit.
+- Instrumentation runtime prod : patch window.Error (pile complète) + patch jsx/jsxs du module webpack 95155 (injection faux chunk) → jsx(undefined, {}) localisé à app/app/layout-5e842e2677bd9c36.js:1:28944 = n.ConflictResolutionModal dans AppLayoutClient compilé.
+- Cause racine : commit 6f21bd4dc (chantier GTMetrix) a converti l'import de ConflictResolutionModal en import NOMMÉ alors que le module n'exportait qu'en DEFAULT ; ignoreBuildErrors=true a laissé passer le TS2305 ; SWC compile vers namespace vide (var n={};r.r(n)) → <undefined> → React #130 sur TOUTES les pages /app/* (tous rôles, toutes écoles — login ET bascule UI).
+- Correctif (commit a8c63ad25) : export nommé AJOUTÉ à ConflictResolutionModal.tsx (default conservé) — les deux styles d'import valides.
+- Audit systémique (scanner scripts/scan_runtime_import_bugs.py, 2072 fichiers) : aucun autre import nommé utilisé en valeur sans export (3 restants = imports aliasés).
+- Validation : tsc isolé ✓, check_syntax_swc.js ✓, post-déploiement E2E ✓ : login secrétaire-comptable → /app/secretaire-comptable rendu complet ; bascule vers UI Enseignant ✓ ; bascule RETOUR vers UI École ✓ (flux exact du signalement) ; 0 erreur React. Captures : download/fix68-secretaire-comptable-login.png, fix68-bascule-retour-ecole.png.
+- Mots de passe DB restaurés et vérifiés ($2a$10$).
+
+Stage Summary:
+- ✅ Anomalie corrigée et vérifiée en production : la cause était une régression du chantier perf du 17/09, invisible au build (ignoreBuildErrors).
+- 🔴 Reco forte : remettre typescript.ignoreBuildErrors à false (ou CI tsc) — cette classe de bug (import nommé sans export) est exactement ce que tsc attrape.
+- Repéré au passage (non bloquant, à traiter séparément) : /~partytown/partytown-sw.js 404 en console (G12).

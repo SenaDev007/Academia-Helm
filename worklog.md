@@ -11072,31 +11072,34 @@ Stage Summary:
 - Note pour le promoteur : les groupes Parents (Parents d'élèves, Parents-{niveau}) et Enseignants apparaîtront automatiquement dès que les parents/enseignants auront des comptes utilisateurs — la sync est déclenchable manuellement (bouton Re-sync dans Communautés)
 
 ---
-Task ID: 78 (partie 1 — commit c7455695a, déploiements en cours)
+Task ID: 78
 Agent: main (Super Z)
-Task: Trois retours promoteur — (1) UX hors ligne (rechargements brutaux répétés au changement d'onglet offline, modules qui disparaissent offline, pas de rechargement au retour du réseau) ; (2) « aucune évaluation supprimable » au nettoyage des évaluations tests du module Examens ; (3) Helm Connect non multi-tenant strict (un secrétaire comptable de Mon Avenir Plus visible chez CSPEB) + composition des canaux non conforme (personnel administratif mélangé avec l'équipe pédagogique, groupes classes/parents invisibles)
+Task: Fiches pédagogiques — champs manquants des modèles officiels (MATH : Dossier/Thème/SA/Séance… ; FRANÇAIS : matière spécifique) + persistance DB + sous-matières « Éducation artistique » du cahier journal CI-CM2
 
 Work Log:
-- REPRODUCTION E2E offline (navigateur réel, compte recette.promoteur@cspeb.test, émulation offline CDP) :
-  * CAUSE RACINE rechargements brutaux = OfflineNavigation (layout racine) : TOUT clic de lien interne offline → window.location.assign (navigation complète) → flash blanc + re-bootstrap à chaque changement de module
-  * Navigation offline vers route non pré-cachée (ex. fiche élève /app/students/<id>) → rechargement + ÉJECTION vers /login (shell /app empoisonné : cache.add de l'install suivait la 302 du middleware → HTML de LOGIN caché sous la clé /app pour les installs anonymes)
-  * Le payload RSC offline répond 200 depuis le cache (vérifié fetch direct) → la navigation SPA est possible, l'interception était contre-productive
-- CORRECTIFS OFFLINE (7 fichiers web + sw.js v4.6.0) :
-  1. OfflineNavigation v2 : round-trip message SW (AH_HAS_ROUTE_CACHE) → RSC en cache = navigation SPA SANS rechargement ; HTML seul en cache = navigation complète ; rien = error boundary gracieuse (503 rapide du SW)
-  2. sw.js v4.6.0 : install = fetch manuel, jamais de réponse redirectée cachée (anti-empoisonnement) ; self-heal activate (entrée /app dont res.url ≠ /app supprimée) ; handler AH_HAS_ROUTE_CACHE ; RSC_TIMEOUT 4s→8s ; clé shell propre /app (sans query) écrite en ligne pour que le fallback offline trouve le VRAI shell
-  3. chunk-recovery v2 + script inline pré-hydratation (layout.tsx) : JAMAIS de reload auto offline (le réseau est coupé, recharger ne résout rien) → reload UNIQUE programmé sur l'événement 'online' (garde sessionStorage)
-  4. useEnabledFeatureCodes : snapshot localStorage (30 j) de la dernière liste réussie → fallback offline = snapshot (la sidebar garde Cantine/EduCast/Shop/CMS…) au lieu de 6 codes par défaut
-  5. NetworkRecovery (nouveau composant, layout /app) : 'online' → debounce 2,5 s + sonde GET /api/auth/me → 'ah:network-restored' (features + contexte admin se re-fetchent) + rechargement propre UNIQUE si app dégradée (flag __ah_degraded_nav posé par error.tsx ; garde 3 min)
-  6. app/error.tsx : flag dégradé + data-ah-offline-error + message « l'application se rechargera à la reconnexion »
-  7. useAdminContext : refresh sur 'ah:network-restored'
-- EXAMENS : API evaluations.service.remove() — VALIDATED désormais supprimable (annulation auto si notes = workflow « annulez-la d'abord » automatisé ; hard delete sinon), seul LOCKED (délibération) protégé ; UI suppression unitaire + multiple alignées
-- PURGE DB exécutée (scripts/purge_cspeb_evaluations.js --confirm, transaction) : 100 évaluations « TEST First CA » + 330 notes + 44 grade_validation_batches supprimés de CSPEB (100% titrées TEST vérifié avant) ; évaluations restantes : 0
-- HELM CONNECT :
-  * Fuite multi-tenant = GET /chat/search-users (includeOtherTenants ACTIVÉ par défaut côté contrôleur ET demandé =true par le sélecteur « nouvelle conversation » du frontend) → listait les users de TOUTES les écoles. Corrigé : filtre tenant TOUJOURS appliqué (param ignoré), sendInvitation garde tenant sur recipientId, frontend =false
-  * Composition des groupes (auto-group.service.ts) : « Personnel administratif » (STAFF/ALL_STAFF) = UNIQUEMENT staff.roleType ADMIN/ADMINISTRATION mappé aux users par email (module Personnel = référence — enseignants exclus, avant tout y était mélangé) ; « Administration » (ROLE) = direction et cadres (rôles users) — descriptions distinctes ; groupes de CLASSE : + membres ADMINISTRATION (spec §4 : élèves/enseignants/prof principal/administration/parents) → le promoteur voit enfin les groupes de classes dans Communautés
-- VALIDATIONS locales : SWC 10/10 fichiers web OK ; bun build 4/4 fichiers API OK ; node --check sw.js OK + vérifs comportementales (plus de cache.add en code, garde redirected, handler, version v4.6.0)
-- Déploiements : push c7455695a → Vercel (poll SW v4.6.0) + Railway (poll uptime reset) en cours
+- ANALYSE des 4 captures officielles (VLM + zooms x3) : MATH = Fn° | FICHE DE MATHEMATIQUE : titre | Cours, puis DOSSIER N° + THEME, SA N° + Thème (sous-thème), Séquence N° + Séance N° + Durée + Date, Titre — ES = Fn°/THEME/SA N°/Séance N°/Durée/Date/Titre — EPS = idem — FRANÇAIS = bandeau « Français | matière spécifique (ex : Vocabulaire thématique) », Cours, Durée/Unité/Étape/Date, Titre
+- ÉTAT EXISTANT : en-tête unique SAN° | Séquence N° | Date | Cours | Titre | Durée pour TOUS les types → champs manquants confirmés ; stockage = table primary_pedagogical_fiches (SQL brut, fieldMap create + allowedFields update)
+- MIGRATION 20260917100000 (appliquée sur Neon prod + marquée dans _prisma_migrations) : 8 colonnes TEXT — fn, dossier, theme, saTheme, seance, unite, etape, matiereSpecifique (toutes NULLABLE, rétro-compatibles)
+- BACKEND pedagogical-space.service.ts : fieldMap (create) + allowedFields (update) + replis résilients 42703 étendus aux 8 colonnes ; duplicateFicheToYear copie désormais TOUT l'en-tête (avant : la duplication cross-year PERDAIT san/sequence/cours/titre/duree/ibis/phases/application/retour — gap corrigé) ; buildFichePdfHtml refondu : en-tête officiel par type (MATH / ES-EST-EA-EPS-STANDARD / FRANÇAIS avec ligne « Matière » en tête)
+- ⭐ BUG MAJEUR DÉCOUVERT EN E2E : updatePedagogicalFiche cassé depuis le 2026-07-20 (commit 80ed9cc35) — cast `::string` inexistant en PostgreSQL (42704 « type "string" does not exist » → P2010) : toute MAJ d'une fiche avec champ texte → 500, ou mise à jour silencieusement avalée par le repli optionnel (200, fiche inchangée). Fix : cast 'string' → 'text' (commit fb1459a63). Aucune autre occurrence du pattern dans le code.
+- FRONTEND FR (production/PedagogicalSheetsTab.tsx) : en-tête par type — MATH (Fn°/Cours/SA/Séquence/Séance/Durée/Date/Classe + DOSSIER N° + THEME + Thème sous-thème + Titre), ES/EST/EA/EPS/STANDARD (Fn°/Cours/SA/Séance/Durée/Date/Classe + THEME + Titre), FRANÇAIS (champ « Matière spécifique » avec datalist — Vocabulaire thématique, Dictée, Expression écrite, Grammaire, Conjugaison, Lecture… — JUSTE APRÈS le bandeau + Cours/Durée/Unité N°/Étape N°/Date/Classe + Titre) ; « Cours » pré-rempli avec la classe (ex : CM1) ; anti-vide étendu (theme/matiereSpecifique) ; carte de liste enrichie (Fn°/SA/Séance/Thème)
+- FRONTEND EN (production-en/PedagogicalSheetsTab.tsx + CahierJournalTab.tsx) : miroir identique (parité)
+- CAHIER JOURNAL (CahierJournalTab.tsx FR + EN) : ROOT CAUSE du « non-regroupement » = noms réels en base « Éducation Artistique (EA) Plastique » / « Éducation Artistique (EA) Vivant » ne matchaient pas les variantes codées en dur ; fix = noms réels ajoutés + matching normalisé (casse + accents + parenthèses « (EA) » + vivant/vivante + espaces) → EA Plastique/Vivant deviennent des SOUS-MATIÈRES de la colonne « Éducation artistique », exactement comme les sous-matières du Français ; Éducation artistique → fiche EA vérifié (mapMatiereKeyToSheetType)
+- Élision du titre corrigée : « FICHE D'ÉDUCATION SOCIALE/ARTISTIQUE/SCIENTIFIQUE… » (pas « FICHE DE ÉDUCATION ») — commit 2a8be1154
+- VALIDATIONS : SWC 6/6 fichiers web OK ; bun build 3/3 backend OK ; structure HTML des en-têtes PDF auditée (8 scénarios, 6 colonnes cohérentes)
+- 3 COMMITS POUSSÉS : 54ba0db4c (feature complète), fb1459a63 (fix UPDATE ::string), 2a8be1154 (élision) — déploiements Vercel + Railway confirmés (dpl-id changé 15:15 ; fix Railway live 15:23)
+- E2E PRODUCTION :
+  * API : login promoteur recette → CREATE fiche MATH CM1 avec les 8 champs → GET : 8/8 PERSISTÉS (fn, dossier, theme, saTheme, seance, unite, etape, matiereSpecifique) → PUT : dossier 1→2, séance 3→4 ✅ (après le fix ::string) → PDF export 223 Ko ✅ → DELETE ✅
+  * PDF : pdftotext des exports MATH (Fn°, DOSSIER N°, THEME, sous-thème, Séquence N°, Séance N°, SA N° ✓✓) et FRANÇAIS (Matière, Vocabulaire thématique, Unité N°, Étape N° ✓✓)
+  * UI navigateur réel (agent-browser, session promoteur) : cahier journal CM1 = colonnes « FRANÇAIS (Dictée · Expression Écrite · Lecture) », « ÉDUCATION SOCIALE », « ÉDUCATION ARTISTIQUE (Éducation Artistique (EA) Plastique · Éducation Artistique (EA) Vivant) » ✓ — fiche MATH : Fn°/Cours/SA N°/Séquence N°/Séance N°/Durée/DOSSIER N°/THEME/Thème sous-thème/Titre ✓ — saisie complète + sauvegarde → fiche persistée en base avec tous les champs ✓ — fiche FRANÇAIS : « Matière spécifique » présent + Unité/Étape ✓ — ES et EST : structure identique ✓ — captures : cj-cm1-ea-sous-matieres.png, fiche-math-en-tete-officiel.png, fiche-francais-matiere-specifique.png, fiche-est-en-tete.png
+- NETTOYAGE : toutes les fiches de test supprimées de la base (E2E, DEBUG, SONDE, PDF, UI)
+- Scripts persistés : apply_migration_fiches_header.js, mark_migration_fiches_header.js, e2e_fiches_header_fields.js, verify_pdf_fiches_header.js, test_pdf_header_structure.js, probe_put_fix.js, check_deploy_fiches*.js, list_matieres_cspeb.js, test_grouping_matieres.js, cleanup_fiches_tests.js
 
 Stage Summary:
-- ⏳ En attente des déploiements Vercel + Railway pour validation E2E production (navigation offline sans reload, sidebar complète offline, recharge à la reconnexion, suppression évaluations dans l'UI, search-users CSPEB sans utilisateur Mon Avenir Plus, sync auto-groups avec nouvelles compositions)
-- ✅ Purge DB des évaluations tests CSPEB DÉJÀ exécutée (100 évaluations, 330 notes, 44 lots de validation)
+- ✅ Fiche MATH : Fn°, DOSSIER N°, THEME, Thème (sous-thème SA), Séance N° ajoutés — structure exacte du modèle officiel (curriculum « dossiers »), persistés en base
+- ✅ Fiches ES / EST / EA / EPS / STANDARD : Fn°, THEME, Séance N° ajoutés (même structure que la capture Éducation Sociale)
+- ✅ Fiche FRANÇAIS : champ « Matière spécifique » (Vocabulaire thématique, Dictée, Expression écrite…) juste après l'en-tête + Unité N° + Étape N° — persistés
+- ✅ Cahier journal CI→CM2 : « Éducation Artistique (EA) Plastique » et « (EA) Vivant » = sous-matières de « Éducation artistique » comme les sous-matières du Français (matching insensible casse/accents/parenthèses)
+- ✅ Export PDF : en-têtes officiels par type (texte vérifié par extraction)
+- ✅ BONUS : bug critique du 20/07 corrigé — TOUTES les mises à jour de fiches (PUT) étaient cassées (cast ::string invalide) ; duplication cross-year ne perd plus l'en-tête
+- En production et validé E2E (API + navigateur réel + PDF)

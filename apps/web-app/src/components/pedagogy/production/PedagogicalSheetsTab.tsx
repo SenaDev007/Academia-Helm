@@ -1256,7 +1256,11 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
           {/* En-tête avec couleur spécifique au type */}
           <div className={cn("text-center border-b-2 pb-3 rounded-t-lg -mx-6 -mt-6 px-6 py-3", sheetType?.headerBg || "bg-slate-800")}>
             <h2 className="text-lg font-bold text-white uppercase">
-              FICHE DE {form.sheetType === "MATH" ? "MATHÉMATIQUE" : form.sheetType === "FRANCAIS" ? "FRANÇAIS" : sheetType?.label.toUpperCase()}
+              {(() => {
+                const raw = form.sheetType === "MATH" ? "MATHÉMATIQUE" : form.sheetType === "FRANCAIS" ? "FRANÇAIS" : (sheetType?.label || "").toUpperCase();
+                const de = /^[AEÉÈÊIÎOÔUÛHY]/.test(raw) ? "D'" : "DE ";
+                return `FICHE ${de}${raw}`;
+              })()}
             </h2>
           </div>
 

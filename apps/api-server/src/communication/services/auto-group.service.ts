@@ -278,26 +278,51 @@ export class AutoGroupService {
       const adminIds = await this.getRoleParticipants(tenantId, 'ADMINISTRATION');
       participantIds.push(...adminIds);
 
-      // 1. Professeur principal → compte user
-      // Get the class's main teacher → find their user ID
-      const cls = await this.prisma.class.findUnique({
-        where: { id: classId },
-        select: { mainTeacherId: true },
-      });
-      if (cls?.mainTeacherId) {
-        const teacher = await this.prisma.teacher.findUnique({
-          where: { id: cls.mainTeacherId },
-          select: { email: true },
+      // 1. ENSEIGNANTS DE LA CLASSE (spéc. §4) — via teacher_class_assignments
+      //    (les vraies affectations du module Pédagogie/Personnel).
+      //    ⭐ BUG LATENT CORRIGÉ (sept. 2026) : l'ancien code lisait
+      //    prisma.class.mainTeacherId — ce champ n'existe PAS sur le modèle
+      //    Class (il vit sur AcademicClass, module pédagogie) → Prisma
+      //    rejetait la requête → le catch avalait → AUCUN enseignant n'a
+      //    jamais été membre d'un groupe de classe. On utilise la table
+      //    réelle des affectations + le prof principal de la classe
+      //    officielle (best-effort, champ mainTeacherId d'AcademicClass)
+      //    quand il est désigné.
+      const teacherEmails: string[] = [];
+      try {
+        const assigned: Array<{ email: string }> = await this.prisma.$queryRawUnsafe<Array<{ email: string }>>(
+          `SELECT DISTINCT t."email"
+           FROM teacher_class_assignments tca
+           JOIN teachers t ON t.id = tca."teacherId"
+           WHERE tca."tenantId" = $1 AND tca."classId" = $2 AND t."email" IS NOT NULL`,
+          tenantId, classId,
+        );
+        for (const a of assigned) teacherEmails.push(a.email);
+      } catch { /* table absente — continuer */ }
+      // Professeur principal : classe physique → classe officielle (module
+      // pédagogie) → mainTeacherId. Best-effort : souvent non désigné encore.
+      try {
+        const mainTeacher: Array<{ email: string }> = await this.prisma.$queryRawUnsafe<Array<{ email: string }>>(
+          `SELECT t."email"
+           FROM classes c
+           JOIN pedagogy_academic_classes pac ON pac.id = c."officialClassId"
+           JOIN teachers t ON t.id = pac."mainTeacherId"
+           WHERE c."id" = $1 AND t."email" IS NOT NULL
+           LIMIT 1`,
+          classId,
+        );
+        if (mainTeacher.length > 0) teacherEmails.push(mainTeacher[0].email);
+      } catch { /* pas de classe officielle / prof non désigné */ }
+      if (teacherEmails.length > 0) {
+        const users = await this.prisma.user.findMany({
+          where: { email: { in: Array.from(new Set(teacherEmails)) }, tenantId, status: 'active' },
+          select: { id: true },
         });
-        if (teacher?.email) {
-          const user = await this.prisma.user.findFirst({
-            where: { email: teacher.email, tenantId, status: 'active' },
-            select: { id: true },
-          });
-          if (user) participantIds.push(user.id);
-        }
+        participantIds.push(...users.map(u => u.id));
       }
-      // Get all enrolled students → find their parents (guardians with user accounts)
+
+      // 2. Parents des élèves inscrits (guardians avec comptes users) —
+      //    apparaîtront à l'onboarding des parents.
       const enrollments = await this.prisma.studentEnrollment.findMany({
         where: { classId, status: 'ENROLLED' },
         select: { student: { select: { guardianId: true } } },
@@ -523,27 +548,32 @@ export class AutoGroupService {
       // 1. Direction / administration
       const adminIds = await this.getRoleParticipants(tenantId, 'ADMINISTRATION');
       participantIds.push(...adminIds);
-      // 2. Professeurs principaux (mainTeacher de chaque classe de l'année)
-      const classes = await this.prisma.class.findMany({
-        where: { tenantId, academicYearId, mainTeacherId: { not: null } },
-        select: { mainTeacherId: true },
-      });
-      const mainTeacherIds = Array.from(new Set(
-        classes.map(c => c.mainTeacherId).filter((t): t is string => !!t),
-      ));
-      if (mainTeacherIds.length > 0) {
-        const teachers = await this.prisma.teacher.findMany({
-          where: { id: { in: mainTeacherIds } },
-          select: { email: true },
+      // 2. Professeurs principaux de toutes les classes : classe physique →
+      //    classe officielle (module pédagogie) → mainTeacherId.
+      //    ⭐ BUG LATENT CORRIGÉ (sept. 2026) : l'ancien code faisait
+      //    prisma.class.findMany({ mainTeacherId: { not: null } }) — champ
+      //    inexistant sur le modèle Class (il vit sur AcademicClass) → Prisma
+      //    rejetait → le conseil n'a jamais contenu de profs principaux.
+      //    Best-effort : le conseil s'enrichit dès que l'école désigne des
+      //    profs principaux dans le module Pédagogie.
+      const mainTeacherEmails: string[] = [];
+      try {
+        const rows: Array<{ email: string }> = await this.prisma.$queryRawUnsafe<Array<{ email: string }>>(
+          `SELECT DISTINCT t."email"
+           FROM classes c
+           JOIN pedagogy_academic_classes pac ON pac.id = c."officialClassId"
+           JOIN teachers t ON t.id = pac."mainTeacherId"
+           WHERE c."tenantId" = $1 AND c."academicYearId" = $2 AND t."email" IS NOT NULL`,
+          tenantId, academicYearId,
+        );
+        for (const r of rows) mainTeacherEmails.push(r.email);
+      } catch { /* pas de classes officielles / profs non désignés */ }
+      if (mainTeacherEmails.length > 0) {
+        const users = await this.prisma.user.findMany({
+          where: { email: { in: Array.from(new Set(mainTeacherEmails)) }, tenantId, status: 'active' },
+          select: { id: true },
         });
-        const emails = Array.from(new Set(teachers.map(t => t.email).filter((e): e is string => !!e)));
-        if (emails.length > 0) {
-          const users = await this.prisma.user.findMany({
-            where: { email: { in: emails }, tenantId, status: 'active' },
-            select: { id: true },
-          });
-          for (const u of users) participantIds.push(u.id);
-        }
+        participantIds.push(...users.map(u => u.id));
       }
     } catch (e: any) {
       this.logger.warn(`getPedagogicalCouncilParticipants failed: ${e.message}`);

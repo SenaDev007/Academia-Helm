@@ -20,10 +20,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
 import { usePathname } from 'next/navigation';
-import { getPageSlideMotion } from '@/lib/motion/presets';
-import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import PilotageTopBar from './PilotageTopBar';
 import PilotageSidebar from './PilotageSidebar';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -45,8 +42,7 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false); // mobile: drawer overlay
   const { currentLevel } = useSchoolLevel();
   const pathname = usePathname();
-  const { shouldReduceMotion } = useMotionBudget();
-  const pageMotion = getPageSlideMotion(shouldReduceMotion);
+  // ⭐ PERF : pageMotion (framer) remplacé par la classe CSS .page-transition-in
 
   // ⭐ OFFLINE-FIRST RÉACTIVÉ — worker de sync (push outbox + pull incrémental périodique)
   useSyncWorker();
@@ -115,18 +111,19 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
               sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'
             }`}
           >
-            <AnimatePresence mode="wait">
-              <motion.div
-              className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full"
+            {/*
+              ⭐ PERF (chantier GTMetrix) : transition de page en CSS pur
+              (.page-transition-in — voir globals.css). Remplace
+              AnimatePresence + motion.div (framer-motion ~35 Ko gz retirés
+              du chunk initial du shell promoteur). Le key{} force le
+              remontage à chaque changement de route/niveau → l'animation
+              CSS se rejoue comme avant. */}
+            <div
+              className="page-transition-in p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full"
               key={`${pathname}-${currentLevel?.id ?? 'no-level'}`}
-              initial={pageMotion.initial}
-              animate={pageMotion.animate}
-              exit={pageMotion.exit}
-              transition={pageMotion.transition}
-              >
-                {children}
-              </motion.div>
-            </AnimatePresence>
+            >
+              {children}
+            </div>
           </main>
         </div>
 

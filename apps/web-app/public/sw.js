@@ -3,6 +3,11 @@
  * SERVICE WORKER UNIFIÉ — Academia Helm (v4.1 « offline exhaustif + visible »)
  * ============================================================================
  *
+ * ⭐ CARTE DU CACHE RÉSEAU (source unique de vérité, coordination chantiers
+ *    performance ↔ offline) : docs/PERF-GTMETRIX-CHARGEMENT.md — toute
+ *    modification des stratégies ci-dessous DOIT y être reportée et testée
+ *    en ligne ET hors ligne.
+ *
  * ⭐ SW UNIQUE à la racine du domaine (scope: '/'). NE PAS enregistrer
  *    d'autres service workers au même scope — les anciens sw-offline.js,
  *    sw-site.js et sw-chat.js sont OBSOLÈTES et sont désinstallés par

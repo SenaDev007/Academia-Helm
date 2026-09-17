@@ -75,7 +75,7 @@ export function UploadZone({
         const buffer = await file.arrayBuffer();
         setProgress(50);
 
-        const classes = parseEducMasterFile(buffer, file.name);
+        const classes = await parseEducMasterFile(buffer, file.name);
         setProgress(80);
 
         if (classes.length === 0) {
@@ -163,7 +163,7 @@ export function UploadZone({
 
         try {
           const buffer = await file.arrayBuffer();
-          const classes = parseEducMasterFile(buffer, file.name);
+          const classes = await parseEducMasterFile(buffer, file.name);
 
           if (classes.length === 0) {
             errors.push(`${file.name}: aucune classe détectée`);

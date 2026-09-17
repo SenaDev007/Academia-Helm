@@ -183,6 +183,9 @@ export default function TenantCareersPage() {
             <img
               src="/images/AcademiaHelm_NoRecruitment.webp"
               alt="Aucune offre d'emploi"
+              width={896}
+              height={1200}
+              loading="lazy"
               className="w-full max-w-md rounded-2xl shadow-lg mb-6"
             />
             <h3 className="text-lg font-bold text-slate-900 mb-2">Aucune offre d'emploi pour le moment</h3>

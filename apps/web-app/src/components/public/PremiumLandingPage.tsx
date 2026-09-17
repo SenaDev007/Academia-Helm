@@ -440,7 +440,14 @@ function RecruitmentBanner() {
   );
 }
 
-const LANDING_MIN_LOADING_MS = 6000;
+/**
+ * ⭐ PERF (chantier GTMetrix — spéc. §1 LCP < 2,5 s) : révélation de marque
+ * courte. AVANT : plancher artificiel de 6 000 ms → le LCP réel de la
+ * landing était ≥ 6,3 s quelle que soit la vitesse réseau (note F GTMetrix
+ * garantie). APRÈS : 600 ms — le temps du logo animé, sans tenir le contenu
+ * en otage. La progression s'adapte automatiquement (totalSteps/time).
+ */
+const LANDING_MIN_LOADING_MS = 600;
 
 export default function PremiumLandingPage() {
   const [showContent, setShowContent] = useState(false);
@@ -455,7 +462,7 @@ export default function PremiumLandingPage() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Loading minimum de 6 secondes avant d'afficher le contenu
+  // ⭐ PERF : courte révélation de marque (600 ms) puis contenu — LCP < 2,5 s
   useEffect(() => {
     const startTime = Date.now();
     const totalSteps = 90;
@@ -504,7 +511,7 @@ export default function PremiumLandingPage() {
     []
   );
 
-  // Afficher le loading screen pendant 6 secondes minimum
+  // Afficher le loading screen brièvement (600 ms)
   // Sur mobile : LoadingScreenMobile (CSS-only, léger)
   // Sur desktop : LoadingScreen (framer-motion, animations riches)
   if (!showContent) {

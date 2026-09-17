@@ -15,7 +15,19 @@
  * - Lignes 3+: données des élèves.
  */
 
-import * as XLSX from "xlsx";
+// ⭐ PERF (chantier GTMetrix — spéc. §3/§4) : SheetJS (~120 Ko gz) chargé À LA
+//    DEMANDE au premier parse d'un fichier EducMaster — plus dans le chunk de
+//    la page SaisieMaster. Les types restent en import type (effacés au build).
+import type * as XLSX from "xlsx";
+
+type XLSXModule = typeof import("xlsx");
+
+let _xlsxModule: XLSXModule | null = null;
+
+async function loadXlsx(): Promise<XLSXModule> {
+  if (!_xlsxModule) _xlsxModule = await import("xlsx");
+  return _xlsxModule;
+}
 import type { ClassData, Note, Student, Subject } from "./types";
 import {
   CLASS_NAME_REGEX,
@@ -228,14 +240,15 @@ function detectSubjects(
 
 /** Extrait les élèves depuis les lignes 3+ (index 2+). */
 function extractStudents(
+  X: XLSXModule,
   sheet: XLSX.WorkSheet,
   range: XLSX.Range,
 ): Student[] {
   const students: Student[] = [];
   for (let r = 2; r <= range.e.r; r++) {
-    const matriculeCell = sheet[XLSX.utils.encode_cell({ r, c: 0 })];
-    const nomCell = sheet[XLSX.utils.encode_cell({ r, c: 1 })];
-    const prenomsCell = sheet[XLSX.utils.encode_cell({ r, c: 2 })];
+    const matriculeCell = sheet[X.utils.encode_cell({ r, c: 0 })];
+    const nomCell = sheet[X.utils.encode_cell({ r, c: 1 })];
+    const prenomsCell = sheet[X.utils.encode_cell({ r, c: 2 })];
 
     const matricule = cellToString(matriculeCell?.v);
     const nom = cellToString(nomCell?.v);
@@ -257,12 +270,13 @@ function extractStudents(
 
 /** Lit une feuille Excel et construit l'objet ClassData. */
 function parseSheet(
+  X: XLSXModule,
   sheet: XLSX.WorkSheet,
   sheetName: string,
   fileName: string,
 ): ClassData | null {
   if (!sheet || !sheet["!ref"]) return null;
-  const range = XLSX.utils.decode_range(sheet["!ref"]);
+  const range = X.utils.decode_range(sheet["!ref"]);
 
   // Lecture de la ligne 1 (en-têtes matières) et ligne 2 (sous-en-têtes)
   const row1Cells = new Map<number, string>();
@@ -270,7 +284,7 @@ function parseSheet(
 
   if (range.e.r >= 0) {
     for (let c = range.s.c; c <= range.e.c; c++) {
-      const cell = sheet[XLSX.utils.encode_cell({ r: 0, c })];
+      const cell = sheet[X.utils.encode_cell({ r: 0, c })];
       if (cell && cell.v !== undefined) {
         row1Cells.set(c, cellToString(cell.v));
       }
@@ -278,7 +292,7 @@ function parseSheet(
   }
   if (range.e.r >= 1) {
     for (let c = range.s.c; c <= range.e.c; c++) {
-      const cell = sheet[XLSX.utils.encode_cell({ r: 1, c })];
+      const cell = sheet[X.utils.encode_cell({ r: 1, c })];
       if (cell && cell.v !== undefined) {
         row2Cells.set(c, cellToString(cell.v));
       }
@@ -286,7 +300,7 @@ function parseSheet(
   }
 
   const subjects = detectSubjects(sheet["!merges"], row1Cells, row2Cells);
-  const students = extractStudents(sheet, range);
+  const students = extractStudents(X, sheet, range);
 
   if (students.length === 0) return null;
 
@@ -301,12 +315,12 @@ function parseSheet(
     ef1Notes[student.id] = {};
     for (const subject of subjects) {
       // Lecture des valeurs existantes dans le fichier (au cas où)
-      const obtenueCell = sheet[XLSX.utils.encode_cell({
+      const obtenueCell = sheet[X.utils.encode_cell({
         r: student.rowIndex - 1,
         c: subject.startCol,
       })];
       const perfCell = subject.hasPerfectionnement
-        ? sheet[XLSX.utils.encode_cell({
+        ? sheet[X.utils.encode_cell({
             r: student.rowIndex - 1,
             c: subject.startCol + 1,
           })]
@@ -362,16 +376,18 @@ function parseSheet(
  * Point d'entrée du parser: prend un ArrayBuffer du fichier .xlsx
  * et retourne la liste des classes trouvées (1 par feuille).
  */
-export function parseEducMasterFile(
+export async function parseEducMasterFile(
   buffer: ArrayBuffer,
   fileName: string,
-): ClassData[] {
-  const wb = XLSX.read(buffer, { type: "array" });
+): Promise<ClassData[]> {
+  // ⭐ PERF : SheetJS chargé à la demande (une seule fois par session)
+  const X = await loadXlsx();
+  const wb = X.read(buffer, { type: "array" });
   const classes: ClassData[] = [];
 
   for (const sheetName of wb.SheetNames) {
     const sheet = wb.Sheets[sheetName];
-    const parsed = parseSheet(sheet, sheetName, fileName);
+    const parsed = parseSheet(X, sheet, sheetName, fileName);
     if (parsed) classes.push(parsed);
   }
 

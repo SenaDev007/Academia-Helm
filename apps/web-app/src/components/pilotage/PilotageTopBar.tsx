@@ -39,6 +39,7 @@ import PortalSwitchButton from '@/components/auth/PortalSwitchButton';
 // ⛔ OFFLINE-FIRST DÉSACTIVÉ — SyncButton supprimé
 // import { SyncButton } from '@/components/header/SyncButton';
 import type { User, Tenant } from '@/types';
+import { cachedGet, invalidateApiCache } from '@/lib/api/get-cache';
 
 // ── Rôles promoteur : seuls à voir le bouton « Vue Groupe » (vue stratégique
 //    multi-écoles — miroir des rôles stratégiques du backend /analytics).
@@ -247,27 +248,27 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
 
   const loadSchoolIdentity = useCallback(async () => {
     try {
-      const response = await fetch('/api/settings/identity', {
-        credentials: 'include',
-        cache: 'no-store',
-      });
-      if (response.ok) {
-        const data = await response.json();
-        console.log('[PilotageTopBar] School identity loaded:', {
-          hasSchoolName: !!data?.schoolName,
-          hasSchoolAcronym: !!data?.schoolAcronym,
-          hasLogoUrl: !!data?.logoUrl,
-          data: data ? Object.keys(data) : 'null',
+      // ⭐ PERF (chantier GTMetrix — spéc. §7) : AVANT, TopBar ET Sidebar
+      //    faisaient chacun leur fetch /api/settings/identity (cache: no-store)
+      //    à CHAQUE vue → 2 requêtes identiques concurrentes + re-fetch à
+      //    chaque navigation. APRÈS : cachedGet (dédup in-flight + TTL 45 s,
+      //    même mécanique que lib/api/get-cache.ts) → 1 requête partagée,
+      //    0 requête en re-navigation < 45 s. Invalidation ciblée sur
+      //    l'événement SCHOOL_IDENTITY_UPDATED_EVENT (maj des paramètres).
+      const data = await cachedGet<any>('/api/settings/identity', async () => {
+        const response = await fetch('/api/settings/identity', {
+          credentials: 'include',
+          cache: 'no-store',
         });
-        if (data) {
-          setSchoolIdentity({
-            schoolName: data.schoolName,
-            schoolAcronym: data.schoolAcronym,
-            logoUrl: data.logoUrl,
-          });
-        }
-      } else {
-        console.warn('[PilotageTopBar] /api/settings/identity returned', response.status);
+        if (!response.ok) throw new Error(`identity ${response.status}`);
+        return response.json();
+      });
+      if (data) {
+        setSchoolIdentity({
+          schoolName: data.schoolName,
+          schoolAcronym: data.schoolAcronym,
+          logoUrl: data.logoUrl,
+        });
       }
     } catch (error) {
       console.error('[PilotageTopBar] Failed to load school identity:', error);
@@ -282,6 +283,8 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
 
     loadSchoolIdentity();
     const onIdentityUpdated = () => {
+      // ⭐ PERF : maj des paramètres identité → purge du cache partagé puis reload
+      invalidateApiCache('/api/settings/identity');
       void loadSchoolIdentity();
     };
     window.addEventListener(SCHOOL_IDENTITY_UPDATED_EVENT, onIdentityUpdated);
@@ -313,11 +316,16 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
 
     const loadOrionAlerts = async () => {
       try {
-        const response = await fetch('/api/orion/alerts?status=active');
-        if (response.ok) {
-          const alerts = await response.json();
-          setOrionAlertsCount(Array.isArray(alerts) ? alerts.length : 0);
-        }
+        // ⭐ PERF (chantier GTMetrix — spéc. §7) : le dashboard charge la même
+        //    URL au même moment (OrionAlertsCard) → dédup in-flight via
+        //    cachedGet (TTL 30 s) : 1 requête partagée au chargement au lieu
+        //    de 2. Le polling 60 s reste actif (intervalle > TTL = fetch réel).
+        const alerts = await cachedGet<any[]>('/api/orion/alerts?status=active', async () => {
+          const response = await fetch('/api/orion/alerts?status=active');
+          if (!response.ok) throw new Error(`orion ${response.status}`);
+          return response.json();
+        }, { ttl: 30_000 });
+        setOrionAlertsCount(Array.isArray(alerts) ? alerts.length : 0);
       } catch (error) {
         console.error('Failed to load ORION alerts:', error);
       }

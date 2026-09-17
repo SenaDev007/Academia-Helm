@@ -133,9 +133,13 @@ export default function SessionLockScreen() {
                   {/* Logo école */}
                   <div className="mb-3">
                     {schoolLogo ? (
+                      // ⭐ PERF (GTMetrix/CLS) : dimensions réservées via ratio
+                      // (180×64 max) — pas de décalage au chargement du logo.
                       <img
                         src={schoolLogo}
                         alt={schoolName}
+                        width={180}
+                        height={64}
                         className="object-contain"
                         style={{ maxHeight: '64px', maxWidth: '180px' }}
                       />

@@ -1102,3 +1102,53 @@ svg {
 html {
   overflow-x: clip;
 }
+
+/* ⭐ PERFORMANCE (chantier GTMetrix) — Fade d'apparition de l'application
+   en CSS pur. Remplace le motion.div framer-motion du layout client
+   (~35 Ko gz retirés du chunk partagé de toutes les vues /app/*).
+   Respecte prefers-reduced-motion (pas d'animation du tout). */
+.app-fade-in {
+  animation: appFadeIn 0.32s ease-out both;
+}
+
+@keyframes appFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-fade-in {
+    animation: none;
+  }
+}
+
+/* ⭐ PERFORMANCE (chantier GTMetrix) — Transition de page du shell promoteur
+   (PilotageLayout) en CSS pur. Remplace AnimatePresence + motion.div
+   (framer-motion ~35 Ko gz retirés du chunk initial du shell).
+   La key React force le remontage à chaque route → l'animation se rejoue. */
+.page-transition-in {
+  animation: pageTransitionIn 0.28s ease-out both;
+}
+
+@keyframes pageTransitionIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-transition-in {
+    animation: none;
+  }
+}

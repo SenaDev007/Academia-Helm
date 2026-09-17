@@ -25,7 +25,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import QRCode from 'qrcode';
+// ⭐ PERF : qrcode importé dynamiquement dans RealQRCode (voir ci-dessous)
 
 interface CardStudent {
   firstName: string;
@@ -105,20 +105,31 @@ function formatDate(d?: string) {
 }
 
 // ⭐ QR code réel — génère une image base64 depuis le qrPayload
+// ⭐ PERF (chantier GTMetrix — spéc. §3) : la lib qrcode (~18 Ko gz) est
+//    chargée À LA DEMANDE au premier QR réellement affiché — retirée du
+//    chunk de la vue Élèves (cartes d'identité). Le placeholder grillé
+//    s'affiche pendant ce court chargement (déjà le comportement existant
+//    pendant la génération).
 function RealQRCode({ payload }: { payload?: string }) {
   const [dataUrl, setDataUrl] = useState<string>('');
 
   useEffect(() => {
+    let cancelled = false;
     if (payload) {
-      QRCode.toDataURL(payload, {
-        width: 200,
-        margin: 0,
-        color: { dark: '#000000', light: '#ffffff' },
-        errorCorrectionLevel: 'M',
-      }).then(setDataUrl).catch(() => setDataUrl(''));
+      import('qrcode')
+        .then(({ default: QRCode }) =>
+          QRCode.toDataURL(payload, {
+            width: 200,
+            margin: 0,
+            color: { dark: '#000000', light: '#ffffff' },
+            errorCorrectionLevel: 'M',
+          }))
+        .then((url) => { if (!cancelled) setDataUrl(url); })
+        .catch(() => { if (!cancelled) setDataUrl(''); });
     } else {
       setDataUrl('');
     }
+    return () => { cancelled = true; };
   }, [payload]);
 
   if (!payload || !dataUrl) {
@@ -131,7 +142,7 @@ function RealQRCode({ payload }: { payload?: string }) {
     );
   }
 
-  return <img src={dataUrl} alt="QR Code" className="w-full h-full block" />;
+  return <img src={dataUrl} alt="QR Code" width={200} height={200} className="w-full h-full block" />;
 }
 
 export function IdCardVisual({

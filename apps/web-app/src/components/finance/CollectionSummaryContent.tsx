@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import * as XLSX from 'xlsx';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -371,13 +370,16 @@ export default function CollectionSummaryContent() {
   //    1. "Bilan détaillé" — un élève par ligne avec toutes les colonnes
   //    2. "Récapitulatif" — une classe par ligne avec totaux
   //    Utilise la lib xlsx (déjà présente dans les dépendances web-app).
-  const handleExportExcel = () => {
+  // ⭐ PERF (chantier GTMetrix) : SheetJS (~120 Ko gz) chargé à la demande
+  //    au clic Export — retiré du chunk de la vue Finance.
+  const handleExportExcel = async () => {
     if (studentRows.length === 0 && recapRows.length === 0) {
       alert('Aucune donnée à exporter. Veuillez sélectionner une année scolaire et une classe.');
       return;
     }
 
     try {
+      const XLSX = await import('xlsx');
       const wb = XLSX.utils.book_new();
       const instLabels = installments.map((i) => i.label);
 

@@ -26,7 +26,9 @@
 
 import { useState, useEffect } from "react";
 import { Download, Monitor, Bell, X } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+// ⭐ PERF (chantier GTMetrix) : import framer-motion retiré — il était
+// importé mais JAMAIS utilisé dans le JSX (import mort qui tirait ~35 Ko gz
+// dans le chunk du shell promoteur via PilotageTopBar).
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 

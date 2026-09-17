@@ -50,11 +50,11 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   const stats = classData ? computeSaisieStats(classData, activeEvalType) : null;
 
   /** Export individuel : 1 fichier Excel pour un type d'évaluation. */
-  const handleExportEval = (evalCode: string) => {
+  const handleExportEval = async (evalCode: string) => {
     if (!classData) return;
     setExportingEval(evalCode);
     try {
-      const { blob, fileName } = exportEducMasterFile(
+      const { blob, fileName } = await exportEducMasterFile(
         classData,
         evalCode as "EF1" | "ES1" | "ES2" | "ES3",
       );

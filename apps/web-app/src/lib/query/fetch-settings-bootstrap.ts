@@ -1,6 +1,7 @@
 /**
  * Chargement parallèle des données « Paramètres » — source unique pour la page et le préchargement post-login.
  */
+
 import * as settingsService from '@/services/settings.service';
 
 export interface SettingsBilingualExtras {
@@ -30,6 +31,55 @@ export interface SettingsBootstrapPayload {
   identityHist: { versions?: unknown[] };
   educationHierarchy: unknown;
   bilingualExtras: SettingsBilingualExtras;
+}
+
+/**
+ * ⭐ PERF (chantier GTMetrix — spéc. §7 « Optimisation des appels réseau »)
+ *
+ * Variante « core » du bootstrap : SEULEMENT les 5 données chaudes partagées
+ * par les shells de tous les rôles (TopBar/Sidebar/providers) :
+ *   general, features, academic-years (+ active), identity, bilingual.
+ *
+ * AVANT : le prefetch post-login déclenchait 23 GET /api/settings/* en
+ * parallèle à CHAQUE montage /app (history 50, invoices 10, users, roles,
+ * permissions, plans, billing… utiles uniquement sur la page Paramètres).
+ * → ~18 requêtes réseau économisées par vue, budget GTMetrix < 50 requêtes.
+ *
+ * La page Paramètres continue d'utiliser fetchSettingsBootstrap (complet) :
+ * les 23 appels n'ont lieu qu'à la visite réelle de la page.
+ */
+export interface SettingsBootstrapCorePayload {
+  general: unknown;
+  featuresData: unknown;
+  academicYearsResult: { years: unknown[]; activeYear: unknown | null };
+  bilingual: unknown;
+  identity: unknown;
+}
+
+export async function fetchSettingsBootstrapCore(
+  tenantId: string | undefined,
+): Promise<SettingsBootstrapCorePayload> {
+  const [general, featuresData, academicYearsResult, bilingual, identity] =
+    await Promise.all([
+      settingsService.getGeneralSettings(tenantId).catch(() => null),
+      settingsService.getFeatures(tenantId ?? undefined).catch(() => []),
+      tenantId
+        ? Promise.all([
+            settingsService.getAcademicYears(tenantId).catch(() => []),
+            settingsService.getActiveAcademicYear(tenantId).catch(() => null),
+          ]).then(([y, a]) => ({ years: y, activeYear: a }))
+        : Promise.resolve({ years: [], activeYear: null }),
+      settingsService.getBilingualSettings(tenantId ?? undefined).catch(() => null),
+      settingsService.getActiveIdentityProfile(tenantId ?? undefined).catch(() => null),
+    ]);
+
+  return {
+    general,
+    featuresData,
+    academicYearsResult,
+    bilingual,
+    identity,
+  };
 }
 
 export async function fetchSettingsBootstrap(

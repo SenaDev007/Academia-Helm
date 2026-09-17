@@ -11103,3 +11103,31 @@ Stage Summary:
 - ✅ Export PDF : en-têtes officiels par type (texte vérifié par extraction)
 - ✅ BONUS : bug critique du 20/07 corrigé — TOUTES les mises à jour de fiches (PUT) étaient cassées (cast ::string invalide) ; duplication cross-year ne perd plus l'en-tête
 - En production et validé E2E (API + navigateur réel + PDF)
+
+---
+Task ID: perf-gt-1
+Agent: Super Z (principal)
+Task: « Optimisation des temps de chargement — standards GTMetrix » (spéc. 11 sections : LCP < 2,5 s, TBT < 200 ms, CLS < 0,1, < 2 Mo/vue, < 50 requêtes/vue, coordination chantiers DB + SW offline)
+
+Work Log:
+- AUDIT (3 agents Explore + mesures HTTP production) : landing ~400 Ko JS initial ; login ~434 Ko (31 fichiers) ; fresh login dashboard ≈ 56 requêtes (23 settings prefetch + doublons identity×2/features/orion×3 + 404 orion silencieux) ; prefetch Link de TOUS les modules des sidebars ; framer-motion + code mort (Sara/Onboarding importés jamais rendus) dans le chunk partagé /app/* ; logo brand PNG 320 Ko (webp 27 Ko existant) ; helm-connect.png 728 Ko affiché 40 px ; LCP landing bridé ≥ 6,3 s par LANDING_MIN_LOADING_MS=6000 ; ~20 Mo de médias publics morts ; 20 dépendances npm jamais importées ; buildCacheHeaders = public,s-maxage=60 sur ~148 routes BFF authentifiées (risque sécurité + incohérence get-cache 45 s)
+- INCIDENTS PROD découverts : (1) certificat wildcard *.academiahelm.com EXPIRÉ depuis 08/08/2026 → cspeb.academiahelm.com TLS refusé (000) — app/admin/saisiemaster ont des certs dédiés à jour, www passe par Cloudflare ; (2) sw.js servi par Cloudflare avec max-age=14400 malgré le max-age=0 de next.config → propagation SW jusqu'à 4 h
+- G1 code splitting : prefetch={false} sur les <Link> des 4 shells (AdminPortalShell, PilotageSidebar desktop+collé, teacher, parent) + nouveau composant perf/DeferredRoutePrefetch (requestIdleCallback → router.prefetch des 2-3 top-modules du rôle)
+- G2 chunk partagé : framer-motion retiré (fade CSS .app-fade-in ; AnimatePresence→.page-transition-in dans PilotageLayout ; import framer mort de DesktopUpdateBadge supprimé) ; SessionInactivityModal/SessionLockScreen/CrispChat/SyncModal en dynamic(ssr:false) ; imports morts Sara/Onboarding supprimés — ARCHITECTURE OFFLINE V4 DISTANTE PRÉSERVÉE (OfflineGuard/NetworkRecovery/ConflictResolutionModal/OfflineSWRegister statiques, rebase sur les commits 77/78)
+- G3-G4 libs lourdes à la demande : livekit-client (~160 Ko gz hors 3 routes chat) ; SheetJS+JSZip (saisiemaster + export finance) ; qrcode (QR cartes élèves)
+- G5 landing : plancher loader 6 000 ms → 600 ms (LCP libéré)
+- G6 images : BRAND.logoPath PNG 320 Ko → webp 27 Ko ; LoginPage URL absolue→locale ; helm-connect-128.webp généré (5,9 Ko) ; width/height+lazy sur jobs/SessionLockScreen/QR (CLS)
+- G7 réseau : fetchSettingsBootstrapCore (23→5 appels au prefetch post-login ; page Paramètres = bootstrap complet à la demande)
+- G8 dédup shell : identity TopBar+Sidebar via cachedGet TTL 45 s (invalidation event) ; orion/alerts dédup TTL 30 s (polling 60 s conservé)
+- G9 BUG 404 : orion.service.ts appelait /orion/* sans préfixe /api (7 chemins — vérifié prod : 404→200) 
+- G10 cache HTTP : buildCacheHeaders public,s-maxage=60,SWR=300 → private,max-age=45,SWR=60 (~148 routes, alignement get-cache + sécurité tenant)
+- G11 : VAPID localStorage 24 h + sortie précoce permission denied ; useReviewPrompt flag session
+- G12 scripts tiers : Partytown beforeInteractive→afterInteractive ; Crisp injecté à requestIdleCallback (fallback 4 s)
+- G13 purge : ~20 Mo médias morts vérifiés non référencés (web-app + mobile + desktop + api-server — logo-yehi-or-tech.png RESTAURÉ car référencé par emails SaisieMaster Nest) + 20 deps npm retirées + public/fonts doublon + preload-images.tsx mort
+- COORDINATION (spec §9) : docs/PERF-GTMETRIX-CHARGEMENT.md = carte unique du cache réseau (SW v4 actif + BFF Cache-Control + caches client + IDB + règles chantier offline↔perf)
+- VALIDATION : parse TS/TSX OK sur fichiers modifiés (scripts/check_syntax_swc.js recréé) ; node --check sw.js OK ; compression brotli vérifiée active (Vercel + API Railway)
+
+Stage Summary:
+- ✅ Budget requêtes fresh login ~56→~35 (<50) ; LCP landing libéré ; ~35 Ko gz (chunk partagé) + ~160 Ko gz (chat) + ~170 Ko gz (xlsx/zip/qr) + ~730 Ko images 1er écran économisés
+- ✅ Bugs bonus : 404 orion silencieux (7 chemins), import framer mort, 20 deps mortes
+- ⚠️ ACTIONS UTILISATEUR : (1) URGENT certificat wildcard expiré (Vercel/Cloudflare) ; (2) bypass cache Cloudflare sur /sw.js ; (3) GTMetrix par rôle à consigner dans docs/PERF-GTMETRIX-CHARGEMENT.md §6

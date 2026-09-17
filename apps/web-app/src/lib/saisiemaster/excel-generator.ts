@@ -14,8 +14,19 @@
  * précisément la structure.
  */
 
-import * as XLSX from "xlsx";
-import JSZip from "jszip";
+// ⭐ PERF (chantier GTMetrix — spéc. §3/§4) : SheetJS (~120 Ko gz) et JSZip
+//    (~30 Ko gz) chargés À LA DEMANDE au premier export — plus dans le chunk
+//    de la page SaisieMaster. Types en import type (effacés au build).
+import type * as XLSX from "xlsx";
+
+type XLSXModule = typeof import("xlsx");
+
+let _xlsxModule: XLSXModule | null = null;
+
+async function loadXlsx(): Promise<XLSXModule> {
+  if (!_xlsxModule) _xlsxModule = await import("xlsx");
+  return _xlsxModule;
+}
 import type { ClassData, EvaluationType, Note } from "./types";
 import { EVALUATION_TYPES } from "./constants";
 import {
@@ -24,7 +35,7 @@ import {
 } from "./evaluation-utils";
 
 /** Construit l'objet worksheet au format EducMaster pour une classe et un type d'évaluation donnés. */
-function buildSheet(data: ClassData, evalType: EvaluationType): XLSX.WorkSheet {
+function buildSheet(X: XLSXModule, data: ClassData, evalType: EvaluationType): XLSX.WorkSheet {
   const ws: XLSX.WorkSheet = {};
   const merges: XLSX.Range[] = [];
 
@@ -32,7 +43,7 @@ function buildSheet(data: ClassData, evalType: EvaluationType): XLSX.WorkSheet {
   // Colonnes A, B, C = Matricule, Nom, Prénoms (fusion verticale sur 2 lignes)
   const fixedHeaders = ["Matricule", "Nom", "Prénoms"];
   fixedHeaders.forEach((label, col) => {
-    ws[XLSX.utils.encode_cell({ r: 0, c: col })] = {
+    ws[X.utils.encode_cell({ r: 0, c: col })] = {
       t: "s",
       v: label,
     };
@@ -49,7 +60,7 @@ function buildSheet(data: ClassData, evalType: EvaluationType): XLSX.WorkSheet {
 
     if (subject.hasPerfectionnement) {
       // Fusion horizontale sur 2 colonnes (ligne 1)
-      ws[XLSX.utils.encode_cell({ r: 0, c: startCol })] = {
+      ws[X.utils.encode_cell({ r: 0, c: startCol })] = {
         t: "s",
         v: subject.name,
       };
@@ -59,11 +70,11 @@ function buildSheet(data: ClassData, evalType: EvaluationType): XLSX.WorkSheet {
       });
 
       // Ligne 2: sous-en-têtes
-      ws[XLSX.utils.encode_cell({ r: 1, c: startCol })] = {
+      ws[X.utils.encode_cell({ r: 1, c: startCol })] = {
         t: "s",
         v: "Note obtenue",
       };
-      ws[XLSX.utils.encode_cell({ r: 1, c: startCol + 1 })] = {
+      ws[X.utils.encode_cell({ r: 1, c: startCol + 1 })] = {
         t: "s",
         v: "Note perfectionnement",
       };
@@ -71,7 +82,7 @@ function buildSheet(data: ClassData, evalType: EvaluationType): XLSX.WorkSheet {
       currentCol += 2;
     } else {
       // Fusion verticale sur 2 lignes (1 colonne)
-      ws[XLSX.utils.encode_cell({ r: 0, c: startCol })] = {
+      ws[X.utils.encode_cell({ r: 0, c: startCol })] = {
         t: "s",
         v: subject.name,
       };
@@ -81,7 +92,7 @@ function buildSheet(data: ClassData, evalType: EvaluationType): XLSX.WorkSheet {
       });
 
       // Ligne 2: sous-en-tête "Note obtenue" sur /20
-      ws[XLSX.utils.encode_cell({ r: 1, c: startCol })] = {
+      ws[X.utils.encode_cell({ r: 1, c: startCol })] = {
         t: "s",
         v: "Note obtenue",
       };
@@ -98,15 +109,15 @@ function buildSheet(data: ClassData, evalType: EvaluationType): XLSX.WorkSheet {
     const row = 2 + studentIdx;
 
     // Matricule en texte (préserve les zéros initiaux)
-    ws[XLSX.utils.encode_cell({ r: row, c: 0 })] = {
+    ws[X.utils.encode_cell({ r: row, c: 0 })] = {
       t: "s",
       v: student.matricule,
     };
-    ws[XLSX.utils.encode_cell({ r: row, c: 1 })] = {
+    ws[X.utils.encode_cell({ r: row, c: 1 })] = {
       t: "s",
       v: student.nom,
     };
-    ws[XLSX.utils.encode_cell({ r: row, c: 2 })] = {
+    ws[X.utils.encode_cell({ r: row, c: 2 })] = {
       t: "s",
       v: student.prenoms,
     };
@@ -119,13 +130,13 @@ function buildSheet(data: ClassData, evalType: EvaluationType): XLSX.WorkSheet {
       const perf = note?.perfectionnement;
 
       // Note obtenue
-      ws[XLSX.utils.encode_cell({ r: row, c: col })] = {
+      ws[X.utils.encode_cell({ r: row, c: col })] = {
         t: "n",
         v: obtenue !== null && obtenue !== undefined ? obtenue : "",
       };
 
       if (subject.hasPerfectionnement) {
-        ws[XLSX.utils.encode_cell({ r: row, c: col + 1 })] = {
+        ws[X.utils.encode_cell({ r: row, c: col + 1 })] = {
           t: "n",
           v: perf !== null && perf !== undefined ? perf : "",
         };
@@ -139,7 +150,7 @@ function buildSheet(data: ClassData, evalType: EvaluationType): XLSX.WorkSheet {
   // 3. Plage de données (!ref)
   const lastRow = 1 + data.students.length; // 0-indexé
   const lastCol = currentCol - 1;
-  ws["!ref"] = XLSX.utils.encode_range({
+  ws["!ref"] = X.utils.encode_range({
     s: { r: 0, c: 0 },
     e: { r: lastRow, c: lastCol },
   });
@@ -201,18 +212,20 @@ function buildExportFileName(data: ClassData, evalType: EvaluationType): string 
  * Génère un fichier .xlsx pour un type d'évaluation spécifique.
  * Utilisé pour l'export individuel (1 fichier par type d'évaluation).
  */
-export function exportEducMasterFile(
+export async function exportEducMasterFile(
   data: ClassData,
   evalType: EvaluationType = "EF1",
-): {
+): Promise<{
   blob: Blob;
   fileName: string;
-} {
+}> {
+  // ⭐ PERF : SheetJS chargé à la demande (une seule fois par session)
+  const X = await loadXlsx();
   // Nom de feuille incluant le type d'évaluation
   const sheetName = `${data.sheetName} - ${evalType}`;
   const wb: XLSX.WorkBook = {
     SheetNames: [sheetName],
-    Sheets: { [sheetName]: buildSheet(data, evalType) },
+    Sheets: { [sheetName]: buildSheet(X, data, evalType) },
     Props: {
       Title: `${evalType} — Notes ${data.className} — ${data.schoolName || "École"}`,
       Author: "SaisieMaster",
@@ -220,7 +233,7 @@ export function exportEducMasterFile(
     },
   };
 
-  const arrayBuffer: ArrayBuffer = XLSX.write(wb, {
+  const arrayBuffer: ArrayBuffer = X.write(wb, {
     bookType: "xlsx",
     type: "array",
     cellStyles: false,
@@ -241,6 +254,8 @@ export async function exportAllEvaluationsZip(data: ClassData): Promise<{
   blob: Blob;
   fileName: string;
 }> {
+  // ⭐ PERF : JSZip chargé à la demande (uniquement pour l'export groupé ZIP)
+  const { default: JSZip } = await import("jszip");
   const zip = new JSZip();
 
   // Récupère TOUS les types d'évaluations (4 prédéfinis + personnalisés)
@@ -248,7 +263,7 @@ export async function exportAllEvaluationsZip(data: ClassData): Promise<{
 
   // Génère un fichier Excel par type d'évaluation
   for (const evalType of allTypes) {
-    const { blob, fileName } = exportEducMasterFile(data, evalType.code);
+    const { blob, fileName } = await exportEducMasterFile(data, evalType.code);
     const arrayBuffer = await blob.arrayBuffer();
     zip.file(fileName, arrayBuffer);
   }

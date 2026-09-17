@@ -72,6 +72,7 @@ import { getPortalForRole, getVisibleModulesForRole } from '@/lib/auth/role-port
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useAdminContext, hasModuleAccess } from '@/hooks/useAdminContext';
 import InAppReviewModal from '@/components/reviews/InAppReviewModal';
+import { cachedGet, invalidateApiCache } from '@/lib/api/get-cache';
 
 interface SidebarSchoolIdentity {
   schoolName: string;
@@ -423,19 +424,24 @@ export default function PilotageSidebar({
   const [schoolIdentity, setSchoolIdentity] = useState<SidebarSchoolIdentity | null>(null);
   const loadSchoolIdentity = useCallback(async () => {
     try {
-      const response = await fetch('/api/settings/identity', {
-        credentials: 'include',
-        cache: 'no-store',
+      // ⭐ PERF (chantier GTMetrix — spéc. §7) : cache partagé avec
+      //    PilotageTopBar (dédup in-flight + TTL 45 s via cachedGet) →
+      //    1 seule requête /api/settings/identity par vue au lieu de 2,
+      //    et 0 requête en re-navigation < 45 s.
+      const data = await cachedGet<any>('/api/settings/identity', async () => {
+        const response = await fetch('/api/settings/identity', {
+          credentials: 'include',
+          cache: 'no-store',
+        });
+        if (!response.ok) throw new Error(`identity ${response.status}`);
+        return response.json();
       });
-      if (response.ok) {
-        const data = await response.json();
-        if (data) {
-          setSchoolIdentity({
-            schoolName: data.schoolName,
-            schoolAcronym: data.schoolAcronym,
-            logoUrl: data.logoUrl,
-          });
-        }
+      if (data) {
+        setSchoolIdentity({
+          schoolName: data.schoolName,
+          schoolAcronym: data.schoolAcronym,
+          logoUrl: data.logoUrl,
+        });
       }
     } catch (error) {
       console.error('Failed to load school identity:', error);
@@ -444,7 +450,10 @@ export default function PilotageSidebar({
 
   useEffect(() => {
     loadSchoolIdentity();
-    const onIdentityUpdated = () => { void loadSchoolIdentity(); };
+    const onIdentityUpdated = () => {
+      invalidateApiCache('/api/settings/identity');
+      void loadSchoolIdentity();
+    };
     window.addEventListener(SCHOOL_IDENTITY_UPDATED_EVENT, onIdentityUpdated);
     return () => { window.removeEventListener(SCHOOL_IDENTITY_UPDATED_EVENT, onIdentityUpdated); };
   }, [loadSchoolIdentity]);
@@ -610,6 +619,7 @@ export default function PilotageSidebar({
       <Link
         key={item.path}
         href={href}
+        prefetch={false}
         onClick={onCloseMobileDrawer}
         className={`group relative flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${
           active
@@ -653,6 +663,7 @@ export default function PilotageSidebar({
       <Link
         key={item.path}
         href={href}
+        prefetch={false}
         onClick={onCloseMobileDrawer}
         className={`group relative flex items-center justify-center p-2.5 rounded-xl transition-all duration-200 min-h-[44px] min-w-[44px] ${
           active
@@ -890,6 +901,7 @@ export default function PilotageSidebar({
           {/* Visiter le site public */}
           <Link
             href={typeof window !== 'undefined' ? getLandingPageUrlFromApp() : '/'}
+            prefetch={false}
             onClick={onCloseMobileDrawer}
             className="group flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-blue-100/80 hover:bg-white/[0.04] hover:text-white"
             title={!effectiveOpen ? 'Visiter le site' : undefined}
@@ -903,6 +915,7 @@ export default function PilotageSidebar({
           {/* Paramètres */}
           <Link
             href={tenantParam ? `/app/settings?tenant=${tenantParam}` : '/app/settings'}
+            prefetch={false}
             onClick={onCloseMobileDrawer}
             className={`group flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 ${
               isActive('/app/settings')
@@ -1017,6 +1030,7 @@ export default function PilotageSidebar({
           {/* ⭐ SaisieMaster supprimé de la sidebar tablette aussi */}
           <Link
             href={typeof window !== 'undefined' ? getLandingPageUrlFromApp() : '/'}
+            prefetch={false}
             className="flex items-center justify-center p-2.5 rounded-xl text-blue-100/80 hover:bg-white/[0.04] hover:text-white min-h-[44px] min-w-[44px]"
             title="Visiter le site"
             {...(typeof window !== 'undefined' && getLandingPageUrl() !== '/' ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
@@ -1025,6 +1039,7 @@ export default function PilotageSidebar({
           </Link>
           <Link
             href="/app/settings"
+            prefetch={false}
             className={`flex items-center justify-center p-2.5 rounded-xl transition-all duration-200 min-h-[44px] min-w-[44px] ${
               isActive('/app/settings')
                 ? 'bg-white/[0.12] text-white'

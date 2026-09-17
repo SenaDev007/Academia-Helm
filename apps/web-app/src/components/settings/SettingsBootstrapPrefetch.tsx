@@ -5,8 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { settingsKeys } from '@/lib/query/settings-keys';
-import { fetchSettingsBootstrap } from '@/lib/query/fetch-settings-bootstrap';
-import type { SettingsBootstrapPayload } from '@/lib/query/fetch-settings-bootstrap';
+import { fetchSettingsBootstrapCore } from '@/lib/query/fetch-settings-bootstrap';
 import { hydrateAcademicYearsFromBootstrap } from '@/lib/query/academic-years-fetch';
 
 const BOOTSTRAP_STALE_MS = 2 * 60 * 1000;
@@ -29,7 +28,16 @@ const ROLES_WITHOUT_SETTINGS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Précharge le bundle Paramètres dès que le tenant effectif est connu (en parallèle du splash post-login).
+ * Précharge les données Paramètres « core » dès que le tenant effectif est
+ * connu (en parallèle du splash post-login).
+ *
+ * ⭐ PERF (chantier GTMetrix — spéc. §7) : AVANT, ce prefetch déclenchait
+ * 23 GET /api/settings/* à CHAQUE montage /app/* (history, invoices, users,
+ * roles, permissions, plans, billing… — utiles seulement sur la page
+ * Paramètres). Désormais : 5 appels max (general, features, academic-years
+ * + active, identity, bilingual), et l'hydratation des années scolaires
+ * reste préservée (consommée par AcademicYearProvider).
+ *
  * Aligné sur la page Paramètres : `tenant_id` en query pour PLATFORM_OWNER.
  */
 export function SettingsBootstrapPrefetch() {
@@ -61,16 +69,20 @@ export function SettingsBootstrapPrefetch() {
     const run = () => {
       void queryClient
         .prefetchQuery({
-          queryKey: settingsKeys.bootstrap(effectiveTenantId),
-          queryFn: () => fetchSettingsBootstrap(effectiveTenantId),
+          queryKey: settingsKeys.bootstrapCore(effectiveTenantId),
+          queryFn: () => fetchSettingsBootstrapCore(effectiveTenantId),
           staleTime: BOOTSTRAP_STALE_MS,
         })
         .then(() => {
-          const data = queryClient.getQueryData<SettingsBootstrapPayload>(
-            settingsKeys.bootstrap(effectiveTenantId),
+          const data = queryClient.getQueryData<{ academicYearsResult?: unknown }>(
+            settingsKeys.bootstrapCore(effectiveTenantId),
           );
           if (data?.academicYearsResult) {
-            hydrateAcademicYearsFromBootstrap(queryClient, effectiveTenantId, data);
+            hydrateAcademicYearsFromBootstrap(
+              queryClient,
+              effectiveTenantId,
+              data as Parameters<typeof hydrateAcademicYearsFromBootstrap>[2],
+            );
           }
         });
     };

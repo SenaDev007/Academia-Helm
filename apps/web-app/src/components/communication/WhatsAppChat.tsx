@@ -5722,10 +5722,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           12 sections are accessible on touch devices. */}
       <div className="hidden md:flex flex-col items-center gap-1 py-3 w-[72px] flex-shrink-0 bg-gradient-to-b from-[#0A2A5E] to-[#114FC4] border-r border-[#1C6FE8]/30">
         {/* ⭐ V3-11: Helm Connect logo at top — NO square container, just the
-            logo image larger (was 24px in a 40x40 box, now 40px standalone). */}
+            logo image larger (was 24px in a 40x40 box, now 40px standalone).
+            ⭐ PERF (GTMetrix) : webp 128px 5,9 Ko au lieu du PNG 728 Ko (÷123). */}
         <img
-          src="/icons/modules/helm-connect.png"
+          src="/icons/modules/helm-connect-128.webp"
           alt="Helm Connect"
+          width={40}
+          height={40}
           className="w-10 h-10 object-contain mb-3 drop-shadow-[0_0_8px_rgba(255,224,138,0.4)]"
         />
         <div className="w-8 h-px bg-[#1C6FE8]/40 mb-1" />
@@ -8629,9 +8632,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           style={getHelmWatermarkStyle({ opacity: 0.08 })}
         >
           <div className="text-center relative z-10">
+            {/* ⭐ PERF (GTMetrix) : webp 128px (5,9 Ko) au lieu du PNG 728 Ko */}
             <img
-              src="/icons/modules/helm-connect.png"
+              src="/icons/modules/helm-connect-128.webp"
               alt="Helm Connect"
+              width={64}
+              height={64}
               className="w-16 h-16 mx-auto mb-4 object-contain opacity-80"
             />
             <h3 className="text-lg font-bold text-slate-700">Helm Connect</h3>

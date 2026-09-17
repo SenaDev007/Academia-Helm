@@ -34,7 +34,25 @@
  * ============================================================================
  */
 
-import { Room, RoomEvent, Track, type RemoteParticipant, type RemoteAudioTrack } from "livekit-client";
+// ⭐ PERF (chantier GTMetrix — spéc. §3/§4) : livekit-client (~160 Ko gz)
+//    est chargé À LA DEMANDE au premier appel média — exactement le même
+//    pattern que Agora (l. ~427) et Daily (l. ~568) plus bas dans ce fichier.
+//    AVANT : import statique → le SDK LiveKit était dans le chunk des 3
+//    routes Helm Connect (/app/communication/messages, /app/parent/messages,
+//    /app/teacher/communication) même sans jamais lancer d'appel.
+import type { RemoteParticipant, RemoteAudioTrack } from "livekit-client";
+
+type LiveKitModule = typeof import("livekit-client");
+
+let liveKitModulePromise: Promise<LiveKitModule> | null = null;
+
+/** Charge (une seule fois) le SDK LiveKit — partagé entre tous les appels. */
+function loadLiveKit(): Promise<LiveKitModule> {
+  if (!liveKitModulePromise) {
+    liveKitModulePromise = import("livekit-client");
+  }
+  return liveKitModulePromise;
+}
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Types partagés
@@ -222,6 +240,7 @@ function removeAudioEl(key: string): void {
 class LiveKitParticipant implements HcRemoteParticipant {
   constructor(
     private readonly p: RemoteParticipant,
+    private readonly lk: LiveKitModule,
     private readonly fallbackName?: string,
   ) {}
   get identity(): string { return this.p.identity; }
@@ -239,7 +258,7 @@ class LiveKitParticipant implements HcRemoteParticipant {
   get isCameraEnabled(): boolean { return this.p.isCameraEnabled; }
   get isSpeaking(): boolean { return this.p.isSpeaking; }
   attachVideo(el: HTMLVideoElement): boolean {
-    const pub = this.p.getTrackPublication(Track.Source.Camera);
+    const pub = this.p.getTrackPublication(this.lk.Track.Source.Camera);
     if (pub?.track && pub.isSubscribed) {
       try { pub.track.attach(el); return true; } catch { return false; }
     }
@@ -247,7 +266,7 @@ class LiveKitParticipant implements HcRemoteParticipant {
   }
   detachVideo(el: HTMLVideoElement): void {
     try {
-      const pub = this.p.getTrackPublication(Track.Source.Camera);
+      const pub = this.p.getTrackPublication(this.lk.Track.Source.Camera);
       if (pub?.track) pub.track.detach(el);
     } catch {}
   }
@@ -258,7 +277,9 @@ async function createLiveKitSession(
   opts: MediaSessionOptions,
   events: MediaSessionEvents,
 ): Promise<MediaSessionHandle> {
-  const room = new Room({
+  // ⭐ PERF : SDK chargé à la demande (voir commentaire d'import en tête de fichier)
+  const lk = await loadLiveKit();
+  const room = new lk.Room({
     adaptiveStream: true,
     dynacast: true,
     videoCaptureDefaults: { resolution: { width: 1280, height: 720 } },
@@ -269,12 +290,12 @@ async function createLiveKitSession(
   const emit = () => {
     events.onParticipants(
       Array.from(room.remoteParticipants.values()).map(
-        (p) => new LiveKitParticipant(p, opts.resolveUser?.(p.identity)?.name),
+        (p) => new LiveKitParticipant(p, lk, opts.resolveUser?.(p.identity)?.name),
       ),
     );
   };
 
-  room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+  room.on(lk.RoomEvent.TrackSubscribed, (track, publication, participant) => {
     // Audio distant → <audio> caché (autoplay) — sans attachement, on ne
     // s'entend pas. Vidéo → re-rendu (participant ré-émis).
     void publication;
@@ -287,20 +308,20 @@ async function createLiveKitSession(
     }
     emit();
   });
-  room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+  room.on(lk.RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
     void publication;
     if (track.kind === "audio") removeAudioEl(`lk-${participant.identity}`);
     emit();
   });
-  room.on(RoomEvent.ParticipantConnected, emit);
-  room.on(RoomEvent.ParticipantDisconnected, emit);
-  room.on(RoomEvent.TrackMuted, emit);
-  room.on(RoomEvent.TrackUnmuted, emit);
-  room.on(RoomEvent.ActiveSpeakersChanged, (speakers) => {
+  room.on(lk.RoomEvent.ParticipantConnected, emit);
+  room.on(lk.RoomEvent.ParticipantDisconnected, emit);
+  room.on(lk.RoomEvent.TrackMuted, emit);
+  room.on(lk.RoomEvent.TrackUnmuted, emit);
+  room.on(lk.RoomEvent.ActiveSpeakersChanged, (speakers) => {
     events.onActiveSpeakers(new Set(speakers.map((s) => s.identity)));
     emit();
   });
-  room.on(RoomEvent.Disconnected, (reason) => {
+  room.on(lk.RoomEvent.Disconnected, (reason) => {
     if (ended) return;
     for (const p of room.remoteParticipants.keys()) removeAudioEl(`lk-${p}`);
     events.onDisconnected(`livekit: ${reason || "déconnecté"}`);
@@ -343,9 +364,9 @@ async function createLiveKitSession(
     },
     attachLocalVideo(el: HTMLVideoElement): boolean {
       try {
-        const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+        const pub = room.localParticipant.getTrackPublication(lk.Track.Source.Camera);
         if (pub?.track) { pub.track.attach(el); return true; }
-        const screenPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+        const screenPub = room.localParticipant.getTrackPublication(lk.Track.Source.ScreenShare);
         if (screenPub?.track) { screenPub.track.attach(el); return true; }
       } catch {}
       return false;

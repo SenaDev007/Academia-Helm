@@ -50,10 +50,45 @@ export function usePushSubscription(isAuthenticated: boolean) {
 
     let cancelled = false;
 
+    /**
+     * ⭐ PERF (chantier GTMetrix) — la clé publique VAPID est quasi immuable.
+     * AVANT : 1 requête cross-origin (api.academiahelm.com) à CHAQUE montage
+     * de vue /app/*. APRÈS : cache localStorage TTL 24 h → 0 requête en
+     * usage quotidien. Invalidation : expiry explicite ou clé absente.
+     */
+    const VAPID_CACHE_KEY = 'helm_vapid_public_key_cache';
+    const VAPID_TTL_MS = 24 * 60 * 60 * 1000;
+
+    async function getVapidPublicKey(): Promise<string | null> {
+      try {
+        const raw = localStorage.getItem(VAPID_CACHE_KEY);
+        if (raw) {
+          const cached = JSON.parse(raw) as { publicKey: string | null; at: number };
+          if (Date.now() - cached.at < VAPID_TTL_MS) return cached.publicKey ?? null;
+        }
+      } catch {
+        /* cache corrompu → on passe au fetch */
+      }
+      const { publicKey } = await apiFetch<{ publicKey: string | null }>('/notifications/vapid-public-key');
+      try {
+        localStorage.setItem(VAPID_CACHE_KEY, JSON.stringify({ publicKey: publicKey ?? null, at: Date.now() }));
+      } catch {
+        /* quota localStorage — non bloquant */
+      }
+      return publicKey;
+    }
+
     async function setup() {
       try {
-        // 1. Récupérer la clé publique VAPID
-        const { publicKey } = await apiFetch<{ publicKey: string | null }>('/notifications/vapid-public-key');
+        // ⭐ PERF : permission refusée → sortie IMMÉDIATE, avant toute requête
+        // réseau (la clé VAPID ne servirait à rien).
+        if (typeof Notification !== 'undefined' && Notification.permission === 'denied') {
+          setStatus('denied');
+          return;
+        }
+
+        // 1. Récupérer la clé publique VAPID (cache local 24 h — voir getVapidPublicKey)
+        const publicKey = await getVapidPublicKey();
         if (cancelled) return;
         if (!publicKey) {
           // Web Push non configuré côté backend — on quitte silencieusement

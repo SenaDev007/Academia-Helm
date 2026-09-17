@@ -2135,7 +2135,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           >
             <span>Propulsé par</span>
             <Image
-              src="https://www.academiahelm.com/images/logo-Academia%20Hub.png"
+              src="/images/logo-Academia Hub.webp"
               alt={BRAND.name}
               width={56}
               height={20}

@@ -8,8 +8,13 @@ export const BRAND = {
   subtitle: 'Plateforme de pilotage éducatif',
   description: 'La plateforme de pilotage éducatif nouvelle génération',
   slogan: 'Prenez le gouvernail de votre institution',
-  /** Chemin du logo — PNG requis (transparence alpha pour le loader circulaire) */
-  logoPath: '/images/logo-Academia Hub.png',
+  /**
+   * Chemin du logo — ⭐ PERF (chantier GTMetrix) : WebP 27 Ko (transparence
+   * alpha conservée) au lieu du PNG 320 Ko (÷12). Les emails gardent leur
+   * PNG dédié (les clients mail ne supportent pas webp de façon fiable —
+   * voir lib/admin/email-templates.ts).
+   */
+  logoPath: '/images/logo-Academia Hub.webp',
 } as const;
 
 export const BRAND_NAME = BRAND.name;

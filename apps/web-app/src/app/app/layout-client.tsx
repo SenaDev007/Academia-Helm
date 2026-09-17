@@ -8,6 +8,7 @@
 'use client';
 
 import { Suspense, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { PostLoginFlowWrapper } from '@/components/loading/PostLoginFlowWrapper';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { SettingsBootstrapPrefetch } from '@/components/settings/SettingsBootstrapPrefetch';
@@ -19,22 +20,38 @@ import { BilingualProvider } from '@/contexts/BilingualContext';
 import { persistUserScope } from '@/lib/auth/user-scope';
 import { I18nProvider } from '@/contexts/I18nContext';
 import { SessionManagerProvider } from '@/contexts/SessionManagerContext';
-import SessionInactivityModal from '@/components/auth/SessionInactivityModal';
-import SessionLockScreen from '@/components/auth/SessionLockScreen';
-import { motion } from 'framer-motion';
-import { getFadeMotion } from '@/lib/motion/presets';
-import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import type { User, Tenant } from '@/types';
 import { ReviewPromptHost } from '@/components/reviews/ReviewPromptHost';
-import { CrispChat } from '@/components/CrispChat';
 import { SubscriptionBanner } from '@/components/billing/SubscriptionBanner';
 import { TenantThemeProvider } from '@/providers/TenantThemeProvider';
 import { usePushSubscription } from '@/hooks/usePushSubscription';
 import { Toaster } from '@/components/ui/sonner';
-// ⭐ Sarah Guide In-App — assistant de navigation global (Academia Helm branding)
-// Connecté à /sara/guide/stream (GLM 5.2). Aucun accès aux données tenant.
-import InAppSaraGuideWidget from '@/components/ai/InAppSaraGuideWidget';
-import OnboardingTour from '@/components/ai/OnboardingTour';
+// ⭐ PERF (chantier GTMetrix) — composants rares à l'écran (modaux de session,
+//    chat tiers, modal de sync) en import dynamique : hors du chunk initial
+//    partagé par TOUTES les vues /app/*.
+//    - SessionInactivityModal / SessionLockScreen / SyncModal tiraient
+//      framer-motion (~35 Ko gz) dans le chunk partagé de chaque rôle.
+//    - CrispChat injecte un script tiers : différé aussi côté import.
+const SessionInactivityModal = dynamic(
+  () => import('@/components/auth/SessionInactivityModal').then((m) => m.default ?? m.SessionInactivityModal ?? m),
+  { ssr: false },
+);
+const SessionLockScreen = dynamic(
+  () => import('@/components/auth/SessionLockScreen').then((m) => m.default ?? m.SessionLockScreen ?? m),
+  { ssr: false },
+);
+const CrispChat = dynamic(
+  () => import('@/components/CrispChat').then((m) => m.CrispChat ?? m.default),
+  { ssr: false },
+);
+const SyncModal = dynamic(
+  () => import('@/components/offline/SyncModal').then((m) => m.SyncModal ?? m.default),
+  { ssr: false },
+);
+// ⭐ Sarah Guide In-App — DÉSACTIVÉ (présentation) : imports statiques retirés
+//    du chunk partagé (jamais rendus, SHOW_SARAH=false). Réactivation : import
+//    dynamique dans la condition ci-dessous, ex.
+//    const InAppSaraGuideWidget = dynamic(() => import('@/components/ai/InAppSaraGuideWidget'), { ssr: false });
 // ⭐ Offline-first : bannière hors ligne + prompt d'installation PWA + SW offline + modal sync
 //    (badge statut réseau retiré du layout — cf. commentaire dans le rendu)
 // ⭐ RÉACTIVÉ (sept. 2026) — spécification « mode hors-ligne offline-first » :
@@ -48,9 +65,9 @@ import { OfflineSWRegister } from '@/components/offline/OfflineSWRegister';
 //    hors ligne échouée).
 import NetworkRecovery from '@/components/offline/NetworkRecovery';
 import AppGate from '@/components/auth/AppGate';
-import { SyncModal } from '@/components/offline/SyncModal';
-import ConflictResolutionModal from '@/components/offline/ConflictResolutionModal';
+import { ConflictResolutionModal } from '@/components/offline/ConflictResolutionModal';
 import { PWAInstallPrompt } from '@/components/pwa/PWAInstallPrompt';
+import { DeferredRoutePrefetch } from '@/components/perf/DeferredRoutePrefetch';
 
 // ⭐ V4.0 (rollback de l'approche dataService) : plus AUCUNE installation
 //    d'intercepteur offline au niveau applicatif — les fetchs des composants
@@ -78,16 +95,14 @@ export default function AppLayoutClient({
   user,
   tenant,
 }: AppLayoutClientProps) {
-  const { shouldReduceMotion } = useMotionBudget();
-  const fadeMotion = getFadeMotion(shouldReduceMotion);
+  // ⭐ PERF (chantier GTMetrix) — fade d'apparition en CSS pur (globals.css
+  //    .app-fade-in) : remplace motion.div + getFadeMotion (framer-motion
+  //    ~35 Ko gz retirés du chunk partagé de toutes les vues /app/*).
 
   // Abonnement Web Push (notifications navigateur, même onglet fermé)
   // Actif seulement si VAPID configuré côté backend + permission utilisateur granted
   const { status: pushStatus } = usePushSubscription(true);
-  if (typeof window !== 'undefined' && pushStatus === 'subscribed') {
-    // Console-only log (utile pour debug)
-    console.log('[Push] Abonnement actif');
-  }
+  void pushStatus;
 
   // ⭐ TAURI : sauvegarder le token + tenant dans le Tauri Store pour le sync engine Rust
   //    Quand le web-app est chargé dans la webview Tauri, on détecte window.__TAURI__
@@ -356,11 +371,7 @@ export default function AppLayoutClient({
     <SessionManagerProvider>
       {/* ⭐ OfflineGuard : bannière hors-ligne + blocage écritures financières offline */}
       <OfflineGuard>
-      <motion.div
-        initial={fadeMotion.initial}
-        animate={fadeMotion.animate}
-        transition={fadeMotion.transition}
-      >
+      <div className="app-fade-in">
         {/* Bandeau d'abonnement (GRACE_PERIOD / SUSPENDED) */}
         <SubscriptionBanner tenantId={tenant?.id} />
         <I18nProvider>
@@ -387,25 +398,29 @@ export default function AppLayoutClient({
             </AppSessionProvider>
           </QueryProvider>
         </I18nProvider>
-      </motion.div>
+      </div>
 
-      {/* Modaux et écrans de session — montés hors du layout principal */}
+      {/* ⭐ PERF (chantier GTMetrix) — préchargement différé des top-modules du
+          rôle APRÈS le rendu initial (idle) : les <Link> des sidebars ont
+          prefetch={false} → 0 chunk module téléchargé au 1er écran, mais les
+          modules les plus utilisés du rôle sont chauds en arrière-plan. */}
+      <DeferredRoutePrefetch role={user?.role} />
+
+      {/* Modaux et écrans de session — montés hors du layout principal.
+          ⭐ Perf : chargés à la demande (dynamic ssr:false). */}
       <SessionInactivityModal />
       <SessionLockScreen />
       <CrispChat />
-      {/* ⭐ Sarah Guide In-App — assistant de navigation flottant
-          DÉSACTIVÉ pour tous les rôles sauf plateforme owner / super admin.
-          L'utilisateur a demandé de masquer Sarah pour la présentation.
-          Pour réactiver, retirer la condition ou passer SHOW_SARAH à true. */}
+      {/* ⭐ Sarah Guide In-App — DÉSACTIVÉ globalement (présentation).
+          Imports statiques retirés du chunk partagé (perf) — voir commentaire
+          d'import ci-dessus pour la réactivation. */}
       {(() => {
-        const SHOW_SARAH = false; // ⭐ Désactivé globalement pour la présentation
+        const SHOW_SARAH = false;
         const PLATFORM_ROLES = ['PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'SUPER_ADMIN'];
         const isPlatformAdmin = SHOW_SARAH && user?.role && PLATFORM_ROLES.includes(user.role);
-        return isPlatformAdmin ? <InAppSaraGuideWidget /> : null;
+        return isPlatformAdmin ? null : null;
       })()}
-      {/* ⭐ OnboardingTour — parcours guidé par Sarah au premier login
-          Désactivé en même temps que le widget Sarah. */}
-      {/* <OnboardingTour /> */}
+      {/* ⭐ OnboardingTour — désactivé (import retiré du bundle, perf) */}
       {/* ⭐ Toaster (sonner) — affiche les toast.success/toast.error partout
           dans l'app (sans lui, les notifications sont silencieuses) */}
       <Toaster richColors position="top-right" closeButton />

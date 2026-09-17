@@ -41,6 +41,13 @@ export function useReviewPrompt(
     const shownThisSession = sessionStorage.getItem('helm_review_popup_shown');
     if (shownThisSession === 'true') return;
 
+    // ⭐ PERF (chantier GTMetrix) : la vérification backend a déjà eu lieu
+    // dans cette session → on ne re-déclenche PAS le fetch /api/public/
+    // reviews/check-tenant à chaque changement de vue (1 requête économisée
+    // par navigation tant que l'avis n'est ni soumis ni refusé).
+    const checkedThisSession = sessionStorage.getItem('helm_review_checked');
+    if (checkedThisSession === 'true') return;
+
     let cancelled = false;
 
     const run = async () => {
@@ -53,6 +60,7 @@ export function useReviewPrompt(
       // 2) Vérifier côté backend (source de vérité, marche même en cas de
       //    changement de navigateur, de cache vidé, etc.)
       try {
+        try { sessionStorage.setItem('helm_review_checked', 'true'); } catch {}
         const checkUrl = `/api/public/reviews/check-tenant/${encodeURIComponent(tenant.id)}`;
         const res = await fetch(checkUrl, { cache: 'no-store' });
         if (res.ok) {

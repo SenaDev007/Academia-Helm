@@ -9,7 +9,7 @@
  *
  * Ce helper applique automatiquement :
  *   1. Timeout 15s (configurable) via AbortController
- *   2. cache: 'no-store' (JAMAIS next: { revalidate } — voir doc CACHE_PERFORMANCE_PATTERN.md)
+ *   2. cache: 'no-store' (JAMAIS next: { revalidate } — voir doc PERF-GTMETRIX-CHARGEMENT.md)
  *   3. Headers BFF standards (User-Agent, Accept, Content-Type)
  *   4. Gestion d'erreur avec retour gracieux (liste vide au lieu de 504)
  *
@@ -113,9 +113,24 @@ export async function bffFetchJson<T = any>(
 /**
  * Construit les headers Cache-Control pour une réponse BFF.
  *
+ * ⭐ PERF + SÉCURITÉ (chantier GTMetrix — spéc. §7 « mise en cache HTTP
+ *    appropriée sur les données peu volatiles ») :
+ *
  * RÈGLE : Si la réponse est valide (au moins `minItems` items OU a un id),
- * on cache 60s avec stale-while-revalidate 5min. Sinon, no-cache pour
- * forcer un re-fetch au prochain appel (évite le cache empoisonné).
+ * on pose `private, max-age=45, stale-while-revalidate=60`.
+ * - `private` : ces réponses sont AUTHENTIFIÉES et scopées tenant — jamais
+ *   de cache CDN partagé cross-request (`public, s-maxage` exposait des
+ *   données tenant à un éventuel partage edge ; Vercel bypass de toute
+ *   façon les requêtes à Authorization header, mais on ne doit pas compter
+ *   sur ce détail).
+ * - `max-age=45` : aligné exactement sur le cache client GET 45 s
+ *   (lib/api/get-cache.ts) et les staleTime React Query — une seule
+ *   source de vérité de fraîcheur, cohérente offline/online (coordination
+ *   chantier SW : voir docs/PERF-GTMETRIX-CHARGEMENT.md).
+ * - `stale-while-revalidate=60` : navigation retour = réponse instantanée
+ *   (stale servie depuis le cache navigateur) + revalidation en arrière-plan.
+ * Sinon, no-cache pour forcer un re-fetch au prochain appel (évite le cache
+ * empoisonné).
  *
  * @param data - Données à valider
  * @param options - { minItems: number } pour les listes (défaut: 1)
@@ -133,7 +148,7 @@ export function buildCacheHeaders(
 
   if (isValid) {
     return {
-      'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+      'Cache-Control': 'private, max-age=45, stale-while-revalidate=60',
     };
   }
 

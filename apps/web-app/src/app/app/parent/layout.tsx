@@ -179,6 +179,7 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
               <Link
                 key={mod.path}
                 href={mod.path}
+                prefetch={false}
                 onClick={() => setMobileSidebarOpen(false)}
                 className={cn(
                   "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",

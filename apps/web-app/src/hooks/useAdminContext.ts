@@ -110,16 +110,26 @@ export function useAdminContext() {
 }
 
 /**
- * Helper : vérifie si l'utilisateur a accès à un module donné.
+ * Rôles admin « promoteur » — accès complet, SANS restriction de niveau scolaire.
+ * ⭐ 2026-09-17 — les DEUX orthographes coexistent en base selon la source
+ *    (assignment adminRole='PROMOTEUR' français vs 'PROMOTER' anglais —
+ *    cf. commit 5f71eb32e « Add 'PROMOTEUR' (French) to all role arrays »).
+ *    Un check mono-orthographe a déjà fait disparaître TOUS les modules
+ *    principaux de la sidebar du vrai promoteur (Task 76).
  */
+const PROMOTER_ADMIN_ROLES = ['PROMOTER', 'PROMOTEUR'];
+
 export function hasModuleAccess(
   context: AdminContext | null,
   module: string
 ): boolean {
   if (!context) return true; // Pas encore chargé → ne pas bloquer
 
-  // Le promoteur a accès à tout
-  if (context.adminRole === 'PROMOTER' || context.schoolLevelCodes.length === 0) {
+  // Le promoteur a accès à tout (les deux orthographes)
+  if (
+    PROMOTER_ADMIN_ROLES.includes(context.adminRole || '') ||
+    context.schoolLevelCodes.length === 0
+  ) {
     return true; // Pas d'affectation admin = probablement promoteur
   }
 
@@ -130,6 +140,10 @@ export function hasModuleAccess(
 
   // Mapping rôle → modules de base
   const ROLE_MODULES: Record<string, string[]> = {
+    // ⭐ Promoteur (les deux orthographes) : accès complet — filet de sécurité
+    //    même si le check dédié ci-dessus évoluait.
+    PROMOTER: ['*'],
+    PROMOTEUR: ['*'],
     DIRECTEUR: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline', 'director'],
     PROVISEUR: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline', 'director'],
     DIRECTEUR_ADJOINT: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline', 'director'],
@@ -157,6 +171,9 @@ export function hasModuleAccess(
  */
 export function getSchoolLevelFilter(context: AdminContext | null): string[] | null {
   if (!context) return null;
+  // ⭐ Le promoteur n'est JAMAIS filtré par niveau scolaire (accès global à
+  //    son école), même si son assignment porte un schoolLevelCode (ex: MAT_PRI).
+  if (PROMOTER_ADMIN_ROLES.includes(context.adminRole || '')) return null;
   if (context.schoolLevelIds.length === 0) return null; // Pas de filtre = tous
   return context.schoolLevelIds;
 }

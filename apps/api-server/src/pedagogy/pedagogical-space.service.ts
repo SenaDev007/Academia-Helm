@@ -6347,7 +6347,13 @@ export class PedagogicalSpaceService {
     for (const [key, type] of Object.entries(allowedFields)) {
       if (data[key] !== undefined) {
         const val = data[key];
-        updates.push(`"${key}" = $${paramIdx++}::${type}`);
+        // ⭐ FIX 2026-09-17 (bug du 2026-07-20) : « string » n'est PAS un type
+        //    PostgreSQL (erreur 42704 « type "string" does not exist » → P2010).
+        //    Les casts des UPDATE doivent utiliser TEXT. Ce bug cassait TOUTES
+        //    les mises à jour de fiches comportant un champ texte (soit 500,
+        //    soit mise à jour silencieusement ignorée par le repli optionnel).
+        const pgType = type === 'string' ? 'text' : type;
+        updates.push(`"${key}" = $${paramIdx++}::${pgType}`);
         if (type === 'jsonb') {
           params.push(JSON.stringify(val));
         } else if (type === 'date' && val) {

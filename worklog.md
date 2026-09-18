@@ -11238,3 +11238,7 @@ Stage Summary:
 - ✅ Catalogue des sous-matières conforme à la spécification corrigée : FR épuré, MATH/EPS sans sous-matières (comme EST), EA officielles seules, ES inchangé.
 - ✅ Portails comptable + secrétaire-comptable : conteneur aligné sur l'UI promoteur (max-w-7xl centré, paddings p-4/6/8) — cartes multi-caisses/caisses bien aérées.
 - Reste (optionnel) : validation visuelle navigateur post-déploiement ; miroir EN (production-en) des corrections de catalogue à porter ensuite.
+- VALIDATION PRODUCTION (navigateur agent-browser, comptes de recette — lecture seule, aucune donnée modifiée, aucun mot de passe touché) :
+  * Portail comptable ET secrétaire-comptable → /app/finance/cash-registers : conteneur main « p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full » actif en production ; 1920px → colonne centrée 1280px ; 375px → responsive ; contrôle VLM des captures : cartes bien aérées, zéro chevauchement.
+  * Cahier journal CM1 (Espace pédagogie, lecture seule) : datalist FRANÇAIS = liste corrigée complète (8 officielles + 6 variantes, AUCUNE chaîne supprimée) ; MATH = 0 suggestion ; EPS = 0 suggestion ; EA = 7 officielles exactement ; ES inchangé.
+  * Captures : download/fix71-*.png (6 fichiers).

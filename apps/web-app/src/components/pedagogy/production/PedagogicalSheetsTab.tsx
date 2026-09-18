@@ -1349,7 +1349,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                   Dictée, Grammaire, Conjugaison, Lecture… */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Matière spécifique <span className="font-normal text-slate-400">(Dictée, Grammaire, Conjugaison, Orthographe, Lecture…)</span>
+                  Matière spécifique <span className="font-normal text-slate-400">(Dictée, Grammaire, Conjugaison, Orthographe, Lecture, Expression écrite…)</span>
                 </label>
                 <input type="text" list="fr-matiere-specifique-suggestions" value={form.matiereSpecifique || ""} disabled={isReadOnly}
                   onChange={e => setForm({ ...form, matiereSpecifique: e.target.value })}

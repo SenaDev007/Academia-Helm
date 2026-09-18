@@ -5498,11 +5498,19 @@ export class PedagogicalSpaceService {
       || k.includes('mesure') || k.includes('geometrie')) {
       return 'MATH';
     }
-    if (k.includes('est') || k.includes('science') || k.includes('technologie')) {
+    // ⭐ 2026-09-18 (3e passe promoteur — fiche sans sous-matière MATH/EPS/EST) :
+    //    « Éducation Scientifique et Technologique » (nom réel en base) ne
+    //    matchait AUCUN des motifs précédents (« scientifique » ≠ « science »,
+    //    « technologique » ≠ « technologie ») → les fiches EST n'étaient jamais
+    //    rapprochées dans getFichesForCahierJournal. Motifs élargis :
+    //    'scientifique' + 'technologi' (couvre technologie ET technologique).
+    if (k.includes('est') || k.includes('science') || k.includes('scientifique') || k.includes('technologi')) {
       return 'EST';
     }
+    // ⭐ 2026-09-18 : + 'physical' — piste anglophone « Physical and Health
+    //    Education (PHE) » (les motifs existants ne matchaient pas non plus).
     if (k.includes('eps') || k.includes('sport') || k.includes('education physique')
-      || k.includes('athletisme') || k.includes('gymnastique') || k.includes('jeu collectif')) {
+      || k.includes('physical') || k.includes('athletisme') || k.includes('gymnastique') || k.includes('jeu collectif')) {
       return 'EPS';
     }
     if (k.includes('histoire') || k.includes('geographie') || k.includes('geographie')

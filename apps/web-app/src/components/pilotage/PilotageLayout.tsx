@@ -19,7 +19,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import PilotageTopBar from './PilotageTopBar';
 import PilotageSidebar from './PilotageSidebar';
@@ -43,6 +43,14 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
   const { currentLevel } = useSchoolLevel();
   const pathname = usePathname();
   // ⭐ PERF : pageMotion (framer) remplacé par la classe CSS .page-transition-in
+
+  // ⭐ 2026-09-18 (shell à hauteur fixe) — le scroll vit dans <main> : au
+  //    changement de route, on remet la zone de contenu en haut (comportement
+  //    standard d'un shell applicatif — la nouvelle page démarre en haut).
+  const mainScrollRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    mainScrollRef.current?.scrollTo({ top: 0 });
+  }, [pathname]);
 
   // ⭐ OFFLINE-FIRST RÉACTIVÉ — worker de sync (push outbox + pull incrémental périodique)
   useSyncWorker();
@@ -72,7 +80,17 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
 
   return (
     <OfflineGuard>
-      <div className="min-h-screen bg-[#F7F9FC] flex flex-col">
+      {/* ⭐ 2026-09-18 (retour promoteur) — SHELL À HAUTEUR FIXE : la racine
+          verrouille sa hauteur au viewport (app-shell-vh = 100vh/100dvh,
+          voir globals.css) + overflow-hidden. Le scroll ne vit QUE dans le
+          <main> (overflow-y-auto) : la sidebar (fixed) et le footer restent
+          VISIBLES EN PERMANENCE — la page ne défile plus « à l'infini » avec
+          le footer rejeté tout en bas du document.
+          AVANT : min-h-screen → la racine grandissait avec le contenu → tout
+          le document défilait (sidebar quittait l'écran, footer relégué en
+          bas après tout le contenu) au lieu de scroller dans la zone de
+          contenu de la page courante. */}
+      <div className="app-shell-vh overflow-hidden bg-[#F7F9FC] flex flex-col">
         {/* Top Bar - Fixe en haut */}
         <PilotageTopBar
           user={user}
@@ -107,6 +125,7 @@ export default function PilotageLayout({ user, tenant, children }: PilotageLayou
 
           {/* Main Content */}
           <main
+            ref={mainScrollRef}
             className={`flex-1 min-h-0 transition-all duration-300 overflow-y-auto md:ml-16 ${
               sidebarOpen ? 'lg:ml-64' : 'lg:ml-16'
             }`}

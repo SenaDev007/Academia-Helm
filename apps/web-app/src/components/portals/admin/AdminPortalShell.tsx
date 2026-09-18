@@ -29,7 +29,7 @@
  * ============================================================================
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -159,6 +159,14 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
   const [loggingOut, setLoggingOut] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
+  // ⭐ 2026-09-18 (shell à hauteur fixe) — le scroll vit dans <main> : au
+  //    changement de route, on remet la zone de contenu en haut (comportement
+  //    standard d'un shell applicatif — la nouvelle page démarre en haut).
+  const mainScrollRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    mainScrollRef.current?.scrollTo({ top: 0 });
+  }, [pathname]);
+
   // ─── Garde défensive : rôle sans vocation sur CE portail → /app ──────────
   // (En conditions normales, le layout racine ne rend ce shell que pour les
   //  rôles du portail — ceci couvre les sessions incohérentes.)
@@ -241,7 +249,14 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
     : L(config.label, config.labelEn);
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    // ⭐ 2026-09-18 (retour promoteur) — SHELL À HAUTEUR FIXE : la racine
+    //    verrouille sa hauteur au viewport (app-shell-vh = 100vh/100dvh, voir
+    //    globals.css) + overflow-hidden. Le scroll ne vit QUE dans <main>
+    //    (overflow-y-auto) : la sidebar (fixed) reste ancrée à gauche en
+    //    permanence et la page ne défile plus « à l'infini » — exactement le
+    //    comportement de l'UI promoteur (PilotageLayout) : la page courante
+    //    (les onglets ouverts) défile DANS son conteneur, rien d'autre.
+    <div className="app-shell-vh overflow-hidden bg-slate-50">
       {/* ⭐ Overlay mobile — sombre la page quand la sidebar est ouverte */}
       {mobileSidebarOpen && (
         <div
@@ -366,10 +381,12 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
 
       {/* Contenu principal — responsive :
           - Desktop (lg+) : ml-64 pour laisser place à la sidebar fixed
-          - Mobile (<lg) : ml-0, pas de marge (la sidebar est en drawer) */}
-      <div className="lg:ml-64 min-w-0">
+          - Mobile (<lg) : ml-0, pas de marge (la sidebar est en drawer)
+          ⭐ 2026-09-18 : colonne pleine hauteur (h-full flex flex-col) —
+          header shrink-0 + zone de contenu scrollable (flex-1 overflow-y-auto) */}
+      <div className="lg:ml-64 min-w-0 h-full flex flex-col">
         {/* Top bar — responsive avec bouton hamburger mobile */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30">
+        <header className="h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 z-30">
           <div className="flex items-center gap-3 min-w-0">
             {/* Bouton hamburger (mobile only) */}
             <button
@@ -408,9 +425,16 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
             Caisses dans les portails comptable et secrétaire-comptable).
             Désormais les pages métier partagées (/app/finance…) s'affichent
             EXACTEMENT comme dans l'UI promoteur : colonne centrée de 1280px,
-            cartes bien aérées. */}
-        <main className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full">
-          <div className="min-w-0">{children}</div>
+            cartes bien aérées.
+            ⭐ FIX 2026-09-18 (2e passe — shell à hauteur fixe) : <main> est
+            désormais le CONTENEUR DE SCROLL (flex-1 min-h-0 overflow-y-auto,
+            pleine largeur → barre de défilement au bord du viewport comme
+            dans l'UI promoteur) ; le conteneur centré max-w-7xl + paddings
+            vit À L'INTÉRIEUR de la zone scrollable. */}
+        <main ref={mainScrollRef} className="flex-1 min-h-0 overflow-y-auto">
+          <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+            <div className="min-w-0">{children}</div>
+          </div>
         </main>
       </div>
     </div>

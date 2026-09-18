@@ -1152,3 +1152,34 @@ html {
     animation: none;
   }
 }
+
+/* ⭐ 2026-09-18 (retour promoteur) — SHELL À HAUTEUR FIXE (sidebar + footer fixes).
+   La racine des 4 shells (PilotageLayout, AdminPortalShell, TeacherLayout,
+   ParentLayout) verrouille sa hauteur au viewport : le scroll ne vit QUE dans
+   la zone de contenu (main overflow-y-auto) — la sidebar reste ancrée à gauche
+   et le footer reste visible en bas, quelle que soit la longueur de la page.
+   100dvh (dynamic viewport height) remplace 100vh sur les navigateurs qui le
+   supportent : sur mobile, la hauteur suit la barre d'URL du navigateur au
+   lieu de déborder derrière elle (footer jamais rogné). */
+.app-shell-vh {
+  height: 100vh;
+}
+
+@supports (height: 100dvh) {
+  .app-shell-vh {
+    height: 100dvh;
+  }
+}
+
+/* Garde impression : les shells à hauteur verrouillée repassent en flux
+   normal pour l'impression (window.print — ex. factures/contrats) — sans
+   cela, le contenu serait rogné à la hauteur d'un écran. */
+@media print {
+  .app-shell-vh {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .app-shell-vh main {
+    overflow: visible !important;
+  }
+}

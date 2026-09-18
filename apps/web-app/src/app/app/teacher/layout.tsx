@@ -22,7 +22,7 @@
  * ============================================================================
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useSchoolIdentity } from "@/hooks/useSchoolIdentity";
@@ -71,6 +71,12 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  // ⭐ 2026-09-18 (shell à hauteur fixe) — le scroll vit dans <main> : au
+  //    changement de route, on remet la zone de contenu en haut.
+  const mainScrollRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    mainScrollRef.current?.scrollTo({ top: 0 });
+  }, [pathname]);
   // ⭐ P4-final : libellés dans la langue du profil (piste EN → anglais)
   const L = useL();
   // ⭐ 2026-09-15 : hook AVANT tout early-return (règle des hooks) — filtrage
@@ -112,7 +118,12 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   const currentModuleLabel = activeModule ? L(activeModule.label, activeModule.labelEn) : L("Portail Enseignant", "Teacher Portal");
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    // ⭐ 2026-09-18 (retour promoteur) — SHELL À HAUTEUR FIXE (app-shell-vh =
+    //    100vh/100dvh, voir globals.css) + overflow-hidden : le scroll ne vit
+    //    QUE dans <main> (overflow-y-auto) — la sidebar (fixed) reste ancrée
+    //    à gauche en permanence, la page ne défile plus « à l'infini ».
+    //    Même comportement que l'UI promoteur (PilotageLayout).
+    <div className="app-shell-vh overflow-hidden bg-slate-50">
       {/* ⭐ Overlay mobile — sombre la page quand la sidebar est ouverte */}
       {mobileSidebarOpen && (
         <div
@@ -229,10 +240,12 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
 
       {/* Contenu principal — responsive :
           - Desktop (lg+) : ml-64 pour laisser place à la sidebar fixed
-          - Mobile (<lg) : ml-0, pas de marge (la sidebar est en drawer) */}
-      <div className="lg:ml-64 min-w-0">
+          - Mobile (<lg) : ml-0, pas de marge (la sidebar est en drawer)
+          ⭐ 2026-09-18 : colonne pleine hauteur (h-full flex flex-col) —
+          header shrink-0 + zone de contenu scrollable (flex-1 overflow-y-auto) */}
+      <div className="lg:ml-64 min-w-0 h-full flex flex-col">
         {/* Top bar — responsive avec bouton hamburger mobile */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30">
+        <header className="h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 z-30">
           <div className="flex items-center gap-3 min-w-0">
             {/* Bouton hamburger (mobile only) */}
             <button
@@ -261,9 +274,14 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
         </header>
 
         {/* Contenu de la page */}
-        <main className="p-3 sm:p-4 lg:p-6">
-          <div className="min-w-0">
-            {children}
+        {/* ⭐ 2026-09-18 (shell à hauteur fixe) : <main> est le CONTENEUR DE
+            SCROLL (flex-1 min-h-0 overflow-y-auto) ; les paddings historiques
+            (p-3 sm:p-4 lg:p-6) vivent à l'intérieur, inchangés. */}
+        <main ref={mainScrollRef} className="flex-1 min-h-0 overflow-y-auto">
+          <div className="p-3 sm:p-4 lg:p-6">
+            <div className="min-w-0">
+              {children}
+            </div>
           </div>
         </main>
       </div>

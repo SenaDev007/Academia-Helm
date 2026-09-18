@@ -29,6 +29,7 @@ import { CahierJournalMaternelleGrid } from "./CahierJournalMaternelleGrid";
 import { bindDynamicSubjectsToColumns, buildMaternelleEntryKeyResolver, type DynamicSubject } from "@/lib/pedagogy/maternelle-domaines";
 import {
   resoudreSousMatieres,
+  estMatiereFicheSansSousMatiere,
   normaliserValeurFichesAPreparer,
   type SousMatiereFiche,
   type FichesAPreparerState,
@@ -138,20 +139,32 @@ function formatDateFR(dateStr: string): string {
 //     fiche pédagogique à préparer — on peut donc préparer PLUSIEURS fiches
 //     pour la même matière le même jour. Saisie assistée (suggestions du
 //     catalogue officiel) + texte libre (variantes fines).
+//     ⭐ 2026-09-18 (3e passe promoteur) — MATHÉMATIQUES / EPS / ÉDUCATION
+//     SCIENTIFIQUE ET TECHNOLOGIQUE (ficheSansNom) : tout le contenu est déjà
+//     sur la fiche de préparation → le marquage se fait EN UN CLIC, SANS nom
+//     de sous-matière (« Fiche à préparer » → [{ nom: "" }] = fiche de la
+//     matière en général). Le bouton « + » reste disponible pour ajouter des
+//     sous-matières nommées si l'enseignant veut détailler (facultatif).
 function SousMatieresFichesBar({
   matiere,
   sousMatieres,
   suggestions,
   readOnly,
+  ficheSansNom,
   onAdd,
   onRemove,
+  onToggleFiche,
 }: {
   matiere: string;
   sousMatieres: SousMatiereFiche[];
   suggestions: string[];
   readOnly: boolean;
+  /** ⭐ MATH/EPS/EST : marquage « Fiche à préparer » en un clic, sans nom. */
+  ficheSansNom?: boolean;
   onAdd: (nom: string) => void;
   onRemove: (index: number) => void;
+  /** ⭐ MATH/EPS/EST : bascule la fiche de la matière (nom vide). */
+  onToggleFiche?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
@@ -167,16 +180,22 @@ function SousMatieresFichesBar({
   };
 
   // État vide : bouton compact « + Fiche à préparer »
+  // ⭐ MATH/EPS/EST (ficheSansNom) : UN SEUL CLIC marque la fiche — pas de
+  //    saisie de sous-matière (même si l'enseignant ne renseigne pas le nom,
+  //    le système considère que c'est une fiche à préparer).
   if (sousMatieres.length === 0 && !open) {
+    const marquageDirect = !!ficheSansNom && !!onToggleFiche;
     return (
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        title="Renseigner la(les) sous-matière(s) de cette séance — chaque sous-matière donne une fiche pédagogique à préparer"
+        onClick={() => (marquageDirect ? onToggleFiche!() : setOpen(true))}
+        title={marquageDirect
+          ? `Marquer cette séance comme fiche à préparer — tout le contenu figure sur la fiche de ${matiere} (sous-matière facultative)`
+          : "Renseigner la(les) sous-matière(s) de cette séance — chaque sous-matière donne une fiche pédagogique à préparer"}
         className="w-full flex items-center gap-1 px-1.5 py-1 bg-amber-50/70 border-b border-amber-200 text-[10px] font-bold text-amber-700 hover:bg-amber-100 transition-all text-left"
       >
         <ClipboardList className="h-3 w-3 shrink-0" />
-        <span className="truncate">Fiche(s) à préparer — sous-matière +</span>
+        <span className="truncate">{marquageDirect ? "Fiche à préparer +" : "Fiche(s) à préparer — sous-matière +"}</span>
       </button>
     );
   }
@@ -995,12 +1014,15 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
       if (!DAYS_KEYS.has(day)) continue;
       const filtered: Record<string, SousMatiereFiche[]> = {};
       for (const [matiere, list] of Object.entries(dayMap || {})) {
-        const named = (list || []).filter((sm) => sm && (sm.nom || "").trim() !== "");
-        if (named.length > 0) {
-          filtered[matiere] = named;
-        } else if ((list || []).length > 0) {
-          // [{ nom: "" }] seul = fiche de la matière en général (maternelle / legacy)
-          filtered[matiere] = [{ nom: "" }];
+        // ⭐ 2026-09-18 (3e passe) : chaque puce = UNE fiche à préparer — on
+        //    conserve la liste TELLE QUELLE (nom vide = fiche de la matière en
+        //    général, marquage MATH/EPS/EST en un clic ; nom renseigné =
+        //    fiche de la sous-matière). Avant : les noms vides étaient
+        //    supprimés dès qu'un nom coexistait → le décompte (barre « N
+        //    fiches ») divergeait de l'exigence persistée.
+        const cleaned = (list || []).filter((sm) => sm && typeof sm.nom === "string");
+        if (cleaned.length > 0) {
+          filtered[matiere] = cleaned;
         }
       }
       if (Object.keys(filtered).length > 0) out[day] = filtered;
@@ -1206,6 +1228,9 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                       const key = getColumnKey(col);
                       // ⭐ Suggestions de sous-matières selon la matière de la colonne
                       const sousMatieresSuggestions = resoudreSousMatieres(key).suggestions;
+                      // ⭐ 2026-09-18 (3e passe) : MATH/EPS/EST — fiche à préparer
+                      //    en un clic, même sans nom de sous-matière
+                      const ficheSansNom = estMatiereFicheSansSousMatiere(key);
                       return (
                         <td key={key} className="border border-slate-300 p-0 relative">
                           {/* ⭐ FEATURE : sous-matières renseignées = fiches à préparer */}
@@ -1214,8 +1239,10 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                             sousMatieres={getSousMatieres(day.key, key)}
                             suggestions={sousMatieresSuggestions}
                             readOnly={!!isReadOnly}
+                            ficheSansNom={ficheSansNom}
                             onAdd={(nom) => addSousMatiere(day.key, key, nom)}
                             onRemove={(idx) => removeSousMatiere(day.key, key, idx)}
+                            onToggleFiche={() => toggleFicheAPreparer(day.key, key)}
                           />
                           <RichTextEditor
                             value={getEntry(day.key, key)}
@@ -1294,6 +1321,9 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                       const key = getColumnKey(col);
                       // ⭐ Suggestions de sous-matières selon la matière de la colonne
                       const sousMatieresSuggestions = resoudreSousMatieres(key).suggestions;
+                      // ⭐ 2026-09-18 (3e passe) : MATH/EPS/EST — fiche à préparer
+                      //    en un clic, même sans nom de sous-matière
+                      const ficheSansNom = estMatiereFicheSansSousMatiere(key);
                       return (
                         <td key={key} className="border border-slate-300 p-0 relative">
                           {/* ⭐ FEATURE : sous-matières renseignées = fiches à préparer */}
@@ -1302,8 +1332,10 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                             sousMatieres={getSousMatieres(day.key, key)}
                             suggestions={sousMatieresSuggestions}
                             readOnly={!!isReadOnly}
+                            ficheSansNom={ficheSansNom}
                             onAdd={(nom) => addSousMatiere(day.key, key, nom)}
                             onRemove={(idx) => removeSousMatiere(day.key, key, idx)}
+                            onToggleFiche={() => toggleFicheAPreparer(day.key, key)}
                           />
                           <RichTextEditor
                             value={getEntry(day.key, key)}

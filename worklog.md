@@ -11242,3 +11242,35 @@ Stage Summary:
   * Portail comptable ET secrétaire-comptable → /app/finance/cash-registers : conteneur main « p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full » actif en production ; 1920px → colonne centrée 1280px ; 375px → responsive ; contrôle VLM des captures : cartes bien aérées, zéro chevauchement.
   * Cahier journal CM1 (Espace pédagogie, lecture seule) : datalist FRANÇAIS = liste corrigée complète (8 officielles + 6 variantes, AUCUNE chaîne supprimée) ; MATH = 0 suggestion ; EPS = 0 suggestion ; EA = 7 officielles exactement ; ES inchangé.
   * Captures : download/fix71-*.png (6 fichiers).
+
+---
+Task ID: 72
+Agent: Super Z (session principale)
+Task: Corrections promoteur — (1) sidebar + footer FIXES dans TOUS les UI (scroll confiné à la page courante) ; (2) sous-matières FRANÇAIS 3e passe (restaurations + suppressions) ; (3) MATH/EPS/EST : fiche à préparer même SANS nom de sous-matière
+
+Work Log:
+- SHELLS À HAUTEUR FIXE (retour promoteur : « la sidebar et le footer ne sont plus fixes — quand on scrolle, la page va à l'infini, la sidebar part en haut et le footer se retrouve tout en bas ; le scroll doit être uniquement pour la page des onglets où on est ») :
+  * Cause racine : la racine de CHAQUE shell était en min-h-screen → elle grandissait avec le contenu → TOUT le document défilait (le main avait bien overflow-y-auto mais ne se déclenchait jamais ; le footer in-flux était rejeté après tout le contenu). 
+  * Correctif : nouvelle classe .app-shell-vh dans globals.css (height:100vh, remplacée par 100dvh via @supports — barre d'URL mobile) + garde @media print (flux normal à l'impression). Les 4 shells passent leur racine en « app-shell-vh overflow-hidden » :
+    - PilotageLayout (promoteur + back-office /platform — footer branding/niveau/offline TOUJOURS visible en bas, sidebar fixed ancrée, main overflow-y-auto = SEULE zone qui défile) ;
+    - AdminPortalShell (les 6 portails admin : directeur, secrétaire, secrétaire-comptable, comptable, surveillant, censeur — contenu en colonne h-full flex-col : header shrink-0 + main scrollable pleine largeur, barre de défilement au bord du viewport comme l'UI promoteur, conteneur max-w-7xl centré à l'intérieur — paddings aérés task 71 inchangés) ;
+    - TeacherLayout + ParentLayout (même pattern, paddings historiques p-3/4/6 conservés à l'intérieur).
+  * Comportement ajouté : remise en haut de la zone de contenu à chaque changement de route (scrollTo top sur pathname — la nouvelle page démarre en haut, pattern standard de shell applicatif). Effet bonus : les barres d'outils sticky top-0 internes aux pages (CatalogueTab, AttendanceRegisterTab, FeeOverrides…) collent désormais VISIBLES sous le header (avant : inertes, elles s'échappaient avec le document).
+- SOUS-MATIÈRES FRANÇAIS — 3e passe (retour promoteur : « tu as encore supprimé des choses que je n'ai pas demandé de supprimer ; j'avais dit de supprimer compte et tu ne l'as pas supprimé ; les vocabulaires doivent tous figurer ; il n'y a pas expression orale, c'est plutôt expression écrite ») :
+  * RESTAURÉS (supprimés à tort en 2e passe) : Vocabulaire thématique, Vocabulaire systématique, Vocabulaire fonctionnel (variantes) + Expression écrite (officielle).
+  * SUPPRIMÉS : Expression orale (n'existe pas — remplacée par Expression écrite) et Conte (« compte » — demandé dès la 1re passe ; conte conservé uniquement en EA où il est officiel).
+  * Datalist FRANÇAIS final : Dictée, Grammaire, Conjugaison, Communication orale, Orthographe, Lecture, Expression écrite, Graphisme/Écriture, Combinatoire + Lecture oralisée, Lecture silencieuse, Dictée préparée, Dictée-recherche, Vocabulaire thématique, Vocabulaire systématique, Vocabulaire fonctionnel. Restent supprimés (2e passe) : Vocabulaire générique, Production écrite, Récitation, Poésie, Exercices structuraux. MATH/EPS : 0 suggestion (inchangé) ; EA 7 officielles + ES inchangés.
+  * PedagogicalSheetsTab : hint « Matière spécifique » FR + Expression écrite ; le datalist du formulaire de fiche lit le catalogue partagé (mis à jour automatiquement).
+- MATH/EPS/EST — FICHE À PRÉPARER MÊME SANS NOM (retour promoteur : « même si l'enseignant ne renseigne pas le nom de la sous-matière, le système considère que c'est une fiche à préparer ») :
+  * cahier-sous-matieres.ts : helper estMatiereFicheSansSousMatiere() — matching normalisé (casse/accents/parenthèses) des noms réels en base (« Mathématiques », « Éducation Physique et Sportive », « Éducation Scientifique et Technologique ») + intitulés piste EN (Mathematics, Physical and Health Education (PHE), Basic Science) ; négatifs vérifiés (Français, ES, EA, Anglais, Informatique…).
+  * CahierJournalTab → SousMatieresFichesBar : nouveau mode ficheSansNom — pour ces 3 matières, l'état vide affiche « Fiche à préparer + » qui marque la fiche EN UN CLIC (toggle → [{ nom: "" }] = fiche de la matière en général, format de compatibilité existant) ; la puce affiche le nom de la matière avec sa croix de retrait ; le « + » pointillé reste disponible pour ajouter des sous-matières nommées (facultatif). Le « + Fiche(s) à préparer — sous-matière » (saisie) est inchangé pour toutes les autres matières.
+  * buildFichesAPreparerPayload : la liste est conservée telle quelle (chaque puce = UNE fiche) — avant, les noms vides étaient supprimés dès qu'un nom coexistait → décompte barre ≠ exigence persistée.
+  * Backend getFichesForCahierJournal : compatible [{ nom: "" }] de bout en bout (rapprochement passe 2 : fiches sans matiereSpecifique) — aucun changement de format requis.
+  * BUG LATENT BACKEND CORRIGÉ (mapMatiereKeyToSheetType) : « Éducation Scientifique et Technologique » ne matchait AUCUN motif ('scientifique' ≠ 'science', 'technologique' ≠ 'technologie') → les fiches EST n'étaient JAMAIS rapprochées dans le cahier journal. Motifs élargis : 'scientifique' + 'technologi' (couvre technologie/technologique) ; + 'physical' pour la piste EN (Physical and Health Education → EPS).
+- Vérifications : check_syntax.mjs 7 fichiers frontend ✓ ; bun build backend ✓ ; test catalogue 3e passe (scripts/test_catalogue_corrige.ts, hors dépôt) 76/76 ✓ (FR restaurations/suppressions, ficheSansNom FR+EN positifs et négatifs, MATH/EPS 0 suggestion, EA/ES inchangés).
+
+Stage Summary:
+- ✅ Sidebar + footer fixes dans TOUS les UI sans exception (promoteur/PilotageLayout, 6 portails admin/AdminPortalShell, enseignant, parent + back-office platform qui réutilise PilotageLayout) — le scroll vit uniquement dans la page courante.
+- ✅ Catalogue FRANÇAIS conforme à la 3e passe : vocabulaires thématique/systématique/fonctionnel + Expression écrite rétablis ; Expression orale et Conte (« compte ») supprimés.
+- ✅ MATH/EPS/EST : marquage « Fiche à préparer » en un clic sans nom de sous-matière + rapprochement EST réparé au backend.
+- Reste (optionnel) : validation visuelle navigateur post-déploiement ; miroir EN (production-en) des corrections de catalogue à porter ensuite.

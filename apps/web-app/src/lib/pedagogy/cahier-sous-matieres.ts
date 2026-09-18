@@ -22,10 +22,26 @@
  *      apprentissage, dessin — coloriage, dessin — modelage, compte,
  *      récitation) ; seules les sous-matières officielles restent.
  *
+ * ⭐ 2026-09-18 (corrections promoteur — 3e passe) :
+ *    - FRANÇAIS : RESTAURATION des vocabulaires (Vocabulaire thématique,
+ *      Vocabulaire systématique, Vocabulaire fonctionnel — supprimés à tort
+ *      lors de la 2e passe) et d'EXPRESSION ÉCRITE ; SUPPRESSION de
+ *      « Expression orale » (n'existe pas — c'est plutôt Expression écrite)
+ *      et de « Conte » (« compte » — demandé supprimé dès la 1re passe).
+ *    - MATHÉMATIQUES / EPS / ÉDUCATION SCIENTIFIQUE ET TECHNOLOGIQUE :
+ *      chaque séance = UNE fiche à préparer, MÊME SI l'enseignant ne
+ *      renseigne PAS le nom de la sous-matière (tout est déjà sur la fiche
+ *      de préparation) → helper estMatiereFicheSansSousMatiere() : la barre
+ *      de cellule propose un marquage « Fiche à préparer » EN UN CLIC,
+ *      sans nom (cf. CahierJournalTab).
+ *
  * Listes officielles (spécification utilisateur corrigée) :
  *   FRANÇAIS              : dictée, grammaire, conjugaison, communication
- *                           orale, orthographe, lecture, graphisme/écriture,
- *                           combinatoire
+ *                           orale, orthographe, lecture, expression écrite,
+ *                           graphisme/écriture, combinatoire (+ variantes
+ *                           vocabulaire thématique/systématique/fonctionnel,
+ *                           lecture oralisée/silencieuse, dictée
+ *                           préparée/recherche)
  *   MATHÉMATIQUES         : (aucune — tout est sur la fiche, comme l'EST)
  *   ÉDUCATION SOCIALE     : morale, civisme, histoire, géographie
  *   EPS                   : (aucune — comme l'EST)
@@ -68,18 +84,21 @@ export const SOUS_MATIERES_CATALOGUE: {
     key: "francais",
     sheetType: "FRANCAIS",
     colonnes: ["Français", "Francais"],
-    // ⭐ 2026-09-18 (corrections promoteur) : suppressions de Vocabulaire,
-    //    Expression écrite et Exercices structuraux (déjà sur la fiche de
-    //    préparation) + variantes associées (vocabulaire thématique/
-    //    fonctionnel/systématique, production écrite, expression écrite —
-    //    imprégnation/production, récitation, poésie).
+    // ⭐ 2026-09-18 (3e passe promoteur) : RESTAURÉ — Vocabulaire thématique,
+    //    Vocabulaire systématique, Vocabulaire fonctionnel (variantes) et
+    //    Expression écrite (officielle — « c'est plutôt expression écrite »).
+    //    SUPPRIMÉ — Expression orale (n'existe pas) et Conte (« compte »).
+    //    Restent supprimés (2e passe) : Vocabulaire (générique),
+    //    Production écrite, Récitation, Poésie, Exercices structuraux.
     sousMatieres: [
       "Dictée", "Grammaire", "Conjugaison", "Communication orale",
-      "Orthographe", "Lecture", "Graphisme/Écriture", "Combinatoire",
+      "Orthographe", "Lecture", "Expression écrite", "Graphisme/Écriture",
+      "Combinatoire",
     ],
     variantes: [
-      "Lecture oralisée", "Lecture silencieuse", "Expression orale",
-      "Dictée préparée", "Dictée-recherche", "Conte",
+      "Lecture oralisée", "Lecture silencieuse", "Dictée préparée",
+      "Dictée-recherche", "Vocabulaire thématique", "Vocabulaire systématique",
+      "Vocabulaire fonctionnel",
     ],
   },
   // ⭐ 2026-09-18 (corrections promoteur) : MATHÉMATIQUES et EPS sans
@@ -149,6 +168,39 @@ export function suggestionsPourSheetType(sheetType: string): string[] {
   const entry = SOUS_MATIERES_CATALOGUE.find(e => e.sheetType === sheetType);
   if (!entry) return [];
   return [...entry.sousMatieres, ...(entry.variantes || [])];
+}
+
+// ─── ⭐ 2026-09-18 (3e passe) — Matières « fiche sans sous-matière » ────────
+//     MATHÉMATIQUES, EPS et ÉDUCATION SCIENTIFIQUE ET TECHNOLOGIQUE : tout le
+//     contenu de la leçon figure déjà sur la fiche de préparation → chaque
+//     séance planifiée dans le cahier journal = UNE fiche à préparer, MÊME SI
+//     l'enseignant ne renseigne PAS le nom de la sous-matière.
+//     La barre de cellule (CahierJournalTab → SousMatieresFichesBar) propose
+//     alors un marquage « Fiche à préparer » EN UN CLIC (sous-matière vide —
+//     cf. compatibilité [{ nom: "" }] : fiche de la matière en général), et
+//     le backend compte cette exigence comme une fiche à préparer/jour.
+//     Matching insensible à la casse, aux accents et aux parenthèses — couvre
+//     les noms réels en base (« Mathématiques », « Éducation Physique et
+//     Sportive », « Éducation Scientifique et Technologique ») et les
+//     intitulés de la piste anglophone (« Mathematics », « Physical and
+//     Health Education (PHE) », « Basic Science »).
+export function estMatiereFicheSansSousMatiere(colonneMatiere: string): boolean {
+  const n = normalizeSousMatiere(colonneMatiere);
+  if (!n) return false;
+  // Mathématiques (+ variantes anciennes : calcul, numération, mesure, géométrie)
+  const isMath =
+    /\bmath/.test(n) || n.includes("calcul") || n.includes("numeratio") ||
+    n.includes("geometrie") || n === "maths";
+  // EPS (+ piste anglophone : Physical and Health Education)
+  const isEps =
+    /\beps\b/.test(n) || n.includes("education physique") ||
+    n.includes("physical") || n.includes("sport") || n.includes("athletis") ||
+    n.includes("gymnastiq");
+  // Éducation scientifique et technologique (+ « Basic Science », « EST »)
+  const isEst =
+    n.includes("education scientifique") || n.includes("scientifique") ||
+    n.includes("technologi") || n.includes("science") || /\best\b/.test(n);
+  return isMath || isEps || isEst;
 }
 
 // ─── Format persisté dans entries.__fichesAPreparer__ ───────────────────────

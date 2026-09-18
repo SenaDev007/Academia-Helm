@@ -446,6 +446,11 @@ const ROLE_LABEL_FALLBACK: Record<string, string> = {
   'PROMOTEUR': 'Promoteur / Fondateur',
   'SECRETAIRE': 'Secrétaire',
   'SECRETAIRE_COMPTABLE': 'Secrétaire-Comptable',
+  'SURVEILLANT_GENERAL': 'Surveillant Général',
+  'DIRECTEUR_ADJOINT': 'Directeur Adjoint',
+  'PROVISEUR': 'Proviseur',
+  'INTENDANT': 'Intendant',
+  'RESP_SCOLARITE': 'Responsable Scolarité',
   'COMPTABLE': 'Comptable',
   'CENSEUR': 'Censeur',
   'SURVEILLANT': 'Surveillant',
@@ -464,9 +469,39 @@ export function getRoleDisplayLabel(role: string | undefined | null): string {
   // 2. Fallback legacy / variations
   const fallback = ROLE_LABEL_FALLBACK[role];
   if (fallback) return fallback;
-  // 3. Dernier recours : retourner le rôle tel quel
+  // ⭐ 3. Rôles niveau-spécifiques hors catalogue : on retire le suffixe de
+  //    niveau (_MAT, _PRI, _SEC, _MAT_PRI, _MATERNELLE, _PRIMAIRE,
+  //    _SECONDAIRE, _GEN, _EN) et on recompose « libellé de base + niveau ».
+  //    Ex : SECRETAIRE_COMPTABLE_MAT → « Secrétaire-Comptable Maternelle »,
+  //         SURVEILLANT_SEC          → « Surveillant Secondaire ».
+  //    (produits par resolveUserRoleWithLevel côté backend — codes MAT/PRI/SEC)
+  //    Regex LAZY (.+?) + alternation la plus longue d'abord : décompose
+  //    SECRETAIRE_COMPTABLE_MAT_PRI en base SECRETAIRE_COMPTABLE + MAT_PRI
+  //    (et non base SECRETAIRE_COMPTABLE_MAT + PRI).
+  const suffixMatch = /^(.+?)_(MAT_PRI|MATERNELLE|PRIMAIRE|SECONDAIRE|MAT|PRI|SEC|GEN|EN)$/.exec(role);
+  if (suffixMatch) {
+    const base = suffixMatch[1];
+    const baseLabel = ROLE_TO_ENTRY.get(base)?.functionLabel || ROLE_LABEL_FALLBACK[base];
+    const levelLabel = LEVEL_SUFFIX_LABELS[suffixMatch[2]];
+    if (baseLabel && levelLabel) return `${baseLabel} ${levelLabel}`;
+    if (baseLabel) return baseLabel;
+  }
+  // 4. Dernier recours : retourner le rôle tel quel
   return role;
 }
+
+/** Libellés des suffixes de niveau (rôles niveau-spécifiques). */
+const LEVEL_SUFFIX_LABELS: Record<string, string> = {
+  MATERNELLE: 'Maternelle',
+  PRIMAIRE: 'Primaire',
+  SECONDAIRE: 'Secondaire',
+  MAT_PRI: 'Maternelle + Primaire',
+  MAT: 'Maternelle',
+  PRI: 'Primaire',
+  SEC: 'Secondaire',
+  GEN: 'Général',
+  EN: 'Piste anglophone',
+};
 
 /**
  * Retourne les modules de la sidebar visibles selon le rôle et le portail.

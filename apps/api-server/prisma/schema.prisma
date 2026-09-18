@@ -4189,6 +4189,11 @@ model PasswordReset {
   token     String    @unique
   expiresAt DateTime
   usedAt    DateTime?
+  /// ⭐ Changement d'adresse email self-service (« Mon profil » → Sécurité) :
+  ///    nouvelle adresse EN ATTENTE de confirmation par OTP. Null = OTP de
+  ///    réinitialisation de mot de passe classique. Le code est envoyé à CETTE
+  ///    nouvelle adresse — le champ lie le code à la demande exacte.
+  pendingEmail String?
   createdAt DateTime  @default(now())
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 

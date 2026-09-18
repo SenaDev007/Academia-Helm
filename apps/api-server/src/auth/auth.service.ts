@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ForbiddenException, NotFoundException, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ForbiddenException, NotFoundException, BadRequestException, ConflictException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { UsersService } from '../users/users.service';
@@ -1194,6 +1194,213 @@ export class AuthService {
   }
 
   /**
+   * ⭐ Changement d'adresse email self-service DEPUIS l'application (connecté) — ÉTAPE 1.
+   *
+   * Même mécanique OTP que « mot de passe oublié » (table password_resets,
+   * code 6 chiffres hashé bcrypt, expiration 10 minutes, anciens codes
+   * invalidés) — mais le code est envoyé à la NOUVELLE adresse : seule la
+   * personne qui CONTRÔLE la nouvelle boîte peut confirmer le changement
+   * (pas d'usurpation d'adresse tierce, pas de faute de frappe qui verrouille
+   * le compte). Le code est LIÉ à la demande via la colonne pendingEmail.
+   *
+   *   1. POST /auth/request-email-change { newEmail }   (cette méthode, JWT)
+   *   2. POST /auth/confirm-email-change { code, newEmail } → users.email
+   *      mis à jour + TOUTES les sessions invalidées (reconnexion requise)
+   */
+  async requestEmailChange(
+    jwtUser: { id: string; email: string },
+    newEmailRaw: string,
+  ): Promise<{ success: boolean; message: string; emailSent?: boolean }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: jwtUser.id },
+      select: { id: true, email: true, firstName: true, tenantId: true, status: true },
+    });
+    if (!user) {
+      throw new NotFoundException('Utilisateur introuvable.');
+    }
+    if (user.status && user.status !== 'active') {
+      throw new ForbiddenException('Compte inactif — impossible de changer l\'adresse email.');
+    }
+
+    // ── Validation de la nouvelle adresse ──
+    const newEmail = (newEmailRaw || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(newEmail)) {
+      throw new BadRequestException('Veuillez saisir une adresse email valide.');
+    }
+    if (newEmail === user.email.trim().toLowerCase()) {
+      throw new BadRequestException('La nouvelle adresse est identique à votre adresse actuelle.');
+    }
+    const existing = await this.prisma.user.findFirst({
+      where: { email: newEmail },
+      select: { id: true },
+    });
+    if (existing && existing.id !== user.id) {
+      throw new ConflictException('Cette adresse email est déjà utilisée par un autre compte.');
+    }
+
+    // ── OTP : mêmes internals que forgotPassword / requestPasswordChange ──
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOtp = await bcrypt.hash(otpCode, 10);
+
+    // Invalider les anciens codes non utilisés pour cet utilisateur
+    await this.prisma.passwordReset.updateMany({
+      where: {
+        userId: user.id,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      data: { usedAt: new Date() },
+    });
+
+    // Code LIÉ à la nouvelle adresse en attente (pendingEmail)
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    await this.prisma.passwordReset.create({
+      data: {
+        userId: user.id,
+        token: hashedOtp,
+        expiresAt,
+        pendingEmail: newEmail,
+      },
+    });
+
+    // Envoyer le code à la NOUVELLE adresse (template dédié)
+    try {
+      const result = await this.sendEmailChangeOtpEmail(
+        newEmail,
+        user.firstName || '',
+        otpCode,
+        user.email,
+        user.tenantId || undefined,
+        user.id,
+      );
+      this.logger.log(`Code OTP de changement d'email envoyé à ${newEmail} (pour le compte ${user.email}) (provider: ${this.configService.get<string>('EMAIL_PROVIDER', 'mock')}, success: ${result?.success})`);
+      return {
+        success: true,
+        message: `Un code de vérification a été envoyé à ${newEmail}. Saisissez-le pour confirmer votre nouvelle adresse. Le code expire dans 10 minutes.`,
+        emailSent: result?.success ?? true,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ ÉCHEC ENVOI OTP changement d'email à ${newEmail} | erreur: ${error?.message || error}`);
+      return {
+        success: false,
+        message: "Impossible d'envoyer le code de vérification pour le moment. Vérifiez la nouvelle adresse et réessayez.",
+        emailSent: false,
+      };
+    }
+  }
+
+  /**
+   * ⭐ Changement d'adresse email self-service — ÉTAPE 2 : confirmation.
+   *
+   * Vérifie le code OTP (lié à la demande via pendingEmail), met à jour
+   * users.email, invalide TOUTES les sessions (l'email est l'identifiant de
+   * connexion → reconnexion obligatoire) et notifie l'ANCIENNE adresse
+   * (alerte de sécurité standard, best-effort).
+   */
+  async confirmEmailChange(
+    jwtUser: { id: string; email: string },
+    dto: { code: string; newEmail?: string },
+  ): Promise<{ success: boolean; message: string; email: string }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: jwtUser.id },
+      select: { id: true, email: true, firstName: true, tenantId: true, status: true },
+    });
+    if (!user) {
+      throw new NotFoundException('Utilisateur introuvable.');
+    }
+    if (user.status && user.status !== 'active') {
+      throw new ForbiddenException('Compte inactif — impossible de changer l\'adresse email.');
+    }
+
+    if (!dto?.code || !/^\d{6}$/.test(dto.code.trim())) {
+      throw new BadRequestException('Veuillez saisir les 6 chiffres du code de vérification.');
+    }
+
+    // Code le plus récent non utilisé POUR UNE DEMANDE DE CHANGEMENT D'EMAIL
+    const resetRecord = await this.prisma.passwordReset.findFirst({
+      where: {
+        userId: user.id,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+        pendingEmail: { not: null },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!resetRecord) {
+      throw new ForbiddenException('Aucun changement d\'email en attente. Veuillez demander un nouveau code.');
+    }
+
+    // L'adresse confirmée doit être EXACTEMENT celle qui a reçu le code
+    const pendingEmail = (resetRecord as any).pendingEmail as string;
+    if (dto.newEmail && dto.newEmail.trim().toLowerCase() !== pendingEmail) {
+      throw new ForbiddenException('L\'adresse à confirmer ne correspond pas à la demande. Veuillez recommencer.');
+    }
+
+    // Vérifier le code OTP (bcrypt — même mécanique que reset-password)
+    const isValidOtp = await bcrypt.compare(dto.code.trim(), resetRecord.token);
+    if (!isValidOtp) {
+      // Après trop de tentatives, invalider le code (comme verifyResetOtp)
+      const attempts = (resetRecord as any).attempts || 0;
+      if (attempts + 1 >= 5) {
+        await this.prisma.passwordReset.update({
+          where: { id: resetRecord.id },
+          data: { usedAt: new Date() },
+        });
+        throw new ForbiddenException('Trop de tentatives. Veuillez demander un nouveau code.');
+      }
+      throw new ForbiddenException('Code invalide. Veuillez réessayer.');
+    }
+
+    // Le code est valide → l'utilisateur contrôle bien la nouvelle adresse.
+    // Ré-exclure une prise de compte entre-temps (course) :
+    const taken = await this.prisma.user.findFirst({
+      where: { email: pendingEmail },
+      select: { id: true },
+    });
+    if (taken && taken.id !== user.id) {
+      await this.prisma.passwordReset.update({
+        where: { id: resetRecord.id },
+        data: { usedAt: new Date() },
+      });
+      throw new ConflictException('Cette adresse email est déjà utilisée par un autre compte.');
+    }
+
+    // Transaction : email mis à jour + code consommé
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: { email: pendingEmail },
+      }),
+      this.prisma.passwordReset.update({
+        where: { id: resetRecord.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+
+    // Invalider TOUTES les sessions actives (l'email = identifiant de connexion)
+    try {
+      await this.prisma.session.deleteMany({ where: { userId: user.id } });
+      this.logger.log(`Sessions invalidées pour ${user.email} après changement d'adresse email`);
+    } catch (e) {
+      this.logger.warn(`Impossible d'invalider les sessions pour ${user.email}: ${e}`);
+    }
+
+    // Notifier l'ANCIENNE adresse (alerte de sécurité — best-effort)
+    try {
+      await this.sendEmailChangedNotification(user.email, user.firstName || '', pendingEmail, user.tenantId || undefined, user.id);
+    } catch (e: any) {
+      this.logger.warn(`Notification changement email non envoyée à ${user.email}: ${e?.message || e}`);
+    }
+
+    this.logger.log(`Adresse email modifiée pour l'utilisateur ${user.id} : ${user.email} → ${pendingEmail}`);
+    return {
+      success: true,
+      message: `Votre adresse email est désormais ${pendingEmail}. Toutes vos sessions ont été fermées — reconnectez-vous avec votre nouvelle adresse.`,
+      email: pendingEmail,
+    };
+  }
+
+  /**
    * Vérifie le code OTP de réinitialisation
    * Retourne un token temporaire si le code est valide
    */
@@ -1579,6 +1786,331 @@ export class AuthService {
       </div>
 
       <!-- Footer -->
+      <div class="footer">
+        <p class="brand">Academia Helm</p>
+        <p>Solution de gestion scolaire nouvelle génération</p>
+        <p>Cet email a été envoyé automatiquement. Merci de ne pas y répondre.</p>
+        <p>&copy; ${currentYear} Academia Helm. Tous droits réservés.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`.trim();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  CHANGEMENT D'ADRESSE EMAIL — ENVOIS (même pattern que l'OTP reset)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Envoie le code OTP de confirmation à la NOUVELLE adresse email
+   * (mêmes internals que sendPasswordResetOtpEmail : sendCategorized si
+   * tenant, fallback sendEmail sinon — never throws côté EmailService).
+   */
+  private async sendEmailChangeOtpEmail(
+    to: string,
+    firstName: string,
+    otpCode: string,
+    oldEmail: string,
+    tenantId?: string,
+    userId?: string,
+  ): Promise<{ success: boolean; messageId?: string }> {
+    const fromEmail = this.configService.get<string>('EMAIL_FROM_NOREPLY') || 'noreply@academiahelm.com';
+    const subject = 'Academia Helm — Confirmez votre nouvelle adresse email';
+    const html = this.buildEmailChangeOtpTemplate(firstName, otpCode, oldEmail, to);
+    const text = `Bonjour ${firstName},\n\nVous avez demandé le remplacement de l'adresse ${oldEmail} par ${to} sur votre compte Academia Helm.\nCode de confirmation : ${otpCode}\nCe code expire dans 10 minutes.\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez cet email — votre adresse restera inchangée.\n\nCordialement,\nL'équipe Academia Helm\nhttps://academiahelm.com`;
+
+    if (tenantId) {
+      const result = await this.emailService.sendCategorized({
+        tenantId,
+        category: 'SYSTEM',
+        subCategory: 'changement_email_otp',
+        module: 'auth',
+        to,
+        toName: firstName || undefined,
+        fromEmail,
+        fromName: 'Academia Helm',
+        subject,
+        html,
+        text,
+        recipientType: 'USER',
+        recipientId: userId,
+        triggeredBy: userId || 'SYSTEM',
+        relatedEntityId: userId,
+        relatedEntityType: 'User',
+      });
+      return { success: result.success, messageId: result.providerId };
+    }
+
+    const result = await this.emailService.sendEmail({
+      to,
+      from: fromEmail,
+      fromName: 'Academia Helm',
+      subject,
+      html,
+      text,
+    });
+    return { success: true, ...(result as any) };
+  }
+
+  /**
+   * Notification envoyée à l'ANCIENNE adresse après un changement effectif
+   * (alerte de sécurité standard — best-effort, ne bloque jamais le flux).
+   */
+  private async sendEmailChangedNotification(
+    oldEmail: string,
+    firstName: string,
+    newEmail: string,
+    tenantId?: string,
+    userId?: string,
+  ): Promise<void> {
+    const fromEmail = this.configService.get<string>('EMAIL_FROM_NOREPLY') || 'noreply@academiahelm.com';
+    const subject = 'Academia Helm — Votre adresse email a été modifiée';
+    const html = this.buildEmailChangedTemplate(firstName, oldEmail, newEmail);
+    const text = `Bonjour ${firstName},\n\nL'adresse email de votre compte Academia Helm a été modifiée : ${oldEmail} → ${newEmail}.\nSi vous n'êtes pas à l'origine de ce changement, contactez immédiatement votre administration.\n\nCordialement,\nL'équipe Academia Helm\nhttps://academiahelm.com`;
+
+    if (tenantId) {
+      await this.emailService.sendCategorized({
+        tenantId,
+        category: 'SYSTEM',
+        subCategory: 'changement_email_effectue',
+        module: 'auth',
+        to: oldEmail,
+        toName: firstName || undefined,
+        fromEmail,
+        fromName: 'Academia Helm',
+        subject,
+        html,
+        text,
+        recipientType: 'USER',
+        recipientId: userId,
+        triggeredBy: userId || 'SYSTEM',
+        relatedEntityId: userId,
+        relatedEntityType: 'User',
+      });
+      return;
+    }
+
+    await this.emailService.sendEmail({
+      to: oldEmail,
+      from: fromEmail,
+      fromName: 'Academia Helm',
+      subject,
+      html,
+      text,
+    });
+  }
+
+  /**
+   * Template OTP « confirmez votre nouvelle adresse email » — même charte
+   * que l'OTP reset (navy/blue/gold, logo, signature responsive).
+   */
+  private buildEmailChangeOtpTemplate(firstName: string, otpCode: string, oldEmail: string, newEmail: string): string {
+    const logoUrl = this.configService.get<string>('APP_PUBLIC_URL', 'https://academiahelm.com') + '/images/logo-academia-helm-email.png';
+    const signatureLogoUrl = logoUrl;
+    const currentYear = new Date().getFullYear();
+
+    return `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Confirmez votre nouvelle adresse — Academia Helm</title>
+  <style>
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+    body { margin: 0; padding: 0; width: 100% !important; height: 100% !important; background-color: #f0f4f8; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif; }
+    .email-wrapper { width: 100%; background-color: #f0f4f8; padding: 32px 16px; }
+    .email-container { max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(11, 47, 115, 0.08); }
+    .header { background: linear-gradient(135deg, #0b2f73 0%, #1d4fa5 100%); padding: 36px 32px 28px; text-align: center; position: relative; }
+    .header::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, #f5b335, #e09915, #f5b335); }
+    .header-logo { max-width: 56px; margin-bottom: 12px; border-radius: 12px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
+    .header .tagline { color: #f5b335; margin: 6px 0 0; font-size: 12px; font-weight: 500; letter-spacing: 0.3px; text-transform: uppercase; }
+    .content { padding: 40px 36px; }
+    .greeting { font-size: 17px; color: #1e293b; margin: 0 0 6px; font-weight: 600; }
+    .instruction { font-size: 14px; color: #475569; line-height: 1.8; margin: 0 0 28px; }
+    .email-change-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 20px; margin: 0 0 24px; text-align: center; }
+    .email-change-row { font-size: 14px; color: #475569; margin: 4px 0; }
+    .email-old { color: #64748b; text-decoration: line-through; }
+    .email-new { color: #0b2f73; font-weight: 700; }
+    .email-arrow { color: #f5b335; font-weight: 800; margin: 0 8px; }
+    .otp-section { text-align: center; margin: 28px 0; }
+    .otp-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 2px; margin: 0 0 14px; font-weight: 700; }
+    .otp-box { display: inline-block; background: linear-gradient(135deg, #0b2f7306, #1d4fa506); border: 2px dashed #1d4fa530; border-radius: 14px; padding: 20px 48px; }
+    .otp-code { font-size: 38px; font-weight: 800; letter-spacing: 10px; color: #0b2f73; font-family: 'Courier New', 'Consolas', monospace; margin: 0; }
+    .expiry-notice { text-align: center; margin: 20px 0 0; }
+    .expiry-notice p { font-size: 13px; color: #64748b; margin: 0; display: inline-block; background: #fef3c7; padding: 6px 16px; border-radius: 20px; font-weight: 500; }
+    .expiry-notice strong { color: #92400e; }
+    .divider { border: none; border-top: 1px solid #e2e8f0; margin: 28px 0; }
+    .warning-box { font-size: 13px; color: #64748b; padding: 16px 20px; background: #f8fafc; border-radius: 10px; border-left: 4px solid #f5b335; line-height: 1.6; margin: 0; }
+    .signature { margin-top: 28px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+    .signature-row { display: flex; align-items: center; gap: 12px; }
+    .signature-logo { width: 36px; height: 36px; border-radius: 8px; }
+    .signature-text p { margin: 0; font-size: 13px; color: #475569; line-height: 1.5; }
+    .signature-text .team-name { font-weight: 600; color: #0b2f73; }
+    .signature-text .website { color: #1d4fa5; text-decoration: none; font-weight: 500; }
+    .footer { background: #0b2f73; padding: 20px 32px; text-align: center; }
+    .footer p { font-size: 11px; color: #94a3b8; margin: 4px 0; line-height: 1.5; }
+    .footer a { color: #f5b335; text-decoration: none; font-weight: 500; }
+    .footer .brand { color: #f5b335; font-weight: 600; font-size: 12px; }
+    @media only screen and (max-width: 480px) {
+      .email-wrapper { padding: 16px 8px; }
+      .content { padding: 28px 20px; }
+      .otp-box { padding: 16px 28px; }
+      .otp-code { font-size: 28px; letter-spacing: 6px; }
+      .header { padding: 28px 20px 22px; }
+      .signature-row { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="email-wrapper">
+    <div class="email-container">
+      <div class="header">
+        <img src="${logoUrl}" alt="Academia Helm" class="header-logo" />
+        <h1>Academia Helm</h1>
+        <p class="tagline">Confirmation de votre nouvelle adresse</p>
+      </div>
+      <div class="content">
+        <p class="greeting">Bonjour ${firstName},</p>
+        <p class="instruction">
+          Vous avez demandé le remplacement de l'adresse email de votre compte
+          <strong>Academia Helm</strong> :
+        </p>
+        <div class="email-change-box">
+          <p class="email-change-row"><span class="email-old">${oldEmail}</span><span class="email-arrow">→</span><span class="email-new">${newEmail}</span></p>
+          <p class="email-change-row" style="font-size:12px;color:#94a3b8;">Vous recevez ce code sur la nouvelle adresse — seul son propriétaire peut confirmer le changement.</p>
+        </div>
+        <div class="otp-section">
+          <p class="otp-label">Code de confirmation</p>
+          <div class="otp-box">
+            <p class="otp-code">${otpCode}</p>
+          </div>
+        </div>
+        <div class="expiry-notice">
+          <p>Ce code expire dans <strong>10 minutes</strong></p>
+        </div>
+        <hr class="divider" />
+        <div class="warning-box">
+          Si vous n'êtes pas à l'origine de cette demande, ignorez cet email :
+          votre adresse actuelle (${oldEmail}) restera inchangée et aucune
+          action ne sera effectuée sur votre compte.
+        </div>
+        <div class="signature">
+          <div class="signature-row">
+            <img src="${signatureLogoUrl}" alt="" class="signature-logo" />
+            <div class="signature-text">
+              <p>Cordialement,</p>
+              <p class="team-name">L'équipe Academia Helm</p>
+              <p><a href="https://academiahelm.com" class="website">academiahelm.com</a></p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="footer">
+        <p class="brand">Academia Helm</p>
+        <p>Solution de gestion scolaire nouvelle génération</p>
+        <p>Cet email a été envoyé automatiquement. Merci de ne pas y répondre.</p>
+        <p>&copy; ${currentYear} Academia Helm. Tous droits réservés.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`.trim();
+  }
+
+  /**
+   * Template « votre adresse email a été modifiée » (notification à
+   * l'ANCIENNE adresse après changement effectif).
+   */
+  private buildEmailChangedTemplate(firstName: string, oldEmail: string, newEmail: string): string {
+    const logoUrl = this.configService.get<string>('APP_PUBLIC_URL', 'https://academiahelm.com') + '/images/logo-academia-helm-email.png';
+    const signatureLogoUrl = logoUrl;
+    const currentYear = new Date().getFullYear();
+
+    return `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Adresse email modifiée — Academia Helm</title>
+  <style>
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    body { margin: 0; padding: 0; width: 100% !important; background-color: #f0f4f8; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif; }
+    .email-wrapper { width: 100%; background-color: #f0f4f8; padding: 32px 16px; }
+    .email-container { max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(11, 47, 115, 0.08); }
+    .header { background: linear-gradient(135deg, #0b2f73 0%, #1d4fa5 100%); padding: 36px 32px 28px; text-align: center; position: relative; }
+    .header::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, #f5b335, #e09915, #f5b335); }
+    .header-logo { max-width: 56px; margin-bottom: 12px; border-radius: 12px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
+    .header .tagline { color: #f5b335; margin: 6px 0 0; font-size: 12px; font-weight: 500; letter-spacing: 0.3px; text-transform: uppercase; }
+    .content { padding: 40px 36px; }
+    .greeting { font-size: 17px; color: #1e293b; margin: 0 0 6px; font-weight: 600; }
+    .instruction { font-size: 14px; color: #475569; line-height: 1.8; margin: 0 0 24px; }
+    .email-change-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 20px; text-align: center; }
+    .email-change-row { font-size: 14px; color: #475569; margin: 4px 0; }
+    .email-old { color: #64748b; }
+    .email-new { color: #0b2f73; font-weight: 700; }
+    .email-arrow { color: #f5b335; font-weight: 800; margin: 0 8px; }
+    .divider { border: none; border-top: 1px solid #e2e8f0; margin: 28px 0; }
+    .warning-box { font-size: 13px; color: #64748b; padding: 16px 20px; background: #fef2f2; border-radius: 10px; border-left: 4px solid #ef4444; line-height: 1.6; margin: 0; }
+    .warning-box strong { color: #b91c1c; }
+    .signature { margin-top: 28px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+    .signature-row { display: flex; align-items: center; gap: 12px; }
+    .signature-logo { width: 36px; height: 36px; border-radius: 8px; }
+    .signature-text p { margin: 0; font-size: 13px; color: #475569; line-height: 1.5; }
+    .signature-text .team-name { font-weight: 600; color: #0b2f73; }
+    .signature-text .website { color: #1d4fa5; text-decoration: none; font-weight: 500; }
+    .footer { background: #0b2f73; padding: 20px 32px; text-align: center; }
+    .footer p { font-size: 11px; color: #94a3b8; margin: 4px 0; line-height: 1.5; }
+    .footer .brand { color: #f5b335; font-weight: 600; font-size: 12px; }
+    @media only screen and (max-width: 480px) {
+      .email-wrapper { padding: 16px 8px; }
+      .content { padding: 28px 20px; }
+      .header { padding: 28px 20px 22px; }
+      .signature-row { flex-direction: column; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="email-wrapper">
+    <div class="email-container">
+      <div class="header">
+        <img src="${logoUrl}" alt="Academia Helm" class="header-logo" />
+        <h1>Academia Helm</h1>
+        <p class="tagline">Sécurité du compte</p>
+      </div>
+      <div class="content">
+        <p class="greeting">Bonjour ${firstName},</p>
+        <p class="instruction">
+          L'adresse email de votre compte <strong>Academia Helm</strong> vient
+          d'être modifiée. À partir de maintenant, elle sert d'identifiant de
+          connexion :
+        </p>
+        <div class="email-change-box">
+          <p class="email-change-row"><span class="email-old">${oldEmail}</span><span class="email-arrow">→</span><span class="email-new">${newEmail}</span></p>
+        </div>
+        <hr class="divider" />
+        <div class="warning-box">
+          <strong>Si vous n'êtes pas à l'origine de ce changement,</strong>
+          contactez immédiatement l'administration de votre établissement afin
+          de sécuriser votre compte.
+        </div>
+        <div class="signature">
+          <div class="signature-row">
+            <img src="${signatureLogoUrl}" alt="" class="signature-logo" />
+            <div class="signature-text">
+              <p>Cordialement,</p>
+              <p class="team-name">L'équipe Academia Helm</p>
+              <p><a href="https://academiahelm.com" class="website">academiahelm.com</a></p>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="footer">
         <p class="brand">Academia Helm</p>
         <p>Solution de gestion scolaire nouvelle génération</p>

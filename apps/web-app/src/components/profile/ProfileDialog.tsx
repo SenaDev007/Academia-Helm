@@ -12,15 +12,30 @@
  *   1. PHOTO DE PROFIL
  *      Choix d'une image → compression navigateur → POST /api/users/me/avatar
  *      → sharp 512×512 webp côté backend → users.avatarUrl (data URL).
+ *      ⭐ Si l'utilisateur n'a PAS de photo perso mais une photo dans son
+ *        dossier du personnel (module RH — staff_photos), celle-ci s'affiche
+ *        (profile.hrPhotoUrl) et l'utilisateur peut la remplacer par la
+ *        sienne (users.avatarUrl reste prioritaire).
  *
- *   2. SÉCURITÉ — Changement de mot de passe
- *      ⭐ EXACTEMENT le même processus que « mot de passe oublié » (login) :
- *         Étape 1 : POST /api/auth/request-password-change → code OTP 6
- *                   chiffres envoyé à l'email du compte (email connecté)
- *         Étape 2 : POST /api/auth/verify-reset-otp { email, code }
- *         Étape 3 : POST /api/auth/reset-password { email, code, newPassword }
- *                   → bcrypt + invalidation de TOUTES les sessions
- *         Étape 4 : succès → reconnexion obligatoire
+ *   2. SÉCURITÉ — DEUX options self-service :
+ *      a) Changer mon mot de passe
+ *         ⭐ EXACTEMENT le même processus que « mot de passe oublié » (login) :
+ *            Étape 1 : POST /api/auth/request-password-change → code OTP 6
+ *                      chiffres envoyé à l'email du compte (email connecté)
+ *            Étape 2 : POST /api/auth/verify-reset-otp { email, code }
+ *            Étape 3 : POST /api/auth/reset-password { email, code, newPassword }
+ *                      → bcrypt + invalidation de TOUTES les sessions
+ *            Étape 4 : succès → reconnexion obligatoire
+ *      b) Changer mon adresse email
+ *         Même mécanique OTP sécurisée :
+ *            Étape 1 : POST /api/auth/request-email-change { newEmail } → code
+ *                      OTP envoyé à la NOUVELLE adresse (seul son propriétaire
+ *                      peut confirmer — pas d'usurpation, pas de faute de
+ *                      frappe qui verrouille le compte)
+ *            Étape 2 : POST /api/auth/confirm-email-change { code, newEmail }
+ *                      → users.email mis à jour + invalidation de TOUTES les
+ *                      sessions + notification envoyée à l'ancienne adresse
+ *            Étape 3 : succès → reconnexion obligatoire avec la nouvelle adresse
  *      Mêmes règles de validation que ForgotPasswordPage : ≥ 8 caractères,
  *      force ≥ « Moyen », checklist (majuscule, chiffre, caractère spécial).
  * ============================================================================
@@ -48,12 +63,15 @@ import {
   RefreshCw,
   LogOut,
   Mail,
+  AtSign,
+  ArrowLeft,
 } from 'lucide-react';
 import UserAvatar from './UserAvatar';
 import { useUserProfileStore, authedProfileFetch } from '@/stores/user-profile-store';
 import { compressImageFileToDataUrl } from '@/lib/media/client-image';
 import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 import { useL } from '@/lib/i18n/bilingual';
+import { getRoleDisplayLabel } from '@/lib/auth/role-portal-map';
 
 /** Palette Academia Helm (alignée ForgotPasswordPage). */
 const NAVY = '#0b2f73';
@@ -65,6 +83,8 @@ const CLIENT_MAX_EDGE = 1024;
 const CLIENT_MAX_FILE_BYTES = 8 * 1024 * 1024; // 8 Mo fichier brut
 
 type SecurityStep = 'start' | 'otp' | 'reset' | 'success';
+type SecurityAction = 'password' | 'email' | null;
+type EmailStep = 'start' | 'otp' | 'success';
 
 /** Évalue la force d'un mot de passe — identique à ForgotPasswordPage. */
 function getPasswordStrength(password: string): { score: number; label: string; color: string } {
@@ -122,6 +142,19 @@ export default function ProfileDialog({ open, onClose, fallbackUser }: ProfileDi
   };
   const email = (display.email || '').trim().toLowerCase();
   const displayName = `${display.firstName} ${display.lastName}`.trim() || display.email || L('Utilisateur', 'User');
+  // ⭐ Libellé français du rôle via le catalogue canonique (role-portal-map)
+  //    — JAMAIS l'ID technique brut (ex : SECRETAIRE_COMPTABLE_MAT_PRI →
+  //    « Secrétaire Comptable Maternelle + Primaire », pas « secretaire
+  //    comptable mat pri »). Les libellés déjà formatés (fallback des
+  //    portails) passent tels quels (getRoleDisplayLabel est idempotent).
+  const roleLabel = (() => {
+    if (!display.role) return '';
+    const label = getRoleDisplayLabel(display.role);
+    if (!label || label === display.role) {
+      return display.role.replaceAll('_', ' ');
+    }
+    return label;
+  })();
 
   // ── Onglets ──
   const [activeTab, setActiveTab] = useState<'photo' | 'security'>('photo');
@@ -145,6 +178,19 @@ export default function ProfileDialog({ open, onClose, fallbackUser }: ProfileDi
   const [resendCooldown, setResendCooldown] = useState(0);
   const otpInputs = useRef<(HTMLInputElement | null)[]>([]);
 
+  // ── Sécurité — choix de l'action (mot de passe | adresse email) ──
+  const [securityAction, setSecurityAction] = useState<SecurityAction>(null);
+
+  // ── Sécurité (changement d'adresse email) ──
+  const [emailStep, setEmailStep] = useState<EmailStep>('start');
+  const [newEmail, setNewEmail] = useState('');
+  const [emailOtpCode, setEmailOtpCode] = useState(['', '', '', '', '', '']);
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailCooldown, setEmailCooldown] = useState(0);
+  const [emailDoneAddress, setEmailDoneAddress] = useState('');
+  const emailOtpInputs = useRef<(HTMLInputElement | null)[]>([]);
+
   const passwordStrength = getPasswordStrength(newPassword);
   const passwordsMatch = Boolean(newPassword && confirmPassword && newPassword === confirmPassword);
   const passwordValid = newPassword.length >= 8 && passwordStrength.score >= 2;
@@ -165,22 +211,43 @@ export default function ProfileDialog({ open, onClose, fallbackUser }: ProfileDi
       setConfirmPassword('');
       setSecurityError(null);
       setResendCooldown(0);
+      setSecurityAction(null);
+      setEmailStep('start');
+      setNewEmail('');
+      setEmailOtpCode(['', '', '', '', '', '']);
+      setEmailError(null);
+      setEmailCooldown(0);
+      setEmailDoneAddress('');
     }
   }, [open, ensureLoaded]);
 
-  // Cooldown de renvoi du code
+  // Cooldown de renvoi du code (mot de passe)
   useEffect(() => {
     if (resendCooldown <= 0) return;
     const timer = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
     return () => clearTimeout(timer);
   }, [resendCooldown]);
 
-  // Focus sur le premier champ OTP
+  // Cooldown de renvoi du code (changement d'email)
+  useEffect(() => {
+    if (emailCooldown <= 0) return;
+    const timer = setTimeout(() => setEmailCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [emailCooldown]);
+
+  // Focus sur le premier champ OTP (mot de passe)
   useEffect(() => {
     if (step === 'otp') {
       setTimeout(() => otpInputs.current[0]?.focus(), 100);
     }
   }, [step]);
+
+  // Focus sur le premier champ OTP (changement d'email)
+  useEffect(() => {
+    if (emailStep === 'otp') {
+      setTimeout(() => emailOtpInputs.current[0]?.focus(), 100);
+    }
+  }, [emailStep]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // PHOTO DE PROFIL
@@ -381,7 +448,124 @@ export default function ProfileDialog({ open, onClose, fallbackUser }: ProfileDi
     }
   };
 
-  /** Succès — déconnexion propre puis retour au login. */
+  // ─────────────────────────────────────────────────────────────────────────
+  // SÉCURITÉ — Changement d'adresse email (même mécanique OTP sécurisée)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** Nouvelle adresse saisie valide et différente de l'actuelle. */
+  const normalizedNewEmail = newEmail.trim().toLowerCase();
+  const newEmailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normalizedNewEmail);
+  const newEmailIsDifferent = normalizedNewEmail !== email;
+  const canRequestEmailCode = newEmailIsValid && newEmailIsDifferent && !emailBusy;
+
+  /** Étape 1 — Envoi du code OTP à la NOUVELLE adresse. */
+  const handleRequestEmailCode = useCallback(async () => {
+    if (!newEmailIsValid) {
+      setEmailError(L('Veuillez saisir une adresse email valide.', 'Please enter a valid email address.'));
+      return;
+    }
+    if (!newEmailIsDifferent) {
+      setEmailError(L('La nouvelle adresse est identique à votre adresse actuelle.', 'The new address is the same as your current address.'));
+      return;
+    }
+    setEmailBusy(true);
+    setEmailError(null);
+    try {
+      const response = await authedProfileFetch('/api/auth/request-email-change', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newEmail: normalizedNewEmail }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.success === false) {
+        throw new Error(data?.message || L("Impossible d'envoyer le code de vérification.", 'Unable to send the verification code.'));
+      }
+      setEmailStep('otp');
+      setEmailCooldown(60);
+      setEmailOtpCode(['', '', '', '', '', '']);
+    } catch (err: any) {
+      setEmailError(err?.message || L('Une erreur inattendue est survenue.', 'An unexpected error occurred.'));
+    } finally {
+      setEmailBusy(false);
+    }
+  }, [newEmailIsValid, newEmailIsDifferent, normalizedNewEmail, L]);
+
+  /** Étape 2 — Vérification du code + application du changement (one-shot). */
+  const handleConfirmEmailOtp = useCallback(
+    async (codeArg?: string) => {
+      const code = codeArg ?? emailOtpCode.join('');
+      if (code.length !== 6) {
+        setEmailError(L('Veuillez saisir les 6 chiffres du code.', 'Please enter all 6 digits of the code.'));
+        return;
+      }
+      setEmailBusy(true);
+      setEmailError(null);
+      try {
+        const response = await authedProfileFetch('/api/auth/confirm-email-change', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, newEmail: normalizedNewEmail }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) {
+          throw new Error(data?.message || L('Code invalide ou expiré.', 'Invalid or expired code.'));
+        }
+        setEmailDoneAddress(data.email || normalizedNewEmail);
+        setEmailStep('success');
+      } catch (err: any) {
+        setEmailError(err?.message || L('Code invalide. Veuillez réessayer.', 'Invalid code. Please try again.'));
+        setEmailOtpCode(['', '', '', '', '', '']);
+        setTimeout(() => emailOtpInputs.current[0]?.focus(), 100);
+      } finally {
+        setEmailBusy(false);
+      }
+    },
+    [emailOtpCode, normalizedNewEmail, L]
+  );
+
+  /** Gestion des inputs OTP email (un chiffre par champ, auto-focus, auto-submit). */
+  const handleEmailOtpChange = (index: number, value: string) => {
+    if (!/^\d*$/.test(value)) return;
+    const newOtp = [...emailOtpCode];
+    newOtp[index] = value.slice(-1);
+    setEmailOtpCode(newOtp);
+    setEmailError(null);
+    if (value && index < 5) {
+      emailOtpInputs.current[index + 1]?.focus();
+    }
+    if (newOtp.every((d) => d !== '') && newOtp.join('').length === 6) {
+      setTimeout(() => handleConfirmEmailOtp(newOtp.join('')), 150);
+    }
+  };
+
+  const handleEmailOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !emailOtpCode[index] && index > 0) {
+      emailOtpInputs.current[index - 1]?.focus();
+    }
+    if (e.key === 'Enter') {
+      void handleConfirmEmailOtp();
+    }
+  };
+
+  const handleEmailOtpPaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (pasted.length > 0) {
+      const newOtp = [...emailOtpCode];
+      for (let i = 0; i < 6; i++) {
+        newOtp[i] = pasted[i] || '';
+      }
+      setEmailOtpCode(newOtp);
+      const nextEmpty = newOtp.findIndex((d) => d === '');
+      if (nextEmpty >= 0) {
+        emailOtpInputs.current[nextEmpty]?.focus();
+      } else {
+        setTimeout(() => handleConfirmEmailOtp(newOtp.join('')), 150);
+      }
+    }
+  };
+
+  /** Succès — déconnexion propre puis retour au login (sessions serveur invalidées). */
   const handleReLogin = async () => {
     try {
       // Logout best-effort (3 s max) — les sessions serveur sont déjà invalidées
@@ -395,7 +579,8 @@ export default function ProfileDialog({ open, onClose, fallbackUser }: ProfileDi
     }
   };
 
-  const avatarUrl = selectedPhoto ?? profile?.avatarUrl ?? null;
+  // Avatar effectif : photo perso > photo du dossier RH (module RH) > initiales
+  const avatarUrl = selectedPhoto ?? profile?.avatarUrl ?? profile?.hrPhotoUrl ?? null;
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDU
@@ -409,7 +594,7 @@ export default function ProfileDialog({ open, onClose, fallbackUser }: ProfileDi
           <div className="flex items-center gap-4">
             <div className="relative flex-shrink-0">
               <UserAvatar
-                photoUrl={selectedPhoto ?? profile?.avatarUrl}
+                photoUrl={selectedPhoto ?? profile?.avatarUrl ?? profile?.hrPhotoUrl}
                 firstName={display.firstName}
                 lastName={display.lastName}
                 email={display.email}
@@ -429,15 +614,15 @@ export default function ProfileDialog({ open, onClose, fallbackUser }: ProfileDi
                 {L('Mon profil', 'My Profile')}
               </DialogTitle>
               <p className="text-sm text-white/90 font-medium truncate">{displayName}</p>
-              {display.role && (
-                <p className="text-[11px] text-gold-400 font-medium uppercase tracking-wide mt-0.5">
-                  {display.role.replaceAll('_', ' ')}
+              {roleLabel && (
+                <p className="text-[11px] text-gold-400 font-medium tracking-wide mt-0.5">
+                  {roleLabel}
                 </p>
               )}
             </div>
           </div>
           <DialogDescription className="sr-only">
-            {L('Gérer ma photo de profil et mon mot de passe', 'Manage my profile photo and password')}
+            {L("Gérer ma photo de profil, mon mot de passe et mon adresse email", 'Manage my profile photo, password and email address')}
           </DialogDescription>
         </DialogHeader>
 
@@ -542,7 +727,7 @@ export default function ProfileDialog({ open, onClose, fallbackUser }: ProfileDi
                   <Camera className="w-4 h-4" />
                   {selectedPhoto
                     ? L('Choisir une autre image', 'Choose another image')
-                    : profile?.avatarUrl
+                    : (profile?.avatarUrl || profile?.hrPhotoUrl)
                       ? L('Changer ma photo', 'Change my photo')
                       : L('Ajouter une photo', 'Add a photo')}
                 </button>
@@ -585,6 +770,21 @@ export default function ProfileDialog({ open, onClose, fallbackUser }: ProfileDi
                 )}
               </div>
 
+              {/* ⭐ Photo issue du dossier du personnel (module RH) : affichée
+                  en attendant qu'une photo personnelle soit importée — la
+                  photo du dossier RH reste inchangée (lecture seule). */}
+              {!selectedPhoto && !profile?.avatarUrl && profile?.hrPhotoUrl && (
+                <div className="flex items-start gap-2.5 rounded-xl bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-slate-600">
+                  <AtSign className="w-4 h-4 text-[#1d4fa5] flex-shrink-0 mt-0.5" />
+                  <p className="leading-relaxed">
+                    {L(
+                      'Photo affichée depuis votre dossier du personnel (module RH). Importez une photo personnelle pour la remplacer ici — la photo de votre dossier RH reste inchangée.',
+                      'Photo shown from your staff record (HR module). Upload a personal photo to replace it here — your HR record photo stays unchanged.'
+                    )}
+                  </p>
+                </div>
+              )}
+
               <p className="text-[11px] text-slate-400 text-center">
                 {L('Formats : JPEG, PNG, WebP, GIF · max 8 Mo · recadrage carré automatique', 'Formats: JPEG, PNG, WebP, GIF · max 8 MB · automatic square crop')}
               </p>
@@ -592,10 +792,66 @@ export default function ProfileDialog({ open, onClose, fallbackUser }: ProfileDi
           )}
 
           {/* ════════════════════════════════════════════════════════════════
-              ONGLET SÉCURITÉ — Changement de mot de passe
+              ONGLET SÉCURITÉ — Mot de passe & adresse email
               ════════════════════════════════════════════════════════════════ */}
           {activeTab === 'security' && !profileUnavailable && (
             <div className="space-y-4">
+              {/* ── Choix de l'action : mot de passe | adresse email ── */}
+              {securityAction === null && (
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSecurityAction('password');
+                      setStep('start');
+                      setSecurityError(null);
+                    }}
+                    className="w-full flex items-start gap-3 rounded-xl border border-slate-200 hover:border-[#1d4fa5] hover:bg-blue-50/40 px-4 py-4 text-left transition-colors group"
+                  >
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#eef4ff' }}>
+                      <KeyRound className="w-5 h-5 text-[#1d4fa5]" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">
+                        {L('Changer mon mot de passe', 'Change my password')}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500 leading-relaxed">
+                        {L(
+                          'Par code de vérification envoyé à votre adresse email actuelle.',
+                          'By verification code sent to your current email address.'
+                        )}
+                      </p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSecurityAction('email');
+                      setEmailStep('start');
+                      setEmailError(null);
+                    }}
+                    className="w-full flex items-start gap-3 rounded-xl border border-slate-200 hover:border-[#1d4fa5] hover:bg-blue-50/40 px-4 py-4 text-left transition-colors group"
+                  >
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#eef4ff' }}>
+                      <AtSign className="w-5 h-5 text-[#1d4fa5]" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">
+                        {L("Changer mon adresse email", 'Change my email address')}
+                      </p>
+                      <p className="mt-0.5 text-xs text-slate-500 leading-relaxed">
+                        {L(
+                          'Saisissez une nouvelle adresse — un code de vérification lui est envoyé pour la confirmer.',
+                          'Enter a new address — a verification code is sent to it for confirmation.'
+                        )}
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              )}
+
+              {securityAction === 'password' && (
+                <>
               {/* Bandeau process — miroir de « mot de passe oublié » */}
               <div className="flex items-start gap-2.5 rounded-xl bg-blue-50 border border-blue-100 px-4 py-3">
                 <KeyRound className="w-4 h-4 text-[#1d4fa5] flex-shrink-0 mt-0.5" />
@@ -606,6 +862,18 @@ export default function ProfileDialog({ open, onClose, fallbackUser }: ProfileDi
                   )}
                 </p>
               </div>
+
+              {/* Retour au choix de l'action */}
+              {step !== 'success' && (
+                <button
+                  type="button"
+                  onClick={() => setSecurityAction(null)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-700"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  {L('Autres options de sécurité', 'Other security options')}
+                </button>
+              )}
 
               {securityError && (
                 <div className="flex items-start gap-2 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -868,6 +1136,203 @@ export default function ProfileDialog({ open, onClose, fallbackUser }: ProfileDi
                     {L('Me reconnecter', 'Sign in again')}
                   </button>
                 </div>
+              )}
+                </>
+              )}
+
+              {/* ════════════════════════════════════════════════════════════
+                  CHANGEMENT D'ADRESSE EMAIL (même mécanique OTP sécurisée)
+                  ════════════════════════════════════════════════════════════ */}
+              {securityAction === 'email' && (
+                <>
+              {/* Bandeau process */}
+              <div className="flex items-start gap-2.5 rounded-xl bg-blue-50 border border-blue-100 px-4 py-3">
+                <AtSign className="w-4 h-4 text-[#1d4fa5] flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  {L(
+                    'Le code de vérification est envoyé à votre NOUVELLE adresse : seul son propriétaire peut confirmer le changement. Votre ancienne adresse reçoit une notification de sécurité.',
+                    'The verification code is sent to your NEW address: only its owner can confirm the change. Your old address receives a security notification.'
+                  )}
+                </p>
+              </div>
+
+              {/* Retour au choix de l'action */}
+              {emailStep !== 'success' && (
+                <button
+                  type="button"
+                  onClick={() => setSecurityAction(null)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-700"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  {L('Autres options de sécurité', 'Other security options')}
+                </button>
+              )}
+
+              {emailError && (
+                <div className="flex items-start gap-2 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span>{emailError}</span>
+                </div>
+              )}
+
+              {/* ── Étape 1 : nouvelle adresse ── */}
+              {emailStep === 'start' && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+                    <Mail className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    <div className="min-w-0 text-sm">
+                      <span className="text-slate-500">{L('Adresse actuelle :', 'Current address:')} </span>
+                      <span className="font-semibold text-slate-800 truncate">
+                        {email ? (loadingProfile && !profile ? '…' : maskEmail(email)) : '—'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="profile-new-email" className="mb-1.5 block text-sm font-semibold text-slate-900">
+                      {L('Nouvelle adresse email', 'New email address')}
+                    </label>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                        <AtSign className="h-4 w-4 text-slate-400" />
+                      </div>
+                      <input
+                        id="profile-new-email"
+                        type="email"
+                        autoComplete="email"
+                        value={newEmail}
+                        onChange={(e) => {
+                          setNewEmail(e.target.value);
+                          setEmailError(null);
+                        }}
+                        className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-4 min-h-[44px] outline-none focus:border-[#1d4fa5] focus:ring-2 focus:ring-[#1d4fa5]/20 transition-all text-sm"
+                        style={{ borderColor: newEmail && !newEmailIsValid ? '#ef4444' : undefined }}
+                        placeholder={L('ex : prenom.nom@exemple.com', 'e.g. firstname.lastname@example.com')}
+                      />
+                    </div>
+                    {newEmail && !newEmailIsValid && (
+                      <p className="mt-1 text-xs text-red-500">
+                        {L('Adresse email invalide.', 'Invalid email address.')}
+                      </p>
+                    )}
+                    {newEmail && newEmailIsValid && !newEmailIsDifferent && (
+                      <p className="mt-1 text-xs text-amber-600">
+                        {L('Cette adresse est identique à votre adresse actuelle.', 'This address is the same as your current address.')}
+                      </p>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleRequestEmailCode}
+                    disabled={!canRequestEmailCode}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-semibold text-white min-h-[44px] disabled:opacity-50"
+                    style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                  >
+                    {emailBusy ? <Loader className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                    {emailBusy
+                      ? L('Envoi du code…', 'Sending code…')
+                      : L('Envoyer le code de vérification', 'Send verification code')}
+                  </button>
+                </div>
+              )}
+
+              {/* ── Étape 2 : saisie du code OTP ── */}
+              {emailStep === 'otp' && (
+                <div className="space-y-4">
+                  <p className="text-sm text-slate-600 text-center">
+                    {L(
+                      `Saisissez le code à 6 chiffres envoyé à ${normalizedNewEmail ? maskEmail(normalizedNewEmail) : 'votre nouvelle adresse'}.`,
+                      `Enter the 6-digit code sent to ${normalizedNewEmail ? maskEmail(normalizedNewEmail) : 'your new address'}.`
+                    )}
+                  </p>
+                  <div className="flex justify-center gap-2" onPaste={handleEmailOtpPaste}>
+                    {emailOtpCode.map((digit, i) => (
+                      <input
+                        key={i}
+                        ref={(el) => {
+                          emailOtpInputs.current[i] = el;
+                        }}
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={1}
+                        value={digit}
+                        onChange={(e) => handleEmailOtpChange(i, e.target.value)}
+                        onKeyDown={(e) => handleEmailOtpKeyDown(i, e)}
+                        disabled={emailBusy}
+                        aria-label={`Chiffre ${i + 1}`}
+                        className="w-11 h-12 text-center text-lg font-bold rounded-xl border-2 border-slate-200 focus:border-[#1d4fa5] focus:ring-2 focus:ring-[#1d4fa5]/20 outline-none transition-all text-slate-900 disabled:opacity-50"
+                      />
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-center gap-3 text-xs text-slate-500">
+                    <button
+                      type="button"
+                      onClick={() => setEmailStep('start')}
+                      className="font-medium text-slate-500 hover:text-slate-700 underline-offset-2 hover:underline"
+                    >
+                      {L("Modifier l'adresse", 'Change address')}
+                    </button>
+                    <span className="text-slate-300">·</span>
+                    {emailCooldown > 0 ? (
+                      <span className="text-slate-400">
+                        {L(`Renvoyer le code (${emailCooldown}s)`, `Resend code (${emailCooldown}s)`)}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleRequestEmailCode}
+                        disabled={emailBusy}
+                        className="font-semibold text-[#1d4fa5] hover:underline disabled:opacity-50 inline-flex items-center gap-1"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        {L('Renvoyer le code', 'Resend code')}
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleConfirmEmailOtp()}
+                    disabled={emailBusy || emailOtpCode.join('').length !== 6}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-semibold text-white min-h-[44px] disabled:opacity-50"
+                    style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                  >
+                    {emailBusy ? <Loader className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
+                    {L('Confirmer ma nouvelle adresse', 'Confirm my new address')}
+                  </button>
+                </div>
+              )}
+
+              {/* ── Étape 3 : succès ── */}
+              {emailStep === 'success' && (
+                <div className="space-y-4 text-center py-2">
+                  <div className="mx-auto w-14 h-14 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center">
+                    <CheckCircle2 className="w-7 h-7 text-emerald-500" />
+                  </div>
+                  <div>
+                    <p className="text-base font-bold text-slate-900">
+                      {L('Adresse email modifiée avec succès', 'Email address changed successfully')}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500 leading-relaxed">
+                      {L(
+                        `Votre adresse est désormais ${emailDoneAddress || normalizedNewEmail}. Pour votre sécurité, toutes vos sessions ont été fermées — reconnectez-vous avec votre nouvelle adresse.`,
+                        `Your address is now ${emailDoneAddress || normalizedNewEmail}. For your security, all your sessions have been closed — sign in again with your new address.`
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleReLogin}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-3 font-semibold text-white min-h-[44px]"
+                    style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                  >
+                    <LogOut className="w-4 h-4" />
+                    {L('Me reconnecter', 'Sign in again')}
+                  </button>
+                </div>
+              )}
+                </>
               )}
             </div>
           )}

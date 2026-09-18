@@ -36,6 +36,15 @@ export class ProfileService {
   /**
    * Profil complet de l'utilisateur connecté — champs SÉCURISÉS uniquement
    * (jamais passwordHash / secrets 2FA, contrairement à l'ancien /users/me).
+   *
+   * ⭐ hrPhotoUrl : fallback lecture seule vers la photo du dossier du
+   *    personnel (staff_photos — module « RH et personnel »). Si certaines
+   *    personnes ont déjà une photo définie dans le module RH, elle doit
+   *    s'afficher dans « Mon profil » (et partout où l'avatar apparaît),
+   *    même sans photo perso users.avatarUrl ; l'utilisateur peut ensuite
+   *    la remplacer par sa propre photo (upload → users.avatarUrl prioritaire).
+   *    Liaison Staff ↔ User : même email dans le même tenant (pattern
+   *    staff-credential.service.ts). AUCUNE écriture côté RH.
    */
   async getMyProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -57,7 +66,31 @@ export class ProfileService {
     if (!user) {
       throw new NotFoundException('Utilisateur introuvable.');
     }
-    return user;
+
+    // ── Fallback photo RH (lecture seule, best-effort) ──
+    let hrPhotoUrl: string | null = null;
+    if (!user.avatarUrl && user.tenantId && user.email) {
+      try {
+        const staff = await this.prisma.staff.findFirst({
+          where: {
+            tenantId: user.tenantId,
+            email: { equals: user.email, mode: 'insensitive' },
+          },
+          select: { photo: { select: { thumbnailUrl: true } } },
+        });
+        const thumb = staff?.photo?.thumbnailUrl ?? null;
+        // Data URLs (pattern upload RH) et URLs http(s) directement
+        // exploitables dans <img src> — tout autre format ignoré (clé de
+        // stockage non résolue ici, pas de coupling StorageService).
+        if (thumb && (/^data:image\//i.test(thumb) || /^https?:\/\//i.test(thumb))) {
+          hrPhotoUrl = thumb;
+        }
+      } catch (e: any) {
+        this.logger.warn(`Fallback photo RH indisponible pour ${user.email}: ${e?.message || e}`);
+      }
+    }
+
+    return { ...user, hrPhotoUrl };
   }
 
   /**

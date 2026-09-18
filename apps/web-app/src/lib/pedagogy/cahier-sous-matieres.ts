@@ -90,15 +90,17 @@ export const SOUS_MATIERES_CATALOGUE: {
     //    SUPPRIMÉ — Expression orale (n'existe pas) et Conte (« compte »).
     //    Restent supprimés (2e passe) : Vocabulaire (générique),
     //    Production écrite, Récitation, Poésie, Exercices structuraux.
-    // ⭐ 2026-09-19 (nouvelle passe promoteur) : AJOUTÉ — les trois stades
-    //    d'Expression écrite : « Expression écrite (imprégnation) »,
-    //    « Expression écrite (premier jet) » et « Expression écrite simple ».
+    // ⭐ 2026-09-19 (nouvelle passe promoteur) : AJOUTÉ — les stades
+    //    d'Expression écrite : « Expression écrite (imprégnation) » et
+    //    « Expression écrite (premier jet) ».
+    // ⭐ 2026-09-19 (retour promoteur) : « Expression écrite simple »
+    //    SUPPRIMÉ — « c'est plutôt expression écrite » : l'officielle est
+    //    « Expression écrite » (déjà au catalogue), pas une variante « simple ».
     sousMatieres: [
       "Dictée", "Grammaire", "Conjugaison", "Communication orale",
       "Orthographe", "Lecture", "Expression écrite", "Graphisme/Écriture",
       "Combinatoire",
       "Expression écrite (imprégnation)", "Expression écrite (premier jet)",
-      "Expression écrite simple",
     ],
     variantes: [
       "Lecture oralisée", "Lecture silencieuse", "Dictée préparée",

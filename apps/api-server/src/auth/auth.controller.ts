@@ -189,6 +189,59 @@ export class AuthController {
   }
 
   /**
+   * ⭐ Changement d'adresse email self-service DEPUIS l'application (connecté).
+   *
+   * Même mécanique OTP que « mot de passe oublié », mais le code est envoyé
+   * à la NOUVELLE adresse (prouve que l'utilisateur la contrôle) et lié à la
+   * demande via password_resets.pendingEmail :
+   *   1. POST /auth/request-email-change { newEmail }   (ici) → code OTP
+   *   2. POST /auth/confirm-email-change { code, newEmail } → users.email
+   *      mis à jour + toutes les sessions invalidées + notification à
+   *      l'ancienne adresse.
+   *
+   * ⚠️ PAS de @Public : route protégée par le JwtAuthGuard global → seul
+   *    l'utilisateur connecté peut demander le changement pour SON compte.
+   */
+  @Post('request-email-change')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ medium: { limit: 5, ttl: 60000 } })
+  async requestEmailChange(
+    @CurrentUser() user: any,
+    @Body('newEmail') newEmail: string,
+  ) {
+    const userId = user?.id || user?.sub || user?.userId;
+    const email = user?.email;
+    if (!userId || !email) {
+      throw new ForbiddenException('Utilisateur non authentifié');
+    }
+    if (!newEmail || typeof newEmail !== 'string') {
+      throw new ForbiddenException('Nouvelle adresse email requise.');
+    }
+    return this.authService.requestEmailChange({ id: userId, email }, newEmail);
+  }
+
+  /**
+   * ⭐ Changement d'adresse email — ÉTAPE 2 : confirmation par code OTP.
+   * Applique le changement (users.email), invalide toutes les sessions et
+   * notifie l'ancienne adresse. Reconnexion obligatoire ensuite.
+   */
+  @Post('confirm-email-change')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ medium: { limit: 10, ttl: 60000 } })
+  async confirmEmailChange(
+    @CurrentUser() user: any,
+    @Body('code') code: string,
+    @Body('newEmail') newEmail: string | undefined,
+  ) {
+    const userId = user?.id || user?.sub || user?.userId;
+    const email = user?.email;
+    if (!userId || !email) {
+      throw new ForbiddenException('Utilisateur non authentifié');
+    }
+    return this.authService.confirmEmailChange({ id: userId, email }, { code, newEmail });
+  }
+
+  /**
    * Route de développement : connexion automatique avec PLATFORM_OWNER
    * ⚠️ UNIQUEMENT EN DÉVELOPPEMENT
    */

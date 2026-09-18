@@ -49,6 +49,10 @@ export interface UserProfileData {
   role: string | null;
   tenantId: string | null;
   avatarUrl: string | null;
+  /** ⭐ Photo du dossier personnel (module RH — staff_photos) : fallback
+   *    lecture seule quand l'utilisateur n'a pas de photo perso. Priorité
+   *    d'affichage : avatarUrl (photo perso) > hrPhotoUrl (dossier RH). */
+  hrPhotoUrl?: string | null;
   twoFactorEnabled?: boolean;
 }
 
@@ -132,9 +136,10 @@ export const useUserProfileStore = create<UserProfileStore>((set, get) => ({
 
 /**
  * Hook pratique : URL de l'avatar de l'utilisateur connecté.
- * Priorité : profil frais (API) > fallback (session / props serveur).
- * Déclenche le chargement unique au montage (dans un effet, jamais pendant
- * le rendu — évite les mises à jour d'état synchrones inter-composants).
+ * Priorité : photo perso (profil frais API) > photo du dossier RH > fallback
+ * (session / props serveur). Déclenche le chargement unique au montage
+ * (dans un effet, jamais pendant le rendu — évite les mises à jour d'état
+ * synchrones inter-composants).
  */
 export function useAvatarUrl(fallbackUrl?: string | null): string | null {
   const profile = useUserProfileStore((s) => s.profile);
@@ -145,5 +150,5 @@ export function useAvatarUrl(fallbackUrl?: string | null): string | null {
     void ensureLoaded();
   }, [ensureLoaded]);
 
-  return profile?.avatarUrl ?? fallbackUrl ?? null;
+  return profile?.avatarUrl ?? profile?.hrPhotoUrl ?? fallbackUrl ?? null;
 }

@@ -241,6 +241,12 @@ export class GlobalSearchService {
     const rawDigits = isPhoneish ? digits : null;
 
     // Search in users table
+    // ⭐ FIX (sept. 2026 — isolation multi-tenant, retour utilisateur) :
+    //    recherche limitée à l'établissement courant — les membres d'autres
+    //    écoles n'apparaissent plus (un secrétaire comptable d'une autre école
+    //    apparaissait dans la recherche Helm Connect de CSPEB). Le filtre
+    //    inclut les comptes sans établissement ? NON — restons stricts : la
+    //    discussion est interne à l'école.
     const userRows: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT u.id, u."firstName", u."lastName", u.email, u.role,
              t."name" AS "tenantName",
@@ -255,6 +261,7 @@ export class GlobalSearchService {
         LIMIT 1
       ) tch ON true
       WHERE u.id != $2
+        AND u."tenantId" = $1
         AND (
           LOWER(COALESCE(u."firstName", '')) LIKE $3
           OR LOWER(COALESCE(u."lastName", '')) LIKE $3
@@ -335,13 +342,22 @@ export class GlobalSearchService {
 
   private getRoleLabel(role: string | undefined): string {
     const upperRole = (role || '').toUpperCase();
-    if (upperRole === 'ENSEIGNANT' || upperRole === 'TEACHER') return 'Enseignant';
-    if (upperRole === 'PARENT' || upperRole === 'GUARDIAN') return 'Parent d\'élève';
-    if (upperRole === 'PROMOTER' || upperRole === 'SCHOOL_OWNER') return 'Promoteur';
-    if (upperRole === 'DIRECTEUR_GENERAL' || upperRole === 'DIRECTEUR_ETABLISSEMENT' || upperRole === 'DIRECTEUR') return 'Directeur';
-    if (upperRole === 'SCHOOL_ADMIN' || upperRole === 'ADMIN') return 'Administration';
-    if (upperRole === 'PLATFORM_OWNER' || upperRole === 'SUPER_ADMIN') return 'Administration plateforme';
-    if (upperRole === 'COMPTABLE' || upperRole === 'CAISSIER') return 'Comptable';
+    // ⭐ FIX (sept. 2026 — retour utilisateur Helm Connect) : suffixes de
+    //    niveau (_MAT, _PRI, _SEC…) retirés + SECRETAIRE_COMPTABLE →
+    //    « Secrétaire comptable » (s'affichait en brut dans la recherche).
+    const baseRole = upperRole.replace(/_(MAT_PRI|MAT|PRI|SEC|GEN|EN)$/i, '');
+    const r = baseRole || upperRole;
+    if (r === 'ENSEIGNANT' || r === 'TEACHER') return 'Enseignant';
+    if (r === 'PARENT' || r === 'GUARDIAN') return 'Parent d\'élève';
+    if (r === 'PROMOTER' || r === 'SCHOOL_OWNER' || r === 'PROMOTEUR') return 'Promoteur';
+    if (r === 'DIRECTEUR_GENERAL' || r === 'DIRECTOR_GENERAL' || r === 'DIRECTEUR_ETABLISSEMENT' || r === 'DIRECTEUR') return 'Directeur';
+    if (r === 'SCHOOL_ADMIN' || r === 'ADMIN') return 'Administration';
+    if (r === 'PLATFORM_OWNER' || r === 'SUPER_ADMIN') return 'Administration plateforme';
+    if (r === 'SECRETAIRE_COMPTABLE') return 'Secrétaire comptable';
+    if (r === 'SECRETAIRE') return 'Secrétaire';
+    if (r === 'SURVEILLANT' || r === 'SURVEILLANT_GENERAL') return 'Surveillant';
+    if (r === 'CENSEUR') return 'Censeur';
+    if (r === 'COMPTABLE' || r === 'CAISSIER') return 'Comptable';
     return role || 'Utilisateur';
   }
 

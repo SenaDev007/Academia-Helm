@@ -113,5 +113,26 @@ export class ClassesRepository {
     await this.prisma.class.deleteMany({
       where: { id, tenantId },
     });
+
+    // ⭐ FIX (sept. 2026 — retour promoteur) : nettoyer les artefacts Helm
+    //    Connect de la classe supprimée (communauté de classe + conversation
+    //    + participants + messages — les FK sont ON DELETE CASCADE). Sinon la
+    //    communauté de classe restait visible dans Helm Connect. Best-effort :
+    //    ne jamais bloquer la suppression (la sync auto purge en secours).
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM chat_conversations WHERE id IN (
+           SELECT g."conversationId" FROM chat_auto_groups g
+           WHERE g."classId" = $1 AND g."conversationId" IS NOT NULL
+         )`,
+        id,
+      );
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM chat_auto_groups WHERE "classId" = $1`,
+        id,
+      );
+    } catch {
+      // silencieux — la purge de syncAutoGroups rattrapera
+    }
   }
 }

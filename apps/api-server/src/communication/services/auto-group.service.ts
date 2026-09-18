@@ -67,8 +67,18 @@ export class AutoGroupService {
 
     try {
       // 1. Get all classes for this tenant + academic year
+      // ⭐ FIX (sept. 2026 — retour promoteur) : LES CLASSES FRANCOPHONES SONT
+      //    LA SOURCE DE VÉRITÉ des communautés de classe. Les sections miroirs
+      //    anglophones (language='EN' — « Nursery 1 », « Primary 1 »…) créées
+      //    pour les écoles bilingues ne doivent PAS générer de canal : « ça
+      //    demeure la maternelle 1, la maternelle 2, etc. ». language NULL =
+      //    classes créées avant la piste bilingue → francophones → conservées.
       const classes = await this.prisma.class.findMany({
-        where: { tenantId, academicYearId },
+        where: {
+          tenantId,
+          academicYearId,
+          OR: [{ language: null }, { language: { not: 'EN' } }],
+        },
         include: {
           schoolLevel: { select: { name: true } },
           _count: { select: { studentEnrollments: true } },
@@ -142,7 +152,12 @@ export class AutoGroupService {
         select: { id: true, name: true, label: true },
       });
       const classesWithLevel = await this.prisma.class.findMany({
-        where: { tenantId, academicYearId },
+        where: {
+          tenantId,
+          academicYearId,
+          // ⭐ Même règle : classes francophones = source de vérité (miroirs EN exclus)
+          OR: [{ language: null }, { language: { not: 'EN' } }],
+        },
         select: { id: true, schoolLevelId: true },
       });
       const classesByLevel = new Map<string, string[]>();
@@ -209,8 +224,17 @@ export class AutoGroupService {
       // ⭐ TASK 77 — purge des groupes SUBJECT auto-créés devenus obsolètes
       //    (génération supprimée ci-dessus) : uniquement les groupes VIDES
       //    (aucun message) — un groupe avec de l'activité est conservé.
-      const purged = await this.purgeEmptySubjectGroups(tenantId);
+      const purgedSubject = await this.purgeEmptySubjectGroups(tenantId);
 
+      // ⭐ FIX (sept. 2026 — retour promoteur) : purge des communautés de
+      //    classe OBSOLÈTES — classe SUPPRIMÉE (l'utilisateur a retiré des
+      //    classes de la base « mais les classes sont toujours présentes
+      //    dans Helm Connect ») ou miroir anglophone (les classes FR sont la
+      //    source de vérité — aucune communauté « Nursery 1 » ne doit exister
+      //    pour une école bilingue).
+      const purgedClassGroups = await this.purgeObsoleteClassGroups(tenantId);
+
+      const purged = purgedSubject + purgedClassGroups;
       const total = created + updated + skipped;
       this.logger.log(`syncAutoGroups complete: ${created} created, ${updated} updated, ${skipped} skipped, ${purged} purged, ${total} total`);
       return { created, updated, skipped, purged, total };
@@ -218,6 +242,58 @@ export class AutoGroupService {
       this.logger.error(`syncAutoGroups failed: ${e.message}`, e.stack);
       throw e;
     }
+  }
+
+  /**
+   * ⭐ FIX (sept. 2026 — retour promoteur) — purge des communautés de classe
+   * OBSOLÈTES :
+   *   • classe SUPPRIMÉE de la base (chat_auto_groups orphelin) — « j'ai fait
+   *     exprès de supprimer ces classes… mais les classes sont toujours
+   *     présentes dans Helm Connect » ;
+   *   • classe MIROIR ANGLOPHONE (language='EN') — les classes francophones
+   *     sont la source de vérité : aucune communauté « Nursery 1 »,
+   *     « Primary 1 » ne doit exister pour une école bilingue.
+   *
+   * Supprime chat_auto_groups + conversation miroir + participants + messages.
+   * Appelée à chaque sync (démarrage API + toutes les 6 h + sync manuelle) →
+   * les orphelins disparaissent automatiquement, y compris ceux créés par
+   * des suppressions DIRECTES en base (hors application).
+   */
+  async purgeObsoleteClassGroups(tenantId: string): Promise<number> {
+    const obsolete: Array<{ id: string; conversationId: string | null; name: string; reason: string }> =
+      await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT g."id", g."conversationId", g."name",
+                CASE WHEN c.id IS NULL THEN 'DELETED' ELSE 'EN_MIRROR' END AS reason
+         FROM "chat_auto_groups" g
+         LEFT JOIN "classes" c ON c.id = g."classId"
+         WHERE g."tenantId" = $1 AND g."groupType" = 'CLASS' AND g."classId" IS NOT NULL
+           AND (c.id IS NULL OR c."language" = 'EN')`,
+        tenantId,
+      );
+    for (const grp of obsolete) {
+      try {
+        if (grp.conversationId) {
+          await this.prisma.$executeRawUnsafe(
+            `DELETE FROM "chat_participants" WHERE "conversationId" = $1`, grp.conversationId,
+          );
+          await this.prisma.$executeRawUnsafe(
+            `DELETE FROM "chat_messages" WHERE "conversationId" = $1`, grp.conversationId,
+          );
+          await this.prisma.$executeRawUnsafe(
+            `DELETE FROM "chat_conversations" WHERE "id" = $1`, grp.conversationId,
+          );
+        }
+        await this.prisma.$executeRawUnsafe(
+          `DELETE FROM "chat_auto_groups" WHERE "id" = $1`, grp.id,
+        );
+        this.logger.log(
+          `purgeObsoleteClassGroups: « ${grp.name} » supprimé (${grp.reason === 'DELETED' ? 'classe supprimée' : 'miroir EN — la classe FR est la source de vérité'}) — tenant ${tenantId}`,
+        );
+      } catch (e: any) {
+        this.logger.warn(`purgeObsoleteClassGroups: échec pour « ${grp.name} » (${grp.id}): ${e.message}`);
+      }
+    }
+    return obsolete.length;
   }
 
   /**

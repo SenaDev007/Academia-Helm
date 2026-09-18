@@ -577,6 +577,43 @@ function getAvatarColor(name: string): string {
   return colors[hash % colors.length];
 }
 
+// ⭐ FIX (sept. 2026 — retour utilisateur) : le rôle du profil Helm Connect
+//    s'affichait en IDENTIFIANT BRUT (« SECRETAIRE_COMPTABLE ») au lieu du
+//    libellé métier. Le backend renvoie désormais roleLabel — ce helper est
+//    le filet de sécurité frontend (libellé manquant → formatage propre :
+//    suffixe de niveau retiré, underscores → espaces, capitalisation).
+function formatChatRoleLabel(role?: string | null): string {
+  if (!role) return '';
+  const raw = String(role).trim();
+  if (!raw) return '';
+  const base = raw.toUpperCase().replace(/_(MAT_PRI|MAT|PRI|SEC|GEN|EN)$/i, '');
+  const known: Record<string, string> = {
+    SECRETAIRE_COMPTABLE: 'Secrétaire comptable',
+    SECRETAIRE: 'Secrétaire',
+    SURVEILLANT: 'Surveillant',
+    SURVEILLANT_GENERAL: 'Surveillant général',
+    CENSEUR: 'Censeur',
+    COMPTABLE: 'Comptable',
+    ENSEIGNANT: 'Enseignant',
+    PROMOTEUR: 'Promoteur',
+    PROMOTER: 'Promoteur',
+    DIRECTEUR: 'Directeur',
+    DIRECTEUR_ETABLISSEMENT: 'Directeur',
+    DIRECTEUR_GENERAL: 'Directeur général',
+    DIRECTEUR_PEDAGOGIQUE: 'Directeur pédagogique',
+    PARENT: "Parent d'élève",
+    ELEVE: 'Élève',
+    STUDENT: 'Élève',
+  };
+  if (known[base]) return known[base];
+  // Formatage générique : SECRETARY_GENERAL → « Secretary general »
+  return base
+    .toLowerCase()
+    .split('_')
+    .map((w, i) => (i === 0 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .join(' ');
+}
+
 // ⭐ FIX: Strip HTML tags from content for previews (reply quote, forward modal, notifications)
 //    Converts <div>/<br> to newlines, removes other tags, decodes entities.
 function stripHtml(html: string | null | undefined): string {
@@ -9595,7 +9632,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
             <div className="p-6 text-center border-b border-slate-100">
               <div className={cn('w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center text-white text-2xl font-bold', getAvatarColor(profileUser.name))}>{getInitials(profileUser.name)}</div>
               <h3 className="text-lg font-bold text-slate-900">{profileUser.name}</h3>
-              <p className="text-sm text-slate-500">{profileData?.role || '—'}</p>
+              <p className="text-sm text-slate-500">
+                {formatChatRoleLabel(profileData?.roleLabel || profileData?.role) || '—'}
+              </p>
               <p className="text-xs text-slate-400">{profileData?.email || ''}</p>
               <div className="mt-2"><span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold', profileData?.availabilityStatus === 'online' ? 'bg-green-100 text-green-700' : profileData?.availabilityStatus === 'away' ? 'bg-amber-100 text-amber-700' : profileData?.availabilityStatus === 'dnd' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500')}>{profileData?.availabilityStatus === 'online' ? '🟢 En ligne' : profileData?.availabilityStatus === 'away' ? '🟡 Absent' : profileData?.availabilityStatus === 'dnd' ? '🔴 Ne pas déranger' : '⚫ Hors ligne'}</span></div>
             </div>
@@ -9665,7 +9704,9 @@ function MemberProfileModal({
 
   const fullName = `${member.firstName || ''} ${member.lastName || ''}`.trim() || 'Membre';
   const isOnline = !!member.isOnline;
-  const roleLabel = member.roleLabel || member.userRole || profile?.roleLabel || profile?.role || '';
+  const roleLabel = formatChatRoleLabel(
+    member.roleLabel || member.userRole || profile?.roleLabel || profile?.role,
+  );
   const bio = profile?.bio || member.bio || '';
   const availability = profile?.availabilityStatus || member.activityStatus || '';
 

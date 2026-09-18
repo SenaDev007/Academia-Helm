@@ -315,6 +315,34 @@ export class ChatService {
       this.logger.log(`Resolved tenantId for conversation: ${resolvedTenantId} (from user records)`);
     }
 
+    // ⭐ FIX (sept. 2026 — isolation multi-tenant, retour utilisateur) :
+    //    un DM ne peut lier que deux membres du MÊME établissement.
+    //    Avant : aucun contrôle — un membre CSPEB pouvait ouvrir une discussion
+    //    avec un utilisateur d'une AUTRE école (vu en production : un
+    //    secrétaire comptable de CSP Mon Avenir Plus N'Dali apparaissait dans
+    //    les discussions privées de CSPEB).
+    if (resolvedTenantId) {
+      const members: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
+        SELECT id, "tenantId" FROM "users" WHERE id IN ($1, $2)
+      `, currentUserId, otherUserId);
+      const other = members.find(m => m.id === otherUserId);
+      const current = members.find(m => m.id === currentUserId);
+      if (!other) {
+        throw new BadRequestException('Utilisateur introuvable.');
+      }
+      // L'autre membre doit appartenir à l'établissement de la conversation
+      if (other.tenantId && other.tenantId !== resolvedTenantId) {
+        this.logger.warn(
+          `DM cross-tenant bloqué : ${currentUserId} (tenant ${resolvedTenantId}) → ${otherUserId} (tenant ${other.tenantId})`,
+        );
+        throw new ForbiddenException("Cet utilisateur n'appartient pas à votre établissement.");
+      }
+      // Le demandeur aussi (sauf compte plateforme sans établissement)
+      if (current?.tenantId && current.tenantId !== resolvedTenantId) {
+        throw new ForbiddenException("Cet utilisateur n'appartient pas à votre établissement.");
+      }
+    }
+
     // ⭐ V5 (chantier 1) — BLOCAGE : on refuse la création/OUVERTURE d'un DM si
     //    l'un des deux membres a bloqué l'autre (403, message uniforme).
     //    Comme Yeshua : POST /conversations/dm → 403 si blocage dans un sens ou l'autre.
@@ -476,25 +504,38 @@ export class ChatService {
 
   /**
    * Libellé lisible d'un rôle (partagé entre listConversations et getConversation).
+   *
+   * ⭐ FIX (sept. 2026 — retour utilisateur Helm Connect) :
+   *    - SECRETAIRE_COMPTABLE s'affichait en BRUT (« SECRETAIRE_COMPTABLE »)
+   *      au lieu du libellé « Secrétaire comptable » → mapping ajouté ;
+   *    - les rôles à SUFFIXE DE NIVEAU (SECRETAIRE_COMPTABLE_MAT_PRI,
+   *      DIRECTEUR_SEC, SECRETAIRE_COMPTABLE_SEC…) sont ramenés au rôle de
+   *      base (le suffixe de niveau n'apporte rien dans le chat).
    */
   private roleLabelFor(role: string, children: string[] | undefined): string {
     const upperRole = (role || '').toUpperCase();
+    // Retire le suffixe de niveau : _MAT, _PRI, _SEC, _MAT_PRI, _GEN…
+    const baseRole = upperRole.replace(/_(MAT_PRI|MAT|PRI|SEC|GEN|EN)$/i, '');
+    const r = baseRole || upperRole;
     // French values (from users.role column in DB)
-    if (upperRole === 'ENSEIGNANT' || upperRole === 'TEACHER' || upperRole === 'TEACHER_RESP') return 'Collègue enseignant';
-    if (upperRole === 'PARENT' || upperRole === 'GUARDIAN') {
+    if (r === 'ENSEIGNANT' || r === 'TEACHER' || r === 'TEACHER_RESP') return 'Collègue enseignant';
+    if (r === 'PARENT' || r === 'GUARDIAN') {
       if (children && children.length > 0) return `Parent de ${children.join(', ')}`;
       return 'Parent d\'élève';
     }
-    if (upperRole === 'PROMOTER' || upperRole === 'SCHOOL_OWNER' || upperRole === 'PROMOTEUR') return 'Promoteur';
-    if (upperRole === 'DIRECTOR_GENERAL' || upperRole === 'DIRECTEUR_GENERAL' || upperRole === 'SCHOOL_DIRECTOR' || upperRole === 'DIRECTEUR_ETABLISSEMENT' || upperRole === 'DIRECTEUR') return 'Directeur';
-    if (upperRole === 'DEPUTY_DIRECTOR') return 'Directeur adjoint';
-    if (upperRole === 'SUPER_ADMIN' || upperRole === 'PLATFORM_OWNER' || upperRole === 'PLATFORM_SUPER_ADMIN' || upperRole === 'PLATFORM_ADMIN') return 'Administration plateforme';
-    if (upperRole === 'SCHOOL_ADMIN' || upperRole === 'ADMIN' || upperRole === 'ADMINISTRATEUR') return 'Administration école';
-    if (upperRole === 'CENSEUR') return 'Censeur';
-    if (upperRole === 'COMPTABLE' || upperRole === 'ACCOUNTANT' || upperRole === 'CAISSIER' || upperRole === 'CASHIER') return 'Comptable';
-    if (upperRole === 'PEDAGOGIC_DIRECTOR' || upperRole === 'PEDAGOGIC_COORDINATOR' || upperRole === 'DIRECTEUR_PEDAGOGIQUE') return 'Directeur pédagogique';
-    if (upperRole === 'STUDENT' || upperRole === 'ELEVE') return 'Élève';
-    if (upperRole === 'ECONOME' || upperRole === 'CFO') return 'Économe';
+    if (r === 'PROMOTER' || r === 'SCHOOL_OWNER' || r === 'PROMOTEUR') return 'Promoteur';
+    if (r === 'DIRECTOR_GENERAL' || r === 'DIRECTEUR_GENERAL' || r === 'SCHOOL_DIRECTOR' || r === 'DIRECTEUR_ETABLISSEMENT' || r === 'DIRECTEUR') return 'Directeur';
+    if (r === 'DEPUTY_DIRECTOR') return 'Directeur adjoint';
+    if (r === 'SUPER_ADMIN' || r === 'PLATFORM_OWNER' || r === 'PLATFORM_SUPER_ADMIN' || r === 'PLATFORM_ADMIN') return 'Administration plateforme';
+    if (r === 'SCHOOL_ADMIN' || r === 'ADMIN' || r === 'ADMINISTRATEUR') return 'Administration école';
+    if (r === 'CENSEUR') return 'Censeur';
+    if (r === 'SECRETAIRE_COMPTABLE') return 'Secrétaire comptable';
+    if (r === 'SECRETAIRE') return 'Secrétaire';
+    if (r === 'SURVEILLANT' || r === 'SURVEILLANT_GENERAL') return 'Surveillant';
+    if (r === 'COMPTABLE' || r === 'ACCOUNTANT' || r === 'CAISSIER' || r === 'CASHIER') return 'Comptable';
+    if (r === 'PEDAGOGIC_DIRECTOR' || r === 'PEDAGOGIC_COORDINATOR' || r === 'DIRECTEUR_PEDAGOGIQUE') return 'Directeur pédagogique';
+    if (r === 'STUDENT' || r === 'ELEVE') return 'Élève';
+    if (r === 'ECONOME' || r === 'CFO') return 'Économe';
     return role || 'Utilisateur';
   }
 
@@ -1853,23 +1894,30 @@ export class ChatService {
     //    - Si l'utilisateur courant est promoteur/directeur → "Enseignant" (pas "Collègue")
     const roleLabelFor = (role: string, children: string[] | undefined): string => {
       const upperRole = (role || '').toUpperCase();
-      if (upperRole === 'ENSEIGNANT' || upperRole === 'TEACHER' || upperRole === 'TEACHER_RESP') {
+      // ⭐ FIX (sept. 2026) : suffixes de niveau (_MAT, _PRI, _SEC…) retirés +
+      //    SECRETAIRE_COMPTABLE → « Secrétaire comptable » (s'affichait en brut)
+      const baseRole = upperRole.replace(/_(MAT_PRI|MAT|PRI|SEC|GEN|EN)$/i, '');
+      const r = baseRole || upperRole;
+      if (r === 'ENSEIGNANT' || r === 'TEACHER' || r === 'TEACHER_RESP') {
         return isCurrentUserTeacher ? 'Collègue enseignant' : 'Enseignant';
       }
-      if (upperRole === 'PARENT' || upperRole === 'GUARDIAN') {
+      if (r === 'PARENT' || r === 'GUARDIAN') {
         if (children && children.length > 0) return `Parent de ${children.join(', ')}`;
         return 'Parent d\'élève';
       }
-      if (upperRole === 'PROMOTER' || upperRole === 'SCHOOL_OWNER' || upperRole === 'PROMOTEUR') return 'Promoteur';
-      if (upperRole === 'DIRECTOR_GENERAL' || upperRole === 'DIRECTEUR_GENERAL' || upperRole === 'SCHOOL_DIRECTOR' || upperRole === 'DIRECTEUR_ETABLISSEMENT' || upperRole === 'DIRECTEUR') return 'Directeur';
-      if (upperRole === 'DEPUTY_DIRECTOR') return 'Directeur adjoint';
-      if (upperRole === 'SUPER_ADMIN' || upperRole === 'PLATFORM_OWNER' || upperRole === 'PLATFORM_SUPER_ADMIN' || upperRole === 'PLATFORM_ADMIN') return 'Administration plateforme';
-      if (upperRole === 'SCHOOL_ADMIN' || upperRole === 'ADMIN' || upperRole === 'ADMINISTRATEUR') return 'Administration école';
-      if (upperRole === 'CENSEUR') return 'Censeur';
-      if (upperRole === 'COMPTABLE' || upperRole === 'ACCOUNTANT' || upperRole === 'CAISSIER' || upperRole === 'CASHIER') return 'Comptable';
-      if (upperRole === 'PEDAGOGIC_DIRECTOR' || upperRole === 'PEDAGOGIC_COORDINATOR' || upperRole === 'DIRECTEUR_PEDAGOGIQUE') return 'Directeur pédagogique';
-      if (upperRole === 'STUDENT' || upperRole === 'ELEVE') return 'Élève';
-      if (upperRole === 'ECONOME' || upperRole === 'CFO') return 'Économe';
+      if (r === 'PROMOTER' || r === 'SCHOOL_OWNER' || r === 'PROMOTEUR') return 'Promoteur';
+      if (r === 'DIRECTOR_GENERAL' || r === 'DIRECTEUR_GENERAL' || r === 'SCHOOL_DIRECTOR' || r === 'DIRECTEUR_ETABLISSEMENT' || r === 'DIRECTEUR') return 'Directeur';
+      if (r === 'DEPUTY_DIRECTOR') return 'Directeur adjoint';
+      if (r === 'SUPER_ADMIN' || r === 'PLATFORM_OWNER' || r === 'PLATFORM_SUPER_ADMIN' || r === 'PLATFORM_ADMIN') return 'Administration plateforme';
+      if (r === 'SCHOOL_ADMIN' || r === 'ADMIN' || r === 'ADMINISTRATEUR') return 'Administration école';
+      if (r === 'CENSEUR') return 'Censeur';
+      if (r === 'SECRETAIRE_COMPTABLE') return 'Secrétaire comptable';
+      if (r === 'SECRETAIRE') return 'Secrétaire';
+      if (r === 'SURVEILLANT' || r === 'SURVEILLANT_GENERAL') return 'Surveillant';
+      if (r === 'COMPTABLE' || r === 'ACCOUNTANT' || r === 'CAISSIER' || r === 'CASHIER') return 'Comptable';
+      if (r === 'PEDAGOGIC_DIRECTOR' || r === 'PEDAGOGIC_COORDINATOR' || r === 'DIRECTEUR_PEDAGOGIQUE') return 'Directeur pédagogique';
+      if (r === 'STUDENT' || r === 'ELEVE') return 'Élève';
+      if (r === 'ECONOME' || r === 'CFO') return 'Économe';
       return role || 'Utilisateur';
     };
 
@@ -2391,7 +2439,14 @@ export class ChatService {
   // ═════════════════════════════════════════════════════════════════
   async getUserProfile(userId: string) {
     const rows = await this.prisma.$queryRawUnsafe<any[]>(`SELECT id,"firstName","lastName",email,role,"avatarUrl","bio","availabilityStatus","availableFrom","availableUntil","lastActiveAt" FROM "users" WHERE id=$1`, userId);
-    return rows[0] || null;
+    const profile = rows[0] || null;
+    // ⭐ FIX (sept. 2026 — retour utilisateur) : libellé lisible du rôle —
+    //    le modal profil affichait l'IDENTIFIANT BRUT (« SECRETAIRE_COMPTABLE »)
+    //    au lieu du libellé métier (« Secrétaire comptable »).
+    if (profile) {
+      profile.roleLabel = this.roleLabelFor(profile.role, undefined);
+    }
+    return profile;
   }
 
   async updateUserProfile(userId: string, data: { bio?: string; availabilityStatus?: string; availableFrom?: string; availableUntil?: string }) {

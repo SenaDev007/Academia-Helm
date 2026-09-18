@@ -1120,6 +1120,32 @@ export class AcademicStructurePrismaService {
     }
 
     await this.prisma.class.delete({ where: { id } });
+
+    // ⭐ FIX (sept. 2026 — retour promoteur) : nettoyer les artefacts Helm
+    //    Connect de la classe supprimée (communauté de classe + conversation
+    //    + participants + messages — les FK sont ON DELETE CASCADE). Avant :
+    //    la communauté de classe restait visible dans Helm Connect après
+    //    suppression de la classe. Best-effort : une erreur de nettoyage ne
+    //    doit JAMAIS bloquer la suppression (la sync auto purge en filet de
+    //    sécurité toutes les 6 h).
+    try {
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM chat_conversations WHERE id IN (
+           SELECT g."conversationId" FROM chat_auto_groups g
+           WHERE g."classId" = $1 AND g."conversationId" IS NOT NULL
+         )`,
+        id,
+      );
+      await this.prisma.$executeRawUnsafe(
+        `DELETE FROM chat_auto_groups WHERE "classId" = $1`,
+        id,
+      );
+    } catch (e: any) {
+      this.logger.warn(
+        `Nettoyage Helm Connect après suppression de la section ${id} (best-effort) : ${e.message}`,
+      );
+    }
+
     this.logger.log(
       `Section ${id} (« ${section.name} ») supprimée par le tenant ${tenantId}. ` +
       `(officialClassId=${section.officialClassId ?? 'null'})`,

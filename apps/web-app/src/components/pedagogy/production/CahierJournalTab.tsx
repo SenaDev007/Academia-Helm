@@ -146,6 +146,11 @@ function formatDateFR(dateStr: string): string {
 //     de sous-matière (« Fiche à préparer » → [{ nom: "" }] = fiche de la
 //     matière en général). Le bouton « + » reste disponible pour ajouter des
 //     sous-matières nommées si l'enseignant veut détailler (facultatif).
+/** ⭐ 2026-09-19 (nouvelle passe promoteur) — échappe le texte d'un titre
+ *  pour une insertion HTML sûre dans le RichTextEditor (champ de saisie). */
+const escapeHtmlText = (s: string): string =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
 function SousMatieresFichesBar({
   matiere,
   sousMatieres,
@@ -996,7 +1001,17 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   const getSousMatieres = (dayKey: string, subjectKey: string): SousMatiereFiche[] =>
     fichesAPreparer[dayKey]?.[subjectKey] || [];
 
-  /** Ajoute une sous-matière (→ une fiche à préparer) à une cellule. */
+  /** Ajoute une sous-matière (→ une fiche à préparer) à une cellule.
+   *
+   * ⭐ 2026-09-19 (nouvelle passe promoteur) — à la sélection d'une
+   *    sous-matière, SON TITRE apparaît dans le champ de saisie de la
+   *    cellule, EN GRAS ET SOULIGNÉ (une ligne de titre) : l'enseignant
+   *    continue sa saisie avec le titre et le reste à compléter.
+   *    - Cellule vide → le titre ouvre la saisie.
+   *    - Cellule déjà remplie → le titre s'ajoute en fin de contenu (les
+   *      titres s'empilent dans l'ordre d'ajout des sous-matières).
+   *    - Jamais dupliqué (re-saisie de la même sous-matière → ignoré).
+   */
   const addSousMatiere = (dayKey: string, subjectKey: string, nom: string) => {
     const clean = nom.trim();
     if (!clean) return;
@@ -1006,6 +1021,18 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
       list.push({ nom: clean });
       dayMap[subjectKey] = list;
       return { ...prev, [dayKey]: dayMap };
+    });
+    // Titre gras + souligné inséré dans le champ de saisie (HTML du RichTextEditor)
+    const escaped = escapeHtmlText(clean);
+    setEntries((prev) => {
+      const current = prev[dayKey]?.[subjectKey] || "";
+      // Déjà présent (l'ordre des tags peut varier après un aller-retour navigateur) → pas de doublon
+      if (current.includes(`<b><u>${escaped}</u></b>`) || current.includes(`<u><b>${escaped}</b></u>`)) {
+        return prev;
+      }
+      const titre = `<p><b><u>${escaped}</u></b></p>`;
+      const next = contenuCelluleNonVide(current) ? `${current}${titre}` : titre;
+      return { ...prev, [dayKey]: { ...(prev[dayKey] || {}), [subjectKey]: next } };
     });
   };
 

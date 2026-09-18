@@ -11295,3 +11295,22 @@ Stage Summary:
 - ✅ Validation production concluante : scroll confiné (document figé, sidebar + header fixes), datalist FR conforme 3e passe, fiche MATH/EPS/EST en un clic sans nom.
 - ✅ Règle mot de passe respectée à la lettre : seuls des comptes de test existants ont été utilisés en lecture seule.
 - Reste (optionnel) : validation visuelle par le promoteur sur SON UI (footer toujours visible) ; miroir EN des corrections catalogue (suivi existant).
+---
+Task ID: 73
+Agent: Super Z (principal)
+Task: 4e passe promoteur — marquage auto « fiche à remplir » MATH/EST/EPS + abréviations EST/EPS + suppression champ « Cours » + scroll « Voir » vers la fiche
+
+Work Log:
+- Reprise session : pull origin/main (2ace7bb23 — tâches 70-72 livrées), lecture worklog, exploration complète du trio CahierJournalTab / CahierJournalFichesContainer / PedagogicalSheetsTab + catalogue partagé + export PDF backend.
+- MARQUAGE AUTO (demande : « dès lors que leurs cellules sont remplies, marquer automatiquement fiche à remplir ») : updateEntry() détecte MATH/EST/EPS (estMatiereFicheSansSousMatiere) avec contenu réel (contenuCelluleNonVide : strip HTML/nbsp/<br> → texte) et pose [{nom:""}] si aucune fiche marquée ; garde !isMaternelleClass (maternelle = marquage manuel par activité) ; sécurité anti-écrasement dans le setState ; ne jamais dé-marquer automatiquement (l'enseignant retire via le X).
+- ABRÉVIATIONS EST/EPS (« tu peux directement mettre EST », « tu peut mettre EPS simplement ») : helper partagé affichageMatiere() (cahier-sous-matieres.ts, matching normalisé exact — affichage SEUL, clés de données/entries/__fichesAPreparer__ inchangées, zéro migration) appliqué : en-têtes recto+verso du cahier journal, prop matiere de SousMatieresFichesBar (puces + tooltip élidé « fiche d'EST »), en-têtes cartes FichesAPreparer, SHEET_TYPES (formulaire → « FICHE D'EST »/« FICHE D'EPS » + type selector), titre pré-rempli (« Fiche EST »), CatalogueTab, DirectorPedagogyControl (labels + bannières), SHEET_TYPE_CONFIG backend PDF, noms de fichiers PDF export.
+- « FICHE DE LA MATIÈRE » → NOM RÉEL : la ligne anonyme de FichesAPreparer affiche désormais matiereAffichee (« Mathématiques », « EST », « EPS »…) au lieu du générique « Fiche de la matière » (demande : « ça doit mettre clairement mathématique »).
+- CHAMP « COURS » SUPPRIMÉ (« cours, c'est pour parler de la classe ») : formulaire web — 3 sections (FRANÇAIS/MATH/ES-EST-EA-EPS-STANDARD), seule « Classe » reste ; PDF backend — cellules Cours retirées des 3 modèles, nouveau helper cellSpan (valeur colspan 3) pour des rangées équilibrées 6 colonnes, const ficheCours supprimée ; colonne DB cours conservée + pré-remplie (compat données).
+- SCROLL « VOIR » (« diriger spécifiquement là où la fiche commence ») : ancre ficheDocumentRef sur le DOCUMENT de la fiche (carte FICHE DE …) des 2 branches (primaire + maternelle) ; effet showForm false→true → scrollIntoView smooth block:start (délai 150ms) ; couvre Voir + Préparer + Modifier + Nouvelle fiche (expérience cohérente).
+- FIX LATENT ré-ouverture : viewFicheRequest {id, nonce} + pendingPayloadNonce — re-cliquer « Voir »/« Préparer » sur la MÊME cible après refermeture rouvrait rien (ID/payload identiques → effet non redéclenché) ; nonces passés via nouvelles props optionnelles initialFicheNonce/initialPayloadNonce (effets asservis).
+- Vérifs : check_syntax.mjs 7 fichiers ✓ ; test logique 36/36 ✓ (scripts/test_4e_passe.ts : EST/EPS longs+courts+casse, matières inchangées, auto-marquage positif/négatif — observations/directorObservation/Anglais/Informatique exclus —, HTML vide vs texte, titres FICHE D'EST/D'EPS/DE MATHÉMATIQUE) ; commit 90da7280b poussé sur main → Railway + Vercel auto-déploient.
+- NOTE ENV : node_modules absent du sandbox (deps résolues au déploiement) — bun build backend non exécutable localement, validation par transpile TS (fiable : erreurs template/blocs détectées).
+
+Stage Summary:
+- ✅ 5 demandes promoteur livrées et poussées (commit 90da7280b) : marquage auto MATH/EST/EPS, EST/EPS abrégés partout, nom réel au lieu de « Fiche de la matière », champ Cours supprimé (web + PDF), scroll automatique vers la fiche au clic « Voir ».
+- Reste : validation production post-déploiement (optionnelle — lecture seule via compte de recette) ; miroir EN production-en (suivi existant, non couvert comme les passes précédentes).

@@ -13,7 +13,7 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useId } from "react";
 import {
   NotebookPen, Loader2, Save, RefreshCw, Send, Lock, Calendar,
   ChevronLeft, ChevronRight, CheckCircle2, XCircle, Clock, X, AlertCircle,
@@ -27,6 +27,12 @@ import { useAppSession } from "@/contexts/AppSessionContext";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CahierJournalMaternelleGrid } from "./CahierJournalMaternelleGrid";
 import { bindDynamicSubjectsToColumns, buildMaternelleEntryKeyResolver, type DynamicSubject } from "@/lib/pedagogy/maternelle-domaines";
+import {
+  resoudreSousMatieres,
+  normaliserValeurFichesAPreparer,
+  type SousMatiereFiche,
+  type FichesAPreparerState,
+} from "@/lib/pedagogy/cahier-sous-matieres";
 
 interface CahierJournalTabProps {
   tenantId: string;
@@ -125,42 +131,140 @@ function formatDateFR(dateStr: string): string {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-// ─── ⭐ FEATURE « Fiche à préparer » — bouton toggle par cellule ────────────
-//     L'enseignant marque la matière de ce jour comme nécessitant une fiche
-//     pédagogique. Compact : icône + libellé, état ambre quand actif.
-function FicheAPreparerToggle({
-  active,
-  onToggle,
-  disabled,
+// ─── ⭐ FEATURE « Sous-matières & fiches à préparer » — barre par cellule ─────
+//     L'enseignant renseigne, pour chaque (jour × matière), la ou les
+//     SOUS-MATIÈRES qu'il va enseigner (ex : lundi français → Vocabulaire
+//     thématique + Lecture oralisée). Chaque sous-matière renseignée = UNE
+//     fiche pédagogique à préparer — on peut donc préparer PLUSIEURS fiches
+//     pour la même matière le même jour. Saisie assistée (suggestions du
+//     catalogue officiel) + texte libre (variantes fines).
+function SousMatieresFichesBar({
+  matiere,
+  sousMatieres,
+  suggestions,
+  readOnly,
+  onAdd,
+  onRemove,
 }: {
-  active: boolean;
-  onToggle: () => void;
-  disabled?: boolean;
+  matiere: string;
+  sousMatieres: SousMatiereFiche[];
+  suggestions: string[];
+  readOnly: boolean;
+  onAdd: (nom: string) => void;
+  onRemove: (index: number) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const inputId = useId();
+
+  if (readOnly && sousMatieres.length === 0) return null;
+
+  const submit = () => {
+    const nom = value.trim();
+    if (!nom) return;
+    onAdd(nom);
+    setValue("");
+  };
+
+  // État vide : bouton compact « + Fiche à préparer »
+  if (sousMatieres.length === 0 && !open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Renseigner la(les) sous-matière(s) de cette séance — chaque sous-matière donne une fiche pédagogique à préparer"
+        className="w-full flex items-center gap-1 px-1.5 py-1 bg-amber-50/70 border-b border-amber-200 text-[10px] font-bold text-amber-700 hover:bg-amber-100 transition-all text-left"
+      >
+        <ClipboardList className="h-3 w-3 shrink-0" />
+        <span className="truncate">Fiche(s) à préparer — sous-matière +</span>
+      </button>
+    );
+  }
+
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
-      disabled={disabled}
-      title={
-        active
-          ? "Fiche pédagogique à préparer pour cette séance (cliquer pour retirer)"
-          : "Marquer cette séance comme fiche pédagogique à préparer"
-      }
-      className={[
-        "absolute top-1 right-1 z-20 flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all",
-        active
-          ? "bg-amber-100 border-amber-400 text-amber-800 shadow-sm"
-          : "bg-white/80 border-slate-200 text-slate-400 hover:text-amber-700 hover:border-amber-300",
-        disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
-      ].join(" ")}
-    >
-      <ClipboardList className="h-3 w-3" />
-      {active ? "Fiche à préparer" : "Fiche"}
-    </button>
+    <div className="bg-amber-50/70 border-b border-amber-200 px-1.5 py-1 space-y-1">
+      <div className="flex items-center gap-1 flex-wrap">
+        <ClipboardList className="h-3 w-3 text-amber-500 shrink-0" />
+        {sousMatieres.map((sm, idx) => (
+          <span
+            key={idx}
+            title={`Fiche à préparer — ${sm.nom || matiere}`}
+            className="inline-flex items-center gap-1 pl-1.5 pr-0.5 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-[9px] font-bold text-amber-800"
+          >
+            <span className="max-w-[110px] truncate">{sm.nom || matiere}</span>
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => onRemove(idx)}
+                title="Retirer cette sous-matière"
+                className="text-amber-500 hover:text-red-600"
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            )}
+          </span>
+        ))}
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            title="Ajouter une sous-matière (fiche à préparer)"
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border border-dashed border-amber-400 text-[9px] font-bold text-amber-700 hover:bg-amber-100"
+          >
+            <Plus className="h-2.5 w-2.5" />
+            {sousMatieres.length === 0 ? "Sous-matière" : ""}
+          </button>
+        )}
+        {sousMatieres.length > 0 && (
+          <span className="text-[9px] font-bold text-amber-600">
+            {sousMatieres.length} fiche{ sousMatieres.length > 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+      {open && !readOnly && (
+        <div className="flex items-center gap-1">
+          <input
+            id={inputId}
+            type="text"
+            list={`dl-${inputId}`}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submit();
+              } else if (e.key === "Escape") {
+                setOpen(false);
+                setValue("");
+              }
+            }}
+            placeholder={suggestions.length > 0 ? "Sous-matière (ex : " + suggestions[0] + ")…" : "Sous-matière…"}
+            autoFocus
+            className="flex-1 min-w-0 px-1.5 py-0.5 border border-amber-300 rounded text-[10px] bg-white"
+          />
+          <button
+            type="button"
+            onClick={submit}
+            className="px-1.5 py-0.5 rounded bg-amber-500 text-white text-[9px] font-bold hover:bg-amber-600"
+          >
+            Ajouter
+          </button>
+          <button
+            type="button"
+            onClick={() => { setOpen(false); setValue(""); }}
+            title="Fermer"
+            className="p-0.5 rounded text-amber-500 hover:text-slate-600"
+          >
+            <X className="h-3 w-3" />
+          </button>
+          <datalist id={`dl-${inputId}`}>
+            {suggestions.map((s) => (
+              <option key={s} value={s} />
+            ))}
+          </datalist>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -172,14 +276,18 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   const [weekStart, setWeekStart] = useState<Date>(getMondayOfWeek(new Date()));
   const [journal, setJournal] = useState<any>(null);
   const [entries, setEntries] = useState<Record<string, Record<string, string>>>({});
-  // ⭐ 2026-09-18 — FEATURE « Fiche à préparer » : l'enseignant marque une
-  //    matière d'un jour comme nécessitant une fiche pédagogique (ex : civisme,
-  //    morale…). Les flags sont persistés dans entries sous la clé top-level
-  //    __fichesAPreparer__ : { lundi: { "Civisme": true, ... }, ... }.
-  //    → le backend cible EXACTEMENT ces (jour, matière) pour le décompte des
-  //    fiches à préparer, et l'enregistrement bascule vers l'onglet Fiches avec
-  //    le détail jour par jour + le total de la semaine.
-  const [fichesAPreparer, setFichesAPreparer] = useState<Record<string, Record<string, boolean>>>({});
+  // ⭐ 2026-09-18 (v2) — FEATURE « Sous-matières & fiches à préparer » :
+  //    pour chaque (jour × matière), l'enseignant renseigne la ou les
+  //    SOUS-MATIÈRES qu'il va enseigner. Chaque sous-matière = UNE fiche
+  //    pédagogique à préparer (plusieurs fiches possibles pour la même
+  //    matière le même jour). Persisté dans entries sous la clé top-level
+  //    __fichesAPreparer__ : { lundi: { "Français": [{ nom: "Vocabulaire
+  //    thématique" }, { nom: "Lecture oralisée" }] } }.
+  //    → le backend en déduit les fiches à préparer jour × matière ×
+  //    sous-matière, et l'onglet Fiches liste chaque fiche individuellement.
+  //    Compatibilité : l'ancien format booléen { "Civisme": true } est lu
+  //    comme [{ nom: "" }] (une fiche de la matière en général).
+  const [fichesAPreparer, setFichesAPreparer] = useState<FichesAPreparerState>({});
   const [observations, setObservations] = useState("");
   const [directorName, setDirectorName] = useState("");
   const [directorNameState, setDirectorNameState] = useState("");
@@ -424,23 +532,25 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
       const data = await res.json();
       setJournal(data);
       setEntries(parseEntries(data.entries));
-      // ⭐ Restaurer les flags « fiche à préparer » depuis la clé réservée
+      // ⭐ Restaurer les sous-matières « fiche à préparer » depuis la clé réservée
+      //    (formats : nouveau tableau [{nom}] / ancien booléen true → [{nom:""}])
       const parsed = parseEntries(data.entries);
       const rawFlags = (parsed as any).__fichesAPreparer__;
-      setFichesAPreparer(
-        rawFlags && typeof rawFlags === "object"
-          ? Object.fromEntries(
-              Object.entries(rawFlags)
-                .filter(([, dayMap]) => dayMap && typeof dayMap === "object")
-                .map(([day, dayMap]) => [
-                  day,
-                  Object.fromEntries(
-                    Object.entries(dayMap as Record<string, unknown>).filter(([, v]) => !!v),
-                  ) as Record<string, boolean>,
-                ]),
-            )
-          : {},
-      );
+      if (rawFlags && typeof rawFlags === "object" && !Array.isArray(rawFlags)) {
+        const restored: FichesAPreparerState = {};
+        for (const [day, dayMap] of Object.entries(rawFlags)) {
+          if (!dayMap || typeof dayMap !== "object") continue;
+          const dayOut: Record<string, SousMatiereFiche[]> = {};
+          for (const [matiere, rawVal] of Object.entries(dayMap as Record<string, unknown>)) {
+            const list = normaliserValeurFichesAPreparer(rawVal);
+            if (list.length > 0) dayOut[matiere] = list;
+          }
+          if (Object.keys(dayOut).length > 0) restored[day] = dayOut;
+        }
+        setFichesAPreparer(restored);
+      } else {
+        setFichesAPreparer({});
+      }
       setObservations(data.observations || "");
       setDirectorName(data.directorName || "");
       // ⭐ Charger les signatures existantes
@@ -659,18 +769,24 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
     const hasObservations =
       stripHtml(observations).length > 0 ||
       (isMaternelleClass && stripHtml(maternelleFooterRight).length > 0);
-    if (!hasGridContent && !hasObservations && !teacherSignature) {
+    // ⭐ Les sous-matières « fiche à préparer » renseignées comptent comme du
+    //    contenu valide (l'enseignant peut marquer ses fiches avant de
+    //    rédiger le contenu des séances).
+    const hasFichesMarquees = countFichesAPreparer() > 0;
+    if (!hasGridContent && !hasObservations && !teacherSignature && !hasFichesMarquees) {
       toast.error("Aucun contenu à enregistrer", {
-        description: "Vous n'avez rien renseigné dans le cahier journal (ni séances, ni observations). Renseignez au moins une cellule avant d'enregistrer.",
+        description: "Vous n'avez rien renseigné dans le cahier journal (ni séances, ni observations, ni fiches à préparer). Renseignez au moins une cellule avant d'enregistrer.",
       });
       return;
     }
 
     setSaving(true);
     try {
-      // ⭐ FEATURE « Fiche à préparer » : les flags sont persistés dans entries
-      //    sous la clé réservée __fichesAPreparer__ (clé top-level — jamais
-      //    itérée comme un jour par le backend ni par la grille).
+      // ⭐ FEATURE « Sous-matières & fiches à préparer » : les listes de
+      //    sous-matières sont persistées dans entries sous la clé réservée
+      //    __fichesAPreparer__ (clé top-level — jamais itérée comme un jour par
+      //    le backend ni par la grille). Format : { lundi: { "Français":
+      //    [{ nom: "Dictée" }, { nom: "Grammaire" }] } }.
       const payloadEntries: Record<string, any> = { ...entries };
       const flags = buildFichesAPreparerPayload();
       if (Object.keys(flags).length > 0) {
@@ -812,21 +928,58 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
     return entries[dayKey]?.[subjectKey] || "";
   };
 
-  // ─── ⭐ FEATURE « Fiche à préparer » (2026-09-18) ───────────────────────────
-  //     L'enseignant marque une matière d'un jour : « cette séance nécessite
-  //     une fiche pédagogique à préparer ». Les flags sont enregistrés dans
-  //     entries.__fichesAPreparer__ et lus par le backend pour cibler les
-  //     (jour, matière) exacts dans le décompte des fiches.
-  const isFicheAPreparer = (dayKey: string, subjectKey: string): boolean =>
-    !!fichesAPreparer[dayKey]?.[subjectKey];
+  // ─── ⭐ FEATURE « Sous-matières & fiches à préparer » (2026-09-18 v2) ──────
+  //     Chaque (jour × matière) porte une LISTE de sous-matières ; chaque
+  //     sous-matière renseignée = UNE fiche pédagogique à préparer. Les listes
+  //     sont enregistrées dans entries.__fichesAPreparer__ et lues par le
+  //     backend pour cibler les fiches à préparer (jour × matière ×
+  //     sous-matière).
 
+  /** Sous-matières d'une cellule (jour × matière). */
+  const getSousMatieres = (dayKey: string, subjectKey: string): SousMatiereFiche[] =>
+    fichesAPreparer[dayKey]?.[subjectKey] || [];
+
+  /** Ajoute une sous-matière (→ une fiche à préparer) à une cellule. */
+  const addSousMatiere = (dayKey: string, subjectKey: string, nom: string) => {
+    const clean = nom.trim();
+    if (!clean) return;
+    setFichesAPreparer((prev) => {
+      const dayMap = { ...(prev[dayKey] || {}) };
+      const list = [...(dayMap[subjectKey] || [])];
+      list.push({ nom: clean });
+      dayMap[subjectKey] = list;
+      return { ...prev, [dayKey]: dayMap };
+    });
+  };
+
+  /** Retire la i-ème sous-matière d'une cellule. */
+  const removeSousMatiere = (dayKey: string, subjectKey: string, index: number) => {
+    setFichesAPreparer((prev) => {
+      const dayMap = { ...(prev[dayKey] || {}) };
+      const list = [...(dayMap[subjectKey] || [])];
+      if (index < 0 || index >= list.length) return prev;
+      list.splice(index, 1);
+      if (list.length === 0) delete dayMap[subjectKey];
+      else dayMap[subjectKey] = list;
+      const next = { ...prev, [dayKey]: dayMap };
+      if (Object.keys(dayMap).length === 0) delete next[dayKey];
+      return next;
+    });
+  };
+
+  /** Compatibilité maternelle : la cellule a-t-elle une fiche à préparer ? */
+  const isFicheAPreparer = (dayKey: string, subjectKey: string): boolean =>
+    (fichesAPreparer[dayKey]?.[subjectKey] || []).length > 0;
+
+  /** Compatibilité maternelle : bascule une fiche (activité) par cellule. */
   const toggleFicheAPreparer = (dayKey: string, subjectKey: string) => {
     setFichesAPreparer((prev) => {
       const dayMap = { ...(prev[dayKey] || {}) };
       if (dayMap[subjectKey]) {
         delete dayMap[subjectKey];
       } else {
-        dayMap[subjectKey] = true;
+        // Maternelle : une activité = une fiche (sous-matière vide = matière)
+        dayMap[subjectKey] = [{ nom: "" }];
       }
       const next = { ...prev, [dayKey]: dayMap };
       if (Object.keys(dayMap).length === 0) delete next[dayKey];
@@ -834,22 +987,32 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
     });
   };
 
-  /** Nettoie les flags : retire les jours non-standard et vide le résidu. */
-  const buildFichesAPreparerPayload = (): Record<string, Record<string, boolean>> => {
+  /** Nettoie et sérialise les sous-matières pour la persistance. */
+  const buildFichesAPreparerPayload = (): Record<string, Record<string, SousMatiereFiche[]>> => {
     const DAYS_KEYS = new Set(["lundi", "mardi", "mercredi", "jeudi", "vendredi"]);
-    const out: Record<string, Record<string, boolean>> = {};
+    const out: Record<string, Record<string, SousMatiereFiche[]>> = {};
     for (const [day, dayMap] of Object.entries(fichesAPreparer)) {
       if (!DAYS_KEYS.has(day)) continue;
-      const filtered = Object.fromEntries(
-        Object.entries(dayMap || {}).filter(([, v]) => !!v),
-      );
+      const filtered: Record<string, SousMatiereFiche[]> = {};
+      for (const [matiere, list] of Object.entries(dayMap || {})) {
+        const named = (list || []).filter((sm) => sm && (sm.nom || "").trim() !== "");
+        if (named.length > 0) {
+          filtered[matiere] = named;
+        } else if ((list || []).length > 0) {
+          // [{ nom: "" }] seul = fiche de la matière en général (maternelle / legacy)
+          filtered[matiere] = [{ nom: "" }];
+        }
+      }
       if (Object.keys(filtered).length > 0) out[day] = filtered;
     }
     return out;
   };
 
+  /** Nombre total de fiches à préparer (toutes sous-matières confondues). */
   const countFichesAPreparer = (): number =>
-    Object.values(buildFichesAPreparerPayload()).reduce((s, m) => s + Object.keys(m).length, 0);
+    Object.values(buildFichesAPreparerPayload()).reduce(
+      (s, m) => s + Object.values(m).reduce((s2, list) => s2 + list.length, 0), 0,
+    );
 
   const selectedClass = classes.find(c => c.classId === selectedClassId);
   const weekEnd = new Date(weekStart);
@@ -1041,13 +1204,18 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                     </td>
                     {RECTO_COLUMNS.map((col) => {
                       const key = getColumnKey(col);
+                      // ⭐ Suggestions de sous-matières selon la matière de la colonne
+                      const sousMatieresSuggestions = resoudreSousMatieres(key).suggestions;
                       return (
                         <td key={key} className="border border-slate-300 p-0 relative">
-                          {/* ⭐ FEATURE : marquer la matière comme fiche à préparer */}
-                          <FicheAPreparerToggle
-                            active={isFicheAPreparer(day.key, key)}
-                            onToggle={() => toggleFicheAPreparer(day.key, key)}
-                            disabled={!!isReadOnly}
+                          {/* ⭐ FEATURE : sous-matières renseignées = fiches à préparer */}
+                          <SousMatieresFichesBar
+                            matiere={key}
+                            sousMatieres={getSousMatieres(day.key, key)}
+                            suggestions={sousMatieresSuggestions}
+                            readOnly={!!isReadOnly}
+                            onAdd={(nom) => addSousMatiere(day.key, key, nom)}
+                            onRemove={(idx) => removeSousMatiere(day.key, key, idx)}
                           />
                           <RichTextEditor
                             value={getEntry(day.key, key)}
@@ -1124,13 +1292,18 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                     </td>
                     {VERSO_COLUMNS.map((col) => {
                       const key = getColumnKey(col);
+                      // ⭐ Suggestions de sous-matières selon la matière de la colonne
+                      const sousMatieresSuggestions = resoudreSousMatieres(key).suggestions;
                       return (
                         <td key={key} className="border border-slate-300 p-0 relative">
-                          {/* ⭐ FEATURE : marquer la matière comme fiche à préparer */}
-                          <FicheAPreparerToggle
-                            active={isFicheAPreparer(day.key, key)}
-                            onToggle={() => toggleFicheAPreparer(day.key, key)}
-                            disabled={!!isReadOnly}
+                          {/* ⭐ FEATURE : sous-matières renseignées = fiches à préparer */}
+                          <SousMatieresFichesBar
+                            matiere={key}
+                            sousMatieres={getSousMatieres(day.key, key)}
+                            suggestions={sousMatieresSuggestions}
+                            readOnly={!!isReadOnly}
+                            onAdd={(nom) => addSousMatiere(day.key, key, nom)}
+                            onRemove={(idx) => removeSousMatiere(day.key, key, idx)}
                           />
                           <RichTextEditor
                             value={getEntry(day.key, key)}

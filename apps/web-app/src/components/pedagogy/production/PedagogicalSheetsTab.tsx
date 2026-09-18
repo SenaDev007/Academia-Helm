@@ -46,6 +46,7 @@ import {
   getMaternelleDomainInfo,
   normalizeFrText as normalizeMatiereName,
 } from "@/lib/pedagogy/maternelle-domains";
+import { suggestionsPourSheetType } from "@/lib/pedagogy/cahier-sous-matieres";
 
 interface PedagogicalSheetsTabProps {
   tenantId: string;
@@ -61,6 +62,11 @@ interface PedagogicalSheetsTabProps {
   initialSheetType?: string;
   /** ⭐ Matière initiale (clé matière du cahier journal, ex: "francais") */
   initialMatiere?: string;
+  /** ⭐ Sous-matière initiale renseignée dans le cahier journal (ex :
+   *    « Vocabulaire thématique », « Morale », « Arithmétique »…) — pré-remplit
+   *    le champ « Matière spécifique / Sous-matière » de la fiche. C'est la
+   *    clé de cohérence cahier journal ↔ fiches pédagogiques. */
+  initialSousMatiere?: string;
   /** ⭐ ID d'une fiche existante à ouvrir en édition (depuis "Voir la fiche" dans FichesAPreparer) */
   initialFicheId?: string;
 }
@@ -114,6 +120,61 @@ const MATERNELLE_SHEET_TYPES = [
   { type: "DOMAINE", label: "Domaine", sub: "N° du domaine à renseigner par l'enseignante", icon: Blocks, color: "bg-indigo-100 text-indigo-700 border-indigo-200", headerBg: "bg-indigo-600", sectionBorder: "border-indigo-300" },
   { type: "DOMAINE_2", label: "Domaine 2", sub: "Fiche dédiée au DOMAINE II", icon: Shapes, color: "bg-teal-100 text-teal-700 border-teal-200", headerBg: "bg-teal-600", sectionBorder: "border-teal-300" },
 ] as const;
+
+// ─── ⭐ SOUS-MATIÈRE (2026-09-18 v2) — champ partagé par types de fiche ───────
+//     Chaque grande matière a ses sous-matières officielles (catalogue
+//     cahier-sous-matieres.ts). Le champ est la clé de cohérence cahier
+//     journal ↔ fiche pédagogique (rapprochement backend par
+//     matiereSpecifique normalisée) : « fiche de dictée », « fiche de
+//     morale », « fiche EA chant », « fiche d'arithmétique »…
+const SOUS_MATIERE_FIELD_CONFIG: Record<string, { label: string; hint: string; placeholder: string }> = {
+  MATH: { label: "Sous-matière", hint: "Arithmétique, Calcul mental, Mesure, Géométrie", placeholder: "Ex : Arithmétique, Calcul mental, Mesure, Géométrie…" },
+  ES: { label: "Sous-matière", hint: "Morale, Civisme, Histoire, Géographie", placeholder: "Ex : Morale, Civisme, Histoire, Géographie…" },
+  EA: { label: "Sous-matière", hint: "Chant, Poésie, Dessin, Conte, Couture, Atelier, Art dramatique", placeholder: "Ex : Chant, Poésie, Dessin, Conte…" },
+  EPS: { label: "Sous-matière", hint: "Endurance, Vitesse, Course, Lancer, Gymnastique, Saut, Grimper", placeholder: "Ex : Endurance, Vitesse, Course, Saut…" },
+  EST: { label: "Sous-matière", hint: "facultatif", placeholder: "Sous-matière / domaine scientifique…" },
+  STANDARD: { label: "Sous-matière", hint: "facultatif", placeholder: "Sous-matière (ex : Grammar, Reading, Tableur…)" },
+};
+
+function SousMatiereField({
+  sheetType,
+  value,
+  onChange,
+  disabled,
+}: {
+  sheetType: string;
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const cfg = SOUS_MATIERE_FIELD_CONFIG[sheetType];
+  if (!cfg) return null;
+  const suggestions = suggestionsPourSheetType(sheetType);
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-slate-600 mb-1">
+        {cfg.label}{" "}
+        {suggestions.length > 0 && (
+          <span className="font-normal text-slate-400">({cfg.hint})</span>
+        )}
+      </label>
+      <input
+        type="text"
+        list={`dl-sous-matiere-${sheetType}`}
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        placeholder={cfg.placeholder}
+        className="w-full px-2 py-1.5 border-2 border-slate-300 rounded text-sm font-semibold bg-slate-50/60"
+      />
+      <datalist id={`dl-sous-matiere-${sheetType}`}>
+        {suggestions.map((s) => (
+          <option key={s} value={s} />
+        ))}
+      </datalist>
+    </div>
+  );
+}
 
 const STATUS_CONFIG = {
   DRAFT: { label: "Brouillon", color: "bg-slate-100 text-slate-600", icon: Clock },
@@ -212,7 +273,7 @@ const SHEET_TYPE_CONFIG: Record<string, {
   },
 };
 
-export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahierJournalId, initialClassId, initialLessonDay, initialSheetType, initialMatiere, initialFicheId }: PedagogicalSheetsTabProps) {
+export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahierJournalId, initialClassId, initialLessonDay, initialSheetType, initialMatiere, initialSousMatiere, initialFicheId }: PedagogicalSheetsTabProps) {
   const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
@@ -515,9 +576,9 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   //    qu'à la section signature (supprimée des fiches pédagogiques).
 
   // ⭐ Pré-remplissage automatique quand l'utilisateur clique sur "Préparer la fiche"
-  //    pour [jour] [matière] depuis le cahier journal.
+  //    pour [jour] [matière] [sous-matière] depuis le cahier journal.
   useEffect(() => {
-    if (!initialSheetType && !initialLessonDay && !initialMatiere) return;
+    if (!initialSheetType && !initialLessonDay && !initialMatiere && !initialSousMatiere) return;
     // Calculer la date de la leçon à partir du jour de la semaine (lundi=1, ..., vendredi=5)
     // en utilisant la semaine courante.
     if (initialLessonDay) {
@@ -555,25 +616,39 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       const domInfo = getMaternelleDomainInfo(initialMatiere);
       const autoRoman = domInfo.roman || "";
       const autoDomaineDu = domInfo.domainLabel || "";
+      // ⭐ SOUS-MATIÈRE (2026-09-18 v2) : pré-remplit le champ dédié — c'est la
+      //    clé de cohérence cahier journal ↔ fiche (rapprochement backend par
+      //    matiereSpecifique normalisée).
+      const sousMatiere = (initialSousMatiere || "").trim();
       setForm((p: any) => ({
         ...p,
         cours: p.cours || initialMatiere.charAt(0).toUpperCase() + initialMatiere.slice(1),
-        titre: p.titre || `Fiche ${matLabel}`,
+        titre: p.titre || (sousMatiere ? `Fiche ${sousMatiere}` : `Fiche ${matLabel}`),
+        matiereSpecifique: p.matiereSpecifique || sousMatiere,
         ...(isMatType ? {
           maternelle: {
             ...p.maternelle,
-            titre: p.maternelle?.titre || matLabel,
+            titre: p.maternelle?.titre || (sousMatiere || matLabel),
             domainNumber: p.maternelle?.domainNumber
               || (initialSheetType === "DOMAINE_2" ? "II" : (autoRoman || p.maternelle?.domainNumber || "")),
             domaineDu: p.maternelle?.domaineDu || autoDomaineDu || "",
           },
         } : {}),
       }));
+    } else if (initialSousMatiere) {
+      // ⭐ Sécurité : sous-matière fournie seule (sans matière) — on pré-remplit
+      //    quand même le champ dédié + le titre.
+      const sousMatiere = initialSousMatiere.trim();
+      setForm((p: any) => ({
+        ...p,
+        titre: p.titre || `Fiche ${sousMatiere}`,
+        matiereSpecifique: p.matiereSpecifique || sousMatiere,
+      }));
     }
     // Ouvrir automatiquement le formulaire
     setShowForm(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialSheetType, initialLessonDay, initialMatiere]);
+  }, [initialSheetType, initialLessonDay, initialMatiere, initialSousMatiere]);
 
   // ⭐ Ouvrir une fiche existante en édition quand initialFicheId est fourni
   //    (depuis le bouton "Voir la fiche" dans FichesAPreparer)
@@ -1278,9 +1353,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                   placeholder="Ex : Vocabulaire thématique, Dictée, Expression écrite, Lecture…"
                   className="w-full px-3 py-2 border-2 border-emerald-300 rounded-lg text-sm font-semibold bg-emerald-50/40" />
                 <datalist id="fr-matiere-specifique-suggestions">
-                  {["Vocabulaire thématique", "Vocabulaire", "Dictée", "Expression écrite", "Expression orale",
-                    "Grammaire", "Conjugaison", "Lecture", "Orthographe", "Communication orale",
-                    "Exercices structuraux", "Graphisme", "Écriture", "Combinatoire", "Conte", "Récitation", "Poésie"].map(s => (
+                  {/* ⭐ Catalogue partagé cahier-sous-matieres.ts (officiel + variantes) */}
+                  {suggestionsPourSheetType("FRANCAIS").map(s => (
                     <option key={s} value={s} />
                   ))}
                 </datalist>
@@ -1342,6 +1416,14 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                   </div>
                 </div>
               </div>
+              {/* ⭐ SOUS-MATIÈRE (MATH) : Arithmétique, Calcul mental, Mesure,
+                  Géométrie — clé de cohérence avec le cahier journal */}
+              <SousMatiereField
+                sheetType="MATH"
+                value={form.matiereSpecifique || ""}
+                onChange={(v) => setForm({ ...form, matiereSpecifique: v })}
+                disabled={isReadOnly}
+              />
               <div className="grid grid-cols-2 md:grid-cols-[160px_1fr] gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">DOSSIER N°</label>
@@ -1395,6 +1477,16 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                   </div>
                 </div>
               </div>
+              {/* ⭐ SOUS-MATIÈRE (ES : Morale/Civisme/Histoire/Géographie ;
+                  EA : Chant/Poésie/Dessin/Conte/Couture/Atelier/Art dramatique ;
+                  EPS : Endurance/Vitesse/Course/Lancer/Gymnastique/Saut/Grimper) —
+                  clé de cohérence avec le cahier journal */}
+              <SousMatiereField
+                sheetType={form.sheetType}
+                value={form.matiereSpecifique || ""}
+                onChange={(v) => setForm({ ...form, matiereSpecifique: v })}
+                disabled={isReadOnly}
+              />
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">THEME</label>
                 <input type="text" value={form.theme || ""} onChange={e => setForm({ ...form, theme: e.target.value })} disabled={isReadOnly}
@@ -1735,7 +1827,11 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                       })()
                     : fiche.sheetType === "FRANCAIS"
                       ? ` — ${fiche.matiereSpecifique ? fiche.matiereSpecifique.replace(/<[^>]*>/g, '') : "Français"}${fiche.unite ? ` · Unité ${fiche.unite}` : ""}${fiche.etape ? ` · Étape ${fiche.etape}` : ""}`
-                      : ` — ${fiche.fn ? `Fn°${fiche.fn}` : `SA N°${fiche.san || "—"}`}${fiche.seance ? ` · Séance ${fiche.seance}` : ""}`}
+                      : fiche.matiereSpecifique
+                        // ⭐ SOUS-MATIÈRE (MATH/ES/EA/EPS/EST/STANDARD) : affichée
+                        //    en priorité quand elle est renseignée (ex : « — Morale »)
+                        ? ` — ${String(fiche.matiereSpecifique).replace(/<[^>]*>/g, '')}${fiche.seance ? ` · Séance ${fiche.seance}` : ""}`
+                        : ` — ${fiche.fn ? `Fn°${fiche.fn}` : `SA N°${fiche.san || "—"}`}${fiche.seance ? ` · Séance ${fiche.seance}` : ""}`}
                 </div>
                 {fiche.theme && (
                   <div className="text-[11px] text-slate-400 line-clamp-1 mb-1" title={String(fiche.theme).replace(/<[^>]*>/g, '')}>

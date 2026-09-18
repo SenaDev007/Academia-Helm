@@ -5193,9 +5193,21 @@ export class PedagogicalSpaceService {
     }
 
     // ─── 5. Calculer la liste des matières planifiées dans le cahier journal ───
-    //    `entries` est un JSON : { lundi: { francais: "...", maths: "..." }, mardi: {...}, ... }
-    //    On extrait les matières non-vides par jour pour identifier les fiches manquantes.
-    const matieresPlanifiees: Record<string, Array<{ matiere: string; fichePreparede: boolean; ficheId?: string }>> = {
+    //    `entries` est un JSON : { lundi: { "Français": "...", ... }, ... }
+    //    On extrait les matières planifiées par jour pour identifier les fiches manquantes.
+    //    ⭐ 2026-09-18 (v2) — SOUS-MATIÈRES : chaque (jour × matière) marquée
+    //    porte une LISTE de sous-matières ; chaque sous-matière = UNE fiche
+    //    pédagogique à préparer (plusieurs fiches possibles pour la même
+    //    matière le même jour — ex : lundi français → Vocabulaire thématique +
+    //    Lecture oralisée).
+    type SousMatiereExigence = { nom: string; fichePreparede: boolean; ficheId?: string };
+    type MatierePlanifiee = {
+      matiere: string;
+      sousMatieres: SousMatiereExigence[];
+      fichePreparede: boolean; // toutes les sous-matières ont leur fiche
+      ficheId?: string;        // première fiche rapprochée (compat affichage)
+    };
+    const matieresPlanifiees: Record<string, MatierePlanifiee[]> = {
       lundi: [], mardi: [], mercredi: [], jeudi: [], vendredi: [],
     };
     let entries: any = {};
@@ -5208,101 +5220,183 @@ export class PedagogicalSpaceService {
     //    Observations du groupe DOMAINE dans la grille maternelle).
     const RESERVED_ENTRY_KEYS = new Set(['observations', 'directorObservation', 'obs_dom']);
 
-    // ⭐ 2026-09-18 — FEATURE « Fiche à préparer » : l'enseignant peut MARQUER
-    //    explicitement (jour × matière) les séances nécessitant une fiche
-    //    pédagogique (bouton « Fiche à préparer » dans la grille du cahier
-    //    journal). Les flags sont persistés dans entries.__fichesAPreparer__ :
-    //    { lundi: { "Civisme": true }, mardi: { ... } }.
-    //    Quand AU MOINS UN flag existe, le décompte cible EXACTEMENT ces
-    //    (jour, matière) — sinon comportement historique (toutes les matières
-    //    non vides sont considérées planifiées).
-    const rawFlags = (entries as any).__fichesAPreparer__;
-    const fichesAPreparer: Record<string, Record<string, boolean>> =
-      rawFlags && typeof rawFlags === 'object' && !Array.isArray(rawFlags) ? rawFlags : null;
-    const hasExplicitFlags =
-      fichesAPreparer !== null &&
-      Object.values(fichesAPreparer).some(
-        (dayMap: any) => dayMap && typeof dayMap === 'object' && Object.values(dayMap).some(Boolean),
-      );
+    // ⭐ 2026-09-18 (v2) — FEATURE « Sous-matières & fiches à préparer » :
+    //    l'enseignant renseigne, pour chaque (jour × matière), la ou les
+    //    sous-matières qu'il va enseigner. Persisté dans
+    //    entries.__fichesAPreparer__ :
+    //      { lundi: { "Français": [{ nom: "Vocabulaire thématique" },
+    //                               { nom: "Lecture oralisée" }] } }
+    //    Formats acceptés (normalisés) :
+    //      true                    → [{ nom: "" }]  (une fiche de la matière —
+    //                                               ancien toggle, maternelle)
+    //      ["a", "b"]              → [{ nom: "a" }, { nom: "b" }]
+    //      [{ nom: "a" }, ...]     → tel quel
+    //    Quand AU MOINS UNE sous-matière existe, le décompte cible EXACTEMENT
+    //    ces (jour × matière × sous-matière) — sinon comportement historique
+    //    (toutes les matières non vides = 1 fiche chacune).
+    const normaliserListeSousMatieres = (rawVal: any): Array<{ nom: string }> => {
+      if (!rawVal) return [];
+      if (rawVal === true) return [{ nom: '' }];
+      if (Array.isArray(rawVal)) {
+        return rawVal
+          .map((item: any) => {
+            if (typeof item === 'string') return item.trim() ? { nom: item } : null;
+            if (item && typeof item === 'object' && typeof item.nom === 'string') return { nom: item.nom };
+            return null;
+          })
+          .filter((x: any): x is { nom: string } => !!x);
+      }
+      return [];
+    };
 
-    for (const jour of Object.keys(parJour)) {
-      const dayEntries = entries[jour] || {};
-      const flaggedForDay = hasExplicitFlags ? fichesAPreparer[jour] || {} : null;
-      for (const [matiereKey, matiereContent] of Object.entries(dayEntries)) {
-        if (RESERVED_ENTRY_KEYS.has(matiereKey)) continue;
-        if (hasExplicitFlags) {
-          // ⭐ Mode ciblé : seules les matières MARQUÉES comptent
-          if (!flaggedForDay || !flaggedForDay[matiereKey]) continue;
-        } else {
-          // Mode historique : une matière est "planifiée" si son contenu n'est pas vide
-          const content = typeof matiereContent === 'string' ? matiereContent.trim() : '';
-          if (!content) continue;
+    // Normalisation pour le rapprochement matiereSpecifique ↔ sous-matière :
+    // retire le HTML éventuel, la casse, les accents, la ponctuation.
+    const normaliserPourRapprochement = (s: any): string =>
+      String(s || '')
+        .replace(/<br\s*\/?>/gi, ' ')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&nbsp;/g, ' ')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const rawFlags = (entries as any).__fichesAPreparer__;
+    const fichesAPreparer: Record<string, Record<string, Array<{ nom: string }>>> = {};
+    if (rawFlags && typeof rawFlags === 'object' && !Array.isArray(rawFlags)) {
+      for (const [jour, dayMap] of Object.entries(rawFlags as Record<string, any>)) {
+        if (!dayMap || typeof dayMap !== 'object' || Array.isArray(dayMap)) continue;
+        const dayOut: Record<string, Array<{ nom: string }>> = {};
+        for (const [matiereKey, rawVal] of Object.entries(dayMap)) {
+          const list = normaliserListeSousMatieres(rawVal);
+          if (list.length > 0) dayOut[matiereKey] = list;
         }
-        // Cherche si une fiche existe pour cette matière ce jour
-        const fichesForDay = parJour[jour] || [];
-        // ⭐ MATERNELLE : la clé matière = le NOM de la matière configurée
-        //    (Matières & programmes) → rapprochement prioritaire par subjectId,
-        //    puis par type de fiche (DOMAINE / DOMAINE_2).
-        const matSubjectId = subjectIdByMatiereName.get(matiereKey);
-        const matchingFiche = fichesForDay.find((f: any) => {
-          if (isMaternelleJournal) {
-            if (matSubjectId && f.subjectId && f.subjectId === matSubjectId) return true;
-            const expectedSheetType = this.mapMatiereKeyToSheetType(matiereKey, true);
-            return !!expectedSheetType && f.sheetType === expectedSheetType;
-          }
-          // PRIMAIRE : match par subjectId si dispo, sinon par sheetType
-          return (f.subjectId && f.subjectId === matiereKey)
-            || (f.sheetType && this.mapMatiereKeyToSheetType(matiereKey, false) === f.sheetType);
-        });
-        matieresPlanifiees[jour].push({
-          matiere: matiereKey,
-          fichePreparede: !!matchingFiche,
-          ficheId: matchingFiche?.id,
-        });
+        if (Object.keys(dayOut).length > 0) fichesAPreparer[jour] = dayOut;
       }
     }
+    const hasExplicitFlags = Object.keys(fichesAPreparer).length > 0;
 
-    // ⭐ FEATURE : les flags peuvent pointer une matière d'un jour qui n'est pas
-    //    (encore) dans les entries journalières vides (l'enseignant marque sans
-    //    remplir le contenu, ou la clé d'écriture diffère) — on les ajoute pour
-    //    que le décompte « à préparer » soit EXHAUSTIF par rapport au marquage.
+    // Rapprochement des fiches d'une (jour × matière) avec les exigences de
+    // sous-matières : 1) par matiereSpecifique exact (normalisé), 2) les
+    // fiches SANS matiereSpecifique comblent les exigences restantes (fiches
+    // créées avant la feature / sans sous-matière renseignée).
+    const rapprocherFiches = (
+      exigences: Array<{ nom: string; fichePreparede: boolean; ficheId?: string }>,
+      candidates: any[],
+    ) => {
+      const disponibles = [...candidates];
+      // Passe 1 : sous-matière nommée ↔ fiche dont matiereSpecifique matche
+      for (const ex of exigences) {
+        if (!ex.nom || ex.fichePreparede) continue;
+        const idx = disponibles.findIndex((f: any) =>
+          normaliserPourRapprochement(f.matiereSpecifique) === normaliserPourRapprochement(ex.nom));
+        if (idx >= 0) {
+          const fiche = disponibles.splice(idx, 1)[0];
+          ex.fichePreparede = true;
+          ex.ficheId = fiche.id;
+        }
+      }
+      // Passe 2 : exigences restantes ↔ fiches sans matiereSpecifique
+      //    (nom vide = fiche de la matière en général ; fiches legacy)
+      for (const ex of exigences) {
+        if (ex.fichePreparede) continue;
+        const idx = disponibles.findIndex((f: any) =>
+          !normaliserPourRapprochement(f.matiereSpecifique));
+        if (idx >= 0) {
+          const fiche = disponibles.splice(idx, 1)[0];
+          ex.fichePreparede = true;
+          ex.ficheId = fiche.id;
+        }
+      }
+    };
+
+    // Fiches candidates d'une (jour × matière) : même jour + matière qui matche
+    // (subjectId sinon sheetType via mapMatiereKeyToSheetType — logique
+    // inchangée par rapport à l'existant).
+    const fichesCandidatesPour = (jour: string, matiereKey: string): any[] => {
+      const fichesForDay = parJour[jour] || [];
+      const matSubjectId = subjectIdByMatiereName.get(matiereKey);
+      return fichesForDay.filter((f: any) => {
+        if (isMaternelleJournal) {
+          if (matSubjectId && f.subjectId && f.subjectId === matSubjectId) return true;
+          const expectedSheetType = this.mapMatiereKeyToSheetType(matiereKey, true);
+          return !!expectedSheetType && f.sheetType === expectedSheetType;
+        }
+        return (f.subjectId && f.subjectId === matiereKey)
+          || (f.sheetType && this.mapMatiereKeyToSheetType(matiereKey, false) === f.sheetType);
+      });
+    };
+
     if (hasExplicitFlags) {
+      // ⭐ Mode ciblé : seules les (jour × matière) MARQUÉES comptent, avec
+      //    leurs sous-matières (une exigence de fiche par sous-matière).
       for (const [jour, dayMap] of Object.entries(fichesAPreparer)) {
         if (!matieresPlanifiees[jour]) continue;
-        const existing = new Set(matieresPlanifiees[jour].map((m: any) => m.matiere));
-        for (const matiereKey of Object.keys(dayMap || {})) {
-          if (!dayMap[matiereKey] || existing.has(matiereKey) || RESERVED_ENTRY_KEYS.has(matiereKey)) continue;
-          const fichesForDay = parJour[jour] || [];
-          const matSubjectId = subjectIdByMatiereName.get(matiereKey);
-          const matchingFiche = fichesForDay.find((f: any) => {
-            if (isMaternelleJournal) {
-              if (matSubjectId && f.subjectId && f.subjectId === matSubjectId) return true;
-              const expectedSheetType = this.mapMatiereKeyToSheetType(matiereKey, true);
-              return !!expectedSheetType && f.sheetType === expectedSheetType;
-            }
-            return (f.subjectId && f.subjectId === matiereKey)
-              || (f.sheetType && this.mapMatiereKeyToSheetType(matiereKey, false) === f.sheetType);
-          });
+        for (const [matiereKey, list] of Object.entries(dayMap)) {
+          if (RESERVED_ENTRY_KEYS.has(matiereKey)) continue;
+          const candidates = fichesCandidatesPour(jour, matiereKey);
+          const sousMatieres: SousMatiereExigence[] = list.map((sm) => ({
+            nom: sm.nom,
+            fichePreparede: false,
+            ficheId: undefined,
+          }));
+          rapprocherFiches(sousMatieres, candidates);
           matieresPlanifiees[jour].push({
             matiere: matiereKey,
-            fichePreparede: !!matchingFiche,
-            ficheId: matchingFiche?.id,
+            sousMatieres,
+            fichePreparede: sousMatieres.every((sm) => sm.fichePreparede),
+            ficheId: sousMatieres.find((sm) => sm.fichePreparede)?.ficheId,
+          });
+        }
+      }
+    } else {
+      // Mode historique : une matière est "planifiée" si son contenu n'est pas
+      // vide → une seule exigence de fiche par (jour × matière).
+      for (const jour of Object.keys(parJour)) {
+        const dayEntries = entries[jour] || {};
+        for (const [matiereKey, matiereContent] of Object.entries(dayEntries)) {
+          if (RESERVED_ENTRY_KEYS.has(matiereKey)) continue;
+          const content = typeof matiereContent === 'string' ? matiereContent.trim() : '';
+          if (!content) continue;
+          const candidates = fichesCandidatesPour(jour, matiereKey);
+          const sousMatieres: SousMatiereExigence[] = [
+            { nom: '', fichePreparede: false, ficheId: undefined },
+          ];
+          rapprocherFiches(sousMatieres, candidates);
+          matieresPlanifiees[jour].push({
+            matiere: matiereKey,
+            sousMatieres,
+            fichePreparede: sousMatieres[0].fichePreparede,
+            ficheId: sousMatieres[0].ficheId,
           });
         }
       }
     }
 
     // ─── 6. Stats ───
+    //    ⭐ v2 : les décomptes sont au niveau EXIGENCE (jour × matière ×
+    //    sous-matière) — c'est le nombre de FICHES à préparer, pas le nombre
+    //    de matières. En mode historique : 1 exigence par matière (inchangé).
     const totalMatieresPlanifiees = Object.values(matieresPlanifiees).reduce((s, arr) => s + arr.length, 0);
-    const totalFichesPreparees = Object.values(matieresPlanifiees).reduce(
-      (s, arr) => s + arr.filter(m => m.fichePreparede).length, 0,
+    const totalExigences = Object.values(matieresPlanifiees).reduce(
+      (s, arr) => s + arr.reduce((s2, m) => s2 + m.sousMatieres.length, 0), 0,
     );
-    const totalFichesManquantes = totalMatieresPlanifiees - totalFichesPreparees;
+    const totalFichesPreparees = Object.values(matieresPlanifiees).reduce(
+      (s, arr) => s + arr.reduce(
+        (s2, m) => s2 + m.sousMatieres.filter((sm) => sm.fichePreparede).length, 0),
+      0,
+    );
+    const totalFichesManquantes = totalExigences - totalFichesPreparees;
     // ⭐ FEATURE : décompte des fiches à préparer PAR JOUR (demande promoteur :
     //    « pour chaque jour le nombre de fiches, et le nombre total pour la semaine »)
     const fichesManquantesParJour: Record<string, number> = {};
+    const fichesTotalParJour: Record<string, number> = {};
     for (const [jour, arr] of Object.entries(matieresPlanifiees)) {
-      fichesManquantesParJour[jour] = arr.filter(m => !m.fichePreparede).length;
+      fichesTotalParJour[jour] = arr.reduce((s, m) => s + m.sousMatieres.length, 0);
+      fichesManquantesParJour[jour] = arr.reduce(
+        (s, m) => s + m.sousMatieres.filter((sm) => !sm.fichePreparede).length, 0);
     }
 
     return {
@@ -5318,17 +5412,21 @@ export class PedagogicalSpaceService {
       fiches: allFiches,
       parJour,
       matieresPlanifiees,
-      // ⭐ FEATURE « Fiche à préparer » : true si l'enseignant a marqué
-      //    explicitement des matières (mode ciblé) — le frontend adapte le
-      //    libellé (« fiches à préparer marquées » vs « matières sans fiche »).
+      // ⭐ FEATURE « Sous-matières & fiches à préparer » : true si
+      //    l'enseignant a renseigné explicitement des sous-matières (mode
+      //    ciblé) — le frontend adapte le libellé (« fiches à préparer
+      //    renseignées dans le cahier journal » vs « matières sans fiche »).
       hasExplicitFichesAPreparer: hasExplicitFlags,
       stats: {
         totalFiches: allFiches.length,
         totalMatieresPlanifiees,
+        // ⭐ v2 : décomptes au niveau fiche (exigences de sous-matières)
+        totalFichesAPreparer: totalExigences,
         totalFichesPreparees,
         totalFichesManquantes,
         toutesFichesPreparees: totalFichesManquantes === 0,
         fichesManquantesParJour,
+        fichesTotalParJour,
       },
     };
   }

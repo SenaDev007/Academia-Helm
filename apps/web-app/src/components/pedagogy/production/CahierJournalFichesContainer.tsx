@@ -99,6 +99,9 @@ export function CahierJournalFichesContainer({
     day?: string;
     matiere?: string;
     sheetType?: string;
+    /** ⭐ Sous-matière renseignée dans le cahier journal (ex : « Vocabulaire
+     *    thématique ») — pré-remplit le champ dédié de la fiche pédagogique. */
+    sousMatiere?: string;
   } | null>(null);
   // ⭐ ClassId récupéré depuis le cahier journal — passé à PedagogicalSheetsTab
   //    pour pré-sélectionner automatiquement la classe
@@ -165,11 +168,11 @@ export function CahierJournalFichesContainer({
     }
   }, [subTab, showCatalogue]);
 
-  // L'utilisateur clique sur "Préparer la fiche pour [jour] [matière]"
+  // L'utilisateur clique sur "Préparer la fiche pour [jour] [matière] [sous-matière]"
   // On bascule vers l'onglet Fiches avec un payload initial
   const handlePrepareFicheFor = useCallback(
-    (day: string, matiere: string, sheetType?: string) => {
-      setPendingInitialPayload({ day, matiere, sheetType });
+    (day: string, matiere: string, sheetType?: string, sousMatiere?: string) => {
+      setPendingInitialPayload({ day, matiere, sheetType, sousMatiere });
       setViewFicheId(null); // Clear view mode — on veut créer, pas voir
       setSubTab("fiches");
     },
@@ -340,6 +343,7 @@ export function CahierJournalFichesContainer({
                     initialLessonDay={pendingInitialPayload?.day}
                     initialSheetType={pendingInitialPayload?.sheetType}
                     initialMatiere={pendingInitialPayload?.matiere}
+                    initialSousMatiere={pendingInitialPayload?.sousMatiere}
                     initialFicheId={viewFicheId || undefined}
                   />
                 </div>
@@ -519,7 +523,7 @@ function FichesAPreparer({
   journalId: string;
   /** ⭐ Incrémenté à chaque enregistrement du cahier journal → re-fetch */
   refreshKey?: number;
-  onPrepareFiche: (day: string, matiere: string, sheetType?: string) => void;
+  onPrepareFiche: (day: string, matiere: string, sheetType?: string, sousMatiere?: string) => void;
   /** ⭐ Callback pour le bouton "Voir la fiche" (ouvre la fiche existante en édition) */
   onViewFiche?: (ficheId: string) => void;
   /** ⭐ Callback pour le bouton "Créer une fiche libre" (sans pré-remplissage) */
@@ -593,11 +597,17 @@ function FichesAPreparer({
 
   const stats = data.stats || {};
   const toutesFichesPreparees = stats.toutesFichesPreparees;
-  // ⭐ FEATURE « Fiche à préparer » : décompte par jour + total semaine, et
-  //    distinction marquage explicite (flags) vs matières sans fiche (historique).
+  // ⭐ FEATURE « Sous-matières & fiches à préparer » : décomptes au niveau
+  //    FICHE (une exigence par sous-matière renseignée dans le cahier journal)
+  //    + distinction marquage explicite vs matières sans fiche (historique).
+  const totalFichesAPreparer = stats.totalFichesAPreparer || stats.totalMatieresPlanifiees || 0;
   const parJourManquantes: Record<string, number> = stats.fichesManquantesParJour || {};
+  const parJourTotal: Record<string, number> = stats.fichesTotalParJour || {};
   const joursAvecFiches = days.filter(
-    (d) => (parJourManquantes[d] || 0) > 0 || (data.matieresPlanifiees?.[d] || []).length > 0,
+    (d) =>
+      (parJourManquantes[d] || 0) > 0 ||
+      (parJourTotal[d] || 0) > 0 ||
+      (data.matieresPlanifiees?.[d] || []).length > 0,
   );
   const isModeMarquage = !!data.hasExplicitFichesAPreparer;
 
@@ -622,19 +632,21 @@ function FichesAPreparer({
             {toutesFichesPreparees
               ? "Toutes les fiches pédagogiques sont préparées ✨"
               : `${stats.totalFichesManquantes || 0} fiche(s) pédagogique(s) à préparer ${
-                  isModeMarquage ? "— matières marquées dans le cahier journal" : "cette semaine"
+                  isModeMarquage ? "— sous-matières renseignées dans le cahier journal" : "cette semaine"
                 }`}
           </p>
           <p className="text-xs opacity-80">
-            {stats.totalFichesPreparees || 0} / {stats.totalMatieresPlanifiees || 0} matières ont leur fiche · {stats.totalFiches || 0} fiche(s) au total
+            {stats.totalFichesPreparees || 0} / {totalFichesAPreparer} fiches préparées ·{" "}
+            {stats.totalMatieresPlanifiees || 0} matière(s) concernée(s) · {stats.totalFiches || 0} fiche(s) créée(s)
           </p>
           {/* ⭐ Décompte par jour (demande promoteur : « pour chaque jour le nombre
-              de fiches chaque jour et le nombre total pour la semaine ») */}
+              de fiches chaque jour et le nombre total pour la semaine ») — au
+              niveau FICHE (sous-matières), pas matière. */}
           {joursAvecFiches.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {joursAvecFiches.map((d) => {
                 const manquantes = parJourManquantes[d] || 0;
-                const total = (data.matieresPlanifiees?.[d] || []).length;
+                const total = parJourTotal[d] || (data.matieresPlanifiees?.[d] || []).length;
                 return (
                   <span
                     key={d}
@@ -671,16 +683,21 @@ function FichesAPreparer({
         )}
       </div>
 
-      {/* Liste par jour */}
+      {/* Liste par jour : jour → matière → sous-matières (une ligne = une fiche) */}
       <div className="space-y-3">
         {days.map((day) => {
           const matieres = (data.matieresPlanifiees?.[day] || []) as Array<{
             matiere: string;
             fichePreparede: boolean;
             ficheId?: string;
+            sousMatieres?: Array<{ nom: string; fichePreparede: boolean; ficheId?: string }>;
           }>;
           if (matieres.length === 0) return null;
-          const dayComplete = matieres.every((m) => m.fichePreparede);
+          const dayTotalFiches = matieres.reduce((s, m) => s + (m.sousMatieres?.length || 1), 0);
+          const dayPrepared = matieres.reduce(
+            (s, m) => s + (m.sousMatieres || [{ nom: "", fichePreparede: m.fichePreparede, ficheId: m.ficheId }])
+              .filter((sm) => sm.fichePreparede).length, 0);
+          const dayComplete = dayPrepared >= dayTotalFiches;
           return (
             <div
               key={day}
@@ -703,58 +720,90 @@ function FichesAPreparer({
                       : "bg-amber-100 text-amber-700",
                   )}
                 >
-                  {matieres.filter((m) => m.fichePreparede).length} / {matieres.length}
+                  {dayPrepared} / {dayTotalFiches} fiche{dayTotalFiches > 1 ? "s" : ""}
                 </span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {matieres.map((m) => (
-                  <div
-                    key={`${day}-${m.matiere}`}
-                    className={cn(
-                      "flex items-center justify-between rounded-md border px-3 py-2 text-xs",
-                      m.fichePreparede
-                        ? "border-emerald-200 bg-white"
-                        : "border-amber-200 bg-white",
-                    )}
-                  >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      {m.fichePreparede ? (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                      ) : (
-                        <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                {matieres.map((m) => {
+                  // ⭐ Sous-matières renseignées (mode marquage v2) — fallback
+                  //    matière entière (historique : sousMatieres = [] ou absent)
+                  const sousMatieres =
+                    m.sousMatieres && m.sousMatieres.length > 0
+                      ? m.sousMatieres
+                      : [{ nom: "", fichePreparede: m.fichePreparede, ficheId: m.ficheId }];
+                  const matiereSheetType = mapMatiereToSheetType(m.matiere, isMaternelle);
+                  return (
+                    <div
+                      key={`${day}-${m.matiere}`}
+                      className={cn(
+                        "rounded-md border px-3 py-2 text-xs bg-white",
+                        m.fichePreparede ? "border-emerald-200" : "border-amber-200",
                       )}
-                      <span className="font-medium text-slate-700 truncate capitalize">
-                        {MATIERE_LABELS[m.matiere] || m.matiere.replace(/_/g, " ")}
-                      </span>
+                    >
+                      <div className="flex items-center gap-2 mb-1.5 pb-1.5 border-b border-slate-100">
+                        {m.fichePreparede ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                        )}
+                        <span className="font-bold text-slate-700 truncate capitalize">
+                          {MATIERE_LABELS[m.matiere] || m.matiere.replace(/_/g, " ")}
+                        </span>
+                        <span className="ml-auto text-[10px] font-bold text-slate-400 shrink-0">
+                          {sousMatieres.filter((sm) => sm.fichePreparede).length}/{sousMatieres.length}
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        {sousMatieres.map((sm, smIdx) => (
+                          <div
+                            key={`${day}-${m.matiere}-${smIdx}`}
+                            className="flex items-center justify-between gap-2 rounded px-1.5 py-1 bg-slate-50/70"
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                              {sm.fichePreparede ? (
+                                <CheckCircle2 className="h-3 w-3 text-emerald-600 shrink-0" />
+                              ) : (
+                                <AlertCircle className="h-3 w-3 text-amber-600 shrink-0" />
+                              )}
+                              <span className="font-medium text-slate-600 truncate">
+                                {sm.nom
+                                  ? sm.nom
+                                  : "Fiche de la matière"}
+                              </span>
+                            </div>
+                            {sm.fichePreparede ? (
+                              <a
+                                href="#"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  // ⭐ Ouvrir la fiche existante en édition
+                                  if (sm.ficheId && onViewFiche) {
+                                    onViewFiche(sm.ficheId);
+                                  } else if (m.ficheId && onViewFiche) {
+                                    onViewFiche(m.ficheId);
+                                  } else {
+                                    onPrepareFiche(day, m.matiere, matiereSheetType, sm.nom || undefined);
+                                  }
+                                }}
+                                className="text-[10px] font-bold text-blue-600 hover:underline ml-1 shrink-0"
+                              >
+                                Voir
+                              </a>
+                            ) : (
+                              <button
+                                onClick={() => onPrepareFiche(day, m.matiere, matiereSheetType, sm.nom || undefined)}
+                                className="flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded ml-1 shrink-0"
+                              >
+                                <Plus className="h-3 w-3" />
+                                Préparer
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    {m.fichePreparede ? (
-                      <a
-                        href="#"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          // ⭐ Ouvrir la fiche existante en édition (pas en créer une nouvelle)
-                          if (m.ficheId && onViewFiche) {
-                            onViewFiche(m.ficheId);
-                          } else {
-                            // Fallback : si pas de ficheId, on bascule vers l'onglet fiches
-                            onPrepareFiche(day, m.matiere, mapMatiereToSheetType(m.matiere, isMaternelle));
-                          }
-                        }}
-                        className="text-[10px] font-bold text-blue-600 hover:underline ml-2"
-                      >
-                        Voir
-                      </a>
-                    ) : (
-                      <button
-                        onClick={() => onPrepareFiche(day, m.matiere, mapMatiereToSheetType(m.matiere, isMaternelle))}
-                        className="flex items-center gap-1 text-[10px] font-bold text-white bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded ml-2"
-                      >
-                        <Plus className="h-3 w-3" />
-                        Préparer
-                      </button>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );
@@ -857,8 +906,14 @@ function FichesLieesJournal({
             <div className="flex items-center gap-2 min-w-0 flex-1">
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
               <div className="min-w-0">
-                <div className="font-medium text-slate-700 truncate">
-                  {fiche.sheetType === 'DOMAINE_2' ? 'Domaine 2' : fiche.sheetType === 'DOMAINE' ? 'Domaine' : fiche.sheetType || fiche.competence || 'Fiche'}
+                <div className="font-medium text-slate-700 truncate" title={fiche.matiereSpecifique ? String(fiche.matiereSpecifique).replace(/<[^>]*>/g, '') : undefined}>
+                  {/* ⭐ Affiche la sous-matière (matiereSpecifique) quand elle est
+                      renseignée — ex : « FRANCAIS — Vocabulaire thématique » */}
+                  {(() => {
+                    const base = fiche.sheetType === 'DOMAINE_2' ? 'Domaine 2' : fiche.sheetType === 'DOMAINE' ? 'Domaine' : fiche.sheetType || fiche.competence || 'Fiche';
+                    const sm = fiche.matiereSpecifique ? String(fiche.matiereSpecifique).replace(/<[^>]*>/g, '').trim() : '';
+                    return sm ? `${base} — ${sm}` : base;
+                  })()}
                 </div>
                 {fiche.lessonDate && (
                   <div className="text-[10px] text-slate-400">

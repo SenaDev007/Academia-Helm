@@ -11314,3 +11314,20 @@ Work Log:
 Stage Summary:
 - ✅ 5 demandes promoteur livrées et poussées (commit 90da7280b) : marquage auto MATH/EST/EPS, EST/EPS abrégés partout, nom réel au lieu de « Fiche de la matière », champ Cours supprimé (web + PDF), scroll automatique vers la fiche au clic « Voir ».
 - Reste : validation production post-déploiement (optionnelle — lecture seule via compte de recette) ; miroir EN production-en (suivi existant, non couvert comme les passes précédentes).
+---
+Task ID: 75
+Agent: Super Z (principal)
+(numéroté 75 : un « Task ID: 74 » historique d'une session antérieure existe déjà plus haut dans ce journal)
+Task: Fix reset password — « token must be a string » + vrai logo Academia Helm dans l'email OTP (retour promoteur)
+
+Work Log:
+- Reproduction du bug dans /home/z/valtest avec le ValidationPipe global EXACT (whitelist + forbidNonWhitelisted + transform + enableImplicitConversion) : ResetPasswordDto déclarait token?/email?/code? SANS @IsOptional() → class-validator 0.14/0.15 rejette les champs ABSENTS → flux OTP {email, code, newPassword} = « token must be a string » ET flux JWT legacy {token, newPassword} = erreurs email+code — les DEUX flux étaient cassés depuis l'origine.
+- FIX DTO : @IsOptional() sur token/email/code (alternative arbitrée dans auth.service.resetPassword) + correctif préventif identique sur SyncPushRecordDto (tableName?/recordId? — scan du backend : scripts/scan_optional_dtos.py, seul autre DTO touché).
+- LOGO EMAIL : l'en-tête de l'email OTP utilisait /images/logo-academia-helm-email.png = image générique JPEG 1152×864, PAS le logo Academia Helm (le vrai = logo-Academia Hub.png, celui de la signature « Cordialement, l'équipe Academia Helm »). Correctif : contenu du fichier REMPLACÉ par le vrai logo (1024→128px LANCZOS, PNG RGBA transparent, 18 Ko — pixels vérifiés identiques au vrai logo) → URL propre sans espace, léger pour les clients mail, header ↔ signature même image, et les ANCIENS emails déjà envoyés affichent désormais le vrai logo. Même correctif pour l'email de rappel d'expiration d'abonnement (email.service.ts — même mauvais asset).
+- Vérifs : check_syntax.mjs 4 fichiers ✓ ; test logique 11/11 (régression avant/après, forbidNonWhitelisted, code 5 chiffres, email invalide, mdp court, flux JWT, cas limites) ; vérif pixels du logo ✓.
+- Commit c96786a36 poussé sur main → Railway + Vercel auto-déploient.
+
+Stage Summary:
+- ✅ Réinitialisation de mot de passe RÉPARÉE (les 2 flux : OTP email→code→nouveau mdp + liens JWT legacy) — root cause : champs DTO alternatifs sans @IsOptional().
+- ✅ Vrai logo Academia Helm partout dans les emails (header + signature), anciens emails corrigés rétroactivement.
+- Reste : validation production post-déploiement (test réel du flux complet forgot-password avec un compte de recette).

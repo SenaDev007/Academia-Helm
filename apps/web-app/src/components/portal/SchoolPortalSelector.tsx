@@ -33,6 +33,8 @@ import { useMotionBudget } from '@/lib/motion/use-motion-budget';
 import { getMotionDuration } from '@/lib/motion/presets';
 import { extractTenantSlug } from '@/lib/tenant/constants';
 import { type PortalType } from '@/lib/auth/role-portal-map';
+// ⭐ Tenant de test Academia Helm — panneau d'identifiants de test (tous portails)
+import TestCredentialsPanel from '@/components/auth/TestCredentialsPanel';
 import { useThemeApplier } from '@/lib/themes/theme-applier';
 import { tenantThemeService } from '@/services/tenant-theme.service';
 import type { ThemeMode } from '@/lib/themes/themes.config';
@@ -414,6 +416,18 @@ export default function SchoolPortalSelector({ schoolInfo, subdomain }: SchoolPo
               </motion.button>
             );
           })}
+        </motion.div>
+
+        {/* ── ⭐ Tenant de test Academia Helm : comptes de test (tous portails) ── */}
+        {/* Affiché uniquement si l'école courante est le tenant de test.
+            Chaque compte propose « Utiliser » : mémorisation (sessionStorage)
+            puis redirection vers /login du portail concerné, pré-rempli. */}
+        <motion.div variants={itemVariants} className="mt-4 w-full max-w-xl">
+          <TestCredentialsPanel
+            variant="selector"
+            tenantKey={schoolData?.slug || subdomain || null}
+            schoolName={schoolData?.name || null}
+          />
         </motion.div>
 
         {/* ── Navigation footer ── */}

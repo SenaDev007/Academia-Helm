@@ -72,6 +72,13 @@ import { detectAccessContext, getAvailablePortals, getPortalForRole, canRoleUseP
 import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
 import { useSchoolBranding } from '@/hooks/useSchoolBranding';
 import AcademicParticles from './AcademicParticles';
+// ⭐ Tenant de test Academia Helm — panneau d'identifiants de test (École/Enseignant/Parent)
+import TestCredentialsPanel from '@/components/auth/TestCredentialsPanel';
+import {
+  consumeTestCredentialPrefill,
+  isTestCredentialsTenant,
+  type TestAccount,
+} from '@/lib/auth/test-credentials';
 
 type PortalType = 'platform' | 'school' | 'teacher' | 'parent' | 'public' | null;
 
@@ -585,6 +592,26 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const [parentOtpSent, setParentOtpSent] = useState(false);
   const [parentOtpCode, setParentOtpCode] = useState<string>('');
 
+  // ⭐ Tenant de test Academia Helm : détection (slug / UUID / nom d'école)
+  const testTenantDetected = isTestCredentialsTenant(
+    tenantIdForApi || tenantSlug || schoolNameFromUrl,
+  );
+
+  // ⭐ Tenant de test Academia Helm — remplissage du formulaire depuis le
+  //    panneau « Comptes de test » (clic « Utiliser ») ou depuis le compte
+  //    mémorisé par le sélecteur de portail (sessionStorage → pré-remplissage).
+  const handleUseTestAccount = useCallback((account: TestAccount) => {
+    if (account.portal === 'school') {
+      setSchoolCredentials((prev) => ({ ...prev, email: account.identifier, password: account.password }));
+    } else if (account.portal === 'teacher') {
+      setTeacherCredentials((prev) => ({ ...prev, teacherIdentifier: account.identifier, password: account.password }));
+    } else if (account.portal === 'parent') {
+      // Portail parent : connexion directe par téléphone (le mot de passe est
+      // optionnel et ignoré en mode téléphone) — on remplit le numéro.
+      setParentCredentials((prev) => ({ ...prev, phone: account.identifier, otp: '' }));
+    }
+  }, []);
+
   // ── School Google OAuth + 2FA OTP state ──
   // Uniquement pour le portail SCHOOL (pas TEACHER, pas PARENT, pas PLATFORM)
   const [schoolGooglePending, setSchoolGooglePending] = useState(false);
@@ -806,6 +833,16 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       setSchoolCredentials((prev) => ({ ...prev, email: lastEmail }));
     }
   }, [tenantStorageKey]);
+
+  // ⭐ Tenant de test Academia Helm — pré-remplissage depuis le sélecteur de
+  //    portail : le compte choisi (sessionStorage) remplit directement le
+  //    formulaire. Déclaré APRÈS « Pre-fill saved email » pour primer sur lui.
+  useEffect(() => {
+    if (!testTenantDetected || !portalType) return;
+    const account = consumeTestCredentialPrefill();
+    if (!account || account.portal !== portalType) return;
+    handleUseTestAccount(account);
+  }, [testTenantDetected, portalType, handleUseTestAccount]);
 
   const isStandardLogin = !portalType;
 
@@ -3241,6 +3278,18 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                 )}
               </motion.div>
             </AnimatePresence>
+
+            {/* ── ⭐ Tenant de test Academia Helm : comptes de test affichés ── */}
+            {/* Uniquement pour les portails authentifiés (pas PUBLIC) et si
+                l'école courante est le tenant de test Academia Helm. Le panneau
+                liste les identifiants du portail courant + bouton « Utiliser ». */}
+            {testTenantDetected && (isStandardLogin || portalType === 'school' || portalType === 'platform' || portalType === 'teacher' || portalType === 'parent') && (
+              <TestCredentialsPanel
+                portal={portalType === 'teacher' || portalType === 'parent' ? portalType : 'school'}
+                tenantKey={tenantIdForApi || tenantSlug || schoolNameFromUrl}
+                onUseAccount={handleUseTestAccount}
+              />
+            )}
 
             {/* ── Cloudflare Turnstile — vérification d'humanité ── */}
             {/* Désactivé pour le portail public (pré-inscription) pour simplifier le flux.

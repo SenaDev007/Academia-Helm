@@ -15,7 +15,12 @@
  * connexion de l'école Academia Helm pour faciliter les vérifications de
  * chaque portail (École / Enseignant / Parent).
  *
- * Source de vérité : scripts/task77_set_credentials.py (mise à jour DB),
+ * ⚠️ ANONYMISATION (Task 78) : les comptes de test portent désormais des
+ * identités ENTIÈREMENT FICTIVES (patronyme « HELM ») — aucun vrai nom ni
+ * aucune vraie adresse du tenant CSPEB ne doit apparaître ici.
+ *
+ * Source de vérité : scripts/task77_set_credentials.py puis
+ * scripts/task78_anonymize.py (anonymisation DB),
  * fiche download/academiahelm_comptes_de_test.md.
  * ============================================================================
  */
@@ -49,8 +54,8 @@ export interface TestAccount {
 }
 
 /**
- * Comptes de test du tenant Academia Helm (clone CSPEB du 2026-09-18,
- * mots de passe uniformisés — cf. Task 77).
+ * Comptes de test du tenant Academia Helm — identités fictives (Task 78 :
+ * anonymisation complète, patronyme HELM ; Task 77 : mot de passe commun).
  */
 export const TEST_ACCOUNTS: TestAccount[] = [
   // ── Portail École (email + mot de passe) ──
@@ -65,8 +70,8 @@ export const TEST_ACCOUNTS: TestAccount[] = [
   {
     portal: 'school',
     roleLabel: 'Promoteur',
-    name: 'Erhel DEGBE',
-    identifier: 'salumerhel2036@academia-helm.test',
+    name: 'Placide HELM',
+    identifier: 'recette.promoteur2@academia-helm.test',
     identifierLabel: 'Email',
     password: TEST_PASSWORD,
   },
@@ -81,8 +86,8 @@ export const TEST_ACCOUNTS: TestAccount[] = [
   {
     portal: 'school',
     roleLabel: 'Directrice (Maternelle / Primaire)',
-    name: 'Queen EZE',
-    identifier: 'queeneze@academia-helm.test',
+    name: 'Damienne HELM',
+    identifier: 'recette.directrice@academia-helm.test',
     identifierLabel: 'Email',
     password: TEST_PASSWORD,
     note: 'Aussi connectable au Portail Enseignant avec le matricule AHE-26-00010.',
@@ -98,8 +103,8 @@ export const TEST_ACCOUNTS: TestAccount[] = [
   {
     portal: 'school',
     roleLabel: 'Secrétaire comptable (Mat. / Prim.)',
-    name: 'Aurore AKPOVI',
-    identifier: 'auroretheodoraa@academia-helm.test',
+    name: 'Sandra HELM',
+    identifier: 'recette.sec-comptable2@academia-helm.test',
     identifierLabel: 'Email',
     password: TEST_PASSWORD,
     note: 'Aussi connectable au Portail Enseignant avec le matricule AHE-26-00006.',
@@ -117,7 +122,7 @@ export const TEST_ACCOUNTS: TestAccount[] = [
   {
     portal: 'teacher',
     roleLabel: 'Enseignant',
-    name: 'Bienvenu CHABI',
+    name: 'Éric HELM',
     identifier: 'AHE-26-00007',
     identifierLabel: 'Matricule',
     password: TEST_PASSWORD,
@@ -125,7 +130,7 @@ export const TEST_ACCOUNTS: TestAccount[] = [
   {
     portal: 'teacher',
     roleLabel: 'Enseignante',
-    name: 'Elodie YAROU',
+    name: 'Nadège HELM',
     identifier: 'AHE-26-00009',
     identifierLabel: 'Matricule',
     password: TEST_PASSWORD,
@@ -133,7 +138,7 @@ export const TEST_ACCOUNTS: TestAccount[] = [
   {
     portal: 'teacher',
     roleLabel: 'Enseignant',
-    name: 'Stevens AKPOVI',
+    name: 'Blaise HELM',
     identifier: 'AHE-P-26-00014',
     identifierLabel: 'Matricule',
     password: TEST_PASSWORD,
@@ -141,7 +146,7 @@ export const TEST_ACCOUNTS: TestAccount[] = [
   {
     portal: 'teacher',
     roleLabel: 'Directrice — double casquette',
-    name: 'Queen EZE',
+    name: 'Damienne HELM',
     identifier: 'AHE-26-00010',
     identifierLabel: 'Matricule',
     password: TEST_PASSWORD,
@@ -150,7 +155,7 @@ export const TEST_ACCOUNTS: TestAccount[] = [
   {
     portal: 'teacher',
     roleLabel: 'Secrétaire comptable — double casquette',
-    name: 'Aurore AKPOVI',
+    name: 'Sandra HELM',
     identifier: 'AHE-26-00006',
     identifierLabel: 'Matricule',
     password: TEST_PASSWORD,
@@ -161,7 +166,7 @@ export const TEST_ACCOUNTS: TestAccount[] = [
   {
     portal: 'parent',
     roleLabel: 'Parent',
-    name: 'Evrard BOSSOU',
+    name: 'Pascal HELM',
     identifier: '+229 97 00 00 01',
     identifierLabel: 'Téléphone',
     password: TEST_PASSWORD,
@@ -170,7 +175,7 @@ export const TEST_ACCOUNTS: TestAccount[] = [
   {
     portal: 'parent',
     roleLabel: 'Parent',
-    name: 'Olivia AKOTCHAYE',
+    name: 'Odile HELM',
     identifier: '+229 97 00 00 02',
     identifierLabel: 'Téléphone',
     password: TEST_PASSWORD,

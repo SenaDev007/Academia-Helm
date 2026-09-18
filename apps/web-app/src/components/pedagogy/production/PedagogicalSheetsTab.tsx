@@ -126,12 +126,15 @@ const MATERNELLE_SHEET_TYPES = [
 //     cahier-sous-matieres.ts). Le champ est la clé de cohérence cahier
 //     journal ↔ fiche pédagogique (rapprochement backend par
 //     matiereSpecifique normalisée) : « fiche de dictée », « fiche de
-//     morale », « fiche EA chant », « fiche d'arithmétique »…
+//     morale », « fiche EA chant »…
+//     ⭐ 2026-09-18 (corrections promoteur) : MATH et EPS n'ont PLUS de
+//     sous-matières (tout est déjà sur la fiche de préparation) → champ
+//     libre facultatif, exactement comme l'EST.
 const SOUS_MATIERE_FIELD_CONFIG: Record<string, { label: string; hint: string; placeholder: string }> = {
-  MATH: { label: "Sous-matière", hint: "Arithmétique, Calcul mental, Mesure, Géométrie", placeholder: "Ex : Arithmétique, Calcul mental, Mesure, Géométrie…" },
+  MATH: { label: "Sous-matière", hint: "facultatif", placeholder: "Sous-matière / rubrique de la leçon (facultatif)…" },
   ES: { label: "Sous-matière", hint: "Morale, Civisme, Histoire, Géographie", placeholder: "Ex : Morale, Civisme, Histoire, Géographie…" },
   EA: { label: "Sous-matière", hint: "Chant, Poésie, Dessin, Conte, Couture, Atelier, Art dramatique", placeholder: "Ex : Chant, Poésie, Dessin, Conte…" },
-  EPS: { label: "Sous-matière", hint: "Endurance, Vitesse, Course, Lancer, Gymnastique, Saut, Grimper", placeholder: "Ex : Endurance, Vitesse, Course, Saut…" },
+  EPS: { label: "Sous-matière", hint: "facultatif", placeholder: "Sous-matière / activité (facultatif)…" },
   EST: { label: "Sous-matière", hint: "facultatif", placeholder: "Sous-matière / domaine scientifique…" },
   STANDARD: { label: "Sous-matière", hint: "facultatif", placeholder: "Sous-matière (ex : Grammar, Reading, Tableur…)" },
 };
@@ -1343,14 +1346,14 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
           {form.sheetType === "FRANCAIS" ? (
             <>
               {/* FRANÇAIS — champ « Matière spécifique » JUSTE APRÈS l'en-tête :
-                  Vocabulaire thématique, Dictée, Expression écrite, Grammaire… */}
+                  Dictée, Grammaire, Conjugaison, Lecture… */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Matière spécifique <span className="font-normal text-slate-400">(Vocabulaire, Dictée, Expression écrite, Grammaire, Conjugaison…)</span>
+                  Matière spécifique <span className="font-normal text-slate-400">(Dictée, Grammaire, Conjugaison, Orthographe, Lecture…)</span>
                 </label>
                 <input type="text" list="fr-matiere-specifique-suggestions" value={form.matiereSpecifique || ""} disabled={isReadOnly}
                   onChange={e => setForm({ ...form, matiereSpecifique: e.target.value })}
-                  placeholder="Ex : Vocabulaire thématique, Dictée, Expression écrite, Lecture…"
+                  placeholder="Ex : Dictée, Grammaire, Lecture oralisée, Conjugaison…"
                   className="w-full px-3 py-2 border-2 border-emerald-300 rounded-lg text-sm font-semibold bg-emerald-50/40" />
                 <datalist id="fr-matiere-specifique-suggestions">
                   {/* ⭐ Catalogue partagé cahier-sous-matieres.ts (officiel + variantes) */}
@@ -1416,8 +1419,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                   </div>
                 </div>
               </div>
-              {/* ⭐ SOUS-MATIÈRE (MATH) : Arithmétique, Calcul mental, Mesure,
-                  Géométrie — clé de cohérence avec le cahier journal */}
+              {/* ⭐ SOUS-MATIÈRE (MATH) — facultatif (tout est déjà sur la fiche
+                  de préparation) ; clé de cohérence cahier journal */}
               <SousMatiereField
                 sheetType="MATH"
                 value={form.matiereSpecifique || ""}
@@ -1479,7 +1482,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               </div>
               {/* ⭐ SOUS-MATIÈRE (ES : Morale/Civisme/Histoire/Géographie ;
                   EA : Chant/Poésie/Dessin/Conte/Couture/Atelier/Art dramatique ;
-                  EPS : Endurance/Vitesse/Course/Lancer/Gymnastique/Saut/Grimper) —
+                  EPS : facultatif — comme l'EST) —
                   clé de cohérence avec le cahier journal */}
               <SousMatiereField
                 sheetType={form.sheetType}

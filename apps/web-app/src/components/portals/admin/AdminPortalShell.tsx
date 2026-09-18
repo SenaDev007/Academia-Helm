@@ -400,7 +400,16 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
         </header>
 
         {/* Contenu de la page */}
-        <main className="p-3 sm:p-4 lg:p-6">
+        {/* ⭐ FIX 2026-09-18 (demande promoteur) : MÊME conteneur que l'UI
+            promoteur (PilotageLayout) — `max-w-7xl mx-auto` + paddings
+            responsive p-4/md:p-6/lg:p-8. Avant : `p-3 sm:p-4 lg:p-6` SANS
+            max-width → le contenu s'étirait sur toute la largeur (cartes
+            étirées/pas aérées, ex : onglet Multi-caisses et son sous-onglet
+            Caisses dans les portails comptable et secrétaire-comptable).
+            Désormais les pages métier partagées (/app/finance…) s'affichent
+            EXACTEMENT comme dans l'UI promoteur : colonne centrée de 1280px,
+            cartes bien aérées. */}
+        <main className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto w-full">
           <div className="min-w-0">{children}</div>
         </main>
       </div>

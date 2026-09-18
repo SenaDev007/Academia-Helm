@@ -8,26 +8,32 @@
  *    pour chaque jour × matière, la(les) sous-matière(s) qu'il va enseigner —
  *    chaque sous-matière renseignée = UNE fiche pédagogique à préparer.
  *    On peut donc préparer PLUSIEURS fiches pour la même matière le même jour
- *    (ex : lundi français → fiche de Vocabulaire thématique + fiche de
- *    Lecture oralisée ; mardi → Expression écrite (imprégnation) puis
- *    Expression écrite (la lettre) ; mercredi → Vocabulaire fonctionnel +
- *    Grammaire).
+ *    (ex : lundi français → fiche de Dictée + fiche de Lecture oralisée).
  *
- * Listes officielles (spécification utilisateur) :
- *   FRANÇAIS              : dictée, grammaire, exercices structuraux,
- *                           conjugaison, communication orale, orthographe,
- *                           lecture, vocabulaire, expression écrite,
- *                           graphisme/écriture, combinatoire
- *   MATHÉMATIQUES         : arithmétique, calcul mental, mesure, géométrie
+ * ⭐ 2026-09-18 (corrections promoteur — 2e passe) :
+ *    - FRANÇAIS : suppression de vocabulaire, production écrite, expression
+ *      écrite (et ses variantes), récitation, poésie et exercices structuraux
+ *      (exercices structuraux figure déjà sur la fiche de préparation).
+ *    - MATHÉMATIQUES : PLUS DE sous-matières — tout est déjà sur la fiche de
+ *      préparation (comportement identique à l'EST : champ libre, aucune
+ *      suggestion).
+ *    - EPS : PLUS DE sous-matières — comme l'EST et les mathématiques.
+ *    - ÉDUCATION ARTISTIQUE : suppression des variantes (chant —
+ *      apprentissage, dessin — coloriage, dessin — modelage, compte,
+ *      récitation) ; seules les sous-matières officielles restent.
+ *
+ * Listes officielles (spécification utilisateur corrigée) :
+ *   FRANÇAIS              : dictée, grammaire, conjugaison, communication
+ *                           orale, orthographe, lecture, graphisme/écriture,
+ *                           combinatoire
+ *   MATHÉMATIQUES         : (aucune — tout est sur la fiche, comme l'EST)
  *   ÉDUCATION SOCIALE     : morale, civisme, histoire, géographie
- *   EPS                   : endurance, vitesse, course, lancer, gymnastique,
- *                           saut, grimper
+ *   EPS                   : (aucune — comme l'EST)
  *   ÉDUCATION ARTISTIQUE  : chant, poésie, dessin, conte, couture, atelier,
  *                           art dramatique
  *
  * Le champ de saisie accepte AUSSI du texte libre (variantes fines utilisées
- * dans les cahiers réels : « Vocabulaire thématique », « Lecture oralisée »,
- * « Expression écrite — imprégnation », etc.).
+ * dans les cahiers réels : « Lecture oralisée », « Dictée préparée », etc.).
  * ============================================================================
  */
 
@@ -62,31 +68,23 @@ export const SOUS_MATIERES_CATALOGUE: {
     key: "francais",
     sheetType: "FRANCAIS",
     colonnes: ["Français", "Francais"],
+    // ⭐ 2026-09-18 (corrections promoteur) : suppressions de Vocabulaire,
+    //    Expression écrite et Exercices structuraux (déjà sur la fiche de
+    //    préparation) + variantes associées (vocabulaire thématique/
+    //    fonctionnel/systématique, production écrite, expression écrite —
+    //    imprégnation/production, récitation, poésie).
     sousMatieres: [
-      "Dictée", "Grammaire", "Exercices structuraux", "Conjugaison",
-      "Communication orale", "Orthographe", "Lecture", "Vocabulaire",
-      "Expression écrite", "Graphisme/Écriture", "Combinatoire",
+      "Dictée", "Grammaire", "Conjugaison", "Communication orale",
+      "Orthographe", "Lecture", "Graphisme/Écriture", "Combinatoire",
     ],
     variantes: [
-      "Vocabulaire thématique", "Vocabulaire fonctionnel", "Vocabulaire systématique",
       "Lecture oralisée", "Lecture silencieuse", "Expression orale",
-      "Dictée préparée", "Dictée-recherche", "Production écrite",
-      "Expression écrite — imprégnation", "Expression écrite — production",
-      "Conte", "Récitation", "Poésie",
+      "Dictée préparée", "Dictée-recherche", "Conte",
     ],
   },
-  {
-    key: "mathematiques",
-    sheetType: "MATH",
-    colonnes: ["Mathématiques", "Mathematiques", "Maths", "Math"],
-    sousMatieres: [
-      "Arithmétique", "Calcul mental", "Mesure", "Géométrie",
-    ],
-    variantes: [
-      "Numération", "Problèmes", "Arithmétique — problèmes",
-      "Géométrie — construction", "Mesure — conversions",
-    ],
-  },
+  // ⭐ 2026-09-18 (corrections promoteur) : MATHÉMATIQUES et EPS sans
+  //    sous-matières — tout est déjà sur la fiche de préparation.
+  //    Comportement identique à l'EST (champ libre, aucune suggestion).
   {
     key: "education_sociale",
     sheetType: "ES",
@@ -96,35 +94,18 @@ export const SOUS_MATIERES_CATALOGUE: {
     ],
   },
   {
-    key: "eps",
-    sheetType: "EPS",
-    colonnes: [
-      "Éducation physique et sportive", "Education physique et sportive",
-      "EPS", "Éducation physique", "Sport",
-    ],
-    sousMatieres: [
-      "Endurance", "Vitesse", "Course", "Lancer",
-      "Gymnastique", "Saut", "Grimper",
-    ],
-    variantes: [
-      "Course de vitesse", "Course d'endurance", "Saut en hauteur",
-      "Saut en longueur", "Jeu collectif",
-    ],
-  },
-  {
     key: "education_artistique",
     sheetType: "EA",
     colonnes: [
       "Éducation artistique", "Education artistique",
       "Éducation artistique plastique", "Éducation artistique vivante",
     ],
+    // ⭐ 2026-09-18 (corrections promoteur) : variantes supprimées (chant —
+    //    apprentissage, dessin — coloriage, dessin — modelage, compte,
+    //    récitation) — seules les sous-matières officielles restent.
     sousMatieres: [
       "Chant", "Poésie", "Dessin", "Conte",
       "Couture", "Atelier", "Art dramatique",
-    ],
-    variantes: [
-      "Chant — apprentissage", "Dessin — coloriage", "Dessin — modelage",
-      "Compte", "Récitation",
     ],
   },
 ];

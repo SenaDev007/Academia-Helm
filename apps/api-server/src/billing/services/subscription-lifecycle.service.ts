@@ -22,6 +22,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { EmailService } from '../../communication/services/email.service';
 import { WhatsAppService } from '../../communication/services/whatsapp.service';
 import { StudentCountVerifierService } from './student-count-verifier.service';
+import { PricingService } from './pricing.service';
 
 @Injectable()
 export class SubscriptionLifecycleService {
@@ -38,6 +39,7 @@ export class SubscriptionLifecycleService {
     private readonly whatsappService: WhatsAppService,
     private readonly configService: ConfigService,
     private readonly studentCountVerifier: StudentCountVerifierService,
+    private readonly pricingService: PricingService,
   ) {}
 
   /**
@@ -302,34 +304,102 @@ export class SubscriptionLifecycleService {
 
   // ─── NOTIFICATIONS ──────────────────────────────────────────────────────────
 
+  /**
+   * Notification d'expiration (J-7 / J-3 / J-1)
+   *
+   * ⭐ ALIGNÉE SUR LES NOUVEAUX PLANS D'ABONNEMENT (page tarification + contrat
+   * d'abonnement de l'onboarding sign-up) :
+   *   - nom OFFICIEL du plan (« Helm Performance »…), jamais le code brut ;
+   *   - grille tarifaire des 4 plans (contrat Article 3) ;
+   *   - règles de renouvellement du contrat (Articles 4 et 5) : seuls les
+   *     frais annuels sont dus au renouvellement (activation déjà réglée à la
+   *     signature), option bilingue en supplément ;
+   *   - lien direct vers la page Facturation (Paramètres → Facturation).
+   */
   private async sendExpirationNotification(sub: any, daysLeft: number): Promise<void> {
     const schoolName = sub.tenant?.name || 'votre établissement';
-    const subject = `⏰ Votre abonnement Academia Helm expire dans ${daysLeft} jour${daysLeft > 1 ? 's' : ''}`;
-    const message = `Bonjour,\n\nVotre abonnement Academia Helm pour ${schoolName} expire dans ${daysLeft} jour${daysLeft > 1 ? 's' : ''}.\n\nPour éviter toute interruption de service, veuillez renouveler votre abonnement dès maintenant.\n\nConnectez-vous à votre espace Academia Helm et rendez-vous dans les paramètres pour renouveler.\n\nCordialement,\nL'équipe Academia Helm`;
 
-    // Email
+    // ── Résolution du plan courant + grille (source pricing_plans) ──
+    const planDisplay = await this.pricingService
+      .resolvePlanDisplay(String(sub.plan || ''))
+      .catch(() => null);
+    const plansGrid = await this.pricingService
+      .getActivePlansGrid()
+      .catch(() => [] as Awaited<ReturnType<PricingService['getActivePlansGrid']>>);
+    const bilingualYearlyFee = sub.bilingualEnabled
+      ? await this.pricingService.getBilingualYearlyFee().catch(() => null)
+      : null;
+
+    const planName = planDisplay?.name || String(sub.plan || 'votre plan');
+    const planCode = planDisplay?.code || String(sub.plan || '');
+    const planRange = planDisplay
+      ? planDisplay.studentMax == null
+        ? `${planDisplay.studentMin} élèves et plus`
+        : `${planDisplay.studentMin} à ${planDisplay.studentMax} élèves`
+      : null;
+    // Frais annuels du plan : prix COURANT de la grille (source de vérité,
+    // comme la page tarification) ; repli sur le montant souscrit.
+    const planAnnualFee = planDisplay?.yearlyAmount ?? sub.annualAmount ?? null;
+    const planActivationFee = planDisplay?.initialFee ?? sub.setupFee ?? null;
+    const renewalFee =
+      planAnnualFee != null
+        ? planAnnualFee + (bilingualYearlyFee ?? 0)
+        : null;
+
+    // Lien de renouvellement : page Facturation réelle de l'application
+    const frontendUrl = (this.configService.get<string>('FRONTEND_URL') || 'https://app.academiahelm.com').trim().replace(/\/$/, '');
+    const renewalUrl = `${frontendUrl}/app/settings/billing`;
+
+    // ── Email riche (template partagé, conforme contrat) ──
+    const emailContent = this.emailService.formatBillingReminderEmail({
+      schoolName,
+      planName,
+      planCode,
+      planRange,
+      planAnnualFee,
+      planActivationFee,
+      bilingualEnabled: !!sub.bilingualEnabled,
+      bilingualYearlyFee,
+      renewalFee,
+      daysRemaining: daysLeft,
+      status: sub.status === 'TRIALING' ? 'TRIAL_ACTIVE' : sub.status,
+      renewalUrl,
+      plansGrid,
+    });
+
     try {
       const promoterEmail = await this.getPromoterEmail(sub.tenantId);
       if (promoterEmail) {
-        await this.emailService.sendEmail({
+        await this.emailService.sendCategorized({
+          tenantId: sub.tenantId,
+          category: 'FINANCE',
+          subCategory: 'rappel_expiration_abonnement',
+          module: 'billing',
           to: promoterEmail,
-          subject,
-          html: `<p>Bonjour,</p><p>Votre abonnement Academia Helm pour <strong>${schoolName}</strong> expire dans <strong>${daysLeft} jour${daysLeft > 1 ? 's' : ''}</strong>.</p><p>Pour éviter toute interruption de service, veuillez renouveler votre abonnement dès maintenant.</p><p>Connectez-vous à votre espace Academia Helm et rendez-vous dans les paramètres pour renouveler.</p><p>Cordialement,<br>L'équipe Academia Helm</p>`,
-          fromName: 'Academia Helm',
+          subject: emailContent.subject,
+          html: emailContent.html,
+          text: emailContent.text,
+          recipientType: 'STAFF',
+          triggeredBy: 'AUTOMATION',
+          relatedEntityType: 'HelmSubscription',
+          relatedEntityId: sub.id,
         });
-        this.logger.log(`Email expiration J-${daysLeft} sent to ${promoterEmail}`);
+        this.logger.log(`Email expiration J-${daysLeft} sent to ${promoterEmail} (plan: ${planName})`);
       }
     } catch (err: any) {
       this.logger.error(`Email notification failed: ${err.message}`);
     }
 
-    // WhatsApp
+    // ── WhatsApp (aligné : plan + montant des frais annuels) ──
     try {
       const promoterPhone = await this.getPromoterPhone(sub.tenantId);
       if (promoterPhone) {
+        const feeText = renewalFee != null
+          ? `Frais annuels à régler : ${renewalFee.toLocaleString('fr-FR').replace(/\u202f|\u00a0/g, ' ')} FCFA`
+          : '';
         await this.whatsappService.sendWhatsApp({
           to: promoterPhone,
-          message: `🎓 Academia Helm\n\nBonjour,\nVotre abonnement pour ${schoolName} expire dans ${daysLeft} jour${daysLeft > 1 ? 's' : ''}.\n\nRenouvelez dès maintenant pour éviter toute interruption.\n\nConnectez-vous: https://academiahelm.com/login`,
+          message: `🎓 Academia Helm\n\nBonjour,\nVotre ${sub.status === 'TRIALING' ? 'période d\'essai' : 'abonnement'} pour ${schoolName} expire dans ${daysLeft} jour${daysLeft > 1 ? 's' : ''}.\n\nPlan actuel : ${planName}${planRange ? ` (${planRange})` : ''}\n${feeText}\n\nAu renouvellement, seuls les frais annuels sont dus (activation déjà réglée à la signature).\n\nRenouvelez ici : ${renewalUrl}`,
         });
         this.logger.log(`WhatsApp expiration J-${daysLeft} sent to ${promoterPhone}`);
       }

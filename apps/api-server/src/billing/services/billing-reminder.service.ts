@@ -270,8 +270,36 @@ export class BillingReminderService {
     }
 
     const tenant = subscription.tenant;
-    const planName =
-      subscription.subscriptionPlan?.name ?? (subscription.plan as string) ?? 'Plan';
+
+    // ⭐ ALIGNEMENT NOUVEAUX PLANS — le nom du plan vient désormais de
+    //    `pricing_plans` (source de vérité : « Helm Essentiel », « Helm
+    //    Croissance », « Helm Performance », « Helm Institution »).
+    //    ⚠️ L'ancienne relation `subscriptionPlan` (table obsolète
+    //    subscription_plans) affichait des plans disparus (« Plan Mensuel -
+    //    1 École ») et le champ `plan` contient le code brut (LEAD/GROW…).
+    const planDisplay = await this.pricingService
+      .resolvePlanDisplay(String(subscription.plan || ''))
+      .catch(() => null);
+    const plansGrid = await this.pricingService
+      .getActivePlansGrid()
+      .catch(() => [] as Awaited<ReturnType<PricingService['getActivePlansGrid']>>);
+    const bilingualYearlyFee = subscription.bilingualEnabled
+      ? await this.pricingService.getBilingualYearlyFee().catch(() => null)
+      : null;
+
+    const planName = planDisplay?.name || 'Plan';
+    const planCode = planDisplay?.code || String(subscription.plan || '');
+    const planRange = planDisplay
+      ? planDisplay.studentMax == null
+        ? `${planDisplay.studentMin} élèves et plus`
+        : `${planDisplay.studentMin} à ${planDisplay.studentMax} élèves`
+      : null;
+    const planAnnualFee = planDisplay?.yearlyAmount ?? null;
+    const planActivationFee = planDisplay?.initialFee ?? null;
+    const renewalFee =
+      planAnnualFee != null
+        ? planAnnualFee + (bilingualYearlyFee ?? 0)
+        : null;
 
     // Téléphone de contact établissement (User n'a pas de champ phone dans le schéma)
     const schoolSettings = await this.prisma.schoolSettings.findUnique({
@@ -316,11 +344,17 @@ export class BillingReminderService {
     const emailEnabled = sc?.emailEnabled !== false;
     const whatsappEnabled = sc?.whatsappEnabled !== false;
 
-    const renewalUrl = `${this.configService.get<string>('FRONTEND_URL', 'https://app.academia-hub.com')}/billing/renew`;
-    
+    // ⭐ Lien de renouvellement : page Facturation réelle (Paramètres →
+    //    Facturation) — l'ancien chemin /billing/renew n'existait pas (404).
+    const frontendUrl = (this.configService.get<string>('FRONTEND_URL') || 'https://app.academiahelm.com').trim().replace(/\/$/, '');
+    const renewalUrl = `${frontendUrl}/app/settings/billing`;
+
+    // ⭐ Message SMS/WhatsApp aligné nouveaux plans (nom lisible + frais annuels)
     const message = this.buildReminderMessage(
       tenant.name,
       planName,
+      planRange,
+      renewalFee,
       daysRemaining,
       subscription.status,
       renewalUrl,
@@ -356,9 +390,17 @@ export class BillingReminderService {
         const emailContent = this.emailService.formatBillingReminderEmail({
           schoolName: tenant.name,
           planName,
+          planCode,
+          planRange,
+          planAnnualFee,
+          planActivationFee,
+          bilingualEnabled: !!subscription.bilingualEnabled,
+          bilingualYearlyFee,
+          renewalFee,
           daysRemaining,
           status: subscription.status,
           renewalUrl,
+          plansGrid,
         });
 
         await this.emailService.sendCategorized({
@@ -390,7 +432,7 @@ export class BillingReminderService {
       try {
         const whatsappMessage = this.whatsappService.formatBillingReminderMessage({
           schoolName: tenant.name,
-          planName,
+          planName: `${planName}${planRange ? ` (${planRange})` : ''}${renewalFee != null ? ` — frais annuels ${renewalFee.toLocaleString('fr-FR').replace(/\u202f|\u00a0/g, ' ')} FCFA` : ''}`,
           daysRemaining,
           status: subscription.status,
           renewalUrl,
@@ -447,27 +489,34 @@ export class BillingReminderService {
   }
 
   /**
-   * Construit le message de rappel
+   * Construit le message de rappel (SMS/WhatsApp court)
+   * ⭐ Aligné nouveaux plans : nom OFFICIEL du plan + frais annuels à régler.
    */
   private buildReminderMessage(
     schoolName: string,
     planName: string,
+    planRange: string | null,
+    renewalFee: number | null,
     daysRemaining: number,
     status: string,
     renewalUrl: string,
   ): string {
     const statusText = status === 'TRIAL_ACTIVE' ? 'période d\'essai' : 'abonnement';
+    const feeText = renewalFee != null
+      ? `Frais annuels à régler : ${renewalFee.toLocaleString('fr-FR').replace(/\u202f|\u00a0/g, ' ')} FCFA.`
+      : '';
 
     return `
 Bonjour,
 
 Votre ${statusText} pour ${schoolName} expire dans ${daysRemaining} jour${daysRemaining > 1 ? 's' : ''}.
 
-Plan : ${planName}
+Plan : ${planName}${planRange ? ` (${planRange})` : ''}
+${feeText}
 
-Pour continuer à bénéficier de tous les services Academia Helm, veuillez renouveler votre abonnement.
+Au renouvellement, seuls les frais annuels sont dus (activation déjà réglée à la signature).
 
-Connectez-vous à votre espace pour effectuer le paiement :
+Pour renouveler :
 ${renewalUrl}
 
 Cordialement,

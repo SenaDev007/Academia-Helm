@@ -558,6 +558,126 @@ export class PricingService {
     return (config.reminderDays as number[]) || [7, 3, 1];
   }
 
+  // ─── ⭐ EMAILS D'EXPIRATION — ALIGNEMENT NOUVEAUX PLANS (contrat Article 3/4) ──
+
+  /**
+   * Grille des 4 plans du contrat (Helm Essentiel / Croissance / Performance /
+   * Institution) pour l'email de rappel d'expiration — même source que la page
+   * tarification : `pricing_plans` (éditable back-office, dynamique).
+   * Exclut le pseudo-plan BILINGUAL (add-on, pas un plan).
+   */
+  async getActivePlansGrid(): Promise<
+    Array<{
+      code: string;
+      name: string;
+      studentMin: number;
+      studentMax: number | null;
+      initialFee: number;
+      yearlyAmount: number | null;
+    }>
+  > {
+    const plans = await this.prisma.pricingPlan.findMany({
+      where: { isActive: true, code: { not: 'BILINGUAL' } },
+      orderBy: { sortOrder: 'asc' },
+      select: {
+        code: true,
+        name: true,
+        studentMin: true,
+        studentMax: true,
+        initialFee: true,
+        yearlyAmount: true,
+      },
+    });
+    return plans;
+  }
+
+  /**
+   * Résout le nom lisible d'un plan depuis `pricing_plans` (source de vérité
+   * des NOUVEAUX plans : « Helm Essentiel », « Helm Croissance », « Helm
+   * Performance », « Helm Institution »).
+   *
+   * ⚠️ Ne JAMAIS afficher le code brut (SEED/GROW/LEAD/NETWORK) ni l'ancienne
+   * table `subscription_plans` (plans obsolètes « Plan Mensuel - 1 École »).
+   *
+   * @param planCode code du plan (SEED, GROW, LEAD, NETWORK) — accepte aussi
+   *                 un nom déjà lisible (« Helm Performance ») pour robustesse
+   */
+  async resolvePlanDisplay(planCode: string): Promise<{
+    code: string;
+    name: string;
+    studentMin: number;
+    studentMax: number | null;
+    initialFee: number;
+    yearlyAmount: number | null;
+    bilingualYearly: number | null;
+  } | null> {
+    if (!planCode) return null;
+
+    // 1. Résolution directe par code (SEED/GROW/LEAD/NETWORK)
+    const byCode = await this.prisma.pricingPlan.findFirst({
+      where: { code: planCode, isActive: true },
+      select: {
+        code: true,
+        name: true,
+        studentMin: true,
+        studentMax: true,
+        initialFee: true,
+        yearlyAmount: true,
+        bilingualYearly: true,
+      },
+    });
+    if (byCode) return byCode;
+
+    // 2. La valeur passée est peut-être déjà un nom lisible (« Helm Performance »)
+    const byName = await this.prisma.pricingPlan.findFirst({
+      where: { name: planCode, isActive: true },
+      select: {
+        code: true,
+        name: true,
+        studentMin: true,
+        studentMax: true,
+        initialFee: true,
+        yearlyAmount: true,
+        bilingualYearly: true,
+      },
+    });
+    if (byName) return byName;
+
+    // 3. Fallback statique (codes du contrat — noms officiels)
+    const fallback: Record<string, string> = {
+      SEED: 'Helm Essentiel',
+      GROW: 'Helm Croissance',
+      LEAD: 'Helm Performance',
+      NETWORK: 'Helm Institution',
+    };
+    const name = fallback[planCode];
+    if (!name) return null;
+    return {
+      code: planCode,
+      name,
+      studentMin: 0,
+      studentMax: null,
+      initialFee: null,
+      yearlyAmount: null,
+      bilingualYearly: null,
+    };
+  }
+
+  /**
+   * Prix de l'option bilingue FR/EN (cycle annuel) — depuis le pseudo-plan
+   * BILINGUAL de `pricing_plans`, sinon la config active.
+   */
+  async getBilingualYearlyFee(): Promise<number | null> {
+    const bilingual = await this.prisma.pricingPlan.findFirst({
+      where: { code: 'BILINGUAL', isActive: true },
+      select: { bilingualYearly: true, yearlyAmount: true },
+    });
+    if (bilingual?.bilingualYearly != null) return bilingual.bilingualYearly;
+    if (bilingual?.yearlyAmount != null) return bilingual.yearlyAmount;
+    const config = await this.getActiveConfig();
+    return config.bilingualYearlyAddon ?? null;
+  }
+
   /**
    * Calcule le prix de renouvellement pour une souscription existante
    */

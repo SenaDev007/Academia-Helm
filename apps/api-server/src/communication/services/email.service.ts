@@ -336,7 +336,36 @@ export class EmailService {
   }
 
   /**
-   * Formate un email de rappel de facturation
+   * Formate un montant FCFA avec espaces (ex : 550 000) — même rendu que le
+   * contrat d'abonnement (contract-generation.service.ts fmt()).
+   */
+  private fmtFCFA(n: number | null | undefined): string {
+    if (n == null || isNaN(Number(n))) return '';
+    return Math.round(Number(n)).toLocaleString('fr-FR').replace(/\u202f|\u00a0/g, ' ');
+  }
+
+  /** Libellé « 1 à 50 », « 51 à 150 », « 401 et plus ». */
+  private fmtStudentRange(min: number | null | undefined, max: number | null | undefined): string {
+    if (max == null) return `${min ?? 0} et plus`;
+    return `${min ?? 0} à ${max}`;
+  }
+
+  /**
+   * Formate un email de rappel d'expiration d'abonnement
+   *
+   * ⭐ ALIGNÉ SUR LES NOUVEAUX PLANS D'ABONNEMENT (page tarification + contrat
+   * d'abonnement de l'onboarding sign-up) :
+   *   - Plan actuel avec son nom OFFICIEL (« Helm Essentiel », « Helm
+   *     Croissance », « Helm Performance », « Helm Institution ») et sa
+   *     tranche d'élèves — JAMAIS le code brut (SEED/LEAD…) ni les anciens
+   *     plans « Plan Mensuel - 1 École » ;
+   *   - Grille tarifaire des 4 plans (contrat Article 3 / page tarification),
+   *     plan courant surligné ;
+   *   - Règles de renouvellement du contrat (Articles 4 et 5).
+   *
+   * Les enrichissements (planCode/plansGrid/renewalFee…) sont optionnels pour
+   * rester rétro-compatible : sans grille, l'email reste correct (bloc plan
+   * seul) ; avec grille, il est complet.
    */
   formatBillingReminderEmail(data: {
     schoolName: string;
@@ -344,17 +373,131 @@ export class EmailService {
     daysRemaining: number;
     status: string;
     renewalUrl: string;
+    // ⭐ Enrichissements nouveaux plans (alignement contrat)
+    planCode?: string | null;
+    planRange?: string | null;
+    planAnnualFee?: number | null;
+    planActivationFee?: number | null;
+    bilingualEnabled?: boolean;
+    bilingualYearlyFee?: number | null;
+    renewalFee?: number | null;
+    plansGrid?: Array<{
+      code: string;
+      name: string;
+      studentMin: number;
+      studentMax: number | null;
+      initialFee: number;
+      yearlyAmount: number | null;
+    }> | null;
   }): { subject: string; html: string; text: string } {
-    const statusText = data.status === 'TRIAL_ACTIVE' ? 'période d\'essai' : 'abonnement';
+    const isTrial = data.status === 'TRIAL_ACTIVE' || data.status === 'TRIALING';
+    const statusText = isTrial ? 'période d\'essai' : 'abonnement';
     const urgency = data.daysRemaining === 1 ? 'URGENT' : data.daysRemaining <= 3 ? 'IMPORTANT' : '';
 
-    const subject = `${urgency ? `[${urgency}] ` : ''}Rappel - ${data.schoolName} - Expiration dans ${data.daysRemaining} jour${data.daysRemaining > 1 ? 's' : ''}`;
+    const subject = `${urgency ? `[${urgency}] ` : ''}Rappel - ${data.schoolName} - ${isTrial ? 'Fin de période d\'essai' : 'Expiration d\'abonnement'} dans ${data.daysRemaining} jour${data.daysRemaining > 1 ? 's' : ''}`;
 
     // ⭐ FIX 2026-09-18 (retour promoteur) : le fichier
     //    /images/logo-academia-helm-email.png a été remplacé par le VRAI
     //    logo Academia Helm (128×128, PNG transparent) — même image que la
     //    signature des emails OTP.
     const logoUrl = this.configService.get<string>('APP_PUBLIC_URL', 'https://academiahelm.com') + '/images/logo-academia-helm-email.png';
+
+    // ── Données enrichies (avec replis robustes) ──
+    const bilingualEnabled = !!data.bilingualEnabled;
+    const bilingualFee = bilingualEnabled ? (data.bilingualYearlyFee ?? null) : null;
+    const planAnnualFee = data.planAnnualFee ?? null;
+    // Montant à régler : frais annuels du plan (+ bilingue si activée).
+    // En essai : souscription initiale = activation + frais annuels (+ bilingue).
+    const renewalFee =
+      data.renewalFee != null
+        ? data.renewalFee
+        : planAnnualFee != null
+          ? isTrial
+            ? (data.planActivationFee ?? 0) + planAnnualFee + (bilingualFee ?? 0)
+            : planAnnualFee + (bilingualFee ?? 0)
+          : null;
+    const planRange = data.planRange ?? null;
+    const grid = (data.plansGrid || []).filter((p) => p && p.name);
+    const planCode = data.planCode ?? null;
+
+    const fmt = (n: number | null | undefined) => this.fmtFCFA(n);
+
+    // ── Bloc « Votre plan » ──
+    const planDetails: string[] = [];
+    if (planRange) planDetails.push(`<tr><td style="padding:4px 0;color:#475569;font-size:14px;">Capacité du plan</td><td style="padding:4px 0;text-align:right;color:#0b2f73;font-size:14px;font-weight:600;">${planRange}</td></tr>`);
+    if (planAnnualFee != null) planDetails.push(`<tr><td style="padding:4px 0;color:#475569;font-size:14px;">Frais annuels du plan</td><td style="padding:4px 0;text-align:right;color:#0b2f73;font-size:14px;font-weight:600;">${fmt(planAnnualFee)} FCFA/an</td></tr>`);
+    if (bilingualEnabled) {
+      planDetails.push(`<tr><td style="padding:4px 0;color:#475569;font-size:14px;">Option bilingue FR/EN (activée)</td><td style="padding:4px 0;text-align:right;color:#0b2f73;font-size:14px;font-weight:600;">${bilingualFee != null ? `${fmt(bilingualFee)} FCFA/an` : 'en supplément'}</td></tr>`);
+    }
+    const planBlock = planDetails.length
+      ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;border-radius:8px;padding:14px 18px;margin:16px 0;border:1px solid #e2e8f0;">
+          <tr><td colspan="2" style="padding:0 0 8px 0;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;">Votre plan actuel</td></tr>
+          <tr><td colspan="2" style="padding:0 0 6px 0;color:#0b2f73;font-size:17px;font-weight:700;">${data.planName}</td></tr>
+          ${planDetails.join('')}
+        </table>`
+      : `<p style="margin:12px 0;"><strong>Plan actuel :</strong> ${data.planName}</p>`;
+
+    // ── Bloc « À régler » + conditions de renouvellement (contrat Art. 4/5) ──
+    const renewalIntro = isTrial
+      ? `Pour continuer à utiliser Academia Helm au terme de votre période d'essai, souscrivez au plan adapté à votre effectif :`
+      : `Pour renouveler, seuls les <strong>frais annuels de votre plan</strong> sont dus — payables d'avance à la date d'échéance annuelle (contrat d'abonnement, Article 4) :`;
+    const renewalLines: string[] = [];
+    if (renewalFee != null && planAnnualFee != null) {
+      if (isTrial && data.planActivationFee != null) renewalLines.push(`Frais d'activation (une seule fois, à la souscription) : <strong>${fmt(data.planActivationFee)} FCFA</strong>`);
+      renewalLines.push(`Frais annuels du plan ${data.planName} : <strong>${fmt(planAnnualFee)} FCFA/an</strong>`);
+      if (bilingualFee != null) renewalLines.push(`Option bilingue FR/EN : <strong>${fmt(bilingualFee)} FCFA/an</strong>`);
+      renewalLines.push(`<strong>Total à régler${isTrial ? '' : ' au renouvellement'} : ${fmt(renewalFee)} FCFA</strong>`);
+    }
+    const activationNote = data.planActivationFee != null
+      ? `Les frais d'activation (${fmt(data.planActivationFee)} FCFA) ne sont dus qu'une seule fois, à la signature du contrat — ils ne sont pas redevables au renouvellement.`
+      : `Les frais d'activation ne sont dus qu'une seule fois, à la signature du contrat — ils ne sont pas redevables au renouvellement.`;
+    const renewalBlock = `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid #f5b335;border-radius:8px;padding:16px 20px;margin:16px 0;">
+      <p style="margin:0 0 10px 0;font-size:14px;color:#334155;line-height:1.6;">${renewalIntro}</p>
+      ${renewalLines.length ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 10px 0;">${renewalLines.map((l) => `<tr><td style="padding:3px 0;font-size:14px;color:#475569;line-height:1.6;">• ${l}</td></tr>`).join('')}</table>` : ''}
+      ${isTrial ? '' : `<p style="margin:0;font-size:12.5px;color:#64748b;line-height:1.6;">${activationNote}</p>`}
+    </div>`;
+
+    // ── Grille tarifaire des 4 plans (contrat Article 3 — page tarification) ──
+    const gridRows = grid
+      .map((p) => {
+        const isCurrent = planCode ? p.code === planCode : p.name === data.planName;
+        const range = this.fmtStudentRange(p.studentMin, p.studentMax);
+        const bg = isCurrent ? 'background:#e8eefb;' : '';
+        const bold = isCurrent ? 'font-weight:700;color:#0b2f73;' : 'color:#334155;';
+        return `<tr style="${bg}">
+          <td style="padding:8px 10px;font-size:13.5px;${bold}">${p.name}${isCurrent ? ' <span style="color:#1d4fa5;">✔</span>' : ''}</td>
+          <td style="padding:8px 10px;font-size:13.5px;text-align:center;${bold}">${range}</td>
+          <td style="padding:8px 10px;font-size:13.5px;text-align:right;${bold}">${fmt(p.initialFee)}</td>
+          <td style="padding:8px 10px;font-size:13.5px;text-align:right;${bold}">${fmt(p.yearlyAmount)} / an</td>
+        </tr>`;
+      })
+      .join('');
+    const gridBlock = gridRows
+      ? `<h3 style="font-size:15px;color:#0b2f73;margin:24px 0 8px 0;">Grille tarifaire — plans Academia Helm</h3>
+        <p style="margin:0 0 10px 0;font-size:13px;color:#64748b;line-height:1.6;">Tous les plans incluent l'intégralité des 21 modules métier + 6 modules complémentaires — aucune restriction. Montants en FCFA, toutes taxes comprises (contrat d'abonnement, Article 3).</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+          <thead>
+            <tr style="background:#0b2f73;">
+              <th style="padding:9px 10px;font-size:12.5px;color:#ffffff;text-align:left;font-weight:600;">Plan</th>
+              <th style="padding:9px 10px;font-size:12.5px;color:#ffffff;text-align:center;font-weight:600;">Capacité (élèves)</th>
+              <th style="padding:9px 10px;font-size:12.5px;color:#ffffff;text-align:right;font-weight:600;">Activation (FCFA)</th>
+              <th style="padding:9px 10px;font-size:12.5px;color:#ffffff;text-align:right;font-weight:600;">Frais annuels (FCFA)</th>
+            </tr>
+          </thead>
+          <tbody>${gridRows}</tbody>
+        </table>
+        <p style="margin:8px 0 0 0;font-size:12.5px;color:#64748b;line-height:1.6;">Option bilingue FR/EN : ${bilingualFee != null ? fmt(bilingualFee) : fmt(data.bilingualYearlyFee)} FCFA/an en supplément, quel que soit le plan. Si votre effectif a évolué, le plan adapté à votre nouvelle tranche s'applique au renouvellement.</p>`
+      : '';
+
+    // ── Conditions (contrat Articles 4 et 5) ──
+    const conditionsBlock = `<h3 style="font-size:15px;color:#0b2f73;margin:24px 0 8px 0;">Conditions de renouvellement</h3>
+      <ul style="margin:0;padding-left:20px;font-size:13px;color:#475569;line-height:1.7;">
+        <li>Facturation <strong>annuelle uniquement</strong> ; frais annuels payables d'avance à chaque date d'échéance annuelle.</li>
+        <li>Pénalité de retard : <strong>15 jours</strong> après l'échéance → suspension possible du service.</li>
+        <li>Règlement : espèces contre reçu, virement bancaire ou Mobile Money.</li>
+        <li>Reconduction tacite par périodes d'un an ; dénonciation possible jusqu'à <strong>60 jours</strong> avant la date d'échéance (Article 5).</li>
+        <li>Messagerie Helm Connect et e-mail inclus gratuitement et sans limitation.</li>
+      </ul>`;
 
     const html = `
 <!DOCTYPE html>
@@ -385,12 +528,14 @@ export class EmailService {
       <p>Plateforme SaaS de gestion scolaire</p>
     </div>
     <div class="content">
-      <h2>Rappel d'expiration</h2>
+      <h2>${isTrial ? 'Fin de période d\'essai imminente' : 'Rappel d\'expiration d\'abonnement'}</h2>
       <p>Bonjour,</p>
       <p>Votre ${statusText} pour <strong>${data.schoolName}</strong> expire dans <strong>${data.daysRemaining} jour${data.daysRemaining > 1 ? 's' : ''}</strong>.</p>
-      <p><strong>Plan actuel :</strong> ${data.planName}</p>
-      <p>Pour continuer à bénéficier de tous les services Academia Helm, veuillez renouveler votre abonnement dès maintenant.</p>
-      <a href="${data.renewalUrl}" class="button">Renouveler maintenant</a>
+      ${planBlock}
+      ${renewalBlock}
+      <a href="${data.renewalUrl}" class="button">${isTrial ? 'Souscrire maintenant' : 'Renouveler maintenant'}</a>
+      ${gridBlock}
+      ${conditionsBlock}
       <p style="margin-top: 24px;">Si vous avez des questions, n'hésitez pas à nous contacter.</p>
       <p>Cordialement,<br>L'équipe Academia Helm</p>
     </div>
@@ -403,21 +548,44 @@ export class EmailService {
 </html>
     `.trim();
 
-    const text = `
-Academia Helm - Rappel d'expiration
+    // ── Version texte (alignée sur le HTML) ──
+    const textLines: string[] = [
+      `Academia Helm - ${isTrial ? 'Fin de période d\'essai' : 'Rappel d\'expiration d\'abonnement'}`,
+      '',
+      'Bonjour,',
+      '',
+      `Votre ${statusText} pour ${data.schoolName} expire dans ${data.daysRemaining} jour${data.daysRemaining > 1 ? 's' : ''}.`,
+      '',
+      `Plan actuel : ${data.planName}${planRange ? ` (${planRange})` : ''}`,
+    ];
+    if (planAnnualFee != null) textLines.push(`Frais annuels du plan : ${fmt(planAnnualFee)} FCFA/an`);
+    if (bilingualEnabled && bilingualFee != null) textLines.push(`Option bilingue FR/EN : ${fmt(bilingualFee)} FCFA/an`);
+    if (renewalFee != null) {
+      textLines.push('');
+      textLines.push(isTrial
+        ? `Pour continuer après votre essai, souscrivez au plan adapté — total à régler : ${fmt(renewalFee)} FCFA.`
+        : `Pour renouveler, seuls les frais annuels sont dus (contrat Article 4) — total à régler : ${fmt(renewalFee)} FCFA.`);
+      if (!isTrial) textLines.push('Les frais d\'activation ne sont dus qu\'une seule fois, à la signature du contrat.');
+    }
+    if (grid.length) {
+      textLines.push('');
+      textLines.push('Grille tarifaire — plans Academia Helm (contrat Article 3) :');
+      grid.forEach((p) => {
+        const isCurrent = planCode ? p.code === planCode : p.name === data.planName;
+        textLines.push(`- ${p.name}${isCurrent ? ' (votre plan)' : ''} : ${this.fmtStudentRange(p.studentMin, p.studentMax)} élèves — activation ${fmt(p.initialFee)} FCFA, frais annuels ${fmt(p.yearlyAmount)} FCFA/an`);
+      });
+      textLines.push(`Option bilingue FR/EN : ${bilingualFee != null ? fmt(bilingualFee) : fmt(data.bilingualYearlyFee)} FCFA/an en supplément.`);
+    }
+    textLines.push('');
+    textLines.push(`Pour ${isTrial ? 'souscrire' : 'renouveler'} :`);
+    textLines.push(data.renewalUrl);
+    textLines.push('');
+    textLines.push('Conditions (contrat Articles 4 et 5) : facturation annuelle uniquement ; pénalité de retard 15 jours après échéance (suspension possible) ; règlement en espèces contre reçu, virement ou Mobile Money ; reconduction tacite annuelle, dénonciation jusqu\'à 60 jours avant l\'échéance.');
+    textLines.push('');
+    textLines.push('Cordialement,');
+    textLines.push('L\'équipe Academia Helm');
 
-Bonjour,
-
-Votre ${statusText} pour ${data.schoolName} expire dans ${data.daysRemaining} jour${data.daysRemaining > 1 ? 's' : ''}.
-
-Plan actuel : ${data.planName}
-
-Pour continuer à bénéficier de tous les services Academia Helm, veuillez renouveler votre abonnement :
-${data.renewalUrl}
-
-Cordialement,
-L'équipe Academia Helm
-    `.trim();
+    const text = textLines.join('\n').trim();
 
     return { subject, html, text };
   }

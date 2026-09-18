@@ -1062,7 +1062,8 @@ export class PedagogicalSpaceService {
         },
       },
       EST: {
-        label: 'Éducation Scientifique et Technologique', color: '#6d28d9', bg: '#ede9fe', border: '#8b5cf6',
+        // ⭐ 2026-09-18 (4e passe promoteur) — abréviation officielle : « EST »
+        label: 'EST', color: '#6d28d9', bg: '#ede9fe', border: '#8b5cf6',
         ibisTitle: 'Activités préliminaires',
         ibisFields: [
           { label: 'Rappel de la leçon précédente', key: 'ibis_1' },
@@ -1084,7 +1085,8 @@ export class PedagogicalSpaceService {
         ],
       },
       EPS: {
-        label: 'Éducation Physique et Sportive', color: '#0e7490', bg: '#cffafe', border: '#06b6d4',
+        // ⭐ 2026-09-18 (4e passe promoteur) — abréviation officielle : « EPS »
+        label: 'EPS', color: '#0e7490', bg: '#cffafe', border: '#06b6d4',
         ibisTitle: 'Proposition de nouvelles acquisitions',
         ibisFields: [
           { label: "Annoncer l'objet d'apprentissage (titre de l'activité physique et sportive)", key: 'ibis_1' },
@@ -1250,12 +1252,18 @@ export class PedagogicalSpaceService {
         const cell = (label: string, value: any, wide = false, bold = false) =>
           `<td style="border:1px solid #cbd5e1;padding:4px 5px;background:#f8fafc;font-weight:bold;width:${wide ? '18%' : '15%'};font-size:9px;">${label}</td>
            <td style="border:1px solid #cbd5e1;padding:4px 5px;font-size:9px;${bold ? 'font-weight:600;' : ''}">${value}</td>`;
+        // ⭐ 2026-09-18 (4e passe promoteur) — champ « Cours » SUPPRIMÉ du PDF
+        //    (« cours » et « classe », c'est la même chose — seul Classe reste).
+        //    cellSpan = 2 cellules de large (valeur sur 3 colonnes) pour
+        //    conserver des rangées équilibrées à 6 colonnes.
+        const cellSpan = (label: string, value: any, bold = false) =>
+          `<td style="border:1px solid #cbd5e1;padding:4px 5px;background:#f8fafc;font-weight:bold;width:15%;font-size:9px;">${label}</td>
+           <td colspan="3" style="border:1px solid #cbd5e1;padding:4px 5px;font-size:9px;${bold ? 'font-weight:600;' : ''}">${value}</td>`;
         const row = (cells: string) => `<tr>${cells}</tr>`;
         const fullRow = (label: string, value: any, bold = false) =>
           `<tr><td style="border:1px solid #cbd5e1;padding:4px 5px;background:#f8fafc;font-weight:bold;width:15%;font-size:9px;">${label}</td><td colspan="5" style="border:1px solid #cbd5e1;padding:4px 5px;font-size:9px;${bold ? 'font-weight:600;' : ''}">${value === '—' ? '' : value}</td></tr>`;
 
         const ficheFn = fiche.fn || '—';
-        const ficheCours = fiche.cours || '—';
         const ficheTheme = fiche.theme ? strip(fiche.theme) : '—';
         const ficheSaTheme = fiche.saTheme ? strip(fiche.saTheme) : '—';
         const ficheSeance = fiche.seance || '—';
@@ -1266,13 +1274,9 @@ export class PedagogicalSpaceService {
 
         if (fiche.sheetType === 'MATH') {
           // Modèle officiel MATH (curriculum « dossiers ») :
-          //   Fn° | FICHE DE MATHEMATIQUE : {titre} | Cours
-          //   DOSSIER N° … THEME …
-          //   SA N° … Thème (sous-thème) …
-          //   Séquence N° … Séance N° … Durée … Date …
-          //   Titre …
+          //   Fn° | Classe | DOSSIER N° | THEME | SA N° + Thème | Séquence/Séance/Durée/Date | Titre
           headerRows =
-            row(cell('Fn°', ficheFn) + cell('Cours', ficheCours) + cell('Classe', className)) +
+            row(cell('Fn°', ficheFn) + cellSpan('Classe', className)) +
             fullRow('DOSSIER N°', fiche.dossier || '—', false) +
             fullRow('THEME', ficheTheme, true) +
             row(cell('SA N°', fiche.san || '—') + cell('Thème', ficheSaTheme === '—' ? '' : ficheSaTheme) + cell('Séquence N°', fiche.sequence || '—')) +
@@ -1281,24 +1285,20 @@ export class PedagogicalSpaceService {
         } else if (fiche.sheetType === 'FRANCAIS') {
           // Modèle officiel FRANÇAIS :
           //   [Français | Matière spécifique] (juste après l'en-tête)
-          //   Cours … Durée … Unité N° … Étape N° … Date …
-          //   Titre …
+          //   Durée … Date … Classe … Unité N° … Étape N° … Titre
           const matiereSpec = fiche.matiereSpecifique ? strip(fiche.matiereSpecifique) : '';
           headerRows =
             (matiereSpec
               ? row(`<td colspan="1" style="border:1px solid #cbd5e1;padding:4px 5px;background:${typeConfig.bg};font-weight:bold;font-size:9px;color:${typeConfig.color};">Matière</td><td colspan="5" style="border:1px solid #cbd5e1;padding:4px 5px;font-size:10px;font-weight:bold;">${matiereSpec}</td>`)
               : '') +
-            row(cell('Cours', ficheCours) + cell('Durée', ficheDuree) + cell('Date', lessonDateStr)) +
-            row(cell('Unité N°', fiche.unite || '—') + cell('Étape N°', fiche.etape || '—') + cell('Classe', className)) +
+            row(cell('Durée', ficheDuree) + cell('Date', lessonDateStr) + cell('Classe', className)) +
+            row(cell('Unité N°', fiche.unite || '—') + cellSpan('Étape N°', fiche.etape || '—')) +
             fullRow('Titre', strip(fiche.titre), true);
         } else {
           // Modèle officiel ES / EST / EA / EPS / STANDARD :
-          //   Fn° | FICHE … | Cours
-          //   THEME …
-          //   SA N° … Séance N° … Durée … Date …
-          //   Titre …
+          //   Fn° | Classe | THEME | SA N° / Séance N° / Durée / Date | Titre
           headerRows =
-            row(cell('Fn°', ficheFn) + cell('Cours', ficheCours) + cell('Classe', className)) +
+            row(cell('Fn°', ficheFn) + cellSpan('Classe', className)) +
             fullRow('THEME', ficheTheme, true) +
             row(cell('SA N°', fiche.san || '—') + cell('Séance N°', ficheSeance) + cell('Durée', ficheDuree)) +
             row(cell('Date', lessonDateStr) + cell('Effectif', `${fiche.totalStudents || '—'} élèves`) + cell('Enseignant', teacherName)) +

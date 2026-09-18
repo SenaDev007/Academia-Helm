@@ -203,6 +203,26 @@ export function estMatiereFicheSansSousMatiere(colonneMatiere: string): boolean 
   return isMath || isEps || isEst;
 }
 
+// ─── ⭐ 2026-09-18 (4e passe promoteur) — Affichage abrégé des matières ──────
+//     « tu peux remplacer éducation scientifique et technologique, tu peux
+//     directement mettre EST, il y a pas de problème. Et pour éducation
+//     physique et sportive également, tu peut mettre EPS simplement. »
+//     → TOUTES les interfaces affichent EST / EPS (en-têtes du cahier journal,
+//       puces « fiche à préparer », liste des fiches, fiches pédagogiques,
+//       catalogue, contrôle directeur…). Les autres matières sont affichées
+//     telles quelles. AFFICHAGE UNIQUEMENT : les clés de données (entries du
+//     cahier journal, __fichesAPreparer__, matieresPlanifiees) restent les noms
+//     complets — aucune migration, aucune rupture de compatibilité.
+export function affichageMatiere(nomMatiere: string): string {
+  const n = normalizeSousMatiere(nomMatiere || "");
+  if (!n) return nomMatiere || "";
+  // Éducation Scientifique et Technologique → EST
+  if (n === "education scientifique et technologique" || n === "est") return "EST";
+  // Éducation Physique et Sportive → EPS
+  if (n === "education physique et sportive" || n === "eps") return "EPS";
+  return nomMatiere;
+}
+
 // ─── Format persisté dans entries.__fichesAPreparer__ ───────────────────────
 //
 //    Historique (2026-09-18 matin) : { lundi: { "Civisme": true } }

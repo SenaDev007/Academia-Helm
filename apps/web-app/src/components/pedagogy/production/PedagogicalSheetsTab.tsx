@@ -10,7 +10,8 @@
  *          EPS (Éducation Physique et Sportive)
  *
  * Structure commune (conforme aux PDFs) :
- *   En-tête : SAN°, Séquence N°, Date, Cours, Titre, Durée
+ *   En-tête : SAN°, Séquence N°, Date, Classe, Titre, Durée
+ *   (⭐ 2026-09-18 — champ « Cours » supprimé : cours = classe)
  *   I- Éléments de planification :
  *     1. Compétences disciplinaires
  *     2. Compétences transversales
@@ -29,7 +30,7 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   FileText, Loader2, Plus, Save, RefreshCw, Send, Trash2,
   ChevronLeft, Clock, CheckCircle2, XCircle, BookOpen, Sigma,
@@ -46,7 +47,7 @@ import {
   getMaternelleDomainInfo,
   normalizeFrText as normalizeMatiereName,
 } from "@/lib/pedagogy/maternelle-domains";
-import { suggestionsPourSheetType } from "@/lib/pedagogy/cahier-sous-matieres";
+import { suggestionsPourSheetType, affichageMatiere } from "@/lib/pedagogy/cahier-sous-matieres";
 
 interface PedagogicalSheetsTabProps {
   tenantId: string;
@@ -69,15 +70,24 @@ interface PedagogicalSheetsTabProps {
   initialSousMatiere?: string;
   /** ⭐ ID d'une fiche existante à ouvrir en édition (depuis "Voir la fiche" dans FichesAPreparer) */
   initialFicheId?: string;
+  /** ⭐ Nonce d'ouverture — incrémenté à CHAQUE clic « Voir » : garantit que
+   *    re-cliquer sur la MÊME fiche (après l'avoir refermée) rouvre le
+   *    formulaire (sinon l'ID identique ne redéclenche pas l'effet). */
+  initialFicheNonce?: number;
+  /** ⭐ Nonce du payload « Préparer » — même logique pour les clics répétés
+   *    sur la même (jour × matière × sous-matière). */
+  initialPayloadNonce?: number;
 }
 
 const SHEET_TYPES = [
   { type: "MATH", label: "Mathématiques", icon: Sigma, color: "bg-blue-100 text-blue-700 border-blue-200", headerBg: "bg-blue-600", sectionBorder: "border-blue-300" },
   { type: "FRANCAIS", label: "Français", icon: BookOpen, color: "bg-emerald-100 text-emerald-700 border-emerald-200", headerBg: "bg-emerald-600", sectionBorder: "border-emerald-300" },
-  { type: "EST", label: "Éducation Scientifique et Technologique", icon: FlaskConical, color: "bg-purple-100 text-purple-700 border-purple-200", headerBg: "bg-purple-600", sectionBorder: "border-purple-300" },
+  // ⭐ 2026-09-18 (4e passe promoteur) — abréviations officielles :
+  //    « tu peux directement mettre EST » / « tu peut mettre EPS simplement ».
+  { type: "EST", label: "EST", icon: FlaskConical, color: "bg-purple-100 text-purple-700 border-purple-200", headerBg: "bg-purple-600", sectionBorder: "border-purple-300" },
   { type: "ES", label: "Éducation Sociale", icon: Users, color: "bg-amber-100 text-amber-700 border-amber-200", headerBg: "bg-amber-600", sectionBorder: "border-amber-300" },
   { type: "EA", label: "Éducation Artistique", icon: Palette, color: "bg-pink-100 text-pink-700 border-pink-200", headerBg: "bg-pink-600", sectionBorder: "border-pink-300" },
-  { type: "EPS", label: "Éducation Physique et Sportive", icon: Dumbbell, color: "bg-cyan-100 text-cyan-700 border-cyan-200", headerBg: "bg-cyan-600", sectionBorder: "border-cyan-300" },
+  { type: "EPS", label: "EPS", icon: Dumbbell, color: "bg-cyan-100 text-cyan-700 border-cyan-200", headerBg: "bg-cyan-600", sectionBorder: "border-cyan-300" },
   // ⭐ 2026-09-15 — MODÈLE STANDARD pour l'ANGLAIS et l'INFORMATIQUE enseignés
   //    comme matières par un enseignant SPÉCIALISÉ (écoles non bilingues).
   //    Même structure que la fiche standard du primaire : éléments de
@@ -276,7 +286,7 @@ const SHEET_TYPE_CONFIG: Record<string, {
   },
 };
 
-export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahierJournalId, initialClassId, initialLessonDay, initialSheetType, initialMatiere, initialSousMatiere, initialFicheId }: PedagogicalSheetsTabProps) {
+export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahierJournalId, initialClassId, initialLessonDay, initialSheetType, initialMatiere, initialSousMatiere, initialFicheId, initialFicheNonce, initialPayloadNonce }: PedagogicalSheetsTabProps) {
   const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
@@ -615,7 +625,10 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       //    travaux manuels → III, expression émotionnelle/plastique → IV,
       //    communication orale/conte/poésie chant comptine/activités libres → V.
       const isMatType = initialSheetType === "DOMAINE" || initialSheetType === "DOMAINE_2";
-      const matLabel = MAT_KEY_LABELS[initialMatiere] || initialMatiere.charAt(0).toUpperCase() + initialMatiere.slice(1);
+      // ⭐ 4e passe : EST / EPS en abrégé dans le titre pré-rempli
+      //    (« Fiche EST », « Fiche EPS », « Fiche Mathématiques »…).
+      const matiereBase = affichageMatiere(initialMatiere);
+      const matLabel = MAT_KEY_LABELS[initialMatiere] || matiereBase.charAt(0).toUpperCase() + matiereBase.slice(1);
       const domInfo = getMaternelleDomainInfo(initialMatiere);
       const autoRoman = domInfo.roman || "";
       const autoDomaineDu = domInfo.domainLabel || "";
@@ -651,10 +664,11 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     // Ouvrir automatiquement le formulaire
     setShowForm(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialSheetType, initialLessonDay, initialMatiere, initialSousMatiere]);
+  }, [initialSheetType, initialLessonDay, initialMatiere, initialSousMatiere, initialPayloadNonce]);
 
   // ⭐ Ouvrir une fiche existante en édition quand initialFicheId est fourni
-  //    (depuis le bouton "Voir la fiche" dans FichesAPreparer)
+  //    (depuis le bouton "Voir la fiche" dans FichesAPreparer / FichesLieesJournal)
+  //    — le nonce redéclenche l'effet à CHAQUE clic « Voir », même sur la même fiche.
   useEffect(() => {
     if (!initialFicheId) return;
     let cancelled = false;
@@ -674,7 +688,30 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialFicheId]);
+  }, [initialFicheId, initialFicheNonce]);
+
+  // ⭐ 2026-09-18 (4e passe promoteur) — DÉFILEMENT AUTOMATIQUE vers le début
+  //    de la fiche quand le formulaire s'ouvre (boutons « Voir » et « Préparer »
+  //    du cahier journal) : « il faut que lorsqu'on clique sur le bouton voir,
+  //    ça puisse nous diriger spécifiquement là où la fiche commence » — sans
+  //    ça, l'utilisateur restait positionné sur la liste et ne « sentait » pas
+  //    qu'il était déjà au niveau de la fiche.
+  //    L'ancre est le DOCUMENT de la fiche (carte blanche à en-tête coloré
+  //    « FICHE DE … ») ; la barre d'actions et le sélecteur de type restent
+  //    accessibles en remontant légèrement.
+  const ficheDocumentRef = useRef<HTMLDivElement>(null);
+  const prevShowFormRef = useRef(false);
+  useEffect(() => {
+    const wasOpen = prevShowFormRef.current;
+    prevShowFormRef.current = showForm;
+    if (!showForm || wasOpen) return;
+    // Laisser le rendu se poser (montage des RichTextEditors…) puis défiler
+    // en douceur vers le début du document de la fiche.
+    const t = setTimeout(() => {
+      ficheDocumentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 150);
+    return () => clearTimeout(t);
+  }, [showForm]);
 
   // === CRUD ===
   const handleCreateOrUpdate = async () => {
@@ -875,7 +912,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
           </div>
 
           {/* === Document — Modèle officiel maternelle === */}
-          <div className="bg-white rounded-xl border-2 border-slate-800 p-6 space-y-6">
+          {/* ⭐ Ancre du défilement automatique « Voir »/« Préparer » (4e passe) */}
+          <div ref={ficheDocumentRef} className="scroll-mt-4 bg-white rounded-xl border-2 border-slate-800 p-6 space-y-6">
             {/* En-tête ÉCOLE MATERNELLE */}
             <div className="text-center border-b-2 pb-4 rounded-t-lg -mx-6 -mt-6 px-6 py-3 bg-slate-800">
               <h2 className="text-lg font-bold text-white uppercase tracking-wide">ÉCOLE MATERNELLE</h2>
@@ -1330,7 +1368,9 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
         </div>
 
         {/* === Document — Structure conforme au PDF === */}
-        <div className={cn("bg-white rounded-xl border-2 p-6 space-y-6", sheetType?.sectionBorder || "border-slate-800")}>
+        {/* ⭐ Ancre du défilement automatique « Voir »/« Préparer » (4e passe) :
+            c'est LÀ que « la fiche commence » — l'en-tête coloré FICHE DE … */}
+        <div ref={ficheDocumentRef} className={cn("scroll-mt-4 bg-white rounded-xl border-2 p-6 space-y-6", sheetType?.sectionBorder || "border-slate-800")}>
           {/* En-tête avec couleur spécifique au type */}
           <div className={cn("text-center border-b-2 pb-3 rounded-t-lg -mx-6 -mt-6 px-6 py-3", sheetType?.headerBg || "bg-slate-800")}>
             <h2 className="text-lg font-bold text-white uppercase">
@@ -1363,8 +1403,10 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                 </datalist>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                {/* ⭐ 4e passe promoteur : champ « Cours » SUPPRIMÉ — « cours » et
+                    « classe », c'est la même chose ; seul « Classe » est conservé. */}
                 {[
-                  { label: "Cours", key: "cours" }, { label: "Durée", key: "duree" },
+                  { label: "Durée", key: "duree" },
                   { label: "Unité N°", key: "unite" }, { label: "Étape N°", key: "etape" },
                   { label: "Date", key: "lessonDate", type: "date" },
                 ].map(f => (
@@ -1390,12 +1432,12 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
           ) : form.sheetType === "MATH" ? (
             <>
               {/* MATH — modèle officiel « dossiers » :
-                  Fn°/Cours/Classe → DOSSIER N° → THEME → SA N° + Thème (sous-thème) →
+                  Fn°/Classe → DOSSIER N° → THEME → SA N° + Thème (sous-thème) →
                   Séquence N° / Séance N° / Durée / Date → Titre */}
               <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                {/* ⭐ 4e passe promoteur : champ « Cours » SUPPRIMÉ (cours = classe). */}
                 {[
                   { label: "Fn°", key: "fn", placeholder: "N° de la fiche" },
-                  { label: "Cours", key: "cours", placeholder: "Ex : CM1" },
                   { label: "SA N°", key: "san", placeholder: "Ex : 1" },
                   { label: "Séquence N°", key: "sequence", placeholder: "Ex : 0" },
                   { label: "Séance N°", key: "seance", placeholder: "Ex : 0" },
@@ -1453,11 +1495,11 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
           ) : (
             <>
               {/* ES / EST / EA / EPS / STANDARD — modèle officiel :
-                  Fn°/Cours/Classe → THEME → SA N° / Séance N° / Durée / Date → Titre */}
+                  Fn°/Classe → THEME → SA N° / Séance N° / Durée / Date → Titre */}
               <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                {/* ⭐ 4e passe promoteur : champ « Cours » SUPPRIMÉ (cours = classe). */}
                 {[
                   { label: "Fn°", key: "fn", placeholder: "N° de la fiche" },
-                  { label: "Cours", key: "cours", placeholder: "Ex : CM1" },
                   { label: "SA N°", key: "san", placeholder: "Ex : 6" },
                   { label: "Séance N°", key: "seance", placeholder: "Ex : 7" },
                   { label: "Durée", key: "duree", placeholder: "Ex : 60 min" },
@@ -1858,7 +1900,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                         a.href = url;
                         // ⭐ Nom du fichier : Fiche pédagogique [matière] [jour] [date] période [date] à [date]
                         const SHEET_LABELS: Record<string, string> = {
-                          MATH: 'Mathematiques', FRANCAIS: 'Francais', EST: 'EST', ES: 'Education Sociale', EA: 'Education Artistique', EPS: 'Education Physique et Sportive',
+                          MATH: 'Mathematiques', FRANCAIS: 'Francais', EST: 'EST', ES: 'Education Sociale', EA: 'Education Artistique', EPS: 'EPS',
                           DOMAINE: 'Domaine', DOMAINE_2: 'Domaine 2',
                         };
                         const matiere = SHEET_LABELS[fiche.sheetType] || fiche.sheetType || 'Fiche';

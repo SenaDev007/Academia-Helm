@@ -83,10 +83,10 @@ type NavStep = { type: NavLevel; id: string; label: string };
 const SHEET_LABELS: Record<string, { label: string; icon: any; color: string }> = {
   MATH: { label: "Mathématiques", icon: Sigma, color: "bg-blue-100 text-blue-700" },
   FRANCAIS: { label: "Français", icon: BookOpen, color: "bg-emerald-100 text-emerald-700" },
-  EST: { label: "Éduc. Scientifique & Tech.", icon: FlaskConical, color: "bg-purple-100 text-purple-700" },
+  EST: { label: "EST", icon: FlaskConical, color: "bg-purple-100 text-purple-700" },
   ES: { label: "Éducation Sociale", icon: Users, color: "bg-amber-100 text-amber-700" },
   EA: { label: "Éducation Artistique", icon: Palette, color: "bg-pink-100 text-pink-700" },
-  EPS: { label: "Éducation Physique et Sportive", icon: Dumbbell, color: "bg-cyan-100 text-cyan-700" },
+  EPS: { label: "EPS", icon: Dumbbell, color: "bg-cyan-100 text-cyan-700" },
 };
 
 const STATUS_BADGES: Record<string, { label: string; color: string; icon: any }> = {

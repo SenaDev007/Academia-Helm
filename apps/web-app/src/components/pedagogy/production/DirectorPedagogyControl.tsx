@@ -85,10 +85,10 @@ type TabId = typeof TABS[number]["id"];
 const SHEET_TYPE_LABELS: Record<string, { label: string; icon: any; color: string }> = {
   MATH: { label: "Mathématiques", icon: Sigma, color: "bg-blue-100 text-blue-700" },
   FRANCAIS: { label: "Français", icon: BookOpen, color: "bg-emerald-100 text-emerald-700" },
-  EST: { label: "Éduc. Scientifique & Tech.", icon: FlaskConical, color: "bg-purple-100 text-purple-700" },
+  EST: { label: "EST", icon: FlaskConical, color: "bg-purple-100 text-purple-700" },
   ES: { label: "Éducation Sociale", icon: Users, color: "bg-amber-100 text-amber-700" },
   EA: { label: "Éducation Artistique", icon: Palette, color: "bg-pink-100 text-pink-700" },
-  EPS: { label: "Éducation Physique et Sportive", icon: Activity, color: "bg-cyan-100 text-cyan-700" },
+  EPS: { label: "EPS", icon: Activity, color: "bg-cyan-100 text-cyan-700" },
   // ⭐ 2026-09-15 — fiche standard pour l'anglais / l'informatique (spécialiste)
   STANDARD: { label: "Anglais / Informatique (fiche standard)", icon: FileText, color: "bg-violet-100 text-violet-700" },
   // ⭐ 2026-09-15 MATERNELLE — 2 formats de fiches dédiés
@@ -3312,10 +3312,10 @@ function AttendanceRegisterDirectorDetail({ register, userId, onBack, onValidate
 const SHEET_TYPE_HEADERS: Record<string, { label: string; bg: string }> = {
   MATH: { label: "MATHÉMATIQUE", bg: "bg-blue-50 border-blue-300" },
   FRANCAIS: { label: "FRANÇAIS", bg: "bg-emerald-50 border-emerald-300" },
-  EST: { label: "ÉDUCATION SCIENTIFIQUE ET TECHNOLOGIQUE", bg: "bg-purple-50 border-purple-300" },
+  EST: { label: "EST", bg: "bg-purple-50 border-purple-300" },
   ES: { label: "ÉDUCATION SOCIALE", bg: "bg-amber-50 border-amber-300" },
   EA: { label: "ÉDUCATION ARTISTIQUE", bg: "bg-pink-50 border-pink-300" },
-  EPS: { label: "ÉDUCATION PHYSIQUE ET SPORTIVE", bg: "bg-cyan-50 border-cyan-300" },
+  EPS: { label: "EPS", bg: "bg-cyan-50 border-cyan-300" },
   STANDARD: { label: "ANGLAIS / INFORMATIQUE", bg: "bg-violet-50 border-violet-300" },
 };
 

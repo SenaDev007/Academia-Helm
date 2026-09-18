@@ -30,6 +30,7 @@ import { bindDynamicSubjectsToColumns, buildMaternelleEntryKeyResolver, type Dyn
 import {
   resoudreSousMatieres,
   estMatiereFicheSansSousMatiere,
+  affichageMatiere,
   normaliserValeurFichesAPreparer,
   type SousMatiereFiche,
   type FichesAPreparerState,
@@ -185,12 +186,14 @@ function SousMatieresFichesBar({
   //    le système considère que c'est une fiche à préparer).
   if (sousMatieres.length === 0 && !open) {
     const marquageDirect = !!ficheSansNom && !!onToggleFiche;
+    // Élision française : « la fiche d'EST / d'EPS » vs « la fiche de Mathématiques »
+    const de = /^[AEÉÈÊIÎOÔUÛHY]/.test(matiere) ? "d'" : "de ";
     return (
       <button
         type="button"
         onClick={() => (marquageDirect ? onToggleFiche!() : setOpen(true))}
         title={marquageDirect
-          ? `Marquer cette séance comme fiche à préparer — tout le contenu figure sur la fiche de ${matiere} (sous-matière facultative)`
+          ? `Marquer cette séance comme fiche à préparer — tout le contenu figure sur la fiche ${de}${matiere} (sous-matière facultative)`
           : "Renseigner la(les) sous-matière(s) de cette séance — chaque sous-matière donne une fiche pédagogique à préparer"}
         className="w-full flex items-center gap-1 px-1.5 py-1 bg-amber-50/70 border-b border-amber-200 text-[10px] font-bold text-amber-700 hover:bg-amber-100 transition-all text-left"
       >
@@ -933,6 +936,13 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   const thisWeek = () => setWeekStart(getMondayOfWeek(new Date()));
 
   // === Mise à jour d'une case (day × subject) ===
+  // ⭐ 2026-09-18 (4e passe promoteur) — MATH / EST / EPS : dès que la cellule
+  //    est REMPLIE, la séance est AUTOMATIQUEMENT marquée « fiche à remplir »
+  //    (une fiche de la matière, sans sous-matière — tout le contenu figure
+  //    déjà sur la fiche de préparation). L'enseignant n'a plus besoin de
+  //    cliquer « Fiche à préparer + » : le marquage suit la saisie.
+  //    Primaire uniquement — la maternelle conserve son marquage manuel par
+  //    activité (grille officielle par domaines).
   const updateEntry = (dayKey: string, subjectKey: string, value: string) => {
     setEntries(prev => ({
       ...prev,
@@ -941,6 +951,34 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
         [subjectKey]: value,
       },
     }));
+    if (
+      !isMaternelleClass &&
+      estMatiereFicheSansSousMatiere(subjectKey) &&
+      contenuCelluleNonVide(value) &&
+      (fichesAPreparer[dayKey]?.[subjectKey] || []).length === 0
+    ) {
+      setFichesAPreparer(prev => {
+        // Sécurité : ne rien écraser si l'enseignant a déjà marqué des
+        // fiches (manuellement ou via sous-matières nommées) entre-temps.
+        if ((prev[dayKey]?.[subjectKey] || []).length > 0) return prev;
+        const dayMap = { ...(prev[dayKey] || {}) };
+        dayMap[subjectKey] = [{ nom: "" }];
+        return { ...prev, [dayKey]: dayMap };
+      });
+    }
+  };
+
+  // ⭐ 2026-09-18 (4e passe) — une cellule a-t-elle du contenu réel ?
+  //    (les éditeurs rich-text émettent du HTML : « <p><br></p> », « &nbsp; »
+  //    sont des contenus VIDES — on ne marque pas la fiche dans ce cas)
+  const contenuCelluleNonVide = (html: string): boolean => {
+    const text = (html || "")
+      .replace(/<br\s*\/?>/gi, " ")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return text.length > 0;
   };
 
   const getEntry = (dayKey: string, subjectKey: string): string => {
@@ -1196,7 +1234,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                     const subLabels = getColumnSubLabels(col);
                     return (
                       <th key={key} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "180px" }}>
-                        <div className="font-bold">{key}</div>
+                        {/* ⭐ 4e passe : EST / EPS affichés en abrégé (clé de données inchangée) */}
+                        <div className="font-bold">{affichageMatiere(key)}</div>
                         {subLabels.length > 0 && (
                           <div className="mt-1 pt-1 border-t border-slate-300 text-[9px] font-normal text-slate-500 normal-case">
                             {subLabels.map((label, i) => (
@@ -1235,7 +1274,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                         <td key={key} className="border border-slate-300 p-0 relative">
                           {/* ⭐ FEATURE : sous-matières renseignées = fiches à préparer */}
                           <SousMatieresFichesBar
-                            matiere={key}
+                            matiere={affichageMatiere(key)}
                             sousMatieres={getSousMatieres(day.key, key)}
                             suggestions={sousMatieresSuggestions}
                             readOnly={!!isReadOnly}
@@ -1295,7 +1334,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                     const subLabels = getColumnSubLabels(col);
                     return (
                       <th key={key} className="border border-slate-300 px-2 py-2 text-xs font-bold text-slate-700 uppercase align-top" style={{ minWidth: "160px" }}>
-                        <div className="font-bold">{key}</div>
+                        {/* ⭐ 4e passe : EST / EPS affichés en abrégé (clé de données inchangée) */}
+                        <div className="font-bold">{affichageMatiere(key)}</div>
                         {subLabels.length > 0 && (
                           <div className="mt-1 pt-1 border-t border-slate-300 text-[9px] font-normal text-slate-500 normal-case">
                             {subLabels.map((label, i) => (
@@ -1328,7 +1368,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                         <td key={key} className="border border-slate-300 p-0 relative">
                           {/* ⭐ FEATURE : sous-matières renseignées = fiches à préparer */}
                           <SousMatieresFichesBar
-                            matiere={key}
+                            matiere={affichageMatiere(key)}
                             sousMatieres={getSousMatieres(day.key, key)}
                             suggestions={sousMatieresSuggestions}
                             readOnly={!!isReadOnly}

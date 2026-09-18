@@ -50,6 +50,7 @@ import {
   mapMatiereNameToSheetType,
   MAT_LEGACY_LABELS as MAT_MATIERE_LABELS,
 } from "@/lib/pedagogy/maternelle-domains";
+import { affichageMatiere } from "@/lib/pedagogy/cahier-sous-matieres";
 
 type SubTab = "cahier" | "fiches" | "catalogue";
 
@@ -106,8 +107,18 @@ export function CahierJournalFichesContainer({
   // ⭐ ClassId récupéré depuis le cahier journal — passé à PedagogicalSheetsTab
   //    pour pré-sélectionner automatiquement la classe
   const [currentClassId, setCurrentClassId] = useState<string | null>(null);
-  // ⭐ ID d'une fiche existante à ouvrir en édition (depuis "Voir la fiche")
-  const [viewFicheId, setViewFicheId] = useState<string | null>(null);
+  // ⭐ ID d'une fiche existante à ouvrir en édition (depuis "Voir la fiche").
+  //    Porté par une REQUÊTE {id, nonce} : le nonce garantit que re-cliquer
+  //    « Voir » sur la MÊME fiche (après l'avoir refermée) rouvre bien le
+  //    formulaire — sinon l'ID ne change pas et l'effet d'ouverture ne se
+  //    redéclenche pas (le clic semblait « ne rien faire »).
+  const [viewFicheRequest, setViewFicheRequest] = useState<{ id: string | null; nonce: number }>({
+    id: null,
+    nonce: 0,
+  });
+  // ⭐ Nonce du payload « Préparer » — même logique : re-cliquer « Préparer »
+  //    pour la même (jour × matière × sous-matière) rouvre le formulaire.
+  const [pendingPayloadNonce, setPendingPayloadNonce] = useState(0);
 
   // Quand CahierJournalTab appelle onJournalSaved/onJournalSubmitted avec
   // l'ID du cahier journal, on bascule vers le sous-onglet fiches.
@@ -173,16 +184,21 @@ export function CahierJournalFichesContainer({
   const handlePrepareFicheFor = useCallback(
     (day: string, matiere: string, sheetType?: string, sousMatiere?: string) => {
       setPendingInitialPayload({ day, matiere, sheetType, sousMatiere });
-      setViewFicheId(null); // Clear view mode — on veut créer, pas voir
+      setPendingPayloadNonce((n) => n + 1);
+      setViewFicheRequest({ id: null, nonce: 0 }); // Clear view mode — on veut créer, pas voir
       setSubTab("fiches");
     },
     [],
   );
 
   // ⭐ L'utilisateur clique sur "Voir la fiche" — ouvre la fiche existante en édition
+  //    + demande de DÉFILEMENT vers le début de la fiche (demande promoteur :
+  //    « lorsqu'on clique sur le bouton voir, ça puisse nous diriger
+  //    spécifiquement là où la fiche commence » — cf. PedagogicalSheetsTab,
+  //    effet d'ancrage sur l'ouverture du formulaire).
   const handleViewFiche = useCallback(
     (ficheId: string) => {
-      setViewFicheId(ficheId);
+      setViewFicheRequest((prev) => ({ id: ficheId, nonce: prev.nonce + 1 }));
       setPendingInitialPayload(null); // Clear prepare mode
       setSubTab("fiches");
     },
@@ -323,7 +339,7 @@ export function CahierJournalFichesContainer({
                     // ⭐ Bouton "Créer une fiche libre" — ouvre le formulaire
                     //    sans pré-remplissage (l'utilisateur choisit tout)
                     setPendingInitialPayload(null);
-                    setViewFicheId(null);
+                    setViewFicheRequest({ id: null, nonce: 0 });
                     // On ne fait rien ici — le formulaire PedagogicalSheetsTab
                     // a son propre bouton "+ Nouvelle fiche" qui s'affichera en bas
                     // Scroller vers le formulaire
@@ -344,7 +360,9 @@ export function CahierJournalFichesContainer({
                     initialSheetType={pendingInitialPayload?.sheetType}
                     initialMatiere={pendingInitialPayload?.matiere}
                     initialSousMatiere={pendingInitialPayload?.sousMatiere}
-                    initialFicheId={viewFicheId || undefined}
+                    initialFicheId={viewFicheRequest.id || undefined}
+                    initialFicheNonce={viewFicheRequest.nonce}
+                    initialPayloadNonce={pendingPayloadNonce}
                   />
                 </div>
               </>
@@ -732,6 +750,10 @@ function FichesAPreparer({
                       ? m.sousMatieres
                       : [{ nom: "", fichePreparede: m.fichePreparede, ficheId: m.ficheId }];
                   const matiereSheetType = mapMatiereToSheetType(m.matiere, isMaternelle);
+                  // ⭐ 4e passe promoteur : nom de matière LISIBLE — EST / EPS en
+                  //    abrégé (les clés de données restent les noms complets).
+                  const matiereAffichee =
+                    MATIERE_LABELS[m.matiere] || affichageMatiere(m.matiere.replace(/_/g, " "));
                   return (
                     <div
                       key={`${day}-${m.matiere}`}
@@ -747,7 +769,7 @@ function FichesAPreparer({
                           <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
                         )}
                         <span className="font-bold text-slate-700 truncate capitalize">
-                          {MATIERE_LABELS[m.matiere] || m.matiere.replace(/_/g, " ")}
+                          {matiereAffichee}
                         </span>
                         <span className="ml-auto text-[10px] font-bold text-slate-400 shrink-0">
                           {sousMatieres.filter((sm) => sm.fichePreparede).length}/{sousMatieres.length}
@@ -766,9 +788,11 @@ function FichesAPreparer({
                                 <AlertCircle className="h-3 w-3 text-amber-600 shrink-0" />
                               )}
                               <span className="font-medium text-slate-600 truncate">
-                                {sm.nom
-                                  ? sm.nom
-                                  : "Fiche de la matière"}
+                                {/* ⭐ 4e passe promoteur : la fiche sans sous-matière
+                                    porte le NOM RÉEL de la matière (« Mathématiques »,
+                                    « EST », « EPS »…) au lieu du générique
+                                    « Fiche de la matière ». */}
+                                {sm.nom ? sm.nom : matiereAffichee}
                               </span>
                             </div>
                             {sm.fichePreparede ? (
@@ -942,7 +966,7 @@ function FichesLieesJournal({
                     a.href = url;
                     // ⭐ Nom du fichier : Fiche pédagogique [matière] [jour] [date] période [date] à [date]
                     const SHEET_LABELS: Record<string, string> = {
-                      MATH: 'Mathematiques', FRANCAIS: 'Francais', EST: 'EST', ES: 'Education Sociale', EA: 'Education Artistique', EPS: 'Education Physique et Sportive',
+                      MATH: 'Mathematiques', FRANCAIS: 'Francais', EST: 'EST', ES: 'Education Sociale', EA: 'Education Artistique', EPS: 'EPS',
                       DOMAINE: 'Domaine', DOMAINE_2: 'Domaine 2', STANDARD: 'Anglais-Informatique',
                     };
                     const matiere = SHEET_LABELS[fiche.sheetType] || fiche.sheetType || 'Fiche';

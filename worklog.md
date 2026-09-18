@@ -11377,3 +11377,29 @@ Stage Summary:
 - ✅ Chaque page de login par portail (École, Enseignant, Parent) affiche les comptes de test du portail courant ; les vraies écoles ne voient jamais ce panneau (détection stricte slug/UUID/nom).
 - ✅ Mot de passe uniforme HelmTest2026! sur les 12 comptes de test (owner réel protégé), liaisons réparées (parent téléphone/email, teacher YAROU) — 8/8 scénarios E2E validés en production.
 - Reste : validation visuelle post-déploiement par le promoteur sur https://academia-helm.academiahelm.com et les 3 portails ; anomalies encore ouvertes (React #130 login secrétaire comptable, HTTP 500 catalogue/cahier journal, « non affecté » onglet inscription) à reproduire désormais sur Academia Helm.
+
+---
+Task ID: 21
+Agent: Super Z (principal)
+Task: Retours promoteur — cahier journal « expression écrite » ; modal « Mon profil » (libellé de rôle, changement d'email, photo RH)
+
+Work Log:
+- CAHIER JOURNAL : « Expression écrite simple » SUPPRIMÉE du catalogue (cahier-sous-matieres.ts) — l'officielle « Expression écrite » y figure déjà ; « (imprégnation) » et « (premier jet) » conservées.
+- MODAL « MON PROFIL » — LIBELLÉ DE RÔLE : le profil API (rôle brut) écrasait le fallback formaté → s'affichait l'ID technique (« secretaire comptable mat pri »). Fix : getRoleDisplayLabel(role-portal-map) + NOUVEAU fallback à suffixes de niveau (regex lazy MAT_PRI|MATERNELLE|PRIMAIRE|SECONDAIRE|MAT|PRI|SEC|GEN|EN → « libellé de base + niveau ») + entrées fallback complétées (SURVEILLANT_GENERAL, PROVISEUR, INTENDANT, DIRECTEUR_ADJOINT, RESP_SCOLARITE). SECRETAIRE_COMPTABLE_MAT_PRI → « Secrétaire Comptable Maternelle + Primaire ».
+- MODAL « MON PROFIL » — CHANGEMENT D'ADRESSE EMAIL (nouveau) :
+  * Onglet Sécurité : écran de choix avec DEUX options (mot de passe | adresse email) + retour « Autres options de sécurité ».
+  * Backend auth.service/controller : POST /auth/request-email-change { newEmail } + POST /auth/confirm-email-change { code, newEmail } — même mécanique OTP que forgot-password (password_resets, bcrypt, 10 min, anciens codes invalidés) MAIS code envoyé à la NOUVELLE adresse et LIÉ à la demande via nouvelle colonne password_resets.pendingEmail (migration 20260919100000, appliquée sur Neon AVANT le push — nullable, 0 ligne touchée). Confirm : transaction email+code consommé, vérif unicité (409), TOUTES les sessions invalidées, notification à l'ANCIENNE adresse (template dédié « alerte de sécurité »). Templates email « Confirmez votre nouvelle adresse » (charte navy/blue/gold).
+  * BFF : /api/auth/request-email-change + /api/auth/confirm-email-change (getProxyAuthHeaders + body).
+  * UX miroir « mot de passe oublié » : 6 cases OTP auto-submit, cooldown 60 s, renvoi, « Modifier l'adresse », reconnexion obligatoire.
+- MODAL « MON PROFIL » — PHOTO RH : GET /users/me/profile renvoie hrPhotoUrl (staff_photos du dossier du personnel — liaison Staff↔User par email+tenant, lecture seule, data URL/http uniquement) quand l'utilisateur n'a pas de photo perso. Chaîne d'affichage : avatarUrl (perso) > hrPhotoUrl (RH) > initiales — modal + store + useAvatarUrl (toutes les topbars). Note explicative « Photo issue de votre dossier du personnel (module RH) » quand seul le fallback s'affiche ; « Supprimer ma photo » uniquement pour la photo perso.
+- VALIDATION PRODUCTION (déploiements Railway+Vercel confirmés, commit 0e6e40df0 après rebase sur 04277619b) :
+  * E2E API (compte de test recette.sec-comptable2@academia-helm.test) : profile 200 avec hrPhotoUrl (photo RH 70 Ko) ; request-email-change 200 (code réellement envoyé — emailSent=true) ; mauvais code → 403 ; bon code → 200, users.email changé, 0 session restante, login OK avec la nouvelle adresse ; 409 sur email déjà prise ; nettoyage complet (email restauré, OTP purgés).
+  * Navigateur : modal ouvert sur le portail École → libellé « Secrétaire Comptable Maternelle + Primaire » (VLM confirmé sur capture), photo RH affichée, bouton « Changer ma photo » ; onglet Sécurité → les DEUX options ; flux email → écran OTP 6 chiffres → erreur « Code invalide » sur mauvais code + cooldown.
+  * Cahier journal (enseignant de test blaise.helm, classe CI) : datalist sous-matières = Dictée…Expression écrite…(imprégnation)/(premier jet)… — « Expression écrite simple » ABSENTE ✅.
+- Données de test créées sur le tenant de TEST academia-helm (178d5b6b) pour la vérification : sujet Français (PRIMAIRE), class_subjects Français-CI, affectation blaise.helm↔CI·Français ; mots de passe des 2 comptes de test réalignés sur la convention HelmTest2026!.
+
+Stage Summary:
+- ✅ Cahier journal : sous-matière = « Expression écrite » (plus de variante « simple »)
+- ✅ Modal profil : libellé de rôle réel (jamais l'ID technique) — catalogue canonique + suffixes de niveau
+- ✅ Modal profil : Sécurité = mot de passe ET adresse email (OTP vers la nouvelle adresse, sessions invalidées, notification ancienne adresse) — validé E2E production
+- ✅ Modal profil : photos définies dans le module RH s'affichent partout (fallback), remplaçables par une photo perso

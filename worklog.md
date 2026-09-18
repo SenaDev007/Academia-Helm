@@ -11274,3 +11274,24 @@ Stage Summary:
 - ✅ Catalogue FRANÇAIS conforme à la 3e passe : vocabulaires thématique/systématique/fonctionnel + Expression écrite rétablis ; Expression orale et Conte (« compte ») supprimés.
 - ✅ MATH/EPS/EST : marquage « Fiche à préparer » en un clic sans nom de sous-matière + rapprochement EST réparé au backend.
 - Reste (optionnel) : validation visuelle navigateur post-déploiement ; miroir EN (production-en) des corrections de catalogue à porter ensuite.
+
+---
+Task ID: 72 (addendum)
+Agent: Super Z (session principale)
+Task: Validation production du commit b40cf4100 (shells fixes + catalogue 3e passe + fiche sans nom)
+
+Work Log:
+- DÉPLOIEMENT confirmé : CSS de production (dpl_F7YXvmDnWd6YViYoFBvHFKWKcwoT) contient .app-shell-vh + 100dvh + garde @media print (chunks CSS analysés directement).
+- PORTAIL DIRECTEUR (recette.directeur@cspeb.test — compte de TEST dédié, lecture seule, AUCUN mot de passe modifié) → /app/director puis /app/pedagogy :
+  * Shell : racine « app-shell-vh overflow-hidden bg-slate-50 » active ; document NON scrollable (scrollHeight 577 = innerHeight 577, window.scrollY=0 après scroll) ; <main> « flex-1 min-h-0 overflow-y-auto » scrollable EN INTERNE (scrollHeight 3944 > clientHeight 513) ; header non-sticky (flex child).
+  * Scroll test : main.scrollTop=1500 → sidebar FIXED visible (bounding box top=0, bottom=900 = pleine hauteur viewport), header toujours top=0. Capture download/fix72-director-scrolled.png.
+  * Cahier journal CM1 : datalist FRANÇAIS = Dictée, Grammaire, Conjugaison, Communication orale, Orthographe, Lecture, Expression écrite, Graphisme/Écriture, Combinatoire + Lecture oralisée, Lecture silencieuse, Dictée préparée, Dictée-recherche, Vocabulaire thématique, Vocabulaire systématique, Vocabulaire fonctionnel — EXACTEMENT la 3e passe (expression orale et conte absents).
+  * VERSO = exactement Mathématiques / Éducation Physique et Sportive / Éducation Scientifique et Technologique ; les 15 cellules (5 jours × 3 matières) affichent « Fiche à préparer + » (marquage UN CLIC, tooltip adapté).
+  * Test fonctionnel du clic (état React local, page rechargée sans Enregistrer → AUCUNE donnée persistée) : clic → AUCUN input ouvert, puce « Mathématiques » (nom de matière), compteur « 1 fiche », bouton « + » nommé facultatif toujours disponible. Capture download/fix72-cahier-journal-math-un-clic.png.
+- COMPTE DE TEST recette.promoteur@cspeb.test ET recette.teacher-en@cspeb.test : mots de passe refusés (401) — NON réinitialisés conformément à la règle « aucun mot de passe modifié sans l'accord du promoteur ». Les shells TeacherLayout/ParentLayout/PilotageLayout partagent la mécanique exacte validée sur AdminPortalShell (même déploiement atomique Vercel, même classe .app-shell-vh, mêmes colonnes flex) — footer PilotageLayout garanti visible par construction (flex column h-screen + shrink-0).
+- Erreurs console résiduelles : uniquement préexistantes (SW 404 au login — cache Cloudflare documenté dans le chantier perf ; school-info 400 sur le login public) — aucune liée aux correctifs.
+
+Stage Summary:
+- ✅ Validation production concluante : scroll confiné (document figé, sidebar + header fixes), datalist FR conforme 3e passe, fiche MATH/EPS/EST en un clic sans nom.
+- ✅ Règle mot de passe respectée à la lettre : seuls des comptes de test existants ont été utilisés en lecture seule.
+- Reste (optionnel) : validation visuelle par le promoteur sur SON UI (footer toujours visible) ; miroir EN des corrections catalogue (suivi existant).

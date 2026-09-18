@@ -38,6 +38,11 @@ export class SyncPullDto {
 /// DTO pour un enregistrement à pusher vers Neon
 /// ⭐ Accepte à la fois camelCase et snake_case
 export class SyncPushRecordDto {
+  // ⭐ FIX 2026-09-18 : variante camelCase OPTIONNELLE du snake_case
+  //    table_name — sans @IsOptional(), class-validator rejette les
+  //    payloads qui n'envoient QUE le snake_case (« tableName must be a
+  //    string », cf. même correctif que reset-password.dto.ts).
+  @IsOptional()
   @IsString()
   tableName?: string;
 
@@ -45,6 +50,7 @@ export class SyncPushRecordDto {
   @IsString()
   table_name?: string;
 
+  @IsOptional()
   @IsString()
   recordId?: string;
 

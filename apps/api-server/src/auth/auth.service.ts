@@ -1360,8 +1360,17 @@ export class AuthService {
    * Avec logo, signature complète et design responsive
    */
   private buildOtpEmailTemplate(firstName: string, otpCode: string): string {
+    // ⭐ FIX 2026-09-18 (retour promoteur) : l'ancien logo d'en-tête
+    //    n'était PAS le vrai logo Academia Helm. Le fichier
+    //    /images/logo-academia-helm-email.png a été REMPLACÉ par le vrai
+    //    logo (logo-Academia Hub.png, redimensionné 128×128, PNG
+    //    transparent) : URL propre (pas d'espace), fichier léger (18 Ko)
+    //    pour les clients mail — et les ANCIENS emails déjà envoyés qui
+    //    référencent cette URL affichent désormais le vrai logo aussi.
+    //    La signature « Cordialement, l'équipe Academia Helm » utilise le
+    //    même fichier (cohérence totale header ↔ signature).
     const logoUrl = this.configService.get<string>('APP_PUBLIC_URL', 'https://academiahelm.com') + '/images/logo-academia-helm-email.png';
-    const signatureLogoUrl = this.configService.get<string>('APP_PUBLIC_URL', 'https://academiahelm.com') + '/images/logo-Academia Hub.png';
+    const signatureLogoUrl = logoUrl;
     const currentYear = new Date().getFullYear();
 
     return `

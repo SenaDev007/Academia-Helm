@@ -350,6 +350,10 @@ export class EmailService {
 
     const subject = `${urgency ? `[${urgency}] ` : ''}Rappel - ${data.schoolName} - Expiration dans ${data.daysRemaining} jour${data.daysRemaining > 1 ? 's' : ''}`;
 
+    // ⭐ FIX 2026-09-18 (retour promoteur) : le fichier
+    //    /images/logo-academia-helm-email.png a été remplacé par le VRAI
+    //    logo Academia Helm (128×128, PNG transparent) — même image que la
+    //    signature des emails OTP.
     const logoUrl = this.configService.get<string>('APP_PUBLIC_URL', 'https://academiahelm.com') + '/images/logo-academia-helm-email.png';
 
     const html = `

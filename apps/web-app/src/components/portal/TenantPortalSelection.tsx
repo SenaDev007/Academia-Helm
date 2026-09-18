@@ -30,6 +30,9 @@ import { QueryProvider } from '@/providers/QueryProvider';
 import { extractTenantSlug } from '@/lib/tenant/constants';
 import { resolveTenantColors } from '@/lib/tenant/use-tenant-colors';
 import { type DepartmentData } from '@/data/benin-departments';
+// ⭐ Tenant de test Academia Helm — panneau d'identifiants de test (tous portails)
+import TestCredentialsPanel from '@/components/auth/TestCredentialsPanel';
+import { setTestCredentialPrefill } from '@/lib/auth/test-credentials';
 
 type PortalType = 'SCHOOL' | 'TEACHER' | 'PARENT' | 'PUBLIC';
 
@@ -387,6 +390,21 @@ export default function TenantPortalSelection({
                   );
                 })}
               </div>
+
+              {/* ⭐ Tenant de test Academia Helm : comptes de test (tous portails) */}
+              {/* Affiché uniquement si l'école courante est le tenant de test.
+                  Chaque compte propose « Utiliser » : mémorisation (sessionStorage)
+                  puis redirection vers /login du portail concerné, pré-rempli —
+                  en réutilisant handlePortalClick (persistance du branding). */}
+              <TestCredentialsPanel
+                variant="selector"
+                tenantKey={slug || null}
+                schoolName={school?.name || null}
+                onUseAccount={(account) => {
+                  setTestCredentialPrefill(account);
+                  handlePortalClick(account.portal.toUpperCase() as PortalType);
+                }}
+              />
 
               {/* Bouton retour site institutionnel */}
               <Link

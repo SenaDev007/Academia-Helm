@@ -98,6 +98,8 @@ export async function POST(request: NextRequest) {
       email: data.user.email,
       firstName: data.user.firstName || '',
       lastName: data.user.lastName || '',
+      // ⭐ Photo de profil (users.avatarUrl) — affichée par les avatars des portails
+      avatarUrl: (data.user as any).avatarUrl || undefined,
       role: (data.user.role || 'USER') as any,
       portal: 'TEACHER' as any,
       tenantId: data.user.tenantId || tenantId,

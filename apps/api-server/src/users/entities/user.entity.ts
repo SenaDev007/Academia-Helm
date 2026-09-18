@@ -45,6 +45,11 @@ export class User {
   @Column({ nullable: true })
   role: string;
 
+  // ⭐ Photo de profil (data URL optimisée) — colonne users.avatarUrl créée
+  //    par Helm Connect v2 (migration 20260824020000), déclarée en Prisma.
+  @Column({ nullable: true })
+  avatarUrl: string;
+
   @Column({ nullable: true })
   lastLogin: Date;
 

@@ -22,6 +22,10 @@ import Image from 'next/image';
 import { Bell, RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, ChevronDown, Settings, HelpCircle, School, Globe, Star } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { clearClientSessionSync } from '@/lib/auth/client-access-token';
+// ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service)
+import UserAvatar from '@/components/profile/UserAvatar';
+import ProfileDialog from '@/components/profile/ProfileDialog';
+import { useUserProfileStore } from '@/stores/user-profile-store';
 import AcademicYearSelector from './AcademicYearSelector';
 import SchoolLevelSelector from './SchoolLevelSelector';
 // ⛔ 2026-09-12 : AcademicTrackSelector RETIRÉ de la topbar — l'utilisateur n'a
@@ -243,6 +247,14 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
   const [orionAlertsCount, setOrionAlertsCount] = useState(0);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  // ⭐ « Mon profil » — dialogue photo de profil + mot de passe
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  // ⭐ Avatar frais (source API) avec repli sur la session serveur
+  const profileAvatarUrl = useUserProfileStore((s) => s.profile?.avatarUrl ?? null);
+  const ensureProfileLoaded = useUserProfileStore((s) => s.ensureLoaded);
+  useEffect(() => {
+    void ensureProfileLoaded();
+  }, [ensureProfileLoaded]);
   const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentity | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -568,9 +580,15 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                   <p className="text-[11px] text-gray-400 font-medium">{formatRoleLabel(user.role)}</p>
                 </div>
                 <div className="relative">
-                  <div className="w-9 h-9 bg-gradient-to-br from-blue-800 to-blue-900 rounded-xl flex items-center justify-center shadow-sm group-hover:shadow-md transition-shadow ring-1 ring-blue-700/20">
-                    <UserIcon className="w-4 h-4 text-white" />
-                  </div>
+                  <UserAvatar
+                    photoUrl={profileAvatarUrl || (user as { avatarUrl?: string })?.avatarUrl || undefined}
+                    firstName={user.firstName}
+                    lastName={user.lastName}
+                    email={user.email}
+                    size={36}
+                    className="rounded-xl shadow-sm group-hover:shadow-md transition-shadow ring-1 ring-blue-700/20"
+                    initialsClassName="bg-gradient-to-br from-blue-800 to-blue-900"
+                  />
                   <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white shadow-sm" />
                 </div>
                 <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${profileDropdownOpen ? 'rotate-180' : ''}`} />
@@ -591,6 +609,17 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
                   </div>
                   
                   <div className="py-1">
+                    {/* ⭐ « Mon profil » — photo de profil + changement de mot de passe */}
+                    <button
+                      onClick={() => {
+                        setProfileDialogOpen(true);
+                        setProfileDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                    >
+                      <UserIcon className="w-4 h-4 text-blue-800" />
+                      <span>Mon profil</span>
+                    </button>
                     {!isPlatformAdmin && (
                     <button
                       onClick={() => {
@@ -669,6 +698,18 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
         schoolName={schoolIdentity?.schoolName || tenant.name || ''}
         city=""
         tenantId={tenant.id}
+      />
+
+      {/* ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service) */}
+      <ProfileDialog
+        open={profileDialogOpen}
+        onClose={() => setProfileDialogOpen(false)}
+        fallbackUser={{
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: formatRoleLabel(user.role),
+        }}
       />
     </header>
   );

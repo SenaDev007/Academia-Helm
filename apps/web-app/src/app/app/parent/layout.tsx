@@ -29,10 +29,13 @@ import {
   LayoutDashboard, Users, CreditCard, FileText,
   CalendarCheck, MessageSquare, Folder, Loader2, Heart,
   Building2, Phone, Mail, MapPin, GraduationCap, LogOut, Menu, X,
-  BookOpen, ClipboardList, CalendarDays,
+  BookOpen, ClipboardList, CalendarDays, UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
+// ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service)
+import ProfileDialog from "@/components/profile/ProfileDialog";
+import { useUserProfileStore } from "@/stores/user-profile-store";
 // ⛔ OFFLINE-FIRST DÉSACTIVÉ
 // import { SyncButton } from "@/components/header/SyncButton";
 import AcademicYearSelector from "@/components/pilotage/AcademicYearSelector";
@@ -68,6 +71,14 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
   useEffect(() => {
     mainScrollRef.current?.scrollTo({ top: 0 });
   }, [pathname]);
+  // ⭐ « Mon profil » — dialogue partagé (photo + mot de passe). Hooks AVANT
+  //    l'early-return « année scolaire » (règles React hooks).
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const profileAvatarUrl = useUserProfileStore((s) => s.profile?.avatarUrl ?? null);
+  const ensureProfileLoaded = useUserProfileStore((s) => s.ensureLoaded);
+  useEffect(() => {
+    void ensureProfileLoaded();
+  }, [ensureProfileLoaded]);
   // ⭐ P4-final : libellés dans la langue du profil (piste EN → anglais)
   const L = useL();
 
@@ -144,17 +155,31 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
           </button>
         </div>
 
-        {/* Profil parent */}
+        {/* Profil parent — photo ou initiales.
+            ⭐ Cliquable : ouvre « Mon profil » (photo + mot de passe). */}
         <div className="px-4 py-3 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-              <Heart className="h-4 w-4 text-emerald-600" />
-            </div>
+          <button
+            type="button"
+            onClick={() => setProfileDialogOpen(true)}
+            className="w-full flex items-center gap-2 rounded-lg p-1 -mx-1 hover:bg-slate-50 transition-colors text-left"
+            title={L("Modifier mon profil (photo, mot de passe)", "Edit my profile (photo, password)")}
+          >
+            {profileAvatarUrl ? (
+              <img
+                src={profileAvatarUrl}
+                alt={parentName}
+                className="h-8 w-8 rounded-full object-cover flex-shrink-0 border border-slate-200"
+              />
+            ) : (
+              <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                <Heart className="h-4 w-4 text-emerald-600" />
+              </div>
+            )}
             <div className="min-w-0">
               <p className="text-sm font-semibold text-slate-900 truncate">{parentName}</p>
               <p className="text-[10px] text-slate-400">{L("Parent / Tuteur", "Parent / Guardian")}</p>
             </div>
-          </div>
+          </button>
         </div>
 
         {/* Coordonnées école */}
@@ -208,6 +233,14 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
 
         {/* Footer */}
         <div className="p-3 border-t border-slate-200">
+          {/* ⭐ « Mon profil » — photo de profil + changement de mot de passe */}
+          <button
+            onClick={() => setProfileDialogOpen(true)}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+          >
+            <UserCog className="h-4 w-4" />
+            <span>{L("Mon profil", "My profile")}</span>
+          </button>
           <button
             onClick={() => setLogoutOpen(true)}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
@@ -225,6 +258,18 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
         onConfirm={handleLogout}
         loading={loggingOut}
         userName={user ? `${user.firstName} ${user.lastName}`.trim() : undefined}
+      />
+
+      {/* ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service) */}
+      <ProfileDialog
+        open={profileDialogOpen}
+        onClose={() => setProfileDialogOpen(false)}
+        fallbackUser={{
+          firstName: user?.firstName,
+          lastName: user?.lastName,
+          email: user?.email,
+          role: L("Parent / Tuteur", "Parent / Guardian"),
+        }}
       />
 
       {/* Contenu principal — responsive

@@ -46,6 +46,9 @@ import { useSchoolIdentity } from '@/hooks/useSchoolIdentity';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useEnabledFeatureCodes } from '@/hooks/useEnabledFeatureCodes';
 import { LogoutModal } from '@/components/auth/LogoutModal';
+// ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service)
+import ProfileDialog from '@/components/profile/ProfileDialog';
+import { useUserProfileStore } from '@/stores/user-profile-store';
 // ⭐ Double casquette : bascule instantanée vers l'UI Enseignant sans déconnexion
 import PortalSwitchButton from '@/components/auth/PortalSwitchButton';
 import NotificationDropdown from '@/components/notifications/NotificationDropdown';
@@ -158,6 +161,14 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  // ⭐ « Mon profil » — dialogue partagé (photo + mot de passe). Hooks AVANT les
+  //    early-returns (règles React hooks — ne jamais les rendre conditionnels).
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const profileAvatarUrl = useUserProfileStore((s) => s.profile?.avatarUrl ?? null);
+  const ensureProfileLoaded = useUserProfileStore((s) => s.ensureLoaded);
+  useEffect(() => {
+    void ensureProfileLoaded();
+  }, [ensureProfileLoaded]);
 
   // ⭐ 2026-09-18 (shell à hauteur fixe) — le scroll vit dans <main> : au
   //    changement de route, on remet la zone de contenu en haut (comportement
@@ -238,9 +249,13 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
   // pendant ~1 s, jamais de rideau.
 
   const userName = user ? `${user.firstName} ${user.lastName}`.trim() : L(config.roleLabel, config.roleLabelEn);
-  // Photo de profil si le payload de session la transporte (sinon initiales).
-  // ⚠️ Cast étroit : le type User de session ne déclare pas photoUrl.
-  const userPhoto = (user as { photoUrl?: string } | null | undefined)?.photoUrl;
+  // ⭐ Photo de profil : source API fraîche (store « Mon profil ») avec repli
+  //    sur la session serveur (avatarUrl/photoUrl si présents dans le payload).
+  const sessionPhoto =
+    (user as { avatarUrl?: string; photoUrl?: string } | null | undefined)?.avatarUrl ||
+    (user as { photoUrl?: string } | null | undefined)?.photoUrl ||
+    undefined;
+  const userPhoto = profileAvatarUrl || sessionPhoto;
   const activeModule = modules.find(
     (m) => pathname === m.path || (m.path !== config.path && pathname.startsWith(m.path))
   );
@@ -299,9 +314,15 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
           </button>
         </div>
 
-        {/* Profil du métier — photo ou initiales + badge du portail */}
+        {/* Profil du métier — photo ou initiales + badge du portail.
+            ⭐ Cliquable : ouvre « Mon profil » (photo + mot de passe). */}
         <div className="px-4 py-3 border-b border-slate-100">
-          <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setProfileDialogOpen(true)}
+            className="w-full flex items-center gap-2 rounded-lg p-1 -mx-1 hover:bg-slate-50 transition-colors text-left"
+            title={L("Modifier mon profil (photo, mot de passe)", "Edit my profile (photo, password)")}
+          >
             {userPhoto ? (
               <img
                 src={userPhoto}
@@ -324,7 +345,7 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
               <p className="text-sm font-semibold text-slate-900 truncate">{userName}</p>
               <p className={cn('text-[10px] font-semibold', theme.iconText)}>{L(config.roleLabel, config.roleLabelEn)}</p>
             </div>
-          </div>
+          </button>
         </div>
 
         {/* Navigation — modules du métier, en dur */}
@@ -356,6 +377,14 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
 
         {/* Footer */}
         <div className="p-3 border-t border-slate-200 space-y-1">
+          {/* ⭐ « Mon profil » — photo de profil + changement de mot de passe */}
+          <button
+            onClick={() => setProfileDialogOpen(true)}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+          >
+            <UserCog className="h-4 w-4" />
+            <span>{L("Mon profil", "My profile")}</span>
+          </button>
           {/* ⭐ Double casquette (ex : secrétaire + enseignant) : bascule vers
               l'UI Enseignant SANS déconnexion — visible seulement si
               l'utilisateur dispose d'un profil Teacher actif. */}
@@ -377,6 +406,18 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
         onConfirm={handleLogout}
         loading={loggingOut}
         userName={user ? `${user.firstName} ${user.lastName}`.trim() : undefined}
+      />
+
+      {/* ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service) */}
+      <ProfileDialog
+        open={profileDialogOpen}
+        onClose={() => setProfileDialogOpen(false)}
+        fallbackUser={{
+          firstName: user?.firstName,
+          lastName: user?.lastName,
+          email: user?.email,
+          role: L(config.roleLabel, config.roleLabelEn),
+        }}
       />
 
       {/* Contenu principal — responsive :

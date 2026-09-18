@@ -32,12 +32,17 @@ import {
   LogOut,
   MapPin,
   RefreshCw,
+  UserCog,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { persistClientSession, clearClientSessionSync } from '@/lib/auth/client-access-token';
 import { getRoleDisplayLabel } from '@/lib/auth/role-portal-map';
 import { getConsolidatedKpi } from '@/services/consolidated-kpi.service';
 import type { ConsolidatedKpiResponse, GroupSchoolKpi } from '@/types';
+// ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service)
+import UserAvatar from '@/components/profile/UserAvatar';
+import ProfileDialog from '@/components/profile/ProfileDialog';
+import { useUserProfileStore } from '@/stores/user-profile-store';
 
 // ─── Formatage (fr-FR, devise du système : F CFA) ───────────────────────────
 
@@ -70,6 +75,13 @@ export default function PromoterStrategicView({ user }: PromoterStrategicViewPro
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [enteringTenantId, setEnteringTenantId] = useState<string | null>(null);
+  // ⭐ « Mon profil » — dialogue photo de profil + mot de passe
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const profileAvatarUrl = useUserProfileStore((s) => s.profile?.avatarUrl ?? null);
+  const ensureProfileLoaded = useUserProfileStore((s) => s.ensureLoaded);
+  useEffect(() => {
+    void ensureProfileLoaded();
+  }, [ensureProfileLoaded]);
 
   const userName = `${user.firstName} ${user.lastName}`.trim() || user.email;
   const roleLabel = getRoleDisplayLabel(user.role);
@@ -161,9 +173,23 @@ export default function PromoterStrategicView({ user }: PromoterStrategicViewPro
         <div className="rounded-xl bg-gradient-to-r from-slate-900 to-slate-800 p-6 text-white">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="h-12 w-12 rounded-full bg-amber-400/20 border border-amber-400/40 flex items-center justify-center flex-shrink-0">
-                <Building2 className="h-6 w-6 text-amber-400" />
-              </div>
+              {/* ⭐ Avatar promoteur — ouvre « Mon profil » (photo + mot de passe) */}
+              <button
+                type="button"
+                onClick={() => setProfileDialogOpen(true)}
+                className="flex-shrink-0 rounded-full ring-2 ring-amber-400/40 hover:ring-amber-400 transition-all"
+                title="Mon profil — photo de profil et mot de passe"
+              >
+                <UserAvatar
+                  photoUrl={profileAvatarUrl}
+                  firstName={user.firstName}
+                  lastName={user.lastName}
+                  email={user.email}
+                  size={48}
+                  initialsClassName="bg-amber-400/20 text-amber-400 border border-amber-400/40"
+                  className="ring-0"
+                />
+              </button>
               <div className="min-w-0">
                 <p className="text-amber-400/90 text-xs font-semibold uppercase tracking-wider">
                   Vue stratégique · Groupe scolaire
@@ -185,6 +211,14 @@ export default function PromoterStrategicView({ user }: PromoterStrategicViewPro
                   Retour à l&apos;application
                 </button>
               )}
+              {/* ⭐ « Mon profil » — photo de profil + changement de mot de passe */}
+              <button
+                onClick={() => setProfileDialogOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/20 transition-colors"
+              >
+                <UserCog className="h-4 w-4" />
+                Mon profil
+              </button>
               <button
                 onClick={handleLogout}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/20 transition-colors"
@@ -300,6 +334,18 @@ export default function PromoterStrategicView({ user }: PromoterStrategicViewPro
           </div>
         )}
       </div>
+
+      {/* ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service) */}
+      <ProfileDialog
+        open={profileDialogOpen}
+        onClose={() => setProfileDialogOpen(false)}
+        fallbackUser={{
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: roleLabel,
+        }}
+      />
     </div>
   );
 }

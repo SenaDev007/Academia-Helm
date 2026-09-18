@@ -164,6 +164,8 @@ export async function POST(request: NextRequest) {
       email: backendData.user.email,
       firstName: backendData.user.firstName || '',
       lastName: backendData.user.lastName || '',
+      // ⭐ Photo de profil (users.avatarUrl) — affichée par les avatars des portails
+      avatarUrl: (backendData.user as any).avatarUrl || undefined,
       role: (backendData.user.role || 'USER') as any,
       portal: (body.portal_type || 'SCHOOL') as any,
       function: (backendData.user as any).function || '',

@@ -1773,6 +1773,10 @@ model User {
   isSuperAdmin                              Boolean                           @default(false)
   status                                    String                            @default("active")
   lastLogin                                 DateTime?
+  // ⭐ Photo de profil utilisateur (data URL optimisée sharp 512px webp).
+  //    Colonne créée par la migration 20260824020000_add_channels_e2e_avatar
+  //    (Helm Connect) — déclarée ici depuis le profil self-service « Mon profil ».
+  avatarUrl                                 String?
   // ⭐ 2FA TOTP (RFC 6238) — activation depuis Paramètres Helm Connect
   twoFactorSecret                           String?
   twoFactorPendingSecret                    String?

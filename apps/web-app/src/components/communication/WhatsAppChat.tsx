@@ -2142,6 +2142,12 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       if (!res.ok) throw new Error('Upload failed');
       const data = await res.json();
       setMyAvatarUrl(data.avatarUrl);
+      // ⭐ « Mon profil » partagé : propage l'avatar aux topbars/sidebars de
+      //    tous les portails (store + événement écouté par les composants).
+      try {
+        const { useUserProfileStore } = await import('@/stores/user-profile-store');
+        useUserProfileStore.getState().setAvatar(data.avatarUrl || null);
+      } catch {}
       toast.success('Photo de profil mise à jour');
     } catch (e: any) {
       toast.error('Échec upload: ' + e.message);

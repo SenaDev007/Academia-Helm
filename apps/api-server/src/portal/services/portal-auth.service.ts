@@ -216,6 +216,7 @@ export class PortalAuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
+        avatarUrl: (user as any).avatarUrl ?? null,
         role: user.role,
         tenantId: user.tenantId,
       },
@@ -479,6 +480,7 @@ export class PortalAuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
+        avatarUrl: (user as any).avatarUrl ?? null,
         role: user.role,
         tenantId: user.tenantId,
       },
@@ -810,6 +812,7 @@ export class PortalAuthService {
         // ⭐ Nom du parent (Guardian) prioritaire sur le nom du User
         firstName: displayName.firstName,
         lastName: displayName.lastName,
+        avatarUrl: (user as any).avatarUrl ?? null,
         role: user.role,
         tenantId: user.tenantId,
       },

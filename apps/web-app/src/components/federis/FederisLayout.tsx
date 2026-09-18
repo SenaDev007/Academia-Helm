@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Image from 'next/image';
@@ -18,6 +18,9 @@ import OfflineIndicator from '@/components/offline/OfflineIndicator';
 import OfflineGuard from '@/components/offline/OfflineGuard';
 import { offlineBootstrapService } from '@/lib/offline/offline-bootstrap.service';
 import { useFederisPath } from '@/lib/federis/useFederisPath';
+// ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service)
+import ProfileDialog from '@/components/profile/ProfileDialog';
+import { useUserProfileStore } from '@/stores/user-profile-store';
 
 interface FederisLayoutProps {
   children: React.ReactNode;
@@ -83,6 +86,13 @@ export default function FederisLayout({
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const pathname = usePathname();
   const { path: federisPath } = useFederisPath();
+  // ⭐ « Mon profil » — dialogue photo de profil + mot de passe
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const profileAvatarUrl = useUserProfileStore((s) => s.profile?.avatarUrl ?? null);
+  const ensureProfileLoaded = useUserProfileStore((s) => s.ensureLoaded);
+  useEffect(() => {
+    void ensureProfileLoaded();
+  }, [ensureProfileLoaded]);
 
   const userRole = user.role || 'FEDERIS_VIEWER';
 
@@ -138,11 +148,27 @@ export default function FederisLayout({
                   <div className="text-sm font-medium text-gray-900">{user.firstName} {user.lastName}</div>
                   <div className="text-xs text-gray-500">{userRole}</div>
                 </div>
-                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                  <span className="text-white text-sm font-semibold">
-                    {user.firstName?.[0] || user.email[0].toUpperCase()}
-                  </span>
-                </div>
+                {/* ⭐ Avatar — cliquable : ouvre « Mon profil » (photo + mot de passe) */}
+                <button
+                  type="button"
+                  onClick={() => setProfileDialogOpen(true)}
+                  className="rounded-full transition-transform hover:scale-105"
+                  title="Mon profil — photo de profil et mot de passe"
+                >
+                  {profileAvatarUrl ? (
+                    <img
+                      src={profileAvatarUrl}
+                      alt={`${user.firstName} ${user.lastName}`}
+                      className="w-8 h-8 rounded-full object-cover border border-gray-200"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                      <span className="text-white text-sm font-semibold">
+                        {user.firstName?.[0] || user.email[0].toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                </button>
                 {/* Logout Button (Section 20.2) */}
                 <button 
                   onClick={async () => {
@@ -211,6 +237,18 @@ export default function FederisLayout({
         </button>
 
         <OfflineIndicator />
+
+        {/* ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service) */}
+        <ProfileDialog
+          open={profileDialogOpen}
+          onClose={() => setProfileDialogOpen(false)}
+          fallbackUser={{
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            role: userRole,
+          }}
+        />
       </div>
     </OfflineGuard>
   );

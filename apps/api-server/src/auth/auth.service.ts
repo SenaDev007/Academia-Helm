@@ -70,6 +70,7 @@ export class AuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
+        avatarUrl: (user as any).avatarUrl ?? null,
         tenantId: user.tenantId,
       },
       ...tokens,
@@ -213,6 +214,7 @@ export class AuthService {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
+          avatarUrl: (user as any).avatarUrl ?? null,
           role: this.jwtRole(user),
           isPlatformOwner: true,
           tenantId: targetTenantId,
@@ -353,6 +355,7 @@ export class AuthService {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
+          avatarUrl: (user as any).avatarUrl ?? null,
           role: this.jwtRole(user),
           tenantId: loginDto.tenant_id || user.tenantId || null,
           isPlatformOwner: this.isPlatformOwner(user),
@@ -414,6 +417,7 @@ export class AuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
+        avatarUrl: (user as any).avatarUrl ?? null,
         role: this.jwtRole(user as any),
         tenantId: tenantId || user.tenantId || null,
         isPlatformOwner: isOwner,
@@ -1016,6 +1020,7 @@ export class AuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
+        avatarUrl: (user as any).avatarUrl ?? null,
         role: this.jwtRole(user),
         isPlatformOwner: isOwner,
       },
@@ -1109,6 +1114,82 @@ export class AuthService {
       // On continue pour ne pas fuiter l'erreur au client (anti-énumération)
       // emailError sera utilisé par le BFF pour le logging uniquement
       return { ...successMessage, emailSent: false, emailError: error?.message };
+    }
+  }
+
+  /**
+   * ⭐ Changement de mot de passe self-service DEPUIS l'application (connecté).
+   *
+   * EXACTEMENT le même processus que « mot de passe oublié » (page login) :
+   *   1. Code OTP à 6 chiffres envoyé par email (cette méthode) — l'email est
+   *      tiré du JWT de l'utilisateur connecté, pas saisi.
+   *   2. Vérification du code : POST /auth/verify-reset-otp { email, code }
+   *   3. Nouveau mot de passe   : POST /auth/reset-password { email, code, newPassword }
+   *      → bcrypt + invalidation de TOUTES les sessions actives (reconnexion requise).
+   *
+   * Mêmes internals que forgotPassword : table password_resets, code hashé
+   * bcrypt, expiration 10 min, invalidation des anciens codes, même email OTP.
+   * Différence : utilisateur authentifié → messages d'erreur réels (pas
+   * d'anti-énumération nécessaire) + aucun captcha requis.
+   */
+  async requestPasswordChange(jwtUser: { id: string; email: string }): Promise<{ success: boolean; message: string; emailSent?: boolean }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: jwtUser.id },
+      select: { id: true, email: true, firstName: true, tenantId: true, status: true },
+    });
+    if (!user) {
+      throw new NotFoundException('Utilisateur introuvable.');
+    }
+    if (user.status && user.status !== 'active') {
+      throw new ForbiddenException('Compte inactif — impossible de changer le mot de passe.');
+    }
+
+    // Générer un code OTP à 6 chiffres (identique au flux forgot-password)
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOtp = await bcrypt.hash(otpCode, 10);
+
+    // Invalider les anciens codes non utilisés pour cet utilisateur
+    await this.prisma.passwordReset.updateMany({
+      where: {
+        userId: user.id,
+        usedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      data: { usedAt: new Date() },
+    });
+
+    // Stocker le nouveau code — même table, même expiration (10 minutes)
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    await this.prisma.passwordReset.create({
+      data: {
+        userId: user.id,
+        token: hashedOtp,
+        expiresAt,
+      },
+    });
+
+    // Envoyer l'email OTP — même template que « mot de passe oublié »
+    try {
+      const result = await this.sendPasswordResetOtpEmail(
+        user.email,
+        user.firstName || '',
+        otpCode,
+        user.tenantId || undefined,
+        user.id,
+      );
+      this.logger.log(`Code OTP de changement de mot de passe envoyé à ${user.email} (provider: ${this.configService.get<string>('EMAIL_PROVIDER', 'mock')}, success: ${result?.success})`);
+      return {
+        success: true,
+        message: `Un code de vérification a été envoyé à ${user.email}. Il expire dans 10 minutes.`,
+        emailSent: result?.success ?? true,
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ ÉCHEC ENVOI OTP changement de mot de passe à ${user.email} | erreur: ${error?.message || error}`);
+      return {
+        success: false,
+        message: "Impossible d'envoyer le code de vérification pour le moment. Veuillez réessayer plus tard.",
+        emailSent: false,
+      };
     }
   }
 
@@ -1615,6 +1696,7 @@ export class AuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
+        avatarUrl: (user as any).avatarUrl ?? null,
         role: user.role,
         tenantId: resolvedTenantId,
       },

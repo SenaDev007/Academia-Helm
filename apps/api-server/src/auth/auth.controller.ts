@@ -1,6 +1,7 @@
 import { Controller, Post, Body, Get, UseGuards, HttpCode, HttpStatus, ForbiddenException, Req, Logger } from '@nestjs/common';
 import { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -12,6 +13,7 @@ import { LocalAuthGuard } from './guards/local-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Public } from './decorators/public.decorator';
 import { TwoFactorService } from './services/twofactor.service';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('auth')
 export class AuthController {
@@ -159,6 +161,31 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async verifyResetOtp(@Body() verifyResetOtpDto: VerifyResetOtpDto) {
     return this.authService.verifyResetOtp(verifyResetOtpDto);
+  }
+
+  /**
+   * ⭐ Changement de mot de passe self-service DEPUIS l'application (connecté).
+   *
+   * EXACTEMENT le même processus que « mot de passe oublié » :
+   *   1. POST /auth/request-password-change (ici) → code OTP 6 chiffres par email
+   *      (email tiré du JWT — l'utilisateur connecté, pas saisi)
+   *   2. POST /auth/verify-reset-otp { email, code }
+   *   3. POST /auth/reset-password { email, code, newPassword }
+   *      → bcrypt + invalidation de toutes les sessions (reconnexion requise)
+   *
+   * ⚠️ PAS de @Public : route protégée par le JwtAuthGuard global → seul
+   *    l'utilisateur connecté peut déclencher l'envoi du code pour SON compte.
+   */
+  @Post('request-password-change')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ medium: { limit: 5, ttl: 60000 } })
+  async requestPasswordChange(@CurrentUser() user: any) {
+    const userId = user?.id || user?.sub || user?.userId;
+    const email = user?.email;
+    if (!userId || !email) {
+      throw new ForbiddenException('Utilisateur non authentifié');
+    }
+    return this.authService.requestPasswordChange({ id: userId, email });
   }
 
   /**

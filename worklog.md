@@ -11196,3 +11196,18 @@ Stage Summary:
 - ✅ Sous-matières officielles par matière dans le cahier journal (5 catalogues + variantes) et préparation MULTI-FICHES par jour/matière : le système sait désormais QUELLE fiche préparer (dictée, grammaire, morale, endurance, chant…) et COMBIEN (une par sous-matière renseignée).
 - ✅ Compatibilité ascendante totale (ancien format booléen + fiches sans matiereSpecifique) — aucune migration de données requise.
 - Reste (session suivante) : redéploiement Railway (backend) + Vercel (frontend), validation E2E production sur la semaine du 21-25 septembre (CM1 CSPEB), miroir EN (production-en) à porter ensuite.
+
+---
+Task ID: 70 (addendum)
+Agent: Super Z (session principale)
+Task: Validation E2E production de la feature sous-matières (déploiement automatique inclus)
+
+Work Log:
+- Déploiements automatiques confirmés : Railway (restart ~3 min post-push, uptime 54 s à 08:28) + Vercel (nouveau bundle en ligne < 12 min).
+- E2E API (scripts/test_e2e_sous_matieres.js, compte de recette directeur) sur le journal CM1 réel 21-09 (sauvegarde/restauration des entries) — scénario EXACT promoteur : lundi Vocabulaire thématique + Lecture oralisée, mardi Expression écrite — imprégnation + la lettre, mercredi Vocabulaire fonctionnel + Grammaire → 21/21 ✓ : mode ciblé (jeudi/vendredi 0), exigences par sous-matière, création d'une fiche « Grammaire » (matiereSpecifique) rapprochée automatiquement, la fiche FRANÇAIS « Vocabulaire thématique » existante (liée au journal, lessonDate lundi) correctement rapprochée au lundi, nettoyage complet (fiche test supprimée, entries restaurées, flags retirés — vérifiés en DB).
+- E2E navigateur (agent-browser, compte réel Saliou — mdp temporaire hash sauvegardé/restauré) sur son journal CI 21-09 : bouton « Fiche(s) à préparer — sous-matière + » visible dans chaque cellule → panneau avec suggestions du catalogue (« ex : Dictée ») → ajout « Vocabulaire thématique » + « Lecture oralisée » (chips + compteur « 2 fiches ») → Enregistrer → bascule onglet Fiches : LUNDI « 1/2 fiches », carte Français avec 2 lignes — Vocabulaire thématique [Voir] (fiche rapprochée) et Lecture oralisée [Préparer] → clic Préparer : formulaire FICHE DE FRANÇAIS pré-rempli avec Matière spécifique « Lecture oralisée » + titre « Fiche Lecture oralisée ». Captures : download/fix70-cellule-sous-matieres.png, fix70-fiches-par-sous-matiere.png, fix70-fiche-prefilliee.png.
+- Nettoyage final : journal CI 21-09 restauré (flags retirés, vérifié DB), mot de passe Saliou restauré, fiche de test supprimée.
+
+Stage Summary:
+- ✅ Feature validée E2E en production (API 21/21 + navigateur, flux complet enseignant) — déployée et opérationnelle.
+- Reste (optionnel) : miroir EN (production-en) à porter ; purge des scripts de test locaux hors dépôt.

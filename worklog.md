@@ -11331,3 +11331,25 @@ Stage Summary:
 - ✅ Réinitialisation de mot de passe RÉPARÉE (les 2 flux : OTP email→code→nouveau mdp + liens JWT legacy) — root cause : champs DTO alternatifs sans @IsOptional().
 - ✅ Vrai logo Academia Helm partout dans les emails (header + signature), anciens emails corrigés rétroactivement.
 - Reste : validation production post-déploiement (test réel du flux complet forgot-password avec un compte de recette).
+
+---
+Task ID: 76
+Agent: Super Z (principal)
+Task: Email d'expiration d'abonnement aligné sur les NOUVEAUX plans (pages tarification/pricing + contrat d'abonnement onboarding) — retour promoteur
+
+Work Log:
+- DIAGNOSTIC (base production Neon vérifiée) : DEUX moteurs d'emails d'expiration coexistaient —
+  1. subscription-lifecycle.service.ts (runDailyCheck sur HelmSubscription = VRAIES dates currentPeriodEnd) envoyait un email minimaliste : ni plan, ni montant, ni grille tarifaire, ni règles du contrat, ni lien de renouvellement direct → c'est LUI que le promoteur recevait ;
+  2. billing-reminder.service.ts (cron 9h sur l'ancienne table subscriptions) résolvait le plan via la relation subscriptionPlan → table OBSOLÈTE subscription_plans qui contient encore « Plan Mensuel - 1 École » (15 000/mois) ; sinon code brut (LEAD/GROW) ; renewalUrl pointait vers /billing/renew (page INEXISTANTE → 404) ; de plus current_period_end NULL partout → rappels ACTIVE jamais déclenchés.
+- BASE VÉRIFIÉE : pricing_plans actif = Helm Essentiel (1-50, 50 000/an), Helm Croissance (51-150, 75 000/an), Helm Performance (151-400, 100 000/an), Helm Institution (401+, 150 000/an) — activation uniforme 500 000, bilingue 100 000/an (migration 20260901000000 + révision tarifaire back-office confirmée en DB).
+- PRICING SERVICE (+3 méthodes, source pricing_plans = même source que la page tarification) : getActivePlansGrid() (grille des 4 plans, BILINGUAL exclu), resolvePlanDisplay(code|nom) (nom OFFICIEL + tranche + montants, fallback statique des 4 codes), getBilingualYearlyFee() (pseudo-plan BILINGUAL puis config).
+- TEMPLATE formatBillingReminderEmail REFONDU (email.service.ts) : bloc « Votre plan actuel » (nom officiel, tranche élèves, frais annuels, bilingue si activée) ; encadré « À régler » = frais annuels du plan + bilingue (essai : activation + annuels + bilingue) avec règle contrat « activation non redevable au renouvellement » ; GRILLE TARIFAIRE des 4 plans (Article 3, plan courant surligné ✔, 21 modules métier + 6 complémentaires inclus) ; conditions Articles 4 & 5 (annuel uniquement, pénalité 15 jours, espèces/virement/Mobile Money, reconduction tacite 60 jours, Helm Connect gratuit) ; CTA vers /app/settings/billing (page Facturation réelle — bouton Renouveler + FedaPay) ; objet « Fin de période d'essai » vs « Expiration d'abonnement » ; version texte alignée ; signature enrichie rétro-compatible (enrichissements optionnels).
+- SUBSCRIPTION-LIFECYCLE (moteur réel J-7/J-3/J-1) : sendExpirationNotification → PricingService (plan officiel, grille, bilingue), sendCategorized (FINANCE/rappel_expiration_abonnement, traçabilité EmailLog), renewalUrl = FRONTEND_URL||app.academiahelm.com + /app/settings/billing, WhatsApp enrichi (plan + frais annuels + règle activation).
+- BILLING-REMINDER : planName résolu via pricing_plans (fini « Plan Mensuel - 1 École » et codes bruts), données enrichies passées au template, renewalUrl corrigé (domaine + chemin réels), SMS/WhatsApp buildReminderMessage alignés (nom officiel + frais annuels + règle renouvellement).
+- Vérifs : check_syntax.mjs 4 fichiers ✓ ; test logique 34/34 (scripts/_test_email_expiration_plans.mjs : 3 cas — ACTIVE/LEAD/bilingue J-7, TRIAL/GROW J-3, rétro-compat minimale ; grille complète, montants 500k/50k/75k/100k/150k/100k, plan surligné, règles contrat, CTA, absence anciens plans et /billing/renew) ; aperçus HTML + captures PNG (download/apercu-email-expiration-*) ; contrôle VLM : en-tête/bloc plan/encadré 200 000 FCFA/grille surlignée/bouton — aucun débordement, « techniquement impeccable ».
+
+Stage Summary:
+- ✅ L'email d'expiration (J-7/J-3/J-1) est désormais CONFORME aux nouveaux plans : noms officiels Helm Essentiel/Croissance/Performance/Institution, grille tarifaire complète (contrat Article 3), règles de renouvellement (Articles 4-5 : seuls les frais annuels dus au renouvellement, activation unique à la signature, bilingue 100 000/an, pénalité 15 j, reconduction 60 j), CTA vers la page Facturation réelle.
+- ✅ Les DEUX moteurs (lifecycle = réel, billing-reminder = hérité) produisent le même email conforme ; SMS + WhatsApp alignés.
+- ✅ Montants DYNAMIQUES depuis pricing_plans (éditable back-office /platform/subscriptions) — zéro prix codé en dur dans le template.
+- Reste : validation production post-déploiement (un vrai rappel J-7 partira à la prochaine échéance — EPP Sainte Thérèse 06/09/2027, Le Palmares Plus 03/09/2027) ; miroir EN des emails (suivi i18n existant).

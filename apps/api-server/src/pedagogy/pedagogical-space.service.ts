@@ -1116,6 +1116,26 @@ export class PedagogicalSpaceService {
 
     // Récupérer les champs (strip HTML basique)
     const strip = (html: string) => (html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim() || '—';
+    // ⭐ 2026-09-19 (retour promoteur) — strip multi-lignes pour la section
+    //    RETENONS : conserve la STRUCTURE du texte (retours à la ligne,
+    //    paragraphes, puces) au lieu de tout aplatir sur une ligne — la
+    //    leçon à retenir peut être longue et structurée.
+    const stripLines = (html: string) => {
+      const lines = (html || '')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(div|p|li|h[1-6]|tr|blockquote)>/gi, '\n')
+        .replace(/<li[^>]*>/gi, '• ')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .split('\n').map((l) => l.replace(/\s+/g, ' ').trim());
+      const out: string[] = [];
+      for (const l of lines) {
+        if (l === '' && (out.length === 0 || out[out.length - 1] === '')) continue;
+        out.push(l);
+      }
+      return out.join('\n').trim() || '—';
+    };
 
     // ⭐ Filigrane : acronyme de l'école
     const schoolAcronym = fiche.schoolAcronym || (fiche.schoolName || '').substring(0, 3).toUpperCase() || '';
@@ -1396,15 +1416,48 @@ export class PedagogicalSpaceService {
         </table>
       </div>` : ''}
 
-      <!-- ═══ III — RETOUR ET PROJECTION ═══ -->
+      <!-- ═══ III — RETOUR ET PROJECTION (tableau Consignes / Résultats
+           attendus, EXACTEMENT comme le DÉROULEMENT — retour promoteur
+           2026-09-19 : colonne « Résultat attendu » pour Objectivation,
+           Évaluation et Projection) ═══ -->
       <div style="margin-bottom:8px;">
         <div style="font-size:11px;font-weight:bold;color:white;background:${typeConfig.color};padding:4px 8px;border-radius:3px 3px 0 0;">III — RETOUR ET PROJECTION</div>
-        <table style="width:100%;border-collapse:collapse;font-size:9px;border:1px solid ${typeConfig.border};border-top:none;">
-          <tr><td style="border:1px solid #cbd5e1;padding:5px;width:30%;font-weight:bold;background:#f8fafc;">Objectivation</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.objectivation)}</td></tr>
-          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Évaluation</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.evalRetour)}</td></tr>
-          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Projection</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.projection)}</td></tr>
+        <table style="width:100%;border-collapse:collapse;border:1px solid ${typeConfig.border};border-top:none;">
+          <thead>
+            <tr style="background:${typeConfig.bg};">
+              <th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:14%;">Rubrique</th>
+              <th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">Consignes</th>
+              <th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;width:35%;">Résultats attendus</th>
+            </tr>
+          </thead>
+          <tbody style="font-size:9px;">
+            <tr>
+              <td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Objectivation</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.objectivation)}</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.objectivationResultat)}</td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Évaluation</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.evalRetour)}</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.evalRetourResultat)}</td>
+            </tr>
+            <tr>
+              <td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Projection</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.projection)}</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.projectionResultat)}</td>
+            </tr>
+          </tbody>
         </table>
       </div>
+
+      <!-- ═══ IV — RETENONS (leçon à retenir — DERNIÈRE section de la fiche,
+           retour promoteur 2026-09-19 : un seul champ de saisie, volume
+           important possible, éditable à volonté) ═══ -->
+      ${fiche.retenons && String(fiche.retenons).trim() ? `
+      <div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:${typeConfig.color};padding:4px 8px;border-radius:3px 3px 0 0;">IV — RETENONS <span style="font-weight:normal;font-size:8px;opacity:0.9;">(la leçon à retenir)</span></div>
+        <div style="border:1px solid ${typeConfig.border};border-top:none;border-radius:0 0 3px 3px;padding:6px 8px;font-size:9px;line-height:1.5;white-space:pre-wrap;">${stripLines(fiche.retenons)}</div>
+      </div>` : ''}
 
       </div>
 
@@ -1679,6 +1732,31 @@ export class PedagogicalSpaceService {
       </div>
       <div style="font-size:9px;margin-bottom:8px;"><b>Notes personnelles :</b> <span style="border-bottom:1px dotted #94a3b8;">${strip(mc.notesPersonnelles)}</span></div>`;
 
+    // — RETENONS (leçon à retenir — DERNIÈRE section, retour promoteur
+    //    2026-09-19) : colonne partagée `retenons` avec les fiches primaire,
+    //    texte multi-lignes préservé (stripLines maison), volume important
+    //    possible, éditable à volonté. —
+    let retenonsHtml = '';
+    if (fiche.retenons && String(fiche.retenons).trim()) {
+      const retLines = String(fiche.retenons)
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(div|p|li|h[1-6]|tr|blockquote)>/gi, '\n')
+        .replace(/<li[^>]*>/gi, '• ')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .split('\n').map((l) => l.replace(/\s+/g, ' ').trim())
+        .filter((l, i, arr) => !(l === '' && (i === 0 || arr[i - 1] === '')))
+        .join('\n').trim();
+      if (retLines) {
+        retenonsHtml = `
+      <div style="margin-bottom:8px;">
+        <div style="font-size:11px;font-weight:bold;color:white;background:${C};padding:4px 8px;border-radius:3px 3px 0 0;">RETENONS <span style="font-weight:normal;font-size:8px;opacity:0.9;">(la leçon à retenir)</span></div>
+        <div style="border:1px solid ${C};border-top:none;border-radius:0 0 3px 3px;padding:6px 8px;font-size:9px;line-height:1.5;white-space:pre-wrap;">${retLines}</div>
+      </div>`;
+      }
+    }
+
     // — Observations du directeur —
     let sectionObs = fiche.directorSectionObservations;
     if (typeof sectionObs === 'string') { try { sectionObs = JSON.parse(sectionObs); } catch { sectionObs = {}; } }
@@ -1728,6 +1806,7 @@ export class PedagogicalSpaceService {
         ${realisationHtml}
         ${retourHtml}
         ${rangementHtml}
+        ${retenonsHtml}
       </div>
 
       ${directorHtml}
@@ -6422,6 +6501,15 @@ export class PedagogicalSpaceService {
       unite: 'unite', etape: 'etape', matiereSpecifique: 'matiereSpecifique',
       ibis_1: 'ibis_1', ibis_2: 'ibis_2', ibis_3: 'ibis_3', ibis_4: 'ibis_4', ibis_5: 'ibis_5',
       objectivation: 'objectivation', evalRetour: 'evalRetour', projection: 'projection',
+      // ⭐ 2026-09-19 (retour promoteur) — RETOUR ET PROJECTION EN TABLEAU :
+      //    2e colonne « Résultat attendu » pour Objectivation / Évaluation /
+      //    Projection (comme la section II- Déroulement) + section RETENONS
+      //    (leçon à retenir) en bas de fiche. Colonnes posées par la
+      //    migration 20260919140000 (nullable, rétro-compatible).
+      objectivationResultat: 'objectivationResultat',
+      evalRetourResultat: 'evalRetourResultat',
+      projectionResultat: 'projectionResultat',
+      retenons: 'retenons',
       // ⭐ Phases spécifiques au français
       phase_introductive: 'phase_introductive', phase_systematisation: 'phase_systematisation', phase_application: 'phase_application',
       // ⭐ 2026-09-19 — Exercices structuraux en tableaux 2 colonnes (retour
@@ -6517,6 +6605,7 @@ export class PedagogicalSpaceService {
           'cahierJournalId', 'maternelleContent',
           'fn', 'dossier', 'theme', 'saTheme', 'seance', 'unite', 'etape', 'matiereSpecifique',
           'phase_intro_ens1', 'phase_intro_ens2', 'phase_syst_ens', 'phase_syst_app',
+          'objectivationResultat', 'evalRetourResultat', 'projectionResultat', 'retenons',
         ]);
         const filtered = entries.filter((e) => !optionalCols.has(e.field.replace(/"/g, '')));
         if (filtered.length < entries.length) {
@@ -6570,6 +6659,10 @@ export class PedagogicalSpaceService {
       unite: 'string', etape: 'string', matiereSpecifique: 'string',
       ibis_1: 'string', ibis_2: 'string', ibis_3: 'string', ibis_4: 'string', ibis_5: 'string',
       objectivation: 'string', evalRetour: 'string', projection: 'string',
+      // ⭐ 2026-09-19 (retour promoteur) — Résultats attendus du Retour et
+      //    projection + section RETENONS (migration 20260919140000)
+      objectivationResultat: 'string', evalRetourResultat: 'string', projectionResultat: 'string',
+      retenons: 'string',
       phase_introductive: 'string', phase_systematisation: 'string', phase_application: 'string',
       // ⭐ 2026-09-19 — Exercices structuraux en tableaux 2 colonnes (retour
       //    promoteur) : introductive (Enseignant | Enseignant), systématisation
@@ -6626,6 +6719,7 @@ export class PedagogicalSpaceService {
           'cahierJournalId', 'maternelleContent',
           'fn', 'dossier', 'theme', 'saTheme', 'seance', 'unite', 'etape', 'matiereSpecifique',
           'phase_intro_ens1', 'phase_intro_ens2', 'phase_syst_ens', 'phase_syst_app',
+          'objectivationResultat', 'evalRetourResultat', 'projectionResultat', 'retenons',
         ]) {
           const idx = updates.findIndex(u => u.startsWith(`"${optionalCol}"`));
           if (idx >= 0) {
@@ -6837,6 +6931,9 @@ export class PedagogicalSpaceService {
       src.phase_introductive || null, src.phase_systematisation || null, src.phase_application || null,
       src.app_col1 || null, src.app_col2 || null, src.app_col3 || null,
       src.objectivation || null, src.evalRetour || null, src.projection || null,
+      // ⭐ 2026-09-19 — résultats attendus du retour et projection + RETENONS
+      src.objectivationResultat || null, src.evalRetourResultat || null, src.projectionResultat || null,
+      src.retenons || null,
       src.lessonDate || null,
       sourceFicheId, // originalSheetId — traçabilité
     ];
@@ -6852,7 +6949,9 @@ export class PedagogicalSpaceService {
            "ibis_1", "ibis_2", "ibis_3", "ibis_4", "ibis_5",
            "phase_introductive", "phase_systematisation", "phase_application",
            "app_col1", "app_col2", "app_col3",
-           "objectivation", "evalRetour", "projection", "lessonDate",
+           "objectivation", "evalRetour", "projection",
+           "objectivationResultat", "evalRetourResultat", "projectionResultat", "retenons",
+           "lessonDate",
            "status", "originalSheetId", "createdAt", "updatedAt")
          VALUES ($1, $2, $3, $4, $5, $6,
                  $7, $8, $9, $10, $11, $12,
@@ -6863,8 +6962,9 @@ export class PedagogicalSpaceService {
                  $36, $37, $38, $39, $40,
                  $41, $42, $43,
                  $44, $45, $46,
-                 $47, $48, $49, $50::date,
-                 'DRAFT', $51, NOW(), NOW())`,
+                 $47, $48, $49, $50, $51, $52, $53,
+                 $54::date,
+                 'DRAFT', $55, NOW(), NOW())`,
         ...insertParams,
       );
     } catch (dupErr: any) {

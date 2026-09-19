@@ -3730,6 +3730,15 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
           {renderField("Notes personnelles", mc.notesPersonnelles)}
         </div>
 
+        {/* ⭐ 2026-09-19 (retour promoteur) — RETENONS (leçon à retenir) :
+            DERNIÈRE section de la fiche maternelle, colonne partagée `retenons`. */}
+        {(fiche as any).retenons && String((fiche as any).retenons).replace(/<[^>]*>/g, "").trim() ? (
+          <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3">
+            <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">Retenons <span className="text-xs font-normal text-slate-400 normal-case">la leçon à retenir</span></h3>
+            <div className="text-sm text-slate-800 p-2 bg-slate-50 rounded border border-slate-200"><div dangerouslySetInnerHTML={{ __html: (fiche as any).retenons }} /></div>
+          </div>
+        ) : null}
+
         {/* Observation générale du directeur */}
         <div className="bg-white border-2 border-red-300 rounded-xl p-4 space-y-3">
           <h3 className="text-sm font-bold text-red-700 uppercase">Observation générale du directeur</h3>
@@ -3845,7 +3854,49 @@ function PedagogicalFicheDirectorDetail({ fiche, userId, onBack, onValidated }: 
       <div className={cn("bg-white border-2 rounded-xl p-4 text-center", sheetConfig.bg)}><h2 className="text-lg font-bold text-slate-900">FICHE DE {sheetConfig.label}</h2><div className="text-sm text-slate-600 mt-1">Classe : <strong>{fiche.classNameResolved || "—"}</strong> · Enseignant : {fiche.teacherFirstName} {fiche.teacherLastName}</div><div className="text-xs text-slate-500 mt-1">Date : <strong>{fmt(fiche.lessonDate)}</strong>{fiche.adminWeek ? " · S" + fiche.adminWeek : ""}{fiche.trimester ? " · T" + fiche.trimester : ""} · Statut : <strong>{fiche.status}</strong></div></div>
       <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3"><h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">I- Éléments de planification</h3>{renderField("Compétences disciplinaires", fiche.competence)}{renderField("Compétences transversales", fiche.habilete)}{renderField("Compétences transdisciplinaires", fiche.prealable)}{renderField("Connaissances et techniques", fiche.contenu)}{renderField("Stratégie objet d'apprentissage", fiche.methodes)}{renderField("Stratégie d'enseignement", fiche.moyensDidactiques)}{renderField("Matériel", fiche.evaluation)}{renderObs("phase_preparatoire", "Observation — Phase préparatoire")}</div>
       <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3"><h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">II- Déroulement</h3>{deroulement.length > 0 ? (<div className="overflow-x-auto"><table className="w-full border-collapse text-xs"><thead><tr className="bg-slate-100"><th className="border border-slate-300 px-2 py-1 text-left w-12">N°</th><th className="border border-slate-300 px-2 py-1 text-left">Consignes</th><th className="border border-slate-300 px-2 py-1 text-left">Résultats</th></tr></thead><tbody>{deroulement.map((step: any, idx: number) => (<tr key={idx}><td className="border border-slate-300 px-2 py-1 text-center font-bold">{idx + 1}</td><td className="border border-slate-300 px-2 py-1">{step.consignes || step.activiteEnseignant ? <div dangerouslySetInnerHTML={{ __html: step.consignes || step.activiteEnseignant }} /> : <span className="text-slate-300">—</span>}</td><td className="border border-slate-300 px-2 py-1">{step.resultats || step.activiteEleves ? <div dangerouslySetInnerHTML={{ __html: step.resultats || step.activiteEleves }} /> : <span className="text-slate-300">—</span>}</td></tr>))}</tbody></table></div>) : <p className="text-sm text-slate-400 italic">Aucune étape.</p>}{renderObs("deroulement", "Observation — Déroulement")}</div>
-      <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3"><h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">III- Retour et projection</h3>{renderField("Objectivation", (fiche as any).objectivation)}{renderField("Évaluation", (fiche as any).evalRetour || fiche.evaluation)}{renderField("Projection", (fiche as any).projection)}{renderField("Référence", fiche.reference)}{renderObs("retour_projection", "Observation — Retour et projection")}</div>
+      {/* ⭐ 2026-09-19 (retour promoteur) — III- Retour et projection EN TABLEAU :
+          colonne « Résultat attendu » pour Objectivation / Évaluation / Projection,
+          exactement comme le II- Déroulement. */}
+      <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3">
+        <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">III- Retour et projection</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-100">
+                <th className="border border-slate-300 px-2 py-1 text-left w-28">Rubrique</th>
+                <th className="border border-slate-300 px-2 py-1 text-left">Consignes</th>
+                <th className="border border-slate-300 px-2 py-1 text-left">Résultats attendus</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                { label: "Objectivation", key: "objectivation", resultKey: "objectivationResultat" },
+                { label: "Évaluation", key: "evalRetour", resultKey: "evalRetourResultat", fallback: "evaluation" },
+                { label: "Projection", key: "projection", resultKey: "projectionResultat" },
+              ].map(r => {
+                const v = (fiche as any)[r.key] || (r.fallback ? (fiche as any)[r.fallback] : null);
+                const rv = (fiche as any)[r.resultKey];
+                return (
+                  <tr key={r.key}>
+                    <td className="border border-slate-300 px-2 py-1 font-bold align-top">{r.label}</td>
+                    <td className="border border-slate-300 px-2 py-1">{v ? <div dangerouslySetInnerHTML={{ __html: v }} /> : <span className="text-slate-300">—</span>}</td>
+                    <td className="border border-slate-300 px-2 py-1">{rv ? <div dangerouslySetInnerHTML={{ __html: rv }} /> : <span className="text-slate-300">—</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {renderField("Référence", fiche.reference)}
+        {renderObs("retour_projection", "Observation — Retour et projection")}
+      </div>
+      {/* ⭐ 2026-09-19 — IV- RETENONS (leçon à retenir — DERNIÈRE section) */}
+      {(fiche as any).retenons && String((fiche as any).retenons).replace(/<[^>]*>/g, "").trim() ? (
+        <div className="bg-white border-2 border-slate-300 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-bold text-slate-900 uppercase border-b border-slate-200 pb-2">IV- Retenons <span className="text-xs font-normal text-slate-400 normal-case">la leçon à retenir</span></h3>
+          <div className="text-sm text-slate-800 p-2 bg-slate-50 rounded border border-slate-200"><div dangerouslySetInnerHTML={{ __html: (fiche as any).retenons }} /></div>
+        </div>
+      ) : null}
       <div className="bg-white border-2 border-red-300 rounded-xl p-4 space-y-3"><h3 className="text-sm font-bold text-red-700 uppercase">Observation générale du directeur</h3><RichTextEditor value={directorGeneralObservation} onChange={(html) => setDirectorGeneralObservation(html)} disabled={saving || isAlreadyValidated} placeholder="Observations générales..." minHeight="100px" /></div>
       {/* ⭐ 2026-09-15 : SECTION SIGNATURE SUPPRIMÉE — les fiches pédagogiques
           ne comportent aucune signature (décision utilisateur). */}

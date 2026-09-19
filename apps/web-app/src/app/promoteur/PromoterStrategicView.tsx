@@ -77,7 +77,11 @@ export default function PromoterStrategicView({ user }: PromoterStrategicViewPro
   const [enteringTenantId, setEnteringTenantId] = useState<string | null>(null);
   // ⭐ « Mon profil » — dialogue photo de profil + mot de passe
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
-  const profileAvatarUrl = useUserProfileStore((s) => s.profile?.avatarUrl ?? null);
+  // ⭐ Photo PERSO > photo du dossier RH — même priorité que « Mon profil »
+  //    (sinon la photo RH ne s'affichait que dans le modal, pas dans la topbar)
+  const profileAvatarUrl = useUserProfileStore(
+    (s) => s.profile?.avatarUrl ?? s.profile?.hrPhotoUrl ?? null,
+  );
   const ensureProfileLoaded = useUserProfileStore((s) => s.ensureLoaded);
   useEffect(() => {
     void ensureProfileLoaded();

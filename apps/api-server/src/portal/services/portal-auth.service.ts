@@ -535,6 +535,38 @@ export class PortalAuthService {
   }
 
   /**
+   * ⭐ 2026-09-19 — Résolution du compte parent (User) pour le portail PARENT :
+   *    1. guardian.userId D'ABORD — lien direct posé par
+   *       ParentUserProvisioningService au moment de l'inscription de l'élève
+   *       (compte créé « en même temps que l'inscription », demande promoteur).
+   *       Marche aussi pour les parents SANS email (provisionnés avec l'adresse
+   *       technique guardian-<id>@no-email.local) que l'ancienne recherche par
+   *       email ne trouvait jamais → « Compte parent non configuré ».
+   *    2. Repli : User actif du tenant avec le même email que le guardian
+   *       (comptes créés hors provisioning — ex. enseignant également parent).
+   */
+  private async resolveParentUser(guardian: any, tenantId: string): Promise<any | null> {
+    if (guardian.userId) {
+      const linked = await this.prisma.user.findFirst({
+        where: { id: guardian.userId, status: 'active' },
+      });
+      if (linked) {
+        return linked;
+      }
+    }
+    if (guardian.email) {
+      return this.prisma.user.findFirst({
+        where: {
+          tenantId,
+          email: { equals: guardian.email, mode: 'insensitive' },
+          status: 'active',
+        },
+      });
+    }
+    return null;
+  }
+
+  /**
    * Connexion parent par téléphone — sans OTP si PARENT_OTP_ENABLED=false (défaut).
    *
    * Si OTP désactivé (par défaut, réalité béninoise) :
@@ -566,14 +598,9 @@ export class PortalAuthService {
       throw new UnauthorizedException('Numéro de téléphone non trouvé');
     }
 
-    // Trouver l'utilisateur associé par email
-    const user = guardian.email ? await this.prisma.user.findFirst({
-      where: {
-        tenantId,
-        email: guardian.email,
-        status: 'active',
-      },
-    }) : null;
+    // Trouver l'utilisateur associé — ⭐ 2026-09-19 : lien direct
+    // guardian.userId d'abord (compte créé à l'inscription), puis email.
+    const user = await this.resolveParentUser(guardian, tenantId);
 
     // ── Mode OTP désactivé (défaut, première version) ──
     // On connecte directement le parent si son téléphone est dans la DB
@@ -662,14 +689,9 @@ export class PortalAuthService {
       throw new UnauthorizedException('Adresse email non trouvée');
     }
 
-    // Trouver l'utilisateur associé par email
-    const user = await this.prisma.user.findFirst({
-      where: {
-        tenantId,
-        email: normalizedEmail,
-        status: 'active',
-      },
-    });
+    // Trouver l'utilisateur associé — ⭐ 2026-09-19 : lien direct
+    // guardian.userId d'abord (compte créé à l'inscription), puis email.
+    const user = await this.resolveParentUser(guardian, tenantId);
 
     if (!user) {
       throw new UnauthorizedException('Compte parent non configuré pour cet email');

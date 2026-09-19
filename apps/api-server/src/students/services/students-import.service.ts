@@ -36,6 +36,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { StudentsLifecycleService } from './students-lifecycle.service';
 import { StudentAccountService } from '../../finance/student-account.service';
 import { MatriculeService } from './matricule.service';
+import { ParentUserProvisioningService } from './parent-user-provisioning.service';
 import * as ExcelJS from 'exceljs';
 import { Response } from 'express';
 
@@ -117,6 +118,7 @@ export class StudentsImportService {
     private readonly lifecycleService: StudentsLifecycleService,
     private readonly studentAccountService: StudentAccountService,
     private readonly matriculeService: MatriculeService,
+    private readonly parentProvisioningService: ParentUserProvisioningService,
   ) {}
 
   /**
@@ -819,5 +821,16 @@ export class StudentsImportService {
         relationship: 'PARENT',
       },
     });
+
+    // ⭐ 2026-09-19 (demande promoteur) — COMPTE PARENT créé en même temps que
+    //    l'élève importé (comme le wizard d'inscription). Non bloquant : une
+    //    ligne d'import n'échoue jamais à cause du provisioning du compte.
+    try {
+      await this.parentProvisioningService.ensureUserForGuardian(guardian.id);
+    } catch (provisioningErr: any) {
+      this.logger.warn(
+        `Import : compte parent non provisionné pour le guardian ${guardian.id} (non bloquant): ${provisioningErr?.message || provisioningErr}`,
+      );
+    }
   }
 }

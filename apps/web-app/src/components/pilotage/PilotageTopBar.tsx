@@ -250,7 +250,11 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
   // ⭐ « Mon profil » — dialogue photo de profil + mot de passe
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   // ⭐ Avatar frais (source API) avec repli sur la session serveur
-  const profileAvatarUrl = useUserProfileStore((s) => s.profile?.avatarUrl ?? null);
+  //    + photo du dossier RH (même priorité que « Mon profil » : sans ce
+  //    repli, la photo ne s'affichait que dans le modal, pas dans la topbar)
+  const profileAvatarUrl = useUserProfileStore(
+    (s) => s.profile?.avatarUrl ?? s.profile?.hrPhotoUrl ?? null,
+  );
   const ensureProfileLoaded = useUserProfileStore((s) => s.ensureLoaded);
   useEffect(() => {
     void ensureProfileLoaded();

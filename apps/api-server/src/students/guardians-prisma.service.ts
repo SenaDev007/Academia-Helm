@@ -5,15 +5,27 @@
  * 
  * Service pour la gestion des responsables légaux (guardians)
  * 
+ * ⭐ 2026-09-19 (demande promoteur) : à CHAQUE création/lien d'un responsable
+ *    lors d'une inscription, le COMPTE PARENT (User role=PARENT) est créé en
+ *    même temps via ParentUserProvisioningService — avant, les parents
+ *    restaient sans compte utilisateur (connexion portail impossible, chat
+ *    impossible). Provisionnement idempotent + non bloquant : une erreur
+ *    d'account provisioning n'interrompt JAMAIS l'inscription de l'élève.
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { ParentUserProvisioningService } from './services/parent-user-provisioning.service';
 
 @Injectable()
 export class GuardiansPrismaService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(GuardiansPrismaService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly parentProvisioningService: ParentUserProvisioningService,
+  ) {}
 
   /**
    * Crée un responsable légal et l'associe à un élève
@@ -73,6 +85,18 @@ export class GuardiansPrismaService {
           address: data.address,
         },
       });
+    }
+
+    // ⭐ 2026-09-19 — COMPTE PARENT en même temps que l'inscription : le
+    //    responsable vient d'être créé/lié → on garantit son User (role=PARENT)
+    //    TOUT DE SUITE (connexion portail parent par téléphone/email).
+    //    Idempotent (déjà lié → no-op) et NON BLOQUANT pour l'inscription.
+    try {
+      await this.parentProvisioningService.ensureUserForGuardian(guardian.id);
+    } catch (provisioningErr: any) {
+      this.logger.warn(
+        `Compte parent non provisionné pour le guardian ${guardian.id} (non bloquant): ${provisioningErr?.message || provisioningErr}`,
+      );
     }
 
     // Créer la relation

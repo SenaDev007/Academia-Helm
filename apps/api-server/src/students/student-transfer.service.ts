@@ -27,6 +27,7 @@ import { PrismaService } from '../database/prisma.service';
 import { EmailService } from '../communication/services/email.service';
 import { SmsService } from '../communication/services/sms.service';
 import { WhatsAppService } from '../communication/services/whatsapp.service';
+import { ParentUserProvisioningService } from './services/parent-user-provisioning.service';
 
 @Injectable()
 export class StudentTransferService {
@@ -37,6 +38,7 @@ export class StudentTransferService {
     private readonly emailService: EmailService,
     private readonly smsService: SmsService,
     private readonly whatsappService: WhatsAppService,
+    private readonly parentProvisioningService: ParentUserProvisioningService,
   ) {}
 
   /**
@@ -480,6 +482,18 @@ export class StudentTransferService {
             tenantId: request.targetSchoolId,
           },
         });
+
+        // ⭐ 2026-09-19 (demande promoteur) — COMPTE PARENT créé aussi côté
+        //    école DESTINATION (le guardian y est nouveau). Non bloquant :
+        //    si le parent a déjà un compte (email déjà pris globalement), le
+        //    guardian est quand même copié et le transfert aboutit.
+        try {
+          await this.parentProvisioningService.ensureUserForGuardian(newGuardian.id);
+        } catch (provisioningErr: any) {
+          this.logger.warn(
+            `Transfert : compte parent non provisionné pour le guardian ${newGuardian.id} côté destination (non bloquant): ${provisioningErr?.message || provisioningErr}`,
+          );
+        }
       }
     }
 

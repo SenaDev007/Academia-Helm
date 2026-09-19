@@ -5,6 +5,7 @@ import { StudentIdentifierService } from './student-identifier.service';
 import { StorageService } from '../../common/services/storage.service';
 import { AdmissionNotificationService } from './admission-notification.service';
 import { NotificationService } from '../../notifications/notification.service';
+import { ParentUserProvisioningService } from './parent-user-provisioning.service';
 
 @Injectable()
 export class AdmissionService {
@@ -17,6 +18,7 @@ export class AdmissionService {
     private readonly storageService: StorageService,
     private readonly notificationService: AdmissionNotificationService,
     private readonly inAppNotificationService: NotificationService,
+    private readonly parentProvisioningService: ParentUserProvisioningService,
   ) {}
 
   /**
@@ -674,6 +676,18 @@ export class AdmissionService {
         this.logger.log(
           `Admission ${admission.admissionNumber}: Guardian ${guardianId} linked to student ${student.id}`,
         );
+
+        // ⭐ 2026-09-19 (demande promoteur) — COMPTE PARENT en même temps que
+        //    l'inscription : le responsable vient d'être créé/lié → on garantit
+        //    son User (role=PARENT) dès la conversion (connexion portail parent
+        //    par téléphone/email). Idempotent et non bloquant.
+        try {
+          await this.parentProvisioningService.ensureUserForGuardian(guardianId);
+        } catch (provisioningErr: any) {
+          this.logger.warn(
+            `Admission ${admission.admissionNumber}: compte parent non provisionné pour le guardian ${guardianId} (non bloquant): ${provisioningErr?.message || provisioningErr}`,
+          );
+        }
       } catch (guardianErr: any) {
         // Ne pas bloquer la conversion si le guardian échoue
         this.logger.error(

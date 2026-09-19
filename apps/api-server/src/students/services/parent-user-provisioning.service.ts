@@ -23,8 +23,13 @@
  *     (POST /api/chat/conversations/guardian-direct)
  *   - Lazily: when the finance module wants to send a Helm Connect message
  *     to a parent (ReceiptNotificationFinanceService)
- *   - Eagerly: when a guardian is created via student enrollment
- *     (hooked into GuardiansPrismaService.createGuardianForStudent)
+ *   - Eagerly (⭐ 2026-09-19, demande promoteur « compte parent en même temps
+ *     que l'inscription de l'élève ») : dès qu'un guardian est créé/lié :
+ *       - GuardiansPrismaService.createGuardianForStudent (wizard d'inscription,
+ *         onglet Parents — chemin principal)
+ *       - AdmissionService (conversion admission → inscription)
+ *       - StudentsImportService (import Excel des élèves)
+ *       - StudentTransferService (copie des responsables côté école destination)
  *   - Backfill: a one-time admin script to provision existing guardians
  *
  * ⭐ Email handling:
@@ -71,12 +76,18 @@ export class ParentUserProvisioningService {
       return { userId: guardian.userId, created: false };
     }
 
+    // ⭐ 2026-09-19 : normalisation de l'email (minuscules) — le login parent
+    //    par email normalise en minuscules ; on crée donc le compte avec la
+    //    même convention (et la recherche insensible ci-dessous rattrape les
+    //    comptes historiques créés avec des majuscules).
+    const normalizedEmail = guardian.email?.trim().toLowerCase() || null;
+
     // 3. Look up existing User by email (in case it was created out-of-band)
     let user: any = null;
-    if (guardian.email) {
+    if (normalizedEmail) {
       user = await this.prisma.user.findFirst({
         where: {
-          email: { equals: guardian.email, mode: 'insensitive' },
+          email: { equals: normalizedEmail, mode: 'insensitive' },
           tenantId: guardian.tenantId,
         },
       });
@@ -85,7 +96,7 @@ export class ParentUserProvisioningService {
     // 4. If no User found, create one
     let created = false;
     if (!user) {
-      const email = guardian.email || `guardian-${guardian.id}@no-email.local`;
+      const email = normalizedEmail || `guardian-${guardian.id}@no-email.local`;
       try {
         user = await this.prisma.user.create({
           data: {
@@ -103,18 +114,36 @@ export class ParentUserProvisioningService {
         this.logger.log(`Created PARENT User ${user.id} for guardian ${guardian.id} (tenant ${guardian.tenantId})`);
       } catch (err: any) {
         // Handle race condition: another request created the User in parallel
-        if (err.code === 'P2002' && guardian.email) {
-          // Unique constraint violation on email — another User with this email exists
+        if (err.code === 'P2002' && normalizedEmail) {
+          // Unique constraint violation on email — another User with this email
+          // exists. D'ABORD dans le même tenant (course classique)…
           user = await this.prisma.user.findFirst({
             where: {
-              email: { equals: guardian.email, mode: 'insensitive' },
+              email: { equals: normalizedEmail, mode: 'insensitive' },
               tenantId: guardian.tenantId,
             },
           });
+          if (user) {
+            this.logger.warn(`Race condition: User with email ${normalizedEmail} was created concurrently. Reusing it.`);
+          } else {
+            // …SINON dans un AUTRE tenant (⭐ 2026-09-19 : même parent inscrit dans
+            // deux écoles du groupe — users.email est GLOBALEMENT unique). Le User
+            // existant est réutilisé et lié via guardian.userId : c'est l'architecture
+            // multi-écoles prévue (un user peut gérer plusieurs écoles).
+            user = await this.prisma.user.findFirst({
+              where: {
+                email: { equals: normalizedEmail, mode: 'insensitive' },
+              },
+            });
+            if (user) {
+              this.logger.warn(
+                `User with email ${normalizedEmail} exists in another tenant (${user.tenantId}) — reused for guardian ${guardian.id} of tenant ${guardian.tenantId} (multi-école)`,
+              );
+            }
+          }
           if (!user) {
             throw err; // unexpected — rethrow
           }
-          this.logger.warn(`Race condition: User with email ${guardian.email} was created concurrently. Reusing it.`);
         } else {
           throw err;
         }

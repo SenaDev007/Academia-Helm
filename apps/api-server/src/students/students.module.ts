@@ -68,6 +68,10 @@ import { CommunicationModule } from '../communication/communication.module';
     FinanceModule, // Comptes élèves : création auto StudentAccount à l'admission/réinscription
     BillingModule, // ✅ Pour StudentCountVerifierService (vérification nb élèves vs plan)
     CommunicationModule, // ✅ Pour AdmissionNotificationService (envoi emails aux parents)
+    // ⭐ 2026-09-19 (demande promoteur) : compte parent créé EN MÊME TEMPS que
+    //    l'inscription de l'élève. ParentProvisioningModule ne dépend que de
+    //    DatabaseModule → aucun cycle (cf. parent-provisioning.module.ts).
+    ParentProvisioningModule,
   ],
   controllers: [
     // Specific route controllers MUST be registered BEFORE StudentsPrismaController

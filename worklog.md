@@ -11403,3 +11403,29 @@ Stage Summary:
 - ✅ Modal profil : libellé de rôle réel (jamais l'ID technique) — catalogue canonique + suffixes de niveau
 - ✅ Modal profil : Sécurité = mot de passe ET adresse email (OTP vers la nouvelle adresse, sessions invalidées, notification ancienne adresse) — validé E2E production
 - ✅ Modal profil : photos définies dans le module RH s'affichent partout (fallback), remplaçables par une photo perso
+
+---
+Task ID: 22
+Agent: Super Z (principal)
+Task: Retours promoteur — (1) photo de profil absente de la zone profil (nom+poste+avatar) en dehors du modal ; (2) compte parent créé en même temps que l'inscription de l'élève (module Élèves)
+
+Work Log:
+- DIAGNOSTIC (1) : la tâche 21 avait bien livré la priorité complète avatarUrl > hrPhotoUrl dans le MODAL et le hook useAvatarUrl, MAIS les 6 shells/layouts de zones de profil sélectionnaient uniquement profile.avatarUrl (sans le repli hrPhotoUrl) → un utilisateur avec photo RH mais sans photo perso voyait ses initiales dans la sidebar/topbar et la photo uniquement dans « Mon profil ».
+- FIX (1) — 6 fichiers, même priorité que le modal (photo PERSO > photo DOSSIER RH > session) : AdminPortalShell (portails admin métiers), PilotageTopBar (École/pilotage), layouts Enseignant + Parent, PromoterStrategicView (promoteur), FederisLayout (Federis).
+- DIAGNOSTIC (2) : ParentUserProvisioningService existait (création User role=PARENT + backfill guardian.userId) mais son branchement « eager » annoncé dans la doc n'existait PAS — appelé uniquement en lazy (chat enseignant↔parent, notification de reçu). Les guardians créés à l'inscription restaient donc SANS compte (login parent « Compte parent non configuré »).
+- FIX (2) — provisionnement branché sur TOUS les chemins de création d'un guardian (idempotent, NON bloquant — l'inscription n'échoue jamais à cause du compte) :
+  * students.module.ts : ParentProvisioningModule ajouté aux imports (aucun cycle — ne dépend que de DatabaseModule)
+  * guardians-prisma.service.ts createGuardianForStudent : CHEMIN PRINCIPAL du wizard d'inscription (onglet Parents → POST /students/:id/guardians)
+  * admission.service.ts : conversion admission → inscription (step 4, responsable légal)
+  * students-import.service.ts createGuardian : import Excel des élèves
+  * student-transfer.service.ts : copie des responsables côté école DESTINATION
+- FIX (2) connexion parent — portal-auth.service.ts : resolveParentUser (loginParentByPhone + loginParentByEmail) : guardian.userId D'ABORD (lien direct posé au provisionnement — fonctionne pour les parents SANS email provisionnés avec l'adresse technique guardian-<id>@no-email.local), puis repli recherche email (désormais insensible à la casse). Avant : recherche par guardian.email uniquement → « Compte parent non configuré » pour les parents sans email.
+- FIX (2) robustesse provisioning — parent-user-provisioning.service.ts : email normalisé en minuscules à la création (même convention que le login) ; P2002 cross-tenant géré (même parent inscrit dans deux écoles du groupe — users.email GLOBALEMENT unique) : le User existant de l'autre tenant est réutilisé et lié via guardian.userId (architecture multi-écoles prévue).
+- VÉRIFICATIONS : tsc --noEmit --noResolve (es2020) sur les 13 fichiers → 0 erreur de syntaxe (erreurs restantes = environnement sandbox sans node_modules, préexistantes) ; tests comportementaux sur le code réel transpilé (Prisma mocké) : provisioning 6/6 (déjà lié no-op, création PARENT normalisée, adresse technique sans email, P2002 même tenant, P2002 multi-écoles, casse insensible) + resolveParentUser 6/6 (lien direct, repli email, user lié inactif→repli, ni l'un ni l'autre→null, casse, multi-écoles).
+- NOTE : les parents EXISTANTS (créés avant ce fix) restent sans compte — un script de backfill est prêt à être exécuté sur demande explicite du promoteur (règle : ne jamais toucher aux comptes sans consentement).
+
+Stage Summary:
+- ✅ Photo de profil : la zone profil (nom + poste + avatar) affiche désormais la photo dans TOUS les portails (perso > dossier RH > initiales), plus seulement dans le modal
+- ✅ Compte parent créé EN MÊME TEMPS que l'inscription de l'élève (wizard, conversion admission, import Excel, transfert) — idempotent et non bloquant
+- ✅ Connexion parent réparée : résolution par guardian.userId d'abord → les parents provisionnés (avec ou sans email) peuvent se connecter au portail
+- ⏳ Backfill des parents existants : en attente de confirmation du promoteur

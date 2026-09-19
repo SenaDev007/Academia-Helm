@@ -74,7 +74,11 @@ export default function ParentLayout({ children }: { children: React.ReactNode }
   // ⭐ « Mon profil » — dialogue partagé (photo + mot de passe). Hooks AVANT
   //    l'early-return « année scolaire » (règles React hooks).
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
-  const profileAvatarUrl = useUserProfileStore((s) => s.profile?.avatarUrl ?? null);
+  // ⭐ Photo PERSO > photo du dossier RH — même priorité que « Mon profil »
+  //    (sinon la photo RH ne s'affichait que dans le modal, pas dans la sidebar)
+  const profileAvatarUrl = useUserProfileStore(
+    (s) => s.profile?.avatarUrl ?? s.profile?.hrPhotoUrl ?? null,
+  );
   const ensureProfileLoaded = useUserProfileStore((s) => s.ensureLoaded);
   useEffect(() => {
     void ensureProfileLoaded();

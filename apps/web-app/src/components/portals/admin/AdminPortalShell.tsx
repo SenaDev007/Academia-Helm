@@ -164,7 +164,12 @@ export default function AdminPortalShell({ portalKey, children }: AdminPortalShe
   // ⭐ « Mon profil » — dialogue partagé (photo + mot de passe). Hooks AVANT les
   //    early-returns (règles React hooks — ne jamais les rendre conditionnels).
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
-  const profileAvatarUrl = useUserProfileStore((s) => s.profile?.avatarUrl ?? null);
+  // ⭐ Avatar frais (source API) : photo PERSO > photo du dossier RH >
+  //    session serveur — même priorité que le dialogue « Mon profil »
+  //    (sans le repli RH, la photo ne s'affichait QUE dans le modal).
+  const profileAvatarUrl = useUserProfileStore(
+    (s) => s.profile?.avatarUrl ?? s.profile?.hrPhotoUrl ?? null,
+  );
   const ensureProfileLoaded = useUserProfileStore((s) => s.ensureLoaded);
   useEffect(() => {
     void ensureProfileLoaded();

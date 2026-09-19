@@ -6372,10 +6372,6 @@ export class PedagogicalSpaceService {
     data: any,
   ) {
     const id = crypto.randomUUID();
-    const fields: string[] = ['"id"', '"tenantId"', '"academicYearId"', '"teacherId"', '"createdAt"', '"updatedAt"'];
-    const placeholders: string[] = ['$1', '$2', '$3', '$4', 'NOW()', 'NOW()'];
-    const params: any[] = [id, tenantId, academicYearId, teacherId];
-    let paramIdx = 5;
 
     const fieldMap: Record<string, string> = {
       classId: 'classId',
@@ -6449,56 +6445,82 @@ export class PedagogicalSpaceService {
       cahierJournalId: 'cahierJournalId',
     };
 
+    // ⭐ 2026-09-19 — Construction par ENTRÉES ATOMIQUES { field, placeholder,
+    //    param? } : le repli optionnel (42703) retire une colonne ENTIÈRE
+    //    (field + placeholder + param ensemble) puis RENUMÉROTE les $N —
+    //    l'alignement placeholders ↔ params reste donc TOUJOURS correct.
+    //    AVANT : le retry spliceait params avec l'index de fields, or params
+    //    est décalé (createdAt/updatedAt = NOW() sans param) → 08P01
+    //    « bind message supplies N parameters, but prepared statement
+    //    requires M » dès que le repli se déclenchait (bug latent préexistant,
+    //    révélé par la migration 20260919120000 en attente d'application).
+    const entries: { field: string; placeholder: string; param?: any }[] = [
+      { field: '"id"', placeholder: '$1', param: id },
+      { field: '"tenantId"', placeholder: '$2', param: tenantId },
+      { field: '"academicYearId"', placeholder: '$3', param: academicYearId },
+      { field: '"teacherId"', placeholder: '$4', param: teacherId },
+      { field: '"createdAt"', placeholder: 'NOW()' },
+      { field: '"updatedAt"', placeholder: 'NOW()' },
+    ];
+    let paramIdx = 5;
     for (const [key, col] of Object.entries(fieldMap)) {
       if (data[key] !== undefined && data[key] !== null) {
-        fields.push(`"${col}"`);
+        const entry: { field: string; placeholder: string; param?: any } = { field: `"${col}"` };
         if (key === 'deroulement' || key === 'maternelleContent') {
-          placeholders.push(`$${paramIdx++}::jsonb`);
-          params.push(JSON.stringify(data[key]));
+          entry.placeholder = `$${paramIdx++}::jsonb`;
+          entry.param = JSON.stringify(data[key]);
         } else if (key === 'lessonDate' || key === 'adminDate') {
-          placeholders.push(`$${paramIdx++}::date`);
-          params.push(data[key]);
+          entry.placeholder = `$${paramIdx++}::date`;
+          entry.param = data[key];
         } else if (typeof data[key] === 'number') {
-          placeholders.push(`$${paramIdx++}::int`);
-          params.push(data[key]);
+          entry.placeholder = `$${paramIdx++}::int`;
+          entry.param = data[key];
         } else {
-          placeholders.push(`$${paramIdx++}`);
-          params.push(data[key]);
+          entry.placeholder = `$${paramIdx++}`;
+          entry.param = data[key];
         }
+        entries.push(entry);
       }
     }
 
-    try {
+    /** Exécute l'INSERT à partir des entrées (placeholders renumérotés 1..N). */
+    const execInsert = async (ents: { field: string; placeholder: string; param?: any }[]) => {
+      const fields = ents.map((e) => e.field);
+      let n = 0;
+      const placeholders = ents.map((e) => {
+        const m = e.placeholder.match(/^\$(\d+)(.*)$/);
+        if (!m) return e.placeholder; // NOW() — sans paramètre
+        n += 1;
+        return `$${n}${m[2]}`; // cast conservé (::date, ::int, ::jsonb)
+      });
+      const params: any[] = [];
+      for (const e of ents) {
+        if (e.param !== undefined) params.push(e.param);
+      }
       await this.prisma.$executeRawUnsafe(
         `INSERT INTO "primary_pedagogical_fiches" (${fields.join(', ')}) VALUES (${placeholders.join(', ')})`,
         ...params,
       );
+    };
+
+    try {
+      await execInsert(entries);
     } catch (insertErr: any) {
       // ⭐ Si une colonne optionnelle n'existe pas encore en DB (migration non
       //    faite — erreur 42703 « column does not exist »), on retente sans ces
-      //    colonnes : cahierJournalId (202607xx), maternelleContent (20260915)
-      //    et les champs d'en-tête officiels (20260917 — fn, dossier, theme,
-      //    saTheme, seance, unite, etape, matiereSpecifique).
+      //    colonnes : cahierJournalId (202607xx), maternelleContent (20260915),
+      //    les champs d'en-tête officiels (20260917) et les tableaux d'exercices
+      //    structuraux (20260919) — la fiche est quand même créée (données des
+      //    colonnes manquantes perdue, mais jamais d'échec bloquant).
       if (insertErr.code === 'P2010' || (insertErr.message && insertErr.message.includes('42703'))) {
-        let retryNeeded = false;
-        for (const optionalCol of [
+        const optionalCols = new Set([
           'cahierJournalId', 'maternelleContent',
           'fn', 'dossier', 'theme', 'saTheme', 'seance', 'unite', 'etape', 'matiereSpecifique',
           'phase_intro_ens1', 'phase_intro_ens2', 'phase_syst_ens', 'phase_syst_app',
-        ]) {
-          const idx = fields.indexOf(`"${optionalCol}"`);
-          if (idx >= 0) {
-            fields.splice(idx, 1);
-            placeholders.splice(idx, 1);
-            params.splice(idx, 1);
-            retryNeeded = true;
-          }
-        }
-        if (retryNeeded) {
-          await this.prisma.$executeRawUnsafe(
-            `INSERT INTO "primary_pedagogical_fiches" (${fields.join(', ')}) VALUES (${placeholders.join(', ')})`,
-            ...params,
-          );
+        ]);
+        const filtered = entries.filter((e) => !optionalCols.has(e.field.replace(/"/g, '')));
+        if (filtered.length < entries.length) {
+          await execInsert(filtered);
         } else {
           throw insertErr;
         }

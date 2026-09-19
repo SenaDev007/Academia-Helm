@@ -11518,3 +11518,26 @@ Stage Summary:
 - ⏳ Correctif poussé (commit dédié) — déploiement Vercel à surveiller sur le dashboard ; en cas de nouvel OOM → activer Enhanced Builds dans Settings > General > Build Machine
 - webpack = impasse démontrée sur le conteneur 8 Go (3 épisodes : 25/08, 16/09, 19/09)
 - Cause racine structurelle : taille du graphe de compilation de l'app (~200 pages) — pistes à moyen terme : découpage du build, allègement des barrels/imports lourds
+
+---
+Task ID: 24 (suite — validation)
+Agent: Super Z (principal)
+Task: Validation du déploiement Turbopack (dpl_4ZwbwQbkhJnZPsC1gPbs7bYJac6t) + confirmation tâche H en production
+
+Work Log:
+- DÉPLOIEMENT CONFIRMÉ EN LIGNE : data-dpl-id passé de dpl_FPugAF11spxLUToW2aE98kEJGHg4 (webpack, ancien) à dpl_4ZwbwQbkhJnZPsC1gPbs7bYJac6t ; chunks au format Turbopack (/_next/static/immutable/chunks/…) ; build complet en ~2-10 min après le push (vs 7min30+OOM sous webpack)
+- SMOKE TESTS HTTP : /, /tarification, /login, /portal, /avis → 200 ; BFF /api/public/reviews-published → JSON réel ; chunk immutable servi 200
+- SMOKE TEST NAVIGATEUR (Playwright, enseignant Blaise HELM AHE-P-26-00014 sur tenant test academia-helm) :
+  * login matricule → /app?tenant=academia-helm ✅ (hydratation OK : window.next + __next_f présents ; l'échec initial du 1er test = clic pré-hydratation, pas un bug applicatif)
+  * dashboard enseignant + Espace Pédagogique rendus ✅ ; pageerror = 0 ✅ ; les 400/401/403 console = réponses API normales (regex trop large du 1er scan)
+  * onglet « Cahier Journal & Fiches » → grille hebdo rendue ; formulaire fiches non ouvert (aucun cahier journal enregistré sur le tenant test — état vide attendu, pas de bug)
+- PREUVE BUNDLE TÂCHE H (grep des chunks déployés, API Performance pour capter les imports dynamiques) :
+  * chunk 0q_sg0o48pfi1.js (PedagogicalSheetsTab) : « Retenons », « Retour et projection », « Objectivation », « Projection », « Résultats attendus » ✅ (H-1 + H-2)
+  * chunk 2kau98artxqfd.js (RichTextEditor) : justifyLeft/justifyCenter/justifyRight/justifyFull, insertUnorderedList, queryCommandState, « Gras », « Italique », « Aligner à gauche » ✅ (H-3 alignement + H-4 état actif)
+- Migration 20260919140000 (retenons + 3 colonnes Résultat attendu) vérifiée APPLIQUÉE sur Neon (enregistrée + 4 colonnes présentes + 0 migration en attente) — l'E2E API de la session précédente reste donc valable sur ce déploiement
+
+Stage Summary:
+- ✅ OOM Vercel RÉSOLU : Turbopack build passe et sert la production ; zéro erreur JS runtime ; app authentifiée fonctionnelle
+- ✅ Tâche H confirmée en production : les 4 améliorations (Retenons, tableaux Résultat attendu, alignement, état actif) sont dans le bundle servi + migration en base
+- ℹ️ Anomalie préexistante hors périmètre : SW partytown 404 (~partytown/partytown-sw.js) — analytics, sans impact fonctionnel
+- Plan B notifié au promoteur si OOM futur : Enhanced Builds Vercel (Settings > General > Build Machine, machine 2× mémoire)

@@ -11497,3 +11497,24 @@ Stage Summary:
 - ✅ Nettoyage des données de test du tenant CSPEB exécuté (comptes E2E, notes/fiche/journal/remarque de test, artefacts EN) — sauvegarde JSON intégrale conservée, transaction, 13/13 vérifications
 - ✅ Mon Avenir Plus : aucune donnée de test restante (tout était réel) — aucune modification
 - Les écoles réelles ne contiennent plus AUCUN artefact de nos sessions de validation ; le tenant dédié academia-helm reste le seul terrain de test (politique tâche 23)
+
+---
+Task ID: 24 (OOM build Vercel)
+Agent: Super Z (principal)
+Task: Déploiement Vercel en échec — OOM (SIGKILL) du build sur le commit bd8f67f10 (fiches RETENONS) ; le promoteur fournit le compte GitHub de déploiement (s.akpovitohou@gmail.com / SenaDev007)
+
+Work Log:
+- DIAGNOSTIC : build Vercel (4 cœurs / 8 Go, cle1) tué en SIGKILL après 7 min 30 dans « Creating an optimized production build » — commande `NODE_OPTIONS=--max-old-space-size=4096 next build --webpack` (apps/web-app/vercel.json)
+- HISTORIQUE reconstitué depuis git : hang Turbopack local du 25/08 (3e8052156 — sandbox limité à ~2,2 Go/process, probable OOM déguisé) → revert 22 min plus tard (677435dc7) → Task 73 (16/09, 2c837f366) : webpack + experimental.cpus:1 + webpackMemoryOptimizations + heap 3072 → 4096 (a99203459, + devDependencies à l'install) → OOM aujourd'hui : l'app (~200 pages, 33 Mo de src, 6,4 Mo de routes API, WhatsAppChat.tsx 584 Ko) a franchi le plafond du conteneur 8 Go
+- MESURES sandbox (Next 16.3.5 = parité exacte Vercel, node_modules installés) :
+  * Turbopack : ~3,4 Go de mémoire ANONYME RÉELLE consommés en 50-70 s de compilation sur 2 cœurs (RssAnon 97 % de VmRSS — pas du cache mmap évictable), croissance sans plateau visible ; workers « MainThread » ~450 Mo chacun
+  * RAYON_NUM_THREADS=1 : consommation ralentie ~2× mais pic inchangé → non retenu
+  * webpack : OOM prouvé sur le conteneur 8 Go ; la sérialisation webpackMemoryOptimizations alloue de la mémoire externe NON bornée par --max-old-space-size → relever le heap n'aiderait pas
+  * Schéma config 16.3.5 : pas d'options turbo.workers/memoryLimit ; experimental.cpus toujours honoré (simplement non affiché dans le bandeau experiments)
+- CORRECTIF POUSSÉ : apps/web-app/vercel.json — buildCommand basculé sur Turbopack (`next build` sans --webpack, heap JS 4096 conservé). Justification : moteur Rust sans le piège V8/serialization de webpack ; vérifications de compatibilité : aucune fonction webpack() dans next.config.js, next-pwa inactif sur Vercel (SW manuel v4.5.0), optimizeCss déjà désactivé, redirects page-level (pas de redirect() dans page.tsx), serverExternalPackages supportés
+- PLAN B documenté si l'OOM persiste sous Turbopack : Enhanced Builds Vercel (machine à mémoire 2×, action dashboard utilisateur, zéro code)
+
+Stage Summary:
+- ⏳ Correctif poussé (commit dédié) — déploiement Vercel à surveiller sur le dashboard ; en cas de nouvel OOM → activer Enhanced Builds dans Settings > General > Build Machine
+- webpack = impasse démontrée sur le conteneur 8 Go (3 épisodes : 25/08, 16/09, 19/09)
+- Cause racine structurelle : taille du graphe de compilation de l'app (~200 pages) — pistes à moyen terme : découpage du build, allègement des barrels/imports lourds

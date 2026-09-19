@@ -1,6 +1,6 @@
 {
   "framework": "nextjs",
-  "buildCommand": "NODE_OPTIONS=--max-old-space-size=4096 next build --webpack",
+  "buildCommand": "NODE_OPTIONS=--max-old-space-size=4096 next build",
   "installCommand": "npm install --include=dev",
   "outputDirectory": ".next",
   "regions": [

@@ -1030,7 +1030,7 @@ export class PedagogicalSpaceService {
       ? `${dayNames[lessonDate.getDay()]} ${lessonDate.getDate()}/${lessonDate.getMonth() + 1}/${lessonDate.getFullYear()}`
       : '—';
 
-    const SHEET_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; ibisTitle: string; ibisFields: { label: string; key: string; short?: boolean }[]; phases?: { label: string; key: string }[]; applicationTable?: { columns: string[]; keys: string[] } }> = {
+    const SHEET_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; ibisTitle: string; ibisFields: { label: string; key: string; short?: boolean }[]; phases?: { label: string; key: string }[]; applicationTable?: { columns: string[]; keys: string[] }; phaseTables?: { label: string; columns: string[]; keys: string[] }[] }> = {
       MATH: {
         label: 'Mathématiques', color: '#1e40af', bg: '#dbeafe', border: '#3b82f6',
         ibisTitle: 'Phases préparatoires',
@@ -1055,6 +1055,13 @@ export class PedagogicalSpaceService {
         phases: [
           { label: 'Phase introductive', key: 'phase_introductive' },
           { label: 'Phase de systématisation', key: 'phase_systematisation' },
+        ],
+        // ⭐ 2026-09-19 (retour promoteur) — EXERCICES STRUCTURAUX en tableaux
+        //    2 colonnes : phase introductive (Enseignant | Enseignant) et
+        //    phase de systématisation (Enseignant | Apprenant).
+        phaseTables: [
+          { label: 'Phase introductive', columns: ['Enseignant', 'Enseignant'], keys: ['phase_intro_ens1', 'phase_intro_ens2'] },
+          { label: 'Phase de systématisation', columns: ['Enseignant', 'Apprenant'], keys: ['phase_syst_ens', 'phase_syst_app'] },
         ],
         applicationTable: {
           columns: ['Entrées Enseignant(e) ou élève', 'Structure Élève 1', 'Réduction Élève 2'],
@@ -1135,9 +1142,38 @@ export class PedagogicalSpaceService {
       }
     }
 
-    // ⭐ Phases spécifiques (FRANCAIS : phase introductive + systématisation)
+    // ⭐ 2026-09-19 (retour promoteur) — EXERCICES STRUCTURAUX EN TABLEAUX
+    //    2 COLONNES : phase introductive (Enseignant | Enseignant) et phase de
+    //    systématisation (Enseignant | Apprenant). Chaque tableau affiche une
+    //    ligne de contenu ; les fiches LEGACY (texte simple dans
+    //    phase_introductive / phase_systematisation) restent lisibles : leur
+    //    contenu est reporté dans une ligne pleine largeur (colspan=2).
     let phasesHtml = '';
-    if (typeConfig.phases && typeConfig.phases.length > 0) {
+    if (typeConfig.phaseTables && typeConfig.phaseTables.length > 0) {
+      phasesHtml = typeConfig.phaseTables.map((t) => {
+        const hasNew = t.keys.some((k) => fiche[k] && strip(fiche[k]) !== '—');
+        // Fiches legacy : ancien champ texte → ligne pleine largeur
+        const legacyKey = t.keys[0] === 'phase_intro_ens1' ? 'phase_introductive' : 'phase_systematisation';
+        const legacyVal = fiche[legacyKey] && strip(fiche[legacyKey]) !== '—' ? strip(fiche[legacyKey]) : null;
+        if (!hasNew && !legacyVal) return '';
+        const bodyRow = hasNew
+          ? `<tr>${t.keys.map((k) => `<td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(fiche[k])}</td>`).join('')}</tr>`
+          : `<tr><td colspan="2" style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${legacyVal}</td></tr>`;
+        return `
+        <div style="margin-bottom:8px;">
+          <div style="font-size:11px;font-weight:bold;color:white;background:${typeConfig.color};padding:4px 8px;border-radius:3px 3px 0 0;">${t.label}</div>
+          <table style="width:100%;border-collapse:collapse;border:1px solid ${typeConfig.border};border-top:none;">
+            <thead>
+              <tr style="background:${typeConfig.bg};">
+                ${t.columns.map((c) => `<th style="border:1px solid #cbd5e1;padding:5px;font-size:8px;">${c}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>${bodyRow}</tbody>
+          </table>
+        </div>`;
+      }).join('');
+    } else if (typeConfig.phases && typeConfig.phases.length > 0) {
+      // Rendu historique (autres types le cas échéant) : ligne libellé/valeur
       const phaseRows = typeConfig.phases.map(p => {
         const val = fiche[p.key];
         if (!val || strip(val) === '—') return '';
@@ -6392,6 +6428,12 @@ export class PedagogicalSpaceService {
       objectivation: 'objectivation', evalRetour: 'evalRetour', projection: 'projection',
       // ⭐ Phases spécifiques au français
       phase_introductive: 'phase_introductive', phase_systematisation: 'phase_systematisation', phase_application: 'phase_application',
+      // ⭐ 2026-09-19 — Exercices structuraux en tableaux 2 colonnes (retour
+      //    promoteur) : introductive (Enseignant | Enseignant), systématisation
+      //    (Enseignant | Apprenant). Colonnes posées par la migration
+      //    20260919120000 (nullable, rétro-compatible).
+      phase_intro_ens1: 'phase_intro_ens1', phase_intro_ens2: 'phase_intro_ens2',
+      phase_syst_ens: 'phase_syst_ens', phase_syst_app: 'phase_syst_app',
       app_col1: 'app_col1', app_col2: 'app_col2', app_col3: 'app_col3',
       // ⭐ FICHES MATERNELLE (DOMAINE | DOMAINE_2) — contenu structuré complet
       //    (en-tête ÉCOLE MATERNELLE, Domaine du, Composante, Activités
@@ -6442,6 +6484,7 @@ export class PedagogicalSpaceService {
         for (const optionalCol of [
           'cahierJournalId', 'maternelleContent',
           'fn', 'dossier', 'theme', 'saTheme', 'seance', 'unite', 'etape', 'matiereSpecifique',
+          'phase_intro_ens1', 'phase_intro_ens2', 'phase_syst_ens', 'phase_syst_app',
         ]) {
           const idx = fields.indexOf(`"${optionalCol}"`);
           if (idx >= 0) {
@@ -6506,6 +6549,11 @@ export class PedagogicalSpaceService {
       ibis_1: 'string', ibis_2: 'string', ibis_3: 'string', ibis_4: 'string', ibis_5: 'string',
       objectivation: 'string', evalRetour: 'string', projection: 'string',
       phase_introductive: 'string', phase_systematisation: 'string', phase_application: 'string',
+      // ⭐ 2026-09-19 — Exercices structuraux en tableaux 2 colonnes (retour
+      //    promoteur) : introductive (Enseignant | Enseignant), systématisation
+      //    (Enseignant | Apprenant).
+      phase_intro_ens1: 'string', phase_intro_ens2: 'string',
+      phase_syst_ens: 'string', phase_syst_app: 'string',
       app_col1: 'string', app_col2: 'string', app_col3: 'string',
       // ⭐ FICHES MATERNELLE (DOMAINE | DOMAINE_2) — contenu structuré complet
       maternelleContent: 'jsonb',
@@ -6555,6 +6603,7 @@ export class PedagogicalSpaceService {
         for (const optionalCol of [
           'cahierJournalId', 'maternelleContent',
           'fn', 'dossier', 'theme', 'saTheme', 'seance', 'unite', 'etape', 'matiereSpecifique',
+          'phase_intro_ens1', 'phase_intro_ens2', 'phase_syst_ens', 'phase_syst_app',
         ]) {
           const idx = updates.findIndex(u => u.startsWith(`"${optionalCol}"`));
           if (idx >= 0) {

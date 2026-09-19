@@ -350,6 +350,10 @@ export function CahierJournalFichesContainer({
                 />
                 {/* Formulaire des fiches pédagogiques (pré-rempli si pendingInitialPayload) */}
                 <div id="fiches-section" className="mt-6">
+                  {/* ⭐ 2026-09-19 : initialWeekStartDate = lundi de la semaine
+                      AFFICHÉE dans le cahier journal — la date pré-remplie de la
+                      fiche correspond exactement au jour cliqué (plus de « date
+                      aléatoire » quand l'enseignant navigue entre les semaines). */}
                   <PedagogicalSheetsTab
                     tenantId={tenantId}
                     academicYearId={academicYearId}
@@ -357,6 +361,7 @@ export function CahierJournalFichesContainer({
                     cahierJournalId={currentJournalId}
                     initialClassId={currentClassId || undefined}
                     initialLessonDay={pendingInitialPayload?.day}
+                    initialWeekStartDate={currentJournalMeta?.weekStartDate}
                     initialSheetType={pendingInitialPayload?.sheetType}
                     initialMatiere={pendingInitialPayload?.matiere}
                     initialSousMatiere={pendingInitialPayload?.sousMatiere}

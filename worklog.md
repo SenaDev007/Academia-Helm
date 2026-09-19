@@ -11430,3 +11430,25 @@ Stage Summary:
 - ✅ Connexion parent réparée : résolution par guardian.userId d'abord → les parents provisionnés (avec ou sans email) peuvent se connecter au portail
 - ⏳ Backfill des parents existants : en attente de confirmation du promoteur
 - FIX (2) RBAC BLOQUANT DÉCOUVERT — guardians-prisma.controller.ts : la liste @Roles était plus restrictive que celle du cycle de vie élèves → le SECRETAIRE COMPTABLE (rôle exact signalé par le promoteur) qui inscrivait un élève voyait l'ajout des parents rejeté en 403, avalé silencieusement par le frontend (console.warn par guardian) → inscriptions « réussies » SANS guardian ni compte parent. Liste alignée sur students-lifecycle.controller.ts (SECRETAIRE, SECRETAIRE_COMPTABLE, COMPTABLE, ACCOUNTANT, RESP_SCOLARITE, CENSEUR, ECONOME, SCHOOL_DIRECTOR, DEPUTY_DIRECTOR).
+
+---
+Task ID: 23
+Agent: Super Z (principal)
+Task: Retours promoteur — (1) dates des fiches alignées sur la semaine du cahier journal ; (2) exercices structuraux du FRANÇAIS en tableaux 2 colonnes (préparation + PDF + persistance) ; (3) politique de tests = tenant Academia Helm UNIQUEMENT
+
+Work Log:
+- DIAGNOSTIC (1) : PedagogicalSheetsTab pré-remplissait la date de la leçon en recalculant le lundi de la SEMAINE COURANTE (new Date()) — le cahier journal affiche la semaine naviguée (ex : 21-25 septembre alors qu'on est samedi 19) → « date aléatoire » sur la fiche préparée.
+- FIX (1) : nouvelle prop initialWeekStartDate (lundi YYYY-MM-DD de la semaine affichée, fournie par CahierJournalFichesContainer depuis currentJournalMeta — mise à jour à CHAQUE switch de semaine via onJournalLoaded) ; parsing YYYY-MM-DD manuel TZ-safe (gère aussi l'ISO complet du backend DateTime @db.Date) ; repli semaine courante si absent. Piste FR + miroir piste EN.
+- FIX (2) — exercices structuraux (retour promoteur) : phase introductive = tableau 2 colonnes « Enseignant | Enseignant », phase de systématisation = tableau 2 colonnes « Enseignant | Apprenant » :
+  * Migration 20260919120000 : 4 colonnes TEXT nullable sur primary_pedagogical_fiches (phase_intro_ens1, phase_intro_ens2, phase_syst_ens, phase_syst_app)
+  * Backend pedagogical-space.service.ts : champs ajoutés au fieldMap CREATE + allowedFields UPDATE + listes de repli optionnel 42703 (fenêtre pré-migration)
+  * UI préparation (pistes FR + EN) : rendu phaseTables (pattern du tableau d'application : chaque cellule = RichTextEditor multi-lignes) ; compatibilité LEGACY — à l'ouverture d'une ancienne fiche, l'ancien texte simple (phase_introductive/phase_systematisation) est reporté dans la 1re colonne du tableau (aucune perte visuelle, ancienne colonne conservée en base)
+  * PDF (buildFichePdfHtml) : deux tableaux 2 colonnes avec en-têtes colorés ; fiches legacy → contenu ancien en ligne pleine largeur (colspan=2) sous les mêmes en-têtes
+- POLITIQUE DE TESTS (3) : désormais TOUTE validation E2E production se fait sur le tenant Academia Helm (academia-helm) — les autres écoles (CSPEB, Mon Avenir Plus) ont des données réelles et ne doivent plus être touchées.
+- Vérifications : tsc --noEmit --noResolve sur les 4 fichiers modifiés → 0 erreur de syntaxe.
+- NOTE INFRA : accès DB Neon depuis le sandbox momentanément indisponible (« password authentication failed » — flakiness documenté) ; la migration sera appliquée par le migrate deploy Railway au push, repli 42703 en attendant. Le nettoyage des données de test CSPEB / Mon Avenir Plus (demande explicite promoteur) est préparé et sera exécuté dès le retour de l'accès DB.
+
+Stage Summary:
+- ✅ Dates des fiches = vraie date du jour de la semaine affichée dans le cahier journal (plus de « date aléatoire »)
+- ✅ Exercices structuraux FRANÇAIS : tableaux 2 colonnes (introductive Enseignant/Enseignant, systématisation Enseignant/Apprenant) — préparation UI + PDF + persistance DB (colonnes dédiées)
+- ⏳ Nettoyage données de test CSPEB + Mon Avenir Plus : en attente du retour d'accès DB (script prêt)

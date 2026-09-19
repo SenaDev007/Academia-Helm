@@ -59,6 +59,11 @@ interface PedagogicalSheetsTabProps {
   initialClassId?: string;
   /** ⭐ Jour initial (lundi/mardi/...) pour pré-remplir la date de la leçon */
   initialLessonDay?: string;
+  /** ⭐ 2026-09-19 (retour promoteur « dates non alignées avec le cahier journal ») :
+   *    lundi (YYYY-MM-DD) de la semaine AFFICHÉE dans le cahier journal —
+   *    source de vérité pour la date de la leçon. Sans elle, on retombe sur
+   *    la semaine courante (comportement historique, fiche hors cahier). */
+  initialWeekStartDate?: string;
   /** ⭐ Type de fiche initial (MATH/FRANCAIS/EST/ES/EA) deviné depuis la matière */
   initialSheetType?: string;
   /** ⭐ Matière initiale (clé matière du cahier journal, ex: "francais") */
@@ -219,6 +224,11 @@ const SHEET_TYPE_CONFIG: Record<string, {
   ibisFields: { label: string; key: string; placeholder: string; short?: boolean }[];
   phases?: { label: string; key: string }[];
   applicationTable?: { columns: string[]; keys: string[] };
+  /** ⭐ 2026-09-19 (retour promoteur) — exercices structuraux du FRANÇAIS en
+   *    tableaux 2 colonnes : phase introductive (Enseignant | Enseignant) et
+   *    phase de systématisation (Enseignant | Apprenant). Chaque cellule est
+   *    un RichTextEditor (pattern du tableau d'application). */
+  phaseTables?: { label: string; columns: string[]; keys: string[] }[];
 }> = {
   MATH: {
     ibisTitle: "Phases préparatoires",
@@ -239,9 +249,20 @@ const SHEET_TYPE_CONFIG: Record<string, {
       { label: "Fiche N°", key: "ibis_4", placeholder: "Ex: Fiche 1", short: true },
       { label: "Durée (10 minutes)", key: "ibis_5", placeholder: "Ex: 10 min", short: true },
     ],
-    phases: [
-      { label: "Phase introductive", key: "phase_introductive" },
-      { label: "Phase de systématisation", key: "phase_systematisation" },
+    // ⭐ 2026-09-19 (retour promoteur) — EXERCICES STRUCTURAUX en tableaux 2 colonnes :
+    //    phase introductive (Enseignant | Enseignant) et phase de systématisation
+    //    (Enseignant | Apprenant), dans la préparation ET le PDF.
+    phaseTables: [
+      {
+        label: "Phase introductive",
+        columns: ["Enseignant", "Enseignant"],
+        keys: ["phase_intro_ens1", "phase_intro_ens2"],
+      },
+      {
+        label: "Phase de systématisation",
+        columns: ["Enseignant", "Apprenant"],
+        keys: ["phase_syst_ens", "phase_syst_app"],
+      },
     ],
     // ⭐ Phase d'application = tableau 3 colonnes (conforme au PDF)
     applicationTable: {
@@ -286,7 +307,7 @@ const SHEET_TYPE_CONFIG: Record<string, {
   },
 };
 
-export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahierJournalId, initialClassId, initialLessonDay, initialSheetType, initialMatiere, initialSousMatiere, initialFicheId, initialFicheNonce, initialPayloadNonce }: PedagogicalSheetsTabProps) {
+export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahierJournalId, initialClassId, initialLessonDay, initialWeekStartDate, initialSheetType, initialMatiere, initialSousMatiere, initialFicheId, initialFicheNonce, initialPayloadNonce }: PedagogicalSheetsTabProps) {
   const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>("");
@@ -326,8 +347,12 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     methodes: "", moyensDidactiques: "", evaluation: "",
     // I.bis- Section spécifique (champs dynamiques ibis_1, ibis_2, etc.)
     ibis_1: "", ibis_2: "", ibis_3: "", ibis_4: "", ibis_5: "",
-    // ⭐ Phases spécifiques au français
+    // ⭐ Phases spécifiques au français (legacy — anciennes fiches texte simple)
     phase_introductive: "", phase_systematisation: "",
+    // ⭐ 2026-09-19 — Exercices structuraux en tableaux 2 colonnes :
+    //    introductive (Enseignant | Enseignant), systématisation (Enseignant | Apprenant)
+    phase_intro_ens1: "", phase_intro_ens2: "",
+    phase_syst_ens: "", phase_syst_app: "",
     // ⭐ Phase d'application (tableau 3 colonnes)
     app_col1: "", app_col2: "", app_col3: "",
     // II- Déroulement (tableau d'étapes)
@@ -592,16 +617,37 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   //    pour [jour] [matière] [sous-matière] depuis le cahier journal.
   useEffect(() => {
     if (!initialSheetType && !initialLessonDay && !initialMatiere && !initialSousMatiere) return;
-    // Calculer la date de la leçon à partir du jour de la semaine (lundi=1, ..., vendredi=5)
-    // en utilisant la semaine courante.
+    // ⭐ 2026-09-19 (retour promoteur) — Calculer la date de la leçon à partir du
+    //    jour de la semaine (lundi=1, ..., vendredi=5) en utilisant LA SEMAINE
+    //    DU CAHIER JOURNAL (initialWeekStartDate) et NON la semaine courante.
+    //    AVANT : lundi calculé depuis aujourd'hui → si l'enseignant naviguait sur
+    //    une autre semaine dans le cahier journal (semaine prochaine, précédente),
+    //    la fiche pré-remplie portait une « date aléatoire » hors semaine affichée.
+    //    Parsing YYYY-MM-DD manuel (sans new Date(string)) : évite tout décalage
+    //    de timezone (date-only UTC vs locale).
     if (initialLessonDay) {
       const dayNums: Record<string, number> = { lundi: 1, mardi: 2, mercredi: 3, jeudi: 4, vendredi: 5 };
       const targetDayNum = dayNums[initialLessonDay.toLowerCase()];
       if (targetDayNum !== undefined) {
-        const today = new Date();
-        const monday = new Date(today);
-        const currentDay = today.getDay() === 0 ? 7 : today.getDay(); // 0=dim → 7
-        monday.setDate(today.getDate() - (currentDay - 1)); // revenir à lundi
+        let monday: Date;
+        // ⭐ Gère les 2 formats : "YYYY-MM-DD" (front) et "YYYY-MM-DDT00:00:00.000Z"
+        //    (Date sérialisée du backend — weekStartDate est un DateTime @db.Date).
+        const wsDatePart = (initialWeekStartDate || "").slice(0, 10);
+        const wsParts = wsDatePart.split("-");
+        const wsValid =
+          wsParts.length === 3 &&
+          wsParts.every((p) => /^\d+$/.test(p)) &&
+          wsParts[0].length === 4;
+        if (wsValid) {
+          // Lundi de la semaine affichée dans le cahier journal (date locale)
+          monday = new Date(Number(wsParts[0]), Number(wsParts[1]) - 1, Number(wsParts[2]));
+        } else {
+          // Repli historique : lundi de la semaine courante
+          const today = new Date();
+          const currentDay = today.getDay() === 0 ? 7 : today.getDay(); // 0=dim → 7
+          monday = new Date(today);
+          monday.setDate(today.getDate() - (currentDay - 1));
+        }
         const lessonDate = new Date(monday);
         lessonDate.setDate(monday.getDate() + (targetDayNum - 1));
         const y = lessonDate.getFullYear();
@@ -664,7 +710,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     // Ouvrir automatiquement le formulaire
     setShowForm(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialSheetType, initialLessonDay, initialMatiere, initialSousMatiere, initialPayloadNonce]);
+  }, [initialSheetType, initialLessonDay, initialWeekStartDate, initialMatiere, initialSousMatiere, initialPayloadNonce]);
 
   // ⭐ Ouvrir une fiche existante en édition quand initialFicheId est fourni
   //    (depuis le bouton "Voir la fiche" dans FichesAPreparer / FichesLieesJournal)
@@ -807,6 +853,15 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       ...emptyForm, ...fiche,
       lessonDate: fiche.lessonDate ? formatDate(fiche.lessonDate) : "",
       adminDate: fiche.adminDate ? formatDate(fiche.adminDate) : "",
+      // ⭐ 2026-09-19 — Compatibilité exercices structuraux : les ANCIENNES
+      //    fiches FRANCAIS portaient les phases en texte simple
+      //    (phase_introductive / phase_systematisation). À l'ouverture en
+      //    édition, on reporte l'ancien contenu dans la 1re colonne du
+      //    tableau 2 colonnes correspondant (aucune perte visuelle) ; à la
+      //    sauvegarde, les nouvelles colonnes sont persistées (l'ancienne
+      //    colonne reste intacte en base).
+      phase_intro_ens1: fiche.phase_intro_ens1 || fiche.phase_introductive || "",
+      phase_syst_ens: fiche.phase_syst_ens || fiche.phase_systematisation || "",
       deroulement: Array.isArray(fiche.deroulement) ? fiche.deroulement :
         (typeof fiche.deroulement === "string" ? JSON.parse(fiche.deroulement || "[]") : []),
       maternelle: {
@@ -1588,8 +1643,45 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                 </div>
               ))}
             </div>
-            {/* ⭐ Phases spécifiques (Phase introductive, systématisation) */}
-            {typeConfig.phases && (
+            {/* ⭐ 2026-09-19 — Exercices structuraux en TABLEAUX 2 colonnes
+                (retour promoteur) : phase introductive (Enseignant | Enseignant)
+                et phase de systématisation (Enseignant | Apprenant).
+                Pattern identique au tableau d'application : chaque cellule est
+                un RichTextEditor (contenu multi-lignes/listes possible). */}
+            {typeConfig.phaseTables && (
+              <div className="mt-4 space-y-4">
+                {typeConfig.phaseTables.map((t) => (
+                  <div key={t.label}>
+                    <label className="block text-xs font-bold text-slate-700 mb-2">{t.label}</label>
+                    <div className="overflow-x-auto border border-slate-300 rounded-lg">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className={cn("text-white", sheetType?.headerBg || "bg-slate-600")}>
+                            {t.columns.map((col, i) => (
+                              <th key={i} className="border border-slate-300 px-3 py-2 text-xs font-bold uppercase text-center">{col}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            {t.keys.map((key, i) => (
+                              <td key={i} className="border border-slate-300 p-0 align-top" style={{ minWidth: "200px" }}>
+                                <RichTextEditor value={form[key] || ""} onChange={html => setForm({ ...form, [key]: html })} disabled={isReadOnly} minHeight="120px" />
+                              </td>
+                            ))}
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* ⭐ Ancien rendu des phases (texte simple) — conservé UNIQUEMENT
+                pour l'affichage des fiches LEGACY : une fiche FRANCAIS créée
+                avant le passage aux tableaux qui n'a pas encore été rééditée.
+                Cachée dès que les nouveaux champs tableaux existent. */}
+            {typeConfig.phases && !typeConfig.phaseTables && (
               <div className="mt-4 space-y-3">
                 {typeConfig.phases.map(p => (
                   <div key={p.key}>

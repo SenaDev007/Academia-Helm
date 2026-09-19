@@ -11454,3 +11454,22 @@ Stage Summary:
 - ⏳ Nettoyage données de test CSPEB + Mon Avenir Plus : en attente du retour d'accès DB (script prêt)
 - HOTFIX (bug latent révélé par l'E2E) — createPedagogicalFiche : le repli optionnel 42703 spliceait `params` avec l'INDEX de `fields`, or params est décalé (createdAt/updatedAt = NOW() sans param) → 08P01 « bind message supplies N parameters, but prepared statement requires M » → TOUTE création de fiche portant une colonne optionnelle échouait en 500 dès que le repli se déclenchait. Réécriture en ENTRÉES ATOMIQUES {field, placeholder, param?} + RENUMÉROTATION des $N après filtrage — l'alignement reste toujours correct. (Le repli UPDATE était déjà sain : renumérotation existante.)
 - DÉCOUVERTE INFRA : Railway n'applique PAS les migrations (docker-entrypoint les saute explicitement — « appliquées manuellement sur Neon ») → la migration 20260919120000 doit être appliquée via script ; l'accès DB sandbox subit le flakiness documenté → script apply_migration_task23.js avec boucle de reprise 30 min.
+
+---
+Task ID: 23 (validation production + incidents)
+Agent: Super Z (principal)
+Task: Suite — validation E2E production (tenant Academia Helm) + déblocage déploiement Vercel + migration en attente
+
+Work Log:
+- VALIDATION NAVIGATEUR (déploiement dpl_VYYHwLm6rDZ8TmbLzjGmEPJDQgTU) :
+  * DATES (retour promoteur) : enseignant blaise.helm → cahier journal → navigation vers la semaine du 21-25/09 → sous-matière « Vocabulaire thématique » ajoutée au MARDI (22/09) → « Préparer » → le champ Date de la fiche = **2026-09-22** (l'ANCIEN code affichait 2026-09-15 = mardi de la semaine courante). Sauvegarde + réouverture : lessonDate 2026-09-22 PERSISTÉ ✅.
+  * TABLEAUX EXERCICES STRUCTURAUX : le formulaire FRANCAIS affiche « Phase introductive » (tableau 2 col. Enseignant | Enseignant) + « Phase de systématisation » (tableau 2 col. Enseignant | Apprenant) — 3 th ENSEIGNANT + 1 th APPRENANT vérifiés dans le DOM ; 4 cellules RichTextEditor remplies ; sauvegarde 201/200 sans crash (repli 42703 corrigé) ✅.
+- INCIDENT Vercel : les builds des commits 0ab4f4bc1/2ddd22df8 n'ont PAS abouti (production figée sur le deployment de la tâche 22 — vérifié par fetch no-store + recherche de « initialWeekStartDate » dans les chunks servi : absent). Un commit vide (e9e2982fd) a re-déclenché le build → nouveau deployment EN LIGNE, le code tâche 23 s'est retrouvé déployé (build du code lui-même sain — tsc et lint des fichiers modifiés : aucune nouvelle erreur, les erreurs détectées sont préexistantes).
+- INCIDENT DB Neon : accès sandbox bloqué (« password authentication failed » — même flakiness documenté, ~1 h) → la migration 20260919120000 n'a pas pu être appliquée manuellement (Railway ne l'applique PAS : docker-entrypoint saute les migrations). Conséquence maîtrisée : le repli 42703 CORRIGÉ crée/sauvegarde les fiches en ignorant silencieusement les 4 colonnes de phases (aucun 500, aucune perte des autres champs). Script apply_migration_task23.js prêt (boucle de reprise 30 min) + inventaire READ-ONLY du nettoyage prêt (inventory_test_data.js).
+- E2E API (avant blocage) : création fiche AVEC champs phases → 201 ✅ (repli), nettoyage ✅.
+
+Stage Summary:
+- ✅ Fix dates VALIDÉ en production navigateur (2026-09-22 pour le mardi de la semaine affichée) — capture task23-date-fiche-mardi-22-09.png
+- ✅ Tableaux exercices structuraux VALIDÉS en production navigateur (rendu + sauvegarde sans crash) — capture task23-tableaux-exercices-structuraux.png
+- ⏳ Migration 20260919120000 à appliquer dès le retour d'accès DB (script prêt) → re-tester la persistance des 4 colonnes + le PDF
+- ⏳ Nettoyage données de test CSPEB + Mon Avenir Plus : inventaire READ-ONLY prêt (inventory_test_data.js), purge bloquée par le même accès DB

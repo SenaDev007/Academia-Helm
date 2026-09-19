@@ -27,11 +27,23 @@ import { CreateGuardianDto, UpdateGuardianDto, UpdateGuardianRelationDto } from 
  * ⭐ P2.3 — RBAC renforcé sur GuardiansPrismaController.
  *    Avant : `JwtAuthGuard` uniquement → tout user authentifié pouvait CRUD guardians.
  *    Maintenant : `TenantGuard` + `RolesGuard` + `@Roles` par endpoint.
+ *
+ * ⭐ 2026-09-19 (retour promoteur « parents sans compte utilisateur ») :
+ *    la liste était plus RESTRICTIVE que celle du cycle de vie élèves
+ *    (students-lifecycle.controller.ts). Le secrétaire comptable qui inscrit
+ *    un élève (pre-register/admit autorisés) voyait l'ajout des parents
+ *    rejeté en 403 — avalé silencieusement par le frontend (console.warn)
+ *    → inscription « réussie » mais SANS guardian, donc sans compte parent.
+ *    Alignement sur la liste du cycle de vie (mêmes métiers que l'inscription).
  */
 const MANAGEMENT_ROLES = [
   'ADMIN', 'DIRECTOR', 'SCHOOL_ADMIN', 'DIRECTEUR',
   'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SUPER_DIRECTOR',
   'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'SECRETARY', 'TEACHER',
+  // ⭐ 2026-09-19 : secrétaires et comptables finalisent les inscriptions —
+  //    usage métier légitime, aligné sur students-lifecycle.controller.ts.
+  'SECRETAIRE', 'SECRETAIRE_COMPTABLE', 'COMPTABLE', 'ACCOUNTANT',
+  'RESP_SCOLARITE', 'CENSEUR', 'ECONOME', 'SCHOOL_DIRECTOR', 'DEPUTY_DIRECTOR',
 ];
 
 @Controller('students/:studentId/guardians')

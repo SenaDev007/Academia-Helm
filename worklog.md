@@ -11429,3 +11429,4 @@ Stage Summary:
 - ✅ Compte parent créé EN MÊME TEMPS que l'inscription de l'élève (wizard, conversion admission, import Excel, transfert) — idempotent et non bloquant
 - ✅ Connexion parent réparée : résolution par guardian.userId d'abord → les parents provisionnés (avec ou sans email) peuvent se connecter au portail
 - ⏳ Backfill des parents existants : en attente de confirmation du promoteur
+- FIX (2) RBAC BLOQUANT DÉCOUVERT — guardians-prisma.controller.ts : la liste @Roles était plus restrictive que celle du cycle de vie élèves → le SECRETAIRE COMPTABLE (rôle exact signalé par le promoteur) qui inscrivait un élève voyait l'ajout des parents rejeté en 403, avalé silencieusement par le frontend (console.warn par guardian) → inscriptions « réussies » SANS guardian ni compte parent. Liste alignée sur students-lifecycle.controller.ts (SECRETAIRE, SECRETAIRE_COMPTABLE, COMPTABLE, ACCOUNTANT, RESP_SCOLARITE, CENSEUR, ECONOME, SCHOOL_DIRECTOR, DEPUTY_DIRECTOR).

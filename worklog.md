@@ -11473,3 +11473,27 @@ Stage Summary:
 - ✅ Tableaux exercices structuraux VALIDÉS en production navigateur (rendu + sauvegarde sans crash) — capture task23-tableaux-exercices-structuraux.png
 - ⏳ Migration 20260919120000 à appliquer dès le retour d'accès DB (script prêt) → re-tester la persistance des 4 colonnes + le PDF
 - ⏳ Nettoyage données de test CSPEB + Mon Avenir Plus : inventaire READ-ONLY prêt (inventory_test_data.js), purge bloquée par le même accès DB
+
+---
+Task ID: 23 (déblocage DB — accès rétabli)
+Agent: Super Z (principal)
+Task: Suite finale tâche 23 — le promoteur fournit l'accès DB (chaîne de connexion) : appliquer la migration 20260919120000 en attente, valider la persistance des 4 colonnes, et exécuter le nettoyage des données de test CSPEB / Mon Avenir Plus (demande explicite)
+
+Work Log:
+- ACCÈS DB RÉTABLI : connexion pooler Neon OK (même ep-curly-frost-agx7owra, nouveau mot de passe fourni par le promoteur) — le flakiness « password authentication failed » est résolu
+- MIGRATION 20260919120000 APPLIQUÉE (scripts hors dépôt apply_migration_task23.js, mode manuel docker-entrypoint) : diagnostic → 4 colonnes phases ABSENTES + migration NON enregistrée → DDL idempotent (ADD COLUMN IF NOT EXISTS phase_intro_ens1/phase_intro_ens2/phase_syst_ens/phase_syst_app TEXT nullable sur primary_pedagogical_fiches) → enregistrement _prisma_migrations avec checksum sha256 (2/2 migrations ciblées enregistrées, 0 drift) ; 20260919100000 (pendingEmail) vérifiée déjà appliquée
+- VALIDATION E2E PRODUCTION (tenant de test academia-helm, compte blaise.helm AHE-P-26-00014, POST /api/portal/auth/teacher) : 6/6 — création fiche FRANCAIS AVEC les 4 phases → 201 ; round-trip GET → 4 champs identiques ; CONTRÔLE DB DIRECT → 4 colonnes NON-NULL (preuve que le repli 42703 ne se déclenche PLUS) ; export-pdf → PDF valide 116 Ko ; DELETE nettoyage OK. Le correctif 08P01 (entrées atomiques + renumérotation) est désormais pleinement actif
+- INVENTAIRE READ-ONLY du nettoyage (scripts hors dépôt inventory_test_data.js) :
+  * Mon Avenir Plus : RIEN à nettoyer — 0 compte test (déjà purgés), 172 évaluations réelles (« Évaluation diagnostique - T1 », rentrée), 50 notes toutes liées aux évaluations (12/09), 5 fiches d'enseignants réels (moucharafoubabonre, idrissoutoko18, ayoubakogui778)
+  * CSPEB : artefacts de test restants identifiés — 4 comptes @cspeb.test (recette.comptable/directeur/promoteur/sec-comptable, 42 sessions), 36 notes orphelines DRAFT du 04/09 (seed broadsheet v10d — evaluationId NULL, AY passée 2025-2026), 1 remarque en_broadsheet_remarks orpheline (classe EN supprimée), 1 fiche test « Fiche Français » (03/09, contenu « Thanks dbd' », DRAFT, compte owner) + son journal de test (62 car., même jour, aucune référence devoir), 112 class_subjects orphelins EN (classId passé à NULL par FK SetNull à la suppression des classes EN test), 28 sujets EN (14 × 2 sections Nursery/Primary), 2 types d'évaluation FIRST_CA auto-créés (v10e)
+  * CONSERVÉ (réel) : 99 élèves, 7 enseignants, 9 classes, fiches réelles de l'enseignante auroretheodoraa (18/09), journal réel CM1 Aurore (175 Ko), 72 class_subjects orphelins FR (restructuration école du 20/08 — pas de notre fait), 13 types d'évaluation réels (EM1/EM2/DS/EC/ED/EP/INT)
+- PURGE EXÉCUTÉE (scripts hors dépôt purge_test_data.js) : dry-run d'abord (garde-fous : assertions de compteurs exacts 4/36/1/1/1/112/28/2, emails @cspeb.test vérifiés) puis --execute en TRANSACTION avec sauvegarde JSON complète AVANT suppression (download/backup_purge_test_data_2026-09-19T11-59-52-625Z.json)
+  * 1er essai ROLLBACK propre (atomicité respectée) : le filtre NOT IN ratait les 112 orphelins car leur classId est NULL (SetNull) → corrigé en NOT EXISTS
+  * 2e essai : COMMIT — 42 sessions, 4 users, 36 grades, 1 remarque EN, 1 fiche test, 1 journal test, 112 class_subjects EN, 28 sujets EN, 2 FIRST_CA supprimés
+  * VÉRIFICATION POST-PURGE 13/13 ✅ : 0 artefact restant ; élèves 99→99, enseignants 7→7, classes 9→9, fiches réelles 2→2, journaux 27→26 (−1 test), sujets FR 19→19, types réels 13→13, users réels 8→8, class_subjects 185→73 (−112) ; Mon Avenir Plus INTACT (50 notes, 172 évaluations)
+
+Stage Summary:
+- ✅ Migration 20260919120000 appliquée sur Neon + enregistrée (fin du repli 42703) — persistance des tableaux d'exercices structuraux validée E2E 6/6 en production (API + DB + PDF)
+- ✅ Nettoyage des données de test du tenant CSPEB exécuté (comptes E2E, notes/fiche/journal/remarque de test, artefacts EN) — sauvegarde JSON intégrale conservée, transaction, 13/13 vérifications
+- ✅ Mon Avenir Plus : aucune donnée de test restante (tout était réel) — aucune modification
+- Les écoles réelles ne contiennent plus AUCUN artefact de nos sessions de validation ; le tenant dédié academia-helm reste le seul terrain de test (politique tâche 23)

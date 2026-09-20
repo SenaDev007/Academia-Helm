@@ -2,31 +2,14 @@
 
 /**
  * ============================================================================
- * FICHE DE TRANSFERT — Modal de génération PDF
+ * FICHE DE TRANSFERT — Modal de génération PDF (Primaire + Secondaire)
  * ============================================================================
- *
- * Deux modèles :
- *   1. Primaire : « FICHE DE TRANSFERT EDUCMASTER DES APPRENTIS »
- *      - Tableau 2 sections (Ancienne École | Nouvelle École)
- *      - 8 lignes pour les élèves
- *      - Motif valable de transfert
- *      - Signature du Directeur
- *
- *   2. Secondaire : « DEMANDE DE TRANSFERT »
- *      - Informations élève (matricule, nom, classe suivie, classe à suivre)
- *      - 2 colonnes : Établissement d'origine | Établissement d'accueil
- *      - Signatures : élève, parent, censeur, directeur
- *
- * Les données sont récupérées dynamiquement : sélection d'élèves →
- * remplissage automatique du tableau.
+ * Corrigé : portrait pour secondaire, logo école, champs éditables,
+ * filtre niveau élève, classe suivie/à suivre éditables.
  * ============================================================================
  */
-
 import { useState, useEffect, useCallback } from "react";
-import {
-  X, Loader2, Search, FileText, Download, UserPlus, Trash2,
-  CheckCircle2, AlertCircle,
-} from "lucide-react";
+import { X, Loader2, Search, FileText, Download, UserPlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useModuleContext } from "@/hooks/useModuleContext";
@@ -34,24 +17,16 @@ import { useAppSession } from "@/contexts/AppSessionContext";
 import { loadPdfLibs } from "@/lib/exports/pdf-loader";
 import { drawOfficialHeader, drawFooter, type SchoolHeader } from "@/lib/exports/finance-exports";
 
-interface FicheTransfertModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  level: "primaire" | "secondaire";
-}
+interface FicheTransfertModalProps { isOpen: boolean; onClose: () => void; level: "primaire" | "secondaire"; }
 
 interface StudentItem {
-  id: string;
-  firstName: string;
-  lastName: string;
-  matricule?: string;
-  studentCode?: string;
-  className?: string;
-  gender?: string;
+  id: string; firstName: string; lastName: string; matricule?: string;
+  studentCode?: string; className?: string; gender?: string;
+  dateOfBirth?: string; placeOfBirth?: string;
+  schoolLevelCode?: string; enrollmentDate?: string;
+  // Editable fields per student
+  classeSuivie?: string; classeASuivre?: string;
 }
-
-const MONTH_NAMES_FR = ["", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
-  "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 
 export default function FicheTransfertModal({ isOpen, onClose, level }: FicheTransfertModalProps) {
   const { tenant, academicYear, schoolLevel } = useModuleContext();
@@ -63,96 +38,107 @@ export default function FicheTransfertModal({ isOpen, onClose, level }: FicheTra
   const [generating, setGenerating] = useState(false);
   const [motif, setMotif] = useState("");
   const [targetSchool, setTargetSchool] = useState("");
+  const [directorName, setDirectorName] = useState("");
+  const [censeurName, setCenseurName] = useState("");
 
-  // ─── Search students ───
+  // Filter students by level
+  const isSecondary = level === 'secondaire';
+  const levelFilter = isSecondary ? 'SECONDAIRE' : null; // null = both maternelle + primaire
+
   const handleSearch = useCallback(async (query: string) => {
-    if (!query.trim() || query.length < 2) {
-      setSearchResults([]);
-      return;
-    }
+    if (!query.trim() || query.length < 2) { setSearchResults([]); return; }
     setSearching(true);
     try {
-      const params = new URLSearchParams({
-        academicYearId: academicYear?.id || '',
-        search: query,
-        status: 'ACTIVE',
-      });
+      const params = new URLSearchParams({ academicYearId: academicYear?.id || '', search: query, status: 'ACTIVE' });
       const res = await fetch(`/api/students?${params.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Search failed");
       const data = await res.json();
-      const list = Array.isArray(data) ? data : (data?.data || []);
-      // Filter out already selected
+      let list: StudentItem[] = Array.isArray(data) ? data : (data?.data || []);
+      // Filter by level if needed
+      if (levelFilter) {
+        list = list.filter(s => {
+          const sl = (s as any).schoolLevelCode || (s as any).schoolLevel?.code || '';
+          return String(sl).toUpperCase().includes('SECOND');
+        });
+      } else {
+        // Exclude secondary for primaire
+        list = list.filter(s => {
+          const sl = (s as any).schoolLevelCode || (s as any).schoolLevel?.code || '';
+          return !String(sl).toUpperCase().includes('SECOND');
+        });
+      }
       const selectedIds = new Set(selectedStudents.map(s => s.id));
-      setSearchResults(list.filter((s: StudentItem) => !selectedIds.has(s.id)));
-    } catch {
-      setSearchResults([]);
-    } finally {
-      setSearching(false);
-    }
-  }, [academicYear?.id, selectedStudents]);
+      setSearchResults(list.filter(s => !selectedIds.has(s.id)));
+    } catch { setSearchResults([]); } finally { setSearching(false); }
+  }, [academicYear?.id, selectedStudents, levelFilter]);
+
+  useEffect(() => { const t = setTimeout(() => handleSearch(search), 300); return () => clearTimeout(t); }, [search, handleSearch]);
+
+  const addStudent = (s: StudentItem) => {
+    setSelectedStudents(prev => [...prev, { ...s, classeSuivie: s.className || '', classeASuivre: '' }]);
+    setSearch(""); setSearchResults([]);
+  };
+  const removeStudent = (id: string) => setSelectedStudents(prev => prev.filter(s => s.id !== id));
+  const updateStudentField = (id: string, field: string, value: string) =>
+    setSelectedStudents(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
 
   useEffect(() => {
-    const timer = setTimeout(() => handleSearch(search), 300);
-    return () => clearTimeout(timer);
-  }, [search, handleSearch]);
+    (async () => {
+      try {
+        const res = await fetch('/api/settings/identity', { credentials: "include" });
+        if (res.ok) { const d = await res.json(); setDirectorName(d.directorName || d.director_name || ''); }
+      } catch {}
+    })();
+  }, []);
 
-  const addStudent = (student: StudentItem) => {
-    setSelectedStudents(prev => [...prev, student]);
-    setSearch("");
-    setSearchResults([]);
+  // ─── Fetch school logo as base64 ───
+  const fetchLogoBase64 = async (logoUrl: string): Promise<string | null> => {
+    try {
+      const res = await fetch(logoUrl, { credentials: "include" });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch { return null; }
   };
 
-  const removeStudent = (id: string) => {
-    setSelectedStudents(prev => prev.filter(s => s.id !== id));
-  };
-
-  // ─── Generate PDF ───
   const handleGenerate = async () => {
-    if (selectedStudents.length === 0) {
-      toast.error("Sélectionnez au moins un élève");
-      return;
-    }
+    if (selectedStudents.length === 0) { toast.error("Sélectionnez au moins un élève"); return; }
     setGenerating(true);
     try {
       const { jsPDF } = await loadPdfLibs();
-
       let schoolInfo: any = {};
-      try {
-        const idRes = await fetch('/api/settings/identity', { credentials: 'include' });
-        if (idRes.ok) schoolInfo = await idRes.json();
-      } catch {}
+      try { const r = await fetch('/api/settings/identity', { credentials: 'include' }); if (r.ok) schoolInfo = await r.json(); } catch {}
+
+      const logoUrl = schoolInfo.logoUrl || schoolInfo.logo || (tenant?.id ? `/api/tenants/${tenant.id}/logo` : null);
+      let logoBase64: string | null = null;
+      if (logoUrl) logoBase64 = await fetchLogoBase64(logoUrl);
 
       const header: SchoolHeader = {
         schoolName: schoolInfo.schoolName || schoolInfo.name || tenant?.name || 'Établissement',
-        schoolLogoUrl: schoolInfo.logoUrl || schoolInfo.logo || (tenant?.id ? `/api/tenants/${tenant.id}/logo` : null),
+        schoolLogoUrl: logoBase64,
         schoolAddress: schoolInfo.address || schoolInfo.schoolAddress || null,
         schoolPhone: schoolInfo.phone || schoolInfo.schoolPhone || null,
         schoolEmail: schoolInfo.email || schoolInfo.schoolEmail || null,
-        schoolLevel: schoolLevel?.code || (level === 'secondaire' ? 'SECONDAIRE' : 'PRIMAIRE'),
+        schoolLevel: schoolLevel?.code || (isSecondary ? 'SECONDAIRE' : 'PRIMAIRE'),
       };
 
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-      const margin = 15;
-
       if (level === 'primaire') {
-        generatePrimairePDF(doc, header, selectedStudents, motif, targetSchool, pageWidth, pageHeight, margin);
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+        generatePrimairePDF(doc, header, selectedStudents, motif, targetSchool, directorName);
+        doc.save('fiche_transfert_educmaster_primaire.pdf');
       } else {
-        generateSecondairePDF(doc, header, selectedStudents, motif, targetSchool, pageWidth, pageHeight, margin);
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+        generateSecondairePDF(doc, header, selectedStudents, motif, targetSchool, directorName, censeurName);
+        doc.save('demande_transfert_secondaire.pdf');
       }
-
-      const fileName = level === 'primaire'
-        ? `fiche_transfert_educmaster_primaire.pdf`
-        : `demande_transfert_secondaire.pdf`;
-      doc.save(fileName);
       toast.success(`✅ ${level === 'primaire' ? 'Fiche de transfert' : 'Demande de transfert'} générée`);
-    } catch (e: any) {
-      console.error('PDF generation error:', e);
-      toast.error("Erreur de génération", { description: e.message });
-    } finally {
-      setGenerating(false);
-    }
+    } catch (e: any) { console.error('PDF error:', e); toast.error("Erreur", { description: e.message }); }
+    finally { setGenerating(false); }
   };
 
   if (!isOpen) return null;
@@ -160,117 +146,99 @@ export default function FicheTransfertModal({ isOpen, onClose, level }: FicheTra
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
         <div className="sticky top-0 bg-white border-b border-slate-100 p-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
             <FileText className="h-6 w-6 text-blue-600" />
             <div>
-              <h3 className="text-lg font-bold text-slate-900">
-                {level === 'primaire' ? 'Fiche de Transfert (Primaire)' : 'Demande de Transfert (Secondaire)'}
-              </h3>
-              <p className="text-xs text-slate-500">Génération PDF conforme au modèle officiel</p>
+              <h3 className="text-lg font-bold text-slate-900">{level === 'primaire' ? 'Fiche de Transfert (Primaire)' : 'Demande de Transfert (Secondaire)'}</h3>
+              <p className="text-xs text-slate-500">{level === 'primaire' ? 'Modèle Educmaster' : 'Modèle Secondaire'} — {level === 'secondaire' ? 'Format Portrait' : 'Format Paysage'}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg">
-            <X className="h-5 w-5 text-slate-500" />
-          </button>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg"><X className="h-5 w-5 text-slate-500" /></button>
         </div>
 
-        {/* Body */}
         <div className="p-6 space-y-4">
-          {/* Target school + motif */}
+          {/* School + motif fields */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-1">Nouvelle école (accueil)</label>
-              <input
-                type="text"
-                value={targetSchool}
-                onChange={(e) => setTargetSchool(e.target.value)}
-                placeholder="Nom de l'école d'accueil..."
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
-              />
+              <input type="text" value={targetSchool} onChange={e => setTargetSchool(e.target.value)} placeholder="Nom de l'école d'accueil..." className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
             </div>
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-1">Motif de transfert</label>
-              <input
-                type="text"
-                value={motif}
-                onChange={(e) => setMotif(e.target.value)}
-                placeholder="Ex: Déménagement familial..."
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
-              />
+              <input type="text" value={motif} onChange={e => setMotif(e.target.value)} placeholder="Ex: Déménagement familial..." className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
             </div>
           </div>
 
-          {/* Student search */}
+          {/* Director + Censeur (for secondaire) */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1">Nom du Directeur</label>
+              <input type="text" value={directorName} onChange={e => setDirectorName(e.target.value)} placeholder="Nom du directeur..." className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+            </div>
+            {isSecondary && (
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Nom du Censeur</label>
+                <input type="text" value={censeurName} onChange={e => setCenseurName(e.target.value)} placeholder="Nom du censeur..." className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
+              </div>
+            )}
+          </div>
+
+          {/* Search */}
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1">Rechercher et ajouter des élèves</label>
+            <label className="block text-sm font-bold text-slate-700 mb-1">Rechercher et ajouter des élèves {levelFilter ? '(Secondaire uniquement)' : '(Maternelle/Primaire uniquement)'}</label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Tapez le nom ou matricule de l'élève..."
-                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm"
-              />
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Tapez le nom ou matricule..." className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg text-sm" />
               {searching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-slate-400" />}
             </div>
             {searchResults.length > 0 && (
               <div className="mt-2 border border-slate-200 rounded-lg max-h-48 overflow-y-auto">
-                {searchResults.map((student) => (
-                  <button
-                    key={student.id}
-                    onClick={() => addStudent(student)}
-                    className="w-full flex items-center justify-between p-2 hover:bg-blue-50 border-b border-slate-100 text-left"
-                  >
-                    <div className="flex items-center gap-2">
-                      <UserPlus className="w-4 h-4 text-blue-600" />
-                      <span className="text-sm font-medium text-slate-700">
-                        {student.lastName} {student.firstName}
-                      </span>
-                      <span className="text-xs text-slate-400">· {student.matricule || student.studentCode || '—'}</span>
-                      {student.className && <span className="text-xs text-slate-400">· {student.className}</span>}
-                    </div>
+                {searchResults.map(s => (
+                  <button key={s.id} onClick={() => addStudent(s)} className="w-full flex items-center gap-2 p-2 hover:bg-blue-50 border-b border-slate-100 text-left">
+                    <UserPlus className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm font-medium">{s.lastName} {s.firstName}</span>
+                    <span className="text-xs text-slate-400">· {s.matricule || s.studentCode || '—'}</span>
+                    {s.className && <span className="text-xs text-slate-400">· {s.className}</span>}
                   </button>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Selected students list */}
+          {/* Selected students */}
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-2">
-              Élèves sélectionnés ({selectedStudents.length})
-            </label>
+            <label className="block text-sm font-bold text-slate-700 mb-2">Élèves sélectionnés ({selectedStudents.length})</label>
             {selectedStudents.length === 0 ? (
-              <div className="text-center py-6 text-slate-400 text-sm border-2 border-dashed border-slate-200 rounded-lg">
-                Aucun élève sélectionné. Recherchez ci-dessus pour ajouter.
-              </div>
+              <div className="text-center py-6 text-slate-400 text-sm border-2 border-dashed border-slate-200 rounded-lg">Aucun élève sélectionné.</div>
             ) : (
-              <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <div className="border border-slate-200 rounded-lg overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200">
-                      <th className="text-left px-3 py-2 font-semibold text-slate-700">N°</th>
-                      <th className="text-left px-3 py-2 font-semibold text-slate-700">Nom et Prénom</th>
-                      <th className="text-left px-3 py-2 font-semibold text-slate-700">Matricule</th>
-                      <th className="text-left px-3 py-2 font-semibold text-slate-700">Classe</th>
-                      <th className="text-center px-3 py-2 font-semibold text-slate-700">Retirer</th>
-                    </tr>
-                  </thead>
+                  <thead><tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="text-left px-3 py-2 font-semibold text-slate-700">N°</th>
+                    <th className="text-left px-3 py-2 font-semibold text-slate-700">Nom</th>
+                    <th className="text-left px-3 py-2 font-semibold text-slate-700">Matricule</th>
+                    {isSecondary && <th className="text-left px-3 py-2 font-semibold text-slate-700">Classe suivie</th>}
+                    {isSecondary && <th className="text-left px-3 py-2 font-semibold text-slate-700">Classe à suivre</th>}
+                    <th className="text-center px-3 py-2 font-semibold text-slate-700">✕</th>
+                  </tr></thead>
                   <tbody>
-                    {selectedStudents.map((student, idx) => (
-                      <tr key={student.id} className="border-b border-slate-100">
+                    {selectedStudents.map((s, idx) => (
+                      <tr key={s.id} className="border-b border-slate-100">
                         <td className="px-3 py-2 text-slate-400">{idx + 1}</td>
-                        <td className="px-3 py-2 font-medium text-slate-900">{student.lastName} {student.firstName}</td>
-                        <td className="px-3 py-2 text-slate-600">{student.matricule || student.studentCode || '—'}</td>
-                        <td className="px-3 py-2 text-slate-600">{student.className || '—'}</td>
-                        <td className="px-3 py-2 text-center">
-                          <button onClick={() => removeStudent(student.id)} className="p-1 text-red-500 hover:bg-red-50 rounded">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
+                        <td className="px-3 py-2 font-medium">{s.lastName} {s.firstName}</td>
+                        <td className="px-3 py-2 text-slate-600">{s.matricule || s.studentCode || '—'}</td>
+                        {isSecondary && (
+                          <td className="px-3 py-2">
+                            <input type="text" value={s.classeSuivie || ''} onChange={e => updateStudentField(s.id, 'classeSuivie', e.target.value)} placeholder="Classe..." className="w-full px-2 py-1 border border-slate-200 rounded text-xs" />
+                          </td>
+                        )}
+                        {isSecondary && (
+                          <td className="px-3 py-2">
+                            <input type="text" value={s.classeASuivre || ''} onChange={e => updateStudentField(s.id, 'classeASuivre', e.target.value)} placeholder="Classe..." className="w-full px-2 py-1 border border-slate-200 rounded text-xs" />
+                          </td>
+                        )}
+                        <td className="px-3 py-2 text-center"><button onClick={() => removeStudent(s.id)} className="p-1 text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -280,18 +248,10 @@ export default function FicheTransfertModal({ isOpen, onClose, level }: FicheTra
           </div>
         </div>
 
-        {/* Footer */}
         <div className="sticky bottom-0 bg-white border-t border-slate-100 p-4 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">
-            Annuler
-          </button>
-          <button
-            onClick={handleGenerate}
-            disabled={generating || selectedStudents.length === 0}
-            className="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50"
-          >
-            {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            Générer le PDF
+          <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Annuler</button>
+          <button onClick={handleGenerate} disabled={generating || selectedStudents.length === 0} className="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50">
+            {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Générer le PDF
           </button>
         </div>
       </div>
@@ -299,206 +259,146 @@ export default function FicheTransfertModal({ isOpen, onClose, level }: FicheTra
   );
 }
 
-// ─── PDF Generators ───
+// ─── Primaire PDF (landscape) ───
+function generatePrimairePDF(doc: any, header: SchoolHeader, students: StudentItem[], motif: string, targetSchool: string, directorName: string) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 15;
+  drawOfficialHeader(doc, header, pageWidth, header.schoolLogoUrl || undefined);
 
-function generatePrimairePDF(
-  doc: any, header: SchoolHeader, students: StudentItem[],
-  motif: string, targetSchool: string,
-  pageWidth: number, pageHeight: number, margin: number,
-) {
-  drawOfficialHeader(doc, header, pageWidth);
-
-  // Title
-  doc.setFont('times', 'bold');
-  doc.setFontSize(13);
-  doc.setTextColor(20, 20, 20);
+  doc.setFont('times', 'bold'); doc.setFontSize(13); doc.setTextColor(20, 20, 20);
   doc.text('FICHE DE TRANSFERT EDUCMASTER DES APPRENTIS', pageWidth / 2, 52, { align: 'center' });
 
-  // Header fields
-  doc.setFontSize(9);
-  doc.setFont('times', 'normal');
-  const schoolName = header.schoolName || '';
-  const target = targetSchool || '................................';
   let y = 60;
-  doc.text(`ANCIENNE ECOLE : ${schoolName}`, margin, y);
-  doc.text(`NOUVELLE ECOLE : ${target}`, pageWidth / 2 + 10, y);
-  y += 8;
+  doc.setFontSize(9); doc.setFont('times', 'normal');
+  doc.text(`ANCIENNE ECOLE : ${header.schoolName || ''}`, margin, y);
+  doc.text(`NOUVELLE ECOLE : ${targetSchool || '................................'}`, pageWidth / 2 + 10, y);
+  y += 10;
 
-  // Table headers
+  // Table
   const cols = [
-    { label: 'N°', x: margin, w: 8 },
-    { label: 'ANNEE SCOLAIRE', x: margin + 8, w: 22 },
-    { label: 'CLASSE', x: margin + 30, w: 18 },
-    { label: 'N° MATRICULE', x: margin + 48, w: 25 },
-    { label: 'NOM ET PRENOMS', x: margin + 73, w: 50 },
-    { label: 'ANNEE SCOL.', x: margin + 123, w: 22 },
-    { label: 'CLASSE', x: margin + 145, w: 18 },
-    { label: 'ECOLE D\'ACCUEIL', x: margin + 163, w: 60 },
+    { l: 'N°', x: margin, w: 8 }, { l: 'ANNEE', x: margin + 8, w: 20 },
+    { l: 'CLASSE', x: margin + 28, w: 18 }, { l: 'MATRICULE', x: margin + 46, w: 25 },
+    { l: 'NOM ET PRENOMS', x: margin + 71, w: 52 },
+    { l: 'ANNEE', x: margin + 123, w: 20 }, { l: 'CLASSE', x: margin + 143, w: 18 },
+    { l: 'ECOLE D\'ACCUEIL', x: margin + 161, w: 62 },
   ];
-
-  doc.setFillColor(30, 41, 59);
-  doc.rect(margin, y - 4, pageWidth - 2 * margin, 8, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(6);
-  doc.setFont('times', 'bold');
-  cols.forEach(col => {
-    doc.text(col.label, col.x + 1, y, { maxWidth: col.w - 2 });
-  });
-  // Vertical divider between old/new school
-  doc.setDrawColor(255, 255, 255);
-  doc.setLineWidth(0.5);
-  doc.line(margin + 123, y - 4, margin + 123, y + 4 + students.length * 7);
+  doc.setFillColor(30, 41, 59); doc.rect(margin, y - 4, pageWidth - 2 * margin, 7, 'F');
+  doc.setTextColor(255, 255, 255); doc.setFontSize(6); doc.setFont('times', 'bold');
+  cols.forEach(c => doc.text(c.l, c.x + 1, y, { maxWidth: c.w - 2 }));
+  doc.setDrawColor(255, 255, 255); doc.setLineWidth(0.5);
+  doc.line(margin + 123, y - 4, margin + 123, y + 4 + Math.max(8, students.length) * 7);
   y += 6;
-
-  // Rows
-  doc.setTextColor(20, 20, 20);
-  doc.setFont('times', 'normal');
-  doc.setFontSize(7);
-  const maxRows = Math.max(8, students.length);
-  for (let i = 0; i < maxRows; i++) {
-    const s = students[i];
-    const rowY = y + i * 7;
-    if (i < students.length) {
-      const year = new Date().getFullYear() + '-' + (new Date().getFullYear() + 1);
-      doc.text(String(i + 1), cols[0].x + 1, rowY);
-      doc.text(year, cols[1].x + 1, rowY);
-      doc.text(s.className || '', cols[2].x + 1, rowY);
-      doc.text(s.matricule || s.studentCode || '', cols[3].x + 1, rowY);
-      doc.text(`${s.lastName} ${s.firstName}`, cols[4].x + 1, rowY, { maxWidth: cols[4].w - 2 });
-      doc.text(year, cols[5].x + 1, rowY);
-      doc.text(s.className || '', cols[6].x + 1, rowY);
-      doc.text(targetSchool, cols[7].x + 1, rowY, { maxWidth: cols[7].w - 2 });
+  doc.setTextColor(20, 20, 20); doc.setFont('times', 'normal'); doc.setFontSize(7);
+  for (let i = 0; i < Math.max(8, students.length); i++) {
+    const s = students[i]; const ry = y + i * 7;
+    if (s) {
+      const yr = new Date().getFullYear() + '-' + (new Date().getFullYear() + 1);
+      doc.text(String(i + 1), cols[0].x + 1, ry);
+      doc.text(yr, cols[1].x + 1, ry);
+      doc.text(s.className || '', cols[2].x + 1, ry);
+      doc.text(s.matricule || s.studentCode || '', cols[3].x + 1, ry);
+      doc.text(`${s.lastName} ${s.firstName}`, cols[4].x + 1, ry, { maxWidth: cols[4].w - 2 });
+      doc.text(yr, cols[5].x + 1, ry);
+      doc.text(s.className || '', cols[6].x + 1, ry);
+      doc.text(targetSchool, cols[7].x + 1, ry, { maxWidth: cols[7].w - 2 });
     }
-    // Row border
-    doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.2);
-    doc.line(margin, rowY + 3, pageWidth - margin, rowY + 3);
+    doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.2);
+    doc.line(margin, ry + 3, pageWidth - margin, ry + 3);
   }
+  y += Math.max(8, students.length) * 7 + 5;
 
-  y += maxRows * 7 + 5;
-
-  // Motif box
-  doc.setFont('times', 'bold');
-  doc.setFontSize(9);
+  doc.setFont('times', 'bold'); doc.setFontSize(9);
   doc.text('MOTIF VALABLE DE TRANSFERT', margin, y);
-  doc.setDrawColor(100, 100, 100);
-  doc.setLineWidth(0.3);
+  doc.setDrawColor(100, 100, 100); doc.setLineWidth(0.3);
   doc.rect(margin, y + 2, pageWidth - 2 * margin, 20);
-  doc.setFont('times', 'normal');
-  doc.setFontSize(8);
-  if (motif) {
-    const lines = doc.splitTextToSize(motif, pageWidth - 2 * margin - 4);
-    lines.forEach((line: string, i: number) => {
-      doc.text(line, margin + 2, y + 8 + i * 4);
-    });
-  }
+  doc.setFont('times', 'normal'); doc.setFontSize(8);
+  if (motif) { doc.splitTextToSize(motif, pageWidth - 2 * margin - 4).forEach((l: string, i: number) => doc.text(l, margin + 2, y + 8 + i * 4)); }
   y += 28;
 
-  // Date & signature
   doc.setFontSize(9);
   doc.text(`Fait à ..........................................., le ......... / .......... /20.......`, margin, y);
-  doc.text(`Le Directeur..........`, pageWidth - margin - 40, y);
-
-  // Footer
-  doc.setFontSize(6);
-  doc.setTextColor(150, 150, 150);
+  doc.text(`Le Directeur${directorName ? ' : ' + directorName : '..........'}`, pageWidth - margin - 50, y);
+  doc.setFontSize(6); doc.setTextColor(150, 150, 150);
   doc.text('FICHE DE TRANSFERT-POINT FOCAL/EDUCMASTER', margin, pageHeight - 5);
-
   drawFooter(doc, pageWidth, pageHeight, 1);
 }
 
-function generateSecondairePDF(
-  doc: any, header: SchoolHeader, students: StudentItem[],
-  motif: string, targetSchool: string,
-  pageWidth: number, pageHeight: number, margin: number,
-) {
-  // Generate one page per student
+// ─── Secondaire PDF (PORTRAIT) ───
+function generateSecondairePDF(doc: any, header: SchoolHeader, students: StudentItem[], motif: string, targetSchool: string, directorName: string, censeurName: string) {
+  const pageWidth = doc.internal.pageSize.getWidth(); // ~210mm portrait
+  const pageHeight = doc.internal.pageSize.getHeight(); // ~297mm portrait
+  const margin = 15;
+
   students.forEach((student, idx) => {
     if (idx > 0) doc.addPage();
-    drawOfficialHeader(doc, header, pageWidth);
+    drawOfficialHeader(doc, header, pageWidth, header.schoolLogoUrl || undefined);
 
-    // Title
-    doc.setFont('times', 'bold');
-    doc.setFontSize(16);
-    doc.setTextColor(20, 20, 20);
+    doc.setFont('times', 'bold'); doc.setFontSize(14); doc.setTextColor(20, 20, 20);
     doc.text('DEMANDE DE TRANSFERT', pageWidth / 2, 52, { align: 'center' });
 
     let y = 62;
-    doc.setFontSize(10);
-    doc.setFont('times', 'normal');
-
-    // Student info
+    doc.setFontSize(9); doc.setFont('times', 'normal');
     doc.text(`N° Educmaster de l'élève : ${student.matricule || student.studentCode || '...........'}`, margin, y);
-    doc.text(`ANNÉE SCOLAIRE : ${new Date().getFullYear()}-${new Date().getFullYear() + 1}`, pageWidth - margin - 60, y);
-    y += 8;
+    doc.text(`ANNÉE SCOLAIRE : ${new Date().getFullYear()}-${new Date().getFullYear() + 1}`, pageWidth - margin - 55, y);
+    y += 7;
     doc.text(`Nom et Prénom : ${student.lastName} ${student.firstName}`, margin, y);
     y += 6;
-    doc.text(`Classe suivie : ${student.className || '...........'}`, margin, y);
+    doc.text(`Classe suivie : ${student.classeSuivie || '........................................'}`, margin, y);
     y += 6;
-    doc.text(`Classe à suivre : ........................................`, margin, y);
+    doc.text(`Classe à suivre : ${student.classeASuivre || '........................................'}`, margin, y);
     y += 6;
     doc.text(`Motif de la demande : ${motif || '........................................'}`, margin, y, { maxWidth: pageWidth - 2 * margin });
     y += 10;
 
-    // Divider
-    doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.3);
+    doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.3);
     doc.line(margin, y, pageWidth - margin, y);
-    y += 8;
+    y += 6;
 
-    // Two columns
     const colW = (pageWidth - 2 * margin - 10) / 2;
-    const leftX = margin;
-    const rightX = margin + colW + 10;
+    const leftX = margin, rightX = margin + colW + 10;
 
-    // Left column (Origin)
-    doc.setFont('times', 'bold');
-    doc.setFontSize(9);
+    // Left column
+    doc.setFont('times', 'bold'); doc.setFontSize(9);
     doc.text('ÉTABLISSEMENT D\'ORIGINE', leftX, y);
     y += 8;
-    doc.setFont('times', 'normal');
-    doc.setFontSize(8);
-    doc.text(`Signature de l'élève :`, leftX, y);
+    doc.setFont('times', 'normal'); doc.setFontSize(8);
+    doc.text('Signature de l\'élève :', leftX, y);
     y += 5;
     doc.text(`Etablissement d'origine : ${header.schoolName || '...........'}`, leftX, y);
     y += 5;
-    doc.text(`Nom et Prénom du Censeur : ................................`, leftX, y);
+    doc.text(`Nom et Prénom du Censeur : ${censeurName || '................................'}`, leftX, y);
     y += 5;
-    doc.text(`Avis : Favorable ☐  Défavorable ☐`, leftX, y);
+    doc.text('Avis : Favorable ☐   Défavorable ☐', leftX, y);
     y += 8;
-    doc.text(`Signature : ................................`, leftX, y);
+    doc.text('Signature : ................................', leftX, y);
     y += 5;
-    doc.text(`Cachet : ................................`, leftX, y);
+    doc.text('Cachet : ................................', leftX, y);
     y += 10;
-    doc.text(`Parakou, le ....... / ....... / 20......`, leftX, y);
+    doc.text(`Fait à ................., le ....... / ....... / 20......`, leftX, y);
 
-    // Right column (Accueil)
+    // Right column
     let yr = y - 31;
-    doc.setFont('times', 'bold');
-    doc.setFontSize(9);
+    doc.setFont('times', 'bold'); doc.setFontSize(9);
     doc.text('ÉTABLISSEMENT D\'ACCUEIL', rightX, yr);
     yr += 8;
-    doc.setFont('times', 'normal');
-    doc.setFontSize(8);
-    doc.text(`Nom et signature du père ou tuteur :`, rightX, yr);
+    doc.setFont('times', 'normal'); doc.setFontSize(8);
+    doc.text('Nom et signature du père ou tuteur :', rightX, yr);
     yr += 5;
     doc.text(`Etablissement d'accueil : ${targetSchool || '...........'}`, rightX, yr);
     yr += 5;
-    doc.text(`Nom et Prénom du Directeur : ................................`, rightX, yr);
+    doc.text(`Nom et Prénom du Directeur : ${directorName || '................................'}`, rightX, yr);
     yr += 5;
-    doc.text(`Avis : ................................`, rightX, yr);
+    doc.text('Avis : ................................', rightX, yr);
     yr += 8;
-    doc.text(`Signature : ................................`, rightX, yr);
+    doc.text('Signature : ................................', rightX, yr);
     yr += 5;
-    doc.text(`Cachet : ................................`, rightX, yr);
+    doc.text('Cachet : ................................', rightX, yr);
     yr += 10;
-    doc.text(`Date : ................................`, rightX, yr);
+    doc.text('Date : ................................', rightX, yr);
 
-    // Vertical divider
-    doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.3);
+    doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.3);
     doc.line(margin + colW + 5, y - 31, margin + colW + 5, y + 5);
-
     drawFooter(doc, pageWidth, pageHeight, idx + 1);
   });
 }

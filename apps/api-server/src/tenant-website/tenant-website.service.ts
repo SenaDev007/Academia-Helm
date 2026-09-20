@@ -55,6 +55,11 @@ export class TenantWebsiteService {
 
   /**
    * Met à jour la configuration du site.
+   *
+   * ⚠️ Si la migration 20260920120000_extend_tenant_website_cms n'a pas encore
+   * été appliquée à la DB, l'update échouera sur les nouveaux champs JSON
+   * (programs, faculty, etc.). On log en warning et on continue — l'admin
+   * peut réessayer après avoir exécuté `node scripts/apply-tenant-website-cms-migration.js`.
    */
   async updateWebsiteConfig(tenantId: string, data: any) {
     // S'assurer que la config existe
@@ -62,6 +67,7 @@ export class TenantWebsiteService {
 
     // Filtrer les champs autorisés
     const allowedFields = [
+      // ─── Champs historiques ───
       'heroTitle', 'heroSubtitle', 'heroImageUrl', 'heroCtaText', 'heroCtaUrl', 'heroIsActive',
       'keyFigures',
       'promoterWord', 'promoterName', 'promoterPhotoUrl', 'promoterIsActive',
@@ -75,6 +81,33 @@ export class TenantWebsiteService {
       'contactEmail', 'contactPhone', 'contactAddress', 'contactMapUrl',
       'customColors',
       'isActive', 'aiEnabled', 'aiWelcomeMessage',
+      // ─── Nouveaux champs CMS (2026-09-20) ───
+      // Programmes
+      'programs', 'programsTitle', 'programsSubtitle', 'programsIsActive',
+      // Différenciateurs
+      'differentiators', 'differentiatorsIsActive',
+      // Corps enseignant
+      'faculty', 'facultyTitle', 'facultySubtitle', 'facultyIsActive', 'facultyRatio',
+      // Étapes d'admission + Documents
+      'admissionSteps', 'admissionTitle', 'admissionSubtitle', 'admissionDocuments',
+      // Partenaires
+      'partnerLogos', 'partnerLogosIsActive',
+      // Navigation
+      'navLinks',
+      // Horaires
+      'schoolHoursWeekdays', 'schoolHoursSaturday', 'schoolHoursIsActive',
+      // Témoignages (titres)
+      'testimonialsTitle', 'testimonialsSubtitle', 'testimonialsIsActive',
+      // Contact (titres)
+      'contactTitle', 'contactSubtitle', 'contactIsActive',
+      // Actualités (titres)
+      'newsTitle', 'newsSubtitle', 'newsIsActive',
+      // Galerie (titres)
+      'galleryTitle', 'gallerySubtitle', 'galleryIsActive',
+      // Présentation (sous-titre)
+      'presentationSubtitle',
+      // Stats dynamiques
+      'statsMode', 'dynamicStatsConfig',
     ];
 
     const updateData: any = { ...prismaUpdateDefaults() };
@@ -84,10 +117,48 @@ export class TenantWebsiteService {
       }
     }
 
-    return this.prisma.tenantWebsite.update({
-      where: { tenantId },
-      data: updateData,
-    });
+    try {
+      return await this.prisma.tenantWebsite.update({
+        where: { tenantId },
+        data: updateData,
+      });
+    } catch (err: any) {
+      // Si la migration CMS n'est pas encore appliquée, certains champs
+      // déclencheront l'erreur "column does not exist". On retente en
+      // supprimant les nouveaux champs et on log un warning.
+      const newFields = [
+        'programs', 'programsTitle', 'programsSubtitle', 'programsIsActive',
+        'differentiators', 'differentiatorsIsActive',
+        'faculty', 'facultyTitle', 'facultySubtitle', 'facultyIsActive', 'facultyRatio',
+        'admissionSteps', 'admissionTitle', 'admissionSubtitle', 'admissionDocuments',
+        'partnerLogos', 'partnerLogosIsActive',
+        'navLinks',
+        'schoolHoursWeekdays', 'schoolHoursSaturday', 'schoolHoursIsActive',
+        'testimonialsTitle', 'testimonialsSubtitle', 'testimonialsIsActive',
+        'contactTitle', 'contactSubtitle', 'contactIsActive',
+        'newsTitle', 'newsSubtitle', 'newsIsActive',
+        'galleryTitle', 'gallerySubtitle', 'galleryIsActive',
+        'presentationSubtitle',
+        'statsMode', 'dynamicStatsConfig',
+      ];
+      if (err?.message?.includes('column') && err?.message?.includes('does not exist')) {
+        this.logger.warn(
+          `⚠️ Migration CMS 20260920120000 non appliquée — retry sans nouveaux champs. ` +
+          `Exécutez: node scripts/apply-tenant-website-cms-migration.js`,
+        );
+        const safeData: any = { ...prismaUpdateDefaults() };
+        for (const field of allowedFields) {
+          if (!newFields.includes(field) && data[field] !== undefined) {
+            safeData[field] = data[field];
+          }
+        }
+        return this.prisma.tenantWebsite.update({
+          where: { tenantId },
+          data: safeData,
+        });
+      }
+      throw err;
+    }
   }
 
   /**

@@ -4,12 +4,23 @@
  * ============================================================================
  * FICHE DE TRANSFERT — Modal de génération PDF (Primaire + Secondaire)
  * ============================================================================
- * Corrigé : portrait pour secondaire, logo école, champs éditables,
- * filtre niveau élève, classe suivie/à suivre éditables.
+ * Corrigé (2026-09-20) :
+ *  - Tableau accumulateur dans l'interface : affiche TOUS les élèves
+ *    sélectionnés (pas seulement 1) avec N°, nom, matricule, classe suivie
+ *    (ancienne école) ET classe à suivre (nouvelle école) — éditables pour
+ *    Primaire ET Secondaire.
+ *  - Colonne CLASSE dans le PDF Primaire : côté gauche = classe suivie dans
+ *    l'ancienne école, côté droit = classe à suivre dans la nouvelle école
+ *    (au lieu de dupliquer s.className des deux côtés qui restait vide si
+ *    l'API ne renvoyait pas className).
+ *  - Nom du directeur : placé EN BAS (zone de signature), pas sur la même
+ *    ligne que l'étiquette « Le Directeur ».
+ *  - Bouton « Générer » : génère le PDF global pour TOUS les élèves du
+ *    tableau (le bouton indique explicitement le nombre d'élèves).
  * ============================================================================
  */
 import { useState, useEffect, useCallback } from "react";
-import { X, Loader2, Search, FileText, Download, UserPlus, Trash2 } from "lucide-react";
+import { X, Loader2, Search, FileText, Download, UserPlus, Trash2, Info } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useModuleContext } from "@/hooks/useModuleContext";
@@ -75,7 +86,15 @@ export default function FicheTransfertModal({ isOpen, onClose, level }: FicheTra
   useEffect(() => { const t = setTimeout(() => handleSearch(search), 300); return () => clearTimeout(t); }, [search, handleSearch]);
 
   const addStudent = (s: StudentItem) => {
-    setSelectedStudents(prev => [...prev, { ...s, classeSuivie: s.className || '', classeASuivre: '' }]);
+    setSelectedStudents(prev => [...prev, {
+      ...s,
+      // ⭐ Pré-remplir classeSuivie avec la classe actuelle de l'élève
+      // (classe qu'il a suivie dans l'ancienne école). classeASuivre reste
+      // vide — l'utilisateur doit renseigner la classe que l'élève va faire
+      // dans la nouvelle école.
+      classeSuivie: s.className || '',
+      classeASuivre: '',
+    }]);
     setSearch(""); setSearchResults([]);
   };
   const removeStudent = (id: string) => setSelectedStudents(prev => prev.filter(s => s.id !== id));
@@ -136,7 +155,7 @@ export default function FicheTransfertModal({ isOpen, onClose, level }: FicheTra
         generateSecondairePDF(doc, header, selectedStudents, motif, targetSchool, directorName, censeurName);
         doc.save('demande_transfert_secondaire.pdf');
       }
-      toast.success(`✅ ${level === 'primaire' ? 'Fiche de transfert' : 'Demande de transfert'} générée`);
+      toast.success(`✅ ${level === 'primaire' ? 'Fiche de transfert' : 'Demande de transfert'} générée pour ${selectedStudents.length} élève${selectedStudents.length > 1 ? 's' : ''}`);
     } catch (e: any) { console.error('PDF error:', e); toast.error("Erreur", { description: e.message }); }
     finally { setGenerating(false); }
   };
@@ -145,7 +164,7 @@ export default function FicheTransfertModal({ isOpen, onClose, level }: FicheTra
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-slate-100 p-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-3">
             <FileText className="h-6 w-6 text-blue-600" />
@@ -158,6 +177,20 @@ export default function FicheTransfertModal({ isOpen, onClose, level }: FicheTra
         </div>
 
         <div className="p-6 space-y-4">
+          {/* Info banner : explique le fonctionnement */}
+          <div className="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+            <div className="text-sm text-blue-900">
+              <p className="font-semibold mb-1">Fonctionnement</p>
+              <ol className="list-decimal ml-4 space-y-0.5 text-blue-800">
+                <li>Recherchez et ajoutez les élèves à transférer (plusieurs possibles).</li>
+                <li>Renseignez pour chaque élève la <b>classe suivie</b> dans l'ancienne école et la <b>classe à suivre</b> dans la nouvelle école.</li>
+                <li>Le tableau accumule tous les élèves au fur et à mesure.</li>
+                <li>Cliquez sur « Générer le PDF » pour produire <b>un document global</b> pour tous les élèves du tableau.</li>
+              </ol>
+            </div>
+          </div>
+
           {/* School + motif fields */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -206,52 +239,101 @@ export default function FicheTransfertModal({ isOpen, onClose, level }: FicheTra
             )}
           </div>
 
-          {/* Selected students */}
+          {/* Selected students — TABLEAU ACCUMULATEUR */}
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-2">Élèves sélectionnés ({selectedStudents.length})</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-bold text-slate-700">
+                Élèves sélectionnés ({selectedStudents.length})
+              </label>
+              {selectedStudents.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (confirm('Vider le tableau de tous les élèves ?')) {
+                      setSelectedStudents([]);
+                    }
+                  }}
+                  className="text-xs text-red-600 hover:text-red-700 font-medium"
+                >
+                  Vider le tableau
+                </button>
+              )}
+            </div>
             {selectedStudents.length === 0 ? (
-              <div className="text-center py-6 text-slate-400 text-sm border-2 border-dashed border-slate-200 rounded-lg">Aucun élève sélectionné.</div>
+              <div className="text-center py-6 text-slate-400 text-sm border-2 border-dashed border-slate-200 rounded-lg">
+                Aucun élève sélectionné. Recherchez et ajoutez des élèves ci-dessus — le tableau se remplit au fur et à mesure.
+              </div>
             ) : (
               <div className="border border-slate-200 rounded-lg overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead><tr className="bg-slate-50 border-b border-slate-200">
-                    <th className="text-left px-3 py-2 font-semibold text-slate-700">N°</th>
-                    <th className="text-left px-3 py-2 font-semibold text-slate-700">Nom</th>
-                    <th className="text-left px-3 py-2 font-semibold text-slate-700">Matricule</th>
-                    {isSecondary && <th className="text-left px-3 py-2 font-semibold text-slate-700">Classe suivie</th>}
-                    {isSecondary && <th className="text-left px-3 py-2 font-semibold text-slate-700">Classe à suivre</th>}
-                    <th className="text-center px-3 py-2 font-semibold text-slate-700">✕</th>
-                  </tr></thead>
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="text-left px-3 py-2 font-semibold text-slate-700">N°</th>
+                      <th className="text-left px-3 py-2 font-semibold text-slate-700">Nom et prénom</th>
+                      <th className="text-left px-3 py-2 font-semibold text-slate-700">Matricule</th>
+                      <th className="text-left px-3 py-2 font-semibold text-slate-700" style={{ minWidth: 140 }}>
+                        Classe suivie <span className="text-slate-400 font-normal">(ancienne école)</span>
+                      </th>
+                      <th className="text-left px-3 py-2 font-semibold text-slate-700" style={{ minWidth: 140 }}>
+                        Classe à suivre <span className="text-slate-400 font-normal">(nouvelle école)</span>
+                      </th>
+                      <th className="text-center px-3 py-2 font-semibold text-slate-700">✕</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {selectedStudents.map((s, idx) => (
-                      <tr key={s.id} className="border-b border-slate-100">
-                        <td className="px-3 py-2 text-slate-400">{idx + 1}</td>
+                      <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
+                        <td className="px-3 py-2 text-slate-400 font-semibold">{idx + 1}</td>
                         <td className="px-3 py-2 font-medium">{s.lastName} {s.firstName}</td>
                         <td className="px-3 py-2 text-slate-600">{s.matricule || s.studentCode || '—'}</td>
-                        {isSecondary && (
-                          <td className="px-3 py-2">
-                            <input type="text" value={s.classeSuivie || ''} onChange={e => updateStudentField(s.id, 'classeSuivie', e.target.value)} placeholder="Classe..." className="w-full px-2 py-1 border border-slate-200 rounded text-xs" />
-                          </td>
-                        )}
-                        {isSecondary && (
-                          <td className="px-3 py-2">
-                            <input type="text" value={s.classeASuivre || ''} onChange={e => updateStudentField(s.id, 'classeASuivre', e.target.value)} placeholder="Classe..." className="w-full px-2 py-1 border border-slate-200 rounded text-xs" />
-                          </td>
-                        )}
-                        <td className="px-3 py-2 text-center"><button onClick={() => removeStudent(s.id)} className="p-1 text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button></td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="text"
+                            value={s.classeSuivie || ''}
+                            onChange={e => updateStudentField(s.id, 'classeSuivie', e.target.value)}
+                            placeholder="Ex: CE2, CM1..."
+                            className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 outline-none"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="text"
+                            value={s.classeASuivre || ''}
+                            onChange={e => updateStudentField(s.id, 'classeASuivre', e.target.value)}
+                            placeholder="Ex: CM1, CM2..."
+                            className="w-full px-2 py-1 border border-slate-200 rounded text-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500/30 outline-none"
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <button onClick={() => removeStudent(s.id)} className="p-1 text-red-500 hover:bg-red-50 rounded" title="Retirer du tableau">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
+            {selectedStudents.length > 0 && (
+              <p className="text-xs text-slate-500 mt-2">
+                💡 Le PDF généréré contiendra <b>{selectedStudents.length} élève{selectedStudents.length > 1 ? 's' : ''}</b> dans un seul document.
+                {level === 'secondaire' && ' (une page par élève pour le modèle secondaire)'}
+              </p>
+            )}
           </div>
         </div>
 
         <div className="sticky bottom-0 bg-white border-t border-slate-100 p-4 flex justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg">Annuler</button>
-          <button onClick={handleGenerate} disabled={generating || selectedStudents.length === 0} className="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50">
-            {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Générer le PDF
+          <button
+            onClick={handleGenerate}
+            disabled={generating || selectedStudents.length === 0}
+            className="inline-flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50"
+          >
+            {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            {generating
+              ? 'Génération...'
+              : `Générer le PDF${selectedStudents.length > 0 ? ` (${selectedStudents.length} élève${selectedStudents.length > 1 ? 's' : ''})` : ''}`}
           </button>
         </div>
       </div>
@@ -275,7 +357,8 @@ function generatePrimairePDF(doc: any, header: SchoolHeader, students: StudentIt
   doc.text(`NOUVELLE ECOLE : ${targetSchool || '................................'}`, pageWidth / 2 + 10, y);
   y += 10;
 
-  // Table
+  // Table — 8 colonnes :
+  // N° | ANNEE | CLASSE (suivie) | MATRICULE | NOM ET PRENOMS | ANNEE | CLASSE (à suivre) | ECOLE D'ACCUEIL
   const cols = [
     { l: 'N°', x: margin, w: 8 }, { l: 'ANNEE', x: margin + 8, w: 20 },
     { l: 'CLASSE', x: margin + 28, w: 18 }, { l: 'MATRICULE', x: margin + 46, w: 25 },
@@ -296,11 +379,14 @@ function generatePrimairePDF(doc: any, header: SchoolHeader, students: StudentIt
       const yr = new Date().getFullYear() + '-' + (new Date().getFullYear() + 1);
       doc.text(String(i + 1), cols[0].x + 1, ry);
       doc.text(yr, cols[1].x + 1, ry);
-      doc.text(s.className || '', cols[2].x + 1, ry);
+      // ⭐ Colonne CLASSE (gauche) = classe suivie dans l'ancienne école
+      // (classeSuivie pré-remplie avec s.className, éditable par l'utilisateur)
+      doc.text(s.classeSuivie || s.className || '', cols[2].x + 1, ry);
       doc.text(s.matricule || s.studentCode || '', cols[3].x + 1, ry);
       doc.text(`${s.lastName} ${s.firstName}`, cols[4].x + 1, ry, { maxWidth: cols[4].w - 2 });
       doc.text(yr, cols[5].x + 1, ry);
-      doc.text(s.className || '', cols[6].x + 1, ry);
+      // ⭐ Colonne CLASSE (droite) = classe à suivre dans la nouvelle école
+      doc.text(s.classeASuivre || '', cols[6].x + 1, ry);
       doc.text(targetSchool, cols[7].x + 1, ry, { maxWidth: cols[7].w - 2 });
     }
     doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.2);
@@ -318,7 +404,18 @@ function generatePrimairePDF(doc: any, header: SchoolHeader, students: StudentIt
 
   doc.setFontSize(9);
   doc.text(`Fait à ..........................................., le ......... / .......... /20.......`, margin, y);
-  doc.text(`Le Directeur${directorName ? ' : ' + directorName : '..........'}`, pageWidth - margin - 50, y);
+
+  // ⭐ Zone de signature du Directeur : étiquette « Le Directeur » au-dessus,
+  // nom en dessous (zone de signature) — pas sur la même ligne.
+  const signatureX = pageWidth - margin - 50;
+  const signatureY = y;
+  doc.text('Le Directeur', signatureX, signatureY);
+  // Laisser de l'espace pour la signature manuscrite
+  doc.setFont('times', 'bold'); doc.setFontSize(10);
+  doc.text(directorName || '...................................', signatureX, signatureY + 12);
+  // Revenir à la police normale pour la suite éventuelle
+  doc.setFont('times', 'normal'); doc.setFontSize(9);
+
   doc.setFontSize(6); doc.setTextColor(150, 150, 150);
   doc.text('FICHE DE TRANSFERT-POINT FOCAL/EDUCMASTER', margin, pageHeight - 5);
   drawFooter(doc, pageWidth, pageHeight, 1);
@@ -344,7 +441,7 @@ function generateSecondairePDF(doc: any, header: SchoolHeader, students: Student
     y += 7;
     doc.text(`Nom et Prénom : ${student.lastName} ${student.firstName}`, margin, y);
     y += 6;
-    doc.text(`Classe suivie : ${student.classeSuivie || '........................................'}`, margin, y);
+    doc.text(`Classe suivie : ${student.classeSuivie || student.className || '........................................'}`, margin, y);
     y += 6;
     doc.text(`Classe à suivre : ${student.classeASuivre || '........................................'}`, margin, y);
     y += 6;
@@ -377,7 +474,7 @@ function generateSecondairePDF(doc: any, header: SchoolHeader, students: Student
     y += 10;
     doc.text(`Fait à ................., le ....... / ....... / 20......`, leftX, y);
 
-    // Right column
+    // Right column — ÉTABLISSEMENT D'ACCUEIL
     let yr = y - 31;
     doc.setFont('times', 'bold'); doc.setFontSize(9);
     doc.text('ÉTABLISSEMENT D\'ACCUEIL', rightX, yr);
@@ -387,8 +484,13 @@ function generateSecondairePDF(doc: any, header: SchoolHeader, students: Student
     yr += 5;
     doc.text(`Etablissement d'accueil : ${targetSchool || '...........'}`, rightX, yr);
     yr += 5;
-    doc.text(`Nom et Prénom du Directeur : ${directorName || '................................'}`, rightX, yr);
-    yr += 5;
+    // ⭐ Nom du directeur : étiquette au-dessus, nom en dessous (zone de signature)
+    doc.text('Nom et Prénom du Directeur :', rightX, yr);
+    yr += 6;
+    doc.setFont('times', 'bold');
+    doc.text(directorName || '................................', rightX, yr);
+    doc.setFont('times', 'normal');
+    yr += 6;
     doc.text('Avis : ................................', rightX, yr);
     yr += 8;
     doc.text('Signature : ................................', rightX, yr);

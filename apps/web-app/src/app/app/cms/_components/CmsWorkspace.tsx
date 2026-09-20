@@ -38,8 +38,9 @@ import { useAutoSave, AutoSaveBadge } from '@/components/cms/useAutoSave';
 
 type SubTab =
   | 'general' | 'colors' | 'themes' | 'components' | 'hero' | 'figures' | 'promoter' | 'director'
-  | 'presentation' | 'admissions' | 'schoolLife'
+  | 'presentation' | 'programs' | 'faculty' | 'admissions' | 'schoolLife'
   | 'news' | 'agenda' | 'gallery' | 'testimonials' | 'faq'
+  | 'partners' | 'navigation' | 'hours'
   | 'contact' | 'social' | 'seo' | 'footer' | 'settings';
 
 const TABS: { id: SubTab; label: string; icon: any }[] = [
@@ -52,6 +53,8 @@ const TABS: { id: SubTab; label: string; icon: any }[] = [
   { id: 'promoter', label: 'Mot du Promoteur', icon: MessageSquare },
   { id: 'director', label: 'Mot du Directeur', icon: MessageSquare },
   { id: 'presentation', label: 'Présentation', icon: Presentation },
+  { id: 'programs', label: 'Programmes', icon: BookOpen },
+  { id: 'faculty', label: 'Corps enseignant', icon: Users },
   { id: 'admissions', label: 'Admissions', icon: UserPlus },
   { id: 'schoolLife', label: 'Vie scolaire', icon: BookOpen },
   { id: 'news', label: 'Actualités', icon: FileText },
@@ -59,6 +62,9 @@ const TABS: { id: SubTab; label: string; icon: any }[] = [
   { id: 'gallery', label: 'Galerie', icon: Images },
   { id: 'testimonials', label: 'Témoignages', icon: Star },
   { id: 'faq', label: 'FAQ', icon: HelpCircle },
+  { id: 'partners', label: 'Partenaires', icon: Award },
+  { id: 'navigation', label: 'Navigation', icon: ArrowRight },
+  { id: 'hours', label: 'Horaires', icon: Clock },
   { id: 'contact', label: 'Messages reçus', icon: Mail },
   { id: 'social', label: 'Réseaux sociaux', icon: Share2 },
   { id: 'seo', label: 'Visibilité Google', icon: Search },
@@ -271,6 +277,8 @@ export function CmsWorkspace() {
       {activeTab === 'promoter' && <PromoterTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'director' && <DirectorTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'presentation' && <PresentationTab config={config} onSave={handleSave} saving={saving} />}
+      {activeTab === 'programs' && <ProgramsTab config={config} onSave={handleSave} saving={saving} />}
+      {activeTab === 'faculty' && <FacultyTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'admissions' && <AdmissionsTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'schoolLife' && <SchoolLifeTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'news' && <NewsTab />}
@@ -278,6 +286,9 @@ export function CmsWorkspace() {
       {activeTab === 'gallery' && <GalleryTab />}
       {activeTab === 'testimonials' && <TestimonialsTab />}
       {activeTab === 'faq' && <FaqTab />}
+      {activeTab === 'partners' && <PartnersTab config={config} onSave={handleSave} saving={saving} />}
+      {activeTab === 'navigation' && <NavigationTab config={config} onSave={handleSave} saving={saving} />}
+      {activeTab === 'hours' && <HoursTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'contact' && <ContactTab />}
       {activeTab === 'social' && <SocialTab config={config} onSave={handleSave} saving={saving} />}
       {activeTab === 'seo' && <SeoTab config={config} onSave={handleSave} saving={saving} />}
@@ -429,13 +440,19 @@ function HeroTab({ config, onSave, saving }: any) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  TAB: FIGURES — Cards visuelles + drag-and-drop ordre
+//  TAB: FIGURES — Cards visuelles + drag-and-drop ordre + mode dynamique
 // ═══════════════════════════════════════════════════════════════════════
 
 function FiguresTab({ config, onSave, saving }: any) {
   const [figures, setFigures] = useState<any[]>(
     Array.isArray(config?.keyFigures) ? config.keyFigures : []
   );
+  const [statsMode, setStatsMode] = useState<string>(config?.statsMode || 'manual');
+  const [dynConfig, setDynConfig] = useState<any[]>(
+    Array.isArray(config?.dynamicStatsConfig) ? config.dynamicStatsConfig : []
+  );
+  const [previewStats, setPreviewStats] = useState<any>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   const addFigure = () => setFigures([...figures, { value: '', label: '' }]);
@@ -450,39 +467,157 @@ function FiguresTab({ config, onSave, saving }: any) {
     setFigures(next);
   };
 
+  // Charger les stats temps réel pour prévisualiser le mode dynamique
+  const loadPreviewStats = async () => {
+    setLoadingPreview(true);
+    try {
+      const res = await fetch('/api/tenant-website/sync-stats', { credentials: 'include' });
+      if (res.ok) setPreviewStats(await res.json());
+    } catch (err) { /* ignore */ }
+    finally { setLoadingPreview(false); }
+  };
+
+  useEffect(() => {
+    if (statsMode === 'dynamic' && !previewStats) loadPreviewStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statsMode]);
+
+  // Mapping source → libellé
+  const sourceLabels: Record<string, string> = {
+    studentCount: 'Nombre d\'élèves',
+    teacherCount: 'Nombre d\'enseignants',
+    staffCount: 'Nombre de personnels',
+    publishedNewsCount: 'Articles publiés',
+    upcomingEventsCount: 'Événements à venir',
+    levelsCount: 'Niveaux actifs',
+  };
+
+  // Calculer les figures affichées (en mode dynamique, on substitue les valeurs)
+  const displayFigures = (statsMode === 'dynamic' && previewStats)
+    ? figures.map((fig, idx) => {
+        const mapping = dynConfig.find((m: any) => m.figureIndex === idx);
+        if (!mapping || !mapping.source) return fig;
+        const dynVal = (previewStats as any)[mapping.source];
+        if (typeof dynVal === 'number' && dynVal > 0) return { ...fig, value: String(dynVal) };
+        return fig;
+      })
+    : figures;
+
   return (
     <SplitLayout
       previewTitle="Aperçu des chiffres clés"
       left={
         <>
-          <div className="space-y-3">
-            {figures.map((fig, i) => (
-              <div key={i} className="flex items-center gap-2 p-3 bg-white rounded-xl border border-slate-200 shadow-sm">
-                <div className="flex flex-col gap-0.5">
-                  <button onClick={() => moveFigure(i, -1)} disabled={i === 0} className="text-slate-400 hover:text-blue-600 disabled:opacity-30"><ArrowUp className="w-3 h-3" /></button>
-                  <button onClick={() => moveFigure(i, 1)} disabled={i === figures.length - 1} className="text-slate-400 hover:text-blue-600 disabled:opacity-30"><ArrowDown className="w-3 h-3" /></button>
+          <ControlCard title="Mode de calcul" icon={BarChart3}>
+            <div className="space-y-2">
+              <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition ${statsMode === 'manual' ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                <input type="radio" checked={statsMode === 'manual'} onChange={() => setStatsMode('manual')} className="mt-1" />
+                <div>
+                  <p className="text-sm font-semibold text-slate-900"> Manuel</p>
+                  <p className="text-xs text-slate-500">Les chiffres ci-dessous sont affichés tels que vous les saisissez.</p>
                 </div>
-                <input className="w-20 px-2 py-1.5 text-center text-lg font-bold border border-slate-200 rounded-lg focus:border-blue-500 outline-none" placeholder="500" value={fig.value || ''} onChange={(e) => updateFigure(i, 'value', e.target.value)} />
-                <input className="flex-1 px-2 py-1.5 text-sm border border-slate-200 rounded-lg focus:border-blue-500 outline-none" placeholder="Élèves inscrits" value={fig.label || ''} onChange={(e) => updateFigure(i, 'label', e.target.value)} />
-                <button onClick={() => removeFigure(i)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
+              </label>
+              <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition ${statsMode === 'dynamic' ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                <input type="radio" checked={statsMode === 'dynamic'} onChange={() => setStatsMode('dynamic')} className="mt-1" />
+                <div>
+                  <p className="text-sm font-semibold text-slate-900"> Dynamique (depuis la base de données de l&apos;école)</p>
+                  <p className="text-xs text-slate-500">Les valeurs sont remplacées automatiquement par les statistiques temps réel : nombre d&apos;élèves, d&apos;enseignants, etc.</p>
+                </div>
+              </label>
+            </div>
+            {statsMode === 'dynamic' && (
+              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-xs text-amber-800 mb-2">
+                  ⭐ Associez chaque chiffre clé à une source de données :
+                </p>
+                {figures.map((fig, i) => (
+                  <div key={i} className="flex items-center gap-2 mb-2">
+                    <span className="text-xs text-slate-600 w-32 truncate">#{i + 1} {fig.label || 'Sans label'}</span>
+                    <select
+                      value={(dynConfig.find((m: any) => m.figureIndex === i)?.source) || ''}
+                      onChange={(e) => {
+                        const next = dynConfig.filter((m: any) => m.figureIndex !== i);
+                        if (e.target.value) next.push({ figureIndex: i, source: e.target.value });
+                        setDynConfig(next);
+                      }}
+                      className="flex-1 px-2 py-1 text-xs border border-slate-200 rounded"
+                    >
+                      <option value="">— Manuel (valeur saisie) —</option>
+                      {Object.entries(sourceLabels).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+                <button onClick={loadPreviewStats} disabled={loadingPreview} className="text-xs text-blue-700 hover:underline mt-1">
+                  {loadingPreview ? 'Chargement...' : '↻ Rafraîchir l\'aperçu'}
+                </button>
+                {previewStats && (
+                  <div className="text-xs text-slate-600 mt-2 space-y-0.5">
+                    {Object.entries(previewStats).filter(([k]) => (sourceLabels as any)[k]).map(([k, v]: any) => (
+                      <div key={k}>• {(sourceLabels as any)[k]}: <b>{String(v)}</b></div>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
-          <button onClick={addFigure} className="w-full py-2.5 border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50/30 rounded-xl text-sm font-semibold text-slate-600 hover:text-blue-700 transition flex items-center justify-center gap-2">
-            <Plus className="w-4 h-4" /> Ajouter un chiffre
-          </button>
-          <AutoSaveBar saving={saving} onSave={() => onSave({ keyFigures: figures })} />
+            )}
+          </ControlCard>
+
+          <ControlCard title="Chiffres clés" icon={BarChart3}>
+            <div className="space-y-3">
+              {figures.map((fig, i) => {
+                const isDynamic = statsMode === 'dynamic' && dynConfig.find((m: any) => m.figureIndex === i);
+                return (
+                  <div key={i} className={`flex items-center gap-2 p-3 bg-white rounded-xl border border-slate-200 shadow-sm ${isDynamic ? 'opacity-60' : ''}`}>
+                    <div className="flex flex-col gap-0.5">
+                      <button onClick={() => moveFigure(i, -1)} disabled={i === 0} className="text-slate-400 hover:text-blue-600 disabled:opacity-30"><ArrowUp className="w-3 h-3" /></button>
+                      <button onClick={() => moveFigure(i, 1)} disabled={i === figures.length - 1} className="text-slate-400 hover:text-blue-600 disabled:opacity-30"><ArrowDown className="w-3 h-3" /></button>
+                    </div>
+                    <input
+                      className="w-20 px-2 py-1.5 text-center text-lg font-bold border border-slate-200 rounded-lg focus:border-blue-500 outline-none"
+                      placeholder="500"
+                      value={fig.value || ''}
+                      onChange={(e) => updateFigure(i, 'value', e.target.value)}
+                      disabled={!!isDynamic}
+                    />
+                    <input
+                      className="flex-1 px-2 py-1.5 text-sm border border-slate-200 rounded-lg focus:border-blue-500 outline-none"
+                      placeholder="Élèves inscrits"
+                      value={fig.label || ''}
+                      onChange={(e) => updateFigure(i, 'label', e.target.value)}
+                    />
+                    <button onClick={() => removeFigure(i)} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                );
+              })}
+            </div>
+            <button onClick={addFigure} className="w-full py-2.5 border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50/30 rounded-xl text-sm font-semibold text-slate-600 hover:text-blue-700 transition flex items-center justify-center gap-2">
+              <Plus className="w-4 h-4" /> Ajouter un chiffre
+            </button>
+            {statsMode === 'dynamic' && (
+              <p className="text-[11px] text-amber-700 mt-2">
+                💡 Les chiffres associés à une source dynamique sont désactivés (grisés) — leur valeur sera calculée automatiquement.
+              </p>
+            )}
+          </ControlCard>
+          <AutoSaveBar saving={saving} onSave={() => onSave({ keyFigures: figures, statsMode, dynamicStatsConfig: dynConfig })} />
         </>
       }
       right={
         <div className="grid grid-cols-2 gap-3">
-          {figures.map((fig, i) => (
-            <div key={i} className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 text-center">
-              <div className="text-2xl font-extrabold text-blue-900">{fig.value || '—'}</div>
-              <div className="text-xs text-slate-500 mt-1">{fig.label || 'Libellé'}</div>
-            </div>
-          ))}
-          {figures.length === 0 && <p className="text-sm text-slate-400 col-span-2 text-center py-8">Aucun chiffre clé.</p>}
+          {displayFigures.map((fig, i) => {
+            const dynMapping = statsMode === 'dynamic' ? dynConfig.find((m: any) => m.figureIndex === i) : null;
+            return (
+              <div key={i} className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 text-center">
+                <div className="text-2xl font-extrabold text-blue-900">{fig.value || '—'}</div>
+                <div className="text-xs text-slate-500 mt-1">{fig.label || 'Libellé'}</div>
+                {dynMapping && (
+                  <div className="text-[10px] text-amber-600 mt-1">↻ {sourceLabels[dynMapping.source]}</div>
+                )}
+              </div>
+            );
+          })}
+          {displayFigures.length === 0 && <p className="text-sm text-slate-400 col-span-2 text-center py-8">Aucun chiffre clé.</p>}
         </div>
       }
     />
@@ -675,11 +810,500 @@ function ContentTab({ config, onSave, saving, prefix, title, icon }: any) {
 }
 
 function AdmissionsTab({ config, onSave, saving }: any) {
-  return <ContentTab config={config} onSave={onSave} saving={saving} prefix="admissions" title="Admissions" icon={UserPlus} />;
+  const [form, setForm] = useState({
+    admissionsTitle: config?.admissionsTitle || '',
+    admissionsContent: config?.admissionsContent || '',
+    admissionsIsActive: config?.admissionsIsActive ?? true,
+    admissionTitle: config?.admissionTitle || '',
+    admissionSubtitle: config?.admissionSubtitle || '',
+    admissionSteps: Array.isArray(config?.admissionSteps) ? config.admissionSteps : [],
+    admissionDocuments: Array.isArray(config?.admissionDocuments) ? config.admissionDocuments : [],
+  });
+
+  const update = (field: string, value: any) => setForm({ ...form, [field]: value });
+
+  const addStep = () => update('admissionSteps', [...form.admissionSteps, { num: form.admissionSteps.length + 1, title: '', description: '', iconName: 'CheckCircle2' }]);
+  const updateStep = (i: number, field: string, value: any) => update('admissionSteps', form.admissionSteps.map((s: any, idx: number) => idx === i ? { ...s, [field]: value } : s));
+  const removeStep = (i: number) => update('admissionSteps', form.admissionSteps.filter((_: any, idx: number) => idx !== i));
+
+  const addDoc = () => update('admissionDocuments', [...form.admissionDocuments, '']);
+  const updateDoc = (i: number, value: string) => update('admissionDocuments', form.admissionDocuments.map((d: any, idx: number) => idx === i ? (typeof d === 'string' ? value : { ...d, label: value }) : d));
+  const removeDoc = (i: number) => update('admissionDocuments', form.admissionDocuments.filter((_: any, idx: number) => idx !== i));
+
+  const iconOptions = ['FileText', 'BookOpen', 'Users', 'CheckCircle2', 'Award', 'Star', 'GraduationCap'];
+
+  return (
+    <SplitLayout
+      previewTitle="Aperçu — Admissions"
+      left={
+        <>
+          <ControlCard title="Section Admissions" icon={UserPlus}>
+            <TextField label="Titre de la section" value={form.admissionTitle} onChange={(v) => update('admissionTitle', v)} placeholder="Admissions" />
+            <TextAreaField label="Sous-titre" value={form.admissionSubtitle} onChange={(v) => update('admissionSubtitle', v)} rows={2} placeholder="Un parcours d'admission clair en 4 étapes..." />
+            <div>
+              <label className={labelClass}>Contenu détaillé</label>
+              <RichTextEditor value={form.admissionsContent} onChange={(html) => update('admissionsContent', html)} placeholder="Le processus d'admission se déroule en plusieurs étapes..." rows={6} />
+            </div>
+            <ToggleField label="Afficher la section Admissions" checked={form.admissionsIsActive} onChange={(v) => update('admissionsIsActive', v)} />
+          </ControlCard>
+
+          <ControlCard title="Étapes d'admission" icon={LayoutTemplate}>
+            <p className="text-xs text-slate-500">Définissez les étapes du parcours d'admission (4 étapes recommandées).</p>
+            {form.admissionSteps.map((step: any, i: number) => (
+              <div key={i} className="p-3 border border-slate-200 rounded-lg space-y-2 bg-slate-50">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700">Étape {step.num || i + 1}</span>
+                  <button onClick={() => removeStep(i)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input className="px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Numéro" type="number" value={step.num || ''} onChange={(e) => updateStep(i, 'num', parseInt(e.target.value) || i + 1)} />
+                  <select className="px-2 py-1.5 text-sm border border-slate-200 rounded" value={step.iconName || 'CheckCircle2'} onChange={(e) => updateStep(i, 'iconName', e.target.value)}>
+                    {iconOptions.map((ic) => <option key={ic} value={ic}>{ic}</option>)}
+                  </select>
+                </div>
+                <input className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Titre (ex: Candidature)" value={step.title || ''} onChange={(e) => updateStep(i, 'title', e.target.value)} />
+                <input className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Description courte" value={step.description || ''} onChange={(e) => updateStep(i, 'description', e.target.value)} />
+              </div>
+            ))}
+            <button onClick={addStep} className="w-full py-2 border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-lg text-sm font-semibold text-slate-600 hover:text-blue-700 flex items-center justify-center gap-2">
+              <Plus className="w-4 h-4" /> Ajouter une étape
+            </button>
+          </ControlCard>
+
+          <ControlCard title="Documents requis" icon={FileText}>
+            <p className="text-xs text-slate-500">Liste des documents à fournir pour constituer un dossier d'inscription.</p>
+            {form.admissionDocuments.map((doc: any, i: number) => (
+              <div key={i} className="flex items-center gap-2">
+                <input className="flex-1 px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Ex: Acte de naissance (original + copie)" value={typeof doc === 'string' ? doc : (doc.label || doc.name || '')} onChange={(e) => updateDoc(i, e.target.value)} />
+                <button onClick={() => removeDoc(i)} className="p-1.5 text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+              </div>
+            ))}
+            <button onClick={addDoc} className="w-full py-2 border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-lg text-sm font-semibold text-slate-600 hover:text-blue-700 flex items-center justify-center gap-2">
+              <Plus className="w-4 h-4" /> Ajouter un document
+            </button>
+          </ControlCard>
+
+          <AutoSaveBar saving={saving} onSave={() => onSave(form)} />
+        </>
+      }
+      right={
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 space-y-6">
+          <div>
+            <h3 className="text-xl font-extrabold text-slate-900 mb-2">{form.admissionTitle || 'Admissions'}</h3>
+            {form.admissionSubtitle && <p className="text-sm text-slate-500 mb-3">{form.admissionSubtitle}</p>}
+            <div className="prose prose-sm max-w-none text-slate-600" dangerouslySetInnerHTML={{ __html: form.admissionsContent || '<p>Contenu de la section admissions.</p>' }} />
+          </div>
+          {form.admissionSteps.length > 0 && (
+            <div>
+              <h4 className="text-sm font-bold text-slate-700 mb-3">Étapes</h4>
+              <div className="space-y-3">
+                {form.admissionSteps.map((step: any, i: number) => (
+                  <div key={i} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
+                    <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0">{step.num || i + 1}</div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{step.title || 'Étape'}</p>
+                      <p className="text-xs text-slate-500">{step.description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {form.admissionDocuments.length > 0 && (
+            <div>
+              <h4 className="text-sm font-bold text-slate-700 mb-2">Documents requis</h4>
+              <ul className="space-y-1 text-sm text-slate-600">
+                {form.admissionDocuments.map((doc: any, i: number) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className="text-blue-600">✓</span>
+                    <span>{typeof doc === 'string' ? doc : (doc.label || doc.name || '')}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      }
+    />
+  );
 }
 
 function SchoolLifeTab({ config, onSave, saving }: any) {
   return <ContentTab config={config} onSave={onSave} saving={saving} prefix="schoolLife" title="Vie scolaire" icon={BookOpen} />;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TAB: PROGRAMS — Programmes (Maternelle/Primaire/Secondaire) éditables
+// ═══════════════════════════════════════════════════════════════════════
+
+function ProgramsTab({ config, onSave, saving }: any) {
+  const [form, setForm] = useState({
+    programs: Array.isArray(config?.programs) ? config.programs : [],
+    programsTitle: config?.programsTitle || '',
+    programsSubtitle: config?.programsSubtitle || '',
+    programsIsActive: config?.programsIsActive ?? true,
+    differentiators: Array.isArray(config?.differentiators) ? config.differentiators : [],
+    differentiatorsIsActive: config?.differentiatorsIsActive ?? true,
+  });
+  const update = (field: string, value: any) => setForm({ ...form, [field]: value });
+
+  const iconOptions = ['Baby', 'School', 'Library', 'BookOpen', 'GraduationCap', 'Users', 'Building2', 'Globe', 'Award', 'Star'];
+
+  const addProgram = () => update('programs', [...form.programs, { id: `prog-${Date.now()}`, title: '', description: '', iconName: 'School', levels: '' }]);
+  const updateProgram = (i: number, field: string, value: any) => update('programs', form.programs.map((p: any, idx: number) => idx === i ? { ...p, [field]: value } : p));
+  const removeProgram = (i: number) => update('programs', form.programs.filter((_: any, idx: number) => idx !== i));
+
+  const addDiff = () => update('differentiators', [...form.differentiators, { title: '', description: '', iconName: 'Sparkles' }]);
+  const updateDiff = (i: number, field: string, value: any) => update('differentiators', form.differentiators.map((d: any, idx: number) => idx === i ? { ...d, [field]: value } : d));
+  const removeDiff = (i: number) => update('differentiators', form.differentiators.filter((_: any, idx: number) => idx !== i));
+
+  return (
+    <SplitLayout
+      previewTitle="Aperçu — Programmes"
+      left={
+        <>
+          <ControlCard title="Section Programmes" icon={BookOpen}>
+            <TextField label="Titre de la section" value={form.programsTitle} onChange={(v) => update('programsTitle', v)} placeholder="Nos programmes" />
+            <TextAreaField label="Sous-titre" value={form.programsSubtitle} onChange={(v) => update('programsSubtitle', v)} rows={2} placeholder="De la maternelle au secondaire, un parcours pédagogique structuré..." />
+            <ToggleField label="Afficher la section" checked={form.programsIsActive} onChange={(v) => update('programsIsActive', v)} />
+          </ControlCard>
+
+          <ControlCard title="Cycles / Programmes" icon={LayoutTemplate}>
+            <p className="text-xs text-slate-500">Les 3 cycles (Maternelle, Primaire, Secondaire) par défaut. Vous pouvez en ajouter ou modifier.</p>
+            {form.programs.map((p: any, i: number) => (
+              <div key={i} className="p-3 border border-slate-200 rounded-lg space-y-2 bg-slate-50">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700">Programme #{i + 1}</span>
+                  <button onClick={() => removeProgram(i)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input className="px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Titre (ex: Maternelle)" value={p.title || ''} onChange={(e) => updateProgram(i, 'title', e.target.value)} />
+                  <select className="px-2 py-1.5 text-sm border border-slate-200 rounded" value={p.iconName || 'School'} onChange={(e) => updateProgram(i, 'iconName', e.target.value)}>
+                    {iconOptions.map((ic) => <option key={ic} value={ic}>{ic}</option>)}
+                  </select>
+                </div>
+                <input className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Niveaux (ex: CP au CM2)" value={p.levels || ''} onChange={(e) => updateProgram(i, 'levels', e.target.value)} />
+                <textarea className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded" rows={2} placeholder="Description" value={p.description || ''} onChange={(e) => updateProgram(i, 'description', e.target.value)} />
+              </div>
+            ))}
+            <button onClick={addProgram} className="w-full py-2 border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-lg text-sm font-semibold text-slate-600 hover:text-blue-700 flex items-center justify-center gap-2">
+              <Plus className="w-4 h-4" /> Ajouter un programme
+            </button>
+          </ControlCard>
+
+          <ControlCard title="Points de différenciation" icon={Star}>
+            <p className="text-xs text-slate-500">Les atouts distinctifs de votre établissement (Bilinguisme, STEM, Arts, Sport...).</p>
+            <ToggleField label="Afficher les différenciateurs" checked={form.differentiatorsIsActive} onChange={(v) => update('differentiatorsIsActive', v)} />
+            {form.differentiators.map((d: any, i: number) => (
+              <div key={i} className="p-3 border border-slate-200 rounded-lg space-y-2 bg-slate-50">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700">Point #{i + 1}</span>
+                  <button onClick={() => removeDiff(i)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input className="px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Titre (ex: Bilinguisme)" value={d.title || ''} onChange={(e) => updateDiff(i, 'title', e.target.value)} />
+                  <select className="px-2 py-1.5 text-sm border border-slate-200 rounded" value={d.iconName || 'Sparkles'} onChange={(e) => updateDiff(i, 'iconName', e.target.value)}>
+                    {iconOptions.map((ic) => <option key={ic} value={ic}>{ic}</option>)}
+                  </select>
+                </div>
+                <input className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Description" value={d.description || ''} onChange={(e) => updateDiff(i, 'description', e.target.value)} />
+              </div>
+            ))}
+            <button onClick={addDiff} className="w-full py-2 border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-lg text-sm font-semibold text-slate-600 hover:text-blue-700 flex items-center justify-center gap-2">
+              <Plus className="w-4 h-4" /> Ajouter un point
+            </button>
+          </ControlCard>
+
+          <AutoSaveBar saving={saving} onSave={() => onSave(form)} />
+        </>
+      }
+      right={
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 space-y-6">
+          <div>
+            <h3 className="text-xl font-extrabold text-slate-900 mb-2">{form.programsTitle || 'Nos programmes'}</h3>
+            {form.programsSubtitle && <p className="text-sm text-slate-500 mb-4">{form.programsSubtitle}</p>}
+          </div>
+          {form.programs.length > 0 && (
+            <div className="grid grid-cols-1 gap-3">
+              {form.programs.map((p: any, i: number) => (
+                <div key={i} className="p-4 bg-slate-50 rounded-lg">
+                  <p className="text-sm font-bold text-blue-900">{p.title}</p>
+                  <p className="text-xs text-amber-600 font-semibold">{p.levels}</p>
+                  <p className="text-xs text-slate-600 mt-1">{p.description}</p>
+                </div>
+              ))}
+            </div>
+          )}
+          {form.differentiators.length > 0 && (
+            <div>
+              <h4 className="text-sm font-bold text-slate-700 mb-2">Points de différenciation</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {form.differentiators.map((d: any, i: number) => (
+                  <div key={i} className="p-2 bg-slate-50 rounded">
+                    <p className="text-xs font-bold text-slate-900">{d.title}</p>
+                    <p className="text-[10px] text-slate-500">{d.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      }
+    />
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TAB: FACULTY — Corps enseignant éditable
+// ═══════════════════════════════════════════════════════════════════════
+
+function FacultyTab({ config, onSave, saving }: any) {
+  const [form, setForm] = useState({
+    faculty: Array.isArray(config?.faculty) ? config.faculty : [],
+    facultyTitle: config?.facultyTitle || '',
+    facultySubtitle: config?.facultySubtitle || '',
+    facultyIsActive: config?.facultyIsActive ?? true,
+    facultyRatio: config?.facultyRatio || '',
+  });
+  const update = (field: string, value: any) => setForm({ ...form, [field]: value });
+
+  const addMember = () => update('faculty', [...form.faculty, { name: '', role: '', subject: '', photoUrl: '' }]);
+  const updateMember = (i: number, field: string, value: any) => update('faculty', form.faculty.map((m: any, idx: number) => idx === i ? { ...m, [field]: value } : m));
+  const removeMember = (i: number) => update('faculty', form.faculty.filter((_: any, idx: number) => idx !== i));
+
+  return (
+    <SplitLayout
+      previewTitle="Aperçu — Corps enseignant"
+      left={
+        <>
+          <ControlCard title="Section Corps enseignant" icon={Users}>
+            <TextField label="Titre de la section" value={form.facultyTitle} onChange={(v) => update('facultyTitle', v)} placeholder="Corps enseignant" />
+            <TextAreaField label="Sous-titre" value={form.facultySubtitle} onChange={(v) => update('facultySubtitle', v)} rows={2} placeholder="Une équipe pédagogique engagée et qualifiée..." />
+            <TextField label="Ratio encadrant/élève" value={form.facultyRatio} onChange={(v) => update('facultyRatio', v)} placeholder="Ratio 1 encadrant pour 15 élèves" hint="Laisser vide pour calcul automatique depuis les données de l'école (nombre d'élèves / nombre de personnels)." />
+            <ToggleField label="Afficher la section" checked={form.facultyIsActive} onChange={(v) => update('facultyIsActive', v)} />
+          </ControlCard>
+
+          <ControlCard title="Membres de l'équipe pédagogique" icon={Users}>
+            <p className="text-xs text-slate-500">Ajoutez les profils clés de votre corps enseignant (directeur pédagogique, responsables de niveau, etc.).</p>
+            {form.faculty.map((m: any, i: number) => (
+              <div key={i} className="p-3 border border-slate-200 rounded-lg space-y-2 bg-slate-50">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700">Membre #{i + 1}</span>
+                  <button onClick={() => removeMember(i)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
+                <input className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Nom complet (ex: M. Koffi Adjovi)" value={m.name || ''} onChange={(e) => updateMember(i, 'name', e.target.value)} />
+                <div className="grid grid-cols-2 gap-2">
+                  <input className="px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Rôle (ex: Directeur pédagogique)" value={m.role || ''} onChange={(e) => updateMember(i, 'role', e.target.value)} />
+                  <input className="px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Matière (ex: Mathématiques)" value={m.subject || ''} onChange={(e) => updateMember(i, 'subject', e.target.value)} />
+                </div>
+                <div>
+                  <label className={labelClass}>Photo (optionnel)</label>
+                  <MediaPickerField value={m.photoUrl || null} onChange={(url) => updateMember(i, 'photoUrl', url || '')} aspect="square" folder="faculty" />
+                </div>
+              </div>
+            ))}
+            <button onClick={addMember} className="w-full py-2 border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-lg text-sm font-semibold text-slate-600 hover:text-blue-700 flex items-center justify-center gap-2">
+              <Plus className="w-4 h-4" /> Ajouter un membre
+            </button>
+          </ControlCard>
+
+          <AutoSaveBar saving={saving} onSave={() => onSave(form)} />
+        </>
+      }
+      right={
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 space-y-4">
+          <div>
+            <h3 className="text-xl font-extrabold text-slate-900 mb-2">{form.facultyTitle || 'Corps enseignant'}</h3>
+            {form.facultySubtitle && <p className="text-sm text-slate-500 mb-3">{form.facultySubtitle}</p>}
+          </div>
+          {form.facultyRatio && (
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">
+              <Users className="w-3.5 h-3.5" /> {form.facultyRatio}
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            {form.faculty.map((m: any, i: number) => (
+              <div key={i} className="p-3 bg-slate-50 rounded-lg text-center">
+                {m.photoUrl ? (
+                  <img src={m.photoUrl} alt={m.name} className="w-12 h-12 mx-auto rounded-full object-cover mb-2" />
+                ) : (
+                  <div className="w-12 h-12 mx-auto rounded-full bg-blue-900 text-white flex items-center justify-center font-bold text-sm mb-2">
+                    {(m.name || '?').split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                  </div>
+                )}
+                <p className="text-xs font-bold text-slate-900">{m.name || 'Nom'}</p>
+                <p className="text-[10px] text-amber-600 font-semibold">{m.role}</p>
+                <p className="text-[10px] text-slate-500">{m.subject}</p>
+              </div>
+            ))}
+            {form.faculty.length === 0 && <p className="text-sm text-slate-400 col-span-2 text-center py-4">Aucun membre. Ajoutez-en via le panneau de gauche.</p>}
+          </div>
+        </div>
+      }
+    />
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TAB: PARTNERS — Logos partenaires / accréditations
+// ═══════════════════════════════════════════════════════════════════════
+
+function PartnersTab({ config, onSave, saving }: any) {
+  const [partners, setPartners] = useState<any[]>(Array.isArray(config?.partnerLogos) ? config.partnerLogos : []);
+  const [isActive, setIsActive] = useState(config?.partnerLogosIsActive ?? true);
+
+  const addPartner = () => setPartners([...partners, { name: '', abbr: '', logoUrl: '' }]);
+  const updatePartner = (i: number, field: string, value: string) => setPartners(partners.map((p, idx) => idx === i ? { ...p, [field]: value } : p));
+  const removePartner = (i: number) => setPartners(partners.filter((_, idx) => idx !== i));
+
+  return (
+    <SplitLayout
+      previewTitle="Aperçu — Partenaires"
+      left={
+        <>
+          <ControlCard title="Section Partenaires & accréditations" icon={Award}>
+            <ToggleField label="Afficher les logos partenaires" checked={isActive} onChange={setIsActive} />
+            <p className="text-xs text-slate-500">Ajoutez les logos des partenaires et accréditations de votre établissement (Ministère, organismes, etc.).</p>
+          </ControlCard>
+          <ControlCard title="Logos" icon={LayoutTemplate}>
+            {partners.map((p, i) => (
+              <div key={i} className="p-3 border border-slate-200 rounded-lg space-y-2 bg-slate-50">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700">Partenaire #{i + 1}</span>
+                  <button onClick={() => removePartner(i)} className="text-red-500 hover:bg-red-50 p-1 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input className="px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Nom complet (ex: Ministère de l'Éducation)" value={p.name || ''} onChange={(e) => updatePartner(i, 'name', e.target.value)} />
+                  <input className="px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Abréviation (ex: MEN)" value={p.abbr || ''} onChange={(e) => updatePartner(i, 'abbr', e.target.value)} />
+                </div>
+              </div>
+            ))}
+            <button onClick={addPartner} className="w-full py-2 border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-lg text-sm font-semibold text-slate-600 hover:text-blue-700 flex items-center justify-center gap-2">
+              <Plus className="w-4 h-4" /> Ajouter un partenaire
+            </button>
+          </ControlCard>
+          <AutoSaveBar saving={saving} onSave={() => onSave({ partnerLogos: partners, partnerLogosIsActive: isActive })} />
+        </>
+      }
+      right={
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-4 text-center">Partenaires & accréditations</p>
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            {partners.map((p, i) => (
+              <div key={i} className="flex flex-col items-center gap-1">
+                <div className="w-12 h-12 rounded-lg bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
+                  {(p.abbr || '??').slice(0, 2)}
+                </div>
+                <span className="text-[10px] text-slate-600 font-medium">{p.name}</span>
+              </div>
+            ))}
+            {partners.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Aucun partenaire.</p>}
+          </div>
+        </div>
+      }
+    />
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TAB: NAVIGATION — Liens de la navbar
+// ═══════════════════════════════════════════════════════════════════════
+
+function NavigationTab({ config, onSave, saving }: any) {
+  const [links, setLinks] = useState<any[]>(Array.isArray(config?.navLinks) ? config.navLinks : []);
+
+  const addLink = () => setLinks([...links, { label: '', href: '' }]);
+  const updateLink = (i: number, field: string, value: string) => setLinks(links.map((l, idx) => idx === i ? { ...l, [field]: value } : l));
+  const removeLink = (i: number) => setLinks(links.filter((_, idx) => idx !== i));
+  const moveLink = (i: number, dir: -1 | 1) => {
+    const ni = i + dir;
+    if (ni < 0 || ni >= links.length) return;
+    const next = [...links];
+    [next[i], next[ni]] = [next[ni], next[i]];
+    setLinks(next);
+  };
+
+  return (
+    <SplitLayout
+      previewTitle="Aperçu — Navigation"
+      left={
+        <>
+          <ControlCard title="Liens de navigation (navbar)" icon={ArrowRight}>
+            <p className="text-xs text-slate-500">Les liens affichés dans la barre de navigation du site institutionnel. Chaque lien pointe vers une ancre de la page (ex: /#admissions).</p>
+            {links.map((l, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="flex flex-col gap-0.5">
+                  <button onClick={() => moveLink(i, -1)} disabled={i === 0} className="text-slate-400 hover:text-blue-600 disabled:opacity-30"><ArrowUp className="w-3 h-3" /></button>
+                  <button onClick={() => moveLink(i, 1)} disabled={i === links.length - 1} className="text-slate-400 hover:text-blue-600 disabled:opacity-30"><ArrowDown className="w-3 h-3" /></button>
+                </div>
+                <input className="w-32 px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Libellé (ex: Accueil)" value={l.label || ''} onChange={(e) => updateLink(i, 'label', e.target.value)} />
+                <input className="flex-1 px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Lien (ex: /#admissions)" value={l.href || ''} onChange={(e) => updateLink(i, 'href', e.target.value)} />
+                <button onClick={() => removeLink(i)} className="p-1.5 text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+              </div>
+            ))}
+            <button onClick={addLink} className="w-full py-2 border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-lg text-sm font-semibold text-slate-600 hover:text-blue-700 flex items-center justify-center gap-2">
+              <Plus className="w-4 h-4" /> Ajouter un lien
+            </button>
+          </ControlCard>
+          <AutoSaveBar saving={saving} onSave={() => onSave({ navLinks: links })} />
+        </>
+      }
+      right={
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+          <p className="text-xs text-slate-500 mb-3">Aperçu de la navbar (les liens s&apos;affichent dans l&apos;ordre) :</p>
+          <nav className="flex flex-wrap gap-3 items-center justify-center p-3 bg-slate-50 rounded-lg">
+            {links.map((l, i) => (
+              <span key={i} className="text-sm font-semibold text-blue-900 hover:underline cursor-pointer">{l.label || 'Lien'}</span>
+            ))}
+            {links.length === 0 && <p className="text-sm text-slate-400">Aucun lien.</p>}
+          </nav>
+        </div>
+      }
+    />
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  TAB: HOURS — Horaires d'ouverture
+// ═══════════════════════════════════════════════════════════════════════
+
+function HoursTab({ config, onSave, saving }: any) {
+  const [form, setForm] = useState({
+    schoolHoursWeekdays: config?.schoolHoursWeekdays || '',
+    schoolHoursSaturday: config?.schoolHoursSaturday || '',
+    schoolHoursIsActive: config?.schoolHoursIsActive ?? true,
+  });
+  const update = (field: string, value: any) => setForm({ ...form, [field]: value });
+
+  return (
+    <SplitLayout
+      previewTitle="Aperçu — Horaires"
+      left={
+        <>
+          <ControlCard title="Horaires d'ouverture" icon={Clock}>
+            <TextField label="En semaine (lundi - vendredi)" value={form.schoolHoursWeekdays} onChange={(v) => update('schoolHoursWeekdays', v)} placeholder="Lun - Ven : 7h30 - 17h00" />
+            <TextField label="Samedi" value={form.schoolHoursSaturday} onChange={(v) => update('schoolHoursSaturday', v)} placeholder="Sam : 8h00 - 12h00" />
+            <ToggleField label="Afficher les horaires dans la section Contact" checked={form.schoolHoursIsActive} onChange={(v) => update('schoolHoursIsActive', v)} />
+          </ControlCard>
+          <AutoSaveBar saving={saving} onSave={() => onSave(form)} />
+        </>
+      }
+      right={
+        <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+              <Clock className="w-4 h-4 text-amber-700" />
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 uppercase tracking-wider">Horaires</p>
+              <p className="text-sm font-semibold text-slate-900">{form.schoolHoursWeekdays || 'Lun - Ven : 7h30 - 17h00'}</p>
+              <p className="text-xs text-slate-500">{form.schoolHoursSaturday || 'Sam : 8h00 - 12h00'}</p>
+            </div>
+          </div>
+        </div>
+      }
+    />
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════

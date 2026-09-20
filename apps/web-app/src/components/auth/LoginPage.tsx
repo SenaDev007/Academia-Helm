@@ -73,7 +73,7 @@ import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
 import { useSchoolBranding } from '@/hooks/useSchoolBranding';
 import AcademicParticles from './AcademicParticles';
 // ⭐ Tenant de test Academia Helm — panneau d'identifiants de test (École/Enseignant/Parent)
-import TestCredentialsPanel from '@/components/auth/TestCredentialsPanel';
+import TestCredentialsModal from '@/components/auth/TestCredentialsModal';
 import {
   consumeTestCredentialPrefill,
   isTestCredentialsTenant,
@@ -597,8 +597,18 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     tenantIdForApi || tenantSlug || schoolNameFromUrl,
   );
 
+  // ⭐ Modal « Comptes de test » — state contrôlé
+  //    Le modal s'ouvre automatiquement quand l'utilisateur focus un champ
+  //    de saisie (email, password, identifier, téléphone) sur le tenant de
+  //    test Academia Helm. Voir openTestModal() attachée en onFocus à chaque
+  //    input ci-dessous.
+  const [isTestModalOpen, setIsTestModalOpen] = useState(false);
+  const openTestModal = useCallback(() => {
+    if (testTenantDetected) setIsTestModalOpen(true);
+  }, [testTenantDetected]);
+
   // ⭐ Tenant de test Academia Helm — remplissage du formulaire depuis le
-  //    panneau « Comptes de test » (clic « Utiliser ») ou depuis le compte
+  //    modal « Comptes de test » (clic « Utiliser ») ou depuis le compte
   //    mémorisé par le sélecteur de portail (sessionStorage → pré-remplissage).
   const handleUseTestAccount = useCallback((account: TestAccount) => {
     if (account.portal === 'school') {
@@ -769,13 +779,19 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     return qs ? `/forgot-password?${qs}` : '/forgot-password';
   }, [portalType, tenantSlug, tenantIdFromUrl]);
 
-  // ── Back to portal selection URL (school-portal on subdomain, portal on main) ──
+  // ── Back to portal selection URL ──
+  // ⭐ Sur un sous-domaine école (ex: cspeb.academiahelm.com), le bouton
+  //    « Retour » doit renvoyer vers la PAGE DE SÉLECTION DES PORTAILS du
+  //    tenant (/school-portal/portal), et NON vers /school-portal qui est la
+  //    landing page institutionnelle (ancien comportement qui déroutait
+  //    l'utilisateur en lui montrant la landing page au lieu du sélecteur).
+  //    Sur le domaine principal (academiahelm.com), on renvoie vers /portal.
   const backToPortalHref = useMemo(() => {
     if (typeof window !== 'undefined') {
       const host = window.location.host;
       const slug = extractTenantSlug(host);
       if (slug) {
-        return '/school-portal';
+        return '/school-portal/portal';
       }
     }
     return '/portal';
@@ -2319,6 +2335,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                               email: e.target.value,
                             })
                           }
+                          onFocus={openTestModal}
                           className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder={
@@ -2369,6 +2386,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                               password: e.target.value,
                             })
                           }}
+                          onFocus={openTestModal}
                           className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder="••••••••"
@@ -2446,6 +2464,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                               teacherIdentifier: e.target.value,
                             })
                           }
+                          onFocus={openTestModal}
                           className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder="ECOLE-26-00001"
@@ -2481,6 +2500,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                               password: e.target.value,
                             })
                           }}
+                          onFocus={openTestModal}
                           className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder="••••••••"
@@ -2561,6 +2581,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                               otp: parentOtpSent ? '' : parentCredentials.otp,
                             })
                           }
+                          onFocus={openTestModal}
                           className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-4 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2 disabled:bg-slate-100"
                           style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
                           placeholder={isEmailIdentifier ? 'parent@exemple.com' : '+229 90 00 00 00'}
@@ -3279,17 +3300,14 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               </motion.div>
             </AnimatePresence>
 
-            {/* ── ⭐ Tenant de test Academia Helm : comptes de test affichés ── */}
+            {/* ── ⭐ Tenant de test Academia Helm : modal « Comptes de test » ── */}
             {/* Uniquement pour les portails authentifiés (pas PUBLIC) et si
-                l'école courante est le tenant de test Academia Helm. Le panneau
-                liste les identifiants du portail courant + bouton « Utiliser ». */}
-            {testTenantDetected && (isStandardLogin || portalType === 'school' || portalType === 'platform' || portalType === 'teacher' || portalType === 'parent') && (
-              <TestCredentialsPanel
-                portal={portalType === 'teacher' || portalType === 'parent' ? portalType : 'school'}
-                tenantKey={tenantIdForApi || tenantSlug || schoolNameFromUrl}
-                onUseAccount={handleUseTestAccount}
-              />
-            )}
+                l'école courante est le tenant de test Academia Helm.
+                ⚠️ Le modal est rendu une seule fois, en dehors du flux du
+                formulaire, pour ne pas allonger la page. Il s'ouvre
+                automatiquement quand l'utilisateur focus un champ de saisie
+                (email, password, identifier, téléphone) — voir onFocus
+                attaché à chaque input. */}
 
             {/* ── Cloudflare Turnstile — vérification d'humanité ── */}
             {/* Désactivé pour le portail public (pré-inscription) pour simplifier le flux.
@@ -3777,6 +3795,22 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ══════════════════════════════════════════════════════════════
+          ⭐ MODAL « COMPTES DE TEST » — Tenant Academia Helm uniquement
+          S'ouvre automatiquement au focus sur un champ de saisie (email,
+          password, identifier, téléphone). Rendu en fin de composant pour
+          ne pas allonger la page login — c'est un overlay, pas un bloc.
+          ══════════════════════════════════════════════════════════════ */}
+      {testTenantDetected && (isStandardLogin || portalType === 'school' || portalType === 'platform' || portalType === 'teacher' || portalType === 'parent') && (
+        <TestCredentialsModal
+          isOpen={isTestModalOpen}
+          onClose={() => setIsTestModalOpen(false)}
+          portal={portalType === 'teacher' || portalType === 'parent' ? portalType : 'school'}
+          tenantKey={tenantIdForApi || tenantSlug || schoolNameFromUrl}
+          onUseAccount={handleUseTestAccount}
+        />
+      )}
     </div>
   );
 }

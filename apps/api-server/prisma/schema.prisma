@@ -16324,6 +16324,68 @@ model TenantWebsite {
   // Format JSON: [{ "name": "Primaire", "value": "#0b2f73" }, { "name": "Accent", "value": "#f5b335" }]
   // Si vide/null → utilise la palette Helm par défaut (Navy/Blue/Gold)
   customColors         Json?
+  // ═══ Sections éditables via CMS (2026-09-20) ═══
+  // Programmes (Maternelle/Primaire/Secondaire) — JSON array:
+  // [{ id, title, description, iconName, levels }]
+  programs             Json     @default("[]")
+  programsTitle        String?
+  programsSubtitle     String?  @db.Text
+  programsIsActive     Boolean  @default(true)
+  // Points de différenciation — JSON array:
+  // [{ title, description, iconName }]
+  differentiators      Json     @default("[]")
+  differentiatorsIsActive Boolean @default(true)
+  // Corps enseignant — JSON array:
+  // [{ name, role, subject, photoUrl }]
+  faculty              Json     @default("[]")
+  facultyTitle         String?
+  facultySubtitle      String?  @db.Text
+  facultyIsActive      Boolean  @default(true)
+  // Ratio encadrant/élève (ex: "1 encadrant pour 15 élèves") — si vide,
+  // calculé automatiquement (staffCount / studentCount).
+  facultyRatio         String?
+  // Étapes d'admission — JSON array:
+  // [{ num, title, description, iconName }]
+  admissionSteps       Json     @default("[]")
+  admissionTitle       String?
+  admissionSubtitle    String?  @db.Text
+  // Documents requis — JSON array: [string] ou [{ label }]
+  admissionDocuments   Json     @default("[]")
+  // Logos partenaires — JSON array: [{ name, abbr, logoUrl }]
+  partnerLogos         Json     @default("[]")
+  partnerLogosIsActive Boolean  @default(true)
+  // Liens de navigation (navbar) — JSON array: [{ label, href }]
+  navLinks             Json     @default("[]")
+  // Horaires d'ouverture
+  schoolHoursWeekdays  String?
+  schoolHoursSaturday  String?
+  schoolHoursIsActive  Boolean  @default(true)
+  // Section Témoignages — titres
+  testimonialsTitle    String?
+  testimonialsSubtitle String?  @db.Text
+  testimonialsIsActive Boolean  @default(true)
+  // Section Contact — titres
+  contactTitle         String?
+  contactSubtitle     String?  @db.Text
+  contactIsActive     Boolean  @default(true)
+  // Section Actualités — titres
+  newsTitle            String?
+  newsSubtitle         String?  @db.Text
+  newsIsActive         Boolean  @default(true)
+  // Section Galerie — titres
+  galleryTitle         String?
+  gallerySubtitle      String?  @db.Text
+  galleryIsActive      Boolean  @default(true)
+  // Sous-titre de la section Présentation
+  presentationSubtitle String?  @db.Text
+  // ═══ Statistiques dynamiques (depuis la base de données de l'école) ═══
+  // "manual" = utiliser keyFigures telles quelles
+  // "dynamic" = remplacer certaines valeurs par des stats temps réel
+  statsMode            String?  @default("manual")
+  // Configuration des stats dynamiques — JSON array:
+  // [{ figureIndex, source: 'studentCount'|'staffCount'|'teacherCount'|
+  //           'newsCount'|'eventsCount'|'levelsCount', suffix?: '%'|'' }]
+  dynamicStatsConfig   Json     @default("[]")
   // Paramètres
   isActive             Boolean  @default(true)
   // IA

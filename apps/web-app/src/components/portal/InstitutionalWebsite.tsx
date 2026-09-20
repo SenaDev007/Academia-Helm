@@ -300,6 +300,10 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     (schoolInfo as any)?.tenantId || (schoolInfo as any)?.id || null,
   );
   const [isLoading, setIsLoading] = useState(!schoolInfo);
+  // ⭐ Statistiques dynamiques (élèves, enseignants, etc.) — chargées depuis
+  // l'endpoint public /tenant-website/public/:slug/stats si le CMS est en
+  // mode "dynamic". Voir applyDynamicStats() plus bas.
+  const [dynamicStats, setDynamicStats] = useState<Record<string, number | string> | null>(null);
   const [activeTestimonial, setActiveTestimonial] = useState(0);
 
   // ─── Thème officiel du tenant (40+ thèmes shadcn/ui) ──────────────────
@@ -339,15 +343,21 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       if ((schoolInfo as any)?.tenantId) setTenantId((schoolInfo as any).tenantId);
       else if ((schoolInfo as any)?.id) setTenantId((schoolInfo as any).id);
       setIsLoading(false);
-      // Charger en parallèle les données complémentaires
-      Promise.all([loadWebsiteData(), loadThemeSettings(), loadIdentityInfo()]);
+      // Charger en parallèle les données complémentaires + stats dynamiques
+      Promise.all([
+        loadWebsiteData(),
+        loadThemeSettings(),
+        loadIdentityInfo(),
+        loadDynamicStats(),
+      ]);
     } else {
-      // Pas de schoolInfo → tout charger en parallèle (4 fetchs)
+      // Pas de schoolInfo → tout charger en parallèle (5 fetchs)
       Promise.all([
         loadSchoolData(),
         loadWebsiteData(),
         loadThemeSettings(),
         loadIdentityInfo(),
+        loadDynamicStats(),
       ]).finally(() => setIsLoading(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -421,6 +431,30 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       clearTimeout(timeoutId);
       // Silencieux — fallback sur les valeurs CMS / schoolData / defaults
       console.debug('[identity-info] unavailable for', slug, e);
+    }
+  };
+
+  // ─── Statistiques dynamiques (nombre d'élèves, d'enseignants, etc.) ──
+  // GET /api/tenant-website/public/:slug/stats → compteurs temps réel.
+  // Utilisé seulement si le CMS est en mode "dynamic" (statsMode='dynamic').
+  // En mode "manual" (par défaut), on garde les keyFigures telles quelles.
+  // ⚠️ Pas de abort/warning si échec — fallback silencieux sur keyFigures.
+  const loadDynamicStats = async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    try {
+      const res = await fetch(`/api/tenant-website/public/${slug}/stats`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data === 'object') setDynamicStats(data);
+      }
+    } catch (e) {
+      clearTimeout(timeoutId);
+      // Silencieux — on garde les keyFigures manuelles du CMS
+      console.debug('[stats] unavailable for', slug, e);
     }
   };
 
@@ -503,7 +537,32 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const heroCtaText = withDefault(rawWebsite?.heroCtaText, 'Demander une admission');
 
   // ─── Chiffres clés (CDC 3.2 — bandeau 3-4 indicateurs) ──
-  const keyFigures = withDefault(rawWebsite?.keyFigures, DEFAULT_WEBSITE_CONFIG.keyFigures).slice(0, 4);
+  // ⭐ Mode dynamique : si statsMode='dynamic' et dynamicStatsConfig est
+  // configuré, on remplace certaines valeurs des keyFigures par des
+  // statistiques temps réel (nombre d'élèves, d'enseignants, etc.) issues
+  // de la base de données de l'école.
+  //
+  // Exemple de dynamicStatsConfig côté CMS :
+  //   [
+  //     { figureIndex: 0, source: 'studentCount' },     // remplace "500" par le vrai nombre d'élèves
+  //     { figureIndex: 1, source: 'teacherCount' },     // remplace "30" par le vrai nombre d'enseignants
+  //   ]
+  const rawKeyFigures = withDefault(rawWebsite?.keyFigures, DEFAULT_WEBSITE_CONFIG.keyFigures);
+  const statsMode = (rawWebsite?.statsMode === 'dynamic') ? 'dynamic' : 'manual';
+  const dynamicStatsConfig: any[] = (rawWebsite?.dynamicStatsConfig && Array.isArray(rawWebsite.dynamicStatsConfig))
+    ? rawWebsite.dynamicStatsConfig
+    : [];
+  const keyFigures = (statsMode === 'dynamic' && dynamicStats && dynamicStatsConfig.length > 0)
+    ? rawKeyFigures.map((fig: any, idx: number) => {
+        const mapping = dynamicStatsConfig.find((m: any) => m.figureIndex === idx);
+        if (!mapping || !mapping.source) return fig;
+        const dynVal = (dynamicStats as any)[mapping.source];
+        if (typeof dynVal === 'number' && dynVal > 0) {
+          return { ...fig, value: String(dynVal) };
+        }
+        return fig;
+      }).slice(0, 4)
+    : rawKeyFigures.slice(0, 4);
 
   // ─── Collections avec defaults ──
   const newsArticles = (websiteData?.newsArticles && websiteData.newsArticles.length > 0)
@@ -525,24 +584,80 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   // sur les constantes par défaut. Permet à l'admin de surcharger ces sections
   // via le back-office CMS quand les champs seront exposés dans l'éditeur.
   //
-  // Note : les objets DEFAULT_* contiennent une propriété `Icon` (composant
-  // Lucide). Si le CMS retourne des données avec `iconName` (string) au lieu
-  // de `Icon` (component), un résolveur d'icônes devra être ajouté.
-  const programs = (rawWebsite?.programs && Array.isArray(rawWebsite.programs) && rawWebsite.programs.length > 0)
+  // ⭐ Résolveur d'icônes : le CMS stocke `iconName` (string, ex: 'Baby',
+  // 'School', 'Library'). On le mappe vers le composant Lucide correspondant.
+  // Si l'icône n'est pas trouvée, on utilise une icône par défaut (BookOpen).
+  // Pour les valeurs par défaut (DEFAULT_PROGRAMS etc.), le composant est
+  // déjà attaché sous `Icon`.
+  const iconByName: Record<string, any> = {
+    Baby, School, Library, FileText, BookOpen, Users, CheckCircle2,
+    Languages, Microscope, Palette, Trophy, Building2, GraduationCap,
+    Globe, Award, Star, Images, Sparkles, Mail, Phone, MapPin, Clock,
+    ArrowRight, ChevronRight, Calendar, Quote, Send, MessageCircle,
+  };
+  const resolveIcon = (item: any, fallbackIcon: any = BookOpen) => {
+    if (item?.Icon) return item.Icon;
+    if (item?.iconName && iconByName[item.iconName]) return iconByName[item.iconName];
+    return fallbackIcon;
+  };
+
+  // ⭐ Appliquer le résolveur d'icônes sur chaque collection CMS — on prend
+  // le tableau du CMS si non vide, sinon le défaut. On enrichit avec Icon.
+  const rawPrograms = (rawWebsite?.programs && Array.isArray(rawWebsite.programs) && rawWebsite.programs.length > 0)
     ? rawWebsite.programs
     : DEFAULT_PROGRAMS;
-  const differentiators = (rawWebsite?.differentiators && Array.isArray(rawWebsite.differentiators) && rawWebsite.differentiators.length > 0)
+  const programs = rawPrograms.map((p: any) => ({ ...p, Icon: resolveIcon(p, BookOpen) }));
+
+  const rawDifferentiators = (rawWebsite?.differentiators && Array.isArray(rawWebsite.differentiators) && rawWebsite.differentiators.length > 0)
     ? rawWebsite.differentiators
     : DEFAULT_DIFFERENTIATORS;
+  const differentiators = rawDifferentiators.map((d: any) => ({ ...d, Icon: resolveIcon(d, Sparkles) }));
+
   const faculty = (rawWebsite?.faculty && Array.isArray(rawWebsite.faculty) && rawWebsite.faculty.length > 0)
     ? rawWebsite.faculty
     : DEFAULT_FACULTY;
-  const admissionSteps = (rawWebsite?.admissionSteps && Array.isArray(rawWebsite.admissionSteps) && rawWebsite.admissionSteps.length > 0)
+  const rawAdmissionSteps = (rawWebsite?.admissionSteps && Array.isArray(rawWebsite.admissionSteps) && rawWebsite.admissionSteps.length > 0)
     ? rawWebsite.admissionSteps
     : ADMISSION_STEPS;
+  const admissionSteps = rawAdmissionSteps.map((s: any) => ({ ...s, Icon: resolveIcon(s, CheckCircle2) }));
+
   const admissionDocuments = (rawWebsite?.admissionDocuments && Array.isArray(rawWebsite.admissionDocuments) && rawWebsite.admissionDocuments.length > 0)
     ? rawWebsite.admissionDocuments
     : REQUIRED_DOCUMENTS;
+
+  // ⭐ Logos partenaires : CMS si configuré, sinon fallback sur PARTNER_LOGOS.
+  const partnerLogos = (rawWebsite?.partnerLogos && Array.isArray(rawWebsite.partnerLogos) && rawWebsite.partnerLogos.length > 0)
+    ? rawWebsite.partnerLogos
+    : PARTNER_LOGOS;
+  const partnerLogosIsActive = withDefault(rawWebsite?.partnerLogosIsActive, true);
+
+  // ⭐ Liens de navigation (navbar) : CMS si configuré, sinon fallback sur
+  // les valeurs hardcoded (7 liens standard).
+  const navLinks = (rawWebsite?.navLinks && Array.isArray(rawWebsite.navLinks) && rawWebsite.navLinks.length > 0)
+    ? rawWebsite.navLinks
+    : [
+        { label: 'Accueil', href: '/#hero' },
+        { label: 'À propos', href: '/#a-propos' },
+        { label: 'Programmes', href: '/#programmes' },
+        { label: 'Admissions', href: '/#admissions' },
+        { label: 'Vie scolaire', href: '/#vie-scolaire' },
+        { label: 'Actualités', href: '/#actualites' },
+        { label: 'Contact', href: '/#contact' },
+      ];
+
+  // ⭐ Ratio encadrant/élève (CDC 3.5) : CMS (facultyRatio) si configuré,
+  // sinon calcul automatique si dynamicStats disponible, sinon défaut.
+  const facultyRatio = withDefault(
+    rawWebsite?.facultyRatio,
+    dynamicStats && (dynamicStats as any).studentCount > 0 && (dynamicStats as any).staffCount > 0
+      ? `Ratio 1 encadrant pour ${Math.ceil((dynamicStats as any).studentCount / (dynamicStats as any).staffCount)} élèves`
+      : 'Ratio 1 encadrant pour 15 élèves'
+  );
+
+  // ⭐ Horaires d'ouverture : CMS si configuré, sinon valeurs par défaut.
+  const schoolHoursWeekdays = withDefault(rawWebsite?.schoolHoursWeekdays, 'Lun - Ven : 7h30 - 17h00');
+  const schoolHoursSaturday = withDefault(rawWebsite?.schoolHoursSaturday, 'Sam : 8h00 - 12h00');
+  const schoolHoursIsActive = withDefault(rawWebsite?.schoolHoursIsActive, true);
 
   // ─── Titres & sous-titres de sections (CMS-connectés) ─────────────────
   // Chaque titre/sous-titre de section est lu depuis le CMS avec fallback sur
@@ -610,17 +725,6 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   // SchoolLocationMap pour placer le pin sur la vraie position de l'école.
   const contactLatitude = identityInfo?.latitude ?? null;
   const contactLongitude = identityInfo?.longitude ?? null;
-
-  // ─── Navigation CDC ──
-  const navLinks = [
-    { label: 'Accueil', href: '/#hero' },
-    { label: 'À propos', href: '/#a-propos' },
-    { label: 'Programmes', href: '/#programmes' },
-    { label: 'Admissions', href: '/#admissions' },
-    { label: 'Vie scolaire', href: '/#vie-scolaire' },
-    { label: 'Actualités', href: '/#actualites' },
-    { label: 'Contact', href: '/#contact' },
-  ];
 
   // ─── Iframe OpenStreetMap (CDC 3.9) ──
   // ⚠️ Remplacée par <SchoolLocationMap /> : l'ancienne iframe était codée
@@ -954,7 +1058,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             >
               <Users className="w-5 h-5" style={{ color: NAVY }} />
               <span className="text-sm font-bold" style={{ color: NAVY }}>
-                Ratio 1 encadrant pour 15 élèves
+                {facultyRatio}
               </span>
             </div>
           </div>
@@ -1279,7 +1383,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                 Partenaires & accréditations
               </p>
               <div className="flex flex-wrap items-center justify-center gap-6 md:gap-10">
-                {PARTNER_LOGOS.map((partner, i) => (
+                {partnerLogos.map((partner, i) => (
                   <div
                     key={i}
                     className="grayscale opacity-50 hover:grayscale-0 hover:opacity-100 transition-all duration-300 cursor-default"
@@ -1368,16 +1472,18 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                       </div>
                     </li>
                   )}
-                  <li className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${GOLD}15` }}>
-                      <Clock className="w-4 h-4" style={{ color: '#a07d00' }} />
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 uppercase tracking-wider">Horaires</p>
-                      <p className="text-sm font-semibold text-slate-900">Lun - Ven : 7h30 - 17h00</p>
-                      <p className="text-xs text-slate-500">Sam : 8h00 - 12h00</p>
-                    </div>
-                  </li>
+                  {schoolHoursIsActive && (
+                    <li className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${GOLD}15` }}>
+                        <Clock className="w-4 h-4" style={{ color: '#a07d00' }} />
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500 uppercase tracking-wider">Horaires</p>
+                        <p className="text-sm font-semibold text-slate-900">{schoolHoursWeekdays}</p>
+                        <p className="text-xs text-slate-500">{schoolHoursSaturday}</p>
+                      </div>
+                    </li>
+                  )}
                 </ul>
               </div>
 

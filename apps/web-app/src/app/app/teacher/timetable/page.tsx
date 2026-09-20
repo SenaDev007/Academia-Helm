@@ -89,7 +89,7 @@ export default function TeacherTimetablePage() {
       //      4. p.teacher.matricule === user.matricule (matching par matricule)
       //      5. p.teacher.matricule === user.email (cas où le login est le matricule mais
       //         renvoyé dans user.email — possible selon le portail)
-      //    Sans ce matching multiple, Saliou AKPAKI (CSPEBE-26-00008 / dawesakpovi@gmail.com)
+      //    Sans ce matching multiple, un enseignant (ex: Karim HELM, AHE-26-00008)
       //    ne trouve pas son profil → myTeacherId undefined → pas d'assignments fetchés
       //    → 'Aucun emploi du temps configuré'
       const myProfile = profiles.find((p: any) =>

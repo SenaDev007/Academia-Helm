@@ -117,6 +117,24 @@ export const TEST_ACCOUNTS: TestAccount[] = [
     identifierLabel: 'Email',
     password: TEST_PASSWORD,
   },
+  {
+    portal: 'school',
+    roleLabel: 'Enseignant — double casquette',
+    name: 'Karim HELM',
+    identifier: 'karim.helm@academia-helm.test',
+    identifierLabel: 'Email',
+    password: TEST_PASSWORD,
+    note: 'Anciennement rattaché à un compte externe. Aussi le Portail Enseignant avec le matricule AHE-26-00008.',
+  },
+  {
+    portal: 'school',
+    roleLabel: 'Enseignante — double casquette',
+    name: 'Jade HELM',
+    identifier: 'jade.helm@academia-helm.test',
+    identifierLabel: 'Email',
+    password: TEST_PASSWORD,
+    note: 'Aussi le Portail Enseignant avec le matricule AHE-26-00011.',
+  },
 
   // ── Portail Enseignant (matricule + mot de passe) ──
   {
@@ -160,6 +178,22 @@ export const TEST_ACCOUNTS: TestAccount[] = [
     identifierLabel: 'Matricule',
     password: TEST_PASSWORD,
     note: 'Cumule administration et enseignement : aussi le Portail École par email.',
+  },
+  {
+    portal: 'teacher',
+    roleLabel: 'Enseignant',
+    name: 'Karim HELM',
+    identifier: 'AHE-26-00008',
+    identifierLabel: 'Matricule',
+    password: TEST_PASSWORD,
+  },
+  {
+    portal: 'teacher',
+    roleLabel: 'Enseignante',
+    name: 'Jade HELM',
+    identifier: 'AHE-26-00011',
+    identifierLabel: 'Matricule',
+    password: TEST_PASSWORD,
   },
 
   // ── Portail Parent / Élève (téléphone, connexion directe) ──

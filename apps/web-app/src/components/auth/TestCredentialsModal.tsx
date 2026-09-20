@@ -288,7 +288,7 @@ export default function TestCredentialsModal({
           )}
 
           <p className="pt-1 text-[10px] leading-relaxed text-slate-400">
-            Tenant de test autonome (clone de l&apos;école CSPEB) — emails non délivrables
+            Tenant de test autonome — emails non délivrables
             @academia-helm.test, aucune donnée réelle n&apos;est impactée par les tests.
           </p>
         </div>

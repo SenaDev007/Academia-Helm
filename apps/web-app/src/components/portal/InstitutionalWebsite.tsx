@@ -754,9 +754,9 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             ⚠️ pb-24 sur mobile : réserve la zone de la bannière PWA (fixée en
             bas d'écran) pour qu'elle ne recouvre pas les cartes chiffres clés. */}
         {keyFigures.length > 0 && (
-          <div className="relative z-10 w-full pb-24 pt-2 shrink-0 md:absolute md:bottom-0 md:left-0 md:right-0 md:pb-8">
-            <div className="max-w-6xl mx-auto px-4 sm:px-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-4">
+          <div className="relative z-10 w-full pb-24 pt-2 shrink-0 md:absolute md:bottom-0 md:left-0 md:right-0 md:pb-8 flex justify-center">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 w-full">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-4 text-center">
                 {keyFigures.map((fig: any, i: number) => (
                   <KeyFigureCard key={i} fig={fig} gold={GOLD} navy={NAVY} delay={i * 0.1} />
                 ))}

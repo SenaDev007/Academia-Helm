@@ -244,7 +244,7 @@ export default function StudentSettingsContent() {
                   type="text"
                   value={settings.matriculePrefix}
                   onChange={(e) => update('matriculePrefix', e.target.value.toUpperCase().slice(0, 6))}
-                  placeholder="Ex: CSPEB"
+                  placeholder="Ex: ECOLE"
                   className="w-full max-w-xs px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <p className="text-[10px] text-slate-400 mt-1">Laisser vide pour utiliser le code automatique du tenant</p>
@@ -263,7 +263,7 @@ export default function StudentSettingsContent() {
               <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
                 <p className="text-xs text-blue-700">
                   <strong>Aperçu :</strong>{' '}
-                  {(settings.matriculePrefix || 'CSPEB')}-E-26-0001
+                  {(settings.matriculePrefix || 'ECOLE')}-E-26-0001
                 </p>
               </div>
             </div>

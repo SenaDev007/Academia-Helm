@@ -56,6 +56,19 @@ export class AuditLogInterceptor implements NestInterceptor {
     }
     (request as any).__audited = true;
 
+    // ⭐ SAUVEGARDE AUTOMATIQUE SILENCIEUSE : les requêtes marquées
+    //    ?source=autosave correspondent à la sauvegarde automatique du cahier
+    //    journal / des fiches pédagogiques (toutes les 10 s par utilisateur
+    //    actif, UNIQUEMENT si le contenu a changé). Les journaliser produirait
+    //    ~360 lignes/heure/utilisateur dans audit_logs et serialiserait tout
+    //    le contenu HTML à chaque tick — on les exclut donc de l'audit.
+    //    La traçabilité reste assurée par les sauvegardes manuelles
+    //    (PUT/POST classiques), les soumissions et les validations.
+    const queryAny = query as any;
+    if (queryAny?.source === 'autosave' || queryAny?.['source'] === 'autosave') {
+      return next.handle();
+    }
+
     // Déterminer si cette action doit être loggée
     const shouldLog = this.shouldLogAction(method, url);
 

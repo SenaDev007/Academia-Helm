@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 470 300" width="470" height="300">
+<rect width="470" height="300" fill="#ffffff"/>
+<text x="235" y="24" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">Les quadrilatères particuliers</text>
+
+  <!-- carré -->
+  <rect x="50" y="70" width="80" height="80" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M60 150 l0 -10 l10 0" fill="none" stroke="#dc2626" stroke-width="2"/>
+  <text x="76" y="168" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Carré</text>
+  <text x="86" y="112" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1d4ed8">c</text>
+  <text x="44" y="116" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1d4ed8">c</text>
+  <!-- rectangle -->
+  <rect x="180" y="70" width="120" height="80" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M190 150 l0 -10 l10 0" fill="none" stroke="#dc2626" stroke-width="2"/>
+  <text x="240" y="168" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Rectangle</text>
+  <text x="234" y="112" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1d4ed8">L</text>
+  <text x="172" y="116" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1d4ed8">l</text>
+  <!-- parallélogramme -->
+  <path d="M350 140 l30 -70 l100 0 l-30 70 z" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <text x="400" y="168" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Parallélogramme</text>
+  <text x="400" y="182" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">côtés opposés parallèles et égaux</text>
+  <path d="M358 118 l14 -0 M426 62 l-14 0" stroke="#94a3b8" stroke-width="1.5"/>
+  <!-- losange -->
+  <path d="M90 210 l34 -34 l34 34 l-34 34 z" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <text x="124" y="288" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Losange</text>
+  <text x="124" y="268" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">4 côtés égaux</text>
+  <!-- trapèze -->
+  <path d="M220 244 l26 -70 l76 0 l24 70 z" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <text x="278" y="288" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Trapèze</text>
+  <text x="278" y="268" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">2 côtés parallèles (bases)</text>
+  <!-- cercle -->
+  <circle cx="400" cy="240" r="36" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <text x="400" y="288" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Disque</text>
+  <text x="400" y="268" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">le cercle est le bord</text>
+
+</svg>

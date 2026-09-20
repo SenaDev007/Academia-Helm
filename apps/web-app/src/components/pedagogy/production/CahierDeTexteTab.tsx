@@ -48,6 +48,7 @@ import {
   CalendarDays, ListTree, PenTool, CheckCircle2, Filter, ChevronLeft,
 } from "lucide-react";
 import { toast } from "sonner";
+import { usePersistedTab } from "@/hooks/usePersistedTab";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 import { useModuleContext } from "@/hooks/useModuleContext";
@@ -143,7 +144,10 @@ interface CahierDeTexteTabProps {
 export function CahierDeTexteTab({ tenantId, academicYearId, teacherId }: CahierDeTexteTabProps) {
   const { academicYear } = useModuleContext();
   const { user } = useAppSession();
-  const [activeSubTab, setActiveSubTab] = useState<"journal" | "catalogue">("journal");
+  // ⭐ FIX : persistance du sous-onglet actif après rechargement de la page
+  const [activeSubTab, setActiveSubTab] = usePersistedTab(
+    "vue", ["journal", "catalogue"], "journal",
+  ) as ["journal" | "catalogue", (t: "journal" | "catalogue") => void];
 
   // === Signature de l'enseignant (auto-attach) ===
   const [teacherSignature, setTeacherSignature] = useState<string | null>(null);

@@ -42,6 +42,7 @@ import {
   type DynamicSubject,
 } from "@/lib/pedagogy/maternelle-domaines";
 import { CahierJournalMaternelleGrid } from "./CahierJournalMaternelleGrid";
+import { usePersistedTab } from "@/hooks/usePersistedTab";
 import {
   useDirectorPedagogyDashboard,
   usePendingCahierJournals, usePendingFiches, usePendingRegisters,
@@ -125,7 +126,14 @@ function formatDateTimeFR(dateStr: string): string {
 }
 
 export function DirectorPedagogyControl({ tenantId, academicYearId, userId }: DirectorPedagogyControlProps) {
-  const [tab, setTab] = useState<TabId>("dashboard");
+  // ⭐ FIX (demande utilisateur) : persistance de l'onglet actif après
+  //    rechargement — l'onglet est reflété dans l'URL (?onglet=cahier-journal)
+  //    SANS rechargement + miroir sessionStorage.
+  const [tab, setTab] = usePersistedTab(
+    "onglet",
+    TABS.map((t) => t.id) as readonly string[],
+    "dashboard",
+  ) as [TabId, (t: TabId) => void];
   const [refreshKey, setRefreshKey] = useState(0);
 
   // ⭐ Récupérer le niveau scolaire actif depuis le dropdown (useModuleContext)

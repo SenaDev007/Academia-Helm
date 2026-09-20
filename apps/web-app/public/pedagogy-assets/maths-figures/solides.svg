@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 470 300" width="470" height="300">
+<rect width="470" height="300" fill="#ffffff"/>
+<text x="235" y="24" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">Les solides (figures en 3 dimensions)</text>
+
+  <!-- cube -->
+  <path d="M60 90 h60 v60 h-60 z" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M60 90 l20 -18 h60 l-20 18 M120 90 l20 -18 v60 l-20 18" fill="#eff6ff" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M120 150 l20 -18" stroke="#1d4ed8" stroke-width="1.2" stroke-dasharray="4 3" fill="none"/>
+  <text x="90" y="178" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Cube</text>
+  <text x="90" y="192" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">6 faces carrées</text>
+  <!-- pavé droit -->
+  <path d="M180 90 h76 v58 h-76 z" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M180 90 l18 -16 h76 l-18 16 M256 90 l18 -16 v58 l-18 16" fill="#eff6ff" stroke="#1d4ed8" stroke-width="2.5"/>
+  <text x="222" y="176" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Pavé droit</text>
+  <text x="222" y="190" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">6 faces rectangulaires</text>
+  <!-- cylindre -->
+  <ellipse cx="360" cy="86" rx="34" ry="12" fill="#eff6ff" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M326 86 v62 M394 86 v62" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M326 148 a34 12 0 0 0 68 0" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <text x="360" y="178" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Cylindre</text>
+  <!-- cône -->
+  <path d="M110 244 L150 196 L190 244" fill="none"/>
+  <ellipse cx="150" cy="244" rx="40" ry="13" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M110 244 L150 196 L190 244" stroke="#1d4ed8" stroke-width="2.5" fill="none"/>
+  <path d="M150 196 L168 238" stroke="#1d4ed8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <text x="150" y="272" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Cône</text>
+  <!-- pyramide -->
+  <path d="M250 268 L288 200 L326 268 Z" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M288 200 L306 268" stroke="#1d4ed8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <path d="M250 268 q38 -10 76 0" fill="none" stroke="#1d4ed8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <text x="288" y="290" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Pyramide</text>
+  <!-- sphère -->
+  <circle cx="400" cy="236" r="38" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <ellipse cx="400" cy="236" rx="38" ry="12" fill="none" stroke="#1d4ed8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <ellipse cx="400" cy="236" rx="14" ry="38" fill="none" stroke="#1d4ed8" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <text x="400" y="290" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Sphère</text>
+
+</svg>

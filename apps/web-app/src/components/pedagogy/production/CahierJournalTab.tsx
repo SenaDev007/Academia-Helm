@@ -35,6 +35,8 @@ import {
   type SousMatiereFiche,
   type FichesAPreparerState,
 } from "@/lib/pedagogy/cahier-sous-matieres";
+import { useAutoSave, fireKeepaliveSave } from "@/hooks/useAutoSave";
+import { AutosaveIndicator } from "@/components/pedagogy/media/AutosaveIndicator";
 
 interface CahierJournalTabProps {
   tenantId: string;
@@ -351,6 +353,51 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   // Matières dynamiques chargées depuis la base de données
   const [dynamicSubjects, setDynamicSubjects] = useState<any[]>([]);
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // ⭐ SAUVEGARDE AUTOMATIQUE INVISIBLE — toutes les 10 secondes
+  //
+  // Exigence utilisateur : « la sauvegarde automatique chaque 10 secondes
+  // doit permettre de ne pas perdre son travail, SANS que l'utilisateur ne
+  // le remarque, sans perturber son travail, sans rechargement de page. »
+  //
+  //   - Aucun toast, aucun re-fetch, aucun re-render des données éditées :
+  //     un simple PUT silencieux (?source=autosave → pas d'audit log côté API)
+  //   - Sauvegarde UNIQUEMENT si le contenu a changé depuis la dernière
+  //     sauvegarde réussie (détection par snapshot sérialisé)
+  //   - Active uniquement en Brouillon / Rejeté (pas sur un journal soumis
+  //     ou validé qui est en lecture seule)
+  //   - Flush best-effort à la fermeture de l'onglet / F5 (fetch keepalive)
+  //   - Micro-indicateur discret « Enregistré à HH:MM » dans la barre d'actions
+  // ═════════════════════════════════════════════════════════════════════════
+  const journalSnapshot = JSON.stringify({ entries, observations, directorName, teacherSignature, directorSignature });
+  const autosave = useAutoSave({
+    snapshot: journalSnapshot,
+    enabled:
+      !!journal &&
+      journal.status !== "SUBMITTED" &&
+      journal.status !== "VALIDATED" &&
+      !loading,
+    save: async () => {
+      if (!journal?.id) return;
+      const res = await fetch(`/api/pedagogy-space/cahier-journal/${journal.id}?source=autosave`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: journalSnapshot,
+      });
+      if (!res.ok) throw new Error("Erreur de sauvegarde automatique");
+    },
+    unloadSave: () => {
+      if (!journal?.id) return;
+      fireKeepaliveSave(
+        `/api/pedagogy-space/cahier-journal/${journal.id}?source=autosave`,
+        "PUT",
+        JSON.parse(journalSnapshot),
+      );
+    },
+    intervalMs: 10_000,
+  });
+
   // === Chargement des classes + matières ===
   useEffect(() => {
     (async () => {
@@ -583,6 +630,15 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
       // ⭐ Charger les signatures existantes
       setTeacherSignature(data.teacherSignature || null);
       setDirectorSignature(data.directorSignature || null);
+      // ⭐ Autosave : le contenu chargé devient la nouvelle baseline (aucune
+      //    écriture tant que l'enseignant n'a pas modifié quelque chose)
+      autosave.markSaved(JSON.stringify({
+        entries: parseEntries(data.entries),
+        observations: data.observations || "",
+        directorName: data.directorName || "",
+        teacherSignature: data.teacherSignature || null,
+        directorSignature: data.directorSignature || null,
+      }));
       // ⭐ Notifier le parent du journalId courant (pour afficher les fiches liées)
       onJournalLoaded?.(data.id, {
         weekStartDate: data.weekStartDate,
@@ -598,7 +654,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
     } finally {
       setLoading(false);
     }
-  }, [academicYearId, teacherId, selectedClassId, weekStart, classes, onJournalLoaded, isMaternelleClass]);
+  }, [academicYearId, teacherId, selectedClassId, weekStart, classes, onJournalLoaded, isMaternelleClass, autosave.markSaved]);
 
   useEffect(() => {
     if (selectedClassId) loadJournal();
@@ -839,6 +895,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
         "✅ Cahier journal enregistré" +
           (fichesCount > 0 ? ` — ${fichesCount} fiche(s) à préparer` : ""),
       );
+      // ⭐ Autosave : resynchronise la baseline pour éviter une double
+      autosave.markSaved(journalSnapshot);
       // ⭐ Déclencher la bascule vers le sous-onglet Fiches (si le parent écoute)
       onJournalSaved?.(journal.id, {
         weekStartDate: journal.weekStartDate,
@@ -1155,6 +1213,9 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
         )}
 
         <div className="flex items-center gap-2">
+          {/* ⭐ Micro-indicateur de sauvegarde automatique (très discret —
+              l'utilisateur ne doit pas être perturbé par les sauvegardes) */}
+          <AutosaveIndicator status={autosave.status} lastSavedAt={autosave.lastSavedAt} />
           <button
             onClick={handleSave}
             disabled={saving || loading || !journal || isReadOnly}
@@ -1316,6 +1377,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                             disabled={isReadOnly}
                             placeholder="—"
                             minHeight="96px"
+                            enableMedia={!isReadOnly}
                           />
                         </td>
                       );
@@ -1327,6 +1389,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                         disabled={isReadOnly}
                         placeholder="—"
                         minHeight="96px"
+                        enableMedia={!isReadOnly}
                       />
                       {/* ⭐ Observation du directeur (en rouge, sous l'observation de l'enseignant) */}
                       {getEntry(day.key, "directorObservation") && (
@@ -1410,6 +1473,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                             disabled={isReadOnly}
                             placeholder="—"
                             minHeight="96px"
+                            enableMedia={!isReadOnly}
                           />
                         </td>
                       );

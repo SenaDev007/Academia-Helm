@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 280" width="460" height="280">
+<rect width="460" height="280" fill="#ffffff"/>
+<text x="230" y="24" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">Les fractions</text>
+
+  <!-- disque 1/4 -->
+  <circle cx="110" cy="150" r="70" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M110 150 L110 80 A70 70 0 0 1 180 150 Z" fill="#2563eb" opacity="0.85"/>
+  <path d="M110 150 L180 150 M110 150 L110 80" stroke="#1d4ed8" stroke-width="2"/>
+  <text x="110" y="248" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#334155" font-weight="bold">1/4</text>
+  <text x="110" y="264" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">un quart</text>
+  <!-- disque 2/4 -->
+  <circle cx="250" cy="150" r="70" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M250 150 L250 80 A70 70 0 0 1 320 150 Z M250 150 L320 150 A70 70 0 0 1 250 220 Z" fill="#2563eb" opacity="0.85" fill-rule="evenodd"/>
+  <path d="M250 150 L320 150 M250 150 L180 150 M250 150 L250 80 M250 150 L250 220" stroke="#1d4ed8" stroke-width="2"/>
+  <text x="250" y="248" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#334155" font-weight="bold">2/4 = 1/2</text>
+  <text x="250" y="264" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">deux quarts = un demi</text>
+  <!-- disque 3/4 -->
+  <circle cx="390" cy="150" r="70" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M390 150 L390 80 A70 70 0 1 1 349 205 Z" fill="#2563eb" opacity="0.85"/>
+  <path d="M390 150 L320 150 M390 150 L390 80 M390 150 L390 220" stroke="#1d4ed8" stroke-width="2"/>
+  <text x="390" y="248" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#334155" font-weight="bold">3/4</text>
+  <text x="390" y="264" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">trois quarts</text>
+  <text x="230" y="60" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#64748b">Numérateur (nombre de parts prises) / Dénominateur (nombre de parts au total)</text>
+
+</svg>

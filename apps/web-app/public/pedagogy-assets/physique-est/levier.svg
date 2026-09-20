@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 280" width="440" height="280">
+<rect width="440" height="280" fill="#ffffff"/>
+<text x="220" y="24" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">Le levier</text>
+
+  <!-- sol -->
+  <path d="M30 230 h380" stroke="#475569" stroke-width="3"/>
+  <!-- triangle (point d'appui) -->
+  <path d="M196 230 L216 190 L236 230 Z" fill="#a8a29e" stroke="#57534e" stroke-width="2"/>
+  <!-- barre -->
+  <path d="M60 190 L366 190" stroke="#78350f" stroke-width="7" stroke-linecap="round"/>
+  <!-- charge -->
+  <rect x="86" y="150" width="44" height="40" rx="4" fill="#d6d3d1" stroke="#57534e" stroke-width="2"/>
+  <text x="108" y="176" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#57534e" font-weight="bold">Charge</text>
+  <!-- effort -->
+  <path d="M340 190 q6 -30 -2 -52" stroke="#2563eb" stroke-width="3.5" fill="none" marker-end="url(#le)"/>
+  <defs><marker id="le" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto"><path d="M0 0 L9 4 L0 8 z" fill="#2563eb"/></marker></defs>
+  <text x="344" y="120" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1d4ed8" font-weight="bold">Effort</text>
+  <line x1="216" y1="190" x2="216" y2="262" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="216" cy="190" r="2.5" fill="#64748b"/>
+<text x="216" y="262" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="middle">Point d'appui</text>
+  <path d="M216 250 l0 -14" stroke="#94a3b8" stroke-width="1"/>
+  <!-- cotes -->
+  <path d="M108 240 v14 M216 240 v14" stroke="#94a3b8" stroke-width="1"/>
+  <path d="M108 252 h108" stroke="#94a3b8" stroke-width="1"/>
+  <text x="162" y="248" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">bras moteur</text>
+  <text x="225" y="248" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">bras résistant</text>
+  <text x="220" y="66" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#64748b">Plus le bras moteur est long, moins l'effort à fournir est grand</text>
+
+</svg>

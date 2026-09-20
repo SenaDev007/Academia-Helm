@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 300" width="440" height="300">
+<rect width="440" height="300" fill="#ffffff"/>
+<text x="220" y="24" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">Les engrenages</text>
+
+  <!-- grand engrenage -->
+  <g stroke="#475569" stroke-width="2" fill="#e2e8f0">
+    <circle cx="170" cy="160" r="70" fill="#cbd5e1"/>
+    <line x1="240.0" y1="160.0" x2="256.0" y2="160.0" stroke-width="7" stroke-linecap="round"/><line x1="230.6" y1="195.0" x2="244.5" y2="203.0" stroke-width="7" stroke-linecap="round"/><line x1="205.0" y1="220.6" x2="213.0" y2="234.5" stroke-width="7" stroke-linecap="round"/><line x1="170.0" y1="230.0" x2="170.0" y2="246.0" stroke-width="7" stroke-linecap="round"/><line x1="135.0" y1="220.6" x2="127.0" y2="234.5" stroke-width="7" stroke-linecap="round"/><line x1="109.4" y1="195.0" x2="95.5" y2="203.0" stroke-width="7" stroke-linecap="round"/><line x1="100.0" y1="160.0" x2="84.0" y2="160.0" stroke-width="7" stroke-linecap="round"/><line x1="109.4" y1="125.0" x2="95.5" y2="117.0" stroke-width="7" stroke-linecap="round"/><line x1="135.0" y1="99.4" x2="127.0" y2="85.5" stroke-width="7" stroke-linecap="round"/><line x1="170.0" y1="90.0" x2="170.0" y2="74.0" stroke-width="7" stroke-linecap="round"/><line x1="205.0" y1="99.4" x2="213.0" y2="85.5" stroke-width="7" stroke-linecap="round"/><line x1="230.6" y1="125.0" x2="244.5" y2="117.0" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  <circle cx="170" cy="160" r="12" fill="#ffffff" stroke="#475569" stroke-width="2"/>
+  <!-- petit engrenage -->
+  <g stroke="#475569" stroke-width="2" fill="#e2e8f0">
+    <circle cx="296" cy="160" r="40" fill="#cbd5e1"/>
+    <line x1="336.0" y1="160.0" x2="348.0" y2="160.0" stroke-width="7" stroke-linecap="round"/><line x1="324.3" y1="188.3" x2="332.8" y2="196.8" stroke-width="7" stroke-linecap="round"/><line x1="296.0" y1="200.0" x2="296.0" y2="212.0" stroke-width="7" stroke-linecap="round"/><line x1="267.7" y1="188.3" x2="259.2" y2="196.8" stroke-width="7" stroke-linecap="round"/><line x1="256.0" y1="160.0" x2="244.0" y2="160.0" stroke-width="7" stroke-linecap="round"/><line x1="267.7" y1="131.7" x2="259.2" y2="123.2" stroke-width="7" stroke-linecap="round"/><line x1="296.0" y1="120.0" x2="296.0" y2="108.0" stroke-width="7" stroke-linecap="round"/><line x1="324.3" y1="131.7" x2="332.8" y2="123.2" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  <circle cx="296" cy="160" r="8" fill="#ffffff" stroke="#475569" stroke-width="2"/>
+  <!-- flèches rotation -->
+  <path d="M170 70 a90 90 0 0 1 30 6" fill="none" stroke="#dc2626" stroke-width="2.5" marker-end="url(#gr)"/>
+  <path d="M296 100 a60 60 0 0 1 20 8" fill="none" stroke="#16a34a" stroke-width="2.5" marker-end="url(#gr2)"/>
+  <defs>
+    <marker id="gr" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7 z" fill="#dc2626"/></marker>
+    <marker id="gr2" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7 z" fill="#16a34a"/></marker>
+  </defs>
+  <line x1="170" y1="160" x2="30" y2="60" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="170" cy="160" r="2.5" fill="#64748b"/>
+<text x="30" y="60" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="start">Grande roue : tourne lentement</text>
+  <line x1="296" y1="160" x2="300" y2="44" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="296" cy="160" r="2.5" fill="#64748b"/>
+<text x="300" y="44" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="start">Petite roue : tourne vite</text>
+  <text x="220" y="286" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#64748b">Le grand engrenage entraîne le petit : il tourne moins vite mais avec plus de force</text>
+
+</svg>

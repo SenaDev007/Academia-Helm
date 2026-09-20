@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 430 330" width="430" height="330">
+<rect width="430" height="330" fill="#ffffff"/>
+<text x="215" y="24" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">Le volcan en coupe</text>
+
+  <!-- montagne -->
+  <path d="M60 290 q90 -30 130 -130 q30 40 60 70 q30 30 80 60 z" fill="#a8a29e" stroke="#57534e" stroke-width="2"/>
+  <path d="M190 160 q10 14 22 18 q16 6 34 -8" fill="none"/>
+  <!-- chambre magmatique -->
+  <ellipse cx="196" cy="270" rx="52" ry="26" fill="#ef4444" stroke="#991b1b" stroke-width="2"/>
+  <!-- cheminée -->
+  <path d="M186 250 l4 -84 q10 -8 20 0 l-4 84 z" fill="#ef4444" stroke="#991b1b" stroke-width="1.5"/>
+  <!-- cratère + éruption -->
+  <path d="M170 164 q26 -10 52 0" fill="none" stroke="#57534e" stroke-width="3"/>
+  <path d="M196 160 q-6 -46 -30 -66 M196 160 q0 -52 6 -72 M196 160 q10 -44 34 -58" stroke="#f97316" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <circle cx="164" cy="86" r="7" fill="#fb923c"/><circle cx="204" cy="76" r="9" fill="#f97316"/><circle cx="232" cy="92" r="6" fill="#fb923c"/>
+  <!-- coulée -->
+  <path d="M214 166 q28 20 40 60 q8 26 -6 40" stroke="#ef4444" stroke-width="10" fill="none" stroke-linecap="round"/>
+  <line x1="196" y1="270" x2="268" y2="282" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="196" cy="270" r="2.5" fill="#64748b"/>
+<text x="268" y="282" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="start">Chambre magmatique</text>
+  <line x1="196" y1="210" x2="258" y2="210" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="196" cy="210" r="2.5" fill="#64748b"/>
+<text x="258" y="210" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="start">Cheminée</text>
+  <line x1="178" y1="166" x2="116" y2="148" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="178" cy="166" r="2.5" fill="#64748b"/>
+<text x="116" y="148" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="start">Cratère</text>
+  <line x1="252" y1="240" x2="320" y2="244" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="252" cy="240" r="2.5" fill="#64748b"/>
+<text x="320" y="244" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="start">Coulée de lave</text>
+  <line x1="214" y1="96" x2="276" y2="76" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="214" cy="96" r="2.5" fill="#64748b"/>
+<text x="276" y="76" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="start">Projections (cendres, bombes)</text>
+  <text x="215" y="318" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#64748b">Le magma remonte par la cheminée et sort par le cratère : c'est l'éruption</text>
+
+</svg>

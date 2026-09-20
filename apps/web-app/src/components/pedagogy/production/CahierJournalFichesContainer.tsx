@@ -27,6 +27,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { usePersistedTab } from "@/hooks/usePersistedTab";
 import {
   FileSpreadsheet,
   FileText,
@@ -65,7 +66,15 @@ export function CahierJournalFichesContainer({
   academicYearId,
   teacherId,
 }: CahierJournalFichesContainerProps) {
-  const [subTab, setSubTab] = useState<SubTab>("cahier");
+  // ⭐ FIX (demande utilisateur) : persistance du sous-onglet actif
+  //    (Cahier Journal / Fiches Pédagogiques / Catalogue) après un
+  //    rechargement de page — reflété dans l'URL (?vue=fiches) SANS
+  //    rechargement + miroir sessionStorage.
+  const [subTab, setSubTab] = usePersistedTab(
+    "vue",
+    ["cahier", "fiches", "catalogue"] as const,
+    "cahier",
+  ) as [SubTab, (t: SubTab) => void];
   const [currentJournalId, setCurrentJournalId] = useState<string | null>(null);
   // ⭐ FIX (2026-09-18 — régression "la bascule ne montre plus les fiches à préparer") :
   //    les sous-onglets sont TOUJOURS montés (CSS hidden — commit 150d9bc19) et

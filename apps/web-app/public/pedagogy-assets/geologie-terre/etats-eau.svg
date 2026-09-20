@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 300" width="450" height="300">
+<rect width="450" height="300" fill="#ffffff"/>
+<text x="225" y="24" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">Les trois états de l'eau</text>
+
+  <!-- solide -->
+  <rect x="36" y="70" width="110" height="110" rx="10" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
+  <g stroke="#0ea5e9" stroke-width="2.5" fill="#f8fafc">
+    <path d="M66 96 l12 8 l12 -8 l12 8 l0 34 l-24 0 z"/>
+    <path d="M78 84 l10 7 l10 -7 l0 0" fill="none"/>
+  </g>
+  <circle cx="72" cy="150" r="5" fill="#bae6fd"/><circle cx="96" cy="160" r="5" fill="#bae6fd"/><circle cx="118" cy="148" r="5" fill="#bae6fd"/>
+  <text x="91" y="204" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0369a1" font-weight="bold">SOLIDE — glace</text>
+  <text x="91" y="220" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">molécules serrées, fixes</text>
+  <!-- liquide -->
+  <rect x="172" y="70" width="110" height="110" rx="10" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
+  <path d="M182 148 q14 -8 28 0 q14 8 28 0 q14 -8 28 0 q14 8 18 0 v22 h-112 v-18 z" fill="#7dd3fc"/>
+  <circle cx="196" cy="118" r="5" fill="#38bdf8"/><circle cx="222" cy="104" r="5" fill="#38bdf8"/><circle cx="248" cy="120" r="5" fill="#38bdf8"/><circle cx="208" cy="136" r="5" fill="#38bdf8"/><circle cx="242" cy="136" r="5" fill="#38bdf8"/>
+  <text x="227" y="204" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0369a1" font-weight="bold">LIQUIDE — eau</text>
+  <text x="227" y="220" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">molécules mobiles, collées</text>
+  <!-- gaz -->
+  <rect x="308" y="70" width="110" height="110" rx="10" fill="#e0f2fe" stroke="#0284c7" stroke-width="2"/>
+  <circle cx="332" cy="100" r="5" fill="#38bdf8"/><circle cx="368" cy="88" r="5" fill="#38bdf8"/><circle cx="400" cy="108" r="5" fill="#38bdf8"/><circle cx="348" cy="132" r="5" fill="#38bdf8"/><circle cx="388" cy="142" r="5" fill="#38bdf8"/><circle cx="410" cy="164" r="5" fill="#38bdf8"/>
+  <text x="363" y="204" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#0369a1" font-weight="bold">GAZEUX — vapeur</text>
+  <text x="363" y="220" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">molécules libres, espacées</text>
+  <!-- transitions -->
+  <path d="M150 116 h16" stroke="#475569" stroke-width="2.5" marker-end="url(#ea)"/>
+  <path d="M188 116 h-16" stroke="#475569" stroke-width="2.5" marker-end="url(#ea)"/>
+  <path d="M286 116 h16" stroke="#475569" stroke-width="2.5" marker-end="url(#ea)"/>
+  <path d="M324 116 h-16" stroke="#475569" stroke-width="2.5" marker-end="url(#ea)"/>
+  <defs><marker id="ea" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7 z" fill="#475569"/></marker></defs>
+  <text x="158" y="100" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="8.5" fill="#64748b">fusion</text>
+  <text x="158" y="140" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="8.5" fill="#64748b">solidification</text>
+  <text x="294" y="100" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="8.5" fill="#64748b">vaporisation</text>
+  <text x="294" y="140" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="8.5" fill="#64748b">condensation</text>
+  <text x="225" y="258" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#64748b">La matière change d'état quand on la chauffe ou on la refroidit</text>
+
+</svg>

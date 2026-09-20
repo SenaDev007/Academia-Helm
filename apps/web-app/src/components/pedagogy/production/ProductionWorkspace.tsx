@@ -38,6 +38,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { usePersistedTab } from '@/hooks/usePersistedTab';
 import { FormModal, ConfirmModal } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { pedagogyService } from '@/services/pedagogy.service';
@@ -95,7 +96,13 @@ export default function ProductionWorkspace() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'diaries' | 'lessons' | 'journal' | 'tests' | 'weekly' | 'progress' | 'feedback' | 'students'>('dashboard');
+  // ⭐ FIX (demande utilisateur) : persistance de l'onglet actif après rechargement
+  //    (?onglet=journal dans l'URL, SANS rechargement + miroir sessionStorage)
+  const [activeTab, setActiveTab] = usePersistedTab(
+    'onglet',
+    ['dashboard', 'diaries', 'lessons', 'journal', 'tests', 'weekly', 'progress', 'feedback', 'students'],
+    'dashboard',
+  ) as ['dashboard' | 'diaries' | 'lessons' | 'journal' | 'tests' | 'weekly' | 'progress' | 'feedback' | 'students', (t: 'dashboard' | 'diaries' | 'lessons' | 'journal' | 'tests' | 'weekly' | 'progress' | 'feedback' | 'students') => void];
 
   useEffect(() => {
     const cleanup = networkDetectionService.onNetworkStatusChange((online) => {

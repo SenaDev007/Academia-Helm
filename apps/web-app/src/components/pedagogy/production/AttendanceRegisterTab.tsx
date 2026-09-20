@@ -40,6 +40,7 @@ import {
   X, CalendarCheck, Bell,
 } from "lucide-react";
 import { toast } from "sonner";
+import { usePersistedTab } from "@/hooks/usePersistedTab";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useMyClasses } from "@/lib/query/pedagogy-hooks";
@@ -204,7 +205,10 @@ export function AttendanceRegisterTab({ tenantId, academicYearId, teacherId }: A
   //    renvoyait la veille entre 00h00 et 00h59 heure locale (UTC+1).
   const [appelDate, setAppelDate] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`);
   const [appelSaving, setAppelSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<"register" | "evaluation" | "summary" | "settings">("register");
+  // ⭐ FIX : persistance de l'onglet actif après rechargement de la page
+  const [activeTab, setActiveTab] = usePersistedTab(
+    "vue", ["register", "evaluation", "summary", "settings"], "register",
+  ) as ["register" | "evaluation" | "summary" | "settings", (t: "register" | "evaluation" | "summary" | "settings") => void];
   // ⭐ Modal de confirmation professionnel (remplace window.confirm)
   const { warning: confirmWarning, dialog: confirmDialog } = useConfirmDialog();
 

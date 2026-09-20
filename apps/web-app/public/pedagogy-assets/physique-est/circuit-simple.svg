@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 300" width="450" height="300">
+<rect width="450" height="300" fill="#ffffff"/>
+<text x="225" y="24" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">Le circuit électrique simple</text>
+
+  <!-- fils -->
+  <path d="M80 220 v-90 h60 M140 130 v-30 h140 M280 100 v30 h60 M340 130 v90 h-260" fill="none" stroke="#475569" stroke-width="3"/>
+  <!-- pile -->
+  <rect x="120" y="200" width="120" height="40" rx="4" fill="#fde68a" stroke="#a16207" stroke-width="2"/>
+  <line x1="160" y1="200" x2="160" y2="240" stroke="#a16207" stroke-width="2.5"/>
+  <text x="140" y="226" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#78350f" font-weight="bold">+</text>
+  <text x="172" y="226" font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#78350f" font-weight="bold">−</text>
+  <text x="180" y="196" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Pile</text>
+  <!-- ampoule -->
+  <circle cx="280" cy="86" r="22" fill="#fef08a" stroke="#b45309" stroke-width="2.5"/>
+  <path d="M268 104 h24 l-6 12 h-12 z" fill="#e7e5e4" stroke="#78716c" stroke-width="1.5"/>
+  <path d="M272 80 q8 -12 16 0 M270 90 q10 -14 20 0" stroke="#b45309" stroke-width="1.5" fill="none"/>
+  <text x="280" y="46" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Ampoule</text>
+  <!-- interrupteur -->
+  <circle cx="200" cy="130" r="5" fill="#475569"/><circle cx="140" cy="130" r="5" fill="#475569"/>
+  <path d="M145 130 L196 116" stroke="#475569" stroke-width="3" stroke-linecap="round"/>
+  <text x="172" y="164" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Interrupteur</text>
+  <!-- fils labels -->
+  <line x1="80" y1="170" x2="26" y2="156" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="80" cy="170" r="2.5" fill="#64748b"/>
+<text x="26" y="156" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="start">Fils de connexion</text>
+  <!-- flèche courant -->
+  <path d="M230 84 h26" stroke="#dc2626" stroke-width="2.5" marker-end="url(#cc)"/>
+  <defs><marker id="cc" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7 z" fill="#dc2626"/></marker></defs>
+  <text x="243" y="70" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#dc2626">sens du courant</text>
+  <text x="225" y="286" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#64748b">Circuit fermé : le courant passe et l'ampoule brille. Circuit ouvert : elle s'éteint</text>
+
+</svg>

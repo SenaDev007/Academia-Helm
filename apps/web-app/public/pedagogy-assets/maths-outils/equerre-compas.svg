@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 300" width="440" height="300">
+<rect width="440" height="300" fill="#ffffff"/>
+<text x="220" y="24" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">L'équerre et le compas</text>
+
+  <!-- équerre -->
+  <path d="M50 230 L50 100 L180 230 Z" fill="#dcfce7" stroke="#15803d" stroke-width="2.5" fill-rule="evenodd"/>
+  <path d="M72 230 L72 146 L156 230 Z" fill="#ffffff" stroke="#15803d" stroke-width="2"/>
+  <path d="M50 214 h16 v16" fill="none" stroke="#dc2626" stroke-width="2.5"/>
+  <text x="115" y="258" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#334155" font-weight="bold">Équerre</text>
+  <text x="115" y="274" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">sert à tracer et vérifier les angles droits</text>
+  <!-- compas -->
+  <circle cx="330" cy="112" r="4" fill="#475569"/>
+  <path d="M330 116 L286 216" stroke="#475569" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M330 116 L374 216" stroke="#475569" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M286 216 l-8 14 M374 216 l8 14" stroke="#78350f" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="278" cy="230" r="3" fill="#78350f"/>
+  <path d="M322 130 q8 6 16 0" fill="none" stroke="#475569" stroke-width="2"/>
+  <circle cx="330" cy="236" r="46" fill="none" stroke="#2563eb" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="330" y="262" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#334155" font-weight="bold">Compas</text>
+  <text x="330" y="278" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">sert à tracer des cercles et reporter des longueurs</text>
+  <line x1="330" y1="112" x2="386" y2="90" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="330" cy="112" r="2.5" fill="#64748b"/>
+<text x="386" y="90" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="start">Pivot</text>
+  <line x1="282" y1="222" x2="232" y2="246" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="282" cy="222" r="2.5" fill="#64748b"/>
+<text x="232" y="246" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#78350f" text-anchor="start">Pointe</text>
+
+</svg>

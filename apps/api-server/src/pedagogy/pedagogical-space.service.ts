@@ -987,6 +987,14 @@ export class PedagogicalSpaceService {
       body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; }
       .fiche-page { page-break-after: always; padding: 10mm; }
       .fiche-page:last-child { page-break-after: auto; }
+      /* ⭐ V7 — rendu des illustrations/figures/opérations insérées dans les champs */
+      td img, td svg { max-width:100%; height:auto; }
+      img { max-width:100%; height:auto; }
+      svg { max-width:100%; height:auto; }
+      .ah-fig { display:inline-block; max-width:100%; }
+      td table { border-collapse:collapse; }
+      td table td { border:none; }
+      ul, ol { margin:2px 0 2px 14px; }
     </style></head><body>`;
 
     for (const fiche of fiches) {
@@ -1023,6 +1031,50 @@ export class PedagogicalSpaceService {
    *    colorées par type, tableau structuré, signatures, footer. Identique à l'UI.
    *    ⭐ Récupère RIGOUREUSEMENT tous les champs remplis par l'enseignant.
    */
+  /**
+   * ⭐ V7 — Assainit le HTML riche des champs pédagogiques (compétences,
+   *    déroulement, cellules du cahier journal…) pour le rendu PDF (Puppeteer)
+   *    et les affichages en lecture seule.
+   *
+   *    CONSERVE (nécessaires aux illustrations pédagogiques) :
+   *      - <img> (uploads tenant-media : http/https/data:image)
+   *      - <svg> inline (packs d'illustrations + éditeur de figures)
+   *      - tableaux (opérations posées), fractions (span ah-frac), symboles
+   *      - mise en forme : b/strong/i/em/u, listes, sup/sub, span/div/p/br
+   *
+   *    SUPPRIME (sécurité XSS) :
+   *      - script/iframe/object/embed/style/link/meta/template/form/input…
+   *      - attributs on* (onclick, onerror…)
+   *      - URLs javascript: et vbscript:
+   */
+  private sanitizeRichHtml(html: string): string {
+    if (!html) return '';
+    let s = html;
+
+    // 1. Supprimer les tags dangereux AVEC leur contenu
+    s = s.replace(
+      /<(script|iframe|object|embed|style|link|meta|noscript|template|form|input|button|select|textarea|video|audio)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,
+      '',
+    );
+    // 2. Supprimer les tags dangereux auto-fermés / orphelins
+    s = s.replace(
+      /<(script|iframe|object|embed|style|link|meta|noscript|template|form|input|button|select|textarea|video|audio)\b[^>]*\/?>/gi,
+      '',
+    );
+    // 3. Supprimer les attributs d'événements on*
+    s = s.replace(/\s+on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+    // 4. Neutraliser les URLs javascript:/vbscript: (src, href)
+    s = s.replace(
+      /(src|href)\s*=\s*("javascript:[^"]*"|'javascript:[^']*'|javascript:[^\s>]+|"vbscript:[^"]*"|'vbscript:[^']*')/gi,
+      '$1="#"',
+    );
+    // 5. Attribut contenteditable (sans objet en PDF) + expressions CSS dynamiques
+    s = s.replace(/\s+contenteditable\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+    s = s.replace(/style\s*=\s*"[^"]*expression\s*\(/gi, 'style="');
+
+    return s.trim();
+  }
+
   private buildFichePdfHtml(fiche: any, teacherName: string, embedded: boolean = false): string {
     const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
     const lessonDate = fiche.lessonDate ? new Date(fiche.lessonDate) : null;
@@ -1137,6 +1189,20 @@ export class PedagogicalSpaceService {
       return out.join('\n').trim() || '—';
     };
 
+    // ⭐ V7 — Rendu RICHE des champs pédagogiques : les fiches contiennent
+    //    désormais des ILLUSTRATIONS (SVG inline des packs pédagogiques ou
+    //    images importées), des FIGURES GÉOMÉTRIQUES (éditeur de diagrammes),
+    //    des OPÉRATIONS POSÉES (tableaux HTML) et des FRACTIONS. On conserve
+    //    ce HTML (assaini) au lieu de l'aplatir en texte brut — le PDF montre
+    //    exactement ce que l'enseignant a préparé à l'écran.
+    const rich = (html: string): string => {
+      const clean = this.sanitizeRichHtml(html || '');
+      const textOnly = clean.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim();
+      const hasMedia = /<(img|svg|table|sup|sub|span[^>]*class="ah-(frac|op|math))/i.test(clean);
+      if (!clean || (!textOnly && !hasMedia)) return '—';
+      return clean;
+    };
+
     // ⭐ Filigrane : acronyme de l'école
     const schoolAcronym = fiche.schoolAcronym || (fiche.schoolName || '').substring(0, 3).toUpperCase() || '';
     const watermark = schoolAcronym
@@ -1148,8 +1214,8 @@ export class PedagogicalSpaceService {
     if (typeConfig.ibisFields && typeConfig.ibisFields.length > 0) {
       const ibisRows = typeConfig.ibisFields.map(f => {
         const val = fiche[f.key];
-        if (!val || strip(val) === '—') return ''; // Ne pas afficher les champs vides
-        return `<tr><td style="border:1px solid #cbd5e1;padding:5px;width:35%;font-weight:bold;background:#f8fafc;font-size:9px;">${f.label}</td><td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(val)}</td></tr>`;
+        if (!val || rich(val) === '—') return ''; // Ne pas afficher les champs vides
+        return `<tr><td style="border:1px solid #cbd5e1;padding:5px;width:35%;font-weight:bold;background:#f8fafc;font-size:9px;">${f.label}</td><td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${rich(val)}</td></tr>`;
       }).join('');
       if (ibisRows) {
         ibisHtml = `
@@ -1196,8 +1262,8 @@ export class PedagogicalSpaceService {
       // Rendu historique (autres types le cas échéant) : ligne libellé/valeur
       const phaseRows = typeConfig.phases.map(p => {
         const val = fiche[p.key];
-        if (!val || strip(val) === '—') return '';
-        return `<tr><td style="border:1px solid #cbd5e1;padding:5px;width:30%;font-weight:bold;background:#f8fafc;font-size:9px;">${p.label}</td><td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(val)}</td></tr>`;
+        if (!val || rich(val) === '—') return '';
+        return `<tr><td style="border:1px solid #cbd5e1;padding:5px;width:30%;font-weight:bold;background:#f8fafc;font-size:9px;">${p.label}</td><td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${rich(val)}</td></tr>`;
       }).join('');
       if (phaseRows) {
         phasesHtml = `
@@ -1224,20 +1290,20 @@ export class PedagogicalSpaceService {
         if (Array.isArray(appData) && appData.length > 0) {
           appRows = appData.map((row: any) => `
             <tr>
-              <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(row.col1 || row[keys[0]] || '')}</td>
-              <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(row.col2 || row[keys[1]] || '')}</td>
-              <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(row.col3 || row[keys[2]] || '')}</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${rich(row.col1 || row[keys[0]] || '')}</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${rich(row.col2 || row[keys[1]] || '')}</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${rich(row.col3 || row[keys[2]] || '')}</td>
             </tr>`).join('');
         }
       } catch {}
       if (!appRows) {
         // Fallback : champs séparés (app_col1, app_col2, app_col3)
-        const hasAny = keys.some(k => fiche[k] && strip(fiche[k]) !== '—');
+        const hasAny = keys.some(k => fiche[k] && rich(fiche[k]) !== '—');
         if (hasAny) {
           appRows = `<tr>
-            <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(fiche[keys[0]])}</td>
-            <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(fiche[keys[1]])}</td>
-            <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(fiche[keys[2]])}</td>
+            <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${rich(fiche[keys[0]])}</td>
+            <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${rich(fiche[keys[1]])}</td>
+            <td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${rich(fiche[keys[2]])}</td>
           </tr>`;
         }
       }
@@ -1266,8 +1332,8 @@ export class PedagogicalSpaceService {
           deroulementRows = der.map((d: any, i: number) => `
             <tr>
               <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;font-size:9px;font-weight:bold;background:#f8fafc;width:8%;">${i + 1}</td>
-              <td style="border:1px solid #cbd5e1;padding:6px;font-size:9px;">${strip(d.consignes)}</td>
-              <td style="border:1px solid #cbd5e1;padding:6px;font-size:9px;width:35%;">${strip(d.resultats)}</td>
+              <td style="border:1px solid #cbd5e1;padding:6px;font-size:9px;">${rich(d.consignes)}</td>
+              <td style="border:1px solid #cbd5e1;padding:6px;font-size:9px;width:35%;">${rich(d.resultats)}</td>
             </tr>`).join('');
         }
       } catch {}
@@ -1281,6 +1347,14 @@ export class PedagogicalSpaceService {
         body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1e293b; font-size:10px; padding: 8mm; line-height:1.4; position:relative; }
         .content { position:relative; z-index:1; }
         @page { margin: 10mm; }
+        /* ⭐ V7 — rendu des illustrations/figures/opérations insérées dans les champs */
+        td img, td svg { max-width:100%; height:auto; }
+        img { max-width:100%; height:auto; }
+        svg { max-width:100%; height:auto; }
+        .ah-fig { display:inline-block; max-width:100%; }
+        td table { border-collapse:collapse; }
+        td table td { border:none; }
+        ul, ol { margin:2px 0 2px 14px; }
       </style></head><body>` : ''}
 
       ${watermark}
@@ -1382,12 +1456,12 @@ export class PedagogicalSpaceService {
       <div style="margin-bottom:8px;">
         <div style="font-size:11px;font-weight:bold;color:white;background:${typeConfig.color};padding:4px 8px;border-radius:3px 3px 0 0;">I — ÉLÉMENTS DE PLANIFICATION</div>
         <table style="width:100%;border-collapse:collapse;font-size:9px;border:1px solid ${typeConfig.border};border-top:none;">
-          <tr><td style="border:1px solid #cbd5e1;padding:5px;width:30%;font-weight:bold;background:#f8fafc;">Compétences disciplinaires</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.competence)}</td></tr>
-          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Compétences transversales</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.habilete)}</td></tr>
-          ${fiche.prealable && strip(fiche.prealable) !== '—' ? `<tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Préalable</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.prealable)}</td></tr>` : ''}
-          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Connaissances et techniques</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.contenu)}</td></tr>
-          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Stratégie d'enseignement</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.methodes)}</td></tr>
-          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Moyens didactiques</td><td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.moyensDidactiques)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:5px;width:30%;font-weight:bold;background:#f8fafc;">Compétences disciplinaires</td><td style="border:1px solid #cbd5e1;padding:5px;">${rich(fiche.competence)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Compétences transversales</td><td style="border:1px solid #cbd5e1;padding:5px;">${rich(fiche.habilete)}</td></tr>
+          ${fiche.prealable && rich(fiche.prealable) !== '—' ? `<tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Préalable</td><td style="border:1px solid #cbd5e1;padding:5px;">${rich(fiche.prealable)}</td></tr>` : ''}
+          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Connaissances et techniques</td><td style="border:1px solid #cbd5e1;padding:5px;">${rich(fiche.contenu)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Stratégie d'enseignement</td><td style="border:1px solid #cbd5e1;padding:5px;">${rich(fiche.methodes)}</td></tr>
+          <tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Moyens didactiques</td><td style="border:1px solid #cbd5e1;padding:5px;">${rich(fiche.moyensDidactiques)}</td></tr>
         </table>
       </div>
 
@@ -1433,18 +1507,18 @@ export class PedagogicalSpaceService {
           <tbody style="font-size:9px;">
             <tr>
               <td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Objectivation</td>
-              <td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.objectivation)}</td>
-              <td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.objectivationResultat)}</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;">${rich(fiche.objectivation)}</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;">${rich(fiche.objectivationResultat)}</td>
             </tr>
             <tr>
               <td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Évaluation</td>
-              <td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.evalRetour)}</td>
-              <td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.evalRetourResultat)}</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;">${rich(fiche.evalRetour)}</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;">${rich(fiche.evalRetourResultat)}</td>
             </tr>
             <tr>
               <td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;">Projection</td>
-              <td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.projection)}</td>
-              <td style="border:1px solid #cbd5e1;padding:5px;">${strip(fiche.projectionResultat)}</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;">${rich(fiche.projection)}</td>
+              <td style="border:1px solid #cbd5e1;padding:5px;">${rich(fiche.projectionResultat)}</td>
             </tr>
           </tbody>
         </table>
@@ -10305,6 +10379,18 @@ td.name{text-align:left;font-weight:bold;}
     // ⭐ Strip HTML
     const strip = (html: string) => (html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim() || '—';
 
+    // ⭐ V7 — Rendu RICHE des cellules : les cellules du cahier journal peuvent
+    //    contenir des illustrations (packs SVG), des figures géométriques,
+    //    des opérations posées et des fractions insérées par l'enseignant.
+    //    On conserve ce HTML (assaini) au lieu de l'aplatir en texte brut.
+    const rich = (html: string): string => {
+      const clean = this.sanitizeRichHtml(html || '');
+      const textOnly = clean.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').trim();
+      const hasMedia = /<(img|svg|table|sup|sub|span[^>]*class="ah-(frac|op|math))/i.test(clean);
+      if (!clean || (!textOnly && !hasMedia)) return '—';
+      return clean;
+    };
+
     // ⭐ Génération du HTML professionnel (identique à l'UI)
     const wsStr = j.weekStartDate ? new Date(j.weekStartDate).toLocaleDateString('fr-FR') : '—';
     const weStr = j.weekEndDate ? new Date(j.weekEndDate).toLocaleDateString('fr-FR') : '—';
@@ -10314,6 +10400,14 @@ td.name{text-align:left;font-weight:bold;}
       body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1e293b; font-size:10px; padding: 8mm; line-height:1.4; position:relative; }
       .content { position:relative; z-index:1; }
       @page { margin: 10mm; }
+      /* ⭐ V7 — rendu des illustrations/figures/opérations insérées dans les cellules */
+      td img, td svg { max-width:180px; height:auto; }
+      img { max-width:100%; height:auto; }
+      svg { max-width:100%; height:auto; }
+      .ah-fig { display:inline-block; max-width:100%; }
+      td table { border-collapse:collapse; }
+      td table td { border:none; }
+      ul, ol { margin:2px 0 2px 14px; }
     </style></head><body>`;
 
     html += watermark;
@@ -10430,7 +10524,7 @@ td.name{text-align:left;font-weight:bold;}
         for (const day of DAYS) {
           const obs = (entries[day.key] || {})['directorObservation'];
           if (obs) {
-            html += `<tr><td style="border:1px solid #fca5a5;padding:4px;width:12%;font-weight:bold;background:#fef2f2;font-size:8px;color:#dc2626;">${day.label}</td><td style="border:1px solid #fca5a5;padding:4px;font-size:8px;color:#dc2626;">${strip(obs)}</td></tr>`;
+            html += `<tr><td style="border:1px solid #fca5a5;padding:4px;width:12%;font-weight:bold;background:#fef2f2;font-size:8px;color:#dc2626;">${day.label}</td><td style="border:1px solid #fca5a5;padding:4px;font-size:8px;color:#dc2626;">${rich(obs)}</td></tr>`;
           }
         }
         html += '</table></div>';
@@ -10448,12 +10542,12 @@ td.name{text-align:left;font-weight:bold;}
         html += `<tr><td style="border:1px solid #cbd5e1;padding:5px;font-weight:bold;background:#f8fafc;font-size:9px;">${day.label}</td>`;
         for (const subj of subjects) {
           const val = dayEntries[subj] || '';
-          html += `<td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(val)}</td>`;
+          html += `<td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${rich(val)}</td>`;
         }
-        html += `<td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${strip(dayEntries['observations'] || '')}`;
+        html += `<td style="border:1px solid #cbd5e1;padding:5px;font-size:9px;">${rich(dayEntries['observations'] || '')}`;
         // ⭐ Observation du directeur (en rouge, sous l'observation de l'enseignant)
         if (dayEntries['directorObservation']) {
-          html += `<div style="margin-top:4px;padding:3px;background:#fef2f2;border:1px solid #fca5a5;border-radius:3px;"><div style="font-size:7px;font-weight:bold;color:#dc2626;text-transform:uppercase;margin-bottom:2px;">Observation du Directeur</div><div style="font-size:8px;color:#dc2626;">${strip(dayEntries['directorObservation'])}</div></div>`;
+          html += `<div style="margin-top:4px;padding:3px;background:#fef2f2;border:1px solid #fca5a5;border-radius:3px;"><div style="font-size:7px;font-weight:bold;color:#dc2626;text-transform:uppercase;margin-bottom:2px;">Observation du Directeur</div><div style="font-size:8px;color:#dc2626;">${rich(dayEntries['directorObservation'])}</div></div>`;
         }
         html += `</td></tr>`;
       }
@@ -10464,7 +10558,7 @@ td.name{text-align:left;font-weight:bold;}
     if (j.observations) {
       html += `<div style="margin-bottom:8px;">
         <div style="font-size:11px;font-weight:bold;color:white;background:#0A2A5E;padding:4px 8px;border-radius:3px 3px 0 0;">OBSERVATIONS GÉNÉRALES</div>
-        <div style="border:1px solid #0A2A5E;border-top:none;padding:8px;font-size:9px;">${strip(j.observations)}</div>
+        <div style="border:1px solid #0A2A5E;border-top:none;padding:8px;font-size:9px;">${rich(j.observations)}</div>
       </div>`;
     }
 
@@ -10472,7 +10566,7 @@ td.name{text-align:left;font-weight:bold;}
     if ((j.status === 'VALIDATED' || j.status === 'REJECTED') && j.observations) {
       html += `<div style="margin-bottom:8px;">
         <div style="font-size:11px;font-weight:bold;color:white;background:#dc2626;padding:4px 8px;border-radius:3px 3px 0 0;">OBSERVATION DU DIRECTEUR</div>
-        <div style="border:1px solid #fca5a5;border-top:none;padding:8px;font-size:9px;color:#dc2626;font-weight:bold;">${strip(j.observations)}</div>
+        <div style="border:1px solid #fca5a5;border-top:none;padding:8px;font-size:9px;color:#dc2626;font-weight:bold;">${rich(j.observations)}</div>
       </div>`;
     }
     if (j.status === 'REJECTED' && j.rejectionReason) {

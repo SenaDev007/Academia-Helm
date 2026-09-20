@@ -48,6 +48,8 @@ import {
   normalizeFrText as normalizeMatiereName,
 } from "@/lib/pedagogy/maternelle-domains";
 import { suggestionsPourSheetType, affichageMatiere } from "@/lib/pedagogy/cahier-sous-matieres";
+import { useAutoSave, fireKeepaliveSave } from "@/hooks/useAutoSave";
+import { AutosaveIndicator } from "@/components/pedagogy/media/AutosaveIndicator";
 
 interface PedagogicalSheetsTabProps {
   tenantId: string;
@@ -834,6 +836,10 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       if (!res.ok) throw new Error("Erreur de sauvegarde");
       toast.success(editingFiche ? "✅ Fiche mise à jour" : "✅ Fiche créée");
 
+      // ⭐ Autosave : resynchronise la baseline (évite une double sauvegarde
+      //    juste après le clic sur « Mettre à jour / Créer »)
+      ficheAutosave.markSaved(ficheSnapshot);
+
       // ⭐ Notifier les autres composants (FichesAPreparer, FichesBadge) qu'une fiche
       //    a été créée/mise à jour, pour qu'ils rechargent leurs données automatiquement.
       //    Sans ça, le compteur "X/Y fiches préparées" ne se met pas à jour tant que
@@ -917,6 +923,85 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   const isReadOnly = form.status && form.status !== "DRAFT";
   const sheetType = SHEET_TYPES.find(t => t.type === form.sheetType);
   const typeConfig = SHEET_TYPE_CONFIG[form.sheetType] || SHEET_TYPE_CONFIG.MATH;
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // ⭐ SAUVEGARDE AUTOMATIQUE INVISIBLE — toutes les 10 secondes
+  //
+  // Exigence utilisateur : sauvegarde chaque 10 s sans que l'utilisateur ne
+  // le remarque, sans rechargement, sans perte du travail.
+  //
+  //   - Fiche EXISTANTE (Brouillon) → PUT silencieux (?source=autosave,
+  //     pas d'audit log côté API) sans re-fetch ni fermeture du formulaire
+  //   - NOUVELLE fiche (classe + type choisis) → la première sauvegarde
+  //     silencieuse CRÉE la fiche (POST), puis les suivantes la mettent à
+  //     jour (PUT) — le formulaire reste ouvert, la saisie n'est pas perturbée
+  //   - Flush best-effort à la fermeture de l'onglet / F5 (keepalive)
+  // ═════════════════════════════════════════════════════════════════════════
+  const ficheSnapshot = JSON.stringify(form);
+  const ficheAutosave = useAutoSave({
+    snapshot: ficheSnapshot,
+    enabled: showForm && !isReadOnly && !!form.classId && !!form.sheetType,
+    save: async () => {
+      // ⭐ MATERNELLE : miroir des champs clés (identique à la sauvegarde
+      //    manuelle — maternelleContent en JSONB)
+      const isMaternelleFiche = isMaternelleClass || form.sheetType === "DOMAINE" || form.sheetType === "DOMAINE_2";
+      const body: any = editingFiche?.id
+        ? { ...form }
+        : { ...form, academicYearId, teacherId, cahierJournalId: cahierJournalId || undefined };
+      if (isMaternelleFiche) {
+        body.titre = form.maternelle?.titre || form.titre || "";
+        body.duree = form.maternelle?.duree || form.duree || "";
+        body.competence = form.maternelle?.competence || "";
+        body.maternelleContent = form.maternelle;
+      }
+      if (editingFiche?.id) {
+        const res = await fetch(`/api/pedagogy-space/fiches/${editingFiche.id}?source=autosave`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error("Erreur de sauvegarde automatique");
+      } else {
+        // Création silencieuse — le formulaire reste ouvert, aucune perturbation
+        const res = await fetch(`/api/pedagogy-space/fiches?source=autosave`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error("Erreur de création automatique");
+        const created = await res.json();
+        if (created?.id) {
+          // ⭐ La fiche existe désormais : les prochaines sauvegardes seront des
+          //    PUT. On ne ferme PAS le formulaire et on ne recharge PAS la liste
+          //    (l'utilisateur ne doit rien remarquer).
+          setEditingFiche(created);
+        }
+      }
+    },
+    unloadSave: () => {
+      const isMaternelleFiche = isMaternelleClass || form.sheetType === "DOMAINE" || form.sheetType === "DOMAINE_2";
+      const body: any = JSON.parse(ficheSnapshot);
+      if (!editingFiche?.id) {
+        body.academicYearId = academicYearId;
+        body.teacherId = teacherId;
+        body.cahierJournalId = cahierJournalId || undefined;
+      }
+      if (isMaternelleFiche) {
+        body.titre = form.maternelle?.titre || form.titre || "";
+        body.duree = form.maternelle?.duree || form.duree || "";
+        body.competence = form.maternelle?.competence || "";
+        body.maternelleContent = form.maternelle;
+      }
+      if (editingFiche?.id) {
+        fireKeepaliveSave(`/api/pedagogy-space/fiches/${editingFiche.id}?source=autosave`, "PUT", body);
+      } else {
+        fireKeepaliveSave(`/api/pedagogy-space/fiches?source=autosave`, "POST", body);
+      }
+    },
+    intervalMs: 10_000,
+  });
 
   // === RENDU FORMULAIRE ===
   if (showForm) {
@@ -1414,11 +1499,16 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       <div className="space-y-4">
         {/* Barre d'actions */}
         <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
-          <button onClick={() => { setShowForm(false); setEditingFiche(null); setForm(emptyForm); }}
+          {/* ⭐ Retour : recharge la liste (une fiche a pu être créée
+              silencieusement par la sauvegarde automatique) */}
+          <button onClick={() => { setShowForm(false); setEditingFiche(null); setForm(emptyForm); loadFiches(); }}
             className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg">
             <ChevronLeft className="h-4 w-4" /> Retour à la liste
           </button>
           <div className="flex items-center gap-2">
+            {/* ⭐ Micro-indicateur de sauvegarde automatique (très discret —
+                l'utilisateur ne doit pas être perturbé par les sauvegardes) */}
+            <AutosaveIndicator status={ficheAutosave.status} lastSavedAt={ficheAutosave.lastSavedAt} />
             {/* ⭐ Badge de statut (Soumis / Validé / Rejeté) */}
             {formStatus && form.status !== 'DRAFT' && (
               <span className={cn("flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold uppercase", formStatus.color)}>
@@ -1649,7 +1739,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               ].map(f => (
                 <div key={f.key}>
                   <label className="block text-xs font-bold text-slate-700 mb-1">{f.label}</label>
-                  <RichTextEditor value={form[f.key] || ""} onChange={html => setForm({ ...form, [f.key]: html })} disabled={isReadOnly} minHeight="60px" />
+                  <RichTextEditor value={form[f.key] || ""} onChange={html => setForm({ ...form, [f.key]: html })} disabled={isReadOnly} minHeight="60px" enableMedia={!isReadOnly} />
                 </div>
               ))}
             </div>
@@ -1669,8 +1759,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                     <input type="text" value={form[f.key] || ""} onChange={e => setForm({ ...form, [f.key]: e.target.value })} disabled={isReadOnly}
                       placeholder={f.placeholder} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm" />
                   ) : (
-                    /* ⭐ Champ long (RichTextEditor) */
-                    <RichTextEditor value={form[f.key] || ""} onChange={html => setForm({ ...form, [f.key]: html })} disabled={isReadOnly} minHeight="60px" />
+                    /* ⭐ Champ long (RichTextEditor — images, diagrammes, maths) */
+                    <RichTextEditor value={form[f.key] || ""} onChange={html => setForm({ ...form, [f.key]: html })} disabled={isReadOnly} minHeight="60px" enableMedia={!isReadOnly} />
                   )}
                 </div>
               ))}
@@ -1718,7 +1808,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                 {typeConfig.phases.map(p => (
                   <div key={p.key}>
                     <label className="block text-xs font-bold text-slate-700 mb-1">{p.label}</label>
-                    <RichTextEditor value={form[p.key] || ""} onChange={html => setForm({ ...form, [p.key]: html })} disabled={isReadOnly} minHeight="60px" />
+                    <RichTextEditor value={form[p.key] || ""} onChange={html => setForm({ ...form, [p.key]: html })} disabled={isReadOnly} minHeight="60px" enableMedia={!isReadOnly} />
                   </div>
                 ))}
               </div>
@@ -1792,10 +1882,10 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                     <tr key={idx}>
                       <td className="border border-slate-300 px-2 py-1 text-center font-bold">{idx + 1}</td>
                       <td className="border border-slate-300 p-0">
-                        <RichTextEditor value={step.consignes || ""} onChange={html => updateStep(idx, "consignes", html)} disabled={isReadOnly} minHeight="60px" />
+                        <RichTextEditor value={step.consignes || ""} onChange={html => updateStep(idx, "consignes", html)} disabled={isReadOnly} minHeight="60px" enableMedia={!isReadOnly} />
                       </td>
                       <td className="border border-slate-300 p-0">
-                        <RichTextEditor value={step.resultats || ""} onChange={html => updateStep(idx, "resultats", html)} disabled={isReadOnly} minHeight="60px" />
+                        <RichTextEditor value={step.resultats || ""} onChange={html => updateStep(idx, "resultats", html)} disabled={isReadOnly} minHeight="60px" enableMedia={!isReadOnly} />
                       </td>
                       {!isReadOnly && (
                         <td className="border border-slate-300 px-2 py-1 text-center">
@@ -1852,10 +1942,10 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                     <tr key={row.key} className="align-top">
                       <td className="border border-slate-300 px-2 py-2 font-bold text-slate-700 bg-slate-50/60 align-middle">{row.label}</td>
                       <td className="border border-slate-300 p-0">
-                        <RichTextEditor value={form[row.key] || ""} onChange={html => setForm({ ...form, [row.key]: html })} disabled={isReadOnly} minHeight="80px" />
+                        <RichTextEditor value={form[row.key] || ""} onChange={html => setForm({ ...form, [row.key]: html })} disabled={isReadOnly} minHeight="80px" enableMedia={!isReadOnly} />
                       </td>
                       <td className="border border-slate-300 p-0">
-                        <RichTextEditor value={form[row.resultKey] || ""} onChange={html => setForm({ ...form, [row.resultKey]: html })} disabled={isReadOnly} minHeight="80px" />
+                        <RichTextEditor value={form[row.resultKey] || ""} onChange={html => setForm({ ...form, [row.resultKey]: html })} disabled={isReadOnly} minHeight="80px" enableMedia={!isReadOnly} />
                       </td>
                     </tr>
                   ))}

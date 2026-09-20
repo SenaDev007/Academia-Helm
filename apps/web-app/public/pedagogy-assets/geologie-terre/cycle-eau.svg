@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 340" width="460" height="340">
+<rect width="460" height="340" fill="#ffffff"/>
+<text x="230" y="24" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">Le cycle de l'eau</text>
+
+  <!-- soleil -->
+  <circle cx="60" cy="56" r="22" fill="#fcd34d" stroke="#b45309" stroke-width="2"/>
+  <path d="M60 26 v-8 M60 90 v8 M30 56 h-8 M90 56 h8" stroke="#b45309" stroke-width="2" stroke-linecap="round"/>
+  <!-- mer -->
+  <path d="M0 250 q40 -12 80 0 q40 12 80 0 q40 -12 80 0 q40 12 80 0 q40 -12 80 0 v90 H0 z" fill="#7dd3fc" stroke="#0284c7" stroke-width="2"/>
+  <!-- montagne -->
+  <path d="M300 250 l60 -110 l60 110 z" fill="#d6d3d1" stroke="#57534e" stroke-width="2"/>
+  <path d="M360 140 l-18 32 q18 10 36 0 z" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>
+  <!-- nuages -->
+  <path d="M120 100 q-6 -22 18 -24 q6 -16 26 -8 q14 -14 28 2 q20 -2 18 18 q2 14 -14 14 l-60 0 q-16 0 -16 -12 z" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/>
+  <path d="M286 84 q-6 -20 16 -22 q6 -14 24 -6 q12 -12 24 2 q18 -2 16 16 q2 12 -12 12 l-52 0 q-16 0 -16 -12 z" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/>
+  <!-- flèches -->
+  <path d="M110 210 q-30 -70 30 -96" stroke="#0ea5e9" stroke-width="3" fill="none" marker-end="url(#we)"/>
+  <path d="M212 84 q40 6 62 -8" stroke="#64748b" stroke-width="3" fill="none" marker-end="url(#wc)"/>
+  <path d="M330 120 q30 30 40 80" stroke="#64748b" stroke-width="3" fill="none" marker-end="url(#wc2)" stroke-dasharray="0"/>
+  <path d="M396 210 q-10 24 -40 30" stroke="#0ea5e9" stroke-width="3" fill="none" marker-end="url(#wr)"/>
+  <defs>
+    <marker id="we" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7 z" fill="#0ea5e9"/></marker>
+    <marker id="wc" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7 z" fill="#64748b"/></marker>
+    <marker id="wc2" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7 z" fill="#64748b"/></marker>
+    <marker id="wr" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto"><path d="M0 0 L8 3.5 L0 7 z" fill="#0ea5e9"/></marker>
+  </defs>
+  <!-- pluie -->
+  <path d="M246 116 l-6 14 M262 112 l-6 14 M278 116 l-6 14 M130 118 l-6 14 M146 114 l-6 14" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+  <text x="86" y="150" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#0369a1" font-weight="bold">1. Évaporation</text>
+  <text x="212" y="64" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#475569" font-weight="bold">2. Condensation (nuages)</text>
+  <text x="264" y="106" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#475569" font-weight="bold">3. Précipitations (pluie)</text>
+  <text x="316" y="262" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#0369a1" font-weight="bold">4. Ruissellement</text>
+  <text x="230" y="330" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#64748b">L'eau circule en permanence entre la mer, l'air et la terre</text>
+
+</svg>

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 300" width="460" height="300">
+<rect width="460" height="300" fill="#ffffff"/>
+<text x="230" y="24" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">Les types de triangles</text>
+
+  <!-- équilatéral -->
+  <path d="M80 220 L130 120 L180 220 Z" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M128 220 l0 -14 l-14 0" fill="none" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="70" y="236" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Équilatéral</text>
+  <text x="70" y="252" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">3 côtés égaux, 3 angles de 60°</text>
+  <text x="72" y="232" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1d4ed8">a</text>
+  <text x="126" y="112" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1d4ed8">a</text>
+  <text x="182" y="232" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1d4ed8">a</text>
+  <!-- isocèle -->
+  <path d="M250 220 L300 120 L350 220 Z" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M294 220 l6 -18 l6 18" fill="none" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="246" y="236" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Isocèle</text>
+  <text x="246" y="252" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">2 côtés égaux, 2 angles égaux</text>
+  <text x="268" y="200" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1d4ed8">b</text>
+  <text x="330" y="200" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#1d4ed8">b</text>
+  <!-- rectangle -->
+  <path d="M390 220 L390 130 L440 220 Z" fill="#dbeafe" stroke="#1d4ed8" stroke-width="2.5"/>
+  <path d="M390 210 h10 v10" fill="none" stroke="#dc2626" stroke-width="2.5"/>
+  <text x="386" y="236" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" font-weight="bold">Rectangle</text>
+  <text x="386" y="252" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">1 angle droit (90°)</text>
+  <!-- quelconque -->
+  <path d="M170 286 L110 288 L140 264 Z" fill="none"/>
+  <text x="60" y="286" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">Quelconque : côtés et angles différents</text>
+  <text x="230" y="286" font-family="Arial, Helvetica, sans-serif" font-size="9" fill="#64748b">La somme des angles d'un triangle = 180°</text>
+
+</svg>

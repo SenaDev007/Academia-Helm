@@ -27,6 +27,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { usePersistedTab } from "@/hooks/usePersistedTab";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { useAppSession } from "@/contexts/AppSessionContext";
@@ -59,7 +60,10 @@ function formatDateShort(date: string | Date): string {
 
 export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: CahierSemaineTabProps) {
   const { user } = useAppSession();
-  const [activeSubTab, setActiveSubTab] = useState<"config" | "list" | "cahier">("config");
+  // ⭐ FIX : persistance du sous-onglet actif après rechargement de la page
+  const [activeSubTab, setActiveSubTab] = usePersistedTab(
+    "vue", ["config", "list", "cahier"], "config",
+  ) as ["config" | "list" | "cahier", (t: "config" | "list" | "cahier") => void];
   const [configs, setConfigs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

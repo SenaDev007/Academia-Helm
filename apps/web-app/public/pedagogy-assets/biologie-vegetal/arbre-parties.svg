@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 340" width="420" height="340">
+<rect width="420" height="340" fill="#ffffff"/>
+<text x="210" y="24" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">L'arbre et ses parties</text>
+
+  <!-- houppier -->
+  <circle cx="210" cy="110" r="70" fill="#86efac" stroke="#16a34a" stroke-width="2"/>
+  <circle cx="150" cy="140" r="44" fill="#86efac" stroke="#16a34a" stroke-width="2"/>
+  <circle cx="270" cy="140" r="44" fill="#86efac" stroke="#16a34a" stroke-width="2"/>
+  <!-- tronc -->
+  <path d="M192 186 l-6 84 q24 10 48 0 l-6 -84 z" fill="#d6b98c" stroke="#92400e" stroke-width="2"/>
+  <!-- racines -->
+  <path d="M186 268 q-30 10 -52 30 M234 268 q30 10 52 30 M198 270 q-8 16 -14 30 M222 270 q8 16 14 30 M210 270 l0 32" stroke="#92400e" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <line x1="210" y1="60" x2="300" y2="44" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="210" cy="60" r="2.5" fill="#64748b"/>
+<text x="300" y="44" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="start">Houppier (feuillage)</text>
+  <line x1="262" y1="132" x2="340" y2="140" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="262" cy="132" r="2.5" fill="#64748b"/>
+<text x="340" y="140" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="start">Feuilles</text>
+  <line x1="214" y1="220" x2="280" y2="224" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="214" cy="220" r="2.5" fill="#64748b"/>
+<text x="280" y="224" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="start">Tronc</text>
+  <line x1="168" y1="286" x2="96" y2="296" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="168" cy="286" r="2.5" fill="#64748b"/>
+<text x="96" y="296" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="start">Racines</text>
+  <text x="210" y="330" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#64748b">Les racines absorbent l'eau et les sels minéraux ; les feuilles font la photosynthèse</text>
+
+</svg>

@@ -30,7 +30,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { getUserScope } from "@/lib/auth/user-scope";
-import { cn } from "@/lib/utils";
+import { usePersistedTab } from "@/hooks/usePersistedTab";import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   BookOpen, CalendarCheck, CalendarDays, FileText,
@@ -106,7 +106,16 @@ export function PedagogicalSpaceWorkspace({
 } = {}) {
   const { tenant, academicYear, schoolLevel } = useModuleContext();
   const { user } = useAppSession();
-  const [tab, setTab] = useState<TabId>('classes');
+
+  // ⭐ FIX (demande utilisateur) : persistance de l'onglet actif —
+  //    « lorsqu'on est dans un onglet et que la page se recharge, on se
+  //    retrouve sur l'onglet par défaut, au lieu d'être toujours dans la
+  //    session où on était. »
+  //    L'onglet est reflété dans l'URL (?onglet=cahier-journal) SANS
+  //    rechargement (history.replaceState) + miroir sessionStorage par page.
+  //    → F5 / navigation / partage du lien : l'onglet est restauré.
+  const ALL_TAB_IDS = ALL_TABS.map((t) => t.id) as readonly string[];
+  const [tab, setTab] = usePersistedTab("onglet", ALL_TAB_IDS, "classes");
 
   // ⭐ Classes assignées à l'enseignant (pour la planification mensuelle)
   //    - Pour un enseignant : SEULEMENT SES classes (1 ou plusieurs, via teacher-class-assignments)
@@ -185,7 +194,7 @@ export function PedagogicalSpaceWorkspace({
     if (tab !== 'classes' && !TABS.some(t => t.id === tab)) {
       setTab('classes');
     }
-  }, [tab, TABS]);
+  }, [tab, TABS, setTab]);
 
   // ⭐ Fetch des classes assignées à l'enseignant — pour le sélecteur de la planification mensuelle.
   //    Un enseignant ne doit voir QUE ses classes (pas toutes les classes de l'école).

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 340" width="400" height="340">
+<rect width="400" height="340" fill="#ffffff"/>
+<text x="200" y="24" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">Le globe terrestre</text>
+
+  <!-- globe -->
+  <circle cx="200" cy="160" r="110" fill="#bae6fd" stroke="#0369a1" stroke-width="2.5"/>
+  <!-- continents stylisés -->
+  <path d="M140 90 q30 -20 60 -6 q20 10 8 28 q-16 22 -40 14 q-26 -8 -28 -36 z" fill="#86efac" stroke="#15803d" stroke-width="1.5"/>
+  <path d="M230 130 q24 -6 34 12 q8 18 -10 26 q-20 8 -28 -8 q-6 -16 4 -30 z" fill="#86efac" stroke="#15803d" stroke-width="1.5"/>
+  <path d="M160 180 q30 -8 44 10 q10 18 -8 30 q-24 14 -40 -4 q-10 -18 4 -36 z" fill="#86efac" stroke="#15803d" stroke-width="1.5"/>
+  <path d="M250 200 q18 -4 24 10 q4 14 -8 20 q-14 6 -20 -6 q-4 -14 4 -24 z" fill="#86efac" stroke="#15803d" stroke-width="1.5"/>
+  <!-- équateur -->
+  <ellipse cx="200" cy="160" rx="110" ry="0" fill="none"/>
+  <path d="M90 160 q110 26 220 0" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="8 5"/>
+  <text x="316" y="196" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#b91c1c" font-weight="bold">Équateur</text>
+  <!-- axe -->
+  <path d="M170 34 L230 286" stroke="#334155" stroke-width="2.5" stroke-dasharray="8 5"/>
+  <line x1="200" y1="34" x2="236" y2="30" stroke="#94a3b8" stroke-width="1" stroke-dasharray="2 2"/>
+<circle cx="200" cy="34" r="2.5" fill="#64748b"/>
+<text x="236" y="30" font-family="Arial, Helvetica, sans-serif" font-size="11" fill="#334155" text-anchor="start">Axe des pôles (incliné)</text>
+  <text x="200" y="310" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#64748b">Le globe représente la Terre : hémisphère Nord et hémisphère Sud</text>
+
+</svg>

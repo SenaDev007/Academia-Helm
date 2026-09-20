@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 380" width="380" height="380">
+<rect width="380" height="380" fill="#ffffff"/>
+<text x="190" y="24" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="bold" fill="#0f172a">La rose des vents</text>
+
+  <circle cx="190" cy="200" r="140" fill="#fefce8" stroke="#a16207" stroke-width="2"/>
+  <circle cx="190" cy="200" r="112" fill="none" stroke="#d4d4d8" stroke-width="1.5"/>
+  <circle cx="190" cy="200" r="82" fill="none" stroke="#e4e4e7" stroke-width="1.5"/>
+  <!-- directions principales -->
+  <path d="M190 72 L204 190 L190 208 L176 190 Z" fill="#dc2626"/>
+  <path d="M190 328 L176 210 L190 192 L204 210 Z" fill="#e4e4e7" stroke="#a1a1aa" stroke-width="1"/>
+  <path d="M62 200 L180 186 L198 200 L180 214 Z" fill="#e4e4e7" stroke="#a1a1aa" stroke-width="1"/>
+  <path d="M318 200 L200 214 L182 200 L200 186 Z" fill="#e4e4e7" stroke="#a1a1aa" stroke-width="1"/>
+  <!-- directions secondaires -->
+  <path d="M99 109 L196 194 L190 208 Z" fill="#fca5a5" opacity="0.85" transform="rotate(0 190 200)"/>
+  <path d="M281 109 L184 194 L190 208 Z" fill="#fca5a5" opacity="0.85"/>
+  <path d="M99 291 L184 206 L190 192 Z" fill="#fca5a5" opacity="0.85"/>
+  <path d="M281 291 L196 206 L190 192 Z" fill="#fca5a5" opacity="0.85"/>
+  <!-- lettres -->
+  <text x="190" y="60" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#dc2626" font-weight="bold">N</text>
+  <text x="190" y="356" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#52525b" font-weight="bold">S</text>
+  <text x="40" y="206" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#52525b" font-weight="bold">O</text>
+  <text x="340" y="206" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#52525b" font-weight="bold">E</text>
+  <text x="88" y="88" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#b91c1c" font-weight="bold">NE</text>
+  <text x="292" y="88" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#b91c1c" font-weight="bold">SE</text>
+  <text x="88" y="320" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#b91c1c" font-weight="bold">NO</text>
+  <text x="292" y="320" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#b91c1c" font-weight="bold">SO</text>
+  <circle cx="190" cy="200" r="6" fill="#a16207"/>
+  <text x="190" y="374" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="10" fill="#64748b">La rose des vents indique les directions sur une carte</text>
+
+</svg>

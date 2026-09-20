@@ -1168,26 +1168,6 @@ export class PedagogicalSpaceService {
 
     // Récupérer les champs (strip HTML basique)
     const strip = (html: string) => (html || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim() || '—';
-    // ⭐ 2026-09-19 (retour promoteur) — strip multi-lignes pour la section
-    //    RETENONS : conserve la STRUCTURE du texte (retours à la ligne,
-    //    paragraphes, puces) au lieu de tout aplatir sur une ligne — la
-    //    leçon à retenir peut être longue et structurée.
-    const stripLines = (html: string) => {
-      const lines = (html || '')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/(div|p|li|h[1-6]|tr|blockquote)>/gi, '\n')
-        .replace(/<li[^>]*>/gi, '• ')
-        .replace(/<[^>]*>/g, '')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-        .split('\n').map((l) => l.replace(/\s+/g, ' ').trim());
-      const out: string[] = [];
-      for (const l of lines) {
-        if (l === '' && (out.length === 0 || out[out.length - 1] === '')) continue;
-        out.push(l);
-      }
-      return out.join('\n').trim() || '—';
-    };
 
     // ⭐ V7 — Rendu RICHE des champs pédagogiques : les fiches contiennent
     //    désormais des ILLUSTRATIONS (SVG inline des packs pédagogiques ou
@@ -1526,11 +1506,12 @@ export class PedagogicalSpaceService {
 
       <!-- ═══ IV — RETENONS (leçon à retenir — DERNIÈRE section de la fiche,
            retour promoteur 2026-09-19 : un seul champ de saisie, volume
-           important possible, éditable à volonté) ═══ -->
+           important possible, éditable à volonté) — 2026-09-20 : rendu RICHE
+           (images, figures, tableaux insérés via la barre média) ═══ -->
       ${fiche.retenons && String(fiche.retenons).trim() ? `
       <div style="margin-bottom:8px;">
         <div style="font-size:11px;font-weight:bold;color:white;background:${typeConfig.color};padding:4px 8px;border-radius:3px 3px 0 0;">IV — RETENONS <span style="font-weight:normal;font-size:8px;opacity:0.9;">(la leçon à retenir)</span></div>
-        <div style="border:1px solid ${typeConfig.border};border-top:none;border-radius:0 0 3px 3px;padding:6px 8px;font-size:9px;line-height:1.5;white-space:pre-wrap;">${stripLines(fiche.retenons)}</div>
+        <div style="border:1px solid ${typeConfig.border};border-top:none;border-radius:0 0 3px 3px;padding:6px 8px;font-size:9px;line-height:1.5;">${rich(fiche.retenons)}</div>
       </div>` : ''}
 
       </div>
@@ -1672,6 +1653,10 @@ export class PedagogicalSpaceService {
     // — Champs pédagogiques —
     const fieldRow = (label: string, val: any) =>
       `<tr><td style="border:1px solid ${BORDER};padding:5px;width:30%;font-weight:bold;background:#f8fafc;font-size:9px;">${label}</td><td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${strip(val)}</td></tr>`;
+    // ⭐ 2026-09-20 — variante RICHE (barre média activée sur ces champs :
+    //    images, figures, tableaux) — HTML assaini conservé au lieu de texte plat.
+    const fieldRowR = (label: string, val: any) =>
+      `<tr><td style="border:1px solid ${BORDER};padding:5px;width:30%;font-weight:bold;background:#f8fafc;font-size:9px;">${label}</td><td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${rich(val)}</td></tr>`;
     const champs = `
       <table style="width:100%;border-collapse:collapse;font-size:9px;margin-bottom:8px;">
         ${fieldRow('Thème', mc.theme)}
@@ -1679,10 +1664,10 @@ export class PedagogicalSpaceService {
         ${fieldRow('Section', mc.section)}
         ${fieldRow('Durée', mc.duree)}
         ${fieldRow(isDom2 ? 'Matériels' : 'Matériel', mc.materiel)}
-        ${fieldRow('Compétence', mc.competence)}
-        ${fieldRow(isDom2 ? 'Capacités' : 'Capacité', mc.capacite)}
-        ${fieldRow('Habilités', mc.habiletes)}
-        ${fieldRow("Stratégies D'ens/Apprent/Eval", mc.strategies)}
+        ${fieldRowR('Compétence', mc.competence)}
+        ${fieldRowR(isDom2 ? 'Capacités' : 'Capacité', mc.capacite)}
+        ${fieldRowR('Habilités', mc.habiletes)}
+        ${fieldRowR("Stratégies D'ens/Apprent/Eval", mc.strategies)}
       </table>`;
 
     // — DÉROULEMENT —
@@ -1717,8 +1702,8 @@ export class PedagogicalSpaceService {
       // Tableau 2 colonnes : Consignes | Résultats Attendus — avec INTRODUCTION
       const intro = mc.deroulementIntro || {};
       const introRow = (label: string, cell: any) => `<tr>
-        <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;"><b>${label} :</b> ${strip(cell?.consignes)}</td>
-        <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;width:38%;">${strip(cell?.resultats)}</td>
+        <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;"><b>${label} :</b> ${rich(cell?.consignes)}</td>
+        <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;width:38%;">${rich(cell?.resultats)}</td>
       </tr>`;
       deroulementHtml = `
       <div style="margin-bottom:8px;">
@@ -1746,9 +1731,9 @@ export class PedagogicalSpaceService {
         <div style="font-size:11px;font-weight:bold;color:white;background:${C};padding:4px 8px;border-radius:3px 3px 0 0;">INTRODUCTION</div>
         <table style="width:100%;border-collapse:collapse;border:1px solid ${C};border-top:none;">
           <tr>
-            <td style="border:1px solid ${BORDER};padding:5px;font-size:8px;font-weight:bold;background:#dbeafe;vertical-align:top;width:33%;">Mise en situation<br><span style="font-weight:normal;font-size:9px;color:#1e293b;">${strip(mc.intro.miseEnSituation)}</span></td>
-            <td style="border:1px solid ${BORDER};padding:5px;font-size:8px;font-weight:bold;background:#dbeafe;vertical-align:top;width:34%;">Prise en compte des acquis antérieurs<br><span style="font-weight:normal;font-size:9px;color:#1e293b;">${strip(mc.intro.acquisAnterieurs)}</span></td>
-            <td style="border:1px solid ${BORDER};padding:5px;font-size:8px;font-weight:bold;background:#dbeafe;vertical-align:top;width:33%;">Annonce de l'apprentissage du jour<br><span style="font-weight:normal;font-size:9px;color:#1e293b;">${strip(mc.intro.annonceApprentissage)}</span></td>
+            <td style="border:1px solid ${BORDER};padding:5px;font-size:8px;font-weight:bold;background:#dbeafe;vertical-align:top;width:33%;">Mise en situation<br><div style="font-weight:normal;font-size:9px;color:#1e293b;">${rich(mc.intro.miseEnSituation)}</div></td>
+            <td style="border:1px solid ${BORDER};padding:5px;font-size:8px;font-weight:bold;background:#dbeafe;vertical-align:top;width:34%;">Prise en compte des acquis antérieurs<br><div style="font-weight:normal;font-size:9px;color:#1e293b;">${rich(mc.intro.acquisAnterieurs)}</div></td>
+            <td style="border:1px solid ${BORDER};padding:5px;font-size:8px;font-weight:bold;background:#dbeafe;vertical-align:top;width:33%;">Annonce de l'apprentissage du jour<br><div style="font-weight:normal;font-size:9px;color:#1e293b;">${rich(mc.intro.annonceApprentissage)}</div></td>
           </tr>
         </table>
       </div>`;
@@ -1758,7 +1743,7 @@ export class PedagogicalSpaceService {
     let realisationHtml = `
       <div style="margin-bottom:8px;">
         <div style="font-size:11px;font-weight:bold;color:white;background:${C};padding:4px 8px;border-radius:3px 3px 0 0;">RÉALISATION — Construction de nouveaux savoirs</div>
-        <div style="border:1px solid ${C};border-top:none;padding:5px;font-size:9px;min-height:30px;">${strip(mc.realisation)}</div>
+        <div style="border:1px solid ${C};border-top:none;padding:5px;font-size:9px;min-height:30px;">${rich(mc.realisation)}</div>
       </div>`;
     if (isDom2) {
       const act = mc.activites || {};
@@ -1766,8 +1751,8 @@ export class PedagogicalSpaceService {
       <div style="margin-bottom:8px;">
         <div style="font-size:11px;font-weight:bold;color:white;background:${C};padding:4px 8px;border-radius:3px 3px 0 0;">SUITE DE LA RÉALISATION</div>
         <table style="width:100%;border-collapse:collapse;font-size:9px;border:1px solid ${C};border-top:none;">
-          <tr><td style="border:1px solid ${BORDER};padding:5px;width:30%;font-weight:bold;background:#f8fafc;">Situation problème :</td><td style="border:1px solid ${BORDER};padding:5px;">${strip(mc.situationProbleme)}</td></tr>
-          <tr><td style="border:1px solid ${BORDER};padding:5px;font-weight:bold;background:#f8fafc;">Question de compréhension :</td><td style="border:1px solid ${BORDER};padding:5px;">${strip(mc.questionComprehension)}</td></tr>
+          <tr><td style="border:1px solid ${BORDER};padding:5px;width:30%;font-weight:bold;background:#f8fafc;">Situation problème :</td><td style="border:1px solid ${BORDER};padding:5px;">${rich(mc.situationProbleme)}</td></tr>
+          <tr><td style="border:1px solid ${BORDER};padding:5px;font-weight:bold;background:#f8fafc;">Question de compréhension :</td><td style="border:1px solid ${BORDER};padding:5px;">${rich(mc.questionComprehension)}</td></tr>
         </table>
         <table style="width:100%;border-collapse:collapse;border:1px solid ${C};border-top:none;margin-top:4px;">
           <tr style="background:#dbeafe;">
@@ -1776,9 +1761,9 @@ export class PedagogicalSpaceService {
             <th style="border:1px solid ${BORDER};padding:5px;font-size:8px;width:33%;">Activité n° 3</th>
           </tr>
           <tr style="vertical-align:top;">
-            <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${strip(act.a1)}</td>
-            <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${strip(act.a2)}${act.nb2 ? `<br><b>NB :</b> ${strip(act.nb2)}` : ''}</td>
-            <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${strip(act.a3)}${act.nb3 ? `<br><b>NB :</b> ${strip(act.nb3)}` : ''}</td>
+            <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${rich(act.a1)}</td>
+            <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${rich(act.a2)}${act.nb2 ? `<br><b>NB :</b> ${strip(act.nb2)}` : ''}</td>
+            <td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${rich(act.a3)}${act.nb3 ? `<br><b>NB :</b> ${strip(act.nb3)}` : ''}</td>
           </tr>
         </table>
       </div>`;
@@ -1786,7 +1771,7 @@ export class PedagogicalSpaceService {
 
     // — RETOUR ET PROJECTION —
     const retourRow = (label: string, val: any) =>
-      `<tr><td style="border:1px solid ${BORDER};padding:5px;width:22%;font-weight:bold;background:#f8fafc;font-size:9px;">${label}</td><td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${strip(val)}</td></tr>`;
+      `<tr><td style="border:1px solid ${BORDER};padding:5px;width:22%;font-weight:bold;background:#f8fafc;font-size:9px;">${label}</td><td style="border:1px solid ${BORDER};padding:5px;font-size:9px;">${rich(val)}</td></tr>`;
     const retourHtml = `
       <div style="margin-bottom:8px;">
         <div style="font-size:11px;font-weight:bold;color:white;background:${C};padding:4px 8px;border-radius:3px 3px 0 0;">RETOUR ET PROJECTION</div>
@@ -1802,33 +1787,22 @@ export class PedagogicalSpaceService {
     const rangementHtml = `
       <div style="margin-bottom:8px;">
         <div style="font-size:11px;font-weight:bold;color:white;background:${C};padding:4px 8px;border-radius:3px 3px 0 0;">RANGEMENT</div>
-        <div style="border:1px solid ${C};border-top:none;padding:5px;font-size:9px;min-height:24px;">${strip(mc.rangement)}</div>
+        <div style="border:1px solid ${C};border-top:none;padding:5px;font-size:9px;min-height:24px;">${rich(mc.rangement)}</div>
       </div>
       <div style="font-size:9px;margin-bottom:8px;"><b>Notes personnelles :</b> <span style="border-bottom:1px dotted #94a3b8;">${strip(mc.notesPersonnelles)}</span></div>`;
 
     // — RETENONS (leçon à retenir — DERNIÈRE section, retour promoteur
-    //    2026-09-19) : colonne partagée `retenons` avec les fiches primaire,
-    //    texte multi-lignes préservé (stripLines maison), volume important
-    //    possible, éditable à volonté. —
+    //    2026-09-19) : colonne partagée `retenons` avec les fiches primaire.
+    //    ⭐ 2026-09-20 : rendu RICHE — la section dispose désormais de la
+    //    barre média (images, figures, tableaux) ; on conserve le HTML
+    //    assaini (rich) au lieu d'aplatir en texte brut.
     let retenonsHtml = '';
-    if (fiche.retenons && String(fiche.retenons).trim()) {
-      const retLines = String(fiche.retenons)
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/(div|p|li|h[1-6]|tr|blockquote)>/gi, '\n')
-        .replace(/<li[^>]*>/gi, '• ')
-        .replace(/<[^>]*>/g, '')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-        .split('\n').map((l) => l.replace(/\s+/g, ' ').trim())
-        .filter((l, i, arr) => !(l === '' && (i === 0 || arr[i - 1] === '')))
-        .join('\n').trim();
-      if (retLines) {
-        retenonsHtml = `
+    if (fiche.retenons && String(fiche.retenons).trim() && rich(fiche.retenons) !== '—') {
+      retenonsHtml = `
       <div style="margin-bottom:8px;">
         <div style="font-size:11px;font-weight:bold;color:white;background:${C};padding:4px 8px;border-radius:3px 3px 0 0;">RETENONS <span style="font-weight:normal;font-size:8px;opacity:0.9;">(la leçon à retenir)</span></div>
-        <div style="border:1px solid ${C};border-top:none;border-radius:0 0 3px 3px;padding:6px 8px;font-size:9px;line-height:1.5;white-space:pre-wrap;">${retLines}</div>
+        <div style="border:1px solid ${C};border-top:none;border-radius:0 0 3px 3px;padding:6px 8px;font-size:9px;line-height:1.5;">${rich(fiche.retenons)}</div>
       </div>`;
-      }
     }
 
     // — Observations du directeur —

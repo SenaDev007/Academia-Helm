@@ -1203,7 +1203,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                 ].map(f => (
                   <div key={f.key}>
                     <label className="block text-xs font-bold text-slate-700 mb-1">{f.label}</label>
-                    <RichTextEditor value={getMat(f.key)} onChange={html => setMat(f.key, html)} disabled={isReadOnly} minHeight="60px" />
+                    <RichTextEditor value={getMat(f.key)} onChange={html => setMat(f.key, html)} disabled={isReadOnly} enableMedia={!isReadOnly} minHeight="60px" />
                   </div>
                 ))}
               </div>
@@ -1292,10 +1292,10 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                         <tr key={row.key} className="align-top">
                           <td className="border border-slate-300 p-1">
                             <div className="text-[11px] font-bold text-slate-600 mb-1">{row.label}</div>
-                            <RichTextEditor value={getMat(`deroulementIntro.${row.key}.consignes`)} onChange={html => setMat(`deroulementIntro.${row.key}.consignes`, html)} disabled={isReadOnly} minHeight="60px" />
+                            <RichTextEditor value={getMat(`deroulementIntro.${row.key}.consignes`)} onChange={html => setMat(`deroulementIntro.${row.key}.consignes`, html)} disabled={isReadOnly} enableMedia={!isReadOnly} minHeight="60px" />
                           </td>
                           <td className="border border-slate-300 p-0">
-                            <RichTextEditor value={getMat(`deroulementIntro.${row.key}.resultats`)} onChange={html => setMat(`deroulementIntro.${row.key}.resultats`, html)} disabled={isReadOnly} minHeight="76px" />
+                            <RichTextEditor value={getMat(`deroulementIntro.${row.key}.resultats`)} onChange={html => setMat(`deroulementIntro.${row.key}.resultats`, html)} disabled={isReadOnly} enableMedia={!isReadOnly} minHeight="76px" />
                           </td>
                         </tr>
                       ))}
@@ -1331,7 +1331,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                   ].map(z => (
                     <div key={z.key} className="border border-slate-300 rounded-lg overflow-hidden">
                       <div className="bg-indigo-50 text-indigo-800 text-[11px] font-bold px-2 py-1.5 border-b border-slate-300">{z.label}</div>
-                      <RichTextEditor value={getMat(`intro.${z.key}`)} onChange={html => setMat(`intro.${z.key}`, html)} disabled={isReadOnly} minHeight="90px" />
+                      <RichTextEditor value={getMat(`intro.${z.key}`)} onChange={html => setMat(`intro.${z.key}`, html)} disabled={isReadOnly} enableMedia={!isReadOnly} minHeight="90px" />
                     </div>
                   ))}
                 </div>
@@ -1343,18 +1343,18 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               <h3 className="text-sm font-bold text-slate-900 uppercase mb-3 bg-slate-100 px-3 py-2 rounded-lg">
                 RÉALISATION — Construction de nouveaux savoirs
               </h3>
-              <RichTextEditor value={getMat("realisation")} onChange={html => setMat("realisation", html)} disabled={isReadOnly} minHeight="100px" />
+              <RichTextEditor value={getMat("realisation")} onChange={html => setMat("realisation", html)} disabled={isReadOnly} enableMedia={!isReadOnly} minHeight="100px" />
 
               {/* DOMAINE_2 — Suite : Situation problème, Question de compréhension, Activités 1-3 */}
               {isDom2 && (
                 <div className="mt-4 space-y-4">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">Situation problème :</label>
-                    <RichTextEditor value={getMat("situationProbleme")} onChange={html => setMat("situationProbleme", html)} disabled={isReadOnly} minHeight="60px" />
+                    <RichTextEditor value={getMat("situationProbleme")} onChange={html => setMat("situationProbleme", html)} disabled={isReadOnly} enableMedia={!isReadOnly} minHeight="60px" />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">Question de compréhension :</label>
-                    <RichTextEditor value={getMat("questionComprehension")} onChange={html => setMat("questionComprehension", html)} disabled={isReadOnly} minHeight="60px" />
+                    <RichTextEditor value={getMat("questionComprehension")} onChange={html => setMat("questionComprehension", html)} disabled={isReadOnly} enableMedia={!isReadOnly} minHeight="60px" />
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     {[
@@ -1364,7 +1364,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                     ].map(a => (
                       <div key={a.key} className="border border-slate-300 rounded-lg overflow-hidden">
                         <div className="bg-indigo-50 text-indigo-800 text-[11px] font-bold px-2 py-1.5 border-b border-slate-300">{a.label}</div>
-                        <RichTextEditor value={getMat(`activites.${a.key}`)} onChange={html => setMat(`activites.${a.key}`, html)} disabled={isReadOnly} minHeight="80px" />
+                        <RichTextEditor value={getMat(`activites.${a.key}`)} onChange={html => setMat(`activites.${a.key}`, html)} disabled={isReadOnly} enableMedia={!isReadOnly} minHeight="80px" />
                         {a.nbKey && (
                           <div className="px-2 py-1.5 border-t border-slate-200 flex items-center gap-2 bg-slate-50">
                             <span className="text-[11px] font-bold text-slate-600">NB :</span>
@@ -1405,7 +1405,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                 ].map(f => (
                   <div key={f.key} className="contents">
                     <div className="flex items-start pt-2"><label className="text-xs font-bold text-slate-700">{f.label}</label></div>
-                    <RichTextEditor value={getMat(f.key)} onChange={html => setMat(f.key, html)} disabled={isReadOnly} minHeight="56px" />
+                    <RichTextEditor value={getMat(f.key)} onChange={html => setMat(f.key, html)} disabled={isReadOnly} enableMedia={!isReadOnly} minHeight="56px" />
                   </div>
                 ))}
               </div>
@@ -1428,7 +1428,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
             {/* RANGEMENT */}
             <section className="border-l-4 border-slate-300 pl-4">
               <h3 className="text-sm font-bold text-slate-900 uppercase mb-3 bg-slate-100 px-3 py-2 rounded-lg">RANGEMENT</h3>
-              <RichTextEditor value={getMat("rangement")} onChange={html => setMat("rangement", html)} disabled={isReadOnly} minHeight="60px" />
+              <RichTextEditor value={getMat("rangement")} onChange={html => setMat("rangement", html)} disabled={isReadOnly} enableMedia={!isReadOnly} minHeight="60px" />
             </section>
 
             {/* ⭐ Observation du directeur — Rangement */}
@@ -1466,6 +1466,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                 value={form.retenons || ""}
                 onChange={html => setForm({ ...form, retenons: html })}
                 disabled={isReadOnly}
+                enableMedia={!isReadOnly}
                 placeholder="La leçon à retenir de la séance…"
                 minHeight="140px"
                 maxHeight="none"
@@ -1788,7 +1789,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                           <tr>
                             {t.keys.map((key, i) => (
                               <td key={i} className="border border-slate-300 p-0 align-top" style={{ minWidth: "200px" }}>
-                                <RichTextEditor value={form[key] || ""} onChange={html => setForm({ ...form, [key]: html })} disabled={isReadOnly} minHeight="120px" />
+                                <RichTextEditor value={form[key] || ""} onChange={html => setForm({ ...form, [key]: html })} disabled={isReadOnly} enableMedia={!isReadOnly} minHeight="120px" />
                               </td>
                             ))}
                           </tr>
@@ -1830,7 +1831,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                       <tr>
                         {typeConfig.applicationTable.keys.map((key, i) => (
                           <td key={i} className="border border-slate-300 p-0 align-top" style={{ minWidth: "200px" }}>
-                            <RichTextEditor value={form[key] || ""} onChange={html => setForm({ ...form, [key]: html })} disabled={isReadOnly} minHeight="120px" />
+                            <RichTextEditor value={form[key] || ""} onChange={html => setForm({ ...form, [key]: html })} disabled={isReadOnly} enableMedia={!isReadOnly} minHeight="120px" />
                           </td>
                         ))}
                       </tr>
@@ -1985,6 +1986,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               value={form.retenons || ""}
               onChange={html => setForm({ ...form, retenons: html })}
               disabled={isReadOnly}
+              enableMedia={!isReadOnly}
               placeholder="La leçon à retenir de la séance…"
               minHeight="140px"
               maxHeight="none"

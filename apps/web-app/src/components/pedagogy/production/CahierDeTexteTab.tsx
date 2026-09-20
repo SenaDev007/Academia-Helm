@@ -753,6 +753,7 @@ function JournalHebdomadaire({
                                 <label className="text-xs font-bold text-slate-600 uppercase mb-1 block">Contenu du cours</label>
                                 <RichTextEditor value={editContent}
                                   onChange={html => setEditContent(html)}
+                                  enableMedia
                                   minHeight="120px" />
                               </div>
                               <div className="flex justify-end gap-2">
@@ -904,6 +905,7 @@ function JournalHebdomadaire({
                 </label>
                 <RichTextEditor value={formData.content}
                   onChange={html => setFormData({ ...formData, content: html })}
+                  enableMedia
                   minHeight="160px" />
               </div>
               {/* ⭐ Aperçu de l'auto-attach signature */}

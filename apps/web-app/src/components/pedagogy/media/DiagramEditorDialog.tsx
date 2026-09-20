@@ -8,14 +8,24 @@
  * ⭐ Demande utilisateur : « faire des diagrammes, des cercles… des
  *    illustrations de figures, de toutes sortes de figures géométriques »
  *
+ * ⭐ 2026-09-20 (retour utilisateur) — ANGLES : TOUTES les catégories :
+ *    l'outil Angle suit désormais le CURSEUR (l'élève/enseignant trace
+ *    n'importe quelle mesure de 0° à 360°), la mesure s'affiche en direct,
+ *    un aimant (pas de 1°/5°/15° ou libre) donne des valeurs « propres »,
+ *    et l'angle DROIT est codé par le petit carré conventionnel.
+ *    Préréglages : aigu 45°/60°, droit 90°, obtus 120°/135°, plat 180°,
+ *    rentrant 270°, angle sur mesure…
+ *
+ * ⭐ 2026-09-20 — SYMÉTRIES : schémas de symétrie prêts à l'emploi —
+ *    axiale (axe vertical / horizontal / oblique), exercice À COMPLÉTER
+ *    (figure + axe + points d'interrogation) et symétrie CENTRALE.
+ *
  * Éditeur SVG léger embarqué (aucune dépendance externe) :
- *   OUTILS   : sélection, cercle, rectangle, triangle, segment, flèche,
- *              angle (avec mesure automatique en degrés), texte, main levée
+ *   OUTILS   : sélection, cercle, rectangle, triangle, polygone régulier,
+ *              arc, segment, flèche, angle (toutes mesures), texte, main levée
  *   ACTIONS  : déplacer (glisser), supprimer (touche Suppr / bouton),
  *              changer la couleur et l'épaisseur de la figure sélectionnée
- *   PRÉRÉGLAGES : cercle (O, r), triangle ABC, segment [AB], angle droit,
- *              rectangle L×l, carré — les figures classiques du primaire
- *              en un clic
+ *   PRÉRÉGLAGES : figures rapides + angles (toutes catégories) + symétries
  *   INSERTION : la figure est sérialisée en SVG inline et insérée à la
  *              position du curseur de l'éditeur (rendu écran + PDF identique)
  * ============================================================================
@@ -27,20 +37,25 @@ import {
   DraftingCompass, Type, Pencil, Trash2, Palette, Check, Wand2, Hexagon, Spline,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  angleCCW, angleArms, dirAngle, snapAngle, polar,
+  reflectX, reflectY, reflectLine, centralSym,
+  L_SHAPE, HOUSE_SHAPE, RECT_SHAPE, mapPts,
+  type Pt,
+} from "@/lib/geo-draw";
 
 const W = 760, H = 440, GRID = 20;
-
-type Pt = { x: number; y: number };
 
 type Shape =
   | { id: number; type: "circle"; cx: number; cy: number; r: number; stroke: string; sw: number; label?: string }
   | { id: number; type: "rect"; x: number; y: number; w: number; h: number; stroke: string; sw: number; label?: string }
   | { id: number; type: "triangle"; p1: Pt; p2: Pt; p3: Pt; stroke: string; sw: number; labels?: [string, string, string] }
   | { id: number; type: "polygon"; cx: number; cy: number; r: number; sides: number; rot: number; stroke: string; sw: number; dashed?: boolean }
+  | { id: number; type: "poly"; pts: Pt[]; stroke: string; sw: number; fill?: string; dashed?: boolean }
   | { id: number; type: "arc"; cx: number; cy: number; r: number; a1: number; a2: number; stroke: string; sw: number }
   | { id: number; type: "line"; x1: number; y1: number; x2: number; y2: number; stroke: string; sw: number; dashed?: boolean }
   | { id: number; type: "arrow"; x1: number; y1: number; x2: number; y2: number; stroke: string; sw: number }
-  | { id: number; type: "angle"; v: Pt; b: Pt; stroke: string; sw: number; showDeg: boolean }
+  | { id: number; type: "angle"; v: Pt; b1: Pt; b2: Pt; stroke: string; sw: number; showDeg: boolean }
   | { id: number; type: "text"; x: number; y: number; label: string; size: number; color: string }
   | { id: number; type: "free"; pts: Pt[]; stroke: string; sw: number };
 
@@ -51,12 +66,11 @@ let nextId = 1;
 
 /* ── Géométrie ── */
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
-function angleDeg(v: Pt, b: Pt, a2: Pt): number {
-  const d1 = Math.atan2(b.y - v.y, b.x - v.x);
-  const d2 = Math.atan2(a2.y - v.y, a2.x - v.x);
-  let d = Math.abs(d1 - d2) * 180 / Math.PI;
-  if (d > 180) d = 360 - d;
-  return Math.round(d);
+
+/** Construit une forme « angle » de mesure donnée (degrés, sens trigonométrique, 1er bras horizontal). */
+function angleShape(v: Pt, deg: number, L: number, stroke: string, sw: number): Shape {
+  const arms = angleArms(v, deg, L);
+  return { id: -1, type: "angle", v, b1: arms.b1, b2: arms.b2, stroke, sw, showDeg: true };
 }
 
 export interface DiagramEditorDialogProps {
@@ -71,6 +85,10 @@ export function DiagramEditorDialog({ open, onClose, onInsertHtml }: DiagramEdit
   const [color, setColor] = useState(COLORS[0]);
   const [sw, setSw] = useState(2.5);
   const [polySides, setPolySides] = useState(6);
+  // ⭐ 2026-09-20 — aimant de l'outil angle (pas en degrés ; 0 = libre).
+  //    Par défaut 5° : des mesures « propres » (30°, 45°, 60°, 90°, 120°…)
+  //    tout en laissant toutes les valeurs intermédiaires accessibles.
+  const [angleSnap, setAngleSnap] = useState(5);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [draft, setDraft] = useState<Shape | null>(null);
   const [freePts, setFreePts] = useState<Pt[]>([]);
@@ -126,7 +144,7 @@ export function DiagramEditorDialog({ open, onClose, onInsertHtml }: DiagramEdit
     const st = drawStart.current;
     if (!st) return;
     if (tool === "free") { setFreePts((pts) => [...pts, p]); return; }
-    setDraft(buildShape(tool, st, p, color, sw, polySides));
+    setDraft(buildShape(tool, st, p, color, sw, polySides, angleSnap));
   };
 
   const onPointerUpCanvas = () => {
@@ -198,14 +216,102 @@ ${body}
         { id: nextId++, type: "text", x: cx - 12, y: cy - 14, label: "c", size: 13, color: "#dc2626" },
       ]);
     } else if (name === "angledroit") {
-      const v = { x: cx - 80, y: cy + 40 };
-      setShapes((s) => [
-        ...s,
-        { id: nextId++, type: "line", x1: v.x, y1: v.y, x2: v.x + 160, y2: v.y, stroke: c, sw },
-        { id: nextId++, type: "line", x1: v.x, y1: v.y, x2: v.x, y2: v.y - 120, stroke: c, sw },
-        { id: nextId++, type: "rect", x: v.x, y: v.y - 22, w: 22, h: 22, stroke: c, sw: 2 },
-        { id: nextId++, type: "text", x: v.x + 30, y: v.y - 30, label: "90°", size: 14, color: "#dc2626" },
-      ]);
+      // ⭐ 2026-09-20 — angle droit via la forme « angle » (carré de codage auto)
+      const ang = angleShape({ x: cx - 80, y: cy + 60 }, 90, 170, c, sw);
+      setShapes((s) => [...s, { ...ang, id: nextId++ }]);
+    } else if (name.startsWith("angle-")) {
+      // ⭐ 2026-09-20 — TOUTES les catégories d'angles : aigu, obtus, plat,
+      //    rentrant, sur mesure…
+      let deg: number | null = null;
+      if (name === "angle-aigu45") deg = 45;
+      else if (name === "angle-aigu60") deg = 60;
+      else if (name === "angle-aigu30") deg = 30;
+      else if (name === "angle-obtus120") deg = 120;
+      else if (name === "angle-obtus135") deg = 135;
+      else if (name === "angle-plat") deg = 180;
+      else if (name === "angle-rentrant") deg = 270;
+      else if (name === "angle-mesure") {
+        const raw = window.prompt("Mesure de l'angle en degrés (0 à 359) :", "65");
+        if (raw === null) return;
+        const n = Math.round(Number(raw.replace(",", ".")));
+        if (!Number.isFinite(n) || n < 0 || n > 359) { toast.error("Choisissez une mesure entre 0° et 359°"); return; }
+        deg = n;
+      }
+      if (deg !== null) {
+        // Le sommet est décalé pour que les bras restent dans la feuille
+        // quelle que soit la mesure (180° part vers la gauche, 270° vers le bas).
+        const v = { x: 280, y: deg > 180 ? 200 : 230 };
+        const ang = angleShape(v, deg, deg > 180 ? 150 : 170, c, sw);
+        setShapes((s) => [...s, { ...ang, id: nextId++ }]);
+      }
+    } else if (name.startsWith("sym-")) {
+      // ⭐ 2026-09-20 — SCHÉMAS DE SYMÉTRIE (axiale V/H/oblique, à compléter,
+      //    centrale) : figure asymétrique + axe + image symétrique.
+      const addSym: Shape[] = [];
+      const AX = "#dc2626"; // axe de symétrie en rouge pointillé
+      if (name === "sym-v") {
+        const ax = 400;
+        const img = mapPts(L_SHAPE, (p) => reflectX(p, ax));
+        addSym.push(
+          { id: nextId++, type: "line", x1: ax, y1: 60, x2: ax, y2: 400, stroke: AX, sw: 2, dashed: true },
+          { id: nextId++, type: "poly", pts: L_SHAPE, stroke: c, sw, fill: "#eff6ff" },
+          { id: nextId++, type: "poly", pts: img, stroke: c, sw, fill: "#dbeafe" },
+          { id: nextId++, type: "text", x: ax + 6, y: 74, label: "d", size: 15, color: AX },
+          { id: nextId++, type: "text", x: 296, y: 132, label: "F", size: 15, color: c },
+          { id: nextId++, type: "text", x: 474, y: 132, label: "F'", size: 15, color: c },
+        );
+      } else if (name === "sym-h") {
+        const ay = 220;
+        const img = mapPts(HOUSE_SHAPE, (p) => reflectY(p, ay));
+        addSym.push(
+          { id: nextId++, type: "line", x1: 100, y1: ay, x2: 520, y2: ay, stroke: AX, sw: 2, dashed: true },
+          { id: nextId++, type: "poly", pts: HOUSE_SHAPE, stroke: c, sw, fill: "#eff6ff" },
+          { id: nextId++, type: "poly", pts: img, stroke: c, sw, fill: "#dbeafe" },
+          { id: nextId++, type: "text", x: 254, y: 46, label: "F", size: 15, color: c },
+          { id: nextId++, type: "text", x: 254, y: 396, label: "F'", size: 15, color: c },
+          { id: nextId++, type: "text", x: 524, y: ay - 8, label: "d", size: 15, color: AX },
+        );
+      } else if (name === "sym-oblique") {
+        const o = { x: 380, y: 220 };
+        const fig: Pt[] = [
+          { x: 220, y: 250 }, { x: 280, y: 250 }, { x: 280, y: 300 }, { x: 220, y: 300 },
+        ];
+        const img = mapPts(fig, (p) => reflectLine(p, o, 1, -1));
+        addSym.push(
+          { id: nextId++, type: "line", x1: 220, y1: 380, x2: 540, y2: 60, stroke: AX, sw: 2, dashed: true },
+          { id: nextId++, type: "poly", pts: fig, stroke: c, sw, fill: "#eff6ff" },
+          { id: nextId++, type: "poly", pts: img, stroke: c, sw, fill: "#dbeafe" },
+          { id: nextId++, type: "text", x: 236, y: 268, label: "F", size: 15, color: c },
+          { id: nextId++, type: "text", x: 316, y: 330, label: "F'", size: 15, color: c },
+          { id: nextId++, type: "text", x: 544, y: 70, label: "d", size: 15, color: AX },
+        );
+      } else if (name === "sym-completer") {
+        const ax = 400;
+        const img = mapPts(L_SHAPE, (p) => reflectX(p, ax));
+        addSym.push(
+          { id: nextId++, type: "line", x1: ax, y1: 60, x2: ax, y2: 400, stroke: AX, sw: 2, dashed: true },
+          { id: nextId++, type: "poly", pts: L_SHAPE, stroke: c, sw, fill: "#eff6ff" },
+          { id: nextId++, type: "text", x: ax + 6, y: 74, label: "d", size: 15, color: AX },
+        );
+        for (const p of img) {
+          addSym.push({ id: nextId++, type: "text", x: p.x - 5, y: p.y + 5, label: "?", size: 16, color: AX });
+        }
+        addSym.push({ id: nextId++, type: "text", x: 300, y: 425, label: "Complète la figure symétrique par rapport à l'axe (d)", size: 13, color: "#0f172a" });
+      } else if (name === "sym-centrale") {
+        const o = { x: 380, y: 220 };
+        const img = mapPts(RECT_SHAPE, (p) => centralSym(p, o));
+        const A = RECT_SHAPE[0], Ap = img[0];
+        addSym.push(
+          { id: nextId++, type: "line", x1: A.x, y1: A.y, x2: Ap.x, y2: Ap.y, stroke: "#94a3b8", sw: 1.5, dashed: true },
+          { id: nextId++, type: "poly", pts: RECT_SHAPE, stroke: c, sw, fill: "#eff6ff" },
+          { id: nextId++, type: "poly", pts: img, stroke: c, sw, fill: "#dbeafe" },
+          { id: nextId++, type: "circle", cx: o.x, cy: o.y, r: 4, stroke: c, sw: 2 },
+          { id: nextId++, type: "text", x: o.x + 10, y: o.y - 8, label: "O", size: 15, color: c },
+          { id: nextId++, type: "text", x: A.x - 18, y: A.y - 8, label: "A", size: 15, color: c },
+          { id: nextId++, type: "text", x: Ap.x + 8, y: Ap.y + 16, label: "A'", size: 15, color: c },
+        );
+      }
+      if (addSym.length) setShapes((s) => [...s, ...addSym]);
     } else if (name === "rectangle") {
       setShapes((s) => [
         ...s,
@@ -351,6 +457,28 @@ ${body}
               ))}
             </div>
           )}
+          {/* ⭐ 2026-09-20 — Aimant de l'outil angle : toutes les mesures de
+              0° à 360° (aigu, droit, obtus, plat, rentrant), avec un pas
+              réglable pour des valeurs « propres ». */}
+          {tool === "angle" && (
+            <div className="flex items-center gap-1 ml-1">
+              <span className="text-[10px] font-bold text-slate-500">aimant</span>
+              {([
+                [0, "libre"], [1, "1°"], [5, "5°"], [15, "15°"],
+              ] as [number, string][]).map(([n, lbl]) => (
+                <button
+                  key={n}
+                  onClick={() => setAngleSnap(n)}
+                  className={`px-1.5 py-1 rounded-lg text-[10px] font-bold border ${
+                    angleSnap === n ? "bg-red-600 text-white border-red-600" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                  title={n === 0 ? "Angle libre — toute mesure de 0° à 360°" : `Arrondi au ${lbl} le plus proche`}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="w-px h-6 bg-slate-200 mx-1" />
           <button
             onClick={() => { setShapes((s) => s.filter((x) => x.id !== selectedId)); setSelectedId(null); }}
@@ -369,30 +497,68 @@ ${body}
           </button>
         </div>
 
-        {/* Préréglages */}
-        <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 border-b border-slate-100 bg-purple-50/40">
-          <span className="text-[10px] font-bold text-purple-700 flex items-center gap-1 mr-1">
-            <Wand2 className="h-3 w-3" /> Figures rapides :
-          </span>
-          {[
-            ["cercle", "Cercle (O, r)"],
-            ["triangle", "Triangle ABC"],
-            ["segment", "Segment [AB]"],
-            ["angledroit", "Angle droit"],
-            ["rectangle", "Rectangle L × l"],
-            ["carre", "Carré c"],
-            ["pentagone", "Pentagone"],
-            ["hexagone", "Hexagone"],
-            ["octogone", "Octogone"],
-            ["losange", "Losange + diagonales"],
-            ["paralleles", "Parallèles"],
-            ["perpendiculaires", "Perpendiculaires"],
-            ["graduee", "Droite graduée"],
-          ].map(([k, label]) => (
-            <button key={k} onClick={() => applyPreset(k)} className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-white border border-purple-200 text-purple-700 hover:bg-purple-100">
-              {label}
-            </button>
-          ))}
+        {/* ⭐ 2026-09-20 — Préréglages en 3 familles : figures rapides,
+            ANGLES (toutes catégories) et SYMÉTRIES (tous schémas). */}
+        <div className="flex flex-col gap-1 px-3 py-1.5 border-b border-slate-100 bg-purple-50/40">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-bold text-purple-700 flex items-center gap-1 mr-1">
+              <Wand2 className="h-3 w-3" /> Figures rapides :
+            </span>
+            {[
+              ["cercle", "Cercle (O, r)"],
+              ["triangle", "Triangle ABC"],
+              ["segment", "Segment [AB]"],
+              ["rectangle", "Rectangle L × l"],
+              ["carre", "Carré c"],
+              ["pentagone", "Pentagone"],
+              ["hexagone", "Hexagone"],
+              ["octogone", "Octogone"],
+              ["losange", "Losange + diagonales"],
+              ["paralleles", "Parallèles"],
+              ["perpendiculaires", "Perpendiculaires"],
+              ["graduee", "Droite graduée"],
+            ].map(([k, label]) => (
+              <button key={k} onClick={() => applyPreset(k)} className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-white border border-purple-200 text-purple-700 hover:bg-purple-100">
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-bold text-red-700 flex items-center gap-1 mr-1">
+              <DraftingCompass className="h-3 w-3" /> Angles :
+            </span>
+            {[
+              ["angle-aigu30", "Aigu 30°"],
+              ["angle-aigu45", "Aigu 45°"],
+              ["angle-aigu60", "Aigu 60°"],
+              ["angledroit", "Droit 90°"],
+              ["angle-obtus120", "Obtus 120°"],
+              ["angle-obtus135", "Obtus 135°"],
+              ["angle-plat", "Plat 180°"],
+              ["angle-rentrant", "Rentrant 270°"],
+              ["angle-mesure", "Sur mesure…"],
+            ].map(([k, label]) => (
+              <button key={k} onClick={() => applyPreset(k)} className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-white border border-red-200 text-red-700 hover:bg-red-50">
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-bold text-blue-700 flex items-center gap-1 mr-1">
+              <Hexagon className="h-3 w-3" /> Symétries :
+            </span>
+            {[
+              ["sym-v", "Axiale · axe vertical"],
+              ["sym-h", "Axiale · axe horizontal"],
+              ["sym-oblique", "Axiale · axe oblique"],
+              ["sym-completer", "À compléter"],
+              ["sym-centrale", "Centrale"],
+            ].map(([k, label]) => (
+              <button key={k} onClick={() => applyPreset(k)} className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-white border border-blue-200 text-blue-700 hover:bg-blue-50">
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Canvas */}
@@ -462,7 +628,7 @@ function arcD(cx: number, cy: number, r: number, a1: number, a2: number): string
   return `M ${r2(p1.x)} ${r2(p1.y)} A ${r2(r)} ${r2(r)} 0 ${large} 0 ${r2(p2.x)} ${r2(p2.y)}`;
 }
 
-function buildShape(tool: Tool, st: Pt, p: Pt, color: string, sw: number, polySides: number): Shape | null {
+function buildShape(tool: Tool, st: Pt, p: Pt, color: string, sw: number, polySides: number, angleSnap = 0): Shape | null {
   const base = { id: -1, stroke: color, sw };
   switch (tool) {
     case "circle": {
@@ -497,8 +663,13 @@ function buildShape(tool: Tool, st: Pt, p: Pt, color: string, sw: number, polySi
       return { ...base, type: "arc", cx: st.x, cy: st.y, r, a1, a2 };
     }
     case "angle": {
-      // Sommet = point de départ ; 1er bras horizontal, 2e bras vers le curseur
-      return { ...base, type: "angle", v: st, b: { x: st.x + Math.max(60, Math.abs(p.x - st.x)), y: st.y }, showDeg: true };
+      // ⭐ 2026-09-20 — Sommet = point de départ ; 1er bras horizontal, 2e bras
+      // vers le curseur → TOUTES les mesures de 0° à 360° (aigu, droit,
+      // obtus, plat, rentrant). Aimant optionnel pour des valeurs propres.
+      const L = Math.max(110, Math.min(240, dist(st, p)));
+      const deg = snapAngle(dirAngle(st, p), angleSnap);
+      const arms = angleArms(st, deg, L);
+      return { ...base, type: "angle", v: st, b1: arms.b1, b2: arms.b2, showDeg: true };
     }
     default:
       return null;
@@ -511,9 +682,10 @@ function sizeOf(s: Shape): number {
     case "rect": return Math.max(s.w, s.h);
     case "triangle": return Math.max(dist(s.p1, s.p2), dist(s.p2, s.p3));
     case "polygon": return s.r * 2;
+    case "poly": return Math.max(...s.pts.map((q) => Math.hypot(q.x, q.y)));
     case "arc": return s.r;
     case "line": case "arrow": return Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
-    case "angle": return dist(s.v, s.b);
+    case "angle": return dist(s.v, s.b1);
     case "text": return 999;
     case "free": return 999;
   }
@@ -525,9 +697,10 @@ function translate(s: Shape, dx: number, dy: number): Shape {
     case "rect": return { ...s, x: s.x + dx, y: s.y + dy };
     case "triangle": return { ...s, p1: mv(s.p1, dx, dy), p2: mv(s.p2, dx, dy), p3: mv(s.p3, dx, dy) };
     case "polygon": return { ...s, cx: s.cx + dx, cy: s.cy + dy };
+    case "poly": return { ...s, pts: s.pts.map((p) => mv(p, dx, dy)) };
     case "arc": return { ...s, cx: s.cx + dx, cy: s.cy + dy };
     case "line": case "arrow": return { ...s, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy };
-    case "angle": return { ...s, v: mv(s.v, dx, dy), b: mv(s.b, dx, dy) };
+    case "angle": return { ...s, v: mv(s.v, dx, dy), b1: mv(s.b1, dx, dy), b2: mv(s.b2, dx, dy) };
     case "text": return { ...s, x: s.x + dx, y: s.y + dy };
     case "free": return { ...s, pts: s.pts.map((p) => mv(p, dx, dy)) };
   }
@@ -586,6 +759,19 @@ function renderShape(s: Shape, selected: boolean, onDown: (e: React.PointerEvent
         </g>
       );
     }
+    case "poly": {
+      const pts = s.pts.map((p) => `${r2(p.x)},${r2(p.y)}`).join(" ");
+      const bbox = s.pts.reduce(
+        (acc, p) => ({ x1: Math.min(acc.x1, p.x), y1: Math.min(acc.y1, p.y), x2: Math.max(acc.x2, p.x), y2: Math.max(acc.y2, p.y) }),
+        { x1: Infinity, y1: Infinity, x2: -Infinity, y2: -Infinity },
+      );
+      return (
+        <g key={key} {...hit}>
+          {selected && <rect x={bbox.x1 - 6} y={bbox.y1 - 6} width={bbox.x2 - bbox.x1 + 12} height={bbox.y2 - bbox.y1 + 12} fill="none" stroke={sel} strokeWidth="1" strokeDasharray="4 3" />}
+          <polygon points={pts} fill={s.fill || "none"} stroke={s.stroke} strokeWidth={s.sw} strokeDasharray={s.dashed ? "6 4" : undefined} />
+        </g>
+      );
+    }
     case "arc": {
       const d = arcD(s.cx, s.cy, s.r, s.a1, s.a2);
       return (
@@ -616,12 +802,12 @@ function renderShape(s: Shape, selected: boolean, onDown: (e: React.PointerEvent
       );
     }
     case "angle": {
-      // 2e bras : conservé dans le champ b uniquement pour le drag ; pour
-      // l'aperçu on stocke la direction dans b : bras 2 = miroir simple.
-      // (l'angle réel à deux bras est créé par deux segments + arc)
+      // ⭐ 2026-09-20 — deux bras libres : TOUTES les catégories d'angles
+      // (aigu, droit, obtus, plat, rentrant), mesure affichée, petit carré
+      // de codage pour l'angle droit.
       return (
         <g key={key} {...hit}>
-          <AngleView v={s.v} b={s.b} stroke={s.stroke} sw={s.sw} showDeg={s.showDeg} selected={selected} />
+          <AngleView v={s.v} b1={s.b1} b2={s.b2} stroke={s.stroke} sw={s.sw} showDeg={s.showDeg} selected={selected} />
         </g>
       );
     }
@@ -652,23 +838,52 @@ function renderShape(s: Shape, selected: boolean, onDown: (e: React.PointerEvent
   }
 }
 
-/** Vue d'un angle : sommet + bras horizontal + arc + degrés (le 2e bras est vertical par défaut). */
-function AngleView({ v, b, stroke, sw, showDeg, selected }: { v: Pt; b: Pt; stroke: string; sw: number; showDeg: boolean; selected: boolean }) {
-  const a2 = { x: v.x, y: v.y - (b.x - v.x) };
-  const deg = angleDeg(v, b, a2);
-  const r = Math.min(30, dist(v, b) * 0.35);
-  const start = 0;
-  const end = -deg;
-  const largeArc = 0;
-  const arcEnd = { x: v.x + r * Math.cos((end * Math.PI) / 180), y: v.y + r * Math.sin((end * Math.PI) / 180) };
+/**
+ * ⭐ 2026-09-20 — Vue d'un angle : sommet + 2 bras + arc (ou petit carré pour
+ * l'angle droit) + mesure en degrés. L'angle est mesuré du bras 1 vers le
+ * bras 2 dans le sens trigonométrique → les angles RENTRANTS (> 180°) sont
+ * représentés par le grand arc.
+ */
+function AngleView({ v, b1, b2, stroke, sw, showDeg, selected }: { v: Pt; b1: Pt; b2: Pt; stroke: string; sw: number; showDeg: boolean; selected: boolean }) {
+  const deg = Math.round(angleCCW(v, b1, b2));
+  const L1 = dist(v, b1), L2 = dist(v, b2);
+  const r = Math.min(34, Math.max(16, Math.min(L1, L2) * 0.3));
+  const a1 = dirAngle(v, b1);
+  const isRight = Math.abs(deg - 90) <= 2;
+
+  // Arc du bras 1 vers le bras 2 (sens trigonométrique = sweep 0 en écran).
+  const arcStart = polar(v, a1, r);
+  const arcEnd = polar(v, a1 + deg, r);
+  const largeArc = deg > 180 ? 1 : 0;
+  const arcD = `M ${r2(arcStart.x)} ${r2(arcStart.y)} A ${r2(r)} ${r2(r)} 0 ${largeArc} 0 ${r2(arcEnd.x)} ${r2(arcEnd.y)}`;
+
+  // Petit carré conventionnel pour l'angle droit.
+  const u1 = { x: (b1.x - v.x) / (L1 || 1), y: (b1.y - v.y) / (L1 || 1) };
+  const u2 = { x: (b2.x - v.x) / (L2 || 1), y: (b2.y - v.y) / (L2 || 1) };
+  const s = 15;
+  const sq = [
+    { x: v.x + s * u1.x, y: v.y + s * u1.y },
+    { x: v.x + s * (u1.x + u2.x), y: v.y + s * (u1.y + u2.y) },
+    { x: v.x + s * u2.x, y: v.y + s * u2.y },
+  ];
+  const sqD = `M ${r2(sq[0].x)} ${r2(sq[0].y)} L ${r2(sq[1].x)} ${r2(sq[1].y)} L ${r2(sq[2].x)} ${r2(sq[2].y)}`;
+
+  // Étiquette de mesure au milieu de l'arc.
+  const mid = a1 + deg / 2;
+  const labelPos = polar(v, mid, r + 22);
+
   return (
     <>
-      {selected && <circle cx={v.x} cy={v.y} r={r + 12} fill="none" stroke="#0ea5e9" strokeWidth="1" strokeDasharray="4 3" />}
-      <line x1={v.x} y1={v.y} x2={b.x} y2={b.y} stroke={stroke} strokeWidth={sw} />
-      <line x1={v.x} y1={v.y} x2={a2.x} y2={a2.y} stroke={stroke} strokeWidth={sw} />
-      <path d={`M ${v.x + r} ${v.y} A ${r} ${r} 0 ${largeArc} 0 ${arcEnd.x} ${arcEnd.y}`} fill="none" stroke="#dc2626" strokeWidth="2" />
+      {selected && <circle cx={v.x} cy={v.y} r={Math.max(r, 18) + 12} fill="none" stroke="#0ea5e9" strokeWidth="1" strokeDasharray="4 3" />}
+      <line x1={v.x} y1={v.y} x2={b1.x} y2={b1.y} stroke={stroke} strokeWidth={sw} />
+      <line x1={v.x} y1={v.y} x2={b2.x} y2={b2.y} stroke={stroke} strokeWidth={sw} />
+      {deg > 0 && deg < 360 && (
+        isRight
+          ? <path d={sqD} fill="none" stroke="#dc2626" strokeWidth="2" />
+          : <path d={arcD} fill="none" stroke="#dc2626" strokeWidth="2" />
+      )}
       {showDeg && (
-        <text x={v.x + r + 14} y={v.y - r - 2} fontSize="13" fill="#dc2626" fontFamily="Arial" fontWeight="bold">
+        <text x={r2(labelPos.x)} y={r2(labelPos.y)} fontSize="13" fill="#dc2626" fontFamily="Arial" fontWeight="bold" textAnchor="middle" dominantBaseline="middle">
           {deg}°
         </text>
       )}
@@ -707,15 +922,39 @@ function shapeToSvg(s: Shape): string {
         `<polygon points="${r2(s.x2)},${r2(s.y2)} ${w1} ${w2}" fill="${s.stroke}"/>`;
     }
     case "angle": {
-      const a2 = { x: s.v.x, y: s.v.y - (s.b.x - s.v.x) };
-      const deg = angleDeg(s.v, s.b, a2);
-      const rr = Math.min(30, dist(s.v, s.b) * 0.35);
-      const arcEnd = { x: s.v.x + rr * Math.cos((-deg * Math.PI) / 180), y: s.v.y + rr * Math.sin((-deg * Math.PI) / 180) };
-      return `<line x1="${r2(s.v.x)}" y1="${r2(s.v.y)}" x2="${r2(s.b.x)}" y2="${r2(s.b.y)}" stroke="${s.stroke}" stroke-width="${s.sw}"/>` +
-        `<line x1="${r2(s.v.x)}" y1="${r2(s.v.y)}" x2="${r2(a2.x)}" y2="${r2(a2.y)}" stroke="${s.stroke}" stroke-width="${s.sw}"/>` +
-        `<path d="M ${r2(s.v.x + rr)} ${r2(s.v.y)} A ${r2(rr)} ${r2(rr)} 0 0 0 ${r2(arcEnd.x)} ${r2(arcEnd.y)}" fill="none" stroke="#dc2626" stroke-width="2"/>` +
-        (s.showDeg ? `<text x="${r2(s.v.x + rr + 14)}" y="${r2(s.v.y - rr - 2)}" font-size="13" font-weight="bold" fill="#dc2626" font-family="Arial">${deg}°</text>` : "") +
+      // ⭐ 2026-09-20 — sérialisation du nouvel angle (2 bras, toutes mesures,
+      // petit carré pour l'angle droit, arc pour les autres — y compris
+      // rentrants avec large-arc).
+      const deg = Math.round(angleCCW(s.v, s.b1, s.b2));
+      const L1 = dist(s.v, s.b1), L2 = dist(s.v, s.b2);
+      const rr = Math.min(34, Math.max(16, Math.min(L1, L2) * 0.3));
+      const a1 = dirAngle(s.v, s.b1);
+      const isRight = Math.abs(deg - 90) <= 2;
+      const arcStart = polar(s.v, a1, rr);
+      const arcEnd = polar(s.v, a1 + deg, rr);
+      const largeArc = deg > 180 ? 1 : 0;
+      const u1 = { x: (s.b1.x - s.v.x) / (L1 || 1), y: (s.b1.y - s.v.y) / (L1 || 1) };
+      const u2 = { x: (s.b2.x - s.v.x) / (L2 || 1), y: (s.b2.y - s.v.y) / (L2 || 1) };
+      const cs = 15;
+      const sq0 = { x: s.v.x + cs * u1.x, y: s.v.y + cs * u1.y };
+      const sq1 = { x: s.v.x + cs * (u1.x + u2.x), y: s.v.y + cs * (u1.y + u2.y) };
+      const sq2 = { x: s.v.x + cs * u2.x, y: s.v.y + cs * u2.y };
+      const codage = deg > 0 && deg < 360
+        ? (isRight
+          ? `<path d="M ${r2(sq0.x)} ${r2(sq0.y)} L ${r2(sq1.x)} ${r2(sq1.y)} L ${r2(sq2.x)} ${r2(sq2.y)}" fill="none" stroke="#dc2626" stroke-width="2"/>`
+          : `<path d="M ${r2(arcStart.x)} ${r2(arcStart.y)} A ${r2(rr)} ${r2(rr)} 0 ${largeArc} 0 ${r2(arcEnd.x)} ${r2(arcEnd.y)}" fill="none" stroke="#dc2626" stroke-width="2"/>`)
+        : "";
+      const mid = a1 + deg / 2;
+      const labelPos = polar(s.v, mid, rr + 22);
+      return `<line x1="${r2(s.v.x)}" y1="${r2(s.v.y)}" x2="${r2(s.b1.x)}" y2="${r2(s.b1.y)}" stroke="${s.stroke}" stroke-width="${s.sw}"/>` +
+        `<line x1="${r2(s.v.x)}" y1="${r2(s.v.y)}" x2="${r2(s.b2.x)}" y2="${r2(s.b2.y)}" stroke="${s.stroke}" stroke-width="${s.sw}"/>` +
+        codage +
+        (s.showDeg ? `<text x="${r2(labelPos.x)}" y="${r2(labelPos.y)}" text-anchor="middle" dominant-baseline="middle" font-size="13" font-weight="bold" fill="#dc2626" font-family="Arial">${deg}°</text>` : "") +
         `<circle cx="${r2(s.v.x)}" cy="${r2(s.v.y)}" r="3" fill="${s.stroke}"/>`;
+    }
+    case "poly": {
+      const pts = s.pts.map((p) => `${r2(p.x)},${r2(p.y)}`).join(" ");
+      return `<polygon points="${pts}" fill="${s.fill || "none"}" stroke="${s.stroke}" stroke-width="${s.sw}"${s.dashed ? ' stroke-dasharray="6 4"' : ""}/>`;
     }
     case "polygon": {
       const pts = polygonPts(s.cx, s.cy, s.r, s.sides, s.rot).map((p) => `${r2(p.x)},${r2(p.y)}`).join(" ");

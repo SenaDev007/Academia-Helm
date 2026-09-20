@@ -14,8 +14,13 @@
  *   2. PROPORTIONNALITÉ     — 2 lignes reliées par un coefficient (× k),
  *      calcul automatique ou cases vides (exercice à compléter)
  *   3. TABLE DE PYTHAGORE   — table de multiplication (5/10/12), remplie ou vide
- *   4. CONVERSIONS          — tableau de conversion des unités (longueurs,
- *      masses, capacités) avec rangées vides pour poser les chiffres
+ *   4. CONVERSIONS          — ⭐ 2026-09-20 : COMPLET CE1 → CM2 via le module
+ *      src/lib/conversion-tables.ts : longueurs (CE1 m→mm / complète km→mm),
+ *      masses (kg→g, kg→mg, AVEC TONNE ET QUINTAL), capacités (L→mL, kL→mL
+ *      + correspondances L↔dm³), aires (km²→mm² + ha/a/ca), volumes
+ *      (m³→cm³, km³→mm³), durées (équivalences), monnaie (€/centimes),
+ *      tableau récapitulatif des correspondances ENTRE grandeurs (masse ↔
+ *      capacité : 1 L d'eau ≈ 1 kg…) + méthode de conversion.
  *
  * Insertion en TABLE HTML (styles inline) : identique à l'écran et dans les
  * exports PDF (sanitizeRichHtml conserve les tableaux).
@@ -25,6 +30,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { X, Table2, Check, Plus, Trash2, Percent, Grid2x2, Repeat, Ruler } from "lucide-react";
 import { toast } from "sonner";
+import {
+  CONV_GROUPS, convDefsByGroup, convDefById, buildConversionHtml,
+  type ConvDef, type ConvGroup,
+} from "@/lib/conversion-tables";
 
 const esc = (s: string) =>
   String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -69,10 +78,16 @@ export function TableDialog({ open, onClose, onInsertHtml }: TableDialogProps) {
   const [pythSize, setPythSize] = useState(10);
   const [pythFilled, setPythFilled] = useState(true);
 
-  /* ── état conversions ── */
-  const [convKind, setConvKind] = useState<"longueurs" | "masses" | "capacites">("longueurs");
+  /* ── état conversions (⭐ 2026-09-20 : complet CE1 → CM2) ── */
+  const [convGroup, setConvGroup] = useState<ConvGroup>("Longueurs");
+  const [convDefId, setConvDefId] = useState<string>("longueurs");
   const [convRows, setConvRows] = useState(2);
-  const [convExample, setConvExample] = useState(false);
+  const [convExample, setConvExample] = useState(true);
+  const [convNote, setConvNote] = useState(true);
+
+  const convDefs = useMemo(() => convDefsByGroup(convGroup), [convGroup]);
+  const convDef: ConvDef | undefined =
+    useMemo(() => convDefById(convDefId) || convDefs[0], [convDefId, convDefs]);
 
   useEffect(() => {
     if (!open) return;
@@ -139,38 +154,14 @@ export function TableDialog({ open, onClose, onInsertHtml }: TableDialogProps) {
     return `<table class="ah-table" contenteditable="false" data-table="pythagore" style="${TABLE_STYLE}${n > 8 ? "font-size:11px;" : ""}${n > 8 ? "min-width:480px;" : ""}">${head}${body.join("")}</table><p>&nbsp;</p>`;
   }, [pythSize, pythFilled]);
 
-  const CONV_UNITS: Record<string, string[]> = {
-    longueurs: ["km", "hm", "dam", "m", "dm", "cm", "mm"],
-    masses: ["kg", "hg", "dag", "g", "dg", "cg", "mg"],
-    capacites: ["hL", "daL", "L", "dL", "cL", "mL"],
-  };
-
   const convHtml = useMemo(() => {
-    const units = CONV_UNITS[convKind];
-    const head = `<tr>` +
-      units.map((u, i) =>
-        `<td style="${TD_HEAD}${i === units.findIndex((x) => x === "m" || x === "g" || x === "L") ? "background:#dbeafe;border:2px solid #3b82f6;" : ""}">${u}</td>`,
-      ).join("") + `</tr>`;
-    const body: string[] = [];
-    for (let r = 0; r < convRows; r++) {
-      let cellsRow = units.map((_, i) => {
-        const digit = convExample && r === 0 ? exampleDigits(units.length, i) : "";
-        return `<td style="${TD}height:26px;">${digit}</td>`;
-      }).join("");
-      body.push(`<tr>${cellsRow}</tr>`);
-    }
-    return `<table class="ah-table" contenteditable="false" data-table="conversion" style="${TABLE_STYLE}">${head}${body.join("")}</table><p>&nbsp;</p>`;
-  }, [convKind, convRows, convExample]);
-
-  /** Chiffres d'exemple pour le tableau de conversion (12,5 m → dam m dm…). */
-  function exampleDigits(n: number, col: number): string {
-    // exemple « 12,5 m » : 1 en dam, 2 en m, 5 en dm (unité de base au milieu)
-    const base = Math.floor(n / 2); // colonne de l'unité de base (m, g, L)
-    if (col === base - 1) return "1";
-    if (col === base) return "2";
-    if (col === base + 1) return "5";
-    return "";
-  }
+    if (!convDef) return "";
+    return buildConversionHtml(convDef, {
+      rows: convRows,
+      showExample: convExample,
+      showNote: convNote,
+    });
+  }, [convDef, convRows, convExample, convNote]);
 
   if (!open) return null;
 
@@ -363,31 +354,67 @@ export function TableDialog({ open, onClose, onInsertHtml }: TableDialogProps) {
               {tab === "conversion" && (
                 <>
                   <div className="text-[11px] text-slate-500 leading-relaxed bg-indigo-50/60 border border-indigo-100 rounded-lg p-2">
-                    Tableau de conversion : l&apos;unité de base (m, g, L) est mise en évidence.
-                    Posez les chiffres dans les colonnes pour convertir.
+                    Tableaux de conversion COMPLETS du CE1 au CM2 : longueurs, masses
+                    (avec <b>tonne et quintal</b>), capacités, aires, volumes, durées, monnaie
+                    — et le tableau des <b>correspondances</b> entre grandeurs (1 L = 1 dm³,
+                    1 L d&apos;eau ≈ 1 kg…). L&apos;unité de base est mise en évidence.
                   </div>
                   <label className="block text-[10px] font-bold text-slate-600">
                     Grandeur
-                    <select value={convKind}
-                      onChange={(e) => setConvKind(e.target.value as typeof convKind)}
+                    <select value={convGroup}
+                      onChange={(e) => {
+                        const g = e.target.value as ConvGroup;
+                        setConvGroup(g);
+                        const first = convDefsByGroup(g)[0];
+                        if (first) setConvDefId(first.id);
+                      }}
                       className="w-full mt-0.5 px-2 py-1.5 text-xs border border-slate-200 rounded-md bg-white">
-                      <option value="longueurs">Longueurs (km → mm)</option>
-                      <option value="masses">Masses (kg → mg)</option>
-                      <option value="capacites">Capacités (hL → mL)</option>
+                      {CONV_GROUPS.map((g) => (
+                        <option key={g} value={g}>{g}</option>
+                      ))}
                     </select>
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="text-[10px] font-bold text-slate-600">
-                      Rangées vides
-                      <input type="number" min={1} max={6} value={convRows}
-                        onChange={(e) => setConvRows(Math.max(1, Math.min(6, Number(e.target.value) || 2)))}
-                        className="w-full mt-0.5 px-2 py-1 text-xs border border-slate-200 rounded-md" />
+                  <label className="block text-[10px] font-bold text-slate-600">
+                    Type de tableau (niveau)
+                    <select value={convDef?.id ?? ""}
+                      onChange={(e) => setConvDefId(e.target.value)}
+                      className="w-full mt-0.5 px-2 py-1.5 text-xs border border-slate-200 rounded-md bg-white">
+                      {convDefs.map((d) => (
+                        <option key={d.id} value={d.id}>{d.variant}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {convDef && (
+                    <div className="text-[10.5px] text-slate-500 leading-relaxed bg-slate-50 border border-slate-200 rounded-lg p-2">
+                      <b className="text-slate-600">{convDef.level}</b> — {convDef.desc}
+                    </div>
+                  )}
+                  {convDef?.columns && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="text-[10px] font-bold text-slate-600">
+                        Rangées vides
+                        <input type="number" min={1} max={6} value={convRows}
+                          onChange={(e) => setConvRows(Math.max(1, Math.min(6, Number(e.target.value) || 2)))}
+                          className="w-full mt-0.5 px-2 py-1 text-xs border border-slate-200 rounded-md" />
+                      </label>
+                      <label className="flex items-end gap-2 pb-1 text-[11px] font-semibold text-slate-600 cursor-pointer">
+                        <input type="checkbox" checked={convExample} onChange={(e) => setConvExample(e.target.checked)} className="accent-indigo-600 mb-1" />
+                        Exemple chiffré
+                      </label>
+                    </div>
+                  )}
+                  {convDef?.example && (
+                    <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600 cursor-pointer">
+                      <input type="checkbox" checked={convNote} onChange={(e) => setConvNote(e.target.checked)} className="accent-indigo-600" />
+                      Équivalences + méthode sous le tableau
                     </label>
-                    <label className="flex items-end gap-2 pb-1 text-[11px] font-semibold text-slate-600 cursor-pointer">
-                      <input type="checkbox" checked={convExample} onChange={(e) => setConvExample(e.target.checked)} className="accent-indigo-600 mb-1" />
-                      Exemple (12,5 …)
+                  )}
+                  {convDef && !convDef.example && convDef.note && (
+                    <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-600 cursor-pointer">
+                      <input type="checkbox" checked={convNote} onChange={(e) => setConvNote(e.target.checked)} className="accent-indigo-600" />
+                      Note / méthode sous le tableau
                     </label>
-                  </div>
+                  )}
                 </>
               )}
             </div>
@@ -410,7 +437,7 @@ export function TableDialog({ open, onClose, onInsertHtml }: TableDialogProps) {
         {/* Pied */}
         <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-slate-50">
           <span className="text-[11px] text-slate-500 flex items-center gap-1">
-            <Percent className="h-3 w-3" /> {tab === "proportionnalite" ? `coefficient × ${coef}` : tab === "pythagore" ? `${pythSize} × ${pythSize}` : tab === "conversion" ? CONV_UNITS[convKind].join(" · ") : `${rows} × ${cols}`}
+            <Percent className="h-3 w-3" /> {tab === "proportionnalite" ? `coefficient × ${coef}` : tab === "pythagore" ? `${pythSize} × ${pythSize}` : tab === "conversion" ? (convDef ? `${convDef.variant}` : "") : `${rows} × ${cols}`}
           </span>
           <div className="flex gap-2">
             <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-200">

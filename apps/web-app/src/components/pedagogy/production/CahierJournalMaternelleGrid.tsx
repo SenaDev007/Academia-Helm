@@ -279,6 +279,7 @@ function JournalPage({
                           value={readEntry(day.key, colLabel)}
                           onChange={html => updateEntry(day.key, writeKey, html)}
                           disabled={isReadOnly}
+                          enableMedia={!isReadOnly}
                           placeholder="—"
                           minHeight="110px"
                         />

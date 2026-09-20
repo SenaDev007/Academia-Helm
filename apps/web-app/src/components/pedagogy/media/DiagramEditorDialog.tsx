@@ -24,7 +24,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   X, MousePointer2, Circle, Square, Triangle, Minus, ArrowRight,
-  DraftingCompass, Type, Pencil, Trash2, Palette, Check, Wand2,
+  DraftingCompass, Type, Pencil, Trash2, Palette, Check, Wand2, Hexagon, Spline,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -36,13 +36,15 @@ type Shape =
   | { id: number; type: "circle"; cx: number; cy: number; r: number; stroke: string; sw: number; label?: string }
   | { id: number; type: "rect"; x: number; y: number; w: number; h: number; stroke: string; sw: number; label?: string }
   | { id: number; type: "triangle"; p1: Pt; p2: Pt; p3: Pt; stroke: string; sw: number; labels?: [string, string, string] }
+  | { id: number; type: "polygon"; cx: number; cy: number; r: number; sides: number; rot: number; stroke: string; sw: number; dashed?: boolean }
+  | { id: number; type: "arc"; cx: number; cy: number; r: number; a1: number; a2: number; stroke: string; sw: number }
   | { id: number; type: "line"; x1: number; y1: number; x2: number; y2: number; stroke: string; sw: number; dashed?: boolean }
   | { id: number; type: "arrow"; x1: number; y1: number; x2: number; y2: number; stroke: string; sw: number }
   | { id: number; type: "angle"; v: Pt; b: Pt; stroke: string; sw: number; showDeg: boolean }
   | { id: number; type: "text"; x: number; y: number; label: string; size: number; color: string }
   | { id: number; type: "free"; pts: Pt[]; stroke: string; sw: number };
 
-type Tool = "select" | "circle" | "rect" | "triangle" | "line" | "arrow" | "angle" | "text" | "free";
+type Tool = "select" | "circle" | "rect" | "triangle" | "polygon" | "arc" | "line" | "arrow" | "angle" | "text" | "free";
 
 const COLORS = ["#1d4ed8", "#dc2626", "#16a34a", "#7c3aed", "#0f172a"];
 let nextId = 1;
@@ -68,6 +70,7 @@ export function DiagramEditorDialog({ open, onClose, onInsertHtml }: DiagramEdit
   const [tool, setTool] = useState<Tool>("circle");
   const [color, setColor] = useState(COLORS[0]);
   const [sw, setSw] = useState(2.5);
+  const [polySides, setPolySides] = useState(6);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [draft, setDraft] = useState<Shape | null>(null);
   const [freePts, setFreePts] = useState<Pt[]>([]);
@@ -123,7 +126,7 @@ export function DiagramEditorDialog({ open, onClose, onInsertHtml }: DiagramEdit
     const st = drawStart.current;
     if (!st) return;
     if (tool === "free") { setFreePts((pts) => [...pts, p]); return; }
-    setDraft(buildShape(tool, st, p, color, sw));
+    setDraft(buildShape(tool, st, p, color, sw, polySides));
   };
 
   const onPointerUpCanvas = () => {
@@ -216,6 +219,32 @@ ${body}
         { id: nextId++, type: "rect", x: cx - 80, y: cy - 80, w: 160, h: 160, stroke: c, sw, label: "" },
         { id: nextId++, type: "text", x: cx - 10, y: cy - 92, label: "c", size: 14, color: "#dc2626" },
       ]);
+    } else if (name === "pentagone") {
+      setShapes((s) => [...s, { id: nextId++, type: "polygon", cx: cx - 40, cy, r: 85, sides: 5, rot: -90, stroke: c, sw }]);
+    } else if (name === "hexagone") {
+      setShapes((s) => [...s, { id: nextId++, type: "polygon", cx: cx - 40, cy, r: 80, sides: 6, rot: 0, stroke: c, sw }]);
+    } else if (name === "octogone") {
+      setShapes((s) => [...s, { id: nextId++, type: "polygon", cx: cx - 40, cy, r: 80, sides: 8, rot: 22.5, stroke: c, sw }]);
+    } else if (name === "losange") {
+      setShapes((s) => [
+        ...s,
+        { id: nextId++, type: "polygon", cx: cx - 40, cy, r: 90, sides: 4, rot: -90, stroke: c, sw },
+        { id: nextId++, type: "line", x1: cx - 130, y1: cy, x2: cx + 50, y2: cy, stroke: "#94a3b8", sw: 1.5, dashed: true },
+        { id: nextId++, type: "line", x1: cx - 40, y1: cy - 90, x2: cx - 40, y2: cy + 90, stroke: "#94a3b8", sw: 1.5, dashed: true },
+      ]);
+    } else if (name === "paralleles") {
+      setShapes((s) => [
+        ...s,
+        { id: nextId++, type: "line", x1: cx - 140, y1: cy - 45, x2: cx + 60, y2: cy - 45, stroke: c, sw },
+        { id: nextId++, type: "line", x1: cx - 140, y1: cy + 45, x2: cx + 60, y2: cy + 45, stroke: c, sw },
+      ]);
+    } else if (name === "perpendiculaires") {
+      setShapes((s) => [
+        ...s,
+        { id: nextId++, type: "line", x1: cx - 140, y1: cy + 40, x2: cx + 60, y2: cy + 40, stroke: c, sw },
+        { id: nextId++, type: "line", x1: cx - 40, y1: cy - 110, x2: cx - 40, y2: cy + 110, stroke: c, sw },
+        { id: nextId++, type: "rect", x: cx - 40, y: cy + 18, w: 22, h: 22, stroke: c, sw: 1.6 },
+      ]);
     } else if (name === "graduee") {
       const items: Shape[] = [
         { id: nextId++, type: "line", x1: cx - 220, y1: cy, x2: cx + 220, y2: cy, stroke: c, sw: 2 },
@@ -238,6 +267,8 @@ ${body}
     ["circle", "Cercle", Circle],
     ["rect", "Rectangle / carré", Square],
     ["triangle", "Triangle", Triangle],
+    ["polygon", "Polygone régulier (n côtés)", Hexagon],
+    ["arc", "Arc de cercle", Spline],
     ["line", "Segment / droite", Minus],
     ["arrow", "Flèche", ArrowRight],
     ["angle", "Angle (avec mesure)", DraftingCompass],
@@ -303,6 +334,23 @@ ${body}
               {wv}
             </button>
           ))}
+          {/* Nombre de côtés du polygone */}
+          {tool === "polygon" && (
+            <div className="flex items-center gap-1 ml-1">
+              <span className="text-[10px] font-bold text-slate-500">côtés</span>
+              {[3, 4, 5, 6, 8, 10, 12].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setPolySides(n)}
+                  className={`px-1.5 py-1 rounded-lg text-[10px] font-bold border ${
+                    polySides === n ? "bg-purple-600 text-white border-purple-600" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="w-px h-6 bg-slate-200 mx-1" />
           <button
             onClick={() => { setShapes((s) => s.filter((x) => x.id !== selectedId)); setSelectedId(null); }}
@@ -333,6 +381,12 @@ ${body}
             ["angledroit", "Angle droit"],
             ["rectangle", "Rectangle L × l"],
             ["carre", "Carré c"],
+            ["pentagone", "Pentagone"],
+            ["hexagone", "Hexagone"],
+            ["octogone", "Octogone"],
+            ["losange", "Losange + diagonales"],
+            ["paralleles", "Parallèles"],
+            ["perpendiculaires", "Perpendiculaires"],
             ["graduee", "Droite graduée"],
           ].map(([k, label]) => (
             <button key={k} onClick={() => applyPreset(k)} className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-white border border-purple-200 text-purple-700 hover:bg-purple-100">
@@ -390,7 +444,25 @@ ${body}
 
 /* ═══════════════════ Helpers formes ═══════════════════ */
 
-function buildShape(tool: Tool, st: Pt, p: Pt, color: string, sw: number): Shape | null {
+/** Sommets d'un polygone régulier (angles en degrés, convention math). */
+function polygonPts(cx: number, cy: number, r: number, sides: number, rot: number): Pt[] {
+  return Array.from({ length: sides }, (_, i) => {
+    const a = ((rot + (360 / sides) * i) * Math.PI) / 180;
+    return { x: cx + r * Math.cos(a), y: cy - r * Math.sin(a) };
+  });
+}
+
+function arcD(cx: number, cy: number, r: number, a1: number, a2: number): string {
+  const p = (deg: number) => {
+    const a = (deg * Math.PI) / 180;
+    return { x: cx + r * Math.cos(a), y: cy - r * Math.sin(a) };
+  };
+  const p1 = p(a1), p2 = p(a2);
+  const large = Math.abs(a2 - a1) > 180 ? 1 : 0;
+  return `M ${r2(p1.x)} ${r2(p1.y)} A ${r2(r)} ${r2(r)} 0 ${large} 0 ${r2(p2.x)} ${r2(p2.y)}`;
+}
+
+function buildShape(tool: Tool, st: Pt, p: Pt, color: string, sw: number, polySides: number): Shape | null {
   const base = { id: -1, stroke: color, sw };
   switch (tool) {
     case "circle": {
@@ -410,6 +482,20 @@ function buildShape(tool: Tool, st: Pt, p: Pt, color: string, sw: number): Shape
       return { ...base, type: "line", x1: st.x, y1: st.y, x2: p.x, y2: p.y };
     case "arrow":
       return { ...base, type: "arrow", x1: st.x, y1: st.y, x2: p.x, y2: p.y };
+    case "polygon": {
+      // centre = point de départ, rayon = distance, rotation vers le curseur
+      const r = dist(st, p);
+      const rot = (Math.atan2(-(p.y - st.y), p.x - st.x) * 180) / Math.PI;
+      return { ...base, type: "polygon", cx: st.x, cy: st.y, r, sides: polySides, rot };
+    }
+    case "arc": {
+      // centre = point de départ ; l'arc va de l'angle horizontal vers le curseur
+      const r = dist(st, p);
+      const a = (Math.atan2(-(p.y - st.y), p.x - st.x) * 180) / Math.PI;
+      const a1 = Math.min(0, a);
+      const a2 = Math.max(0, a);
+      return { ...base, type: "arc", cx: st.x, cy: st.y, r, a1, a2 };
+    }
     case "angle": {
       // Sommet = point de départ ; 1er bras horizontal, 2e bras vers le curseur
       return { ...base, type: "angle", v: st, b: { x: st.x + Math.max(60, Math.abs(p.x - st.x)), y: st.y }, showDeg: true };
@@ -424,6 +510,8 @@ function sizeOf(s: Shape): number {
     case "circle": return s.r * 2;
     case "rect": return Math.max(s.w, s.h);
     case "triangle": return Math.max(dist(s.p1, s.p2), dist(s.p2, s.p3));
+    case "polygon": return s.r * 2;
+    case "arc": return s.r;
     case "line": case "arrow": return Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
     case "angle": return dist(s.v, s.b);
     case "text": return 999;
@@ -436,6 +524,8 @@ function translate(s: Shape, dx: number, dy: number): Shape {
     case "circle": return { ...s, cx: s.cx + dx, cy: s.cy + dy };
     case "rect": return { ...s, x: s.x + dx, y: s.y + dy };
     case "triangle": return { ...s, p1: mv(s.p1, dx, dy), p2: mv(s.p2, dx, dy), p3: mv(s.p3, dx, dy) };
+    case "polygon": return { ...s, cx: s.cx + dx, cy: s.cy + dy };
+    case "arc": return { ...s, cx: s.cx + dx, cy: s.cy + dy };
     case "line": case "arrow": return { ...s, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy };
     case "angle": return { ...s, v: mv(s.v, dx, dy), b: mv(s.b, dx, dy) };
     case "text": return { ...s, x: s.x + dx, y: s.y + dy };
@@ -484,6 +574,25 @@ function renderShape(s: Shape, selected: boolean, onDown: (e: React.PointerEvent
             ][i];
             return <text key={i} x={p.x + off.x} y={p.y + off.y} fontSize="15" fill={s.stroke} fontFamily="Arial" fontWeight="bold">{l}</text>;
           })}
+        </g>
+      );
+    }
+    case "polygon": {
+      const pts = polygonPts(s.cx, s.cy, s.r, s.sides, s.rot).map((p) => `${r2(p.x)},${r2(p.y)}`).join(" ");
+      return (
+        <g key={key} {...hit}>
+          {selected && <circle cx={s.cx} cy={s.cy} r={s.r + 6} fill="none" stroke={sel} strokeWidth="1" strokeDasharray="4 3" />}
+          <polygon points={pts} fill="none" stroke={s.stroke} strokeWidth={s.sw} />
+        </g>
+      );
+    }
+    case "arc": {
+      const d = arcD(s.cx, s.cy, s.r, s.a1, s.a2);
+      return (
+        <g key={key} {...hit}>
+          {selected && <circle cx={s.cx} cy={s.cy} r={s.r + 6} fill="none" stroke={sel} strokeWidth="1" strokeDasharray="4 3" />}
+          <path d={d} fill="none" stroke={s.stroke} strokeWidth={s.sw} strokeLinecap="round" />
+          <circle cx={s.cx} cy={s.cy} r="2.5" fill={s.stroke} />
         </g>
       );
     }
@@ -607,6 +716,14 @@ function shapeToSvg(s: Shape): string {
         `<path d="M ${r2(s.v.x + rr)} ${r2(s.v.y)} A ${r2(rr)} ${r2(rr)} 0 0 0 ${r2(arcEnd.x)} ${r2(arcEnd.y)}" fill="none" stroke="#dc2626" stroke-width="2"/>` +
         (s.showDeg ? `<text x="${r2(s.v.x + rr + 14)}" y="${r2(s.v.y - rr - 2)}" font-size="13" font-weight="bold" fill="#dc2626" font-family="Arial">${deg}°</text>` : "") +
         `<circle cx="${r2(s.v.x)}" cy="${r2(s.v.y)}" r="3" fill="${s.stroke}"/>`;
+    }
+    case "polygon": {
+      const pts = polygonPts(s.cx, s.cy, s.r, s.sides, s.rot).map((p) => `${r2(p.x)},${r2(p.y)}`).join(" ");
+      return `<polygon points="${pts}" fill="none" stroke="${s.stroke}" stroke-width="${s.sw}"/>`;
+    }
+    case "arc": {
+      return `<path d="${arcD(s.cx, s.cy, s.r, s.a1, s.a2)}" fill="none" stroke="${s.stroke}" stroke-width="${s.sw}" stroke-linecap="round"/>` +
+        `<circle cx="${r2(s.cx)}" cy="${r2(s.cy)}" r="2.5" fill="${s.stroke}"/>`;
     }
     case "text":
       return `<text x="${r2(s.x)}" y="${r2(s.y)}" font-size="${s.size}" fill="${s.color}" font-family="Arial" font-weight="600">${esc(s.label)}</text>`;

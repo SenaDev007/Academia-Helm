@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import {
   PEDAGOGY_ASSET_CATEGORIES,
+  PEDAGOGY_PHOTO_COUNT,
   searchPedagogyAssets,
   type PedagogyAssetItem,
 } from "@/lib/pedagogy-assets";
@@ -101,9 +102,20 @@ export function ImageLibraryDialog({ open, onClose, onInsertHtml }: ImageLibrary
 
   if (!open) return null;
 
-  // ── Insertion d'un SVG de la bibliothèque (fetch + inline) ──
+  // ── Insertion d'un élément de la bibliothèque ──
+  //    photo réaliste → <img> avec URL ABSOLUE (rendu écran + PDF Puppeteer)
+  //    illustration SVG → fetch + SVG INLINE (vectoriel, hors-ligne)
   const insertPackAsset = async (asset: PedagogyAssetItem) => {
     try {
+      if (asset.kind === "photo") {
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        const abs = `${origin}${asset.file}`;
+        const safe = escapeAttr(asset.label);
+        onInsertHtml(`<img src="${escapeAttr(abs)}" alt="${safe}" style="max-width:100%;height:auto;border-radius:4px;" />&nbsp;`);
+        setInsertedSlug(asset.slug);
+        setTimeout(() => { setInsertedSlug(null); onClose(); }, 450);
+        return;
+      }
       const res = await fetch(asset.file);
       if (!res.ok) throw new Error("Illustration introuvable");
       const text = await res.text();
@@ -279,7 +291,9 @@ export function ImageLibraryDialog({ open, onClose, onInsertHtml }: ImageLibrary
                       {insertedSlug === a.slug ? (
                         <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                       ) : (
-                        <span className="text-[9px] text-blue-600 opacity-0 group-hover:opacity-100 font-bold shrink-0">Insérer</span>
+                        <span className={`text-[8px] px-1 py-0.5 rounded shrink-0 font-bold ${a.kind === "photo" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
+                          {a.kind === "photo" ? "réaliste" : "vectoriel"}
+                        </span>
                       )}
                     </div>
                   </button>
@@ -291,10 +305,10 @@ export function ImageLibraryDialog({ open, onClose, onInsertHtml }: ImageLibrary
                 )}
               </div>
               <p className="text-[10px] text-slate-400 leading-relaxed">
-                Ces {PEDAGOGY_ASSET_CATEGORIES.reduce((n, c) => n + c.items.length, 0)} illustrations
-                couvrent l&apos;anatomie (appareil digestif, muscles…), la biologie, la géologie
-                (cycle de l&apos;eau, volcan…), les mathématiques (figures, solides) et la physique (EST).
-                Elles s&apos;insèrent vectoriellement : nettes à l&apos;écran et dans les PDF.
+                {PEDAGOGY_PHOTO_COUNT} images <b>réalistes</b> (schémas anatomiques professionnels,
+                photographies d'animaux — VALIDÉES visuellement) + illustrations vectorielles pour
+                les maths, la physique et la géographie. Les images réalistes s'insèrent en photo
+                (nettes à l'écran et dans les PDF), les schémas en vectoriel.
               </p>
             </div>
           )}

@@ -42,11 +42,14 @@ import { useRef, useEffect, useCallback, useState } from "react";
 import {
   Bold, Italic, Underline, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  Image as ImageIcon, DraftingCompass, Sigma,
+  Image as ImageIcon, DraftingCompass, Sigma, Shapes, LineChart, Table2,
 } from "lucide-react";
 import { ImageLibraryDialog } from "@/components/pedagogy/media/ImageLibraryDialog";
 import { DiagramEditorDialog } from "@/components/pedagogy/media/DiagramEditorDialog";
 import { MathPanel } from "@/components/pedagogy/media/MathPanel";
+import { FigureLibraryDialog } from "@/components/pedagogy/media/FigureLibraryDialog";
+import { GraphChartDialog } from "@/components/pedagogy/media/GraphChartDialog";
+import { TableDialog } from "@/components/pedagogy/media/TableDialog";
 
 /** Commandes suivies pour l'état actif (boutons « enfoncés »). */
 const TRACKED_COMMANDS = [
@@ -108,6 +111,10 @@ export function RichTextEditor({
   const [showImageDialog, setShowImageDialog] = useState(false);
   const [showDiagramDialog, setShowDiagramDialog] = useState(false);
   const [showMathPanel, setShowMathPanel] = useState(false);
+  // ⭐ V8 — Figures (catalogue), graphiques/diagrammes, tableaux
+  const [showFigureLibrary, setShowFigureLibrary] = useState(false);
+  const [showGraphChart, setShowGraphChart] = useState(false);
+  const [showTableDialog, setShowTableDialog] = useState(false);
 
   // Sync external value → editor (seulement si différent)
   useEffect(() => {
@@ -332,7 +339,7 @@ export function RichTextEditor({
           >
             <ListOrdered className="h-3 w-3" />
           </button>
-          {/* ⭐ V7 — Boutons média (fiches pédagogiques + cahier journal) */}
+          {/* ⭐ V7/V8 — Boutons média (fiches pédagogiques + cahier journal) */}
           {enableMedia && (
             <>
               <div className="w-px h-4 bg-slate-200 mx-0.5" />
@@ -341,18 +348,45 @@ export function RichTextEditor({
                 onMouseDown={(e) => { e.preventDefault(); }}
                 onClick={() => setShowImageDialog(true)}
                 className="p-1 hover:bg-blue-100 rounded text-blue-600 transition-colors"
-                title="Insérer une image (bibliothèque, appareil, URL)"
+                title="Insérer une image (bibliothèque réaliste, appareil, URL)"
               >
                 <ImageIcon className="h-3 w-3" />
               </button>
               <button
                 type="button"
                 onMouseDown={(e) => { e.preventDefault(); }}
+                onClick={() => setShowFigureLibrary(true)}
+                className="p-1 hover:bg-purple-100 rounded text-purple-600 transition-colors"
+                title="Figures de géométrie — catalogue complet maternelle → CM2 (triangles, polygones, solides, symétrie…)"
+              >
+                <Shapes className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); }}
                 onClick={() => setShowDiagramDialog(true)}
                 className="p-1 hover:bg-purple-100 rounded text-purple-600 transition-colors"
-                title="Dessiner une figure géométrique (cercle, triangle, angle…)"
+                title="Dessiner une figure librement (cercle, polygone, angle, main levée…)"
               >
                 <DraftingCompass className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); }}
+                onClick={() => setShowGraphChart(true)}
+                className="p-1 hover:bg-teal-100 rounded text-teal-600 transition-colors"
+                title="Graphiques & diagrammes : repère, proportionnalité, bâtons, circulaire, histogramme, courbe"
+              >
+                <LineChart className="h-3 w-3" />
+              </button>
+              <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); }}
+                onClick={() => setShowTableDialog(true)}
+                className="p-1 hover:bg-indigo-100 rounded text-indigo-600 transition-colors"
+                title="Tableau professionnel : simple, proportionnalité, table de Pythagore, conversions"
+              >
+                <Table2 className="h-3 w-3" />
               </button>
               <button
                 type="button"
@@ -386,7 +420,7 @@ export function RichTextEditor({
         suppressContentEditableWarning
       />
 
-      {/* ⭐ V7 — Dialogues média (rendus uniquement si ouverts) */}
+      {/* ⭐ V7/V8 — Dialogues média (rendus uniquement si ouverts) */}
       {enableMedia && (
         <>
           <ImageLibraryDialog
@@ -394,9 +428,24 @@ export function RichTextEditor({
             onClose={() => setShowImageDialog(false)}
             onInsertHtml={insertHtmlAtCursor}
           />
+          <FigureLibraryDialog
+            open={showFigureLibrary}
+            onClose={() => setShowFigureLibrary(false)}
+            onInsertHtml={insertHtmlAtCursor}
+          />
           <DiagramEditorDialog
             open={showDiagramDialog}
             onClose={() => setShowDiagramDialog(false)}
+            onInsertHtml={insertHtmlAtCursor}
+          />
+          <GraphChartDialog
+            open={showGraphChart}
+            onClose={() => setShowGraphChart(false)}
+            onInsertHtml={insertHtmlAtCursor}
+          />
+          <TableDialog
+            open={showTableDialog}
+            onClose={() => setShowTableDialog(false)}
             onInsertHtml={insertHtmlAtCursor}
           />
           <MathPanel

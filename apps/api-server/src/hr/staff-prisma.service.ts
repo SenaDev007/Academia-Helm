@@ -364,14 +364,21 @@ export class StaffPrismaService {
 
     // Ajouter staffCode et category aliases pour compatibilité frontend
     // Resolve photo URLs for R2/S3 storage (thumbnailUrl is a storage key, not a full URL)
-    return Promise.all(staff.map(async (s) => ({
-      ...s,
-      staffCode: s.employeeNumber,
-      category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === s.roleType)?.[0] || s.roleType,
-      photoUrl: s.photo?.thumbnailUrl
-        ? await this.storageService.resolveFileUrl(s.photo.thumbnailUrl)
-        : null,
-    })));
+    // ⭐ FIX PERF 2026-09-21 (suite) : l'objet `photo` brut est retiré de la
+    //    réponse — la vignette base64 était servie EN DOUBLE (photo.thumbnailUrl
+    //    + photoUrl mappé) alors qu'aucun composant ne lit `s.photo` depuis la
+    //    liste (tous utilisent photoUrl ; la fiche détaillée garde photo: true).
+    return Promise.all(staff.map(async (s) => {
+      const { photo, ...rest } = s as any;
+      return {
+        ...rest,
+        staffCode: s.employeeNumber,
+        category: Object.entries(CATEGORY_TO_ROLE).find(([, v]) => v === s.roleType)?.[0] || s.roleType,
+        photoUrl: photo?.thumbnailUrl
+          ? await this.storageService.resolveFileUrl(photo.thumbnailUrl)
+          : null,
+      };
+    }));
   }
 
   /**

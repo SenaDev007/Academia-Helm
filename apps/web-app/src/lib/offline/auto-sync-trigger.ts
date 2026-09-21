@@ -97,6 +97,14 @@ async function autoSync(tenantId: string): Promise<void> {
   isAutoSyncing = true;
 
   try {
+    // ⭐ RÉCUPÉRATION (idempotent) : les événements FAILED pour cause
+    //    transitoire (ancien bug — panne serveur comptée comme échec
+    //    définitif) repassent PENDING avant chaque tentative, couvrant aussi
+    //    le cas « app chargée hors ligne, réseau revenu ensuite ».
+    try {
+      await outboxService.requeueTransientlyFailedEvents(tenantId);
+    } catch { /* non-bloquant */ }
+
     // ─── 1. PUSH : envoyer l'outbox par lots ───
     //    ⭐ PASTILLE discrète — seulement s'il y a des modifications à envoyer.
     let initialPending = 0;
@@ -296,12 +304,21 @@ export function initAutoSyncTrigger(tenantId: string | undefined): void {
 
   // ⭐ Au montage : si déjà online et qu'il y a des events en attente, sync immédiat
   if (networkDetectionService.isConnected()) {
-    outboxService.getPendingCount().then((count) => {
-      if (count > 0) {
-        console.log(`[AutoSync] ${count} pending events on mount — triggering sync`);
-        setTimeout(() => autoSync(tenantId), 2000); // 2s après le mount
-      }
-    });
+    // ⭐ RÉCUPÉRATION d'abord : les événements marqués FAILED par l'ancien bug
+    //    (panne serveur comptée comme échec définitif) sont re-mis en file
+    //    PENDING — la modification « envoie 0 sur 1 mais rien » de l'utilisateur
+    //    repartira ainsi vers Neon dès le premier push de la session.
+    outboxService
+      .requeueTransientlyFailedEvents(tenantId)
+      .catch(() => { /* non-bloquant */ })
+      .then(() => outboxService.getPendingCount())
+      .then((count) => {
+        if (count > 0) {
+          console.log(`[AutoSync] ${count} pending events on mount — triggering sync`);
+          setTimeout(() => autoSync(tenantId), 2000); // 2s après le mount
+        }
+      })
+      .catch(() => { /* non-bloquant */ });
   }
 
   // ⭐ Background Sync API : si l'onglet est fermé, le SW prend le relais

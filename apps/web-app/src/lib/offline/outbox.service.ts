@@ -226,6 +226,65 @@ class OutboxService {
   }
 
   /**
+   * ⭐ RÉCUPÉRATION (2026-09-21) : re-passe en PENDING les événements marqués
+   * FAILED par l'ANCIEN bug de l'auto-sync (markAsFailed « Max retries
+   * exceeded » après un échec TRANSITOIRE : serveur injoignable / 5xx / panne
+   * réseau). Ces événements n'ont JAMAIS été refusés par le serveur — leur
+   * « échec » était purement infrastructurel. Ils doivent être rejoués vers
+   * Neon dès que le serveur est de retour, pas abandonnés (puis supprimés
+   * par clearStaleEvents).
+   *
+   * Critères stricts de re-file :
+   *  - status === 'FAILED' ;
+   *  - errorMessage correspond à une cause TRANSITOIRE connue (max retries
+   *    exceeded, 5xx, service indisponible, réseau…) — un refus MÉTIER
+   *    (validation 4xx du serveur) n'est JAMAIS re-filé ;
+   *  - événement de moins de 7 jours (au-delà : trop ancien pour être
+   *    rejoué sans risque de conflit).
+   *
+   * Appelé une fois par session (initAutoSyncTrigger) avant la première sync.
+   */
+  async requeueTransientlyFailedEvents(tenantId: string): Promise<number> {
+    let events: OutboxEventLocal[];
+    try {
+      events = await localDb.query<OutboxEventLocal>('outbox_events');
+    } catch {
+      return 0; // Base absente → rien à faire
+    }
+
+    const TRANSIENT_FAILURE_RE =
+      /max retries exceeded|sync service unavailable|502|503|504|failed to fetch|load failed|network|push failed|sync request failed|timeout|délai/i;
+    const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 jours
+    const now = Date.now();
+    let requeued = 0;
+
+    for (const event of events) {
+      if (event.tenantId !== tenantId) continue;
+      if (event.status !== 'FAILED') continue;
+      if (!event.errorMessage || !TRANSIENT_FAILURE_RE.test(event.errorMessage)) continue;
+
+      const age = now - (Date.parse(event.createdAt) || 0);
+      if (age > MAX_AGE_MS) continue;
+
+      await localDb.execute('outbox_events', 'put', {
+        ...event,
+        status: 'PENDING',
+        errorMessage: null,
+        retryCount: 0, // ⭐ reset : l'échec n'était pas de son fait
+        lastAttemptAt: new Date().toISOString(),
+      });
+      requeued++;
+    }
+
+    if (requeued > 0) {
+      console.log(`[Outbox] ${requeued} événement(s) FAILED transitoire(s) re-mis en file PENDING — ils seront synchronisés vers Neon`);
+      await this.updatePendingCount(tenantId);
+      this.notifyOutboxChanged();
+    }
+    return requeued;
+  }
+
+  /**
    * Marque un événement comme en conflit (serveur a une version plus récente)
    */
   async markAsConflict(eventId: string, reason?: string): Promise<void> {

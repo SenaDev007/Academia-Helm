@@ -321,6 +321,13 @@ export function RichTextEditor({
   const mediaElRef = useRef<HTMLElement | null>(null);
   const hoverElRef = useRef<HTMLElement | null>(null);
   const [chip, setChip] = useState<{ top: number; left: number } | null>(null);
+  // ⭐ V13 — Garde anti-« click retargeté » : setPointerCapture (drag des
+  //    insertions) RETARGET l'événement click suivant vers la zone éditable
+  //    (DIV) au lieu de l'insertion — sans cette garde, handleEditorClick ne
+  //    trouverait PAS le média sous le clic et EFFACERAIT la sélection (la
+  //    barre d'objet n'aurait jamais survécu à un vrai clic souris). Tout
+  //    click < 400 ms après un pointerup de drag est déjà traité → ignoré.
+  const clickGuardRef = useRef(0);
 
   // ⭐ V13 — Outils Word sur l'insertion sélectionnée :
   //    mediaBox : rectangle de l'insertion (poignées de taille, coordonnées
@@ -977,7 +984,9 @@ export function RichTextEditor({
       zone.removeEventListener("pointercancel", onUp);
       el.classList.remove("ah-media-dragging");
       el.style.transform = "";
-      if (!moved) return; // simple clic → la sélection suffit (le click suivra)
+      // ⭐ click retargeté par la capture → ignoré par handleEditorClick
+      clickGuardRef.current = Date.now();
+      if (!moved) return; // simple clic → la sélection suffit (le click suivant est ignoré)
       const absolute = wrapMode === "front" || wrapMode === "back";
       if (absolute) {
         // bloc sous le point de dépôt → re-ancrage (Word « déplacer avec le texte »)
@@ -1026,9 +1035,13 @@ export function RichTextEditor({
   }, [disabled, enableMedia, selectMedia, anchorBlockFor, repositionMediaUI, onChange, serializeClean]);
 
   /** Clic dans la zone éditable : sur une insertion → sélection entière +
-   *  pastille ; ailleurs → comportement normal (curseur) + pastille masquée. */
+   *  barre d'objet ; ailleurs → comportement normal (curseur) + barre
+   *  masquée. ⭐ V13 — le garde clickGuardRef ignore le click RETARGETÉ par
+   *  la capture pointer d'un drag/clic sur insertion (déjà traité par
+   *  startMediaDrag : pointerdown = sélection, pointerup = dépôt). */
   const handleEditorClick = useCallback((e: React.MouseEvent) => {
     if (disabled || !enableMedia) return;
+    if (Date.now() - clickGuardRef.current < 400) return; // click de drag — déjà traité
     const el = findMediaElement(e.target, editorRef.current);
     if (!el) { clearMediaSelection(); return; }
     e.preventDefault();

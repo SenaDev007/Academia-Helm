@@ -32,7 +32,13 @@ import {
 } from "@/lib/pedagogy-assets";
 import { toast } from "sonner";
 
-/** Ajoute max-width/height au SVG inline pour qu'il s'adapte à la colonne. */
+/** Adapte le SVG inline pour l'insertion : le SVG suit la largeur EXPLICITE
+ *  du wrapper span.ah-fig (width:100% + ratio via viewBox). ⭐ V13 : avant,
+ *  le style posé ici était RETIRÉ par la sanitisation Chromium de
+ *  execCommand insertHTML → SVG sans dimensions dans un wrapper
+ *  shrink-to-fit → largeur 0 px (illustrations invisibles) ; l'insertion
+ *  passe désormais par Range.createContextualFragment (styles préservés)
+ *  ET le wrapper reçoit une largeur par défaut explicite. */
 function adaptInlineSvg(svgText: string): string {
   return svgText
     .replace(/^<\?xml[^>]*\?>\s*/i, "")
@@ -41,7 +47,7 @@ function adaptInlineSvg(svgText: string): string {
       const cleaned = attrs
         .replace(/\s(width|height)\s*=\s*"[^"]*"/gi, "")
         .replace(/\s(width|height)\s*=\s*'[^']*'/gi, "");
-      return `<svg${cleaned} style="max-width:100%;height:auto;" role="img">`;
+      return `<svg${cleaned} style="width:100%;height:auto;" role="img">`;
     });
 }
 
@@ -110,7 +116,10 @@ export function ImageLibraryDialog({ open, onClose, onInsertHtml }: ImageLibrary
         const origin = typeof window !== "undefined" ? window.location.origin : "";
         const abs = `${origin}${asset.file}`;
         const safe = escapeAttr(asset.label);
-        onInsertHtml(`<img src="${escapeAttr(abs)}" alt="${safe}" style="max-width:100%;height:auto;border-radius:4px;" />&nbsp;`);
+        // ⭐ V13 — taille par défaut explicite (280 px) : les photos étaient
+        // insérées à leur taille NATURELLE (souvent ≥ 800 px → « trop grande »,
+        // retour utilisateur). Redimensionnables ensuite via la barre d'objet.
+        onInsertHtml(`<img src="${escapeAttr(abs)}" alt="${safe}" style="width:280px;max-width:100%;height:auto;border-radius:4px;" />&nbsp;`);
         setInsertedSlug(asset.slug);
         setTimeout(() => { setInsertedSlug(null); onClose(); }, 450);
         return;
@@ -119,7 +128,11 @@ export function ImageLibraryDialog({ open, onClose, onInsertHtml }: ImageLibrary
       if (!res.ok) throw new Error("Illustration introuvable");
       const text = await res.text();
       const inline = adaptInlineSvg(text);
-      const html = `<span class="ah-fig" contenteditable="false" data-asset="${asset.slug}" title="${asset.label}" style="display:inline-block;max-width:100%;">${inline}</span>&nbsp;`;
+      // ⭐ V13 — largeur explicite 280 px sur le wrapper : SANS dimension,
+      //  un SVG viewBox-only dans un span inline-block (shrink-to-fit)
+      //  calcule 0 px de large (illustrations invisibles — bug V7→V12).
+      //  Redimensionnable ensuite via les poignées / boutons ±.
+      const html = `<span class="ah-fig" contenteditable="false" data-asset="${asset.slug}" title="${asset.label}" style="display:inline-block;max-width:100%;width:280px;">${inline}</span>&nbsp;`;
       onInsertHtml(html);
       setInsertedSlug(asset.slug);
       setTimeout(() => { setInsertedSlug(null); onClose(); }, 450);
@@ -175,7 +188,8 @@ export function ImageLibraryDialog({ open, onClose, onInsertHtml }: ImageLibrary
     const safe = escapeAttr(alt || "Illustration");
     const safeUrl = /^(https?:|\/|data:image\/)/i.test(url) ? url : "";
     if (!safeUrl) { toast.error("URL d'image invalide"); return; }
-    onInsertHtml(`<img src="${escapeAttr(safeUrl)}" alt="${safe}" style="max-width:100%;height:auto;border-radius:4px;" />&nbsp;`);
+    // ⭐ V13 — 280 px par défaut (taille naturelle = « trop grande »)
+    onInsertHtml(`<img src="${escapeAttr(safeUrl)}" alt="${safe}" style="width:280px;max-width:100%;height:auto;border-radius:4px;" />&nbsp;`);
   };
 
   // ── Rendu ──

@@ -1347,3 +1347,17 @@ html {
 [contenteditable] .ah-float-derriere {
   cursor: move;
 }
+
+/* ⭐ V13 — Filet de sécurité pour le CONTENU HISTORIQUE (V7→V12) : la
+   sanitisation Chromium de execCommand insertHTML retirait les attributs
+   style des SVG insérés → SVG viewBox-only sans dimensions, DANS un wrapper
+   span.ah-fig inline-block (shrink-to-fit) → largeur calculée 0 px →
+   illustrations de la bibliothèque d'images INVISIBLES. Ce sélecteur
+   chirurgical ne vise QUE ce cas (wrapper inline-block + SVG sans width NI
+   style) et lui redonne une taille lisible — les nouvelles insertions V13
+   (style width:100% posé et préservé) et les figures/graphiques en
+   display:block ne sont PAS affectés. */
+span.ah-fig[style*="inline-block"] > svg[viewBox]:not([width]):not([style]) {
+  width: 280px;
+  height: auto;
+}

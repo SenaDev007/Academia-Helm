@@ -479,7 +479,15 @@ export function RichTextEditor({
 
   /**
    * ⭐ V7 — Insère du HTML à la position du curseur sauvegardée.
-   *    Restaure la sélection, puis insertHTML + propagation onChange.
+   *    ⭐ V13 — CRITICAL FIX : execCommand("insertHTML") est remplacé par
+   *    Range.createContextualFragment + insertNode : la sanitisation
+   *    Chromium de insertHTML RETIRE les attributs style des éléments SVG
+   *    (contenu « étranger ») — les illustrations de la bibliothèque
+   *    d'images étaient donc insérées SANS style ni dimensions → largeur
+   *    calculée 0 px dans leur wrapper inline-block (shrink-to-fit) →
+   *    INVISIBLES depuis la V7. Le fragment de contexte insère EXACTEMENT
+   *    le HTML fourni, à la même position (curseur sauvegardé), sans
+   *    altération. Fallback : ajout à la fin.
    */
   const insertHtmlAtCursor = useCallback((html: string) => {
     const el = editorRef.current;
@@ -500,8 +508,27 @@ export function RichTextEditor({
           sel.addRange(rng);
         }
       }
-      const ok = document.execCommand("insertHTML", false, html);
-      if (!ok) throw new Error("insertHTML refusé");
+      let inserted = false;
+      if (sel && sel.rangeCount > 0) {
+        const rng = sel.getRangeAt(0);
+        if (el.contains(rng.startContainer)) {
+          const frag = rng.createContextualFragment(html);
+          const lastNode = frag.lastChild;
+          rng.insertNode(frag);
+          inserted = true;
+          // curseur juste après l'insertion (comportement execCommand)
+          if (lastNode && sel) {
+            try {
+              const after = document.createRange();
+              after.setStartAfter(lastNode);
+              after.collapse(true);
+              sel.removeAllRanges();
+              sel.addRange(after);
+            } catch { /* positionnement impossible → sans conséquence */ }
+          }
+        }
+      }
+      if (!inserted) throw new Error("aucune position d'insertion valide");
     } catch {
       // Fallback : ajout à la fin (certains navigateurs/nested contenteditable)
       el.insertAdjacentHTML("beforeend", html);

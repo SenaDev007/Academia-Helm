@@ -189,6 +189,7 @@ const MODULE_ROUTES: string[] = [
   '/app/teacher/classes',
   '/app/teacher/communication',
   '/app/teacher/educast',
+  '/app/teacher/exam-preparation',
   '/app/teacher/exams',
   '/app/teacher/library',
   '/app/teacher/orion',

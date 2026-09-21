@@ -30,7 +30,7 @@ import {
   FileText, BookOpen, ClipboardList, FileSpreadsheet, AlertTriangle, AlertCircle,
   ChevronRight, ChevronDown, X, Eye, Sigma, FlaskConical, Users, Palette, Calendar,
   Download, Save, Activity, School, ChevronsDownUp, ChevronsUpDown,
-  CalendarDays, CalendarRange, Folder, FolderOpen, LayoutDashboard, BarChart3,
+  CalendarDays, CalendarRange, Folder, FolderOpen, LayoutDashboard, BarChart3, NotebookPen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -54,6 +54,9 @@ import {
 import { pedagogySpaceService } from "@/services/pedagogy-space.service";
 import apiClient from "@/lib/api/client";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
+// ⭐ 2026-09-21 — MODULE PRÉPARATION D'EXAMEN : validation des BLOCS d'épreuves
+//    d'évaluation soumis par les enseignants (enseignant → directeur → secrétariat).
+import { PendingEpreuvesTab } from "../exam-preparation/DirectorEpreuvesControl";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 import { useModuleContext } from "@/hooks/useModuleContext";
 import { useAppSession } from "@/contexts/AppSessionContext";
@@ -78,6 +81,9 @@ const TABS = [
   { id: "cahier-journal", label: "Cahiers Journal & Fiches", icon: FileSpreadsheet, maternellePrimaireOnly: true },
   { id: "registres", label: "Registres d'Appel", icon: ClipboardList, maternellePrimaireOnly: true },
   { id: "evaluations", label: "Évaluations Mensuelles", icon: BookOpen, maternellePrimaireOnly: true },
+  // ⭐ 2026-09-21 — Épreuves d'évaluation (module Préparation d'examen) :
+  //    blocs d'épreuves soumis par les enseignants → validation → secrétariat.
+  { id: "epreuves", label: "Épreuves d'évaluation", icon: NotebookPen, maternellePrimaireOnly: false },
   { id: "seminaire", label: "Cahier du Semainier", icon: CalendarDays, maternellePrimaireOnly: true },
 ] as const;
 
@@ -213,6 +219,9 @@ export function DirectorPedagogyControl({ tenantId, academicYearId, userId }: Di
         )}
         {tab === "evaluations" && (
           <PendingEvaluationsTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
+        )}
+        {tab === "epreuves" && (
+          <PendingEpreuvesTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />
         )}
         {tab === "seminaire" && (
           <PendingSemainiersTab tenantId={tenantId} academicYearId={academicYearId} userId={userId} refreshKey={refreshKey} onRefresh={refresh} />

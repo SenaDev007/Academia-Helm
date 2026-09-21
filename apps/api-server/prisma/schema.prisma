@@ -16964,6 +16964,99 @@ model PrimaryPedagogicalFiche {
 }
 
 // ============================================================================
+// PRÉPARATION D'EXAMEN — Blocs d'épreuves d'évaluation (pattern fiches)
+// ============================================================================
+
+/// Bloc d'épreuves d'évaluation = l'ensemble des épreuves d'UNE session
+/// d'évaluation (classe × type d'évaluation × période), ex :
+/// « ÉVALUATION D'ETAPE 1 — CE2 » (LECTURE + ES + EST + EXPRESSION ÉCRITE + MATH).
+/// ⭐ Le BLOC (et non chaque épreuve individuelle) est transmis au directeur,
+///    puis après validation, envoyé au secrétariat pour impression.
+model ExamPreparationBlock {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  teacherId       String
+  classId         String
+
+  // Référence à la session d'évaluation (1ère évaluation du groupe)
+  evaluationId    String?
+  periodId        String?
+  evaluationTypeId String?
+
+  // Libellés dénormalisés (robustesse cross-year)
+  title           String?            // « ÉVALUATION D'ETAPE 1 »
+  className       String?
+  monthLabel      String?            // « Octobre »
+  trimesterLabel  String?            // « Trimestre 1 »
+  examDate        DateTime? @db.Date
+
+  // Workflow : DRAFT → SUBMITTED → VALIDATED | REJECTED → SENT_TO_SECRETARIAT
+  status          String   @default("DRAFT")
+  submittedAt     DateTime?
+  validatedAt     DateTime?
+  validatedBy     String?
+  rejectionReason String?
+  sentToSecretariatAt DateTime?
+  directorObservation String?
+  secretariatNotes     String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  sheets          ExamPreparationSheet[]
+
+  @@unique([tenantId, academicYearId, classId, evaluationTypeId, periodId])
+  @@index([tenantId, academicYearId, teacherId])
+  @@index([status])
+  @@index([classId])
+  @@map("exam_preparation_blocks")
+}
+
+/// Épreuve d'évaluation = document par MATIÈRE au sein d'un bloc
+/// (structure conforme aux modèles officiels : entête école, classe, durée,
+/// situation d'évaluation, tâche, consignes/items, clé + grille de correction).
+model ExamPreparationSheet {
+  id              String   @id @default(uuid())
+  tenantId        String
+  academicYearId  String
+  blockId         String
+  teacherId       String
+  classId         String
+  subjectId       String?
+  evaluationId    String?
+
+  // Libellés dénormalisés
+  subjectName     String?            // « LECTURE », « Mathématique »…
+  epreuveTitle    String?            // « Épreuve de LECTURE »
+  durationLabel   String?            // « 1h », « 45mn »
+  maxScoreLabel   String?            // « 10 pts », « 20 »
+  coefficient     String?
+  showIdentityFields Boolean @default(true)   // champs Nom / Prénoms
+
+  // Contenu riche (HTML — RichTextEditor, tous les outils fiches pédagogiques)
+  situation       String?            // Situation d'évaluation
+  tache           String?            // Tâche
+  consignes       String?            // Consigne / Items
+  cleCorrection   String?            // Clé de correction (facultatif)
+  grilleCorrection String?           // Grille de correction (facultatif)
+
+  teacherName     String?
+  orderIndex      Int      @default(0)
+  status          String   @default("DRAFT") // suit le statut du bloc
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  block           ExamPreparationBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, academicYearId, teacherId])
+  @@index([blockId])
+  @@index([subjectId])
+  @@map("exam_preparation_sheets")
+}
+
+// ============================================================================
 // REGISTRE D'APPEL — Registre mensuel par classe
 // ============================================================================
 

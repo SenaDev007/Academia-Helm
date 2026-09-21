@@ -575,6 +575,44 @@ export class NotificationService {
                 `notifyTeachersEvaluationScheduled: create notif failed for user ${userId}: ${e.message}`,
               );
               return null;
+            })
+            // ⭐ 2026-09-21 — MODULE PRÉPARATION D'EXAMEN : 2e notification
+            //    dédiée — l'enseignant reçoit AUSSI le signal dans le module
+            //    « Préparation d'examen » : « telle évaluation est programmée,
+            //    voici les matières dont tu dois préparer les épreuves ».
+            .then(async (primary) => {
+              await this
+                .create({
+                  tenantId: params.tenantId,
+                  recipientId: userId,
+                  type: 'EXAM_PREP_REQUIRED',
+                  title:
+                    count === 1
+                      ? `Épreuve à préparer — ${first.subjectName}`
+                      : `${count} épreuves d'évaluation à préparer`,
+                  body:
+                    count === 1
+                      ? `Évaluation programmée en ${first.subjectName} (classe ${first.className}) le ${dateStr}. Préparez l'épreuve dans le module Préparation d'examen.`
+                      : `Évaluations programmées (${subjectsList.join(', ')}) — classes ${classesList.join(', ')} à partir du ${dateStr}. Préparez les épreuves dans le module Préparation d'examen.`,
+                  priority: 'HIGH',
+                  data: {
+                    url: '/app/teacher/exam-preparation',
+                    evaluationIds: evals.map((e) => e.id),
+                    count,
+                    classes: classesList,
+                    subjects: subjectsList,
+                    date: first.evaluationDate.toISOString(),
+                  },
+                  relatedEntityType: 'Evaluation',
+                  relatedEntityId: first.id,
+                })
+                .catch((e) => {
+                  this.logger.error(
+                    `notifyTeachersEvaluationScheduled: EXAM_PREP_REQUIRED notif failed for user ${userId}: ${e.message}`,
+                  );
+                  return null;
+                });
+              return primary;
             });
         }),
       );

@@ -32,7 +32,7 @@ import {
   LayoutDashboard, BookOpen, CalendarDays,
   Video, ClipboardList, MessageSquare, Loader2,
   FileEdit,
-  Building2, LogOut, Menu, X, CalendarCheck, UserCog,
+  Building2, LogOut, Menu, X, CalendarCheck, UserCog, NotebookPen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LogoutModal } from "@/components/auth/LogoutModal";
@@ -61,6 +61,12 @@ const TEACHER_MODULES = [
   { path: "/app/teacher/annual-planning", label: "Planification annuelle", labelEn: "Annual Planning", icon: ClipboardList, desc: "Planification pédagogique officielle (CI à CM2 + Maternelle)", descEn: "Official pedagogical planning (CI to CM2 + Maternelle)" },
   { path: "/app/teacher/pedagogy", label: "Espace Pédagogique", labelEn: "Pedagogy Space", icon: BookOpen, desc: "Cahier journal, fiches, registre d'appel, cahier de texte, devoirs", descEn: "Daily log, lesson sheets, attendance register, textbook, homework" },
   { path: "/app/teacher/tasks", label: "Travaux & Suivi", labelEn: "Tasks & Tracking", icon: ClipboardList, desc: "Tâches assignées et suivi", descEn: "Assigned tasks and follow-up" },
+  // ⭐ 2026-09-21 — MODULE PRÉPARATION D'EXAMEN : épreuves d'évaluation.
+  //    Position exigée : JUSTE EN DESSOUS de « Travaux & Suivi », AVANT
+  //    « Examens & Notes ». Signal quand une évaluation est programmée,
+  //    préparation des épreuves par matière (éditeur riche complet), envoi
+  //    du BLOC à la direction puis au secrétariat, catalogue hiérarchisé.
+  { path: "/app/teacher/exam-preparation", label: "Préparation d'examen", labelEn: "Exam Preparation", icon: NotebookPen, desc: "Épreuves d'évaluation : signal, préparation, validation et envoi au secrétariat", descEn: "Assessment papers: signal, preparation, validation and sending to secretariat" },
   { path: "/app/teacher/exams", label: "Examens & Notes", labelEn: "Exams & Grades", icon: FileEdit, desc: "Mes évaluations et saisie de notes", descEn: "My assessments and grade entry" },
   { path: "/app/teacher/educast", label: "EduCast", labelEn: "EduCast", icon: Video, desc: "Vidéos et contenus pédagogiques", descEn: "Educational videos and content" },
   { path: "/app/teacher/communication", label: "Helm Connect", labelEn: "Helm Connect", icon: MessageSquare, desc: "Communiquez. Collaborez. Restez connectés.", descEn: "Communicate. Collaborate. Stay connected." },

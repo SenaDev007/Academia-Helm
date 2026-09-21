@@ -65,6 +65,8 @@ import { MultigradeModule } from './multigrade/multigrade.module';
 import { ModulesComplementairesModule } from './modules-complementaires/modules-complementaires.module';
 import { KpiObjectivesModule } from './kpi-objectives/kpi-objectives.module';
 import { PedagogyModule } from './pedagogy/pedagogy.module';
+// ⭐ Préparation d'examen — épreuves d'évaluation (pattern fiches pédagogiques)
+import { ExamPreparationModule } from './exam-preparation/exam-preparation.module';
 import { TenantWebsiteModule } from './tenant-website/tenant-website.module';
 import { ExamsGradesModule } from './exams-grades/exams-grades.module';
 import { FinanceModule } from './finance/finance.module';
@@ -170,6 +172,8 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     DepartmentsModule,
     // RoomsModule removed — collides with RoomsPrismaController (PedagogyModule)
     PedagogyModule,
+    // ⭐ Préparation d'examen — épreuves d'évaluation (enseignant → directeur → secrétariat)
+    ExamPreparationModule,
     TenantWebsiteModule,
     
     // Exams & Grades module (Module 3)

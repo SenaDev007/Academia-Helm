@@ -63,8 +63,8 @@ const ROLE_TOP_ROUTES: Record<string, string[]> = {
   PROMOTEUR: ['/app/finance', '/app/students', '/app/hr'],
   ADMIN: ['/app/students', '/app/finance', '/app/pedagogy'],
   // Portails dédiés
-  TEACHER: ['/app/teacher/pedagogy', '/app/teacher/timetable'],
-  ENSEIGNANT: ['/app/teacher/pedagogy', '/app/teacher/timetable'],
+  TEACHER: ['/app/teacher/pedagogy', '/app/teacher/exam-preparation', '/app/teacher/timetable'],
+  ENSEIGNANT: ['/app/teacher/pedagogy', '/app/teacher/exam-preparation', '/app/teacher/timetable'],
   PARENT: ['/app/parent/notes', '/app/parent/finance'],
 };
 

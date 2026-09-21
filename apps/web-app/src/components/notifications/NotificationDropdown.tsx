@@ -19,7 +19,7 @@ import { useRef, useEffect } from 'react';
 import {
   Bell, Check, CheckCheck, Trash2, X, FileText, UserPlus, AlertCircle, Info,
   CalendarX, CalendarCheck, GraduationCap, Award, ShieldAlert,
-  ClipboardList, BookOpen, MessageSquare, Heart,
+  ClipboardList, BookOpen, MessageSquare, Heart, NotebookPen,
 } from 'lucide-react';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useRouter } from 'next/navigation';
@@ -61,6 +61,17 @@ function getNotifIcon(type: string) {
       return <ShieldAlert className="w-4 h-4 text-red-600" />;
     case 'EVALUATION_SCHEDULED':
       return <ClipboardList className="w-4 h-4 text-indigo-600" />;
+    // ⭐ 2026-09-21 — Module Préparation d'examen (épreuves d'évaluation)
+    case 'EXAM_PREP_REQUIRED':
+      return <NotebookPen className="w-4 h-4 text-amber-600" />;
+    case 'EXAM_PREP_SUBMITTED':
+      return <NotebookPen className="w-4 h-4 text-indigo-600" />;
+    case 'EXAM_PREP_VALIDATED':
+      return <NotebookPen className="w-4 h-4 text-emerald-600" />;
+    case 'EXAM_PREP_REJECTED':
+      return <NotebookPen className="w-4 h-4 text-red-600" />;
+    case 'EXAM_PREP_SECRETARIAT':
+      return <NotebookPen className="w-4 h-4 text-violet-600" />;
     case 'NEW_HOMEWORK':
       return <BookOpen className="w-4 h-4 text-violet-700" />;
     case 'PARENT_MESSAGE':

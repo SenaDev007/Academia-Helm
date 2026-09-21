@@ -42,7 +42,7 @@ import { useRef, useEffect, useCallback, useState } from "react";
 import {
   Bold, Italic, Underline, List, ListOrdered,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  Image as ImageIcon, DraftingCompass, Sigma, Shapes, LineChart, Table2,
+  Image as ImageIcon, DraftingCompass, Sigma, Shapes, LineChart, Table2, PenLine,
 } from "lucide-react";
 import { ImageLibraryDialog } from "@/components/pedagogy/media/ImageLibraryDialog";
 import { DiagramEditorDialog } from "@/components/pedagogy/media/DiagramEditorDialog";
@@ -50,6 +50,7 @@ import { MathPanel } from "@/components/pedagogy/media/MathPanel";
 import { FigureLibraryDialog } from "@/components/pedagogy/media/FigureLibraryDialog";
 import { GraphChartDialog } from "@/components/pedagogy/media/GraphChartDialog";
 import { TableDialog } from "@/components/pedagogy/media/TableDialog";
+import { CalligraphyDialog } from "@/components/pedagogy/media/CalligraphyDialog";
 
 /** Commandes suivies pour l'état actif (boutons « enfoncés »). */
 const TRACKED_COMMANDS = [
@@ -115,6 +116,10 @@ export function RichTextEditor({
   const [showFigureLibrary, setShowFigureLibrary] = useState(false);
   const [showGraphChart, setShowGraphChart] = useState(false);
   const [showTableDialog, setShowTableDialog] = useState(false);
+  // ⭐ V9 (2026-09-21) — Lignes calligraphiques (graphisme / écriture) :
+  //    épreuves d'évaluation + fiches pédagogiques. Modèles de lettres/mots
+  //    selon le style d'écriture script ou cursive.
+  const [showCalligraphy, setShowCalligraphy] = useState(false);
 
   // Sync external value → editor (seulement si différent)
   useEffect(() => {
@@ -397,6 +402,18 @@ export function RichTextEditor({
               >
                 <Sigma className="h-3 w-3" />
               </button>
+              {/* ⭐ V9 (2026-09-21) — Lignes calligraphiques pour le graphisme
+                  (évaluation d'écriture) : lignes seyès / cahier / simples
+                  + modèles de lettres et mots (script ou cursive). */}
+              <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); }}
+                onClick={() => setShowCalligraphy(true)}
+                className="p-1 hover:bg-amber-100 rounded text-amber-600 transition-colors"
+                title="Lignes calligraphiques (graphisme) — modèles de lettres/mots, écriture script ou cursive"
+              >
+                <PenLine className="h-3 w-3" />
+              </button>
             </>
           )}
         </div>
@@ -451,6 +468,11 @@ export function RichTextEditor({
           <MathPanel
             open={showMathPanel}
             onClose={() => setShowMathPanel(false)}
+            onInsertHtml={insertHtmlAtCursor}
+          />
+          <CalligraphyDialog
+            open={showCalligraphy}
+            onClose={() => setShowCalligraphy(false)}
             onInsertHtml={insertHtmlAtCursor}
           />
         </>

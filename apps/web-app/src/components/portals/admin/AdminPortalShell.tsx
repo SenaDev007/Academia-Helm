@@ -36,7 +36,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Brain, School, Users, GraduationCap, Shield,
   Wallet, UserCog, MessageSquare, CalendarDays, ClipboardCheck, Receipt,
-  Building2, LogOut, Menu, X, Lock,
+  Building2, LogOut, Menu, X, Lock, NotebookPen,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -83,6 +83,8 @@ export const ICON_REGISTRY: Record<AdminPortalIcon, LucideIcon> = {
   CalendarDays,
   ClipboardCheck,
   Receipt,
+  // ⭐ 2026-09-21 — Réception des épreuves (module Préparation d'examen)
+  NotebookPen,
 };
 
 // ─── Thèmes par accent (un métier = une couleur) ────────────────────────────

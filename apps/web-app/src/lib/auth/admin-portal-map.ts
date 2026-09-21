@@ -79,7 +79,9 @@ export type AdminPortalIcon =
   | 'MessageSquare'
   | 'CalendarDays'
   | 'ClipboardCheck'
-  | 'Receipt';
+  | 'Receipt'
+  // ⭐ 2026-09-21 — module Réception des épreuves (Préparation d'examen)
+  | 'NotebookPen';
 
 export interface AdminPortalModule {
   /** Route cible (routes métier partagées ou home du portail) */
@@ -223,6 +225,10 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
       // reste le module n°2, à un clic.
       { path: '/app/secretaire', label: 'Tableau de bord', labelEn: 'Dashboard', icon: 'LayoutDashboard', desc: 'KPIs effectifs, finances, alertes', descEn: 'Headcount, finance KPIs, alerts' },
       { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', descEn: 'Admissions, records, headcount', featureCode: 'STUDENTS' },
+      // ⭐ 2026-09-21 — MODULE PRÉPARATION D'EXAMEN : réception des épreuves
+      //    d'évaluation envoyées par les enseignants après validation direction.
+      //    Hiérarchisées par classe, trimestre et mois — visualisation + impression.
+      { path: '/app/exam-reception', label: 'Réception des épreuves', labelEn: 'Exam Papers Reception', icon: 'NotebookPen', desc: "Épreuves d'évaluation reçues — visualisation et impression", descEn: 'Received assessment papers — view and print' },
       { path: '/app/exams', label: 'Examens, Notes & Bulletins', labelEn: 'Exams, Grades & Report Cards', icon: 'GraduationCap', desc: 'Bulletins, impressions', descEn: 'Report cards, printing', featureCode: 'EXAMS' },
       { path: '/app/communication', label: 'Helm Connect', labelEn: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', descEn: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
     ],
@@ -258,6 +264,9 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
       // home du portail secrétaire — /app/secretaire et /app/students rendent
       // StudentsModulePage).
       { path: '/app/students', label: 'Élèves & Scolarité', labelEn: 'Students & Enrollment', icon: 'Users', desc: 'Inscriptions, dossiers, effectifs', descEn: 'Admissions, records, headcount', featureCode: 'STUDENTS' },
+      // ⭐ 2026-09-21 — MODULE PRÉPARATION D'EXAMEN (côté secrétaire de l'union) :
+      //    réception des épreuves d'évaluation — classe → trimestre → mois.
+      { path: '/app/exam-reception', label: 'Réception des épreuves', labelEn: 'Exam Papers Reception', icon: 'NotebookPen', desc: "Épreuves d'évaluation reçues — visualisation et impression", descEn: 'Received assessment papers — view and print' },
       // Côté COMPTABLE : module Finances & Économat complet.
       { path: '/app/finance', label: 'Finances & Économat', labelEn: 'Finance & Store', icon: 'Wallet', desc: 'Frais, recouvrement, trésorerie', descEn: 'Fees, recovery, treasury', featureCode: 'FINANCE' },
       // Côté SECRÉTAIRE + COMPTABLE : examens (saisie des notes, bulletins).

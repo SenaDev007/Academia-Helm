@@ -353,18 +353,56 @@ export class EvaluationsService {
       };
     }
 
+    // ⭐ FIX PERF (2026-09-21 — « plus d'une minute pour charger les
+    //    évaluations », toasts « délai dépassé ») : la liste était renvoyée
+    //    avec des relations COMPLÈTES (subject: true, evaluationType: true,
+    //    period: true, gradeScale: true + classe entière) → payload de
+    //    plusieurs Mo à l'échelle d'une école (des centaines d'évaluations ×
+    //    toutes les colonnes de 5 tables), transferé puis re-parse à chaque
+    //    ouverture d'onglet. Les 8 vues consommatrices (evaluations, grades,
+    //    validation, registre, recap, bulletins, dashboard, espace enseignant)
+    //    n'utilisent qu'une fraction de ces champs : on projète EXACTEMENT
+    //    ce qui est consommé — payload divisé par ~10, plus aucun timeout.
     return this.prisma.evaluation.findMany({
       where,
-      include: {
+      select: {
+        id: true,
+        classId: true,
+        subjectId: true,
+        evaluationTypeId: true,
+        periodId: true,
+        teacherId: true,
+        title: true,
+        description: true,
+        evaluationDate: true,
+        startDate: true,
+        endDate: true,
+        maxScore: true,
+        coefficient: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
         class: {
-          include: {
+          // schoolLevel.code : détection du niveau (maternelle/primaire) côté
+          // espace enseignant (teacher/exams) — seuls id+code sont nécessaires.
+          select: {
+            id: true,
+            name: true,
+            schoolLevelId: true,
             schoolLevel: { select: { id: true, code: true, name: true } },
           },
         },
-        subject: true,
-        evaluationType: true,
-        period: true,
-        gradeScale: true,
+        subject: {
+          // coefficient + language : utilisés par les bulletins (moyennes
+          // pondérées + isolation linguistique)
+          select: { id: true, name: true, coefficient: true, language: true },
+        },
+        evaluationType: {
+          select: { id: true, name: true, code: true },
+        },
+        period: {
+          select: { id: true, name: true },
+        },
         _count: {
           select: { grades: true }
         }

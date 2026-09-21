@@ -160,9 +160,25 @@ apiClient.interceptors.response.use(
     // ⭐ FIX PERF : toute mutation réussie via apiClient (POST/PATCH/PUT/DELETE)
     //    invalide le cache GET → les listes rechargent des données fraîches
     //    après une écriture, quel que soit le chemin utilisé par le composant.
+    //    ⭐ FIX PERF 2026-09-21 (module Examen — « le rafraîchissement après
+    //    enregistrement est trop lent ») : invalidation CIBLÉE pour les
+    //    mutations d'évaluations. L'invalidation GLOBALE (cache.clear())
+    //    forçait un rechargement À FROID de TOUTES les données de référence
+    //    après chaque enregistrement (paramétrage actif, matières, périodes…)
+    //    → le useEffect de rafraîchissement repartait de zéro à chaque fois.
+    //    Les mutations /institutional-exams/evaluations* n'affectent QUE les
+    //    lectures /institutional-exams/* et le dashboard — on préserve donc
+    //    les caches de référence (45 s) qui rechargent instantanément.
     const method = String(response?.config?.method || '').toUpperCase();
     if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) {
-      invalidateApiCache();
+      const url = String(response?.config?.url || '');
+      if (url.includes('/institutional-exams/evaluations')) {
+        // Clés de cache au format « GET:/institutional-exams/… » (apiFetch et
+        // services) — le préfixe couvre evaluations + dashboard.
+        invalidateApiCache('GET:/institutional-exams/');
+      } else {
+        invalidateApiCache();
+      }
     }
     return response;
   },

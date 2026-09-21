@@ -232,4 +232,159 @@ export class GradesService {
       };
     });
   }
+
+  /**
+   * ⭐ FIX PERF (2026-09-21 — module Examen lent, fan-out N+1 sur HTTP) :
+   *    les onglets Validation, Registre des notes, Récapitulatif et Bulletins
+   *    chargeaient la grille de notes ÉVALUATION PAR ÉVALUATION (jusqu'à 30+
+   *    requêtes HTTP parallèles, chacune avec 3 requêtes Prisma incluant les
+   *    élèves COMPLETS). Sur réseau lent (Bénin 300-600 ms RTT) + saturation
+   *    du navigateur et du Service Worker → temps de chargement > 1 minute
+   *    et toasts « délai dépassé ».
+   *    Cette version BATCHÉE fait exactement 3 requêtes Prisma au total, quel
+   *    que soit le nombre d'évaluations, et renvoie un mapping
+   *    evaluationId → grille (exactement le format de getGradingSheet).
+   */
+  async getGradingSheetsBatch(evaluationIds: string[], tenantId: string) {
+    const ids = Array.from(new Set((evaluationIds || []).filter(Boolean)));
+    if (ids.length === 0) return {};
+
+    // 1) Les évaluations + élèves de leurs classes (source ClassStudent) — 1 requête
+    const evaluations = await this.prisma.evaluation.findMany({
+      where: { id: { in: ids }, tenantId },
+      select: {
+        id: true,
+        classId: true,
+        academicYearId: true,
+        class: {
+          select: {
+            classStudents: {
+              where: { student: { isActive: true } },
+              select: { student: true },
+            },
+          },
+        },
+      },
+    });
+
+    const classIds = Array.from(new Set(evaluations.map((e) => e.classId)));
+    // Clé de regroupement classe × année (les inscriptions sont annuelles)
+    const yearsByClass = new Map<string, Set<string>>();
+    for (const ev of evaluations) {
+      if (!yearsByClass.has(ev.classId)) yearsByClass.set(ev.classId, new Set());
+      yearsByClass.get(ev.classId)!.add(ev.academicYearId);
+    }
+
+    // 2) Les inscriptions de TOUTES les classes concernées — 1 requête
+    let enrollmentRows: any[] = [];
+    try {
+      enrollmentRows = await this.prisma.studentEnrollment.findMany({
+        where: {
+          classId: { in: classIds },
+          tenantId,
+          status: {
+            in: [
+              'ACTIVE', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED',
+              'RE_ENROLLED', 'VALIDATED', 'CONFIRMED', 'PENDING',
+            ],
+          },
+          student: { isActive: true },
+        },
+        select: { classId: true, academicYearId: true, student: true },
+      });
+    } catch (err) {
+      console.warn('[getGradingSheetsBatch] StudentEnrollment fetch failed:', err);
+    }
+
+    // Fusion des 2 sources par (classId × année), dédup par studentId —
+    // même logique que getGradingSheet (ClassStudent d'abord, puis inscriptions).
+    const studentsByClassYear = new Map<string, Map<string, any>>();
+    const key = (classId: string, yearId: string) => `${classId}|${yearId}`;
+    for (const ev of evaluations) {
+      const k = key(ev.classId, ev.academicYearId);
+      if (!studentsByClassYear.has(k)) studentsByClassYear.set(k, new Map());
+      const m = studentsByClassYear.get(k)!;
+      for (const cs of ev.class?.classStudents || []) {
+        if (cs.student && !m.has(cs.student.id)) m.set(cs.student.id, cs.student);
+      }
+    }
+    for (const row of enrollmentRows) {
+      // Ne compter l'inscription que si son année correspond à une année
+      // d'évaluation de cette classe (une inscription d'une autre année ne
+      // fait pas partie de la grille).
+      const years = yearsByClass.get(row.classId);
+      if (!years || !years.has(row.academicYearId)) continue;
+      const k = key(row.classId, row.academicYearId);
+      if (!studentsByClassYear.has(k)) studentsByClassYear.set(k, new Map());
+      const m = studentsByClassYear.get(k)!;
+      if (row.student && !m.has(row.student.id)) m.set(row.student.id, row.student);
+    }
+
+    // 3) TOUTES les notes des évaluations demandées — 1 requête
+    const allGrades = await this.prisma.grade.findMany({
+      where: { evaluationId: { in: ids }, tenantId },
+      select: {
+        evaluationId: true,
+        studentId: true,
+        score: true,
+        qualitativeCode: true,
+        isAbsent: true,
+        comment: true,
+        status: true,
+      },
+    });
+    const gradesByEval = new Map<string, any[]>();
+    for (const g of allGrades) {
+      if (!gradesByEval.has(g.evaluationId)) gradesByEval.set(g.evaluationId, []);
+      gradesByEval.get(g.evaluationId)!.push(g);
+    }
+
+    // 4) Construire les grilles (format IDENTIQUE à getGradingSheet)
+    const evalById = new Map(evaluations.map((e) => [e.id, e]));
+    const result: Record<string, any[]> = {};
+    for (const id of ids) {
+      const ev = evalById.get(id);
+      if (!ev) {
+        result[id] = [];
+        continue;
+      }
+      const students = Array.from((studentsByClassYear.get(key(ev.classId, ev.academicYearId)) || new Map()).values());
+      const grades = gradesByEval.get(id) || [];
+      result[id] = students.map(student => {
+        const grade = grades.find(g => g.studentId === student.id);
+
+        // ⭐ Parser cm/cp depuis le champ comment (stocké en JSON) — comme
+        //    getGradingSheet.
+        let cm: number | null = null;
+        let cp: number | null = null;
+        let comment = grade?.comment ?? '';
+        if (comment && comment.startsWith('{') && comment.includes('"cm"')) {
+          try {
+            const parsed = JSON.parse(comment);
+            cm = parsed.cm ?? null;
+            cp = parsed.cp ?? null;
+            comment = parsed.comment ?? '';
+          } catch {
+            // JSON invalide → garder le comment tel quel
+          }
+        }
+
+        return {
+          studentId: student.id,
+          studentName: `${student.lastName} ${student.firstName}`.trim(),
+          matricule: student.matricule ?? null,
+          gender: student.gender ?? null,
+          birthDate: student.dateOfBirth ?? null,
+          score: grade?.score ?? null,
+          cm,
+          cp,
+          qualitativeCode: grade?.qualitativeCode ?? null,
+          isAbsent: grade?.isAbsent ?? false,
+          comment,
+          status: grade?.status ?? 'NEW',
+        };
+      });
+    }
+    return result;
+  }
 }

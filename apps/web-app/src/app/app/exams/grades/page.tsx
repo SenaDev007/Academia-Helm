@@ -187,7 +187,9 @@ export default function GradesPage() {
     try {
       const [periodsData, allClassesData, enrollmentsData] = await Promise.all([
         getAcademicYearPeriods(academicYear.id).catch(() => []),
-        fetch('/api/all-classes', { credentials: 'include' }).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+        // ⭐ FIX PERF (2026-09-21) : academicYearId transmis → la route BFF
+        //    saute la résolution d'année (un aller-retour serveur de moins).
+        fetch(`/api/all-classes?academicYearId=${encodeURIComponent(academicYear.id)}`, { credentials: 'include' }).then((r) => (r.ok ? r.json() : [])).catch(() => []),
         fetch(`/api/students/enrollments?academicYearId=${encodeURIComponent(academicYear.id)}`, { credentials: 'include' })
           .then((r) => (r.ok ? r.json() : []))
           .catch(() => []),

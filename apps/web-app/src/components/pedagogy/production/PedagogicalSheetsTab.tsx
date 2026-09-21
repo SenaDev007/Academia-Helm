@@ -341,7 +341,15 @@ const SHEET_TYPE_CONFIG: Record<string, {
 export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahierJournalId, initialClassId, initialLessonDay, initialWeekStartDate, initialSheetType, initialMatiere, initialSousMatiere, initialFicheId, initialFicheNonce, initialPayloadNonce }: PedagogicalSheetsTabProps) {
   const { user } = useAppSession();
   const [classes, setClasses] = useState<any[]>([]);
-  const [selectedClassId, setSelectedClassId] = useState<string>("");
+  // ⭐ FIX (plaintes sept. 2026 « le champ classe affiche parfois — ») :
+  //    la classe est présélectionnée DÈS l'initialisation depuis le cahier
+  //    journal (même pattern que CahierJournalTab) — même si le chargement de
+  //    la liste est lent ou échoue, la sélection de départ n'est jamais perdue.
+  const [selectedClassId, setSelectedClassId] = useState<string>(initialClassId || "");
+  // ⭐ Chargement des classes VISIBLE + état d'échec explicite (avant : toute
+  //    erreur HTTP produisait une liste vide silencieuse → « — » sans raison)
+  const [classesLoading, setClassesLoading] = useState(true);
+  const [classesFailed, setClassesFailed] = useState(false);
   const [fiches, setFiches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -517,23 +525,65 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   const removeDer5Row = (idx: number) => setMat("der5", (form.maternelle?.der5 || []).filter((_: any, i: number) => i !== idx));
 
   // === Chargement ===
-  const loadClasses = useCallback(async () => {
+  // ⭐ FIX « la classe n'apparaît pas parfois » : refs pour lire
+  //    selectedClassId/initialClassId SANS les mettre dans les dépendances de
+  //    loadClasses. Avant, chaque changement de classe (ou chaque événement du
+  //    cahier journal → initialClassId) recréait le callback → REFETCH complet
+  //    de my-classes. Une seule réponse lente/échouée sur ce refetch en boucle
+  //    vidait la liste → le sélecteur retombait sur « — Sélectionner — ».
+  const selectedClassIdRef = useRef(selectedClassId);
+  useEffect(() => { selectedClassIdRef.current = selectedClassId; }, [selectedClassId]);
+  const initialClassIdRef = useRef(initialClassId);
+  useEffect(() => { initialClassIdRef.current = initialClassId; }, [initialClassId]);
+  // ⭐ Choix MANUEL de l'enseignant dans le sélecteur de la liste : une fois
+  //    posé, les mises à jour du cahier journal ne l'écrasent plus.
+  const userPickedClassRef = useRef(false);
+
+  const loadClasses = useCallback(async (attempt = 0) => {
+    setClassesLoading(true);
+    let retryScheduled = false;
     try {
       const res = await fetch(`/api/pedagogy-space/my-classes?teacherId=${teacherId}&academicYearId=${academicYearId}`, { credentials: "include" });
+      // ⭐ res.ok OBLIGATOIRE : avant, un 401/500/502 (session en cours de
+      //    rafraîchissement, backend momentanément indisponible…) renvoyait un
+      //    objet d'erreur → Array.isArray faux → liste VIDE sans aucun message
+      //    → le champ Classe affichait « — » et la sauvegarde était bloquée.
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setClasses(list);
-      // ⭐ Pré-sélectionner la classe : priorité à initialClassId (depuis le cahier journal)
-      //    sinon la 1ère classe de la liste
-      if (list.length > 0 && !selectedClassId) {
-        if (initialClassId && list.some(c => c.classId === initialClassId)) {
-          setSelectedClassId(initialClassId);
+      setClassesFailed(false);
+      // ⭐ Pré-sélectionner la classe : priorité à initialClassId (depuis le cahier
+      //    journal) sinon la 1ère classe de la liste — lus via REF (zéro refetch)
+      const currentSel = selectedClassIdRef.current;
+      if (list.length > 0 && !currentSel) {
+        const init = initialClassIdRef.current;
+        if (init && list.some(c => c.classId === init)) {
+          setSelectedClassId(init);
         } else {
           setSelectedClassId(list[0].classId);
         }
       }
-    } catch { setClasses([]); }
-  }, [teacherId, academicYearId, selectedClassId, initialClassId]);
+    } catch (e: any) {
+      // ⭐ UNE retry automatique (transitoire : refresh de session, coupure
+      //    réseau brève) puis signalement VISIBLE — plus jamais d'échec muet.
+      //    L'état « Chargement… » est maintenu pendant la fenêtre de retry.
+      if (attempt === 0) {
+        retryScheduled = true;
+        setTimeout(() => { void loadClasses(1); }, 1200);
+        return;
+      }
+      setClasses([]);
+      setClassesFailed(true);
+      console.error("[PedagogicalSheetsTab] Erreur chargement classes:", e);
+      toast.error("Impossible de charger vos classes", {
+        description: "Vérifiez votre connexion puis rechargez la page. Vos fiches déjà enregistrées restent intactes.",
+      });
+    } finally {
+      // Ne baisser le spinner QUE si aucune retry n'est programmée
+      if (!retryScheduled) setClassesLoading(false);
+    }
+  }, [teacherId, academicYearId]);
 
   const loadFiches = useCallback(async () => {
     if (!selectedClassId) { setFiches([]); return; }
@@ -632,6 +682,18 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
 
   useEffect(() => { loadClasses(); }, [loadClasses]);
   useEffect(() => { loadFiches(); }, [loadFiches]);
+
+  // ⭐ FIX « la classe n'apparaît pas » : quand le cahier journal fournit/met à
+  //    jour initialClassId (chargement du journal, changement de semaine…), on
+  //    resélectionne la classe — SANS refetcher la liste. Le choix MANUEL de
+  //    l'enseignant (sélecteur de la liste) n'est jamais écrasé.
+  useEffect(() => {
+    if (!initialClassId || classes.length === 0) return;
+    if (userPickedClassRef.current) return;
+    if (classes.some(c => c.classId === initialClassId)) {
+      setSelectedClassId(initialClassId);
+    }
+  }, [initialClassId, classes]);
 
   // ⭐ 2026-09-15 : l'effet de résolution titulaire/directeur a été retiré —
   //    il ne servait qu'à la section signature (supprimée des fiches pédagogiques).
@@ -996,9 +1058,14 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   const updateStep = (idx: number, field: string, val: string) => setForm((p: any) => ({ ...p, deroulement: (p.deroulement || []).map((s: any, i: number) => i === idx ? { ...s, [field]: val } : s) }));
   const removeStep = (idx: number) => setForm((p: any) => ({ ...p, deroulement: (p.deroulement || []).filter((_: any, i: number) => i !== idx) }));
 
+  // ⭐ FIX « classe parfois absente » : changement de classe DEPUIS LE
+  //    FORMULAIRE — le champ Classe est désormais un vrai sélecteur éditable
+  //    dans la fiche (plus jamais un « — » en lecture seule qui bloque la
+  //    sauvegarde après avoir tout rempli).
   const onClassChange = (classId: string) => {
+    if (!classId) return;
     const cls = classes.find(c => c.classId === classId);
-    if (cls) setForm((p: any) => ({ ...p, classId, className: cls.className || "", boysCount: cls.boys || 0, girlsCount: cls.girls || 0, totalStudents: cls.totalStudents || 0, boysPresent: cls.boys || 0, girlsPresent: cls.girls || 0, totalPresent: cls.totalStudents || 0, boysAbsent: 0, girlsAbsent: 0, totalAbsent: 0 }));
+    if (cls) setForm((p: any) => ({ ...p, classId, className: cls.className || "", cours: p.cours || cls.className || "", boysCount: cls.boys || 0, girlsCount: cls.girls || 0, totalStudents: cls.totalStudents || 0, boysPresent: cls.boys || 0, girlsPresent: cls.girls || 0, totalPresent: cls.totalStudents || 0, boysAbsent: 0, girlsAbsent: 0, totalAbsent: 0 }));
   };
 
   const isReadOnly = form.status && form.status !== "DRAFT";
@@ -1163,11 +1230,27 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     //    cas nominal sans modification, qui ne doit PAS afficher d'alerte)
     const hadPending = ficheAutosave.hasPendingChanges();
     const ok = await ficheAutosave.saveNow().catch(() => false);
+    // ⭐ FIX « tout va en fumée » : contenu réellement saisi ? Le brouillon
+    //    local n'est désormais purgé QUE si une sauvegarde serveur a réussi
+    //    OU si le formulaire est vide. Avant, quand l'autosave n'avait jamais
+    //    pu tourner (classe absente → enabled=false → hasPendingChanges()=false
+    //    → saveNow()=false), l'ancien code tombait dans le « else » et PURGEAIT
+    //    le brouillon : retour à la liste = fiche perdue définitivement.
+    const formHasContent = hasRealContent(draftFormRef.current);
     if (hadPending && !ok) {
       // Échec réseau avec modifs en attente : conserver le brouillon local
-      //    (filet de sécurité — bandeau « Reprendre la saisie » au retour)
+      //    (filet de sécurité — bandeau « Reprendre la saisie » immédiat)
       toast.warning("Modifications non enregistrées", {
         description: "La connexion au serveur a échoué. Votre saisie est conservée localement et pourra être reprise.",
+      });
+      setRecoveredDraft({ form: draftFormRef.current, editingFicheId: draftEditingRef.current?.id || null, savedAt: Date.now() });
+    } else if (!ok && formHasContent) {
+      // ⭐ Autosave impossible (classe manquante à l'ouverture…) mais contenu
+      //    saisi : TOUT est conservé localement + bandeau immédiat — la saisie
+      //    ne part PLUS « en fumée ».
+      setRecoveredDraft({ form: draftFormRef.current, editingFicheId: draftEditingRef.current?.id || null, savedAt: Date.now() });
+      toast.warning("Saisie conservée localement", {
+        description: "La fiche n'a pas pu être enregistrée sur le serveur (classe ou connexion manquante). Elle peut être reprise via le bandeau « Reprendre la saisie ».",
       });
     } else {
       try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
@@ -1303,6 +1386,22 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                     paramétrer les matières dans le module Pédagogie → « Matières &amp; programmes ».
                   </div>
                 )}
+              </div>
+              {/* ⭐ FIX « classe parfois — » (maternelle) : sélecteur de classe
+                  ÉDITABLE dans le formulaire maternelle — la classe est toujours
+                  visible et corrigeable AVANT la sauvegarde. */}
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="text-xs font-bold text-slate-700 whitespace-nowrap">CLASSE :</label>
+                <select value={form.classId || ""} onChange={(e) => onClassChange(e.target.value)} disabled={isReadOnly}
+                  className="flex-1 min-w-[220px] px-3 py-1.5 bg-white border border-slate-300 rounded-md text-sm font-medium focus:border-indigo-500 outline-none">
+                  <option value="">
+                    {classesLoading ? "Chargement des classes…" : classes.length === 0 ? "Aucune classe — rechargez la page" : "— Sélectionner une classe —"}
+                  </option>
+                  {classes.map((c) => <option key={c.classId} value={c.classId}>{c.className || c.classId}</option>)}
+                  {form.classId && !classes.some((c) => c.classId === form.classId) && (
+                    <option value={form.classId}>{form.className || form.classId}</option>
+                  )}
+                </select>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <label className="text-xs font-bold text-slate-700 whitespace-nowrap">FICHE DE :</label>
@@ -1771,9 +1870,21 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                 ))}
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Classe</label>
-                  <div className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-medium bg-slate-50">
-                    {form.className || classes.find(c => c.classId === form.classId)?.className || "—"}
-                  </div>
+                  {/* ⭐ FIX « classe parfois — » : VRAI sélecteur éditable (avant :
+                      div en lecture seule — impossible de choisir la classe depuis
+                      la fiche → sauvegarde bloquée après avoir tout rempli). */}
+                  <select value={form.classId || ""} onChange={(e) => onClassChange(e.target.value)} disabled={isReadOnly}
+                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-medium bg-white">
+                    <option value="">
+                      {classesLoading ? "Chargement des classes…" : classes.length === 0 ? "Aucune classe — rechargez la page" : "— Sélectionner une classe —"}
+                    </option>
+                    {classes.map((c) => <option key={c.classId} value={c.classId}>{c.className || c.classId}</option>)}
+                    {/* ⭐ Classe orpheline (fiche d'une année précédente / classe
+                        non affectée) : toujours proposée — jamais perdue. */}
+                    {form.classId && !classes.some((c) => c.classId === form.classId) && (
+                      <option value={form.classId}>{form.className || form.classId}</option>
+                    )}
+                  </select>
                 </div>
               </div>
               <div>
@@ -1809,9 +1920,21 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Classe</label>
-                  <div className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-medium bg-slate-50">
-                    {form.className || classes.find(c => c.classId === form.classId)?.className || "—"}
-                  </div>
+                  {/* ⭐ FIX « classe parfois — » : VRAI sélecteur éditable (avant :
+                      div en lecture seule — impossible de choisir la classe depuis
+                      la fiche → sauvegarde bloquée après avoir tout rempli). */}
+                  <select value={form.classId || ""} onChange={(e) => onClassChange(e.target.value)} disabled={isReadOnly}
+                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-medium bg-white">
+                    <option value="">
+                      {classesLoading ? "Chargement des classes…" : classes.length === 0 ? "Aucune classe — rechargez la page" : "— Sélectionner une classe —"}
+                    </option>
+                    {classes.map((c) => <option key={c.classId} value={c.classId}>{c.className || c.classId}</option>)}
+                    {/* ⭐ Classe orpheline (fiche d'une année précédente / classe
+                        non affectée) : toujours proposée — jamais perdue. */}
+                    {form.classId && !classes.some((c) => c.classId === form.classId) && (
+                      <option value={form.classId}>{form.className || form.classId}</option>
+                    )}
+                  </select>
                 </div>
               </div>
               {/* ⭐ SOUS-MATIÈRE (MATH) — facultatif (tout est déjà sur la fiche
@@ -1870,9 +1993,21 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                 </div>
                 <div className="md:col-span-2">
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Classe</label>
-                  <div className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-medium bg-slate-50">
-                    {form.className || classes.find(c => c.classId === form.classId)?.className || "—"}
-                  </div>
+                  {/* ⭐ FIX « classe parfois — » : VRAI sélecteur éditable (avant :
+                      div en lecture seule — impossible de choisir la classe depuis
+                      la fiche → sauvegarde bloquée après avoir tout rempli). */}
+                  <select value={form.classId || ""} onChange={(e) => onClassChange(e.target.value)} disabled={isReadOnly}
+                    className="w-full px-2 py-1.5 border border-slate-200 rounded text-sm font-medium bg-white">
+                    <option value="">
+                      {classesLoading ? "Chargement des classes…" : classes.length === 0 ? "Aucune classe — rechargez la page" : "— Sélectionner une classe —"}
+                    </option>
+                    {classes.map((c) => <option key={c.classId} value={c.classId}>{c.className || c.classId}</option>)}
+                    {/* ⭐ Classe orpheline (fiche d'une année précédente / classe
+                        non affectée) : toujours proposée — jamais perdue. */}
+                    {form.classId && !classes.some((c) => c.classId === form.classId) && (
+                      <option value={form.classId}>{form.className || form.classId}</option>
+                    )}
+                  </select>
                 </div>
               </div>
               {/* ⭐ SOUS-MATIÈRE (ES : Morale/Civisme/Histoire/Géographie ;
@@ -2203,10 +2338,13 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
         {/* ⭐ Sélecteur de classe (obligatoire avant "Nouvelle fiche") */}
         <div className="flex flex-col gap-1">
           <label className="text-xs font-semibold text-slate-500 uppercase">Classe</label>
-          <select value={selectedClassId} onChange={e => setSelectedClassId(e.target.value)}
-            className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm min-w-[200px]">
-            <option value="">— Sélectionner une classe —</option>
-            {classes.map(c => <option key={c.classId} value={c.classId}>{c.className}</option>)}
+          <select value={selectedClassId} onChange={e => { userPickedClassRef.current = true; setSelectedClassId(e.target.value); }}
+            disabled={classesLoading}
+            className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm min-w-[200px] disabled:bg-slate-100">
+            <option value="">
+              {classesLoading ? "Chargement des classes…" : classes.length === 0 ? (classesFailed ? "Échec du chargement — rechargez" : "Aucune classe") : "— Sélectionner une classe —"}
+            </option>
+            {classes.map(c => <option key={c.classId} value={c.classId}>{c.className || c.classId}</option>)}
           </select>
         </div>
         <div className="flex flex-col gap-1">

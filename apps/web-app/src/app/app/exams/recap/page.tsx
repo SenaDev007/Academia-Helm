@@ -144,10 +144,12 @@ function TermRecapContent() {
   const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
 
   // ── Load classes (isolation niveau + piste, ordre pédagogique) ─────────────
+  // ⭐ FIX PERF (2026-09-21) : academicYearId transmis → la route BFF saute
+  //    la résolution d'année (un aller-retour serveur de moins).
   const loadClasses = useCallback(async () => {
     if (!schoolLevelUuid) return;
     try {
-      const res = await fetch('/api/all-classes', { credentials: 'include' });
+      const res = await fetch(`/api/all-classes${academicYear?.id ? `?academicYearId=${encodeURIComponent(academicYear.id)}` : ''}`, { credentials: 'include' });
       const data = await res.json();
       const allClasses = Array.isArray(data) ? data : (data?.items || []);
       const langClasses = filterClassesForLevel(allClasses, schoolLevelUuid, language);
@@ -164,7 +166,7 @@ function TermRecapContent() {
     } catch {
       setClasses([]);
     }
-  }, [schoolLevelUuid, language, selectedClassId]);
+  }, [schoolLevelUuid, language, selectedClassId, academicYear?.id]);
 
   // ── Load periods (trimestres de l'année active) ─────────────────────────────
   useEffect(() => {
@@ -379,16 +381,16 @@ function TermRecapSheet({
       setLoading(true);
       try {
         // Notes par évaluation : Map<evaluationId, students[]>
-        const gradesByEval = new Map<string, any[]>();
+        // ⭐ FIX PERF (2026-09-21 — module Examen lent) : UN SEUL appel batché
+        //    au lieu de N requêtes HTTP parallèles (une par évaluation).
         const allEvals = comps.flatMap((k) => periodEvals[k]);
-        await Promise.all(allEvals.map(async (ev: any) => {
-          try {
-            const response = await apiClient.get(`/institutional-exams/grades/evaluation/${ev.id}`);
-            gradesByEval.set(ev.id, Array.isArray(response.data) ? response.data : []);
-          } catch {
-            gradesByEval.set(ev.id, []);
-          }
-        }));
+        const sheetsMap = await institutionalExamsService
+          .getGradingSheetsBatch(allEvals.map((ev: any) => ev.id))
+          .catch(() => ({}) as Record<string, any[]>);
+        const gradesByEval = new Map<string, any[]>();
+        for (const ev of allEvals) {
+          gradesByEval.set(ev.id, Array.isArray(sheetsMap[ev.id]) ? sheetsMap[ev.id] : []);
+        }
 
         // Matières = UNION des matières des évaluations (ordre d'apparition)
         const subjectMap = new Map<string, string>();

@@ -103,11 +103,13 @@ function DashboardContent() {
   const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
 
   // ── Load classes ──────────────────────────────────────────────────────────
+  // ⭐ FIX PERF (2026-09-21) : academicYearId transmis → la route BFF saute
+  //    la résolution d'année (un aller-retour serveur de moins).
   useEffect(() => {
     async function loadClasses() {
       if (!schoolLevelUuid) return;
       try {
-        const res = await fetch('/api/all-classes', { credentials: 'include' });
+        const res = await fetch(`/api/all-classes${academicYear?.id ? `?academicYearId=${encodeURIComponent(academicYear.id)}` : ''}`, { credentials: 'include' });
         const data = await res.json();
         const allClasses = Array.isArray(data) ? data : (data?.items || []);
         // ⭐ V10b — Isolation stricte niveau + piste linguistique
@@ -123,7 +125,7 @@ function DashboardContent() {
       } catch { setClasses([]); }
     }
     loadClasses();
-  }, [schoolLevelUuid, scopeLang]);
+  }, [schoolLevelUuid, scopeLang, academicYear?.id]);
 
   // ── Load evaluations ──────────────────────────────────────────────────────
   useEffect(() => {

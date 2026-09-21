@@ -8,6 +8,7 @@ import apiClient from '@/lib/api/client';
 import { networkDetectionService } from '@/lib/offline/network-detection.service';
 import { LocalSearchService } from '@/lib/offline/local-search.service';
 import { createEntityOffline, updateEntityOffline } from '@/lib/offline/offline-business.service';
+import { cachedGet } from '@/lib/api/get-cache';
 
 function getTenantId(): string {
   if (typeof document === "undefined") return "";
@@ -88,18 +89,35 @@ export const institutionalExamsService = {
 
   /**
    * EVALUATIONS — avec fallback offline
+   * ⭐ FIX PERF (2026-09-21 — « les évaluations mettent plus d'une minute à
+   *    charger ») : cache client 45 s + DÉDUPLICATION des requêtes en vol.
+   *    Le module Examen recharge la liste à CHAQUE changement d'onglet et au
+   *    double montage initial (résolution de availableLevels) → plusieurs
+   *    requêtes réseau IDENTIQUES de plusieurs Mo se juxtaposaient sur un
+   *    réseau lent (Bénin 300-600 ms RTT), d'où les toasts « délai dépassé ».
+   *    Désormais : 1 seule requête en vol, les autres appelants partagent la
+   *    même promesse. Toute mutation (création/suppression/validation) via
+   *    apiClient invalide automatiquement le cache → fraîcheur garantie
+   *    après écriture.
    */
   async getEvaluations(params: any) {
     if (!networkDetectionService.isConnected()) {
       return LocalSearchService.search("exams", { tenantId: getTenantId(), filters: params });
     }
-    try {
-      const response = await apiClient.get(`/institutional-exams/evaluations`, { params });
-      return response.data;
-    } catch (error: any) {
-      if (error.isOffline) return LocalSearchService.search("exams", { tenantId: getTenantId(), filters: params });
-      throw error;
-    }
+    const qs = new URLSearchParams(
+      Object.entries(params || {})
+        .filter(([, v]) => v !== undefined && v !== null && v !== '')
+        .map(([k, v]) => [k, String(v)]),
+    ).toString();
+    return cachedGet(`GET:/institutional-exams/evaluations?${qs}`, async () => {
+      try {
+        const response = await apiClient.get(`/institutional-exams/evaluations`, { params });
+        return response.data;
+      } catch (error: any) {
+        if (error.isOffline) return LocalSearchService.search("exams", { tenantId: getTenantId(), filters: params });
+        throw error;
+      }
+    });
   },
 
   async createEvaluation(data: any) {
@@ -181,6 +199,44 @@ export const institutionalExamsService = {
       if (error.isOffline) return LocalSearchService.search("grades", { tenantId: getTenantId(), filters: { evaluationId } });
       throw error;
     }
+  },
+
+  // ⭐ FIX PERF (2026-09-21 — fan-out N+1 sur HTTP) : grilles de notes pour N
+  //    évaluations en UN SEUL appel (onglets Validation, Registre des notes,
+  //    Récapitulatif, Bulletins). Avant : chaque évaluation déclenchait sa
+  //    propre requête HTTP (jusqu'à 30+ requêtes parallèles) → saturation du
+  //    navigateur + du Service Worker sur réseau lent → > 1 min de chargement.
+  //    Retourne { [evaluationId]: [ {studentId, studentName, score, cm, cp…} ] }.
+  //    Chunké (40 ids max par appel) pour rester sous les limites d'URL, avec
+  //    cache client 45 s + dédup en vol.
+  async getGradingSheetsBatch(evaluationIds: string[]): Promise<Record<string, any[]>> {
+    const ids = Array.from(new Set((evaluationIds || []).filter(Boolean)));
+    if (ids.length === 0) return {};
+    if (!networkDetectionService.isConnected()) {
+      // Hors ligne : servir chaque évaluation depuis le cache local
+      const out: Record<string, any[]> = {};
+      for (const id of ids) {
+        out[id] = LocalSearchService.search("grades", { tenantId: getTenantId(), filters: { evaluationId: id } }) as any[];
+      }
+      return out;
+    }
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += 40) chunks.push(ids.slice(i, i + 40));
+    const results = await Promise.all(
+      chunks.map((chunk) => {
+        const sortedKey = chunk.slice().sort().join(',');
+        return cachedGet<Record<string, any[]>>(
+          `GET:/institutional-exams/grades/evaluations?${sortedKey}`,
+          async () => {
+            const response = await apiClient.get(`/institutional-exams/grades/evaluations`, {
+              params: { ids: chunk.join(',') },
+            });
+            return (response.data && typeof response.data === 'object') ? response.data : {};
+          },
+        );
+      }),
+    );
+    return Object.assign({}, ...results);
   },
 
   async saveGrades(evaluationId: string, grades: any[]) {

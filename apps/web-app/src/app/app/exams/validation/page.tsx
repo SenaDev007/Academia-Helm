@@ -256,16 +256,17 @@ function ValidationDetailSheet({
       }
       setLoading(true);
       try {
-        const sheets = await Promise.all(
-          group.evaluationIds.map(async (evId) => {
-            try {
-              const response = await apiClient.get(`/institutional-exams/grades/evaluation/${evId}`);
-              return { evaluationId: evId, students: Array.isArray(response.data) ? response.data : [] };
-            } catch {
-              return { evaluationId: evId, students: [] };
-            }
-          })
-        );
+        // ⭐ FIX PERF (2026-09-21 — module Examen lent) : UN SEUL appel batché
+        //    au lieu de N requêtes HTTP parallèles (une par évaluation), qui
+        //    saturaient le navigateur et le Service Worker sur réseau lent.
+        //    Même format de résultat : { evaluationId, students }[].
+        const sheetsMap = await institutionalExamsService
+          .getGradingSheetsBatch(group.evaluationIds)
+          .catch(() => ({}) as Record<string, any[]>);
+        const sheets = group.evaluationIds.map((evId) => ({
+          evaluationId: evId,
+          students: Array.isArray(sheetsMap[evId]) ? sheetsMap[evId] : [],
+        }));
 
         const evalToSubject = new Map<string, string>();
         group.evaluationIds.forEach((evId, idx) => {

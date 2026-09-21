@@ -45,6 +45,7 @@ import { academicSettingsService } from '@/services/academic-settings.service';
 import { classesService } from '@/services/classes.service';
 import { pedagogyService } from '@/services/pedagogy.service';
 import { getAcademicYearPeriods } from '@/services/settings.service';
+import { cachedGet } from '@/lib/api/get-cache';
 import { toastSuccess, toastError, toastWarning, toastInfo } from '@/lib/toast/toast-helpers';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -626,13 +627,41 @@ export default function EvaluationsPage() {
       };
       if (scopeLang) params.language = scopeLang;
 
-      // ⭐ Récupérer les types d'évaluation depuis school_academic_settings
-      // (où l'utilisateur les a créés dans l'onglet Paramètres).
-      // Le paramétrage actif contient config.assessmentTypes avec code/label.
-      const activeSettings = await academicSettingsService.getActive(academicYear.id, {
-        levelCode: scopeLevel || undefined,
-        language: scopeLang || undefined,
-      }).catch(() => null);
+      // ⭐ FIX PERF (2026-09-21 — « plus d'une minute avant que le chargement
+      //    ne s'effectue », toasts « délai dépassé ») : les 5 requêtes partent
+      //    désormais TOUTES EN PARALLÈLE. Avant, getActive (paramétrage) était
+      //    AWAITÉ SÉQUENTIELLEMENT AVANT le Promise.all → un aller-retour
+      //    complet de plus (jusqu'à 25-30 s via le Service Worker sur réseau
+      //    lent) avant même que les données principales ne partent. En cascade
+      //    avec /api/all-classes (qui refaisait la résolution d'année en plus),
+      //    le pire cas dépassait largement la minute.
+      //
+      //    Complément (services) : getEvaluations et getActive passent par le
+      //    cache client (45 s + dédup en vol) → le double montage de la page
+      //    (résolution de availableLevels) ne rejoue plus N requêtes réseau
+      //    identiques, et le rafraîchissement post-enregistrement ne refetch
+      //    que la liste des évaluations (invalidée par la mutation).
+      const [activeSettings, evals, allClassesData, periodsData, subjectsData] = await Promise.all([
+        academicSettingsService.getActive(academicYear.id, {
+          levelCode: scopeLevel || undefined,
+          language: scopeLang || undefined,
+        }).catch(() => null),
+        institutionalExamsService.getEvaluations(params),
+        // ⭐ academicYearId transmis → la route BFF saute la résolution d'année
+        //    (un fetch de moins côté serveur) + cache client 45 s avec dédup en
+        //    vol (double montage de la page → 1 seule requête réseau réelle).
+        cachedGet(`GET:/api/all-classes?year=${academicYear.id}`, () =>
+          fetch(`/api/all-classes?academicYearId=${encodeURIComponent(academicYear.id)}`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : [])
+        ).catch(() => []),
+        getAcademicYearPeriods(academicYear.id).catch(() => []),
+        // ⭐ V10c — On ne récupère QUE les matières du niveau + de la piste
+        // linguistique (language=EN → uniquement anglophones côté backend).
+        pedagogyService.getSubjects(academicYear.id, {
+          schoolLevelId: schoolLevelUuid,
+          language: scopeLang,
+        }).catch(() => []),
+      ]);
 
       // Convertir assessmentTypes → format EvaluationTypeItem
       const assessmentTypes = activeSettings?.config?.assessmentTypes || [];
@@ -670,17 +699,6 @@ export default function EvaluationsPage() {
         }));
       }
 
-      const [evals, allClassesData, periodsData, subjectsData] = await Promise.all([
-        institutionalExamsService.getEvaluations(params),
-        fetch('/api/all-classes', { credentials: 'include' }).then(r => r.ok ? r.json() : []).catch(() => []),
-        getAcademicYearPeriods(academicYear.id).catch(() => []),
-        // ⭐ V10c — On ne récupère QUE les matières du niveau + de la piste
-        // linguistique (language=EN → uniquement anglophones côté backend).
-        pedagogyService.getSubjects(academicYear.id, {
-          schoolLevelId: schoolLevelUuid,
-          language: scopeLang,
-        }).catch(() => []),
-      ]);
       setEvaluations(Array.isArray(evals) ? evals : []);
 
       // ⭐ V10b — Isolation stricte par niveau + piste linguistique :

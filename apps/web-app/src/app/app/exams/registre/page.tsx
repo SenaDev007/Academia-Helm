@@ -161,10 +161,12 @@ function RegistreContent() {
   const isSecondaire = scopeLevel === 'SECONDAIRE';
 
   // ── Load classes (with pedagogical sort + auto-select first) ──────────────
+  // ⭐ FIX PERF (2026-09-21) : academicYearId transmis → la route BFF saute
+  //    la résolution d'année (un aller-retour serveur de moins).
   const loadClasses = useCallback(async () => {
     if (!schoolLevelUuid) return;
     try {
-      const res = await fetch('/api/all-classes', { credentials: 'include' });
+      const res = await fetch(`/api/all-classes${academicYear?.id ? `?academicYearId=${encodeURIComponent(academicYear.id)}` : ''}`, { credentials: 'include' });
       const data = await res.json();
       const allClasses = Array.isArray(data) ? data : (data?.items || []);
       // ⭐ V10b — Isolation stricte niveau + piste linguistique (non marqué = FR)
@@ -182,7 +184,7 @@ function RegistreContent() {
     } catch {
       setClasses([]);
     }
-  }, [schoolLevelUuid, language, selectedClassId]);
+  }, [schoolLevelUuid, language, selectedClassId, academicYear?.id]);
 
   // ── Load VALIDATED evaluations for the selected class ─────────────────────
   const loadEvaluations = useCallback(async () => {
@@ -564,14 +566,15 @@ function RegistreSecondaireView({
     setSheetLoading(true);
     (async () => {
       try {
-        const sheets = await Promise.all(Array.from(evalIds).map(async (id) => {
-          try {
-            const response = await apiClient.get(`/institutional-exams/grades/evaluation/${id}`);
-            return [id, Array.isArray(response.data) ? response.data : []] as [string, any[]];
-          } catch {
-            return [id, []] as [string, any[]];
-          }
-        }));
+        // ⭐ FIX PERF (2026-09-21 — module Examen lent) : UN SEUL appel batché
+        //    au lieu de N requêtes HTTP parallèles (une par évaluation).
+        const sheetsMap = await institutionalExamsService
+          .getGradingSheetsBatch(Array.from(evalIds))
+          .catch(() => ({}) as Record<string, any[]>);
+        const sheets = Array.from(evalIds).map((id) => [
+          id,
+          Array.isArray(sheetsMap[id]) ? sheetsMap[id] : [],
+        ] as [string, any[]]);
         if (cancelled) return;
         setGradesByEvalId(new Map(sheets));
       } finally {
@@ -1299,16 +1302,15 @@ function RegistreDetailSheet({
       }
       setLoading(true);
       try {
-        const sheets = await Promise.all(
-          group.evaluationIds.map(async (evId) => {
-            try {
-              const response = await apiClient.get(`/institutional-exams/grades/evaluation/${evId}`);
-              return { evaluationId: evId, students: Array.isArray(response.data) ? response.data : [] };
-            } catch {
-              return { evaluationId: evId, students: [] };
-            }
-          })
-        );
+        // ⭐ FIX PERF (2026-09-21 — module Examen lent) : UN SEUL appel batché
+        //    au lieu de N requêtes HTTP parallèles (une par évaluation).
+        const sheetsMap = await institutionalExamsService
+          .getGradingSheetsBatch(group.evaluationIds)
+          .catch(() => ({}) as Record<string, any[]>);
+        const sheets = group.evaluationIds.map((evId) => ({
+          evaluationId: evId,
+          students: Array.isArray(sheetsMap[evId]) ? sheetsMap[evId] : [],
+        }));
 
         const evalToSubject = new Map<string, string>();
         group.evaluationIds.forEach((evId, idx) => {

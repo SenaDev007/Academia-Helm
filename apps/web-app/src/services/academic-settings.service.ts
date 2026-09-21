@@ -13,6 +13,7 @@
 
 import apiClient from '@/lib/api/client';
 import { getApiBaseUrl } from '@/lib/utils/urls';
+import { cachedGet } from '@/lib/api/get-cache';
 
 const BASE_URL = getApiBaseUrl();
 
@@ -92,20 +93,29 @@ export const academicSettingsService = {
     secondaryCycle?: string;
     classId?: string;
   }): Promise<any> {
-    try {
-      const params: any = { schoolYearId };
-      if (scope?.levelCode) params.levelCode = scope.levelCode;
-      if (scope?.language) params.language = scope.language;
-      if (scope?.secondaryCycle) params.secondaryCycle = scope.secondaryCycle;
-      if (scope?.classId) params.classId = scope.classId;
-      const response = await apiClient.get('/exams/settings/active', { params });
-      const data = response.data;
-      if (data?.id) await cacheOneSetting(data);
-      return data;
-    } catch {
-      console.warn('[AcademicSettings] Network unavailable, using cached active setting');
-      return getCachedActiveSetting();
-    }
+    // ⭐ FIX PERF (2026-09-21 — module Examen lent) : cache client 45 s +
+    //    dédup des requêtes en vol. Ce paramétrage est demandé par TOUTES
+    //    les pages du module (évaluations, notes, validation, bulletins…)
+    //    à chaque montage — il ne change quasiment jamais pendant une
+    //    session. Toute mutation via apiClient (sauvegarde du paramétrage)
+    //    invalide le cache → fraîcheur garantie après écriture.
+    const params: any = { schoolYearId };
+    if (scope?.levelCode) params.levelCode = scope.levelCode;
+    if (scope?.language) params.language = scope.language;
+    if (scope?.secondaryCycle) params.secondaryCycle = scope.secondaryCycle;
+    if (scope?.classId) params.classId = scope.classId;
+    const qs = new URLSearchParams(Object.entries(params)).toString();
+    return cachedGet(`GET:/exams/settings/active?${qs}`, async () => {
+      try {
+        const response = await apiClient.get('/exams/settings/active', { params });
+        const data = response.data;
+        if (data?.id) await cacheOneSetting(data);
+        return data;
+      } catch {
+        console.warn('[AcademicSettings] Network unavailable, using cached active setting');
+        return getCachedActiveSetting();
+      }
+    });
   },
 
   /**

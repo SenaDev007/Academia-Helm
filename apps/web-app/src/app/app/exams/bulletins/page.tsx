@@ -36,7 +36,7 @@
 
 'use client';
 
-import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
 import {
   FileText, Loader2, ChevronDown, ChevronRight, Download,
   Users, BookOpen, Award, Calendar, Printer, AlertCircle,
@@ -362,15 +362,15 @@ async function computeSecondaryPeriodAverages(
   isJunior: boolean,
   coefficientBySubject: Map<string, number>,
 ): Promise<Map<string, number | null>> {
+  // ⭐ FIX PERF (2026-09-21 — module Examen lent) : UN SEUL appel batché au
+  //    lieu de N requêtes HTTP parallèles (une par évaluation).
+  const sheetsMap = await institutionalExamsService
+    .getGradingSheetsBatch(periodEvals.map((ev: any) => ev.id))
+    .catch(() => ({}) as Record<string, any[]>);
   const gradesByEval = new Map<string, any[]>();
-  await Promise.all(periodEvals.map(async (ev: any) => {
-    try {
-      const r = await apiClient.get(`/institutional-exams/grades/evaluation/${ev.id}`);
-      gradesByEval.set(ev.id, Array.isArray(r.data) ? r.data : []);
-    } catch {
-      gradesByEval.set(ev.id, []);
-    }
-  }));
+  for (const ev of periodEvals) {
+    gradesByEval.set(ev.id, Array.isArray(sheetsMap[ev.id]) ? sheetsMap[ev.id] : []);
+  }
 
   // Slots par élève × matière
   const slotsByStudent = new Map<string, Map<string, { INT1?: number | null; INT2?: number | null; DS1?: number | null; DS2?: number | null }>>();
@@ -441,6 +441,15 @@ function BulletinsContent() {
 
   const [classes, setClasses] = useState<any[]>([]);
   const [periods, setPeriods] = useState<any[]>([]);
+  // ⭐ FIX PERF (2026-09-21) : refs miroirs — loadBulletins lit classes/periods
+  //    via refs et ne les a PLUS dans ses dépendances. Avant, chaque re-fetch
+  //    des listes de référence (nouvelle identité de tableau, contenu identique)
+  //    recréait le callback → RECHARGEMENT COMPLET des bulletins (requêtes
+  //    évaluations + notes rejouées pour rien).
+  const classesRef = useRef<any[]>([]);
+  const periodsRef = useRef<any[]>([]);
+  useEffect(() => { classesRef.current = classes; }, [classes]);
+  useEffect(() => { periodsRef.current = periods; }, [periods]);
   const [evaluationTypes, setEvaluationTypes] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedPeriodId, setSelectedPeriodId] = useState('');
@@ -558,7 +567,7 @@ function BulletinsContent() {
   const loadClasses = useCallback(async () => {
     if (!schoolLevelUuid) return;
     try {
-      const res = await fetch('/api/all-classes', { credentials: 'include' });
+      const res = await fetch(`/api/all-classes${academicYear?.id ? `?academicYearId=${encodeURIComponent(academicYear.id)}` : ''}`, { credentials: 'include' });
       const data = await res.json();
       const allClasses = Array.isArray(data) ? data : (data?.items || []);
       // ⭐ V10b — Isolation stricte niveau + piste linguistique (non marqué = FR)
@@ -572,7 +581,7 @@ function BulletinsContent() {
       setClasses(langClasses);
       if (langClasses.length > 0 && !selectedClassId) setSelectedClassId(langClasses[0].id);
     } catch { setClasses([]); }
-  }, [schoolLevelUuid, scopeLang, selectedClassId]);
+  }, [schoolLevelUuid, scopeLang, selectedClassId, academicYear?.id]);
 
   // ── Load periods ──────────────────────────────────────────────────────────
   const loadPeriods = useCallback(async () => {
@@ -658,10 +667,10 @@ function BulletinsContent() {
         : filtered;
 
       // ⭐ SECONDAIRE — 6e/5e SANS coefficient ; 4e → Terminale AVEC coefficient
-      const selectedClassObj = classes.find((c: any) => c.id === selectedClassId);
+      const selectedClassObj = classesRef.current.find((c: any) => c.id === selectedClassId);
       const isJuniorSec = isJuniorSecondaryClass2(selectedClassObj?.name || '');
       const selectedPeriodNumber = parseInt(
-        (periods.find((p: any) => p.id === selectedPeriodId)?.name || '').match(/(\d+)/)?.[1] || '0', 10
+        (periodsRef.current.find((p: any) => p.id === selectedPeriodId)?.name || '').match(/(\d+)/)?.[1] || '0', 10
       );
 
       // ⭐ Step 2: Build subject list (sorted)
@@ -679,18 +688,19 @@ function BulletinsContent() {
         }
       }
 
-      // ⭐ Step 3: Fetch grades for each evaluation (same as registre)
+      // ⭐ Step 3: Fetch grades — UN SEUL appel batché (FIX PERF 2026-09-21 :
+      //    N requêtes HTTP parallèles saturaient le navigateur/le SW sur
+      //    réseau lent → temps de chargement > 1 min et toasts « délai
+      //    dépassé »)
       const evalGradesMap = new Map<string, any[]>();
-      await Promise.all(
-        langFiltered.map(async (ev: any) => {
-          try {
-            const response = await apiClient.get(`/institutional-exams/grades/evaluation/${ev.id}`);
-            evalGradesMap.set(ev.id, Array.isArray(response.data) ? response.data : []);
-          } catch {
-            evalGradesMap.set(ev.id, []);
-          }
-        })
-      );
+      {
+        const sheetsMap = await institutionalExamsService
+          .getGradingSheetsBatch(langFiltered.map((ev: any) => ev.id))
+          .catch(() => ({}) as Record<string, any[]>);
+        for (const ev of langFiltered) {
+          evalGradesMap.set(ev.id, Array.isArray(sheetsMap[ev.id]) ? sheetsMap[ev.id] : []);
+        }
+      }
 
       // ⭐ Step 4: Build student results + compute averages (frontend calculation)
       const studentMap = new Map<string, StudentResult>();
@@ -980,7 +990,7 @@ function BulletinsContent() {
       //    récap s'ajoute sous le tableau du T3 uniquement (modèle officiel).
       if (secondaryConsolidated && selectedPeriodNumber === 3 && results.length > 0) {
         const coefficientBySubject = new Map<string, number>(subjects.map((s) => [s.id, s.coefficient ?? 1]));
-        const otherPeriods = periods
+        const otherPeriods = periodsRef.current
           .filter((p: any) => p.id !== selectedPeriodId)
           .sort((a: any, b: any) => {
             const numA = parseInt((a.name || '').match(/(\d+)/)?.[1] || '99', 10);
@@ -1058,7 +1068,10 @@ function BulletinsContent() {
     } finally {
       setLoadingBulletins(false);
     }
-  }, [selectedClassId, selectedPeriodId, selectedEvalTypeId, academicYear?.id, scopeLang, isMaternelle, isSecondaryTrack, secondaryConsolidated, classes, periods]);
+  // ⭐ FIX PERF : classes/periods retirés des deps (lus via refs ci-dessus) —
+  //    fin des rechargements complets des bulletins à chaque re-fetch des
+  //    listes de référence.
+  }, [selectedClassId, selectedPeriodId, selectedEvalTypeId, academicYear?.id, scopeLang, isMaternelle, isSecondaryTrack, secondaryConsolidated]);
 
   useEffect(() => { loadBulletins(); }, [loadBulletins]);
 
@@ -3477,19 +3490,31 @@ function MoyennesTab({
         // accessible ensuite (noms d'élèves depuis les notes du 1er type) —
         // corrige le ReferenceError latent evalGradesMap.
         const evalGradesMap = new Map<string, any[]>();
+        // ⭐ FIX PERF (2026-09-21) : récupérer TOUTES les notes d'un coup
+        //    (batché) AVANT la boucle des types — au lieu d'une requête HTTP
+        //    par évaluation à chaque itération.
+        {
+          const allLangEvalIds: string[] = [];
+          for (const [, evals] of evalTypeMap) {
+            const langEvals0 = scopeLang
+              ? evals.filter((ev: any) => matchesLevelLanguage(ev.subject, scopeLang))
+              : evals;
+            langEvals0.forEach((ev: any) => allLangEvalIds.push(ev.id));
+          }
+          const sheetsMap = await institutionalExamsService
+            .getGradingSheetsBatch(allLangEvalIds)
+            .catch(() => ({}) as Record<string, any[]>);
+          for (const id of allLangEvalIds) {
+            evalGradesMap.set(id, Array.isArray(sheetsMap[id]) ? sheetsMap[id] : []);
+          }
+        }
         for (const [typeId, evals] of evalTypeMap) {
           // Filter by language — ⭐ V10b règle d'isolation stricte (non marqué = FR)
           const langEvals = scopeLang
             ? evals.filter((ev: any) => matchesLevelLanguage(ev.subject, scopeLang))
             : evals;
 
-          // Get grades for each eval (map hoistée avant la boucle des types)
-          await Promise.all(langEvals.map(async (ev: any) => {
-            try {
-              const res = await apiClient.get(`/institutional-exams/grades/evaluation/${ev.id}`);
-              evalGradesMap.set(ev.id, Array.isArray(res.data) ? res.data : []);
-            } catch { evalGradesMap.set(ev.id, []); }
-          }));
+          // (notes déjà récupérées EN BATCH avant la boucle — evalGradesMap)
 
           // Compute per-student average for this eval type
           const studentScores = new Map<string, { total: number; count: number; tsCount: number; sCount: number; psCount: number }>();

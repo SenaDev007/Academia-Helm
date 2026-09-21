@@ -351,7 +351,12 @@ export class StaffPrismaService {
         documents: {
           orderBy: { createdAt: 'desc' },
         },
-        photo: true,
+        // ⭐ FIX PERF 2026-09-21 : ne sélectionner QUE la vignette — la liste
+        //    renvoyait originalUrl + hdUrl + thumbnailUrl (3 copies base64 de
+        //    ~70 Ko chacune quand la photo est une data-URL) alors qu'aucun
+        //    composant ne lit autre chose que `photoUrl` (mappé depuis
+        //    thumbnailUrl). La fiche détaillée (findStaffById) garde photo: true.
+        photo: { select: { thumbnailUrl: true } },
         schoolLevel: { select: { id: true, name: true, code: true } },
       },
       orderBy: { lastName: 'asc' },

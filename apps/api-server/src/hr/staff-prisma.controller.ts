@@ -42,6 +42,7 @@ import {
   ValidateDocumentDto, BatchAssignLevelDto, ChangeStatutContractuelDto,
 } from './dto/index';
 import type { Response, Request } from 'express';
+import { SkipAcademicYear } from '../common/decorators/skip-academic-year.decorator';
 
 @Controller('hr/staff')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -69,7 +70,25 @@ export class StaffPrismaController {
     });
   }
 
+  // ⭐ FIX 2026-09-21 (« module RH — les données ne s'affichent pas ») :
+  //    la liste du personnel N'est PAS une donnée annéeisée — un employé
+  //    embauché en 2025-2026 reste dans l'effectif en 2026-2027. Or depuis le
+  //    fix 2026-09-09 (header x-academic-year-id systématique côté client),
+  //    l'AcademicYearEnforcementInterceptor injectait l'année courante dans
+  //    la query → findAllStaff filtrait `WHERE academicYearId = année active`
+  //    → les staff à année NULL ou ancienne disparaissaient de la liste
+  //    (constaté en production : 3 écoles avec liste de collaborateurs VIDE
+  //    alors que la BDD contient leurs fiches ; « il y a bien des données,
+  //    mais elles ne s'affichent pas »). Aucun appel frontend ne passe
+  //    academicYearId à cette route ( vérifié : 14 callers hrUrl('staff') →
+  //    tous { tenantId } seul) : l'année injectée n'était JAMAIS souhaitée.
+  //    @SkipAcademicYear() restaure le comportement d'avant le 2026-09-09 :
+  //    liste complète du personnel, filtrable explicitement via
+  //    ?academicYearId= si un appel le demande (le contrôleur lit toujours
+  //    le query param). Même pattern que staff-admin-assignment et le CRUD
+  //    students (déjà exemptés pour la même raison).
   @Get()
+  @SkipAcademicYear() // ⭐ Le personnel n'est pas lié à l'année scolaire (donnée de référence transverse)
   async findAllStaff(
     @GetTenant() tenant: any,
     @Query('academicYearId') academicYearId?: string,

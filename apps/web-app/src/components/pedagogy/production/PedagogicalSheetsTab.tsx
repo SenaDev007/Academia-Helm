@@ -35,7 +35,7 @@ import {
   FileText, Loader2, Plus, Save, RefreshCw, Send, Trash2,
   ChevronLeft, Clock, CheckCircle2, XCircle, BookOpen, Sigma,
   FlaskConical, Users, Palette, Download, History, Copy, Dumbbell,
-  Blocks, Shapes, Languages,
+  Blocks, Shapes, Languages, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
@@ -216,6 +216,35 @@ function formatDateFR(dateStr: string): string {
   if (!dateStr) return "";
   const d = new Date(dateStr);
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+// ⭐ Champs "pédagogiquement significatifs" — utilisés pour décider si un
+//    brouillon local de crash mérite d'être proposé à la restauration (on ne
+//    remonte pas un bandeau pour un formulaire à peine ouvert).
+const CONTENT_FIELDS = [
+  "san", "sequence", "cours", "titre", "duree",
+  "competence", "habilete", "prealable", "contenu", "methodes", "moyensDidactiques", "evaluation",
+  "ibis_1", "ibis_2", "ibis_3", "ibis_4", "ibis_5",
+  "phase_introductive", "phase_systematisation", "phase_intro_ens1", "phase_syst_ens",
+  "app_col1", "app_col2", "app_col3",
+  "objectivation", "evalRetour", "projection",
+];
+function stripHtml(v: any): string {
+  return String(v || "").replace(/<[^>]*>/g, "").trim();
+}
+function hasRealContent(f: any): boolean {
+  if (!f) return false;
+  let filled = 0;
+  for (const k of CONTENT_FIELDS) {
+    if (stripHtml(f[k]).length >= 3) filled++;
+  }
+  if (stripHtml(f?.maternelle?.titre).length >= 3) filled++;
+  if (stripHtml(f?.maternelle?.competence).length >= 3) filled++;
+  const der = Array.isArray(f?.deroulement) ? f.deroulement : [];
+  const hasSteps = der.some((s: any) =>
+    stripHtml(s?.consignes).length >= 3 || stripHtml(s?.resultats).length >= 3,
+  );
+  return filled >= 2 || (filled >= 1 && hasSteps);
 }
 
 // ⭐ Configuration spécifique par type de fiche
@@ -513,8 +542,21 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       const params = new URLSearchParams({ teacherId, academicYearId, classId: selectedClassId });
       if (filterType) params.append("sheetType", filterType);
       const res = await fetch(`/api/pedagogy-space/fiches?${params.toString()}`, { credentials: "include" });
-      setFiches(Array.isArray(await res.json()) ? await res.json() : []);
-    } catch { setFiches([]); }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // ⭐ CORRECTION BUG CRITIQUE (plaintes enseignants sept. 2026) : res.json()
+      //    ne doit être lu qu'UNE SEULE fois. L'ancien code
+      //    `Array.isArray(await res.json()) ? await res.json() : []` consommait
+      //    le body DEUX fois → la 2e lecture échouait (body already used) → catch
+      //    silencieux → la liste des fiches apparaissait TOUJOURS VIDE alors
+      //    qu'elles existaient en base : l'enseignant croyait que sa sauvegarde
+      //    avait disparu, puis la retrouvait « plus tard » via les autres
+      //    composants qui chargent correctement.
+      const data = await res.json();
+      setFiches(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setFiches([]);
+      console.error("[PedagogicalSheetsTab] Erreur chargement fiches:", e);
+    }
     finally { setLoading(false); }
   }, [teacherId, academicYearId, filterType, selectedClassId]);
 
@@ -840,6 +882,10 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       //    juste après le clic sur « Mettre à jour / Créer »)
       ficheAutosave.markSaved(ficheSnapshot);
 
+      // ⭐ La fiche est enregistrée côté serveur → supprimer le brouillon local
+      //    (le filet anti-rechargement n'est plus nécessaire pour cette fiche)
+      try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+
       // ⭐ Notifier les autres composants (FichesAPreparer, FichesBadge) qu'une fiche
       //    a été créée/mise à jour, pour qu'ils rechargent leurs données automatiquement.
       //    Sans ça, le compteur "X/Y fiches préparées" ne se met pas à jour tant que
@@ -860,17 +906,39 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   };
 
   const handleEdit = (fiche: any) => {
+    // ⭐ BROUILLON LOCAL plus récent que le serveur pour CETTE fiche ?
+    //    (page rechargée pendant l'édition + coupure réseau) → on l'applique
+    //    par-dessus la version serveur pour ne perdre aucune saisie.
+    let draftForm: any = null;
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        const serverUpdated = fiche.updatedAt ? new Date(fiche.updatedAt).getTime() : 0;
+        if (d?.editingFicheId === fiche.id && d.savedAt > serverUpdated + 2000 && hasRealContent(d.form)) {
+          draftForm = d.form;
+          toast.info("Version non enregistrée restaurée", {
+            description: "Une saisie plus récente de cette fiche a été retrouvée localement (rechargement de la page pendant votre édition).",
+          });
+        }
+      }
+    } catch { /* ignore */ }
+
     setEditingFiche(fiche);
     // ⭐ MATERNELLE : parser maternelleContent (JSONB ou string) et fusionner
     //    avec les défauts pour que les objets imbriqués existent toujours.
+    //    Si un brouillon local plus récent existe, sa version prime (saisie la
+    //    plus fraîche).
     let mc: any = {};
-    if (fiche.maternelleContent) {
-      try { mc = typeof fiche.maternelleContent === "string" ? JSON.parse(fiche.maternelleContent) : fiche.maternelleContent; } catch { mc = {}; }
+    const mcSource: any = draftForm?.maternelle || fiche.maternelleContent;
+    if (mcSource) {
+      try { mc = typeof mcSource === "string" ? JSON.parse(mcSource) : mcSource; } catch { mc = {}; }
     }
+    const base: any = { ...emptyForm, ...fiche, ...(draftForm || {}) };
     setForm({
-      ...emptyForm, ...fiche,
-      lessonDate: fiche.lessonDate ? formatDate(fiche.lessonDate) : "",
-      adminDate: fiche.adminDate ? formatDate(fiche.adminDate) : "",
+      ...base,
+      lessonDate: base.lessonDate ? formatDate(base.lessonDate) : "",
+      adminDate: base.adminDate ? formatDate(base.adminDate) : "",
       // ⭐ 2026-09-19 — Compatibilité exercices structuraux : les ANCIENNES
       //    fiches FRANCAIS portaient les phases en texte simple
       //    (phase_introductive / phase_systematisation). À l'ouverture en
@@ -878,10 +946,10 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       //    tableau 2 colonnes correspondant (aucune perte visuelle) ; à la
       //    sauvegarde, les nouvelles colonnes sont persistées (l'ancienne
       //    colonne reste intacte en base).
-      phase_intro_ens1: fiche.phase_intro_ens1 || fiche.phase_introductive || "",
-      phase_syst_ens: fiche.phase_syst_ens || fiche.phase_systematisation || "",
-      deroulement: Array.isArray(fiche.deroulement) ? fiche.deroulement :
-        (typeof fiche.deroulement === "string" ? JSON.parse(fiche.deroulement || "[]") : []),
+      phase_intro_ens1: base.phase_intro_ens1 || base.phase_introductive || "",
+      phase_syst_ens: base.phase_syst_ens || base.phase_systematisation || "",
+      deroulement: Array.isArray(base.deroulement) ? base.deroulement :
+        (typeof base.deroulement === "string" ? JSON.parse(base.deroulement || "[]") : []),
       maternelle: {
         ...emptyForm.maternelle, ...mc,
         der5: Array.isArray(mc.der5) ? mc.der5 : [],
@@ -900,13 +968,26 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
 
   const handleDelete = async (fiche: any) => {
     if (!confirm(`Supprimer cette fiche (${fiche.sheetType}) ?`)) return;
-    try { await fetch(`/api/pedagogy-space/fiches/${fiche.id}`, { method: "DELETE", credentials: "include" }); toast.success("Fiche supprimée"); loadFiches(); }
+    try {
+      const res = await fetch(`/api/pedagogy-space/fiches/${fiche.id}`, { method: "DELETE", credentials: "include" });
+      // ⭐ Vérifier res.ok : sans ça, un échec serveur affichait quand même « Fiche supprimée »
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.success("Fiche supprimée"); loadFiches();
+    }
     catch (e: any) { toast.error("Erreur", { description: e.message }); }
   };
 
   const handleSubmit = async (fiche: any) => {
     if (!confirm("Soumettre cette fiche au directeur ?")) return;
-    try { await fetch(`/api/pedagogy-space/fiches/${fiche.id}/submit`, { method: "POST", credentials: "include" }); toast.success("✅ Fiche soumise"); loadFiches(); }
+    try {
+      const res = await fetch(`/api/pedagogy-space/fiches/${fiche.id}/submit`, { method: "POST", credentials: "include" });
+      // ⭐ Vérifier res.ok : sans ça, un échec serveur affichait quand même « Fiche soumise »
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.message || `HTTP ${res.status}`);
+      }
+      toast.success("✅ Fiche soumise"); loadFiches();
+    }
     catch (e: any) { toast.error("Erreur", { description: e.message }); }
   };
 
@@ -1003,6 +1084,100 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     intervalMs: 10_000,
   });
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // ⭐ BROUILLON LOCAL (complément de l'autosave serveur) — filet de sécurité
+  //    final contre les rechargements spontanés pendant la préparation d'une
+  //    fiche (plaintes enseignants sept. 2026 : « la page se recharge d'elle-
+  //    même pendant la préparation, tout est à l'eau, il refait la fiche 5 fois »).
+  //
+  //    L'autosave serveur (10 s + keepalive au déchargement) couvre le cas
+  //    nominal. Ce brouillon localStorage couvre le cas résiduel : rechargement
+  //    pendant une coupure réseau (fréquente) — la saisie reste restaurable
+  //    localement, à l'identique, via le bandeau « Reprendre la saisie ».
+  // ═════════════════════════════════════════════════════════════════════════
+  const DRAFT_KEY = `ah-fiche-draft:${tenantId}:${teacherId}`;
+  const [recoveredDraft, setRecoveredDraft] = useState<any | null>(null);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftFormRef = useRef<any>(null);
+  const draftEditingRef = useRef<any>(null);
+
+  useEffect(() => { draftFormRef.current = form; }, [form]);
+  useEffect(() => { draftEditingRef.current = editingFiche; }, [editingFiche]);
+
+  // Écriture continue (throttle 800 ms après chaque modification du formulaire)
+  useEffect(() => {
+    if (!showForm) return;
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({
+          form: draftFormRef.current,
+          editingFicheId: draftEditingRef.current?.id || null,
+          savedAt: Date.now(),
+        }));
+      } catch { /* localStorage plein/inaccessible — filet best-effort */ }
+    }, 800);
+    return () => { if (draftTimerRef.current) clearTimeout(draftTimerRef.current); };
+  }, [form, showForm, DRAFT_KEY]);
+
+  // Au montage : détecter un brouillon de crash (page rechargée pendant la saisie)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      const AGE_MAX = 48 * 60 * 60 * 1000;
+      if (!d?.savedAt || Date.now() - d.savedAt > AGE_MAX) {
+        if (d?.savedAt) localStorage.removeItem(DRAFT_KEY);
+        return;
+      }
+      if (hasRealContent(d.form)) setRecoveredDraft(d);
+    } catch { /* brouillon corrompu → ignoré */ }
+  }, [DRAFT_KEY]);
+
+  // Reprendre la saisie interrompue par un rechargement de page
+  const resumeDraft = useCallback(() => {
+    if (!recoveredDraft) return;
+    setForm({ ...emptyForm, ...recoveredDraft.form });
+    if (recoveredDraft.editingFicheId) setEditingFiche({ id: recoveredDraft.editingFicheId, status: "DRAFT" });
+    setShowForm(true);
+    setRecoveredDraft(null);
+    toast.success("Saisie restaurée", {
+      description: "Votre fiche a été retrouvée après le rechargement de la page. La sauvegarde automatique reprend immédiatement.",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recoveredDraft]);
+
+  // Ignorer le brouillon de crash
+  const discardDraft = useCallback(() => {
+    try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+    setRecoveredDraft(null);
+  }, [DRAFT_KEY]);
+
+  // ⭐ Retour à la liste : on force d'abord une dernière sauvegarde automatique
+  //    (les modifs des < 10 dernières secondes) puis on purge le brouillon local —
+  //    plus AUCUNE perte de saisie, même en quittant le formulaire en plein milieu.
+  const handleCloseForm = async () => {
+    // ⭐ Discriminateur : y a-t-il des modifs non encore sauvegardées ?
+    //    (saveNow() retourne false aussi quand il n'y a RIEN à sauvegarder —
+    //    cas nominal sans modification, qui ne doit PAS afficher d'alerte)
+    const hadPending = ficheAutosave.hasPendingChanges();
+    const ok = await ficheAutosave.saveNow().catch(() => false);
+    if (hadPending && !ok) {
+      // Échec réseau avec modifs en attente : conserver le brouillon local
+      //    (filet de sécurité — bandeau « Reprendre la saisie » au retour)
+      toast.warning("Modifications non enregistrées", {
+        description: "La connexion au serveur a échoué. Votre saisie est conservée localement et pourra être reprise.",
+      });
+    } else {
+      try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ }
+    }
+    setShowForm(false);
+    setEditingFiche(null);
+    setForm(emptyForm);
+    loadFiches();
+  };
+
   // === RENDU FORMULAIRE ===
   if (showForm) {
     // ⭐ Badge de statut affiché dans la barre d'actions
@@ -1021,7 +1196,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
         <div className="space-y-4">
           {/* Barre d'actions */}
           <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
-            <button onClick={() => { setShowForm(false); setEditingFiche(null); setForm(emptyForm); }}
+            <button onClick={handleCloseForm}
               className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg">
               <ChevronLeft className="h-4 w-4" /> Retour à la liste
             </button>
@@ -1500,9 +1675,9 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       <div className="space-y-4">
         {/* Barre d'actions */}
         <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
-          {/* ⭐ Retour : recharge la liste (une fiche a pu être créée
-              silencieusement par la sauvegarde automatique) */}
-          <button onClick={() => { setShowForm(false); setEditingFiche(null); setForm(emptyForm); loadFiches(); }}
+          {/* ⭐ Retour : sauvegarde finale automatique + purge brouillon (via
+              handleCloseForm — une fiche a pu être créée silencieusement) */}
+          <button onClick={handleCloseForm}
             className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg">
             <ChevronLeft className="h-4 w-4" /> Retour à la liste
           </button>
@@ -2083,6 +2258,34 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
           <Plus className="h-4 w-4" /> Nouvelle fiche
         </button>
       </div>
+
+      {/* ⭐ Bandeau de récupération : brouillon de fiche préservé après un
+          rechargement de la page (déploiement, ChunkLoadError, coupure réseau,
+          fermeture accidentelle…). Complète l'autosave serveur : couvre le cas
+          où le serveur était injoignable au moment du rechargement. */}
+      {recoveredDraft && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 p-4 bg-amber-50 border border-amber-300 rounded-xl">
+          <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-bold text-amber-900">Fiche en cours de préparation récupérée</p>
+            <p className="text-xs text-amber-800 mt-0.5">
+              La page a été rechargée pendant votre saisie
+              {recoveredDraft.savedAt ? ` (${new Date(recoveredDraft.savedAt).toLocaleString("fr-FR")})` : ""}.
+              Vos données ont été conservées localement et peuvent être restaurées telles quelles.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={resumeDraft}
+              className="px-3 py-2 bg-amber-600 text-white rounded-lg text-xs font-bold hover:bg-amber-700">
+              Reprendre la saisie
+            </button>
+            <button onClick={discardDraft}
+              className="px-3 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-xs font-semibold">
+              Ignorer
+            </button>
+          </div>
+        </div>
+      )}
 
       {loading && <div className="flex items-center justify-center py-12 text-slate-500"><Loader2 className="h-6 w-6 animate-spin mr-2" />Chargement…</div>}
 

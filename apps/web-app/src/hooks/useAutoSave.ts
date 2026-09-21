@@ -73,6 +73,14 @@ export interface UseAutoSaveResult {
   /** Force une sauvegarde immédiate (si modifs en attente). Retourne true si sauvegardé. */
   saveNow: () => Promise<boolean>;
   /**
+   * ⭐ discriminateur synchrone (via ref) : y a-t-il des modifs non encore
+   * sauvegardées ? — permet aux appelants de distinguer « saveNow() a retourné
+   * false parce qu'il n'y avait rien à sauvegarder » (cas nominal) de
+   * « saveNow() a échoué alors qu'il y avait des modifs » (échec réseau →
+   * conserver le brouillon local). Usage : fermeture volontaire du formulaire.
+   */
+  hasPendingChanges: () => boolean;
+  /**
    * À appeler après une sauvegarde MANUELLE réussie (bouton « Enregistrer »)
    * pour resynchroniser le snapshot de référence — évite une double
    * sauvegarde juste après le clic. Sans argument : prend le snapshot courant.
@@ -185,7 +193,13 @@ export function useAutoSave({
 
   const saveNow = useCallback(async () => runSave(), [runSave]);
 
-  return { status, lastSavedAt, saveNow, markSaved };
+  // ⭐ discriminateur synchrone : modifs en attente ? (cf. interface)
+  const hasPendingChanges = useCallback(
+    () => lastSavedRef.current !== null && lastSavedRef.current !== snapshotRef.current,
+    [],
+  );
+
+  return { status, lastSavedAt, saveNow, markSaved, hasPendingChanges };
 }
 
 /**

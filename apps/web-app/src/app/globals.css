@@ -1046,6 +1046,19 @@ body {
   text-decoration: underline;
 }
 
+/* ⭐ V10 (2026-09-21) — Rich Text Editor : affordance de retrait des
+   insertions médias (images, figures, dessins, graphiques, tableaux,
+   maths, lignes calligraphiques). Classe posée dynamiquement au survol
+   par le composant (handleEditorMouseMove) — contour pointillé bleu +
+   curseur « cliquable ». Le clic sélectionne l'insertion entière et fait
+   apparaître la pastille « Retirer l'insertion ». Classe purement
+   additive : aucun effet sur le contenu enregistré ni le rendu PDF. */
+.ah-media-hover {
+  outline: 2px dashed rgba(37, 99, 235, 0.55) !important;
+  outline-offset: 2px;
+  cursor: pointer;
+}
+
 /* ============================================================
    CDC RESPONSIVE — règles globales mobile-first
    (Refonte responsive complète Academia Helm — YEHI OR Tech)

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">
+<rect width="640" height="480" fill="#ffffff"/>
+<g stroke="#374151" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<path d="M 130 128 L 486 128 L 486 392 L 130 392 Z" fill="#fefce8" stroke="#374151" stroke-width="2.5"/>
+<path d="M 112 148 L 470 112 L 502 372 L 144 408 Z" fill="#2563eb" stroke="#374151" stroke-width="2.5"/>
+<path d="M 112 148 L 130 128 L 130 392 L 144 408 Z" fill="#1e40af" stroke="#374151" stroke-width="2.5"/>
+<text x="306.0" y="240.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="24" fill="#ffffff" font-weight="bold" stroke="none">HISTOIRE</text>
+<text x="306.0" y="268.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#bfdbfe" stroke="none">et découvertes</text>
+<line x1="230.0" y1="300.0" x2="390.0" y2="288.0" stroke="#93c5fd" stroke-width="2" stroke-linecap="round"/>
+</g>
+</svg>

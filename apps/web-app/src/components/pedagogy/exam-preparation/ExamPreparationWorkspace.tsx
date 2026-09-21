@@ -230,6 +230,50 @@ export function ExamPreparationWorkspace() {
     }
   };
 
+  // ⭐ V11 (retour utilisateur) : chaque matière de l'onglet « Évaluations
+  //    programmées » est CLIQUABLE — ouverture DIRECTE de l'éditeur de
+  //    l'épreuve de cette matière, sans passer par le bouton principal.
+  //    • épreuve déjà créée     → ouverture directe sur cette épreuve
+  //    • bloc absent/incomplet  → POST idempotent (crée le bloc au besoin et
+  //      complète les squelettes manquants) puis sélection de la matière
+  const prepareMatiere = async (session: any, matiere: any) => {
+    if (!teacherId || !academicYear?.id) return;
+    // Épreuve déjà créée et rattachée → ouverture directe
+    if (session.block?.id && matiere.epreuveId) {
+      setTab("preparation");
+      await loadBlock(session.block.id, matiere.epreuveId);
+      return;
+    }
+    try {
+      const res = await fetch("/api/exam-preparation/blocks", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teacherId,
+          academicYearId: academicYear.id,
+          classId: session.classId,
+          evaluationTypeId: session.evaluationTypeId || "",
+          periodId: session.periodId || "",
+          evaluationIds: session.matieres.map((m: any) => m.evaluationId),
+          title: session.title,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.message || "Impossible d'ouvrir la préparation");
+        return;
+      }
+      const target = (data.sheets || []).find((sh: any) => sh.evaluationId === matiere.evaluationId);
+      setTab("preparation");
+      await loadBlock(data.id, target?.id || data.sheets?.[0]?.id);
+      void loadPending();
+      void loadBlocks();
+    } catch {
+      toast.error("Erreur réseau lors de l'ouverture de la préparation");
+    }
+  };
+
   if (!academicYear?.id || loading) {
     return (
       <div className="flex items-center justify-center py-24 text-slate-400">
@@ -307,7 +351,12 @@ export function ExamPreparationWorkspace() {
 
       {/* ─── Contenu des onglets ───────────────────────────────────────────── */}
       {tab === "signal" && (
-        <SignalTab pending={pending} onPrepare={prepareSession} onOpenBlock={(id) => { setTab("preparation"); void loadBlock(id); }} />
+        <SignalTab
+          pending={pending}
+          onPrepare={prepareSession}
+          onOpenBlock={(id) => { setTab("preparation"); void loadBlock(id); }}
+          onPrepareMatiere={(session, matiere) => { void prepareMatiere(session, matiere); }}
+        />
       )}
       {tab === "preparation" && (
         <PreparationTab
@@ -337,11 +386,13 @@ export function ExamPreparationWorkspace() {
 // ============================================================================
 
 function SignalTab({
-  pending, onPrepare, onOpenBlock,
+  pending, onPrepare, onOpenBlock, onPrepareMatiere,
 }: {
   pending: any;
   onPrepare: (session: any) => void;
   onOpenBlock: (blockId: string) => void;
+  /** ⭐ Chaque matière est cliquable : ouvre DIRECTEMENT l'épreuve de cette matière. */
+  onPrepareMatiere: (session: any, matiere: any) => void;
 }) {
   const sessions: any[] = pending?.sessions || [];
   const stats = pending?.stats;
@@ -421,25 +472,41 @@ function SignalTab({
               </div>
             </div>
 
-            {/* Matières évaluées (le système dit QUOI préparer) */}
+            {/* Matières évaluées (le système dit QUOI préparer)
+                ⭐ V11 : chaque matière est CLIQUABLE — ouvre directement
+                l'éditeur de l'épreuve de cette matière, sans passer par le
+                bouton principal. */}
             <div className="px-4 py-3">
               <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">
-                Matières dans lesquelles les élèves seront évalués
+                Matières dans lesquelles les élèves seront évalués — cliquer sur une matière pour préparer son épreuve
               </div>
               <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
                 {s.matieres.map((m: any) => (
-                  <div
+                  <button
                     key={m.evaluationId}
+                    onClick={() => onPrepareMatiere(s, m)}
+                    title={m.epreuvePreparee
+                      ? `Ouvrir l'épreuve de ${m.subjectName}`
+                      : `Préparer l'épreuve de ${m.subjectName}`}
                     className={cn(
-                      "flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs",
-                      m.epreuvePreparee ? "bg-emerald-50/60 border-emerald-200" : "bg-amber-50/60 border-amber-200",
+                      "group flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg border text-xs text-left cursor-pointer transition-all hover:shadow-sm active:scale-[0.99]",
+                      m.epreuvePreparee
+                        ? "bg-emerald-50/60 border-emerald-200 hover:border-emerald-400"
+                        : "bg-amber-50/60 border-amber-200 hover:border-amber-400 hover:bg-amber-50",
                     )}
                   >
                     <span className="font-semibold text-slate-700 truncate">{m.subjectName}</span>
-                    <span className={cn("flex-shrink-0 text-[10px] font-bold", m.epreuvePreparee ? "text-emerald-600" : "text-amber-600")}>
-                      {m.epreuvePreparee ? "✓ Épreuve préparée" : "À préparer"}
+                    <span className={cn(
+                      "flex-shrink-0 text-[10px] font-bold inline-flex items-center gap-1",
+                      m.epreuvePreparee ? "text-emerald-600" : "text-amber-600 group-hover:translate-x-0.5 transition-transform",
+                    )}>
+                      {m.epreuvePreparee ? (
+                        <><CheckCircle2 className="h-3 w-3" /> Épreuve préparée</>
+                      ) : (
+                        <><PenSquare className="h-3 w-3" /> À préparer</>
+                      )}
                     </span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>

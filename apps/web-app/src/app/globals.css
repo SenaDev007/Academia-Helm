@@ -1196,3 +1196,32 @@ html {
     overflow: visible !important;
   }
 }
+
+/* ⭐ V12 (2026-09-22) — POLICES D'ÉCRITURE SCOLAIRE (auto-hébergées, OFL)
+   Playwrite FR Moderne / Playwrite FR Trad : cursives scolaires françaises
+   (projet Google Fonts dédié à l'enseignement). Comic Neue : écriture script
+   (lettres imprimées). Utilisées par les lignes calligraphiques insérées via
+   le RichTextEditor (fiches, cahier journal, épreuves) — rendu identique à
+   l'écran, dans les PDF et hors-ligne (fichiers servis depuis /fonts,
+   pré-cachés par le service worker). */
+@font-face {
+  font-family: 'Playwrite FR Moderne';
+  src: url('/fonts/playwrite-fr-moderne.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Playwrite FR Trad';
+  src: url('/fonts/playwrite-fr-trad.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Comic Neue';
+  src: url('/fonts/comic-neue.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}

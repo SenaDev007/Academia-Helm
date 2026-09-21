@@ -3,12 +3,12 @@
  * PACKS D'IMAGES PÉDAGOGIQUES — Manifeste
  * ============================================================================
  *
- * ⭐ V2 (retour utilisateur) : les illustrations d'anatomie, de biologie, de
- *    botanique et de géologie sont désormais de VRAIES IMAGES RÉALISTES
- *    (schémas anatomiques professionnels, photographies) collectées sur le
- *    web et validées visuellement — plus de « SVG simplistes » pour les
- *    sciences. S'ajoutent les ANIMAUX domestiques et sauvages (maternelle /
- *    primaire) en photographies réalistes.
+ * ⭐ V12 (retour utilisateur 2026-09-22) : TRACÉS 2D STANDARDISÉS —
+ *    l'anatomie devient des schémas 2D légendés (tracés professionnels),
+ *    et s'ajoutent les OBJETS du quotidien, les ANIMAUX et les VÉGÉTAUX
+ *    en tracés 2D pour les activités de graphisme (maternelle / primaire).
+ *    Les photographies (animaux, botanique, biologie, géologie) restent
+ *    disponibles pour l'observation du réel.
  *
  *    kind = "photo" → fichiers /pedagogy-images/<cat>/<slug>.<ext>
  *                       insertion en <img> (URL absolue → rendu PDF Puppeteer)
@@ -97,28 +97,114 @@ const catPhoto = (
 });
 
 export const PEDAGOGY_ASSET_CATEGORIES: PedagogyAssetCategory[] = [
-  catPhoto(
+  // ⭐ V12 (2026-09-22) — TRACÉS 2D STANDARDISÉS (retour utilisateur) :
+  //    anatomie en schémas 2D légendés + objets du quotidien, animaux et
+  //    végétaux en tracés 2D professionnels — pour les activités de
+  //    graphisme / observation / dénomination (maternelle & primaire).
+  cat(
+    "objets-quotidiens",
+    "Objets du quotidien — tracés 2D",
+    "Stylo, crayon, cahier, ballons, vélo… (activités de graphisme)",
+    "bg-cyan-100 text-cyan-700",
+    "ruler",
+    ["Maternelle", "Graphisme", "Vocabulaire", "Sciences"],
+    [
+      ["stylo-bille", "Le stylo-bille", "stylo bille ecriture objet ecole bureau pointe capuchon"],
+      ["crayon-papier", "Le crayon papier", "crayon papier mine gomme bois taille objet ecrire"],
+      ["regle-plate", "La règle graduée", "regle plate graduee cm mm mesure objet geometrie 30"],
+      ["gomme", "La gomme", "gomme effacer gomme caoutchouc objet ecole rouge"],
+      ["taille-crayon", "Le taille-crayon", "taille crayon lame vis orifice objet coupe pointe"],
+      ["ciseaux", "Les ciseaux", "ciseaux lames anneaux couper papier objet ecole pointes"],
+      ["colle-baton", "La colle en bâton", "colle baton tube collage objet ecole violet capuchon"],
+      ["livre", "Le livre fermé", "livre ferme couverture titre pages lecture objet"],
+      ["cahier", "Le cahier", "cahier couverture etiquette couture pages texte objet"],
+      ["cartable", "Le cartable", "cartable sac dos ecole bretelles rabat boucle anse"],
+      ["ballon-football", "Le ballon de football", "ballon football foot pentagones noir blanc sport jeu"],
+      ["ballon-basketball", "Le ballon de basket", "ballon basket basket-ball orange lignes sport jeu"],
+      ["cerf-volant", "Le cerf-volant", "cerf volant losange queue noeuds ficelle jeu vent"],
+      ["tambour", "Le tambour", "tambour caisse claire fût peau baguettes musique instrument"],
+      ["velo", "Le vélo", "velo bicyclette roues cadre guidon selle pedales cycling"],
+      ["montre", "La montre", "montre bracelet cadran aiguilles heure boitier temps"],
+      ["arrosoir", "L'arrosoir", "arrosoir bec pomme eau jardin plante fleurs arrosage"],
+      ["seau-pelle", "Le seau et la pelle", "seau pelle sable plage jouer plastique plage moule"],
+    ],
+  ),
+  cat(
     "anatomie",
-    "Anatomie & corps humain",
-    "Schémas anatomiques réalistes et légendés (EST, biologie)",
+    "Anatomie — schémas 2D légendés",
+    "Tracés 2D standardisés et légendés (EST, sciences)",
     "bg-rose-100 text-rose-700",
     "anatomie",
     ["EST", "Sciences", "Biologie"],
     [
-      ["appareil-digestif", "jpg", "L'appareil digestif", "digestif digestion estomac intestin bouche oesophage foie corps anatomie realiste"],
-      ["systeme-respiratoire", "jpg", "Le système respiratoire", "respiration poumons trachee bronches air inspire expiration anatomie"],
-      ["coeur-circulation", "jpg", "Le cœur et la circulation", "coeur sang arteres veines circulation ventricule oreillette anatomie"],
-      ["systeme-musculaire", "jpg", "Le système musculaire", "muscles biceps pectoraux abdominaux quadriceps mollets corps anatomie"],
-      ["squelette", "jpg", "Le squelette humain", "squelette os crane cotes colonne vertebrale bassin femur anatomie"],
-      ["cerveau", "jpg", "Le cerveau", "cerveau cervelet tronc cerebral pensee memoire nerfs anatomie"],
-      ["dent", "jpg", "Anatomie d'une dent", "dent email dentine pulpe gencive racine carie anatomie"],
-      ["oeil", "jpg", "Anatomie de l'œil", "oeil vue cornee cristallin retine iris pupille optic anatomie"],
-      ["oreille", "jpg", "Anatomie de l'oreille", "oreille audition tympan cochlee pavillon osselets anatomie"],
-      ["peau", "jpg", "Anatomie de la peau", "peau epiderme derme hypoderme toucher coupe anatomie"],
-      ["systeme-urinaire", "jpg", "Le système urinaire", "urinaire reins vessie ureteres uretre reins anatomie"],
-      ["systeme-nerveux", "jpg", "Le système nerveux", "nerveux neurones moelle epiniere cerveau anatomie"],
-      ["neurone", "jpg", "Le neurone", "neurone axone dendrites synapse cellule nerveuse anatomie"],
-      ["cellules-sang", "jpg", "Les cellules du sang", "sang globules rouges blancs plaquettes hematies anatomie"],
+      ["appareil-digestif", "L'appareil digestif", "digestif digestion estomac intestin bouche oesophage foie corps anatomie"],
+      ["systeme-respiratoire", "Le système respiratoire", "respiration poumons trachee bronches air inspire expiration anatomie"],
+      ["coeur-circulation", "Le cœur et la circulation", "coeur sang arteres veines circulation ventricule oreillette anatomie"],
+      ["systeme-musculaire", "Le système musculaire", "muscles biceps pectoraux abdominaux quadriceps mollets corps anatomie"],
+      ["squelette", "Le squelette humain", "squelette os crane cotes colonne vertebrale bassin femur anatomie"],
+      ["cerveau", "Le cerveau", "cerveau cervelet tronc cerebral pensee memoire nerfs anatomie"],
+      ["dent", "Anatomie d'une dent", "dent email dentine pulpe gencive racine carie anatomie"],
+      ["oeil", "Anatomie de l'œil", "oeil vue cornee cristallin retine iris pupille nerf optique anatomie"],
+      ["oreille", "Anatomie de l'oreille", "oreille audition tympan cochlee pavillon osselets anatomie"],
+      ["peau", "Anatomie de la peau", "peau epiderme derme hypoderme toucher coupe poil glande anatomie"],
+      ["systeme-urinaire", "Le système urinaire", "urinaire reins vessie ureteres uretre anatomie"],
+      ["systeme-nerveux", "Le système nerveux", "nerveux neurones moelle epiniere cerveau nerfs anatomie"],
+      ["neurone", "Le neurone", "neurone axone dendrites synapse cellule nerveuse myeline anatomie"],
+      ["cellules-sang", "Les cellules du sang", "sang globules rouges blancs plaquettes hematies anatomie"],
+    ],
+  ),
+  cat(
+    "animaux-2d",
+    "Animaux — tracés 2D",
+    "Domestiques et sauvages en tracés 2D (activités, graphisme)",
+    "bg-orange-100 text-orange-700",
+    "paw",
+    ["Maternelle", "Éveil", "Sciences", "Lecture"],
+    [
+      ["chien", "Le chien", "chien animal domestique compagnon chiot mammifere"],
+      ["chat", "Le chat", "chat animal domestique chaton mammifere felin moustaches"],
+      ["lapin", "Le lapin", "lapin rongeur oreilles animal domestique mammifere"],
+      ["vache", "La vache", "vache bovin ferme lait mammifere elevage taches"],
+      ["chevre", "La chèvre", "chevre caprin ferme fromage mammifere elevage cornes"],
+      ["mouton", "Le mouton", "mouton ovin laine agneau ferme mammifere toison"],
+      ["poule", "La poule", "poule volaille oeuf coq poussin ferme oiseau crete"],
+      ["coq", "Le coq", "coq volaille crete queue oiseau basse-cour fermier"],
+      ["canard", "Le canard", "canard colvert palmipede etang oiseau bec eau"],
+      ["cheval", "Le cheval", "cheval equide ferme cavalier mammifere criniere"],
+      ["cochon", "Le cochon", "cochon porc ferme mammifere elevage groin"],
+      ["pigeon", "Le pigeon", "pigeon moineau oiseau ville branche bec plumes"],
+      ["lion", "Le lion", "lion fauve savane afrique felin predateur criniere"],
+      ["elephant", "L'éléphant", "elephant afrique defenses proboscidien pachyderme savane trompe"],
+      ["girafe", "La girafe", "girafe cou long savane afrique ruminant mammifere taches"],
+      ["zebre", "Le zèbre", "zebre rayures savane afrique equide mammifere noir blanc"],
+      ["crocodile", "Le crocodile", "crocodile reptile ecailles fleuve predateur dents"],
+      ["tortue", "La tortue", "tortue reptile carapace nage plaques"],
+      ["poisson", "Le poisson", "poisson nageoires ecailles queue eau riviere mer"],
+      ["papillon", "Le papillon", "papillon ailes antennes insecte metamorphose couleurs"],
+    ],
+  ),
+  cat(
+    "vegetal-2d",
+    "Végétaux — tracés 2D",
+    "Arbres, fleurs, fruits et légumes en tracés 2D",
+    "bg-green-100 text-green-700",
+    "leaf",
+    ["Maternelle", "Éveil", "Sciences", "Vocabulaire"],
+    [
+      ["arbre", "L'arbre", "arbre racines tronc feuilles houppier vegetal plante"],
+      ["fleur", "La marguerite", "fleur marguerite petales coeur tige botanique plante"],
+      ["tournesol", "Le tournesol", "tournesol fleur graines helianthe jaune botanique"],
+      ["tulipe", "La tulipe", "tulipe fleur corolle bulbe botanique rouge"],
+      ["feuille", "La feuille", "feuille nervures limbe petiole botanique plante verte"],
+      ["tomate", "La tomate", "tomate fruit rouge potager legume calice"],
+      ["mangue", "La mangue", "mangue fruit jaune tropical noyau doux"],
+      ["banane", "La banane", "banane fruit jaune croissant regime tropical"],
+      ["orange", "L'orange", "orange fruit agrume rond jus vitaminé"],
+      ["ananas", "L'ananas", "ananas fruit tropical couronne ecailles pine apple"],
+      ["mais", "L'épi de maïs", "mais epi grains spathes cereale champs"],
+      ["carotte", "La carotte", "carotte legume racine orange feuilles potager"],
+      ["piment", "Le piment", "piment legume fort rouge epice piquant"],
+      ["citron", "Le citron", "citron agrume jaune acide vitamine"],
     ],
   ),
   catPhoto(

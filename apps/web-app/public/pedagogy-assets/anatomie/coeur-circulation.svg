@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 560" width="720" height="560">
+<rect width="720" height="560" fill="#ffffff"/>
+<g stroke="#374151" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<text x="360" y="30" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="bold" fill="#0f172a" stroke="none">Le cœur et la circulation</text>
+<path d="M 396 286 C 388 220 396 140 434 140 C 470 140 486 168 486 200 L 486 252" fill="none" stroke="#e26d6d" stroke-width="10"/>
+<path d="M 314 282 C 296 240 288 196 268 186 L 232 176" fill="none" stroke="#9b7fd4" stroke-width="8"/>
+<path d="M 298 282 C 284 226 276 196 254 186 L 216 178" fill="none" stroke="#6a9fd8" stroke-width="8"/>
+<path d="M 216 178 C 170 190 130 228 118 276 C 112 300 112 324 116 348" fill="none" stroke="#6a9fd8" stroke-width="6"/>
+<path d="M 486 252 C 496 292 500 330 494 368" fill="none" stroke="#e26d6d" stroke-width="6"/>
+<path d="M 316 244 C 296 246 286 262 288 282 C 290 300 304 310 322 308 L 330 260 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2.4"/>
+<path d="M 386 240 C 406 240 418 254 416 274 C 414 292 400 302 384 300 L 378 254 Z" fill="#d8ccf0" stroke="#374151" stroke-width="2.4"/>
+<path d="M 300 306 C 274 318 262 348 272 380 C 282 414 316 442 352 448 C 388 442 420 414 428 380 C 436 350 424 318 400 306 Z" fill="#e26d6d" stroke="#374151" stroke-width="2.6"/>
+<path d="M 350 252 L 344 444" fill="none" stroke="#374151" stroke-width="2.2"/>
+<path d="M 136 356 l -8 -12 l 16 0 Z" fill="#6a9fd8" stroke="#374151" stroke-width="1.5"/>
+<path d="M 492 348 l -8 -12 l 16 0 Z" fill="#e26d6d" stroke="#374151" stroke-width="1.5"/>
+<text x="130.0" y="396.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#6a9fd8" font-weight="bold" stroke="none">veines</text>
+<text x="500.0" y="396.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#e26d6d" font-weight="bold" stroke="none">artères</text>
+<circle cx="460.0" cy="148.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="460.0" y1="148.0" x2="560.0" y2="92.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="560.0" y="96.0" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Aorte</text>
+<circle cx="244.0" cy="182.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="244.0" y1="182.0" x2="122.0" y2="124.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="128.0" y="128.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Artère pulmonaire</text>
+<circle cx="256.0" cy="186.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="256.0" y1="186.0" x2="122.0" y2="164.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="128.0" y="168.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Veine cave</text>
+<circle cx="296.0" cy="274.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="296.0" y1="274.0" x2="122.0" y2="284.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="128.0" y="288.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Oreillette droite</text>
+<circle cx="414.0" cy="262.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="414.0" y1="262.0" x2="560.0" y2="254.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="560.0" y="258.0" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Oreillette gauche</text>
+<circle cx="296.0" cy="380.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="296.0" y1="380.0" x2="122.0" y2="376.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="128.0" y="380.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Ventricule droit</text>
+<circle cx="424.0" cy="380.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="424.0" y1="380.0" x2="566.0" y2="376.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="566.0" y="380.0" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Ventricule gauche</text>
+</g>
+</svg>

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 560" width="720" height="560">
+<rect width="720" height="560" fill="#ffffff"/>
+<g stroke="#374151" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<text x="360" y="30" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="bold" fill="#0f172a" stroke="none">Le système musculaire</text>
+<circle cx="340" cy="98" r="34" fill="#f3c9a8"/>
+<path d="M 328.0 128.0 C 317.3 131.7, 297.0 142.7, 288.0 150.0 C 279.0 157.3, 277.0 158.3, 274.0 172.0 C 271.0 185.7, 270.0 210.3, 270.0 232.0 C 270.0 253.7, 272.3 280.3, 274.0 302.0 C 275.7 323.7, 279.7 344.5, 280.0 362.0 C 280.3 379.5, 275.0 398.3, 276.0 407.0 C 277.0 415.7, 283.3 421.5, 286.0 414.0 C 288.7 406.5, 290.7 377.0, 292.0 362.0 C 293.3 347.0, 294.3 324.0, 294.0 324.0 C 293.7 324.0, 291.3 350.3, 290.0 362.0 C 288.7 373.7, 284.7 385.3, 286.0 394.0 C 287.3 402.7, 294.0 409.3, 298.0 414.0 C 302.0 418.7, 307.3 409.0, 310.0 422.0 C 312.7 435.0, 313.7 468.7, 314.0 492.0 C 314.3 515.3, 312.7 543.7, 312.0 562.0 C 311.3 580.3, 306.3 595.3, 310.0 602.0 C 313.7 608.7, 330.3 613.7, 334.0 602.0 C 337.7 590.3, 329.7 543.7, 332.0 532.0 C 334.3 520.3, 345.7 520.3, 348.0 532.0 C 350.3 543.7, 342.3 590.3, 346.0 602.0 C 349.7 613.7, 366.3 608.7, 370.0 602.0 C 373.7 595.3, 368.7 580.3, 368.0 562.0 C 367.3 543.7, 365.7 515.3, 366.0 492.0 C 366.3 468.7, 367.3 435.0, 370.0 422.0 C 372.7 409.0, 378.0 418.7, 382.0 414.0 C 386.0 409.3, 392.7 402.7, 394.0 394.0 C 395.3 385.3, 391.3 373.7, 390.0 362.0 C 388.7 350.3, 386.3 324.0, 386.0 324.0 C 385.7 324.0, 385.0 348.2, 388.0 362.0 C 391.0 375.8, 402.0 398.3, 404.0 407.0 C 406.0 415.7, 399.7 431.5, 400.0 414.0 C 400.3 396.5, 404.3 332.3, 406.0 302.0 C 407.7 271.7, 410.0 253.7, 410.0 232.0 C 410.0 210.3, 409.0 185.7, 406.0 172.0 C 403.0 158.3, 401.0 157.3, 392.0 150.0 C 383.0 142.7, 362.7 131.7, 352.0 128.0 C 341.3 124.3, 338.7 124.3, 328.0 128.0 Z" fill="#f3c9a8" stroke="#374151" stroke-width="2.2"/>
+<path d="M 288 168 C 270 176 268 204 278 222 C 288 214 294 190 296 178 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2"/>
+<path d="M 392 168 C 410 176 412 204 402 222 C 392 214 386 190 384 178 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2"/>
+<path d="M 300 196 C 316 188 334 190 336 200 L 336 232 C 318 240 304 232 300 214 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2"/>
+<path d="M 380 196 C 364 188 346 190 344 200 L 344 232 C 362 240 376 232 380 214 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2"/>
+<path d="M 276 232 C 268 254 270 280 280 296 C 288 280 288 252 284 234 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2"/>
+<path d="M 404 232 C 412 254 410 280 400 296 C 392 280 392 252 396 234 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2"/>
+<rect x="314.0" y="250.0" width="22.0" height="24.0" rx="8" fill="#f6b8b8" stroke="#374151" stroke-width="1.8" />
+<rect x="344.0" y="250.0" width="22.0" height="24.0" rx="8" fill="#f6b8b8" stroke="#374151" stroke-width="1.8" />
+<rect x="314.0" y="280.0" width="22.0" height="24.0" rx="8" fill="#f6b8b8" stroke="#374151" stroke-width="1.8" />
+<rect x="344.0" y="280.0" width="22.0" height="24.0" rx="8" fill="#f6b8b8" stroke="#374151" stroke-width="1.8" />
+<rect x="314.0" y="310.0" width="22.0" height="24.0" rx="8" fill="#f6b8b8" stroke="#374151" stroke-width="1.8" />
+<rect x="344.0" y="310.0" width="22.0" height="24.0" rx="8" fill="#f6b8b8" stroke="#374151" stroke-width="1.8" />
+<line x1="340.0" y1="246.0" x2="340.0" y2="344.0" stroke="#6b7280" stroke-width="1.6" stroke-linecap="round"/>
+<path d="M 296 366 C 286 396 288 440 300 470 C 308 442 308 396 304 368 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2"/>
+<path d="M 384 366 C 394 396 392 440 380 470 C 372 442 372 396 376 368 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2"/>
+<path d="M 296 474 C 288 496 290 520 300 536 C 310 518 308 494 306 476 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2"/>
+<path d="M 384 474 C 392 496 390 520 380 536 C 370 518 372 494 374 476 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2"/>
+<circle cx="278.0" cy="196.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="278.0" y1="196.0" x2="90.0" y2="168.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="172.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Deltoïde</text>
+<circle cx="310.0" cy="214.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="310.0" y1="214.0" x2="90.0" y2="232.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="236.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Pectoraux</text>
+<circle cx="272.0" cy="262.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="272.0" y1="262.0" x2="90.0" y2="292.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="296.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Biceps</text>
+<circle cx="330.0" cy="300.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="330.0" y1="300.0" x2="90.0" y2="326.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="330.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Abdominaux</text>
+<circle cx="292.0" cy="420.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="292.0" y1="420.0" x2="90.0" y2="416.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="420.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Quadriceps</text>
+<circle cx="292.0" cy="508.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="292.0" y1="508.0" x2="90.0" y2="504.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="508.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Mollet</text>
+</g>
+</svg>

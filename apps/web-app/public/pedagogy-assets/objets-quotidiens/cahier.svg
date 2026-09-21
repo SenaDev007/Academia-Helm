@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">
+<rect width="640" height="480" fill="#ffffff"/>
+<g stroke="#374151" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<rect x="150.0" y="108.0" width="340.0" height="288.0" rx="8" fill="#f97316" stroke="#374151" stroke-width="2.5" />
+<rect x="150.0" y="108.0" width="40.0" height="288.0" rx="8" fill="#ea580c" stroke="#374151" stroke-width="2.5" />
+<path d="M 158 132 q 12 -8 24 0" fill="none" stroke="#fdba74" stroke-width="2.4"/>
+<path d="M 158 160 q 12 -8 24 0" fill="none" stroke="#fdba74" stroke-width="2.4"/>
+<path d="M 158 188 q 12 -8 24 0" fill="none" stroke="#fdba74" stroke-width="2.4"/>
+<path d="M 158 216 q 12 -8 24 0" fill="none" stroke="#fdba74" stroke-width="2.4"/>
+<path d="M 158 244 q 12 -8 24 0" fill="none" stroke="#fdba74" stroke-width="2.4"/>
+<path d="M 158 272 q 12 -8 24 0" fill="none" stroke="#fdba74" stroke-width="2.4"/>
+<path d="M 158 300 q 12 -8 24 0" fill="none" stroke="#fdba74" stroke-width="2.4"/>
+<path d="M 158 328 q 12 -8 24 0" fill="none" stroke="#fdba74" stroke-width="2.4"/>
+<path d="M 158 356 q 12 -8 24 0" fill="none" stroke="#fdba74" stroke-width="2.4"/>
+<rect x="232.0" y="172.0" width="216.0" height="130.0" rx="8" fill="#fff7ed" stroke="#374151" stroke-width="2.5" />
+<text x="340.0" y="216.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#c2410c" font-weight="bold" stroke="none">CAHIER</text>
+<text x="340.0" y="244.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#ea580c" stroke="none">de textes</text>
+<line x1="252.0" y1="268.0" x2="428.0" y2="268.0" stroke="#fdba74" stroke-width="1.6" stroke-linecap="round"/>
+<line x1="252.0" y1="284.0" x2="428.0" y2="284.0" stroke="#fdba74" stroke-width="1.6" stroke-linecap="round"/>
+</g>
+</svg>

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">
+<rect width="640" height="480" fill="#ffffff"/>
+<g stroke="#374151" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<circle cx="320" cy="280" r="138" fill="#f08c2e" stroke="#374151" stroke-width="2.8" />
+<circle cx="360.0" cy="280.0" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="382.35968414625506" cy="293.5330554293269" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="399.0938760743267" cy="316.2620612623925" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="407.04034768318076" cy="346.2548507697269" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="344.6264590130263" cy="309.62920433561277" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="347.04756875140475" cy="334.52347646812484" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="338.29622879196285" cy="360.9123695327004" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="318.04533047902424" cy="385.2639653460649" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="310.32312417601327" cy="316.48311930797746" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="290.944608016669" cy="333.6029524951722" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="263.43469034758454" cy="343.36719633480186" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="230.5528228747032" cy="343.3590856374476" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="283.45818169429594" cy="295.2932977796501" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="257.1758602593495" cy="291.4790691618529" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="232.05360722231956" cy="277.1131136327691" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="211.81630745562435" cy="252.75153093160662" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="284.68209628564296" cy="262.3478692392505" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="271.6985868657426" cy="240.53148881593108" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="268.2748977982624" cy="213.07811422530438" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="276.2381136092013" cy="183.0892490285271" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="313.05407289332277" cy="242.97122848674098" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="323.3495011995484" cy="219.92244718916484" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="344.25608731189595" cy="200.48443251198228" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="374.29867746758975" cy="187.92003723236442" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="346.76522425435434" cy="252.05775456204998" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="372.4257308344955" cy="245.49364158912104" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="401.5921792018773" cy="249.01254259263573" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<circle cx="430.6210941466554" cy="263.53057952056446" r="2.2" fill="#d97716" stroke="none" stroke-width="0" />
+<path d="M 320 142 C 318 128 322 118 320 108" fill="none" stroke="#4a8a3a" stroke-width="5"/>
+<path d="M 322 116 C 348 84 392 76 424 92 C 400 112 356 120 324 118 Z" fill="#5fae5f" stroke="#374151" stroke-width="2.4"/>
+<circle cx="320" cy="152" r="9" fill="#c96a15" stroke="#374151" stroke-width="1.8" />
+<ellipse cx="258" cy="216" rx="24" ry="14" fill="#f8b266" stroke="none" stroke-width="0" transform="rotate(-30 258 216)"/>
+<ellipse cx="320" cy="440" rx="112" ry="12" fill="#e2e8f0" stroke="none" stroke-width="0" />
+</g>
+</svg>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">
+<rect width="640" height="480" fill="#ffffff"/>
+<g stroke="#374151" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<polygon points="320.0,56.0 452.0,216.0 320.0,360.0 188.0,216.0" fill="#34d399" stroke="#374151" stroke-width="2.8"/>
+<line x1="320.0" y1="56.0" x2="320.0" y2="360.0" stroke="#065f46" stroke-width="2" stroke-linecap="round"/>
+<line x1="188.0" y1="216.0" x2="452.0" y2="216.0" stroke="#065f46" stroke-width="2" stroke-linecap="round"/>
+<polygon points="320.0,128.0 392.0,216.0 320.0,296.0 248.0,216.0" fill="#a7f3d0" stroke="#374151" stroke-width="2"/>
+<line x1="248.0" y1="216.0" x2="392.0" y2="216.0" stroke="#065f46" stroke-width="1.6" stroke-linecap="round"/>
+<path d="M 320 360 C 316 396 344 408 336 440" fill="none" stroke="#6b7280" stroke-width="3"/>
+<path d="M 312 386 l -22 -7 l 6 12 l -6 12 l 22 -7 Z" fill="#f87171" stroke="#374151" stroke-width="1.8"/>
+<path d="M 348 406 l -22 -7 l 6 12 l -6 12 l 22 -7 Z" fill="#60a5fa" stroke="#374151" stroke-width="1.8"/>
+<path d="M 322 434 l -22 -7 l 6 12 l -6 12 l 22 -7 Z" fill="#fbbf24" stroke="#374151" stroke-width="1.8"/>
+<path d="M 452 216 C 520 240 560 300 574 372" fill="none" stroke="#94a3b8" stroke-width="2.2"/>
+</g>
+</svg>

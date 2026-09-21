@@ -27,7 +27,6 @@ import {
 } from "lucide-react";
 import {
   PEDAGOGY_ASSET_CATEGORIES,
-  PEDAGOGY_PHOTO_COUNT,
   searchPedagogyAssets,
   type PedagogyAssetItem,
 } from "@/lib/pedagogy-assets";
@@ -288,12 +287,8 @@ export function ImageLibraryDialog({ open, onClose, onInsertHtml }: ImageLibrary
                     </div>
                     <div className="px-2 py-1.5 flex items-center justify-between gap-1">
                       <span className="text-[10.5px] font-semibold text-slate-700 leading-tight line-clamp-2">{a.label}</span>
-                      {insertedSlug === a.slug ? (
+                      {insertedSlug === a.slug && (
                         <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                      ) : (
-                        <span className={`text-[8px] px-1 py-0.5 rounded shrink-0 font-bold ${a.kind === "photo" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
-                          {a.kind === "photo" ? "réaliste" : "vectoriel"}
-                        </span>
                       )}
                     </div>
                   </button>
@@ -305,10 +300,10 @@ export function ImageLibraryDialog({ open, onClose, onInsertHtml }: ImageLibrary
                 )}
               </div>
               <p className="text-[10px] text-slate-400 leading-relaxed">
-                {PEDAGOGY_PHOTO_COUNT} images <b>réalistes</b> (schémas anatomiques professionnels,
-                photographies d'animaux — VALIDÉES visuellement) + illustrations vectorielles pour
-                les maths, la physique et la géographie. Les images réalistes s'insèrent en photo
-                (nettes à l'écran et dans les PDF), les schémas en vectoriel.
+                Tracés 2D standardisés et professionnels (anatomie légendée, objets du quotidien,
+                animaux, végétaux — activités de graphisme et d’observation) + photographies
+                (animaux, botanique) + schémas vectoriels pour les maths, la physique et la
+                géographie. Cliquer sur une image pour l’insérer.
               </p>
             </div>
           )}

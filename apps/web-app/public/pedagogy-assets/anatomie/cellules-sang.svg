@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 560" width="720" height="560">
+<rect width="720" height="560" fill="#ffffff"/>
+<g stroke="#374151" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<text x="360" y="30" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="bold" fill="#0f172a" stroke="none">Les cellules du sang</text>
+<ellipse cx="140" cy="140" rx="38" ry="30" fill="#f6b8b8" stroke="#374151" stroke-width="2.2" />
+<ellipse cx="140" cy="140" rx="18" ry="12" fill="#ffffff" stroke="#f6b8b8" stroke-width="1.6" />
+<ellipse cx="230" cy="120" rx="38" ry="30" fill="#f6b8b8" stroke="#374151" stroke-width="2.2" />
+<ellipse cx="230" cy="120" rx="18" ry="12" fill="#ffffff" stroke="#f6b8b8" stroke-width="1.6" />
+<ellipse cx="320" cy="150" rx="38" ry="30" fill="#f6b8b8" stroke="#374151" stroke-width="2.2" />
+<ellipse cx="320" cy="150" rx="18" ry="12" fill="#ffffff" stroke="#f6b8b8" stroke-width="1.6" />
+<ellipse cx="160" cy="230" rx="38" ry="30" fill="#f6b8b8" stroke="#374151" stroke-width="2.2" />
+<ellipse cx="160" cy="230" rx="18" ry="12" fill="#ffffff" stroke="#f6b8b8" stroke-width="1.6" />
+<ellipse cx="250" cy="220" rx="38" ry="30" fill="#f6b8b8" stroke="#374151" stroke-width="2.2" />
+<ellipse cx="250" cy="220" rx="18" ry="12" fill="#ffffff" stroke="#f6b8b8" stroke-width="1.6" />
+<ellipse cx="350" cy="250" rx="38" ry="30" fill="#f6b8b8" stroke="#374151" stroke-width="2.2" />
+<ellipse cx="350" cy="250" rx="18" ry="12" fill="#ffffff" stroke="#f6b8b8" stroke-width="1.6" />
+<ellipse cx="120" cy="330" rx="38" ry="30" fill="#f6b8b8" stroke="#374151" stroke-width="2.2" />
+<ellipse cx="120" cy="330" rx="18" ry="12" fill="#ffffff" stroke="#f6b8b8" stroke-width="1.6" />
+<ellipse cx="220" cy="330" rx="38" ry="30" fill="#f6b8b8" stroke="#374151" stroke-width="2.2" />
+<ellipse cx="220" cy="330" rx="18" ry="12" fill="#ffffff" stroke="#f6b8b8" stroke-width="1.6" />
+<ellipse cx="310" cy="350" rx="38" ry="30" fill="#f6b8b8" stroke="#374151" stroke-width="2.2" />
+<ellipse cx="310" cy="350" rx="18" ry="12" fill="#ffffff" stroke="#f6b8b8" stroke-width="1.6" />
+<ellipse cx="170" cy="430" rx="38" ry="30" fill="#f6b8b8" stroke="#374151" stroke-width="2.2" />
+<ellipse cx="170" cy="430" rx="18" ry="12" fill="#ffffff" stroke="#f6b8b8" stroke-width="1.6" />
+<ellipse cx="270" cy="430" rx="38" ry="30" fill="#f6b8b8" stroke="#374151" stroke-width="2.2" />
+<ellipse cx="270" cy="430" rx="18" ry="12" fill="#ffffff" stroke="#f6b8b8" stroke-width="1.6" />
+<ellipse cx="360" cy="430" rx="38" ry="30" fill="#f6b8b8" stroke="#374151" stroke-width="2.2" />
+<ellipse cx="360" cy="430" rx="18" ry="12" fill="#ffffff" stroke="#f6b8b8" stroke-width="1.6" />
+<path d="M 520 300 C 470 280 450 320 470 356 C 484 382 530 392 560 376 C 592 360 600 320 578 296 C 558 274 528 276 520 300 Z" fill="#d8ccf0" stroke="#374151" stroke-width="2.6"/>
+<circle cx="508" cy="322" r="11" fill="#9b7fd4" stroke="#374151" stroke-width="1.6" />
+<circle cx="544" cy="314" r="9" fill="#9b7fd4" stroke="#374151" stroke-width="1.6" />
+<circle cx="556" cy="348" r="10" fill="#9b7fd4" stroke="#374151" stroke-width="1.6" />
+<circle cx="516" cy="356" r="8" fill="#9b7fd4" stroke="#374151" stroke-width="1.6" />
+<path d="M 460 180 q 12 -8 22 0 q 6 8 -4 14 q -14 6 -20 -4 q -2 -6 2 -10 Z" fill="#f5e29b" stroke="#374151" stroke-width="1.8"/>
+<path d="M 540 160 q 12 -8 22 0 q 6 8 -4 14 q -14 6 -20 -4 q -2 -6 2 -10 Z" fill="#f5e29b" stroke="#374151" stroke-width="1.8"/>
+<path d="M 600 220 q 12 -8 22 0 q 6 8 -4 14 q -14 6 -20 -4 q -2 -6 2 -10 Z" fill="#f5e29b" stroke="#374151" stroke-width="1.8"/>
+<path d="M 470 440 q 12 -8 22 0 q 6 8 -4 14 q -14 6 -20 -4 q -2 -6 2 -10 Z" fill="#f5e29b" stroke="#374151" stroke-width="1.8"/>
+<path d="M 560 450 q 12 -8 22 0 q 6 8 -4 14 q -14 6 -20 -4 q -2 -6 2 -10 Z" fill="#f5e29b" stroke="#374151" stroke-width="1.8"/>
+<path d="M 610 380 q 12 -8 22 0 q 6 8 -4 14 q -14 6 -20 -4 q -2 -6 2 -10 Z" fill="#f5e29b" stroke="#374151" stroke-width="1.8"/>
+<circle cx="230.0" cy="120.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="230.0" y1="120.0" x2="224.0" y2="66.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="230.0" y="70.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Globules rouges</text>
+<circle cx="520.0" cy="282.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="520.0" y1="282.0" x2="514.0" y2="226.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="520.0" y="230.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Globule blanc</text>
+<circle cx="560.0" cy="158.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="560.0" y1="158.0" x2="554.0" y2="106.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="560.0" y="110.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Plaquettes</text>
+<text x="360.0" y="520.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#6b7280" font-style="italic" stroke="none">(grossissement important — couleurs normalisées)</text>
+</g>
+</svg>

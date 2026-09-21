@@ -318,6 +318,10 @@ export class ExamPreparationService {
    * classe × type × période) + squelettes d'épreuves par matière.
    * ⭐ Chaque matière de la session = UNE épreuve à préparer (pattern
    *    « __fichesAPreparer__ » : une sous-matière = une fiche).
+   * ⭐ V11 : si le bloc existe déjà, les squelettes des matières programmées
+   *    APRÈS sa création sont complétés (idempotent — jamais de doublon).
+   *    C'est ce qui permet l'ouverture directe d'une matière cliquée depuis
+   *    l'onglet « Évaluations programmées ».
    */
   async createBlock(
     tenantId: string,
@@ -343,9 +347,6 @@ export class ExamPreparationService {
        LIMIT 1`,
       tenantId, body.academicYearId, classId, evaluationTypeId || '', periodId || '',
     ).catch(() => []);
-    if (existing && existing.length > 0) {
-      return this.getBlock(tenantId, existing[0].id);
-    }
 
     // 2. Récupérer les évaluations de la session (infos complètes)
     const evalIds = body.evaluationIds || [];
@@ -365,6 +366,27 @@ export class ExamPreparationService {
           evalIds, tenantId,
         ).catch(() => [])
       : [];
+
+    // 3. Nom de l'enseignant (pour l'entête des épreuves)
+    const teacherRow = await this.prisma.teacher.findFirst({
+      where: { id: teacherId, tenantId },
+      select: { firstName: true, lastName: true, gender: true },
+    }).catch(() => null);
+    const teacherName = teacherRow
+      ? `${teacherRow.gender === 'F' ? 'Mme' : 'M.'} ${(teacherRow.lastName || '').toUpperCase()} ${teacherRow.firstName || ''}`.trim()
+      : '';
+
+    // Bloc déjà existant → compléter les squelettes manquants puis retourner
+    if (existing && existing.length > 0) {
+      const created = await this.ensureSheetSkeletons(
+        tenantId, body.academicYearId, existing[0].id, teacherId, classId, evalRows, teacherName,
+      );
+      if (created > 0) {
+        this.logger.log(`Bloc ${existing[0].id} complété : ${created} épreuve(s) ajoutée(s)`);
+      }
+      return this.getBlock(tenantId, existing[0].id);
+    }
+
     if (!evalRows || evalRows.length === 0) {
       throw new BadRequestException('Aucune évaluation trouvée pour cette session');
     }
@@ -378,15 +400,6 @@ export class ExamPreparationService {
       trimesterLabel = `Trimestre ${Math.floor(examDate.getMonth() / 3) + 1}`;
     }
     const monthRef = examDate || new Date();
-
-    // 3. Nom de l'enseignant (pour l'entête des épreuves)
-    const teacherRow = await this.prisma.teacher.findFirst({
-      where: { id: teacherId, tenantId },
-      select: { firstName: true, lastName: true, gender: true },
-    }).catch(() => null);
-    const teacherName = teacherRow
-      ? `${teacherRow.gender === 'F' ? 'Mme' : 'M.'} ${(teacherRow.lastName || '').toUpperCase()} ${teacherRow.firstName || ''}`.trim()
-      : '';
 
     // 4. Créer le bloc
     const blockId = crypto.randomUUID();
@@ -405,9 +418,39 @@ export class ExamPreparationService {
     );
 
     // 5. Squelettes d'épreuves (une par matière, ordre = ordre des évaluations)
-    let order = 0;
+    await this.ensureSheetSkeletons(
+      tenantId, body.academicYearId, blockId, teacherId, classId, evalRows, teacherName,
+    );
+
+    this.logger.log(`Bloc d'épreuves créé : ${blockId} (${evalRows.length} épreuve(s))`);
+    return this.getBlock(tenantId, blockId);
+  }
+
+  /**
+   * Insère les squelettes d'épreuves manquants pour un bloc (idempotent :
+   * ne crée que les épreuves dont l'évaluation n'a pas encore de fiche).
+   * Retourne le nombre d'épreuves créées.
+   */
+  private async ensureSheetSkeletons(
+    tenantId: string,
+    academicYearId: string,
+    blockId: string,
+    teacherId: string,
+    classId: string,
+    evalRows: any[],
+    teacherName: string,
+  ): Promise<number> {
+    if (!evalRows || evalRows.length === 0) return 0;
+    // Ordre de départ : après les épreuves déjà présentes du bloc
+    const ord: any = await this.prisma.$queryRawUnsafe(
+      `SELECT COALESCE(MAX("orderIndex"), -1) AS "maxOrder"
+       FROM exam_preparation_sheets WHERE "blockId" = $1`,
+      blockId,
+    ).catch(() => [{ maxOrder: -1 }]);
+    let order = ((ord?.[0]?.maxOrder ?? -1) as number) + 1;
+    let created = 0;
     for (const ev of evalRows) {
-      // Éviter les doublons de matière dans le même bloc
+      // Éviter les doublons (même évaluation dans le même bloc)
       const dup: any = await this.prisma.$queryRawUnsafe(
         `SELECT id FROM exam_preparation_sheets
          WHERE "blockId" = $1 AND "evaluationId" = $2 LIMIT 1`,
@@ -421,17 +464,16 @@ export class ExamPreparationService {
            "maxScoreLabel", "coefficient", "teacherName", "orderIndex", "status",
            "createdAt", "updatedAt")
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'DRAFT',NOW(),NOW())`,
-        crypto.randomUUID(), tenantId, body.academicYearId, blockId, teacherId, classId,
+        crypto.randomUUID(), tenantId, academicYearId, blockId, teacherId, classId,
         ev.subjectId || null, ev.id, ev.subjectName || '—',
         `Épreuve de ${(ev.subjectName || '—').toUpperCase()}`,
         ev.maxScore != null ? `${ev.maxScore}` : null,
         ev.coefficient != null ? `${ev.coefficient}` : null,
         teacherName, order++,
       );
+      created++;
     }
-
-    this.logger.log(`Bloc d'épreuves créé : ${blockId} (${evalRows.length} épreuve(s))`);
-    return this.getBlock(tenantId, blockId);
+    return created;
   }
 
   /** Supprime un bloc (et ses épreuves en cascade) — DRAFT uniquement. */
@@ -1070,7 +1112,7 @@ export class ExamPreparationService {
 <html lang="fr">
 <head>
 <meta charset="UTF-8" />
-<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Patrick+Hand&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Comic+Neue&family=Patrick+Hand&family=Playwrite+FR+Moderne&family=Playwrite+FR+Trad&display=swap" rel="stylesheet">
 <style>
   @page { size: A4; }
   * { box-sizing: border-box; margin: 0; padding: 0; }

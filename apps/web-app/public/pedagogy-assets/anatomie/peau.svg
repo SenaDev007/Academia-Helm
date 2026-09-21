@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 560" width="720" height="560">
+<rect width="720" height="560" fill="#ffffff"/>
+<g stroke="#374151" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<text x="360" y="30" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="bold" fill="#0f172a" stroke="none">Anatomie de la peau (coupe)</text>
+<path d="M 80 420 Q 200 386 360 396 Q 520 386 640 420 L 640 520 L 80 520 Z" fill="#f5e29b" stroke="#374151" stroke-width="2.4"/>
+<ellipse cx="160" cy="460" rx="22" ry="16" fill="none" stroke="#d3b93e" stroke-width="1.8" />
+<ellipse cx="240" cy="470" rx="26" ry="18" fill="none" stroke="#d3b93e" stroke-width="1.8" />
+<ellipse cx="330" cy="458" rx="22" ry="15" fill="none" stroke="#d3b93e" stroke-width="1.8" />
+<ellipse cx="420" cy="468" rx="26" ry="17" fill="none" stroke="#d3b93e" stroke-width="1.8" />
+<ellipse cx="510" cy="458" rx="22" ry="15" fill="none" stroke="#d3b93e" stroke-width="1.8" />
+<ellipse cx="580" cy="470" rx="24" ry="16" fill="none" stroke="#d3b93e" stroke-width="1.8" />
+<path d="M 80 420 Q 200 386 360 396 Q 520 386 640 420 L 640 300 Q 520 268 360 276 Q 200 268 80 300 Z" fill="#f7d3dc" stroke="#374151" stroke-width="2.4"/>
+<path d="M 150 400 C 154 366 150 340 146 312" fill="none" stroke="#e26d6d" stroke-width="5"/>
+<path d="M 176 400 C 172 366 176 340 180 312" fill="none" stroke="#6a9fd8" stroke-width="5"/>
+<path d="M 500 400 C 504 368 500 344 496 318" fill="none" stroke="#e26d6d" stroke-width="5"/>
+<path d="M 526 400 C 522 368 526 344 530 318" fill="none" stroke="#6a9fd8" stroke-width="5"/>
+<path d="M 320 396 C 324 368 318 350 322 330" fill="none" stroke="#e8c547" stroke-width="3.4"/>
+<path d="M 420 300 q 16 44 4 84 q -4 14 -18 12 q -12 -2 -10 -16 q 8 -40 -2 -76 Z" fill="#c1e0b8" stroke="#374151" stroke-width="2.2"/>
+<path d="M 240 286 q 10 34 4 66 q -2 12 -14 11 q -11 -1 -10 -13 q 3 -34 -4 -62 Z" fill="#f3c9a8" stroke="#374151" stroke-width="2.2"/>
+<path d="M 226 288 C 222 250 228 216 222 186" fill="none" stroke="#8a5a2b" stroke-width="4"/>
+<path d="M 80 300 Q 120 282 160 292 Q 200 302 240 288 Q 280 276 320 290 Q 360 302 400 288 Q 440 276 480 290 Q 520 302 560 288 Q 600 276 640 300 L 640 268 Q 600 248 560 260 Q 520 272 480 258 Q 440 246 400 260 Q 360 272 320 258 Q 280 246 240 260 Q 200 272 160 258 Q 120 246 80 268 Z" fill="#f3f4f6" stroke="#374151" stroke-width="2.4"/>
+<circle cx="360.0" cy="262.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="360.0" y1="262.0" x2="354.0" y2="206.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="360.0" y="210.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Épiderme</text>
+<circle cx="560.0" cy="292.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="560.0" y1="292.0" x2="600.0" y2="246.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="600.0" y="250.0" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Derme</text>
+<circle cx="560.0" cy="440.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="560.0" y1="440.0" x2="600.0" y2="426.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="600.0" y="430.0" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Hypoderme</text>
+<circle cx="226.0" cy="208.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="226.0" y1="208.0" x2="90.0" y2="182.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="186.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Poil</text>
+<circle cx="240.0" cy="330.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="240.0" y1="330.0" x2="90.0" y2="336.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="340.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Follicule</text>
+<circle cx="410.0" cy="356.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="410.0" y1="356.0" x2="90.0" y2="372.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="376.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Glande sudoripare</text>
+<circle cx="163.0" cy="356.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="163.0" y1="356.0" x2="204.0" y2="466.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="210.0" y="470.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Vaisseaux sanguins</text>
+<circle cx="322.0" cy="350.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="322.0" y1="350.0" x2="324.0" y2="466.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="330.0" y="470.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Nerf</text>
+</g>
+</svg>

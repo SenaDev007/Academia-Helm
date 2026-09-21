@@ -982,7 +982,7 @@ export class PedagogicalSpaceService {
     }
 
     // Construire le HTML combiné (page break entre chaque fiche)
-    let combinedHtml = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Patrick+Hand&display=swap" rel="stylesheet"><style>
+    let combinedHtml = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Comic+Neue&family=Patrick+Hand&family=Playwrite+FR+Moderne&family=Playwrite+FR+Trad&display=swap" rel="stylesheet"><style>
       * { margin:0; padding:0; box-sizing:border-box; }
       body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; }
       .fiche-page { page-break-after: always; padding: 10mm; }
@@ -1322,7 +1322,7 @@ export class PedagogicalSpaceService {
     // (Section Effectifs supprimée du PDF — les effectifs sont déjà dans les infos générales)
 
     const content = `
-      ${!embedded ? `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Patrick+Hand&display=swap" rel="stylesheet"><style>
+      ${!embedded ? `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Comic+Neue&family=Patrick+Hand&family=Playwrite+FR+Moderne&family=Playwrite+FR+Trad&display=swap" rel="stylesheet"><style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1e293b; font-size:10px; padding: 8mm; line-height:1.4; position:relative; }
         .content { position:relative; z-index:1; }
@@ -1836,7 +1836,7 @@ export class PedagogicalSpaceService {
       </div>` : '';
 
     const content = `
-      ${!embedded ? `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Patrick+Hand&display=swap" rel="stylesheet"><style>
+      ${!embedded ? `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Comic+Neue&family=Patrick+Hand&family=Playwrite+FR+Moderne&family=Playwrite+FR+Trad&display=swap" rel="stylesheet"><style>
         * { margin:0; padding:0; box-sizing:border-box; }
         body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1e293b; font-size:10px; padding: 8mm; line-height:1.4; position:relative; }
         .content { position:relative; z-index:1; }
@@ -10369,7 +10369,7 @@ td.name{text-align:left;font-weight:bold;}
     const wsStr = j.weekStartDate ? new Date(j.weekStartDate).toLocaleDateString('fr-FR') : '—';
     const weStr = j.weekEndDate ? new Date(j.weekEndDate).toLocaleDateString('fr-FR') : '—';
 
-    let html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Patrick+Hand&display=swap" rel="stylesheet"><style>
+    let html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Comic+Neue&family=Patrick+Hand&family=Playwrite+FR+Moderne&family=Playwrite+FR+Trad&display=swap" rel="stylesheet"><style>
       * { margin:0; padding:0; box-sizing:border-box; }
       body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1e293b; font-size:10px; padding: 8mm; line-height:1.4; position:relative; }
       .content { position:relative; z-index:1; }

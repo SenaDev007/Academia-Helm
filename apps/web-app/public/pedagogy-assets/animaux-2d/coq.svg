@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">
+<rect width="640" height="480" fill="#ffffff"/>
+<g stroke="#374151" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<line x1="60.0" y1="436.0" x2="580.0" y2="436.0" stroke="#cbd5e1" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="10 8"/>
+<path d="M 220.0 300.0 C 224.0 287.0, 241.7 266.3, 260.0 258.0 C 278.3 249.7, 310.0 247.7, 330.0 250.0 C 350.0 252.3, 369.7 260.7, 380.0 272.0 C 390.3 283.3, 395.3 304.7, 392.0 318.0 C 388.7 331.3, 377.0 345.7, 360.0 352.0 C 343.0 358.3, 310.7 358.7, 290.0 356.0 C 269.3 353.3, 247.7 345.3, 236.0 336.0 C 224.3 326.7, 216.0 313.0, 220.0 300.0 Z" fill="#d9663d" stroke="#374151" stroke-width="2.6"/>
+<path d="M 232 282 C 188 188 158 166 130 130 C 172 146 214 174 244 192 Z" fill="#2f6f4f" stroke="#374151" stroke-width="2.2"/>
+<path d="M 232 282 C 188 216 158 194 130 158 C 172 174 214 202 244 220 Z" fill="#3d8b63" stroke="#374151" stroke-width="2.2"/>
+<path d="M 232 282 C 188 244 158 222 130 186 C 172 202 214 230 244 248 Z" fill="#4fa878" stroke="#374151" stroke-width="2.2"/>
+<path d="M 236 288 C 196 280 168 268 148 244 C 186 258 222 268 248 276 Z" fill="#35795a" stroke="#374151" stroke-width="2"/>
+<path d="M 372 268 C 392 220 416 186 444 172 C 436 194 432 218 434 240 Z" fill="#d9663d" stroke="#374151" stroke-width="2.4"/>
+<circle cx="448" cy="168" r="40" fill="#d9663d" stroke="#374151" stroke-width="2.6" />
+<path d="M 414 138 C 418 116 436 112 442 126 C 446 110 466 112 470 126 C 478 114 492 122 490 136 C 476 146 428 148 414 138 Z" fill="#c93b3b" stroke="#374151" stroke-width="2.2"/>
+<polygon points="484.0,164.0 516.0,172.0 484.0,182.0" fill="#e8a13a" stroke="#374151" stroke-width="2"/>
+<path d="M 486 186 q 14 4 10 20 q -10 8 -14 -4 Z" fill="#c93b3b" stroke="#374151" stroke-width="2"/>
+<circle cx="458" cy="158" r="7" fill="#ffffff" stroke="#374151" stroke-width="2" />
+<circle cx="460" cy="158" r="3" fill="#1f2937" stroke="#374151" stroke-width="1.4" />
+<line x1="320.0" y1="350.0" x2="320.0" y2="436.0" stroke="#e8a13a" stroke-width="5.5" stroke-linecap="round"/>
+<path d="M 320 436 l -18 8 M 320 436 l 18 8 M 320 436 l 0 12" fill="none" stroke="#e8a13a" stroke-width="3.4"/>
+<line x1="282.0" y1="344.0" x2="282.0" y2="424.0" stroke="#e8a13a" stroke-width="4.5" stroke-linecap="round"/>
+<path d="M 282 424 l -14 8 M 282 424 l 14 8" fill="none" stroke="#e8a13a" stroke-width="3"/>
+</g>
+</svg>

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">
+<rect width="640" height="480" fill="#ffffff"/>
+<g stroke="#374151" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<circle cx="520" cy="120" r="10" fill="none" stroke="#bae6fd" stroke-width="1.8" />
+<circle cx="548" cy="92" r="7" fill="none" stroke="#bae6fd" stroke-width="1.8" />
+<circle cx="568" cy="132" r="5" fill="none" stroke="#bae6fd" stroke-width="1.8" />
+<path d="M 120.0 240.0 C 135.0 226.0, 180.0 190.7, 220.0 180.0 C 260.0 169.3, 316.7 168.7, 360.0 176.0 C 403.3 183.3, 458.3 212.3, 480.0 224.0 C 501.7 235.7, 491.7 238.0, 490.0 246.0 C 488.3 254.0, 495.0 260.3, 470.0 272.0 C 445.0 283.7, 385.0 311.3, 340.0 316.0 C 295.0 320.7, 235.0 308.7, 200.0 300.0 C 165.0 291.3, 143.3 274.0, 130.0 264.0 C 116.7 254.0, 105.0 254.0, 120.0 240.0 Z" fill="#5fa8e8" stroke="#374151" stroke-width="2.6"/>
+<polygon points="120.0,240.0 48.0,186.0 70.0,246.0 46.0,306.0" fill="#4a8fd4" stroke="#374151" stroke-width="2.4"/>
+<polygon points="280.0,182.0 320.0,120.0 360.0,180.0" fill="#4a8fd4" stroke="#374151" stroke-width="2.2"/>
+<polygon points="300.0,308.0 286.0,360.0 336.0,318.0" fill="#4a8fd4" stroke="#374151" stroke-width="2.2"/>
+<polygon points="390.0,250.0 430.0,290.0 440.0,240.0" fill="#79bdf0" stroke="#374151" stroke-width="2"/>
+<path d="M 396 216 C 404 236 404 254 396 270" fill="none" stroke="#3f7fbd" stroke-width="2.4"/>
+<circle cx="430" cy="228" r="14" fill="#ffffff" stroke="#374151" stroke-width="2.2" />
+<circle cx="432" cy="228" r="6.5" fill="#1f2937" stroke="#374151" stroke-width="1.4" />
+<path d="M 470 258 q 16 6 18 16" fill="none" stroke="#374151" stroke-width="2.2"/>
+<path d="M 210 216 q 16 14 32 0" fill="none" stroke="#3f7fbd" stroke-width="1.6"/>
+<path d="M 210 250 q 16 14 32 0" fill="none" stroke="#3f7fbd" stroke-width="1.6"/>
+<path d="M 210 284 q 16 14 32 0" fill="none" stroke="#3f7fbd" stroke-width="1.6"/>
+<path d="M 256 216 q 16 14 32 0" fill="none" stroke="#3f7fbd" stroke-width="1.6"/>
+<path d="M 256 250 q 16 14 32 0" fill="none" stroke="#3f7fbd" stroke-width="1.6"/>
+<path d="M 256 284 q 16 14 32 0" fill="none" stroke="#3f7fbd" stroke-width="1.6"/>
+<path d="M 302 216 q 16 14 32 0" fill="none" stroke="#3f7fbd" stroke-width="1.6"/>
+<path d="M 302 250 q 16 14 32 0" fill="none" stroke="#3f7fbd" stroke-width="1.6"/>
+<path d="M 302 284 q 16 14 32 0" fill="none" stroke="#3f7fbd" stroke-width="1.6"/>
+<path d="M 348 216 q 16 14 32 0" fill="none" stroke="#3f7fbd" stroke-width="1.6"/>
+<path d="M 348 250 q 16 14 32 0" fill="none" stroke="#3f7fbd" stroke-width="1.6"/>
+<path d="M 348 284 q 16 14 32 0" fill="none" stroke="#3f7fbd" stroke-width="1.6"/>
+</g>
+</svg>

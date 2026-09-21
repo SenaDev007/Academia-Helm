@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 560" width="720" height="560">
+<rect width="720" height="560" fill="#ffffff"/>
+<g stroke="#374151" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<text x="360" y="30" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="bold" fill="#0f172a" stroke="none">Anatomie d'une dent</text>
+<path d="M 120 300 Q 200 268 340 272 Q 480 268 560 300 L 560 330 Q 480 356 340 352 Q 200 356 120 330 Z" fill="#f3c9a8" stroke="#374151" stroke-width="2.4"/>
+<path d="M 120 330 Q 200 356 340 352 Q 480 356 560 330 L 560 470 Q 480 500 340 500 Q 200 500 120 470 Z" fill="#e9e0c4" stroke="#374151" stroke-width="2.4"/>
+<line x1="186.0" y1="400.0" x2="214.0" y2="400.0" stroke="#a89a6b" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="256.0" y1="430.0" x2="284.0" y2="430.0" stroke="#a89a6b" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="406.0" y1="420.0" x2="434.0" y2="420.0" stroke="#a89a6b" stroke-width="1.8" stroke-linecap="round"/>
+<line x1="466.0" y1="390.0" x2="494.0" y2="390.0" stroke="#a89a6b" stroke-width="1.8" stroke-linecap="round"/>
+<path d="M 250 250 C 246 200 268 172 306 176 C 330 178 352 178 376 176 C 414 172 436 200 432 250 C 430 282 420 310 400 330 L 384 448 C 382 466 372 470 366 448 L 356 360 L 330 360 L 322 448 C 318 470 306 466 304 448 L 290 330 C 266 308 252 280 250 250 Z" fill="#f5e29b" stroke="#374151" stroke-width="2.6"/>
+<path d="M 252 248 C 250 204 270 180 306 184 C 330 186 352 186 376 184 C 412 180 432 204 430 248 C 428 270 420 288 408 300 L 276 300 C 264 288 254 270 252 248 Z" fill="#f7f3e8" stroke="#374151" stroke-width="2.2"/>
+<path d="M 310 240 C 308 210 322 198 342 198 C 362 198 376 210 374 240 C 372 262 366 300 362 360 L 330 360 C 328 300 314 262 310 240 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2"/>
+<path d="M 352 366 C 354 392 356 420 358 440 M 336 366 C 334 392 332 420 330 440" fill="none" stroke="#e26d6d" stroke-width="3"/>
+<circle cx="316.0" cy="186.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="316.0" y1="186.0" x2="90.0" y2="146.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="150.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Émail</text>
+<circle cx="400.0" cy="226.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="400.0" y1="226.0" x2="560.0" y2="192.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="560.0" y="196.0" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Dentine</text>
+<circle cx="342.0" cy="230.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="342.0" y1="230.0" x2="90.0" y2="256.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="260.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Pulpe</text>
+<circle cx="300.0" cy="292.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="300.0" y1="292.0" x2="90.0" y2="316.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="320.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Gencive</text>
+<circle cx="330.0" cy="356.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="330.0" y1="356.0" x2="90.0" y2="396.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="400.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Racine</text>
+<circle cx="470.0" cy="440.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="470.0" y1="440.0" x2="560.0" y2="456.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="560.0" y="460.0" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Os de la mâchoire</text>
+</g>
+</svg>

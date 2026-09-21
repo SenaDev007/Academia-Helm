@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 560" width="720" height="560">
+<rect width="720" height="560" fill="#ffffff"/>
+<g stroke="#374151" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<text x="360" y="30" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="bold" fill="#0f172a" stroke="none">Anatomie de l'œil</text>
+<circle cx="340" cy="300" r="150" fill="#ffffff" stroke="#374151" stroke-width="2.6" />
+<path d="M 180 270 C 140 290 140 330 180 346 C 200 316 200 294 180 270 Z" fill="#e8f4f8" stroke="#374151" stroke-width="2.4"/>
+<ellipse cx="240" cy="300" rx="40" ry="52" fill="#7db3e0" stroke="#374151" stroke-width="2.2" />
+<circle cx="236" cy="300" r="18" fill="#1f2937" stroke="#374151" stroke-width="1.6" />
+<ellipse cx="286" cy="300" rx="20" ry="42" fill="#cfe8f5" stroke="#374151" stroke-width="2.2" />
+<circle cx="350" cy="300" r="96" fill="#f3fafc" stroke="#374151" stroke-width="0" />
+<circle cx="350" cy="300" r="96" fill="none" stroke="#bcd8e8" stroke-width="1.2" />
+<path d="M 392 182 C 468 220 468 380 392 418" fill="none" stroke="#e8a7b8" stroke-width="7"/>
+<path d="M 480 278 C 526 270 552 274 578 276 L 578 324 L 480 322 Z" fill="#f7f0d8" stroke="#374151" stroke-width="2.4"/>
+<path d="M 490 240 q 40 -18 88 -16 l 0 26 q -46 -4 -86 10 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2"/>
+<circle cx="164.0" cy="284.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="164.0" y1="284.0" x2="90.0" y2="176.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="180.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Cornée</text>
+<circle cx="236.0" cy="260.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="236.0" y1="260.0" x2="90.0" y2="254.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="258.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Iris</text>
+<circle cx="216.0" cy="300.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="216.0" y1="300.0" x2="90.0" y2="312.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="316.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Pupille</text>
+<circle cx="286.0" cy="266.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="286.0" y1="266.0" x2="90.0" y2="376.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="380.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Cristallin</text>
+<circle cx="440.0" cy="204.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="440.0" y1="204.0" x2="560.0" y2="166.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="560.0" y="170.0" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Rétine</text>
+<circle cx="566.0" cy="300.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="566.0" y1="300.0" x2="560.0" y2="296.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="560.0" y="300.0" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Nerf optique</text>
+<text x="340.0" y="520.0" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#6b7280" font-style="italic" stroke="none">coupe horizontale</text>
+</g>
+</svg>

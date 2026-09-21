@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 560" width="720" height="560">
+<rect width="720" height="560" fill="#ffffff"/>
+<g stroke="#374151" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<text x="360" y="30" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="bold" fill="#0f172a" stroke="none">Le système urinaire</text>
+<circle cx="340" cy="98" r="34" fill="#f3f4f6"/>
+<path d="M 328.0 128.0 C 310.7 128.0, 296.7 141.8, 288.0 150.0 C 279.3 158.2, 278.7 161.7, 276.0 177.0 C 273.3 192.3, 271.7 219.5, 272.0 242.0 C 272.3 264.5, 275.0 292.0, 278.0 312.0 C 281.0 332.0, 289.0 343.7, 290.0 362.0 C 291.0 380.3, 280.7 410.0, 284.0 422.0 C 287.3 434.0, 295.7 432.0, 310.0 434.0 C 324.3 436.0, 355.7 436.0, 370.0 434.0 C 384.3 432.0, 392.7 434.0, 396.0 422.0 C 399.3 410.0, 389.0 380.3, 390.0 362.0 C 391.0 343.7, 399.0 332.0, 402.0 312.0 C 405.0 292.0, 407.7 264.5, 408.0 242.0 C 408.3 219.5, 406.7 192.3, 404.0 177.0 C 401.3 161.7, 404.7 158.2, 392.0 150.0 C 379.3 141.8, 345.3 128.0, 328.0 128.0 Z" fill="#f3f4f6" stroke="#374151" stroke-width="2.2"/>
+<path d="M 268 208 C 240 202 222 226 224 258 C 226 290 246 312 272 308 C 284 306 288 294 282 284 C 274 272 272 250 280 236 C 285 226 280 210 268 208 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2.4"/>
+<path d="M 412 208 C 440 202 458 226 456 258 C 454 290 434 312 408 308 C 396 306 392 294 398 284 C 406 272 408 250 400 236 C 395 226 400 210 412 208 Z" fill="#f6b8b8" stroke="#374151" stroke-width="2.4"/>
+<path d="M 282 306 C 296 330 318 348 336 356" fill="none" stroke="#f5e29b" stroke-width="5"/>
+<path d="M 398 306 C 384 330 362 348 344 356" fill="none" stroke="#f5e29b" stroke-width="5"/>
+<path d="M 306 356 C 330 348 356 348 374 360 C 384 370 384 392 372 404 C 358 416 322 416 308 404 C 296 392 296 368 306 356 Z" fill="#e8c547" stroke="#374151" stroke-width="2.4"/>
+<path d="M 340 416 L 340 470" fill="none" stroke="#f5e29b" stroke-width="7"/>
+<path d="M 300 240 L 330 240" fill="none" stroke="#e26d6d" stroke-width="4"/>
+<path d="M 380 240 L 350 240" fill="none" stroke="#6a9fd8" stroke-width="4"/>
+<circle cx="226.0" cy="226.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="226.0" y1="226.0" x2="90.0" y2="196.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="200.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Rein gauche</text>
+<circle cx="454.0" cy="226.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="454.0" y1="226.0" x2="560.0" y2="196.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="560.0" y="200.0" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Rein droit</text>
+<circle cx="286.0" cy="336.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="286.0" y1="336.0" x2="90.0" y2="326.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="96.0" y="330.0" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Uretère</text>
+<circle cx="372.0" cy="380.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="372.0" y1="380.0" x2="560.0" y2="356.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="560.0" y="360.0" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Vessie</text>
+<circle cx="340.0" cy="452.0" r="2.6" fill="#9ca3af" stroke="none"/>
+<line x1="340.0" y1="452.0" x2="560.0" y2="436.0" stroke="#9ca3af" stroke-width="1.2" stroke="none" style="stroke:#9ca3af;stroke-width:1.2"/>
+<text x="560.0" y="440.0" text-anchor="start" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" stroke="none">Urètre</text>
+</g>
+</svg>

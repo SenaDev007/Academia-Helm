@@ -628,7 +628,7 @@ export function RichTextEditor({
                 onMouseDown={(e) => { e.preventDefault(); }}
                 onClick={() => setShowImageDialog(true)}
                 className="p-1 hover:bg-blue-100 rounded text-blue-600 transition-colors"
-                title="Insérer une image (bibliothèque réaliste, appareil, URL)"
+                title="Insérer une image (bibliothèque pédagogique, appareil, URL)"
               >
                 <ImageIcon className="h-3 w-3" />
               </button>

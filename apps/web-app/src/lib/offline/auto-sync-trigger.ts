@@ -14,7 +14,9 @@
  *       → lance pushOutbox() immédiatement
  *         → batches de 50 événements vers POST /api/sync/push
  *         → retry backoff exponentiel + jitter (2s, 5s, 15s, 45s, 60s)
- *         → max 10 tentatives avant markAsFailed
+ *         → max 5 tentatives ; au-delà, les événements RESTENT PENDING
+ *           (jamais marqués FAILED sur échec transitoire) — le cycle de
+ *           30 s du offlineSyncService prend le relais
  *       → puis runSync() (pull) si temps depuis dernier pull > 5 min
  *
  * ⭐ UX SIMPLISTE (sept. 2026) :
@@ -55,7 +57,11 @@ const BATCH_SIZE = 50; // 50 événements par lot vers /api/sync/push
 // ─── Backoff exponentiel + jitter ─────────────────────────────────────────
 
 const BACKOFF_DELAYS = [2000, 5000, 15000, 45000, 60000]; // 2s, 5s, 15s, 45s, 60s
-const MAX_RETRIES = 10;
+// ⭐ Réduit de 10 à 5 : une fois le backoff épuisé (~2 min), on rend la main
+//    au cycle de 30 s (qui relance le push régulièrement) au lieu de rester
+//    bloqué jusqu'à ~6,5 min dans l'autoSync — c'est ce qui donnait
+//    l'impression que « la synchronisation prend un temps fou ».
+const MAX_RETRIES = 5;
 
 function getBackoffDelay(retryCount: number): number {
   if (retryCount < BACKOFF_DELAYS.length) {
@@ -159,10 +165,26 @@ async function autoSync(tenantId: string): Promise<void> {
 /**
  * Pousse l'outbox par lots de BATCH_SIZE événements.
  * Retry avec backoff exponentiel sur échec.
+ *
+ * ⭐ FIX (2026-09-21) — deux bugs critiques corrigés :
+ * 1. PERTE DE DONNÉES : après MAX_RETRIES échecs, l'ancien code marquait les
+ *    événements FAILED (« Max retries exceeded ») → clearStaleEvents les
+ *    SUPPRIMAIT ensuite (retryCount >= maxRetries). Une panne serveur de
+ *    quelques minutes détruisait donc DÉFINITIVEMENT les modifications de
+ *    l'utilisateur. Désormais : un échec réseau/5xx laisse les événements
+ *    PENDING — ils sont retentés au cycle de 30 s / au prochain retour du
+ *    réseau. Seuls les refus MÉTIER (4xx, gérés dans replayOfflineRequest /
+ *    les résultats du push) marquent FAILED.
+ * 2. BOUCLE SERRÉE : quand pushOutbox revenait SANS exception mais sans rien
+ *    pousser (replay 5xx transitoire → événements restés PENDING), le
+ *    while(true) re-consultait la même file et re-martelait le serveur mort
+ *    sans AUCUN délai (et isAutoSyncing restait vérouillé à jamais).
+ *    Désormais : détection de blocage → on sort proprement.
  */
 async function pushOutboxBatched(tenantId: string): Promise<void> {
   let pushed = 0;
   let failed = 0;
+  let lastRemaining = -1;
 
   while (true) {
     if (!networkDetectionService.isConnected()) {
@@ -178,7 +200,8 @@ async function pushOutboxBatched(tenantId: string): Promise<void> {
     }
 
     // Tenter le push du lot avec retry
-    let success = false;
+    let batchSucceeded = false;
+    let batchPushed = 0;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       if (!networkDetectionService.isConnected()) {
         console.log('[AutoSync] Connection lost during retry — stopping');
@@ -188,6 +211,7 @@ async function pushOutboxBatched(tenantId: string): Promise<void> {
       try {
         const result = await pushOutbox(tenantId);
         pushed += result.pushed;
+        batchPushed += result.pushed;
         if (result.errors > 0) {
           failed += result.errors;
           console.warn(`[AutoSync] ${result.errors} errors in batch`);
@@ -195,7 +219,7 @@ async function pushOutboxBatched(tenantId: string): Promise<void> {
         if (result.conflicts > 0) {
           console.warn(`[AutoSync] ${result.conflicts} conflicts — will show modal`);
         }
-        success = true;
+        batchSucceeded = true;
         break;
       } catch (error) {
         console.warn(`[AutoSync] Push attempt ${attempt + 1} failed:`, error);
@@ -207,14 +231,33 @@ async function pushOutboxBatched(tenantId: string): Promise<void> {
       }
     }
 
-    if (!success) {
-      // Marquer les événements restants comme failed
-      for (const event of pending) {
-        await outboxService.markAsFailed(event.id, 'Max retries exceeded');
-      }
-      failed += pending.length;
-      console.error(`[AutoSync] Batch failed after ${MAX_RETRIES} retries — marked as failed`);
+    const remaining = await outboxService.getPendingCount(tenantId).catch(() => -1);
+    if (remaining === 0) break;
+
+    if (!batchSucceeded) {
+      // ⭐ ÉCHEC TRANSITOIRE (serveur injoignable / 5xx) : les événements
+      //    RESTENT PENDING — retentés par le cycle de 30 s et le prochain
+      //    retour du réseau. ON NE LES MARQUE PAS FAILED : une panne serveur
+      //    ne doit JAMAIS détruire les données en attente de l'utilisateur.
+      console.warn(
+        `[AutoSync] Push transitoirement impossible après ${MAX_RETRIES} tentatives ` +
+        `(${remaining} événement(s) restent en file PENDING) — nouvelle tentative au prochain cycle`,
+      );
+      break;
     }
+
+    // ⭐ DÉTECTION DE BLOCAGE : le lot « a réussi » sans exception mais sans
+    //    rien pousser ET la file n'a pas diminué (replay 5xx transitoire →
+    //    événements restés PENDING). Sans cette garde : boucle serrée sans
+    //    délai qui martèle le serveur et vérouille isAutoSyncing indéfiniment.
+    if (batchPushed === 0 && remaining === lastRemaining) {
+      console.warn(
+        `[AutoSync] Stall détecté (${remaining} événement(s) PENDING inchangés) — ` +
+        `sortie de la boucle, nouvelle tentative au cycle de 30 s`,
+      );
+      break;
+    }
+    lastRemaining = remaining;
   }
 
   // Mettre à jour le badge outbox

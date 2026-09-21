@@ -749,7 +749,7 @@ async function replayOfflineRequest(
       await invalidateResponseCacheFamily(request.url);
     } catch { /* non bloquant */ }
 
-    return { ok: true };
+    return { ok: true, conflict: false };
   }
 
   if (response.status >= 400 && response.status < 500) {
@@ -781,6 +781,10 @@ export async function pushOutbox(
   pushed: number;
   conflicts: number;
   errors: number;
+  /** ⭐ Événements restés EN FILE (échec transitoire : réseau / 5xx — ils
+   *    seront retentés au prochain cycle). Ce n'est NI un échec définitif NI
+   *    un succès : les appelants doivent le distinguer de `errors`. */
+  stillPending: number;
 }> {
   const { hash } = await getSchemaHash();
 
@@ -794,7 +798,7 @@ export async function pushOutbox(
   });
 
   if (sortedPending.length === 0) {
-    return { pushed: 0, conflicts: 0, errors: 0 };
+    return { pushed: 0, conflicts: 0, errors: 0, stillPending: 0 };
   }
 
   // ⭐ V4.0 — SPLIT : les événements portant metadata.request (mutations créées
@@ -817,19 +821,26 @@ export async function pushOutbox(
   let replayPushed = 0;
   let replayErrors = 0;
   let replayConflicts = 0;
+  let replayTransient = 0; // ⭐ échecs réseau/5xx → restent PENDING (pas des erreurs)
   for (const event of replayable) {
     const result = await replayOfflineRequest(event, tenantId);
     if (result.ok) replayPushed++;
     else if (result.error === 'network' || result.error === 'server') {
       // Transitoire — l'événement RESTE PENDING : pas compté comme erreur,
       // il sera retenté au prochain cycle.
+      replayTransient++;
     } else {
       replayErrors++;
     }
   }
 
   if (tableOps.length === 0) {
-    return { pushed: replayPushed, conflicts: replayConflicts, errors: replayErrors };
+    return {
+      pushed: replayPushed,
+      conflicts: replayConflicts,
+      errors: replayErrors,
+      stillPending: replayTransient,
+    };
   }
 
   const body = {
@@ -848,9 +859,18 @@ export async function pushOutbox(
 
   if (!pushRes.ok) {
     // ⭐ Les replays déjà ackés ne sont pas perdus : on retourne leur compte
-    //    avec l'erreur du batch générique (retenté au prochain cycle).
+    //    avec l'état du batch générique. Les tableOps RESTENT PENDING (aucun
+    //    statut terminal n'a été posé) : ils ne sont PAS comptés comme
+    //    « errors » (échec définitif) mais comme « stillPending » — le batch
+    //    sera retenté au prochain cycle. Avant : tableOps comptés en erreurs
+    //    → toast « N actions ont échoué » sur une simple panne serveur.
     if (replayPushed > 0) {
-      return { pushed: replayPushed, conflicts: replayConflicts, errors: replayErrors + tableOps.length };
+      return {
+        pushed: replayPushed,
+        conflicts: replayConflicts,
+        errors: replayErrors,
+        stillPending: replayTransient + tableOps.length,
+      };
     }
     throw new Error(pushData?.message || pushData?.error || 'Push failed');
   }
@@ -903,7 +923,20 @@ export async function pushOutbox(
     }
   }
 
-  return { pushed, conflicts, errors };
+  // ⭐ Compter les tableOps restés en file (statut terminal non posé —
+  //    ex : résultat absent de la réponse serveur) : transitoire, pas erreur.
+  let terminalCount = 0;
+  for (const r of results) {
+    if (r.status === 'SUCCESS' || r.status === 'CONFLICT' || r.status === 'FAILED') terminalCount++;
+  }
+  const tableOpsStillPending = Math.max(0, tableOps.length - terminalCount);
+
+  return {
+    pushed,
+    conflicts,
+    errors,
+    stillPending: replayTransient + tableOpsStillPending,
+  };
 }
 
 /**
@@ -925,6 +958,8 @@ export async function runSync(
   pushed: number;
   conflicts: number;
   errors: number;
+  /** ⭐ Événements restés en file après le push (transitoire). */
+  pending: number;
   pulled: Record<string, number>;
 }> {
   const result = {
@@ -932,6 +967,7 @@ export async function runSync(
     pushed: 0,
     conflicts: 0,
     errors: 0,
+    pending: 0,
     pulled: {} as Record<string, number>,
   };
 
@@ -940,13 +976,22 @@ export async function runSync(
   result.pushed = pushResult.pushed;
   result.conflicts = pushResult.conflicts;
   result.errors = pushResult.errors;
+  result.pending = pushResult.stillPending ?? 0;
 
   // ⭐ SYNC EXPRESS (options.pull === false) : push-only, AUCUNE lecture serveur.
   //    Le timestamp de dernière sync n'est PAS touché — le prochain pull delta
   //    repartira du même point et récupérera tout ce qui a changé entre-temps.
   if (options?.pull === false) {
     console.log('[Sync] Express sync (push-only) — pull différé au cycle périodique');
-    result.success = result.errors === 0 && result.conflicts === 0;
+    // ⭐ FIX « succès mensonger » : avant, success = (errors === 0 && conflicts === 0)
+    //    → un push qui n'avait RIEN envoyé (serveur injoignable, événements
+    //    restés PENDING) était compté RÉUSSI → toast « Synchronisation réussie »
+    //    alors que rien n'était parti vers Neon.
+    result.success =
+      result.errors === 0 && result.conflicts === 0 && result.pending === 0;
+    if (result.pending > 0) {
+      console.log(`[Sync] Express sync : ${result.pending} événement(s) toujours en file (transitoire) — nouvelle tentative au prochain cycle`);
+    }
     return result;
   }
 
@@ -1191,7 +1236,7 @@ export async function runSync(
     }
   }
 
-  result.success = result.errors === 0 && result.conflicts === 0;
+  result.success = result.errors === 0 && result.conflicts === 0 && result.pending === 0;
 
   // Clean up stale outbox events (ACKNOWLEDGED, old SENT/FAILED) after each sync
   try {

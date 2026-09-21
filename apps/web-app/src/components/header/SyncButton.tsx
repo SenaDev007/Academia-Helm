@@ -256,11 +256,15 @@ export function SyncButton() {
 
       const result = await syncEngine.pushOutbox(tenantId);
 
-      setPendingCount(0);
+      const stillPending = (result as any).stillPending ?? 0;
+      setPendingCount(stillPending);
       setSyncModalState({
         isVisible: true,
         phase: 'done',
-        message: `${result.pushed} modification(s) envoyée(s)${result.conflicts > 0 ? ` • ${result.conflicts} conflit(s)` : ''}`,
+        message:
+          `${result.pushed} modification(s) envoyée(s)` +
+          (result.conflicts > 0 ? ` • ${result.conflicts} conflit(s)` : '') +
+          (stillPending > 0 ? ` • ${stillPending} en attente (nouvelle tentative automatique)` : ''),
         pushed: result.pushed,
         pulled: 0,
         total: pendingCount,
@@ -272,6 +276,13 @@ export function SyncButton() {
       if (result.pushed > 0) {
         toast.success("Modifications envoyées", {
           description: `${result.pushed} modification(s) poussée(s) vers le serveur.`,
+        });
+      } else if (stillPending > 0) {
+        // ⭐ Rien n'est parti mais RIEN n'est perdu : événements toujours en
+        //    file (serveur injoignable / 5xx). Message honnête au lieu du
+        //    silence d'avant (« 0 envoyé » sans explication).
+        toast.info("Synchronisation en attente", {
+          description: "Le serveur est momentanément injoignable — vos modifications sont conservées et seront envoyées automatiquement.",
         });
       }
     } catch (err: any) {

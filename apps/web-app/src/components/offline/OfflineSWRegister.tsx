@@ -36,7 +36,35 @@ export function OfflineSWRegister() {
         try { window.dispatchEvent(new CustomEvent('outbox-changed')); } catch { /* non-bloquant */ }
       }
       if (type === 'OUTBOX_SYNCED') {
-        try { window.dispatchEvent(new CustomEvent('sync-end', { detail: event.data })); } catch { /* non-bloquant */ }
+        // ⭐ FIX « toast échec en boucle » : le payload du SW
+        //    ({ type, replayed, failed, stillPending, source }) n'a PAS de champ
+        //    « success » — le SyncToast l'interprétait comme `success ?? false`
+        //    → toast « Erreur de synchronisation » à CHAQUE retry du SW alors
+        //    que RIEN n'avait définitivement échoué (événements simplement
+        //    restés en file : serveur injoignable / 5xx transitoire).
+        //    On traduit désormais en SyncResult complet :
+        //    - success = aucun échec définitif ET file vide ;
+        //    - pending = événements restés en file (transitoire — le toast
+        //      NE doit PAS s'afficher pour ça, la pastille de sync informe déjà).
+        const d = event.data || {};
+        const replayed = Number(d.replayed) || 0;
+        const failed = Number(d.failed) || 0;
+        const stillPending = Number(d.stillPending) || 0;
+        try {
+          window.dispatchEvent(
+            new CustomEvent('sync-end', {
+              detail: {
+                success: failed === 0 && stillPending === 0,
+                successful: replayed,
+                failed,
+                conflicted: 0,
+                pending: stillPending,
+                total: replayed + failed + stillPending,
+                source: 'sw',
+              },
+            }),
+          );
+        } catch { /* non-bloquant */ }
       }
     };
     navigator.serviceWorker.addEventListener('message', handleSwMessage);

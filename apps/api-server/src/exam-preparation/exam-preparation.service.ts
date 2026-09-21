@@ -32,7 +32,7 @@
 
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../database/prisma.service';
 import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
 import { NotificationService } from '../notifications/notification.service';
 

@@ -278,6 +278,10 @@ class OfflineSyncService {
               successful: result.pushed,
               conflicted: result.conflicts,
               failed: result.errors,
+              // ⭐ Événements restés en file (échec transitoire) — permet au
+              //    SyncToast de distinguer « en attente » (pas de toast) d'un
+              //    vrai échec. Avant : pending ignoré → fausse erreur.
+              pending: result.pending ?? 0,
             },
           })
         );
@@ -290,7 +294,12 @@ class OfflineSyncService {
           isVisible: true,
           isMinimized: true, // pastille
           phase: 'done',
-          message: `${result.pushed} envoi(s) • ${totalPulled} mise(s) à jour`,
+          // ⭐ Message HONNÊTE : si des événements restent en file (serveur
+          //    injoignable), on le dit au lieu d'afficher « 0 envoi(s) » sans
+          //    explication (« envoie 0 sur 1 mais rien »).
+          message:
+            `${result.pushed} envoi(s) • ${totalPulled} mise(s) à jour` +
+            (result.pending > 0 ? ` • ${result.pending} en attente (nouvelle tentative automatique)` : ''),
           pushed: result.pushed,
           pulled: totalPulled,
         });
@@ -302,16 +311,56 @@ class OfflineSyncService {
       );
     } catch (error: any) {
       console.error('[Sync] Sync error:', error);
+      const message = error?.message || 'Erreur de synchronisation';
+
+      // ⭐ Échec TRANSITOIRE (serveur injoignable / 5xx / réseau) : les
+      //    modifications RESTENT en file et seront rejouées automatiquement
+      //    (cycle 30 s / retour du réseau). On n'affiche PLUS un toast
+      //    « Erreur de synchronisation » à chaque cycle — c'était exactement
+      //    le « ça toast échec, échec de synchronisation et ça a encore
+      //    relancé » signalé en production. Pastille calme + sync-end
+      //    « transitoire » (le SyncToast ne toast pas ces états).
+      const isTransient =
+        /sync service unavailable|502|503|504|failed to fetch|load failed|network|push failed|sync request failed|chunk|timeout|délai/i.test(message);
+
+      // Nombre d'événements restés en file (pour un détail sync-end honnête)
+      let pendingInError = 0;
+      try {
+        const tid = await this.getTenantId();
+        if (tid) {
+          const { outboxService } = await import('./outbox.service');
+          pendingInError = await outboxService.getPendingCount(tid);
+        }
+      } catch { /* non-bloquant */ }
+
       setSyncModalState({
         isVisible: true,
-        isMinimized: true, // pastille d'erreur (non bloquante en sync de routine)
+        isMinimized: true, // pastille (non bloquante en sync de routine)
         phase: 'error',
-        message: error?.message || 'Erreur de synchronisation',
+        message: isTransient
+          ? 'Synchronisation en attente — serveur momentanément injoignable. Nouvelle tentative automatique…'
+          : `${message}`,
       });
-      setTimeout(() => setSyncModalState({ isVisible: false }), 3000);
+      setTimeout(() => setSyncModalState({ isVisible: false }), isTransient ? 4000 : 3000);
+
       if (typeof window !== 'undefined') {
         window.dispatchEvent(
-          new CustomEvent('sync-end', { detail: { success: false, error: error?.message } })
+          new CustomEvent('sync-end', {
+            detail: isTransient
+              ? {
+                  // ⭐ Transitoire : PAS un échec définitif — données saines,
+                  //    file en attente. Le SyncToast ignore ces états (pas de
+                  //    toast), les hooks rafraîchissent leurs compteurs.
+                  success: false,
+                  transient: true,
+                  pending: pendingInError,
+                  failed: 0,
+                  conflicted: 0,
+                  successful: 0,
+                  total: pendingInError,
+                }
+              : { success: false, error: message },
+          })
         );
       }
     } finally {

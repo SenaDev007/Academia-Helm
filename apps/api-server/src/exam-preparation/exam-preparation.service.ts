@@ -34,6 +34,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
+import { SCHOOL_FONTS_CSS } from '../common/pdf-school-fonts';
 import { NotificationService } from '../notifications/notification.service';
 
 const MONTH_NAMES = [
@@ -1113,7 +1114,8 @@ export class ExamPreparationService {
 <head>
 <meta charset="UTF-8" />
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Comic+Neue&family=Patrick+Hand&family=Playwrite+FR+Moderne&family=Playwrite+FR+Trad&display=swap" rel="stylesheet">
-<style>
+<style>/* Polices scolaires embarquées — lignes calligraphiques V12 (base64, sans réseau) */
+${SCHOOL_FONTS_CSS}
   @page { size: A4; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Times New Roman', 'Noto Serif', serif; color: #111; font-size: 12px; line-height: 1.55; }

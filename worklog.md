@@ -11541,3 +11541,22 @@ Stage Summary:
 - ✅ Tâche H confirmée en production : les 4 améliorations (Retenons, tableaux Résultat attendu, alignement, état actif) sont dans le bundle servi + migration en base
 - ℹ️ Anomalie préexistante hors périmètre : SW partytown 404 (~partytown/partytown-sw.js) — analytics, sans impact fonctionnel
 - Plan B notifié au promoteur si OOM futur : Enhanced Builds Vercel (Settings > General > Build Machine, machine 2× mémoire)
+
+---
+Task ID: cms-site-1+2
+Agent: main (Super Z)
+Task: Site institutionnel — bouton CMS sidebar promoteur + images R2 + stats centrées + fin des données codées en dur + fix crash /app/cms
+
+Work Log:
+- Diagnostic production (headless browser) : FeatureCode 'CMS' absent de l'enum backend → API ne retournait jamais le module → sidebar le masquait ; docs.academiahelm.com absent des remotePatterns → _next/image 400 ; grille stats fixe 4 colonnes avec 3 chiffres → décalage gauche ; DEFAULT_FACULTY/PARTNER_LOGOS/DEFAULT_TESTIMONIALS/DEFAULT_NEWS_ARTICLES/keyFigures par défaut affichés sur tous les sites
+- Commits : 3cb7a21f7 (feature flag CMS enum + FEATURE_KEYS + DEFAULT_ENABLED + fail-open frontend + remotePatterns docs.academiahelm.com + grille stats adaptative + suppression fallbacks factices + toggles isActive respectés + CmsContent HTML + admissionsContent/schoolLifeContent rendus + onError hero) ; 1a1d54975 (icônes Users/Award/Clock non importées → ReferenceError sur /app/cms, crash masqué par le bug du bouton invisible)
+- DB Neon : lignes tenant_features CMS ACTIVE créées pour les 5 tenants manquants (script scripts/active-cms-feature-all-tenants.js) ; compte de recette promoteur recréé (recette.promoteur@cspeb.test / Recette2026!)
+- Vérifié E2E en production SANS mock : API retourne CMS ACTIVE ; sidebar promoteur affiche « Site Institutionnel » (globe) ; /app/cms charge avec 24 onglets sans erreur ; stats CSPEB 3 cartes grid-cols-3 centrées ; image hero CMS charge (0 cassée) ; zéro faux employé/partenaire/témoignage
+- Captures : download/cspeb-hero-corrigee.png, cspeb-sections-corrigees.png, cspeb-contact-corrigee.png, cms-workspace-promoteur.png, sidebar-promoteur-cms-visible.png
+
+Stage Summary:
+- ✅ Bouton « Site Institutionnel » visible pour le promoteur (et tous les tenants) — cause racine corrigée côté enum backend, pas seulement en DB
+- ✅ Toutes les images du landing page s'affichent (remotePatterns R2 + résilience onError)
+- ✅ Stats du Hero toujours centrées, quelle que soit leur nombre (grille adaptative)
+- ✅ Aucune donnée d'école codée en dur : chaque site n'affiche que SES contenus CMS ; sections non configurées = masquées (pas de faux employés/partenaires/témoignages/stats)
+- ⚠️ Si l'API tarde à déployer : redémarrer api-server sur Railway (webhook auto-deploy capricieux, cf. scripts/railway-deploy.sh)

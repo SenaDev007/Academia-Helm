@@ -69,6 +69,12 @@ const nextConfig = {
       // ✅ Cloudflare R2 — logos + documents migrés depuis base64 Neon
       // Permet à next/image d'optimiser les URLs https://downloads.academiahelm.com/logos/...
       { protocol: 'https', hostname: 'downloads.academiahelm.com' },
+      // ⭐ 2026-09-22 — R2 tenant-media (Médiathèque CMS) : les images du site
+      //    institutionnel (hero, photo du promoteur, galerie…) sont servies
+      //    depuis https://docs.academiahelm.com/tenant-media/... Ce domaine
+      //    manquait ici → next/image répondait 400 INVALID_IMAGE_OPTIMIZE_REQUEST
+      //    → images cassées sur le landing page des écoles.
+      { protocol: 'https', hostname: 'docs.academiahelm.com' },
       // Vercel blob storage
       { protocol: 'https', hostname: '**.public.blob.vercel-storage.com' },
       // Développement local

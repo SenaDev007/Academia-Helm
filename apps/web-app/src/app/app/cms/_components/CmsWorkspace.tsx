@@ -599,6 +599,11 @@ function FiguresTab({ config, onSave, saving }: any) {
                 💡 Les chiffres associés à une source dynamique sont désactivés (grisés) — leur valeur sera calculée automatiquement.
               </p>
             )}
+            {figures.length === 0 && (
+              <p className="text-[11px] text-slate-500 mt-2">
+                ⓘ Aucun chiffre saisi : le bandeau des chiffres clés sera masqué sur le site institutionnel (aucune valeur fictive n'est affichée par défaut). La grille s'adapte automatiquement au nombre de chiffres (2, 3 ou 4 colonnes) et reste centrée.
+              </p>
+            )}
           </ControlCard>
           <AutoSaveBar saving={saving} onSave={() => onSave({ keyFigures: figures, statsMode, dynamicStatsConfig: dynConfig })} />
         </>
@@ -1136,7 +1141,7 @@ function FacultyTab({ config, onSave, saving }: any) {
                 <p className="text-[10px] text-slate-500">{m.subject}</p>
               </div>
             ))}
-            {form.faculty.length === 0 && <p className="text-sm text-slate-400 col-span-2 text-center py-4">Aucun membre. Ajoutez-en via le panneau de gauche.</p>}
+            {form.faculty.length === 0 && <p className="text-sm text-slate-400 col-span-2 text-center py-4">Aucun membre. Ajoutez-en via le panneau de gauche.<br /><span className="text-[11px]">ⓘ Sans membres configurés, la section « Corps enseignant » est masquée sur le site — aucun profil fictif n'est affiché.</span></p>}
           </div>
         </div>
       }
@@ -1197,7 +1202,7 @@ function PartnersTab({ config, onSave, saving }: any) {
                 <span className="text-[10px] text-slate-600 font-medium">{p.name}</span>
               </div>
             ))}
-            {partners.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Aucun partenaire.</p>}
+            {partners.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Aucun partenaire.<br /><span className="text-[11px]">ⓘ Sans partenaires configurés, le bloc « Partenaires & accréditations » est masqué sur le site — aucune accréditation fictive (UNESCO, MEN…) n'est affichée.</span></p>}
           </div>
         </div>
       }
@@ -1728,7 +1733,7 @@ function TestimonialsTab() {
               <p className="text-xs font-bold text-slate-900 mt-2">— {item.authorName}{item.authorRole && <span className="font-normal text-slate-400"> · {item.authorRole}</span>}</p>
             </div>
           ))}
-          {items.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Aucun témoignage.</p>}
+          {items.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Aucun témoignage.<br /><span className="text-[11px]">ⓘ Sans témoignages réels, la section est masquée sur le site — aucun témoignage fictif n'est affiché.</span></p>}
         </div>
       }
     />

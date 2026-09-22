@@ -53,13 +53,10 @@ export const DEFAULT_WEBSITE_CONFIG = {
   heroCtaUrl: '/public/pre-enrollment',
   heroIsActive: true,
 
-  // Chiffres clés
-  keyFigures: [
-    { value: '500', label: 'Élèves inscrits' },
-    { value: '30', label: 'Enseignants qualifiés' },
-    { value: '20', label: "Années d'expérience" },
-    { value: '95%', label: 'Taux de réussite' },
-  ],
+  // ⭐ 2026-09-22 — Chiffres clés : PLUS de valeurs par défaut. « 500 élèves /
+  //    30 enseignants / 95% réussite » étaient des chiffres INVENTÉS affichés
+  //    sur tous les sites non configurés. Non configuré → bandeau masqué.
+  //    Les vrais chiffres se saisissent via le CMS (onglet Chiffres clés).
 
   // Mot du promoteur
   promoterWord: "Chers parents, chers élèves, c'est avec une grande fierté que je vous accueille au sein de notre établissement. Depuis notre création, nous avons à cœur d'offrir une éducation d'excellence qui allie rigueur académique, épanouissement personnel et valeurs humaines. Notre mission est de former des citoyens responsables, créatifs et ouverts sur le monde, prêts à relever les défis de demain.",
@@ -115,65 +112,15 @@ export const DEFAULT_WEBSITE_CONFIG = {
   aiWelcomeMessage: "Bonjour ! Je suis l'assistant de l'établissement. Comment puis-je vous aider ?",
 };
 
-// ─── Collections de démo (1-2 items légers) ──────────────────────────────
-
-export const DEFAULT_NEWS_ARTICLES = [
-  {
-    id: 'demo-news-1',
-    title: "Bienvenue sur notre nouveau site institutionnel",
-    slug: 'bienvenue-nouveau-site',
-    excerpt: "Découvrez notre tout nouveau site web, conçu pour vous informer et vous accompagner au quotidien.",
-    content: "Nous avons le plaisir de vous présenter notre nouveau site institutionnel. Conçu pour être plus clair, plus moderne et plus accessible, il vous permettra de suivre toute l'actualité de l'établissement, de prendre connaissance des événements à venir et de trouver toutes les informations pratiques.\n\nN'hésitez pas à parcourir les différentes sections : présentation, admissions, vie scolaire, actualités et contact. Notre assistant virtuel est également à votre disposition pour répondre à vos questions.\n\nBienvenue à toutes et à tous !",
-    coverImageUrl: DEFAULT_PORTAL_IMAGES.news[0],
-    category: 'Annonce',
-    status: 'PUBLISHED',
-    publishedAt: new Date().toISOString(),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    isFeatured: true,
-  },
-  {
-    id: 'demo-news-2',
-    title: "Journée des sciences : nos élèves à l'honneur",
-    slug: 'journee-des-sciences',
-    excerpt: "Ateliers pratiques, expériences guidées et présentations de projets : la science au cœur de notre pédagogie.",
-    content: "Nos élèves ont brillé lors de la journée des sciences organisée dans notre laboratoire. Au programme : expériences de chimie, observations au microscope et présentation de projets d'ingénierie.\n\nCes ateliers pratiques illustrent notre engagement pour une pédagogie active, où l'expérimentation précède la théorie. Félicitations à tous les participants et merci à nos enseignants pour leur accompagnement.",
-    coverImageUrl: DEFAULT_PORTAL_IMAGES.news[1],
-    category: 'Vie scolaire',
-    status: 'PUBLISHED',
-    publishedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-    isFeatured: false,
-  },
-  {
-    id: 'demo-news-3',
-    title: "Résultats remarquables aux examens nationaux",
-    slug: 'resultats-examens-nationaux',
-    excerpt: "Une nouvelle promotion qui honore le travail collectif de nos élèves, de leurs familles et de nos équipes pédagogiques.",
-    content: "Nos élèves ont obtenu des résultats exceptionnels aux examens nationaux de cette session. Ce succès est le fruit d'un travail rigoureux tout au long de l'année : séances de renforcement, simulations d'examens et accompagnement personnalisé.\n\nNous remercions les familles pour leur confiance et nos enseignants pour leur dévouement. Ensemble, nous continuons de viser l'excellence.",
-    coverImageUrl: DEFAULT_PORTAL_IMAGES.news[2],
-    category: 'Résultats',
-    status: 'PUBLISHED',
-    publishedAt: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString(),
-    createdAt: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date(Date.now() - 21 * 24 * 60 * 60 * 1000).toISOString(),
-    isFeatured: false,
-  },
-];
-
-export const DEFAULT_EVENTS = [
-  {
-    id: 'demo-event-1',
-    title: 'Rentrée scolaire 2026-2027',
-    description: "Célébration de la rentrée scolaire. Les élèves sont attendus à 8h00 en tenue complète.",
-    startDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // +30 jours
-    endDate: null,
-    location: 'Enceinte de l\'établissement',
-    category: 'Événement',
-    isFeatured: true,
-  },
-];
+// ─── Collections — 2026-09-22 : contenus de démo factices retirés ────────
+// ⭐ Les faux articles d'actualités, événements et témoignages (parents
+//    fictifs) n'apparaissent plus sur les sites non configurés : chaque école
+//    publie SES propres contenus via le CMS (onglets Actualités, Agenda,
+//    Témoignages). Non configuré → état vide honnête.
+// ⭐ La galerie et la FAQ conservent leurs valeurs génériques de plateforme
+//    (visuels Academia Helm neutres / Q&R procédurales standard) : elles ne
+//    formulent aucune affirmation propre à une école et sont remplacées dès
+//    que l'école configure le CMS.
 
 export const DEFAULT_GALLERY_ITEMS = [
   { id: 'demo-gallery-1', imageUrl: DEFAULT_PORTAL_IMAGES.gallery[0], caption: 'Campus principal', category: 'Campus', displayOrder: 0, isActive: true },
@@ -182,26 +129,6 @@ export const DEFAULT_GALLERY_ITEMS = [
   { id: 'demo-gallery-4', imageUrl: DEFAULT_PORTAL_IMAGES.gallery[3], caption: 'Bibliothèque', category: 'Infrastructure', displayOrder: 3, isActive: true },
 ];
 
-export const DEFAULT_TESTIMONIALS = [
-  {
-    id: 'demo-testimonial-1',
-    authorName: 'Mme Aïcha Bello',
-    authorRole: "Parent d'élève (CE2)",
-    content: "Mon enfant s'épanouit dans cette école. L'encadrement est exceptionnel et les enseignants sont à l'écoute. Je recommande vivement cet établissement.",
-    rating: 5,
-    isFeatured: true,
-    isActive: true,
-  },
-  {
-    id: 'demo-testimonial-2',
-    authorName: 'M. Koffi Adjovi',
-    authorRole: 'Ancien élève (Promotion 2020)',
-    content: "J'ai été élève dans cet établissement pendant 7 ans. La qualité de l'enseignement m'a permis de réussir mes études supérieures. Merci à toute l'équipe pédagogique.",
-    rating: 5,
-    isFeatured: false,
-    isActive: true,
-  },
-];
 
 export const DEFAULT_FAQ_ITEMS = [
   {

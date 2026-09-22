@@ -63,10 +63,7 @@ import { tenantThemeService } from '@/services/tenant-theme.service';
 import { ThemeApplier } from '@/lib/themes/theme-applier';
 import {
   DEFAULT_WEBSITE_CONFIG,
-  DEFAULT_NEWS_ARTICLES,
-  DEFAULT_EVENTS,
   DEFAULT_GALLERY_ITEMS,
-  DEFAULT_TESTIMONIALS,
   DEFAULT_FAQ_ITEMS,
   DEFAULT_PORTAL_IMAGES,
   withDefault,
@@ -138,20 +135,17 @@ const DEFAULT_PROGRAMS = [
 ];
 
 // ─── Points de différenciation (CDC 3.4) ──
-const DEFAULT_DIFFERENTIATORS = [
-  { title: 'Bilinguisme', description: "Enseignement français-anglais dès le primaire", Icon: Languages },
-  { title: 'STEM', description: "Sciences, technologie, ingénierie & mathématiques", Icon: Microscope },
-  { title: 'Arts', description: "Théâtre, musique, arts plastiques", Icon: Palette },
-  { title: 'Sport', description: "Éducation physique & compétitions scolaires", Icon: Trophy },
-];
+// ⭐ 2026-09-22 — PLUS DE FALLBACK CODÉ EN DUR : « Bilinguisme dès le primaire »,
+//    « STEM », etc. sont des affirmations propres à chaque école. 100% éditables
+//    via le CMS (onglet Programmes → Points de différenciation). Non configurées
+//    → bloc masqué (aucune affirmation fausse par défaut sur les sites).
 
-// ─── Corps enseignant par défaut (CDC 3.5) ──
-const DEFAULT_FACULTY = [
-  { name: 'M. Koffi Adjovi', role: 'Directeur pédagogique', subject: 'Mathématiques' },
-  { name: 'Mme Aïcha Bello', role: 'Directrice Maternelle', subject: 'Petite section' },
-  { name: 'M. Jean Houngbo', role: 'Responsable Primaire', subject: 'Français' },
-  { name: 'Mme Fatou Diallo', role: 'Responsable Secondaire', subject: 'Sciences physiques' },
-];
+// ─── Corps enseignant (CDC 3.5) ──
+// ⭐ 2026-09-22 — PLUS DE FALLBACK CODÉ EN DUR : quatre faux profils
+//    (« M. Koffi Adjovi », « Mme Aïcha Bello »…) s'affichaient sur TOUS les
+//    sites institutionnels non configurés — perçus comme des employés réels
+//    de l'école. Le corps enseignant est 100% éditable via le CMS (onglet
+//    Corps enseignant). Non configuré → section masquée.
 
 // ─── Étapes d'admission (CDC 3.7) ──
 const ADMISSION_STEPS = [
@@ -172,15 +166,28 @@ const REQUIRED_DOCUMENTS = [
 ];
 
 // ─── Témoignages carrousel (CDC 3.8) ──
-// Utilise DEFAULT_TESTIMONIALS mais peut être surchargé par les données du tenant.
+// ⭐ 2026-09-22 — PLUS DE FALLBACK : de faux témoignages de parents s'affichaient
+//    sur tous les sites non configurés. Les vrais témoignages sont gérés via le
+//    CMS (onglet Témoignages). Non configurés → section masquée.
 
-// ─── Logos partenaires (placeholder — gris par défaut, couleur au survol) ──
-const PARTNER_LOGOS = [
-  { name: 'Ministère de l\'Éducation', abbr: 'MEN' },
-  { name: 'UNESCO', abbr: 'UNESCO' },
-  { name: 'Confemen', abbr: 'CONFEMEN' },
-  { name: 'Agence Universitaire Francophone', abbr: 'AUF' },
-];
+// ─── Logos partenaires / accréditations (CDC 3.8) ──
+// ⭐ 2026-09-22 — PLUS DE FALLBACK : afficher par défaut MEN / UNESCO / CONFEMEN /
+//    AUF revenait à revendiquer de fausses accréditations. Les partenaires sont
+//    100% éditables via le CMS (onglet Partenaires). Non configurés → bloc masqué.
+
+// ─── CmsContent : rend un contenu CMS qui peut être du texte brut OU du HTML ──
+// Le RichTextEditor du CMS (onglets Présentation / Admissions / Vie scolaire)
+// sauvegarde du HTML (innerHTML). On détecte la présence de balises :
+//  - HTML → rendu enrichi (contenu CMS = trusté, saisi par l'admin de l'école)
+//  - texte brut → rendu texte avec sauts de ligne conservés
+function CmsContent({ content, className }: { content: string | null | undefined; className?: string }) {
+  if (!content || content.trim() === '') return null;
+  const isHtml = /<\/[a-z][\s\S]*>/i.test(content);
+  if (isHtml) {
+    return <div className={className} dangerouslySetInnerHTML={{ __html: content }} />;
+  }
+  return <p className={className} style={{ whiteSpace: 'pre-wrap' }}>{content}</p>;
+}
 
 // ─── SectionHeader : H2 avec liseré or (CDC 3.3+) ──────────────────────────
 function SectionHeader({
@@ -305,6 +312,10 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   // mode "dynamic". Voir applyDynamicStats() plus bas.
   const [dynamicStats, setDynamicStats] = useState<Record<string, number | string> | null>(null);
   const [activeTestimonial, setActiveTestimonial] = useState(0);
+  // ⭐ 2026-09-22 — Résilience images : si l'image de hero configurée dans le
+  // CMS échoue au chargement (R2/CDN indisponible), on retombe sur l'image
+  // par défaut plutôt que d'afficher un hero vide/cassé.
+  const [heroImageError, setHeroImageError] = useState(false);
 
   // ─── Thème officiel du tenant (40+ thèmes shadcn/ui) ──────────────────
   // Résolu depuis tenantThemeService.getPublicSettings(slug) → { themeId, mode }.
@@ -547,7 +558,14 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   //     { figureIndex: 0, source: 'studentCount' },     // remplace "500" par le vrai nombre d'élèves
   //     { figureIndex: 1, source: 'teacherCount' },     // remplace "30" par le vrai nombre d'enseignants
   //   ]
-  const rawKeyFigures = withDefault(rawWebsite?.keyFigures, DEFAULT_WEBSITE_CONFIG.keyFigures);
+  // ⭐ 2026-09-22 — PLUS DE FALLBACK sur DEFAULT_WEBSITE_CONFIG.keyFigures :
+  //    « 500 élèves / 30 enseignants / 95% réussite » sont des chiffres INVENTÉS
+  //    qui s'affichaient sur tous les sites non configurés. Non configuré →
+  //    bandeau masqué (honnête). Les vrais chiffres se saisissent dans le CMS
+  //    (onglet Chiffres clés) ou via le mode dynamique (statsMode).
+  const rawKeyFigures: any[] = Array.isArray(rawWebsite?.keyFigures)
+    ? rawWebsite.keyFigures
+    : [];
   const statsMode = (rawWebsite?.statsMode === 'dynamic') ? 'dynamic' : 'manual';
   const dynamicStatsConfig: any[] = (rawWebsite?.dynamicStatsConfig && Array.isArray(rawWebsite.dynamicStatsConfig))
     ? rawWebsite.dynamicStatsConfig
@@ -564,16 +582,21 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       }).slice(0, 4)
     : rawKeyFigures.slice(0, 4);
 
-  // ─── Collections avec defaults ──
+  // ─── Collections — données RÉELLES du tenant uniquement ──
+  // ⭐ 2026-09-22 — actualités & témoignages : PLUS de faux contenus de démo
+  //    (articles et parents fictifs) sur les sites non configurés. Non
+  //    configuré → état vide / section masquée. La galerie et la FAQ gardent
+  //    leurs valeurs génériques de plateforme (visuels Academia Helm / Q&R
+  //    procédurales standard) — remplacées dès que l'école configure le CMS.
   const newsArticles = (websiteData?.newsArticles && websiteData.newsArticles.length > 0)
     ? websiteData.newsArticles
-    : DEFAULT_NEWS_ARTICLES;
+    : [];
   const galleryItems = (websiteData?.galleryItems && websiteData.galleryItems.length > 0)
     ? websiteData.galleryItems
     : DEFAULT_GALLERY_ITEMS;
   const testimonials = (websiteData?.testimonials && websiteData.testimonials.length > 0)
     ? websiteData.testimonials
-    : DEFAULT_TESTIMONIALS;
+    : [];
   const faqItems = (websiteData?.faqItems && websiteData.faqItems.length > 0)
     ? websiteData.faqItems
     : DEFAULT_FAQ_ITEMS;
@@ -610,12 +633,13 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
 
   const rawDifferentiators = (rawWebsite?.differentiators && Array.isArray(rawWebsite.differentiators) && rawWebsite.differentiators.length > 0)
     ? rawWebsite.differentiators
-    : DEFAULT_DIFFERENTIATORS;
+    : [];
   const differentiators = rawDifferentiators.map((d: any) => ({ ...d, Icon: resolveIcon(d, Sparkles) }));
 
+  // ⭐ Corps enseignant : CMS uniquement — PLUS de faux profils par défaut.
   const faculty = (rawWebsite?.faculty && Array.isArray(rawWebsite.faculty) && rawWebsite.faculty.length > 0)
     ? rawWebsite.faculty
-    : DEFAULT_FACULTY;
+    : [];
   const rawAdmissionSteps = (rawWebsite?.admissionSteps && Array.isArray(rawWebsite.admissionSteps) && rawWebsite.admissionSteps.length > 0)
     ? rawWebsite.admissionSteps
     : ADMISSION_STEPS;
@@ -625,10 +649,10 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     ? rawWebsite.admissionDocuments
     : REQUIRED_DOCUMENTS;
 
-  // ⭐ Logos partenaires : CMS si configuré, sinon fallback sur PARTNER_LOGOS.
+  // ⭐ Logos partenaires : CMS uniquement — PLUS de faux MEN/UNESCO/CONFEMEN/AUF.
   const partnerLogos = (rawWebsite?.partnerLogos && Array.isArray(rawWebsite.partnerLogos) && rawWebsite.partnerLogos.length > 0)
     ? rawWebsite.partnerLogos
-    : PARTNER_LOGOS;
+    : [];
   const partnerLogosIsActive = withDefault(rawWebsite?.partnerLogosIsActive, true);
 
   // ⭐ Liens de navigation (navbar) : CMS si configuré, sinon fallback sur
@@ -645,13 +669,15 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         { label: 'Contact', href: '/#contact' },
       ];
 
-  // ⭐ Ratio encadrant/élève (CDC 3.5) : CMS (facultyRatio) si configuré,
-  // sinon calcul automatique si dynamicStats disponible, sinon défaut.
+  // ⭐ Ratio encadrant/élève (CDC 3.5) — CMS (facultyRatio) si configuré, sinon
+  //    calcul automatique si dynamicStats disponible, sinon AUCUN ratio affiché.
+  //    2026-09-22 : le défaut codé en dur « 1 encadrant pour 15 élèves » était
+  //    une affirmation inventée — un badge masqué vaut mieux qu'un mensonge.
   const facultyRatio = withDefault(
     rawWebsite?.facultyRatio,
     dynamicStats && (dynamicStats as any).studentCount > 0 && (dynamicStats as any).staffCount > 0
       ? `Ratio 1 encadrant pour ${Math.ceil((dynamicStats as any).studentCount / (dynamicStats as any).staffCount)} élèves`
-      : 'Ratio 1 encadrant pour 15 élèves'
+      : null
   );
 
   // ⭐ Horaires d'ouverture : CMS si configuré, sinon valeurs par défaut.
@@ -783,14 +809,18 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <div className="absolute inset-0">
           {/* Image de fond : CMS de l'école > image par défaut (campus scolaire
               africain Academia Helm) > dégradé navy → bleu académique (CDC 3.2) */}
-          {(heroImage || DEFAULT_PORTAL_IMAGES.hero) ? (
+          {/* ⭐ 2026-09-22 — Résilience onError : si l'image CMS (R2) échoue
+              (fichier supprimé, CDN indisponible), on retombe automatiquement
+              sur l'image par défaut — le hero n'est JAMAIS vide/cassé. */}
+          {(heroImage && !heroImageError) || (!heroImage && DEFAULT_PORTAL_IMAGES.hero) ? (
             <Image
-              src={heroImage || DEFAULT_PORTAL_IMAGES.hero}
+              src={heroImage && !heroImageError ? heroImage : DEFAULT_PORTAL_IMAGES.hero}
               alt={schoolName}
               fill
               priority
               className="object-cover"
               sizes="100vw"
+              onError={() => setHeroImageError(true)}
             />
           ) : (
             // CDC 3.2 — Fond : dégradé navy → bleu académique par défaut
@@ -857,10 +887,26 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             md+ : superposé en bas du hero comme au CDC.
             ⚠️ pb-24 sur mobile : réserve la zone de la bannière PWA (fixée en
             bas d'écran) pour qu'elle ne recouvre pas les cartes chiffres clés. */}
+        {/* ⭐ 2026-09-22 — GRILLE ADAPTATIVE : le nombre de colonnes suit le
+            nombre de chiffres configurés (ex : 3 chiffres → 3 colonnes).
+            Avant : grid-cols-4 fixe → 3 cartes sur 4 colonnes = bandeau
+            décalé à gauche (retour utilisateur « les quatre stats ne sont
+            pas centrés, c'est aligné à gauche »). Quel que soit le nombre
+            de chiffres, ils occupent désormais TOUTE la largeur, centrés. */}
         {keyFigures.length > 0 && (
           <div className="relative z-10 w-full pb-24 pt-2 shrink-0 md:absolute md:bottom-0 md:left-0 md:right-0 md:pb-8 flex justify-center">
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 w-full">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-4 text-center">
+            <div className={`w-full px-4 sm:px-6 ${keyFigures.length === 1 ? 'max-w-xs' : 'max-w-6xl'} mx-auto`}>
+              <div
+                className={`grid gap-2.5 md:gap-4 text-center ${
+                  keyFigures.length === 1
+                    ? 'grid-cols-1'
+                    : keyFigures.length === 2
+                      ? 'grid-cols-2'
+                      : keyFigures.length === 3
+                        ? 'grid-cols-3'
+                        : 'grid-cols-2 md:grid-cols-4'
+                }`}
+              >
                 {keyFigures.map((fig: any, i: number) => (
                   <KeyFigureCard key={i} fig={fig} gold={GOLD} navy={NAVY} delay={i * 0.1} />
                 ))}
@@ -893,9 +939,11 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                 <h3 className="text-xl md:text-2xl font-bold mb-4" style={{ color: NAVY }}>
                   Notre mission
                 </h3>
-                <p className="text-base text-slate-700 leading-relaxed whitespace-pre-wrap mb-6">
-                  {withDefault(website.presentationContent, DEFAULT_WEBSITE_CONFIG.presentationContent)}
-                </p>
+                {/* ⭐ 2026-09-22 — rendu compatible HTML (RichTextEditor CMS) */}
+                <CmsContent
+                  className="text-base text-slate-700 leading-relaxed mb-6 [&_p]:mb-3"
+                  content={withDefault(website.presentationContent, DEFAULT_WEBSITE_CONFIG.presentationContent)}
+                />
                 <div className="flex flex-wrap gap-3">
                   <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: `${NAVY}10`, color: NAVY }}>
                     <Award className="w-3.5 h-3.5" /> Excellence académique
@@ -965,7 +1013,10 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       )}
 
       {/* ═══ 3.4 EXCELLENCE ACADÉMIQUE / PROGRAMMES ═══ */}
-      <section id="programmes" className="py-16 md:py-24 bg-white">
+      {/* ⭐ 2026-09-22 — respecte le toggle CMS « Afficher la section »
+          (onglet Programmes). Par défaut : visible (true en base). */}
+      {shouldShowSection(rawWebsite?.programsIsActive) && (
+        <section id="programmes" className="py-16 md:py-24 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <SectionHeader
             eyebrow="Excellence académique"
@@ -1011,93 +1062,128 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           </div>
 
           {/* Points de différenciation — liste à icônes (CDC 3.4) */}
-          <div className="rounded-2xl p-8 md:p-10" style={{ background: `linear-gradient(135deg, ${PEARL}, #e8edf5)` }}>
-            <h3 className="text-lg md:text-xl font-bold text-center mb-8" style={{ color: NAVY }}>
-              Nos points de différenciation
-            </h3>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-              {differentiators.map((item: any, i: number) => (
+          {/* ⭐ 2026-09-22 — affiché UNIQUEMENT si l'école a configuré ses
+              points de différenciation dans le CMS (onglet Programmes) ET si
+              le toggle « Afficher les différenciateurs » est actif.
+              Aucun fallback : ces affirmations (« Bilinguisme dès le
+              primaire », « STEM »…) sont propres à chaque établissement. */}
+          {shouldShowSection(rawWebsite?.differentiatorsIsActive) && differentiators.length > 0 && (
+            <div className="rounded-2xl p-8 md:p-10" style={{ background: `linear-gradient(135deg, ${PEARL}, #e8edf5)` }}>
+              <h3 className="text-lg md:text-xl font-bold text-center mb-8" style={{ color: NAVY }}>
+                Nos points de différenciation
+              </h3>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                {differentiators.map((item: any, i: number) => (
+                  <motion.div
+                    key={item.title}
+                    initial={{ opacity: 0, y: 16 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.08 }}
+                    className="flex items-start gap-3"
+                  >
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${GOLD}20` }}>
+                      <item.Icon className="w-5 h-5" style={{ color: '#a07d00' }} />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold" style={{ color: NAVY }}>{item.title}</h4>
+                      <p className="text-xs text-slate-600 mt-0.5">{item.description}</p>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+      )}
+      {/* ═══ fin 3.4 — wrapper programsIsActive ═══ */}
+
+      {/* ═══ 3.5 CORPS ENSEIGNANT / ENCADREMENT ═══ */}
+      {/* ⭐ 2026-09-22 — section affichée UNIQUEMENT si l'école a configuré
+          son corps enseignant dans le CMS (onglet Corps enseignant) ET si le
+          toggle « Afficher la section » est actif.
+          Avant : quatre profils fictifs codés en dur (« M. Koffi Adjovi »,
+          « Mme Aïcha Bello »…) apparaissaient sur TOUS les sites des écoles —
+          perçus comme de vrais employés. Chaque école présente désormais
+          uniquement SON équipe réelle (nom, rôle, matière, photo). */}
+      {shouldShowSection(rawWebsite?.facultyIsActive) && faculty.length > 0 && (
+        <section id="corps-enseignant" className="py-16 md:py-24" style={{ background: PEARL }}>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <SectionHeader
+              eyebrow="Notre équipe"
+              title={facultyTitle}
+              subtitle={facultySubtitle}
+              navy={NAVY}
+              gold={GOLD}
+            />
+
+            {/* Ratio encadrant/élève — badge or (CDC 3.5) — uniquement si
+                configuré dans le CMS ou calculable via les stats dynamiques. */}
+            {facultyRatio && (
+              <div className="flex justify-center mb-10">
+                <div
+                  className="inline-flex items-center gap-3 px-5 py-3 rounded-full shadow-md"
+                  style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)` }}
+                >
+                  <Users className="w-5 h-5" style={{ color: NAVY }} />
+                  <span className="text-sm font-bold" style={{ color: NAVY }}>
+                    {facultyRatio}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Grille d'enseignants clés (CDC 3.5 — 3-8 profils, responsive 2-4 colonnes) */}
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {faculty.map((member: any, i: number) => (
                 <motion.div
-                  key={item.title}
-                  initial={{ opacity: 0, y: 16 }}
+                  key={i}
+                  initial={{ opacity: 0, y: 24 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
                   transition={{ delay: i * 0.08 }}
-                  className="flex items-start gap-3"
+                  whileHover={{ y: -6 }}
+                  className="group bg-white rounded-2xl p-6 text-center shadow-sm border border-slate-100 hover:shadow-lg transition-all"
                 >
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${GOLD}20` }}>
-                    <item.Icon className="w-5 h-5" style={{ color: '#a07d00' }} />
+                  {/* Portrait — photo CMS ou initiales, bordure or au hover */}
+                  <div className="relative w-20 h-20 mx-auto mb-4">
+                    {member.photoUrl ? (
+                      <Image
+                        src={member.photoUrl}
+                        alt={member.name}
+                        width={80}
+                        height={80}
+                        className="w-20 h-20 rounded-full object-cover transition-all group-hover:ring-4 group-hover:ring-amber-400/40 group-hover:ring-offset-2"
+                      />
+                    ) : (
+                      <div
+                        className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold transition-all group-hover:ring-4 group-hover:ring-amber-400/40 group-hover:ring-offset-2"
+                        style={{
+                          background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                          color: '#FFFFFF',
+                        }}
+                      >
+                        {member.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <h4 className="text-sm font-bold" style={{ color: NAVY }}>{item.title}</h4>
-                    <p className="text-xs text-slate-600 mt-0.5">{item.description}</p>
-                  </div>
+                  <h4 className="text-sm font-bold" style={{ color: NAVY }}>{member.name}</h4>
+                  <p className="text-xs font-medium mt-1" style={{ color: GOLD }}>{member.role}</p>
+                  <p className="text-[11px] text-slate-500 mt-1">{member.subject}</p>
                 </motion.div>
               ))}
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* ═══ 3.5 CORPS ENSEIGNANT / ENCADREMENT ═══ */}
-      <section id="corps-enseignant" className="py-16 md:py-24" style={{ background: PEARL }}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <SectionHeader
-            eyebrow="Notre équipe"
-            title={facultyTitle}
-            subtitle={facultySubtitle}
-            navy={NAVY}
-            gold={GOLD}
-          />
-
-          {/* Ratio encadrant/élève — badge or (CDC 3.5) */}
-          <div className="flex justify-center mb-10">
-            <div
-              className="inline-flex items-center gap-3 px-5 py-3 rounded-full shadow-md"
-              style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)` }}
-            >
-              <Users className="w-5 h-5" style={{ color: NAVY }} />
-              <span className="text-sm font-bold" style={{ color: NAVY }}>
-                {facultyRatio}
-              </span>
-            </div>
-          </div>
-
-          {/* Grille d'enseignants clés (CDC 3.5 — 3-8 profils, responsive 2-4 colonnes) */}
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {faculty.map((member: any, i: number) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 24 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.08 }}
-                whileHover={{ y: -6 }}
-                className="group bg-white rounded-2xl p-6 text-center shadow-sm border border-slate-100 hover:shadow-lg transition-all"
-              >
-                {/* Portrait placeholder — bordure or au hover */}
-                <div className="relative w-20 h-20 mx-auto mb-4">
-                  <div
-                    className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold transition-all group-hover:ring-4 group-hover:ring-amber-400/40 group-hover:ring-offset-2"
-                    style={{
-                      background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
-                      color: '#FFFFFF',
-                    }}
-                  >
-                    {member.name.split(' ').map(n => n[0]).slice(0, 2).join('')}
-                  </div>
-                </div>
-                <h4 className="text-sm font-bold" style={{ color: NAVY }}>{member.name}</h4>
-                <p className="text-xs font-medium mt-1" style={{ color: GOLD }}>{member.role}</p>
-                <p className="text-[11px] text-slate-500 mt-1">{member.subject}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* ═══ 3.6 VIE SCOLAIRE / ACTUALITÉS ═══ */}
-      <section id="vie-scolaire" className="py-16 md:py-24 bg-white">
+      {/* ⭐ 2026-09-22 — respecte le toggle CMS newsIsActive (défaut : visible).
+          Actualités : données RÉELLES du tenant uniquement — plus de faux
+          articles de démo. Non configuré → message « Aucune actualité ». */}
+      {shouldShowSection(rawWebsite?.newsIsActive) && (
+        <section id="vie-scolaire" className="py-16 md:py-24 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <SectionHeader
             eyebrow="Vie scolaire"
@@ -1106,6 +1192,19 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             navy={NAVY}
             gold={GOLD}
           />
+
+          {/* ⭐ 2026-09-22 — Texte « Vie scolaire » (CMS, onglet Vie scolaire →
+              Contenu). Avant : ce champ était éditable dans le CMS mais JAMAIS
+              rendu sur le site public. Rich HTML ou texte brut, affiché
+              uniquement si l'école l'a renseigné. */}
+          {shouldShowSection(rawWebsite?.schoolLifeIsActive) && withDefault(rawWebsite?.schoolLifeContent, '') && (
+            <div className="mb-12">
+              <CmsContent
+                className="max-w-3xl mx-auto text-center text-sm md:text-base text-slate-600 leading-relaxed [&_p]:mb-3"
+                content={rawWebsite?.schoolLifeContent}
+              />
+            </div>
+          )}
 
           {/* Flux d'actualités — 3-6 cartes (image, date, extrait) (CDC 3.6) */}
           {newsArticles.length > 0 ? (
@@ -1162,8 +1261,9 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             <div className="text-center py-12 text-slate-500 mb-16">Aucune actualité pour le moment.</div>
           )}
 
-          {/* Galerie photo — grille (CDC 3.6) */}
-          {galleryItems.length > 0 && (
+          {/* Galerie photo — grille (CDC 3.6) — respecte le toggle CMS
+              galleryIsActive (défaut : visible) */}
+          {shouldShowSection(rawWebsite?.galleryIsActive) && galleryItems.length > 0 && (
             <div id="galerie">
               <h3 className="text-xl md:text-2xl font-bold text-center mb-8" style={{ color: NAVY }}>
                 Galerie — Vie scolaire en images
@@ -1203,9 +1303,13 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           )}
         </div>
       </section>
+      )}
+      {/* ═══ fin 3.6 — wrapper newsIsActive ═══ */}
 
       {/* ═══ 3.7 ADMISSIONS — fond navy, texte blanc (CDC 3.7) ═══ */}
-      <section id="admissions" className="relative py-16 md:py-24 overflow-hidden" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${DARK} 100%)` }}>
+      {/* ⭐ 2026-09-22 — respecte le toggle CMS admissionsIsActive (défaut : visible). */}
+      {shouldShowSection(rawWebsite?.admissionsIsActive) && (
+        <section id="admissions" className="relative py-16 md:py-24 overflow-hidden" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${DARK} 100%)` }}>
         {/* Halo doré décoratif */}
         <div className="absolute inset-0 opacity-[0.08] bg-[radial-gradient(circle_at_top_right,#F5B700_0%,transparent_50%)]" />
         <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1217,6 +1321,18 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             gold={GOLD}
             inverted
           />
+
+          {/* ⭐ 2026-09-22 — Texte descriptif du processus d'admission (CMS,
+              onglet Admissions → Contenu). Rich HTML ou texte brut.
+              Affiché uniquement si l'école l'a renseigné. */}
+          {withDefault(rawWebsite?.admissionsContent, '') && (
+            <div className="mb-12 -mt-4">
+              <CmsContent
+                className="max-w-3xl mx-auto text-center text-sm md:text-base text-blue-50/85 leading-relaxed [&_p]:mb-3"
+                content={rawWebsite?.admissionsContent}
+              />
+            </div>
+          )}
 
           {/* Timeline horizontale desktop / verticale mobile (CDC 3.7) */}
           <div className="mb-16">
@@ -1292,9 +1408,14 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           </div>
         </div>
       </section>
+      )}
+      {/* ═══ fin 3.7 — wrapper admissionsIsActive ═══ */}
 
       {/* ═══ 3.8 TÉMOIGNAGES ═══ */}
-      {testimonials.length > 0 && (
+      {/* ⭐ 2026-09-22 — respecte le toggle CMS testimonialsIsActive ET
+          n'affiche que les VRAIS témoignages configurés par l'école
+          (plus de parents fictifs de démo). */}
+      {shouldShowSection(rawWebsite?.testimonialsIsActive) && testimonials.length > 0 && (
         <section id="temoignages" className="py-16 md:py-24 bg-white">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <SectionHeader
@@ -1378,26 +1499,43 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             </div>
 
             {/* Logos partenaires / accréditations — niveaux de gris, couleur au survol (CDC 3.8) */}
-            <div className="border-t border-slate-100 pt-10">
-              <p className="text-center text-xs font-semibold uppercase tracking-wider text-slate-400 mb-6">
-                Partenaires & accréditations
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-6 md:gap-10">
-                {partnerLogos.map((partner, i) => (
-                  <div
-                    key={i}
-                    className="grayscale opacity-50 hover:grayscale-0 hover:opacity-100 transition-all duration-300 cursor-default"
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="w-10 h-10 rounded-lg bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
-                        {partner.abbr.slice(0, 2)}
+            {/* ⭐ 2026-09-22 — affiché UNIQUEMENT si l'école a configuré ses
+                partenaires dans le CMS (onglet Partenaires). Avant : MEN /
+                UNESCO / CONFEMEN / AUF codés en dur = fausses accréditations
+                revendiquées par toutes les écoles. Logo image (logoUrl) ou
+                abréviation si pas d'image. */}
+            {partnerLogosIsActive && partnerLogos.length > 0 && (
+              <div className="border-t border-slate-100 pt-10">
+                <p className="text-center text-xs font-semibold uppercase tracking-wider text-slate-400 mb-6">
+                  Partenaires & accréditations
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-6 md:gap-10">
+                  {partnerLogos.map((partner, i) => (
+                    <div
+                      key={i}
+                      className="grayscale opacity-50 hover:grayscale-0 hover:opacity-100 transition-all duration-300 cursor-default"
+                    >
+                      <div className="flex items-center gap-2">
+                        {partner.logoUrl ? (
+                          <Image
+                            src={partner.logoUrl}
+                            alt={partner.name}
+                            width={40}
+                            height={40}
+                            className="w-10 h-10 rounded-lg object-contain"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-lg bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
+                            {(partner.abbr || partner.name || '?').slice(0, 2)}
+                          </div>
+                        )}
+                        <span className="text-xs font-semibold text-slate-600 hidden md:inline">{partner.name}</span>
                       </div>
-                      <span className="text-xs font-semibold text-slate-600 hidden md:inline">{partner.name}</span>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </section>
       )}

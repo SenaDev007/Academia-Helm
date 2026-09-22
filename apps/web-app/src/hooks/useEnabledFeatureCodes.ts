@@ -27,6 +27,9 @@ const DEFAULT_ENABLED_CODES = new Set([
   'PEDAGOGY',
   'HR_PAYROLL',
   'COMMUNICATION',
+  // ⭐ Site Institutionnel (CMS) — module de base : inclus dans le fallback
+  //    ultime pour que le bouton reste visible même hors ligne / API KO.
+  'CMS',
 ]);
 
 /** ⭐ (sept. 2026 — retour promoteur « tous les modules disparaissent hors

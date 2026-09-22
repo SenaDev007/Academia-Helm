@@ -15,6 +15,14 @@ export enum FeatureCode {
   FINANCE = 'FINANCE',
   HR_PAYROLL = 'HR_PAYROLL',
   COMMUNICATION = 'COMMUNICATION',
+  // ⭐ Site institutionnel (CMS) — module visible par le promoteur et les
+  //    rôles de direction/communication (cf. PilotageSidebar MAIN_MODULES).
+  //    ⚠️ Avant 2026-09-22 ce code était absent de FEATURE_KEYS : l'API
+  //    /settings/features (getAllModulesWithState) ne le retournait JAMAIS,
+  //    donc la sidebar masquait le bouton « Site Institutionnel » pour tous
+  //    les tenants — même ceux avec une ligne CMS active en base. Ajouté ici
+  //    + dans DEFAULT_ENABLED_FEATURES (module de base, non premium).
+  CMS = 'CMS',
   QHSE = 'QHSE',
   CANTEEN = 'CANTEEN',
   TRANSPORT = 'TRANSPORT',
@@ -35,6 +43,7 @@ export const FEATURE_KEYS: string[] = [
   FeatureCode.PEDAGOGY,       // Organisation Pédagogique
   FeatureCode.HR_PAYROLL,     // Personnel, RH & Paie
   FeatureCode.COMMUNICATION,  // Communication
+  FeatureCode.CMS,            // Site Institutionnel (CMS)
   FeatureCode.LIBRARY,        // Bibliothèque
   FeatureCode.TRANSPORT,      // Transport
   FeatureCode.CANTEEN,        // Cantine
@@ -55,6 +64,9 @@ export const DEFAULT_ENABLED_FEATURES = new Set<string>([
   FeatureCode.PEDAGOGY,
   FeatureCode.HR_PAYROLL,
   FeatureCode.COMMUNICATION,
+  // ⭐ CMS : le site institutionnel est un module de base du plan — activé
+  //    par défaut pour tous les tenants (promoteur personnalise son site).
+  FeatureCode.CMS,
 ]);
 
 /** Modules premium (impact facturation) — uniquement ceux de la liste app */

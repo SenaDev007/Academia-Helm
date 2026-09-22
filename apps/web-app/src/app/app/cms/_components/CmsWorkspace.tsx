@@ -24,6 +24,12 @@ import {
   Save, Plus, Trash2, Edit2, X, Check, AlertCircle, ExternalLink,
   Palette, GripVertical, Eye, ArrowLeft, ArrowRight, ArrowUp, ArrowDown,
   AlignLeft, AlignCenter, AlignRight, Bold, Italic, Type, Monitor,
+  // ⭐ 2026-09-22 — icônes des onglets Corps enseignant / Partenaires / Horaires
+  //    (ajoutés par 61d7d3446 SANS import → ReferenceError « Users is not
+  //    defined » au rendu de /app/cms — le crash était masqué par le bug du
+  //    feature flag CMS qui rendait le bouton « Site Institutionnel » invisible,
+  //    donc la page inatteignable).
+  Users, Award, Clock,
 } from 'lucide-react';
 import { toast } from '@/components/ui/toast';
 import { tenantWebsiteService } from '@/services/tenant-website.service';

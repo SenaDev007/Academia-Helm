@@ -243,3 +243,29 @@ log('harnais chargé');
 </script>
 </body>
 </html>
+<script>
+/* ═══ Phase v4.7.0b — scénario de production exact ═══
+ * L'autosave crée la fiche en file (POST, id local) → le POST se synchronise
+ * SEUL (Background Sync) → le formulaire continue de viser l'id LOCAL :
+ *   __phaseB1() : PUT EN LIGNE vers l'id local → 404 attendu SANS correctif
+ *                 → AVEC v4.7.0b : réécriture transparente → 200
+ *   __phaseB2() : (serveur down) PUT mis en file vers l'id local →
+ *                 réécrit à l'entrée vers l'id serveur → replay OK
+ */
+window.__readStore = async function (store) { return idbAll(store); };
+
+window.__phaseB1 = async function (localId) {
+  // PUT EN LIGNE vers l'id LOCAL — le serveur ne connaît que l'id serveur
+  const r = await fetch(`/api/pedagogy-space/fiches/${localId}?source=autosave`, {
+    method: 'PUT', headers: HEADERS, credentials: 'include',
+    body: JSON.stringify({ sheetType: 'MATH', titre: 'Fiche mobile', n: 4 }),
+  });
+  let body = null; try { body = await r.json(); } catch {}
+  return { status: r.status, syncHeader: r.headers.get('X-Sync-Status'), body };
+};
+
+window.__entityState = async function (localId) {
+  const ws = await idbAll('pedagogicalworkspace');
+  return ws.map((w) => ({ id: w.id, serverId: w._serverId || null, dirty: w._isDirty, n: w.n }));
+};
+</script>

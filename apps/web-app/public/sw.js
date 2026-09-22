@@ -2888,6 +2888,20 @@ async function handleApiMutation(request) {
       if (response && response.status >= 200 && response.status < 300) {
         swInvalidateCacheFamily(request.url).catch(() => {});
       }
+      // ⭐ v4.7.0b — RÉÉCRITURE TRANSPARENTE d'un 404 « id local obsolète » :
+      //    la fiche a été CRÉÉE en ligne (pendant une coupure) sous un id
+      //    local adopté par le formulaire, puis synchronisée sous l'id
+      //    SERVEUR ; l'app continue d'adresser ses PUT/PATCH à l'id local →
+      //    404 en ligne → l'autosave échouait SILENCIEUSEMENT et toutes les
+      //    saisies postérieures à la synchronisation étaient perdues. Si un
+      //    mapping _serverId existe pour l'id de l'URL, on REJOUE la requête
+      //    vers l'id serveur et on retourne SA réponse — l'app ne voit rien,
+      //    la sauvegarde aboutit sur la vraie fiche.
+      if (response && response.status === 404
+          && (request.method === 'PUT' || request.method === 'PATCH')) {
+        const rewritten = await swReplayMutationToServerId(request, details, bodyText);
+        if (rewritten) return rewritten;
+      }
       return response;
     } catch (error) {
       // ⭐ ANTI-DOUBLON (politique 504 du module finance) : un TIMEOUT est
@@ -2923,10 +2937,49 @@ async function handleApiMutation(request) {
  *  + écriture optimiste dans le store d'entités + Background Sync + réponse
  *  fabriquée qui IMITE un succès (X-Sync-Status: pending) pour que le code
  *  existant poursuive son flux normal (redirection, confirmation). */
+/** ⭐ v4.7.0b — Rejoue une mutation PUT/PATCH vers l'id SERVEUR réel
+ *  (mapping _serverId) et retourne SA réponse — utilisée par le chemin
+ *  EN LIGNE de handleApiMutation après un 404 « id local obsolète ».
+ *  Retourne null si aucun mapping ou si le replay n'aboutit pas (la
+ *  réponse 404 d'origine est alors rendue telle quelle — honnêteté). */
+async function swReplayMutationToServerId(request, details, bodyText) {
+  try {
+    const localId = swUuidFromUrl(request.url);
+    if (!localId) return null;
+    const serverId = await swResolveServerIdForUrl(request.url, localId);
+    if (!serverId || serverId === localId) return null;
+    const newUrl = request.url.split(localId).join(serverId);
+
+    const headers = {};
+    const auth = request.headers.get('authorization');
+    if (auth) headers['Authorization'] = auth;
+    const ct = request.headers.get('content-type');
+    if (ct) headers['Content-Type'] = ct;
+    const xtid = request.headers.get('x-tenant-id');
+    if (xtid) headers['X-Tenant-ID'] = xtid;
+    else if (details && details.tenantId) headers['X-Tenant-ID'] = details.tenantId;
+
+    let sameOrigin = true;
+    try { sameOrigin = new URL(newUrl).origin === self.location.origin; } catch { sameOrigin = true; }
+
+    const init = { method: request.method, credentials: sameOrigin ? 'include' : 'omit', headers };
+    if (bodyText) init.body = bodyText;
+
+    const response = await fetchWithTimeout(new Request(newUrl, init), SW_MUTATION_TIMEOUT);
+    if (response && response.status >= 200 && response.status < 300) {
+      swInvalidateCacheFamily(newUrl).catch(() => {});
+      return response;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function swQueueMutation(request, details, bodyText) {
-  const url = request.url;
+  let url = request.url;
   const method = request.method;
-  const { path } = swNormalizeUrl(url);
+  let { path } = swNormalizeUrl(url);
   const tenantId = details.tenantId;
 
   let body = null;
@@ -2939,7 +2992,27 @@ async function swQueueMutation(request, details, bodyText) {
 
   // ID de l'entité : corps → URL → généré localement
   const urlUuidMatch = url.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-  const urlId = urlUuidMatch ? urlUuidMatch[0] : null;
+  let urlId = urlUuidMatch ? urlUuidMatch[0] : null;
+
+  // ─── ⭐ v4.7.0b — RÉÉCRITURE À L'ENTRÉE (id local → id serveur) ───────────
+  //    Cas réel observé en production : l'autosave crée la fiche en file
+  //    (id LOCAL adopté par le formulaire) → le POST est synchronisé SEUL
+  //    (Background Sync) → le serveur a créé la fiche sous un AUTRE id →
+  //    les PUT suivants (mis en file après) visaient l'id local → 404 →
+  //    FAILED définitif. Le mapping _serverId (posé à la synchronisation de
+  //    la création) permet de cibler DIRECTEMENT l'id serveur dès la mise
+  //    en file — le replay ne peut plus échouer sur un id obsolète.
+  try {
+    if (urlId && method !== 'POST') {
+      const serverId = await swResolveServerIdForUrl(url, urlId);
+      if (serverId) {
+        url = url.split(urlId).join(serverId);
+        urlId = serverId;
+        path = swNormalizeUrl(url).path;
+      }
+    }
+  } catch { /* réécriture best-effort — l'URL originale reste utilisable */ }
+
   const entityId = (body && typeof body === 'object' && body.id) || urlId || swUuid();
 
   // URLs d'action /{uuid}/archive|admit|activate… → modification locale
@@ -3166,6 +3239,19 @@ async function swApplyServerEntityResponse(event, parsed) {
         _deleted: false,
         _lastSync: new Date().toISOString(),
         ...(local ? { _version: (local._version || 1) + 1 } : {}),
+        // ⭐ v4.7.0b — MARQUEUR _serverId : la création offline a reçu un id
+        //    LOCAL (adopté par le formulaire) mais le serveur a créé la
+        //    fiche sous un AUTRE id. On mémorise le mapping SUR l'entité
+        //    locale → toute future écriture vers l'id local (en ligne par
+        //    handleApiMutation ou en file par swQueueMutation) sera
+        //    réécrite vers l'id SERVEUR — sans ce marqueur, chaque PUT
+        //    recevait 404 (création synchronisée entre-temps) → échec
+        //    silencieux de l'autosave → perte de TOUTES les saisies
+        //    postérieures à la synchronisation (cas réel observé en prod).
+        ...(parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+            && typeof parsed.id === 'string' && parsed.id && parsed.id !== event.entityId
+          ? { _serverId: parsed.id }
+          : {}),
       });
     }
     // ⭐ v4.7.0a — CRÉATION dont l'id serveur ≠ id local : on écrit AUSSI la
@@ -3289,6 +3375,36 @@ async function swHasPendingCreateForUrl(db, url) {
   }
 }
 
+/** ⭐ v4.7.0b — Résout l'id SERVEUR réel d'un id LOCAL présent dans une URL
+ *  (mapping _serverId mémorisé sur l'entité locale lors de la synchronisation
+ *  d'une création offline). null si aucun mapping n'existe. */
+async function swResolveServerIdForUrl(url, localId) {
+  try {
+    if (!localId || typeof url !== 'string') return null;
+    const { path } = swNormalizeUrl(url);
+    const store = routeTable(path);
+    if (!store || store === 'orion_cache' || store === 'api_cache') return null;
+    const entity = await swIdbGetByKey(store, localId);
+    if (entity && typeof entity === 'object'
+        && entity._serverId && String(entity._serverId) !== String(localId)) {
+      return String(entity._serverId);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Extrait le premier UUID d'une URL (id d'entité du chemin), null sinon. */
+function swUuidFromUrl(url) {
+  try {
+    const m = String(url).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    return m ? m[0] : null;
+  } catch {
+    return null;
+  }
+}
+
 /** ⭐ PROPRIÉTAIRE UNIQUE : rejoue UNIQUEMENT les événements marqués
  *  metadata.sw (créés par le SW — cf. swQueueMutation). Les événements créés
  *  par la couche applicative restent au sync-engine applicatif. */
@@ -3392,6 +3508,33 @@ async function swReplayPendingMutations() {
           const parsed = JSON.parse(text);
           msg = parsed?.message || parsed?.error || msg;
         } catch { /* corps non-JSON */ }
+        // ⭐ v4.7.0b — RÉÉCRITURE id local → id serveur (cas réel observé en
+        //    production : la CRÉATION s'est synchronisée AVANT que ce PUT ne
+        //    soit mis en file → il vise un id que le serveur n'a JAMAIS eu).
+        //    On réécrit l'URL de l'événement (DB + miroir mémoire) et on le
+        //    laisse PENDING : la passe suivante le rejouera vers la VRAIE
+        //    fiche. Prioritaire sur le report de dépendance (le mapping est
+        //    plus précis : il donne l'id RÉEL, pas juste « réessaie plus tard »).
+        let handledByRewrite = false;
+        if (response.status === 404) {
+          const localId = swUuidFromUrl(req.url);
+          if (localId) {
+            const serverId = await swResolveServerIdForUrl(req.url, localId);
+            if (serverId && serverId !== localId) {
+              const newUrl = req.url.split(localId).join(serverId);
+              const newMeta = { ...meta, request: { ...meta.request, url: newUrl } };
+              meta.request.url = newUrl; // miroir mémoire (req === meta.request)
+              await swUpdateOutboxEvent(db, event.id, {
+                entityId: event.entityId === localId ? serverId : event.entityId,
+                metadata: JSON.stringify(newMeta),
+                status: 'PENDING',
+                updatedAt: new Date().toISOString(),
+              });
+              stillPending++;
+              handledByRewrite = true;
+            }
+          }
+        }
         // ⭐ v4.7.0a — DÉPENDANCE POST→PUT (course de reprise découverte au
         //    harnais) : quand le réseau revient ENTRE le PUT et le POST d'une
         //    même passe de replay, le PUT part vers l'id LOCAL avant que la
@@ -3403,22 +3546,25 @@ async function swReplayPendingMutations() {
         //    rejoué vers la vraie fiche. Le report est BORNÉ : dès que le POST
         //    est SYNCED/FAILED, un 404 redevient définitif (comportement
         //    historique — une vraie suppression n'est jamais masquée).
-        const deferredByPendingCreate = response.status === 404
+        const deferredByPendingCreate = !handledByRewrite
+          && response.status === 404
           && (req.method === 'PUT' || req.method === 'PATCH')
           && (await swHasPendingCreateForUrl(db, req.url));
-        if (deferredByPendingCreate) {
-          await swUpdateOutboxEvent(db, event.id, {
-            status: 'PENDING',
-            updatedAt: new Date().toISOString(),
-          });
-          stillPending++;
-        } else {
-          await swUpdateOutboxEvent(db, event.id, {
-            status: 'FAILED',
-            errorMessage: msg,
-            updatedAt: new Date().toISOString(),
-          });
-          failed++;
+        if (!handledByRewrite) {
+          if (deferredByPendingCreate) {
+            await swUpdateOutboxEvent(db, event.id, {
+              status: 'PENDING',
+              updatedAt: new Date().toISOString(),
+            });
+            stillPending++;
+          } else {
+            await swUpdateOutboxEvent(db, event.id, {
+              status: 'FAILED',
+              errorMessage: msg,
+              updatedAt: new Date().toISOString(),
+            });
+            failed++;
+          }
         }
       } else {
         // 5xx → transitoire (redémarrage Railway, cold start) → PENDING

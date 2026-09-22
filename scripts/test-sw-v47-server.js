@@ -51,8 +51,10 @@ const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', () => {
-      received.push({ method, url, body, at: Date.now() });
-      // Le serveur crée la fiche avec SON id (différent de l'id local du SW)
+      received.push({ method, url, body, at: Date.now(), status: 200 });
+      // Le serveur crée la fiche avec SON id (différent de l'id local du SW).
+      // Production-accurate : la fiche créée PERSISTE (base de données) —
+      // le nouvel id est déterministe pour survivre aux redémarrages.
       createdFiches.add(SERVER_FICHE_ID);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ id: SERVER_FICHE_ID, status: 'DRAFT', titre: 'Fiche serveur', serverSide: true }));
@@ -64,9 +66,13 @@ const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (c) => (body += c));
     req.on('end', () => {
-      received.push({ method, url, body, at: Date.now(), ficheExists: createdFiches.has(ficheId) });
-      if (!createdFiches.has(ficheId)) {
-        // Production-like : fiche inexistante → 404 (avant le POST replayé)
+      // Production-accurate : la fiche créée par un POST PERSISTE en base —
+      // l'id serveur déterministe existe donc même après un redémarrage du
+      // processus mock ; les ids LOCAUX n'existent jamais côté serveur.
+      const exists = ficheId === SERVER_FICHE_ID || createdFiches.has(ficheId);
+      received.push({ method, url, body, at: Date.now(), status: exists ? 200 : 404 });
+      if (!exists) {
+        // Production-like : fiche inexistante → 404 (id local jamais créé)
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ message: 'Fiche pédagogique non trouvée', statusCode: 404 }));
         return;

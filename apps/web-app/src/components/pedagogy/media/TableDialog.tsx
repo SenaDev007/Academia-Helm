@@ -22,8 +22,20 @@
  *      tableau récapitulatif des correspondances ENTRE grandeurs (masse ↔
  *      capacité : 1 L d'eau ≈ 1 kg…) + méthode de conversion.
  *
+ * ⭐ V14 (2026-09-22 — retour utilisateur) : TABLEAUX MODIFIABLES APRÈS
+ *    INSERTION. Les tableaux ne sont plus insérés en
+ *    contenteditable="false" : les cellules restent éditables à tout moment
+ *    (clic dans une cellule = curseur), le RichTextEditor V14 fournit une
+ *    barre « Outils du tableau » (lignes/colonnes, fusion/scission) + la
+ *    poignée de sélection objet (habillage, déplacement, retrait) + le
+ *    redimensionnement des COLONNES comme dans Word/Excel (glisser les
+ *    séparations). Le « Tableau simple » est inséré avec table-layout:fixed
+ *    + colgroup à largeurs égales → structure stable et prévisible.
+ *
  * Insertion en TABLE HTML (styles inline) : identique à l'écran et dans les
- * exports PDF (sanitizeRichHtml conserve les tableaux).
+ * exports PDF (sanitizeRichHtml conserve les tableaux — l'attribut
+ * contenteditable n'est d'ailleurs plus nécessaire : il est retiré par le
+ * sanitize à la sauvegarde de toute façon).
  * ============================================================================
  */
 
@@ -120,7 +132,13 @@ export function TableDialog({ open, onClose, onInsertHtml }: TableDialogProps) {
       }
       trs.push(`<tr>${tds.join("")}</tr>`);
     }
-    return `<table class="ah-table" contenteditable="false" data-table="1" style="${TABLE_STYLE}">${trs.join("")}</table><p>&nbsp;</p>`;
+    // ⭐ V14 — contenteditable="false" SUPPRIMÉ : le tableau reste modifiable
+    //    après insertion (cellules éditables, outils lignes/colonnes du
+    //    RichTextEditor). table-layout:fixed + colgroup égalitaire → les
+    //    colonnes gardent des largeurs stables et égales (redimensionnables
+    //    ensuite comme dans Word).
+    const colgroup = `<colgroup>${Array.from({ length: cols }, () => `<col style="width:${(100 / cols).toFixed(2)}%">`).join("")}</colgroup>`;
+    return `<table class="ah-table" data-table="1" style="${TABLE_STYLE}table-layout:fixed;width:100%;">${colgroup}${trs.join("")}</table><p>&nbsp;</p>`;
   }, [rows, cols, headerRow, headerCol, cells]);
 
   const propB = useMemo(
@@ -136,7 +154,7 @@ export function TableDialog({ open, onClose, onInsertHtml }: TableDialogProps) {
       Array.from({ length: n }, () => `<td style="border:none;padding:0;text-align:center;color:#dc2626;font-weight:700;font-size:11px;">↓</td>`).join("") + `</tr>`;
     const rowB = `<tr><td style="${TD_FIRSTCOL}text-align:left;">${esc(labelB)}</td>` +
       propB.map((v) => `<td style="${TD}">${esc(v)}</td>`).join("") + `</tr>`;
-    return `<table class="ah-table" contenteditable="false" data-table="prop" style="${TABLE_STYLE}">${rowA}${coefRow}${rowB}</table><p>&nbsp;</p>`;
+    return `<table class="ah-table" data-table="prop" style="${TABLE_STYLE}">${rowA}${coefRow}${rowB}</table><p>&nbsp;</p>`;
   }, [propA, propB, coef, labelA, labelB]);
 
   const pythHtml = useMemo(() => {
@@ -151,7 +169,7 @@ export function TableDialog({ open, onClose, onInsertHtml }: TableDialogProps) {
         `</tr>`,
       );
     }
-    return `<table class="ah-table" contenteditable="false" data-table="pythagore" style="${TABLE_STYLE}${n > 8 ? "font-size:11px;" : ""}${n > 8 ? "min-width:480px;" : ""}">${head}${body.join("")}</table><p>&nbsp;</p>`;
+    return `<table class="ah-table" data-table="pythagore" style="${TABLE_STYLE}${n > 8 ? "font-size:11px;" : ""}${n > 8 ? "min-width:480px;" : ""}">${head}${body.join("")}</table><p>&nbsp;</p>`;
   }, [pythSize, pythFilled]);
 
   const convHtml = useMemo(() => {

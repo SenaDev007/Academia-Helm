@@ -162,6 +162,7 @@ function SousMatieresFichesBar({
   onAdd,
   onRemove,
   onToggleFiche,
+  getFicheStatut,
 }: {
   matiere: string;
   sousMatieres: SousMatiereFiche[];
@@ -173,6 +174,11 @@ function SousMatieresFichesBar({
   onRemove: (index: number) => void;
   /** ⭐ MATH/EPS/EST : bascule la fiche de la matière (nom vide). */
   onToggleFiche?: () => void;
+  /** ⭐ V14 — statut de la fiche de chaque sous-matière (null = à préparer →
+   *    badge ambre ; "DRAFT"/"SUBMITTED" = préparée → badge VERT clair ;
+   *    "VALIDATED" = validée → badge VERT plein). Couleur = vert dès que la
+   *    fiche est préparée, conformément au retour utilisateur. */
+  getFicheStatut?: (nom: string) => string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
@@ -186,6 +192,15 @@ function SousMatieresFichesBar({
     onAdd(nom);
     setValue("");
   };
+
+  // ⭐ V14 — statuts des fiches de cette (jour × matière) : vert dès que
+  //    préparée (créée), vert plein si validée. Toutes préparées → toute la
+  //    barre passe au vert.
+  const statuts = sousMatieres.map((sm) => getFicheStatut?.(sm.nom || "") || null);
+  const toutesPreparees = sousMatieres.length > 0 && statuts.every((s) => !!s);
+  const barSkin = toutesPreparees
+    ? { bg: "bg-emerald-50/70", border: "border-emerald-200", icon: "text-emerald-500" }
+    : { bg: "bg-amber-50/70", border: "border-amber-200", icon: "text-amber-500" };
 
   // État vide : bouton compact « + Fiche à préparer »
   // ⭐ MATH/EPS/EST (ficheSansNom) : UN SEUL CLIC marque la fiche — pas de
@@ -211,42 +226,60 @@ function SousMatieresFichesBar({
   }
 
   return (
-    <div className="bg-amber-50/70 border-b border-amber-200 px-1.5 py-1 space-y-1">
+    <div className={cn(barSkin.bg, "border-b", barSkin.border, "px-1.5 py-1 space-y-1")}>
       <div className="flex items-center gap-1 flex-wrap">
-        <ClipboardList className="h-3 w-3 text-amber-500 shrink-0" />
-        {sousMatieres.map((sm, idx) => (
-          <span
-            key={idx}
-            title={`Fiche à préparer — ${sm.nom || matiere}`}
-            className="inline-flex items-center gap-1 pl-1.5 pr-0.5 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-[9px] font-bold text-amber-800"
-          >
-            <span className="max-w-[110px] truncate">{sm.nom || matiere}</span>
-            {!readOnly && (
-              <button
-                type="button"
-                onClick={() => onRemove(idx)}
-                title="Retirer cette sous-matière"
-                className="text-amber-500 hover:text-red-600"
-              >
-                <X className="h-2.5 w-2.5" />
-              </button>
-            )}
-          </span>
-        ))}
+        <ClipboardList className={cn("h-3 w-3 shrink-0", barSkin.icon)} />
+        {sousMatieres.map((sm, idx) => {
+          const st = statuts[idx];
+          const validee = st === "VALIDATED";
+          return (
+            <span
+              key={idx}
+              title={st
+                ? `${validee ? "Fiche VALIDÉE" : "Fiche préparée"} — ${sm.nom || matiere}`
+                : `Fiche à préparer — ${sm.nom || matiere}`}
+              className={cn(
+                "inline-flex items-center gap-1 pl-1.5 pr-0.5 py-0.5 rounded-full text-[9px] font-bold",
+                validee
+                  ? "bg-emerald-600 border border-emerald-700 text-white"
+                  : st
+                    ? "bg-emerald-100 border border-emerald-300 text-emerald-800"
+                    : "bg-amber-100 border border-amber-300 text-amber-800",
+              )}
+            >
+              {st && <CheckCircle2 className={cn("h-2.5 w-2.5 shrink-0", validee ? "text-emerald-200" : "text-emerald-600")} />}
+              <span className="max-w-[110px] truncate">{sm.nom || matiere}</span>
+              {!readOnly && (
+                <button
+                  type="button"
+                  onClick={() => onRemove(idx)}
+                  title="Retirer cette sous-matière"
+                  className={validee ? "text-emerald-200 hover:text-red-300" : st ? "text-emerald-500 hover:text-red-600" : "text-amber-500 hover:text-red-600"}
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              )}
+            </span>
+          );
+        })}
         {!readOnly && (
           <button
             type="button"
             onClick={() => setOpen(!open)}
             title="Ajouter une sous-matière (fiche à préparer)"
-            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border border-dashed border-amber-400 text-[9px] font-bold text-amber-700 hover:bg-amber-100"
+            className={cn(
+              "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border border-dashed text-[9px] font-bold hover:bg-amber-100",
+              toutesPreparees ? "border-emerald-400 text-emerald-700" : "border-amber-400 text-amber-700",
+            )}
           >
             <Plus className="h-2.5 w-2.5" />
             {sousMatieres.length === 0 ? "Sous-matière" : ""}
           </button>
         )}
         {sousMatieres.length > 0 && (
-          <span className="text-[9px] font-bold text-amber-600">
+          <span className={cn("text-[9px] font-bold", toutesPreparees ? "text-emerald-600" : "text-amber-600")}>
             {sousMatieres.length} fiche{ sousMatieres.length > 1 ? "s" : ""}
+            {toutesPreparees ? " ✓" : ""}
           </span>
         )}
       </div>
@@ -352,6 +385,16 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   const [creatingTask, setCreatingTask] = useState(false);
   // Matières dynamiques chargées depuis la base de données
   const [dynamicSubjects, setDynamicSubjects] = useState<any[]>([]);
+
+  // ⭐ V14 (retour utilisateur 2026-09-22) — STATUT DES FICHES À PRÉPARER :
+  //    données du endpoint fiches du journal courant (matieresPlanifiees +
+  //    fiches). Alimente les badges VERTS de la barre des sous-matières : une
+  //    fiche PRÉPARÉE (créée — brouillon/soumise) ou VALIDÉE passe au vert
+  //    au lieu de rester « or / à préparer ». Rechargé au chargement du
+  //    journal, après chaque enregistrement/soumission, et à chaque
+  //    'fiche:saved' (fiche créée/modifiée dans le sous-onglet Fiches).
+  const [fichesStatutData, setFichesStatutData] = useState<any>(null);
+  const [fichesStatutRefresh, setFichesStatutRefresh] = useState(0);
 
   // ═════════════════════════════════════════════════════════════════════════
   // ⭐ SAUVEGARDE AUTOMATIQUE INVISIBLE — toutes les 10 secondes
@@ -660,6 +703,60 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
     if (selectedClassId) loadJournal();
   }, [loadJournal, selectedClassId]);
 
+  // ⭐ V14 — Statut des fiches du journal courant (jour × matière ×
+  //    sous-matière → préparée ? validée ?) : badges VERTS du cahier journal.
+  useEffect(() => {
+    if (!journal?.id) {
+      setFichesStatutData(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/pedagogy-space/cahier-journal/${journal.id}/fiches?_r=${fichesStatutRefresh}`,
+          { credentials: "include" },
+        );
+        if (!res.ok) throw new Error("Erreur");
+        const data = await res.json();
+        if (!cancelled) setFichesStatutData(data);
+      } catch {
+        if (!cancelled) setFichesStatutData(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [journal?.id, fichesStatutRefresh]);
+
+  // ⭐ V14 — une fiche vient d'être créée/modifiée/supprimée dans le
+  //    sous-onglet Fiches → rafraîchir les badges du cahier journal.
+  useEffect(() => {
+    const onFicheSaved = () => setFichesStatutRefresh((k) => k + 1);
+    window.addEventListener("fiche:saved", onFicheSaved);
+    return () => window.removeEventListener("fiche:saved", onFicheSaved);
+  }, []);
+
+  /** ⭐ V14 — Statut de la fiche d'une (jour × matière × sous-matière) :
+   *    "VALIDATED" / "SUBMITTED" / "DRAFT"… si la fiche EXISTE (préparée),
+   *    null si elle reste à préparer. Base des badges verts de la grille. */
+  const getFicheStatut = useCallback(
+    (dayKey: string, matiereKey: string, nom: string): string | null => {
+      if (!fichesStatutData?.matieresPlanifiees) return null;
+      const mps = fichesStatutData.matieresPlanifiees[dayKey];
+      if (!Array.isArray(mps)) return null;
+      const m = mps.find((x: any) => x.matiere === matiereKey);
+      if (!m) return null;
+      const sms = Array.isArray(m.sousMatieres) ? m.sousMatieres : [];
+      if (sms.length === 0) return null;
+      const target = nom
+        ? sms.find((sm: any) => String(sm.nom || "").trim() === nom.trim())
+        : sms.find((sm: any) => !String(sm.nom || "").trim()) || null;
+      if (!target || !target.fichePreparede) return null;
+      const status = (fichesStatutData.fiches || []).find((f: any) => f.id === target.ficheId)?.status;
+      return status || "DRAFT";
+    },
+    [fichesStatutData],
+  );
+
   // ⭐ Fetch les HomeworkEntry liés au cahier journal courant (Phase 4c)
   //    Quand un journal est chargé (journal.id existe), on récupère les
   //    devoirs/leçons/récitations/exposés qui y sont rattachés via cahierJournalId.
@@ -897,6 +994,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
       );
       // ⭐ Autosave : resynchronise la baseline pour éviter une double
       autosave.markSaved(journalSnapshot);
+      // ⭐ V14 — rafraîchit les badges fiche (vert si préparée) après save
+      setFichesStatutRefresh((k) => k + 1);
       // ⭐ Déclencher la bascule vers le sous-onglet Fiches (si le parent écoute)
       onJournalSaved?.(journal.id, {
         weekStartDate: journal.weekStartDate,
@@ -961,6 +1060,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
       toast.success("✅ Cahier journal soumis au directeur", {
         description: `${data.totalFiches || 0} fiche(s) pédagogique(s) soumise(s) — le directeur a été notifié.`,
       });
+      // ⭐ V14 — rafraîchit les badges fiche (vert si préparée/soumise)
+      setFichesStatutRefresh((k) => k + 1);
       // ⭐ Déclencher la bascule vers le sous-onglet Fiches (pour voir le résultat)
       onJournalSubmitted?.(journal.id, {
         weekStartDate: journal.weekStartDate,
@@ -1360,7 +1461,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                       const ficheSansNom = estMatiereFicheSansSousMatiere(key);
                       return (
                         <td key={key} className="border border-slate-300 p-0 relative">
-                          {/* ⭐ FEATURE : sous-matières renseignées = fiches à préparer */}
+                          {/* ⭐ FEATURE : sous-matières renseignées = fiches à préparer
+                              ⭐ V14 : badge VERT dès que la fiche est préparée/validée */}
                           <SousMatieresFichesBar
                             matiere={affichageMatiere(key)}
                             sousMatieres={getSousMatieres(day.key, key)}
@@ -1370,6 +1472,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                             onAdd={(nom) => addSousMatiere(day.key, key, nom)}
                             onRemove={(idx) => removeSousMatiere(day.key, key, idx)}
                             onToggleFiche={() => toggleFicheAPreparer(day.key, key)}
+                            getFicheStatut={(nom) => getFicheStatut(day.key, key, nom)}
                           />
                           <RichTextEditor
                             value={getEntry(day.key, key)}
@@ -1456,7 +1559,8 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                       const ficheSansNom = estMatiereFicheSansSousMatiere(key);
                       return (
                         <td key={key} className="border border-slate-300 p-0 relative">
-                          {/* ⭐ FEATURE : sous-matières renseignées = fiches à préparer */}
+                          {/* ⭐ FEATURE : sous-matières renseignées = fiches à préparer
+                              ⭐ V14 : badge VERT dès que la fiche est préparée/validée */}
                           <SousMatieresFichesBar
                             matiere={affichageMatiere(key)}
                             sousMatieres={getSousMatieres(day.key, key)}
@@ -1466,6 +1570,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
                             onAdd={(nom) => addSousMatiere(day.key, key, nom)}
                             onRemove={(idx) => removeSousMatiere(day.key, key, idx)}
                             onToggleFiche={() => toggleFicheAPreparer(day.key, key)}
+                            getFicheStatut={(nom) => getFicheStatut(day.key, key, nom)}
                           />
                           <RichTextEditor
                             value={getEntry(day.key, key)}

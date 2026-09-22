@@ -1361,3 +1361,61 @@ span.ah-fig[style*="inline-block"] > svg[viewBox]:not([width]):not([style]) {
   width: 280px;
   height: auto;
 }
+
+/* ══════════════════════════════════════════════════════════════════
+   ⭐ V14 (2026-09-22) — OUTILS TABLEAU + TABULATIONS du RichTextEditor
+   ══════════════════════════════════════════════════════════════════ */
+
+/* Taquet de tabulation (touche Tab) : espaceur invisible d'un seul bloc,
+   supprimé d'un seul Backspace — largeur posée en style inline par le
+   composant (prochain arrêt tous les 48 px, comme Word). */
+.ah-tab {
+  display: inline-block;
+  user-select: none;
+}
+
+/* Poignée ⬛ de sélection OBJET du tableau (coin supérieur gauche,
+   apparaît au survol — comme Word / Google Docs). Rendue dans le wrapper
+   de l'éditeur → jamais sérialisée. */
+.ah-tablehandle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  border: 2px solid rgb(37, 99, 235);
+  border-radius: 3px;
+  cursor: move;
+  z-index: 32;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.35);
+}
+.ah-tablehandle:hover {
+  background: rgb(219, 234, 254);
+}
+
+/* Séparateur de COLONNE redimensionnable (tableau sélectionné comme
+   objet) : glisser comme dans Word/Excel. Rendu dans le wrapper → jamais
+   sérialisé. */
+.ah-colhandle {
+  position: absolute;
+  width: 7px;
+  height: 24px;
+  background: #ffffff;
+  border: 2px solid rgb(37, 99, 235);
+  border-radius: 4px;
+  cursor: col-resize;
+  z-index: 32;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.35);
+  touch-action: none;
+}
+.ah-colhandle:hover,
+.ah-colhandle:active {
+  background: rgb(37, 99, 235);
+}
+
+/* Cellules des tableaux ah-table : curseur texte (elles sont éditables —
+   V14 : plus de contenteditable=false) ; la bordure extérieure du tableau
+   garde le curseur « move » de la sélection objet. */
+table.ah-table td,
+table.ah-table th {
+  cursor: text;
+}

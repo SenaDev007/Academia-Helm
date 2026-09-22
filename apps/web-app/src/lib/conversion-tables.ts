@@ -365,7 +365,7 @@ export function buildConversionHtml(def: ConvDef, opts: BuildConversionOptions =
         `<tr><td style="${TD_FIRSTCOL}text-align:left;">${esc(a)}</td><td style="${TD}text-align:left;">${esc(b)}</td></tr>`,
     );
     const head = `<tr><td style="${TD_HEAD}">${esc(h1)}</td><td style="${TD_HEAD}">${esc(h2)}</td></tr>`;
-    let html = `<table class="ah-table" contenteditable="false" data-table="conversion-eq" data-conv="${esc(def.id)}" style="${TABLE_STYLE}">${head}${trs.join("")}</table>`;
+    let html = `<table class="ah-table" data-table="conversion-eq" data-conv="${esc(def.id)}" style="${TABLE_STYLE}">${head}${trs.join("")}</table>`;
     if (showNote && def.note) {
       html += `<p style="${CAPTION}">${esc(def.note)}</p>`;
     }
@@ -411,7 +411,7 @@ export function buildConversionHtml(def: ConvDef, opts: BuildConversionOptions =
   }
 
   let html =
-    `<table class="ah-table" contenteditable="false" data-table="conversion" data-conv="${esc(def.id)}" style="${TABLE_STYLE}${total > 14 ? "font-size:11px;" : ""}">${head}${body.join("")}</table>`;
+    `<table class="ah-table" data-table="conversion" data-conv="${esc(def.id)}" style="${TABLE_STYLE}${total > 14 ? "font-size:11px;" : ""}">${head}${body.join("")}</table>`;
 
   if (showExample && ex) {
     html += `<p style="${CAPTION}">${esc(ex.caption)}</p>`;

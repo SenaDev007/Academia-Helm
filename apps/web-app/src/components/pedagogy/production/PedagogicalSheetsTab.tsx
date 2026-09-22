@@ -1667,12 +1667,16 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                   </div>
                 </div>
               ) : (
-                /* DOMAINE — Tableau 2 colonnes : Consignes | Résultats Attendus — avec INTRODUCTION */
+                /* DOMAINE — Tableau 2 colonnes : Consignes | Résultats Attendus — avec INTRODUCTION
+                   ⭐ V14 : table-layout FIXED + largeurs explicites — la colonne Consignes
+                   occupe TOUJOURS la part principale (62 %) et la colonne Résultats
+                   n'empiète JAMAIS dessus, quel que soit le volume saisi (l'auto-layout
+                   HTML pouvait élargir Résultats au-delà de Consignes). */
                 <div className="overflow-x-auto border border-slate-300 rounded-lg">
-                  <table className="w-full border-collapse text-xs">
+                  <table className="w-full border-collapse text-xs table-fixed">
                     <thead>
                       <tr className="bg-slate-100">
-                        <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-left">Consignes :</th>
+                        <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-left w-[62%]">Consignes :</th>
                         <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-left w-[38%]">Résultats Attendus :</th>
                       </tr>
                     </thead>
@@ -2299,12 +2303,16 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               )}
             </div>
             <div className="overflow-x-auto border border-slate-300 rounded-lg">
-              <table className="w-full border-collapse text-xs">
+              {/* ⭐ V14 : table-layout FIXED — la colonne Consignes (62 %) reste
+                  TOUJOURS plus large que la colonne Résultats attendus (38 %),
+                  quel que soit le contenu saisi (l'auto-layout HTML ajustait les
+                  colonnes au contenu et Résultats pouvait dépasser Consignes). */}
+              <table className="w-full border-collapse text-xs table-fixed">
                 <thead>
                   <tr className="bg-slate-100">
                     <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">N°</th>
-                    <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase">Consignes</th>
-                    <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase">Résultats attendus</th>
+                    <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-[62%]">Consignes</th>
+                    <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-[38%]">Résultats attendus</th>
                     {!isReadOnly && <th className="border border-slate-300 px-2 py-2 w-10"></th>}
                   </tr>
                 </thead>
@@ -2356,12 +2364,14 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               III- Retour et projection
             </h3>
             <div className="overflow-x-auto border border-slate-300 rounded-lg">
-              <table className="w-full border-collapse text-xs">
+              {/* ⭐ V14 : table-layout FIXED — Consignes (part restante ≈ 62 %)
+                  toujours dominante sur Résultats attendus (38 %). */}
+              <table className="w-full border-collapse text-xs table-fixed">
                 <thead>
                   <tr className="bg-slate-100">
                     <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-28">Rubrique</th>
-                    <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase">Consignes</th>
-                    <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase">Résultats attendus</th>
+                    <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-[62%]">Consignes</th>
+                    <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-[38%]">Résultats attendus</th>
                   </tr>
                 </thead>
                 <tbody>

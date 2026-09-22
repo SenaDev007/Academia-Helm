@@ -40,6 +40,11 @@ import { RichTextEditor } from "@/components/ui/RichTextEditor";
 import { SignatureCanvas } from "@/components/ui/SignatureCanvas";
 import { useAppSession } from "@/contexts/AppSessionContext";
 import { useAutoSave, fireKeepaliveSave } from "@/hooks/useAutoSave";
+// ⭐ v4.7.0 (retour terrain mobile 22/09/2026) : lecture de la file offline
+//    du Service Worker — les sauvegardes mises en file pendant un glitch
+//    réseau mobile sont AFFICHÉES dans la liste (badge « envoi en attente »)
+//    au lieu de laisser croire que « rien n'est enregistré » (miroir FR).
+import { outboxService } from "@/lib/offline/outbox.service";
 import { AutosaveIndicator } from "@/components/pedagogy/media/AutosaveIndicator";
 
 interface PedagogicalSheetsTabProps {
@@ -121,6 +126,63 @@ function hasRealContent(f: any): boolean {
     stripHtml(s?.consignes).length >= 3 || stripHtml(s?.resultats).length >= 3,
   );
   return filled >= 2 || (filled >= 1 && hasSteps);
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// ⭐ v4.7.0 (retour terrain mobile 22/09/2026) — FICHES EN ATTENTE D'ENVOI
+// Miroir FR : fusion des sauvegardes PENDING de la file offline du SW dans
+// la liste affichée (badge « envoi en attente ») — le serveur ne connaît
+// pas encore la fiche pendant un glitch réseau mobile, mais l'enseignant
+// la VOIT et sait qu'elle partira automatiquement. Les événements SYNCED
+// ne sont plus PENDING → contenu serveur (source de vérité) repris.
+// ═════════════════════════════════════════════════════════════════════════
+async function mergePendingOfflineFiches(
+  serverList: any[],
+  tenantId: string,
+  classId: string,
+): Promise<any[]> {
+  try {
+    if (typeof window === "undefined") return serverList;
+    const events = await outboxService.getPendingEvents(tenantId);
+    if (!Array.isArray(events) || events.length === 0) return serverList;
+
+    const ficheEvents = events.filter((ev: any) => {
+      const url = String(ev?.metadata?.request?.url || "");
+      if (!url.includes("/api/pedagogy-space/fiches")) return false;
+      const method = String(ev?.metadata?.request?.method || ev?.operation || "").toUpperCase();
+      return method === "POST" || method === "PUT" || method === "PATCH" || method === "UPDATE" || method === "CREATE";
+    });
+    if (ficheEvents.length === 0) return serverList;
+
+    const serverIds = new Set(serverList.map((f: any) => String(f?.id)));
+    const merged = serverList.map((f: any) => ({ ...f }));
+
+    for (const ev of ficheEvents) {
+      const body = ev?.metadata?.request?.body || ev?.payload || {};
+      const isCreate = String(ev?.metadata?.request?.method || ev?.operation || "").toUpperCase() === "POST"
+        || String(ev?.operation || "").toUpperCase() === "CREATE";
+      const ficheId = String(ev?.entityId || body?.id || "");
+      if (!ficheId) continue;
+
+      if (isCreate && !serverIds.has(ficheId)) {
+        serverIds.add(ficheId);
+        merged.push({
+          ...body,
+          id: ficheId,
+          classId: body?.classId || classId,
+          status: "DRAFT",
+          updatedAt: ev?.createdAt || new Date().toISOString(),
+          _pendingSync: true,
+        });
+      } else if (serverIds.has(ficheId)) {
+        const target = merged.find((f: any) => String(f?.id) === ficheId);
+        if (target) target._pendingSync = true;
+      }
+    }
+    return merged;
+  } catch {
+    return serverList;
+  }
 }
 
 // ⭐ Configuration spécifique par type de fiche
@@ -356,13 +418,28 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       //    avait disparu, puis la retrouvait « plus tard » via les autres
       //    composants qui chargent correctement.
       const data = await res.json();
-      setFiches(Array.isArray(data) ? data : []);
+      const serverList = Array.isArray(data) ? data : [];
+      // ⭐ v4.7.0 — FICHES EN ATTENTE D'ENVOI (miroir FR) : fusion des
+      //    sauvegardes en file offline du SW dans la liste affichée.
+      const merged = await mergePendingOfflineFiches(serverList, tenantId, selectedClassId);
+      setFiches(merged);
     } catch (e: any) {
       setFiches([]);
       console.error("[PedagogicalSheetsTab EN] Erreur chargement fiches:", e);
     }
     finally { setLoading(false); }
-  }, [teacherId, academicYearId, filterType, selectedClassId]);
+  }, [teacherId, academicYearId, filterType, selectedClassId, tenantId]);
+
+  // ⭐ v4.7.0 — Rafraîchir la liste quand la file offline évolue (miroir FR).
+  useEffect(() => {
+    const refresh = () => { loadFiches(); };
+    window.addEventListener("outbox-changed", refresh);
+    window.addEventListener("sync-end", refresh);
+    return () => {
+      window.removeEventListener("outbox-changed", refresh);
+      window.removeEventListener("sync-end", refresh);
+    };
+  }, [loadFiches]);
 
   // ⭐ CROSS-YEAR REUSE : charger les fiches des années précédentes
   //    pour la même classe (et matière si filtrée).
@@ -624,7 +701,17 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
         : { ...form, academicYearId, teacherId, cahierJournalId: cahierJournalId || undefined };
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(body), keepalive: true });
       if (!res.ok) throw new Error("Erreur de sauvegarde");
-      toast.success(editingFiche ? "✅ Fiche mise à jour" : "✅ Fiche créée");
+      // ⭐ v4.7.0 — HONNÊTETÉ (miroir FR) : 200 fabriqué par le SW pendant un
+      //    glitch réseau mobile → toast distinct (la fiche est EN FILE, pas
+      //    encore sur le serveur) + badge « envoi en attente » dans la liste.
+      const queuedOffline = res.headers.get("X-Sync-Status") === "pending";
+      if (queuedOffline) {
+        toast.warning("Enregistré hors ligne — envoi en attente", {
+          description: "La connexion a été interrompue pendant la sauvegarde. Votre fiche est conservée sur cet appareil et sera envoyée automatiquement dès le retour du réseau.",
+        });
+      } else {
+        toast.success(editingFiche ? "✅ Fiche mise à jour" : "✅ Fiche créée");
+      }
 
       // ⭐ Autosave : resynchronise la baseline (évite une double sauvegarde
       //    juste après le clic sur « Mettre à jour / Créer »)
@@ -1590,7 +1677,19 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                   <div className={cn("flex items-center gap-2 px-2 py-1 rounded text-xs font-bold", st?.color)}>
                     <Icon className="h-3 w-3" />{st?.label || fiche.sheetType}
                   </div>
-                  {status && <div className={cn("flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase", status.color)}><status.icon className="h-3 w-3" />{status.label}</div>}
+                  <div className="flex items-center gap-1">
+                    {status && <div className={cn("flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase", status.color)}><status.icon className="h-3 w-3" />{status.label}</div>}
+                    {/* ⭐ v4.7.0 — Fiche en attente d'envoi (miroir FR) : file
+                        offline du SW, envoi automatique au retour du réseau. */}
+                    {fiche._pendingSync && (
+                      <div
+                        className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold bg-amber-100 text-amber-700 border border-amber-200"
+                        title="Sauvegardé sur cet appareil — envoi automatique dès le retour de la connexion"
+                      >
+                        <Clock className="h-3 w-3 animate-pulse" />Envoi en attente
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="text-xs text-slate-500 mb-2">{formatDateFR(fiche.lessonDate || fiche.createdAt)} — SAN°{fiche.san || "—"}</div>
                 <div className="text-sm font-medium text-slate-800 line-clamp-2 mb-2">{fiche.titre || fiche.contenu?.replace(/<[^>]*>/g, '').substring(0, 80) || "—"}</div>

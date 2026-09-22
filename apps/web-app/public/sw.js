@@ -183,6 +183,34 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
+// v4.7.0 : (retour terrain mobile 22/09/2026 — « la fiche sauvegardée sur
+//    smartphone n'apparaît pas, puis revient après plusieurs rechargements »)
+//    La FILE DE MUTATIONS du SW n'était rejouée que par Background Sync
+//    (absent d'iOS Safari / Firefox, retardé sur Android) ou par l'événement
+//    window 'online' — JAMAIS au chargement de page. Or sur mobile le réseau
+//    glitch souvent SANS transition offline→online (« fantôme online » :
+//    navigator.onLine true mais fetch TypeError) → la sauvegarde partait en
+//    file avec un 200 fabriqué, n'était jamais rejouée → l'enseignant voyait
+//    « rien n'est enregistré » (le serveur n'a pas encore la fiche) puis la
+//    retrouvait « plus tard » quand la file finissait par se vider.
+//    (1) La page (OfflineSWRegister) envoie TRIGGER_SYNC au CHARGEMENT et
+//        8 s après chaque OUTBOX_CHANGED tant que le navigateur croit être
+//        en ligne → la file se vide d'elle-même en quelques secondes.
+//    (2) ROUTE_TABLES : /api/pedagogy-space/* → 'pedagogicalworkspace'
+//        (miroir exact de store-names.ts applicatif) → écriture optimiste
+//        + fusion dans les listes servies → la fiche en attente devient
+//        VISIBLE localement au lieu de « disparaître ».
+//    (3) DÉDUP « dernière version gagne » : un PUT/PATCH/DELETE PENDING du
+//        SW pour la MÊME URL est MIS À JOUR (corps remplacé par la version
+//        la plus récente) au lieu d'empiler — l'autosave 10 s ne remplit
+//        plus la file de dizaines d'événements pendant une coupure mobile.
+//    (4) REMAP d'identité POST→PUT : après le replay d'un POST créé en
+//        ligne avec un id local, les PUT suivants visant /fiches/<id-local>
+//        sont réécrits vers l'id serveur réel — avant : 404 → FAILED
+//        définitif → les modifications postérieures à la création étaient
+//        perdues.
+//    (5) TRIGGER_SYNC hors ligne réel : skip (pas de tempête de fetch
+//        voués à l'échec à chaque chargement de page hors ligne).
 // v4.4.2 : une variante SANS année dans sa clé est implicitement scopée à
 //    l année ACTIVE (header serveur) → exclue quand une AUTRE année est
 //    demandée, dans swFilteredApiFallback, matchApiByPath ET la cascade IDB.
@@ -200,7 +228,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.6.0';
+const SW_VERSION = 'v4.7.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -2195,6 +2223,17 @@ const ROUTE_TABLES = [
   [/^\/api\/pedagogy\/teacher-class-assignments/, 'teacherclassassignment'],
   [/^\/api\/pedagogy\/academic-structure/, 'academicclass'],
   [/^\/api\/pedagogy-space\/my-classes/, 'teacherclassassignment'],
+  // ⭐ v4.7.0 — Miroir EXACT de store-names.ts applicatif (pattern
+  //    /\/api\/pedagogy-space\// → 'pedagogicalworkspace'). AVANT : seule
+  //    my-classes était mappée → fiches / cahier-journal / lecture-vitesse
+  //    tombaient dans le fallback 'api_cache' GÉNÉRIQUE → quand une
+  //    sauvegarde de fiche était mise en file (réseau mobile instable),
+  //    AUCUNE entité optimiste n'était écrite (swQueueMutation ignore
+  //    api_cache) → les listes servies hors ligne ne fusionnaient JAMAIS
+  //    la fiche en attente → l'enseignant croyait sa sauvegarde disparue.
+  //    Avec ce mapping : écriture optimiste + fusion (swMergePendingEntities)
+  //    + fallback par stores pour les variantes de params jamais visitées.
+  [/^\/api\/pedagogy-space\//, 'pedagogicalworkspace'],
   [/^\/api\/class-diaries/, 'classdiary'],
   [/^\/api\/lesson-plans/, 'lessonplan'],
   [/^\/api\/lesson-journals/, 'lessonjournal'],
@@ -2976,7 +3015,43 @@ async function swQueueMutation(request, details, bodyText) {
   //    en-tête Authorization capturé) pour un replay HTTP EXACT.
   const auth = request.headers.get('authorization');
   const nowIso = new Date().toISOString();
-  const eventId = swUuid();
+
+  // ─── ⭐ v4.7.0 — DÉDUP « dernière version gagne » (même URL, même verbe) ──
+  //    Réseau mobile instable : l'autosave 10 s d'une fiche peut mettre en
+  //    file DES DIZAINES de PUT successifs pour la MÊME URL pendant une
+  //    coupure. Chaque événement = 1 requête serveur au replay → file
+  //    interminable, versions intermédiaires inutiles, risque accru de 404
+  //    (remap POST→PUT non encore appliqué). Désormais : un événement
+  //    PENDING du SW pour la MÊME URL + MÊME verbe (PUT/PATCH/DELETE) est
+  //    MIS À JOUR — corps remplacé par la version la plus récente — au lieu
+  //    d'en empiler un nouveau. Les POST ne sont PAS dédupliqués : deux
+  //    POST distincts peuvent être deux créations légitimes différentes.
+  let replaceEventId = null;
+  let replaceCreatedAt = null;
+  if (method !== 'POST') {
+    try {
+      const db = await swOpenIdb();
+      if (db && db.objectStoreNames.contains('outbox_events')) {
+        const all = await swIdbRequest(
+          db.transaction(['outbox_events'], 'readonly').objectStore('outbox_events').getAll()
+        ).catch(() => []);
+        const dupe = (all || []).find((e) => {
+          if (!e || e.status !== 'PENDING' || !e.metadata) return false;
+          try {
+            const meta = typeof e.metadata === 'string' ? JSON.parse(e.metadata) : e.metadata;
+            return !!(meta && meta.sw && meta.request
+              && meta.request.method === method && meta.request.url === url);
+          } catch { return false; }
+        });
+        if (dupe) {
+          replaceEventId = dupe.id;
+          replaceCreatedAt = dupe.createdAt || null;
+        }
+      }
+    } catch { /* dédup best-effort — en cas d'échec on empile (comportement historique) */ }
+  }
+
+  const eventId = replaceEventId || swUuid();
   const queued = await swIdbPut('outbox_events', {
     id: eventId,
     tenantId,
@@ -3001,7 +3076,10 @@ async function swQueueMutation(request, details, bodyText) {
     maxRetries: 10,
     attemptCount: 0,
     localVersion: Date.now(),
-    createdAt: nowIso,
+    // ⭐ v4.7.0 — dédup : on conserve le createdAt d'ORIGINE (ordre FIFO du
+    //    replay inchangé — la fiche la plus ancienne part toujours en premier)
+    //    mais updatedAt rafraîchi (visible dans les badges/outbox UI).
+    createdAt: replaceCreatedAt || nowIso,
     updatedAt: nowIso,
     conflictStrategy: 'LAST_WRITE_WINS',
   });
@@ -3057,8 +3135,20 @@ async function swQueueMutation(request, details, bodyText) {
  *  replayOfflineRequest du sync-engine applicatif). */
 async function swApplyServerEntityResponse(event, parsed) {
   try {
-    const entityType = event.entityType;
-    const storeName = swIdbStoreForEntityType(entityType);
+    // ⭐ v4.7.0a — RÉSOLUTION SYMÉTRIQUE du store : l'écriture optimiste
+    //    (swQueueMutation) écrit dans routeTable(path) ; la réponse serveur
+    //    après replay doit écrire au MÊME endroit. AVANT : /api/pedagogy-
+    //    space/fiches → entityType « PEDAGOGY_SPACE » → store dérivé
+    //    'pedagogy_space' (INEXISTANT) → swIdbPut échouait silencieusement →
+    //    l'entité optimiste restait _isDirty À VIE → les listes servies hors
+    //    ligne fusionnaient un DOUBLON fantôme (id local jamais nettoyé).
+    let storeName = null;
+    try {
+      const meta = typeof event.metadata === 'string' ? JSON.parse(event.metadata) : event.metadata;
+      const reqUrl = meta && meta.request && meta.request.url;
+      if (typeof reqUrl === 'string') storeName = routeTable(swNormalizeUrl(reqUrl).path);
+    } catch { /* résolution par entityType ci-dessous */ }
+    if (!storeName) storeName = swIdbStoreForEntityType(event.entityType);
     if (!storeName) return;
     const local = await swIdbGetByKey(storeName, event.entityId);
     const serverData =
@@ -3076,6 +3166,26 @@ async function swApplyServerEntityResponse(event, parsed) {
         _deleted: false,
         _lastSync: new Date().toISOString(),
         ...(local ? { _version: (local._version || 1) + 1 } : {}),
+      });
+    }
+    // ⭐ v4.7.0a — CRÉATION dont l'id serveur ≠ id local : on écrit AUSSI la
+    //    version propre sous l'id SERVEUR (la fabrication hors ligne montre
+    //    la VRAIE fiche) ; l'entrée sous l'id local reste propre (plus de
+    //    doublon fantôme dans la fusion _isDirty des listes hors ligne).
+    //    Local d'abord, réponse serveur ensuite : les champs du formulaire
+    //    (titre, contenu…) survivent même si la réponse PUT est sobre.
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        && typeof parsed.id === 'string' && parsed.id && parsed.id !== event.entityId) {
+      const serverLocal = await swIdbGetByKey(storeName, parsed.id);
+      const base = serverLocal ?? local ?? null;
+      await swIdbPut(storeName, {
+        ...(base && typeof base === 'object' ? base : {}),
+        ...parsed,
+        id: parsed.id,
+        tenantId: (serverLocal && serverLocal.tenantId) || (local && local.tenantId) || event.tenantId,
+        _isDirty: false,
+        _deleted: false,
+        _lastSync: new Date().toISOString(),
       });
     }
   } catch { /* non bloquant */ }
@@ -3104,6 +3214,79 @@ async function swUpdateOutboxEvent(db, eventId, patch) {
       store.put({ ...event, ...patch });
     };
   } catch { /* non bloquant */ }
+}
+
+/** ⭐ v4.7.0 — Remappe un id LOCAL (fiche créée en ligne par le SW) vers
+ *  l'id SERVEUR réel dans tous les événements PENDING de la file du SW :
+ *  - metadata.request.url : le segment /<id-local> devient /<id-serveur>
+ *    (les PUT rejoués ciblent la vraie fiche au lieu d'un 404) ;
+ *  - entityId : la réponse serveur du PUT s'écrira sous la bonne clé de
+ *    store local (swApplyServerEntityResponse).
+ *  ⭐ v4.7.0a — MIROIR MÉMOIRE (bug trouvé au harnais) : la boucle de
+ *  replay lit les métadonnées du tableau `candidates` PARSÉ AVANT la
+ *  boucle — sans ce miroir, la réécriture DB n'avait AUCUN effet sur le
+ *  fetch du PUT suivant (il partait vers l'ANCIEN id local → 404 en
+ *  production → FAILED définitif → perte des modifications postérieures)
+ *  alors même que la DB semblait correcte après coup. On mute donc AUSSI
+ *  les objets en mémoire (la boucle itère sur les MÊMES références).
+ *  Les UUID sont uniques — un remplacement textuel est sûr. Best-effort :
+ *  un échec laisse les événements intacts (comportement v4.6.0). */
+async function swRemapLocalIdInPendingEvents(db, localId, serverId, candidates) {
+  if (!localId || !serverId || String(localId) === String(serverId)) return;
+  // Miroir mémoire TOUJOURS (même si la DB est inaccessible) : c'est LUI
+  // qui décide de l'URL des fetch de replay de CETTE passe.
+  if (Array.isArray(candidates)) {
+    for (const c of candidates) {
+      if (!c || !c.meta || !c.meta.request || typeof c.meta.request.url !== 'string') continue;
+      if (!c.meta.request.url.includes(localId)) continue;
+      c.meta.request.url = c.meta.request.url.split(localId).join(serverId);
+      if (c.event && c.event.entityId === localId) c.event.entityId = serverId;
+    }
+  }
+  if (!db || !db.objectStoreNames || !db.objectStoreNames.contains('outbox_events')) return;
+  try {
+    const all = await swIdbRequest(
+      db.transaction(['outbox_events'], 'readonly').objectStore('outbox_events').getAll()
+    ).catch(() => []);
+    for (const e of all || []) {
+      if (!e || (e.status !== 'PENDING' && e.status !== 'SYNCING')) continue;
+      let meta = null;
+      try { meta = typeof e.metadata === 'string' ? JSON.parse(e.metadata) : e.metadata; } catch { meta = null; }
+      if (!meta || !meta.sw || !meta.request || typeof meta.request.url !== 'string') continue;
+      if (!meta.request.url.includes(localId)) continue;
+      const newUrl = meta.request.url.split(localId).join(serverId);
+      const newMeta = { ...meta, request: { ...meta.request, url: newUrl } };
+      await swUpdateOutboxEvent(db, e.id, {
+        entityId: e.entityId === localId ? serverId : e.entityId,
+        metadata: JSON.stringify(newMeta),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  } catch { /* remap best-effort */ }
+}
+
+/** ⭐ v4.7.0a — Y a-t-il encore une CRÉATION (POST PENDING/SYNCING du SW)
+ *  pour un id présent dans l'URL donnée ? Utilisé pour distinguer un 404 de
+ *  « la fiche n'existe pas parce que sa création est ENCORE EN FILE » (course
+ *  POST→PUT) d'un vrai refus métier. Best-effort : en cas d'erreur de lecture
+ *  → false (comportement historique FAILED). */
+async function swHasPendingCreateForUrl(db, url) {
+  try {
+    if (!db || !db.objectStoreNames || !db.objectStoreNames.contains('outbox_events')) return false;
+    const all = await swIdbRequest(
+      db.transaction(['outbox_events'], 'readonly').objectStore('outbox_events').getAll()
+    ).catch(() => []);
+    for (const e of all || []) {
+      if (!e || (e.status !== 'PENDING' && e.status !== 'SYNCING')) continue;
+      let m = null;
+      try { m = typeof e.metadata === 'string' ? JSON.parse(e.metadata) : e.metadata; } catch { m = null; }
+      if (!m || !m.sw || !m.request || m.request.method !== 'POST') continue;
+      if (e.entityId && typeof url === 'string' && url.includes(e.entityId)) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 /** ⭐ PROPRIÉTAIRE UNIQUE : rejoue UNIQUEMENT les événements marqués
@@ -3183,6 +3366,23 @@ async function swReplayPendingMutations() {
           updatedAt: new Date().toISOString(),
         });
         await swInvalidateCacheFamily(req.url);
+        // ⭐ v4.7.0 — REMAP D'IDENTITÉ POST→PUT (bug « fiche incomplète
+        //    après coupure mobile ») : une fiche CRÉÉE pendant une coupure
+        //    reçoit un id LOCAL (généré par swQueueMutation) et la réponse
+        //    fabriquée l'a fait adopter par le formulaire → les autosaves
+        //    suivants mettent en file des PUT vers /fiches/<id-local>.
+        //    Au replay du POST, le serveur crée la fiche avec SON id → sans
+        //    remap, ces PUT recevaient 404 → FAILED DÉFINITIF → toutes les
+        //    modifications postérieures à la création étaient perdues (la
+        //    fiche réapparaissait amputée de sa fin de saisie). On réécrit
+        //    l'id local → id serveur dans les événements PENDING restants
+        //    (URL de replay + entityId) → les PUT rejoués ciblent la vraie
+        //    fiche → contenu complet.
+        if (req.method === 'POST' && parsed && typeof parsed === 'object'
+            && !Array.isArray(parsed) && typeof parsed.id === 'string'
+            && parsed.id && parsed.id !== event.entityId) {
+          await swRemapLocalIdInPendingEvents(db, event.entityId, parsed.id, candidates);
+        }
         replayed++;
       } else if (response.status >= 400 && response.status < 500) {
         // Refus MÉTIER du serveur (validation DTO, 403, 404…) → FAILED définitif
@@ -3192,12 +3392,34 @@ async function swReplayPendingMutations() {
           const parsed = JSON.parse(text);
           msg = parsed?.message || parsed?.error || msg;
         } catch { /* corps non-JSON */ }
-        await swUpdateOutboxEvent(db, event.id, {
-          status: 'FAILED',
-          errorMessage: msg,
-          updatedAt: new Date().toISOString(),
-        });
-        failed++;
+        // ⭐ v4.7.0a — DÉPENDANCE POST→PUT (course de reprise découverte au
+        //    harnais) : quand le réseau revient ENTRE le PUT et le POST d'une
+        //    même passe de replay, le PUT part vers l'id LOCAL avant que la
+        //    création n'ait réussi → 404 → (avant) FAILED définitif → toutes
+        //    les modifications postérieures à la création étaient perdues.
+        //    Si un POST (création) pour le MÊME id est encore en file, ce 404
+        //    n'est PAS un refus métier : on laisse le PUT PENDING — la passe
+        //    suivante traite le POST d'abord (FIFO) → remap id serveur → PUT
+        //    rejoué vers la vraie fiche. Le report est BORNÉ : dès que le POST
+        //    est SYNCED/FAILED, un 404 redevient définitif (comportement
+        //    historique — une vraie suppression n'est jamais masquée).
+        const deferredByPendingCreate = response.status === 404
+          && (req.method === 'PUT' || req.method === 'PATCH')
+          && (await swHasPendingCreateForUrl(db, req.url));
+        if (deferredByPendingCreate) {
+          await swUpdateOutboxEvent(db, event.id, {
+            status: 'PENDING',
+            updatedAt: new Date().toISOString(),
+          });
+          stillPending++;
+        } else {
+          await swUpdateOutboxEvent(db, event.id, {
+            status: 'FAILED',
+            errorMessage: msg,
+            updatedAt: new Date().toISOString(),
+          });
+          failed++;
+        }
       } else {
         // 5xx → transitoire (redémarrage Railway, cold start) → PENDING
         await swUpdateOutboxEvent(db, event.id, { status: 'PENDING', updatedAt: new Date().toISOString() });
@@ -3328,11 +3550,18 @@ self.addEventListener('message', (event) => {
   }
 
   // ⭐ V4.0 — TRIGGER_SYNC : la page (pont OfflineSWRegister, événement
-  //    window 'online') demande au SW de rejouer sa file de mutations
+  //    window 'online' + ⭐ v4.7.0 chargement de page et OUTBOX_CHANGED
+  //    « fantôme online ») demande au SW de rejouer sa file de mutations
   //    (utile quand Background Sync n'est pas supporté/retarde — iOS, Safari).
   if (event.data && event.data.type === 'TRIGGER_SYNC') {
     event.waitUntil(
       (async () => {
+        // ⭐ v4.7.0 — Hors ligne RÉEL : inutile de marteler le serveur à
+        //    chaque chargement de page (chaque événement = 1 fetch voué à
+        //    l'échec) — Background Sync et le retour du réseau relanceront.
+        //    Le « fantôme online » (navigator.onLine true mais réseau KO)
+        //    reste couvert : la tentative part, échoue, reste PENDING.
+        if (self.navigator && self.navigator.onLine === false) return;
         try {
           await swReplayPendingMutations();
         } catch {

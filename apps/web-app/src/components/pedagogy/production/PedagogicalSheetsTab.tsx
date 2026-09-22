@@ -50,6 +50,11 @@ import {
 import { suggestionsPourSheetType, affichageMatiere } from "@/lib/pedagogy/cahier-sous-matieres";
 import { useAutoSave, fireKeepaliveSave } from "@/hooks/useAutoSave";
 import { AutosaveIndicator } from "@/components/pedagogy/media/AutosaveIndicator";
+// ⭐ v4.7.0 (retour terrain mobile 22/09/2026) : lecture de la file offline
+//    du Service Worker — les sauvegardes mises en file pendant un glitch
+//    réseau mobile sont AFFICHÉES dans la liste (badge « envoi en attente »)
+//    au lieu de laisser croire que « rien n'est enregistré ».
+import { outboxService } from "@/lib/offline/outbox.service";
 
 interface PedagogicalSheetsTabProps {
   tenantId: string;
@@ -245,6 +250,81 @@ function hasRealContent(f: any): boolean {
     stripHtml(s?.consignes).length >= 3 || stripHtml(s?.resultats).length >= 3,
   );
   return filled >= 2 || (filled >= 1 && hasSteps);
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// ⭐ v4.7.0 (retour terrain mobile 22/09/2026) — FICHES EN ATTENTE D'ENVOI
+//
+// Contexte (plainte enseignant sur smartphone) : « je finis de préparer la
+// fiche, rien n'est enregistré ; après plusieurs rechargements je la
+// retrouve ». Cause : sur réseau mobile instable, la sauvegarde part dans
+// la FILE du Service Worker avec un 200 fabriqué (X-Sync-Status: pending) ;
+// le serveur ne connaît pas encore la fiche → la liste réseau-first paraît
+// incomplète → découragement. Le SW v4.7.0 rejoue désormais sa file au
+// chargement de page et 8 s après chaque mise en file ; en COMPLÉMENT, on
+// fusionne ici les sauvegardes PENDING dans la liste affichée :
+//   - CRÉATION en file → la fiche apparaît immédiatement, badge « Envoi en
+//     attente » (elle part vers le serveur en quelques secondes) ;
+//   - MISE À JOUR en file → la fiche serveur est affichée MAIS badgée
+//     (l'enseignant sait que sa dernière version n'est pas encore partie).
+// Les événements passés SYNCED ne sont plus PENDING → fusion naturelle
+// désactivée → le contenu serveur (source de vérité) reprend la main.
+// ═════════════════════════════════════════════════════════════════════════
+async function mergePendingOfflineFiches(
+  serverList: any[],
+  tenantId: string,
+  classId: string,
+): Promise<any[]> {
+  try {
+    if (typeof window === "undefined") return serverList;
+    const events = await outboxService.getPendingEvents(tenantId);
+    if (!Array.isArray(events) || events.length === 0) return serverList;
+
+    // Uniquement les mutations de FICHES mises en file par le SW (ou par la
+    // couche applicative) : URL /api/pedagogy-space/fiches, verbes d'écriture.
+    const ficheEvents = events.filter((ev: any) => {
+      const url = String(ev?.metadata?.request?.url || "");
+      if (!url.includes("/api/pedagogy-space/fiches")) return false;
+      const method = String(ev?.metadata?.request?.method || ev?.operation || "").toUpperCase();
+      return method === "POST" || method === "PUT" || method === "PATCH" || method === "UPDATE" || method === "CREATE";
+    });
+    if (ficheEvents.length === 0) return serverList;
+
+    const serverIds = new Set(serverList.map((f: any) => String(f?.id)));
+    const merged = serverList.map((f: any) => ({ ...f }));
+
+    for (const ev of ficheEvents) {
+      // Corps de la requête mise en file : le formulaire complet au moment
+      // de la sauvegarde (POST/PUT interceptés par le SW).
+      const body = ev?.metadata?.request?.body || ev?.payload || {};
+      const isCreate = String(ev?.metadata?.request?.method || ev?.operation || "").toUpperCase() === "POST"
+        || String(ev?.operation || "").toUpperCase() === "CREATE";
+      const ficheId = String(ev?.entityId || body?.id || "");
+      if (!ficheId) continue;
+
+      if (isCreate && !serverIds.has(ficheId)) {
+        // Fiche créée en file : visible immédiatement en Brouillon + badge.
+        serverIds.add(ficheId);
+        merged.push({
+          ...body,
+          id: ficheId,
+          classId: body?.classId || classId,
+          status: "DRAFT",
+          updatedAt: ev?.createdAt || new Date().toISOString(),
+          _pendingSync: true,
+        });
+      } else if (serverIds.has(ficheId)) {
+        // Fiche existante dont une mise à jour est en file : badgée pour
+        // signaler que la dernière saisie n'est pas encore partie.
+        const target = merged.find((f: any) => String(f?.id) === ficheId);
+        if (target) target._pendingSync = true;
+      }
+    }
+    return merged;
+  } catch {
+    // Best-effort : la file est illisible → liste serveur telle quelle.
+    return serverList;
+  }
 }
 
 // ⭐ Configuration spécifique par type de fiche
@@ -602,13 +682,37 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       //    avait disparu, puis la retrouvait « plus tard » via les autres
       //    composants qui chargent correctement.
       const data = await res.json();
-      setFiches(Array.isArray(data) ? data : []);
+      const serverList = Array.isArray(data) ? data : [];
+      // ⭐ v4.7.0 — FICHES EN ATTENTE D'ENVOI (file offline du SW) : quand la
+      //    sauvegarde a été mise en file (réseau mobile instable), le serveur
+      //    ne connaît PAS encore la fiche → la liste « fraîche » paraît
+      //    incomplète (« rien n'est enregistré », plainte enseignant mobile
+      //    22/09/2026). On fusionne les sauvegardes en file : elles
+      //    apparaissent immédiatement avec un badge « envoi en attente » et
+      //    disparaissent du merge dès que le replay les a fait partir (les
+      //    événements passent alors SYNCED → plus PENDING).
+      const merged = await mergePendingOfflineFiches(serverList, tenantId, selectedClassId);
+      setFiches(merged);
     } catch (e: any) {
       setFiches([]);
       console.error("[PedagogicalSheetsTab] Erreur chargement fiches:", e);
     }
     finally { setLoading(false); }
-  }, [teacherId, academicYearId, filterType, selectedClassId]);
+  }, [teacherId, academicYearId, filterType, selectedClassId, tenantId]);
+
+  // ⭐ v4.7.0 — Rafraîchir la liste quand la file offline évolue : mise en
+  //    file d'une sauvegarde (badge « envoi en attente » immédiat) ou fin de
+  //    replay (OUTBOX_SYNCED → 'sync-end' → la fiche est désormais côté
+  //    serveur → le badge disparaît et le contenu serveur réel s'affiche).
+  useEffect(() => {
+    const refresh = () => { loadFiches(); };
+    window.addEventListener("outbox-changed", refresh);
+    window.addEventListener("sync-end", refresh);
+    return () => {
+      window.removeEventListener("outbox-changed", refresh);
+      window.removeEventListener("sync-end", refresh);
+    };
+  }, [loadFiches]);
 
   // ⭐ CROSS-YEAR REUSE : charger les fiches des années précédentes
   //    pour la même classe (et matière si filtrée).
@@ -938,7 +1042,23 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       }
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(body) });
       if (!res.ok) throw new Error("Erreur de sauvegarde");
-      toast.success(editingFiche ? "✅ Fiche mise à jour" : "✅ Fiche créée");
+      // ⭐ v4.7.0 — HONNÊTETÉ (retour terrain mobile 22/09/2026) : quand le
+      //    réseau a glitché au moment de la sauvegarde, le Service Worker a
+      //    mis la requête EN FILE et renvoyé un 200 fabriqué
+      //    (X-Sync-Status: pending). Afficher « Fiche enregistrée » serait un
+      //    mensonge : le serveur ne l'a PAS encore. Toast distinct + la fiche
+      //    apparaît dans la liste avec le badge « envoi en attente » (le SW
+      //    v4.7.0 rejoue sa file en quelques secondes, au chargement et 8 s
+      //    après chaque mise en file). La saisie n'est JAMAIS perdue : elle
+      //    vit dans la file locale jusqu'à l'envoi effectif.
+      const queuedOffline = res.headers.get("X-Sync-Status") === "pending";
+      if (queuedOffline) {
+        toast.warning("Enregistré hors ligne — envoi en attente", {
+          description: "La connexion a été interrompue pendant la sauvegarde. Votre fiche est conservée sur cet appareil et sera envoyée automatiquement dès le retour du réseau (badge « envoi en attente » dans la liste).",
+        });
+      } else {
+        toast.success(editingFiche ? "✅ Fiche mise à jour" : "✅ Fiche créée");
+      }
 
       // ⭐ Autosave : resynchronise la baseline (évite une double sauvegarde
       //    juste après le clic sur « Mettre à jour / Créer »)
@@ -2457,7 +2577,21 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
                   <div className={cn("flex items-center gap-2 px-2 py-1 rounded text-xs font-bold", st?.color)}>
                     <Icon className="h-3 w-3" />{st?.label || fiche.sheetType}
                   </div>
-                  {status && <div className={cn("flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase", status.color)}><status.icon className="h-3 w-3" />{status.label}</div>}
+                  <div className="flex items-center gap-1">
+                    {status && <div className={cn("flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold uppercase", status.color)}><status.icon className="h-3 w-3" />{status.label}</div>}
+                    {/* ⭐ v4.7.0 — Fiche en attente d'envoi (file offline du SW,
+                        réseau mobile instable) : la sauvegarde est conservée
+                        sur l'appareil et partira automatiquement — l'enseignant
+                        le VOIT au lieu de croire que « rien n'est enregistré ». */}
+                    {fiche._pendingSync && (
+                      <div
+                        className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-semibold bg-amber-100 text-amber-700 border border-amber-200"
+                        title="Sauvegardé sur cet appareil — envoi automatique dès le retour de la connexion"
+                      >
+                        <Clock className="h-3 w-3 animate-pulse" />Envoi en attente
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="text-xs text-slate-500 mb-2">
                   {formatDateFR(fiche.lessonDate || fiche.createdAt)}

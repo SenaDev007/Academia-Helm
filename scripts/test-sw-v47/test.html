@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Harnais SW v4.7.0 — fiche mobile</title>
+<style>
+  body { font-family: monospace; font-size: 12px; padding: 12px; }
+  .ok { color: #059669; font-weight: bold; }
+  .ko { color: #dc2626; font-weight: bold; }
+  pre { background: #f1f5f9; padding: 8px; overflow: auto; }
+</style>
+</head>
+<body>
+<h3>Harnais SW v4.7.0 — bug mobile fiche</h3>
+<div id="status">initialisation…</div>
+<pre id="log"></pre>
+<script>
+/* ============================================================================
+ * Orchestration pilotée depuis l'extérieur (agent-browser eval) :
+ *   __setup()    → IDB + SW actif + contrôlé
+ *   __phaseA()   → sauvegardes pendant que le SERVEUR EST DOWN (fantôme
+ *                  online : navigator.onLine reste TRUE)
+ *   __phaseB()   → TRIGGER_SYNC (serveur revenu) → attend le drain
+ *   __phaseC()   → état final (requêtes reçues, outbox, fusion merge)
+ * ==========================================================================*/
+
+const logEl = document.getElementById('log');
+const statusEl = document.getElementById('status');
+function log(msg) { logEl.textContent += msg + '\n'; }
+function setStatus(s) { statusEl.textContent = s; }
+window.__log = log;
+
+const TENANT = 'tenant-test-47';
+const HEADERS = { 'Content-Type': 'application/json', 'X-Tenant-ID': TENANT };
+
+/* IDB brute (mêmes noms/shape que local-db.service) */
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('academia-helm-local', 19);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      const stores = [
+        ['outbox_events', 'id'], ['pedagogicalworkspace', 'id'],
+        ['response_cache', 'cacheKey'], ['sync_state', 'tenantId'],
+        ['local_academic_year', 'id'], ['academicyear', 'id'],
+      ];
+      for (const [name, kp] of stores) {
+        if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath: kp });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbAll(store) {
+  return idbOpen().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction([store], 'readonly');
+    const rq = tx.objectStore(store).getAll();
+    rq.onsuccess = () => resolve(rq.result || []);
+    rq.onerror = () => reject(rq.error);
+  }));
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* ─── SETUP : DB + SW ─── */
+window.__setup = async function () {
+  await idbOpen(); // crée les stores AVANT le SW (comme l'app au chargement)
+  const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+  await navigator.serviceWorker.ready;
+  // attendre que la page soit contrôlée (2e chargement ou claim)
+  let guarded = 0;
+  while (!navigator.serviceWorker.controller && guarded < 50) {
+    await sleep(100); guarded++;
+  }
+  const version = await new Promise((resolve) => {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = (e) => resolve(e.data && e.data.version);
+    navigator.serviceWorker.controller.postMessage({ type: 'GET_SW_VERSION' }, [ch.port2]);
+    setTimeout(() => resolve('timeout'), 3000);
+  });
+  return {
+    controlled: !!navigator.serviceWorker.controller,
+    swVersion: version,
+    online: navigator.onLine,
+  };
+};
+
+/* ─── PHASE A : serveur DOWN (killé extérieurement) — fantôme online ─── */
+window.__phaseA = async function () {
+  const out = {};
+  // 1. Création (POST) — doit être mise en file + 200 fabriqué
+  const r1 = await fetch('/api/pedagogy-space/fiches?source=autosave', {
+    method: 'POST', headers: HEADERS, credentials: 'include',
+    body: JSON.stringify({ sheetType: 'MATH', titre: 'Fiche mobile', n: 1 }),
+  });
+  const b1 = await r1.json();
+  out.post = {
+    status: r1.status,
+    syncHeader: r1.headers.get('X-Sync-Status'),
+    offlineHeader: r1.headers.get('X-AH-Offline'),
+    bodyId: b1.id,
+    online: navigator.onLine, // doit rester TRUE (fantôme online)
+  };
+  const localId = b1.id;
+
+  // 2. Deux mises à jour (PUT) — DÉDUP attendue : 1 seul événement PUT
+  const r2 = await fetch(`/api/pedagogy-space/fiches/${localId}?source=autosave`, {
+    method: 'PUT', headers: HEADERS, credentials: 'include',
+    body: JSON.stringify({ sheetType: 'MATH', titre: 'Fiche mobile', n: 2 }),
+  });
+  const r3 = await fetch(`/api/pedagogy-space/fiches/${localId}?source=autosave`, {
+    method: 'PUT', headers: HEADERS, credentials: 'include',
+    body: JSON.stringify({ sheetType: 'MATH', titre: 'Fiche mobile', n: 3 }),
+  });
+  out.put = { r2: { status: r2.status, sync: r2.headers.get('X-Sync-Status') },
+              r3: { status: r3.status, sync: r3.headers.get('X-Sync-Status') } };
+  out.localId = localId;
+  await sleep(400);
+
+  // 3. Contenu de la file (dédup : 2 événements = 1 POST + 1 PUT)
+  const events = await idbAll('outbox_events');
+  out.outboxCount = events.length;
+  out.outbox = events.map((e) => {
+    let m = null; try { m = JSON.parse(e.metadata); } catch {}
+    return {
+      method: m && m.request && m.request.method,
+      url: m && m.request && m.request.url,
+      bodyN: m && m.request && m.request.body && m.request.body.n,
+      status: e.status, entityId: e.entityId,
+    };
+  });
+
+  // 4. Entité optimiste (mapping pedagogy-space → pedagogicalworkspace)
+  const ws = await idbAll('pedagogicalworkspace');
+  out.optimisticCount = ws.length;
+  out.optimistic = ws.map((w) => ({ id: w.id, dirty: w._isDirty, titre: w.titre, n: w.n }));
+
+  // 5. GET pendant la coupure : la fiche en attente doit être SERVIE
+  //    (fabrication depuis le store d'entités + fusion _isDirty)
+  try {
+    const g = await fetch(`/api/pedagogy-space/fiches?teacherId=t&academicYearId=y&classId=c`, {
+      headers: HEADERS, credentials: 'include',
+    });
+    const gd = await g.json();
+    out.getDuringOutage = {
+      status: g.status,
+      offlineHeader: g.headers.get('X-AH-Offline'),
+      count: Array.isArray(gd) ? gd.length : 'not-array',
+      ids: Array.isArray(gd) ? gd.map((f) => f.id) : [],
+    };
+  } catch (e) {
+    out.getDuringOutage = { error: String(e) };
+  }
+
+  // 6. Pont page → SW : écoute OUTBOX_CHANGED (comme OfflineSWRegister v4.7.0)
+  //    (le timer 8 s est armé par __armPhantomRetry — pilotage externe)
+  window.__outboxChangedHeard = 0;
+  navigator.serviceWorker.addEventListener('message', (ev) => {
+    if (ev.data && ev.data.type === 'OUTBOX_CHANGED') window.__outboxChangedHeard++;
+  });
+  return out;
+};
+
+/* Simule le retry 8 s du OfflineSWRegister v4.7.0 (fantôme online) */
+window.__armPhantomRetry = async function () {
+  // remet en file une nouvelle version (comme un autosave tardif) PUIS
+  // attend le timer → TRIGGER_SYNC — reproduit le pont applicatif réel.
+  return new Promise((resolve) => {
+    const t = setTimeout(() => {
+      navigator.serviceWorker.controller.postMessage({ type: 'TRIGGER_SYNC' });
+      resolve({ triggeredAfterMs: 8000, outboxChangedHeard: window.__outboxChangedHeard });
+    }, 8000);
+    window.__cancelPhantomRetry = () => { clearTimeout(t); resolve({ cancelled: true }); };
+  });
+};
+/* Version courte : TRIGGER_SYNC immédiat (équivaut au chargement de page) */
+window.__triggerSyncNow = function () {
+  navigator.serviceWorker.controller.postMessage({ type: 'TRIGGER_SYNC' });
+  return { posted: true };
+};
+
+/* ─── PHASE B : serveur revenu → attendre le drain de la file ─── */
+window.__phaseB = async function () {
+  const deadline = Date.now() + 20000;
+  let events = [];
+  while (Date.now() < deadline) {
+    events = await idbAll('outbox_events');
+    const pending = events.filter((e) => e.status === 'PENDING' || e.status === 'SYNCING');
+    if (pending.length === 0) break;
+    await sleep(500);
+  }
+  const reqs = await (await fetch('/__requests', { credentials: 'include' })).json();
+  return {
+    outbox: events.map((e) => {
+      let m = null; try { m = JSON.parse(e.metadata); } catch {}
+      return { method: m && m.request && m.request.method,
+               url: m && m.request && m.request.url,
+               status: e.status, error: e.errorMessage || null,
+               bodyN: m && m.request && m.request.body && m.request.body.n };
+    }),
+    serverReceived: reqs,
+  };
+};
+
+/* ─── PHASE C : merge applicatif (réplique fidèle de
+ * mergePendingOfflineFiches — lis la MÊME file outbox_events) ─── */
+window.__mergeReplica = async function (serverList) {
+  try {
+    const events = await idbAll('outbox_events');
+    const pending = events.filter((e) => e.status === 'PENDING');
+    const ficheEvents = pending.filter((ev) => {
+      const url = String((() => { let m = null; try { m = JSON.parse(ev.metadata); } catch {} return m && m.request && m.request.url || ''; })());
+      if (!url.includes('/api/pedagogy-space/fiches')) return false;
+      const method = String((() => { let m = null; try { m = JSON.parse(ev.metadata); } catch {} return (m && m.request && m.request.method) || ev.operation || ''; })()).toUpperCase();
+      return ['POST', 'PUT', 'PATCH', 'UPDATE', 'CREATE'].includes(method);
+    });
+    const serverIds = new Set(serverList.map((f) => String(f.id)));
+    const merged = serverList.map((f) => ({ ...f }));
+    for (const ev of ficheEvents) {
+      let m = null; try { m = JSON.parse(ev.metadata); } catch {}
+      const body = (m && m.request && m.request.body) || null;
+      const method = String((m && m.request && m.request.method) || ev.operation || '').toUpperCase();
+      const isCreate = method === 'POST' || String(ev.operation || '').toUpperCase() === 'CREATE';
+      const ficheId = String(ev.entityId || (body && body.id) || '');
+      if (!ficheId) continue;
+      if (isCreate && !serverIds.has(ficheId)) {
+        serverIds.add(ficheId);
+        merged.push({ ...body, id: ficheId, status: 'DRAFT', _pendingSync: true });
+      } else if (serverIds.has(ficheId)) {
+        const target = merged.find((f) => String(f.id) === ficheId);
+        if (target) target._pendingSync = true;
+      }
+    }
+    return merged;
+  } catch (e) {
+    return { error: String(e) };
+  }
+};
+
+window.__idbAll = idbAll;
+window.__sleep = sleep;
+log('harnais chargé');
+</script>
+</body>
+</html>

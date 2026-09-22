@@ -22,6 +22,11 @@ export function OfflineSWRegister() {
     if (typeof window === 'undefined') return;
     if (!('serviceWorker' in navigator)) return;
 
+    // ⭐ v4.7.0 — Timer du retry « fantôme online » (déclaré AVANT les
+    //    early-returns du mode dev pour que le nettoyage final le voie
+    //    toujours — cohérent avec le pattern des autres listeners).
+    let phantomOnlineRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
     // ⭐ V4.0 — PONT SW → PAGE (spec « interception réseau » §4-§5) :
     //    - OUTBOX_CHANGED / OUTBOX_SYNCED : le SW a mis une mutation en file
     //      (ou terminé un replay) → on dispatch l'événement DOM
@@ -34,6 +39,29 @@ export function OfflineSWRegister() {
       const type = event.data?.type;
       if (type === 'OUTBOX_CHANGED' || type === 'OUTBOX_SYNCED') {
         try { window.dispatchEvent(new CustomEvent('outbox-changed')); } catch { /* non-bloquant */ }
+      }
+      // ⭐ v4.7.0 (retour terrain mobile 22/09/2026 — « la fiche sauvegardée
+      //    sur smartphone n'apparaît pas, puis revient après plusieurs
+      //    rechargements ») — FANTÔME ONLINE : le SW vient de mettre une
+      //    mutation en file alors que le navigateur se CROIT en ligne
+      //    (réseau mobile glitch sans transition offline→online).
+      //    Avant : cette file n'était rejouée que par Background Sync
+      //    (absent d'iOS Safari/Firefox, retardé sur Android) ou par
+      //    l'événement window 'online' — qui ne se produit JAMAIS ici.
+      //    Désormais : on redemande au SW de rejouer sa file 8 s plus tard
+      //    — si le réseau est réellement utilisable, la sauvegarde part
+      //    vers le serveur en quelques secondes ; sinon, les événements
+      //    restent PENDING (aucune perte de données, nouvelle tentative
+      //    au prochain déclencheur). Debounce : UNE tentative par salve
+      //    de mises en file, jamais de tempête.
+      if (type === 'OUTBOX_CHANGED' && typeof navigator !== 'undefined' && navigator.onLine) {
+        if (phantomOnlineRetryTimer) clearTimeout(phantomOnlineRetryTimer);
+        phantomOnlineRetryTimer = setTimeout(() => {
+          phantomOnlineRetryTimer = null;
+          try {
+            navigator.serviceWorker.controller?.postMessage({ type: 'TRIGGER_SYNC' });
+          } catch { /* non-bloquant */ }
+        }, 8000);
       }
       if (type === 'OUTBOX_SYNCED') {
         // ⭐ FIX « toast échec en boucle » : le payload du SW
@@ -78,6 +106,29 @@ export function OfflineSWRegister() {
       } catch { /* non-bloquant */ }
     };
     window.addEventListener('online', handleOnline);
+
+    // ⭐ v4.7.0 — REPLAY AU CHARGEMENT DE PAGE (correctif mobile du
+    //    22/09/2026) : l'enseignant dont la sauvegarde est partie en file
+    //    pendant un glitch réseau RECHARGE la page pour vérifier → il faut
+    //    que ce rechargement REJOUE la file (avant : seul l'événement
+    //    'online' le faisait, or il ne se déclenche pas quand le
+    //    navigateur n'est jamais passé hors ligne). Le SW vérifie lui-même
+    //    navigator.onLine avant de tenter (v4.7.0) → hors ligne réel = no-op.
+    //    controller est null au tout premier chargement (page pas encore
+    //    contrôlée) → on retente via ready/active pour couvrir les
+    //    rechargements suivants, qui sont précisément le scénario visé.
+    try {
+      const postTriggerSync = (sw: ServiceWorker | null) => {
+        try { sw?.postMessage({ type: 'TRIGGER_SYNC' }); } catch { /* non-bloquant */ }
+      };
+      if (navigator.serviceWorker.controller) {
+        postTriggerSync(navigator.serviceWorker.controller);
+      } else {
+        navigator.serviceWorker.ready
+          .then((reg) => postTriggerSync(reg.active ?? null))
+          .catch(() => { /* non-bloquant */ });
+      }
+    } catch { /* non-bloquant */ }
 
     // ⭐ Ne pas enregistrer en dev sauf si ?sw=1 dans l'URL (pour tester offline)
     if (process.env.NODE_ENV === 'development') {
@@ -127,6 +178,7 @@ export function OfflineSWRegister() {
     return () => {
       navigator.serviceWorker.removeEventListener('message', handleSwMessage);
       window.removeEventListener('online', handleOnline);
+      if (phantomOnlineRetryTimer) clearTimeout(phantomOnlineRetryTimer);
     };
   }, []);
 

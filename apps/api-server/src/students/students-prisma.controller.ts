@@ -183,31 +183,44 @@ export class StudentsPrismaController {
   async update(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Body() updateDto: UpdateStudentPrismaDto,
   ) {
-    return this.studentsService.updateStudent(id, tenantId, updateDto);
+    // ⭐ FIX 2026-09-23 : transmettre user.scope au service (anti-IDOR) —
+    //    son absence faisait crasher assertLevelInScope (500 « reading 'resolved' »)
+    //    sur TOUTE modification d'élève (onglet Inscription).
+    return this.studentsService.updateStudent(id, tenantId, updateDto, user?.scope ?? null);
   }
 
   @Post(':id/archive')
   async archive(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Body() body: ArchiveStudentDto,
   ) {
-    return this.studentsService.archiveStudent(id, tenantId, body.reason);
+    // ⭐ FIX 2026-09-23 : userId (audit) + scope (anti-IDOR) transmis
+    return this.studentsService.archiveStudent(
+      id,
+      tenantId,
+      body.reason,
+      user?.id || user?.sub,
+      user?.scope ?? null,
+    );
   }
 
   @Post(':id/enroll')
   async enroll(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Body() enrollDto: EnrollStudentDto,
   ) {
     return this.studentsService.enrollStudent({
       ...enrollDto,
       tenantId,
       studentId: id,
-    });
+    }, user?.scope ?? null);
   }
 
   /**
@@ -220,8 +233,9 @@ export class StudentsPrismaController {
   async uploadPhoto(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Body('photoDataUrl', IMAGE_ONLY_DATA_URL_PIPE) photoDataUrl: string,
   ) {
-    return this.studentsService.uploadStudentPhotoDataUrl(id, tenantId, photoDataUrl);
+    return this.studentsService.uploadStudentPhotoDataUrl(id, tenantId, photoDataUrl, user?.scope ?? null);
   }
 }

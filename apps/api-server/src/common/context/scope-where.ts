@@ -22,9 +22,18 @@ import { ForbiddenException } from '@nestjs/common';
 import { AccessScope } from './access-scope.service';
 import { resolveSchoolLevelFilter } from './resolve-school-level';
 
+/**
+ * ⭐ FIX 2026-09-23 « modification élève impossible » :
+ *    tous les helpers acceptent désormais `scope` null/undefined (comptes
+ *    transverses — promoteur, admin… — ou services appelant findStudentById
+ *    sans scope). Avant, `scope.resolved` sur un scope absent levait
+ *    « TypeError: Cannot read properties of undefined (reading 'resolved') »
+ *    → 500 sur PUT /students/:id (updateStudent → findStudentById sans scope).
+ */
+
 /** Filtre niveau sur un where Prisma (champ schoolLevelId par défaut) */
-export function levelWhere(scope: AccessScope, field = 'schoolLevelId') {
-  if (!scope.resolved || scope.allLevels) return undefined;
+export function levelWhere(scope: AccessScope | null | undefined, field = 'schoolLevelId') {
+  if (!scope || !scope.resolved || scope.allLevels) return undefined;
   return { [field]: { in: scope.levelIds } };
 }
 
@@ -99,8 +108,8 @@ export function applyLevelScope(
  * - scope mono-piste FR → classes FR + non marquées (langue null = héritage FR)
  * - scope mono-piste EN → classes EN uniquement
  */
-export function classTrackWhere(scope: AccessScope) {
-  if (!scope.resolved || scope.allTracks) return undefined;
+export function classTrackWhere(scope: AccessScope | null | undefined) {
+  if (!scope || !scope.resolved || scope.allTracks) return undefined;
   const tracks = scope.trackCodes;
   if (tracks.includes('EN') && !tracks.includes('FR')) {
     // Piste EN stricte : marquées EN (language ou trackId)
@@ -141,8 +150,8 @@ export function classTrackWhere(scope: AccessScope) {
  * - scope mono-piste EN → élève ayant une classe EN (l'une ou l'autre relation)
  * - scope mono-piste FR → élève n'ayant AUCUNE classe EN (FR + non marqués)
  */
-export function studentTrackRelation(scope: AccessScope) {
-  if (!scope.resolved || scope.allTracks) return undefined;
+export function studentTrackRelation(scope: AccessScope | null | undefined) {
+  if (!scope || !scope.resolved || scope.allTracks) return undefined;
   const trackIds = scope.trackIds;
   const enClass: any = { language: 'EN' };
   if (trackIds.length > 0) {
@@ -171,7 +180,8 @@ export function studentTrackRelation(scope: AccessScope) {
  * Fusionne le scope dans un where existant (niveau + piste élèves).
  * Utilisé par les listes d'élèves / classes / entités level-scopées.
  */
-export function scopedWhere(scope: AccessScope, base: any): any {
+export function scopedWhere(scope: AccessScope | null | undefined, base: any): any {
+  if (!scope) return { ...base };
   const out: any = { ...base };
   const lvl = levelWhere(scope);
   if (lvl) {
@@ -197,8 +207,8 @@ export function scopedWhere(scope: AccessScope, base: any): any {
  * Filtre piste sur les paiements (Payment.academicTrackId dénormalisé).
  * NULL = piste indéterminée → exonéré du filtre piste (données historiques).
  */
-export function paymentTrackWhere(scope: AccessScope) {
-  if (!scope.resolved || scope.allTracks) return undefined;
+export function paymentTrackWhere(scope: AccessScope | null | undefined) {
+  if (!scope || !scope.resolved || scope.allTracks) return undefined;
   if (scope.trackCodes.includes('EN') && !scope.trackCodes.includes('FR')) {
     return { OR: [{ academicTrackId: { in: scope.trackIds } }, { academicTrackId: null }] };
   }
@@ -214,8 +224,8 @@ export function paymentTrackWhere(scope: AccessScope) {
  * Filtre piste sur les entités possédant une colonne `language` propre
  * (Subject, Exam, ReportCard…) — NULL = héritage FR.
  */
-export function languageColumnTrackWhere(scope: AccessScope) {
-  if (!scope.resolved || scope.allTracks) return undefined;
+export function languageColumnTrackWhere(scope: AccessScope | null | undefined) {
+  if (!scope || !scope.resolved || scope.allTracks) return undefined;
   if (scope.trackCodes.includes('EN') && !scope.trackCodes.includes('FR')) {
     return { language: 'EN' };
   }
@@ -228,11 +238,11 @@ export function languageColumnTrackWhere(scope: AccessScope) {
  * niveau de l'utilisateur (anti-IDOR). Renvoie 403 sinon.
  */
 export function assertLevelInScope(
-  scope: AccessScope,
+  scope: AccessScope | null | undefined,
   record: { schoolLevelId?: string | null } | null | undefined,
   what = 'cette ressource',
 ): void {
-  if (!scope.resolved || scope.allLevels || !record?.schoolLevelId) return;
+  if (!scope || !scope.resolved || scope.allLevels || !record?.schoolLevelId) return;
   if (!scope.levelIds.includes(record.schoolLevelId)) {
     throw new ForbiddenException(`Accès refusé : ${what} n'appartient pas à votre niveau scolaire.`);
   }
@@ -243,11 +253,11 @@ export function assertLevelInScope(
  * scope piste. La classe doit être incluse dans la requête Prisma.
  */
 export function assertClassTrackInScope(
-  scope: AccessScope,
+  scope: AccessScope | null | undefined,
   record: { language?: string | null; academicTrackId?: string | null } | null | undefined,
   what = 'cette ressource',
 ): void {
-  if (!scope.resolved || scope.allTracks || !record) return;
+  if (!scope || !scope.resolved || scope.allTracks || !record) return;
   const lang = record.language || null;
   // Détermination de la piste effective : marquage explicite sinon héritage FR
   let isEN: boolean;

@@ -381,9 +381,13 @@ export class StudentsPrismaService {
       academicYearId?: string;
       schoolLevelId?: string;
       currentAcademicYearId?: string;
-    }
+    },
+    scope?: AccessScope | null,
   ) {
-    await this.findStudentById(id, tenantId);
+    // ⭐ FIX 2026-09-23 : transmettre le scope de l'utilisateur (anti-IDOR)
+    //    au findStudentById. Avant, l'absence de scope faisait crasher
+    //    assertLevelInScope (« reading 'resolved' ») → 500 sur toute modification.
+    await this.findStudentById(id, tenantId, scope);
     // Strippage des champs non-modifiables manuellement (matricule généré par le service dédié)
     const { matricule: _m, enrollmentYear: _e, ...safeData } = data as typeof data & { matricule?: string; enrollmentYear?: number };
 
@@ -413,8 +417,15 @@ export class StudentsPrismaService {
    *    Avant, le reason collecté par l'UI était ignoré et l'archive n'avait
    *    aucune trace dans studentAuditLog.
    */
-  async archiveStudent(id: string, tenantId: string, reason?: string, userId?: string) {
-    const student = await this.findStudentById(id, tenantId);
+  async archiveStudent(
+    id: string,
+    tenantId: string,
+    reason?: string,
+    userId?: string,
+    scope?: AccessScope | null,
+  ) {
+    // ⭐ FIX 2026-09-23 : scope transmis (anti-IDOR + crash undefined)
+    const student = await this.findStudentById(id, tenantId, scope);
     const previousStatus = student.status;
     const now = new Date();
 
@@ -457,14 +468,15 @@ export class StudentsPrismaService {
     classId: string;
     enrollmentType: 'NEW' | 'REPEAT' | 'TRANSFER';
     enrollmentDate: Date;
-  }) {
+  }, scope?: AccessScope | null) {
     // Vérifier que le tenant peut inscrire un élève (plan d'abonnement)
     // L'élève existe déjà mais son enrollment pour l'année active peut faire
     // grandir le nombre d'élèves comptés (currentAcademicYearId non mis à jour ici).
     await this.assertCanEnroll(data.tenantId);
 
     // Vérifier que l'élève existe
-    const student = await this.findStudentById(data.studentId, data.tenantId);
+    // ⭐ FIX 2026-09-23 : scope transmis (anti-IDOR + crash undefined)
+    const student = await this.findStudentById(data.studentId, data.tenantId, scope);
 
     // Vérifier que la classe existe
     const classExists = await this.prisma.class.findFirst({
@@ -837,9 +849,11 @@ export class StudentsPrismaService {
     studentId: string,
     tenantId: string,
     photoDataUrl: string,
+    scope?: AccessScope | null,
   ): Promise<any> {
     // Vérifier que l'élève existe
-    await this.findStudentById(studentId, tenantId);
+    // ⭐ FIX 2026-09-23 : scope transmis (anti-IDOR + crash undefined)
+    await this.findStudentById(studentId, tenantId, scope);
 
     // Valider le format data URL
     const trimmed = (photoDataUrl ?? '').trim();

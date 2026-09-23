@@ -131,7 +131,7 @@ async function proxyRequest(
     });
 
     const data = await parseBackendJson(response);
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error: any) {
     console.error(`[platform/proxy] ${method} error:`, error?.message);
     return NextResponse.json(

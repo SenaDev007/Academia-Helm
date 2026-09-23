@@ -14,7 +14,7 @@ export async function GET(
     const headers = await getProxyAuthHeaders(request);
     const response = await fetchWithTimeout(normalizeApiUrl(`${API_URL}/finance/expenses/categories/${id}`), { headers , cache: 'no-store' }, 15000);
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (e) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
@@ -34,7 +34,7 @@ export async function PUT(
       body: JSON.stringify(body),
     });
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (e) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
@@ -53,7 +53,7 @@ export async function DELETE(
       cache: 'no-store',
     }, 15000);
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (e) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

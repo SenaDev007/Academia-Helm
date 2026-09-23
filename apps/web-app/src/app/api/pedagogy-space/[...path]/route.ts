@@ -89,7 +89,7 @@ async function proxy(request: NextRequest, method: string) {
       path.startsWith('/weekly-record-catalogue');
     const cacheControl = isVolatilePath
       ? 'no-store, max-age=0'
-      : 'public, s-maxage=60, stale-while-revalidate=300';
+      : 'private, no-store';
 
     return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': cacheControl } });
   } catch (error: unknown) {

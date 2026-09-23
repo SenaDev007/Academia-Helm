@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     const response = await fetchWithTimeout(url, { headers, cache: 'no-store' }, 15000);
 
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error fetching invoices:', error);
     return NextResponse.json({ error: 'Failed to fetch invoices' }, { status: 500 });

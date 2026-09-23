@@ -26,7 +26,7 @@ export async function GET(
     const headers = await getAuthHeaders(request);
     const response = await fetchWithTimeout(`${API_BASE_URL}/settings/academic-years/${id}/stats`, { headers , cache: 'no-store' }, 15000);
     const data = await response.json();
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error fetching academic year stats:', error);
     return NextResponse.json({ error: 'Failed to fetch academic year stats' }, { status: 500 });

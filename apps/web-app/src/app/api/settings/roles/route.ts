@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     if (fromQuery) url.search = fromQuery;
     const response = await fetchWithTimeout(normalizeApiUrl(url.toString()), { headers, cache: 'no-store' }, 15000);
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error fetching roles:', error);
     return NextResponse.json({ error: 'Failed to fetch roles' }, { status: 500 });
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(body),
     }, 30000);
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error creating role:', error);
     return NextResponse.json({ error: 'Failed to create role' }, { status: 500 });

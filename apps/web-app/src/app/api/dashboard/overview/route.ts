@@ -312,7 +312,7 @@ export async function GET(request: NextRequest) {
       //    stale-while-revalidate=300 : sert le cache périmé pendant 5min pendant
       //    qu'on revalide en arrière-plan → navigations suivantes = 0ms
       headers: {
-        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
+        'Cache-Control': 'private, no-store',
       },
     });
   } catch (error) {

@@ -16,7 +16,7 @@ export async function GET(
     const headers = await getProxyAuthHeaders(request);
     const response = await fetchWithTimeout(normalizeApiUrl(url.toString()), { headers , cache: 'no-store' }, 15000);
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error fetching student documents:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -36,7 +36,7 @@ export async function POST(
       { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     );
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error uploading student document:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

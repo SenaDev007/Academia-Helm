@@ -36,7 +36,7 @@ export async function GET(
     }, 15000);
 
     const data = await response.json();
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error fetching role:', error);
     return NextResponse.json({ error: 'Failed to fetch role' }, { status: 500 });
@@ -60,7 +60,7 @@ export async function PUT(
     }, 15000);
 
     const data = await response.json();
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error updating role:', error);
     return NextResponse.json({ error: 'Failed to update role' }, { status: 500 });
@@ -82,7 +82,7 @@ export async function DELETE(
     }, 15000);
 
     const data = await response.json();
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error deleting role:', error);
     return NextResponse.json({ error: 'Failed to delete role' }, { status: 500 });

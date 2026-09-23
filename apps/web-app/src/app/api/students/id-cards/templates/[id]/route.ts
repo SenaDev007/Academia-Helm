@@ -28,7 +28,7 @@ export async function GET(
       { headers },
     15000);
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('[BFF] Error fetching card template:', error);
     return NextResponse.json(
@@ -55,7 +55,7 @@ export async function PUT(
       },
     30000);
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('[BFF] Error updating card template:', error);
     return NextResponse.json(
@@ -77,7 +77,7 @@ export async function DELETE(
       { method: 'DELETE', headers },
     30000);
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('[BFF] Error deleting card template:', error);
     return NextResponse.json(

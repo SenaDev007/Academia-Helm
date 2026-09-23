@@ -30,7 +30,7 @@ export async function GET(
 
     const data = await response.json();
     if (!response.ok) {
-      return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+      return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
     }
     return NextResponse.json(data);
   } catch (error: any) {

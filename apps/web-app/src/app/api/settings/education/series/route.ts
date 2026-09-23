@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
     const response = await fetchWithTimeout(url.toString(), { method: 'GET', headers, cache: 'no-store' }, 15000);
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error listing education series:', error);
     return NextResponse.json({ error: 'Failed to list series' }, { status: 500 });
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(body),
     }, 30000);
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error creating education series:', error);
     return NextResponse.json({ error: 'Failed to create series' }, { status: 500 });

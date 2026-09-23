@@ -17,7 +17,7 @@ export async function GET(
       { headers }
     , 15000);
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error fetching ID card history:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

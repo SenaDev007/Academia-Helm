@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
             schoolLevelId: schoolLevelId || data.schoolLevelId,
           }, {
             status: 200,
-            headers: { 'Cache-Control': 'public, s-maxage=120, stale-while-revalidate=300' },
+            headers: { 'Cache-Control': 'private, no-store' },
           });
         }
       }

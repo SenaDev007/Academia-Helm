@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
 
     const data = await response.json();
     console.log('[Cron Trigger] Daily check result:', data);
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error: any) {
     console.error('[Cron Trigger] Error:', error);
     return NextResponse.json(

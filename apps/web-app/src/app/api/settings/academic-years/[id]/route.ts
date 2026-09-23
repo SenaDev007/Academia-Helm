@@ -51,7 +51,7 @@ export async function GET(
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => ({ error: 'Invalid response' }))
       : { error: await response.text() || 'Erreur serveur' };
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error fetching academic year:', error);
     return NextResponse.json({ error: 'Failed to fetch academic year' }, { status: 500 });
@@ -88,7 +88,7 @@ export async function PUT(
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => ({ error: 'Invalid response' }))
       : { error: await response.text() || 'Erreur serveur' };
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error updating academic year:', error);
     return NextResponse.json({ error: 'Failed to update academic year' }, { status: 500 });
@@ -111,7 +111,7 @@ export async function DELETE(
     const data = contentType.includes('application/json')
       ? await response.json().catch(() => ({ error: 'Invalid response' }))
       : { error: await response.text() || 'Erreur serveur' };
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error deleting academic year:', error);
     return NextResponse.json({ error: 'Failed to delete academic year' }, { status: 500 });

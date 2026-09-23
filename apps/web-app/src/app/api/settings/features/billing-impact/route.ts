@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     if (fromQuery) url.searchParams.set('tenant_id', fromQuery);
     const response = await fetchWithTimeout(normalizeApiUrl(url.toString()), { headers }, 15000);
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error fetching billing impact:', error);
     return NextResponse.json({ error: 'Failed to fetch billing impact' }, { status: 500 });

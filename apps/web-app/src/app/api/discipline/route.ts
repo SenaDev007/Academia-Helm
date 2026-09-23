@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     const headers = await getProxyAuthHeaders(request);
     const response = await fetch(normalizeApiUrl(url.toString()), { headers });
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error fetching disciplinary actions:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       cache: 'no-store',
     }, 15000);
     const data = await response.json().catch(() => ({}));
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error creating disciplinary action:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

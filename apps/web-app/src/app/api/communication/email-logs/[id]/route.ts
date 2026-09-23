@@ -27,7 +27,7 @@ export async function GET(
     });
 
     const data = await response.json();
-    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300' } });
+    return NextResponse.json(data, { status: response.status, headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {
     console.error('Error fetching email log detail:', error);
     return NextResponse.json({ error: 'Failed to fetch email log' }, { status: 500 });

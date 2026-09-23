@@ -11580,3 +11580,24 @@ Stage Summary:
 - ✅ Déconnexion hors ligne fiabilisée : /login, /portal, / pré-cachées en anonyme (chunks + HTML)
 - ✅ Message d'erreur honnête + action utile en attendant le re-pré-cache
 - ⏳ Validation E2E production après déploiement (SW v4.8.0 actif + pré-cache + navigation offline inter-modules + logout)
+
+---
+Task ID: offline-v48 (validation)
+Agent: Super Z (principal)
+Task: Validation E2E production du correctif v4.8.0 (navigation offline inter-modules + déconnexion)
+
+Work Log:
+- DÉPLOIEMENT : commit bfb692ccd → SW v4.8.0 servi en production ~90 s après le push (build Turbopack)
+- TRANSITION : reload sous v4.8.0 → epoch stockée (ah-meta, 20 chunks hachés) + flags invalidés + re-pré-cache complet relancé automatiquement (terminé < 45 s : 122 pages, 120 RSC, 294 chunks immuables, 406 entrées API, ah-meta:1)
+- E2E OFFLINE (scénario exact du terrain, réseau coupé via emulation navigateur) :
+  * Élèves & Scolarité → rendu complet depuis IndexedDB, ZÉRO « Connexion instable » ✅
+  * Personnel RH & Paie → ✅ | Finances & Économat → ✅ | Examens Notes & Bulletins → ✅ | Organisation Pédagogique → ✅
+  * Sous-onglets internes → contenu rendu ✅
+  * DÉCONNEXION hors ligne → POST logout best-effort avalé + redirection / → landing page ENTIERE rendue hors ligne ✅
+  * Aucune page error JS pendant toutes les navigations offline (seule anomalie console = SW 404 partytown analytics, préexistante, sans impact)
+- Retour en ligne restauré, console vérifiée
+
+Stage Summary:
+- ✅ v4.8.0 déployé et validé E2E en production : navigation inter-modules hors ligne + déconnexion réparées
+- ✅ Le trou de déploiement est refermé structurellement : tout futur déploiement (avec ou sans bump sw.js) déclenchera le re-pré-cache via l'époque de build (démontré au harnais, message BUILD_EPOCH_CHANGED)
+- ⚠️ Pour les device actuellement sur le terrain : OUVRIR l'app UNE FOIS en ligne (~2-3 min en arrière-plan, indicateur « Préparation hors ligne ») AVANT de couper la connexion — un device déjà hors ligne ne peut pas télécharger les nouveaux chunks

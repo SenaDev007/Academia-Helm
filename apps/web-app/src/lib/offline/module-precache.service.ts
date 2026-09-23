@@ -67,6 +67,12 @@ export {
 } from './offline-readiness';
 export type { OfflineReadinessState, OfflineReadinessPhase } from './offline-readiness';
 
+/** ⭐ v4.8.0 — Pages PUBLIQUES pré-cachées en mode ANONYME (credentials omit
+ *    côté SW) : connecté, le middleware les redirige (302) et une réponse
+ *    redirigée n'est jamais cachée → sans cela, la déconnexion hors ligne
+ *    retomberait sur un HTML périmé sans ses chunks. */
+const PUBLIC_ROUTES: string[] = ['/login', '/portal', '/'];
+
 const MODULE_ROUTES: string[] = [
   // ─── Racine + portails par rôle ───
   '/app',
@@ -307,6 +313,41 @@ const PRECACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 h
  */
 const PRECACHE_SW_VERSION_KEY = 'academia_helm_precache_sw_version';
 
+/** ⭐ v4.8.0 — Epoch de build au moment du dernier pré-cache.
+ *    Un déploiement Vercel sans modification de sw.js ne déclenche NI mise à
+ *    jour du SW NI SW_ACTIVATED → le flag 24 h restait « frais » alors que
+ *    les chunks du NOUVEAU build n'étaient jamais pré-cachés → navigation
+ *    hors ligne inter-modules = ChunkLoadError = « Connexion instable ».
+ *    Le SW hache désormais l'ensemble des chunks du shell servi en ligne
+ *    (epoch) ; le flag n'est valable QUE si l'epoch n'a pas changé.
+ */
+const PRECACHE_EPOCH_KEY = 'ah_precache_build_epoch';
+
+/** Epoch enregistrée lors du dernier pré-cache réussi (null si absente). */
+function getStoredPrecacheEpoch(): string | null {
+  try {
+    return localStorage.getItem(PRECACHE_EPOCH_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredPrecacheEpoch(epoch: string): void {
+  try {
+    localStorage.setItem(PRECACHE_EPOCH_KEY, epoch);
+  } catch {
+    /* localStorage indisponible — l'epoch sera redemandée au prochain run */
+  }
+}
+
+function clearStoredPrecacheEpoch(): void {
+  try {
+    localStorage.removeItem(PRECACHE_EPOCH_KEY);
+  } catch {
+    /* noop */
+  }
+}
+
 /** Retourne true si un pré-cache a été fait il y a moins de 24 h. */
 function isPrecacheFresh(): boolean {
   try {
@@ -369,6 +410,51 @@ function getActiveSwVersion(timeoutMs = 2000): Promise<string | null> {
   });
 }
 
+/**
+ * ⭐ v4.8.0 — Epoch de build courante, demandée au SW (réponse BUILD_EPOCH,
+ * hash de l'ensemble des chunks du dernier shell frais servi en ligne).
+ * Null si le SW n'a encore jamais servi de shell frais depuis v4.8.0 (ou ne
+ * répond pas) → l'appelant IGNORE ce critère (comportement v4.7).
+ */
+function getSwBuildEpoch(timeoutMs = 2000): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
+      resolve(null);
+      return;
+    }
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener('message', onMessage);
+    };
+    const done = (epoch: string | null) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(epoch);
+    };
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; epoch?: string | null } | null;
+      if (data?.type === 'BUILD_EPOCH') {
+        done(typeof data.epoch === 'string' && data.epoch ? data.epoch : null);
+      }
+    };
+    const timer = setTimeout(() => done(null), timeoutMs);
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    navigator.serviceWorker
+      .ready
+      .then((registration) => {
+        const sw = registration.active;
+        if (!sw) {
+          done(null);
+          return;
+        }
+        sw.postMessage({ type: 'GET_BUILD_EPOCH' });
+      })
+      .catch(() => done(null));
+  });
+}
+
 let swActivatedListenerBound = false;
 
 /**
@@ -376,6 +462,11 @@ let swActivatedListenerBound = false;
  *    bump, les caches ah-pages-<version> sont purgés → on invalide le flag
  *    24 h pour que le pré-cache soit refait dès que possible (montage suivant
  *    ou retour du réseau). À appeler une fois au montage de l'app.
+ *    ⭐ v4.8.0 — Écoute AUSSI BUILD_EPOCH_CHANGED : déploiement Vercel détecté
+ *    par le SW (epoch des chunks du shell) alors que sw.js n'a PAS changé →
+ *    même traitement que SW_ACTIVATED (invalidation + re-pré-cache immédiat,
+ *    sans attendre le TTL 24 h) — referme le trou « Connexion instable » à
+ *    la navigation hors ligne entre modules après un déploiement.
  */
 export function initModulePrecacheInvalidation(): void {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
@@ -388,6 +479,17 @@ export function initModulePrecacheInvalidation(): void {
       // ⭐ v4.1.0 — l'indicateur de préparation repart de zéro : les flags
       //    viennent d'être purgés → un nouveau run va démarrer
       resetOfflineReadiness();
+    }
+    if (event.data?.type === 'BUILD_EPOCH_CHANGED') {
+      console.log(
+        `[ModulePrecache] Build changé (epoch ${event.data.previous} → ${event.data.epoch}) ` +
+          '— re-pré-cache immédiat (déploiement sans bump de sw.js)',
+      );
+      invalidateModulePrecache();
+      resetOfflineReadiness();
+      // Re-pré-cache immédiat en arrière-plan (se garde lui-même si offline,
+      // concurrent, ou déjà en cours via inFlightRun)
+      void precacheAllModules().catch(() => {});
     }
   });
 }
@@ -426,11 +528,29 @@ export async function precacheAllModules(
   //    sont purgés à chaque nouvelle version du SW ; un flag « frais » d'une
   //    version précédente ne vaut plus rien. Si le SW ne répond pas (null),
   //    on re-pré-cache (par sécurité — coût : quelques MB refetchés).
+  //    ⭐ v4.8.0 — ET pour l'ÉPOCH DE BUILD courante : un déploiement Vercel
+  //    sans bump de sw.js change les chunks sans purger le flag 24 h → on
+  //    re-pré-cache dès que l'epoch diffère (null = SW pas encore aligné →
+  //    critère ignoré, comportement v4.7).
   const activeVersion = await getActiveSwVersion();
   const storedVersion = getStoredPrecacheVersion();
-  if (isPrecacheFresh() && activeVersion && storedVersion === activeVersion) {
-    console.log(`[ModulePrecache] Fresh (<24 h, SW ${storedVersion}) — skipping`);
+  const swEpoch = await getSwBuildEpoch();
+  const storedEpoch = getStoredPrecacheEpoch();
+  const epochChanged = swEpoch !== null && storedEpoch !== null && swEpoch !== storedEpoch;
+  if (
+    isPrecacheFresh()
+    && activeVersion
+    && storedVersion === activeVersion
+    && !epochChanged
+  ) {
+    console.log(`[ModulePrecache] Fresh (<24 h, SW ${storedVersion}, epoch ${swEpoch ?? 'n/a'}) — skipping`);
     return;
+  }
+  if (epochChanged) {
+    console.warn(
+      `[ModulePrecache] Build changé depuis le dernier pré-cache ` +
+        `(epoch ${storedEpoch} → ${swEpoch}) — re-pré-cache forcé`,
+    );
   }
 
   // ⭐ v3.4.0 — Garde de concurrence : le layout appelle run() au montage ET
@@ -534,6 +654,17 @@ async function runPrecache(
       pending = failed;
     }
 
+    // ⭐ v4.8.0 — ROUTES PUBLIQUES en mode ANONYME (credentials omit côté SW) :
+    //    /login, /portal, / — connecté, le middleware les REDIRIGE (302) et
+    //    une réponse redirigée n'est jamais cachée → sans cela, la
+    //    DÉCONNEXION hors ligne retomberait sur un HTML périmé sans chunks.
+    //    Hors du décompte du flag (best-effort, ACK non attendu).
+    try {
+      for (const route of PUBLIC_ROUTES) {
+        sw.postMessage({ type: 'PRECACHE_MODULE', url: buildRouteUrl(route, tenantQuery), anonymous: true });
+      }
+    } catch { /* best-effort */ }
+
     // ⭐ v3.4.0 — Bilan RÉEL (ACK-based) : le flag n'est posé que si ≥ 90 %
     const okCount = routeUrls.filter((url) => results.get(url)).length;
     const successRate = okCount / total;
@@ -550,6 +681,16 @@ async function runPrecache(
           localStorage.setItem(PRECACHE_SW_VERSION_KEY, activeVersion);
         } else {
           localStorage.removeItem(PRECACHE_SW_VERSION_KEY); // version inconnue → re-pré-cache au prochain montage
+        }
+        // ⭐ v4.8.0 — Epoch de build du run : le pré-cache vient d'écrire les
+        //    chunks du build COURANT → au prochain montage, une epoch
+        //    différente (nouveau déploiement sans bump sw.js) forcera un
+        //    re-pré-cache même si le flag 24 h est encore « frais ».
+        const runEpoch = await getSwBuildEpoch();
+        if (runEpoch) {
+          setStoredPrecacheEpoch(runEpoch);
+        } else {
+          clearStoredPrecacheEpoch(); // epoch inconnue → critère ignoré au prochain montage
         }
         localStorage.removeItem('academia_helm_modules_precached'); // legacy
       } catch {
@@ -632,6 +773,7 @@ export function invalidateModulePrecache(): void {
   try {
     localStorage.removeItem(PRECACHE_TS_KEY);
     localStorage.removeItem(PRECACHE_SW_VERSION_KEY); // ⭐ v3.3.1
+    localStorage.removeItem(PRECACHE_EPOCH_KEY); // ⭐ v4.8.0 — epoch invalide aussi
     localStorage.removeItem('academia_helm_modules_precached'); // legacy
     localStorage.removeItem(API_PRECACHE_TS_KEY); // ⭐ v3.5.0 — données KPI aussi
   } catch {

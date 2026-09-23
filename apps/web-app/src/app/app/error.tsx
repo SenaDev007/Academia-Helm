@@ -49,6 +49,13 @@ export default function AppModuleError({
   // Lecture pure au premier rendu (pas de setState dans un effet)
   const [autoReloadBlocked] = useState(hasExhaustedAutoReloads);
 
+  // ⭐ v4.8.0 — Hors ligne : le rechargement ne peut PAS récupérer le chunk
+  //    manquant (aucun réseau) → message honnête et action utile (retour au
+  //    tableau de bord) au lieu d'un « rechargement automatique » mensonger.
+  const [isOffline] = useState(
+    () => typeof navigator !== 'undefined' && navigator.onLine === false,
+  );
+
   useEffect(() => {
     console.error('[Module Error Boundary]', error);
   }, [error]);
@@ -99,28 +106,54 @@ export default function AppModuleError({
             <WifiOff className="w-6 h-6 text-amber-600" />
           </div>
           <h2 className="text-lg font-bold text-slate-900 mb-2">Connexion instable</h2>
-          <p className="text-sm text-slate-600 mb-2">
-            Ce module n'a pas pu être chargé complètement (connexion instable ou
-            mise à jour récente). Vos données enregistrées sont conservées.
-          </p>
-          <p className="text-xs text-slate-500 mb-4">
-            {autoReloadBlocked
-              ? 'Rechargement automatique suspendu (anti-boucle).'
-              : 'Rechargement automatique en cours…'}
-          </p>
+          {isOffline ? (
+            <>
+              <p className="text-sm text-slate-600 mb-2">
+                Vous êtes hors ligne et ce module n&apos;a pas encore été téléchargé
+                pour un usage hors ligne. Il sera téléchargé automatiquement lors de
+                votre prochaine connexion.
+              </p>
+              <p className="text-xs text-slate-500 mb-4">
+                Vos données enregistrées sont conservées — les modules déjà
+                téléchargés restent accessibles depuis le menu.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-slate-600 mb-2">
+                Ce module n'a pas pu être chargé complètement (connexion instable ou
+                mise à jour récente). Vos données enregistrées sont conservées.
+              </p>
+              <p className="text-xs text-slate-500 mb-4">
+                {autoReloadBlocked
+                  ? 'Rechargement automatique suspendu (anti-boucle).'
+                  : 'Rechargement automatique en cours…'}
+              </p>
+            </>
+          )}
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <button
-              onClick={forceChunkRecoveryReload}
-              className="inline-flex items-center justify-center gap-2 bg-[#1A2BA6] text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:opacity-90 transition"
-            >
-              <RefreshCw className="h-4 w-4" /> Recharger
-            </button>
+            {!isOffline && (
+              <button
+                onClick={forceChunkRecoveryReload}
+                className="inline-flex items-center justify-center gap-2 bg-[#1A2BA6] text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:opacity-90 transition"
+              >
+                <RefreshCw className="h-4 w-4" /> Recharger
+              </button>
+            )}
             <button
               onClick={reset}
               className="inline-flex items-center justify-center gap-2 bg-slate-100 text-slate-700 px-5 py-2.5 rounded-lg text-sm font-semibold hover:bg-slate-200 transition"
             >
               Réessayer
             </button>
+            {isOffline && (
+              <Link
+                href="/app"
+                className="inline-flex items-center justify-center gap-2 bg-[#1A2BA6] text-white px-5 py-2.5 rounded-lg text-sm font-semibold hover:opacity-90 transition"
+              >
+                <ArrowLeft className="h-4 w-4" /> Tableau de bord (hors ligne)
+              </Link>
+            )}
           </div>
         </div>
       </div>

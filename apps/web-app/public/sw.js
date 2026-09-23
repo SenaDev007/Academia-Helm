@@ -183,6 +183,32 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
+// v4.8.0 : (retour terrain 23/09/2026 — « dès qu'on quitte le module courant
+//    en mode hors ligne → page "Connexion instable" ; impossible de naviguer
+//    entre modules ou de se déconnecter offline ») — TROU DE DÉPLOIEMENT :
+//    un déploiement Vercel change les hashes des chunks /_next/static/, mais
+//    si sw.js N'EST PAS modifié (correctifs applicatifs seuls), le SW ne se
+//    met pas à jour → SW_ACTIVATED ne part PAS → le flag 24 h du pré-cache
+//    reste « frais » → les chunks du NOUVEAU build ne sont JAMAIS re-pré-cachés.
+//    L'utilisateur recharge (nouveau build), perd le réseau, navigue vers un
+//    module non visité en ligne depuis le déploiement → ChunkLoadError →
+//    error boundary « Connexion instable ». Le module COURANT continue de
+//    fonctionner (chunks déjà en mémoire) — exactement le symptôme terrain.
+//    (1) ÉPOCH DE BUILD : à chaque HTML frais du shell /app servi en ligne,
+//        le SW hache l'ensemble des URLs de chunks référencées (déterministe
+//        par build). Si l'epoch CHANGE sans que sw.js ait changé →
+//        BUILD_EPOCH_CHANGED diffusé aux clients → le client invalide son
+//        flag 24 h et relance immédiatement le pré-cache complet des 121
+//        routes (HTML + chunks + crawl + RSC) — le trou se referme en
+//        quelques minutes au lieu d'attendre le TTL 24 h.
+//    (2) Le client compare AUSSI l'epoch au montage (GET_BUILD_EPOCH) : un
+//        message manqué (onglet fermé au moment du déploiement) est rattrapé.
+//    (3) Routes PUBLIQUES (/login, /portal, /) pré-cachées en mode ANONYME
+//        (credentials omit) : connecté, le middleware les redirige → jamais
+//        cachées en mode authentifié → la DÉCONNEXION hors ligne retombait
+//        sur un HTML sans chunks récents.
+//    (4) Bump v4.8.0 → SW_ACTIVATED → tous les device existants re-pré-cachent
+//        immédiatement les chunks du build courant (bouche le trou actuel).
 // v4.7.0 : (retour terrain mobile 22/09/2026 — « la fiche sauvegardée sur
 //    smartphone n'apparaît pas, puis revient après plusieurs rechargements »)
 //    La FILE DE MUTATIONS du SW n'était rejouée que par Background Sync
@@ -228,7 +254,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.7.0';
+const SW_VERSION = 'v4.8.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -1951,6 +1977,71 @@ async function shellWithRecoveryScript(shellResponse) {
   }
 }
 
+// ─── ⭐ v4.8.0 — ÉPOCH DE BUILD (détection des déploiements sans bump SW) ──
+// Un déploiement Vercel change les hashes des chunks. Si sw.js est inchangé,
+// le SW ne se met pas à jour → SW_ACTIVATED ne part pas → le flag 24 h du
+// pré-cache client reste « frais » → les chunks du nouveau build ne sont
+// jamais pré-cachés → navigation hors ligne vers un module non visité en
+// ligne = ChunkLoadError = « Connexion instable ». L'epoch hache l'ensemble
+// des URLs de chunks du shell (déterministe par build) : tout changement →
+// BUILD_EPOCH_CHANGED → le client relance le pré-cache immédiatement.
+const META_CACHE = 'ah-meta';
+const BUILD_EPOCH_KEY = '/__ah_build_epoch';
+
+/** Hache l'ensemble des URLs /_next/static/ (js|css) d'un HTML — déterministe par build. */
+function computeBuildEpoch(html) {
+  try {
+    const urls = new Set();
+    const re = /(?:src|href)=["']([^"']*\/_next\/static\/[^"']+\.(?:js|css))["']/g;
+    let m;
+    while ((m = re.exec(html)) !== null) urls.add(m[1]);
+    const list = Array.from(urls).sort();
+    if (!list.length) return null;
+    let h1 = 0x811c9dc5;
+    let h2 = 0xdeadbeef;
+    const joined = list.join('|');
+    for (let i = 0; i < joined.length; i++) {
+      h1 = (h1 ^ joined.charCodeAt(i)) >>> 0;
+      h1 = (h1 * 0x01000193) >>> 0;
+      h2 = (h2 ^ (joined.charCodeAt(i) + i)) >>> 0;
+      h2 = (h2 * 0x85ebca6b) >>> 0;
+    }
+    return `${list.length}-${h1.toString(36)}-${h2.toString(36)}`;
+  } catch {
+    return null;
+  }
+}
+
+/** Epoch enregistrée depuis le dernier HTML frais (null si inconnue). */
+async function getStoredBuildEpoch() {
+  try {
+    const cache = await caches.open(META_CACHE);
+    const res = await cache.match(BUILD_EPOCH_KEY);
+    return res ? (await res.text()) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Enregistre l'epoch du build courant ; si elle a CHANGÉ (déploiement Vercel
+ *  sans bump de sw.js), diffuse BUILD_EPOCH_CHANGED aux fenêtres ouvertes. */
+async function trackBuildEpochFromHtml(html) {
+  try {
+    const epoch = computeBuildEpoch(html);
+    if (!epoch) return;
+    const prev = await getStoredBuildEpoch();
+    if (prev === epoch) return;
+    const cache = await caches.open(META_CACHE);
+    await cache.put(BUILD_EPOCH_KEY, new Response(epoch));
+    if (prev !== null) {
+      console.log(`[SW] Build changé (epoch ${prev} → ${epoch}) — re-pré-cache demandé aux clients`);
+      swBroadcast({ type: 'BUILD_EPOCH_CHANGED', epoch, previous: prev });
+    }
+  } catch {
+    /* non-bloquant */
+  }
+}
+
 async function handleAppShellNavigation(request) {
   const cache = await caches.open(PAGE_CACHE);
   const url = new URL(request.url);
@@ -1993,6 +2084,17 @@ async function handleAppShellNavigation(request) {
           const writes = [cache.put(request, copy)];
           if (url.pathname === '/app' || url.pathname === '/app/') {
             writes.push(cache.put(new Request(url.origin + '/app'), copy.clone()));
+            // ⭐ v4.8.0 — ÉPOCH DE BUILD : le shell /app frais vient d'être
+            //    servi en ligne → on hache son ensemble de chunks ; si le build
+            //    a changé depuis le dernier pré-cache (déploiement Vercel sans
+            //    bump de sw.js), on diffuse BUILD_EPOCH_CHANGED → le client
+            //    relance le pré-cache complet (referme le trou « Connexion
+            //    instable » à la navigation hors ligne inter-modules).
+            copy
+              .clone()
+              .text()
+              .then((html) => trackBuildEpochFromHtml(html))
+              .catch(() => {});
           }
           return Promise.all(writes);
         })
@@ -3665,8 +3767,27 @@ self.addEventListener('message', (event) => {
   //    ⭐ v3.4.0 — la source du message est passée au pré-cache pour l'ACK
   //    (PRECACHE_MODULE_RESULT) : le client sait désormais si la route a
   //    RÉELLEMENT été mise en cache (fini le fire-and-forget aveugle).
+  // ⭐ v4.8.0 — Epoch de build courante (hash des chunks du dernier shell
+  //    frais servi en ligne) : le client la compare à celle de son dernier
+  //    pré-cache — différente = déploiement détecté → re-pré-cache immédiat
+  //    (rattrape un BUILD_EPOCH_CHANGED manqué : onglet fermé, SW démarré
+  //    entre-temps, multi-onglets…).
+  if (event.data?.type === 'GET_BUILD_EPOCH') {
+    event.waitUntil((async () => {
+      try {
+        const epoch = await getStoredBuildEpoch();
+        if (event.source && typeof event.source.postMessage === 'function') {
+          event.source.postMessage({ type: 'BUILD_EPOCH', epoch });
+        }
+      } catch { /* non-bloquant */ }
+    })());
+  }
+
+  // ⭐ v4.8.0 — `anonymous` : pages publiques (/login, /portal, /) pré-cachées
+  //    SANS credentials (connecté, le middleware les redirige sinon → jamais
+  //    cachées → déconnexion hors ligne sans page fraîche).
   if (event.data && event.data.type === 'PRECACHE_MODULE' && event.data.url) {
-    event.waitUntil(precacheModule(event.data.url, event.source));
+    event.waitUntil(precacheModule(event.data.url, event.source, event.data.anonymous === true));
   }
 
   // ⭐ v3.5.0 — Origine réelle de l'API (cross-origin axios) : la page
@@ -3858,7 +3979,7 @@ async function precacheApiEndpoints(urls, headers, sourceClient) {
  */
 const CHUNK_REF_REGEX = /immutable\/chunks\/[a-zA-Z0-9][a-zA-Z0-9._-]*\.(?:js|css)/g;
 const CHUNK_CRAWL_DEPTH = 3;
-const CHUNK_CRAWL_MAX_NEW = 80; // par route — anti-dérive 2G/3G
+const CHUNK_CRAWL_MAX_NEW = 120; // par route — anti-dérive 2G/3G (v4.8.0 : 80→120, build Turbopack plus fragmenté)
 const scannedChunks = new Set();
 
 async function crawlChunkGraph(staticCache, seedUrls) {
@@ -3907,7 +4028,13 @@ async function crawlChunkGraph(staticCache, seedUrls) {
   return newCached;
 }
 
-async function precacheModule(routeUrl, sourceClient) {
+/** ⭐ v4.8.0 — Pré-cache d'une route. `anonymous` (credentials omit) pour les
+ *  pages PUBLIQUES (/login, /portal, /) : connecté, le middleware les
+ *  REDIRIGE (302 → /app ou sélection de portail) — une réponse redirigée
+ *  n'est JAMAIS cachée (garde anti-empoisonnement) → ces pages restaient
+ *  sans entrée fraîche → la DÉCONNEXION hors ligne tombait sur un HTML
+ *  périmé sans ses chunks. En anonyme, le middleware sert la page publique 200. */
+async function precacheModule(routeUrl, sourceClient, anonymous) {
   let htmlOk = false;
   let rscOk = false;
   try {
@@ -3915,7 +4042,7 @@ async function precacheModule(routeUrl, sourceClient) {
     const staticCache = await caches.open(IMMUTABLE_CACHE); // ⭐ chunks immuables — cache persistant
 
     const response = await fetchWithTimeout(new Request(routeUrl, {
-      credentials: 'include',
+      credentials: anonymous ? 'omit' : 'include',
       headers: { Accept: 'text/html,application/xhtml+xml' },
     }), 10000);
 
@@ -3934,6 +4061,17 @@ async function precacheModule(routeUrl, sourceClient) {
         headers,
       }));
       htmlOk = true;
+
+      // ⭐ v4.8.0 — ÉPOCH DE BUILD pour les routes SHELL (/app, /promoteur) :
+      //    leur ensemble de chunks est déterministe par build → haché et
+      //    comparé au dernier pré-cache ; changement = déploiement détecté
+      //    (même sans bump de sw.js) → BUILD_EPOCH_CHANGED aux clients.
+      try {
+        const routePath = new URL(routeUrl).pathname;
+        if (routePath === '/app' || routePath === '/app/' || routePath === '/promoteur') {
+          await trackBuildEpochFromHtml(html);
+        }
+      } catch { /* non-bloquant */ }
 
       const chunkUrls = new Set();
 
@@ -3992,7 +4130,7 @@ async function precacheModule(routeUrl, sourceClient) {
       const rscCache = await caches.open(RSC_CACHE);
       const rscUrl = routeUrl + (routeUrl.includes('?') ? '&' : '?') + '_rsc=precache';
       const rscRes = await fetchWithTimeout(new Request(rscUrl, {
-        credentials: 'include',
+        credentials: anonymous ? 'omit' : 'include',
         headers: { RSC: '1', Accept: 'text/x-component' },
       }), 10000);
       if (rscRes && rscRes.ok && !rscRes.redirected) {

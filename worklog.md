@@ -11601,3 +11601,23 @@ Stage Summary:
 - ✅ v4.8.0 déployé et validé E2E en production : navigation inter-modules hors ligne + déconnexion réparées
 - ✅ Le trou de déploiement est refermé structurellement : tout futur déploiement (avec ou sans bump sw.js) déclenchera le re-pré-cache via l'époque de build (démontré au harnais, message BUILD_EPOCH_CHANGED)
 - ⚠️ Pour les device actuellement sur le terrain : OUVRIR l'app UNE FOIS en ligne (~2-3 min en arrière-plan, indicateur « Préparation hors ligne ») AVANT de couper la connexion — un device déjà hors ligne ne peut pas télécharger les nouveaux chunks
+
+---
+Task ID: fix-refresh-2026-09-23
+Agent: Super Z (principal)
+Task: « Après la mise à jour d'un élève, il faut rafraîchir toute l'application pour voir la modification — corriger pour que ce soit automatique »
+
+Work Log:
+- CONFIRMATION utilisateur : le fix modification élève (f9ec87e49) et le fix photo (c8752ab98) fonctionnent en production ; reste le rafraîchissement UI
+- DIAGNOSTIC en chaîne : le flux existait déjà (loadData → invalidateQueries → useEffect sync) mais le refetch retombait sur une réponse CDN-cachée
+- CAUSE RACINE n°1 : /api/students/enrollments (route BFF) renvoyait Cache-Control: public, s-maxage=60, stale-while-revalidate=300 → cache edge CDN (même bug que le fix pédagogie 95b3df2fa du 10/09, jamais généralisé) ; les mutations passent cross-origin en direct → GET post-modification = réponse PRE-modification pendant 60 s + 300 s SWR ; le F5 « marchait » car la requête précédente avait déclenché la revalidation CDN en arrière-plan
+- AUDIT : 210 en-têtes s-maxage sur 145 routes BFF authentifiées (students, finance, settings, dashboard, communication, discipline, onboarding, billing, academic-tracks, all-classes, school-levels, pedagogy-space, platform) — + risque « public » de partage cross-user au CDN (PII élèves, données finance)
+- CAUSE RACINE n°2 (frontend) : invalidation trop étroite (chaque onglet n'invalide que sa clé) + refetchOnMount: false global → onglet remonté avec données > staleTime ne refetchait jamais
+- CORRECTIF 1 (commit 14fcbfcd5) : script scripts hors-dépôt → 210 en-têtes remplacés par 'private, no-store' sur les 145 routes authentifiées ; conservés en cache edge volontairement : /api/public/* + tenants/:id/logo
+- CORRECTIF 2 (commit 6831abf43) : helper partagé useInvalidateStudentsData() (famille complète : enrollments, students, student-statistics, academic-classes, all-classes, academic-years) branché sur loadData() des 3 onglets du module ; refetchOnMount: true sur les 6 hooks de student-queries.ts ; ImportElevesModal onSuccess sans window.location.reload()
+- VÉRIFICATIONS : tsc --noEmit --noResolve sur les 4 fichiers → 0 erreur de syntaxe (TS2307/TS7006 préexistants = artefacts sandbox sans node_modules ; TS18046 ligne 787 préexistant, confirmé par git stash) ; rg post-balayage → seuls /api/public/* et logo conservent s-maxage (3 occurrences restantes = commentaires)
+- Sandbox instable (montage Academia-Helm intermittent) → commandes robustes avec boucle d'attente ; token GitHub du remote périmé → reconfiguré
+
+Stage Summary:
+- ✅ Cause racine corrigée des deux côtés : CDN hors circuit sur les données authentifiées + invalidation famille complète + refetch au remontage
+- ⏳ Validation E2E production après déploiement Vercel (en-tête private, no-store observé + modification visible sans F5)

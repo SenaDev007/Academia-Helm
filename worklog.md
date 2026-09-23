@@ -11560,3 +11560,23 @@ Stage Summary:
 - ✅ Stats du Hero toujours centrées, quelle que soit leur nombre (grille adaptative)
 - ✅ Aucune donnée d'école codée en dur : chaque site n'affiche que SES contenus CMS ; sections non configurées = masquées (pas de faux employés/partenaires/témoignages/stats)
 - ⚠️ Si l'API tarde à déployer : redémarrer api-server sur Railway (webhook auto-deploy capricieux, cf. scripts/railway-deploy.sh)
+
+---
+Task ID: offline-v48
+Agent: Super Z (principal)
+Task: « Offline first : dès qu'on quitte le module/onglet en mode hors ligne → page "Connexion instable" ; navigation inter-modules et déconnexion impossibles offline » — correctif urgent avant démo terrain 8h
+
+Work Log:
+- REPRODUCTION production (headless, compte recette promoteur CSPEB) : état idéal (pré-cache frais) → navigation offline Élèves/RH + déconnexion OK ; le bug se manifeste dans le scénario trou de déploiement
+- DIAGNOSTIC CAUSE RACINE : 4 déploiements depuis v4.7.0b sans toucher sw.js (CMS + éditeur V14) → chunks /_next/static/ changés MAIS SW inchangé → SW_ACTIVATED ne part pas → flag 24 h « frais » → chunks du nouveau build jamais re-pré-cachés → navigation offline vers module non visité en ligne = ChunkLoadError = « Connexion instable » ; le module courant continue (chunks en mémoire) — symptôme exact du terrain
+- CORRECTIF sw.js v4.8.0 : (1) ÉPOCH DE BUILD — hash de l'ensemble des chunks du shell /app servi en ligne (handleAppShellNavigation + precacheModule routes shell /app et /promoteur), stockée ah-meta:/__ah_build_epoch ; changement → BUILD_EPOCH_CHANGED diffusé (swBroadcast) ; (2) handler GET_BUILD_EPOCH (interrogation client) ; (3) PRECACHE_MODULE anonymous (credentials omit) pour routes publiques ; (4) CHUNK_CRAWL_MAX_NEW 80→120 ; (5) bump v4.8.0 → SW_ACTIVATED → re-pré-cache général des device existants
+- CORRECTIF module-precache.service.ts : PRECACHE_EPOCH_KEY localStorage + getSwBuildEpoch() (roundtrip message, timeout 2 s) ; skip condition étendue (flag 24 h valable SEULEMENT si epoch inchangée) ; epoch stockée en fin de run réussi ; listener BUILD_EPOCH_CHANGED → invalidateModulePrecache + resetOfflineReadiness + re-pré-cache immédiat ; PUBLIC_ROUTES [/login, /portal, /] dispatchées en anonyme après les passes ; invalidateModulePrecache purge aussi l'epoch
+- CORRECTIF app/error.tsx : branche isChunkError hors ligne → message honnête (« module pas encore téléchargé pour un usage hors ligne, disponible à la prochaine connexion ») + bouton retour tableau de bord, sans bouton Recharger inutile offline
+- TESTS : nouveau harnais scripts/test_offline_v48_epoch.mjs (21 ✓ : stockage epoch, non-diffusion même build, diffusion déploiement, chunks nouveaux pré-cachés + anciens conservés, GET_BUILD_EPOCH, /login anonyme omit + ACK ok, non-régression include /app, epoch suivie par navigation shell) ; RÉGRESSION COMPLÈTE : v40 71✓ + v41 71✓ + v42 186✓ + v43 22✓ + v44 63✓ — 434 vérifications, 0 échec ; tsc noResolve : 0 erreur de syntaxe
+- COMMIT bfb692ccd poussé → déploiement Vercel déclenché
+
+Stage Summary:
+- ✅ Trou de déploiement refermé structurellement : tout déploiement (avec OU sans bump sw.js) déclenche désormais le re-pré-cache via l'époque de build
+- ✅ Déconnexion hors ligne fiabilisée : /login, /portal, / pré-cachées en anonyme (chunks + HTML)
+- ✅ Message d'erreur honnête + action utile en attendant le re-pré-cache
+- ⏳ Validation E2E production après déploiement (SW v4.8.0 actif + pré-cache + navigation offline inter-modules + logout)

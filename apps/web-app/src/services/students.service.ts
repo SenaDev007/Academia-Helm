@@ -479,6 +479,18 @@ class StudentsService {
   }
 
   /**
+   * ⭐ FIX 2026-09-23 « photo impossible à supprimer » :
+   * Supprime la photo d'un élève (student_photos + Student.photoUrl = null).
+   * Backend : DELETE /students/:id/photo — idempotent (aucune photo → 0 supprimé).
+   */
+  async deletePhoto(studentId: string): Promise<any> {
+    return apiFetch(`${BASE_URL}/${encodeURIComponent(studentId)}/photo`, {
+      method: "DELETE",
+      timeout: 30000,
+    });
+  }
+
+  /**
    * Récupère les inscriptions — avec fallback offline
    */
   async getEnrollments(params?: Record<string, string>): Promise<any> {

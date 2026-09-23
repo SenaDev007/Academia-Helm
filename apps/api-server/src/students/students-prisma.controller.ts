@@ -238,4 +238,21 @@ export class StudentsPrismaController {
   ) {
     return this.studentsService.uploadStudentPhotoDataUrl(id, tenantId, photoDataUrl, user?.scope ?? null);
   }
+
+  /**
+   * DELETE /students/:id/photo
+   * ⭐ FIX 2026-09-23 « photo impossible à supprimer » : l'UI de modification
+   * (onglet Inscription) permettait de retirer la photo du formulaire, mais
+   * AUCUN endpoint de suppression n'existait — l'ancienne photo restait en
+   * base (student_photos + Student.photoUrl) à vie. Ce endpoint supprime
+   * l'enregistrement photo ET remet Student.photoUrl à null.
+   */
+  @Delete(':id/photo')
+  async deletePhoto(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+  ) {
+    return this.studentsService.deleteStudentPhoto(id, tenantId, user?.scope ?? null);
+  }
 }

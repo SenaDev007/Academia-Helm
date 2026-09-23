@@ -1976,13 +1976,33 @@ export default function EnrollmentsContent() {
                   address: data.student.address || undefined,
                   // ⚠️ PAS de photoUrl ici — la photo est uploadée via uploadPhoto (endpoint dédié)
                 });
-                // Upload photo si nouvelle (data URL)
-                // ⭐ FIX : ne pas avaler l'erreur silencieusement. Avant, le
+                // Photo — 3 cas distincts (⭐ FIX 2026-09-23 « photo impossible à supprimer ») :
+                //   1. SUPPRIMÉE par l'utilisateur (bouton ✕ du formulaire → photoUrl '')
+                //      alors qu'une photo existait → DELETE côté serveur.
+                //      Avant : aucun endpoint de suppression n'existait → l'ancienne
+                //      photo restait en base à vie et réapparaissait sans cesse.
+                //   2. NOUVELLE photo (data URL différente de l'existante) → upload.
+                //      Avant : l'upload n'était jamais atteint car le PUT update
+                //      plantait en 500 (TypeError « resolved » — corrigé par ailleurs).
+                //   3. INCHANGÉE (photoUrl === photo d'origine) → RIEN (évite le
+                //      re-upload systématique d'une data URL lourde à chaque sauvegarde).
+                // ⭐ FIX (hérité) : ne pas avaler l'erreur silencieusement. Avant, le
                 //    .catch() masquait les échecs et le toast affichait "succès"
                 //    même si la photo n'était pas sauvegardée.
-                if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {
+                const initialPhoto = editEnrollment.student.photoUrl || '';
+                const submittedPhoto = data.student.photoUrl || '';
+                if (!submittedPhoto && initialPhoto) {
+                  // Cas 1 — suppression
                   try {
-                    await studentsService.uploadPhoto(editEnrollment.student.id, data.student.photoUrl);
+                    await studentsService.deletePhoto(editEnrollment.student.id);
+                  } catch (photoErr: any) {
+                    console.error('deletePhoto failed:', photoErr?.message);
+                    throw new Error(`Échec de la suppression de la photo: ${photoErr?.message || 'Erreur inconnue'}`);
+                  }
+                } else if (submittedPhoto && submittedPhoto.startsWith('data:') && submittedPhoto !== initialPhoto) {
+                  // Cas 2 — nouvelle photo
+                  try {
+                    await studentsService.uploadPhoto(editEnrollment.student.id, submittedPhoto);
                   } catch (photoErr: any) {
                     console.error('uploadPhoto failed:', photoErr?.message);
                     throw new Error(`Échec de l'upload de la photo: ${photoErr?.message || 'Erreur inconnue'}`);

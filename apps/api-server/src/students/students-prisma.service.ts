@@ -913,6 +913,39 @@ export class StudentsPrismaService {
     };
   }
 
+  /**
+   * ⭐ FIX 2026-09-23 « photo impossible à supprimer » :
+   * Supprime la photo d'un élève (enregistrement student_photos + remise à
+   * null de Student.photoUrl). Avant, l'UI permettait de retirer la photo du
+   * formulaire de modification, mais aucun endpoint de suppression n'existait
+   * → l'ancienne photo (mal cadrée, périmée…) restait en base à vie et
+   * réapparaissait à chaque réouverture du dossier.
+   *
+   * Idempotent : ne renvoie PAS 404 si l'élève n'a pas de photo (deleted: 0).
+   */
+  async deleteStudentPhoto(
+    studentId: string,
+    tenantId: string,
+    scope?: AccessScope | null,
+  ) {
+    // ⭐ Anti-IDOR + existence (même garde que l'upload)
+    await this.findStudentById(studentId, tenantId, scope);
+
+    // Supprimer l'enregistrement photo (0 ou 1 ligne — deleteMany idempotent)
+    const deleted = await this.prisma.studentPhoto.deleteMany({
+      where: { studentId, tenantId },
+    });
+
+    // Remettre à null la dénormalisation Student.photoUrl (compatibilité
+    // affichage : listes, fiches, cartes scolaires)
+    await this.prisma.student.update({
+      where: { id: studentId },
+      data: { photoUrl: null },
+    });
+
+    return { success: true, deleted: deleted.count };
+  }
+
   // ============================================================================
   // ⭐ BULK ACTIONS — Actions multiples sur un groupe d'élèves
   // ============================================================================

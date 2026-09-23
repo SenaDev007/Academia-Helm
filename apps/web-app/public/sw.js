@@ -183,6 +183,15 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
+// v4.8.1 : (fix photo élève 23/09/2026) ROUTE_TABLES — /api/students/:id/photo
+//    et /api/students/:id/upload-photo exclus du store 'student' (fallback
+//    api_cache générique). Avant : un DELETE /students/:id/photo hors ligne
+//    était traité comme une suppression D'ÉLÈVE (écriture optimiste
+//    _deleted:true sur l'entité student → l'élève disparaissait des listes
+//    offline) et un POST upload-photo écrivait la base64 entière (jusqu'à
+//    5 Mo) dans le store student. Désormais : aucune écriture optimiste
+//    pour ces deux routes (la file outbox reste la source de vérité, le
+//    replay synchronise le serveur).
 // v4.8.0 : (retour terrain 23/09/2026 — « dès qu'on quitte le module courant
 //    en mode hors ligne → page "Connexion instable" ; impossible de naviguer
 //    entre modules ou de se déconnecter offline ») — TROU DE DÉPLOIEMENT :
@@ -254,7 +263,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.8.0';
+const SW_VERSION = 'v4.8.1';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -2261,7 +2270,7 @@ function fetchWithTimeout(request, timeoutMs) {
    Le premier match gagne ; '/api/.*' non mappé → 'api_cache' générique. */
 const ROUTE_TABLES = [
   // ─── Élèves & Scolarité ───
-  [/^\/api\/students(\/|$)/, 'student', /\/(statistics|stats|transfers|documents|id-cards|admissions|movements|abandons|guardians)(\/|$)/],
+  [/^\/api\/students(\/|$)/, 'student', /\/(statistics|stats|transfers|documents|id-cards|admissions|movements|abandons|guardians|photo)(\/|$)/],
   [/^\/api\/students\/.*\/guardians/, 'guardian'],
   [/^\/api\/all-classes/, 'class'],
   [/^\/api\/classes/, 'class'],

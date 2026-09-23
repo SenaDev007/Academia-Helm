@@ -44,8 +44,7 @@ import { apiFetch } from '@/lib/api/client';
 import { financeService } from '@/services/finance.service';
 import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
-import { useEnrollments, useAcademicClasses, useAcademicYears } from '@/lib/query/student-queries';
-import { useQueryClient } from '@tanstack/react-query';
+import { useEnrollments, useAcademicClasses, useAcademicYears, useInvalidateStudentsData } from '@/lib/query/student-queries';
 // ⭐ PERF (sept. 2026) : précharge les classes PHYSIQUES dans le cache partagé
 //    React Query dès l'ouverture de l'onglet Inscriptions — le modal
 //    d'affectation du flux post-inscription (PostEnrollmentFlow) consomme ce
@@ -316,12 +315,19 @@ export default function EnrollmentsContent() {
   }, [enrollmentsQuery.data, classesQuery.data, yearsQuery.data, enrollmentsQuery.isLoading, classesQuery.isLoading]);
 
   // ⭐ loadData conservé pour les rechargements manuels (après création/modification)
-  const queryClient = useQueryClient();
+  // ⭐ FIX 2026-09-23 « il faut recharger toute l'app pour voir la modification » :
+  //    AVANT : on n'invalide que ['enrollments', yearId] + ['academic-classes', yearId]
+  //    → (1) les autres vues du module (liste Élèves, stats…) gardaient leur
+  //    cache périmé, (2) le refetch tombait sur une réponse CDN-cachée
+  //    (s-maxage=60 côté BFF — corrigé par ailleurs) → l'onglet Inscription
+  //    lui-même affichait l'ANCIENNE donnée après la sauvegarde, et seul un F5
+  //    complet la faisait apparaître.
+  //    MAINTENANT : on invalide TOUTE la famille du module Élèves (helper
+  //    partagé useInvalidateStudentsData) et les routes BFF ne sont plus
+  //    cachées → la modification est visible immédiatement après le toast ✅.
+  const invalidateStudentsData = useInvalidateStudentsData();
   const loadData = async () => {
-    if (!academicYear) return;
-    // Invalider le cache React Query pour forcer un refresh
-    queryClient.invalidateQueries({ queryKey: ['enrollments', academicYear.id] });
-    queryClient.invalidateQueries({ queryKey: ['academic-classes', academicYear.id] });
+    invalidateStudentsData();
   };
 
   // ─── Vérifier quels PDFs existent déjà en DB ─────────────────────────
@@ -2124,8 +2130,11 @@ export default function EnrollmentsContent() {
         open={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
         onSuccess={() => {
-          // Recharger la liste des inscriptions après import
-          window.location.reload();
+          // ⭐ FIX 2026-09-23 : recharger la liste des inscriptions après import
+          //    SANS window.location.reload() (qui détruisait tout l'état UI et
+          //    forçait l'utilisateur à tout réouvrir). L'invalidation de la
+          //    famille suffit — les listes se rafraîchissent en place.
+          loadData();
         }}
       />
 

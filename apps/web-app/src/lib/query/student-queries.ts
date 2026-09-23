@@ -15,7 +15,36 @@
 
 'use client';
 
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useCallback } from 'react';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+
+// ─── Invalidation famille « module Élèves » ──────────────────────────
+/**
+ * ⭐ FIX 2026-09-23 « il faut recharger toute l'app pour voir la modification » :
+ * Invalide TOUTES les familles de requêtes du module Élèves d'un seul coup.
+ *
+ * AVANT : chaque onglet n'invalide que SA propre clé (ex. ['enrollments', yearId])
+ * → les autres vues (liste Élèves, stats, classes…) gardent leur cache React
+ * Query périmé jusqu'à 2-5 min → l'utilisateur devait recharger toute
+ * l'application pour voir sa modification.
+ *
+ * MAINTENANT : une mutation sur un élève (update, photo, classe, guardian,
+ * réinscription, suppression, import…) invalide toute la famille — le ou les
+ * onglets affichés se rechargent immédiatement, et tout onglet remonté plus
+ * tard refetch automatiquement (cf. refetchOnMount ci-dessous).
+ */
+export function useInvalidateStudentsData() {
+  const queryClient = useQueryClient();
+  return useCallback(() => {
+    // Préfixes — invalide toutes les variantes (toutes années, tous params)
+    queryClient.invalidateQueries({ queryKey: ['enrollments'] });
+    queryClient.invalidateQueries({ queryKey: ['students'] }); // couvre aussi studentsKeys.all = ['students', ...]
+    queryClient.invalidateQueries({ queryKey: ['student-statistics'] });
+    queryClient.invalidateQueries({ queryKey: ['academic-classes'] });
+    queryClient.invalidateQueries({ queryKey: ['all-classes'] });
+    queryClient.invalidateQueries({ queryKey: ['academic-years'] });
+  }, [queryClient]);
+}
 
 // ─── Enrollments (inscriptions) ─────────────────────────────────────────
 export function useEnrollments(academicYearId?: string) {
@@ -34,6 +63,12 @@ export function useEnrollments(academicYearId?: string) {
     enabled: !!academicYearId,
     staleTime: 2 * 60 * 1000, // 2 min
     placeholderData: keepPreviousData,
+    // ⭐ FIX 2026-09-23 : le défaut GLOBAL est refetchOnMount: false (perf) →
+    //    un onglet remonté avec des données > staleTime ne refetchait JAMAIS
+    //    et restait périmé « à vie » (jusqu'au F5). Ici on revient au
+    //    comportement React Query standard : donnée périmée au montage → refetch
+    //    (keepPreviousData évite tout flash pendant le refetch).
+    refetchOnMount: true,
   });
 }
 
@@ -54,6 +89,7 @@ export function useAcademicClasses(academicYearId?: string) {
     enabled: !!academicYearId,
     staleTime: 5 * 60 * 1000, // 5 min (les classes changent rarement)
     placeholderData: keepPreviousData,
+    refetchOnMount: true, // ⭐ cf. FIX 2026-09-23 ci-dessus
   });
 }
 
@@ -69,6 +105,7 @@ export function useAcademicYears() {
     },
     staleTime: 30 * 60 * 1000, // 30 min (les années changent très rarement)
     placeholderData: keepPreviousData,
+    refetchOnMount: true, // ⭐ cf. FIX 2026-09-23 (garde 30 min de fraîcheur)
   });
 }
 
@@ -87,6 +124,7 @@ export function useAllClasses(academicYearId?: string) {
     },
     staleTime: 5 * 60 * 1000, // 5 min
     placeholderData: keepPreviousData,
+    refetchOnMount: true, // ⭐ cf. FIX 2026-09-23 ci-dessus
   });
 }
 
@@ -126,6 +164,7 @@ export function useStudents(params: {
     enabled: !!academicYearId,
     staleTime: 2 * 60 * 1000, // 2 min
     placeholderData: keepPreviousData,
+    refetchOnMount: true, // ⭐ cf. FIX 2026-09-23 ci-dessus
   });
 }
 
@@ -144,5 +183,6 @@ export function useStudentStatistics(academicYearId?: string, schoolLevelId?: st
     enabled: !!academicYearId,
     staleTime: 2 * 60 * 1000, // 2 min
     placeholderData: keepPreviousData,
+    refetchOnMount: true, // ⭐ cf. FIX 2026-09-23 ci-dessus
   });
 }

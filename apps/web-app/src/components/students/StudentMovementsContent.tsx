@@ -36,8 +36,7 @@ import { apiFetch } from '@/lib/api/client';
 import { toast } from '@/components/ui/toast';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { useStudents, useEnrollments } from '@/lib/query/student-queries';
-import { useQueryClient } from '@tanstack/react-query';
+import { useStudents, useEnrollments, useInvalidateStudentsData } from '@/lib/query/student-queries';
 
 interface Student {
   id: string;
@@ -282,7 +281,11 @@ export default function StudentMovementsContent() {
     search: searchQuery.trim() || undefined,
   });
   const enrollmentsQuery = useEnrollments(effectiveYearId);
-  const queryClient = useQueryClient();
+  // ⭐ FIX 2026-09-23 : invalidation de TOUTE la famille du module Élèves
+  //    (helper partagé) — après un mouvement/abandon/radiation, les autres
+  //    vues (Inscriptions, Élèves, stats…) se rafraîchissent aussi au lieu
+  //    de servir leur cache périmé jusqu'au F5.
+  const invalidateStudentsData = useInvalidateStudentsData();
 
   // Synchronisation React Query → state local
   useEffect(() => {
@@ -305,8 +308,7 @@ export default function StudentMovementsContent() {
   }, [effectiveYearId, filterLevelId, filterClassId, filterYearId, schoolLevel?.id]);
 
   const loadData = () => {
-    queryClient.invalidateQueries({ queryKey: ['students'] });
-    queryClient.invalidateQueries({ queryKey: ['enrollments', effectiveYearId] });
+    invalidateStudentsData();
   };
 
   /**

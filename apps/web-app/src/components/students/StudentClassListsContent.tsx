@@ -34,8 +34,7 @@ import { studentsService } from '@/services/students.service';
 import { toast } from '@/components/ui/toast';
 import ResponsiveTableWrapper from '@/components/ui/tables/ResponsiveTableWrapper';
 import { cn } from '@/lib/utils';
-import { useAllClasses, useEnrollments } from '@/lib/query/student-queries';
-import { useQueryClient } from '@tanstack/react-query';
+import { useAllClasses, useEnrollments, useInvalidateStudentsData } from '@/lib/query/student-queries';
 
 interface Enrollment {
   id: string;
@@ -162,7 +161,11 @@ export default function StudentClassListsContent() {
   // ⭐ React Query — cache partagé, pas de re-fetch au remontage
   const allClassesQuery = useAllClasses(academicYear?.id);
   const enrollmentsQuery = useEnrollments(academicYear?.id);
-  const queryClient = useQueryClient();
+  // ⭐ FIX 2026-09-23 : invalidation de TOUTE la famille du module Élèves
+  //    (helper partagé) — pas seulement les clés de cet onglet. Après une
+  //    affectation/réaffectation, les autres vues (Inscriptions, Élèves…)
+  //    se rafraîchissent aussi au lieu de servir leur cache périmé.
+  const invalidateStudentsData = useInvalidateStudentsData();
 
   // Synchronisation React Query → state local
   useEffect(() => {
@@ -172,9 +175,7 @@ export default function StudentClassListsContent() {
   }, [allClassesQuery.data, enrollmentsQuery.data, allClassesQuery.isLoading, enrollmentsQuery.isLoading]);
 
   const loadData = async () => {
-    if (!academicYear) return;
-    queryClient.invalidateQueries({ queryKey: ['all-classes', academicYear.id] });
-    queryClient.invalidateQueries({ queryKey: ['enrollments', academicYear.id] });
+    invalidateStudentsData();
   };
 
   // Vérifier quels PDFs existent déjà (mode physique)

@@ -503,7 +503,15 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const heroCtaText = withDefault(rawWebsite?.heroCtaText, 'Demander une admission');
 
   // ─── Chiffres clés (CDC 3.2 — bandeau 3-4 indicateurs) ──
-  const keyFigures = withDefault(rawWebsite?.keyFigures, DEFAULT_WEBSITE_CONFIG.keyFigures).slice(0, 4);
+  // ⭐ 2026-09-25 — Fix crash "Cannot read properties of undefined (reading 'slice')":
+  //   Le contributeur 2026-09-22 a retiré keyFigures de DEFAULT_WEBSITE_CONFIG
+  //   (état vide honnête). Si rawWebsite?.keyFigures est undefined ET
+  //   DEFAULT_WEBSITE_CONFIG.keyFigures est aussi undefined, withDefault
+  //   retournait undefined → .slice() crashait. On définit maintenant un
+  //   fallback [] explicite + Array.isArray défensif.
+  const rawKeyFigures = withDefault(rawWebsite?.keyFigures, (DEFAULT_WEBSITE_CONFIG as any).keyFigures);
+  const safeKeyFigures: any[] = Array.isArray(rawKeyFigures) ? rawKeyFigures : [];
+  const keyFigures = safeKeyFigures.slice(0, 4);
 
   // ─── Collections avec defaults ──
   const newsArticles = (websiteData?.newsArticles && websiteData.newsArticles.length > 0)
@@ -1237,7 +1245,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                       color: '#FFFFFF',
                     }}
                   >
-                    {member.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                    {(member.name || '?').split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
                   </motion.div>
                   {/* Halo doré décoratif */}
                   <div
@@ -1609,7 +1617,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                     </p>
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold" style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`, color: '#FFFFFF' }}>
-                        {testimonials[activeTestimonial].authorName.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                        {(testimonials[activeTestimonial].authorName || '?').split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
                       </div>
                       <div>
                         <p className="font-bold" style={{ color: NAVY }}>{testimonials[activeTestimonial].authorName}</p>
@@ -1676,7 +1684,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                   >
                     <div className="flex items-center gap-2">
                       <div className="w-10 h-10 rounded-lg bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
-                        {partner.abbr.slice(0, 2)}
+                        {(partner.abbr || '??').slice(0, 2)}
                       </div>
                       <span className="text-xs font-semibold text-slate-600 hidden md:inline">{partner.name}</span>
                     </div>
@@ -1864,9 +1872,12 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
 // ─── Sous-composant : carte chiffre clé avec compteur animé (CDC 8) ──
 function KeyFigureCard({ fig, gold, navy, delay }: { fig: any; gold: string; navy: string; delay: number }) {
   // Essayer d'extraire la partie numérique pour le compteur
-  const numericMatch = String(fig.value || '').match(/^(\d+)/);
+  // ⭐ 2026-09-25 — Défense: fig.value peut être undefined/null si le CMS
+  // fournit une keyFigure incomplète. On cast en string via String(...||'').
+  const figValueStr = String(fig?.value ?? '');
+  const numericMatch = figValueStr.match(/^(\d+)/);
   const targetNum = numericMatch ? parseInt(numericMatch[1], 10) : 0;
-  const suffix = numericMatch ? String(fig.value).slice(numericMatch[0].length) : '';
+  const suffix = numericMatch ? figValueStr.slice(numericMatch[0].length) : '';
   const { value, ref } = useCountUp(targetNum, 1500);
 
   return (
@@ -1922,7 +1933,7 @@ function DirectorWord({
           />
         ) : (
           <div className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold" style={{ background: `linear-gradient(135deg, ${navy}, #1E4FA3)`, color: '#FFFFFF' }}>
-            {name.split(' ').map(n => n[0]).slice(0, 2).join('')}
+            {(name || '?').split(' ').map(n => n[0]).slice(0, 2).join('')}
           </div>
         )}
         <div>

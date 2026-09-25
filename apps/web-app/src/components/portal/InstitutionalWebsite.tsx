@@ -300,6 +300,12 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     (schoolInfo as any)?.tenantId || (schoolInfo as any)?.id || null,
   );
   const [isLoading, setIsLoading] = useState(!schoolInfo);
+  // ⭐ 2026-09-25 — Statistiques dynamiques (élèves, enseignants, etc.) —
+  //    chargées depuis l'endpoint public /tenant-website/public/:slug/stats
+  //    si le CMS est en mode "dynamic". Voir loadDynamicStats() plus bas.
+  //    ⚠️ Défense: si l'endpoint échoue, dynamicStats reste null et on
+  //    fallback sur les keyFigures manuelles du CMS.
+  const [dynamicStats, setDynamicStats] = useState<Record<string, number | string> | null>(null);
   const [activeTestimonial, setActiveTestimonial] = useState(0);
 
   // ─── Thème officiel du tenant (40+ thèmes shadcn/ui) ──────────────────
@@ -339,15 +345,21 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       if ((schoolInfo as any)?.tenantId) setTenantId((schoolInfo as any).tenantId);
       else if ((schoolInfo as any)?.id) setTenantId((schoolInfo as any).id);
       setIsLoading(false);
-      // Charger en parallèle les données complémentaires
-      Promise.all([loadWebsiteData(), loadThemeSettings(), loadIdentityInfo()]);
+      // Charger en parallèle les données complémentaires + stats dynamiques
+      Promise.all([
+        loadWebsiteData(),
+        loadThemeSettings(),
+        loadIdentityInfo(),
+        loadDynamicStats(),
+      ]);
     } else {
-      // Pas de schoolInfo → tout charger en parallèle (4 fetchs)
+      // Pas de schoolInfo → tout charger en parallèle (5 fetchs)
       Promise.all([
         loadSchoolData(),
         loadWebsiteData(),
         loadThemeSettings(),
         loadIdentityInfo(),
+        loadDynamicStats(),
       ]).finally(() => setIsLoading(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -421,6 +433,30 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       clearTimeout(timeoutId);
       // Silencieux — fallback sur les valeurs CMS / schoolData / defaults
       console.debug('[identity-info] unavailable for', slug, e);
+    }
+  };
+
+  // ─── Statistiques dynamiques (nombre d'élèves, d'enseignants, etc.) ──
+  // GET /api/tenant-website/public/:slug/stats → compteurs temps réel.
+  // Utilisé seulement si le CMS est en mode "dynamic" (statsMode='dynamic').
+  // En mode "manual" (par défaut), on garde les keyFigures telles quelles.
+  // ⚠️ Pas de abort/warning si échec — fallback silencieux sur keyFigures.
+  const loadDynamicStats = async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    try {
+      const res = await fetch(`/api/tenant-website/public/${slug}/stats`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data === 'object') setDynamicStats(data);
+      }
+    } catch (e) {
+      clearTimeout(timeoutId);
+      // Silencieux — on garde les keyFigures manuelles du CMS
+      console.debug('[stats] unavailable for', slug, e);
     }
   };
 
@@ -509,9 +545,27 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   //   DEFAULT_WEBSITE_CONFIG.keyFigures est aussi undefined, withDefault
   //   retournait undefined → .slice() crashait. On définit maintenant un
   //   fallback [] explicite + Array.isArray défensif.
+  // ⭐ 2026-09-25 — Mode dynamique : si statsMode='dynamic' et dynamicStatsConfig
+  //   est configuré, on remplace certaines valeurs des keyFigures par des
+  //   statistiques temps réel (nombre d'élèves, d'enseignants, etc.) issues
+  //   de la base de données de l'école.
   const rawKeyFigures = withDefault(rawWebsite?.keyFigures, (DEFAULT_WEBSITE_CONFIG as any).keyFigures);
   const safeKeyFigures: any[] = Array.isArray(rawKeyFigures) ? rawKeyFigures : [];
-  const keyFigures = safeKeyFigures.slice(0, 4);
+  const statsMode = (rawWebsite?.statsMode === 'dynamic') ? 'dynamic' : 'manual';
+  const dynamicStatsConfig: any[] = (rawWebsite?.dynamicStatsConfig && Array.isArray(rawWebsite.dynamicStatsConfig))
+    ? rawWebsite.dynamicStatsConfig
+    : [];
+  const keyFigures = (statsMode === 'dynamic' && dynamicStats && dynamicStatsConfig.length > 0)
+    ? safeKeyFigures.map((fig: any, idx: number) => {
+        const mapping = dynamicStatsConfig.find((m: any) => m.figureIndex === idx);
+        if (!mapping || !mapping.source) return fig;
+        const dynVal = (dynamicStats as any)[mapping.source];
+        if (typeof dynVal === 'number' && dynVal > 0) {
+          return { ...fig, value: String(dynVal) };
+        }
+        return fig;
+      }).slice(0, 4)
+    : safeKeyFigures.slice(0, 4);
 
   // ─── Collections avec defaults ──
   const newsArticles = (websiteData?.newsArticles && websiteData.newsArticles.length > 0)

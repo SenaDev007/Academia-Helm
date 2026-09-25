@@ -63,7 +63,10 @@ import { tenantThemeService } from '@/services/tenant-theme.service';
 import { ThemeApplier } from '@/lib/themes/theme-applier';
 import {
   DEFAULT_WEBSITE_CONFIG,
+  DEFAULT_NEWS_ARTICLES,
+  DEFAULT_EVENTS,
   DEFAULT_GALLERY_ITEMS,
+  DEFAULT_TESTIMONIALS,
   DEFAULT_FAQ_ITEMS,
   DEFAULT_PORTAL_IMAGES,
   withDefault,
@@ -135,17 +138,20 @@ const DEFAULT_PROGRAMS = [
 ];
 
 // ─── Points de différenciation (CDC 3.4) ──
-// ⭐ 2026-09-22 — PLUS DE FALLBACK CODÉ EN DUR : « Bilinguisme dès le primaire »,
-//    « STEM », etc. sont des affirmations propres à chaque école. 100% éditables
-//    via le CMS (onglet Programmes → Points de différenciation). Non configurées
-//    → bloc masqué (aucune affirmation fausse par défaut sur les sites).
+const DEFAULT_DIFFERENTIATORS = [
+  { title: 'Bilinguisme', description: "Enseignement français-anglais dès le primaire", Icon: Languages },
+  { title: 'STEM', description: "Sciences, technologie, ingénierie & mathématiques", Icon: Microscope },
+  { title: 'Arts', description: "Théâtre, musique, arts plastiques", Icon: Palette },
+  { title: 'Sport', description: "Éducation physique & compétitions scolaires", Icon: Trophy },
+];
 
-// ─── Corps enseignant (CDC 3.5) ──
-// ⭐ 2026-09-22 — PLUS DE FALLBACK CODÉ EN DUR : quatre faux profils
-//    (« M. Koffi Adjovi », « Mme Aïcha Bello »…) s'affichaient sur TOUS les
-//    sites institutionnels non configurés — perçus comme des employés réels
-//    de l'école. Le corps enseignant est 100% éditable via le CMS (onglet
-//    Corps enseignant). Non configuré → section masquée.
+// ─── Corps enseignant par défaut (CDC 3.5) ──
+const DEFAULT_FACULTY = [
+  { name: 'M. Koffi Adjovi', role: 'Directeur pédagogique', subject: 'Mathématiques' },
+  { name: 'Mme Aïcha Bello', role: 'Directrice Maternelle', subject: 'Petite section' },
+  { name: 'M. Jean Houngbo', role: 'Responsable Primaire', subject: 'Français' },
+  { name: 'Mme Fatou Diallo', role: 'Responsable Secondaire', subject: 'Sciences physiques' },
+];
 
 // ─── Étapes d'admission (CDC 3.7) ──
 const ADMISSION_STEPS = [
@@ -166,28 +172,15 @@ const REQUIRED_DOCUMENTS = [
 ];
 
 // ─── Témoignages carrousel (CDC 3.8) ──
-// ⭐ 2026-09-22 — PLUS DE FALLBACK : de faux témoignages de parents s'affichaient
-//    sur tous les sites non configurés. Les vrais témoignages sont gérés via le
-//    CMS (onglet Témoignages). Non configurés → section masquée.
+// Utilise DEFAULT_TESTIMONIALS mais peut être surchargé par les données du tenant.
 
-// ─── Logos partenaires / accréditations (CDC 3.8) ──
-// ⭐ 2026-09-22 — PLUS DE FALLBACK : afficher par défaut MEN / UNESCO / CONFEMEN /
-//    AUF revenait à revendiquer de fausses accréditations. Les partenaires sont
-//    100% éditables via le CMS (onglet Partenaires). Non configurés → bloc masqué.
-
-// ─── CmsContent : rend un contenu CMS qui peut être du texte brut OU du HTML ──
-// Le RichTextEditor du CMS (onglets Présentation / Admissions / Vie scolaire)
-// sauvegarde du HTML (innerHTML). On détecte la présence de balises :
-//  - HTML → rendu enrichi (contenu CMS = trusté, saisi par l'admin de l'école)
-//  - texte brut → rendu texte avec sauts de ligne conservés
-function CmsContent({ content, className }: { content: string | null | undefined; className?: string }) {
-  if (!content || content.trim() === '') return null;
-  const isHtml = /<\/[a-z][\s\S]*>/i.test(content);
-  if (isHtml) {
-    return <div className={className} dangerouslySetInnerHTML={{ __html: content }} />;
-  }
-  return <p className={className} style={{ whiteSpace: 'pre-wrap' }}>{content}</p>;
-}
+// ─── Logos partenaires (placeholder — gris par défaut, couleur au survol) ──
+const PARTNER_LOGOS = [
+  { name: 'Ministère de l\'Éducation', abbr: 'MEN' },
+  { name: 'UNESCO', abbr: 'UNESCO' },
+  { name: 'Confemen', abbr: 'CONFEMEN' },
+  { name: 'Agence Universitaire Francophone', abbr: 'AUF' },
+];
 
 // ─── SectionHeader : H2 avec liseré or (CDC 3.3+) ──────────────────────────
 function SectionHeader({
@@ -307,15 +300,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     (schoolInfo as any)?.tenantId || (schoolInfo as any)?.id || null,
   );
   const [isLoading, setIsLoading] = useState(!schoolInfo);
-  // ⭐ Statistiques dynamiques (élèves, enseignants, etc.) — chargées depuis
-  // l'endpoint public /tenant-website/public/:slug/stats si le CMS est en
-  // mode "dynamic". Voir applyDynamicStats() plus bas.
-  const [dynamicStats, setDynamicStats] = useState<Record<string, number | string> | null>(null);
   const [activeTestimonial, setActiveTestimonial] = useState(0);
-  // ⭐ 2026-09-22 — Résilience images : si l'image de hero configurée dans le
-  // CMS échoue au chargement (R2/CDN indisponible), on retombe sur l'image
-  // par défaut plutôt que d'afficher un hero vide/cassé.
-  const [heroImageError, setHeroImageError] = useState(false);
 
   // ─── Thème officiel du tenant (40+ thèmes shadcn/ui) ──────────────────
   // Résolu depuis tenantThemeService.getPublicSettings(slug) → { themeId, mode }.
@@ -354,21 +339,15 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       if ((schoolInfo as any)?.tenantId) setTenantId((schoolInfo as any).tenantId);
       else if ((schoolInfo as any)?.id) setTenantId((schoolInfo as any).id);
       setIsLoading(false);
-      // Charger en parallèle les données complémentaires + stats dynamiques
-      Promise.all([
-        loadWebsiteData(),
-        loadThemeSettings(),
-        loadIdentityInfo(),
-        loadDynamicStats(),
-      ]);
+      // Charger en parallèle les données complémentaires
+      Promise.all([loadWebsiteData(), loadThemeSettings(), loadIdentityInfo()]);
     } else {
-      // Pas de schoolInfo → tout charger en parallèle (5 fetchs)
+      // Pas de schoolInfo → tout charger en parallèle (4 fetchs)
       Promise.all([
         loadSchoolData(),
         loadWebsiteData(),
         loadThemeSettings(),
         loadIdentityInfo(),
-        loadDynamicStats(),
       ]).finally(() => setIsLoading(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -442,30 +421,6 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       clearTimeout(timeoutId);
       // Silencieux — fallback sur les valeurs CMS / schoolData / defaults
       console.debug('[identity-info] unavailable for', slug, e);
-    }
-  };
-
-  // ─── Statistiques dynamiques (nombre d'élèves, d'enseignants, etc.) ──
-  // GET /api/tenant-website/public/:slug/stats → compteurs temps réel.
-  // Utilisé seulement si le CMS est en mode "dynamic" (statsMode='dynamic').
-  // En mode "manual" (par défaut), on garde les keyFigures telles quelles.
-  // ⚠️ Pas de abort/warning si échec — fallback silencieux sur keyFigures.
-  const loadDynamicStats = async () => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
-    try {
-      const res = await fetch(`/api/tenant-website/public/${slug}/stats`, {
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        const data = await res.json();
-        if (data && typeof data === 'object') setDynamicStats(data);
-      }
-    } catch (e) {
-      clearTimeout(timeoutId);
-      // Silencieux — on garde les keyFigures manuelles du CMS
-      console.debug('[stats] unavailable for', slug, e);
     }
   };
 
@@ -548,55 +503,18 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const heroCtaText = withDefault(rawWebsite?.heroCtaText, 'Demander une admission');
 
   // ─── Chiffres clés (CDC 3.2 — bandeau 3-4 indicateurs) ──
-  // ⭐ Mode dynamique : si statsMode='dynamic' et dynamicStatsConfig est
-  // configuré, on remplace certaines valeurs des keyFigures par des
-  // statistiques temps réel (nombre d'élèves, d'enseignants, etc.) issues
-  // de la base de données de l'école.
-  //
-  // Exemple de dynamicStatsConfig côté CMS :
-  //   [
-  //     { figureIndex: 0, source: 'studentCount' },     // remplace "500" par le vrai nombre d'élèves
-  //     { figureIndex: 1, source: 'teacherCount' },     // remplace "30" par le vrai nombre d'enseignants
-  //   ]
-  // ⭐ 2026-09-22 — PLUS DE FALLBACK sur DEFAULT_WEBSITE_CONFIG.keyFigures :
-  //    « 500 élèves / 30 enseignants / 95% réussite » sont des chiffres INVENTÉS
-  //    qui s'affichaient sur tous les sites non configurés. Non configuré →
-  //    bandeau masqué (honnête). Les vrais chiffres se saisissent dans le CMS
-  //    (onglet Chiffres clés) ou via le mode dynamique (statsMode).
-  const rawKeyFigures: any[] = Array.isArray(rawWebsite?.keyFigures)
-    ? rawWebsite.keyFigures
-    : [];
-  const statsMode = (rawWebsite?.statsMode === 'dynamic') ? 'dynamic' : 'manual';
-  const dynamicStatsConfig: any[] = (rawWebsite?.dynamicStatsConfig && Array.isArray(rawWebsite.dynamicStatsConfig))
-    ? rawWebsite.dynamicStatsConfig
-    : [];
-  const keyFigures = (statsMode === 'dynamic' && dynamicStats && dynamicStatsConfig.length > 0)
-    ? rawKeyFigures.map((fig: any, idx: number) => {
-        const mapping = dynamicStatsConfig.find((m: any) => m.figureIndex === idx);
-        if (!mapping || !mapping.source) return fig;
-        const dynVal = (dynamicStats as any)[mapping.source];
-        if (typeof dynVal === 'number' && dynVal > 0) {
-          return { ...fig, value: String(dynVal) };
-        }
-        return fig;
-      }).slice(0, 4)
-    : rawKeyFigures.slice(0, 4);
+  const keyFigures = withDefault(rawWebsite?.keyFigures, DEFAULT_WEBSITE_CONFIG.keyFigures).slice(0, 4);
 
-  // ─── Collections — données RÉELLES du tenant uniquement ──
-  // ⭐ 2026-09-22 — actualités & témoignages : PLUS de faux contenus de démo
-  //    (articles et parents fictifs) sur les sites non configurés. Non
-  //    configuré → état vide / section masquée. La galerie et la FAQ gardent
-  //    leurs valeurs génériques de plateforme (visuels Academia Helm / Q&R
-  //    procédurales standard) — remplacées dès que l'école configure le CMS.
+  // ─── Collections avec defaults ──
   const newsArticles = (websiteData?.newsArticles && websiteData.newsArticles.length > 0)
     ? websiteData.newsArticles
-    : [];
+    : DEFAULT_NEWS_ARTICLES;
   const galleryItems = (websiteData?.galleryItems && websiteData.galleryItems.length > 0)
     ? websiteData.galleryItems
     : DEFAULT_GALLERY_ITEMS;
   const testimonials = (websiteData?.testimonials && websiteData.testimonials.length > 0)
     ? websiteData.testimonials
-    : [];
+    : DEFAULT_TESTIMONIALS;
   const faqItems = (websiteData?.faqItems && websiteData.faqItems.length > 0)
     ? websiteData.faqItems
     : DEFAULT_FAQ_ITEMS;
@@ -607,83 +525,24 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   // sur les constantes par défaut. Permet à l'admin de surcharger ces sections
   // via le back-office CMS quand les champs seront exposés dans l'éditeur.
   //
-  // ⭐ Résolveur d'icônes : le CMS stocke `iconName` (string, ex: 'Baby',
-  // 'School', 'Library'). On le mappe vers le composant Lucide correspondant.
-  // Si l'icône n'est pas trouvée, on utilise une icône par défaut (BookOpen).
-  // Pour les valeurs par défaut (DEFAULT_PROGRAMS etc.), le composant est
-  // déjà attaché sous `Icon`.
-  const iconByName: Record<string, any> = {
-    Baby, School, Library, FileText, BookOpen, Users, CheckCircle2,
-    Languages, Microscope, Palette, Trophy, Building2, GraduationCap,
-    Globe, Award, Star, Images, Sparkles, Mail, Phone, MapPin, Clock,
-    ArrowRight, ChevronRight, Calendar, Quote, Send, MessageCircle,
-  };
-  const resolveIcon = (item: any, fallbackIcon: any = BookOpen) => {
-    if (item?.Icon) return item.Icon;
-    if (item?.iconName && iconByName[item.iconName]) return iconByName[item.iconName];
-    return fallbackIcon;
-  };
-
-  // ⭐ Appliquer le résolveur d'icônes sur chaque collection CMS — on prend
-  // le tableau du CMS si non vide, sinon le défaut. On enrichit avec Icon.
-  const rawPrograms = (rawWebsite?.programs && Array.isArray(rawWebsite.programs) && rawWebsite.programs.length > 0)
+  // Note : les objets DEFAULT_* contiennent une propriété `Icon` (composant
+  // Lucide). Si le CMS retourne des données avec `iconName` (string) au lieu
+  // de `Icon` (component), un résolveur d'icônes devra être ajouté.
+  const programs = (rawWebsite?.programs && Array.isArray(rawWebsite.programs) && rawWebsite.programs.length > 0)
     ? rawWebsite.programs
     : DEFAULT_PROGRAMS;
-  const programs = rawPrograms.map((p: any) => ({ ...p, Icon: resolveIcon(p, BookOpen) }));
-
-  const rawDifferentiators = (rawWebsite?.differentiators && Array.isArray(rawWebsite.differentiators) && rawWebsite.differentiators.length > 0)
+  const differentiators = (rawWebsite?.differentiators && Array.isArray(rawWebsite.differentiators) && rawWebsite.differentiators.length > 0)
     ? rawWebsite.differentiators
-    : [];
-  const differentiators = rawDifferentiators.map((d: any) => ({ ...d, Icon: resolveIcon(d, Sparkles) }));
-
-  // ⭐ Corps enseignant : CMS uniquement — PLUS de faux profils par défaut.
+    : DEFAULT_DIFFERENTIATORS;
   const faculty = (rawWebsite?.faculty && Array.isArray(rawWebsite.faculty) && rawWebsite.faculty.length > 0)
     ? rawWebsite.faculty
-    : [];
-  const rawAdmissionSteps = (rawWebsite?.admissionSteps && Array.isArray(rawWebsite.admissionSteps) && rawWebsite.admissionSteps.length > 0)
+    : DEFAULT_FACULTY;
+  const admissionSteps = (rawWebsite?.admissionSteps && Array.isArray(rawWebsite.admissionSteps) && rawWebsite.admissionSteps.length > 0)
     ? rawWebsite.admissionSteps
     : ADMISSION_STEPS;
-  const admissionSteps = rawAdmissionSteps.map((s: any) => ({ ...s, Icon: resolveIcon(s, CheckCircle2) }));
-
   const admissionDocuments = (rawWebsite?.admissionDocuments && Array.isArray(rawWebsite.admissionDocuments) && rawWebsite.admissionDocuments.length > 0)
     ? rawWebsite.admissionDocuments
     : REQUIRED_DOCUMENTS;
-
-  // ⭐ Logos partenaires : CMS uniquement — PLUS de faux MEN/UNESCO/CONFEMEN/AUF.
-  const partnerLogos = (rawWebsite?.partnerLogos && Array.isArray(rawWebsite.partnerLogos) && rawWebsite.partnerLogos.length > 0)
-    ? rawWebsite.partnerLogos
-    : [];
-  const partnerLogosIsActive = withDefault(rawWebsite?.partnerLogosIsActive, true);
-
-  // ⭐ Liens de navigation (navbar) : CMS si configuré, sinon fallback sur
-  // les valeurs hardcoded (7 liens standard).
-  const navLinks = (rawWebsite?.navLinks && Array.isArray(rawWebsite.navLinks) && rawWebsite.navLinks.length > 0)
-    ? rawWebsite.navLinks
-    : [
-        { label: 'Accueil', href: '/#hero' },
-        { label: 'À propos', href: '/#a-propos' },
-        { label: 'Programmes', href: '/#programmes' },
-        { label: 'Admissions', href: '/#admissions' },
-        { label: 'Vie scolaire', href: '/#vie-scolaire' },
-        { label: 'Actualités', href: '/#actualites' },
-        { label: 'Contact', href: '/#contact' },
-      ];
-
-  // ⭐ Ratio encadrant/élève (CDC 3.5) — CMS (facultyRatio) si configuré, sinon
-  //    calcul automatique si dynamicStats disponible, sinon AUCUN ratio affiché.
-  //    2026-09-22 : le défaut codé en dur « 1 encadrant pour 15 élèves » était
-  //    une affirmation inventée — un badge masqué vaut mieux qu'un mensonge.
-  const facultyRatio = withDefault(
-    rawWebsite?.facultyRatio,
-    dynamicStats && (dynamicStats as any).studentCount > 0 && (dynamicStats as any).staffCount > 0
-      ? `Ratio 1 encadrant pour ${Math.ceil((dynamicStats as any).studentCount / (dynamicStats as any).staffCount)} élèves`
-      : null
-  );
-
-  // ⭐ Horaires d'ouverture : CMS si configuré, sinon valeurs par défaut.
-  const schoolHoursWeekdays = withDefault(rawWebsite?.schoolHoursWeekdays, 'Lun - Ven : 7h30 - 17h00');
-  const schoolHoursSaturday = withDefault(rawWebsite?.schoolHoursSaturday, 'Sam : 8h00 - 12h00');
-  const schoolHoursIsActive = withDefault(rawWebsite?.schoolHoursIsActive, true);
 
   // ─── Titres & sous-titres de sections (CMS-connectés) ─────────────────
   // Chaque titre/sous-titre de section est lu depuis le CMS avec fallback sur
@@ -752,6 +611,17 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   const contactLatitude = identityInfo?.latitude ?? null;
   const contactLongitude = identityInfo?.longitude ?? null;
 
+  // ─── Navigation CDC ──
+  const navLinks = [
+    { label: 'Accueil', href: '/#hero' },
+    { label: 'À propos', href: '/#a-propos' },
+    { label: 'Programmes', href: '/#programmes' },
+    { label: 'Admissions', href: '/#admissions' },
+    { label: 'Vie scolaire', href: '/#vie-scolaire' },
+    { label: 'Actualités', href: '/#actualites' },
+    { label: 'Contact', href: '/#contact' },
+  ];
+
   // ─── Iframe OpenStreetMap (CDC 3.9) ──
   // ⚠️ Remplacée par <SchoolLocationMap /> : l'ancienne iframe était codée
   // en dur (marker à Porto-Novo + bbox Cotonou/Porto-Novo pour TOUTES les
@@ -798,115 +668,191 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         <TenantRecruitmentBanner tenantId={tenantId || undefined} tenantSlug={slug} />
       </div>
 
-      {/* ═══ 3.2 HERO ═══ */}
-      {/* ⚠️ RESPONSIVE FIX (2026-09) : le bandeau de chiffres clés était en
-          position ABSOLUE collé en bas — sur mobile il chevauchait les boutons
-          CTA. Structure corrigée : le section est en flex-col, le contenu prend
-          l'espace restant (flex-1, centré) et le bandeau est DANS le flux sur
-          mobile (relative) / superposé en bas sur md+ (absolute) — plus aucun
-          chevauchement possible, quelle que soit la hauteur d'écran. */}
-      <section id="hero" className="relative flex min-h-[calc(100svh-4rem)] flex-col items-center justify-center overflow-hidden md:min-h-[720px]">
-        <div className="absolute inset-0">
-          {/* Image de fond : CMS de l'école > image par défaut (campus scolaire
-              africain Academia Helm) > dégradé navy → bleu académique (CDC 3.2) */}
-          {/* ⭐ 2026-09-22 — Résilience onError : si l'image CMS (R2) échoue
-              (fichier supprimé, CDN indisponible), on retombe automatiquement
-              sur l'image par défaut — le hero n'est JAMAIS vide/cassé. */}
-          {(heroImage && !heroImageError) || (!heroImage && DEFAULT_PORTAL_IMAGES.hero) ? (
+      {/* ═══ 3.2 HERO — Design Win Agro (palette + polices Helm conservées) ═══ */}
+      {/* Refonte Win Agro (2026-09-25) :
+          - Fond image plein écran + dégradé navy multiply (style Win Agro)
+          - Cercles blur flottants (animate-float) — signature Win Agro
+          - Badge avec ping pulse (animate-pulse-slow)
+          - H1 staggered avec underline accent animée sur mot clé
+          - CTA primaire avec btn-shimmer + animation scale infinie
+          - Slanted section divider en bas (clip-path)
+          - SVG noise grain pour texture premium
+          - bg-grain pour motif de fond */}
+      <section
+        id="hero"
+        className="relative min-h-[90vh] flex items-center justify-center pt-24 pb-16 overflow-hidden bg-[#0B1E4D] text-white"
+      >
+        {/* 1. Premium Background Image + Navy Opacity Overlay */}
+        <div className="absolute inset-0 z-0">
+          {(heroImage || DEFAULT_PORTAL_IMAGES.hero) ? (
             <Image
-              src={heroImage && !heroImageError ? heroImage : DEFAULT_PORTAL_IMAGES.hero}
+              src={heroImage || DEFAULT_PORTAL_IMAGES.hero}
               alt={schoolName}
               fill
               priority
-              className="object-cover"
               sizes="100vw"
-              onError={() => setHeroImageError(true)}
+              className="object-cover object-center scale-102"
             />
           ) : (
-            // CDC 3.2 — Fond : dégradé navy → bleu académique par défaut
-            <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 50%, ${DARK} 100%)` }} />
+            <div
+              className="absolute inset-0"
+              style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${BLUE} 50%, ${DARK} 100%)` }}
+            />
           )}
-          {/* Overlay sombre 40% (CDC 3.2) — équilibre lisibilité du texte /
-              visibilité de la photo de fond */}
-          <div className="absolute inset-0 bg-black/40" />
-          {/* Halo doré en haut à droite — signature Academia Helm */}
-          <div className="absolute inset-0 opacity-[0.12] bg-[radial-gradient(circle_at_top_right,#F5B700_0%,transparent_45%)]" />
+
+          {/* Dynamic mesh gradients overlaying photo (multiply blend) */}
+          <div
+            className="absolute inset-0 mix-blend-multiply"
+            style={{ background: `linear-gradient(to bottom right, ${NAVY}f0, ${NAVY}cc, ${DARK}f0)` }}
+          />
+
+          {/* Glowing floating decorative circles (signature Win Agro) */}
+          <div
+            className="absolute -top-40 -left-40 w-96 h-96 rounded-full blur-[100px] animate-float"
+            style={{ background: `${BLUE}33` }}
+          />
+          <div
+            className="absolute bottom-10 right-10 w-[500px] h-[500px] rounded-full blur-[150px] animate-float"
+            style={{ background: `${GOLD}14`, animationDelay: '2s' }}
+          />
+
+          {/* SVG Noise Grain Filter (texture premium Win Agro) */}
+          <svg
+            viewBox="0 0 200 200"
+            xmlns="http://www.w3.org/2000/svg"
+            className="absolute inset-0 w-full h-full opacity-[0.035] pointer-events-none mix-blend-overlay"
+          >
+            <filter id="noiseFilter-ah-hero">
+              <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+            </filter>
+            <rect width="100%" height="100%" filter="url(#noiseFilter-ah-hero)" />
+          </svg>
+
+          {/* Decorative Grid Patterns (grain) */}
+          <div className="absolute inset-0 bg-grain opacity-[0.08] mix-blend-overlay" />
         </div>
 
-        {/* Particules dorées flottantes */}
+        {/* Particules dorées flottantes (signature Academia Helm) */}
         <FloatingEduParticles count={18} opacityMultiplier={1.2} variant="light" />
 
-        <div className="relative z-10 w-full max-w-5xl mx-auto px-4 sm:px-6 text-center flex-1 flex flex-col items-center justify-center py-12 md:py-20">
-          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }} className="w-full">
-            <div className="inline-flex items-center gap-2 mb-5 px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/20">
-              <Sparkles className="w-3.5 h-3.5" style={{ color: GOLD }} />
-              <span className="text-xs font-bold uppercase tracking-wider" style={{ color: GOLD }}>
-                {schoolName}
+        {/* 2. Hero Content Grid */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 w-full">
+          <div className="max-w-4xl mx-auto text-center flex flex-col items-center">
+
+            {/* Staggered Badge avec ping (signature Win Agro) */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border text-xs font-bold uppercase tracking-wider mb-8 animate-pulse-slow"
+              style={{
+                background: `${BLUE}33`,
+                borderColor: `${BLUE}88`,
+                color: GOLD,
+              }}
+            >
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: GOLD }} />
+                <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: GOLD }} />
               </span>
-            </div>
+              <Sparkles className="w-3.5 h-3.5 shrink-0" style={{ color: GOLD }} />
+              {schoolName}
+            </motion.div>
 
-            {/* H1 — baseline institutionnelle (CDC 3.2) */}
-            <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold text-white leading-[1.15] tracking-tight mb-5 drop-shadow-lg">
-              {heroTitle}
+            {/* Staggered Main Title (H1) — avec underline accent animée sur le mot clé */}
+            <h1 className="font-serif font-extrabold text-3xl sm:text-4xl md:text-5xl lg:text-6xl tracking-tight leading-[1.15] mb-6">
+              <motion.span
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.7, delay: 0.15, ease: "easeOut" }}
+                className="block text-white"
+              >
+                {heroTitle}
+              </motion.span>
+              {heroSubtitle && (
+                <motion.span
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.7, delay: 0.3, ease: "easeOut" }}
+                  className="block mt-4 text-amber-300 font-black"
+                >
+                  <span className="relative inline-block">
+                    Excellence éducative
+                    <motion.span
+                      animate={{ scaleX: [0, 1, 1, 0], transformOrigin: ["0% 50%", "0% 50%", "100% 50%", "100% 50%"] }}
+                      transition={{ duration: 3, repeat: Infinity, times: [0, 0.15, 0.85, 1], ease: "easeInOut" }}
+                      className="absolute bottom-1 left-0 w-full h-[4px] rounded-full"
+                      style={{ background: GOLD }}
+                    />
+                  </span>
+                </motion.span>
+              )}
             </h1>
-            <p className="text-sm sm:text-base md:text-xl text-blue-50/85 mb-8 max-w-2xl mx-auto leading-relaxed">
+
+            {/* Subtitle */}
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.6, ease: "easeOut" }}
+              className="text-base sm:text-lg md:text-xl text-blue-50/85 mb-10 max-w-2xl leading-relaxed"
+            >
               {heroSubtitle}
-            </p>
+            </motion.p>
 
-            <div className="flex items-center justify-center gap-3 mb-8" aria-hidden>
-              <span className="h-px w-12 bg-gradient-to-r from-transparent to-amber-400" />
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-              <span className="h-px w-12 bg-gradient-to-l from-transparent to-amber-400" />
-            </div>
-
-            {/* CTA primaire (or) + CTA secondaire (contour blanc → /portal) */}
-            {/* Empilés pleine largeur sur mobile (w-full sm:w-auto) — fini les
-                boutons trop étroits / chevauchants sur petit écran */}
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              {/* CTA primaire — "Demander une admission" (or plein) */}
-              <button
+            {/* Action CTAs — primaire avec btn-shimmer + animation scale infinie (style Win Agro) */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.75, ease: "easeOut" }}
+              className="flex flex-col sm:flex-row items-center justify-center gap-5 w-full sm:w-auto"
+            >
+              <motion.button
                 onClick={() => handlePortalClick('PUBLIC')}
-                className="inline-flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-bold shadow-lg transition-all hover:scale-105 hover:shadow-xl w-full sm:w-auto"
-                style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)`, color: NAVY }}
+                whileHover={{ scale: 1.05, boxShadow: `0px 10px 25px ${BLUE}66` }}
+                whileTap={{ scale: 0.98 }}
+                animate={{ scale: [1, 1.03, 1] }}
+                transition={{ scale: { repeat: Infinity, duration: 2.5, ease: "easeInOut" } }}
+                className="w-full sm:w-auto px-8 py-4 rounded-full text-white font-bold text-base shadow-xl border flex items-center justify-center gap-2 cursor-pointer focus:outline-none btn-shimmer"
+                style={{
+                  background: `linear-gradient(135deg, ${GOLD}, #e09e1f)`,
+                  color: NAVY,
+                  borderColor: GOLD,
+                }}
               >
-                {heroCtaText} <ChevronRight size={16} />
-              </button>
-              {/* CTA secondaire — "Portail" (contour blanc) → /school-portal/portal (page portail tenant) */}
-              <a
-                href="/school-portal/portal"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl text-sm font-bold text-white border-2 border-white/40 hover:bg-white/10 hover:border-white/70 transition-all backdrop-blur-sm w-full sm:w-auto"
-              >
-                Portail <ArrowRight size={16} />
-              </a>
-            </div>
-          </motion.div>
+                {heroCtaText}
+                <ChevronRight className="w-5 h-5 shrink-0" />
+              </motion.button>
+
+              <div className="flex items-center gap-2 text-sm text-blue-50/80 font-medium">
+                <a
+                  href="/school-portal/portal"
+                  className="hover:text-amber-300 underline transition-colors cursor-pointer"
+                >
+                  Portail
+                </a>
+                <span>·</span>
+                <a
+                  href="#programmes"
+                  className="hover:text-amber-300 underline transition-colors cursor-pointer"
+                >
+                  Nos programmes
+                </a>
+              </div>
+            </motion.div>
+          </div>
         </div>
 
+        {/* Elegant Slanted Section Divider (signature Win Agro) */}
+        <div
+          className="absolute bottom-0 left-0 right-0 h-8"
+          style={{ background: PEARL, clipPath: "polygon(0 100%, 100% 100%, 100% 0)" }}
+        />
+
         {/* Bandeau chiffres clés (CDC 3.2 — 3-4 indicateurs) */}
-        {/* Mobile : DANS le flux (sous le contenu — zéro chevauchement) ;
-            md+ : superposé en bas du hero comme au CDC.
-            ⚠️ pb-24 sur mobile : réserve la zone de la bannière PWA (fixée en
-            bas d'écran) pour qu'elle ne recouvre pas les cartes chiffres clés. */}
-        {/* ⭐ 2026-09-22 — GRILLE ADAPTATIVE : le nombre de colonnes suit le
-            nombre de chiffres configurés (ex : 3 chiffres → 3 colonnes).
-            Avant : grid-cols-4 fixe → 3 cartes sur 4 colonnes = bandeau
-            décalé à gauche (retour utilisateur « les quatre stats ne sont
-            pas centrés, c'est aligné à gauche »). Quel que soit le nombre
-            de chiffres, ils occupent désormais TOUTE la largeur, centrés. */}
         {keyFigures.length > 0 && (
-          <div className="relative z-10 w-full pb-24 pt-2 shrink-0 md:absolute md:bottom-0 md:left-0 md:right-0 md:pb-8 flex justify-center">
-            <div className={`w-full px-4 sm:px-6 ${keyFigures.length === 1 ? 'max-w-xs' : 'max-w-6xl'} mx-auto`}>
-              <div
-                className={`grid gap-2.5 md:gap-4 text-center ${
-                  keyFigures.length === 1
-                    ? 'grid-cols-1'
-                    : keyFigures.length === 2
-                      ? 'grid-cols-2'
-                      : keyFigures.length === 3
-                        ? 'grid-cols-3'
-                        : 'grid-cols-2 md:grid-cols-4'
-                }`}
-              >
+          <div className="relative z-20 w-full pb-24 pt-2 shrink-0 md:absolute md:bottom-8 md:left-0 md:right-0 md:pb-8 flex justify-center">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 w-full">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-4 text-center">
                 {keyFigures.map((fig: any, i: number) => (
                   <KeyFigureCard key={i} fig={fig} gold={GOLD} navy={NAVY} delay={i * 0.1} />
                 ))}
@@ -916,72 +862,133 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         )}
       </section>
 
-      {/* ═══ 3.3 À PROPOS / PRÉSENTATION ═══ */}
+      {/* ═══ 3.3 À PROPOS / PRÉSENTATION — Design Win Agro ═══ */}
       {shouldShowSection(rawWebsite?.presentationIsActive) && (
-        <section id="a-propos" className="py-16 md:py-24" style={{ background: PEARL }}>
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <SectionHeader
-              eyebrow="Notre établissement"
-              title={withDefault(website.presentationTitle, 'À propos de notre école')}
-              subtitle={presentationSubtitle}
-              navy={NAVY}
-              gold={GOLD}
-            />
+        <section id="a-propos" className="py-24 relative overflow-hidden" style={{ background: PEARL }}>
+          {/* Decorative Blur Backgrounds (signature Win Agro) */}
+          <div
+            className="absolute top-1/2 left-0 w-72 h-72 rounded-full blur-3xl opacity-40 -z-10"
+            style={{ background: `${NAVY}14` }}
+          />
 
-            {/* Bloc texte/image en alternance (zig-zag) */}
-            <div className="grid lg:grid-cols-2 gap-10 items-center mb-16">
-              <motion.div
-                initial={{ opacity: 0, x: -30 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.6 }}
-              >
-                <h3 className="text-xl md:text-2xl font-bold mb-4" style={{ color: NAVY }}>
-                  Notre mission
-                </h3>
-                {/* ⭐ 2026-09-22 — rendu compatible HTML (RichTextEditor CMS) */}
-                <CmsContent
-                  className="text-base text-slate-700 leading-relaxed mb-6 [&_p]:mb-3"
-                  content={withDefault(website.presentationContent, DEFAULT_WEBSITE_CONFIG.presentationContent)}
-                />
-                <div className="flex flex-wrap gap-3">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: `${NAVY}10`, color: NAVY }}>
-                    <Award className="w-3.5 h-3.5" /> Excellence académique
-                  </span>
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold" style={{ background: `${GOLD}15`, color: '#a07d00' }}>
-                    <Users className="w-3.5 h-3.5" /> Accompagnement personnalisé
-                  </span>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            {/* Header avec badge + hook statement (style Win Agro) */}
+            <div className="flex flex-col lg:flex-row items-center gap-12 lg:gap-16">
+
+              {/* 1. Narrative Content (60%) */}
+              <div className="w-full lg:w-3/5 space-y-6">
+                <div
+                  className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-2"
+                  style={{ background: `${NAVY}14`, color: NAVY }}
+                >
+                  {withDefault(website.presentationTitle, 'À propos de notre école') === 'À propos de notre école' ? 'À Propos de notre établissement' : website.presentationTitle}
                 </div>
-              </motion.div>
-              <motion.div
-                initial={{ opacity: 0, x: 30 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.6, delay: 0.15 }}
-                className="relative"
-              >
-                {(website.presentationImageUrl || DEFAULT_PORTAL_IMAGES.presentation) ? (
-                  <div className="relative aspect-[4/3] rounded-2xl overflow-hidden shadow-xl">
+
+                {/* Hook statement avec underline accent animée (style Win Agro) */}
+                <motion.h2
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.6 }}
+                  className="font-serif text-2xl sm:text-3xl md:text-4xl font-extrabold leading-snug"
+                  style={{ color: NAVY }}
+                >
+                  &ldquo;{withDefault(website.presentationTitle, 'À propos de notre école')}&rdquo;
+                </motion.h2>
+
+                {/* Animated underline separator (signature Win Agro) */}
+                <motion.div
+                  animate={{ scaleX: [0, 1, 1, 0], transformOrigin: ["0% 50%", "0% 50%", "100% 50%", "100% 50%"] }}
+                  transition={{ duration: 3, repeat: Infinity, times: [0, 0.15, 0.85, 1], ease: "easeInOut" }}
+                  className="h-1 w-16 rounded-full"
+                  style={{ background: GOLD }}
+                />
+
+                {/* Structured Paragraphs */}
+                <div
+                  className="space-y-4 text-sm sm:text-base font-sans leading-relaxed"
+                  style={{ color: '#475569' }}
+                >
+                  <p className="whitespace-pre-wrap">
+                    {withDefault(website.presentationContent, DEFAULT_WEBSITE_CONFIG.presentationContent)}
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <span
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
+                      style={{ background: `${NAVY}10`, color: NAVY }}
+                    >
+                      <Award className="w-3.5 h-3.5" /> Excellence académique
+                    </span>
+                    <span
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold"
+                      style={{ background: `${GOLD}15`, color: '#a07d00' }}
+                    >
+                      <Users className="w-3.5 h-3.5" /> Accompagnement personnalisé
+                    </span>
+                  </div>
+                </div>
+
+                {/* Signature Area (style Win Agro) */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 pt-4">
+                  <div>
+                    <p className="font-serif text-xl font-extrabold italic flex items-center gap-1" style={{ color: NAVY }}>
+                      On y va ensemble. <Sparkles className="w-5 h-5 shrink-0" style={{ color: GOLD }} />
+                    </p>
+                    <p className="font-sans text-xs font-bold uppercase tracking-wider mt-1" style={{ color: '#475569' }}>
+                      {withDefault(website.directorName, DEFAULT_WEBSITE_CONFIG.directorName)} · Directeur/trice
+                    </p>
+                  </div>
+
+                  <motion.a
+                    href="#contact"
+                    whileHover={{ scale: 1.05, boxShadow: `0 10px 20px ${NAVY}4d` }}
+                    whileTap={{ scale: 0.98 }}
+                    className="inline-flex items-center justify-center px-8 py-3.5 rounded-full text-white font-bold text-base shadow-md cursor-pointer btn-shimmer"
+                    style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                  >
+                    Prendre contact →
+                  </motion.a>
+                </div>
+              </div>
+
+              {/* 2. Image (40%) avec card-shimmer (style Win Agro) */}
+              <div className="w-full lg:w-2/5 flex flex-col justify-center">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  whileInView={{ opacity: 1, scale: 1 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.5, delay: 0.2 }}
+                  className="relative aspect-[4/3] rounded-3xl overflow-hidden shadow-xl card-shimmer group"
+                >
+                  {(website.presentationImageUrl || DEFAULT_PORTAL_IMAGES.presentation) ? (
                     <Image
                       src={website.presentationImageUrl || DEFAULT_PORTAL_IMAGES.presentation}
                       alt="Présentation"
                       fill
                       sizes="(max-width: 768px) 100vw, 50vw"
-                      className="object-cover"
+                      className="object-cover transition-transform duration-500 group-hover:scale-105"
                     />
-                  </div>
-                ) : (
-                  <div className="relative aspect-[4/3] rounded-2xl overflow-hidden shadow-xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}>
-                    <Building2 className="w-20 h-20 text-white/30" />
-                    <div className="absolute top-4 right-4 w-12 h-1 rounded-full" style={{ background: GOLD }} />
-                  </div>
-                )}
-              </motion.div>
+                  ) : (
+                    <div
+                      className="w-full h-full flex items-center justify-center"
+                      style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                    >
+                      <Building2 className="w-20 h-20 text-white/30" />
+                      <div className="absolute top-4 right-4 w-12 h-1 rounded-full" style={{ background: GOLD }} />
+                    </div>
+                  )}
+                  {/* Halo doré décoratif (signature Win Agro) */}
+                  <div
+                    className="absolute top-0 right-0 w-24 h-24 rounded-full blur-xl pointer-events-none"
+                    style={{ background: `${GOLD}1a` }}
+                  />
+                </motion.div>
+              </div>
             </div>
 
             {/* Mot du directeur/fondateur — citation + portrait, bordure gauche or (CDC 3.3) */}
             {(shouldShowSection(rawWebsite?.directorIsActive) || shouldShowSection(rawWebsite?.promoterIsActive)) && (
-              <div className="grid md:grid-cols-2 gap-6">
+              <div className="grid md:grid-cols-2 gap-6 mt-16">
                 {shouldShowSection(rawWebsite?.promoterIsActive) && (
                   <DirectorWord
                     title="Mot du Promoteur"
@@ -1012,222 +1019,319 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         </section>
       )}
 
-      {/* ═══ 3.4 EXCELLENCE ACADÉMIQUE / PROGRAMMES ═══ */}
-      {/* ⭐ 2026-09-22 — respecte le toggle CMS « Afficher la section »
-          (onglet Programmes). Par défaut : visible (true en base). */}
-      {shouldShowSection(rawWebsite?.programsIsActive) && (
-        <section id="programmes" className="py-16 md:py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <SectionHeader
-            eyebrow="Excellence académique"
-            title={programsTitle}
-            subtitle={programsSubtitle}
-            navy={NAVY}
-            gold={GOLD}
-          />
+      {/* ═══ 3.4 EXCELLENCE ACADÉMIQUE / PROGRAMMES — Design Win Agro ═══ */}
+      <section id="programmes" className="py-24 bg-white relative overflow-hidden">
+        {/* Decorative Blur Backgrounds (signature Win Agro) */}
+        <div
+          className="absolute bottom-10 right-0 w-72 h-72 rounded-full blur-3xl opacity-50 -z-10"
+          style={{ background: `${NAVY}14` }}
+        />
 
-          {/* Grille de programmes — cartes avec icône (CDC 3.4) */}
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Header avec badge + hook statement (style Win Agro) */}
+          <div className="max-w-4xl mx-auto text-center mb-16">
+            <div
+              className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-4"
+              style={{ background: `${NAVY}14`, color: NAVY }}
+            >
+              Excellence académique
+            </div>
+            <motion.h2
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="font-serif text-2xl sm:text-3xl md:text-4xl font-extrabold leading-snug"
+              style={{ color: NAVY }}
+            >
+              {programsTitle}
+            </motion.h2>
+            <motion.div
+              animate={{ scaleX: [0, 1, 1, 0], transformOrigin: ["0% 50%", "0% 50%", "100% 50%", "100% 50%"] }}
+              transition={{ duration: 3, repeat: Infinity, times: [0, 0.15, 0.85, 1], ease: "easeInOut" }}
+              className="h-1 w-16 mx-auto mt-6 rounded-full"
+              style={{ background: GOLD }}
+            />
+            {programsSubtitle && (
+              <p className="text-sm md:text-base text-slate-500 max-w-2xl mx-auto mt-4">
+                {programsSubtitle}
+              </p>
+            )}
+          </div>
+
+          {/* Grille de programmes — cards premium avec card-shimmer (style Win Agro) */}
           <div className="grid md:grid-cols-3 gap-6 mb-16">
             {programs.map((program: any, i: number) => (
               <motion.div
                 key={program.id}
-                initial={{ opacity: 0, y: 24 }}
+                initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: i * 0.1, duration: 0.5 }}
-                whileHover={{ y: -8 }}
-                className="group relative bg-white rounded-2xl p-6 md:p-8 shadow-[0_4px_30px_-10px_rgba(11,30,77,0.12)] border border-slate-100 hover:shadow-[0_24px_60px_-20px_rgba(11,30,77,0.30)] hover:border-[#0B1E4D]/20 transition-all duration-300 overflow-hidden"
+                transition={{ delay: i * 0.08, duration: 0.5, ease: "easeOut" }}
+                whileHover={{
+                  y: -8,
+                  scale: 1.02,
+                  boxShadow: `0 20px 25px -5px ${NAVY}14, 0 8px 10px -6px ${NAVY}14`,
+                }}
+                className="group relative bg-white rounded-2xl p-6 md:p-8 shadow-lg border border-slate-100 transition-all duration-300 overflow-hidden card-shimmer"
               >
                 {/* Halo or au hover */}
-                <div className="absolute -top-16 -right-16 w-40 h-40 rounded-full opacity-0 group-hover:opacity-[0.08] blur-3xl transition-opacity duration-500" style={{ background: GOLD }} />
+                <div
+                  className="absolute -top-16 -right-16 w-40 h-40 rounded-full opacity-0 group-hover:opacity-[0.08] blur-3xl transition-opacity duration-500"
+                  style={{ background: GOLD }}
+                />
                 <div className="relative">
-                  <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-5 shadow-md" style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}>
+                  {/* Icône avec animation rotate infinie (signature Win Agro) */}
+                  <motion.div
+                    whileHover={{ rotate: 360 }}
+                    transition={{ duration: 0.6 }}
+                    className="w-14 h-14 rounded-xl flex items-center justify-center mb-5 shadow-md"
+                    style={{ background: `linear-gradient(135deg, ${NAVY}, ${BLUE})` }}
+                  >
                     <program.Icon className="w-7 h-7 text-white" />
-                  </div>
-                  <h3 className="text-xl font-bold mb-2" style={{ color: NAVY }}>{program.title}</h3>
-                  <p className="text-xs font-semibold mb-3" style={{ color: GOLD }}>{program.levels}</p>
+                  </motion.div>
+                  <h3 className="font-serif text-xl font-bold mb-2" style={{ color: NAVY }}>{program.title}</h3>
+                  <p className="text-xs font-bold mb-3 uppercase tracking-wider" style={{ color: GOLD }}>{program.levels}</p>
                   <p className="text-sm text-slate-600 leading-relaxed mb-5">{program.description}</p>
                   <button
                     onClick={() => { if (typeof window !== 'undefined') window.location.href = '/#admissions'; }}
-                    className="inline-flex items-center gap-1.5 text-sm font-semibold transition-colors group-hover:gap-2.5"
+                    className="inline-flex items-center gap-1.5 text-sm font-bold transition-all group-hover:gap-2.5"
                     style={{ color: NAVY }}
                   >
                     En savoir plus <ArrowRight size={14} />
                   </button>
                 </div>
                 {/* Liseré or en bas au hover */}
-                <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-b-2xl opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)` }} />
+                <div
+                  className="absolute bottom-0 left-0 right-0 h-0.5 rounded-b-2xl opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ background: `linear-gradient(90deg, transparent, ${GOLD}, transparent)` }}
+                />
               </motion.div>
             ))}
           </div>
 
-          {/* Points de différenciation — liste à icônes (CDC 3.4) */}
-          {/* ⭐ 2026-09-22 — affiché UNIQUEMENT si l'école a configuré ses
-              points de différenciation dans le CMS (onglet Programmes) ET si
-              le toggle « Afficher les différenciateurs » est actif.
-              Aucun fallback : ces affirmations (« Bilinguisme dès le
-              primaire », « STEM »…) sont propres à chaque établissement. */}
-          {shouldShowSection(rawWebsite?.differentiatorsIsActive) && differentiators.length > 0 && (
-            <div className="rounded-2xl p-8 md:p-10" style={{ background: `linear-gradient(135deg, ${PEARL}, #e8edf5)` }}>
-              <h3 className="text-lg md:text-xl font-bold text-center mb-8" style={{ color: NAVY }}>
-                Nos points de différenciation
-              </h3>
-              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                {differentiators.map((item: any, i: number) => (
-                  <motion.div
-                    key={item.title}
-                    initial={{ opacity: 0, y: 16 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ delay: i * 0.08 }}
-                    className="flex items-start gap-3"
-                  >
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${GOLD}20` }}>
-                      <item.Icon className="w-5 h-5" style={{ color: '#a07d00' }} />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold" style={{ color: NAVY }}>{item.title}</h4>
-                      <p className="text-xs text-slate-600 mt-0.5">{item.description}</p>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
-      )}
-      {/* ═══ fin 3.4 — wrapper programsIsActive ═══ */}
-
-      {/* ═══ 3.5 CORPS ENSEIGNANT / ENCADREMENT ═══ */}
-      {/* ⭐ 2026-09-22 — section affichée UNIQUEMENT si l'école a configuré
-          son corps enseignant dans le CMS (onglet Corps enseignant) ET si le
-          toggle « Afficher la section » est actif.
-          Avant : quatre profils fictifs codés en dur (« M. Koffi Adjovi »,
-          « Mme Aïcha Bello »…) apparaissaient sur TOUS les sites des écoles —
-          perçus comme de vrais employés. Chaque école présente désormais
-          uniquement SON équipe réelle (nom, rôle, matière, photo). */}
-      {shouldShowSection(rawWebsite?.facultyIsActive) && faculty.length > 0 && (
-        <section id="corps-enseignant" className="py-16 md:py-24" style={{ background: PEARL }}>
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <SectionHeader
-              eyebrow="Notre équipe"
-              title={facultyTitle}
-              subtitle={facultySubtitle}
-              navy={NAVY}
-              gold={GOLD}
+          {/* Points de différenciation — card premium Win Agro */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+            className="rounded-3xl p-8 md:p-10 relative overflow-hidden"
+            style={{ background: `linear-gradient(135deg, ${PEARL}, ${NAVY}0a)` }}
+          >
+            {/* Halo doré décoratif */}
+            <div
+              className="absolute top-0 right-0 w-24 h-24 rounded-full blur-xl pointer-events-none"
+              style={{ background: `${GOLD}1a` }}
             />
-
-            {/* Ratio encadrant/élève — badge or (CDC 3.5) — uniquement si
-                configuré dans le CMS ou calculable via les stats dynamiques. */}
-            {facultyRatio && (
-              <div className="flex justify-center mb-10">
-                <div
-                  className="inline-flex items-center gap-3 px-5 py-3 rounded-full shadow-md"
-                  style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)` }}
-                >
-                  <Users className="w-5 h-5" style={{ color: NAVY }} />
-                  <span className="text-sm font-bold" style={{ color: NAVY }}>
-                    {facultyRatio}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Grille d'enseignants clés (CDC 3.5 — 3-8 profils, responsive 2-4 colonnes) */}
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {faculty.map((member: any, i: number) => (
+            <h3 className="font-serif text-lg md:text-xl font-bold text-center mb-8" style={{ color: NAVY }}>
+              Nos points de différenciation
+            </h3>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+              {differentiators.map((item: any, i: number) => (
                 <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 24 }}
+                  key={item.title}
+                  initial={{ opacity: 0, y: 16 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
-                  transition={{ delay: i * 0.08 }}
-                  whileHover={{ y: -6 }}
-                  className="group bg-white rounded-2xl p-6 text-center shadow-sm border border-slate-100 hover:shadow-lg transition-all"
+                  transition={{ delay: i * 0.08, duration: 0.5 }}
+                  whileHover={{ y: -4 }}
+                  className="flex items-start gap-3 p-4 rounded-2xl bg-white/60 border border-white/40 hover:bg-white transition-all duration-300"
                 >
-                  {/* Portrait — photo CMS ou initiales, bordure or au hover */}
-                  <div className="relative w-20 h-20 mx-auto mb-4">
-                    {member.photoUrl ? (
-                      <Image
-                        src={member.photoUrl}
-                        alt={member.name}
-                        width={80}
-                        height={80}
-                        className="w-20 h-20 rounded-full object-cover transition-all group-hover:ring-4 group-hover:ring-amber-400/40 group-hover:ring-offset-2"
-                      />
-                    ) : (
-                      <div
-                        className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold transition-all group-hover:ring-4 group-hover:ring-amber-400/40 group-hover:ring-offset-2"
-                        style={{
-                          background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
-                          color: '#FFFFFF',
-                        }}
-                      >
-                        {member.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
-                      </div>
-                    )}
+                  <motion.div
+                    whileHover={{ scale: 1.1, rotate: 5 }}
+                    className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+                    style={{ background: `${GOLD}20` }}
+                  >
+                    <item.Icon className="w-5 h-5" style={{ color: '#a07d00' }} />
+                  </motion.div>
+                  <div>
+                    <h4 className="text-sm font-bold" style={{ color: NAVY }}>{item.title}</h4>
+                    <p className="text-xs text-slate-600 mt-0.5">{item.description}</p>
                   </div>
-                  <h4 className="text-sm font-bold" style={{ color: NAVY }}>{member.name}</h4>
-                  <p className="text-xs font-medium mt-1" style={{ color: GOLD }}>{member.role}</p>
-                  <p className="text-[11px] text-slate-500 mt-1">{member.subject}</p>
                 </motion.div>
               ))}
             </div>
-          </div>
-        </section>
-      )}
+          </motion.div>
+        </div>
+      </section>
 
-      {/* ═══ 3.6 VIE SCOLAIRE / ACTUALITÉS ═══ */}
-      {/* ⭐ 2026-09-22 — respecte le toggle CMS newsIsActive (défaut : visible).
-          Actualités : données RÉELLES du tenant uniquement — plus de faux
-          articles de démo. Non configuré → message « Aucune actualité ». */}
-      {shouldShowSection(rawWebsite?.newsIsActive) && (
-        <section id="vie-scolaire" className="py-16 md:py-24 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <SectionHeader
-            eyebrow="Vie scolaire"
-            title={newsTitle}
-            subtitle={newsSubtitle}
-            navy={NAVY}
-            gold={GOLD}
-          />
+      {/* ═══ 3.5 CORPS ENSEIGNANT / ENCADREMENT — Design Win Agro ═══ */}
+      <section id="corps-enseignant" className="py-24 relative overflow-hidden" style={{ background: PEARL }}>
+        {/* Decorative Blur Backgrounds (signature Win Agro) */}
+        <div
+          className="absolute top-1/2 left-0 w-80 h-80 rounded-full blur-[100px] pointer-events-none"
+          style={{ background: `${NAVY}0a` }}
+        />
+        <div
+          className="absolute bottom-0 right-10 w-96 h-96 rounded-full blur-[120px] pointer-events-none"
+          style={{ background: `${GOLD}14` }}
+        />
 
-          {/* ⭐ 2026-09-22 — Texte « Vie scolaire » (CMS, onglet Vie scolaire →
-              Contenu). Avant : ce champ était éditable dans le CMS mais JAMAIS
-              rendu sur le site public. Rich HTML ou texte brut, affiché
-              uniquement si l'école l'a renseigné. */}
-          {shouldShowSection(rawWebsite?.schoolLifeIsActive) && withDefault(rawWebsite?.schoolLifeContent, '') && (
-            <div className="mb-12">
-              <CmsContent
-                className="max-w-3xl mx-auto text-center text-sm md:text-base text-slate-600 leading-relaxed [&_p]:mb-3"
-                content={rawWebsite?.schoolLifeContent}
-              />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          {/* Header avec badge + hook statement (style Win Agro) */}
+          <div className="max-w-4xl mx-auto text-center mb-12">
+            <div
+              className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-4"
+              style={{ background: `${NAVY}14`, color: NAVY }}
+            >
+              Notre équipe
             </div>
-          )}
+            <motion.h2
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="font-serif text-2xl sm:text-3xl md:text-4xl font-extrabold leading-snug"
+              style={{ color: NAVY }}
+            >
+              {facultyTitle}
+            </motion.h2>
+            <motion.div
+              animate={{ scaleX: [0, 1, 1, 0], transformOrigin: ["0% 50%", "0% 50%", "100% 50%", "100% 50%"] }}
+              transition={{ duration: 3, repeat: Infinity, times: [0, 0.15, 0.85, 1], ease: "easeInOut" }}
+              className="h-1 w-16 mx-auto mt-6 rounded-full"
+              style={{ background: GOLD }}
+            />
+            {facultySubtitle && (
+              <p className="text-sm md:text-base text-slate-500 max-w-2xl mx-auto mt-4">
+                {facultySubtitle}
+              </p>
+            )}
+          </div>
 
-          {/* Flux d'actualités — 3-6 cartes (image, date, extrait) (CDC 3.6) */}
+          {/* Ratio encadrant/élève — badge or premium avec pulse (style Win Agro) */}
+          <div className="flex justify-center mb-10">
+            <motion.div
+              animate={{ scale: [1, 1.04, 1] }}
+              transition={{ repeat: Infinity, duration: 2.5, ease: "easeInOut" }}
+              className="inline-flex items-center gap-3 px-5 py-3 rounded-full shadow-xl"
+              style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)` }}
+            >
+              <Users className="w-5 h-5" style={{ color: NAVY }} />
+              <span className="text-sm font-bold" style={{ color: NAVY }}>
+                {facultyRatio}
+              </span>
+            </motion.div>
+          </div>
+
+          {/* Grille d'enseignants — cards premium avec card-shimmer (style Win Agro) */}
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {faculty.map((member: any, i: number) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 24 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.08, duration: 0.5, ease: "easeOut" }}
+                whileHover={{ y: -8, transition: { duration: 0.2 } }}
+                className="group bg-white rounded-3xl p-6 text-center shadow-lg border border-slate-100 hover:shadow-xl transition-all duration-300 card-shimmer"
+              >
+                {/* Portrait placeholder — bordure or au hover + scale (style Win Agro) */}
+                <div className="relative w-20 h-20 mx-auto mb-4">
+                  <motion.div
+                    whileHover={{ scale: 1.05 }}
+                    className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold transition-all group-hover:ring-4 group-hover:ring-amber-400/40 group-hover:ring-offset-2"
+                    style={{
+                      background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                      color: '#FFFFFF',
+                    }}
+                  >
+                    {member.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                  </motion.div>
+                  {/* Halo doré décoratif */}
+                  <div
+                    className="absolute -top-2 -right-2 w-6 h-6 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity"
+                    style={{ background: GOLD }}
+                  />
+                </div>
+                <h4 className="font-serif text-sm font-bold" style={{ color: NAVY }}>{member.name}</h4>
+                <p className="text-xs font-bold mt-1 uppercase tracking-wider" style={{ color: GOLD }}>{member.role}</p>
+                <p className="text-[11px] text-slate-500 mt-1">{member.subject}</p>
+                {/* Separator line with shine (style Win Agro) */}
+                <div
+                  className="w-8 h-0.5 rounded-full mx-auto mt-3 opacity-50 group-hover:opacity-100 group-hover:w-12 transition-all duration-300"
+                  style={{ background: GOLD }}
+                />
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ 3.6 VIE SCOLAIRE / ACTUALITÉS — Design Win Agro ═══ */}
+      <section id="vie-scolaire" className="py-24 bg-white relative overflow-hidden">
+        {/* Decorative Blur Backgrounds (signature Win Agro) */}
+        <div
+          className="absolute top-1/2 left-0 w-72 h-72 rounded-full blur-3xl opacity-40 -z-10"
+          style={{ background: `${NAVY}0a` }}
+        />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          {/* Header avec badge + hook statement (style Win Agro) */}
+          <div className="max-w-4xl mx-auto text-center mb-16">
+            <div
+              className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-4"
+              style={{ background: `${NAVY}14`, color: NAVY }}
+            >
+              Vie scolaire
+            </div>
+            <motion.h2
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="font-serif text-2xl sm:text-3xl md:text-4xl font-extrabold leading-snug"
+              style={{ color: NAVY }}
+            >
+              {newsTitle}
+            </motion.h2>
+            <motion.div
+              animate={{ scaleX: [0, 1, 1, 0], transformOrigin: ["0% 50%", "0% 50%", "100% 50%", "100% 50%"] }}
+              transition={{ duration: 3, repeat: Infinity, times: [0, 0.15, 0.85, 1], ease: "easeInOut" }}
+              className="h-1 w-16 mx-auto mt-6 rounded-full"
+              style={{ background: GOLD }}
+            />
+            {newsSubtitle && (
+              <p className="text-sm md:text-base text-slate-500 max-w-2xl mx-auto mt-4">
+                {newsSubtitle}
+              </p>
+            )}
+          </div>
+
+          {/* Flux d'actualités — cards premium avec card-shimmer + staggered (style Win Agro) */}
           {newsArticles.length > 0 ? (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
               {newsArticles.slice(0, 6).map((article: any, i: number) => (
                 <motion.article
                   key={article.id || i}
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 30 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
-                  transition={{ delay: i * 0.08 }}
-                  className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-lg transition-all cursor-pointer group"
+                  transition={{ delay: i * 0.08, duration: 0.5, ease: "easeOut" }}
+                  whileHover={{
+                    y: -8,
+                    scale: 1.02,
+                    boxShadow: `0 20px 25px -5px ${NAVY}14, 0 8px 10px -6px ${NAVY}14`,
+                  }}
+                  className="bg-white rounded-2xl overflow-hidden shadow-lg border border-slate-100 transition-all duration-300 cursor-pointer group card-shimmer"
                   onClick={() => { if (article.slug) window.location.href = `/actualites/${article.slug}`; }}
                 >
                   {article.coverImageUrl || DEFAULT_PORTAL_IMAGES.news[i % DEFAULT_PORTAL_IMAGES.news.length] ? (
-                    <div className="h-44 overflow-hidden">
+                    <div className="h-44 overflow-hidden relative">
                       <Image
                         src={article.coverImageUrl || DEFAULT_PORTAL_IMAGES.news[i % DEFAULT_PORTAL_IMAGES.news.length]}
                         alt={article.title}
                         fill
                         sizes="(max-width: 768px) 100vw, 33vw"
-                        className="object-cover group-hover:scale-105 transition-transform duration-300"
+                        className="object-cover group-hover:scale-105 transition-transform duration-500"
                       />
+                      {/* Numéro de l'article en badge (style Win Agro) */}
+                      <div
+                        className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full bg-white/90 backdrop-blur-sm text-[10px] font-black shadow-sm"
+                        style={{ color: NAVY }}
+                      >
+                        #{String(i + 1).padStart(2, '0')}
+                      </div>
                     </div>
                   ) : (
                     <div className="h-44 overflow-hidden flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${NAVY}30, ${GOLD}20)` }}>
@@ -1237,7 +1341,10 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                   <div className="p-5">
                     <div className="flex items-center gap-2 mb-2">
                       {article.category && (
-                        <span className="inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full" style={{ background: `${NAVY}15`, color: NAVY }}>
+                        <span
+                          className="inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
+                          style={{ background: `${NAVY}15`, color: NAVY }}
+                        >
                           {article.category}
                         </span>
                       )}
@@ -1248,9 +1355,14 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                         </span>
                       )}
                     </div>
-                    <h3 className="text-base font-bold text-slate-900 mb-2 line-clamp-2 group-hover:text-[#0B1E4D] transition-colors">{article.title}</h3>
+                    <h3 className="font-serif text-base font-bold mb-2 line-clamp-2 transition-colors" style={{ color: NAVY }}>
+                      {article.title}
+                    </h3>
                     <p className="text-sm text-slate-600 line-clamp-2 mb-3">{article.excerpt || article.content}</p>
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold" style={{ color: NAVY }}>
+                    <span
+                      className="inline-flex items-center gap-1 text-xs font-bold transition-all group-hover:gap-2"
+                      style={{ color: NAVY }}
+                    >
                       Lire la suite <ArrowRight size={12} className="group-hover:translate-x-0.5 transition-transform" />
                     </span>
                   </div>
@@ -1261,9 +1373,8 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             <div className="text-center py-12 text-slate-500 mb-16">Aucune actualité pour le moment.</div>
           )}
 
-          {/* Galerie photo — grille (CDC 3.6) — respecte le toggle CMS
-              galleryIsActive (défaut : visible) */}
-          {shouldShowSection(rawWebsite?.galleryIsActive) && galleryItems.length > 0 && (
+          {/* Galerie photo — grille (CDC 3.6) */}
+          {galleryItems.length > 0 && (
             <div id="galerie">
               <h3 className="text-xl md:text-2xl font-bold text-center mb-8" style={{ color: NAVY }}>
                 Galerie — Vie scolaire en images
@@ -1303,128 +1414,182 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           )}
         </div>
       </section>
-      )}
-      {/* ═══ fin 3.6 — wrapper newsIsActive ═══ */}
 
       {/* ═══ 3.7 ADMISSIONS — fond navy, texte blanc (CDC 3.7) ═══ */}
-      {/* ⭐ 2026-09-22 — respecte le toggle CMS admissionsIsActive (défaut : visible). */}
-      {shouldShowSection(rawWebsite?.admissionsIsActive) && (
-        <section id="admissions" className="relative py-16 md:py-24 overflow-hidden" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${DARK} 100%)` }}>
+      <section id="admissions" className="relative py-16 md:py-24 overflow-hidden" style={{ background: `linear-gradient(135deg, ${NAVY} 0%, ${DARK} 100%)` }}>
         {/* Halo doré décoratif */}
         <div className="absolute inset-0 opacity-[0.08] bg-[radial-gradient(circle_at_top_right,#F5B700_0%,transparent_50%)]" />
         <div className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <SectionHeader
-            eyebrow="Rejoindre notre établissement"
-            title={admissionTitle}
-            subtitle={admissionSubtitle}
-            navy={NAVY}
-            gold={GOLD}
-            inverted
-          />
-
-          {/* ⭐ 2026-09-22 — Texte descriptif du processus d'admission (CMS,
-              onglet Admissions → Contenu). Rich HTML ou texte brut.
-              Affiché uniquement si l'école l'a renseigné. */}
-          {withDefault(rawWebsite?.admissionsContent, '') && (
-            <div className="mb-12 -mt-4">
-              <CmsContent
-                className="max-w-3xl mx-auto text-center text-sm md:text-base text-blue-50/85 leading-relaxed [&_p]:mb-3"
-                content={rawWebsite?.admissionsContent}
-              />
+          {/* Header avec badge + hook statement (style Win Agro, inverted) */}
+          <div className="max-w-4xl mx-auto text-center mb-16">
+            <div
+              className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-4"
+              style={{ background: `${GOLD}22`, color: GOLD, border: `1px solid ${GOLD}55` }}
+            >
+              Rejoindre notre établissement
             </div>
-          )}
+            <motion.h2
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="font-serif text-2xl sm:text-3xl md:text-4xl font-extrabold leading-snug text-white"
+            >
+              {admissionTitle}
+            </motion.h2>
+            <motion.div
+              animate={{ scaleX: [0, 1, 1, 0], transformOrigin: ["0% 50%", "0% 50%", "100% 50%", "100% 50%"] }}
+              transition={{ duration: 3, repeat: Infinity, times: [0, 0.15, 0.85, 1], ease: "easeInOut" }}
+              className="h-1 w-16 mx-auto mt-6 rounded-full"
+              style={{ background: GOLD }}
+            />
+            {admissionSubtitle && (
+              <p className="text-sm md:text-base text-blue-100/70 max-w-2xl mx-auto mt-4">
+                {admissionSubtitle}
+              </p>
+            )}
+          </div>
 
-          {/* Timeline horizontale desktop / verticale mobile (CDC 3.7) */}
+          {/* Timeline horizontale desktop / verticale mobile (CDC 3.7) — Win Agro style */}
           <div className="mb-16">
             <div className="grid md:grid-cols-4 gap-6 md:gap-4 relative">
               {/* Ligne de timeline horizontale (desktop) */}
-              <div className="hidden md:block absolute top-8 left-[12.5%] right-[12.5%] h-0.5" style={{ background: `linear-gradient(90deg, ${GOLD}, ${GOLD}55, ${GOLD})` }} />
+              <div
+                className="hidden md:block absolute top-8 left-[12.5%] right-[12.5%] h-0.5"
+                style={{ background: `linear-gradient(90deg, ${GOLD}, ${GOLD}55, ${GOLD})` }}
+              />
               {admissionSteps.map((step: any, i: number) => (
                 <motion.div
                   key={step.num}
-                  initial={{ opacity: 0, y: 20 }}
+                  initial={{ opacity: 0, y: 30 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
-                  transition={{ delay: i * 0.15 }}
+                  transition={{ delay: i * 0.15, duration: 0.5, ease: "easeOut" }}
+                  whileHover={{ y: -6 }}
                   className="relative text-center"
                 >
-                  <div className="relative inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 z-10" style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)`, boxShadow: `0 0 0 4px ${DARK}` }}>
+                  <motion.div
+                    whileHover={{ scale: 1.1, rotate: 5 }}
+                    className="relative inline-flex items-center justify-center w-16 h-16 rounded-full mb-4 z-10"
+                    style={{
+                      background: `linear-gradient(135deg, ${GOLD}, #e09e1f)`,
+                      boxShadow: `0 0 0 4px ${DARK}`,
+                    }}
+                  >
                     <step.Icon className="w-7 h-7" style={{ color: NAVY }} />
                     {/* Numéro d'étape en badge */}
-                    <span className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-white text-xs font-bold flex items-center justify-center" style={{ color: NAVY }}>
+                    <span
+                      className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-white text-xs font-bold flex items-center justify-center"
+                      style={{ color: NAVY }}
+                    >
                       {step.num}
                     </span>
-                  </div>
-                  <h4 className="text-base font-bold text-white mb-2">{step.title}</h4>
+                  </motion.div>
+                  <h4 className="font-serif text-base font-bold text-white mb-2">{step.title}</h4>
                   <p className="text-xs text-blue-100/70 leading-relaxed px-2">{step.description}</p>
                 </motion.div>
               ))}
             </div>
           </div>
 
-          {/* Documents requis + CTA final (CDC 3.7) */}
+          {/* Documents requis + CTA final (CDC 3.7) — glass-panel Win Agro */}
           <div className="grid lg:grid-cols-2 gap-8 items-center">
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
-              className="bg-white/5 backdrop-blur-sm rounded-2xl p-6 md:p-8 border border-white/10"
+              transition={{ duration: 0.6 }}
+              className="glass-panel rounded-3xl p-6 md:p-8"
+              style={{ background: 'rgba(255, 255, 255, 0.05)', borderColor: 'rgba(255, 255, 255, 0.1)' }}
             >
-              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <h3 className="font-serif text-lg font-bold text-white mb-4 flex items-center gap-2">
                 <FileText className="w-5 h-5" style={{ color: GOLD }} />
                 Documents requis
               </h3>
               <ul className="space-y-2.5">
                 {admissionDocuments.map((doc: any, i: number) => (
-                  <li key={i} className="flex items-start gap-2 text-sm text-blue-50/85">
+                  <motion.li
+                    key={i}
+                    initial={{ opacity: 0, x: -10 }}
+                    whileInView={{ opacity: 1, x: 0 }}
+                    viewport={{ once: true }}
+                    transition={{ delay: i * 0.05 }}
+                    className="flex items-start gap-2 text-sm text-blue-50/85"
+                  >
                     <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" style={{ color: GOLD }} />
                     <span>{typeof doc === 'string' ? doc : doc.label || doc.name || doc.title}</span>
-                  </li>
+                  </motion.li>
                 ))}
               </ul>
             </motion.div>
 
-            {/* CTA final — "Commencer ma candidature" (or) */}
+            {/* CTA final — "Commencer ma candidature" (or) avec btn-shimmer */}
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
               className="text-center"
             >
-              <h3 className="text-2xl md:text-3xl font-extrabold text-white mb-3">
+              <h3 className="font-serif text-2xl md:text-3xl font-extrabold text-white mb-3">
                 Prêt à nous rejoindre ?
               </h3>
               <p className="text-blue-100/70 text-sm mb-6 max-w-md mx-auto">
                 Démarrez votre candidature en ligne dès maintenant. Notre équipe vous accompagne à chaque étape.
               </p>
-              <button
+              <motion.button
                 onClick={() => handlePortalClick('PUBLIC')}
-                className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-xl text-base font-bold shadow-xl transition-all hover:scale-105"
+                whileHover={{ scale: 1.05, boxShadow: `0px 10px 25px ${GOLD}66` }}
+                whileTap={{ scale: 0.98 }}
+                className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-full text-base font-bold shadow-xl cursor-pointer btn-shimmer"
                 style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)`, color: NAVY }}
               >
                 Commencer ma candidature <ArrowRight size={18} />
-              </button>
+              </motion.button>
             </motion.div>
           </div>
         </div>
       </section>
-      )}
-      {/* ═══ fin 3.7 — wrapper admissionsIsActive ═══ */}
 
-      {/* ═══ 3.8 TÉMOIGNAGES ═══ */}
-      {/* ⭐ 2026-09-22 — respecte le toggle CMS testimonialsIsActive ET
-          n'affiche que les VRAIS témoignages configurés par l'école
-          (plus de parents fictifs de démo). */}
-      {shouldShowSection(rawWebsite?.testimonialsIsActive) && testimonials.length > 0 && (
-        <section id="temoignages" className="py-16 md:py-24 bg-white">
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-            <SectionHeader
-              eyebrow="Ils nous font confiance"
-              title={testimonialsTitle}
-              subtitle={testimonialsSubtitle}
-              navy={NAVY}
-              gold={GOLD}
-            />
+      {/* ═══ 3.8 TÉMOIGNAGES — Design Win Agro ═══ */}
+      {testimonials.length > 0 && (
+        <section id="temoignages" className="py-24 bg-white relative overflow-hidden">
+          {/* Decorative Blur Backgrounds (signature Win Agro) */}
+          <div
+            className="absolute bottom-10 right-0 w-72 h-72 rounded-full blur-3xl opacity-50 -z-10"
+            style={{ background: `${GOLD}14` }}
+          />
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            {/* Header avec badge + hook statement (style Win Agro) */}
+            <div className="max-w-4xl mx-auto text-center mb-16">
+              <div
+                className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-4"
+                style={{ background: `${NAVY}14`, color: NAVY }}
+              >
+                Ils nous font confiance
+              </div>
+              <motion.h2
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6 }}
+                className="font-serif text-2xl sm:text-3xl md:text-4xl font-extrabold leading-snug"
+                style={{ color: NAVY }}
+              >
+                {testimonialsTitle}
+              </motion.h2>
+              <motion.div
+                animate={{ scaleX: [0, 1, 1, 0], transformOrigin: ["0% 50%", "0% 50%", "100% 50%", "100% 50%"] }}
+                transition={{ duration: 3, repeat: Infinity, times: [0, 0.15, 0.85, 1], ease: "easeInOut" }}
+                className="h-1 w-16 mx-auto mt-6 rounded-full"
+                style={{ background: GOLD }}
+              />
+              {testimonialsSubtitle && (
+                <p className="text-sm md:text-base text-slate-500 max-w-2xl mx-auto mt-4">
+                  {testimonialsSubtitle}
+                </p>
+              )}
+            </div>
 
             {/* Carrousel témoignages (CDC 3.8 — un seul visible sur mobile) */}
             <div className="relative mb-12">
@@ -1499,57 +1664,72 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             </div>
 
             {/* Logos partenaires / accréditations — niveaux de gris, couleur au survol (CDC 3.8) */}
-            {/* ⭐ 2026-09-22 — affiché UNIQUEMENT si l'école a configuré ses
-                partenaires dans le CMS (onglet Partenaires). Avant : MEN /
-                UNESCO / CONFEMEN / AUF codés en dur = fausses accréditations
-                revendiquées par toutes les écoles. Logo image (logoUrl) ou
-                abréviation si pas d'image. */}
-            {partnerLogosIsActive && partnerLogos.length > 0 && (
-              <div className="border-t border-slate-100 pt-10">
-                <p className="text-center text-xs font-semibold uppercase tracking-wider text-slate-400 mb-6">
-                  Partenaires & accréditations
-                </p>
-                <div className="flex flex-wrap items-center justify-center gap-6 md:gap-10">
-                  {partnerLogos.map((partner, i) => (
-                    <div
-                      key={i}
-                      className="grayscale opacity-50 hover:grayscale-0 hover:opacity-100 transition-all duration-300 cursor-default"
-                    >
-                      <div className="flex items-center gap-2">
-                        {partner.logoUrl ? (
-                          <Image
-                            src={partner.logoUrl}
-                            alt={partner.name}
-                            width={40}
-                            height={40}
-                            className="w-10 h-10 rounded-lg object-contain"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-lg bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
-                            {(partner.abbr || partner.name || '?').slice(0, 2)}
-                          </div>
-                        )}
-                        <span className="text-xs font-semibold text-slate-600 hidden md:inline">{partner.name}</span>
+            <div className="border-t border-slate-100 pt-10">
+              <p className="text-center text-xs font-semibold uppercase tracking-wider text-slate-400 mb-6">
+                Partenaires & accréditations
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-6 md:gap-10">
+                {PARTNER_LOGOS.map((partner, i) => (
+                  <div
+                    key={i}
+                    className="grayscale opacity-50 hover:grayscale-0 hover:opacity-100 transition-all duration-300 cursor-default"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-10 h-10 rounded-lg bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">
+                        {partner.abbr.slice(0, 2)}
                       </div>
+                      <span className="text-xs font-semibold text-slate-600 hidden md:inline">{partner.name}</span>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
-            )}
+            </div>
           </div>
         </section>
       )}
 
-      {/* ═══ 3.9 CONTACT ═══ */}
-      <section id="contact" className="py-16 md:py-24" style={{ background: PEARL }}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <SectionHeader
-            eyebrow="Nous contacter"
-            title={contactTitle}
-            subtitle={contactSubtitle}
-            navy={NAVY}
-            gold={GOLD}
-          />
+      {/* ═══ 3.9 CONTACT — Design Win Agro ═══ */}
+      <section id="contact" className="py-24 relative overflow-hidden" style={{ background: PEARL }}>
+        {/* Decorative Blur Backgrounds (signature Win Agro) */}
+        <div
+          className="absolute top-1/2 left-0 w-72 h-72 rounded-full blur-3xl opacity-40 -z-10"
+          style={{ background: `${NAVY}0a` }}
+        />
+        <div
+          className="absolute bottom-0 right-10 w-96 h-96 rounded-full blur-[120px] pointer-events-none"
+          style={{ background: `${GOLD}14` }}
+        />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          {/* Header avec badge + hook statement (style Win Agro) */}
+          <div className="max-w-4xl mx-auto text-center mb-16">
+            <div
+              className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-4"
+              style={{ background: `${NAVY}14`, color: NAVY }}
+            >
+              Nous contacter
+            </div>
+            <motion.h2
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="font-serif text-2xl sm:text-3xl md:text-4xl font-extrabold leading-snug"
+              style={{ color: NAVY }}
+            >
+              {contactTitle}
+            </motion.h2>
+            <motion.div
+              animate={{ scaleX: [0, 1, 1, 0], transformOrigin: ["0% 50%", "0% 50%", "100% 50%", "100% 50%"] }}
+              transition={{ duration: 3, repeat: Infinity, times: [0, 0.15, 0.85, 1], ease: "easeInOut" }}
+              className="h-1 w-16 mx-auto mt-6 rounded-full"
+              style={{ background: GOLD }}
+            />
+            {contactSubtitle && (
+              <p className="text-sm md:text-base text-slate-500 max-w-2xl mx-auto mt-4">
+                {contactSubtitle}
+              </p>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Colonne gauche : Coordonnées + Carte OpenStreetMap */}
@@ -1610,18 +1790,16 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                       </div>
                     </li>
                   )}
-                  {schoolHoursIsActive && (
-                    <li className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${GOLD}15` }}>
-                        <Clock className="w-4 h-4" style={{ color: '#a07d00' }} />
-                      </div>
-                      <div>
-                        <p className="text-xs text-slate-500 uppercase tracking-wider">Horaires</p>
-                        <p className="text-sm font-semibold text-slate-900">{schoolHoursWeekdays}</p>
-                        <p className="text-xs text-slate-500">{schoolHoursSaturday}</p>
-                      </div>
-                    </li>
-                  )}
+                  <li className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${GOLD}15` }}>
+                      <Clock className="w-4 h-4" style={{ color: '#a07d00' }} />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wider">Horaires</p>
+                      <p className="text-sm font-semibold text-slate-900">Lun - Ven : 7h30 - 17h00</p>
+                      <p className="text-xs text-slate-500">Sam : 8h00 - 12h00</p>
+                    </div>
+                  </li>
                 </ul>
               </div>
 
@@ -1697,13 +1875,18 @@ function KeyFigureCard({ fig, gold, navy, delay }: { fig: any; gold: string; nav
       initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
-      transition={{ delay }}
-      whileHover={{ y: -4 }}
-      className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-3 md:p-4 text-center"
+      transition={{ delay, duration: 0.6, ease: "easeOut" }}
+      whileHover={{ y: -8, transition: { duration: 0.2 } }}
+      className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-3 md:p-4 text-center card-shimmer transition-all duration-300"
     >
       <div className="text-xl md:text-2xl font-extrabold text-white">
         {targetNum > 0 ? `${value}${suffix}` : fig.value}
       </div>
+      {/* Separator line with shine animation (style Win Agro) */}
+      <div
+        className="w-12 h-1 rounded-full mx-auto mt-1 mb-2 transition-all duration-300 group-hover:w-20"
+        style={{ background: gold }}
+      />
       <div className="text-[10px] md:text-xs text-blue-50/70 font-medium mt-0.5">{fig.label}</div>
     </motion.div>
   );

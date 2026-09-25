@@ -1046,19 +1046,6 @@ body {
   text-decoration: underline;
 }
 
-/* ⭐ V10 (2026-09-21) — Rich Text Editor : affordance de retrait des
-   insertions médias (images, figures, dessins, graphiques, tableaux,
-   maths, lignes calligraphiques). Classe posée dynamiquement au survol
-   par le composant (handleEditorMouseMove) — contour pointillé bleu +
-   curseur « cliquable ». Le clic sélectionne l'insertion entière et fait
-   apparaître la pastille « Retirer l'insertion ». Classe purement
-   additive : aucun effet sur le contenu enregistré ni le rendu PDF. */
-.ah-media-hover {
-  outline: 2px dashed rgba(37, 99, 235, 0.55) !important;
-  outline-offset: 2px;
-  cursor: pointer;
-}
-
 /* ============================================================
    CDC RESPONSIVE — règles globales mobile-first
    (Refonte responsive complète Academia Helm — YEHI OR Tech)
@@ -1197,225 +1184,234 @@ html {
   }
 }
 
-/* ⭐ V12 (2026-09-22) — POLICES D'ÉCRITURE SCOLAIRE (auto-hébergées, OFL)
-   Playwrite FR Moderne / Playwrite FR Trad : cursives scolaires françaises
-   (projet Google Fonts dédié à l'enseignement). Comic Neue : écriture script
-   (lettres imprimées). Utilisées par les lignes calligraphiques insérées via
-   le RichTextEditor (fiches, cahier journal, épreuves) — rendu identique à
-   l'écran, dans les PDF et hors-ligne (fichiers servis depuis /fonts,
-   pré-cachés par le service worker). */
-@font-face {
-  font-family: 'Playwrite FR Moderne';
-  src: url('/fonts/playwrite-fr-moderne.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Playwrite FR Trad';
-  src: url('/fonts/playwrite-fr-trad.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Comic Neue';
-  src: url('/fonts/comic-neue.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
+/* ============================================================================
+ * WIN AGRO DESIGN TOKENS — Appliqué à Academia Helm (2026-09-25)
+ * ============================================================================
+ * Tokens design importés du site Win Agro et mappés sur la palette Helm :
+ *   - primary-deep → NAVY (#0B1E4D)
+ *   - primary-green → BLUE (#1E4FA3)
+ *   - primary-pale → navy tinté
+ *   - accent-yellow → GOLD (#F5B700)
+ *   - accent-dark → #a07d00 (or sombre)
+ *   - accent-pale → gold tinté
+ *   - noir-vert → DARK navy foncé (#091F4A)
+ *   - cream → PEARL (#F4F6FA)
+ *   - gray-text → slate-600 (#475569)
+ *
+ * Polices CONSERVÉES (Academia Helm) : Noto Sans SC + Noto Serif SC.
+ * Palette CONSERVÉE : Navy / Blue / Gold / Pearl.
+ * ============================================================================
+ */
+
+:root {
+  /* Couleurs Win Agro mappées sur palette Helm */
+  --color-primary-deep: #0B1E4D;
+  --color-primary-green: #1E4FA3;
+  --color-primary-pale: #E6EBF6;
+  --color-accent-yellow: #F5B700;
+  --color-accent-dark: #a07d00;
+  --color-accent-pale: #FFF8D6;
+  --color-cream: #F4F6FA;
+  --color-noir-vert: #091F4A;
+  --color-gray-text: #475569;
 }
 
-/* ⭐ V13 (2026-09-22) — POLICES PROFESSIONNELLES de l'éditeur enrichi
-   (cahier journal, fiches pédagogiques, épreuves). 11 polices choisissables
-   dans le menu « Police » du RichTextEditor — auto-hébergées (sous-ensemble
-   latin, OFL, ~310 Ko), servies depuis /fonts et mises en cache par le
-   service worker (pattern /fonts/). Les MÊMES fichiers sont embarqués en
-   base64 dans les templates PDF (api-server : pdf-school-fonts.ts) → rendu
-   écran / PDF identique. Arimo/Tinos/Carlito sont les équivalents
-   métriques d'Arial / Times New Roman / Calibri. */
-@font-face {
-  font-family: 'Montserrat';
-  src: url('/fonts/montserrat.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Playfair Display';
-  src: url('/fonts/playfair-display.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'EB Garamond';
-  src: url('/fonts/eb-garamond.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Merriweather';
-  src: url('/fonts/merriweather.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Dancing Script';
-  src: url('/fonts/dancing-script.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Caveat';
-  src: url('/fonts/caveat.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Patrick Hand';
-  src: url('/fonts/patrick-hand.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Lobster Two';
-  src: url('/fonts/lobster-two.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Arimo';
-  src: url('/fonts/arimo.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Tinos';
-  src: url('/fonts/tinos.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Carlito';
-  src: url('/fonts/carlito.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
+/* ─── Keyframes (animations Win Agro) ─── */
+@keyframes pulse-slow {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(30, 79, 163, 0.7);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 12px rgba(30, 79, 163, 0);
+  }
 }
 
-/* ⭐ V13 — ÉDITEUR ENRICHI : redimensionnement / habillage des insertions.
-   Poignées de taille (coins) posées dynamiquement par le composant sur
-   l'insertion sélectionnée — purement affichage écran, jamais sérialisées
-   (serializeClean retire .ah-media-hover ET .ah-selected avant onChange).
-   .ah-fig svg bénéficie d'un redimensionnement fluide quand une largeur
-   explicite est posée sur le wrapper (l'inline SVG garde son ratio). */
-.ah-media-selected {
-  outline: 2px solid rgba(37, 99, 235, 0.8) !important;
-  outline-offset: 2px;
-  cursor: move;
-}
-.ah-handle {
-  position: absolute;
-  width: 10px;
-  height: 10px;
-  background: #ffffff;
-  border: 2px solid rgb(37, 99, 235);
-  border-radius: 2px;
-  z-index: 30;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.35);
-}
-.ah-handle[data-dir="nw"] { cursor: nwse-resize; }
-.ah-handle[data-dir="ne"] { cursor: nesw-resize; }
-.ah-handle[data-dir="sw"] { cursor: nesw-resize; }
-.ah-handle[data-dir="se"] { cursor: nwse-resize; }
-/* l'élément en cours de déplacement/déformation prend un aspect « fantôme » */
-.ah-media-dragging {
-  opacity: 0.55;
-}
-/* les insertions en habillage « devant / derrière le texte » restent
-   sélectionnables au clic (elles chevauchent le texte) */
-[contenteditable] .ah-float-devant,
-[contenteditable] .ah-float-derriere {
-  cursor: move;
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
 }
 
-/* ⭐ V13 — Filet de sécurité pour le CONTENU HISTORIQUE (V7→V12) : la
-   sanitisation Chromium de execCommand insertHTML retirait les attributs
-   style des SVG insérés → SVG viewBox-only sans dimensions, DANS un wrapper
-   span.ah-fig inline-block (shrink-to-fit) → largeur calculée 0 px →
-   illustrations de la bibliothèque d'images INVISIBLES. Ce sélecteur
-   chirurgical ne vise QUE ce cas (wrapper inline-block + SVG sans width NI
-   style) et lui redonne une taille lisible — les nouvelles insertions V13
-   (style width:100% posé et préservé) et les figures/graphiques en
-   display:block ne sont PAS affectés. */
-span.ah-fig[style*="inline-block"] > svg[viewBox]:not([width]):not([style]) {
-  width: 280px;
-  height: auto;
+@keyframes subtle-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
-/* ══════════════════════════════════════════════════════════════════
-   ⭐ V14 (2026-09-22) — OUTILS TABLEAU + TABULATIONS du RichTextEditor
-   ══════════════════════════════════════════════════════════════════ */
-
-/* Taquet de tabulation (touche Tab) : espaceur invisible d'un seul bloc,
-   supprimé d'un seul Backspace — largeur posée en style inline par le
-   composant (prochain arrêt tous les 48 px, comme Word). */
-.ah-tab {
-  display: inline-block;
-  user-select: none;
+@keyframes shimmer {
+  0% { transform: translateX(-150%) skewX(-20deg); }
+  100% { transform: translateX(200%) skewX(-20deg); }
 }
 
-/* Poignée ⬛ de sélection OBJET du tableau (coin supérieur gauche,
-   apparaît au survol — comme Word / Google Docs). Rendue dans le wrapper
-   de l'éditeur → jamais sérialisée. */
-.ah-tablehandle {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  background: #ffffff;
-  border: 2px solid rgb(37, 99, 235);
-  border-radius: 3px;
-  cursor: move;
-  z-index: 32;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.35);
-}
-.ah-tablehandle:hover {
-  background: rgb(219, 234, 254);
+@keyframes rotate-conic-light {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
-/* Séparateur de COLONNE redimensionnable (tableau sélectionné comme
-   objet) : glisser comme dans Word/Excel. Rendu dans le wrapper → jamais
-   sérialisé. */
-.ah-colhandle {
-  position: absolute;
-  width: 7px;
-  height: 24px;
-  background: #ffffff;
-  border: 2px solid rgb(37, 99, 235);
-  border-radius: 4px;
-  cursor: col-resize;
-  z-index: 32;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.35);
-  touch-action: none;
-}
-.ah-colhandle:hover,
-.ah-colhandle:active {
-  background: rgb(37, 99, 235);
+@keyframes marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
 }
 
-/* Cellules des tableaux ah-table : curseur texte (elles sont éditables —
-   V14 : plus de contenteditable=false) ; la bordure extérieure du tableau
-   garde le curseur « move » de la sélection objet. */
-table.ah-table td,
-table.ah-table th {
-  cursor: text;
+@keyframes marquee-left {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-33.3333%); }
+}
+
+@keyframes marquee-right {
+  0% { transform: translateX(-33.3333%); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes marquee-badge {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+/* ─── Utility classes Win Agro (mappées palette Helm) ─── */
+@layer utilities {
+  .animate-pulse-slow {
+    animation: pulse-slow 2s infinite ease-in-out;
+  }
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+  .animate-subtle-spin {
+    animation: subtle-spin 20s linear infinite;
+  }
+  .animate-marquee {
+    animation: marquee 180s linear infinite;
+  }
+  .animate-marquee-left {
+    animation: marquee-left 65s linear infinite;
+  }
+  .animate-marquee-right {
+    animation: marquee-right 65s linear infinite;
+  }
+  .animate-marquee-badge {
+    animation: marquee-badge 16s linear infinite;
+  }
+
+  /* Logo avec halo conique rotatif (signature Win Agro) */
+  .logo-light-beam {
+    position: relative;
+    overflow: hidden;
+    border-radius: 50%;
+    clip-path: circle(50%);
+  }
+  .logo-light-beam::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      transparent 120deg,
+      #1E4FA3 180deg,
+      #F5B700 240deg,
+      transparent 300deg,
+      transparent 360deg
+    );
+    animation: rotate-conic-light 3s linear infinite;
+    z-index: 1;
+  }
+  .logo-light-beam::after {
+    content: '';
+    position: absolute;
+    inset: 2.5px;
+    background: #091F4A;
+    border-radius: 50%;
+    z-index: 2;
+  }
+  .logo-light-beam > * {
+    position: relative;
+    z-index: 3;
+  }
+
+  /* Bouton avec shimmer (effet de brillance en mouvement) */
+  .btn-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .btn-shimmer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.4), transparent);
+    transform: translateX(-150%) skewX(-20deg);
+    animation: shimmer 2.5s infinite linear;
+    pointer-events: none;
+  }
+
+  /* Carte avec shimmer au hover */
+  .card-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .card-shimmer:hover::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.4), transparent);
+    transform: translateX(-150%) skewX(-20deg);
+    animation: shimmer 1.5s infinite linear;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* Soulignement accent (jaune/or) derrière le texte */
+  .underline-accent {
+    position: relative;
+  }
+  .underline-accent::after {
+    content: '';
+    position: absolute;
+    bottom: 4px;
+    left: 0;
+    width: 100%;
+    height: 8px;
+    background-color: #F5B700;
+    z-index: -1;
+    transform: skewX(-12deg);
+    opacity: 0.8;
+  }
+
+  /* Panneau glassmorphism premium */
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(11, 30, 77, 0.08);
+  }
+
+  /* Texture grain SVG premium (faible opacité, couleur navy) */
+  .bg-grain {
+    background-image: radial-gradient(rgba(11, 30, 77, 0.04) 1px, transparent 0), radial-gradient(rgba(11, 30, 77, 0.04) 1px, transparent 0);
+    background-size: 24px 24px;
+    background-position: 0 0, 12px 12px;
+  }
+
+  /* Scale helpers (Win Agro utilise scale-102 pour le hero) */
+  .scale-102 {
+    transform: scale(1.02);
+  }
+  .scale-105-hover {
+    transition: transform 0.3s ease;
+  }
+  .scale-105-hover:hover {
+    transform: scale(1.05);
+  }
 }

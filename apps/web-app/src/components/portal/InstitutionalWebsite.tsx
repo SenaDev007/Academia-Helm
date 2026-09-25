@@ -1140,7 +1140,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           />
 
           <div className="max-w-5xl mx-auto px-4 sm:px-6 relative z-10">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 justify-items-center">
+            <div className="flex flex-wrap justify-center gap-4 lg:gap-6">
               {keyFigures.map((fig: any, i: number) => (
                 <KeyFigureCardLight key={i} fig={fig} gold={GOLD} navy={NAVY} blue={BLUE} delay={i * 0.1} />
               ))}
@@ -1347,7 +1347,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           </div>
 
           {/* Grille de programmes — cards premium avec card-shimmer (style Win Agro) */}
-          <div className="grid md:grid-cols-3 gap-6 mb-16">
+          <div className="flex flex-wrap justify-center gap-6 mb-16">
             {programs.map((program: any, i: number) => (
               <motion.div
                 key={program.id}
@@ -1361,6 +1361,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                   boxShadow: `0 20px 25px -5px ${NAVY}14, 0 8px 10px -6px ${NAVY}14`,
                 }}
                 className="group relative bg-white rounded-2xl p-6 md:p-8 shadow-lg border border-slate-100 transition-all duration-300 overflow-hidden card-shimmer"
+                style={{ maxWidth: '380px', flex: '1 1 320px' }}
               >
                 {/* Halo or au hover */}
                 <div
@@ -1503,7 +1504,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           </div>
 
           {/* Grille d'enseignants — cards premium avec card-shimmer (style Win Agro) */}
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="flex flex-wrap justify-center gap-6">
             {faculty.map((member: any, i: number) => {
               // ⭐ 2026-09-25 — dynamicFaculty (depuis RH) a : name, position, subject, photoUrl
               //    DEFAULT_FACULTY / CMS faculty a : name, role, subject
@@ -1520,6 +1521,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
                   transition={{ delay: i * 0.08, duration: 0.5, ease: "easeOut" }}
                   whileHover={{ y: -8, transition: { duration: 0.2 } }}
                   className="group bg-white rounded-3xl p-6 text-center shadow-lg border border-slate-100 hover:shadow-xl transition-all duration-300 card-shimmer"
+                  style={{ maxWidth: '240px', flex: '1 1 200px' }}
                 >
                   {/* Portrait — photo réelle (RH) si dispo, sinon initiales */}
                   <div className="relative w-20 h-20 mx-auto mb-4">

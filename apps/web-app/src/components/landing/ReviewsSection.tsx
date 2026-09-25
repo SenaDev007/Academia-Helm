@@ -1,6 +1,13 @@
 'use client';
 
-import { DM_Sans } from 'next/font/google';
+// ⭐ 2026-09-25 — DM_Sans (police Win Agro) retiré :
+//   - Incompatibilité avec le build Turbopack sur Vercel (next/font/google
+//     génère une erreur "next/font/google queries have exactly one entry").
+//   - Conflit avec la consigne : conserver les polices Helm (Noto Sans SC +
+//     Noto Serif SC) — DM Sans est la police Win Agro, à exclure.
+//   - La police est déjà appliquée globalement via `font-sans` sur <html>
+//     dans apps/web-app/src/app/layout.tsx (localFont → --font-sans).
+//   La section hérite donc de la police globale sans déclaration explicite.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { buildReviewsPublishedUrl } from '@/lib/reviews-api-url';
@@ -14,12 +21,6 @@ import {
   HELM_TEXT_MUTED,
 } from '@/lib/helm-colors';
 import { TestimonialSlider, buildAvatarDataUrl, type SliderReview } from './TestimonialSlider';
-
-const dmSans = DM_Sans({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  display: 'swap',
-});
 
 const NAVY = HELM_NAVY;
 const NAVY_MID = HELM_NAVY_MID;
@@ -559,7 +560,7 @@ export default function ReviewsSection() {
 
   return (
     <section
-      className={`${dmSans.className} py-14 md:py-20`}
+      className="py-14 md:py-20"
       style={{ background: SECTION_BG }}
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">

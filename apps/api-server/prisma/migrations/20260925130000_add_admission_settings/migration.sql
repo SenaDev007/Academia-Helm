@@ -55,9 +55,12 @@ CREATE TABLE IF NOT EXISTS admission_steps (
 CREATE INDEX IF NOT EXISTS idx_admission_steps_tenant ON admission_steps("tenantId");
 CREATE INDEX IF NOT EXISTS idx_admission_steps_admission ON admission_steps("admissionId");
 
--- ─── Table admission_documents ───────────────────────────────────────────
+-- ─── Table admission_required_documents ────────────────────────────────
+-- ⭐ Renommé admission_required_documents (au lieu de admission_documents)
+--    pour éviter le conflit avec la table admission_documents existante
+--    (système de transfert inter-écoles).
 -- ⚠️ admissionId est UUID (pas TEXT) pour matcher admission_settings.id
-CREATE TABLE IF NOT EXISTS admission_documents (
+CREATE TABLE IF NOT EXISTS admission_required_documents (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   "tenantId"      TEXT NOT NULL,
   "admissionId"   UUID NOT NULL,
@@ -68,11 +71,11 @@ CREATE TABLE IF NOT EXISTS admission_documents (
   "isActive"      BOOLEAN NOT NULL DEFAULT true,
   "createdAt"     TIMESTAMPTZ NOT NULL DEFAULT now(),
   "updatedAt"     TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT fk_admission_documents_tenant
+  CONSTRAINT fk_admission_required_documents_tenant
     FOREIGN KEY ("tenantId") REFERENCES tenants(id) ON DELETE CASCADE,
-  CONSTRAINT fk_admission_documents_admission
+  CONSTRAINT fk_admission_required_documents_admission
     FOREIGN KEY ("admissionId") REFERENCES admission_settings(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_admission_documents_tenant ON admission_documents("tenantId");
-CREATE INDEX IF NOT EXISTS idx_admission_documents_admission ON admission_documents("admissionId");
+CREATE INDEX IF NOT EXISTS idx_admission_required_documents_tenant ON admission_required_documents("tenantId");
+CREATE INDEX IF NOT EXISTS idx_admission_required_documents_admission ON admission_required_documents("admissionId");

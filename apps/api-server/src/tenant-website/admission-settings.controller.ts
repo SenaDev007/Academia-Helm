@@ -220,7 +220,7 @@ export class AdmissionSettingsController {
     const tid = resolveTid(tenant, tidFallback);
     const settings = await this._getOrCreateSettings(tid);
     if (!body.label) throw new BadRequestException('Libellé requis pour un document');
-    return this.prisma.admissionDocument.create({
+    return this.prisma.admissionRequiredDocument.create({
       data: {
         tenantId: tid,
         admissionId: settings.id,
@@ -242,7 +242,7 @@ export class AdmissionSettingsController {
     @Body() body: any,
   ) {
     const tid = resolveTid(tenant, tidFallback);
-    const doc = await this.prisma.admissionDocument.findFirst({
+    const doc = await this.prisma.admissionRequiredDocument.findFirst({
       where: { id, tenantId: tid },
     });
     if (!doc) throw new BadRequestException('Document introuvable');
@@ -252,7 +252,7 @@ export class AdmissionSettingsController {
     for (const field of allowedFields) {
       if (body[field] !== undefined) updateData[field] = body[field];
     }
-    return this.prisma.admissionDocument.update({ where: { id }, data: updateData });
+    return this.prisma.admissionRequiredDocument.update({ where: { id }, data: updateData });
   }
 
   @UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
@@ -263,11 +263,11 @@ export class AdmissionSettingsController {
     @Param('id') id: string,
   ) {
     const tid = resolveTid(tenant, tidFallback);
-    const doc = await this.prisma.admissionDocument.findFirst({
+    const doc = await this.prisma.admissionRequiredDocument.findFirst({
       where: { id, tenantId: tid },
     });
     if (!doc) throw new BadRequestException('Document introuvable');
-    await this.prisma.admissionDocument.delete({ where: { id } });
+    await this.prisma.admissionRequiredDocument.delete({ where: { id } });
     return { success: true };
   }
 

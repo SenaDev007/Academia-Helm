@@ -501,7 +501,7 @@ model Tenant {
   // Module Admissions (configurable par le promoteur)
   admissionSettings AdmissionSettings?
   admissionSteps    AdmissionStep[]
-  admissionDocuments AdmissionDocument[]
+  admissionRequiredDocuments AdmissionRequiredDocument[]
 
   @@index([subdomain])
   @@index([slug])
@@ -17418,7 +17418,7 @@ model AdmissionSettings {
   updatedAt       DateTime @updatedAt
   tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   steps           AdmissionStep[]
-  documents       AdmissionDocument[]
+  documents       AdmissionRequiredDocument[]
   @@map("admission_settings")
 }
 
@@ -17449,7 +17449,9 @@ model AdmissionStep {
 }
 
 /// Document requis pour l'admission (ex: "Acte de naissance (original + copie)").
-model AdmissionDocument {
+/// ⭐ Renommé AdmissionRequiredDocument pour éviter le conflit avec le modèle
+///    AdmissionDocument existant (système de transfert inter-écoles).
+model AdmissionRequiredDocument {
   id              String   @id @default(uuid())
   tenantId        String
   admissionId     String
@@ -17469,7 +17471,7 @@ model AdmissionDocument {
   tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   @@index([tenantId])
   @@index([admissionId])
-  @@map("admission_documents")
+  @@map("admission_required_documents")
 }
 
 // Cache bust: force prisma generate to re-run after AdmissionSettings models

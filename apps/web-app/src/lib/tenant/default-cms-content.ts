@@ -121,6 +121,19 @@ export const DEFAULT_WEBSITE_CONFIG = {
 //    (visuels Academia Helm neutres / Q&R procédurales standard) : elles ne
 //    formulent aucune affirmation propre à une école et sont remplacées dès
 //    que l'école configure le CMS.
+//
+// ⭐ 2026-09-25 — Ajout des exports vides DEFAULT_NEWS_ARTICLES,
+//    DEFAULT_EVENTS, DEFAULT_TESTIMONIALS (tableaux vides) pour la
+//    compatibilité avec InstitutionalWebsite.tsx qui les importe.
+//    Raison : InstitutionalWebsite.tsx fait du destructuring + `.length > 0`
+//    pour décider d'afficher ou non la section — un tableau vide masque
+//    proprement la section sans casser le build.
+
+export const DEFAULT_NEWS_ARTICLES: any[] = [];
+
+export const DEFAULT_EVENTS: any[] = [];
+
+export const DEFAULT_TESTIMONIALS: any[] = [];
 
 export const DEFAULT_GALLERY_ITEMS = [
   { id: 'demo-gallery-1', imageUrl: DEFAULT_PORTAL_IMAGES.gallery[0], caption: 'Campus principal', category: 'Campus', displayOrder: 0, isActive: true },

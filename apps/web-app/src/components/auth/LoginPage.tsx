@@ -2048,9 +2048,22 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
               ? 'md:w-1/4 p-6 sm:p-8 flex flex-col relative overflow-hidden'
               : 'flex-1 p-6 sm:p-8 flex flex-col relative overflow-hidden'}
               style={{ background: `linear-gradient(155deg, ${NAVY} 0%, ${BLUE} 100%)` }}>
-              {/* ── Décor bleu : halos lumineux subtils ── */}
-              <div className="pointer-events-none absolute -top-16 -left-10 h-48 w-48 rounded-full opacity-25 blur-3xl" style={{ background: '#ffffff' }} aria-hidden />
-              <div className="pointer-events-none absolute -bottom-20 -right-10 h-56 w-56 rounded-full opacity-15 blur-3xl" style={{ background: `${GOLD}` }} aria-hidden />
+              {/* ── Décor bleu : halos lumineux subtils (animate-float Win Agro) ── */}
+              <div className="pointer-events-none absolute -top-16 -left-10 h-48 w-48 rounded-full opacity-25 blur-3xl animate-float" style={{ background: '#ffffff' }} aria-hidden />
+              <div className="pointer-events-none absolute -bottom-20 -right-10 h-56 w-56 rounded-full opacity-15 blur-3xl animate-float" style={{ background: `${GOLD}`, animationDelay: '2s' }} aria-hidden />
+
+              {/* SVG Noise Grain Filter (texture premium Win Agro) */}
+              <svg
+                viewBox="0 0 200 200"
+                xmlns="http://www.w3.org/2000/svg"
+                className="absolute inset-0 w-full h-full opacity-[0.035] pointer-events-none mix-blend-overlay"
+              >
+                <filter id="noiseFilter-login-hero">
+                  <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+                </filter>
+                <rect width="100%" height="100%" filter="url(#noiseFilter-login-hero)" />
+              </svg>
+              <div className="absolute inset-0 bg-grain opacity-[0.08] mix-blend-overlay pointer-events-none" />
 
           {/* ════════════════════════════════════════════════════════════════════
               1. HEADER (top) : Badge portail (icône + libellé)

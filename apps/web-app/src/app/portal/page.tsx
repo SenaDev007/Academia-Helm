@@ -587,13 +587,14 @@ export default function PortalPage() {
                           ? undefined
                           : {
                               x: 3,
-                              boxShadow: `0 6px 16px ${NAVY}18`,
+                              y: -4,
+                              boxShadow: `0 10px 25px ${NAVY}26`,
                               transition: cardSpring,
                             }
                       }
                       whileTap={shouldReduceMotion ? undefined : { scale: 0.98 }}
                       onClick={() => handlePortalSelect(portal.type)}
-                      className="group relative flex items-center gap-3 rounded-xl border px-3 py-3 text-left outline-none transition-all min-h-[44px] sm:px-4 sm:py-3"
+                      className="group relative flex items-center gap-3 rounded-xl border px-3 py-3 text-left outline-none transition-all min-h-[44px] sm:px-4 sm:py-3 card-shimmer"
                       style={{
                         borderColor: isActive ? GOLD : `${NAVY}15`,
                         background: isActive

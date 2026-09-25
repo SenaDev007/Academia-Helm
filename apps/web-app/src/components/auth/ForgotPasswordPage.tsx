@@ -373,26 +373,32 @@ export default function ForgotPasswordPage({ schoolBranding }: ForgotPasswordPag
 
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-gradient-to-br from-slate-50 via-white to-blue-50/90 px-3 py-12 sm:px-6 sm:py-16 lg:px-8">
-      {/* ── Background blobs ── */}
+      {/* ── Background blobs (animate-float Win Agro signature) ── */}
       <div className="pointer-events-none absolute inset-0 opacity-40" aria-hidden>
         <motion.div
-          className="absolute -left-20 top-24 h-72 w-72 rounded-full blur-3xl"
+          className="absolute -left-20 top-24 h-72 w-72 rounded-full blur-3xl animate-float"
           style={{ backgroundColor: `${NAVY}25` }}
-          animate={{ x: [0, 20, 0], y: [0, -10, 0] }}
-          transition={{ duration: 14, repeat: Infinity, ease: 'easeInOut' }}
         />
         <motion.div
-          className="absolute -right-16 bottom-24 h-80 w-80 rounded-full blur-3xl"
-          style={{ backgroundColor: `${GOLD}20` }}
-          animate={{ x: [0, -16, 0], y: [0, 14, 0] }}
-          transition={{ duration: 17, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute -right-16 bottom-24 h-80 w-80 rounded-full blur-3xl animate-float"
+          style={{ backgroundColor: `${GOLD}20`, animationDelay: '2s' }}
         />
         <motion.div
-          className="absolute left-1/2 top-1/3 h-56 w-56 -translate-x-1/2 rounded-full blur-3xl"
-          style={{ background: `${BLUE}18` }}
-          animate={{ scale: [1, 1.06, 1], opacity: [0.25, 0.38, 0.25] }}
-          transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }}
+          className="absolute left-1/2 top-1/3 h-56 w-56 -translate-x-1/2 rounded-full blur-3xl animate-float"
+          style={{ background: `${BLUE}18`, animationDelay: '4s' }}
         />
+        {/* SVG Noise Grain Filter (texture premium Win Agro) */}
+        <svg
+          viewBox="0 0 200 200"
+          xmlns="http://www.w3.org/2000/svg"
+          className="absolute inset-0 w-full h-full opacity-[0.035] mix-blend-overlay"
+        >
+          <filter id="noiseFilter-forgot-bg">
+            <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+          </filter>
+          <rect width="100%" height="100%" filter="url(#noiseFilter-forgot-bg)" />
+        </svg>
+        <div className="absolute inset-0 bg-grain opacity-[0.06] mix-blend-overlay" />
       </div>
 
       {/* ── Navigation ── */}

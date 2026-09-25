@@ -352,10 +352,10 @@ export default function TenantPortalSelection({
                       initial={{ opacity: 0, x: 12 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 0.05 + index * 0.05, duration: 0.4 }}
-                      whileHover={{ x: 3, boxShadow: `0 6px 16px ${NAVY}18` }}
+                      whileHover={{ x: 3, y: -4, boxShadow: `0 10px 25px ${NAVY}26` }}
                       whileTap={{ scale: 0.98 }}
                       onClick={() => handlePortalClick(portal.type)}
-                      className="group relative flex items-center gap-3 rounded-xl border px-4 py-3.5 text-left outline-none transition-all min-h-[44px]"
+                      className="group relative flex items-center gap-3 rounded-xl border px-4 py-3.5 text-left outline-none transition-all min-h-[44px] card-shimmer"
                       style={{
                         borderColor: `${NAVY}15`,
                         background: `linear-gradient(135deg, ${NAVY}04, ${BLUE}02)`,

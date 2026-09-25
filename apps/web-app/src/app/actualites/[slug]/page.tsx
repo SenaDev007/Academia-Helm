@@ -147,29 +147,39 @@ export default async function NewsArticlePage({ params }: PageProps) {
   const publishedDate = article.publishedAt || article.createdAt;
 
   return (
-    <div className="min-h-screen bg-white flex flex-col">
+    <div className="min-h-screen bg-white flex flex-col relative overflow-hidden">
+      {/* Decorative blur backgrounds (signature Win Agro) */}
+      <div className="pointer-events-none absolute top-0 -left-20 w-72 h-72 rounded-full blur-3xl opacity-30" style={{ background: '#0b2f7314' }} />
+      <div className="pointer-events-none absolute bottom-0 -right-20 w-96 h-96 rounded-full blur-3xl opacity-20" style={{ background: '#f5b33514' }} />
+
       {/* ── Article header ── */}
-      <article className="flex-1 max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12 w-full">
+      <article className="flex-1 max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12 w-full relative z-10">
         {/* Back link */}
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-900 transition mb-6"
         >
           <ArrowLeft className="w-4 h-4" />
-          Retour à l'accueil
+          Retour à l&apos;accueil
         </Link>
 
-        {/* Category badge */}
+        {/* Category badge (style Win Agro) */}
         {article.category && (
-          <span className="inline-block px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-semibold uppercase tracking-wide mb-3">
+          <span className="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-3" style={{ background: '#0b2f7314', color: '#0b2f73' }}>
             {article.category}
           </span>
         )}
 
-        {/* Title */}
-        <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 leading-tight mb-4">
+        {/* Title (font-serif signature Win Agro) */}
+        <h1 className="font-serif text-3xl sm:text-4xl font-extrabold text-slate-900 leading-tight mb-4">
           {article.title}
         </h1>
+
+        {/* Animated underline separator (signature Win Agro) */}
+        <div
+          className="h-1 w-16 rounded-full mb-6"
+          style={{ background: '#f5b335' }}
+        />
 
         {/* Meta (date, views) */}
         <div className="flex items-center gap-4 text-sm text-slate-500 mb-6">
@@ -182,14 +192,14 @@ export default async function NewsArticlePage({ params }: PageProps) {
           )}
         </div>
 
-        {/* Cover image */}
+        {/* Cover image — card-shimmer premium (style Win Agro) */}
         {article.coverImageUrl && (
-          <div className="relative w-full aspect-[16/9] rounded-xl overflow-hidden mb-8 bg-slate-100">
+          <div className="relative w-full aspect-[16/9] rounded-2xl overflow-hidden mb-8 bg-slate-100 shadow-lg card-shimmer group">
             <Image
               src={article.coverImageUrl}
               alt={article.title}
               fill
-              className="object-cover"
+              className="object-cover transition-transform duration-500 group-hover:scale-105"
               sizes="(max-width: 768px) 100vw, 768px"
               priority
             />
@@ -198,7 +208,7 @@ export default async function NewsArticlePage({ params }: PageProps) {
 
         {/* Excerpt (lead) */}
         {article.excerpt && (
-          <p className="text-lg text-slate-600 font-medium leading-relaxed mb-6">
+          <p className="text-lg text-slate-600 font-medium leading-relaxed mb-6 italic border-l-4 pl-4" style={{ borderColor: '#f5b335' }}>
             {article.excerpt}
           </p>
         )}
@@ -218,7 +228,8 @@ export default async function NewsArticlePage({ params }: PageProps) {
         <div className="mt-12 pt-6 border-t border-slate-100 flex items-center justify-between">
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-700 hover:text-blue-800 transition"
+            className="inline-flex items-center gap-1.5 text-sm font-bold transition-all hover:gap-2"
+            style={{ color: '#0b2f73' }}
           >
             <ArrowLeft className="w-4 h-4" />
             Retour aux actualités

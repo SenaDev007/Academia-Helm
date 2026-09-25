@@ -31,6 +31,7 @@ import {
   Phone,
   ExternalLink,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { Footer2 } from '@/components/ui/footer-2';
 
 // ─── Liens FedaPay directs (page de paiement hébergée par FedaPay) ────────
@@ -115,15 +116,41 @@ export default function TarificationPage() {
         {/* ─── Hero ─── */}
         <section className="relative overflow-hidden bg-gradient-to-br from-[#0a1d3f] via-[#0b2f73] to-[#071d49] text-white py-20 px-4">
           <div className="absolute inset-0 opacity-[0.05] bg-[linear-gradient(rgba(255,255,255,0.6)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.6)_1px,transparent_1px)] [background-size:48px_48px]" />
-          <div className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full bg-[radial-gradient(circle,rgba(245,179,53,0.15),transparent_70%)]" />
+          {/* Glowing floating circles (signature Win Agro) */}
+          <div className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full bg-[radial-gradient(circle,rgba(245,179,53,0.15),transparent_70%)] animate-float" />
+          <div className="absolute -bottom-32 -left-32 w-[400px] h-[400px] rounded-full bg-[radial-gradient(circle,rgba(29,79,165,0.20),transparent_70%)] animate-float" style={{ animationDelay: '2s' }} />
+          {/* SVG noise grain (texture premium Win Agro) */}
+          <svg
+            viewBox="0 0 200 200"
+            xmlns="http://www.w3.org/2000/svg"
+            className="absolute inset-0 w-full h-full opacity-[0.035] pointer-events-none mix-blend-overlay"
+          >
+            <filter id="noiseFilter-tarif-hero">
+              <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+            </filter>
+            <rect width="100%" height="100%" filter="url(#noiseFilter-tarif-hero)" />
+          </svg>
+          <div className="absolute inset-0 bg-grain opacity-[0.08] mix-blend-overlay pointer-events-none" />
           <div className="relative max-w-5xl mx-auto text-center">
-            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full px-4 py-1.5 mb-6">
+            {/* Badge avec ping pulse (signature Win Agro) */}
+            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full px-4 py-1.5 mb-6 animate-pulse-slow">
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#f5b335] opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#f5b335]" />
+              </span>
               <Sparkles className="w-4 h-4 text-[#f5b335]" />
               <span className="text-sm font-semibold">21 modules métier + 6 modules complémentaires inclus — sans restriction</span>
             </div>
-            <h1 className="text-4xl md:text-6xl font-black tracking-tight mb-4">
+            <h1 className="text-4xl md:text-6xl font-black tracking-tight mb-4 font-serif">
               Une tarification <span className="text-[#f5b335]">simple</span> et <span className="text-[#f5b335]">transparente</span>
             </h1>
+            {/* Animated underline separator (signature Win Agro) */}
+            <motion.div
+              animate={{ scaleX: [0, 1, 1, 0], transformOrigin: ["0% 50%", "0% 50%", "100% 50%", "100% 50%"] }}
+              transition={{ duration: 3, repeat: Infinity, times: [0, 0.15, 0.85, 1], ease: "easeInOut" }}
+              className="h-1 w-16 mx-auto my-5 rounded-full"
+              style={{ background: '#f5b335' }}
+            />
             <p className="text-lg md:text-xl text-blue-100 max-w-2xl mx-auto mb-8">
               Choisissez le plan adapté à la taille de votre établissement. Facturation
               annuelle, frais d&apos;activation uniques de 500 000 FCFA, WhatsApp illimité
@@ -131,7 +158,7 @@ export default function TarificationPage() {
             </p>
 
             <div className="inline-flex items-center bg-white/10 backdrop-blur-sm rounded-full p-1 border border-white/20">
-              <span className="px-6 py-2 rounded-full text-sm font-bold bg-[#f5b335] text-[#0a1d3f]">
+              <span className="px-6 py-2 rounded-full text-sm font-bold bg-[#f5b335] text-[#0a1d3f] btn-shimmer">
                 Facturation annuelle
               </span>
               <span className="px-6 py-2 text-sm font-bold text-blue-100">

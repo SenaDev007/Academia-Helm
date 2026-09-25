@@ -572,12 +572,31 @@ export default function PremiumLandingPage() {
           src="/images/AH background.webp"
           alt="Fond hero Academia Helm"
           fill
-          className="object-cover opacity-45"
+          className="object-cover opacity-45 scale-102"
           priority
           sizes="100vw"
         />
-        <div className="absolute inset-0 bg-[#0b2f73]/64" />
+        <div className="absolute inset-0 bg-[#0b2f73]/64 mix-blend-multiply" />
         <div className="absolute inset-0 opacity-12 bg-[radial-gradient(circle_at_top_right,#f5b335_0%,transparent_45%)]" />
+
+        {/* Glowing floating decorative circles (signature Win Agro) */}
+        <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full blur-[100px] animate-float" style={{ background: '#1d4fa533' }} />
+        <div className="absolute bottom-10 right-10 w-[500px] h-[500px] rounded-full blur-[150px] animate-float" style={{ background: '#f5b33514', animationDelay: '2s' }} />
+
+        {/* SVG Noise Grain Filter (texture premium Win Agro) */}
+        <svg
+          viewBox="0 0 200 200"
+          xmlns="http://www.w3.org/2000/svg"
+          className="absolute inset-0 w-full h-full opacity-[0.035] pointer-events-none mix-blend-overlay"
+        >
+          <filter id="noiseFilter-ah-premium-hero">
+            <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" />
+          </filter>
+          <rect width="100%" height="100%" filter="url(#noiseFilter-ah-premium-hero)" />
+        </svg>
+
+        {/* Decorative Grid Patterns (grain Win Agro) */}
+        <div className="absolute inset-0 bg-grain opacity-[0.08] mix-blend-overlay" />
 
         <motion.div
           animate={{ y: [0, -12, 0], opacity: [0.35, 0.75, 0.35] }}
@@ -616,7 +635,12 @@ export default function PremiumLandingPage() {
             className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center"
           >
             <motion.div variants={staggerContainer} initial={false} animate="show">
-              <p className="inline-flex items-center rounded-full bg-amber-400/20 border border-amber-300/50 text-amber-200 px-4 py-1 text-sm font-semibold mb-6">
+              {/* Badge avec ping pulse (signature Win Agro) */}
+              <p className="inline-flex items-center gap-2 rounded-full bg-amber-400/20 border border-amber-300/50 text-amber-200 px-4 py-1 text-sm font-semibold mb-6 animate-pulse-slow">
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-300 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-300" />
+                </span>
                 Plateforme de pilotage éducatif
               </p>
 
@@ -638,12 +662,12 @@ export default function PremiumLandingPage() {
                   <motion.span
                     animate={{ opacity: [0.45, 0.85, 0.45], scale: [1, 1.05, 1] }}
                     transition={{ duration: 2.6, repeat: Infinity }}
-                    className="absolute inset-0 rounded-xl bg-amber-300/40 blur-md"
+                    className="absolute inset-0 rounded-full bg-amber-300/40 blur-md"
                   />
 
                   <Link
                     href="/signup"
-                    className="relative inline-flex items-center justify-center rounded-xl bg-[#f5b335] px-7 py-3.5 font-bold text-[#0b2f73] hover:bg-[#f7c359] transition-colors min-h-[48px]"
+                    className="relative inline-flex items-center justify-center rounded-full bg-[#f5b335] px-8 py-4 font-bold text-[#0b2f73] hover:bg-[#f7c359] transition-colors min-h-[48px] btn-shimmer"
                   >
                     Démarrer maintenant
                     <ArrowRight className="ml-2 w-4 h-4" />
@@ -653,11 +677,10 @@ export default function PremiumLandingPage() {
                 <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
                   <Link
                     href="/portal"
-                    className="inline-flex w-full sm:w-auto items-center justify-center rounded-xl border border-amber-300/40 bg-white/10 px-7 py-3.5 font-semibold text-white hover:bg-white/20 transition-colors min-h-[48px]"
-                    style={{ animation: 'heroPortalPulse 2.5s ease-in-out infinite' }}
+                    className="inline-flex w-full sm:w-auto items-center justify-center rounded-full border border-amber-300/40 bg-white/10 px-8 py-4 font-semibold text-white hover:bg-white/20 transition-colors min-h-[48px]"
                   >
                     Accéder au portail
-                    <DoorOpen className="ml-2 w-4 h-4" style={{ animation: 'heroPortalGlow 2.5s ease-in-out infinite' }} />
+                    <DoorOpen className="ml-2 w-4 h-4" />
                   </Link>
                 </motion.div>
               </motion.div>
@@ -701,6 +724,12 @@ export default function PremiumLandingPage() {
             </motion.div>
           </motion.div>
         </div>
+
+        {/* Elegant Slanted Section Divider (signature Win Agro) */}
+        <div
+          className="absolute bottom-0 left-0 right-0 h-8 bg-white"
+          style={{ clipPath: "polygon(0 100%, 100% 100%, 100% 0)" }}
+        />
       </section>
 
       {/* ===================================================================== */}
@@ -772,7 +801,7 @@ export default function PremiumLandingPage() {
                 variants={fadeUp}
                 whileHover={{ y: -6 }}
                 transition={{ type: 'spring', stiffness: 240, damping: 20 }}
-                className="group relative rounded-3xl border border-slate-200/80 bg-white p-6 md:p-8 shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] hover:shadow-[0_24px_60px_-20px_rgba(11,47,115,0.30)] hover:border-[#0b2f73]/30 transition-all duration-300 overflow-hidden"
+                className="group relative rounded-3xl border border-slate-200/80 bg-white p-6 md:p-8 shadow-[0_2px_20px_-8px_rgba(11,47,115,0.10)] hover:shadow-[0_24px_60px_-20px_rgba(11,47,115,0.30)] hover:border-[#0b2f73]/30 transition-all duration-300 overflow-hidden card-shimmer"
               >
                 {/* Halo coloré au hover */}
                 <div className={`absolute -top-20 -right-20 w-48 h-48 rounded-full bg-gradient-to-br ${item.accent} opacity-0 group-hover:opacity-[0.12] blur-3xl transition-opacity duration-500`} />
@@ -922,7 +951,7 @@ export default function PremiumLandingPage() {
                   variants={fadeUp}
                   whileHover={{ y: -6, scale: 1.01 }}
                   transition={{ type: 'spring', stiffness: 250, damping: 20 }}
-                  className={`group relative ${colSpan} ${rowSpan} rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-sm p-5 md:p-6 hover:border-[#f5b335]/40 hover:bg-white/[0.07] transition-all duration-300 overflow-hidden flex flex-col`}
+                  className={`group relative ${colSpan} ${rowSpan} rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-sm p-5 md:p-6 hover:border-[#f5b335]/40 hover:bg-white/[0.07] transition-all duration-300 overflow-hidden flex flex-col card-shimmer`}
                 >
                   {/* Halo doré au hover */}
                   <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full bg-[#f5b335] opacity-0 group-hover:opacity-[0.15] blur-3xl transition-opacity duration-500" />

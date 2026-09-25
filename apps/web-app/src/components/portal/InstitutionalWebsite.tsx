@@ -119,14 +119,14 @@ const DEFAULT_PROGRAMS = [
     title: 'Maternelle',
     description: "Éveil, épanouissement et premiers apprentissages dans un cadre bienveillant et stimulant.",
     Icon: Baby,
-    levels: 'Petite, Moyenne & Grande section',
+    levels: 'Petite & Grande section',
   },
   {
     id: 'primaire',
     title: 'Primaire',
     description: "Acquisition des fondamentaux : lecture, écriture, calcul et développement de la curiosité.",
     Icon: School,
-    levels: 'CP au CM2',
+    levels: 'CI au CM2',
   },
   {
     id: 'secondaire',
@@ -740,7 +740,21 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
         };
       })
     : null;
-  const programs = programsFromCMS || programsFromLevels || DEFAULT_PROGRAMS;
+  // ⭐ 2026-09-25 — Si l'endpoint /school-levels a renvoyé des niveaux actifs,
+  //    on filtre DEFAULT_PROGRAMS pour ne garder QUE les cycles paramétrés.
+  //    Une école sans secondaire ne verra PAS la carte "Secondaire", même
+  //    dans le fallback DEFAULT_PROGRAMS.
+  const defaultProgramsFiltered = activeSchoolLevels.length > 0
+    ? DEFAULT_PROGRAMS.filter((p) => {
+        const codes = activeSchoolLevels.map((l: any) => String(l.code || '').toUpperCase());
+        if (p.id === 'maternelle') return codes.some((c: string) => c.includes('MATERNEL'));
+        if (p.id === 'primaire') return codes.some((c: string) => c.includes('PRIMAIRE') || c.includes('PRIMARY'));
+        if (p.id === 'secondaire') return codes.some((c: string) => c.includes('SECOND'));
+        return false;
+      })
+    : DEFAULT_PROGRAMS;
+
+  const programs = programsFromCMS || programsFromLevels || defaultProgramsFiltered;
 
   // ⭐ Différenciateurs : contrôlables depuis le CMS (déjà configurable dans
   //    l'onglet CMS > Programmes > Points de différenciation).
@@ -1095,29 +1109,38 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           </div>
         </div>
 
-        {/* Bandeau chiffres clés (CDC 3.2 — 3-4 indicateurs) */}
-        {/* ⭐ 2026-09-25 — Fix overlap CTA : les stats sont DANS LE FLUX
-            (après les CTA, avant le slanted divider) au lieu d'être en
-            md:absolute md:bottom-8 qui les faisait chevaucher les boutons
-            CTA sur desktop. Plus aucun chevauchement possible. */}
-        {keyFigures.length > 0 && (
-          <div className="relative z-20 w-full px-4 sm:px-6 pt-12 pb-6">
-            <div className="max-w-6xl mx-auto w-full">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-4 text-center">
-                {keyFigures.map((fig: any, i: number) => (
-                  <KeyFigureCard key={i} fig={fig} gold={GOLD} navy={NAVY} delay={i * 0.1} />
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Elegant Slanted Section Divider (signature Win Agro) */}
         <div
           className="absolute bottom-0 left-0 right-0 h-8"
           style={{ background: PEARL, clipPath: "polygon(0 100%, 100% 100%, 100% 0)" }}
         />
       </section>
+
+      {/* ═══ 3.2b SECTION STATS — dédiée juste après le Hero (Design Win Agro) ═══ */}
+      {/* ⭐ 2026-09-25 — Les stats ont leur PROPRE section (pas dans le Hero).
+          Cartes premium avec card-shimmer + count-up animé. Fond PEARL
+          pour contraste avec le Hero navy. */}
+      {keyFigures.length > 0 && (
+        <section className="py-20 bg-[#F4F6FA] relative overflow-hidden">
+          {/* Decorative Blur Backgrounds (signature Win Agro) */}
+          <div
+            className="absolute top-1/2 left-0 w-80 h-80 rounded-full blur-[100px] pointer-events-none"
+            style={{ background: `${NAVY}0a` }}
+          />
+          <div
+            className="absolute bottom-0 right-10 w-96 h-96 rounded-full blur-[120px] pointer-events-none"
+            style={{ background: `${GOLD}14` }}
+          />
+
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+              {keyFigures.map((fig: any, i: number) => (
+                <KeyFigureCardLight key={i} fig={fig} gold={GOLD} navy={NAVY} blue={BLUE} delay={i * 0.1} />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ═══ 3.3 À PROPOS / PRÉSENTATION — Design Win Agro ═══ */}
       {shouldShowSection(rawWebsite?.presentationIsActive) && (
@@ -2165,6 +2188,56 @@ function KeyFigureCard({ fig, gold, navy, delay }: { fig: any; gold: string; nav
         style={{ background: gold }}
       />
       <div className="text-[10px] md:text-xs text-blue-50/70 font-medium mt-0.5">{fig.label}</div>
+    </motion.div>
+  );
+}
+
+// ─── Sous-composant : carte chiffre clé VERSION CLAIRE (fond PEARL) ──
+// ⭐ 2026-09-25 — Version light pour la section Stats dédiée (fond #F4F6FA).
+//    Carte blanche avec border navy pâle, count-up animé, card-shimmer,
+//    separator line gold. Style Win Agro adapté palette Helm.
+function KeyFigureCardLight({ fig, gold, navy, blue, delay }: { fig: any; gold: string; navy: string; blue: string; delay: number }) {
+  const figValueStr = String(fig?.value ?? '');
+  const numericMatch = figValueStr.match(/^(\d+)/);
+  const targetNum = numericMatch ? parseInt(numericMatch[1], 10) : 0;
+  const suffix = numericMatch ? figValueStr.slice(numericMatch[0].length) : '';
+  const { value, ref } = useCountUp(targetNum, 1500);
+
+  return (
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, y: 30 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ delay, duration: 0.6, ease: "easeOut" }}
+      whileHover={{ y: -8, transition: { duration: 0.2 } }}
+      className="relative p-8 rounded-3xl bg-white border border-slate-100 shadow-lg hover:shadow-xl transition-all duration-300 group card-shimmer"
+    >
+      <div>
+        {/* Count display avec styling premium Win Agro */}
+        <div className="flex items-baseline gap-1 mb-3">
+          <span
+            className="font-serif text-5xl sm:text-6xl font-black tracking-tight group-hover:transition-colors duration-300"
+            style={{ color: navy }}
+          >
+            {targetNum > 0 ? value : fig.value}
+          </span>
+          {suffix && (
+            <span className="font-sans text-3xl font-black" style={{ color: gold }}>{suffix}</span>
+          )}
+        </div>
+
+        {/* Separator line with shine animation (signature Win Agro) */}
+        <div
+          className="w-12 h-1 rounded-full mb-4 group-hover:w-20 transition-all duration-300"
+          style={{ background: gold }}
+        />
+
+        {/* Label */}
+        <h3 className="font-sans font-bold text-lg tracking-wide mb-2" style={{ color: navy }}>
+          {fig.label}
+        </h3>
+      </div>
     </motion.div>
   );
 }

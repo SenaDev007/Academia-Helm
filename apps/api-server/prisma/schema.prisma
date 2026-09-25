@@ -498,6 +498,11 @@ model Tenant {
   faqItems        TenantFaqItem[]
   contactMessages TenantContactMessage[]
 
+  // Module Admissions (configurable par le promoteur)
+  admissionSettings AdmissionSettings?
+  admissionSteps    AdmissionStep[]
+  admissionDocuments AdmissionDocument[]
+
   @@index([subdomain])
   @@index([slug])
   @@index([countryId])
@@ -17366,3 +17371,106 @@ model ChatContactPolicy {
 
 // Cache bust: force prisma generate to re-run after V5 chat models
 // Timestamp: 2026-09-07T12:00:00Z
+
+// ============================================================================
+// ADMISSIONS — Module configurable par le promoteur (2026-09-25)
+// ============================================================================
+// Le promoteur configure depuis /app/admissions :
+//   - Activation de l'admission sur le site institutionnel
+//   - Étapes (de 1 à N, ordre libre) avec titre + description + icône
+//   - Documents requis (libre, ordre libre)
+//   - Texte du bouton CTA ("Soumettre l'admission de mon enfant" par défaut)
+//   - Texte d'introduction + sous-titre
+//
+// Sur le site institutionnel public, la section Admissions affiche ces
+// données si `isActive=true`, sinon la section est masquée.
+//
+// ⭐ Pattern multi-tenant : tout est scoped par tenantId. Un tenant = une
+// config AdmissionSettings (relation 1-1 via tenantId @unique).
+// ============================================================================
+
+model AdmissionSettings {
+  id              String   @id @default(uuid())
+  tenantId        String   @unique
+  /// Activation globale de l'admission sur le site institutionnel.
+  isActive        Boolean  @default(false)
+  /// Titre principal de la section (ex: "Admissions 2026-2027").
+  title           String?
+  /// Sous-titre / introduction (ex: "Un parcours d'admission clair en 4 étapes...").
+  subtitle        String? @db.Text
+  /// Texte du bouton CTA final (ex: "Soumettre l'admission de mon enfant").
+  ctaText         String? @default("Soumettre l'admission de mon enfant")
+  /// URL de redirection au clic sur le CTA (par défaut /public/pre-enrollment).
+  ctaUrl          String? @default("/public/pre-enrollment")
+  /// Titre du bloc "Documents requis" (ex: "Dossier à fournir").
+  documentsTitle  String? @default("Documents requis")
+  /// Texte de présentation des documents (ex: "Constituez votre dossier avec...").
+  documentsIntro  String? @db.Text
+  /// Titre du bloc "Étapes" (ex: "Notre processus en 4 étapes").
+  stepsTitle      String? @default("Notre processus d'admission")
+  /// Texte de présentation des étapes.
+  stepsIntro      String? @db.Text
+  /// Texte du bloc CTA final (ex: "Prêt à nous rejoindre ?").
+  ctaBlockTitle   String? @default("Prêt à nous rejoindre ?")
+  /// Sous-titre du bloc CTA final.
+  ctaBlockText    String? @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  steps           AdmissionStep[]
+  documents       AdmissionDocument[]
+  @@map("admission_settings")
+}
+
+/// Étape d'admission (ex: "Candidature", "Évaluation", "Entretien", "Confirmation").
+model AdmissionStep {
+  id              String   @id @default(uuid())
+  tenantId        String
+  admissionId     String
+  /// Numéro d'étape (1, 2, 3, ...) — contrôlé par le promoteur.
+  num             Int      @default(1)
+  /// Titre court (ex: "Candidature").
+  title           String
+  /// Description (ex: "Remplissez le formulaire de pré-inscription en ligne.").
+  description     String?  @db.Text
+  /// Nom de l'icône Lucide (ex: "FileText", "BookOpen", "Users", "CheckCircle2").
+  iconName        String?  @default("CheckCircle2")
+  /// Ordre d'affichage (optionnel — par défaut on trie par `num`).
+  order           Int      @default(0)
+  /// Activer/désactiver une étape sans la supprimer.
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  admission       AdmissionSettings @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
+  @@index([admissionId])
+  @@map("admission_steps")
+}
+
+/// Document requis pour l'admission (ex: "Acte de naissance (original + copie)").
+model AdmissionDocument {
+  id              String   @id @default(uuid())
+  tenantId        String
+  admissionId     String
+  /// Libellé du document (ex: "Acte de naissance (original + copie)").
+  label           String
+  /// Description optionnelle (ex: "À fournir en 2 exemplaires certifiés").
+  description     String?  @db.Text
+  /// Icône Lucide (par défaut "FileText").
+  iconName        String?  @default("FileText")
+  /// Ordre d'affichage.
+  order           Int      @default(0)
+  /// Activer/désactiver un document sans le supprimer.
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  admission       AdmissionSettings @relation(fields: [admissionId], references: [id], onDelete: Cascade)
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
+  @@index([admissionId])
+  @@map("admission_documents")
+}
+
+// Cache bust: force prisma generate to re-run after AdmissionSettings models
+// Timestamp: 2026-09-25T13:00:00Z

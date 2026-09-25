@@ -26,6 +26,7 @@ import {
   Wallet,
   GraduationCap,
   UserCog,
+  UserPlus,
   Building,
   School,
   MessageSquare,
@@ -324,6 +325,7 @@ const MAIN_MODULES: MainModule[] = [
   { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCog, iconUrl: '/icons/modules/rh-personnel.png', featureCode: 'HR_PAYROLL', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'HR_MANAGER', 'PAYROLL_MANAGER', 'SECRETAIRE_COMPTABLE', 'SCOLARITE', 'admin'] },
   { path: '/app/communication', label: 'Helm Connect', icon: MessageSquare, iconUrl: '/icons/modules/helm-connect.png', featureCode: 'COMMUNICATION' },
   { path: '/app/cms', label: 'Site Institutionnel', icon: Globe, featureCode: 'CMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'COMMUNICATION_MANAGER', 'admin'] },
+  { path: '/app/admissions', label: 'Admissions', icon: UserPlus, featureCode: 'CMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'admin'] },
 ];
 
 /**

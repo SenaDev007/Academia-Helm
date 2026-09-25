@@ -7,6 +7,7 @@
 import { Module } from '@nestjs/common';
 import { TenantWebsiteController } from './tenant-website.controller';
 import { TenantWebsiteSyncController } from './tenant-website-sync.controller';
+import { AdmissionSettingsController } from './admission-settings.controller';
 import { TenantWebsiteService } from './tenant-website.service';
 import { DatabaseModule } from '../database/database.module';
 import { AuthModule } from '../auth/auth.module';
@@ -14,7 +15,7 @@ import { OpenRouterModule } from '../common/services/openrouter.module';
 
 @Module({
   imports: [DatabaseModule, AuthModule, OpenRouterModule],
-  controllers: [TenantWebsiteController, TenantWebsiteSyncController],
+  controllers: [TenantWebsiteController, TenantWebsiteSyncController, AdmissionSettingsController],
   providers: [TenantWebsiteService],
   exports: [TenantWebsiteService],
 })

@@ -306,6 +306,18 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   //    ⚠️ Défense: si l'endpoint échoue, dynamicStats reste null et on
   //    fallback sur les keyFigures manuelles du CMS.
   const [dynamicStats, setDynamicStats] = useState<Record<string, number | string> | null>(null);
+  // ⭐ 2026-09-25 — Niveaux scolaires ACTIFS (depuis la DB, pas le CMS).
+  //    Permet de n'afficher que les programmes correspondant aux niveaux
+  //    réellement configurés par l'école (maternelle/primaire/secondaire).
+  const [activeSchoolLevels, setActiveSchoolLevels] = useState<any[]>([]);
+  // ⭐ 2026-09-25 — Enseignants réels (depuis le module RH, roleType=TEACHER).
+  //    Remplace DEFAULT_FACULTY (noms fictifs "Koffi Adjovi"...) par les
+  //    vrais enseignants de l'école avec leur photo.
+  const [dynamicFaculty, setDynamicFaculty] = useState<any[]>([]);
+  // ⭐ 2026-09-25 — Admission settings (depuis le module configurable par
+  //    le promoteur dans /app/admissions). Remplace les placeholders
+  //    hardcodés (4 étapes + 6 documents) par les vraies données.
+  const [admissionSettings, setAdmissionSettings] = useState<any>(null);
   const [activeTestimonial, setActiveTestimonial] = useState(0);
 
   // ─── Thème officiel du tenant (40+ thèmes shadcn/ui) ──────────────────
@@ -346,20 +358,27 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       else if ((schoolInfo as any)?.id) setTenantId((schoolInfo as any).id);
       setIsLoading(false);
       // Charger en parallèle les données complémentaires + stats dynamiques
+      // + niveaux scolaires + enseignants + admission settings
       Promise.all([
         loadWebsiteData(),
         loadThemeSettings(),
         loadIdentityInfo(),
         loadDynamicStats(),
+        loadSchoolLevels(),
+        loadFaculty(),
+        loadAdmissionSettings(),
       ]);
     } else {
-      // Pas de schoolInfo → tout charger en parallèle (5 fetchs)
+      // Pas de schoolInfo → tout charger en parallèle (8 fetchs)
       Promise.all([
         loadSchoolData(),
         loadWebsiteData(),
         loadThemeSettings(),
         loadIdentityInfo(),
         loadDynamicStats(),
+        loadSchoolLevels(),
+        loadFaculty(),
+        loadAdmissionSettings(),
       ]).finally(() => setIsLoading(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -457,6 +476,81 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
       clearTimeout(timeoutId);
       // Silencieux — on garde les keyFigures manuelles du CMS
       console.debug('[stats] unavailable for', slug, e);
+    }
+  };
+
+  // ─── Niveaux scolaires ACTIFS (depuis la DB, pas le CMS) ─────────────
+  // GET /api/tenant-website/public/:slug/school-levels → codes des niveaux
+  // actifs pour ce tenant (MATERNELLE, PRIMAIRE, SECONDAIRE).
+  // Permet de n'afficher que les programmes correspondant aux niveaux
+  // réellement configurés par l'école (ex: pas de "Secondaire" si l'école
+  // n'a que maternelle+primaire).
+  // ⚠️ Si l'endpoint échoue → fallback sur DEFAULT_PROGRAMS (3 cycles).
+  const loadSchoolLevels = async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    try {
+      const res = await fetch(`/api/tenant-website/public/${slug}/school-levels`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) setActiveSchoolLevels(data);
+      }
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.debug('[school-levels] unavailable for', slug, e);
+    }
+  };
+
+  // ─── Enseignants réels (depuis le module RH, roleType=TEACHER) ──────
+  // GET /api/tenant-website/public/:slug/faculty → liste des enseignants
+  // actifs avec leur nom + photo + poste. Remplace DEFAULT_FACULTY
+  // (noms fictifs "Koffi Adjovi", "Aïcha Bello"...) par les vrais
+  // enseignants de l'école. Si l'endpoint renvoie [] → fallback sur le
+  // CMS faculty ou DEFAULT_FACULTY.
+  const loadFaculty = async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    try {
+      const res = await fetch(`/api/tenant-website/public/${slug}/faculty`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) setDynamicFaculty(data);
+      }
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.debug('[faculty] unavailable for', slug, e);
+    }
+  };
+
+  // ─── Admission settings (depuis le module configurable par le promoteur) ─
+  // GET /api/tenant-website/public/:slug/admission → config admission
+  // (steps + documents + CTA) si isActive=true. Sinon null → section
+  // admissions masquée sur le site public.
+  // ⭐ Remplace les placeholders hardcodés (4 étapes + 6 documents) par
+  // les vraies données configurées par le promoteur dans /app/admissions.
+  const loadAdmissionSettings = async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    try {
+      const res = await fetch(`/api/tenant-website/public/${slug}/admission`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data === 'object' && data.isActive) {
+          setAdmissionSettings(data);
+        }
+      }
+    } catch (e) {
+      clearTimeout(timeoutId);
+      console.debug('[admission] unavailable for', slug, e);
     }
   };
 
@@ -590,21 +684,109 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
   // Note : les objets DEFAULT_* contiennent une propriété `Icon` (composant
   // Lucide). Si le CMS retourne des données avec `iconName` (string) au lieu
   // de `Icon` (component), un résolveur d'icônes devra être ajouté.
-  const programs = (rawWebsite?.programs && Array.isArray(rawWebsite.programs) && rawWebsite.programs.length > 0)
+  // ─── PROGRAMMES dynamiques depuis les niveaux scolaires de l'école ──
+  // ⭐ 2026-09-25 — N'afficher QUE les cycles réellement paramétrés par
+  //    l'école dans le module Paramètres → Structure de l'école. Une école
+  //    sans secondaire ne verra pas la carte "Secondaire".
+  //    - Maternelle = Petite Section (PS) + Grande Section (GS) uniquement.
+  //    - Primaire = CI → CM2 (Cours d'Initiation, CP, CE1, CE2, CM1, CM2).
+  //    - Secondaire = 6e → Terminale.
+  // Source de vérité : GET /api/tenant-website/public/:slug/school-levels.
+  // Si l'endpoint échoue ou renvoie [] → fallback sur DEFAULT_PROGRAMS (3 cycles).
+  // Si le CMS fournit `programs` personnalisés → on les utilise.
+  // Sinon → on génère les programmes depuis les niveaux actifs.
+  const programsFromCMS = (rawWebsite?.programs && Array.isArray(rawWebsite.programs) && rawWebsite.programs.length > 0)
     ? rawWebsite.programs
-    : DEFAULT_PROGRAMS;
+    : null;
+  // Construire les programmes depuis activeSchoolLevels (DB) si pas de CMS
+  const programsFromLevels = activeSchoolLevels.length > 0
+    ? activeSchoolLevels.map((level: any) => {
+        const code = String(level.code || '').toUpperCase();
+        // Mapper code → icône + libellé + description + niveaux
+        if (code.includes('MATERNEL')) {
+          return {
+            id: 'maternelle',
+            title: level.name || 'Maternelle',
+            description: "Éveil, épanouissement et premiers apprentissages dans un cadre bienveillant et stimulant.",
+            Icon: Baby,
+            levels: 'Petite & Grande section', // PS + GS uniquement (consigne promoteur)
+          };
+        }
+        if (code.includes('PRIMAIRE') || code.includes('PRIMARY')) {
+          return {
+            id: 'primaire',
+            title: level.name || 'Primaire',
+            description: "Acquisition des fondamentaux : lecture, écriture, calcul et développement de la curiosité.",
+            Icon: School,
+            levels: 'CI au CM2', // Cours d'Initiation → CM2 (consigne promoteur)
+          };
+        }
+        if (code.includes('SECOND')) {
+          return {
+            id: 'secondaire',
+            title: level.name || 'Secondaire',
+            description: "Approfondissement des savoirs, orientation et préparation aux examens nationaux.",
+            Icon: Library,
+            levels: '6e à Terminale',
+          };
+        }
+        // Fallback générique
+        return {
+          id: code.toLowerCase(),
+          title: level.name || level.label || 'Niveau',
+          description: level.label || "Programme d'enseignement de notre établissement.",
+          Icon: BookOpen,
+          levels: '',
+        };
+      })
+    : null;
+  const programs = programsFromCMS || programsFromLevels || DEFAULT_PROGRAMS;
+
+  // ⭐ Différenciateurs : contrôlables depuis le CMS (déjà configurable dans
+  //    l'onglet CMS > Programmes > Points de différenciation).
   const differentiators = (rawWebsite?.differentiators && Array.isArray(rawWebsite.differentiators) && rawWebsite.differentiators.length > 0)
     ? rawWebsite.differentiators
     : DEFAULT_DIFFERENTIATORS;
-  const faculty = (rawWebsite?.faculty && Array.isArray(rawWebsite.faculty) && rawWebsite.faculty.length > 0)
-    ? rawWebsite.faculty
-    : DEFAULT_FACULTY;
-  const admissionSteps = (rawWebsite?.admissionSteps && Array.isArray(rawWebsite.admissionSteps) && rawWebsite.admissionSteps.length > 0)
-    ? rawWebsite.admissionSteps
-    : ADMISSION_STEPS;
-  const admissionDocuments = (rawWebsite?.admissionDocuments && Array.isArray(rawWebsite.admissionDocuments) && rawWebsite.admissionDocuments.length > 0)
-    ? rawWebsite.admissionDocuments
-    : REQUIRED_DOCUMENTS;
+
+  // ⭐ FACULTY : enseignants réels depuis le module RH (roleType=TEACHER).
+  //    Priority 1: dynamicFaculty (endpoint public /faculty → vrais enseignants
+  //    avec photo + nom + poste).
+  //    Priority 2: rawWebsite.faculty (CMS — si l'admin a configuré manuellement).
+  //    Priority 3: DEFAULT_FACULTY (noms fictifs "Koffi Adjovi" — fallback).
+  const faculty = dynamicFaculty.length > 0
+    ? dynamicFaculty
+    : (rawWebsite?.faculty && Array.isArray(rawWebsite.faculty) && rawWebsite.faculty.length > 0)
+      ? rawWebsite.faculty
+      : DEFAULT_FACULTY;
+
+  // ⭐ ADMISSION STEPS + DOCUMENTS : depuis le module configurable par le
+  //    promoteur dans /app/admissions. Priority 1: admissionSettings
+  //    (endpoint public /admission → vraies étapes + documents configurés).
+  //    Priority 2: rawWebsite.admissionSteps/admissionDocuments (CMS —
+  //    si l'admin a surchargé via le back-office CMS).
+  //    Priority 3: ADMISSION_STEPS / REQUIRED_DOCUMENTS (placeholders
+  //    hardcodés — fallback).
+  const admissionSteps = admissionSettings?.steps && Array.isArray(admissionSettings.steps) && admissionSettings.steps.length > 0
+    ? admissionSettings.steps
+    : (rawWebsite?.admissionSteps && Array.isArray(rawWebsite.admissionSteps) && rawWebsite.admissionSteps.length > 0)
+      ? rawWebsite.admissionSteps
+      : ADMISSION_STEPS;
+  const admissionDocuments = admissionSettings?.documents && Array.isArray(admissionSettings.documents) && admissionSettings.documents.length > 0
+    ? admissionSettings.documents
+    : (rawWebsite?.admissionDocuments && Array.isArray(rawWebsite.admissionDocuments) && rawWebsite.admissionDocuments.length > 0)
+      ? rawWebsite.admissionDocuments
+      : REQUIRED_DOCUMENTS;
+
+  // ⭐ Textes de la section Admissions depuis admissionSettings si dispo
+  const admissionSectionTitle = admissionSettings?.title || withDefault(rawWebsite?.admissionTitle, 'Admissions');
+  const admissionSectionSubtitle = admissionSettings?.subtitle || withDefault(
+    rawWebsite?.admissionSubtitle,
+    "Un parcours d'admission clair pour rejoindre notre communauté éducative.",
+  );
+  const admissionCtaText = admissionSettings?.ctaText || 'Soumettre l\'admission de mon enfant';
+  const admissionCtaUrl = admissionSettings?.ctaUrl || '/public/pre-enrollment';
+  const admissionCtaBlockTitle = admissionSettings?.ctaBlockTitle || 'Prêt à nous rejoindre ?';
+  const admissionCtaBlockText = admissionSettings?.ctaBlockText || 'Démarrez votre candidature en ligne dès maintenant. Notre équipe vous accompagne à chaque étape.';
 
   // ─── Titres & sous-titres de sections (CMS-connectés) ─────────────────
   // Chaque titre/sous-titre de section est lu depuis le CMS avec fallback sur
@@ -751,7 +933,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           - bg-grain pour motif de fond */}
       <section
         id="hero"
-        className="relative min-h-[90vh] flex items-center justify-center pt-24 pb-16 overflow-hidden bg-[#0B1E4D] text-white"
+        className="relative min-h-[90vh] flex flex-col items-center justify-center pt-24 pb-20 overflow-hidden bg-[#0B1E4D] text-white"
       >
         {/* 1. Premium Background Image + Navy Opacity Overlay */}
         <div className="absolute inset-0 z-0">
@@ -913,16 +1095,14 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
           </div>
         </div>
 
-        {/* Elegant Slanted Section Divider (signature Win Agro) */}
-        <div
-          className="absolute bottom-0 left-0 right-0 h-8"
-          style={{ background: PEARL, clipPath: "polygon(0 100%, 100% 100%, 100% 0)" }}
-        />
-
         {/* Bandeau chiffres clés (CDC 3.2 — 3-4 indicateurs) */}
+        {/* ⭐ 2026-09-25 — Fix overlap CTA : les stats sont DANS LE FLUX
+            (après les CTA, avant le slanted divider) au lieu d'être en
+            md:absolute md:bottom-8 qui les faisait chevaucher les boutons
+            CTA sur desktop. Plus aucun chevauchement possible. */}
         {keyFigures.length > 0 && (
-          <div className="relative z-20 w-full pb-24 pt-2 shrink-0 md:absolute md:bottom-8 md:left-0 md:right-0 md:pb-8 flex justify-center">
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 w-full">
+          <div className="relative z-20 w-full px-4 sm:px-6 pt-12 pb-6">
+            <div className="max-w-6xl mx-auto w-full">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-4 text-center">
                 {keyFigures.map((fig: any, i: number) => (
                   <KeyFigureCard key={i} fig={fig} gold={GOLD} navy={NAVY} delay={i * 0.1} />
@@ -931,6 +1111,12 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
             </div>
           </div>
         )}
+
+        {/* Elegant Slanted Section Divider (signature Win Agro) */}
+        <div
+          className="absolute bottom-0 left-0 right-0 h-8"
+          style={{ background: PEARL, clipPath: "polygon(0 100%, 100% 100%, 100% 0)" }}
+        />
       </section>
 
       {/* ═══ 3.3 À PROPOS / PRÉSENTATION — Design Win Agro ═══ */}
@@ -1288,44 +1474,61 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
 
           {/* Grille d'enseignants — cards premium avec card-shimmer (style Win Agro) */}
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {faculty.map((member: any, i: number) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 24 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.08, duration: 0.5, ease: "easeOut" }}
-                whileHover={{ y: -8, transition: { duration: 0.2 } }}
-                className="group bg-white rounded-3xl p-6 text-center shadow-lg border border-slate-100 hover:shadow-xl transition-all duration-300 card-shimmer"
-              >
-                {/* Portrait placeholder — bordure or au hover + scale (style Win Agro) */}
-                <div className="relative w-20 h-20 mx-auto mb-4">
-                  <motion.div
-                    whileHover={{ scale: 1.05 }}
-                    className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold transition-all group-hover:ring-4 group-hover:ring-amber-400/40 group-hover:ring-offset-2"
-                    style={{
-                      background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
-                      color: '#FFFFFF',
-                    }}
-                  >
-                    {(member.name || '?').split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
-                  </motion.div>
-                  {/* Halo doré décoratif */}
+            {faculty.map((member: any, i: number) => {
+              // ⭐ 2026-09-25 — dynamicFaculty (depuis RH) a : name, position, subject, photoUrl
+              //    DEFAULT_FACULTY / CMS faculty a : name, role, subject
+              //    On normalise : role = position || role
+              const memberName = member.name || `${member.firstName || ''} ${member.lastName || ''}`.trim() || '?';
+              const memberRole = member.position || member.role || 'Enseignant';
+              const memberSubject = member.subject || '';
+              return (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 24 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.08, duration: 0.5, ease: "easeOut" }}
+                  whileHover={{ y: -8, transition: { duration: 0.2 } }}
+                  className="group bg-white rounded-3xl p-6 text-center shadow-lg border border-slate-100 hover:shadow-xl transition-all duration-300 card-shimmer"
+                >
+                  {/* Portrait — photo réelle (RH) si dispo, sinon initiales */}
+                  <div className="relative w-20 h-20 mx-auto mb-4">
+                    {member.photoUrl ? (
+                      <motion.img
+                        whileHover={{ scale: 1.05 }}
+                        src={member.photoUrl}
+                        alt={memberName}
+                        className="w-20 h-20 rounded-full object-cover transition-all group-hover:ring-4 group-hover:ring-amber-400/40 group-hover:ring-offset-2"
+                      />
+                    ) : (
+                      <motion.div
+                        whileHover={{ scale: 1.05 }}
+                        className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold transition-all group-hover:ring-4 group-hover:ring-amber-400/40 group-hover:ring-offset-2"
+                        style={{
+                          background: `linear-gradient(135deg, ${NAVY}, ${BLUE})`,
+                          color: '#FFFFFF',
+                        }}
+                      >
+                        {memberName.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                      </motion.div>
+                    )}
+                    {/* Halo doré décoratif */}
+                    <div
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ background: GOLD }}
+                    />
+                  </div>
+                  <h4 className="font-serif text-sm font-bold" style={{ color: NAVY }}>{memberName}</h4>
+                  <p className="text-xs font-bold mt-1 uppercase tracking-wider" style={{ color: GOLD }}>{memberRole}</p>
+                  {memberSubject && <p className="text-[11px] text-slate-500 mt-1">{memberSubject}</p>}
+                  {/* Separator line with shine (style Win Agro) */}
                   <div
-                    className="absolute -top-2 -right-2 w-6 h-6 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="w-8 h-0.5 rounded-full mx-auto mt-3 opacity-50 group-hover:opacity-100 group-hover:w-12 transition-all duration-300"
                     style={{ background: GOLD }}
                   />
-                </div>
-                <h4 className="font-serif text-sm font-bold" style={{ color: NAVY }}>{member.name}</h4>
-                <p className="text-xs font-bold mt-1 uppercase tracking-wider" style={{ color: GOLD }}>{member.role}</p>
-                <p className="text-[11px] text-slate-500 mt-1">{member.subject}</p>
-                {/* Separator line with shine (style Win Agro) */}
-                <div
-                  className="w-8 h-0.5 rounded-full mx-auto mt-3 opacity-50 group-hover:opacity-100 group-hover:w-12 transition-all duration-300"
-                  style={{ background: GOLD }}
-                />
-              </motion.div>
-            ))}
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -1506,7 +1709,7 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
               transition={{ duration: 0.6 }}
               className="font-serif text-2xl sm:text-3xl md:text-4xl font-extrabold leading-snug text-white"
             >
-              {admissionTitle}
+              {admissionSectionTitle}
             </motion.h2>
             <motion.div
               animate={{ scaleX: [0, 1, 1, 0], transformOrigin: ["0% 50%", "0% 50%", "100% 50%", "100% 50%"] }}
@@ -1514,9 +1717,9 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
               className="h-1 w-16 mx-auto mt-6 rounded-full"
               style={{ background: GOLD }}
             />
-            {admissionSubtitle && (
+            {admissionSectionSubtitle && (
               <p className="text-sm md:text-base text-blue-100/70 max-w-2xl mx-auto mt-4">
-                {admissionSubtitle}
+                {admissionSectionSubtitle}
               </p>
             )}
           </div>
@@ -1603,20 +1806,20 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
               className="text-center"
             >
               <h3 className="font-serif text-2xl md:text-3xl font-extrabold text-white mb-3">
-                Prêt à nous rejoindre ?
+                {admissionCtaBlockTitle}
               </h3>
               <p className="text-blue-100/70 text-sm mb-6 max-w-md mx-auto">
-                Démarrez votre candidature en ligne dès maintenant. Notre équipe vous accompagne à chaque étape.
+                {admissionCtaBlockText}
               </p>
-              <motion.button
-                onClick={() => handlePortalClick('PUBLIC')}
+              <motion.a
+                href={admissionCtaUrl}
                 whileHover={{ scale: 1.05, boxShadow: `0px 10px 25px ${GOLD}66` }}
                 whileTap={{ scale: 0.98 }}
                 className="inline-flex items-center justify-center gap-2 px-8 py-4 rounded-full text-base font-bold shadow-xl cursor-pointer btn-shimmer"
                 style={{ background: `linear-gradient(135deg, ${GOLD}, #e09e1f)`, color: NAVY }}
               >
-                Commencer ma candidature <ArrowRight size={18} />
-              </motion.button>
+                {admissionCtaText} <ArrowRight size={18} />
+              </motion.a>
             </motion.div>
           </div>
         </div>

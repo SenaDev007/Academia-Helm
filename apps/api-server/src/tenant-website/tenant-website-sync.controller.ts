@@ -58,6 +58,127 @@ export class TenantWebsiteSyncController {
   }
 
   /**
+   * GET /api/tenant-website/public/:tenantSlug/school-levels
+   * Renvoie la liste des niveaux scolaires ACTIFS pour ce tenant.
+   * Utilisé par le site institutionnel public pour n'afficher que les
+   * programmes correspondant aux niveaux réellement configurés par l'école
+   * (ex: une école sans secondaire ne verra pas la carte "Secondaire").
+   *
+   * Réponse: [{ code, name, label, order }]
+   *  - code : 'MATERNELLE' | 'PRIMAIRE' | 'SECONDAIRE'
+   *  - name : nom court (ex: 'Maternelle')
+   *  - label : libellé long (ex: 'Maternelle — PS & GS')
+   *  - order : pour trier l'affichage
+   */
+  @Public()
+  @Get('public/:tenantSlug/school-levels')
+  async getPublicSchoolLevels(@Param('tenantSlug') tenantSlug: string) {
+    const tenant = await this.prisma.tenant.findFirst({
+      where: {
+        OR: [{ slug: tenantSlug }, { subdomain: tenantSlug }],
+        status: { in: ['active', 'trial'] },
+      },
+      select: { id: true },
+    });
+    if (!tenant) throw new BadRequestException('Établissement introuvable');
+
+    try {
+      const levels = await this.prisma.schoolLevel.findMany({
+        where: { tenantId: tenant.id, isActive: true },
+        select: { code: true, name: true, label: true, order: true },
+        orderBy: { order: 'asc' },
+      });
+      return levels.map((l: any) => ({
+        code: l.code,
+        name: l.name,
+        label: l.label || l.name,
+        order: l.order ?? 0,
+      }));
+    } catch (err: any) {
+      // Si la colonne isActive n'existe pas (vieille DB) — fallback : tous les niveaux
+      try {
+        const levels = await this.prisma.schoolLevel.findMany({
+          where: { tenantId: tenant.id },
+          select: { code: true, name: true, label: true, order: true },
+          orderBy: { order: 'asc' },
+        });
+        return levels.map((l: any) => ({
+          code: l.code,
+          name: l.name,
+          label: l.label || l.name,
+          order: l.order ?? 0,
+        }));
+      } catch {
+        return [];
+      }
+    }
+  }
+
+  /**
+   * GET /api/tenant-website/public/:tenantSlug/faculty
+   * Renvoie la liste des enseignants actifs (roleType=TEACHER) pour le site
+   * institutionnel public. Inclut leur photo (StaffPhoto.thumbnailUrl) si
+   * disponible, et leur poste (position) qui peut être "Directeur/trice",
+   * "Directeur pédagogique", etc.
+   *
+   * ⚠️ PUBLIC (sans auth) : on ne sélectionne QUE des champs publics —
+   * jamais d'email, de téléphone, d'adresse, de salaire, etc.
+   *
+   * Réponse: [{ id, firstName, lastName, position, subject, photoUrl }]
+   *  - position : depuis Staff.position (ex: "Directeur pédagogique",
+   *    "Responsable Primaire", "Enseignant" si vide)
+   *  - subject : depuis Staff.department (ex: "Mathématiques")
+   *  - photoUrl : StaffPhoto.thumbnailUrl (ou null)
+   *
+   * Limité à 12 enseignants (suffit pour la grille 2x4 / 3x4 sur le site).
+   */
+  @Public()
+  @Get('public/:tenantSlug/faculty')
+  async getPublicFaculty(@Param('tenantSlug') tenantSlug: string) {
+    const tenant = await this.prisma.tenant.findFirst({
+      where: {
+        OR: [{ slug: tenantSlug }, { subdomain: tenantSlug }],
+        status: { in: ['active', 'trial'] },
+      },
+      select: { id: true },
+    });
+    if (!tenant) throw new BadRequestException('Établissement introuvable');
+
+    try {
+      // Staff avec roleType TEACHER + status actif
+      const teachers = await this.prisma.staff.findMany({
+        where: {
+          tenantId: tenant.id,
+          roleType: 'TEACHER',
+          status: 'ACTIVE',
+        },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          position: true,
+          department: true,
+          photo: { select: { thumbnailUrl: true, originalUrl: true } },
+        },
+        take: 12,
+        orderBy: { lastName: 'asc' },
+      }).catch(() => []);
+
+      return teachers.map((t: any) => ({
+        id: t.id,
+        firstName: t.firstName,
+        lastName: t.lastName,
+        name: `${t.firstName} ${t.lastName}`.trim(),
+        position: t.position || 'Enseignant',
+        subject: t.department || null,
+        photoUrl: t.photo?.thumbnailUrl || t.photo?.originalUrl || null,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Compute real-time stats for a tenant — shared by both auth and public
    * endpoints. Toutes les requêtes sont catchées pour éviter qu'un échec
    * partiel (table absente, etc.) ne casse l'endpoint.

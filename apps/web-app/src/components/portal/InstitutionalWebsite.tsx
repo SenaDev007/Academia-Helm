@@ -569,6 +569,15 @@ export default function InstitutionalWebsite({ schoolInfo, subdomain }: Props) {
     rawWebsite?.facultySubtitle,
     'Une équipe pédagogique engagée et qualifiée au service de la réussite de chaque élève.',
   );
+  // ⭐ 2026-09-25 — Défense facultyRatio : si le CMS ne fournit pas de ratio
+  // personnalisé et que dynamicStats n'est pas dispo, on calcule automatiquement
+  // à partir des stats temps réel (élèves / personnels), sinon fallback défaut.
+  const facultyRatio = withDefault(
+    rawWebsite?.facultyRatio,
+    dynamicStats && (dynamicStats as any).studentCount > 0 && (dynamicStats as any).staffCount > 0
+      ? `Ratio 1 encadrant pour ${Math.ceil((dynamicStats as any).studentCount / (dynamicStats as any).staffCount)} élèves`
+      : 'Ratio 1 encadrant pour 15 élèves'
+  );
   const admissionTitle = withDefault(rawWebsite?.admissionTitle, 'Admissions');
   const admissionSubtitle = withDefault(
     rawWebsite?.admissionSubtitle,

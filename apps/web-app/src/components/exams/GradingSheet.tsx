@@ -1438,6 +1438,9 @@ export function GradingSheet({
                         {!isMaternelle && (
                           <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total gén.</th>
                         )}
+                        {!isMaternelle && (
+                          <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Moyenne</th>
+                        )}
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Rang</th>
                         <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Seuil fixé</th>
                         <th colSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-24">Seuil atteint</th>
@@ -1669,6 +1672,19 @@ export function GradingSheet({
                                 {totalGeneral !== null ? totalGeneral.toFixed(2) : '—'}
                               </td>
                             )}
+                            {/* Moyenne = totalGeneral / nombre de matières évaluées */}
+                            {!isMaternelle && (() => {
+                              const subjectsWithScores = sortedSubjects.filter(subj => {
+                                const s = row.scores[subj.id];
+                                return s && typeof s.score === 'number' && !s.isAbsent;
+                              }).length;
+                              const moyenne = subjectsWithScores > 0 ? totalGeneral / subjectsWithScores : null;
+                              return (
+                                <td className="border border-slate-300 px-2 py-1 text-center font-bold text-indigo-700 bg-indigo-50">
+                                  {moyenne !== null ? moyenne.toFixed(2) : '—'}
+                                </td>
+                              );
+                            })()}
                             {/* Rang avec suffixe français */}
                             <td className="border border-slate-300 px-2 py-1 text-center font-bold text-slate-700">
                               {formatRang(rang, row.gender)}

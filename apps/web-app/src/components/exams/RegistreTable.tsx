@@ -172,11 +172,18 @@ export function RegistreTable({
           const appreciation = computeAppreciationGlobale(row.scores, sortedSubjects);
           didReach = (appreciation === 'Très Satisfaisant' || appreciation === 'Satisfaisant');
         } else {
+          // ⭐ Fix 2026-09-25 — seuil de réussite = la MOYENNE (total / nb matières) ≥ 10
+          // Pas le total global qui devrait être ≥ 10 × nb matières (trop strict).
           const totalGeneral = sortedSubjects.reduce((sum, subj) => {
             const s = row.scores[subj.id];
             return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
           }, 0);
-          didReach = totalGeneral >= (10 * sortedSubjects.length);
+          const subjectsWithScores = sortedSubjects.filter(subj => {
+            const s = row.scores[subj.id];
+            return s && typeof s.score === 'number' && !s.isAbsent;
+          }).length;
+          const moyenne = subjectsWithScores > 0 ? totalGeneral / subjectsWithScores : 0;
+          didReach = moyenne >= 10;
         }
 
         if (didReach) {
@@ -275,6 +282,15 @@ export function RegistreTable({
               ))}
               {!isMaternelle && !isSecondaire && (
                 <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total gén.</th>
+              )}
+              {!isMaternelle && !isSecondaire && (
+                <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Moyenne</th>
+              )}
+              {!isMaternelle && isSecondaire && (
+                <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Total gén.</th>
+              )}
+              {!isMaternelle && isSecondaire && (
+                <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Moyenne</th>
               )}
               <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">Rang</th>
               <th rowSpan={2} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-16">Seuil fixé</th>
@@ -376,6 +392,38 @@ export function RegistreTable({
                       {totalGeneral !== null ? totalGeneral.toFixed(2) : '—'}
                     </td>
                   )}
+                  {/* Moyenne (primaire) = total / nombre de matières évaluées */}
+                  {!isMaternelle && !isSecondaire && (() => {
+                    const subjectsWithScores = sortedSubjects.filter(subj => {
+                      const s = row.scores[subj.id];
+                      return s && typeof s.score === 'number' && !s.isAbsent;
+                    }).length;
+                    const moyenne = subjectsWithScores > 0 && totalGeneral !== null ? totalGeneral / subjectsWithScores : null;
+                    return (
+                      <td className="border border-slate-300 px-2 py-1 text-center font-bold text-indigo-700 bg-indigo-50">
+                        {moyenne !== null ? moyenne.toFixed(2) : '—'}
+                      </td>
+                    );
+                  })()}
+                  {/* Total général (secondaire) */}
+                  {!isMaternelle && isSecondaire && (
+                    <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
+                      {totalGeneral !== null ? totalGeneral.toFixed(2) : '—'}
+                    </td>
+                  )}
+                  {/* Moyenne (secondaire) = total / nombre de matières évaluées */}
+                  {!isMaternelle && isSecondaire && (() => {
+                    const subjectsWithScores = sortedSubjects.filter(subj => {
+                      const s = row.scores[subj.id];
+                      return s && typeof s.score === 'number' && !s.isAbsent;
+                    }).length;
+                    const moyenne = subjectsWithScores > 0 && totalGeneral !== null ? totalGeneral / subjectsWithScores : null;
+                    return (
+                      <td className="border border-slate-300 px-2 py-1 text-center font-bold text-indigo-700 bg-indigo-50">
+                        {moyenne !== null ? moyenne.toFixed(2) : '—'}
+                      </td>
+                    );
+                  })()}
                   {/* Rang */}
                   <td className="border border-slate-300 px-2 py-1 text-center font-bold text-slate-700">
                     {formatRang(rang, row.gender)}

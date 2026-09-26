@@ -1883,31 +1883,50 @@ export function RichTextEditor({
         <div className="flex items-center flex-wrap gap-0.5 border-b border-slate-200 px-1 py-0.5 bg-slate-50/50">
           {/* ⭐ V13 — POLICE DE CARACTÈRE : 14 polices professionnelles
               auto-hébergées (mêmes fichiers que les PDF). Chaque option
-              s'affiche dans SA propre police (aperçu direct). */}
+              s'affiche dans SA propre police (aperçu direct).
+              ⭐ 2026-09-26 (fix mobile « tout est en noir ») : couleurs
+              explicites claires sur les <option> + color-scheme light
+              global — le popup natif reste lisible même quand l'OS du
+              smartphone est en mode sombre. */}
           <select
             value={activeFont}
             onChange={(e) => { applyFontFamily(e.target.value); e.currentTarget.blur(); }}
-            className="h-6 mr-0.5 px-1 border border-slate-200 rounded text-[11px] text-slate-700 bg-white max-w-[128px] hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer"
+            className="rte-tool-select h-6 mr-0.5 px-1 border border-slate-200 rounded text-[11px] text-slate-700 bg-white max-w-[128px] hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer"
             title="Police de caractère"
             data-touch="sm"
           >
             {FONT_OPTIONS.map((f) => (
-              <option key={f.value || "defaut"} value={f.value} style={f.value ? { fontFamily: `"${f.value}"` } : undefined}>
+              <option
+                key={f.value || "defaut"}
+                value={f.value}
+                style={{
+                  color: "#0f172a",
+                  backgroundColor: "#ffffff",
+                  fontFamily: f.value ? `"${f.value}"` : undefined,
+                }}
+              >
                 {f.label}
               </option>
             ))}
           </select>
-          {/* ⭐ V13 — TAILLE DE POLICE (8 → 72 px) : titres, sous-titres, corps. */}
+          {/* ⭐ V13 — TAILLE DE POLICE (8 → 72 px) : titres, sous-titres, corps.
+              ⭐ 2026-09-26 — mêmes couleurs explicites (lisibilité mobile). */}
           <select
             value={activeSize}
             onChange={(e) => { applyFontSize(e.target.value); e.currentTarget.blur(); }}
-            className="h-6 mr-0.5 px-1 border border-slate-200 rounded text-[11px] text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer"
+            className="rte-tool-select h-6 mr-0.5 px-1 border border-slate-200 rounded text-[11px] text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-400 cursor-pointer"
             title="Taille de police (px)"
             data-touch="sm"
           >
-            <option value="">Taille</option>
+            <option value="" style={{ color: "#0f172a", backgroundColor: "#ffffff" }}>Taille</option>
             {SIZE_OPTIONS.map((s) => (
-              <option key={s} value={`${s}px`}>{s}</option>
+              <option
+                key={s}
+                value={`${s}px`}
+                style={{ color: "#0f172a", backgroundColor: "#ffffff" }}
+              >
+                {s}
+              </option>
             ))}
           </select>
           <button

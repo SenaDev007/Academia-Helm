@@ -5449,6 +5449,17 @@ ${SCHOOL_FONTS_CSS}
     // sous-matières : 1) par matiereSpecifique exact (normalisé), 2) les
     // fiches SANS matiereSpecifique comblent les exigences restantes (fiches
     // créées avant la feature / sans sous-matière renseignée).
+    // ⭐ 2026-09-26 — PASSES 3 ET 4 (retour enseignante CM1) : une fiche
+    //    MATH correctement sauvegardée (matiereSpecifique « Arithmétique »)
+    //    ne matchait JAMAIS l'exigence {"nom":""} (marquage Mathématiques
+    //    « fiche sans sous-matière ») → la matière restait « Préparer » alors
+    //    que le brouillon existait (l'enseignante a cru que l'enregistrement
+    //    échouait et a recréé la fiche 7 fois). Désormais :
+    //    Passe 3 : une exigence SANS nom accepte N'IMPORTE quelle fiche
+    //    restante de la matière (avec ou sans matiereSpecifique) ;
+    //    Passe 4 (filet de sécurité) : toute exigence restante accepte toute
+    //    fiche restante — on ne dit plus JAMAIS « à préparer » alors qu'une
+    //    fiche existe pour ce (jour × matière).
     const rapprocherFiches = (
       exigences: Array<{ nom: string; fichePreparede: boolean; ficheId?: string }>,
       candidates: any[],
@@ -5476,6 +5487,29 @@ ${SCHOOL_FONTS_CSS}
           ex.fichePreparede = true;
           ex.ficheId = fiche.id;
         }
+      }
+      // ⭐ Passe 3 : exigence SANS nom (« fiche de la matière en général » —
+      //    ex : Mathématiques marquée sans sous-matière) ↔ n'importe quelle
+      //    fiche restante de la matière (avec OU sans matiereSpecifique).
+      //    Avant : une fiche MATH « Arithmétique » ne pouvait jamais satisfaire
+      //    l'exigence {"nom":""} → faux négatif permanent.
+      for (const ex of exigences) {
+        if (ex.fichePreparede || ex.nom) continue;
+        if (disponibles.length === 0) break;
+        const fiche = disponibles.shift();
+        ex.fichePreparede = true;
+        ex.ficheId = fiche.id;
+      }
+      // ⭐ Passe 4 — filet de sécurité : toute exigence restante ↔ toute fiche
+      //    restante. Sémantique : le nombre d'exigences satisfaites suit le
+      //    nombre de fiches réellement sauvegardées pour ce (jour × matière)
+      //    — jamais de « à préparer » mensonger alors qu'une fiche existe.
+      for (const ex of exigences) {
+        if (ex.fichePreparede) continue;
+        if (disponibles.length === 0) break;
+        const fiche = disponibles.shift();
+        ex.fichePreparede = true;
+        ex.ficheId = fiche.id;
       }
     };
 

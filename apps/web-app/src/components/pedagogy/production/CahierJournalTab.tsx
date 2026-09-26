@@ -99,6 +99,44 @@ function parseEntries(entries: any): Record<string, Record<string, string>> {
   return entries as Record<string, Record<string, string>>;
 }
 
+// ⭐ 2026-09-26 — Helpers PURS (module) de sérialisation des sous-matières
+//    « fiches à préparer ». Extraits du corps du composant pour pouvoir être
+//    utilisés AVANT le bloc autosave (qui doit inclure les sous-matières
+//    dans son snapshot — cf. correctif « sauvegarde automatique du cahier
+//    journal pas opérationnelle ») sans violer la zone morte temporelle.
+/** Nettoie et sérialise les sous-matières pour la persistance (pur). */
+function buildFichesAPreparerPayloadFrom(
+  state: FichesAPreparerState,
+): Record<string, Record<string, SousMatiereFiche[]>> {
+  const DAYS_KEYS = new Set(["lundi", "mardi", "mercredi", "jeudi", "vendredi"]);
+  const out: Record<string, Record<string, SousMatiereFiche[]>> = {};
+  for (const [day, dayMap] of Object.entries(state)) {
+    if (!DAYS_KEYS.has(day)) continue;
+    const filtered: Record<string, SousMatiereFiche[]> = {};
+    for (const [matiere, list] of Object.entries(dayMap || {})) {
+      // ⭐ 2026-09-18 (3e passe) : chaque puce = UNE fiche à préparer — on
+      //    conserve la liste TELLE QUELLE (nom vide = fiche de la matière en
+      //    général, marquage MATH/EPS/EST en un clic ; nom renseigné =
+      //    fiche de la sous-matière). Avant : les noms vides étaient
+      //    supprimés dès qu'un nom coexistait → le décompte (barre « N
+      //    fiches ») divergeait de l'exigence persistée.
+      const cleaned = (list || []).filter((sm) => sm && typeof sm.nom === "string");
+      if (cleaned.length > 0) {
+        filtered[matiere] = cleaned;
+      }
+    }
+    if (Object.keys(filtered).length > 0) out[day] = filtered;
+  }
+  return out;
+}
+
+/** Nombre total de fiches à préparer d'un état (pur). */
+function countFichesAPreparerIn(state: FichesAPreparerState): number {
+  return Object.values(buildFichesAPreparerPayloadFrom(state)).reduce(
+    (s, m) => s + Object.values(m).reduce((s2, list) => s2 + list.length, 0), 0,
+  );
+}
+
 function cn(...classes: (string | false | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
@@ -396,6 +434,12 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   const [fichesStatutData, setFichesStatutData] = useState<any>(null);
   const [fichesStatutRefresh, setFichesStatutRefresh] = useState(0);
 
+  // ⭐ 2026-09-26 — Wrappers du composant sur les helpers purs (déclarés
+  //    AVANT le bloc autosave : le snapshot doit inclure les sous-matières).
+  const buildFichesAPreparerPayload = (): Record<string, Record<string, SousMatiereFiche[]>> =>
+    buildFichesAPreparerPayloadFrom(fichesAPreparer);
+  const countFichesAPreparer = (): number => countFichesAPreparerIn(fichesAPreparer);
+
   // ═════════════════════════════════════════════════════════════════════════
   // ⭐ SAUVEGARDE AUTOMATIQUE INVISIBLE — toutes les 10 secondes
   //
@@ -411,8 +455,41 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
   //     ou validé qui est en lecture seule)
   //   - Flush best-effort à la fermeture de l'onglet / F5 (fetch keepalive)
   //   - Micro-indicateur discret « Enregistré à HH:MM » dans la barre d'actions
+  //
+  // ⭐ 2026-09-26 (correctif « autosave du cahier journal pas opérationnelle ») :
+  //   1. Le snapshot inclut désormais les SOUS-MATIÈRES « fiches à préparer »
+  //      (puces/marquage) — avant, marquer ou retirer une fiche à préparer
+  //      ne changeait PAS le snapshot → aucune sauvegarde automatique pour
+  //      ces modifications (seul le bouton « Enregistrer » les persistait).
+  //   2. Le PUT automatique envoie EXACTEMENT le même payload que la
+  //      sauvegarde manuelle : entries + __fichesAPreparer__ fusionnées,
+  //      observations, signatures — parité totale handleSave/autosave.
   // ═════════════════════════════════════════════════════════════════════════
-  const journalSnapshot = JSON.stringify({ entries, observations, directorName, teacherSignature, directorSignature });
+  const journalSnapshot = JSON.stringify({
+    entries,
+    observations,
+    directorName,
+    teacherSignature,
+    directorSignature,
+    fichesAPreparer: buildFichesAPreparerPayload(),
+  });
+  /** Payload identique à handleSave : entries avec __fichesAPreparer__ fusionnée. */
+  const buildAutosaveBody = (): Record<string, any> => {
+    const payloadEntries: Record<string, any> = { ...entries };
+    const flags = buildFichesAPreparerPayload();
+    if (Object.keys(flags).length > 0) {
+      payloadEntries.__fichesAPreparer__ = flags;
+    } else {
+      delete payloadEntries.__fichesAPreparer__;
+    }
+    return {
+      entries: payloadEntries,
+      observations,
+      directorName,
+      teacherSignature,
+      directorSignature,
+    };
+  };
   const autosave = useAutoSave({
     snapshot: journalSnapshot,
     enabled:
@@ -426,7 +503,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: journalSnapshot,
+        body: JSON.stringify(buildAutosaveBody()),
       });
       if (!res.ok) throw new Error("Erreur de sauvegarde automatique");
     },
@@ -435,7 +512,7 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
       fireKeepaliveSave(
         `/api/pedagogy-space/cahier-journal/${journal.id}?source=autosave`,
         "PUT",
-        JSON.parse(journalSnapshot),
+        buildAutosaveBody(),
       );
     },
     intervalMs: 10_000,
@@ -653,8 +730,10 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
       //    (formats : nouveau tableau [{nom}] / ancien booléen true → [{nom:""}])
       const parsed = parseEntries(data.entries);
       const rawFlags = (parsed as any).__fichesAPreparer__;
+      // ⭐ 2026-09-26 — `restored` hissé hors du if : la baseline autosave doit
+      //    refléter les sous-matières restaurées (même forme que journalSnapshot).
+      const restored: FichesAPreparerState = {};
       if (rawFlags && typeof rawFlags === "object" && !Array.isArray(rawFlags)) {
-        const restored: FichesAPreparerState = {};
         for (const [day, dayMap] of Object.entries(rawFlags)) {
           if (!dayMap || typeof dayMap !== "object") continue;
           const dayOut: Record<string, SousMatiereFiche[]> = {};
@@ -664,23 +743,25 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
           }
           if (Object.keys(dayOut).length > 0) restored[day] = dayOut;
         }
-        setFichesAPreparer(restored);
-      } else {
-        setFichesAPreparer({});
       }
+      setFichesAPreparer(restored);
       setObservations(data.observations || "");
       setDirectorName(data.directorName || "");
       // ⭐ Charger les signatures existantes
       setTeacherSignature(data.teacherSignature || null);
       setDirectorSignature(data.directorSignature || null);
       // ⭐ Autosave : le contenu chargé devient la nouvelle baseline (aucune
-      //    écriture tant que l'enseignant n'a pas modifié quelque chose)
+      //    écriture tant que l'enseignant n'a pas modifié quelque chose).
+      //    ⭐ 2026-09-26 — MEME FORME que journalSnapshot (entries + sous-matières
+      //    sérialisées) : sans ça, le snapshot ≠ baseline juste après le
+      //    chargement → une écriture fantôme inutile à chaque tick.
       autosave.markSaved(JSON.stringify({
-        entries: parseEntries(data.entries),
+        entries: parsed,
         observations: data.observations || "",
         directorName: data.directorName || "",
         teacherSignature: data.teacherSignature || null,
         directorSignature: data.directorSignature || null,
+        fichesAPreparer: buildFichesAPreparerPayloadFrom(restored),
       }));
       // ⭐ Notifier le parent du journalId courant (pour afficher les fiches liées)
       onJournalLoaded?.(data.id, {
@@ -1230,35 +1311,10 @@ export function CahierJournalTab({ tenantId, academicYearId, teacherId, initialC
     });
   };
 
-  /** Nettoie et sérialise les sous-matières pour la persistance. */
-  const buildFichesAPreparerPayload = (): Record<string, Record<string, SousMatiereFiche[]>> => {
-    const DAYS_KEYS = new Set(["lundi", "mardi", "mercredi", "jeudi", "vendredi"]);
-    const out: Record<string, Record<string, SousMatiereFiche[]>> = {};
-    for (const [day, dayMap] of Object.entries(fichesAPreparer)) {
-      if (!DAYS_KEYS.has(day)) continue;
-      const filtered: Record<string, SousMatiereFiche[]> = {};
-      for (const [matiere, list] of Object.entries(dayMap || {})) {
-        // ⭐ 2026-09-18 (3e passe) : chaque puce = UNE fiche à préparer — on
-        //    conserve la liste TELLE QUELLE (nom vide = fiche de la matière en
-        //    général, marquage MATH/EPS/EST en un clic ; nom renseigné =
-        //    fiche de la sous-matière). Avant : les noms vides étaient
-        //    supprimés dès qu'un nom coexistait → le décompte (barre « N
-        //    fiches ») divergeait de l'exigence persistée.
-        const cleaned = (list || []).filter((sm) => sm && typeof sm.nom === "string");
-        if (cleaned.length > 0) {
-          filtered[matiere] = cleaned;
-        }
-      }
-      if (Object.keys(filtered).length > 0) out[day] = filtered;
-    }
-    return out;
-  };
-
-  /** Nombre total de fiches à préparer (toutes sous-matières confondues). */
-  const countFichesAPreparer = (): number =>
-    Object.values(buildFichesAPreparerPayload()).reduce(
-      (s, m) => s + Object.values(m).reduce((s2, list) => s2 + list.length, 0), 0,
-    );
+  // ⭐ 2026-09-26 — buildFichesAPreparerPayload / countFichesAPreparer :
+  //    déplacés PLUS HAUT dans le composant (wrappers sur les helpers purs
+  //    du module) car le bloc autosave les référence désormais — cf. lignes
+  //    ~437-441. Les anciennes définitions inline ont été retirées ici.
 
   const selectedClass = classes.find(c => c.classId === selectedClassId);
   const weekEnd = new Date(weekStart);

@@ -2,6 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ⭐ 2026-09-26 (retour terrain mobile) — MENUS NATIFS LISIBLES SUR MOBILE :
+ * L'application est intégralement à thème clair (aucun mode sombre). Sans
+ * déclaration color-scheme, Chrome Android (OS en mode sombre — fréquent
+ * chez les enseignants sur smartphone) rend le popup natif des <select>
+ * sur fond NOIR : le texte des options (hérité sombre, ex. text-slate-700
+ * du sélecteur « Police » du RichTextEditor) devient invisible — « tout est
+ * en noir, on ne voit rien ». On déclare le thème clair au navigateur :
+ * les popups natifs (selects, date pickers, scrollbars) sont rendus en
+ * clair sur TOUTES les plateformes, quel que soit le réglage de l'OS. */
+:root {
+  color-scheme: light;
+}
+
+/* ⭐ 2026-09-26 — Cible tactile confortable pour les petits <select> de la
+ * barre d'outils du RichTextEditor (Police / Taille) : 24 px est trop petit
+ * au doigt sur mobile — on passe à 34 px en écran tactile (rendu desktop
+ * inchangé). */
+@media (pointer: coarse) {
+  .rte-tool-select {
+    height: 34px;
+    min-height: 34px;
+    max-width: 150px;
+  }
+}
+
 /* Fluid typography base — responsive (spec Academia Helm) */
 @layer base {
   html {

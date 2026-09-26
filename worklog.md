@@ -11621,3 +11621,26 @@ Work Log:
 Stage Summary:
 - ✅ Cause racine corrigée des deux côtés : CDN hors circuit sur les données authentifiées + invalidation famille complète + refetch au remontage
 - ⏳ Validation E2E production après déploiement Vercel (en-tête private, no-store observé + modification visible sans F5)
+
+---
+Task ID: fix-fiches-2026-09-26
+Agent: Super Z (principal)
+Task: « Fiche de mathématiques préparée mais jamais validée comme faite + sélecteur police invisible sur mobile + autosave cahier journal pas opérationnel » — module pédagogie (CSPEB / Eveil d'Afrique, école bilingue)
+
+Work Log:
+- SYNCHRO REPO : token GitHub du remote périmé → remote reconfiguré avec le token valide ; fast-forward 3206c7ed5 → f64e950c1 (44 commits : éditeur V13/V14 avec sélecteurs police/taille, offline v4.7.0/v4.8.0, fix refresh étudiants du 23/09)
+- DIAGNOSTIC FICHE MATH (reproduit sur données production Neon via scripts/diag_fiches_math.js — lecture seule, miroir exact de getFichesForCahierJournal) :
+  * Journal 0559b8d3 (CM1 Eveil d'Afrique, semaine 28/09) : exigence lundi × Mathématiques = {"nom":""} (marquage « fiche sans sous-matière »), fiche MATH sauvegardée avec matiereSpecifique « Arithmétique »
+  * Cause racine : rapprocherFiches Passe 1 ignorée (exigence sans nom) + Passe 2 impossible (la fiche PORTE un matiereSpecifique) → fichePreparede=false pour toujours → bouton « Préparer » permanent ; l'enseignante a cru à un échec d'enregistrement et a recréé la fiche 7 fois la semaine précédente (journal 305c38aa)
+- CORRECTIF 1 (backend, pedagogical-space.service.ts) : + Passe 3 (exigence sans nom ↔ n'importe quelle fiche restante de la matière) + Passe 4 (filet : toute exigence restante ↔ toute fiche restante) → le décompte suit les fiches réellement sauvegardées ; plus jamais de « à préparer » mensonger
+- CORRECTIF 2 (mobile noir-sur-noir) : Chrome Android en OS sombre rendait le popup natif du <select> Police/Taille sur fond noir avec texte sombre hérité → :root{color-scheme:light} global (app 100% claire) + couleurs explicites #0f172a/#ffffff sur les <option> + cible tactile 34px (.rte-tool-select, @media pointer:coarse)
+- CORRECTIF 3 (autosave cahier journal) : marquer/retirer une « fiche à préparer » ne changeait PAS le snapshot (sous-matières absentes) → aucune sauvegarde auto pour ces modifs ; le PUT autosave n'avait pas la parité handleSave → snapshot inclut fichesAPreparer sérialisées, payload autosave = payload manuel (entries + __fichesAPreparer__ fusionnées), baseline loadJournal à la même forme (zéro écriture fantôme), helpers purs hissés au module (buildFichesAPreparerPayloadFrom/countFichesAPreparerIn)
+- VÉRIFICATIONS : transpile TS des 3 fichiers → 0 erreur ; simulation du nouveau rapprochement sur les 12 journaux production → seule la ligne bugée change (AVANT: À PRÉPARER → ✅ FAITE), aucune régression ailleurs
+- COMMIT abc6c4c80 poussé → Railway + Vercel auto-déployés
+- VALIDATION E2E PRODUCTION (scripts/verify_fix_fiches_math.js, compte recette CSPEB = même tenant que l'enseignante) : polls GET cahier-journal/0559b8d3/fiches → tentatives 1-3 ancien code (false) → 502 (redémarrage Railway) → tentative 5 : lundi × Mathématiques fichePreparede=true (ficheId ✓), stats 11/11, toutesFichesPreparees=true ✅ ; CSS Vercel en ligne contient color-scheme:light + rte-tool-select ✅
+
+Stage Summary:
+- ✅ Fiche MATH validée automatiquement en production : le journal de l'enseignante affiche « Toutes les fiches pédagogiques sont préparées ✨ » sans aucune migration (le rapprochement est recalculé à chaque chargement)
+- ✅ Sélecteurs Police/Taille lisibles sur mobile (OS sombre) + cible tactile 34px
+- ✅ Autosave cahier journal opérationnel pour les sous-matières « fiches à préparer » (parité totale avec la sauvegarde manuelle)
+- Note : 7 fiches MATH dupliquées (journal 305c38aa, semaine précédente) restent en base — l'enseignante peut les supprimer depuis l'UI, ou purge sur demande

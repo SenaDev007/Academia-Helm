@@ -90,6 +90,10 @@ interface SubjectScore {
   isAbsent: boolean;
   appreciation: string;
   directorVisa?: string | null;
+  // ⭐ Primaire FR — CM (Composé /18) et CP (Contrôle Permanent /2)
+  //    Parsé depuis le champ comment de la DB au format JSON {"cm":X,"cp":Y}
+  cm?: number | null;   // /18
+  cp?: number | null;   // /2
   // ⭐ Champs anglophones : 3 composantes par matière (CA + Exam)
   // ⭐ V10g — First CA /20 + Second CA /20 + Exam /60 → total = /100 exact
   firstCA?: number | null;   // /20
@@ -808,6 +812,9 @@ function BulletinsContent() {
             };
           } else {
             const score = grade.score !== null ? Number(grade.score) : null;
+            // ⭐ Récupérer CM et CP depuis le grade (parsé depuis comment JSON par le backend)
+            const cmVal = grade.cm !== null && grade.cm !== undefined ? Number(grade.cm) : null;
+            const cpVal = grade.cp !== null && grade.cp !== undefined ? Number(grade.cp) : null;
             // ⭐ En anglophone, les mentions sont basées sur /100 (converties depuis le barème)
             const score100 = score !== null && grade.maxScore ? (score / Number(grade.maxScore || 20)) * 100 : null;
             // ⭐ Secondaire « Bulletin d'évaluation » : mêmes mentions que le
@@ -817,6 +824,7 @@ function BulletinsContent() {
               : (score === null ? '—' : score >= 16 ? 'Très Bien' : score >= 14 ? 'Bien' : score >= 12 ? 'Assez Bien' : score >= 10 ? 'Passable' : 'Insuffisant');
             student.subjectScores[subjectId] = {
               score, qualitativeCode: null, isAbsent: false,
+              cm: cmVal, cp: cpVal,
               appreciation: scopeLang === 'EN'
                 ? (score100 === null ? '—'
                   : score100 >= 90 ? 'Outstanding'
@@ -1929,16 +1937,25 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
           {bulletinData.subjects.map((subject, idx) => {
             const score = student.subjectScores[subject.id];
             const note = score?.score !== null && typeof score?.score === 'number' ? score.score : null;
+            const cmVal = score?.cm !== null && typeof score?.cm === 'number' ? score.cm : null;
+            const cpVal = score?.cp !== null && typeof score?.cp === 'number' ? score.cp : null;
             const reached = note !== null && note >= 10;
             return (
               <tr key={subject.id} className={cn(idx % 2 === 1 && 'bg-slate-50/50')}>
                 <td className="border border-slate-300 px-1 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
                 <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-400 text-[8px]">10</td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-400">—</td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-400">—</td>
+                {/* CM /18 — depuis le champ cm du SubjectScore (parsé depuis comment JSON) */}
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-700">
+                  {score?.isAbsent ? <span className="text-red-500 text-[8px]">ABS</span> : cmVal !== null ? cmVal : '—'}
+                </td>
+                {/* CP /2 — depuis le champ cp du SubjectScore (parsé depuis comment JSON) */}
+                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-700">
+                  {score?.isAbsent ? <span className="text-red-500 text-[8px]">ABS</span> : cpVal !== null ? cpVal : '—'}
+                </td>
                 <td className="border border-slate-300 px-1 py-0.5 text-center font-bold">
+                  {/* ⭐ Afficher la note sans décimales (entier) si la note est entière */}
                   {score?.isAbsent ? <span className="text-red-500 text-[8px]">ABS</span> :
-                    note !== null ? <span className={note >= 10 ? 'text-emerald-700' : 'text-red-600'}>{note.toFixed(2)}</span> : '—'}
+                    note !== null ? <span className={note >= 10 ? 'text-emerald-700' : 'text-red-600'}>{Number.isInteger(note) ? note : note.toFixed(2)}</span> : '—'}
                 </td>
                 <td className="border border-slate-300 px-1 py-0.5 text-center">{reached ? '✓' : ''}</td>
                 <td className="border border-slate-300 px-1 py-0.5 text-center">{!reached && note !== null ? '✓' : ''}</td>
@@ -1963,7 +1980,7 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
           {/* Total General */}
           <tr className="bg-slate-200 font-bold">
             <td className="border border-slate-300 px-1 py-0.5 uppercase text-slate-900" colSpan={4}>TOTAL GENERAL</td>
-            <td className="border border-slate-300 px-1 py-0.5 text-center text-blue-700">{totalGeneral.toFixed(2)}</td>
+            <td className="border border-slate-300 px-1 py-0.5 text-center text-blue-700">{Number.isInteger(totalGeneral) ? totalGeneral : totalGeneral.toFixed(2)}</td>
             <td className="border border-slate-300 px-1 py-0.5 text-center" colSpan={2}></td>
             <td className="border border-slate-300 px-1 py-0.5 text-center" colSpan={2}></td>
             <td className="border border-slate-300 px-1 py-0.5 text-center"></td>
@@ -1976,15 +1993,15 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
       <div className="mt-2 space-y-1 text-[10px] text-slate-700">
         <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
           <span>Moyenne obtenue par l'élève:</span>
-          <strong className="text-blue-700">{student.generalAverage !== null ? student.generalAverage.toFixed(2) : '—'}/20</strong>
+          <strong className="text-blue-700">{student.generalAverage !== null ? (Number.isInteger(student.generalAverage) ? student.generalAverage : student.generalAverage.toFixed(2)) : '—'}/20</strong>
         </div>
         <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
           <span>Plus forte moyenne de la classe:</span>
-          <strong>{bulletinData.stats.classAverage !== null ? Math.max(...bulletinData.results.map(r => r.generalAverage || 0)).toFixed(2) : '—'}/20</strong>
+          <strong>{bulletinData.stats.classAverage !== null ? (() => { const v = Math.max(...bulletinData.results.map(r => r.generalAverage || 0)); return Number.isInteger(v) ? v : v.toFixed(2); })() : '—'}/20</strong>
         </div>
         <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
           <span>Plus faible moyenne de la classe:</span>
-          <strong>{bulletinData.stats.classAverage !== null ? Math.min(...bulletinData.results.map(r => r.generalAverage || 0)).toFixed(2) : '—'}/20</strong>
+          <strong>{bulletinData.stats.classAverage !== null ? (() => { const v = Math.min(...bulletinData.results.map(r => r.generalAverage || 0)); return Number.isInteger(v) ? v : v.toFixed(2); })() : '—'}/20</strong>
         </div>
         <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
           <span>Seuil de réussite globale fixé à:</span>

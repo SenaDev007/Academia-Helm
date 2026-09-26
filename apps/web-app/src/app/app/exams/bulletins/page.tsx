@@ -36,7 +36,7 @@
 
 'use client';
 
-import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef, Suspense, Fragment } from 'react';
 import {
   FileText, Loader2, ChevronDown, ChevronRight, Download,
   Users, BookOpen, Award, Calendar, Printer, AlertCircle,
@@ -3450,6 +3450,13 @@ function BulletinPage2({ student, isMaternelle, signatures, periodId, directorNa
 }
 
 // ─── Moyennes Tab (Trimestriel + Annuel) ─────────────────────────────────────
+//
+// ⭐ Refonte (2026-09-27) — tableau primaire/maternelle avec colonnes
+//    détaillées : Nom | EM1 | EM2 | Moy. EM | EC | Moyenne générale
+//    (par trimestre, bloc de 5 colonnes par période).
+//    Pour la moyenne annuelle : Nom | EM annuel | EC annuel | Moyenne annuelle
+//    (agrégation sur tous les trimestres + EP si présent).
+//    Maternelle garde les valeurs qualitatives TS / S / PS.
 
 function MoyennesTab({
   academicYear, schoolLevelUuid, scopeLang, scopeLevel, isMaternelle, classes,
@@ -3469,12 +3476,128 @@ function MoyennesTab({
   const [trimesterData, setTrimesterData] = useState<any[]>([]);
   const [annualData, setAnnualData] = useState<any[]>([]);
 
-  // Load trimester averages
+  // ── Helper : compute per-student averages for a set of evaluations ──
+  //   Returns: Map<studentId, { name, em1Avg, em2Avg, ecAvg, epAvg }>
+  //   For each eval type code, computes either the numeric average (primaire)
+  //   or the qualitative average (maternelle — TS=3, S=2, PS=1).
+  const computeAveragesForEvals = useCallback(async (
+    periodEvals: any[],
+  ): Promise<{
+    studentAverages: Map<string, {
+      name: string;
+      em1Avg: number | null;
+      em2Avg: number | null;
+      ecAvg: number | null;
+      epAvg: number | null;
+    }>;
+    hasEm1: boolean;
+    hasEm2: boolean;
+    hasEc: boolean;
+    hasEp: boolean;
+  }> => {
+    // Group by evaluation type
+    const evalTypeMap = new Map<string, any[]>();
+    for (const ev of periodEvals) {
+      const typeId = ev.evaluationType?.id || '_no_type';
+      if (!evalTypeMap.has(typeId)) evalTypeMap.set(typeId, []);
+      evalTypeMap.get(typeId)!.push(ev);
+    }
+
+    // Resolve eval type codes (EM1, EM2, EC, EP)
+    const evalTypeCodes = new Map<string, string>(); // typeId → code
+    for (const [typeId, evals] of evalTypeMap) {
+      if (evals[0]?.evaluationType?.code) evalTypeCodes.set(typeId, evals[0].evaluationType.code);
+    }
+    const em1TypeId = Array.from(evalTypeCodes.entries()).find(([, c]) => c === 'EM1')?.[0];
+    const em2TypeId = Array.from(evalTypeCodes.entries()).find(([, c]) => c === 'EM2')?.[0];
+    const ecTypeId = Array.from(evalTypeCodes.entries()).find(([, c]) => c === 'EC')?.[0];
+    const epTypeId = Array.from(evalTypeCodes.entries()).find(([, c]) => c === 'EP')?.[0];
+
+    // Batch-load all grading sheets
+    const evalGradesMap = new Map<string, any[]>();
+    const allLangEvalIds: string[] = [];
+    for (const [, evals] of evalTypeMap) {
+      const langEvals = scopeLang
+        ? evals.filter((ev: any) => matchesLevelLanguage(ev.subject, scopeLang))
+        : evals;
+      langEvals.forEach((ev: any) => allLangEvalIds.push(ev.id));
+    }
+    const sheetsMap = await institutionalExamsService
+      .getGradingSheetsBatch(allLangEvalIds)
+      .catch(() => ({}) as Record<string, any[]>);
+    for (const id of allLangEvalIds) {
+      evalGradesMap.set(id, Array.isArray(sheetsMap[id]) ? sheetsMap[id] : []);
+    }
+
+    // Compute per-student per-type averages
+    // evalTypeAverages: studentId → { typeId: avg }
+    const evalTypeAverages: Record<string, Record<string, number | null>> = {};
+    const studentNames = new Map<string, string>();
+
+    for (const [typeId, evals] of evalTypeMap) {
+      const langEvals = scopeLang
+        ? evals.filter((ev: any) => matchesLevelLanguage(ev.subject, scopeLang))
+        : evals;
+      const studentScores = new Map<string, { total: number; count: number; tsCount: number; sCount: number; psCount: number }>();
+      for (const ev of langEvals) {
+        const grades = evalGradesMap.get(ev.id) || [];
+        for (const grade of grades) {
+          if (!studentScores.has(grade.studentId)) {
+            studentScores.set(grade.studentId, { total: 0, count: 0, tsCount: 0, sCount: 0, psCount: 0 });
+          }
+          const s = studentScores.get(grade.studentId)!;
+          if (!studentNames.has(grade.studentId)) {
+            studentNames.set(grade.studentId, grade.studentName || 'Inconnu');
+          }
+          if (grade.isAbsent) continue;
+          if (isMaternelle) {
+            if (grade.qualitativeCode === 'TS') { s.tsCount++; s.count++; }
+            else if (grade.qualitativeCode === 'S') { s.sCount++; s.count++; }
+            else if (grade.qualitativeCode === 'PS') { s.psCount++; s.count++; }
+          } else {
+            if (grade.score !== null && grade.score !== undefined) { s.total += Number(grade.score); s.count++; }
+          }
+        }
+      }
+      for (const [studentId, s] of studentScores) {
+        if (!evalTypeAverages[studentId]) evalTypeAverages[studentId] = {};
+        if (isMaternelle && s.count > 0) {
+          evalTypeAverages[studentId][typeId] = (s.tsCount * 3 + s.sCount * 2 + s.psCount * 1) / s.count;
+        } else if (!isMaternelle && s.count > 0) {
+          evalTypeAverages[studentId][typeId] = s.total / s.count;
+        } else {
+          evalTypeAverages[studentId][typeId] = null;
+        }
+      }
+    }
+
+    // Build the result map
+    const studentAverages = new Map<string, { name: string; em1Avg: number | null; em2Avg: number | null; ecAvg: number | null; epAvg: number | null }>();
+    for (const [studentId, name] of studentNames) {
+      const avgs = evalTypeAverages[studentId] || {};
+      studentAverages.set(studentId, {
+        name,
+        em1Avg: em1TypeId ? avgs[em1TypeId] ?? null : null,
+        em2Avg: em2TypeId ? avgs[em2TypeId] ?? null : null,
+        ecAvg: ecTypeId ? avgs[ecTypeId] ?? null : null,
+        epAvg: epTypeId ? avgs[epTypeId] ?? null : null,
+      });
+    }
+    return {
+      studentAverages,
+      hasEm1: !!em1TypeId,
+      hasEm2: !!em2TypeId,
+      hasEc: !!ecTypeId,
+      hasEp: !!epTypeId,
+    };
+  }, [scopeLang, isMaternelle]);
+
+  // ── Load trimester averages ──
+  //   Returns one row per (student, period) with: em1Avg, em2Avg, ecAvg, moyEm, trimesterAvg, appreciation
   const loadTrimesterAverages = useCallback(async () => {
     if (!selectedClassId || !academicYear?.id) return;
     setLoading(true);
     try {
-      // Fetch all evaluations for this class (VALIDATED only)
       const evaluations = await institutionalExamsService.getEvaluations({
         academicYearId: academicYear.id,
         classId: selectedClassId,
@@ -3482,156 +3605,48 @@ function MoyennesTab({
       });
       const allEvals = Array.isArray(evaluations) ? evaluations : [];
 
-      // Fetch periods (trimesters)
       const periodsRes = await fetch(`/api/settings/academic-years/${academicYear.id}/periods`, { credentials: 'include' });
       const periodsData = await periodsRes.json();
       const periods = Array.isArray(periodsData) ? periodsData : [];
 
-      // For each trimester, compute averages per student
       const results: any[] = [];
       for (const period of periods) {
         const periodEvals = allEvals.filter((ev: any) => ev.period?.id === period.id);
         if (periodEvals.length === 0) continue;
 
-        // Group by evaluation type (EM1, EM2, EC, EP)
-        const evalTypeMap = new Map<string, any[]>();
-        for (const ev of periodEvals) {
-          const typeId = ev.evaluationType?.id || '_no_type';
-          if (!evalTypeMap.has(typeId)) evalTypeMap.set(typeId, []);
-          evalTypeMap.get(typeId)!.push(ev);
-        }
+        const { studentAverages } = await computeAveragesForEvals(periodEvals);
 
-        // For each eval type, compute student averages (same pattern as bulletin)
-        const evalTypeAverages: Record<string, Record<string, number | null>> = {}; // studentId → { evalTypeId: avg }
-        // ⚠ Hoistée AVANT la boucle des types : la map des notes doit rester
-        // accessible ensuite (noms d'élèves depuis les notes du 1er type) —
-        // corrige le ReferenceError latent evalGradesMap.
-        const evalGradesMap = new Map<string, any[]>();
-        // ⭐ FIX PERF (2026-09-21) : récupérer TOUTES les notes d'un coup
-        //    (batché) AVANT la boucle des types — au lieu d'une requête HTTP
-        //    par évaluation à chaque itération.
-        {
-          const allLangEvalIds: string[] = [];
-          for (const [, evals] of evalTypeMap) {
-            const langEvals0 = scopeLang
-              ? evals.filter((ev: any) => matchesLevelLanguage(ev.subject, scopeLang))
-              : evals;
-            langEvals0.forEach((ev: any) => allLangEvalIds.push(ev.id));
-          }
-          const sheetsMap = await institutionalExamsService
-            .getGradingSheetsBatch(allLangEvalIds)
-            .catch(() => ({}) as Record<string, any[]>);
-          for (const id of allLangEvalIds) {
-            evalGradesMap.set(id, Array.isArray(sheetsMap[id]) ? sheetsMap[id] : []);
-          }
-        }
-        for (const [typeId, evals] of evalTypeMap) {
-          // Filter by language — ⭐ V10b règle d'isolation stricte (non marqué = FR)
-          const langEvals = scopeLang
-            ? evals.filter((ev: any) => matchesLevelLanguage(ev.subject, scopeLang))
-            : evals;
+        for (const [studentId, avgs] of studentAverages) {
+          // moyEm = (EM1 + EM2) / 2 if both, else either one, else null
+          let moyEm: number | null = null;
+          if (avgs.em1Avg !== null && avgs.em2Avg !== null) moyEm = (avgs.em1Avg + avgs.em2Avg) / 2;
+          else if (avgs.em1Avg !== null) moyEm = avgs.em1Avg;
+          else if (avgs.em2Avg !== null) moyEm = avgs.em2Avg;
 
-          // (notes déjà récupérées EN BATCH avant la boucle — evalGradesMap)
-
-          // Compute per-student average for this eval type
-          const studentScores = new Map<string, { total: number; count: number; tsCount: number; sCount: number; psCount: number }>();
-          for (const ev of langEvals) {
-            const grades = evalGradesMap.get(ev.id) || [];
-            for (const grade of grades) {
-              if (!studentScores.has(grade.studentId)) {
-                studentScores.set(grade.studentId, { total: 0, count: 0, tsCount: 0, sCount: 0, psCount: 0 });
-              }
-              const s = studentScores.get(grade.studentId)!;
-              if (grade.isAbsent) continue;
-              if (isMaternelle) {
-                if (grade.qualitativeCode === 'TS') { s.tsCount++; s.count++; }
-                else if (grade.qualitativeCode === 'S') { s.sCount++; s.count++; }
-                else if (grade.qualitativeCode === 'PS') { s.psCount++; s.count++; }
-              } else {
-                if (grade.score !== null) { s.total += Number(grade.score); s.count++; }
-              }
-            }
-          }
-
-          for (const [studentId, s] of studentScores) {
-            if (!evalTypeAverages[studentId]) evalTypeAverages[studentId] = {};
-            if (isMaternelle && s.count > 0) {
-              evalTypeAverages[studentId][typeId] = (s.tsCount * 3 + s.sCount * 2 + s.psCount * 1) / s.count;
-            } else if (!isMaternelle && s.count > 0) {
-              evalTypeAverages[studentId][typeId] = s.total / s.count;
-            } else {
-              evalTypeAverages[studentId][typeId] = null;
-            }
-          }
-        }
-
-        // Now compute trimester average per student
-        // Formula: ((EM1 + EM2) / 2 + EC) / 2
-        const evalTypeIds = Array.from(evalTypeMap.keys());
-        const em1Id = evalTypeIds.find(id => {
-          const ev = evalTypeMap.get(id)?.[0];
-          return ev?.evaluationType?.code === 'EM1';
-        });
-        const em2Id = evalTypeIds.find(id => {
-          const ev = evalTypeMap.get(id)?.[0];
-          return ev?.evaluationType?.code === 'EM2';
-        });
-        const ecId = evalTypeIds.find(id => {
-          const ev = evalTypeMap.get(id)?.[0];
-          return ev?.evaluationType?.code === 'EC';
-        });
-
-        const studentNames = new Map<string, string>();
-        for (const evals of evalTypeMap.values()) {
-          for (const ev of evals) {
-            // Get student names from grades
-          }
-        }
-
-        // Get student names from the first eval's grades
-        const firstEvals = Array.from(evalTypeMap.values())[0] || [];
-        for (const ev of firstEvals) {
-          const grades = evalGradesMap.get(ev.id) || [];
-          for (const g of grades) {
-            if (!studentNames.has(g.studentId)) {
-              studentNames.set(g.studentId, g.studentName || 'Inconnu');
-            }
-          }
-        }
-
-        for (const [studentId, name] of studentNames) {
-          const avgs = evalTypeAverages[studentId] || {};
-          const em1Avg = em1Id ? avgs[em1Id] : null;
-          const em2Avg = em2Id ? avgs[em2Id] : null;
-          const ecAvg = ecId ? avgs[ecId] : null;
-
+          // trimesterAvg = ((EM1+EM2)/2 + EC) / 2 if moyEm + EC, else moyEm or EC
           let trimesterAvg: number | null = null;
-          let appreciation = '—';
-          if (em1Avg !== null && em2Avg !== null && ecAvg !== null) {
-            const emAvg = (em1Avg + em2Avg) / 2;
-            trimesterAvg = (emAvg + ecAvg) / 2;
-          } else if (em1Avg !== null && em2Avg !== null) {
-            trimesterAvg = (em1Avg + em2Avg) / 2;
-          } else if (ecAvg !== null) {
-            trimesterAvg = ecAvg;
-          }
+          if (moyEm !== null && avgs.ecAvg !== null) trimesterAvg = (moyEm + avgs.ecAvg) / 2;
+          else if (moyEm !== null) trimesterAvg = moyEm;
+          else if (avgs.ecAvg !== null) trimesterAvg = avgs.ecAvg;
 
+          // Maternelle appreciation TS/S/PS
+          let appreciation = '—';
           if (isMaternelle && trimesterAvg !== null) {
             appreciation = trimesterAvg >= 2.5 ? 'Très Satisfaisant' : trimesterAvg >= 1.5 ? 'Satisfaisant' : 'Peu Satisfaisant';
           }
-
           results.push({
             studentId,
-            studentName: name,
+            studentName: avgs.name,
             periodName: period.name,
-            em1Avg, em2Avg, ecAvg,
+            em1Avg: avgs.em1Avg,
+            em2Avg: avgs.em2Avg,
+            ecAvg: avgs.ecAvg,
+            moyEm,
             trimesterAvg,
             appreciation,
           });
         }
       }
-
-      // Sort by student name
       results.sort((a, b) => a.studentName.localeCompare(b.studentName, 'fr'));
       setTrimesterData(results);
     } catch (err) {
@@ -3640,11 +3655,106 @@ function MoyennesTab({
     } finally {
       setLoading(false);
     }
-  }, [selectedClassId, academicYear?.id, scopeLang, isMaternelle]);
+  }, [selectedClassId, academicYear?.id, computeAveragesForEvals, isMaternelle]);
+
+  // ── Load annual averages ──
+  //   Aggregates: EM annuel = moyenne des moyEm des 3 trimestres
+  //               EC annuel = moyenne des ecAvg des 3 trimestres
+  //               Moyenne annuelle = ((EM annuel + EC annuel) / 2 + EP) / 2 (EP si présent, sinon (EM annuel + EC annuel) / 2)
+  const loadAnnualAverages = useCallback(async () => {
+    if (!selectedClassId || !academicYear?.id) return;
+    setLoading(true);
+    try {
+      const evaluations = await institutionalExamsService.getEvaluations({
+        academicYearId: academicYear.id,
+        classId: selectedClassId,
+        status: 'VALIDATED',
+      });
+      const allEvals = Array.isArray(evaluations) ? evaluations : [];
+
+      const periodsRes = await fetch(`/api/settings/academic-years/${academicYear.id}/periods`, { credentials: 'include' });
+      const periodsData = await periodsRes.json();
+      const periods = Array.isArray(periodsData) ? periodsData : [];
+
+      // Pour chaque période (trimestre), on calcule les moyennes par élève.
+      // Ensuite on agrège : moyenne annuelle EM = moyenne des moyEm sur tous les trimestres.
+      // Pour EP : on prend n'importe quel trimestre (généralement le 3e).
+      // studentAnnualMap: studentId → { name, trimesters: [{name, moyEm, ecAvg, epAvg}] }
+      const studentAnnualMap = new Map<string, { name: string; trimesters: { name: string; moyEm: number | null; ecAvg: number | null; epAvg: number | null }[] }>();
+
+      for (const period of periods) {
+        const periodEvals = allEvals.filter((ev: any) => ev.period?.id === period.id);
+        if (periodEvals.length === 0) continue;
+        const { studentAverages } = await computeAveragesForEvals(periodEvals);
+        for (const [studentId, avgs] of studentAverages) {
+          if (!studentAnnualMap.has(studentId)) {
+            studentAnnualMap.set(studentId, { name: avgs.name, trimesters: [] });
+          }
+          let moyEm: number | null = null;
+          if (avgs.em1Avg !== null && avgs.em2Avg !== null) moyEm = (avgs.em1Avg + avgs.em2Avg) / 2;
+          else if (avgs.em1Avg !== null) moyEm = avgs.em1Avg;
+          else if (avgs.em2Avg !== null) moyEm = avgs.em2Avg;
+          studentAnnualMap.get(studentId)!.trimesters.push({
+            name: period.name,
+            moyEm,
+            ecAvg: avgs.ecAvg,
+            epAvg: avgs.epAvg,
+          });
+        }
+      }
+
+      // Compute annual aggregates
+      const annualRows: any[] = [];
+      for (const [studentId, info] of studentAnnualMap) {
+        const validMoyEms = info.trimesters.map(t => t.moyEm).filter((v): v is number => v !== null);
+        const validEcs = info.trimesters.map(t => t.ecAvg).filter((v): v is number => v !== null);
+        const validEps = info.trimesters.map(t => t.epAvg).filter((v): v is number => v !== null);
+
+        const emAnnuel = validMoyEms.length > 0 ? validMoyEms.reduce((a, b) => a + b, 0) / validMoyEms.length : null;
+        const ecAnnuel = validEcs.length > 0 ? validEcs.reduce((a, b) => a + b, 0) / validEcs.length : null;
+        const epAnnuel = validEps.length > 0 ? validEps.reduce((a, b) => a + b, 0) / validEps.length : null;
+
+        let moyenneAnnuelle: number | null = null;
+        if (emAnnuel !== null && ecAnnuel !== null && epAnnuel !== null) {
+          moyenneAnnuelle = ((emAnnuel + ecAnnuel) / 2 + epAnnuel) / 2;
+        } else if (emAnnuel !== null && ecAnnuel !== null) {
+          moyenneAnnuelle = (emAnnuel + ecAnnuel) / 2;
+        } else if (emAnnuel !== null) {
+          moyenneAnnuelle = emAnnuel;
+        } else if (ecAnnuel !== null) {
+          moyenneAnnuelle = ecAnnuel;
+        }
+
+        let appreciation = '—';
+        if (isMaternelle && moyenneAnnuelle !== null) {
+          appreciation = moyenneAnnuelle >= 2.5 ? 'Très Satisfaisant' : moyenneAnnuelle >= 1.5 ? 'Satisfaisant' : 'Peu Satisfaisant';
+        }
+
+        annualRows.push({
+          studentId,
+          studentName: info.name,
+          emAnnuel,
+          ecAnnuel,
+          epAnnuel,
+          moyenneAnnuelle,
+          appreciation,
+          trimesterCount: info.trimesters.length,
+        });
+      }
+      annualRows.sort((a, b) => a.studentName.localeCompare(b.studentName, 'fr'));
+      setAnnualData(annualRows);
+    } catch (err) {
+      console.error('Error loading annual averages:', err);
+      setAnnualData([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedClassId, academicYear?.id, computeAveragesForEvals, isMaternelle]);
 
   useEffect(() => {
     if (activeMoyenneTab === 'trimestriel') loadTrimesterAverages();
-  }, [loadTrimesterAverages, activeMoyenneTab]);
+    else loadAnnualAverages();
+  }, [loadTrimesterAverages, loadAnnualAverages, activeMoyenneTab]);
 
   return (
     <div className="space-y-4">
@@ -3687,18 +3797,39 @@ function MoyennesTab({
       ) : activeMoyenneTab === 'trimestriel' ? (
         <MoyennesTrimestrielTable data={trimesterData} isMaternelle={isMaternelle} />
       ) : (
-        <MoyennesAnnuelTable data={[]} isMaternelle={isMaternelle} />
+        <MoyennesAnnuelTable data={annualData} isMaternelle={isMaternelle} />
       )}
     </div>
   );
 }
 
+// ─── Helper : afficher une valeur (numérique /20 ou qualitative TS/S/PS) ──
+function fmtAvg(value: number | null | undefined, isMaternelle: boolean, threshold = 10): string {
+  if (value === null || value === undefined) return '—';
+  if (isMaternelle) {
+    return value >= 2.5 ? 'TS' : value >= 1.5 ? 'S' : 'PS';
+  }
+  return value.toFixed(2);
+}
+
+function avgColor(value: number | null | undefined, isMaternelle: boolean, threshold = 10): string {
+  if (value === null || value === undefined) return 'text-slate-400';
+  if (isMaternelle) {
+    return value >= 2.5 ? 'text-emerald-700' : value >= 1.5 ? 'text-blue-700' : 'text-amber-700';
+  }
+  return value >= threshold ? 'text-emerald-700' : 'text-red-600';
+}
+
 // ─── Moyennes Trimestrielles Table ───────────────────────────────────────────
+//
+// ⭐ Refonte (2026-09-27) — colonnes détaillées par trimestre :
+//    Nom | EM1 | EM2 | Moy. EM | EC | Moyenne générale  (× nb trimestres)
+//    Bordures arrondies (border-radius) sur le conteneur et les en-têtes.
 
 function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMaternelle: boolean }) {
   if (data.length === 0) {
     return (
-      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+      <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
         <Calculator className="w-10 h-10 text-slate-300 mx-auto mb-2" />
         <p className="text-sm text-slate-500">Aucune donnée disponible. Sélectionnez une classe.</p>
       </div>
@@ -3709,55 +3840,148 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
   const studentMap = new Map<string, any>();
   for (const row of data) {
     if (!studentMap.has(row.studentId)) {
-      studentMap.set(row.studentId, { studentName: row.studentName, periods: {} });
+      studentMap.set(row.studentId, { studentName: row.studentName, periods: {} as Record<string, any> });
     }
-    studentMap.get(row.studentId).periods[row.periodName] = row;
+    studentMap.get(row.studentId)!.periods[row.periodName] = row;
   }
   const students = Array.from(studentMap.values());
 
-  // Get all period names
+  // Get all period names (sorted)
   const periodNames = [...new Set(data.map(r => r.periodName))].sort();
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-      <div className="px-4 py-3 bg-blue-50 border-b border-blue-100">
-        <h3 className="text-sm font-bold text-slate-900">Moyennes trimestrielles</h3>
-        <p className="text-xs text-slate-500">Formule: ((EM1 + EM2) / 2 + EC) / 2</p>
+    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+      <div className="px-5 py-3 bg-gradient-to-r from-blue-50 to-slate-50 border-b border-blue-100">
+        <h3 className="text-sm font-bold text-slate-900">Bulletin trimestriel — moyennes détaillées</h3>
+        <p className="text-xs text-slate-500 mt-0.5">
+          {isMaternelle
+            ? 'Valeurs qualitatives : TS = Très Satisfaisant, S = Satisfaisant, PS = Peu Satisfaisant'
+            : 'Formule : Moy. EM = (EM1 + EM2) / 2  ·  Moyenne générale = (Moy. EM + EC) / 2'}
+        </p>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-xs">
           <thead>
+            {/* Row 1 : Nom (rowspan=2) + period groups (colspan=5 each) */}
             <tr style={{ backgroundColor: '#0A2A5E', color: 'white' }}>
-              <th className="border px-2 py-2 font-bold uppercase text-left" style={{ borderColor: '#0D3B85', minWidth: '180px' }}>Nom et prénom</th>
+              <th
+                rowSpan={2}
+                className="border px-3 py-2 font-bold uppercase text-left sticky left-0 z-10"
+                style={{ borderColor: '#0D3B85', backgroundColor: '#0A2A5E', minWidth: '200px', borderRadius: '8px 0 0 0' }}
+              >
+                Nom et prénom
+              </th>
               {periodNames.map(p => (
-                <th key={p} className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>{p}</th>
+                <th
+                  key={p}
+                  colSpan={5}
+                  className="border px-3 py-2 font-bold uppercase text-center"
+                  style={{ borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}
+                >
+                  {p}
+                </th>
+              ))}
+            </tr>
+            {/* Row 2 : EM1 | EM2 | Moy. EM | EC | Moy. gén. (× nb trimestres) */}
+            <tr style={{ backgroundColor: '#0A2A5E', color: 'white' }}>
+              {periodNames.map(p => (
+                <Fragment key={p}>
+                  <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '70px' }}>EM1</th>
+                  <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '70px' }}>EM2</th>
+                  <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '80px' }}>Moy. EM</th>
+                  <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '70px' }}>EC</th>
+                  <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '100px' }}>Moyenne gén.</th>
+                </Fragment>
               ))}
             </tr>
           </thead>
           <tbody>
             {students.map((student, idx) => (
-              <tr key={idx} className={cn(idx % 2 === 1 && 'bg-slate-50/50')}>
-                <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{student.studentName}</td>
+              <tr key={student.studentName + idx} className={cn(idx % 2 === 1 && 'bg-slate-50/60')}>
+                <td className="border border-slate-300 px-3 py-1.5 font-medium text-slate-900 whitespace-nowrap sticky left-0 z-10 bg-white">
+                  {student.studentName}
+                </td>
                 {periodNames.map(p => {
                   const row = student.periods[p];
-                  if (!row) return <td key={p} className="border border-slate-300 px-2 py-1 text-center text-slate-300">—</td>;
-                  if (isMaternelle) {
+                  if (!row) {
                     return (
-                      <td key={p} className="border border-slate-300 px-2 py-1 text-center">
-                        <span className={cn('inline-flex px-2 py-0.5 rounded text-xs font-bold',
-                          row.appreciation === 'Très Satisfaisant' && 'bg-emerald-100 text-emerald-700',
-                          row.appreciation === 'Satisfaisant' && 'bg-blue-100 text-blue-700',
-                          row.appreciation === 'Peu Satisfaisant' && 'bg-amber-100 text-amber-700',
-                        )}>{row.appreciation || '—'}</span>
-                      </td>
+                      <Fragment key={p}>
+                        <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-300">—</td>
+                        <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-300">—</td>
+                        <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-300">—</td>
+                        <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-300">—</td>
+                        <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-300">—</td>
+                      </Fragment>
                     );
                   }
+                  if (isMaternelle) {
+                    return (
+                      <Fragment key={p}>
+                        <td className="border border-slate-300 px-2 py-1.5 text-center font-bold">
+                          <span className={cn('inline-flex min-w-[36px] px-2 py-0.5 rounded-full text-[10px] font-bold',
+                            row.em1Avg === null ? 'bg-slate-100 text-slate-400' :
+                              row.em1Avg >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
+                              row.em1Avg >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                            {fmtAvg(row.em1Avg, true)}
+                          </span>
+                        </td>
+                        <td className="border border-slate-300 px-2 py-1.5 text-center font-bold">
+                          <span className={cn('inline-flex min-w-[36px] px-2 py-0.5 rounded-full text-[10px] font-bold',
+                            row.em2Avg === null ? 'bg-slate-100 text-slate-400' :
+                              row.em2Avg >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
+                              row.em2Avg >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                            {fmtAvg(row.em2Avg, true)}
+                          </span>
+                        </td>
+                        <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold bg-slate-100/70">
+                          <span className={cn('inline-flex min-w-[40px] px-2 py-0.5 rounded-full text-[10px] font-bold',
+                            row.moyEm === null ? 'bg-slate-100 text-slate-400' :
+                              row.moyEm >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
+                              row.moyEm >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                            {fmtAvg(row.moyEm, true)}
+                          </span>
+                        </td>
+                        <td className="border border-slate-300 px-2 py-1.5 text-center font-bold">
+                          <span className={cn('inline-flex min-w-[36px] px-2 py-0.5 rounded-full text-[10px] font-bold',
+                            row.ecAvg === null ? 'bg-slate-100 text-slate-400' :
+                              row.ecAvg >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
+                              row.ecAvg >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                            {fmtAvg(row.ecAvg, true)}
+                          </span>
+                        </td>
+                        <td className="border border-slate-300 px-2 py-1.5 text-center font-bold bg-blue-50/70">
+                          <span className={cn('inline-flex min-w-[80px] px-2 py-1 rounded-full text-[10px] font-bold',
+                            row.appreciation === 'Très Satisfaisant' && 'bg-emerald-100 text-emerald-700',
+                            row.appreciation === 'Satisfaisant' && 'bg-blue-100 text-blue-700',
+                            row.appreciation === 'Peu Satisfaisant' && 'bg-amber-100 text-amber-700',
+                            !row.appreciation || row.appreciation === '—' && 'bg-slate-100 text-slate-400')}>
+                            {row.appreciation || '—'}
+                          </span>
+                        </td>
+                      </Fragment>
+                    );
+                  }
+                  // Primaire — numérique /20
                   return (
-                    <td key={p} className="border border-slate-300 px-2 py-1 text-center font-bold">
-                      <span className={cn((row.trimesterAvg || 0) >= 10 ? 'text-emerald-700' : 'text-red-600')}>
-                        {row.trimesterAvg !== null ? row.trimesterAvg.toFixed(2) : '—'}
-                      </span>
-                    </td>
+                    <Fragment key={p}>
+                      <td className="border border-slate-300 px-2 py-1.5 text-center font-medium">
+                        <span className={cn('font-semibold', avgColor(row.em1Avg, false))}>{fmtAvg(row.em1Avg, false)}</span>
+                      </td>
+                      <td className="border border-slate-300 px-2 py-1.5 text-center font-medium">
+                        <span className={cn('font-semibold', avgColor(row.em2Avg, false))}>{fmtAvg(row.em2Avg, false)}</span>
+                      </td>
+                      <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold bg-slate-100/70">
+                        <span className={cn('inline-flex min-w-[44px] justify-center px-2 py-0.5 rounded-md text-xs font-bold bg-white/80',
+                          avgColor(row.moyEm, false))}>{fmtAvg(row.moyEm, false)}</span>
+                      </td>
+                      <td className="border border-slate-300 px-2 py-1.5 text-center font-medium">
+                        <span className={cn('font-semibold', avgColor(row.ecAvg, false))}>{fmtAvg(row.ecAvg, false)}</span>
+                      </td>
+                      <td className="border border-slate-300 px-2 py-1.5 text-center font-bold bg-blue-50/70">
+                        <span className={cn('inline-flex min-w-[60px] justify-center px-2 py-0.5 rounded-md text-xs font-bold bg-white',
+                          avgColor(row.trimesterAvg, false))}>{fmtAvg(row.trimesterAvg, false)}</span>
+                      </td>
+                    </Fragment>
                   );
                 })}
               </tr>
@@ -3765,23 +3989,152 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
           </tbody>
         </table>
       </div>
+      {/* Légende */}
+      <div className="px-5 py-2 bg-slate-50 border-t border-slate-200 text-[10px] text-slate-500">
+        {isMaternelle
+          ? <>TS = Très Satisfaisant · S = Satisfaisant · PS = Peu Satisfaisant — Moy. EM = moyenne des EM1/EM2, Moyenne gén. = (Moy. EM + EC) / 2</>
+          : <>Moy. EM = (EM1 + EM2) / 2 · Moyenne générale = (Moy. EM + EC) / 2 — seuil de réussite : 10/20</>}
+      </div>
     </div>
   );
 }
 
 // ─── Moyennes Annuelles Table ────────────────────────────────────────────────
+//
+// ⭐ Refonte (2026-09-27) — colonnes agrégées sur l'année :
+//    Nom | EM annuel | EC annuel | EP | Moyenne annuelle | Appréciation
+//    EM annuel = moyenne des Moy. EM des 3 trimestres
+//    EC annuel = moyenne des EC des 3 trimestres
+//    EP = évaluation de passage (T3 uniquement, si présente)
+//    Moyenne annuelle = ((EM annuel + EC annuel) / 2 + EP) / 2 (si EP), sinon (EM annuel + EC annuel) / 2
 
 function MoyennesAnnuelTable({ data, isMaternelle }: { data: any[]; isMaternelle: boolean }) {
+  if (data.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+        <Calculator className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+        <p className="text-sm text-slate-500">Aucune donnée annuelle disponible. Sélectionnez une classe.</p>
+        <p className="text-xs text-slate-400 mt-2 italic">
+          Les moyennes annuelles seront calculées à la fin de l'année scolaire,
+          après l'évaluation de passage (EP).
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-      <Calculator className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-      <p className="text-sm text-slate-500 font-medium">Moyennes annuelles</p>
-      <p className="text-xs text-slate-400 mt-1">
-        Formule: ((Moyenne EM annuelle + Moyenne EC annuelle) / 2 + Moyenne EP) / 2
-      </p>
-      <p className="text-xs text-slate-400 mt-2 italic">
-        Les moyennes annuelles seront calculées à la fin de l'année scolaire, après l'évaluation de passage (EP).
-      </p>
+    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+      <div className="px-5 py-3 bg-gradient-to-r from-blue-50 to-slate-50 border-b border-blue-100">
+        <h3 className="text-sm font-bold text-slate-900">Moyennes annuelles — agrégation sur l'année</h3>
+        <p className="text-xs text-slate-500 mt-0.5">
+          {isMaternelle
+            ? 'Valeurs qualitatives : TS = Très Satisfaisant, S = Satisfaisant, PS = Peu Satisfaisant'
+            : 'EM annuel = moyenne des Moy. EM des 3 trimestres · EC annuel = moyenne des EC des 3 trimestres · Moyenne annuelle = ((EM annuel + EC annuel) / 2 + EP) / 2'}
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr style={{ backgroundColor: '#0A2A5E', color: 'white' }}>
+              <th className="border px-3 py-2 font-bold uppercase text-left" style={{ borderColor: '#0D3B85', minWidth: '200px', borderRadius: '8px 0 0 0' }}>Nom et prénom</th>
+              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '90px' }}>EM annuel</th>
+              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '90px' }}>EC annuel</th>
+              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '70px' }}>EP</th>
+              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '110px' }}>Moyenne annuelle</th>
+              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '130px', borderRadius: '0 8px 0 0' }}>Appréciation</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((row, idx) => (
+              <tr key={row.studentId + idx} className={cn(idx % 2 === 1 && 'bg-slate-50/60')}>
+                <td className="border border-slate-300 px-3 py-1.5 font-medium text-slate-900 whitespace-nowrap">{row.studentName}</td>
+                {isMaternelle ? (
+                  <>
+                    <td className="border border-slate-300 px-2 py-1.5 text-center font-bold">
+                      <span className={cn('inline-flex min-w-[40px] px-2 py-0.5 rounded-full text-[10px] font-bold',
+                        row.emAnnuel === null ? 'bg-slate-100 text-slate-400' :
+                          row.emAnnuel >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
+                          row.emAnnuel >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                        {fmtAvg(row.emAnnuel, true)}
+                      </span>
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-center font-bold">
+                      <span className={cn('inline-flex min-w-[40px] px-2 py-0.5 rounded-full text-[10px] font-bold',
+                        row.ecAnnuel === null ? 'bg-slate-100 text-slate-400' :
+                          row.ecAnnuel >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
+                          row.ecAnnuel >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                        {fmtAvg(row.ecAnnuel, true)}
+                      </span>
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-center font-bold">
+                      <span className={cn('inline-flex min-w-[36px] px-2 py-0.5 rounded-full text-[10px] font-bold',
+                        row.epAnnuel === null ? 'bg-slate-100 text-slate-400' :
+                          row.epAnnuel >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
+                          row.epAnnuel >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                        {fmtAvg(row.epAnnuel, true)}
+                      </span>
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-center font-bold bg-blue-50/70">
+                      <span className={cn('inline-flex min-w-[60px] px-2 py-0.5 rounded-full text-[10px] font-bold',
+                        row.moyenneAnnuelle === null ? 'bg-slate-100 text-slate-400' :
+                          row.moyenneAnnuelle >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
+                          row.moyenneAnnuelle >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                        {fmtAvg(row.moyenneAnnuelle, true)}
+                      </span>
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-center">
+                      <span className={cn('inline-flex min-w-[100px] px-2 py-1 rounded-full text-[10px] font-bold',
+                        row.appreciation === 'Très Satisfaisant' && 'bg-emerald-100 text-emerald-700',
+                        row.appreciation === 'Satisfaisant' && 'bg-blue-100 text-blue-700',
+                        row.appreciation === 'Peu Satisfaisant' && 'bg-amber-100 text-amber-700',
+                        (!row.appreciation || row.appreciation === '—') && 'bg-slate-100 text-slate-400')}>
+                        {row.appreciation || '—'}
+                      </span>
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold bg-slate-100/70">
+                      <span className={cn('inline-flex min-w-[50px] justify-center px-2 py-0.5 rounded-md text-xs font-bold bg-white/80',
+                        avgColor(row.emAnnuel, false))}>{fmtAvg(row.emAnnuel, false)}</span>
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold bg-slate-100/70">
+                      <span className={cn('inline-flex min-w-[50px] justify-center px-2 py-0.5 rounded-md text-xs font-bold bg-white/80',
+                        avgColor(row.ecAnnuel, false))}>{fmtAvg(row.ecAnnuel, false)}</span>
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-center font-medium">
+                      <span className={cn('font-semibold', avgColor(row.epAnnuel, false))}>{fmtAvg(row.epAnnuel, false)}</span>
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-center font-bold bg-blue-50/70">
+                      <span className={cn('inline-flex min-w-[70px] justify-center px-2 py-0.5 rounded-md text-sm font-bold bg-white',
+                        avgColor(row.moyenneAnnuelle, false))}>{fmtAvg(row.moyenneAnnuelle, false)}</span>
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-center font-medium">
+                      <span className={cn('inline-flex min-w-[100px] px-2 py-0.5 rounded-full text-[10px] font-bold',
+                        row.moyenneAnnuelle === null ? 'bg-slate-100 text-slate-400' :
+                          row.moyenneAnnuelle >= 16 ? 'bg-emerald-100 text-emerald-700' :
+                          row.moyenneAnnuelle >= 14 ? 'bg-blue-100 text-blue-700' :
+                          row.moyenneAnnuelle >= 12 ? 'bg-cyan-100 text-cyan-700' :
+                          row.moyenneAnnuelle >= 10 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700')}>
+                        {row.moyenneAnnuelle === null ? '—' :
+                          row.moyenneAnnuelle >= 16 ? 'Très Bien' :
+                          row.moyenneAnnuelle >= 14 ? 'Bien' :
+                          row.moyenneAnnuelle >= 12 ? 'Assez Bien' :
+                          row.moyenneAnnuelle >= 10 ? 'Passable' : 'Insuffisant'}
+                      </span>
+                    </td>
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="px-5 py-2 bg-slate-50 border-t border-slate-200 text-[10px] text-slate-500">
+        {isMaternelle
+          ? <>EM annuel = moyenne des Moy. EM des 3 trimestres · EC annuel = moyenne des EC · EP = évaluation de passage (T3)</>
+          : <>Moyenne annuelle = ((EM annuel + EC annuel) / 2 + EP) / 2 — seuil de réussite : 10/20</>}
+      </div>
     </div>
   );
 }

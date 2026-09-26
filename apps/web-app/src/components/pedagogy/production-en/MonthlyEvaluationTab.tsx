@@ -862,11 +862,11 @@ export function MonthlyEvaluationTab({
                   {!isSecondaire && !isMaternelle && (
                     <tr className="bg-slate-50">
                       {sortedSubjects.map((_, idx) => (
-                        <React.Fragment key={idx}>
+                        <Fragment key={idx}>
                           <th className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CM /18</th>
                           <th className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">CP /2</th>
                           <th className="border border-slate-300 px-2 py-1 font-bold text-slate-600 text-[10px]">Total</th>
-                        </React.Fragment>
+                        </Fragment>
                       ))}
                       <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">Yes</th>
                       <th className="border border-slate-300 px-1 py-1 font-bold text-slate-600 text-[10px]">No</th>

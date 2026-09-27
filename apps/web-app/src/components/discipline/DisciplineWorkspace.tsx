@@ -65,8 +65,48 @@ export default function DisciplineWorkspace({
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [cancellingSanctionId, setCancellingSanctionId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
+  // ⭐ Dans le SanctionModal, remplacer la recherche par un sélecteur classe + élève
+  const [modalAllClasses, setModalAllClasses] = useState<ClassInfo[]>([]);
+  const [modalClassStudents, setModalClassStudents] = useState<any[]>([]);
+  const [modalLoadingStudents, setModalLoadingStudents] = useState(false);
   const [editingRule, setEditingRule] = useState<DisciplineRule | null>(null);
   const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
+
+  // Charger toutes les classes secondaires pour le sélecteur
+  const loadModalClasses = useCallback(async () => {
+    if (!academicYear?.id) return;
+    const authHeaders = getClientAuthorizationHeader();
+    const params = new URLSearchParams({ academicYearId: academicYear.id });
+    const res = await fetch(`/api/all-classes?${params}`, { headers: { ...authHeaders }, credentials: 'include' });
+    if (res.ok) {
+      const d = await res.json();
+      const all = Array.isArray(d) ? d : [];
+      setModalAllClasses(all.filter((c: any) => c.schoolLevel?.code === 'SECONDAIRE'));
+    }
+  }, [academicYear?.id]);
+
+  // Charger les élèves d'une classe pour le sélecteur
+  const loadModalStudents = useCallback(async (classId: string) => {
+    setModalLoadingStudents(true);
+    setModalClassStudents([]);
+    try {
+      const authHeaders = getClientAuthorizationHeader();
+      const params = new URLSearchParams({ classId, academicYearId: academicYear?.id || '' });
+      const res = await fetch(`/api/students/enrollments?${params}`, { headers: { ...authHeaders }, credentials: 'include' });
+      if (res.ok) {
+        const d = await res.json();
+        const enrollments = Array.isArray(d) ? d : (d?.items || d?.data || []);
+        const students = enrollments.map((e: any) => ({
+          id: e.studentId || e.student?.id,
+          firstName: e.student?.firstName || '',
+          lastName: e.student?.lastName || '',
+          matricule: e.student?.matricule || '',
+        })).filter((s: any) => s.id);
+        setModalClassStudents(students);
+      }
+    } catch (err) { console.error('loadModalStudents error:', err); }
+    finally { setModalLoadingStudents(false); }
+  }, [academicYear?.id]);
   const { toast } = useToast();
 
   // ⭐ Annuler une sanction (DELETE /api/discipline/sanctions/:id avec reason)
@@ -156,18 +196,36 @@ export default function DisciplineWorkspace({
   useEffect(() => { loadData(); }, [loadData]);
 
   // ⭐ Charger les élèves d'une classe (à la demande quand on déplie une classe)
+  //    Utilise /api/students/enrollments?classId=X&academicYearId=Y (même pattern
+  //    que le module examen qui récupère les élèves via les enrollments).
   const loadClassStudents = useCallback(async (classId: string) => {
     if (classStudents.has(classId)) return; // déjà chargé
     setLoadingClassStudents(prev => { const n = new Set(prev); n.add(classId); return n; });
     try {
       const authHeaders = getClientAuthorizationHeader();
-      const params = new URLSearchParams({ academicYearId: academicYear?.id || '' });
-      if (classId) params.set('classId', classId);
-      const res = await fetch(`/api/students?${params}`, { headers: { ...authHeaders }, credentials: 'include' });
+      const params = new URLSearchParams({ classId, academicYearId: academicYear?.id || '' });
+      const res = await fetch(`/api/students/enrollments?${params}`, { headers: { ...authHeaders }, credentials: 'include' });
       if (res.ok) {
         const d = await res.json();
-        const list = Array.isArray(d) ? d : (d?.items || []);
-        setClassStudents(prev => { const n = new Map(prev); n.set(classId, list); return n; });
+        // Le backend renvoie les enrollments avec student info
+        const enrollments = Array.isArray(d) ? d : (d?.items || d?.data || []);
+        // Extraire les infos élèves depuis les enrollments
+        const students = enrollments.map((e: any) => ({
+          id: e.studentId || e.student?.id,
+          firstName: e.student?.firstName || '',
+          lastName: e.student?.lastName || '',
+          matricule: e.student?.matricule || '',
+          className: e.className || '',
+        })).filter((s: any) => s.id);
+        setClassStudents(prev => { const n = new Map(prev); n.set(classId, students); return n; });
+      } else {
+        // Fallback : essayer /api/students?classId=X
+        const res2 = await fetch(`/api/students?classId=${classId}&academicYearId=${academicYear?.id || ''}`, { headers: { ...authHeaders }, credentials: 'include' });
+        if (res2.ok) {
+          const d2 = await res2.json();
+          const list = Array.isArray(d2) ? d2 : (d2?.items || []);
+          setClassStudents(prev => { const n = new Map(prev); n.set(classId, list); return n; });
+        }
       }
     } catch (err) { console.error('loadClassStudents error:', err); }
     finally { setLoadingClassStudents(prev => { const n = new Set(prev); n.delete(classId); return n; }); }
@@ -388,6 +446,8 @@ export default function DisciplineWorkspace({
           className={modalClassName}
           preselectedStudentId={modalStudentId}
           preselectedStudentName={modalStudentName}
+          allClasses={classes}
+          loadStudentsForClass={loadModalStudents}
         />
       )}
       {showRuleModal && (
@@ -588,36 +648,55 @@ function RulesTab({ rules, onEdit, onDelete }: {
 
 // ─── Sanction Modal ──────────────────────────────────────────────────────
 
-function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelId, classId, className, preselectedStudentId, preselectedStudentName }: {
+function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelId, classId, className, preselectedStudentId, preselectedStudentName, allClasses, loadStudentsForClass }: {
   onClose: () => void; onSuccess: () => void; rules: DisciplineRule[];
   academicYearId?: string; schoolLevelId?: string; classId?: string | null; className?: string;
   preselectedStudentId?: string | null; preselectedStudentName?: string;
+  allClasses?: ClassInfo[];
+  loadStudentsForClass?: (classId: string) => Promise<void>;
 }) {
-  const [studentSearch, setStudentSearch] = useState('');
+  const [selectedClassId, setSelectedClassId] = useState(classId || '');
   const [selectedStudent, setSelectedStudent] = useState<any>(preselectedStudentId ? { id: preselectedStudentId, firstName: preselectedStudentName?.split(' ')[1] || '', lastName: preselectedStudentName?.split(' ')[0] || '' } : null);
+  const [classStudentsList, setClassStudentsList] = useState<any[]>([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
   const [selectedRuleId, setSelectedRuleId] = useState('');
   const [customFaultName, setCustomFaultName] = useState('');
   const [hours, setHours] = useState(0);
   const [points, setPoints] = useState(0);
   const [comment, setComment] = useState('');
   const [saving, setSaving] = useState(false);
-  const [searchResults, setSearchResults] = useState<any[]>([]);
   const { toast } = useToast();
 
-  // Si une classe est sélectionnée, filtrer les élèves par classe
-  const searchStudents = async (query: string) => {
-    if (query.length < 2) { setSearchResults([]); return; }
-    try {
-      const authHeaders = getClientAuthorizationHeader();
-      const params = new URLSearchParams({ search: query, limit: '10' });
-      if (classId) params.set('classId', classId);
-      const res = await fetch(`/api/students?${params}`, { headers: { ...authHeaders }, credentials: 'include' });
-      if (res.ok) {
-        const data = await res.json();
-        setSearchResults(Array.isArray(data?.students) ? data.students : Array.isArray(data) ? data : []);
-      }
-    } catch {}
-  };
+  // ⭐ Charger les élèves quand la classe change
+  useEffect(() => {
+    if (selectedClassId && loadStudentsForClass) {
+      // Use a local async function to set the students
+      setLoadingStudents(true);
+      setClassStudentsList([]);
+      loadStudentsForClass(selectedClassId).then(() => {
+        // The parent doesn't return students — we need to fetch directly
+        // Actually, let's fetch directly here
+        const authHeaders = getClientAuthorizationHeader();
+        const params = new URLSearchParams({ classId: selectedClassId, academicYearId: academicYearId || '' });
+        fetch(`/api/students/enrollments?${params}`, { headers: { ...authHeaders }, credentials: 'include' })
+          .then(r => r.ok ? r.json() : [])
+          .then(d => {
+            const enrollments = Array.isArray(d) ? d : (d?.items || d?.data || []);
+            const students = enrollments.map((e: any) => ({
+              id: e.studentId || e.student?.id,
+              firstName: e.student?.firstName || '',
+              lastName: e.student?.lastName || '',
+              matricule: e.student?.matricule || '',
+            })).filter((s: any) => s.id);
+            setClassStudentsList(students);
+          })
+          .catch(() => {})
+          .finally(() => setLoadingStudents(false));
+      });
+    } else {
+      setClassStudentsList([]);
+    }
+  }, [selectedClassId, academicYearId]);
 
   // ⭐ Quand on sélectionne une règle, les heures et points sont automatiques
   const handleRuleSelect = (ruleId: string) => {
@@ -631,7 +710,6 @@ function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelI
   };
 
   // ⭐ Quand on change les heures manuellement, recalculer les points
-  //    selon le ratio de la règle sélectionnée (points/heures)
   const handleHoursChange = (newHours: number) => {
     setHours(newHours);
     const rule = rules.find(r => r.id === selectedRuleId);
@@ -679,33 +757,38 @@ function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelI
           <button onClick={onClose} className="p-1 hover:bg-blue-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
         </div>
         <div className="p-4 space-y-4">
-          {className && (
-            <div className="p-2 bg-blue-50 rounded-lg text-sm text-blue-700">
-              Classe sélectionnée : <strong>{className}</strong>
-            </div>
-          )}
-          {/* Student search */}
+          {/* ⭐ Sélecteur de classe (dropdown) */}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Élève {className && `(filtré: ${className})`}</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Classe</label>
+            <select value={selectedClassId}
+              onChange={(e) => { setSelectedClassId(e.target.value); setSelectedStudent(null); }}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg">
+              <option value="">— Sélectionner une classe —</option>
+              {(allClasses || []).map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          {/* ⭐ Sélecteur d'élève (dropdown filtré par classe) */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Élève</label>
             {selectedStudent ? (
               <div className="flex items-center justify-between p-2 bg-blue-50 rounded-lg">
                 <span className="text-sm font-medium">{selectedStudent.lastName} {selectedStudent.firstName}</span>
-                <button onClick={() => { setSelectedStudent(null); setStudentSearch(''); }} className="text-xs text-red-500">Changer</button>
+                <button onClick={() => setSelectedStudent(null)} className="text-xs text-red-500">Changer</button>
               </div>
             ) : (
-              <>
-                <input type="text" value={studentSearch}
-                  onChange={(e) => { setStudentSearch(e.target.value); searchStudents(e.target.value); }}
-                  placeholder="Nom de l'élève..." className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg" />
-                {searchResults.length > 0 && (
-                  <div className="mt-1 border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
-                    {searchResults.map(s => (
-                      <button key={s.id} onClick={() => { setSelectedStudent(s); setSearchResults([]); setStudentSearch(''); }}
-                        className="w-full text-left px-3 py-2 hover:bg-blue-50 text-sm">{s.lastName} {s.firstName} — {s.className || ''}</button>
-                    ))}
-                  </div>
-                )}
-              </>
+              <select value="" onChange={(e) => {
+                const stu = classStudentsList.find(s => s.id === e.target.value);
+                if (stu) setSelectedStudent(stu);
+              }}
+              disabled={!selectedClassId || loadingStudents}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg">
+                <option value="">{loadingStudents ? 'Chargement...' : !selectedClassId ? 'Sélectionnez d\'abord une classe' : '— Sélectionner un élève —'}</option>
+                {classStudentsList.map(s => (
+                  <option key={s.id} value={s.id}>{s.lastName} {s.firstName} {s.matricule ? `(${s.matricule})` : ''}</option>
+                ))}
+              </select>
             )}
           </div>
           {/* Rule selection */}
@@ -725,7 +808,7 @@ function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelI
             <input type="text" value={customFaultName} onChange={(e) => setCustomFaultName(e.target.value)}
               placeholder="Ex: Retard, Bavardage..." className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg" />
           </div>
-          {/* Hours + Points — points sont automatiques selon le barème */}
+          {/* Hours + Points */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Heures de punition</label>
@@ -748,7 +831,7 @@ function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelI
         </div>
         <div className="flex justify-end gap-2 p-4 border-t">
           <Button variant="outline" onClick={onClose}>Annuler</Button>
-          <Button onClick={handleSave} disabled={saving || !selectedStudent} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={handleSave} disabled={saving || !selectedStudent} className="bg-blue-600 hover:bg-blue-700 text-white">
             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Gavel className="w-4 h-4 mr-2" />} Enregistrer
           </Button>
         </div>

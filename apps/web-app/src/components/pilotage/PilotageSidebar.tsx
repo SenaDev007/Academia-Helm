@@ -400,7 +400,7 @@ const SUPPLEMENTARY_MODULES = [
   // { path: '/app/library', label: 'Bibliothèque', icon: Library, featureCode: 'LIBRARY' },
   // { path: '/app/transport', label: 'Transport', icon: Bus, featureCode: 'TRANSPORT' },
   // { path: '/app/infirmary', label: 'Infirmerie', icon: HeartPulse, featureCode: 'INFIRMARY' },
-  // { path: '/app/qhse', label: 'QHSE', icon: ShieldCheck, featureCode: 'QHSE' },
+  { path: '/app/qhse', label: 'QHSE', icon: ShieldCheck, featureCode: 'QHSE' },
 ];
 
 export default function PilotageSidebar({

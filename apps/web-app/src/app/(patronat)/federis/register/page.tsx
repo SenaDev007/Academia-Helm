@@ -21,6 +21,11 @@ import FederisHeader from '@/components/federis/FederisHeader';
 import { getFederisBasePath } from '@/lib/federis/useFederisPath';
 import { apiClient } from '@/lib/api/client';
 import { cn } from '@/lib/utils';
+import {
+  persistClientSession,
+  markFreshLogin,
+} from '@/lib/auth/client-access-token';
+import { saveEmailForTenant } from '@/lib/auth/saved-email';
 
 interface TerritorialLevel {
   id: string;
@@ -209,10 +214,14 @@ export default function FederisRegisterPage() {
       const res = await apiClient.post('/federis/public/register', payload, { timeout: 30000 });
       const patronatName = res.data?.patronat?.name ?? formData.name.trim();
 
-      // Connexion immédiate après inscription : le parcours d'activation
-      // (/checkout → Fedapay) requiert la session JWT du responsable.
+      // ── Connexion immédiate après inscription (pattern Helm) ──
+      // Le parcours d'activation (/checkout → Fedapay) requiert la session JWT
+      // du responsable. Même pattern que LoginPage : vérification de la
+      // réponse + persistClientSession (localStorage + miroir Cache API) +
+      // markFreshLogin, pour que /checkout et le dashboard fonctionnent sans
+      // re-saisie des identifiants.
       try {
-        await fetch('/api/auth/login', {
+        const loginRes = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -221,6 +230,32 @@ export default function FederisRegisterPage() {
             portal_type: 'PATRONAT',
           }),
         });
+
+        const loginData = await loginRes.json().catch(() => ({}));
+
+        if (loginRes.ok && loginData.success && loginData.accessToken) {
+          persistClientSession({
+            accessToken: loginData.accessToken,
+            refreshToken: loginData.refreshToken,
+            serverSessionId: loginData.serverSessionId,
+            user: loginData.user,
+            tenant: loginData.tenant,
+            portalType: 'PATRONAT',
+            expiresAt: loginData.expiresAt,
+          });
+          saveEmailForTenant(
+            formData.email.trim().toLowerCase(),
+            loginData.tenant?.id || 'federis',
+          );
+          markFreshLogin();
+        } else {
+          // Auto-login échoué (identifiants, réseau…) : le compte EST créé.
+          // Le responsable se connectera depuis /federis/login → /checkout.
+          console.warn(
+            '[FederisRegister] Auto-login non abouti :',
+            loginData?.message || loginRes.status,
+          );
+        }
       } catch (loginErr) {
         console.warn('[FederisRegister] Auto-login différé :', loginErr);
       }

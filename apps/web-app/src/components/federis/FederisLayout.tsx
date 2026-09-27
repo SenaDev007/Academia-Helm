@@ -19,6 +19,9 @@ import OfflineGuard from '@/components/offline/OfflineGuard';
 import { offlineBootstrapService } from '@/lib/offline/offline-bootstrap.service';
 import { useFederisPath } from '@/lib/federis/useFederisPath';
 import { apiClient } from '@/lib/api/client';
+// ⭐ Pattern Helm — déconnexion complète : purge localStorage + Cache API
+//    (flag anti-boucle 60 s posé par clearClientSessionSync)
+import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 // ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service)
 import ProfileDialog from '@/components/profile/ProfileDialog';
 import { useUserProfileStore } from '@/stores/user-profile-store';
@@ -220,9 +223,17 @@ export default function FederisLayout({
                     </div>
                   )}
                 </button>
-                {/* Logout Button (Section 20.2) */}
+                {/* Logout Button (Section 20.2) — pattern Helm :
+                    1) révocation JWT + purge des cookies (BFF /api/auth/logout)
+                    2) clearClientSessionSync : localStorage + Cache API + flag
+                       anti-boucle (la page login saute la détection de session
+                       pendant 60 s) 3) purge du cache offline 4) redirection */}
                 <button
                   onClick={async () => {
+                    await fetch('/api/auth/logout', { method: 'POST' }).catch(
+                      () => undefined,
+                    );
+                    clearClientSessionSync();
                     await offlineBootstrapService.clearCache();
                     window.location.href = federisPath('/login');
                   }}

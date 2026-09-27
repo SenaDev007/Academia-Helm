@@ -224,6 +224,6 @@ export class TwoFactorService {
     }
 
     // 4. Compléter la connexion (tokens + session persistée + payload complet)
-    return this.auth.completeLoginAfter2fa(user.id, payload.tenant_id, meta);
+    return this.auth.completeLoginAfter2fa(user.id, payload.tenant_id, meta, payload.portal_type);
   }
 }

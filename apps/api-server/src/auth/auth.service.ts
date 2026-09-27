@@ -249,8 +249,69 @@ export class AuthService {
       }
     }
 
+    // ── PORTAIL PATRONAT (Academia Federis) ─────────────────────────────
+    // Pattern dédié, aligné sur le flux Helm mais adapté à la réalité Federis :
+    // contrairement aux écoles (un sous-domaine par établissement → tenant_id
+    // fourni par l'URL), un patronat n'a PAS de sous-domaine propre. Le tenant
+    // PATRONAT est donc AUTO-RÉSOLU depuis le compte :
+    //   1. tenant_id explicite (UUID ou slug) s'il est fourni (multi-patronats)
+    //   2. sinon user.tenantId (posé par POST /federis/public/register)
+    //   3. sinon le premier lien PatronatUser actif de l'utilisateur
+    // Le tenant résolu DOIT être actif ET de type PATRONAT, et l'utilisateur
+    // doit y appartenir (tenant direct, lien PatronatUser ou PLATFORM_OWNER).
+    if (loginDto.portal_type === PortalType.PATRONAT) {
+      let resolvedTenantId: string | null = loginDto.tenant_id
+        ? await this.resolveTenantId(loginDto.tenant_id)
+        : user.tenantId || null;
+
+      // Compte sans tenant direct → premier lien PatronatUser actif
+      if (!resolvedTenantId) {
+        const link = await this.prisma.patronatUser.findFirst({
+          where: { userId: user.id, isActive: true },
+          orderBy: { createdAt: 'asc' },
+          select: { tenantId: true },
+        });
+        resolvedTenantId = link?.tenantId ?? null;
+      }
+
+      if (!resolvedTenantId) {
+        throw new ForbiddenException(
+          'PATRONAT_NO_SPACE: Aucun espace patronat est associé à ce compte. Utilisez le portail correspondant à votre rôle.',
+        );
+      }
+
+      const patronatTenant = await this.prisma.tenant.findUnique({
+        where: { id: resolvedTenantId },
+        select: { id: true, type: true, status: true },
+      });
+      if (!patronatTenant || patronatTenant.status !== 'active') {
+        throw new ForbiddenException('Tenant not found or inactive');
+      }
+      if (patronatTenant.type !== 'PATRONAT') {
+        throw new ForbiddenException(
+          'PORTAL_MISMATCH: Le portail Patronat est réservé aux organisations de type PATRONAT (Academia Federis).',
+        );
+      }
+
+      // Appartenance : tenant direct, lien PatronatUser actif, ou PLATFORM_OWNER
+      if (!this.isPlatformOwner(user) && user.tenantId !== resolvedTenantId) {
+        const membership = await this.prisma.patronatUser.findFirst({
+          where: { userId: user.id, tenantId: resolvedTenantId, isActive: true },
+          select: { id: true },
+        });
+        if (!membership) {
+          throw new ForbiddenException('User does not belong to the specified tenant');
+        }
+      }
+
+      // Le tenant résolu alimente le JWT enrichi (req.user.tenantId) —
+      // utilisé par /federis/patronat/profile & co. pour résoudre le patronat.
+      loginDto.tenant_id = resolvedTenantId;
+    }
+
     // Si portal_type est SCHOOL, TEACHER ou PARENT, tenant_id est requis
-    if (loginDto.portal_type) {
+    // (PATRONAT est exclu : le tenant est auto-résolu ci-dessus)
+    if (loginDto.portal_type && loginDto.portal_type !== PortalType.PATRONAT) {
       if (!loginDto.tenant_id) {
         throw new ForbiddenException('Tenant ID is required for this portal type');
       }
@@ -360,6 +421,12 @@ export class AuthService {
           tenantId: loginDto.tenant_id || user.tenantId || null,
           isPlatformOwner: this.isPlatformOwner(user),
         },
+        // ⭐ PATRONAT (Academia Federis) : infos du tenant patronat pour la
+        //    session BFF (nom du patronat dans le cookie academia_session au
+        //    lieu du fallback générique « Mon École », + cookie x-tenant-id).
+        ...(loginDto.portal_type === PortalType.PATRONAT && loginDto.tenant_id
+          ? { tenant: await this.loadTenantInfo(loginDto.tenant_id) }
+          : {}),
         ...tokens,
         ...(sessionRecord ? { serverSessionId: sessionRecord.id } : {}),
       };
@@ -392,6 +459,7 @@ export class AuthService {
     userId: string,
     tenantId?: string,
     meta?: { ipAddress?: string; userAgent?: string },
+    portalType?: string,
   ): Promise<any> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -423,6 +491,11 @@ export class AuthService {
         isPlatformOwner: isOwner,
       },
       ...(isOwner && tenantId ? { tenant: await this.loadTenantInfo(tenantId) } : {}),
+      // ⭐ PATRONAT (Academia Federis) : même payload que /auth/login — infos
+      //    du tenant patronat pour la session BFF (2FA déjà complétée).
+      ...(portalType === PortalType.PATRONAT && tenantId && !isOwner
+        ? { tenant: await this.loadTenantInfo(tenantId) }
+        : {}),
       ...tokens,
       ...(sessionRecord ? { serverSessionId: sessionRecord.id } : {}),
     };
@@ -678,6 +751,22 @@ export class AuthService {
       'ALUMNUS', 'PROSPECT_PARENT', 'PROSPECT_STUDENT', 'SPONSOR', 'AMBASSADOR', 'VOLUNTEER',
     ];
     if (parentRoles.includes(role)) return [PortalType.PARENT];
+
+    // ── Rôles PATRONAT (Academia Federis — application satellite) ──
+    // Comptes créés par POST /federis/public/register (User.role = PATRONAT_ADMIN)
+    // ou liés à un patronat via PatronatUser. Ils se connectent UNIQUEMENT via
+    // le portail PATRONAT (academiafederis.academiahelm.com/federis/login).
+    //   - PATRONAT_ADMIN    : administrateur du patronat (tous modules)
+    //   - PATRONAT_OPERATOR : opérateur (examens, candidats, centres)
+    //   - EXAM_SUPERVISOR   : surveillant (lecture élargie)
+    //   - EXAM_VIEWER       : inspecteur (lecture seule)
+    // ⭐ Avant ce mapping, ces rôles tombaient dans le DÉFAUT SCHOOL → le login
+    //    Federis avec portal_type=PATRONAT renvoyait 403 PORTAL_MISMATCH.
+    const patronatRoles = [
+      'PATRONAT_ADMIN', 'PATRONAT_OPERATOR', 'PATRONAT_USER',
+      'EXAM_SUPERVISOR', 'EXAM_VIEWER',
+    ];
+    if (patronatRoles.includes(role)) return [PortalType.PATRONAT];
 
     // ── Rôles PUBLIC (5 rôles) — Document §05 ──
     const publicRoles = [

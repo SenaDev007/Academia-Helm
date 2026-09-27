@@ -1,24 +1,60 @@
 /**
- * Page de connexion Academia Federis
+ * Page de connexion Academia Federis — pattern d'authentification Academia Helm
+ * ============================================================================
  *
- * Connexion dédiée aux patronats et organismes d'examens (cahier des charges §6.4) :
- *   1. POST /api/auth/login (BFF) avec portal_type PATRONAT → cookies de session
- *   2. Vérification de l'espace patronat via /federis/patronat/profile
- *   3. Redirection vers le tableau de bord institutionnel
+ * Reproduit EXACTEMENT le flux de connexion d'Academia Helm (LoginPage.tsx),
+ * adapté au portail PATRONAT (cahier des charges §6.4) :
  *
- * Interface distincte de l'espace école, branding institutionnel.
+ *   1. POST /api/auth/login (BFF) avec portal_type: 'PATRONAT'
+ *      → cookies de session posés par la BFF (academia_session, academia_token,
+ *        x-tenant-id) — le tenant patronat est auto-résolu côté backend
+ *        (user.tenantId posé par /federis/public/register).
+ *   2. ⭐ 2FA TOTP : si le backend exige un code (requires2fa), affichage du
+ *      champ « code à 6 chiffres » puis POST /api/auth/2fa/verify-login
+ *      (même mécanique de promesse résolue que Helm).
+ *   3. persistClientSession() → localStorage (accessToken, refreshToken,
+ *      serverSessionId, session, miroir Cache API pour le Service Worker).
+ *   4. saveEmailForTenant() → dernier email mémorisé.
+ *   5. Vérification de l'espace patronat via /federis/patronat/profile
+ *      (404 → « Aucun espace patronat » + logout propre).
+ *   6. markFreshLogin() + redirection full-reload vers le tableau de bord
+ *      (pattern Helm : window.location.href pour que les Server Components
+ *      relisent les cookies fraîchement posés).
+ *
+ * Au montage (pattern Helm exact — anti-boucle) :
+ *   - isRecentlyLoggedOut(60 s) → ne rien tenter
+ *   - hasLocalSessionHints() → validation silencieuse via /api/auth/me
+ *     → session valide : bouton « Continuer vers le tableau de bord »
+ *       (PAS d'auto-redirect, cf. boucle infinie documentée dans Helm)
+ *     → session invalide : clearClientSessionSync()
+ *
+ * Interface distincte de l'espace école, branding institutionnel Federis.
  */
 
 'use client';
 
-import { useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
+import { AlertCircle, ArrowRight, Eye, EyeOff, KeyRound, Loader, Lock, Mail } from 'lucide-react';
 import FederisHeader from '@/components/federis/FederisHeader';
 import { getFederisBasePath } from '@/lib/federis/useFederisPath';
 import { apiClient } from '@/lib/api/client';
+import {
+  persistClientSession,
+  markFreshLogin,
+  hasLocalSessionHints,
+  isRecentlyLoggedOut,
+  clearClientSessionSync,
+} from '@/lib/auth/client-access-token';
+import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
+import { useFetchWithTimeout } from '@/lib/hooks/use-fetch-with-timeout';
+import { getAppBaseUrl } from '@/lib/utils/urls';
 import { cn } from '@/lib/utils';
+
+/** Clé de mémorisation du dernier email (pattern Helm : 1 clé par espace). */
+const FEDERIS_EMAIL_KEY = 'federis';
 
 export default function FederisLoginPage() {
   return (
@@ -35,15 +71,135 @@ export default function FederisLoginPage() {
 }
 
 function FederisLoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const federisBase = getFederisBasePath();
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  });
+  const { fetchWithTimeout } = useFetchWithTimeout();
+
+  const [formData, setFormData] = useState({ email: '', password: '' });
+  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [validSessionDetected, setValidSessionDetected] = useState(false);
+
+  // ── 2FA TOTP (pattern Helm : promesse résolue par le panneau de code) ──
+  const [twoFactorPrompt, setTwoFactorPrompt] = useState<{
+    tempToken: string;
+    email?: string;
+  } | null>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [twoFactorError, setTwoFactorError] = useState<string | null>(null);
+  const [twoFactorVerifying, setTwoFactorVerifying] = useState(false);
+  const twoFactorResolveRef = useRef<((data: any | null) => void) | null>(null);
+
+  // ── Détection d'une session déjà valide (pattern Helm, au montage) ──
+  //    ⛔ PAS d'auto-redirect : boucle infinie documentée côté Helm après
+  //    logout avec données stale. On affiche un bouton « Continuer ».
+  useEffect(() => {
+    // Logout récent (< 60 s) → ne même pas tenter la validation
+    if (isRecentlyLoggedOut(60000)) return;
+    // Pas d'indices de session en localStorage → afficher le formulaire
+    if (!hasLocalSessionHints()) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' });
+        if (res.ok) {
+          setValidSessionDetected(true);
+        } else {
+          // Session invalide → purger les données stale (faux positifs futurs)
+          clearClientSessionSync();
+          try {
+            sessionStorage.setItem('academia_just_logged_out', Date.now().toString());
+          } catch {
+            /* ignore */
+          }
+        }
+      } catch {
+        // Erreur réseau — afficher le formulaire normalement
+      }
+    })();
+  }, []);
+
+  // ── Dernier email utilisé (pattern Helm saveEmailForTenant) ──
+  useEffect(() => {
+    const saved = getSavedEmailForTenant(FEDERIS_EMAIL_KEY);
+    if (saved) setFormData((f) => (f.email ? f : { ...f, email: saved }));
+  }, []);
+
+  /** Déconnexion complète (BFF + localStorage) — profil patronat invalide. */
+  const logoutCleanup = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+    clearClientSessionSync();
+  };
+
+  /** Traduit les messages backend en messages clairs pour le portail Federis. */
+  const humanizeLoginError = (message?: string): string => {
+    const msg = (message || '').toString();
+    if (msg.includes('PATRONAT_NO_SPACE')) {
+      return "Aucun espace patronat n'est associé à ce compte. Cette connexion est réservée aux patronats et organismes d'examens.";
+    }
+    if (msg.includes('PORTAL_MISMATCH')) {
+      return 'Ce compte ne peut pas utiliser le portail Patronat. Utilisez le portail correspondant à votre rôle (école, enseignant ou parent).';
+    }
+    if (msg === 'Unauthorized' || msg.toLowerCase().includes('invalid credentials')) {
+      return 'Identifiants incorrects. Vérifiez votre adresse électronique et votre mot de passe.';
+    }
+    if (msg.toLowerCase().includes('tenant')) {
+      return "Votre organisation est introuvable ou inactive. Contactez l'administrateur de la plateforme.";
+    }
+    return msg || 'Email ou mot de passe incorrect.';
+  };
+
+  // ── 2FA : ouvre le panneau de code, résout la promesse à la complétion ──
+  const promptFor2FA = (tempToken: string, email?: string): Promise<any | null> => {
+    setTwoFactorCode('');
+    setTwoFactorError(null);
+    setTwoFactorPrompt({ tempToken, email });
+    return new Promise((resolve) => {
+      twoFactorResolveRef.current = resolve;
+    });
+  };
+
+  /** Soumet le code TOTP → POST /api/auth/2fa/verify-login (pattern Helm). */
+  const submitTwoFactorCode = async () => {
+    if (!twoFactorPrompt || twoFactorVerifying) return;
+    const code = twoFactorCode.replace(/\D/g, '');
+    if (code.length !== 6) {
+      setTwoFactorError("Saisissez les 6 chiffres de votre application d'authentification.");
+      return;
+    }
+    setTwoFactorVerifying(true);
+    setTwoFactorError(null);
+    try {
+      const res = await fetchWithTimeout('/api/auth/2fa/verify-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          twoFactorTempToken: twoFactorPrompt.tempToken,
+          code,
+          portal_type: 'PATRONAT',
+        }),
+      });
+      const data = await res.json().catch(() => ({}) as any);
+      if (res.ok && data.success && data.accessToken) {
+        setTwoFactorPrompt(null);
+        twoFactorResolveRef.current?.(data);
+        twoFactorResolveRef.current = null;
+      } else {
+        setTwoFactorError(data.message || 'Code de vérification invalide.');
+      }
+    } catch {
+      setTwoFactorError('Impossible de vérifier le code — vérifiez votre connexion.');
+    } finally {
+      setTwoFactorVerifying(false);
+    }
+  };
+
+  /** Annule le panneau 2FA (résout la promesse avec null). */
+  const cancelTwoFactor = () => {
+    setTwoFactorPrompt(null);
+    twoFactorResolveRef.current?.(null);
+    twoFactorResolveRef.current = null;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,7 +221,10 @@ function FederisLoginForm() {
     setErrors({});
     try {
       // ── 1. Authentification via le BFF (pose les cookies de session) ──
-      const loginRes = await fetch('/api/auth/login', {
+      //    Pattern Helm : fetchWithTimeout (10 s + abort-on-unmount) au lieu
+      //    d'un fetch nu — sur réseau instable, un fetch sans timeout reste
+      //    en échec silencieux pendant des minutes (spinner sans fin).
+      const response = await fetchWithTimeout('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -75,26 +234,45 @@ function FederisLoginForm() {
         }),
       });
 
-      const loginData = await loginRes.json().catch(() => ({}));
+      // ⭐ Parse tolérant (pattern Helm) : une page d'erreur non-JSON ne doit
+      //    pas devenir une SyntaxError opaque.
+      let data = await response.json().catch(() => ({}) as any);
 
-      if (!loginRes.ok || !loginData.success) {
-        const msg =
-          loginData?.message === 'Unauthorized'
-            ? 'Identifiants incorrects.'
-            : loginData?.message || 'Email ou mot de passe incorrect.';
-        setErrors({ submit: msg });
-        return;
+      if (!response.ok) {
+        throw new Error(humanizeLoginError(data.message));
       }
 
-      // ── 2. Vérification de l'espace patronat ──
+      // ── 2. 2FA TOTP (pattern Helm) : le backend exige un code ──
+      if (data.requires2fa && data.twoFactorTempToken) {
+        const completed = await promptFor2FA(data.twoFactorTempToken, data.email);
+        if (!completed) return; // annulé par l'utilisateur
+        data = completed;
+      }
+
+      // ── 3. Persistance client (pattern Helm persistClientSession) ──
+      //    localStorage : accessToken / refreshToken / serverSessionId /
+      //    session (tenantId) + miroir Cache API pour le Service Worker.
+      persistClientSession({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        serverSessionId: data.serverSessionId,
+        user: data.user,
+        tenant: data.tenant,
+        portalType: 'PATRONAT',
+        expiresAt: data.expiresAt,
+      });
+      saveEmailForTenant(formData.email.trim(), data.tenant?.id || FEDERIS_EMAIL_KEY);
+
+      // ── 4. Vérification de l'espace patronat (garde-fou Federis) ──
+      //    Un compte Helm valide mais sans patronat ne doit PAS accéder à
+      //    l'espace → logout propre + message explicite.
       try {
         const profileRes = await apiClient.get('/federis/patronat/profile', { timeout: 15000 });
         if (!profileRes.data?.id) {
           throw new Error('NO_PATRONAT');
         }
       } catch (profileErr: any) {
-        // Le compte n'est lié à aucun espace patronat → session inutile
-        await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
+        await logoutCleanup();
         const msg =
           profileErr?.response?.status === 404
             ? "Aucun espace patronat n'est associé à ce compte. Cette connexion est réservée aux patronats et organismes d'examens."
@@ -103,16 +281,20 @@ function FederisLoginForm() {
         return;
       }
 
-      // ── 3. Redirection vers le cockpit institutionnel ──
+      // ── 5. Redirection (pattern Helm : markFreshLogin + full reload) ──
+      markFreshLogin();
       const redirect = searchParams.get('redirect');
-      router.push(redirect || `${federisBase}/dashboard`);
+      window.location.href = redirect || `${federisBase}/dashboard`;
     } catch (error: any) {
       console.error('[FederisLogin] Erreur :', error);
+      const raw = error?.name === 'AbortError' || error?.name === 'TimeoutError'
+        ? 'Le serveur ne répond pas dans les 10 secondes. Vérifiez votre connexion et réessayez.'
+        : error?.message;
       setErrors({
         submit:
-          error?.message === 'Failed to fetch'
+          raw === 'Failed to fetch'
             ? 'Le serveur ne répond pas. Vérifiez votre connexion et réessayez.'
-            : 'Une erreur est survenue lors de la connexion. Veuillez réessayer.',
+            : humanizeLoginError(raw),
       });
     } finally {
       setLoading(false);
@@ -144,66 +326,191 @@ function FederisLoginForm() {
             </p>
           </div>
 
+          {/* Session déjà valide détectée — bouton « Continuer » (pattern Helm) */}
+          {validSessionDetected && !twoFactorPrompt && (
+            <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm text-blue-900 mb-3">
+                Une session active a été détectée sur cet appareil.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href = `${federisBase}/dashboard`;
+                }}
+                className="w-full py-2.5 bg-blue-800 text-white rounded-md font-semibold hover:bg-blue-900 transition-colors inline-flex items-center justify-center gap-2"
+              >
+                Continuer vers le tableau de bord
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
           <form
             onSubmit={handleSubmit}
             className="bg-white rounded-lg shadow-sm border border-gray-200 p-8"
           >
-            <div className="space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Adresse électronique institutionnelle
-                </label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className={cn(
-                    'w-full px-4 py-2 border rounded-md',
-                    errors.email ? 'border-red-300' : 'border-gray-300',
-                    'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
-                  )}
-                  placeholder="contact@patronat.org"
-                  autoComplete="email"
-                  autoFocus
-                />
-                {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Mot de passe
-                </label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className={cn(
-                    'w-full px-4 py-2 border rounded-md',
-                    errors.password ? 'border-red-300' : 'border-gray-300',
-                    'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
-                  )}
-                  placeholder="Votre mot de passe"
-                  autoComplete="current-password"
-                />
-                {errors.password && (
-                  <p className="mt-1 text-sm text-red-600">{errors.password}</p>
-                )}
-              </div>
-
-              {errors.submit && (
-                <div className="p-4 bg-red-50 border border-red-200 rounded-md">
-                  <p className="text-sm text-red-600">{errors.submit}</p>
+            {twoFactorPrompt ? (
+              /* ── Panneau 2FA TOTP (pattern Helm) ── */
+              <div className="space-y-5">
+                <div className="text-center">
+                  <div className="mx-auto mb-3 w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center">
+                    <KeyRound className="h-6 w-6 text-blue-800" />
+                  </div>
+                  <h2 className="text-lg font-semibold text-gray-900">
+                    Double authentification requise
+                  </h2>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Saisissez le code à 6 chiffres généré par votre application
+                    d&rsquo;authentification
+                    {twoFactorPrompt.email ? (
+                      <> pour le compte {twoFactorPrompt.email}</>
+                    ) : null}
+                    .
+                  </p>
                 </div>
-              )}
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 bg-blue-800 text-white rounded-md font-semibold hover:bg-blue-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? 'Connexion en cours…' : 'Se connecter'}
-              </button>
-            </div>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={twoFactorCode}
+                  onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ''))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      submitTwoFactorCode();
+                    }
+                  }}
+                  autoFocus
+                  className="w-full px-4 py-3 border border-gray-300 rounded-md text-center text-2xl tracking-[0.5em] font-mono focus:ring-2 focus:ring-blue-800 focus:border-blue-800"
+                  placeholder="000000"
+                />
+
+                {twoFactorError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-md flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-red-600">{twoFactorError}</p>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={submitTwoFactorCode}
+                  disabled={twoFactorVerifying}
+                  className="w-full py-3 bg-blue-800 text-white rounded-md font-semibold hover:bg-blue-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                >
+                  {twoFactorVerifying ? (
+                    <>
+                      <Loader className="h-4 w-4 animate-spin" />
+                      Vérification…
+                    </>
+                  ) : (
+                    'Valider le code'
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={cancelTwoFactor}
+                  className="w-full py-2 text-sm text-gray-600 hover:text-gray-900"
+                >
+                  Annuler et revenir au formulaire
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Adresse électronique institutionnelle
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className={cn(
+                        'w-full pl-10 pr-4 py-2 border rounded-md',
+                        errors.email ? 'border-red-300' : 'border-gray-300',
+                        'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
+                      )}
+                      placeholder="contact@patronat.org"
+                      autoComplete="email"
+                      autoFocus
+                    />
+                  </div>
+                  {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Mot de passe
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      className={cn(
+                        'w-full pl-10 pr-10 py-2 border rounded-md',
+                        errors.password ? 'border-red-300' : 'border-gray-300',
+                        'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
+                      )}
+                      placeholder="Votre mot de passe"
+                      autoComplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {errors.password && (
+                    <p className="mt-1 text-sm text-red-600">{errors.password}</p>
+                  )}
+                </div>
+
+                {errors.submit && (
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-md flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-red-600">{errors.submit}</p>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-3 bg-blue-800 text-white rounded-md font-semibold hover:bg-blue-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <Loader className="h-4 w-4 animate-spin" />
+                      Connexion en cours…
+                    </>
+                  ) : (
+                    'Se connecter'
+                  )}
+                </button>
+
+                <div className="flex items-center justify-between text-sm">
+                  <a
+                    href={`${getAppBaseUrl()}/forgot-password`}
+                    className="text-gray-500 hover:text-blue-800"
+                  >
+                    Mot de passe oublié ?
+                  </a>
+                  <span className="text-gray-400 inline-flex items-center gap-1">
+                    <KeyRound className="h-3 w-3" />
+                    2FA compatible
+                  </span>
+                </div>
+              </div>
+            )}
           </form>
 
           <div className="mt-6 text-center space-y-2">

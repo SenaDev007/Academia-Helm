@@ -129,7 +129,15 @@ export default function DisciplineWorkspace({
 
       if (rulesRes?.ok) { const d = await rulesRes.json(); setRules(Array.isArray(d) ? d : []); }
       if (sanctionsRes?.ok) { const d = await sanctionsRes.json(); setSanctions(Array.isArray(d) ? d : []); }
-      if (classesRes?.ok) { const d = await classesRes.json(); setClasses(Array.isArray(d) ? d : []); }
+      if (classesRes?.ok) {
+        const d = await classesRes.json();
+        const allClasses = Array.isArray(d) ? d : [];
+        // ⭐ Filtrer pour ne garder QUE les classes secondaires (vie scolaire = secondaire uniquement)
+        const secondaryClasses = allClasses.filter((c: any) =>
+          (c as any).schoolLevel?.code === 'SECONDAIRE'
+        );
+        setClasses(secondaryClasses);
+      }
 
       // ⭐ Charger les settings de conduite (baseline configurable)
       const settingsRes = await fetch(`/api/discipline/conduct/settings?${params}`, { headers: { ...authHeaders }, credentials: 'include' }).catch(() => null);
@@ -151,7 +159,7 @@ export default function DisciplineWorkspace({
     setLoadingClassStudents(prev => { const n = new Set(prev); n.add(classId); return n; });
     try {
       const authHeaders = getClientAuthorizationHeader();
-      const params = new URLSearchParams({ classId, academicYearId: academicYear?.id || '', status: 'ACTIVE' });
+      const params = new URLSearchParams({ classId, academicYearId: academicYear?.id || '', status: 'ACTIVE,ADMITTED' });
       const res = await fetch(`/api/students?${params}`, { headers: { ...authHeaders }, credentials: 'include' });
       if (res.ok) {
         const d = await res.json();
@@ -182,7 +190,11 @@ export default function DisciplineWorkspace({
       }
       levelMap.get(levelCode)!.classes.push(cls);
     }
-    return Array.from(levelMap.values());
+    // ⭐ Tri : SECONDAIRE en premier (vie scolaire = secondaire uniquement)
+    const ORDER = ['SECONDAIRE', 'PRIMAIRE', 'MATERNELLE', 'OTHER'];
+    return Array.from(levelMap.values()).sort((a, b) =>
+      ORDER.indexOf(a.levelCode) - ORDER.indexOf(b.levelCode)
+    );
   }, [classes]);
 
   // Sanctions par classe
@@ -218,14 +230,14 @@ export default function DisciplineWorkspace({
         </div>
         <div className="flex gap-2">
           {activeTab === 'rules' && (
-            <Button onClick={() => { setEditingRule(null); setShowRuleModal(true); }} className="bg-amber-600 hover:bg-amber-700">
+            <Button onClick={() => { setEditingRule(null); setShowRuleModal(true); }} className="bg-blue-600 hover:bg-blue-700 text-white">
               <Plus className="w-4 h-4 mr-2" /> Nouvelle règle
             </Button>
           )}
-          <Button onClick={() => setShowSettingsModal(true)} className="bg-slate-600 hover:bg-slate-700" title="Configurer la moyenne de conduite">
+          <Button onClick={() => setShowSettingsModal(true)} className="bg-blue-600 hover:bg-blue-700 text-white" title="Configurer la moyenne de conduite">
             <Settings className="w-4 h-4 mr-2" /> Paramètres conduite
           </Button>
-          <Button onClick={() => { setModalClassId(null); setModalClassName(''); setModalStudentId(null); setModalStudentName(''); setShowSanctionModal(true); }} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={() => { setModalClassId(null); setModalClassName(''); setModalStudentId(null); setModalStudentName(''); setShowSanctionModal(true); }} className="bg-blue-600 hover:bg-blue-700 text-white">
             <Plus className="w-4 h-4 mr-2" /> Nouvelle sanction
           </Button>
         </div>
@@ -410,7 +422,7 @@ export default function DisciplineWorkspace({
 
       {/* ⭐ Modal d'annulation de sanction */}
       {cancellingSanctionId && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 pt-20">
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
             className="bg-white rounded-xl shadow-2xl max-w-md w-full">
             <div className="flex items-center justify-between p-4 border-b bg-red-50 rounded-t-xl">
@@ -447,7 +459,7 @@ export default function DisciplineWorkspace({
       )}
       {/* ⭐ Modal de suppression de règle */}
       {deletingRuleId && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 pt-20">
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
             className="bg-white rounded-xl shadow-2xl max-w-sm w-full">
             <div className="flex items-center justify-between p-4 border-b bg-red-50 rounded-t-xl">
@@ -672,9 +684,9 @@ function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelI
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 pt-20">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2">
@@ -793,12 +805,12 @@ function RuleModal({ onClose, onSuccess, editingRule }: { onClose: () => void; o
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 pt-20">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         className="bg-white rounded-xl shadow-2xl max-w-lg w-full">
-        <div className="flex items-center justify-between p-4 border-b bg-amber-50 rounded-t-xl">
-          <h3 className="text-lg font-bold text-amber-900 flex items-center gap-2"><Settings className="w-5 h-5" /> {isEditing ? 'Modifier la règle' : 'Nouvelle règle de faute'}</h3>
-          <button onClick={onClose} className="p-1 hover:bg-amber-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
+        <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
+          <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2"><Settings className="w-5 h-5" /> {isEditing ? 'Modifier la règle' : 'Nouvelle règle de faute'}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-blue-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
         </div>
         <div className="p-4 space-y-4">
           <div>
@@ -836,7 +848,7 @@ function RuleModal({ onClose, onSuccess, editingRule }: { onClose: () => void; o
         </div>
         <div className="flex justify-end gap-2 p-4 border-t">
           <Button variant="outline" onClick={onClose}>Annuler</Button>
-          <Button onClick={handleSave} disabled={saving} className="bg-amber-600 hover:bg-amber-700">
+          <Button onClick={handleSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : isEditing ? <Edit className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />} {isEditing ? 'Modifier' : 'Créer'}
           </Button>
         </div>
@@ -935,14 +947,14 @@ function ConductSettingsModal({ onClose, onSuccess, academicYearId, schoolLevelI
   };
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 pt-20">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         className="bg-white rounded-xl shadow-2xl max-w-md w-full">
-        <div className="flex items-center justify-between p-4 border-b bg-slate-50 rounded-t-xl">
+        <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <Settings className="w-5 h-5" /> Paramètres de conduite
           </h3>
-          <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
+          <button onClick={onClose} className="p-1 hover:bg-blue-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
         </div>
         <div className="p-4 space-y-4">
           <div>
@@ -964,10 +976,10 @@ function ConductSettingsModal({ onClose, onSuccess, academicYearId, schoolLevelI
             <br/>Au niveau du bulletin, une ligne « Conduite » sera ajoutée avec cette note.
           </div>
         </div>
-        <div className="flex justify-end gap-2 p-4 border-t bg-slate-50 rounded-b-xl">
+        <div className="flex justify-end gap-2 p-4 border-t bg-blue-50 rounded-b-xl">
           <Button onClick={onClose} variant="outline" className="px-4 py-2">Annuler</Button>
           <Button onClick={handleSave} disabled={saving}
-            className="bg-slate-600 hover:bg-slate-700 text-white px-4 py-2">
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2">
             {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Settings className="w-4 h-4 mr-2" />}
             Sauvegarder
           </Button>

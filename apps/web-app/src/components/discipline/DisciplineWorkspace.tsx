@@ -63,7 +63,55 @@ export default function DisciplineWorkspace({
   // ⭐ Settings de conduite (baseline configurable par l'école)
   const [conductSettings, setConductSettings] = useState<{ conduct_reference: number; critical_threshold: number }>({ conduct_reference: 17, critical_threshold: 5 });
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [cancellingSanctionId, setCancellingSanctionId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [editingRule, setEditingRule] = useState<DisciplineRule | null>(null);
+  const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  // ⭐ Annuler une sanction (DELETE /api/discipline/sanctions/:id avec reason)
+  const handleCancelSanction = async (sanctionId: string) => {
+    if (!cancelReason.trim()) {
+      toast({ title: 'Erreur', description: 'Veuillez indiquer le motif d\'annulation', variant: 'destructive' });
+      return;
+    }
+    try {
+      const authHeaders = getClientAuthorizationHeader();
+      const res = await fetch(`/api/discipline/sanctions/${sanctionId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        credentials: 'include',
+        body: JSON.stringify({ reason: cancelReason }),
+      });
+      if (!res.ok) throw new Error('Erreur lors de l\'annulation');
+      toast({ title: '✅ Sanction annulée', description: 'Les points ont été remboursés au compteur de conduite' });
+      setCancellingSanctionId(null);
+      setCancelReason('');
+      loadData();
+    } catch (err: any) {
+      toast({ title: 'Erreur', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  // ⭐ Supprimer une règle (PUT /api/discipline/rules/:id avec isActive=false)
+  const handleDeleteRule = async (ruleId: string) => {
+    try {
+      const authHeaders = getClientAuthorizationHeader();
+      // Désactiver la règle (PUT isActive=false au lieu de DELETE hard)
+      const res = await fetch(`/api/discipline/rules`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        credentials: 'include',
+        body: JSON.stringify({ id: ruleId, isActive: false }),
+      });
+      if (!res.ok) throw new Error('Erreur lors de la suppression');
+      toast({ title: '✅ Règle supprimée', description: 'La règle a été désactivée' });
+      setDeletingRuleId(null);
+      loadData();
+    } catch (err: any) {
+      toast({ title: 'Erreur', description: err.message, variant: 'destructive' });
+    }
+  };
 
   const loadData = useCallback(async () => {
     if (!academicYear?.id) { setLoading(false); return; }
@@ -283,6 +331,7 @@ export default function DisciplineWorkspace({
                                     <TableHead className="text-xs whitespace-nowrap">Date</TableHead>
                                     <TableHead className="text-xs text-center whitespace-nowrap">Statut</TableHead>
                                     <TableHead className="text-xs text-center whitespace-nowrap">Notif. parent</TableHead>
+                                    <TableHead className="text-xs text-center whitespace-nowrap">Action</TableHead>
                                   </TableRow></TableHeader>
                                   <TableBody>
                                     {clsSanctions.map(s => (
@@ -298,6 +347,14 @@ export default function DisciplineWorkspace({
                                         </TableCell>
                                         <TableCell className="text-xs text-center whitespace-nowrap">
                                           <NotificationBadge status={s.notificationStatus} channels={s.notificationChannels} />
+                                        </TableCell>
+                                        <TableCell className="text-xs text-center whitespace-nowrap">
+                                          {s.status === 'ACTIVE' && (
+                                            <button onClick={() => { setCancellingSanctionId(s.id); setCancelReason(''); }}
+                                              className="px-2 py-0.5 text-[10px] font-bold bg-red-600 text-white rounded hover:bg-red-700 transition-colors">
+                                              Annuler
+                                            </button>
+                                          )}
                                         </TableCell>
                                       </TableRow>
                                     ))}
@@ -321,7 +378,7 @@ export default function DisciplineWorkspace({
           conductReference={conductSettings.conduct_reference} criticalThreshold={conductSettings.critical_threshold} />
       ) : (
         /* ── Barème des fautes ── */
-        <RulesTab rules={rules} onEdit={() => {}} onDelete={() => {}} />
+        <RulesTab rules={rules} onEdit={(r) => { setEditingRule(r); }} onDelete={(id) => { setDeletingRuleId(id); }} />
       )}
 
       {showSanctionModal && (
@@ -349,6 +406,65 @@ export default function DisciplineWorkspace({
           currentReference={conductSettings.conduct_reference}
           currentThreshold={conductSettings.critical_threshold}
         />
+      )}
+
+      {/* ⭐ Modal d'annulation de sanction */}
+      {cancellingSanctionId && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            <div className="flex items-center justify-between p-4 border-b bg-red-50 rounded-t-xl">
+              <h3 className="text-lg font-bold text-red-900 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5" /> Annuler la sanction
+              </h3>
+              <button onClick={() => { setCancellingSanctionId(null); setCancelReason(''); }}
+                className="p-1 hover:bg-red-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
+            </div>
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-gray-600">
+                L'annulation d'une sanction rembourse les points déduits au compteur de conduite de l'élève.
+                Cette action est définitive.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Motif d'annulation *</label>
+                <textarea rows={3} value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="Ex: Erreur de saisie, sanction injustifiée..."
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg resize-none" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t bg-gray-50 rounded-b-xl">
+              <Button onClick={() => { setCancellingSanctionId(null); setCancelReason(''); }} variant="outline" className="px-4 py-2">
+                Fermer
+              </Button>
+              <Button onClick={() => handleCancelSanction(cancellingSanctionId)}
+                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2">
+                <AlertTriangle className="w-4 h-4 mr-2" /> Confirmer l'annulation
+              </Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+      {/* ⭐ Modal de suppression de règle */}
+      {deletingRuleId && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-xl shadow-2xl max-w-sm w-full">
+            <div className="flex items-center justify-between p-4 border-b bg-red-50 rounded-t-xl">
+              <h3 className="text-lg font-bold text-red-900">Supprimer la règle</h3>
+              <button onClick={() => setDeletingRuleId(null)} className="p-1 hover:bg-red-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
+            </div>
+            <div className="p-4">
+              <p className="text-sm text-gray-600">Voulez-vous vraiment supprimer cette règle ? Elle sera désactivée et n'apparaîtra plus dans le barème.</p>
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t bg-gray-50 rounded-b-xl">
+              <Button onClick={() => setDeletingRuleId(null)} variant="outline" className="px-4 py-2">Annuler</Button>
+              <Button onClick={() => handleDeleteRule(deletingRuleId)} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2">
+                <Trash2 className="w-4 h-4 mr-2" /> Supprimer
+              </Button>
+            </div>
+          </motion.div>
+        </div>
       )}
     </div>
   );
@@ -440,10 +556,11 @@ function RulesTab({ rules, onEdit, onDelete }: {
           <TableHead className="text-right whitespace-nowrap">Heures</TableHead>
           <TableHead className="text-right whitespace-nowrap">Points</TableHead>
           <TableHead className="text-center whitespace-nowrap">Gravité</TableHead>
+          <TableHead className="text-center whitespace-nowrap">Actions</TableHead>
         </TableRow></TableHeader>
         <TableBody>
           {rules.length === 0 ? (
-            <TableRow><TableCell colSpan={5} className="text-center text-gray-500 py-8">Aucune règle configurée. Cliquez sur "Nouvelle règle".</TableCell></TableRow>
+            <TableRow><TableCell colSpan={6} className="text-center text-gray-500 py-8">Aucune règle configurée. Cliquez sur "Nouvelle règle".</TableCell></TableRow>
           ) : rules.map(r => (
             <TableRow key={r.id} className="hover:bg-slate-50">
               <TableCell className="font-medium whitespace-nowrap">{r.name}</TableCell>
@@ -454,6 +571,16 @@ function RulesTab({ rules, onEdit, onDelete }: {
                 <span className={cn('px-2 py-0.5 rounded-full text-xs font-bold border', SEVERITY_COLORS[r.severity])}>
                   {SEVERITY_LABELS[r.severity] || r.severity}
                 </span>
+              </TableCell>
+              <TableCell className="text-center whitespace-nowrap">
+                <div className="flex items-center justify-center gap-1">
+                  <button onClick={() => onEdit(r)} className="p-1 text-blue-600 hover:bg-blue-100 rounded" title="Modifier">
+                    <Edit className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => onDelete(r.id)} className="p-1 text-red-600 hover:bg-red-100 rounded" title="Supprimer">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </TableCell>
             </TableRow>
           ))}

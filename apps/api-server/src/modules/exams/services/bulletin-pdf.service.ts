@@ -675,7 +675,7 @@ export class BulletinPdfService {
       <div style="margin-top:30px;"></div>
       <div class="footer">
         Ce bulletin est établi qu'une seule fois, veuillez le conserver précieusement<br/>
-        Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0144000001'}
+        Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0141360803'}
       </div>
       <!-- SAUT DE PAGE -->
       <div style="page-break-after:always;"></div>`;
@@ -1210,7 +1210,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </div>
   </div>
 
-  <div class="footer">Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0144000001'}</div>
+  <div class="footer">Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0141360803'}</div>
 </div>
 
 </body>
@@ -2196,7 +2196,7 @@ ${page2Content}
 
   <div class="footer-official">
     Ce bulletin est établi qu'une seule fois, veuillez le conserver précieusement<br/>
-    Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0144000001'}
+    Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0141360803'}
   </div>
 
   </body></html>`;

@@ -528,6 +528,7 @@ model Country {
   salaryPolicies  SalaryPolicy[]
   tenants         Tenant[]
   territorialLevels CountryTerritorialLevel[]
+  territories     CountryTerritory[]
   patronats       Patronat[]
 
   @@map("countries")
@@ -549,10 +550,37 @@ model CountryTerritorialLevel {
   updatedAt   DateTime  @updatedAt
   country     Country   @relation(fields: [countryId], references: [id], onDelete: Cascade)
   patronats   Patronat[]
+  territories CountryTerritory[]
 
   @@unique([countryId, code])
   @@index([countryId])
   @@map("country_territorial_levels")
+}
+
+/// ⭐ Academia Federis — Unités territoriales de référence par pays
+/// (départements du Bénin, régions, provinces…). Alimente les sélecteurs
+/// « Département / Région » de l'inscription et de la création de patronat
+/// territorial : plus de saisie libre, une liste fiable par pays.
+model CountryTerritory {
+  id                 String                   @id @default(uuid())
+  countryId          String
+  /// Niveau territorial de rattachement (ex: DEPARTMENT) — optionnel
+  territorialLevelId String?
+  /// Libellé officiel (ex: Atlantique, Borgou…)
+  name               String
+  /// Code usuel éventuel (ex: BJ-AT pour l'Atlantique)
+  code               String?
+  /// Ordre d'affichage alphabétique/officiel dans les sélecteurs
+  order              Int                      @default(0)
+  isActive           Boolean                  @default(true)
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  country            Country                  @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  territorialLevel   CountryTerritorialLevel? @relation(fields: [territorialLevelId], references: [id])
+
+  @@unique([countryId, name])
+  @@index([countryId])
+  @@map("country_territories")
 }
 
 model AcademicYear {

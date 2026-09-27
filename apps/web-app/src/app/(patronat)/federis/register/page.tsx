@@ -1,14 +1,21 @@
 /**
  * Page d'inscription Academia Federis
  *
- * Création de compte Patronat / Organisme d'examen en 3 étapes
- * (cahier des charges §6.3 + wireframe §10.1) :
+ * Création de compte Patronat en 3 étapes (cahier des charges §6.3 + wireframe §10.1) :
  *   1. Informations institutionnelles (pays, niveau territorial configurable,
- *      nom, unité territoriale, patronat national de rattachement, type d'organisme)
+ *      nom, département — sélectionné dans la liste du pays — patronat national
+ *      de rattachement)
  *   2. Responsable et accès (nom, email institutionnel, téléphone)
  *   3. Mot de passe et confirmation → POST /federis/public/register → /checkout
  *
  * Le patronat existe avant les écoles : aucune école n'est demandée ici.
+ *
+ * Département : dès qu'un pays est sélectionné, le sélecteur liste ses unités
+ * territoriales de référence (CountryTerritory — ex: les 12 départements du
+ * Bénin). Un pays sans liste configurée conserve un champ texte libre.
+ *
+ * Type d'organisation : Federis est dédié aux patronats — le champ n'est plus
+ * affiché ; PATRONAT est transmis par défaut à l'API.
  */
 
 'use client';
@@ -40,6 +47,15 @@ interface CountryOption {
   name: string;
   phonePrefix?: string;
   territorialLevels: TerritorialLevel[];
+  /** Unités territoriales de référence (départements…) — sélecteur */
+  territories?: TerritoryOption[];
+}
+
+interface TerritoryOption {
+  id: string;
+  name: string;
+  code?: string;
+  order: number;
 }
 
 interface NationalPatronat {
@@ -47,14 +63,6 @@ interface NationalPatronat {
   name: string;
   abbreviation?: string;
 }
-
-type OrganismType = 'PATRONAT' | 'ASSOCIATION' | 'ORGANISME';
-
-const ORGANISM_OPTIONS: Array<{ value: OrganismType; label: string }> = [
-  { value: 'PATRONAT', label: 'Patronat' },
-  { value: 'ASSOCIATION', label: 'Association' },
-  { value: 'ORGANISME', label: 'Organisme' },
-];
 
 export default function FederisRegisterPage() {
   const router = useRouter();
@@ -73,7 +81,6 @@ export default function FederisRegisterPage() {
     name: '',
     territoryName: '',
     parentPatronatId: '',
-    organismType: '' as OrganismType | '',
     // Étape 2 — Responsable et accès
     responsibleName: '',
     email: '',
@@ -117,6 +124,9 @@ export default function FederisRegisterPage() {
     : selectedLevel
       ? selectedLevel.label
       : 'Unité territoriale';
+  // Départements du pays sélectionné — le sélecteur remplace la saisie libre
+  // dès qu'une liste de référence existe (ex: 12 départements du Bénin).
+  const countryTerritories = selectedCountry?.territories ?? [];
 
   // Patronats nationaux du pays sélectionné (rattachement des territoriaux)
   const loadNationalPatronats = useCallback(async (countryId: string) => {
@@ -164,8 +174,15 @@ export default function FederisRegisterPage() {
         ) {
           newErrors.parentPatronatId = 'Patronat national invalide pour ce pays';
         }
+        if (
+          countryTerritories.length > 0 &&
+          !countryTerritories.some(
+            (t) => t.name.toLowerCase() === formData.territoryName.trim().toLowerCase(),
+          )
+        ) {
+          newErrors.territoryName = `Sélectionnez un ${territoryLabel.toLowerCase()} dans la liste`;
+        }
       }
-      if (!formData.organismType) newErrors.organismType = "Le type d'organisme est requis";
     } else if (stepNumber === 2) {
       if (!formData.responsibleName.trim())
         newErrors.responsibleName = 'Le nom du responsable est requis';
@@ -204,7 +221,9 @@ export default function FederisRegisterPage() {
         name: formData.name.trim(),
         territoryName: isNational ? 'National' : formData.territoryName.trim(),
         parentPatronatId: isNational ? undefined : formData.parentPatronatId,
-        organismType: formData.organismType,
+        // Federis est dédié aux patronats : valeur par défaut appliquée côté
+        // serveur également (le champ n'est plus affiché dans le formulaire).
+        organismType: 'PATRONAT' as const,
         responsibleName: formData.responsibleName.trim(),
         email: formData.email.trim().toLowerCase(),
         phone: formData.phone.trim(),
@@ -297,7 +316,7 @@ export default function FederisRegisterPage() {
               />
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white mb-2 tracking-tight">
-              Créer un compte Patronat / Organisme d&rsquo;examen
+              Créer un compte Patronat
             </h1>
             <p className="text-blue-100/60 text-sm">
               Inscrivez votre organisation pour coordonner vos écoles membres et organiser vos
@@ -365,6 +384,7 @@ export default function FederisRegisterPage() {
                         ...formData,
                         countryId: e.target.value,
                         territorialLevelCode: '',
+                        territoryName: '',
                         parentPatronatId: '',
                       })
                     }
@@ -421,8 +441,7 @@ export default function FederisRegisterPage() {
 
                 <div>
                   <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
-                    Nom du patronat ou de l&rsquo;association{' '}
-                    <span className="text-red-500">*</span>
+                    Nom du patronat <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -441,23 +460,48 @@ export default function FederisRegisterPage() {
                   <>
                     <div>
                       <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
-                        {territoryLabel} (département, région ou autre unité territoriale){' '}
-                        <span className="text-red-500">*</span>
+                        {territoryLabel} <span className="text-red-500">*</span>
                       </label>
-                      <input
-                        type="text"
-                        value={formData.territoryName}
-                        onChange={(e) =>
-                          setFormData({ ...formData, territoryName: e.target.value })
-                        }
-                        className={cn(
-                          'fed-input px-4 py-2',
-                          errors.territoryName ? '!border-red-500/60' : '',
-                        )}
-                        placeholder={
-                          selectedCountry?.code === 'BJ' ? 'Ex : Atlantique' : 'Ex : Région du…'
-                        }
-                      />
+                      {countryTerritories.length > 0 ? (
+                        /* Liste de référence du pays (ex: 12 départements du Bénin) */
+                        <>
+                          <select
+                            value={formData.territoryName}
+                            onChange={(e) =>
+                              setFormData({ ...formData, territoryName: e.target.value })
+                            }
+                            className={cn(
+                              'fed-input px-4 py-2',
+                              errors.territoryName ? '!border-red-500/60' : '',
+                            )}
+                          >
+                            <option value="">Sélectionner le {territoryLabel.toLowerCase()}…</option>
+                            {countryTerritories.map((t) => (
+                              <option key={t.id} value={t.name}>
+                                {t.name}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-1.5 text-xs text-blue-100/50">
+                            Liste officielle des {territoryLabel.toLowerCase()}s de{' '}
+                            {selectedCountry?.name}.
+                          </p>
+                        </>
+                      ) : (
+                        /* Pays sans liste configurée : saisie libre (compatibilité multi-pays) */
+                        <input
+                          type="text"
+                          value={formData.territoryName}
+                          onChange={(e) =>
+                            setFormData({ ...formData, territoryName: e.target.value })
+                          }
+                          className={cn(
+                            'fed-input px-4 py-2',
+                            errors.territoryName ? '!border-red-500/60' : '',
+                          )}
+                          placeholder="Ex : Région du…"
+                        />
+                      )}
                       {errors.territoryName && (
                         <p className="mt-1 text-sm text-red-400">{errors.territoryName}</p>
                       )}
@@ -504,32 +548,6 @@ export default function FederisRegisterPage() {
                     </div>
                   </>
                 )}
-
-                <div>
-                  <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
-                    Type d&rsquo;organisme <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    value={formData.organismType}
-                    onChange={(e) =>
-                      setFormData({ ...formData, organismType: e.target.value as OrganismType })
-                    }
-                    className={cn(
-                      'fed-input px-4 py-2',
-                      errors.organismType ? '!border-red-500/60' : '',
-                    )}
-                  >
-                    <option value="">Sélectionner…</option>
-                    {ORGANISM_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.organismType && (
-                    <p className="mt-1 text-sm text-red-400">{errors.organismType}</p>
-                  )}
-                </div>
 
                 <div className="flex justify-end">
                   <button

@@ -47,7 +47,8 @@ export type FederisPlanCode = keyof typeof FEDERIS_PLANS;
 export class CreateChildPatronatDto {
   name!: string;
   territoryName!: string;
-  organismType!: 'PATRONAT' | 'ASSOCIATION' | 'ORGANISME';
+  /** Obsolète : Federis est dédié aux patronats — PATRONAT appliqué par défaut */
+  organismType?: 'PATRONAT' | 'ASSOCIATION' | 'ORGANISME';
   responsibleName?: string;
   email?: string;
   phone?: string;
@@ -508,7 +509,7 @@ export class FederisPatronatService {
           countryId: parent.countryId,
           subscriptionPlan: 'ESSENTIEL',
           subscriptionStatus: 'PENDING_PAYMENT',
-          metadata: { organismType: dto.organismType, createdBy: userId },
+          metadata: { organismType: dto.organismType ?? 'PATRONAT', createdBy: userId },
         },
       });
 

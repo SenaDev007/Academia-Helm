@@ -2,14 +2,17 @@
  * FederisRegisterService — Inscription patronat (multi-pays, hiérarchique)
  *
  * Parcours défini par le cahier des charges Academia Federis §6.3 :
- *   1. Informations institutionnelles (pays, niveau territorial, nom, territoire,
- *      patronat national de rattachement, type d'organisme)
+ *   1. Informations institutionnelles (pays, niveau territorial, nom, département
+ *      sélectionné dans la liste du pays, patronat national de rattachement)
  *   2. Responsable et accès (nom, email institutionnel, téléphone)
  *   3. Mot de passe → création du compte → redirection /checkout
  *
  * Le patronat existe AVANT les écoles : aucune école n'est nécessaire.
  * Règle « NO ACADEMIC YEAR = NO DATA » : une année scolaire active est créée
  * avec l'espace patronat.
+ *
+ * Type d'organisation : Federis est dédié aux patronats — le champ n'est plus
+ * affiché à l'inscription ; la valeur PATRONAT est appliquée par défaut.
  */
 
 import {
@@ -28,11 +31,12 @@ export class RegisterPatronatDto {
   /** Niveau institutionnel : NATIONAL ou code du niveau territorial (ex: DEPARTMENT) */
   territorialLevelCode!: string;
   name!: string;
-  /** Libellé de l'unité territoriale (ex: Atlantique) */
+  /** Libellé de l'unité territoriale (ex: Atlantique) — sélectionnée dans la liste du pays */
   territoryName!: string;
   /** Patronat national de rattachement — obligatoire si niveau territorial */
   parentPatronatId?: string;
-  organismType!: 'PATRONAT' | 'ASSOCIATION' | 'ORGANISME';
+  /** Obsolète : Federis est dédié aux patronats — PATRONAT appliqué par défaut */
+  organismType?: 'PATRONAT' | 'ASSOCIATION' | 'ORGANISME';
   // Étape 2 — Responsable et accès
   responsibleName!: string;
   email!: string;
@@ -68,7 +72,12 @@ export class FederisRegisterService {
     return slug;
   }
 
-  /** Pays actifs avec leurs niveaux territoriaux configurés. */
+  /**
+   * Pays actifs avec leurs niveaux territoriaux et unités territoriales de
+   * référence (départements…). Les territoires alimentent le sélecteur
+   * « Département » de l'inscription ; un pays sans territoire configuré
+   * conserve un champ texte libre (compatibilité multi-pays).
+   */
   async getCountriesWithLevels() {
     const countries = await this.prisma.country.findMany({
       where: { isActive: true },
@@ -82,6 +91,11 @@ export class FederisRegisterService {
           where: { isActive: true },
           orderBy: { order: 'asc' },
           select: { id: true, code: true, label: true, order: true },
+        },
+        territories: {
+          where: { isActive: true },
+          orderBy: [{ order: 'asc' }, { name: 'asc' }],
+          select: { id: true, name: true, code: true, order: true },
         },
       },
       orderBy: { name: 'asc' },
@@ -115,9 +129,12 @@ export class FederisRegisterService {
    */
   async registerPatronat(dto: RegisterPatronatDto) {
     // ── Validations ──────────────────────────────────────────────
-    if (!ORGANISM_TYPES.has(dto.organismType)) {
-      throw new BadRequestException("Type d'organisme invalide.");
-    }
+    // Federis est dédié aux patronats : le sélecteur n'est plus affiché,
+    // PATRONAT est la valeur par défaut (champ accepté pour compatibilité).
+    const organismType: 'PATRONAT' | 'ASSOCIATION' | 'ORGANISME' =
+      dto.organismType && ORGANISM_TYPES.has(dto.organismType)
+        ? dto.organismType
+        : 'PATRONAT';
     if (dto.password && dto.password.length < 8) {
       throw new BadRequestException('Le mot de passe doit contenir au moins 8 caractères.');
     }
@@ -139,6 +156,26 @@ export class FederisRegisterService {
       );
     }
     const isNational = level.code === 'NATIONAL' || level.order === 1;
+
+    // Département / unité territoriale : si le pays dispose d'une liste de
+    // référence (CountryTerritory), la valeur doit en faire partie — plus de
+    // saisie libre (ex: les 12 départements du Bénin).
+    if (!isNational && dto.territoryName?.trim()) {
+      const referenceTerritories = await this.prisma.countryTerritory.findMany({
+        where: { countryId: country.id, isActive: true },
+        select: { name: true },
+      });
+      if (
+        referenceTerritories.length > 0 &&
+        !referenceTerritories.some(
+          (t) => t.name.trim().toLowerCase() === dto.territoryName.trim().toLowerCase(),
+        )
+      ) {
+        throw new BadRequestException(
+          `« ${dto.territoryName.trim()} » ne fait pas partie des unités territoriales configurées pour ce pays. Sélectionnez une valeur dans la liste.`,
+        );
+      }
+    }
 
     // Hiérarchie : un territorial DOIT se rattacher à un national du même pays.
     let parentPatronatId: string | null = null;
@@ -218,7 +255,7 @@ export class FederisRegisterService {
           subscriptionPlan: 'ESSENTIEL',
           subscriptionStatus: 'PENDING_PAYMENT',
           subscriptionPeriod: 'SCHOOL_YEAR',
-          metadata: { organismType: dto.organismType },
+          metadata: { organismType },
         },
       });
 
@@ -291,7 +328,7 @@ export class FederisRegisterService {
             orgLevel: patronat.orgLevel,
             country: country.code,
             territoryName: patronat.territoryName,
-            organismType: dto.organismType,
+            organismType,
           },
         },
       });

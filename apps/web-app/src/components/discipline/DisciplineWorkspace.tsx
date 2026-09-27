@@ -54,7 +54,15 @@ export default function DisciplineWorkspace({
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [modalClassId, setModalClassId] = useState<string | null>(null);
   const [modalClassName, setModalClassName] = useState<string>('');
+  const [modalStudentId, setModalStudentId] = useState<string | null>(null);
+  const [modalStudentName, setModalStudentName] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
+  // ⭐ Élèves par classe (chargés à la demande quand on déplie une classe)
+  const [classStudents, setClassStudents] = useState<Map<string, any[]>>(new Map());
+  const [loadingClassStudents, setLoadingClassStudents] = useState<Set<string>>(new Set());
+  // ⭐ Settings de conduite (baseline configurable par l'école)
+  const [conductSettings, setConductSettings] = useState<{ conduct_reference: number; critical_threshold: number }>({ conduct_reference: 17, critical_threshold: 5 });
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const { toast } = useToast();
 
   const loadData = useCallback(async () => {
@@ -74,11 +82,46 @@ export default function DisciplineWorkspace({
       if (rulesRes?.ok) { const d = await rulesRes.json(); setRules(Array.isArray(d) ? d : []); }
       if (sanctionsRes?.ok) { const d = await sanctionsRes.json(); setSanctions(Array.isArray(d) ? d : []); }
       if (classesRes?.ok) { const d = await classesRes.json(); setClasses(Array.isArray(d) ? d : []); }
+
+      // ⭐ Charger les settings de conduite (baseline configurable)
+      const settingsRes = await fetch(`/api/discipline/conduct/settings?${params}`, { headers: { ...authHeaders }, credentials: 'include' }).catch(() => null);
+      if (settingsRes?.ok) {
+        const sd = await settingsRes.json();
+        if (sd && typeof sd.conduct_reference === 'number') {
+          setConductSettings({ conduct_reference: sd.conduct_reference, critical_threshold: sd.critical_threshold ?? 5 });
+        }
+      }
     } catch (err) { console.error('Discipline load error:', err); }
     finally { setLoading(false); }
   }, [academicYear?.id, schoolLevelId]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // ⭐ Charger les élèves d'une classe (à la demande quand on déplie une classe)
+  const loadClassStudents = useCallback(async (classId: string) => {
+    if (classStudents.has(classId)) return; // déjà chargé
+    setLoadingClassStudents(prev => { const n = new Set(prev); n.add(classId); return n; });
+    try {
+      const authHeaders = getClientAuthorizationHeader();
+      const params = new URLSearchParams({ classId, academicYearId: academicYear?.id || '', status: 'ACTIVE' });
+      const res = await fetch(`/api/students?${params}`, { headers: { ...authHeaders }, credentials: 'include' });
+      if (res.ok) {
+        const d = await res.json();
+        const list = Array.isArray(d) ? d : (d?.items || []);
+        setClassStudents(prev => { const n = new Map(prev); n.set(classId, list); return n; });
+      }
+    } catch (err) { console.error('loadClassStudents error:', err); }
+    finally { setLoadingClassStudents(prev => { const n = new Set(prev); n.delete(classId); return n; }); }
+  }, [academicYear?.id, classStudents]);
+
+  const toggleClass = (id: string) => {
+    setExpandedClasses(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) { n.delete(id); }
+      else { n.add(id); loadClassStudents(id); } // ⭐ Charger les élèves au dépliage
+      return n;
+    });
+  };
 
   // Grouper les classes par niveau scolaire
   const levelGroups = useMemo<LevelGroup[]>(() => {
@@ -108,12 +151,11 @@ export default function DisciplineWorkspace({
   const toggleLevel = (code: string) => {
     setExpandedLevels(prev => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; });
   };
-  const toggleClass = (id: string) => {
-    setExpandedClasses(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  };
 
-  const openSanctionModal = (classId: string, className: string) => {
-    setModalClassId(classId); setModalClassName(className); setShowSanctionModal(true);
+  const openSanctionModal = (classId: string | null, className: string, studentId?: string, studentName?: string) => {
+    setModalClassId(classId); setModalClassName(className);
+    setModalStudentId(studentId || null); setModalStudentName(studentName || '');
+    setShowSanctionModal(true);
   };
 
   return (
@@ -132,7 +174,10 @@ export default function DisciplineWorkspace({
               <Plus className="w-4 h-4 mr-2" /> Nouvelle règle
             </Button>
           )}
-          <Button onClick={() => { setModalClassId(null); setModalClassName(''); setShowSanctionModal(true); }} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={() => setShowSettingsModal(true)} className="bg-slate-600 hover:bg-slate-700" title="Configurer la moyenne de conduite">
+            <Settings className="w-4 h-4 mr-2" /> Paramètres conduite
+          </Button>
+          <Button onClick={() => { setModalClassId(null); setModalClassName(''); setModalStudentId(null); setModalStudentName(''); setShowSanctionModal(true); }} className="bg-blue-600 hover:bg-blue-700">
             <Plus className="w-4 h-4 mr-2" /> Nouvelle sanction
           </Button>
         </div>
@@ -189,37 +234,77 @@ export default function DisciplineWorkspace({
                             </button>
                           </div>
                         </button>
-                        {expandedClasses.has(cls.id) && clsSanctions.length > 0 && (
-                          <div className="px-8 pb-3">
-                            <Table>
-                              <TableHeader><TableRow className="bg-gray-50">
-                                <TableHead className="text-xs whitespace-nowrap">Élève</TableHead>
-                                <TableHead className="text-xs whitespace-nowrap">Faute</TableHead>
-                                <TableHead className="text-xs text-right whitespace-nowrap">Heures</TableHead>
-                                <TableHead className="text-xs text-right whitespace-nowrap">Points</TableHead>
-                                <TableHead className="text-xs whitespace-nowrap">Date</TableHead>
-                                <TableHead className="text-xs text-center whitespace-nowrap">Statut</TableHead>
-                                <TableHead className="text-xs text-center whitespace-nowrap">Notif. parent</TableHead>
-                              </TableRow></TableHeader>
-                              <TableBody>
-                                {clsSanctions.map(s => (
-                                  <TableRow key={s.id}>
-                                    <TableCell className="text-xs font-medium whitespace-nowrap">{s.studentName}</TableCell>
-                                    <TableCell className="text-xs whitespace-nowrap">{s.fault_name}</TableCell>
-                                    <TableCell className="text-xs text-right whitespace-nowrap">{s.hours_attributed}h</TableCell>
-                                    <TableCell className="text-xs text-right font-bold text-red-600 whitespace-nowrap">-{s.points_deducted}</TableCell>
-                                    <TableCell className="text-xs whitespace-nowrap">{new Date(s.sanction_date).toLocaleDateString('fr-FR')}</TableCell>
-                                    <TableCell className="text-xs text-center whitespace-nowrap">
-                                      {s.status === 'ACTIVE' ? <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px] font-bold">Active</span>
-                                      : <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[10px]">Annulée</span>}
-                                    </TableCell>
-                                    <TableCell className="text-xs text-center whitespace-nowrap">
-                                      <NotificationBadge status={s.notificationStatus} channels={s.notificationChannels} />
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
+                        {expandedClasses.has(cls.id) && (
+                          <div className="px-8 pb-3 space-y-3">
+                            {/* ⭐ Liste des élèves de la classe (avec bouton + Sanction par élève) */}
+                            {loadingClassStudents.has(cls.id) ? (
+                              <div className="flex items-center gap-2 py-2 text-xs text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> Chargement des élèves…</div>
+                            ) : (classStudents.get(cls.id) || []).length > 0 ? (
+                              <div>
+                                <div className="text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Élèves de la classe</div>
+                                <div className="grid grid-cols-2 gap-1">
+                                  {(classStudents.get(cls.id) || []).map((stu: any) => {
+                                    const studentSanctions = clsSanctions.filter(s => s.studentId === stu.id);
+                                    return (
+                                      <div key={stu.id} className="flex items-center justify-between px-3 py-1.5 bg-gray-50 rounded-lg hover:bg-blue-50/50 transition-colors">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <span className="text-xs font-medium text-gray-700 truncate">{stu.lastName} {stu.firstName}</span>
+                                          {studentSanctions.length > 0 && (
+                                            <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full text-[9px] font-bold flex-shrink-0">
+                                              {studentSanctions.length} sanction{studentSanctions.length > 1 ? 's' : ''}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <button
+                                          onClick={(e) => { e.stopPropagation(); openSanctionModal(cls.id, cls.name, stu.id, `${stu.lastName} ${stu.firstName}`); }}
+                                          className="px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex-shrink-0"
+                                        >
+                                          + Sanction
+                                        </button>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-400 py-2">Aucun élève inscrit dans cette classe.</div>
+                            )}
+
+                            {/* ⭐ Sanctions existantes de la classe */}
+                            {clsSanctions.length > 0 && (
+                              <div>
+                                <div className="text-xs font-semibold text-gray-600 mb-1.5 uppercase tracking-wide">Sanctions enregistrées</div>
+                                <Table>
+                                  <TableHeader><TableRow className="bg-gray-50">
+                                    <TableHead className="text-xs whitespace-nowrap">Élève</TableHead>
+                                    <TableHead className="text-xs whitespace-nowrap">Faute</TableHead>
+                                    <TableHead className="text-xs text-right whitespace-nowrap">Heures</TableHead>
+                                    <TableHead className="text-xs text-right whitespace-nowrap">Points</TableHead>
+                                    <TableHead className="text-xs whitespace-nowrap">Date</TableHead>
+                                    <TableHead className="text-xs text-center whitespace-nowrap">Statut</TableHead>
+                                    <TableHead className="text-xs text-center whitespace-nowrap">Notif. parent</TableHead>
+                                  </TableRow></TableHeader>
+                                  <TableBody>
+                                    {clsSanctions.map(s => (
+                                      <TableRow key={s.id}>
+                                        <TableCell className="text-xs font-medium whitespace-nowrap">{s.studentName}</TableCell>
+                                        <TableCell className="text-xs whitespace-nowrap">{s.fault_name}</TableCell>
+                                        <TableCell className="text-xs text-right whitespace-nowrap">{s.hours_attributed}h</TableCell>
+                                        <TableCell className="text-xs text-right font-bold text-red-600 whitespace-nowrap">-{s.points_deducted}</TableCell>
+                                        <TableCell className="text-xs whitespace-nowrap">{new Date(s.sanction_date).toLocaleDateString('fr-FR')}</TableCell>
+                                        <TableCell className="text-xs text-center whitespace-nowrap">
+                                          {s.status === 'ACTIVE' ? <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px] font-bold">Active</span>
+                                          : <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[10px]">Annulée</span>}
+                                        </TableCell>
+                                        <TableCell className="text-xs text-center whitespace-nowrap">
+                                          <NotificationBadge status={s.notificationStatus} channels={s.notificationChannels} />
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -232,7 +317,8 @@ export default function DisciplineWorkspace({
         </div>
       ) : activeTab === 'conduct' ? (
         /* ── Compteur de conduite ── */
-        <ConductTab sanctions={sanctions} searchQuery={searchQuery} setSearchQuery={setSearchQuery} />
+        <ConductTab sanctions={sanctions} searchQuery={searchQuery} setSearchQuery={setSearchQuery}
+          conductReference={conductSettings.conduct_reference} criticalThreshold={conductSettings.critical_threshold} />
       ) : (
         /* ── Barème des fautes ── */
         <RulesTab rules={rules} onEdit={() => {}} onDelete={() => {}} />
@@ -247,10 +333,22 @@ export default function DisciplineWorkspace({
           schoolLevelId={schoolLevelId}
           classId={modalClassId}
           className={modalClassName}
+          preselectedStudentId={modalStudentId}
+          preselectedStudentName={modalStudentName}
         />
       )}
       {showRuleModal && (
         <RuleModal onClose={() => setShowRuleModal(false)} onSuccess={() => { loadData(); setShowRuleModal(false); }} />
+      )}
+      {showSettingsModal && (
+        <ConductSettingsModal
+          onClose={() => setShowSettingsModal(false)}
+          onSuccess={() => { loadData(); setShowSettingsModal(false); }}
+          academicYearId={academicYear?.id}
+          schoolLevelId={schoolLevelId}
+          currentReference={conductSettings.conduct_reference}
+          currentThreshold={conductSettings.critical_threshold}
+        />
       )}
     </div>
   );
@@ -258,8 +356,9 @@ export default function DisciplineWorkspace({
 
 // ─── Conduct Tab ─────────────────────────────────────────────────────────
 
-function ConductTab({ sanctions, searchQuery, setSearchQuery }: {
+function ConductTab({ sanctions, searchQuery, setSearchQuery, conductReference, criticalThreshold }: {
   sanctions: Sanction[]; searchQuery: string; setSearchQuery: (v: string) => void;
+  conductReference: number; criticalThreshold: number;
 }) {
   // Calculer le compteur par élève
   const conductByStudent = useMemo(() => {
@@ -268,14 +367,14 @@ function ConductTab({ sanctions, searchQuery, setSearchQuery }: {
       if (s.status !== 'ACTIVE') continue;
       const key = s.studentId;
       if (!map.has(key)) {
-        map.set(key, { studentName: s.studentName, className: s.className, totalDeducted: 0, reference: 20 });
+        map.set(key, { studentName: s.studentName, className: s.className, totalDeducted: 0, reference: conductReference });
       }
       map.get(key)!.totalDeducted += s.points_deducted;
     }
     return Array.from(map.values()).map(c => ({
       ...c, conduct_final: Math.max(0, c.reference - c.totalDeducted),
     })).sort((a, b) => a.conduct_final - b.conduct_final);
-  }, [sanctions]);
+  }, [sanctions, conductReference]);
 
   const filtered = conductByStudent.filter(c =>
     !searchQuery || c.studentName?.toLowerCase().includes(searchQuery.toLowerCase()) || c.className?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -298,8 +397,8 @@ function ConductTab({ sanctions, searchQuery, setSearchQuery }: {
             {filtered.length === 0 ? (
               <TableRow><TableCell colSpan={6} className="text-center text-gray-500 py-8">Aucune donnée. Les données apparaîtront après la première sanction.</TableCell></TableRow>
             ) : filtered.map((c, i) => {
-              const isCritical = c.conduct_final <= 5;
-              const isWarning = c.conduct_final <= 10 && c.conduct_final > 5;
+              const isCritical = c.conduct_final <= criticalThreshold;
+              const isWarning = c.conduct_final <= (conductReference / 2) && c.conduct_final > criticalThreshold;
               return (
                 <TableRow key={i} className="hover:bg-slate-50">
                   <TableCell className="font-medium whitespace-nowrap">{c.studentName}</TableCell>
@@ -366,12 +465,13 @@ function RulesTab({ rules, onEdit, onDelete }: {
 
 // ─── Sanction Modal ──────────────────────────────────────────────────────
 
-function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelId, classId, className }: {
+function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelId, classId, className, preselectedStudentId, preselectedStudentName }: {
   onClose: () => void; onSuccess: () => void; rules: DisciplineRule[];
   academicYearId?: string; schoolLevelId?: string; classId?: string | null; className?: string;
+  preselectedStudentId?: string | null; preselectedStudentName?: string;
 }) {
   const [studentSearch, setStudentSearch] = useState('');
-  const [selectedStudent, setSelectedStudent] = useState<any>(null);
+  const [selectedStudent, setSelectedStudent] = useState<any>(preselectedStudentId ? { id: preselectedStudentId, firstName: preselectedStudentName?.split(' ')[1] || '', lastName: preselectedStudentName?.split(' ')[0] || '' } : null);
   const [selectedRuleId, setSelectedRuleId] = useState('');
   const [customFaultName, setCustomFaultName] = useState('');
   const [hours, setHours] = useState(0);
@@ -445,7 +545,7 @@ function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelI
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
@@ -562,7 +662,7 @@ function RuleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         className="bg-white rounded-xl shadow-2xl max-w-lg w-full">
         <div className="flex items-center justify-between p-4 border-b bg-amber-50 rounded-t-xl">
@@ -660,5 +760,88 @@ function NotificationBadge({ status, channels }: {
       <span>{c.icon}</span>
       <span>{c.label}</span>
     </span>
+  );
+}
+
+// ─── Conduct Settings Modal ─────────────────────────────────────────────────
+//
+// ⭐ Permet à l'école de configurer la moyenne de conduite (baseline) et le
+//    seuil critique. Sauvegardé via PUT /api/discipline/conduct (qui proxy vers
+//    PUT /discipline/conduct/settings côté backend).
+
+function ConductSettingsModal({ onClose, onSuccess, academicYearId, schoolLevelId, currentReference, currentThreshold }: {
+  onClose: () => void; onSuccess: () => void;
+  academicYearId?: string; schoolLevelId?: string;
+  currentReference: number; currentThreshold: number;
+}) {
+  const [conductReference, setConductReference] = useState(currentReference);
+  const [criticalThreshold, setCriticalThreshold] = useState(currentThreshold);
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
+
+  const handleSave = async () => {
+    if (!academicYearId) { toast({ title: 'Erreur', description: 'Année académique requise', variant: 'destructive' }); return; }
+    setSaving(true);
+    try {
+      const authHeaders = getClientAuthorizationHeader();
+      const res = await fetch('/api/discipline/conduct/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        credentials: 'include',
+        body: JSON.stringify({
+          academicYearId,
+          schoolLevelId: schoolLevelId || null,
+          conduct_reference: conductReference,
+          critical_threshold: criticalThreshold,
+        }),
+      });
+      if (!res.ok) throw new Error('Erreur lors de la sauvegarde');
+      toast({ title: '✅ Paramètres sauvegardés', description: `Moyenne de conduite: ${conductReference}/20 · Seuil critique: ${criticalThreshold}` });
+      onSuccess();
+    } catch (err: any) {
+      toast({ title: 'Erreur', description: err.message, variant: 'destructive' });
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+        className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+        <div className="flex items-center justify-between p-4 border-b bg-slate-50 rounded-t-xl">
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Settings className="w-5 h-5" /> Paramètres de conduite
+          </h3>
+          <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
+        </div>
+        <div className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Moyenne de conduite (baseline)</label>
+            <p className="text-xs text-gray-500 mb-2">Note de départ de chaque élève (généralement 17, mais configurable par l'école).</p>
+            <input type="number" min={1} max={20} step={0.5} value={conductReference}
+              onChange={(e) => setConductReference(Number(e.target.value))}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Seuil critique</label>
+            <p className="text-xs text-gray-500 mb-2">En dessous de ce seuil, la conduite de l'élève est considérée comme critique (affichage en rouge).</p>
+            <input type="number" min={0} max={20} step={0.5} value={criticalThreshold}
+              onChange={(e) => setCriticalThreshold(Number(e.target.value))}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg" />
+          </div>
+          <div className="p-3 bg-blue-50 rounded-lg text-xs text-blue-700">
+            <strong>Règle de calcul :</strong> Conduite = Moyenne de conduite − Σ points déduits (sanctions actives).
+            <br/>Au niveau du bulletin, une ligne « Conduite » sera ajoutée avec cette note.
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 p-4 border-t bg-slate-50 rounded-b-xl">
+          <Button onClick={onClose} variant="outline" className="px-4 py-2">Annuler</Button>
+          <Button onClick={handleSave} disabled={saving}
+            className="bg-slate-600 hover:bg-slate-700 text-white px-4 py-2">
+            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Settings className="w-4 h-4 mr-2" />}
+            Sauvegarder
+          </Button>
+        </div>
+      </motion.div>
+    </div>
   );
 }

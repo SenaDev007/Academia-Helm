@@ -313,17 +313,28 @@ export class ConductController {
     }
 
     // Upsert le ledger
+    // ⭐ Récupérer la conduct_reference depuis conduct_settings (configurable
+    //    par l'école) au lieu du hardcoded 20.
+    const settingsRows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT conduct_reference FROM conduct_settings
+       WHERE "tenantId" = $1 AND "academicYearId" = $2
+       ORDER BY "createdAt" DESC LIMIT 1`,
+      tenantId, academicYearId,
+    );
+    const conductReference = (settingsRows.length > 0 && settingsRows[0].conduct_reference != null)
+      ? Number(settingsRows[0].conduct_reference) : 20;
+
     const id = crypto.randomUUID();
     await this.prisma.$executeRawUnsafe(
       `INSERT INTO conduct_ledger (id, "tenantId", "academicYearId", "studentId", "quarterId",
         conduct_reference, total_points_deducted, conduct_final)
-       VALUES ($1, $2, $3, $4, $5, 20, $6, GREATEST(0, 20 - $6))
+       VALUES ($1, $2, $3, $4, $5, $7, $6, GREATEST(0, $7 - $6))
        ON CONFLICT ("tenantId", "studentId", "quarterId")
        DO UPDATE SET
          total_points_deducted = conduct_ledger.total_points_deducted + $6,
          conduct_final = GREATEST(0, conduct_ledger.conduct_reference - (conduct_ledger.total_points_deducted + $6)),
          calculated_at = now(), "updatedAt" = now()`,
-      id, tenantId, academicYearId, studentId, quarterId, pointsDelta,
+      id, tenantId, academicYearId, studentId, quarterId, pointsDelta, conductReference,
     );
   }
 

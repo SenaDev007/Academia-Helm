@@ -129,6 +129,8 @@ export interface BulletinPdfData {
     secNoteCoef?: number | null;
     secRank?: number | null;
     secHasSlot?: boolean;
+    // ⭐ SECONDAIRE — Catégorie de la matière (Lettres/Sciences/Autres) pour regroupement
+    subjectCategory?: 'LETTRES' | 'SCIENCES' | 'AUTRES' | null;
   }>;
   // ⭐ SECONDAIRE — 6e/5e sans coefficient (true) vs 4e → Terminale (false)
   secJunior?: boolean;
@@ -177,6 +179,18 @@ export interface BulletinPdfData {
     nominativeCircularDataUrl?: string | null;
     nominativeRectangularDataUrl?: string | null;
   } | null;
+  // ⭐ SECONDAIRE — Conduite (depuis conduct_ledger du module Vie Scolaire)
+  conductScore?: number | null;     // ex: 17/20 (conduct_final du ledger)
+  conductReference?: number | null; // ex: 17 (baseline configurée par l'école)
+  // ⭐ SECONDAIRE — Distinction/Sanction (depuis school_academic_settings.config.distinctions)
+  distinctionLabel?: string | null; // ex: "Tableau d'honneur + Félicitations"
+  distinctionType?: 'DISTINCTION' | 'SANCTION' | null;
+  // ⭐ SECONDAIRE — Mention + Appréciation du conseil de classe
+  councilMention?: string | null;   // ex: "Tableau d'honneur" (déduit ou saisi)
+  councilAppreciation?: string | null; // appréciation libre du conseil
+  // ⭐ SECONDAIRE — Catégorisation des matières (Lettres / Sciences / Autres)
+  //    Chaque matière peut avoir une catégorie pour regroupement + bilan par catégorie
+  // subjectCategory is per-subject (see subjects[].subjectCategory below)
 }
 
 /**
@@ -866,16 +880,48 @@ ${page2Content}
     const fmtSec = (n: number | null | undefined): string =>
       (typeof n === 'number' && !isNaN(n)) ? n.toFixed(2) : '—';
 
-    // ── Lignes du tableau (une par discipline) ──────────────────────────────
-    const subjectRows = data.subjects.map((s) => {
-      // Note brute : undefined = pas d'évaluation → « — » ; null = absent → ABS
+    // ── Lignes du tableau (une par discipline) — catégorisées ──────────────
+    // ⭐ Catégorisation des matières : LETTRES / SCIENCES / AUTRES
+    //    Pour chaque catégorie, on insère une ligne "Bilan Lettres" / "Bilan
+    //    Sciences" / "Bilan Autres" avec la moyenne de l'élève dans cette catégorie.
+    const CATEGORY_LABELS: Record<string, string> = {
+      LETTRES: 'Bilan Lettres',
+      SCIENCES: 'Bilan Sciences',
+      AUTRES: 'Bilan Autres',
+    };
+    const CATEGORY_SUBJECTS: Record<string, string[]> = {
+      LETTRES: ['Français', 'Communication', 'Lecture', 'Anglais', 'Allemand', 'Espagnol', 'Philosophie', 'Histoire', 'Géographie', 'Histoire-Géographie', 'Éducation Sociale'],
+      SCIENCES: ['Mathématiques', 'Physique', 'Chimie', 'Physique-Chimie', 'Physique Chimie', 'SVT', 'Science de la Vie', 'Sciences de la Vie', 'EST', 'Éducation Scientifique', 'Éveil scientifique', 'PCT', 'Physique Chimie et Technologie'],
+      AUTRES: ['EPS', 'Éducation Physique', 'Informatique', 'Conduite', 'Anglais'],
+    };
+
+    // Déterminer la catégorie d'une matière par son nom
+    const getSubjectCategory = (subjectName: string): string => {
+      const name = subjectName.toLowerCase();
+      for (const [cat, names] of Object.entries(CATEGORY_SUBJECTS)) {
+        if (names.some(n => name.includes(n.toLowerCase()))) return cat;
+      }
+      return 'AUTRES';
+    };
+
+    // Grouper les matières par catégorie et construire les lignes + bilans
+    const subjectsByCategory = new Map<string, any[]>();
+    for (const s of data.subjects) {
+      const cat = s.subjectCategory || getSubjectCategory(s.name);
+      if (!subjectsByCategory.has(cat)) subjectsByCategory.set(cat, []);
+      subjectsByCategory.get(cat)!.push(s);
+    }
+
+    // Ordre des catégories
+    const CATEGORY_ORDER = ['LETTRES', 'SCIENCES', 'AUTRES'];
+
+    const buildSubjectRow = (s: any): string => {
       const cell = (v: number | null | undefined) =>
         typeof v === 'number'
           ? `<span style="color:${v >= 10 ? '#0f172a' : '#dc2626'};font-weight:bold;">${v.toFixed(2)}</span>`
           : (v === null && s.secHasSlot
             ? '<span style="color:#dc2626;font-size:8px;font-weight:bold;">ABS</span>'
             : '<span style="color:#94a3b8;">—</span>');
-      // Moyenne : verte si ≥ 10, rouge sinon
       const moyCell = (v: number | null | undefined) =>
         typeof v === 'number'
           ? `<span style="color:${v >= 10 ? '#059669' : '#dc2626'};font-weight:bold;">${v.toFixed(2)}</span>`
@@ -896,7 +942,42 @@ ${page2Content}
           <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:9px;color:#475569;">${s.appreciation || '—'}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 2px;height:20px;"></td>
         </tr>`;
-    }).join('');
+    };
+
+    const buildBilanRow = (cat: string, subjects: any[]): string => {
+      // Calculer la moyenne du bilan de la catégorie
+      const validMoyennes = subjects
+        .map(s => s.secMoyenne)
+        .filter((v: number | null | undefined): v is number => typeof v === 'number' && !isNaN(v));
+      const bilanMoyenne = validMoyennes.length > 0
+        ? validMoyennes.reduce((sum, v) => sum + v, 0) / validMoyennes.length
+        : null;
+      const bilanCell = bilanMoyenne !== null
+        ? `<span style="color:${bilanMoyenne >= 10 ? '#059669' : '#dc2626'};font-weight:bold;font-size:11px;">${bilanMoyenne.toFixed(2)}</span>`
+        : '—';
+      const label = CATEGORY_LABELS[cat] || 'Bilan';
+      const colSpan = isJunior ? 7 : 9; // colspan jusqu'à la colonne Moyenne
+      return `<tr style="background:#e0f2fe;font-weight:bold;">
+        <td style="border:1px solid #0A2A5E;padding:3px 2px;font-size:10px;text-transform:uppercase;color:#0A2A5E;">${label}</td>
+        <td colspan="${colSpan}" style="border:1px solid #0A2A5E;"></td>
+        <td style="border:1px solid #0A2A5E;padding:3px 2px;text-align:center;font-size:11px;background:#dbeafe;">${bilanCell}</td>
+        <td style="border:1px solid #0A2A5E;"></td>
+        <td style="border:1px solid #0A2A5E;"></td>
+      </tr>`;
+    };
+
+    // Construire les lignes catégorisées
+    let subjectRows = '';
+    for (const cat of CATEGORY_ORDER) {
+      const subjects = subjectsByCategory.get(cat);
+      if (!subjects || subjects.length === 0) continue;
+      // Lignes des matières
+      for (const s of subjects) {
+        subjectRows += buildSubjectRow(s);
+      }
+      // Ligne de bilan de la catégorie
+      subjectRows += buildBilanRow(cat, subjects);
+    }
 
     // ── Totaux (4e → Terminale uniquement) — avec fallback serveur ──────────
     let totalCoef = typeof data.secTotalCoef === 'number' ? data.secTotalCoef : null;
@@ -1076,23 +1157,37 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
 
   ${recapBlock}
 
-  <!-- ═══ PAGE 2 SECONDAIRE : Appréciation du conseil des professeurs +
-       Appréciation du directeur + signature du DIRECTEUR UNIQUEMENT ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:2px;padding:5px;margin-top:6px;width:100%;">
-    <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:3px;">Appréciation du conseil des professeurs</div>
-    ${data.analyseRecommandations
-      ? `<div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:26px;">${data.analyseRecommandations}</div>`
-      : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:10px;"></div>').join('')}
+  <!-- ═══ SECTION : Mention du conseil de classe + Appréciation + Visa ═══ -->
+  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:6px;margin-top:8px;width:100%;">
+    <!-- Mention du conseil de classe (distinction/sanction) -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;white-space:nowrap;">Mention du conseil de classe :</div>
+      <div style="flex:1;border-bottom:1px dotted #94a3b8;height:14px;"></div>
+      <div style="font-size:10px;font-weight:bold;color:${data.distinctionType === 'DISTINCTION' ? '#059669' : data.distinctionType === 'SANCTION' ? '#dc2626' : '#1a1a1a'};">
+        ${data.distinctionLabel || data.councilMention || '—'}
+      </div>
+    </div>
+
+    <!-- Conduite (si disponible depuis le module Vie Scolaire) -->
+    ${typeof data.conductScore === 'number' ? `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;white-space:nowrap;">Conduite :</div>
+      <div style="flex:1;border-bottom:1px dotted #94a3b8;height:14px;"></div>
+      <div style="font-size:10px;font-weight:bold;color:${data.conductScore >= (data.conductReference || 17) * 0.6 ? '#059669' : '#dc2626'};">
+        ${data.conductScore.toFixed(2)}/${data.conductReference || 17}
+      </div>
+    </div>` : ''}
+
+    <!-- Appréciation du conseil de classe -->
+    <div style="margin-top:4px;">
+      <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:3px;">Appréciation du conseil de classe</div>
+      ${(data.councilAppreciation || data.analyseRecommandations)
+        ? `<div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:26px;">${data.councilAppreciation || data.analyseRecommandations}</div>`
+        : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:10px;"></div>').join('')}
+    </div>
   </div>
 
-  <div style="border:1px solid #0A2A5E;border-radius:2px;padding:5px;margin-top:4px;width:100%;">
-    <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:3px;">Appréciation du directeur</div>
-    ${(data.directorVisa || data.appreciationGlobale)
-      ? `<div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:26px;">${data.directorVisa || data.appreciationGlobale}</div>`
-      : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:10px;"></div>').join('')}
-  </div>
-
-  <!-- SIGNATURE : DIRECTEUR UNIQUEMENT (modèle officiel secondaire) -->
+  <!-- Visa du chef d'établissement -->
   <table style="width:100%;border-collapse:collapse;margin-top:10px;">
     <tr>
       <td style="width:55%;text-align:right;vertical-align:bottom;padding:4px 10px 4px 0;font-size:9px;font-style:italic;color:#475569;">
@@ -1100,7 +1195,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
       </td>
       <td style="width:45%;text-align:center;vertical-align:bottom;padding:4px 2px;">
         ${this.renderDirectorSealsZone(data, 35)}
-        <div style="border-top:1px solid #000;margin-top:3px;padding-top:2px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Directeur</div>
+        <div style="border-top:1px solid #000;margin-top:3px;padding-top:2px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Chef d'Établissement</div>
         ${this.renderDirectorNameLine(data, '8px', 'Nom et signature')}
       </td>
     </tr>
@@ -1115,7 +1210,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </div>
   </div>
 
-  <div class="footer">Document généré par Academia Helm — ${new Date().toLocaleString('fr-FR')} · ID : ${bulletinId}</div>
+  <div class="footer">Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0144000001'}</div>
 </div>
 
 </body>

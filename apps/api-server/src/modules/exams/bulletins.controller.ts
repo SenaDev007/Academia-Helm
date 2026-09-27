@@ -833,6 +833,71 @@ export class BulletinsController {
       }
     }
 
+    // ⭐ SECONDAIRE — Résolution de la conduite (conduct_ledger) + distinction/sanction
+    let conductScore: number | null = null;
+    let conductReference: number | null = null;
+    let distinctionLabel: string | null = null;
+    let distinctionType: 'DISTINCTION' | 'SANCTION' | null = null;
+
+    if (body.isSecondary && body.studentMatricule && resolvedTenantId && academicYearId) {
+      try {
+        // 1. Trouver l'élève
+        const conductStudent = await this.prisma.student.findFirst({
+          where: { matricule: body.studentMatricule, tenantId: resolvedTenantId },
+          select: { id: true },
+        }).catch(() => null);
+
+        if (conductStudent) {
+          // 2. Trouver le trimestre courant
+          const quarter = await this.prisma.$queryRawUnsafe<any[]>(
+            `SELECT id FROM quarters WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "isCurrent" = true LIMIT 1`,
+            resolvedTenantId, academicYearId,
+          ).catch(() => []);
+
+          if (quarter.length > 0) {
+            // 3. Récupérer le conduct_ledger
+            const ledger = await this.prisma.$queryRawUnsafe<any[]>(
+              `SELECT conduct_reference, total_points_deducted, conduct_final
+               FROM conduct_ledger
+               WHERE "tenantId" = $1 AND "studentId" = $2 AND "quarterId" = $3
+               LIMIT 1`,
+              resolvedTenantId, conductStudent.id, quarter[0].id,
+            ).catch(() => []);
+
+            if (ledger.length > 0) {
+              conductScore = Number(ledger[0].conduct_final) || null;
+              conductReference = Number(ledger[0].conduct_reference) || 17;
+            }
+          }
+        }
+
+        // 4. Récupérer les distinctions depuis school_academic_settings
+        const settings = await this.prisma.$queryRawUnsafe<any[]>(
+          `SELECT config FROM school_academic_settings
+           WHERE "tenantId" = $1 AND "levelCode" = 'SECONDAIRE' AND "isActive" = true
+           ORDER BY "createdAt" DESC LIMIT 1`,
+          resolvedTenantId,
+        ).catch(() => []);
+
+        if (settings.length > 0 && settings[0].config) {
+          const cfg = typeof settings[0].config === 'string'
+            ? JSON.parse(settings[0].config)
+            : settings[0].config;
+          if (cfg.distinctions && Array.isArray(cfg.distinctions) && typeof body.generalAverage === 'number') {
+            for (const d of cfg.distinctions) {
+              if (body.generalAverage >= d.minScore && body.generalAverage <= d.maxScore) {
+                distinctionLabel = d.label;
+                distinctionType = d.type;
+                break;
+              }
+            }
+          }
+        }
+      } catch {
+        // Silent fail — pas de conduite/distinction, le bulletin reste généré
+      }
+    }
+
     // Fusionner les données du frontend avec le branding + teacherName résolu
     const pdfData = {
       ...body,
@@ -851,6 +916,11 @@ export class BulletinsController {
       admissionNumber: body.admissionNumber || admissionNumber || body.studentMatricule || null,
       // ⭐ Photo de l'élève : résolue depuis student_photos (priorité au backend)
       studentPhotoUrl: studentPhotoUrl || body.studentPhotoUrl || null,
+      // ⭐ SECONDAIRE — Conduite + Distinction/Sanction (résolues backend)
+      conductScore: conductScore ?? body.conductScore ?? null,
+      conductReference: conductReference ?? body.conductReference ?? null,
+      distinctionLabel: distinctionLabel || body.distinctionLabel || null,
+      distinctionType: distinctionType || body.distinctionType || null,
       // ⭐ Directeur : résolu backend depuis school_directors (par niveau + langue)
       //    Priorité au backend si trouvé, sinon fallback sur ce que le frontend a envoyé
       directorName: directorName || body.directorName || null,

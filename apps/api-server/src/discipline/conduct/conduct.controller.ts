@@ -76,6 +76,40 @@ export class ConductController {
     return { id, success: true };
   }
 
+  @Put('rules')
+  async updateRule(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() body: {
+      id: string;
+      name?: string;
+      description?: string;
+      hours_penalty?: number;
+      points_deducted?: number;
+      severity?: string;
+      isActive?: boolean;
+    },
+  ) {
+    if (!body.id) throw new BadRequestException('L\'id de la règle est requis');
+    const sets: string[] = [];
+    const params: any[] = [body.id, tenantId];
+    let idx = 3;
+    if (body.name !== undefined) { sets.push(`name = $${idx}`); params.push(body.name); idx++; }
+    if (body.description !== undefined) { sets.push(`description = $${idx}`); params.push(body.description); idx++; }
+    if (body.hours_penalty !== undefined) { sets.push(`hours_penalty = $${idx}`); params.push(body.hours_penalty); idx++; }
+    if (body.points_deducted !== undefined) { sets.push(`points_deducted = $${idx}`); params.push(body.points_deducted); idx++; }
+    if (body.severity !== undefined) { sets.push(`severity = $${idx}`); params.push(body.severity); idx++; }
+    if (body.isActive !== undefined) { sets.push(`"isActive" = $${idx}`); params.push(body.isActive); idx++; }
+    if (sets.length === 0) return { success: true };
+    sets.push(`"updatedAt" = now()`);
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE discipline_rules SET ${sets.join(', ')} WHERE id = $1 AND "tenantId" = $2`,
+      ...params,
+    );
+    this.logger.log(`Rule updated: ${body.id} by user ${user?.id}`);
+    return { success: true };
+  }
+
   // ── SANCTIONS ──────────────────────────────────────────────────────────
 
   @Get('sanctions')
@@ -280,15 +314,28 @@ export class ConductController {
     },
   ) {
     if (!body.academicYearId) throw new BadRequestException('academicYearId est requis');
-    const id = crypto.randomUUID();
-    await this.prisma.$executeRawUnsafe(
-      `INSERT INTO conduct_settings (id, "tenantId", "academicYearId", "schoolLevelId", conduct_reference, critical_threshold)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT ("tenantId", "academicYearId", "schoolLevelId")
-       DO UPDATE SET conduct_reference = $5, critical_threshold = $6, "updatedAt" = now()`,
-      id, tenantId, body.academicYearId, body.schoolLevelId || null,
-      body.conduct_reference || 20, body.critical_threshold || 5,
+    // ⭐ Check if settings already exist for this tenant + academicYear
+    //    (schoolLevelId can be NULL — ON CONFLICT with NULL doesn't work in PostgreSQL)
+    const existing = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id FROM conduct_settings WHERE "tenantId" = $1 AND "academicYearId" = $2 AND COALESCE("schoolLevelId", 'NULL') = COALESCE($3, 'NULL') LIMIT 1`,
+      [tenantId, body.academicYearId, body.schoolLevelId || null],
     );
+    if (existing.length > 0) {
+      // Update existing
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE conduct_settings SET conduct_reference = $1, critical_threshold = $2, "updatedAt" = now() WHERE id = $3`,
+        [body.conduct_reference || 20, body.critical_threshold || 5, existing[0].id],
+      );
+    } else {
+      // Insert new
+      const id = crypto.randomUUID();
+      await this.prisma.$executeRawUnsafe(
+        `INSERT INTO conduct_settings (id, "tenantId", "academicYearId", "schoolLevelId", conduct_reference, critical_threshold)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        id, tenantId, body.academicYearId, body.schoolLevelId || null,
+        body.conduct_reference || 20, body.critical_threshold || 5,
+      );
+    }
     this.logger.log(`Conduct settings updated by ${user?.id}`);
     return { success: true };
   }

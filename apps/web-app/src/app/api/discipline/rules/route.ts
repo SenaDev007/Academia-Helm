@@ -24,3 +24,14 @@ export async function POST(request: NextRequest) {
   }, 15000);
   return NextResponse.json(await res.json(), { status: res.status });
 }
+
+// PUT /api/discipline/rules → proxy vers PUT /discipline/conduct/rules
+export async function PUT(request: NextRequest) {
+  const headers = await getProxyAuthHeaders(request);
+  const body = await request.json();
+  const apiBaseUrl = getApiBaseUrlForRoutes();
+  const res = await fetchWithTimeout(normalizeApiUrl(`${apiBaseUrl}/discipline/conduct/rules`), {
+    method: 'PUT', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store',
+  }, 15000);
+  return NextResponse.json(await res.json(), { status: res.status });
+}

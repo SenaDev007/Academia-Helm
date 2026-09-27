@@ -196,36 +196,20 @@ export default function DisciplineWorkspace({
   useEffect(() => { loadData(); }, [loadData]);
 
   // ⭐ Charger les élèves d'une classe (à la demande quand on déplie une classe)
-  //    Utilise /api/students/enrollments?classId=X&academicYearId=Y (même pattern
-  //    que le module examen qui récupère les élèves via les enrollments).
+  //    Utilise /api/students?classId=X&academicYearId=Y (le backend /students
+  //    supporte classId directement dans la query, contrairement à /enrollments
+  //    qui ne supporte que academicYearId + schoolLevelId).
   const loadClassStudents = useCallback(async (classId: string) => {
     if (classStudents.has(classId)) return; // déjà chargé
     setLoadingClassStudents(prev => { const n = new Set(prev); n.add(classId); return n; });
     try {
       const authHeaders = getClientAuthorizationHeader();
       const params = new URLSearchParams({ classId, academicYearId: academicYear?.id || '' });
-      const res = await fetch(`/api/students/enrollments?${params}`, { headers: { ...authHeaders }, credentials: 'include' });
+      const res = await fetch(`/api/students?${params}`, { headers: { ...authHeaders }, credentials: 'include' });
       if (res.ok) {
         const d = await res.json();
-        // Le backend renvoie les enrollments avec student info
-        const enrollments = Array.isArray(d) ? d : (d?.items || d?.data || []);
-        // Extraire les infos élèves depuis les enrollments
-        const students = enrollments.map((e: any) => ({
-          id: e.studentId || e.student?.id,
-          firstName: e.student?.firstName || '',
-          lastName: e.student?.lastName || '',
-          matricule: e.student?.matricule || '',
-          className: e.className || '',
-        })).filter((s: any) => s.id);
-        setClassStudents(prev => { const n = new Map(prev); n.set(classId, students); return n; });
-      } else {
-        // Fallback : essayer /api/students?classId=X
-        const res2 = await fetch(`/api/students?classId=${classId}&academicYearId=${academicYear?.id || ''}`, { headers: { ...authHeaders }, credentials: 'include' });
-        if (res2.ok) {
-          const d2 = await res2.json();
-          const list = Array.isArray(d2) ? d2 : (d2?.items || []);
-          setClassStudents(prev => { const n = new Map(prev); n.set(classId, list); return n; });
-        }
+        const list = Array.isArray(d) ? d : (d?.items || d?.students || []);
+        setClassStudents(prev => { const n = new Map(prev); n.set(classId, list); return n; });
       }
     } catch (err) { console.error('loadClassStudents error:', err); }
     finally { setLoadingClassStudents(prev => { const n = new Set(prev); n.delete(classId); return n; }); }
@@ -466,9 +450,9 @@ export default function DisciplineWorkspace({
 
       {/* ⭐ Modal d'annulation de sanction */}
       {cancellingSanctionId && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" style={{ paddingTop: '5rem' }}>
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-xl shadow-2xl max-w-md w-full" style={{ marginTop: '2rem' }}>
+        <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mx-auto my-8"
+            className="bg-white rounded-xl shadow-2xl max-w-md w-full">
             <div className="flex items-center justify-between p-4 border-b bg-red-50 rounded-t-xl">
               <h3 className="text-lg font-bold text-red-900 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5" /> Annuler la sanction
@@ -503,9 +487,9 @@ export default function DisciplineWorkspace({
       )}
       {/* ⭐ Modal de suppression de règle */}
       {deletingRuleId && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" style={{ paddingTop: '5rem' }}>
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-xl shadow-2xl max-w-sm w-full" style={{ marginTop: '2rem' }}>
+        <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mx-auto my-8"
+            className="bg-white rounded-xl shadow-2xl max-w-sm w-full">
             <div className="flex items-center justify-between p-4 border-b bg-red-50 rounded-t-xl">
               <h3 className="text-lg font-bold text-red-900">Supprimer la règle</h3>
               <button onClick={() => setDeletingRuleId(null)} className="p-1 hover:bg-red-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
@@ -667,32 +651,23 @@ function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelI
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
 
-  // ⭐ Charger les élèves quand la classe change
+  // ⭐ Charger les élèves quand la classe change — utilise /api/students?classId=X
+  //    (le backend /students supporte classId directement, contrairement à
+  //    /enrollments qui ne filtre pas par classId).
   useEffect(() => {
-    if (selectedClassId && loadStudentsForClass) {
-      // Use a local async function to set the students
+    if (selectedClassId) {
       setLoadingStudents(true);
       setClassStudentsList([]);
-      loadStudentsForClass(selectedClassId).then(() => {
-        // The parent doesn't return students — we need to fetch directly
-        // Actually, let's fetch directly here
-        const authHeaders = getClientAuthorizationHeader();
-        const params = new URLSearchParams({ classId: selectedClassId, academicYearId: academicYearId || '' });
-        fetch(`/api/students/enrollments?${params}`, { headers: { ...authHeaders }, credentials: 'include' })
-          .then(r => r.ok ? r.json() : [])
-          .then(d => {
-            const enrollments = Array.isArray(d) ? d : (d?.items || d?.data || []);
-            const students = enrollments.map((e: any) => ({
-              id: e.studentId || e.student?.id,
-              firstName: e.student?.firstName || '',
-              lastName: e.student?.lastName || '',
-              matricule: e.student?.matricule || '',
-            })).filter((s: any) => s.id);
-            setClassStudentsList(students);
-          })
-          .catch(() => {})
-          .finally(() => setLoadingStudents(false));
-      });
+      const authHeaders = getClientAuthorizationHeader();
+      const params = new URLSearchParams({ classId: selectedClassId, academicYearId: academicYearId || '' });
+      fetch(`/api/students?${params}`, { headers: { ...authHeaders }, credentials: 'include' })
+        .then(r => r.ok ? r.json() : [])
+        .then(d => {
+          const list = Array.isArray(d) ? d : (d?.items || d?.students || []);
+          setClassStudentsList(list);
+        })
+        .catch(() => {})
+        .finally(() => setLoadingStudents(false));
     } else {
       setClassStudentsList([]);
     }
@@ -746,9 +721,9 @@ function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelI
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" style={{ paddingTop: '5rem' }}>
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto" style={{ marginTop: '2rem' }}>
+    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mx-auto my-8"
+        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2">
@@ -872,9 +847,9 @@ function RuleModal({ onClose, onSuccess, editingRule }: { onClose: () => void; o
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" style={{ paddingTop: '5rem' }}>
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-xl shadow-2xl max-w-lg w-full" style={{ marginTop: '2rem' }}>
+    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mx-auto my-8"
+        className="bg-white rounded-xl shadow-2xl max-w-lg w-full">
         <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2"><Settings className="w-5 h-5" /> {isEditing ? 'Modifier la règle' : 'Nouvelle règle de faute'}</h3>
           <button onClick={onClose} className="p-1 hover:bg-blue-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
@@ -1014,9 +989,9 @@ function ConductSettingsModal({ onClose, onSuccess, academicYearId, schoolLevelI
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" style={{ paddingTop: '5rem' }}>
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-xl shadow-2xl max-w-md w-full" style={{ marginTop: '2rem' }}>
+    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mx-auto my-8"
+        className="bg-white rounded-xl shadow-2xl max-w-md w-full">
         <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <Settings className="w-5 h-5" /> Paramètres de conduite

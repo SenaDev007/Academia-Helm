@@ -81,6 +81,12 @@ export interface BulletinPdfData {
     qualitativeCode?: string | null;
     isAbsent: boolean;
     appreciation: string;
+    // ⭐ Primaire — CM (Connaissance et Maîtrise) sur 18 + CP (Compétence et
+    //    Pratique) sur 2. Valeurs envoyées par le frontend depuis le grade
+    //    (stockées dans comment JSON {cm, cp}). Le backend ne les recalcule
+    //    plus avec score*0.9 (qui était imprécis : CM 16,2 au lieu de 16).
+    cm?: number | null;
+    cp?: number | null;
     // ⭐ Visa du directeur par matière (auto-rempli depuis appreciation, éditable)
     directorVisa?: string | null;
     // ⭐ Notes anglophones par matière (3 composantes CA + Exam)
@@ -352,8 +358,11 @@ export class BulletinPdfService {
         //    payload) : `s.score !== null` était VRAI pour undefined →
         //    s.score.toFixed() → TypeError → 500 « Erreur lors de la génération »
         const scoreNum = !s.isAbsent && s.score != null ? Number(s.score) : null;
-        const cm = scoreNum !== null ? Math.min(18, Math.round(scoreNum * 0.9 * 10) / 10) : null;
-        const cp = scoreNum !== null ? Math.round((scoreNum - (cm || 0)) * 10) / 10 : null;
+        // ⭐ Utiliser les vraies valeurs CM/CP envoyées par le frontend (depuis
+        //    le grade.comment JSON {cm, cp}). Ne plus recalculer avec score*0.9
+        //    qui produisait des décimales imprécises (CM 16,2 au lieu de 16).
+        const cm = s.cm != null ? Math.round(Number(s.cm)) : (scoreNum !== null ? Math.round(scoreNum * 0.9) : null);
+        const cp = s.cp != null ? Math.round(Number(s.cp)) : (cm !== null ? Math.round(scoreNum - cm) : null);
         const scoreVal = s.isAbsent
           ? '<span style="color:red;font-size:8px;font-weight:bold">ABS</span>'
           : s.score != null
@@ -366,10 +375,10 @@ export class BulletinPdfService {
         return `<tr>
           <td style="border:1px solid #cbd5e1;padding:5px 3px;font-size:10px;">${s.name}</td>
           <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;color:#94a3b8;">10</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cm !== null ? cm.toFixed(1) : '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cm !== null ? cm : '—'}</td>
           <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
           <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;">${!reached && s.score != null ? no : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cp !== null ? cp.toFixed(1) : '—'}</td>
+          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cp !== null ? cp : '—'}</td>
           <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:10px;font-weight:bold;">${scoreVal}</td>
           <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
           <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;">${!reached && s.score != null ? no : ''}</td>
@@ -416,16 +425,17 @@ export class BulletinPdfService {
     // Total General row (Primaire only) — column order matches carnet (NO Visa Directeur column):
     // Champs(colspan=2) | CM | Maîtrise(empty colspan=2) | CP | Total | Seuil(empty colspan=2) | Appréciation
     const totalRow = !data.isMaternelle ? (() => {
-      const validScores = data.subjects.filter(s => !s.isAbsent && s.score != null).map(s => Number(s.score));
-      const totalScore = validScores.reduce((sum, v) => sum + v, 0);
-      const totalCm = validScores.reduce((sum, v) => sum + Math.min(18, Math.round(v * 0.9 * 10) / 10), 0);
-      const totalCp = validScores.reduce((sum, v) => sum + Math.round((v - Math.min(18, Math.round(v * 0.9 * 10) / 10)) * 10) / 10, 0);
+      const validScores = data.subjects.filter(s => !s.isAbsent && s.score != null);
+      // ⭐ Utiliser les vraies valeurs CM/CP envoyées par le frontend
+      const totalCm = validScores.reduce((sum, s) => sum + (s.cm != null ? Math.round(Number(s.cm)) : Math.round(Number(s.score) * 0.9)), 0);
+      const totalCp = validScores.reduce((sum, s) => sum + (s.cp != null ? Math.round(Number(s.cp)) : Math.round(Number(s.score) - Math.round(Number(s.score) * 0.9))), 0);
+      const totalScore = validScores.reduce((sum, v) => sum + Number(v.score), 0);
       return `
       <tr style="background:#e2e8f0;font-weight:bold;">
         <td colspan="2" style="border:1px solid #cbd5e1;padding:4px;font-size:9px;text-transform:uppercase;">TOTAL GENERAL</td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;color:#0A2A5E;">${totalCm.toFixed(1)}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;color:#0A2A5E;">${totalCm}</td>
         <td colspan="2" style="border:1px solid #cbd5e1;"></td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;color:#0A2A5E;">${totalCp.toFixed(1)}</td>
+        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;color:#0A2A5E;">${totalCp}</td>
         <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:11px;color:#0A2A5E;">${totalScore.toFixed(2)}</td>
         <td colspan="2" style="border:1px solid #cbd5e1;"></td>
         <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;color:#64748b;">${data.appreciationGlobale || '—'}</td>
@@ -1925,14 +1935,12 @@ ${page2Content}
       const vpm = subject.vueParMatiere;
       if (!vpm) {
         return `<tr>
-          <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold">${idx + 1}</td>
           <td style="border:1px solid #ccc;padding:5px 8px;font-weight:500">${subject.name}</td>
           <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;color:#999" colSpan="5">Aucune donnée</td>
           <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-size:11px">—</td>
         </tr>`;
       }
       return `<tr>
-        <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold">${idx + 1}</td>
         <td style="border:1px solid #ccc;padding:5px 8px;font-weight:500">${subject.name}</td>
         <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold;background:${valBg(vpm.em1)};color:${valColor(vpm.em1)}">${fmtVal(vpm.em1)}</td>
         <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold;background:${valBg(vpm.em2)};color:${valColor(vpm.em2)}">${fmtVal(vpm.em2)}</td>
@@ -1958,7 +1966,7 @@ ${page2Content}
     return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
 <title>Bulletin par matière - ${data.studentName} - ${data.periodName}</title>
 <style>
-  @page { size: A4 landscape; margin: 8mm; }
+  @page { size: A5 portrait; margin: 8mm; }
   body { font-family: 'Times New Roman', serif; margin: 0; padding: 0; color: #1a1a1a; }
   /* ─── Official header ─── */
   .official-header { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 3px solid #0A2A5E; padding-bottom: 8px; margin-bottom: 10px; }
@@ -2027,7 +2035,7 @@ ${page2Content}
 
   <!-- Bulletin Title -->
   <div class="bulletin-title">
-    Bulletin trimestriel par matière — ${data.periodName} ${data.academicYearName || ''}
+    Bulletin trimestriel — ${data.periodName} ${data.academicYearName || ''}
   </div>
 
   <!-- Student Info (avec photo) -->
@@ -2048,7 +2056,6 @@ ${page2Content}
   <!-- Notes Table par matière -->
   <table>
     <thead><tr>
-      <th style="width:30px">N°</th>
       <th style="text-align:left">Matière</th>
       <th>EM1</th>
       <th>EM2</th>

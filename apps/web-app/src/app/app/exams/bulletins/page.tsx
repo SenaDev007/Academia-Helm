@@ -1153,6 +1153,9 @@ function BulletinsContent() {
             qualitativeCode: sc?.qualitativeCode ?? null,
             isAbsent: sc?.isAbsent ?? false,
             appreciation: sc?.appreciation ?? '—',
+            // ⭐ Primaire — CM/CP envoyés par le frontend (valeurs réelles depuis le grade)
+            cm: !isEn && !secondaryConsolidated && !isMaternelle ? (sc?.cm ?? null) : undefined,
+            cp: !isEn && !secondaryConsolidated && !isMaternelle ? (sc?.cp ?? null) : undefined,
             // ⭐ EN: 3-component scores per subject
             firstCA: isEn ? (sc?.firstCA ?? null) : undefined,
             secondCA: isEn ? (sc?.secondCA ?? null) : undefined,
@@ -3798,8 +3801,8 @@ function MoyennesTab({
         </button>
       </div>
 
-      {/* ⭐ Vue par matière / Vue globale — toggle pour la maternelle + primaire */}
-      {(isMaternelle || scopeLevel === 'PRIMAIRE') && activeMoyenneTab === 'trimestriel' && (
+      {/* ⭐ Vue par matière / Vue globale — toggle pour la maternelle + primaire, trimestriel + annuel */}
+      {(isMaternelle || scopeLevel === 'PRIMAIRE') && (activeMoyenneTab === 'trimestriel' || activeMoyenneTab === 'annuel') && (
         <div className="flex items-center gap-2 bg-white p-3 rounded-xl border border-slate-200">
           <span className="text-sm font-semibold text-slate-700 mr-2">Vue :</span>
           <button
@@ -3854,7 +3857,21 @@ function MoyennesTab({
           <MoyennesTrimestrielTable data={trimesterData} isMaternelle={isMaternelle} />
         )
       ) : (
-        <MoyennesAnnuelTable data={annualData} isMaternelle={isMaternelle} />
+        (isMaternelle || scopeLevel === 'PRIMAIRE') && activeVue === 'par-matiere' ? (
+          <VueParMatiereAnnuel
+            academicYear={academicYear}
+            scopeLang={scopeLang}
+            isMaternelle={isMaternelle}
+            classes={classes}
+            selectedClassId={selectedClassId}
+            school={school}
+            effectiveTenantId={effectiveTenantId}
+            user={user}
+            directorName={directorName}
+          />
+        ) : (
+          <MoyennesAnnuelTable data={annualData} isMaternelle={isMaternelle} />
+        )
       )}
     </div>
   );
@@ -4057,6 +4074,12 @@ function VueParMatiereTrimestriel({
           if (isMaternelle && moyenne !== null) {
             sc.moyenneCode = moyenne >= 2.5 ? 'TS' : moyenne >= 1.5 ? 'S' : 'PS';
             sc.appreciation = moyenne >= 2.5 ? 'Très Satisfaisant' : moyenne >= 1.5 ? 'Satisfaisant' : 'Peu Satisfaisant';
+          } else if (!isMaternelle && moyenne !== null) {
+            // ⭐ Primaire — appréciation dynamique basée sur la moyenne /20
+            sc.appreciation = moyenne >= 16 ? 'Très Bien'
+              : moyenne >= 14 ? 'Bien'
+              : moyenne >= 12 ? 'Assez Bien'
+              : moyenne >= 10 ? 'Passable' : 'Insuffisant';
           }
         }
 
@@ -4421,6 +4444,430 @@ function VueParMatiereTrimestriel({
                             ) : (
                               <><Printer className="w-4 h-4 mr-2" />Générer PDF</>
                             )}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Vue Par Matière Annuel (maternelle + primaire) ──────────────────────────
+//
+// ⭐ Même pattern que VueParMatiereTrimestriel mais pour les moyennes annuelles.
+//    Colonnes : Matière | EM annuel | EC annuel | EP | Moyenne annuelle | Appréciation
+//    EM annuel = moyenne des Moy. EM des 3 trimestres
+//    EC annuel = moyenne des EC des 3 trimestres
+//    EP = évaluation de passage (T3 uniquement)
+//    Moyenne annuelle = ((EM annuel + EC annuel) / 2 + EP) / 2 si EP, sinon (EM annuel + EC annuel) / 2
+
+function VueParMatiereAnnuel({
+  academicYear, scopeLang, isMaternelle, classes, selectedClassId, school,
+  effectiveTenantId, user, directorName,
+}: {
+  academicYear: any;
+  scopeLang?: string;
+  isMaternelle: boolean;
+  classes: any[];
+  selectedClassId: string;
+  school: any;
+  effectiveTenantId?: string;
+  user?: any;
+  directorName?: string | null;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [students, setStudents] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<any[]>([]);
+  const [generatingPdf, setGeneratingPdf] = useState<string | null>(null);
+  const [expandedStudents, setExpandedStudents] = useState<Set<string>>(new Set());
+  const isTeacher = ['TEACHER', 'TEACHER_RESP', 'ENSEIGNANT', 'PEDAGOGIC_COORDINATOR'].includes(user?.role || '');
+
+  const loadData = useCallback(async () => {
+    if (!academicYear?.id || !selectedClassId) return;
+    setLoading(true);
+    try {
+      const evaluations = await institutionalExamsService.getEvaluations({
+        academicYearId: academicYear.id,
+        classId: selectedClassId,
+        status: 'VALIDATED',
+      });
+      const allEvals = Array.isArray(evaluations) ? evaluations : [];
+
+      const periodsRes = await fetch(`/api/settings/academic-years/${academicYear.id}/periods`, { credentials: 'include' });
+      const periods = Array.isArray(await periodsRes.json()) ? await periodsRes.json() : [];
+      if (periods.length === 0) { setStudents([]); setSubjects([]); return; }
+
+      // Batch-load grading sheets
+      const evalIds = allEvals.map((ev: any) => ev.id);
+      const sheetsMap = await institutionalExamsService
+        .getGradingSheetsBatch(evalIds)
+        .catch(() => ({}) as Record<string, any[]>);
+      const evalGradesMap = new Map<string, any[]>();
+      for (const id of evalIds) {
+        evalGradesMap.set(id, Array.isArray(sheetsMap[id]) ? sheetsMap[id] : []);
+      }
+
+      // Construire la liste des matières
+      const subjectMap = new Map<string, { id: string; name: string }>();
+      for (const ev of allEvals) {
+        if (ev.subject?.id && !subjectMap.has(ev.subject.id)) {
+          subjectMap.set(ev.subject.id, { id: ev.subject.id, name: ev.subject.name });
+        }
+      }
+      const subjectList = Array.from(subjectMap.values());
+      setSubjects(subjectList);
+
+      // Pour chaque élève × matière × trimestre, calculer EM1, EM2, EC, EP
+      // Puis agréger sur l'année : EM annuel = moyenne des moyEm des 3 trimestres
+      const studentMap = new Map<string, any>();
+
+      for (const period of periods) {
+        const periodEvals = allEvals.filter((ev: any) => ev.period?.id === period.id);
+        if (periodEvals.length === 0) continue;
+
+        for (const ev of periodEvals) {
+          const grades = evalGradesMap.get(ev.id) || [];
+          const subjectId = ev.subject?.id;
+          const evalCode = ev.evaluationType?.code;
+          if (!subjectId) continue;
+
+          for (const grade of grades) {
+            if (!studentMap.has(grade.studentId)) {
+              studentMap.set(grade.studentId, {
+                id: grade.studentId,
+                studentName: grade.studentName || 'Inconnu',
+                matricule: grade.matricule || null,
+                gender: grade.gender,
+                subjectScores: {} as Record<string, any>,
+                generalAverage: null as number | null,
+                appreciationGlobale: null as string | null,
+                classRank: 0,
+              });
+            }
+            const student = studentMap.get(grade.studentId);
+            if (!student.subjectScores[subjectId]) {
+              student.subjectScores[subjectId] = {
+                trimesters: [] as { moyEm: number | null; ec: number | null; ep: number | null }[],
+              };
+            }
+            const sc = student.subjectScores[subjectId];
+            // Initialiser les trimestres
+            while (sc.trimesters.length < periods.length) {
+              sc.trimesters.push({ moyEm: null, ec: null, ep: null });
+            }
+            const periodIdx = periods.findIndex((p: any) => p.id === period.id);
+            if (periodIdx < 0) continue;
+            const trimester = sc.trimesters[periodIdx];
+
+            if (grade.isAbsent) continue;
+
+            // Maternelle : qualitativeCode TS=3, S=2, PS=1
+            // Primaire : score /20
+            const val = isMaternelle
+              ? (grade.qualitativeCode === 'TS' ? 3 : grade.qualitativeCode === 'S' ? 2 : grade.qualitativeCode === 'PS' ? 1 : null)
+              : (grade.score !== null && grade.score !== undefined ? Number(grade.score) : null);
+            if (val === null) continue;
+
+            if (evalCode === 'EM1' || evalCode === 'EM2') {
+              // Accumuler pour moyEm
+              if (trimester.moyEm === null) trimester.moyEm = 0;
+              if (evalCode === 'EM1' && trimester._em1Count === undefined) { trimester._em1Count = 0; trimester._em1Total = 0; }
+              if (evalCode === 'EM2' && trimester._em2Count === undefined) { trimester._em2Count = 0; trimester._em2Total = 0; }
+              if (evalCode === 'EM1') { trimester._em1Total = (trimester._em1Total || 0) + val; trimester._em1Count = (trimester._em1Count || 0) + 1; }
+              if (evalCode === 'EM2') { trimester._em2Total = (trimester._em2Total || 0) + val; trimester._em2Count = (trimester._em2Count || 0) + 1; }
+            } else if (evalCode === 'EC') {
+              if (trimester.ec === null) trimester.ec = 0;
+              trimester.ec = trimester.ec + val;
+              trimester._ecCount = (trimester._ecCount || 0) + 1;
+            } else if (evalCode === 'EP') {
+              trimester.ep = val;
+            }
+          }
+        }
+      }
+
+      // Calculer les moyennes par trimestre + agrégation annuelle
+      const results = Array.from(studentMap.values());
+      for (const student of results) {
+        for (const subject of subjectList) {
+          const sc = student.subjectScores[subject.id];
+          if (!sc) continue;
+
+          let emSum = 0, emCount = 0;
+          let ecSum = 0, ecCount = 0;
+          let epVal: number | null = null;
+
+          for (const trimester of sc.trimesters) {
+            // moyEm = (EM1 + EM2) / 2
+            const em1Avg = trimester._em1Count > 0 ? trimester._em1Total / trimester._em1Count : null;
+            const em2Avg = trimester._em2Count > 0 ? trimester._em2Total / trimester._em2Count : null;
+            const moyEm = (em1Avg !== null && em2Avg !== null) ? (em1Avg + em2Avg) / 2
+              : (em1Avg !== null ? em1Avg : (em2Avg !== null ? em2Avg : null));
+            if (moyEm !== null) { emSum += moyEm; emCount++; }
+
+            const ecAvg = trimester._ecCount > 0 ? trimester.ec / trimester._ecCount : null;
+            if (ecAvg !== null) { ecSum += ecAvg; ecCount++; }
+
+            if (trimester.ep !== null) epVal = trimester.ep;
+          }
+
+          const emAnnuel = emCount > 0 ? emSum / emCount : null;
+          const ecAnnuel = ecCount > 0 ? ecSum / ecCount : null;
+
+          let moyenneAnnuelle: number | null = null;
+          if (emAnnuel !== null && ecAnnuel !== null && epVal !== null) {
+            moyenneAnnuelle = ((emAnnuel + ecAnnuel) / 2 + epVal) / 2;
+          } else if (emAnnuel !== null && ecAnnuel !== null) {
+            moyenneAnnuelle = (emAnnuel + ecAnnuel) / 2;
+          } else if (emAnnuel !== null) {
+            moyenneAnnuelle = emAnnuel;
+          }
+
+          sc.emAnnuel = emAnnuel;
+          sc.ecAnnuel = ecAnnuel;
+          sc.ep = epVal;
+          sc.moyenneAnnuelle = moyenneAnnuelle;
+
+          if (isMaternelle && moyenneAnnuelle !== null) {
+            sc.appreciation = moyenneAnnuelle >= 2.5 ? 'Très Satisfaisant'
+              : moyenneAnnuelle >= 1.5 ? 'Satisfaisant' : 'Peu Satisfaisant';
+          } else if (!isMaternelle && moyenneAnnuelle !== null) {
+            sc.appreciation = moyenneAnnuelle >= 16 ? 'Très Bien'
+              : moyenneAnnuelle >= 14 ? 'Bien'
+              : moyenneAnnuelle >= 12 ? 'Assez Bien'
+              : moyenneAnnuelle >= 10 ? 'Passable' : 'Insuffisant';
+          } else {
+            sc.appreciation = '—';
+          }
+        }
+
+        // Moyenne générale annuelle
+        const moyennes = subjectList
+          .map(s => student.subjectScores[s.id]?.moyenneAnnuelle)
+          .filter((m: number | null | undefined): m is number => m !== null && m !== undefined);
+        if (moyennes.length > 0) {
+          student.generalAverage = moyennes.reduce((a, b) => a + b, 0) / moyennes.length;
+          if (isMaternelle) {
+            student.appreciationGlobale = student.generalAverage >= 2.5 ? 'Très Satisfaisant'
+              : student.generalAverage >= 1.5 ? 'Satisfaisant' : 'Peu Satisfaisant';
+          }
+        }
+      }
+
+      // Rang dense
+      const scored = results.filter(s => s.generalAverage !== null)
+        .sort((a, b) => (b.generalAverage as number) - (a.generalAverage as number));
+      let lastRank = 0; let lastVal: number | null = null;
+      scored.forEach((s, i) => {
+        const r = (i > 0 && s.generalAverage === lastVal) ? lastRank : i + 1;
+        lastRank = r; lastVal = s.generalAverage; s.classRank = r;
+      });
+
+      results.sort((a, b) => a.studentName.localeCompare(b.studentName, 'fr'));
+      setStudents(results);
+    } catch (err) {
+      console.error('Error loading vue par matière annuel:', err);
+      setStudents([]); setSubjects([]);
+    } finally { setLoading(false); }
+  }, [academicYear?.id, selectedClassId, scopeLang, isMaternelle]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const toggleStudent = (id: string) => {
+    setExpandedStudents(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  };
+
+  const handleGeneratePdf = async (student: any) => {
+    setGeneratingPdf(student.id);
+    try {
+      const className = classes.find(c => c.id === selectedClassId)?.name || '';
+      const validAvgs = students.map(s => s.generalAverage).filter((a: number | null): a is number => a !== null);
+      const classAverage = validAvgs.length > 0 ? validAvgs.reduce((a, b) => a + b, 0) / validAvgs.length : null;
+
+      const payload: any = {
+        schoolName: school?.schoolName,
+        schoolLogo: school?.logoUrl,
+        schoolAddress: school?.address,
+        schoolPhone: school?.phone,
+        schoolEmail: school?.email,
+        schoolSlogan: school?.slogan,
+        academicYearName: academicYear?.label || '',
+        periodName: 'Moyenne annuelle',
+        evaluationTypeName: 'Moyenne annuelle',
+        className,
+        studentName: student.studentName,
+        studentMatricule: student.matricule,
+        studentGender: student.gender,
+        isMaternelle,
+        isVueParMatiere: true,
+        subjects: subjects.map(s => {
+          const sc = student.subjectScores[s.id];
+          return {
+            name: s.name,
+            score: sc?.moyenneAnnuelle ?? null,
+            qualitativeCode: isMaternelle ? null : null,
+            isAbsent: false,
+            appreciation: sc?.appreciation ?? '—',
+            vueParMatiere: {
+              em1: sc?.emAnnuel ?? null,  // EM annuel → colonne EM1
+              em2: null,                  // pas de EM2 en annual
+              moyEm: sc?.emAnnuel ?? null, // Moy. EM = EM annuel
+              ec: sc?.ecAnnuel ?? null,    // EC annuel
+              moyenne: sc?.moyenneAnnuelle ?? null,
+            },
+          };
+        }),
+        generalAverage: student.generalAverage,
+        classRank: student.classRank,
+        classAverage,
+        totalStudents: students.length,
+        appreciationGlobale: student.appreciationGlobale,
+        directorName,
+      };
+
+      const response = await apiClient.post('/institutional-exams/bulletins/generate-pdf', payload, {
+        responseType: 'blob', timeout: 120000,
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      const safeName = student.studentName.replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+      link.download = `bulletin_annuel_${safeName}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toastSuccess('Bulletin annuel généré', { description: student.studentName });
+    } catch (err: any) {
+      toastError('Erreur PDF', { description: err.response?.data?.message || err.message });
+    } finally { setGeneratingPdf(null); }
+  };
+
+  const fmtQ = (val: number | null | undefined): string => {
+    if (val === null || val === undefined) return '—';
+    return isMaternelle ? (val >= 2.5 ? 'TS' : val >= 1.5 ? 'S' : 'PS') : val.toFixed(2);
+  };
+  const qColor = (val: number | null | undefined): string => {
+    if (val === null || val === undefined) return 'bg-slate-100 text-slate-400';
+    if (isMaternelle) {
+      return val >= 2.5 ? 'bg-emerald-100 text-emerald-700' : val >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700';
+    }
+    return val >= 10 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700';
+  };
+
+  return (
+    <div className="space-y-4">
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <span className="ml-3 text-sm text-slate-500">Calcul des moyennes annuelles par matière…</span>
+        </div>
+      ) : students.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+          <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500">Aucune donnée annuelle disponible.</p>
+        </div>
+      ) : (
+        <>
+          <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Badge variant="outline" className="text-xs gap-1"><Users className="w-3 h-3" />{students.length} élèves</Badge>
+              <Badge variant="outline" className="text-xs gap-1"><BookOpen className="w-3 h-3" />{subjects.length} matières</Badge>
+            </div>
+            {!isTeacher && (
+              <Button onClick={() => students.forEach(s => handleGeneratePdf(s))} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg shadow-sm">
+                <Printer className="w-4 h-4 mr-2" />Toute la classe
+              </Button>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            {students.map((student) => {
+              const isExpanded = expandedStudents.has(student.id);
+              return (
+                <div key={student.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                  <button onClick={() => toggleStudent(student.id)} className="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      {isExpanded ? <ChevronDown className="w-5 h-5 text-slate-500" /> : <ChevronRight className="w-5 h-5 text-slate-500" />}
+                      <div className="text-left">
+                        <div className="text-sm font-bold text-slate-900 whitespace-nowrap">{student.studentName}</div>
+                        <div className="text-xs text-slate-500">{student.matricule || '—'} · Rang {formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')}{student.appreciationGlobale && ` · ${student.appreciationGlobale}`}</div>
+                      </div>
+                    </div>
+                    {isMaternelle && student.appreciationGlobale && (
+                      <span className={cn('px-2 py-1 rounded text-xs font-bold',
+                        student.appreciationGlobale === 'Très Satisfaisant' && 'bg-emerald-100 text-emerald-700',
+                        student.appreciationGlobale === 'Satisfaisant' && 'bg-blue-100 text-blue-700',
+                        student.appreciationGlobale === 'Peu Satisfaisant' && 'bg-amber-100 text-amber-700',
+                      )}>{student.appreciationGlobale}</span>
+                    )}
+                  </button>
+                  {isExpanded && (
+                    <div className="border-t border-slate-100 p-4">
+                      <div className="overflow-x-auto rounded-lg border border-slate-200">
+                        <table className="w-full border-collapse text-xs">
+                          <thead>
+                            <tr style={{ backgroundColor: '#0A2A5E', color: 'white' }}>
+                              <th className="border px-3 py-2 font-bold uppercase text-left" style={{ borderColor: '#0D3B85', minWidth: '200px' }}>Matière</th>
+                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>EM annuel</th>
+                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>EC annuel</th>
+                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>EP</th>
+                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}>Moyenne annuelle</th>
+                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Appréciation</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {subjects.map((subject, idx) => {
+                              const sc = student.subjectScores[subject.id];
+                              return (
+                                <tr key={subject.id} className={cn(idx % 2 === 1 && 'bg-slate-50/60')}>
+                                  <td className="border border-slate-300 px-3 py-1.5 font-medium text-slate-900">{subject.name}</td>
+                                  <td className="border border-slate-300 px-2 py-1.5 text-center">
+                                    <span className={cn('inline-flex min-w-[40px] px-2 py-0.5 rounded-full text-[10px] font-bold', qColor(sc?.emAnnuel))}>{fmtQ(sc?.emAnnuel)}</span>
+                                  </td>
+                                  <td className="border border-slate-300 px-2 py-1.5 text-center">
+                                    <span className={cn('inline-flex min-w-[40px] px-2 py-0.5 rounded-full text-[10px] font-bold', qColor(sc?.ecAnnuel))}>{fmtQ(sc?.ecAnnuel)}</span>
+                                  </td>
+                                  <td className="border border-slate-300 px-2 py-1.5 text-center">
+                                    <span className={cn('inline-flex min-w-[36px] px-2 py-0.5 rounded-full text-[10px] font-bold', qColor(sc?.ep))}>{fmtQ(sc?.ep)}</span>
+                                  </td>
+                                  <td className="border border-slate-300 px-2 py-1.5 text-center font-bold bg-blue-50/70">
+                                    <span className={cn('inline-flex min-w-[60px] justify-center px-2 py-0.5 rounded-md text-sm font-bold bg-white', qColor(sc?.moyenneAnnuelle))}>{fmtQ(sc?.moyenneAnnuelle)}</span>
+                                  </td>
+                                  <td className="border border-slate-300 px-2 py-1.5 text-center">
+                                    <span className={cn('inline-flex min-w-[80px] px-2 py-0.5 rounded-full text-[10px] font-bold',
+                                      sc?.appreciation === 'Très Satisfaisant' && 'bg-emerald-100 text-emerald-700',
+                                      sc?.appreciation === 'Satisfaisant' && 'bg-blue-100 text-blue-700',
+                                      sc?.appreciation === 'Peu Satisfaisant' && 'bg-amber-100 text-amber-700',
+                                      sc?.appreciation === 'Très Bien' && 'bg-emerald-100 text-emerald-700',
+                                      sc?.appreciation === 'Bien' && 'bg-blue-100 text-blue-700',
+                                      sc?.appreciation === 'Assez Bien' && 'bg-cyan-100 text-cyan-700',
+                                      sc?.appreciation === 'Passable' && 'bg-amber-100 text-amber-700',
+                                      sc?.appreciation === 'Insuffisant' && 'bg-red-100 text-red-700',
+                                      (!sc?.appreciation || sc.appreciation === '—') && 'bg-slate-100 text-slate-400',
+                                    )}>{sc?.appreciation || '—'}</span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-xs text-slate-500">
+                          Formule : Moyenne annuelle = ((EM annuel + EC annuel) / 2 + EP) / 2
+                        </div>
+                        {!isTeacher && (
+                          <Button onClick={() => handleGeneratePdf(student)} disabled={generatingPdf === student.id}
+                            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold px-4 py-2 rounded-lg shadow-sm">
+                            {generatingPdf === student.id ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Génération…</> : <><Printer className="w-4 h-4 mr-2" />Générer PDF</>}
                           </Button>
                         )}
                       </div>

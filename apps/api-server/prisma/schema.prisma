@@ -10422,6 +10422,35 @@ model ExamCandidate {
   @@map("exam_candidates")
 }
 
+/// ⭐ Examens nationaux (CEP / BEPC / Baccalauréat) — soumission des candidats
+/// par l'établissement. L'école Helm sélectionne ses élèves éligibles
+/// (CM2 → CEP, 3ème → BEPC, Terminale → Bac par série) et envoie la liste
+/// officielle au(x) patronat(s) rattaché(s) — Academia Federis (2026-09-27).
+model SchoolExamSubmission {
+  id             String    @id @default(uuid())
+  /// Tenant ÉCOLE émettrice (type SCHOOL)
+  tenantId       String
+  academicYearId String
+  /// CEP | BEPC | BAC
+  examType       String
+  /// DRAFT (sélection en cours) | SUBMITTED (envoyée aux patronats)
+  status         String    @default("DRAFT")
+  /// Sélection officielle : [Student.id]
+  candidateIds   Json
+  /// Tenants patronats destinataires (après envoi)
+  patronatIds    Json?
+  submittedAt    DateTime?
+  submittedBy    String?
+  metadata       Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([tenantId, academicYearId, examType])
+  @@index([tenantId, academicYearId])
+  @@index([examType])
+  @@map("school_exam_submissions")
+}
+
 model ExamRoom {
   id               String           @id @default(uuid())
   tenantId         String

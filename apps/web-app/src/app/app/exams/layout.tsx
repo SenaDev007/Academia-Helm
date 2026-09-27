@@ -112,9 +112,23 @@ export function useExamSubModules(baseModules: any[]) {
   // ⭐ V10g — L'onglet « Récapitulatif trimestriel » (Termly Recap) n'existe que
   // pour la piste ANGLOPHONE (First CA + Second CA + Exam = /100 par matière).
   // On le masque pour les niveaux francophones.
-  const visibleModules = isEN
-    ? baseModules
-    : baseModules.filter((m: any) => m.id !== 'term-recap');
+  //
+  // ⭐ Examens nationaux (CEP / BEPC / Baccalauréat) — onglet réservé aux
+  //    niveaux PRIMAIRE et SECONDAIRE francophones (classes CM2 / 3ème /
+  //    Terminale). Masqué pour Maternelle et les pistes anglophones
+  //    (Nursery/Primary) : ces examens nationaux ne les concernent pas.
+  //    Le contenu de l'onglet reste DYNAMIQUE (API) : seuls les sous-onglets
+  //    CEP / BEPC / Bac correspondant aux classes réelles de l'école
+  //    s'affichent dans la page.
+  const upperLevel = (level || '').toUpperCase();
+  const nationalExamsVisible =
+    !isEN && ['PRIMAIRE', 'SECONDAIRE'].includes(upperLevel);
+
+  const visibleModules = baseModules.filter((m: any) => {
+    if (m.id === 'term-recap') return isEN; // piste anglophone uniquement
+    if (m.id === 'national-exams') return nationalExamsVisible;
+    return true;
+  });
 
   return visibleModules.map((m: any) => ({
     ...m,

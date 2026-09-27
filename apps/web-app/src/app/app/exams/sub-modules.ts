@@ -23,7 +23,8 @@ import {
   Calendar,
   ClipboardList,
   SlidersHorizontal,
-  Lock
+  Lock,
+  Landmark
 } from 'lucide-react';
 
 export const EXAMS_SUB_MODULES = [
@@ -77,6 +78,16 @@ export const EXAMS_SUB_MODULES = [
     label: 'Bulletins',
     href: '/app/exams/bulletins',
     icon: FileText
+  },
+  {
+    // ⭐ Examens nationaux (CEP / BEPC / Baccalauréat) — candidats présentés
+    //    par l'école aux patronats (Academia Federis). Onglet dynamique :
+    //    sous-onglets CEP/BEPC/Bac selon les classes CM2/3ème/Terminale.
+    //    Masqué pour Maternelle et les pistes anglophones (useExamSubModules).
+    id: 'national-exams',
+    label: 'Examens nationaux',
+    href: '/app/exams/national-exams',
+    icon: Landmark
   },
   {
     id: 'analytics',

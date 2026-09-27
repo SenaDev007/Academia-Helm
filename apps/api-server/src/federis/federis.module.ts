@@ -22,6 +22,9 @@ import { FederisSchoolController } from './federis-school.controller';
 // ⭐ Workflow délibération → publication → notifications parents (miroir offline)
 import { FederisDeliberationService } from './federis-deliberation.service';
 import { FederisDeliberationController } from './federis-deliberation.controller';
+// ⭐ Examens nationaux côté école : CEP/BEPC/Bac (sélection + envoi patronat)
+import { FederisSchoolExamsService } from './federis-school-exams.service';
+import { FederisSchoolExamsController } from './federis-school-exams.controller';
 
 @Module({
   controllers: [
@@ -32,6 +35,7 @@ import { FederisDeliberationController } from './federis-deliberation.controller
     FederisExamsController,
     FederisSchoolController,
     FederisDeliberationController,
+    FederisSchoolExamsController,
   ],
   providers: [
     FederisService,
@@ -44,6 +48,7 @@ import { FederisDeliberationController } from './federis-deliberation.controller
     FederisExamsService,
     FederisSchoolService,
     FederisDeliberationService,
+    FederisSchoolExamsService,
   ],
   exports: [
     FederisService,
@@ -56,6 +61,7 @@ import { FederisDeliberationController } from './federis-deliberation.controller
     FederisExamsService,
     FederisSchoolService,
     FederisDeliberationService,
+    FederisSchoolExamsService,
   ],
 })
 export class FederisModule {}

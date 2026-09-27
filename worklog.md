@@ -11670,3 +11670,26 @@ Stage Summary:
 - ✅ Idempotence checkout pattern Helm (double-clic/réessai = même facture, URL fraîche renvoyée sans nouvelle transaction)
 - ✅ Fini le message trompeur : les vraies erreurs Fedapay remontent au frontend
 - ⏳ Validation E2E production après déploiement Railway (re-test : nom « Patronat … » sans 409 + réutilisation facture au 2e clic)
+
+---
+Task ID: fix-fedapay-checkout-2026-09-28 (validation)
+Agent: Super Z (principal)
+Task: Validation E2E production du correctif checkout Fedapay (commit 3e9eaa5f0)
+
+Work Log:
+- DÉPLOIEMENT : commit 3e9eaa5f0 poussé (rebase sur e75382b6a vie-scolaire) → Railway auto-déployé
+- SUITE API (scripts/verify_fedapay_checkout_fix.mjs — 13/13 ✅) :
+  * Inscription « Patronat Vérif … » (ancien cas de collision) → checkout 201, facture FED-PAT-2026-0004, provider FEDAPAY, paymentUrl process.fedapay.com — PLUS AUCUN 409 P2002
+  * Double-clic simulé (2e checkout immédiat) → MÊME facture FED-PAT-2026-0004, MÊME paymentUrl, MÊME ID transaction Fedapay (JWT sub=113354257) → aucune transaction en double
+  * Changement d'offre INSTITUTION → ESSENTIEL → nouvelle facture FED-PAT-2026-0005 (100 000 XOF), ancienne FED-PAT-2026-0004 passée en CANCELLED, une seule facture UNPAID ouverte
+- E2E NAVIGATEUR (agent-browser, compte test testqa.fix.muk7sr8k) :
+  * https://academiafederis.academiahelm.com/login → connexion OK → /dashboard
+  * /checkout → clic « Payer avec Fedapay » → REDIRECTION RÉELLE vers https://process.fedapay.com/mobile-money (marchand YEHI OR Tech, transaction trx_eA4_1790537506838, moyens Mobile Money MTN/Moov/Orange/Togocel/Airtel/Free) — screenshot scripts/fedapay_page_proof.png
+  * Le parcours exact qui affichait « Facture créée… Fedapay non configuré » redirige maintenant vers la page de paiement FedaPay
+- Endpoints post-paiement vérifiés : verify (404 propre facture inconnue), by-transaction ({found:false} structuré), webhook fail-closed (signature invalide rejetée)
+
+Stage Summary:
+- ✅ Correctif déployé et validé E2E production : clic « Payer avec Fedapay » → page de paiement FedaPay (process.fedapay.com)
+- ✅ Collision de numéros éliminée, idempotence double-clic OK, changement d'offre OK
+- ⏳ Reste à valider par l'utilisateur avec un VRAI paiement (Mobile Money) : webhook → activation + sous-domaine patronat + email identifiants (chaîne déjà déployée et vérifiée structurellement)
+- Données de test production (purge admin éventuelle) : patronats « Patronat TESTQA muk78n9j », « Zébu QA muk795y3 », « Yèdè QA muk78n9j+ », « Patronat Vérif muk7sr8k » + factures FED-PAT/ZÉB/YÈD-2026-0001, FED-PAT-2026-0004/0005/0006

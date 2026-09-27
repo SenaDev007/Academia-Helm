@@ -19,6 +19,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { normalizePatronatFunction, patronatFunctionLabel } from './federis-roles';
+import { FederisFedapayService } from './federis-fedapay.service';
 
 /** Offres Federis (cahier des charges §12 + proposition tarifaire). */
 export const FEDERIS_PLANS = {
@@ -74,7 +75,10 @@ export class InitCheckoutDto {
 export class FederisPatronatService {
   private readonly logger = new Logger(FederisPatronatService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly fedapayService: FederisFedapayService,
+  ) {}
 
   /** Résout le patronat depuis le tenant du JWT (fallback : lien PatronatUser). */
   async resolvePatronat(tenantId: string, userId?: string) {
@@ -95,7 +99,11 @@ export class FederisPatronatService {
     if (!patronat && userId) {
       const link = await this.prisma.patronatUser.findFirst({
         where: { userId, isActive: true },
-        select: { patronat: { include: { tenant: true, country: true, territorialLevel: true, parentPatronat: true } } },
+        select: {
+          patronat: {
+            include: { tenant: true, country: true, territorialLevel: true, parentPatronat: true },
+          },
+        },
       });
       patronat = link?.patronat as typeof patronat;
     }
@@ -108,7 +116,8 @@ export class FederisPatronatService {
   /** Profil complet du patronat connecté + statut d'abonnement. */
   async getProfile(tenantId: string, userId?: string) {
     const patronat = await this.resolvePatronat(tenantId, userId);
-    const plan = FEDERIS_PLANS[(patronat.subscriptionPlan as FederisPlanCode)] ?? FEDERIS_PLANS.ESSENTIEL;
+    const plan =
+      FEDERIS_PLANS[patronat.subscriptionPlan as FederisPlanCode] ?? FEDERIS_PLANS.ESSENTIEL;
     const childrenCount = await this.prisma.patronat.count({
       where: { parentPatronatId: patronat.id },
     });
@@ -332,7 +341,7 @@ export class FederisPatronatService {
     }
 
     const plan =
-      FEDERIS_PLANS[(patronat.subscriptionPlan as FederisPlanCode)] ?? FEDERIS_PLANS.ESSENTIEL;
+      FEDERIS_PLANS[patronat.subscriptionPlan as FederisPlanCode] ?? FEDERIS_PLANS.ESSENTIEL;
     const totalSchools = joinedSchools + manualSchools;
 
     return {
@@ -444,10 +453,21 @@ export class FederisPatronatService {
     }
 
     // Niveaux territoriaux configurés pour le pays (ordre > 1 = sous-niveau du national)
-    const levels = await this.prisma.countryTerritorialLevel.findMany({
-      where: { countryId: parent.countryId, isActive: true, order: { gt: 1 } },
-      orderBy: { order: 'asc' },
-    });
+    // Défensif : table non déployée (migration 20260927000000 absente) →
+    // refus propre plutôt qu'une erreur 500.
+    let levels: { id: string; code: string; label: string; order: number }[] = [];
+    try {
+      levels = await this.prisma.countryTerritorialLevel.findMany({
+        where: { countryId: parent.countryId, isActive: true, order: { gt: 1 } },
+        orderBy: { order: 'asc' },
+      });
+    } catch (err) {
+      const code = (err as any)?.code;
+      if (code !== 'P2021' && code !== 'P2022' && code !== 'P2024') throw err;
+      this.logger.warn(
+        'Table country_territorial_levels absente — création de patronat territorial indisponible (migration 20260927000000 non déployée ?).',
+      );
+    }
     if (levels.length === 0) {
       throw new BadRequestException(
         "Aucun niveau territorial configuré pour ce pays. Configurez d'abord les niveaux du pays.",
@@ -643,7 +663,7 @@ export class FederisPatronatService {
 
     // Quota d'écoles du plan (alerte à 80 % / 100 %, jamais de facturation auto)
     const plan =
-      FEDERIS_PLANS[(patronat.subscriptionPlan as FederisPlanCode)] ?? FEDERIS_PLANS.ESSENTIEL;
+      FEDERIS_PLANS[patronat.subscriptionPlan as FederisPlanCode] ?? FEDERIS_PLANS.ESSENTIEL;
     const currentCount = await this.prisma.patronatSchool.count({
       where: { patronatId: patronat.id, status: 'JOINED' },
     });
@@ -724,7 +744,7 @@ export class FederisPatronatService {
   async getSubscription(tenantId: string, userId?: string) {
     const patronat = await this.resolvePatronat(tenantId, userId);
     const plan =
-      FEDERIS_PLANS[(patronat.subscriptionPlan as FederisPlanCode)] ?? FEDERIS_PLANS.ESSENTIEL;
+      FEDERIS_PLANS[patronat.subscriptionPlan as FederisPlanCode] ?? FEDERIS_PLANS.ESSENTIEL;
     const invoices = await this.prisma.federisInvoice.findMany({
       where: { patronatId: patronat.id },
       include: { payments: true },
@@ -769,7 +789,8 @@ export class FederisPatronatService {
     if (!plan) throw new BadRequestException('Offre invalide. Offres : ESSENTIEL, INSTITUTION.');
 
     // Facture de souscription (année scolaire en cours)
-    const year = new Date().getMonth() >= 8 ? new Date().getFullYear() : new Date().getFullYear() - 1;
+    const year =
+      new Date().getMonth() >= 8 ? new Date().getFullYear() : new Date().getFullYear() - 1;
     const invoiceCount = await this.prisma.federisInvoice.count({
       where: { patronatId: patronat.id },
     });
@@ -789,6 +810,54 @@ export class FederisPatronatService {
       },
     });
 
+    // ── Transaction Fedapay (MÊME PATTER QUE HELM — SDK officiel) ──
+    // La transaction porte les metadata federis (federisInvoiceId…) +
+    // webhook_url propre à Federis : le webhook
+    // POST /api/federis/public/fedapay/webhook active l'abonnement dès
+    // l'approbation (montant vérifié, idempotent).
+    let paymentUrl: string | null = null;
+    let provider = 'MANUAL' as 'FEDAPAY' | 'MANUAL';
+    let providerTransactionId: string | null = null;
+
+    if (this.fedapayService.isConfigured()) {
+      try {
+        provider = 'FEDAPAY';
+        const tx = await this.fedapayService.createSubscriptionTransaction({
+          invoice: { id: invoice.id, number: invoice.number, amount: invoice.amount },
+          patronat: {
+            id: patronat.id,
+            tenantId: patronat.tenantId,
+            name: patronat.name,
+            primaryEmail: patronat.primaryEmail,
+            primaryPhone: patronat.primaryPhone,
+          },
+          plan: { code: plan.code, name: plan.name },
+        });
+        paymentUrl = tx.paymentUrl;
+        providerTransactionId = tx.transactionId;
+
+        // Trace la transaction sur la facture (résolution webhook si les
+        // metadata venaient à manquer dans le payload).
+        await this.prisma.federisInvoice.update({
+          where: { id: invoice.id },
+          data: {
+            metadata: {
+              ...(invoice.metadata as any),
+              provider: 'FEDAPAY',
+              providerTransactionId: providerTransactionId,
+              paymentUrl,
+            },
+          },
+        });
+      } catch (err: any) {
+        this.logger.warn(
+          `Fedapay a refusé la transaction : ${err?.message ?? err} — la facture ${invoice.number} reste payable manuellement.`,
+        );
+        paymentUrl = null;
+        providerTransactionId = null;
+      }
+    }
+
     await this.prisma.auditLog.create({
       data: {
         tenantId: patronat.tenantId,
@@ -798,42 +867,14 @@ export class FederisPatronatService {
         resourceId: invoice.id,
         tableName: 'federis_invoices',
         recordId: invoice.id,
-        newData: { plan: plan.code, amount: plan.amountXOF },
+        newData: {
+          plan: plan.code,
+          amount: plan.amountXOF,
+          provider,
+          providerTransactionId,
+        },
       },
     });
-
-    // Transaction Fedapay (API v1) — si la clé est configurée.
-    const apiKey = process.env.FEDAPAY_API_KEY || '';
-    const apiBase = process.env.FEDAPAY_API_URL || 'https://api.fedapay.com';
-    let paymentUrl: string | null = null;
-    let provider = 'MANUAL' as 'FEDAPAY' | 'MANUAL';
-
-    if (apiKey) {
-      try {
-        provider = 'FEDAPAY';
-        const res = await fetch(`${apiBase}/v1/transactions`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            description: `${plan.name} — ${patronat.name} (${number})`,
-            amount: plan.amountXOF,
-            currency: { iso: 'XOF' },
-            callback_url: `${process.env.FEDERIS_CHECKOUT_RETURN_URL || 'https://academiafederis.academiahelm.com/checkout/success'}`,
-          }),
-        });
-        if (res.ok) {
-          const data = (await res.json()) as { v1?: { url?: string }; url?: string };
-          paymentUrl = data?.v1?.url ?? data?.url ?? null;
-        } else {
-          this.logger.warn(`Fedapay a refusé la transaction : HTTP ${res.status}`);
-        }
-      } catch (err: any) {
-        this.logger.warn(`Fedapay indisponible : ${err?.message ?? err}`);
-      }
-    }
 
     return {
       success: true,
@@ -841,10 +882,9 @@ export class FederisPatronatService {
       plan: { code: plan.code, name: plan.name, amountXOF: plan.amountXOF },
       provider,
       paymentUrl,
-      message:
-        paymentUrl
-          ? 'Paiement Fedapay initialisé.'
-          : "Facture créée. Le paiement en ligne sera finalisé par l'équipe (Fedapay non configuré sur cet environnement).",
+      message: paymentUrl
+        ? 'Paiement Fedapay initialisé.'
+        : "Facture créée. Le paiement en ligne sera finalisé par l'équipe (Fedapay non configuré sur cet environnement).",
     };
   }
 }

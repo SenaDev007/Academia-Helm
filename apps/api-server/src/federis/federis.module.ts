@@ -4,6 +4,9 @@ import { FederisService } from './federis.service';
 import { FederisSyncService } from './federis-sync.service';
 // PrismaService retiré — fourni globalement par DatabaseModule (@Global)
 
+// ⭐ Passerelle Fedapay partagée avec Academia Helm (SDK + signature webhook)
+import { BillingModule } from '../billing/billing.module';
+import { FederisFedapayService } from './federis-fedapay.service';
 import { FederisConnectController } from './federis-connect.controller';
 import { FederisConnectService } from './federis-connect.service';
 import { FederisFinanceService } from './federis-finance.service';
@@ -25,8 +28,13 @@ import { FederisDeliberationController } from './federis-deliberation.controller
 // ⭐ Examens nationaux côté école : CEP/BEPC/Bac (sélection + envoi patronat)
 import { FederisSchoolExamsService } from './federis-school-exams.service';
 import { FederisSchoolExamsController } from './federis-school-exams.controller';
+// ⭐ PDF officiels : bordereaux d'émargement + palmarès (Puppeteer, même
+// pattern que les PDF Helm — rendu backend, aucune génération frontend)
+import { FederisPdfService } from './federis-pdf.service';
+import { FederisPdfController } from './federis-pdf.controller';
 
 @Module({
+  imports: [BillingModule],
   controllers: [
     FederisController,
     FederisConnectController,
@@ -36,6 +44,7 @@ import { FederisSchoolExamsController } from './federis-school-exams.controller'
     FederisSchoolController,
     FederisDeliberationController,
     FederisSchoolExamsController,
+    FederisPdfController,
   ],
   providers: [
     FederisService,
@@ -43,12 +52,14 @@ import { FederisSchoolExamsController } from './federis-school-exams.controller'
     FederisConnectService,
     FederisFinanceService,
     FederisRegisterService,
+    FederisFedapayService,
     FederisPatronatService,
     FederisUsersService,
     FederisExamsService,
     FederisSchoolService,
     FederisDeliberationService,
     FederisSchoolExamsService,
+    FederisPdfService,
   ],
   exports: [
     FederisService,
@@ -56,6 +67,7 @@ import { FederisSchoolExamsController } from './federis-school-exams.controller'
     FederisConnectService,
     FederisFinanceService,
     FederisRegisterService,
+    FederisFedapayService,
     FederisPatronatService,
     FederisUsersService,
     FederisExamsService,

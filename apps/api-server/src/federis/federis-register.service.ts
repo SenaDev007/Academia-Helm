@@ -73,34 +73,88 @@ export class FederisRegisterService {
   }
 
   /**
+   * Détermine si une erreur Prisma correspond à une table manquante
+   * (P2021 « table does not exist » / P2022 « column does not exist »).
+   * Utilisé pour le repli défensif : les tables federis
+   * (country_territorial_levels / country_territories) sont créées par des
+   * migrations qui peuvent ne pas encore être déployées sur un environnement —
+   * l'inscription ne doit JAMAIS être bloquée pour autant.
+   */
+  private isMissingRelationError(err: unknown): boolean {
+    const code = (err as any)?.code ?? (err as any)?.error?.clientCode;
+    return code === 'P2021' || code === 'P2022' || code === 'P2024';
+  }
+
+  /**
    * Pays actifs avec leurs niveaux territoriaux et unités territoriales de
    * référence (départements…). Les territoires alimentent le sélecteur
    * « Département » de l'inscription ; un pays sans territoire configuré
    * conserve un champ texte libre (compatibilité multi-pays).
+   *
+   * ⭐ REQUI DÉFENSIF (2026-09-27) : la requête principale ne joint PLUS les
+   * relations federis — les niveaux et territoires sont chargés séparément
+   * et leur absence (migration non déployée → P2021) dégrade simplement le
+   * formulaire (sélecteur → champ texte) SANS casser la liste des pays.
    */
   async getCountriesWithLevels() {
+    // 1. Base — table countries préexistante : toujours disponible
     const countries = await this.prisma.country.findMany({
       where: { isActive: true },
-      select: {
-        id: true,
-        code: true,
-        name: true,
-        currencySymbol: true,
-        phonePrefix: true,
-        territorialLevels: {
-          where: { isActive: true },
-          orderBy: { order: 'asc' },
-          select: { id: true, code: true, label: true, order: true },
-        },
-        territories: {
-          where: { isActive: true },
-          orderBy: [{ order: 'asc' }, { name: 'asc' }],
-          select: { id: true, name: true, code: true, order: true },
-        },
-      },
+      select: { id: true, code: true, name: true, currencySymbol: true, phonePrefix: true },
       orderBy: { name: 'asc' },
     });
-    return countries;
+
+    // 2. Niveaux territoriaux (country_territorial_levels — migration
+    //    20260927000000) : optionnels, jamais bloquants
+    const levelsByCountry = new Map<
+      string,
+      { id: string; code: string; label: string; order: number }[]
+    >();
+    try {
+      const levels = await this.prisma.countryTerritorialLevel.findMany({
+        where: { isActive: true },
+        select: { id: true, code: true, label: true, order: true, countryId: true },
+        orderBy: { order: 'asc' },
+      });
+      for (const l of levels) {
+        const list = levelsByCountry.get(l.countryId) ?? [];
+        list.push({ id: l.id, code: l.code, label: l.label, order: l.order });
+        levelsByCountry.set(l.countryId, list);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Niveaux territoriaux indisponibles (${(err as any)?.code ?? err}) — la migration 20260927000000 n'est probablement pas déployée sur cet environnement. Le sélecteur de niveau sera vide.`,
+      );
+    }
+
+    // 3. Unités territoriales de référence (country_territories — migration
+    //    20260927140000) : optionnelles, jamais bloquantes
+    const territoriesByCountry = new Map<
+      string,
+      { id: string; name: string; code?: string; order: number }[]
+    >();
+    try {
+      const territories = await this.prisma.countryTerritory.findMany({
+        where: { isActive: true },
+        select: { id: true, name: true, code: true, order: true, countryId: true },
+        orderBy: [{ order: 'asc' }, { name: 'asc' }],
+      });
+      for (const t of territories) {
+        const list = territoriesByCountry.get(t.countryId) ?? [];
+        list.push({ id: t.id, name: t.name, code: t.code ?? undefined, order: t.order });
+        territoriesByCountry.set(t.countryId, list);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Unités territoriales indisponibles (${(err as any)?.code ?? err}) — la migration 20260927140000 n'est probablement pas déployée sur cet environnement. Le département repasse en saisie libre.`,
+      );
+    }
+
+    return countries.map((c) => ({
+      ...c,
+      territorialLevels: levelsByCountry.get(c.id) ?? [],
+      territories: territoriesByCountry.get(c.id) ?? [],
+    }));
   }
 
   /** Patronats nationaux actifs (pour le rattachement des territoriaux). */
@@ -132,9 +186,7 @@ export class FederisRegisterService {
     // Federis est dédié aux patronats : le sélecteur n'est plus affiché,
     // PATRONAT est la valeur par défaut (champ accepté pour compatibilité).
     const organismType: 'PATRONAT' | 'ASSOCIATION' | 'ORGANISME' =
-      dto.organismType && ORGANISM_TYPES.has(dto.organismType)
-        ? dto.organismType
-        : 'PATRONAT';
+      dto.organismType && ORGANISM_TYPES.has(dto.organismType) ? dto.organismType : 'PATRONAT';
     if (dto.password && dto.password.length < 8) {
       throw new BadRequestException('Le mot de passe doit contenir au moins 8 caractères.');
     }
@@ -145,11 +197,27 @@ export class FederisRegisterService {
 
     const country = await this.prisma.country.findFirst({
       where: { id: dto.countryId, isActive: true },
-      include: { territorialLevels: { where: { isActive: true } } },
     });
     if (!country) throw new NotFoundException('Pays introuvable ou inactif.');
 
-    const level = country.territorialLevels.find((l) => l.code === dto.territorialLevelCode);
+    // Niveaux territoriaux du pays — défensif : si la table
+    // country_territorial_levels n'est pas encore déployée (migration non
+    // appliquée), l'inscription ne doit pas planter en 500 mais refuser
+    // proprement (aucun niveau connu → message explicite).
+    let countryLevels: { id: string; code: string; order: number }[] = [];
+    try {
+      countryLevels = await this.prisma.countryTerritorialLevel.findMany({
+        where: { countryId: country.id, isActive: true },
+        select: { id: true, code: true, order: true },
+        orderBy: { order: 'asc' },
+      });
+    } catch (err) {
+      if (!this.isMissingRelationError(err)) throw err;
+      this.logger.warn(
+        'Table country_territorial_levels absente — impossible de valider le niveau organisationnel (migration 20260927000000 non déployée ?).',
+      );
+    }
+    const level = countryLevels.find((l) => l.code === dto.territorialLevelCode);
     if (!level) {
       throw new BadRequestException(
         "Le niveau organisationnel sélectionné n'est pas configuré pour ce pays.",
@@ -160,19 +228,29 @@ export class FederisRegisterService {
     // Département / unité territoriale : si le pays dispose d'une liste de
     // référence (CountryTerritory), la valeur doit en faire partie — plus de
     // saisie libre (ex: les 12 départements du Bénin).
+    // Défensif : liste indisponible (migration non déployée) → validation
+    // ignorée, la saisie reste acceptée.
     if (!isNational && dto.territoryName?.trim()) {
-      const referenceTerritories = await this.prisma.countryTerritory.findMany({
-        where: { countryId: country.id, isActive: true },
-        select: { name: true },
-      });
-      if (
-        referenceTerritories.length > 0 &&
-        !referenceTerritories.some(
-          (t) => t.name.trim().toLowerCase() === dto.territoryName.trim().toLowerCase(),
-        )
-      ) {
-        throw new BadRequestException(
-          `« ${dto.territoryName.trim()} » ne fait pas partie des unités territoriales configurées pour ce pays. Sélectionnez une valeur dans la liste.`,
+      try {
+        const referenceTerritories = await this.prisma.countryTerritory.findMany({
+          where: { countryId: country.id, isActive: true },
+          select: { name: true },
+        });
+        if (
+          referenceTerritories.length > 0 &&
+          !referenceTerritories.some(
+            (t) => t.name.trim().toLowerCase() === dto.territoryName.trim().toLowerCase(),
+          )
+        ) {
+          throw new BadRequestException(
+            `« ${dto.territoryName.trim()} » ne fait pas partie des unités territoriales configurées pour ce pays. Sélectionnez une valeur dans la liste.`,
+          );
+        }
+      } catch (err) {
+        if (err instanceof BadRequestException) throw err;
+        if (!this.isMissingRelationError(err)) throw err;
+        this.logger.warn(
+          'Table country_territories absente — validation du département ignorée (migration 20260927140000 non déployée ?).',
         );
       }
     }

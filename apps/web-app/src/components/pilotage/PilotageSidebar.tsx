@@ -64,6 +64,8 @@ import {
   Server,
   Palette,
   ClipboardCheck,
+  // ⭐ 2026-09-27 — Patronats fédérés (validation rattachements Academia Federis)
+  Network,
 } from 'lucide-react';
 import type { User } from '@/types';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
@@ -324,6 +326,9 @@ const MAIN_MODULES: MainModule[] = [
   // ⭐ RH : directeurs niveau-spécifiques voient le module (overview, staff, contracts…) mais pas payroll/cnss/settings (restreint au niveau sub-tab)
   { path: '/app/hr', label: 'Personnel, RH & Paie', icon: UserCog, iconUrl: '/icons/modules/rh-personnel.png', featureCode: 'HR_PAYROLL', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'HR_MANAGER', 'PAYROLL_MANAGER', 'SECRETAIRE_COMPTABLE', 'SCOLARITE', 'admin'] },
   { path: '/app/communication', label: 'Helm Connect', icon: MessageSquare, iconUrl: '/icons/modules/helm-connect.png', featureCode: 'COMMUNICATION' },
+  // ⭐ 2026-09-27 — PATRONATS FÉDÉRÉS : validation côté école des demandes de
+  //    rattachement patronat + examens nationaux (Academia Federis)
+  { path: '/app/federis', label: 'Patronats & Examens', icon: Network, roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'SECRETAIRE', 'SECRETAIRE_GENERAL', 'SECRETAIRE_COMPTABLE', 'admin'] },
   { path: '/app/cms', label: 'Site Institutionnel', icon: Globe, featureCode: 'CMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'COMMUNICATION_MANAGER', 'admin'] },
   { path: '/app/admissions', label: 'Admissions', icon: UserPlus, featureCode: 'CMS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'admin'] },
 ];
@@ -506,6 +511,8 @@ export default function PilotageSidebar({
     if (path.startsWith('/app/discipline')) return 'discipline';
     if (path.startsWith('/app/censeur')) return 'censeur';
     if (path.startsWith('/app/director')) return 'director';
+    // ⭐ 2026-09-27 — Patronats fédérés (Academia Federis)
+    if (path.startsWith('/app/federis')) return 'federis';
     if (path.startsWith('/app/cms')) return 'cms';
     if (path.startsWith('/app/settings')) return 'settings';
     return 'dashboard';

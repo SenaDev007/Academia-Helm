@@ -63,7 +63,9 @@ export const BASE_ROLE_PERMISSIONS: Record<string, {
 
   // ── DIRECTEUR (Maternelle / Primaire) ──
   DIRECTEUR: {
-    modules: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline'],
+    // ⭐ 2026-09-27 : 'federis' — validation des demandes de rattachement
+    //    patronat (Academia Federis) côté établissement
+    modules: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline', 'federis'],
     features: [
       'pedagogy.class_list',        // Voir toutes les classes de son niveau + liste élèves
       'pedagogy.validation',        // Espace validation (fiches pédagogiques, cahiers journaux)
@@ -157,7 +159,9 @@ export const BASE_ROLE_PERMISSIONS: Record<string, {
 
   // ── SECRETAIRE ──
   SECRETAIRE: {
-    modules: ['dashboard', 'students', 'exams'],
+    // ⭐ 2026-09-27 : 'federis' — validation des demandes de rattachement
+    //    patronat (Academia Federis) côté établissement
+    modules: ['dashboard', 'students', 'exams', 'federis'],
     features: [
       'students.view',
       'students.admissions',

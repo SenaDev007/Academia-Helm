@@ -18,6 +18,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { normalizePatronatFunction, patronatFunctionLabel } from './federis-roles';
 
 /** Offres Federis (cahier des charges §12 + proposition tarifaire). */
 export const FEDERIS_PLANS = {
@@ -110,6 +111,24 @@ export class FederisPatronatService {
     const childrenCount = await this.prisma.patronat.count({
       where: { parentPatronatId: patronat.id },
     });
+
+    // ⭐ Fonction du demandeur dans le patronat (UI Shells par rôle) :
+    //    PatronatUser.role (fonction courte) prime, sinon User.role (PATRONAT_*).
+    let userRole: string | null = null;
+    let userFunction: string | null = null;
+    if (userId) {
+      const link = await this.prisma.patronatUser.findFirst({
+        where: { tenantId: patronat.tenantId, userId, isActive: true },
+        select: { role: true },
+      });
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true },
+      });
+      userRole = link?.role ?? user?.role ?? null;
+      userFunction = normalizePatronatFunction(userRole);
+    }
+
     return {
       id: patronat.id,
       name: patronat.name,
@@ -121,6 +140,11 @@ export class FederisPatronatService {
       territorialLevel: patronat.territorialLevel,
       parentPatronat: patronat.parentPatronat,
       childrenCount,
+      // ⭐ Fonction du membre connecté (COORDONNATEUR, SECRETAIRE, …) —
+      //    pilote le filtrage de la navigation (UI Shells pattern Helm).
+      userRole,
+      userFunction,
+      userFunctionLabel: userFunction ? patronatFunctionLabel(userFunction as any) : null,
       subscription: {
         plan: patronat.subscriptionPlan,
         planLabel: plan.name,

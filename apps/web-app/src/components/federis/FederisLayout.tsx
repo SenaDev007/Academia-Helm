@@ -19,6 +19,10 @@ import OfflineGuard from '@/components/offline/OfflineGuard';
 import { offlineBootstrapService } from '@/lib/offline/offline-bootstrap.service';
 import { useFederisPath } from '@/lib/federis/useFederisPath';
 import { apiClient } from '@/lib/api/client';
+// ⭐ UI Shells par fonction (pattern Helm admin-portal-map) : la navigation
+//    est filtrée selon la fonction du membre (profil API /federis/patronat/profile
+//    → userRole ; fallback User.role de la session).
+import { canAccessRoute, patronatRoleLabel } from '@/lib/patronat/permissions';
 // ⭐ Pattern Helm — déconnexion complète : purge localStorage + Cache API
 //    (flag anti-boucle 60 s posé par clearClientSessionSync)
 import { clearClientSessionSync } from '@/lib/auth/client-access-token';
@@ -40,8 +44,12 @@ interface FederisLayoutProps {
 //   1. Tableau de bord  2. Patronats territoriaux (NATIONAL uniquement)
 //   3. Écoles rattachées  4. Examens nationaux  5. Candidats  6. Centres et salles
 //   7. Épreuves et documents  8. Banque d'épreuves  9. Rapports  10. ORION (lecture seule)
-//   11. Paramètres
-// « Patronats territoriaux » n'est rendu que si le profil patronat (API) indique orgLevel NATIONAL.
+//   11. Paramètres  12. Équipe & Comptes (coordonnateur)
+// « Patronats territoriaux » n'est rendu que si le profil patronat (API) indique
+// orgLevel NATIONAL. Chaque entrée est en outre filtrée par la FONCTION du
+// membre connecté (canAccessRoute) : le coordonnateur voit toute l'application,
+// le secrétaire / trésorier / organisateur / chargé de mission voient leur
+// périmètre (UI Shells — pattern Helm).
 const federisNavItems = [
   {
     category: 'PILOTAGE',
@@ -54,6 +62,8 @@ const federisNavItems = [
     items: [
       { name: 'Patronats territoriaux', subPath: '/patronats', icon: 'network' as const, nationalOnly: true },
       { name: 'Bureau & Membres', subPath: '/bureau', icon: 'building' as const },
+      // ⭐ Création des comptes membres — coordonnateur uniquement
+      { name: 'Équipe & Comptes', subPath: '/team', icon: 'students' as const },
     ]
   },
   {
@@ -105,7 +115,9 @@ export default function FederisLayout({
   const { path: federisPath } = useFederisPath();
   // ⭐ Profil patronat (API) : orgLevel (visibilité « Patronats territoriaux »)
   //    + statut d'abonnement (bandeau de blocage si impayé — cahier des charges §12.3)
+  //    + fonction du membre (userRole) → UI Shell par rôle
   const [orgLevel, setOrgLevel] = useState<string | null>(null);
+  const [patronatUserRole, setPatronatUserRole] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<{
     status: string;
     plan: string;
@@ -130,6 +142,8 @@ export default function FederisLayout({
         const res = await apiClient.get('/federis/patronat/profile', { timeout: 20000 });
         if (!cancelled && res.data) {
           setOrgLevel(res.data.orgLevel ?? null);
+          // ⭐ Fonction du membre (PatronatUser.role) — prioritaire sur User.role
+          setPatronatUserRole(res.data.userRole ?? res.data.userFunction ?? null);
           setSubscription({
             status: res.data.subscription?.status ?? 'UNKNOWN',
             plan: res.data.subscription?.plan ?? 'ESSENTIEL',
@@ -145,7 +159,10 @@ export default function FederisLayout({
     };
   }, []);
 
-  const userRole = user.role || 'FEDERIS_VIEWER';
+  // ⭐ UI Shell : le rôle effectif = fonction patronat (profil API) sinon
+  //    User.role de la session. Libellé métier (ex. « Coordonnateur ») en topbar.
+  const effectiveRole = patronatUserRole ?? user.role ?? null;
+  const roleLabel = patronatRoleLabel(effectiveRole);
   const isNational = orgLevel === 'NATIONAL';
   const subscriptionBlocked =
     subscription?.status === 'PENDING_PAYMENT' || subscription?.status === 'EXPIRED';
@@ -200,7 +217,8 @@ export default function FederisLayout({
               <div className="flex items-center space-x-3">
                 <div className="hidden sm:block text-right">
                   <div className="text-sm font-medium text-gray-900">{user.firstName} {user.lastName}</div>
-                  <div className="text-xs text-gray-500">{userRole}</div>
+                  {/* ⭐ Fonction patronat lisible (Coordonnateur, Secrétaire…) */}
+                  <div className="text-xs font-semibold text-blue-900">{roleLabel}</div>
                 </div>
                 {/* ⭐ Avatar — cliquable : ouvre « Mon profil » (photo + mot de passe) */}
                 <button
@@ -255,9 +273,12 @@ export default function FederisLayout({
           )}>
             <nav className="h-full overflow-y-auto py-6 scrollbar-hide">
               {federisNavItems.map((group) => {
-                // « Patronats territoriaux » : visible uniquement au niveau NATIONAL (§7.1)
+                // « Patronats territoriaux » : NATIONAL uniquement (§7.1) ;
+                // chaque entrée est filtrée par la fonction du membre (UI Shell).
                 const visibleItems = group.items.filter(
-                  (item) => !('nationalOnly' in item) || !item.nationalOnly || isNational,
+                  (item) =>
+                    (!('nationalOnly' in item) || !item.nationalOnly || isNational) &&
+                    canAccessRoute(effectiveRole, item.subPath),
                 );
                 if (visibleItems.length === 0) return null;
                 return (
@@ -342,7 +363,7 @@ export default function FederisLayout({
             firstName: user.firstName,
             lastName: user.lastName,
             email: user.email,
-            role: userRole,
+            role: roleLabel,
           }}
         />
       </div>

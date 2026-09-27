@@ -754,17 +754,26 @@ export class AuthService {
 
     // ── Rôles PATRONAT (Academia Federis — application satellite) ──
     // Comptes créés par POST /federis/public/register (User.role = PATRONAT_ADMIN)
-    // ou liés à un patronat via PatronatUser. Ils se connectent UNIQUEMENT via
-    // le portail PATRONAT (academiafederis.academiahelm.com/federis/login).
-    //   - PATRONAT_ADMIN    : administrateur du patronat (tous modules)
-    //   - PATRONAT_OPERATOR : opérateur (examens, candidats, centres)
-    //   - EXAM_SUPERVISOR   : surveillant (lecture élargie)
-    //   - EXAM_VIEWER       : inspecteur (lecture seule)
+    // ou par le coordonnateur (federis-users.service) et liés à un patronat via
+    // PatronatUser. Ils se connectent UNIQUEMENT via le portail PATRONAT
+    // (academiafederis.academiahelm.com/federis/login).
+    //   - PATRONAT_COORDONNATEUR : coordonnateur — responsable du patronat (tout)
+    //   - PATRONAT_SECRETAIRE    : secrétariat (registres, candidats, documents)
+    //   - PATRONAT_TRESORIER     : finances (abonnement, factures)
+    //   - PATRONAT_ORGANISATEUR  : organisation (examens, centres, salles)
+    //   - PATRONAT_CHARGE_MISSION: suivi & reporting (lecture)
+    //   - PATRONAT_ADMIN (legacy) : alias coordonnateur (comptes /register)
+    //   - PATRONAT_OPERATOR      : opérateur (examens, candidats, centres)
+    //   - EXAM_SUPERVISOR        : surveillant (lecture élargie)
+    //   - EXAM_VIEWER            : inspecteur (lecture seule)
     // ⭐ Avant ce mapping, ces rôles tombaient dans le DÉFAUT SCHOOL → le login
     //    Federis avec portal_type=PATRONAT renvoyait 403 PORTAL_MISMATCH.
     const patronatRoles = [
       'PATRONAT_ADMIN', 'PATRONAT_OPERATOR', 'PATRONAT_USER',
       'EXAM_SUPERVISOR', 'EXAM_VIEWER',
+      // ⭐ Fonctions patronat (création de comptes par le coordonnateur)
+      'PATRONAT_COORDONNATEUR', 'PATRONAT_SECRETAIRE', 'PATRONAT_TRESORIER',
+      'PATRONAT_ORGANISATEUR', 'PATRONAT_CHARGE_MISSION',
     ];
     if (patronatRoles.includes(role)) return [PortalType.PATRONAT];
 

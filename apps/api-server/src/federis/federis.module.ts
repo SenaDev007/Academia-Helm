@@ -10,9 +10,25 @@ import { FederisFinanceService } from './federis-finance.service';
 import { FederisRegisterService } from './federis-register.service';
 import { FederisPatronatService } from './federis-patronat.service';
 import { FederisPatronatController } from './federis-patronat.controller';
+// ⭐ Gestion des comptes membres (coordonnateur → secrétaire, trésorier…)
+import { FederisUsersService } from './federis-users.service';
+import { FederisUsersController } from './federis-users.controller';
+// ⭐ Workflow examens : centres, salles, candidats, numéros de table, import
+import { FederisExamsService } from './federis-exams.service';
+import { FederisExamsController } from './federis-exams.controller';
+// ⭐ Portail école : validation des demandes de rattachement patronat
+import { FederisSchoolService } from './federis-school.service';
+import { FederisSchoolController } from './federis-school.controller';
 
 @Module({
-  controllers: [FederisController, FederisConnectController, FederisPatronatController],
+  controllers: [
+    FederisController,
+    FederisConnectController,
+    FederisPatronatController,
+    FederisUsersController,
+    FederisExamsController,
+    FederisSchoolController,
+  ],
   providers: [
     FederisService,
     FederisSyncService,
@@ -20,6 +36,9 @@ import { FederisPatronatController } from './federis-patronat.controller';
     FederisFinanceService,
     FederisRegisterService,
     FederisPatronatService,
+    FederisUsersService,
+    FederisExamsService,
+    FederisSchoolService,
   ],
   exports: [
     FederisService,
@@ -28,6 +47,9 @@ import { FederisPatronatController } from './federis-patronat.controller';
     FederisFinanceService,
     FederisRegisterService,
     FederisPatronatService,
+    FederisUsersService,
+    FederisExamsService,
+    FederisSchoolService,
   ],
 })
 export class FederisModule {}

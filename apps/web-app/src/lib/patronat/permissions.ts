@@ -1,11 +1,18 @@
 /**
  * Guards de Permissions Patronat — Academia Federis
  *
- * Rôles (cahier des charges §11) :
- *   - PATRONAT_ADMIN     : tous les modules de son périmètre
- *   - PATRONAT_OPERATOR  : examens, candidats et centres
- *   - EXAM_SUPERVISOR    : lecture seule élargie
- *   - EXAM_VIEWER        : lecture seule (inspecteur)
+ * UI Shells par fonction (pattern Academia Helm — admin-portal-map) :
+ *   - COORDONNATEUR  : le responsable — TOUTE l'application + gestion des comptes
+ *   - SECRETAIRE     : secrétariat — registres, candidats, documents, PV, conflits
+ *   - TRESORIER      : finances — abonnement, factures, quotas
+ *   - ORGANISATEUR   : organisation — examens, centres, salles, candidats, ORION
+ *   - CHARGE_MISSION : suivi & reporting — consultation, rapports, ORION
+ *
+ * Rôles techniques (stockés en base) :
+ *   - User.role          : PATRONAT_COORDONNATEUR, PATRONAT_SECRETAIRE, …
+ *   - PatronatUser.role  : COORDONNATEUR, SECRETAIRE, … (fonction courte)
+ *   - Legacy : PATRONAT_ADMIN (= coordonnateur, comptes /register),
+ *     PATRONAT_OPERATOR (= organisateur), EXAM_SUPERVISOR / EXAM_VIEWER (lecture)
  *
  * Les routes /patronat/* (domaine principal) et /federis/* (sous-domaine
  * academiafederis.academiahelm.com, réécrit par le middleware) partagent la
@@ -13,69 +20,134 @@
  */
 
 export type PatronatRole =
+  // Fonctions (création de comptes par le coordonnateur)
+  | 'PATRONAT_COORDONNATEUR'
+  | 'PATRONAT_SECRETAIRE'
+  | 'PATRONAT_TRESORIER'
+  | 'PATRONAT_ORGANISATEUR'
+  | 'PATRONAT_CHARGE_MISSION'
+  // Legacy
   | 'PATRONAT_ADMIN'
   | 'PATRONAT_OPERATOR'
+  | 'PATRONAT_USER'
   | 'EXAM_SUPERVISOR'
   | 'EXAM_VIEWER';
 
-export interface Permission {
-  resource: string;
-  action: string;
-}
+/** Fonction normalisée (pilote l'UI Shell). */
+export type PatronatFunctionKey =
+  | 'COORDONNATEUR'
+  | 'SECRETAIRE'
+  | 'TRESORIER'
+  | 'ORGANISATEUR'
+  | 'CHARGE_MISSION'
+  | 'OPERATOR' // legacy PATRONAT_OPERATOR / EXAM_SUPERVISOR
+  | 'VIEWER'; // EXAM_VIEWER / inconnu
 
-const ROLE_PERMISSIONS: Record<PatronatRole, Permission[]> = {
-  PATRONAT_ADMIN: [
-    { resource: '*', action: '*' }, // Accès total du périmètre
-  ],
-  PATRONAT_OPERATOR: [
-    { resource: 'exams', action: 'create' },
-    { resource: 'exams', action: 'update' },
-    { resource: 'candidates', action: '*' },
-    { resource: 'centers', action: '*' },
-    { resource: 'documents', action: 'generate' },
-    { resource: 'question_bank', action: 'upload' },
-    { resource: 'schools', action: 'view' },
-  ],
-  EXAM_SUPERVISOR: [
-    { resource: 'exams', action: 'view' },
-    { resource: 'candidates', action: 'view' },
-    { resource: 'centers', action: 'view' },
-    { resource: 'documents', action: 'view' },
-    { resource: 'reports', action: 'view' },
-  ],
-  EXAM_VIEWER: [
-    { resource: 'exams', action: 'view' },
-    { resource: 'candidates', action: 'view' },
-    { resource: 'reports', action: 'view' },
-  ],
+/** Libellés métier des fonctions. */
+export const PATRONAT_FUNCTION_LABELS: Record<PatronatFunctionKey, string> = {
+  COORDONNATEUR: 'Coordonnateur',
+  SECRETAIRE: 'Secrétaire',
+  TRESORIER: 'Trésorier',
+  ORGANISATEUR: 'Organisateur',
+  CHARGE_MISSION: 'Chargé de mission',
+  OPERATOR: 'Superviseur',
+  VIEWER: 'Observateur',
 };
 
-/**
- * Vérifie si un rôle a une permission
- */
-export function hasPermission(
-  role: PatronatRole,
-  resource: string,
-  action: string
-): boolean {
-  const permissions = ROLE_PERMISSIONS[role] || [];
+/** Descriptions courtes (page Équipe & Comptes). */
+export const PATRONAT_FUNCTION_DESCRIPTIONS: Partial<Record<PatronatFunctionKey, string>> = {
+  COORDONNATEUR: "Responsable du patronat — accès complet à l'application et gestion des comptes",
+  SECRETAIRE: 'Secrétariat — registres, candidats, documents et procès-verbaux',
+  TRESORIER: 'Finances — abonnement, factures et suivi des quotas',
+  ORGANISATEUR: 'Organisation des examens — centres, salles, candidats et numéros de table',
+  CHARGE_MISSION: 'Suivi et reporting — consultation, rapports et alertes ORION',
+};
 
-  return permissions.some((perm) => {
-    if (perm.resource === '*' && perm.action === '*') return true;
-    if (perm.resource === '*' && perm.action === action) return true;
-    if (perm.resource === resource && perm.action === '*') return true;
-    if (perm.resource === resource && perm.action === action) return true;
-    return false;
-  });
+/** Fonctions créables par le coordonnateur. */
+export const CREATABLE_FUNCTIONS: PatronatFunctionKey[] = [
+  'COORDONNATEUR',
+  'SECRETAIRE',
+  'TRESORIER',
+  'ORGANISATEUR',
+  'CHARGE_MISSION',
+];
+
+/**
+ * Normalise un rôle technique (User.role préfixé, PatronatUser.role court ou
+ * legacy) vers la fonction canonique qui pilote l'UI Shell.
+ * PLATFORM_OWNER / SUPER_ADMIN = accès universel (chemin owner Helm).
+ */
+export function normalizePatronatRole(role?: string | null): PatronatFunctionKey {
+  switch (role) {
+    case 'PLATFORM_OWNER':
+    case 'PLATFORM_SUPER_ADMIN':
+    case 'SUPER_ADMIN':
+      return 'COORDONNATEUR';
+    case 'PATRONAT_ADMIN':
+    case 'PATRONAT_COORDONNATEUR':
+    case 'COORDONNATEUR':
+      return 'COORDONNATEUR';
+    case 'PATRONAT_SECRETAIRE':
+    case 'SECRETAIRE':
+      return 'SECRETAIRE';
+    case 'PATRONAT_TRESORIER':
+    case 'TRESORIER':
+      return 'TRESORIER';
+    case 'PATRONAT_ORGANISATEUR':
+    case 'ORGANISATEUR':
+    case 'PATRONAT_OPERATOR':
+      return 'ORGANISATEUR';
+    case 'PATRONAT_CHARGE_MISSION':
+    case 'CHARGE_MISSION':
+      return 'CHARGE_MISSION';
+    case 'EXAM_SUPERVISOR':
+      return 'OPERATOR';
+    default:
+      return 'VIEWER';
+  }
 }
+
+/** Libellé lisible d'un rôle technique quelconque. */
+export function patronatRoleLabel(role?: string | null): string {
+  return PATRONAT_FUNCTION_LABELS[normalizePatronatRole(role)];
+}
+
+// ── Matrice routes ↔ fonctions (UI Shells) ──────────────────────────────────
+// Le coordonnateur voit TOUT ; les autres fonctions voient leur périmètre.
+// « Patronats territoriaux » est en plus soumis à orgLevel NATIONAL côté API.
+
+type RouteRoles = Record<string, PatronatFunctionKey[]>;
+
+const ROUTE_PERMISSIONS: RouteRoles = {
+  '/dashboard': ['COORDONNATEUR', 'SECRETAIRE', 'TRESORIER', 'ORGANISATEUR', 'CHARGE_MISSION', 'OPERATOR', 'VIEWER'],
+  // §8.2 : réservé aux rôles nationaux — le niveau NATIONAL est vérifié côté API
+  '/patronats': ['COORDONNATEUR'],
+  '/bureau': ['COORDONNATEUR', 'SECRETAIRE'],
+  '/schools': ['COORDONNATEUR', 'SECRETAIRE', 'TRESORIER', 'ORGANISATEUR', 'CHARGE_MISSION', 'OPERATOR'],
+  '/exams': ['COORDONNATEUR', 'ORGANISATEUR'],
+  '/centers': ['COORDONNATEUR', 'ORGANISATEUR'],
+  '/candidates': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR', 'CHARGE_MISSION', 'OPERATOR'],
+  '/deliberations': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR'],
+  '/documents': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR', 'CHARGE_MISSION', 'OPERATOR'],
+  '/question-bank': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR'],
+  '/reports': ['COORDONNATEUR', 'SECRETAIRE', 'TRESORIER', 'ORGANISATEUR', 'CHARGE_MISSION', 'OPERATOR', 'VIEWER'],
+  '/orion': ['COORDONNATEUR', 'ORGANISATEUR', 'CHARGE_MISSION'],
+  '/conflicts': ['COORDONNATEUR', 'SECRETAIRE'],
+  '/settings': ['COORDONNATEUR', 'TRESORIER'],
+  '/checkout': ['COORDONNATEUR', 'TRESORIER'],
+  // ⭐ Équipe & Comptes — création des users par le coordonnateur uniquement
+  '/team': ['COORDONNATEUR'],
+};
 
 /**
  * Normalise un chemin /patronat/* ou /federis/* vers la clé de route canonique.
  * Exemples : /federis/dashboard → /dashboard ; /patronat/schools/x → /schools
+ * ⚠️ Le préfixe n'est retiré que s'il forme un segment complet : '/patronats'
+ *    (page Patronats territoriaux) ne doit PAS être confondu avec '/patronat/…'.
  */
 function normalizeRoute(route: string): string {
   let p = route.split('?')[0];
-  p = p.replace(/^\/(patronat|federis)/, '');
+  p = p.replace(/^\/(patronat|federis)(?=\/|$)/, '');
   if (!p.startsWith('/')) p = `/${p}`;
   // Réduit à la première section (ex: /schools/xyz → /schools)
   const segments = p.split('/').filter(Boolean);
@@ -83,42 +155,50 @@ function normalizeRoute(route: string): string {
 }
 
 /**
- * Vérifie si un rôle peut accéder à une route
+ * Vérifie si une fonction peut accéder à une route.
+ * @param role rôle technique (User.role ou PatronatUser.role) — normalisé ici
  */
-export function canAccessRoute(role: PatronatRole, route: string): boolean {
-  const routePermissions: Record<string, PatronatRole[]> = {
-    '/dashboard': ['PATRONAT_ADMIN', 'PATRONAT_OPERATOR', 'EXAM_SUPERVISOR', 'EXAM_VIEWER'],
-    // §8.2 : réservé aux rôles nationaux — le niveau NATIONAL est vérifié côté API
-    '/patronats': ['PATRONAT_ADMIN'],
-    '/schools': ['PATRONAT_ADMIN', 'PATRONAT_OPERATOR'],
-    '/bureau': ['PATRONAT_ADMIN'],
-    '/exams': ['PATRONAT_ADMIN', 'PATRONAT_OPERATOR', 'EXAM_SUPERVISOR'],
-    '/candidates': ['PATRONAT_ADMIN', 'PATRONAT_OPERATOR', 'EXAM_SUPERVISOR'],
-    '/centers': ['PATRONAT_ADMIN', 'PATRONAT_OPERATOR'],
-    '/documents': ['PATRONAT_ADMIN', 'PATRONAT_OPERATOR', 'EXAM_SUPERVISOR'],
-    '/question-bank': ['PATRONAT_ADMIN', 'PATRONAT_OPERATOR'],
-    '/deliberations': ['PATRONAT_ADMIN', 'PATRONAT_OPERATOR'],
-    '/reports': ['PATRONAT_ADMIN', 'PATRONAT_OPERATOR', 'EXAM_SUPERVISOR', 'EXAM_VIEWER'],
-    '/orion': ['PATRONAT_ADMIN', 'PATRONAT_OPERATOR'],
-    '/conflicts': ['PATRONAT_ADMIN', 'PATRONAT_OPERATOR'],
-    '/settings': ['PATRONAT_ADMIN'],
-  };
-
+export function canAccessRoute(role: PatronatRole | string | null | undefined, route: string): boolean {
+  const fn = normalizePatronatRole(role);
   const normalized = normalizeRoute(route);
-  const allowedRoles = routePermissions[normalized];
-  if (!allowedRoles) {
+  const allowed = ROUTE_PERMISSIONS[normalized];
+  if (!allowed) {
     // Route inconnue : autorisée (les pages gèrent leur propre protection)
     return true;
   }
-  return allowedRoles.includes(role);
+  return allowed.includes(fn);
+}
+
+/** Vérifie si la fonction peut écrire (boutons d'action) selon le domaine. */
+export function canWrite(
+  role: PatronatRole | string | null | undefined,
+  domain: 'exam_org' | 'candidates' | 'users' | 'billing',
+): boolean {
+  const fn = normalizePatronatRole(role);
+  switch (domain) {
+    case 'exam_org': // examens, centres, salles, affectations
+      return fn === 'COORDONNATEUR' || fn === 'ORGANISATEUR';
+    case 'candidates': // candidats + import Excel
+      return fn === 'COORDONNATEUR' || fn === 'ORGANISATEUR' || fn === 'SECRETAIRE';
+    case 'users': // gestion des comptes
+      return fn === 'COORDONNATEUR';
+    case 'billing': // abonnement / checkout
+      return fn === 'COORDONNATEUR' || fn === 'TRESORIER';
+    default:
+      return false;
+  }
 }
 
 /**
- * Hook pour vérifier les permissions dans les composants
+ * Hook pour vérifier les permissions dans les composants.
+ * @param role rôle technique (User.role de la session ou PatronatUser.role du profil)
  */
-export function usePatronatPermissions(role: PatronatRole) {
+export function usePatronatPermissions(role: PatronatRole | string | null | undefined) {
   return {
-    can: (resource: string, action: string) => hasPermission(role, resource, action),
+    function: normalizePatronatRole(role),
+    label: patronatRoleLabel(role),
     canAccess: (route: string) => canAccessRoute(role, route),
+    canWrite,
+    isCoordinator: normalizePatronatRole(role) === 'COORDONNATEUR',
   };
 }

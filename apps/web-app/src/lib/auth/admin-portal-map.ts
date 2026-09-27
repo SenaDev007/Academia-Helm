@@ -81,7 +81,10 @@ export type AdminPortalIcon =
   | 'ClipboardCheck'
   | 'Receipt'
   // ⭐ 2026-09-21 — module Réception des épreuves (Préparation d'examen)
-  | 'NotebookPen';
+  | 'NotebookPen'
+  // ⭐ 2026-09-27 — module Patronats fédérés (validation des rattachements
+  //    patronat côté école — Academia Federis)
+  | 'Network';
 
 export interface AdminPortalModule {
   /** Route cible (routes métier partagées ou home du portail) */
@@ -204,6 +207,9 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
       { path: '/app/finance', label: 'Finances & Économat', labelEn: 'Finance & Store', icon: 'Wallet', desc: 'Frais, encaissements, trésorerie', descEn: 'Fees, collections, treasury', featureCode: 'FINANCE' },
       { path: '/app/hr', label: 'Personnel, RH & Paie', labelEn: 'Staff, HR & Payroll', icon: 'UserCog', desc: 'Staff, contrats, paie, CNSS', descEn: 'Staff, contracts, payroll, CNSS', featureCode: 'HR_PAYROLL' },
       { path: '/app/communication', label: 'Helm Connect', labelEn: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', descEn: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
+      // ⭐ 2026-09-27 — PATRONATS FÉDÉRÉS : validation par l'école des demandes
+      //    de rattachement émises par les patronats (Academia Federis)
+      { path: '/app/federis', label: 'Patronats & Examens fédérés', labelEn: 'Federated Patronats & Exams', icon: 'Network', desc: "Demandes de rattachement des patronats — validation, examens nationaux", descEn: 'Patronat link requests — approval, national exams' },
     ],
   },
 
@@ -231,6 +237,9 @@ export const ADMIN_PORTALS: Record<AdminPortalKey, AdminPortalConfig> = {
       { path: '/app/exam-reception', label: 'Réception des épreuves', labelEn: 'Exam Papers Reception', icon: 'NotebookPen', desc: "Épreuves d'évaluation reçues — visualisation et impression", descEn: 'Received assessment papers — view and print' },
       { path: '/app/exams', label: 'Examens, Notes & Bulletins', labelEn: 'Exams, Grades & Report Cards', icon: 'GraduationCap', desc: 'Bulletins, impressions', descEn: 'Report cards, printing', featureCode: 'EXAMS' },
       { path: '/app/communication', label: 'Helm Connect', labelEn: 'Helm Connect', icon: 'MessageSquare', desc: 'Communication & collaboration', descEn: 'Communication & collaboration', featureCode: 'COMMUNICATION' },
+      // ⭐ 2026-09-27 — PATRONATS FÉDÉRÉS : le secrétariat traite les demandes
+      //    de rattachement des patronats (accusés de réception, PV)
+      { path: '/app/federis', label: 'Patronats & Examens fédérés', labelEn: 'Federated Patronats & Exams', icon: 'Network', desc: "Demandes de rattachement des patronats — validation, examens nationaux", descEn: 'Patronat link requests — approval, national exams' },
     ],
   },
 

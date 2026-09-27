@@ -1,25 +1,30 @@
 /**
- * Page Centres - Federis
+ * Page Centres et salles — Academia Federis
+ *
+ * Workflow logistique (§9) : centres d'accueil par examen + salles avec
+ * capacités. Réservé au coordonnateur / organisateur pour les écritures.
  */
 
 import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { getServerSession } from '@/lib/auth';
+import { getFederisBasePath } from '@/lib/federis/useFederisPath';
 import FederisLayout from '@/components/federis/FederisLayout';
+import FederisCentersPage from '@/components/federis/FederisCentersPage';
 import type { User, Tenant } from '@/types';
 
 export const metadata: Metadata = {
-  title: 'Centres d\'examen - Federis',
+  title: 'Centres et salles - Academia Federis',
 };
 
 export default async function CentersPage() {
   const session = await getServerSession();
-  if (!session?.user) redirect('/federis/login');
+  if (!session?.user) redirect(`${getFederisBasePath()}/login?redirect=/federis/centers`);
 
   const user = session.user as User;
   const federis: Tenant = {
     id: user.tenantId || '',
-    name: 'Federis des Écoles Privées',
+    name: 'Espace Patronat',
     slug: 'federis',
     subdomain: '',
     status: 'active',
@@ -28,24 +33,11 @@ export default async function CentersPage() {
     updatedAt: new Date().toISOString(),
     trialEndsAt: undefined,
     nextPaymentDueAt: undefined,
-  } as Tenant as Tenant;
+  } as unknown as Tenant;
 
   return (
-    <FederisLayout
-      user={user}
-      federis={federis}
-      currentAcademicYear={{ id: 'current', label: '2024-2025' }}
-    >
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Centres d'examen</h1>
-          <p className="text-gray-600 mt-1">Gérez les centres d'examen</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
-          Page en cours de développement
-        </div>
-      </div>
+    <FederisLayout user={user} federis={federis}>
+      <FederisCentersPage tenantId={federis.id} userRole={user.role} />
     </FederisLayout>
   );
 }
-

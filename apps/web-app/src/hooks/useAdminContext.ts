@@ -155,15 +155,17 @@ export function hasModuleAccess(
     //    même si le check dédié ci-dessus évoluait.
     PROMOTER: ['*'],
     PROMOTEUR: ['*'],
-    DIRECTEUR: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline', 'director'],
-    PROVISEUR: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline', 'director'],
-    DIRECTEUR_ADJOINT: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline', 'director'],
+    // ⭐ 2026-09-27 : 'federis' — validation des rattachements patronat
+    //    (Academia Federis) côté établissement
+    DIRECTEUR: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline', 'director', 'federis'],
+    PROVISEUR: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline', 'director', 'federis'],
+    DIRECTEUR_ADJOINT: ['dashboard', 'students', 'pedagogy', 'exams', 'discipline', 'director', 'federis'],
     CENSEUR: ['dashboard', 'pedagogy', 'exams', 'discipline', 'censeur'],
     SURVEILLANT_GENERAL: ['dashboard', 'students', 'discipline'],
     SURVEILLANT: ['dashboard', 'students', 'discipline'],
-    SECRETAIRE: ['dashboard', 'students', 'exams'],
+    SECRETAIRE: ['dashboard', 'students', 'exams', 'federis'],
     COMPTABLE: ['dashboard', 'finance'],
-    SECRETAIRE_COMPTABLE: ['dashboard', 'students', 'finance', 'exams'],
+    SECRETAIRE_COMPTABLE: ['dashboard', 'students', 'finance', 'exams', 'federis'],
     ECONOME: ['dashboard', 'finance'],
     INTENDANT: ['dashboard', 'finance'],
     RESP_SCOLARITE: ['dashboard', 'students'],

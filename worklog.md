@@ -11693,3 +11693,27 @@ Stage Summary:
 - ✅ Collision de numéros éliminée, idempotence double-clic OK, changement d'offre OK
 - ⏳ Reste à valider par l'utilisateur avec un VRAI paiement (Mobile Money) : webhook → activation + sous-domaine patronat + email identifiants (chaîne déjà déployée et vérifiée structurellement)
 - Données de test production (purge admin éventuelle) : patronats « Patronat TESTQA muk78n9j », « Zébu QA muk795y3 », « Yèdè QA muk78n9j+ », « Patronat Vérif muk7sr8k » + factures FED-PAT/ZÉB/YÈD-2026-0001, FED-PAT-2026-0004/0005/0006
+
+---
+Task ID: fix-fedapay-400-tel-2026-09-28
+Agent: Super Z (principal)
+Task: « Failed to create payment transaction: Request error: Request failed with status code 400 » après clic « Payer avec FedaPay » — « reproduire le même pattern que l'onboarding du signup Helm »
+
+Work Log:
+- REPRODUCTION API : checkout OK en production avec données neuves (ESSENTIEL 100 000 + INSTITUTION 250 000, paymentUrl valides) → le 400 n'est PAS systémique, il dépend des DONNÉES du patronat
+- DIAGNOSTIC DB (Neon, lecture seule) : le patronat RÉEL (« Patronat des Établissements Scolaires Privés du Bénin », dawesakpovi@gmail.com) a le numéro +2290195722234 — NOUVEAU plan de numérotage béninois ARCEP (30/11/2024, 10 chiffres commençant par 01). Historique reconstitué : 19:10 facture INSTITUTION (échec silencieux ancien code) → 19:35 bascule ESSENTIEL (400 propagé = le message signalé)
+- CAUSE RACINE (reproduite à 100 %) : normalizePhoneForFedaPay retirait l'indicatif 229 PUIS le 0 de tête — or ce 0 FAIT PARTIE du numéro au nouveau plan (E.164 : +229 01 97 22 23 34) → numéro à 9 chiffres (195722234) → rejet 400 de TOUTE la transaction Fedapay. Bug PARTAGÉ avec le signup Helm (même passerelle createTransaction). Tests croisés : Fedapay accepte { number: "0199887766" } (10 chiffres) et sans téléphone, refuse { number: "199887766" } (9 chiffres)
+- CORRECTIF 1 — normalizePhoneForFedaPay (billing/services/fedapay.service.ts, partagé Helm+Federis) : plan ARCEP 2024 géré (10 chiffres 01/02/05 conservés tels quels), 0 omis après +229 reconstitué (199887766 → 0199887766), trunk 0 ancien format préservé (097123456 → 97123456), préfixe d'accès 00 retiré, formats non reconnus → AUCUN numéro envoyé (le formulaire Fedapay laisse saisir — philosophie Helm) ; autres pays au comportement inchangé. Table de test 16 cas : 0 régression, numéro exact de l'utilisateur corrigé
+- CORRECTIF 2 — extraction d'erreur SDK Fedapay dans createTransaction : l'ancien code lisait error.response?.data / error.status / Array.isArray(error.errors) — propriétés INEXISTANTES sur ApiConnectionError (le SDK expose httpStatus, httpResponse.data, errorMessage, errors = OBJET) → le motif de rejet réel était invisible. Désormais le vrai motif (champ en cause) est loggé ET propagé au frontend
+- CORRECTIF 3 — parité pattern Helm signup : isLiveModeResolved() public sur FedaPayService (source unique du mode live, Federis délègue au lieu de re-déduire) ; customer Federis = prénom/nom du RESPONSABLE qui règle (utilisateur connecté, fallback président du bureau) + VRAI pays du patronat (normalisation tél multi-pays) au lieu du nom du patronat en firstname et « Bénin » codé en dur
+- VÉRIFICATIONS : esbuild 0 erreur ; tsc 7273 vs 7271 baseline (0 nouveau TYPE — uniquement décalages d'artefacts PrismaService sandbox + 2 occurrences de la même classe, prisma.user/patronatBureauMember déjà utilisés ailleurs) ; eslint 214 vs 216 baseline (−2)
+- COMMIT 744fed2f9 (rebasé sur 03eaaad02 bulletins) poussé → Railway auto-déployé
+- VALIDATION E2E PRODUCTION : patronat neuf avec téléphone nouveau plan (+2290197235570) → checkout 201, facture FED-PAT-2026-0015, paymentUrl process.fedapay.com, page de paiement HTTP 200 ✅
+- PREUVE DÉCISIVE : le VRAI utilisateur a re-cliqué « Payer avec Fedapay » à 19:52:43 APRÈS le déploiement → facture FED-PAT-2026-0014 INSTITUTION 250 000 XOF créée avec providerTransactionId=113354603 + paymentUrl valide — le parcours qui échouait en 400 fonctionne maintenant pour son compte exact
+
+Stage Summary:
+- ✅ Cause racine éliminée : téléphones nouveau plan béninois 01XXXXXXXX acceptés partout (checkout Federis ET signup Helm — même passerelle)
+- ✅ Vraies erreurs Fedapay désormais propagées (plus jamais de « status code 400 » muet)
+- ✅ Le parcours de paiement de l'utilisateur réel fonctionne (facture 0014, URL Fedapay en main)
+- ⏳ L'utilisateur finalise son paiement Mobile Money → webhook → activation + sous-domaine patronat + email identifiants (chaîne déjà déployée et vérifiée structurellement)
+- Données de test production (purge admin éventuelle) : patronats testqa.* (FED-PAT-2026-0004/0005/0007/0008/0009/0010/0011/0012/0013/0015, FED-ZÉB/YÈD-2026-0001) — transactions Fedapay impayées qui expireront seules

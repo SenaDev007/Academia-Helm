@@ -1369,23 +1369,37 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </tr></table>
   </div>
 
-  <!-- ═══ PAGE 2 SECONDAIRE : Appréciation du conseil des professeurs +
-       Appréciation du directeur + signature du DIRECTEUR UNIQUEMENT ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:2px;padding:5px;margin-top:8px;width:100%;">
-    <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:3px;">Appréciation du conseil des professeurs</div>
-    ${data.analyseRecommandations
-      ? `<div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:26px;">${data.analyseRecommandations}</div>`
-      : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:10px;"></div>').join('')}
+  <!-- ═══ SECTION : Mention du conseil de classe + Conduite + Appréciation + Visa ═══ -->
+  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:6px;margin-top:8px;width:100%;">
+    <!-- Mention du conseil de classe (distinction/sanction) -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;white-space:nowrap;">Mention du conseil de classe :</div>
+      <div style="flex:1;border-bottom:1px dotted #94a3b8;height:14px;"></div>
+      <div style="font-size:10px;font-weight:bold;color:${data.distinctionType === 'DISTINCTION' ? '#059669' : data.distinctionType === 'SANCTION' ? '#dc2626' : '#1a1a1a'};">
+        ${data.distinctionLabel || data.councilMention || '—'}
+      </div>
+    </div>
+
+    <!-- Conduite (si disponible depuis le module Vie Scolaire) -->
+    ${typeof data.conductScore === 'number' ? `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;white-space:nowrap;">Conduite :</div>
+      <div style="flex:1;border-bottom:1px dotted #94a3b8;height:14px;"></div>
+      <div style="font-size:10px;font-weight:bold;color:${data.conductScore >= (data.conductReference || 17) * 0.6 ? '#059669' : '#dc2626'};">
+        ${data.conductScore.toFixed(2)}/${data.conductReference || 17}
+      </div>
+    </div>` : ''}
+
+    <!-- Appréciation du conseil de classe -->
+    <div style="margin-top:4px;">
+      <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:3px;">Appréciation du conseil de classe</div>
+      ${(data.councilAppreciation || data.analyseRecommandations)
+        ? `<div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:26px;">${data.councilAppreciation || data.analyseRecommandations}</div>`
+        : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:10px;"></div>').join('')}
+    </div>
   </div>
 
-  <div style="border:1px solid #0A2A5E;border-radius:2px;padding:5px;margin-top:4px;width:100%;">
-    <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:3px;">Appréciation du directeur</div>
-    ${(data.directorVisa || data.appreciationGlobale)
-      ? `<div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:26px;">${data.directorVisa || data.appreciationGlobale}</div>`
-      : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:10px;"></div>').join('')}
-  </div>
-
-  <!-- SIGNATURE : DIRECTEUR UNIQUEMENT (modèle officiel secondaire) -->
+  <!-- Visa du chef d'établissement -->
   <table style="width:100%;border-collapse:collapse;margin-top:10px;">
     <tr>
       <td style="width:55%;text-align:right;vertical-align:bottom;padding:4px 10px 4px 0;font-size:9px;font-style:italic;color:#475569;">
@@ -1393,7 +1407,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
       </td>
       <td style="width:45%;text-align:center;vertical-align:bottom;padding:4px 2px;">
         ${this.renderDirectorSealsZone(data, 35)}
-        <div style="border-top:1px solid #000;margin-top:3px;padding-top:2px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Directeur</div>
+        <div style="border-top:1px solid #000;margin-top:3px;padding-top:2px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Chef d'Établissement</div>
         ${this.renderDirectorNameLine(data, '8px', 'Nom et signature')}
       </td>
     </tr>
@@ -1408,7 +1422,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </div>
   </div>
 
-  <div class="footer">Document généré par Academia Helm — ${new Date().toLocaleString('fr-FR')} · ID : ${bulletinId}</div>
+  <div class="footer">Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0141360803'}</div>
 </div>
 
 </body>

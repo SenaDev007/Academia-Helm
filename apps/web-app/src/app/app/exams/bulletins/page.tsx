@@ -2989,15 +2989,18 @@ function BulletinAnglophonePage2({
 }
 
 
-// ─── Page 2: Bulletin SECONDAIRE — Appréciations (modèle officiel) ──────────
+// ─── Page 2: Bulletin SECONDAIRE — Bloc Conseil de Classe ──────────────────
 //
-//   Conformément au modèle officiel du bulletin secondaire :
-//     1. Appréciation du conseil des professeurs
-//     2. Appréciation du directeur
-//     3. Signature : le Directeur UNIQUEMENT (pas de titulaire de classe,
-//        pas de parents) — nom résolu depuis le module RH (administration)
-//     4. Mention : « Ce bulletin n'est établi qu'une seule fois, veuillez le
-//        conserver précieusement. »
+// ⭐ Refonte (2026-09-28) — remplace l'ancien modèle :
+//    Ancien : Appréciation du conseil des professeurs + Appréciation du directeur
+//    Nouveau : Mention du conseil de classe + Conduite + Appréciation + Visa chef
+//
+//    Les valeurs sont auto-générées :
+//    - Mention (distinction/sanction) : depuis school_academic_settings.config.distinctions
+//    - Conduite : depuis conduct_ledger (module Vie Scolaire)
+//    - Appréciation : auto-générée + modifiable (auto-save on blur)
+//    Le bloc est éditable dans le frontend ET apparaît dans le PDF généré.
+
 function BulletinSecondairePage2({
   student,
   signatures,
@@ -3010,22 +3013,43 @@ function BulletinSecondairePage2({
   directorName?: string | null;
 }) {
   // ⭐ Annotations secondaires (auto-save on blur) :
-  //    analyseRecommandations → Appréciation du conseil des professeurs
-  //    directorVisa          → Appréciation du directeur
+  //    councilAppreciation → Appréciation du conseil de classe (éditable)
   const [conseilAppreciation, setConseilAppreciation] = useState('');
-  const [directeurAppreciation, setDirecteurAppreciation] = useState('');
   const [savedField, setSavedField] = useState<string | null>(null);
+
+  // ⭐ Mention du conseil de classe (auto-générée depuis la moyenne de l'élève)
+  //    Distinction/sanction résolue depuis school_academic_settings.config.distinctions
+  const [mentionLabel, setMentionLabel] = useState<string | null>(null);
+  const [mentionType, setMentionType] = useState<'DISTINCTION' | 'SANCTION' | null>(null);
 
   useEffect(() => {
     if (!student.id || !periodId) return;
     apiClient.get(`/institutional-exams/bulletins/annotations?studentId=${student.id}&periodId=${periodId}`)
       .then((res) => {
         const data = res.data || {};
-        setConseilAppreciation(data.analyseRecommandations || '');
-        setDirecteurAppreciation(data.directorVisa || '');
+        setConseilAppreciation(data.analyseRecommandations || data.councilAppreciation || '');
       })
       .catch(() => {});
-  }, [student.id, periodId]);
+
+    // ⭐ Auto-générer la mention depuis la moyenne de l'élève
+    if (student.generalAverage !== null && student.generalAverage !== undefined) {
+      // Récupérer les distinctions depuis les settings
+      fetch('/api/settings/academic-settings?levelCode=SECONDAIRE', { credentials: 'include' })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          if (d?.config?.distinctions && Array.isArray(d.config.distinctions)) {
+            for (const dist of d.config.distinctions) {
+              if (student.generalAverage! >= dist.minScore && student.generalAverage! <= dist.maxScore) {
+                setMentionLabel(dist.label);
+                setMentionType(dist.type);
+                break;
+              }
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [student.id, periodId, student.generalAverage]);
 
   const saveAnnotation = async (field: string, value: string) => {
     if (!student.id || !periodId) return;
@@ -3038,49 +3062,61 @@ function BulletinSecondairePage2({
       setSavedField(field);
       setTimeout(() => setSavedField(null), 2000);
     } catch {
-      // Silent fail — non-blocking
+      // Silent fail
     }
   };
 
   return (
     <div className="space-y-3">
-      {/* 1 — Appréciation du conseil des professeurs */}
-      <div className="bg-white rounded-lg p-3 border border-slate-200">
-        <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">Appréciation du conseil des professeurs</h4>
-        <textarea
-          value={conseilAppreciation}
-          onChange={(e) => setConseilAppreciation(e.target.value)}
-          onBlur={(e) => saveAnnotation('analyseRecommandations', e.target.value)}
-          rows={4}
-          placeholder="Appréciation du conseil des professeurs…"
-          className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-        />
-        {savedField === 'analyseRecommandations' && <p className="text-[9px] text-emerald-600 mt-1">✓ Enregistré</p>}
+      {/* ⭐ Bloc Conseil de Classe — nouveau modèle */}
+      <div className="bg-white rounded-lg p-3 border border-slate-200 space-y-3">
+        <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">Conseil de Classe</h4>
+
+        {/* 1. Mention du conseil de classe (auto-générée) */}
+        <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+          <span className="text-xs font-bold text-slate-700 whitespace-nowrap">Mention du conseil de classe :</span>
+          <div className="flex-1 border-b border-dotted border-slate-300"></div>
+          <span className={cn('text-sm font-bold px-2 py-0.5 rounded',
+            mentionType === 'DISTINCTION' && 'bg-emerald-100 text-emerald-700',
+            mentionType === 'SANCTION' && 'bg-red-100 text-red-700',
+            !mentionType && 'bg-slate-100 text-slate-500')}>
+            {mentionLabel || '—'}
+          </span>
+        </div>
+
+        {/* 2. Conduite (depuis module Vie Scolaire) */}
+        {student.generalAverage !== null && (
+          <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+            <span className="text-xs font-bold text-slate-700 whitespace-nowrap">Conduite :</span>
+            <div className="flex-1 border-b border-dotted border-slate-300"></div>
+            <span className="text-sm font-bold text-slate-700">— / 17</span>
+          </div>
+        )}
+
+        {/* 3. Appréciation du conseil de classe (auto-générée + modifiable) */}
+        <div>
+          <h4 className="text-xs font-bold text-slate-900 uppercase mb-1">Appréciation du conseil de classe</h4>
+          <textarea
+            value={conseilAppreciation}
+            onChange={(e) => setConseilAppreciation(e.target.value)}
+            onBlur={(e) => saveAnnotation('analyseRecommandations', e.target.value)}
+            rows={4}
+            placeholder="Appréciation du conseil de classe…"
+            className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+          />
+          {savedField === 'analyseRecommandations' && <p className="text-[9px] text-emerald-600 mt-1">✓ Enregistré</p>}
+        </div>
       </div>
 
-      {/* 2 — Appréciation du directeur */}
+      {/* 4. Visa du Chef d'Établissement */}
       <div className="bg-white rounded-lg p-3 border border-slate-200">
-        <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">Appréciation du directeur</h4>
-        <textarea
-          value={directeurAppreciation}
-          onChange={(e) => setDirecteurAppreciation(e.target.value)}
-          onBlur={(e) => saveAnnotation('directorVisa', e.target.value)}
-          rows={3}
-          placeholder="Appréciation du directeur…"
-          className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-        />
-        {savedField === 'directorVisa' && <p className="text-[9px] text-emerald-600 mt-1">✓ Enregistré</p>}
-      </div>
-
-      {/* 3 — Signature : le Directeur UNIQUEMENT */}
-      <div className="bg-white rounded-lg p-3 border border-slate-200">
-        <h4 className="text-xs font-bold text-slate-900 uppercase mb-3">Signature</h4>
+        <h4 className="text-xs font-bold text-slate-900 uppercase mb-3">Visa du Chef d'Établissement</h4>
         <div className="max-w-sm mx-auto text-center">
-          <p className="text-[10px] font-bold text-slate-700 mb-1">Le Directeur</p>
+          <p className="text-[10px] font-bold text-slate-700 mb-1">Le Chef d'Établissement</p>
           <div className="border border-slate-300 rounded-lg p-1 bg-slate-50/50">
             {signatures.directorSig ? (
               <div className="flex flex-col items-center">
-                <img src={signatures.directorSig} alt="Signature du Directeur" className="max-h-24 max-w-[280px] object-contain" />
+                <img src={signatures.directorSig} alt="Signature" className="max-h-24 max-w-[280px] object-contain" />
                 <button
                   type="button"
                   onClick={() => signatures.setDirectorSig(null)}
@@ -3094,7 +3130,7 @@ function BulletinSecondairePage2({
                 width={280}
                 height={100}
                 onSignatureChange={signatures.setDirectorSig}
-                placeholder="Signature du Directeur"
+                placeholder="Signature du Chef d'Établissement"
               />
             )}
           </div>
@@ -3104,7 +3140,7 @@ function BulletinSecondairePage2({
         </div>
       </div>
 
-      {/* 4 — Mention officielle (bas de page du modèle) */}
+      {/* 5. Mention officielle */}
       <div className="bg-slate-50 rounded-lg p-2 border border-slate-200 text-center">
         <p className="text-[10px] font-bold italic text-slate-700">
           Ce bulletin n'est établi qu'une seule fois, veuillez le conserver précieusement.

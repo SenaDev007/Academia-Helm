@@ -3798,8 +3798,8 @@ function MoyennesTab({
         </button>
       </div>
 
-      {/* ⭐ Vue par matière / Vue globale — toggle pour la maternelle uniquement */}
-      {isMaternelle && activeMoyenneTab === 'trimestriel' && (
+      {/* ⭐ Vue par matière / Vue globale — toggle pour la maternelle + primaire */}
+      {(isMaternelle || scopeLevel === 'PRIMAIRE') && activeMoyenneTab === 'trimestriel' && (
         <div className="flex items-center gap-2 bg-white p-3 rounded-xl border border-slate-200">
           <span className="text-sm font-semibold text-slate-700 mr-2">Vue :</span>
           <button
@@ -3838,7 +3838,7 @@ function MoyennesTab({
           <span className="ml-3 text-sm text-slate-500">Calcul des moyennes…</span>
         </div>
       ) : activeMoyenneTab === 'trimestriel' ? (
-        isMaternelle && activeVue === 'par-matiere' ? (
+        (isMaternelle || scopeLevel === 'PRIMAIRE') && activeVue === 'par-matiere' ? (
           <VueParMatiereTrimestriel
             academicYear={academicYear}
             scopeLang={scopeLang}
@@ -4111,47 +4111,94 @@ function VueParMatiereTrimestriel({
     });
   };
 
-  // ── Génère le HTML imprimable pour un élève ─────────────────────────
-  const handleGeneratePdf = (student: any) => {
+  // ── Génère le PDF professionnel via le backend (Puppeteer) ────────────
+  // Même pattern que handleGeneratePdf du bulletin d'évaluation standard,
+  // mais avec isVueParMatiere=true pour déclencher buildHtmlVueParMatiere
+  // côté backend. Les valeurs em1/em2/moyEm/ec/moyenne par matière sont
+  // envoyées dans subject.vueParMatiere.
+  const handleGeneratePdf = async (student: any) => {
     setGeneratingPdf(student.id);
     try {
       const periodName = periods.find(p => p.id === selectedPeriodId)?.name || '';
       const className = classes.find(c => c.id === selectedClassId)?.name || '';
-      const html = generateVueParMatiereHtml({
-        student,
-        subjects,
-        school,
-        academicYear,
+
+      // Stats classe (moyenne + min/max) pour la synthèse PDF
+      const validAvgs = students.map(s => s.generalAverage).filter((a: number | null): a is number => a !== null);
+      const classAverage = validAvgs.length > 0 ? validAvgs.reduce((a, b) => a + b, 0) / validAvgs.length : null;
+
+      const payload: any = {
+        schoolName: school?.schoolName,
+        schoolLogo: school?.logoUrl,
+        schoolAddress: school?.address,
+        schoolPhone: school?.phone,
+        schoolEmail: school?.email,
+        schoolSlogan: school?.slogan,
+        academicYearName: academicYear?.label || '',
         periodName,
+        evaluationTypeName: 'Vue par matière',
         className,
+        studentName: student.studentName,
+        studentMatricule: student.matricule,
+        studentGender: student.gender,
         isMaternelle,
+        isVueParMatiere: true,
+        subjects: subjects.map(s => {
+          const sc = student.subjectScores[s.id];
+          const moyEm = (sc?.em1 !== null && sc?.em1 !== undefined && sc?.em2 !== null && sc?.em2 !== undefined)
+            ? ((sc.em1 as number) + (sc.em2 as number)) / 2
+            : (sc?.em1 !== null && sc?.em1 !== undefined ? sc.em1
+              : (sc?.em2 !== null && sc?.em2 !== undefined ? sc.em2 : null));
+          return {
+            name: s.name,
+            score: sc?.moyenne ?? null,
+            qualitativeCode: isMaternelle ? (sc?.moyenneCode ?? null) : null,
+            isAbsent: false,
+            appreciation: sc?.appreciation ?? '—',
+            vueParMatiere: {
+              em1: sc?.em1 ?? null,
+              em2: sc?.em2 ?? null,
+              moyEm,
+              ec: sc?.ec ?? null,
+              moyenne: sc?.moyenne ?? null,
+            },
+          };
+        }),
+        generalAverage: student.generalAverage,
+        classRank: student.classRank,
+        classAverage,
+        totalStudents: students.length,
+        appreciationGlobale: student.appreciationGlobale,
         directorName,
-      });
-      // Ouvrir dans une nouvelle fenêtre pour impression
-      const printWindow = window.open('', '_blank', 'width=900,height=700');
-      if (!printWindow) {
-        alert('Veuillez autoriser les pop-ups pour générer le PDF.');
-        return;
-      }
-      printWindow.document.open();
-      printWindow.document.write(html);
-      printWindow.document.close();
-      // Attendre le chargement puis imprimer
-      printWindow.onload = () => {
-        setTimeout(() => {
-          printWindow.print();
-        }, 250);
       };
+
+      const response = await apiClient.post('/institutional-exams/bulletins/generate-pdf', payload, {
+        responseType: 'blob',
+        timeout: 120000, // 2 minutes
+      });
+
+      // Télécharger le PDF
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      const safeStudentName = student.studentName.replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+      const safePeriod = periodName.replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+      link.download = `bulletin_par_matiere_${safeStudentName}_${safePeriod}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toastSuccess('Bulletin généré', { description: student.studentName });
     } catch (err: any) {
-      alert('Erreur lors de la génération du PDF : ' + err.message);
+      toastError('Erreur PDF', { description: err.response?.data?.message || err.message });
     } finally {
       setGeneratingPdf(null);
     }
   };
 
-  const handleGenerateAllPdf = () => {
+  const handleGenerateAllPdf = async () => {
     for (const student of students) {
-      handleGeneratePdf(student);
+      await handleGeneratePdf(student);
     }
   };
 

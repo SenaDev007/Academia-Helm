@@ -51,6 +51,14 @@ export interface BulletinPdfData {
   //    graphique que le bulletin trimestriel CEG, mais tableau simple
   //    Discipline | Note /20 | Rang | Appréciation + moyenne de l'évaluation.
   isSecondaryEval?: boolean;
+  // ⭐ Vue par matière (2026-09-27) — quand ce flag est true, le backend
+  //    génère un PDF « Vue par matière » : tableau par matière avec colonnes
+  //    EM1 | EM2 | Moy. EM | EC | Moyenne gén. pour une période donnée
+  //    (utilisé par le sous-onglet « Bulletin trimestriel et annuel » >
+  //    « Moyennes trimestrielles » > toggle « Vue par matière »).
+  //    Les valeurs par matière (em1/em2/moyEm/ec/moyenne) sont dans
+  //    subject.vueParMatiere (cf. plus bas).
+  isVueParMatiere?: boolean;
   // ⭐ Champs anglophones spécifiques (page 1 + page 2 du bulletin anglophone)
   studentAge?: number | null;
   studentBirthDate?: string | null;
@@ -87,6 +95,20 @@ export interface BulletinPdfData {
     subjectPosition?: number | null;
     grade?: string | null;
     remark?: string | null;
+    // ⭐ Vue par matière (2026-09-27) — tableau par matière avec colonnes
+    //    EM1 | EM2 | Moy. EM | EC | Moyenne gén. pour une période donnée.
+    //    Utilisé par le sous-onglet « Bulletin trimestriel et annuel » >
+    //    « Moyennes trimestrielles » > toggle « Vue par matière ».
+    //    Pour la maternelle, em1/em2/moyEm/ec/moyenne contiennent une valeur
+    //    numérique (TS=3, S=2, PS=1) — le backend les affiche en pills colorées.
+    //    Pour le primaire, ce sont des scores /20.
+    vueParMatiere?: {
+      em1: number | null;
+      em2: number | null;
+      moyEm: number | null;
+      ec: number | null;
+      moyenne: number | null;
+    };
     // ⭐ SECONDAIRE — modèle CEG : Moy Int / Dev1 / Dev2 / Moy / Coef / Moy Coef
     //    (undefined = aucune donnée, null = absent, number = note)
     secInt1?: number | null;
@@ -184,13 +206,19 @@ export class BulletinPdfService {
       //    ⭐ SECONDAIRE FR « Bulletin d'évaluation » : tableau simple
       //    (Discipline | Note /20 | Rang | Appréciation)
       //    ⭐ SECONDAIRE FR : modèle CEG (Moy Int / Dev1 / Dev2 / Moy / Coef / Moy Coef)
-      const html = data.scopeLang === 'EN'
-        ? this.buildHtmlAnglophone(data, qrDataUrl, bulletinId)
-        : (data.isSecondaryEval
-          ? this.buildHtmlSecondaireEval(data, qrDataUrl, bulletinId)
-          : (data.isSecondary
-            ? this.buildHtmlSecondaire(data, qrDataUrl, bulletinId)
-            : this.buildHtml(data, qrDataUrl, bulletinId)));
+      //    ⭐ Vue par matière (maternelle + primaire) : tableau par matière
+      //    avec colonnes EM1 | EM2 | Moy. EM | EC | Moyenne gén. pour une
+      //    période donnée (toggle Vue par matière dans le sous-onglet
+      //    « Bulletin trimestriel et annuel » > « Moyennes trimestrielles »).
+      const html = data.isVueParMatiere
+        ? this.buildHtmlVueParMatiere(data, qrDataUrl, bulletinId)
+        : (data.scopeLang === 'EN'
+          ? this.buildHtmlAnglophone(data, qrDataUrl, bulletinId)
+          : (data.isSecondaryEval
+            ? this.buildHtmlSecondaireEval(data, qrDataUrl, bulletinId)
+            : (data.isSecondary
+              ? this.buildHtmlSecondaire(data, qrDataUrl, bulletinId)
+              : this.buildHtml(data, qrDataUrl, bulletinId))));
 
       // 3. Generate PDF via Puppeteer
       //    ⭐ V10h — le bulletin anglophone (Report Book, tableau 10 colonnes)
@@ -1835,6 +1863,218 @@ ${page2Content}
       map[skills[i]] = levels[idx];
     }
     return map;
+  }
+
+  /**
+   * ⭐ Vue par matière (2026-09-27) — PDF professionnel avec tableau par matière
+   *    pour une période donnée. Utilisé par le sous-onglet « Bulletin trimestriel
+   *    et annuel » > « Moyennes trimestrielles » > toggle « Vue par matière ».
+   *
+   * Colonnes par matière : EM1 | EM2 | Moy. EM | EC | Moyenne gén. | Appréciation
+   *
+   * Pour la maternelle, em1/em2/moyEm/ec/moyenne contiennent une valeur numérique
+   * (TS=3, S=2, PS=1) → le backend les affiche en code qualitatif (TS/S/PS) avec
+   * couleur de fond.
+   *
+   * Pour le primaire, ce sont des scores /20 → affichage numérique avec couleur
+   * (vert si ≥ 10, rouge sinon).
+   *
+   * Même en-tête officiel que les autres bulletins (République + drapeau Bénin
+   * + ministère + école + logo + slogan + contact).
+   */
+  private buildHtmlVueParMatiere(data: BulletinPdfData, qrCode: string, _bulletinId: string): string {
+    const isMaternelle = data.isMaternelle;
+
+    // Helper : formater une valeur (maternelle = TS/S/PS, primaire = /20)
+    const fmtVal = (val: number | null | undefined): string => {
+      if (val === null || val === undefined) return '—';
+      if (isMaternelle) {
+        return val >= 2.5 ? 'TS' : val >= 1.5 ? 'S' : 'PS';
+      }
+      return val.toFixed(2);
+    };
+    const valColor = (val: number | null | undefined): string => {
+      if (val === null || val === undefined) return '#666';
+      if (isMaternelle) {
+        return val >= 2.5 ? '#059669' : val >= 1.5 ? '#2563eb' : '#d97706';
+      }
+      return val >= 10 ? '#059669' : '#dc2626';
+    };
+    const valBg = (val: number | null | undefined): string => {
+      if (val === null || val === undefined) return 'transparent';
+      if (isMaternelle) {
+        return val >= 2.5 ? '#d1fae5' : val >= 1.5 ? '#dbeafe' : '#fef3c7';
+      }
+      return val >= 10 ? '#d1fae5' : '#fee2e2';
+    };
+
+    // Lignes du tableau par matière
+    const subjectRows = data.subjects.map((subject, idx) => {
+      const vpm = subject.vueParMatiere;
+      if (!vpm) {
+        return `<tr>
+          <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold">${idx + 1}</td>
+          <td style="border:1px solid #ccc;padding:5px 8px;font-weight:500">${subject.name}</td>
+          <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;color:#999" colSpan="5">Aucune donnée</td>
+          <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-size:11px">—</td>
+        </tr>`;
+      }
+      return `<tr>
+        <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold">${idx + 1}</td>
+        <td style="border:1px solid #ccc;padding:5px 8px;font-weight:500">${subject.name}</td>
+        <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold;background:${valBg(vpm.em1)};color:${valColor(vpm.em1)}">${fmtVal(vpm.em1)}</td>
+        <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold;background:${valBg(vpm.em2)};color:${valColor(vpm.em2)}">${fmtVal(vpm.em2)}</td>
+        <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold;background:${valBg(vpm.moyEm)};color:${valColor(vpm.moyEm)}">${fmtVal(vpm.moyEm)}</td>
+        <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold;background:${valBg(vpm.ec)};color:${valColor(vpm.ec)}">${fmtVal(vpm.ec)}</td>
+        <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold;background:${valBg(vpm.moyenne)};color:${valColor(vpm.moyenne)}">${fmtVal(vpm.moyenne)}</td>
+        <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-size:11px">${subject.appreciation || '—'}</td>
+      </tr>`;
+    }).join('');
+
+    const rankStr = formatRank(data.classRank, data.studentGender === 'FEMALE' || data.studentGender === 'F');
+
+    // Mention annuelle (primaire) ou appréciation (maternelle)
+    const mentionStr = isMaternelle
+      ? (data.appreciationGlobale || '—')
+      : (data.generalAverage !== null
+        ? (data.generalAverage >= 16 ? 'Très Bien'
+          : data.generalAverage >= 14 ? 'Bien'
+          : data.generalAverage >= 12 ? 'Assez Bien'
+          : data.generalAverage >= 10 ? 'Passable' : 'Insuffisant')
+        : '—');
+
+    return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
+<title>Bulletin par matière - ${data.studentName} - ${data.periodName}</title>
+<style>
+  @page { size: A4 landscape; margin: 8mm; }
+  body { font-family: 'Times New Roman', serif; margin: 0; padding: 0; color: #1a1a1a; }
+  /* ─── Official header ─── */
+  .official-header { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 3px solid #0A2A5E; padding-bottom: 8px; margin-bottom: 10px; }
+  .header-left { display: flex; align-items: center; gap: 8px; }
+  .benin-flag { width: 28px; height: 18px; display: inline-block; vertical-align: middle; }
+  .benin-flag .green { float: left; width: 33%; height: 100%; background: #00803D; }
+  .benin-flag .yellow { float: right; width: 67%; height: 50%; background: #FCDE16; }
+  .benin-flag .red { float: right; width: 67%; height: 50%; background: #E8112D; }
+  .header-center { text-align: center; flex: 1; }
+  .header-center .republique { font-size: 11px; font-weight: bold; }
+  .header-center .ministry { font-size: 8px; margin-top: 2px; }
+  .header-center .school-name { font-size: 13px; font-weight: bold; color: #0A2A5E; margin-top: 4px; }
+  .header-center .school-slogan { font-size: 8px; font-style: italic; color: #475569; margin-top: 2px; }
+  .header-center .school-contact { font-size: 7px; color: #666; margin-top: 2px; font-style: italic; }
+  .header-right { text-align: right; }
+  .header-right img.logo { max-height: 55px; max-width: 55px; }
+  /* ─── Title ─── */
+  .bulletin-title { text-align: center; background: #0A2A5E; color: white; padding: 6px 12px; border-radius: 4px; margin-bottom: 8px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
+  /* ─── Student info ─── */
+  .student-info { display: flex; justify-content: space-between; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 12px; margin-bottom: 8px; font-size: 10px; }
+  .student-info div { flex: 1; }
+  .student-info strong { color: #0A2A5E; }
+  /* ─── Table ─── */
+  table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  thead th { background: #0A2A5E; color: white; padding: 6px 8px; border: 1px solid #0D3B85; text-align: center; font-size: 9px; }
+  tbody td { border: 1px solid #cbd5e1; padding: 4px 8px; }
+  tbody tr:nth-child(even) { background: #f8fafc; }
+  tfoot td { background: #0A2A5E; color: white; padding: 6px 8px; border: 1px solid #0D3B85; font-size: 10px; }
+  /* ─── Synthèse ─── */
+  .synthesis { display: flex; justify-content: space-around; margin-top: 10px; gap: 8px; }
+  .synthesis div { text-align: center; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 4px; flex: 1; background: #f8fafc; }
+  .synthesis .label { font-size: 8px; color: #64748b; text-transform: uppercase; font-weight: bold; }
+  .synthesis .value { font-size: 14px; font-weight: bold; margin-top: 2px; }
+  /* ─── QR + signatures ─── */
+  .qr-signatures { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 20px; gap: 16px; }
+  .qr-section { text-align: right; }
+  .qr-section img { width: 60px; height: 60px; }
+  .qr-section .qr-text { font-size: 7px; color: #94a3b8; text-align: right; }
+  .signatures { flex: 1; display: flex; justify-content: space-around; gap: 16px; }
+  .sig-box { flex: 1; text-align: center; border-top: 1px solid #94a3b8; padding-top: 6px; }
+  .sig-box .sig-label { font-size: 9px; font-weight: bold; color: #0A2A5E; }
+  .sig-box .sig-line { margin-top: 35px; font-size: 8px; color: #94a3b8; }
+  /* ─── Footer ─── */
+  .footer-official { text-align: center; font-size: 7px; color: #94a3b8; margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 6px; }
+</style></head><body>
+
+  <!-- Official Header -->
+  <div class="official-header">
+    <div class="header-left">
+      <div class="benin-flag"><div class="green"></div><div class="yellow"></div><div class="red"></div></div>
+    </div>
+    <div class="header-center">
+      <div class="republique">République du Bénin</div>
+      <div class="ministry">${isMaternelle ? 'Ministère des Enseignements Maternel et Primaire' : "Ministère de l'Enseignement Primaire et Secondaire"}</div>
+      <div class="school-name">${data.schoolName || 'Établissement'}</div>
+      ${data.schoolSlogan ? `<div class="school-slogan">${data.schoolSlogan}</div>` : ''}
+      <div class="school-contact">${data.schoolAddress || ''}${data.schoolPhone ? ` · Tél: ${data.schoolPhone}` : ''}${data.schoolEmail ? ` · ${data.schoolEmail}` : ''}</div>
+    </div>
+    <div class="header-right">
+      ${data.schoolLogo ? `<img class="logo" src="${data.schoolLogo}" />` : ''}
+    </div>
+  </div>
+
+  <!-- Bulletin Title -->
+  <div class="bulletin-title">
+    Bulletin trimestriel par matière — ${data.periodName} ${data.academicYearName || ''}
+  </div>
+
+  <!-- Student Info -->
+  <div class="student-info">
+    <div>Élève: <strong>${data.studentName}</strong></div>
+    <div>Matricule: <strong>${data.studentMatricule || '—'}</strong></div>
+    <div>Classe: <strong>${data.className || '—'}</strong></div>
+    <div>Rang: <strong>${rankStr}</strong></div>
+  </div>
+
+  <!-- Notes Table par matière -->
+  <table>
+    <thead><tr>
+      <th style="width:30px">N°</th>
+      <th style="text-align:left">Matière</th>
+      <th>EM1</th>
+      <th>EM2</th>
+      <th>Moy. EM</th>
+      <th>EC</th>
+      <th>Moyenne gén.</th>
+      <th>Appréciation</th>
+    </tr></thead>
+    <tbody>${subjectRows}</tbody>
+    <tfoot>
+      <tr>
+        <td colSpan="6" style="text-align:right;font-weight:bold;text-transform:uppercase">
+          ${isMaternelle ? 'Appréciation générale' : 'Moyenne générale'}
+        </td>
+        <td style="text-align:center;font-weight:bold;font-size:14px;color:#0A2A5E;background:#dbeafe">
+          ${isMaternelle ? (data.appreciationGlobale || '—') : (data.generalAverage !== null ? data.generalAverage.toFixed(2) + '/20' : '—')}
+        </td>
+        <td style="background:#dbeafe;font-size:11px;text-align:center">${mentionStr}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- Synthèse -->
+  <div class="synthesis">
+    <div><div class="label">Moyenne</div><div class="value" style="color:#0A2A5E">${isMaternelle ? (data.appreciationGlobale || '—') : (data.generalAverage !== null ? data.generalAverage.toFixed(2) : '—')}${isMaternelle ? '' : '/20'}</div></div>
+    <div><div class="label">Rang</div><div class="value" style="color:#334155">${rankStr}</div></div>
+    <div><div class="label">${isMaternelle ? 'Appréciation' : 'Mention'}</div><div class="value" style="color:#059669;font-size:12px">${mentionStr}</div></div>
+    ${!isMaternelle && data.classAverage !== null && data.classAverage !== undefined ? `<div><div class="label">Moy. classe</div><div class="value" style="color:#CFA63A">${data.classAverage.toFixed(2)}</div></div>` : ''}
+  </div>
+
+  <!-- QR + Signatures -->
+  <div class="qr-signatures">
+    <div class="signatures">
+      <div class="sig-box"><div class="sig-label">Titulaire de la classe</div><div class="sig-line">Signature</div></div>
+      <div class="sig-box"><div class="sig-label">Le Directeur(trice)</div>${this.renderDirectorSealsZone(data, 35)}<div class="sig-line">${this.renderDirectorNameLine(data, '8px', 'Visa')}</div></div>
+      <div class="sig-box"><div class="sig-label">Les Parents</div><div class="sig-line">Nom, Prénoms et Signature</div></div>
+    </div>
+    <div class="qr-section">
+      <img src="${qrCode}" alt="QR Code vérification" />
+      <div class="qr-text">Code de vérification<br/>${_bulletinId.substring(0, 20)}…</div>
+    </div>
+  </div>
+
+  <div class="footer-official">
+    Bulletin généré par Academia Helm — ${data.schoolName || ''} · ${data.periodName || ''} ${data.academicYearName || ''}
+  </div>
+
+  </body></html>`;
   }
 }
 

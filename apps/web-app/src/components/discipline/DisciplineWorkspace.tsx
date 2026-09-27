@@ -218,7 +218,7 @@ export default function DisciplineWorkspace({
         </div>
         <div className="flex gap-2">
           {activeTab === 'rules' && (
-            <Button onClick={() => setShowRuleModal(true)} className="bg-amber-600 hover:bg-amber-700">
+            <Button onClick={() => { setEditingRule(null); setShowRuleModal(true); }} className="bg-amber-600 hover:bg-amber-700">
               <Plus className="w-4 h-4 mr-2" /> Nouvelle règle
             </Button>
           )}
@@ -395,7 +395,7 @@ export default function DisciplineWorkspace({
         />
       )}
       {showRuleModal && (
-        <RuleModal onClose={() => setShowRuleModal(false)} onSuccess={() => { loadData(); setShowRuleModal(false); }} />
+        <RuleModal onClose={() => { setShowRuleModal(false); setEditingRule(null); }} onSuccess={() => { loadData(); setShowRuleModal(false); setEditingRule(null); }} editingRule={editingRule} />
       )}
       {showSettingsModal && (
         <ConductSettingsModal
@@ -763,12 +763,13 @@ function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelI
 
 // ─── Rule Modal (CRUD barème) ────────────────────────────────────────────
 
-function RuleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void; }) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [hours, setHours] = useState(0);
-  const [points, setPoints] = useState(0);
-  const [severity, setSeverity] = useState('MINOR');
+function RuleModal({ onClose, onSuccess, editingRule }: { onClose: () => void; onSuccess: () => void; editingRule?: DisciplineRule | null }) {
+  const isEditing = !!editingRule;
+  const [name, setName] = useState(editingRule?.name || '');
+  const [description, setDescription] = useState(editingRule?.description || '');
+  const [hours, setHours] = useState(editingRule?.hours_penalty || 0);
+  const [points, setPoints] = useState(editingRule?.points_deducted || 0);
+  const [severity, setSeverity] = useState(editingRule?.severity || 'MINOR');
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
 
@@ -777,12 +778,15 @@ function RuleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () 
     setSaving(true);
     try {
       const authHeaders = getClientAuthorizationHeader();
+      const payload = { name, description, hours_penalty: hours, points_deducted: points, severity };
+      const method = isEditing ? 'PUT' : 'POST';
+      const body = isEditing ? { id: editingRule!.id, ...payload, isActive: true } : payload;
       const res = await fetch('/api/discipline/rules', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders }, credentials: 'include',
-        body: JSON.stringify({ name, description, hours_penalty: hours, points_deducted: points, severity }),
+        method, headers: { 'Content-Type': 'application/json', ...authHeaders }, credentials: 'include',
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      toast({ title: '✅ Règle créée', description: `${name} — ${hours}h, -${points}pts` });
+      toast({ title: isEditing ? '✅ Règle modifiée' : '✅ Règle créée', description: `${name} — ${hours}h, -${points}pts` });
       onSuccess();
     } catch (err: any) { toast({ title: 'Erreur', description: err.message, variant: 'destructive' }); }
     finally { setSaving(false); }
@@ -793,7 +797,7 @@ function RuleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () 
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
         className="bg-white rounded-xl shadow-2xl max-w-lg w-full">
         <div className="flex items-center justify-between p-4 border-b bg-amber-50 rounded-t-xl">
-          <h3 className="text-lg font-bold text-amber-900 flex items-center gap-2"><Settings className="w-5 h-5" /> Nouvelle règle de faute</h3>
+          <h3 className="text-lg font-bold text-amber-900 flex items-center gap-2"><Settings className="w-5 h-5" /> {isEditing ? 'Modifier la règle' : 'Nouvelle règle de faute'}</h3>
           <button onClick={onClose} className="p-1 hover:bg-amber-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
         </div>
         <div className="p-4 space-y-4">
@@ -833,7 +837,7 @@ function RuleModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () 
         <div className="flex justify-end gap-2 p-4 border-t">
           <Button variant="outline" onClick={onClose}>Annuler</Button>
           <Button onClick={handleSave} disabled={saving} className="bg-amber-600 hover:bg-amber-700">
-            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />} Créer
+            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : isEditing ? <Edit className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />} {isEditing ? 'Modifier' : 'Créer'}
           </Button>
         </div>
       </motion.div>

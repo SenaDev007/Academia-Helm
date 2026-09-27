@@ -255,7 +255,7 @@ export class BulletinPdfService {
         // Small delay to let any inline images (base64 signatures, SVG flag) render
         await new Promise(resolve => setTimeout(resolve, 500));
         const pdfBuffer = await page.pdf({
-          format: data.scopeLang === 'EN' || data.isSecondary || data.isSecondaryEval ? 'A4' : 'A5',
+          format: (data.scopeLang === 'EN' || data.isSecondary || data.isSecondaryEval || data.isVueParMatiere) ? 'A4' : 'A5',
           landscape: false,
           printBackground: true,
           margin: { top: '8mm', bottom: '8mm', left: '8mm', right: '8mm' },
@@ -2001,205 +2001,193 @@ ${page2Content}
    */
   private buildHtmlVueParMatiere(data: BulletinPdfData, qrCode: string, _bulletinId: string): string {
     const isMaternelle = data.isMaternelle;
+    const ministry = isMaternelle
+      ? 'Ministère des Enseignements Maternel et Primaire'
+      : 'Ministère des Enseignements Maternel et Primaire';
 
-    // Helper : formater une valeur (maternelle = TS/S/PS, primaire = /20)
+    // Benin flag as SVG data URL (même drapeau que buildHtml)
+    const beninFlagSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`;
+    const beninFlag = `data:image/svg+xml;base64,${Buffer.from(beninFlagSvg).toString('base64')}`;
+
+    // Helpers
     const fmtVal = (val: number | null | undefined): string => {
       if (val === null || val === undefined) return '—';
-      if (isMaternelle) {
-        return val >= 2.5 ? 'TS' : val >= 1.5 ? 'S' : 'PS';
-      }
+      if (isMaternelle) return val >= 2.5 ? 'TS' : val >= 1.5 ? 'S' : 'PS';
       return val.toFixed(2);
     };
     const valColor = (val: number | null | undefined): string => {
-      if (val === null || val === undefined) return '#666';
-      if (isMaternelle) {
-        return val >= 2.5 ? '#059669' : val >= 1.5 ? '#2563eb' : '#d97706';
-      }
+      if (val === null || val === undefined) return '#94a3b8';
+      if (isMaternelle) return val >= 2.5 ? '#059669' : val >= 1.5 ? '#2563eb' : '#d97706';
       return val >= 10 ? '#059669' : '#dc2626';
     };
     const valBg = (val: number | null | undefined): string => {
       if (val === null || val === undefined) return 'transparent';
-      if (isMaternelle) {
-        return val >= 2.5 ? '#d1fae5' : val >= 1.5 ? '#dbeafe' : '#fef3c7';
-      }
+      if (isMaternelle) return val >= 2.5 ? '#d1fae5' : val >= 1.5 ? '#dbeafe' : '#fef3c7';
       return val >= 10 ? '#d1fae5' : '#fee2e2';
     };
 
-    // Lignes du tableau par matière
-    const subjectRows = data.subjects.map((subject, idx) => {
+    // Lignes du tableau — SANS la cellule vide à droite
+    const subjectRows = data.subjects.map((subject) => {
       const vpm = subject.vueParMatiere;
       if (!vpm) {
         return `<tr>
-          <td style="border:1px solid #ccc;padding:5px 8px;font-weight:500">${subject.name}</td>
-          <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;color:#999" colSpan="5">Aucune donnée</td>
-          <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-size:11px">—</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;font-size:10px;">${subject.name}</td>
+          <td colspan="5" style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;color:#94a3b8;font-size:9px;">Aucune donnée</td>
+          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;color:#94a3b8;font-size:9px;">—</td>
         </tr>`;
       }
       return `<tr>
-        <td style="border:1px solid #ccc;padding:5px 8px;font-weight:500">${subject.name}</td>
-        <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold;background:${valBg(vpm.em1)};color:${valColor(vpm.em1)}">${fmtVal(vpm.em1)}</td>
-        <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold;background:${valBg(vpm.em2)};color:${valColor(vpm.em2)}">${fmtVal(vpm.em2)}</td>
-        <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold;background:${valBg(vpm.moyEm)};color:${valColor(vpm.moyEm)}">${fmtVal(vpm.moyEm)}</td>
-        <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold;background:${valBg(vpm.ec)};color:${valColor(vpm.ec)}">${fmtVal(vpm.ec)}</td>
-        <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-weight:bold;background:${valBg(vpm.moyenne)};color:${valColor(vpm.moyenne)}">${fmtVal(vpm.moyenne)}</td>
-        <td style="border:1px solid #ccc;padding:5px 8px;text-align:center;font-size:11px">${subject.appreciation || '—'}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px 4px;font-size:10px;font-weight:600;">${subject.name}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:10px;font-weight:bold;background:${valBg(vpm.em1)};color:${valColor(vpm.em1)}">${fmtVal(vpm.em1)}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:10px;font-weight:bold;background:${valBg(vpm.em2)};color:${valColor(vpm.em2)}">${fmtVal(vpm.em2)}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:10px;font-weight:bold;background:${valBg(vpm.moyEm)};color:${valColor(vpm.moyEm)}">${fmtVal(vpm.moyEm)}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:10px;font-weight:bold;background:${valBg(vpm.ec)};color:${valColor(vpm.ec)}">${fmtVal(vpm.ec)}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:11px;font-weight:bold;background:${valBg(vpm.moyenne)};color:${valColor(vpm.moyenne)}">${fmtVal(vpm.moyenne)}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:9px;color:#475569;">${subject.appreciation || '—'}</td>
       </tr>`;
     }).join('');
 
     const rankStr = formatRank(data.classRank, data.studentGender === 'FEMALE' || data.studentGender === 'F');
-
-    // Mention annuelle (primaire) ou appréciation (maternelle)
     const mentionStr = isMaternelle
       ? (data.appreciationGlobale || '—')
       : (data.generalAverage !== null
-        ? (data.generalAverage >= 16 ? 'Très Bien'
-          : data.generalAverage >= 14 ? 'Bien'
-          : data.generalAverage >= 12 ? 'Assez Bien'
-          : data.generalAverage >= 10 ? 'Passable' : 'Insuffisant')
+        ? (data.generalAverage >= 16 ? 'Très Bien' : data.generalAverage >= 14 ? 'Bien' : data.generalAverage >= 12 ? 'Assez Bien' : data.generalAverage >= 10 ? 'Passable' : 'Insuffisant')
         : '—');
 
     return `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8">
-<title>Bulletin par matière - ${data.studentName} - ${data.periodName}</title>
+<title>Bulletin - ${data.studentName}</title>
 <style>
-  @page { size: A5 portrait; margin: 8mm; }
-  body { font-family: 'Times New Roman', serif; margin: 0; padding: 0; color: #1a1a1a; }
-  /* ─── Official header ─── */
-  .official-header { display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 3px solid #0A2A5E; padding-bottom: 8px; margin-bottom: 10px; }
-  .header-left { display: flex; align-items: center; gap: 8px; }
-  .benin-flag { width: 28px; height: 18px; display: inline-block; vertical-align: middle; }
-  .benin-flag .green { float: left; width: 33%; height: 100%; background: #00803D; }
-  .benin-flag .yellow { float: right; width: 67%; height: 50%; background: #FCDE16; }
-  .benin-flag .red { float: right; width: 67%; height: 50%; background: #E8112D; }
-  .header-center { text-align: center; flex: 1; }
-  .header-center .republique { font-size: 11px; font-weight: bold; }
-  .header-center .ministry { font-size: 8px; margin-top: 2px; }
-  .header-center .school-name { font-size: 13px; font-weight: bold; color: #0A2A5E; margin-top: 4px; }
-  .header-center .school-slogan { font-size: 8px; font-style: italic; color: #475569; margin-top: 2px; }
-  .header-center .school-contact { font-size: 7px; color: #666; margin-top: 2px; font-style: italic; }
-  .header-right { text-align: right; }
-  .header-right img.logo { max-height: 55px; max-width: 55px; }
-  /* ─── Title ─── */
-  .bulletin-title { text-align: center; background: #0A2A5E; color: white; padding: 6px 12px; border-radius: 4px; margin-bottom: 8px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
-  /* ─── Student info ─── */
-  .student-info { display: flex; justify-content: space-between; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 3px; padding: 8px 12px; margin-bottom: 15px; font-size: 10px; }
-  .student-info div { flex: 1; }
-  .student-info strong { color: #0A2A5E; }
-  .student-info-table { width: 100%; border-collapse: collapse; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 3px; margin-bottom: 15px; }
-  .student-photo { width: 50px; height: 55px; object-fit: cover; border: 1px solid #cbd5e1; border-radius: 2px; }
-  .student-photo-placeholder { width: 50px; height: 55px; border: 1px solid #cbd5e1; border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 7px; color: #94a3b8; background: #f8fafc; }
-  /* ─── Table ─── */
-  table { width: 100%; border-collapse: collapse; font-size: 10px; }
-  thead th { background: #0A2A5E; color: white; padding: 6px 8px; border: 1px solid #0D3B85; text-align: center; font-size: 9px; }
-  tbody td { border: 1px solid #cbd5e1; padding: 4px 8px; }
-  tbody tr:nth-child(even) { background: #f8fafc; }
-  tfoot td { background: #0A2A5E; color: white; padding: 6px 8px; border: 1px solid #0D3B85; font-size: 10px; }
-  /* ─── Synthèse ─── */
-  .synthesis { display: flex; justify-content: space-around; margin-top: 10px; gap: 8px; }
-  .synthesis div { text-align: center; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 4px; flex: 1; background: #f8fafc; }
-  .synthesis .label { font-size: 8px; color: #64748b; text-transform: uppercase; font-weight: bold; }
-  .synthesis .value { font-size: 14px; font-weight: bold; margin-top: 2px; }
-  /* ─── QR + signatures ─── */
-  .qr-signatures { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 20px; gap: 16px; }
-  .qr-section { text-align: right; }
-  .qr-section img { width: 60px; height: 60px; }
-  .qr-section .qr-text { font-size: 7px; color: #94a3b8; text-align: right; }
-  .signatures { flex: 1; display: flex; justify-content: space-around; gap: 16px; }
-  .sig-box { flex: 1; text-align: center; border-top: 1px solid #94a3b8; padding-top: 6px; }
-  .sig-box .sig-label { font-size: 9px; font-weight: bold; color: #0A2A5E; }
-  .sig-box .sig-line { margin-top: 35px; font-size: 8px; color: #94a3b8; }
-  /* ─── Footer ─── */
-  .footer-official { text-align: center; font-size: 7px; color: #94a3b8; margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 6px; }
-</style></head><body>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; position:relative; min-height:100vh; display:flex; flex-direction:column; }
+.watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); opacity:0.08; z-index:0; pointer-events:none; }
+.content { position:relative; z-index:1; flex:1; }
+.header { margin-bottom:12px; padding-bottom:6px; border-bottom:2px solid #0A2A5E; }
+.header-table { width:100%; border-collapse:collapse; }
+.header-table td { vertical-align:middle; padding:3px 5px; }
+.header-left { text-align:center; width:12%; }
+.header-center { text-align:center; width:68%; }
+.header-right { text-align:center; width:20%; }
+.republique { font-size:11px; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; }
+.divider { margin:2px auto; width:50%; }
+.divider-line { height:1px; background:#0A2A5E; }
+.ministere { font-size:8px; font-weight:bold; text-transform:uppercase; letter-spacing:0.3px; line-height:1.3; }
+.school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
+.school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
+.bulletin-title { text-align:center; background:#0A2A5E; color:white; padding:6px 10px; border-radius:3px; margin-bottom:10px; font-size:10px; font-weight:bold; text-transform:uppercase; }
+.info-table { width:100%; border-collapse:collapse; margin-bottom:10px; border:1px solid #0A2A5E; }
+.info-table td { border:1px solid #cbd5e1; padding:4px 6px; font-size:9px; background:#f8fafc; }
+table.notes { width:100%; border-collapse:collapse; }
+table.notes th { color:white; border:1px solid; padding:6px 4px; font-size:8px; text-transform:uppercase; }
+table.notes td { border:1px solid #cbd5e1; padding:6px 4px; }
+table.notes tbody tr:nth-child(even) { background:#f8fafc; }
+.footer { margin-top:auto; padding-top:6px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; }
+.student-photo { width:45px; height:50px; object-fit:cover; border:1px solid #cbd5e1; border-radius:2px; }
+.student-photo-placeholder { width:45px; height:50px; border:1px solid #cbd5e1; border-radius:2px; display:flex; align-items:center; justify-content:center; font-size:7px; color:#94a3b8; background:#f8fafc; }
+.synthesis { display:flex; justify-content:space-around; margin-top:8px; gap:6px; }
+.synthesis div { text-align:center; padding:5px 8px; border:1px solid #e2e8f0; border-radius:3px; flex:1; background:#f8fafc; }
+.synthesis .label { font-size:8px; color:#64748b; text-transform:uppercase; font-weight:bold; }
+.synthesis .value { font-size:12px; font-weight:bold; margin-top:2px; }
+.signatures { display:flex; justify-content:space-between; margin-top:20px; gap:12px; }
+.sig-box { flex:1; text-align:center; border-top:1px solid #94a3b8; padding-top:4px; }
+.sig-box .sig-label { font-size:9px; font-weight:bold; color:#0A2A5E; }
+.sig-box .sig-line { margin-top:30px; font-size:7px; color:#94a3b8; }
+.official-notice { font-size:8px; font-style:italic; font-weight:bold; color:#0A2A5E; text-align:left; margin-top:10px; }
+</style></head>
+<body>
+${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="width:400px;height:400px;object-fit:contain;" alt="" />` : ''}
+<div class="content">
 
-  <!-- Official Header -->
-  <div class="official-header">
-    <div class="header-left">
-      <div class="benin-flag"><div class="green"></div><div class="yellow"></div><div class="red"></div></div>
-    </div>
-    <div class="header-center">
-      <div class="republique">République du Bénin</div>
-      <div class="ministry">${isMaternelle ? 'Ministère des Enseignements Maternel et Primaire' : "Ministère de l'Enseignement Primaire et Secondaire"}</div>
-      <div class="school-name">${data.schoolName || 'Établissement'}</div>
-      ${data.schoolSlogan ? `<div class="school-slogan">${data.schoolSlogan}</div>` : ''}
-      <div class="school-contact">${data.schoolAddress || ''}${data.schoolPhone ? ` · Tél: ${data.schoolPhone}` : ''}${data.schoolEmail ? ` · ${data.schoolEmail}` : ''}</div>
-    </div>
-    <div class="header-right">
-      ${data.schoolLogo ? `<img class="logo" src="${data.schoolLogo}" />` : ''}
-    </div>
+  <!-- EN-TÊTE OFFICIEL (même pattern que buildHtml) -->
+  <div class="header">
+    <table class="header-table">
+      <tr>
+        <td class="header-left"><img src="${beninFlag}" alt="Drapeau du Bénin" style="width:30px;height:20px;" /></td>
+        <td class="header-center">
+          <div class="republique">République du Bénin</div>
+          <div class="divider"><div class="divider-line"></div></div>
+          <div class="ministere">${ministry}</div>
+          <div class="divider"><div class="divider-line"></div></div>
+          <div class="school-name">${data.schoolName}</div>
+          <div class="school-info">${data.schoolSlogan ? `« ${data.schoolSlogan} » · ` : ''}${data.schoolAddress || ''} · Tél: ${data.schoolPhone || ''} · ${data.schoolEmail || ''}</div>
+        </td>
+        <td class="header-right">${data.schoolLogo ? `<img src="${data.schoolLogo}" style="max-width:35px;max-height:35px;object-fit:contain;" />` : ''}</td>
+      </tr>
+    </table>
   </div>
 
-  <!-- Bulletin Title -->
-  <div class="bulletin-title">
-    Bulletin trimestriel — ${data.periodName} ${data.academicYearName || ''}
-  </div>
+  <!-- TITRE BULLETIN -->
+  <div class="bulletin-title">Bulletin trimestriel — ${data.periodName} ${data.academicYearName}</div>
 
-  <!-- Student Info (avec photo) -->
-  <table class="student-info-table">
+  <!-- INFOS ÉLÈVE (avec photo, même pattern que buildHtml) -->
+  <table class="info-table">
     <tr>
-      <td style="width:60px;text-align:center;vertical-align:middle;padding:8px 10px;">
+      <td style="width:55px;text-align:center;vertical-align:middle;">
         ${data.studentPhotoUrl
           ? `<img src="${data.studentPhotoUrl}" class="student-photo" alt="Photo" />`
           : `<div class="student-photo-placeholder">Photo</div>`}
       </td>
-      <td style="padding:8px 10px;font-size:10px;">Élève: <strong>${data.studentName}</strong></td>
-      <td style="padding:8px 10px;font-size:10px;text-align:center;">Matricule: <strong>${data.studentMatricule || '—'}</strong></td>
-      <td style="padding:8px 10px;font-size:10px;text-align:center;">Classe: <strong>${data.className || '—'}</strong></td>
-      <td style="padding:8px 10px;font-size:10px;text-align:right;">Rang: <strong>${rankStr}</strong></td>
+      <td>Élève: <strong style="color:#0A2A5E;">${data.studentName}</strong></td>
+      <td style="text-align:center;">Matricule: <strong style="color:#0A2A5E;">${data.studentMatricule || '—'}</strong></td>
+      <td style="text-align:center;">Classe: <strong style="color:#0A2A5E;">${data.className || '—'}</strong></td>
+      <td style="text-align:right;">Rang: <strong style="color:#0A2A5E;">${rankStr}</strong></td>
     </tr>
   </table>
 
-  <!-- Notes Table par matière -->
-  <table>
-    <thead><tr>
-      <th style="text-align:left">Matière</th>
-      <th>EM1</th>
-      <th>EM2</th>
-      <th>Moy. EM</th>
-      <th>EC</th>
-      <th>Moyenne gén.</th>
-      <th>Appréciation</th>
-    </tr></thead>
-    <tbody>${subjectRows}</tbody>
-    <tfoot>
-      <tr>
-        <td colSpan="6" style="text-align:right;font-weight:bold;text-transform:uppercase">
-          ${isMaternelle ? 'Appréciation générale' : 'Moyenne générale'}
-        </td>
-        <td style="text-align:center;font-weight:bold;font-size:14px;color:#0A2A5E;background:#dbeafe">
-          ${isMaternelle ? (data.appreciationGlobale || '—') : (data.generalAverage !== null ? data.generalAverage.toFixed(2) + '/20' : '—')}
-        </td>
-        <td style="background:#dbeafe;font-size:11px;text-align:center">${mentionStr}</td>
-      </tr>
-    </tfoot>
-  </table>
+  <!-- TABLEAU DES NOTES (coins arrondis, bordure navy) -->
+  <div style="border:2px solid #0A2A5E;border-radius:4px;overflow:hidden;">
+    <table class="notes">
+      <thead><tr>
+        <th style="text-align:left">Matière</th>
+        <th>EM1</th>
+        <th>EM2</th>
+        <th>Moy. EM</th>
+        <th>EC</th>
+        <th>Moyenne gén.</th>
+        <th>Appréciation</th>
+      </tr></thead>
+      <tbody>${subjectRows}</tbody>
+      <tfoot>
+        <tr style="background:#0A2A5E;color:white;font-weight:bold;">
+          <td colspan="5" style="border:1px solid #0D3B85;padding:5px;text-align:right;text-transform:uppercase;font-size:9px;">
+            ${isMaternelle ? 'Appréciation générale' : 'Moyenne générale'}
+          </td>
+          <td style="border:1px solid #0D3B85;padding:5px;text-align:center;font-size:12px;background:#dbeafe;color:#0A2A5E;">
+            ${isMaternelle ? (data.appreciationGlobale || '—') : (data.generalAverage !== null ? data.generalAverage.toFixed(2) + '/20' : '—')}
+          </td>
+          <td style="border:1px solid #0D3B85;padding:5px;text-align:center;font-size:9px;background:#dbeafe;color:#0A2A5E;">${mentionStr}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
 
-  <!-- Synthèse -->
+  <!-- SYNTHÈSE -->
   <div class="synthesis">
     <div><div class="label">Moyenne</div><div class="value" style="color:#0A2A5E">${isMaternelle ? (data.appreciationGlobale || '—') : (data.generalAverage !== null ? data.generalAverage.toFixed(2) : '—')}${isMaternelle ? '' : '/20'}</div></div>
     <div><div class="label">Rang</div><div class="value" style="color:#334155">${rankStr}</div></div>
-    <div><div class="label">${isMaternelle ? 'Appréciation' : 'Mention'}</div><div class="value" style="color:#059669;font-size:12px">${mentionStr}</div></div>
-    ${!isMaternelle && data.classAverage !== null && data.classAverage !== undefined ? `<div><div class="label">Moy. classe</div><div class="value" style="color:#CFA63A">${data.classAverage.toFixed(2)}</div></div>` : ''}
+    <div><div class="label">${isMaternelle ? 'Appréciation' : 'Mention'}</div><div class="value" style="color:#059669;font-size:11px">${mentionStr}</div></div>
+    ${!isMaternelle && data.classAverage != null ? `<div><div class="label">Moy. classe</div><div class="value" style="color:#CFA63A">${data.classAverage.toFixed(2)}</div></div>` : ''}
   </div>
 
-  <!-- QR + Signatures -->
-  <div class="qr-signatures">
-    <div class="signatures">
-      <div class="sig-box"><div class="sig-label">Titulaire de la classe</div><div class="sig-line">Signature</div></div>
-      <div class="sig-box"><div class="sig-label">Le Directeur(trice)</div>${this.renderDirectorSealsZone(data, 35)}<div class="sig-line">${this.renderDirectorNameLine(data, '8px', 'Visa')}</div></div>
-      <div class="sig-box"><div class="sig-label">Les Parents</div><div class="sig-line">Nom, Prénoms et Signature</div></div>
+  <!-- SIGNATURES -->
+  <div class="signatures">
+    <div class="sig-box"><div class="sig-label">Titulaire de la classe</div><div class="sig-line">Signature</div></div>
+    <div class="sig-box"><div class="sig-label">Le Directeur(trice)</div>${this.renderDirectorSealsZone(data, 30)}<div class="sig-line">${this.renderDirectorNameLine(data, '7px', 'Visa')}</div></div>
+    <div class="sig-box"><div class="sig-label">Les Parents</div><div class="sig-line">Nom, Prénoms et Signature</div></div>
+  </div>
+
+  <!-- MENTION OFFICIELLE + QR -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
+    <div class="official-notice">Ce bulletin est établi qu'une seule fois,<br/>veuillez le conserver précieusement.</div>
+    <div style="text-align:center;">
+      <img src="${qrCode}" style="width:35px;height:35px;" alt="QR" />
+      <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
     </div>
-    <div class="qr-section">
-      <img src="${qrCode}" alt="QR Code vérification" />
-      <div class="qr-text">Code de vérification<br/>${_bulletinId.substring(0, 20)}…</div>
-    </div>
   </div>
 
-  <div class="footer-official">
-    Ce bulletin est établi qu'une seule fois, veuillez le conserver précieusement<br/>
-    Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0141360803'}
-  </div>
-
-  </body></html>`;
+  <div class="footer">Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0141360803'}</div>
+</div>
+</body>
+</html>`;
   }
 }
 

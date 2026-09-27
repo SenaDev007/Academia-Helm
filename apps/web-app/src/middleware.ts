@@ -494,6 +494,62 @@ export async function middleware(request: NextRequest) {
     return safeRedirect(adminUrl, request, redirectDepth);
   }
 
+  // ── Sous-domaines PATRONAT (tenant PATRONAT — Academia Federis) ──
+  // Convention d'attribution (à l'activation, après paiement Fedapay) :
+  //   - Patronat national     → patronatnational.academiahelm.com
+  //   - Patronat départemental → patronat{département}.academiahelm.com
+  //     (ex : Atlantique → patronatatlantique.academiahelm.com)
+  // Même mécanique de rewrite que le satellite academiafederis (l'URL reste
+  // visible dans la barre d'adresse) :
+  //   /           → /patronat-portal (landing page publique du patronat)
+  //   /login      → /federis/login (connexion Academia Federis du patronat)
+  //   /xxx        → /federis/xxx (application — dashboard, examens…)
+  // Les routes /api/*, assets Next et fichiers statiques passent tels quels.
+  // La page /patronat-portal résout le tenant par sous-domaine et redirige
+  // vers /school-portal si le tenant n'est pas un patronat (garde-fou
+  // anti-collision avec une école dont le sous-domaine commencerait par
+  // « patronat »).
+  if (
+    hostParts.length >= 3 &&
+    !isReservedSubdomain(hostParts[0]) &&
+    hostParts[0].startsWith('patronat') &&
+    !pathname.startsWith('/api/') &&
+    !pathname.startsWith('/_next/')
+  ) {
+    let patronatTarget: string;
+    if (pathname === '/') {
+      patronatTarget = '/patronat-portal';
+    } else if (pathname === '/login') {
+      patronatTarget = '/federis/login';
+    } else if (pathname.startsWith('/federis') || pathname.startsWith('/patronat')) {
+      // Déjà préfixé (bookmark ancien / lien direct)
+      patronatTarget = pathname;
+    } else if (
+      pathname.startsWith('/images/') ||
+      pathname.startsWith('/fonts/') ||
+      pathname.startsWith('/uploads/') ||
+      pathname === '/favicon.ico' ||
+      pathname === '/manifest.json' ||
+      pathname === '/robots.txt' ||
+      pathname === '/sw.js'
+    ) {
+      // Assets statiques : jamais de rewrite
+      patronatTarget = pathname;
+    } else {
+      // Application Federis : /dashboard → /federis/dashboard, /exams → /federis/exams…
+      patronatTarget = `/federis${pathname}`;
+    }
+    const patronatUrl = new URL(patronatTarget + request.nextUrl.search, request.nextUrl.origin);
+    const patronatResponse = withAntiCacheHeaders(
+      NextResponse.rewrite(patronatUrl),
+      patronatTarget,
+    );
+    // Header lisible par les pages serveur (le host d'origine est conservé
+    // par le rewrite — ce header documente le contexte satellite).
+    patronatResponse.headers.set('x-patronat-subdomain', hostParts[0]);
+    return patronatResponse;
+  }
+
   // Routes Patronat (Academia Federis) : utiliser le middleware dédié
   if (pathname.startsWith('/patronat') || pathname.startsWith('/federis')) {
     const { patronatMiddleware } = await import('./middleware-patronat');

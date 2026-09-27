@@ -6,6 +6,8 @@ import { FederisSyncService } from './federis-sync.service';
 
 // ⭐ Passerelle Fedapay partagée avec Academia Helm (SDK + signature webhook)
 import { BillingModule } from '../billing/billing.module';
+// ⭐ EmailService pour l'email automatique identifiants + domaine (pattern Helm)
+import { CommunicationModule } from '../communication/communication.module';
 import { FederisFedapayService } from './federis-fedapay.service';
 import { FederisConnectController } from './federis-connect.controller';
 import { FederisConnectService } from './federis-connect.service';
@@ -34,7 +36,7 @@ import { FederisPdfService } from './federis-pdf.service';
 import { FederisPdfController } from './federis-pdf.controller';
 
 @Module({
-  imports: [BillingModule],
+  imports: [BillingModule, CommunicationModule],
   controllers: [
     FederisController,
     FederisConnectController,

@@ -177,6 +177,80 @@ export class FederisRegisterService {
   }
 
   /**
+   * ⭐ Infos PUBLIQUES d'un patronat par sous-domaine — alimente la landing
+   * page patronatxxx.academiahelm.com (pattern /tenants/by-subdomain Helm,
+   * /school-portal côté écoles). Aucune donnée sensible : nom, niveau,
+   * territoire, pays, statut d'abonnement (pour orienter vers /login ou
+   * /checkout).
+   */
+  async getPublicPatronatBySubdomain(subdomain: string) {
+    const normalized = subdomain.trim().toLowerCase();
+    if (!normalized) {
+      throw new NotFoundException('Sous-domaine requis.');
+    }
+
+    // Tenant par sous-domaine (unicité) — fallback slug (pattern Helm
+    // findBySubdomainOrSlug) pour les tenants créés avant l'attribution.
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { subdomain: normalized },
+      select: { id: true, type: true, status: true },
+    });
+    const tenantRow =
+      tenant ??
+      (await this.prisma.tenant.findUnique({
+        where: { slug: normalized },
+        select: { id: true, type: true, status: true },
+      }));
+
+    if (!tenantRow) {
+      throw new NotFoundException(`Aucun espace patronat pour le sous-domaine « ${normalized} ».`);
+    }
+    if (tenantRow.type !== 'PATRONAT') {
+      throw new NotFoundException(
+        `Le sous-domaine « ${normalized} » ne correspond pas à un patronat.`,
+      );
+    }
+
+    const patronat = await this.prisma.patronat.findFirst({
+      where: { tenantId: tenantRow.id },
+      select: {
+        id: true,
+        name: true,
+        abbreviation: true,
+        orgLevel: true,
+        scope: true,
+        territoryName: true,
+        subscriptionStatus: true,
+        subscriptionPlan: true,
+        parentPatronat: { select: { id: true, name: true } },
+        country: { select: { id: true, code: true, name: true } },
+        territorialLevel: { select: { id: true, code: true, label: true } },
+      },
+    });
+    if (!patronat) {
+      throw new NotFoundException(`Aucun espace patronat pour le sous-domaine « ${normalized} ».`);
+    }
+
+    return {
+      found: true,
+      tenantType: tenantRow.type,
+      patronat: {
+        id: patronat.id,
+        name: patronat.name,
+        abbreviation: patronat.abbreviation,
+        orgLevel: patronat.orgLevel,
+        scope: patronat.scope,
+        territoryName: patronat.territoryName,
+        levelLabel: patronat.territorialLevel?.label ?? null,
+        parentName: patronat.parentPatronat?.name ?? null,
+        country: patronat.country,
+        subscriptionStatus: patronat.subscriptionStatus,
+        subscriptionPlan: patronat.subscriptionPlan,
+      },
+    };
+  }
+
+  /**
    * Création complète d'un compte patronat :
    * Tenant (PATRONAT) + Patronat + User + PatronatUser (PATRONAT_ADMIN)
    * + Bureau (Président) + AcademicYear active + audit log.

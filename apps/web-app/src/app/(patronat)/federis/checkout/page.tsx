@@ -176,7 +176,6 @@ function CheckoutContent() {
       <div className="pt-24 pb-12 relative z-10">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-10">
-            <div className="fed-badge fed-badge-amber mb-3">Activation</div>
             <h1 className="text-2xl sm:text-3xl font-black text-white mb-2 tracking-tight">
               Activation du compte Patronat
             </h1>
@@ -211,30 +210,33 @@ function CheckoutContent() {
           )}
 
           {/* Cartes d'offres */}
-          <div className="grid md:grid-cols-2 gap-6 mb-8">
+          <div className="grid md:grid-cols-2 gap-6 mb-8 md:pt-4">
             {PLANS.map((plan) => {
               const isSelected = selectedPlan === plan.code;
               return (
-                <button
-                  key={plan.code}
-                  type="button"
-                  onClick={() => setSelectedPlan(plan.code)}
-                  className={cn(
-                    'relative text-left p-8 rounded-3xl transition-all duration-200 fed-card-shimmer',
-                    plan.recommended
-                      ? 'border-2 border-amber-500 shadow-2xl shadow-amber-500/15 bg-gradient-to-b from-white to-amber-50/40'
-                      : 'fed-card border-blue-100',
-                    isSelected && 'ring-2 ring-[#1e3a8a] ring-offset-2 ring-offset-[#071528]',
-                  )}
-                  aria-pressed={isSelected}
-                >
+                <div key={plan.code} className="relative">
+                  {/* Badge « Recommandée » HORS de la carte — au-dessus, visible
+                      (le shimmer de la carte a overflow:hidden et rognerait un
+                      badge positionné à l'intérieur) */}
                   {plan.recommended && (
-                    <span className="absolute -top-4 left-1/2 -translate-x-1/2 bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] text-[#0b1d3a] px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-amber-500/30 inline-flex items-center gap-1.5">
+                    <span className="absolute -top-4 left-1/2 -translate-x-1/2 z-20 bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] text-[#0b1d3a] px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-amber-500/30 inline-flex items-center gap-1.5 whitespace-nowrap">
                       <Crown size={12} />
                       Recommandée
                     </span>
                   )}
-                  <div className="flex items-start justify-between mb-4">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPlan(plan.code)}
+                    className={cn(
+                      'w-full h-full text-left p-8 rounded-3xl transition-all duration-200 fed-card fed-card-shimmer',
+                      plan.recommended
+                        ? 'border-2 border-amber-500 shadow-2xl shadow-amber-500/15'
+                        : 'border-blue-100',
+                      isSelected && 'ring-2 ring-[#1e3a8a] ring-offset-2 ring-offset-[#071528]',
+                    )}
+                    aria-pressed={isSelected}
+                  >
+                    <div className="flex items-start justify-between mb-4">
                     <div>
                       <h3 className="text-xl font-black text-[#0b1d3a]">{plan.name}</h3>
                       <p className="text-sm text-slate-500 mt-1">{plan.positioning}</p>
@@ -273,7 +275,8 @@ function CheckoutContent() {
                       </li>
                     ))}
                   </ul>
-                </button>
+                  </button>
+                </div>
               );
             })}
           </div>

@@ -5,6 +5,9 @@
  *   GET  /federis/public/countries          — pays + niveaux territoriaux
  *   GET  /federis/public/national-patronats — patronats nationaux (rattachement)
  *   POST /federis/public/register           — création de compte patronat
+ *   GET  /federis/public/patronat-info/:subdomain — landing page patronat
+ *   GET  /federis/public/checkout/by-transaction/:transactionId — lookup Fedapay
+ *   POST /federis/public/checkout/verify    — vérification réelle + activation
  *   POST /federis/public/fedapay/webhook    — webhook Fedapay (activation auto)
  *
  * Routes protégées (JWT) :
@@ -27,6 +30,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Param,
   Post,
   Query,
   Req,
@@ -77,6 +81,47 @@ export class FederisPatronatController {
   @Post('public/register')
   async register(@Body() dto: any) {
     return this.registerService.registerPatronat(dto);
+  }
+
+  /**
+   * ⭐ Infos PUBLIQUES d'un patronat par sous-domaine (landing page
+   * patronatxxx.academiahelm.com — pattern /tenants/by-subdomain Helm).
+   */
+  @Public()
+  @Get('public/patronat-info/:subdomain')
+  async getPublicPatronatInfo(@Param('subdomain') subdomain: string) {
+    return this.registerService.getPublicPatronatBySubdomain(subdomain);
+  }
+
+  /**
+   * ⭐ Retrouve une facture depuis l'ID numérique Fedapay (pattern Helm
+   * /onboarding/payment/by-transaction/:transactionId).
+   *
+   * FedaPay redirige après paiement vers /checkout/success?id=470323&status=approved
+   * SANS préserver les query params d'origine (invoiceId) — la page succès
+   * appelle cet endpoint pour retrouver la facture puis la vérifier.
+   */
+  @Public()
+  @Get('public/checkout/by-transaction/:transactionId')
+  async findInvoiceByTransactionId(@Param('transactionId') transactionId: string) {
+    return this.fedapayService.findInvoiceByTransactionId(transactionId);
+  }
+
+  /**
+   * ⭐ Vérification post-paiement (pattern Helm POST /onboarding/payment/:id/verify).
+   *
+   * ⚠️ CRITIQUE : interroge l'API Fedapay RÉELLE ; si la transaction est
+   * approuvée → activation idempotente de l'abonnement + attribution du
+   * sous-domaine patronat + email identifiants. Le frontend ne doit JAMAIS
+   * se fier au seul retour navigateur de Fedapay.
+   *
+   * Body : { invoiceId? , transactionId? } — au moins un des deux.
+   */
+  @Public()
+  @Post('public/checkout/verify')
+  @HttpCode(HttpStatus.OK)
+  async verifyCheckoutPayment(@Body() body: { invoiceId?: string; transactionId?: string }) {
+    return this.fedapayService.verifyInvoicePayment(body ?? {});
   }
 
   /**

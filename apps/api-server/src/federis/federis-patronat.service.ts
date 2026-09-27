@@ -17,6 +17,7 @@ import {
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
+import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { PrismaService } from '../database/prisma.service';
 import { normalizePatronatFunction, patronatFunctionLabel } from './federis-roles';
 import { FederisFedapayService } from './federis-fedapay.service';
@@ -46,28 +47,83 @@ export const FEDERIS_PLANS = {
 export type FederisPlanCode = keyof typeof FEDERIS_PLANS;
 
 export class CreateChildPatronatDto {
+  /**
+   * ⚠️ Décorateurs class-validator OBLIGATOIRES : le ValidationPipe global
+   * (whitelist + forbidNonWhitelisted) rejette toute propriété sans
+   * décorateur (« property X should not exist »).
+   */
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
   name!: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
   territoryName!: string;
+
   /** Obsolète : Federis est dédié aux patronats — PATRONAT appliqué par défaut */
+  @IsOptional()
+  @IsIn(['PATRONAT', 'ASSOCIATION', 'ORGANISME'])
   organismType?: 'PATRONAT' | 'ASSOCIATION' | 'ORGANISME';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
   responsibleName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(190)
   email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
   phone?: string;
 }
 
 export class RequestSchoolLinkDto {
+  @IsString()
   schoolTenantId!: string;
 }
 
 export class CreateManualSchoolDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(150)
   name!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
   address?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
   contactPerson?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(190)
   email?: string;
 }
 
 export class InitCheckoutDto {
+  /**
+   * ⭐ FIX « Property plan should not exist » : le ValidationPipe global
+   * (whitelist: true + forbidNonWhitelisted: true, main.ts) rejette toute
+   * propriété dépourvue de décorateur class-validator. Sans @IsIn, le POST
+   * /federis/patronat/checkout { plan } était rejeté en 400 avant d'atteindre
+   * le service — le paiement Fedapay ne pouvait jamais s'initialiser.
+   */
+  @IsIn(['ESSENTIEL', 'INSTITUTION'])
   plan!: FederisPlanCode;
 }
 
@@ -836,8 +892,10 @@ export class FederisPatronatService {
         paymentUrl = tx.paymentUrl;
         providerTransactionId = tx.transactionId;
 
-        // Trace la transaction sur la facture (résolution webhook si les
-        // metadata venaient à manquer dans le payload).
+        // Trace la transaction sur la facture (résolution webhook + lookup
+        // by-transaction si les metadata venaient à manquer dans le payload).
+        // amountFedapay = montant réellement débité (plafonné en sandbox —
+        // pattern Helm : la facture conserve le montant RÉEL).
         await this.prisma.federisInvoice.update({
           where: { id: invoice.id },
           data: {
@@ -845,6 +903,7 @@ export class FederisPatronatService {
               ...(invoice.metadata as any),
               provider: 'FEDAPAY',
               providerTransactionId: providerTransactionId,
+              amountFedapay: tx.amountFedapay,
               paymentUrl,
             },
           },

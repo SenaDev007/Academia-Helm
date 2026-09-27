@@ -898,9 +898,102 @@ export class BulletinsController {
       }
     }
 
+    // ⭐ 2026-09-28 — RÉSOUDRE LE NOM DE L'ENSEIGNANT PAR MATIÈRE
+    //    Pour chaque matière de body.subjects[], on cherche l'enseignant
+    //    assigné à (classe, matière) via TeacherClassAssignment + ClassSubject.
+    //    On ne fait cet appel QUE pour les bulletins secondaires (les seuls
+    //    qui affichent la colonne « Professeur »), pour éviter la latence
+    //    sur les bulletins primaire/maternelle/anglophone qui n'en ont pas
+    //    besoin.
+    let resolvedSubjects = body.subjects;
+    if (Array.isArray(body.subjects) && body.subjects.length > 0
+        && (body.isSecondary || body.isSecondaryEval)
+        && body.studentMatricule && resolvedTenantId && academicYearId) {
+      try {
+        // 1. Trouver l'élève pour récupérer son enrollment (classe)
+        const subStudent = await this.prisma.student.findFirst({
+          where: { matricule: body.studentMatricule, tenantId: resolvedTenantId },
+          select: { id: true },
+        }).catch(() => null);
+
+        if (subStudent) {
+          const subEnrollment = await this.prisma.studentEnrollment.findFirst({
+            where: { studentId: subStudent.id, academicYearId, tenantId: resolvedTenantId },
+            select: { classId: true, academicClassId: true },
+          }).catch(() => null);
+
+          // 2. Pour chaque matière, résoudre le teacher via TeacherClassAssignment
+          //    ⚠️ TeacherClassAssignment n'a PAS de subjectId direct ; la
+          //    relation est via ClassSubject (FK classSubjectId → ClassSubject
+          //    qui a subjectId). On filtre donc par `classSubject.subjectId`.
+          const subjectIds: string[] = body.subjects
+            .map((s: any) => s.id)
+            .filter((id: any) => typeof id === 'string' && id.length > 0);
+
+          if (subjectIds.length > 0 && (subEnrollment?.classId || subEnrollment?.academicClassId)) {
+            // ⭐ Stratégie : on tente d'abord par classe physique (classId
+            //    sur TeacherClassAssignment), puis par classe officielle
+            //    (academicClassId sur ClassSubject via classSubject). Les 2
+            //    chemins coexistent dans le schéma Prisma — l'un des deux
+            //    aura des données selon comment l'école a configuré ses
+            //    affectations.
+            const classFilters: any[] = [];
+            if (subEnrollment?.classId) {
+              classFilters.push({ classId: subEnrollment.classId });
+            }
+            if (subEnrollment?.academicClassId) {
+              classFilters.push({ classSubject: { academicClassId: subEnrollment.academicClassId } });
+            }
+
+            const assignments = await this.prisma.teacherClassAssignment.findMany({
+              where: {
+                tenantId: resolvedTenantId,
+                academicYearId,
+                classSubject: { subjectId: { in: subjectIds } },
+                OR: classFilters,
+              },
+              include: {
+                teacher: { select: { firstName: true, lastName: true, gender: true } },
+                classSubject: { select: { subjectId: true } },
+              },
+            }).catch(() => []);
+
+            // Construire la map subjectId → teacherName
+            const teacherBySubject = new Map<string, string>();
+            for (const a of assignments) {
+              const sid = a.classSubject?.subjectId;
+              if (!sid) continue;
+              if (teacherBySubject.has(sid)) continue; // premier trouvé gagne
+              if (a.teacher) {
+                const last = (a.teacher.lastName || '').trim().toUpperCase();
+                const first = (a.teacher.firstName || '').trim();
+                const civility = a.teacher.gender === 'F' ? 'Mme'
+                  : (a.teacher.gender === 'M' ? 'M.' : '');
+                const name = civility
+                  ? `${civility} ${last} ${first}`.trim()
+                  : `${last} ${first}`.trim();
+                if (name) teacherBySubject.set(sid, name);
+              }
+            }
+
+            // 3. Réinjecter les teacherName dans subjects[]
+            resolvedSubjects = body.subjects.map((s: any) => ({
+              ...s,
+              teacherName: s.teacherName
+                || teacherBySubject.get(s.id)
+                || null,
+            }));
+          }
+        }
+      } catch {
+        // Silent fail — on retombe sur body.subjects tel quel
+      }
+    }
+
     // Fusionner les données du frontend avec le branding + teacherName résolu
     const pdfData = {
       ...body,
+      subjects: resolvedSubjects,
       schoolName: body.schoolName || branding.schoolName,
       schoolLogo: body.schoolLogo || branding.schoolLogo,
       schoolAddress: body.schoolAddress || branding.schoolAddress,

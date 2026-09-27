@@ -1148,6 +1148,11 @@ function BulletinsContent() {
           // ⭐ V10h — stats par matière (Highest/Lowest in class + Position)
           const stats = isEn ? enSubjectClassStats(bulletinData!, s.id, student.id) : null;
           return {
+            // ⭐ 2026-09-28 — id (subjectId) envoyé au backend pour qu'il
+            //    puisse résoudre le nom de l'enseignant de la matière via
+            //    TeacherClassAssignment (classe × matière). Affiché dans la
+            //    colonne « Professeur » du bulletin secondaire.
+            id: s.id,
             name: s.name,
             score: sc?.score ?? null,
             qualitativeCode: sc?.qualitativeCode ?? null,
@@ -3012,21 +3017,39 @@ function BulletinSecondairePage2({
   periodId?: string;
   directorName?: string | null;
 }) {
-  // ⭐ Annotations secondaires (auto-save on blur) :
+  // ⭐ 2026-09-28 — Annotations secondaires COMPLÈTES (assiduité, discipline,
+  //    défauts majeurs, qualités remarquables, analyse/recommandations) avec
+  //    auto-save on blur — exactement comme BulletinPage2 du primaire. Le
+  //    bloc est éditable dans le frontend ET apparaît dans le PDF généré.
   //    councilAppreciation → Appréciation du conseil de classe (éditable)
+  const [assiduite, setAssiduite] = useState('');
+  const [discipline, setDiscipline] = useState('');
+  const [defautsMajeurs, setDefautsMajeurs] = useState('');
+  const [qualitesRemarquables, setQualitesRemarquables] = useState('');
   const [conseilAppreciation, setConseilAppreciation] = useState('');
   const [savedField, setSavedField] = useState<string | null>(null);
+  const [autoFillLoading, setAutoFillLoading] = useState(false);
 
   // ⭐ Mention du conseil de classe (auto-générée depuis la moyenne de l'élève)
   //    Distinction/sanction résolue depuis school_academic_settings.config.distinctions
   const [mentionLabel, setMentionLabel] = useState<string | null>(null);
   const [mentionType, setMentionType] = useState<'DISTINCTION' | 'SANCTION' | null>(null);
 
+  // ⭐ 2026-09-28 — Conduite résolue depuis conduct_ledger (module Vie Scolaire).
+  //    Affichée même si pas de donnée (placeholder « — / 17 »).
+  const [conductScore, setConductScore] = useState<number | null>(null);
+  const [conductReference, setConductReference] = useState<number | null>(17);
+
   useEffect(() => {
     if (!student.id || !periodId) return;
+    // ⭐ Load all annotations from backend
     apiClient.get(`/institutional-exams/bulletins/annotations?studentId=${student.id}&periodId=${periodId}`)
       .then((res) => {
         const data = res.data || {};
+        setAssiduite(data.assiduite || '');
+        setDiscipline(data.discipline || '');
+        setDefautsMajeurs(data.defautsMajeurs || '');
+        setQualitesRemarquables(data.qualitesRemarquables || '');
         setConseilAppreciation(data.analyseRecommandations || data.councilAppreciation || '');
       })
       .catch(() => {});
@@ -3049,6 +3072,22 @@ function BulletinSecondairePage2({
         })
         .catch(() => {});
     }
+
+    // ⭐ 2026-09-28 — Charger la conduite depuis le backend (conduct_ledger).
+    //    L'endpoint /api/vie-scolaire/conduct retourne la fiche de l'élève
+    //    avec le conduct_final. Si l'endpoint échoue (module Vie Scolaire non
+    //    activé ou pas de données pour le trimestre), on garde le placeholder.
+    fetch(`/api/vie-scolaire/conduct?studentId=${student.id}&periodId=${periodId}`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d?.conductFinal !== undefined && d?.conductFinal !== null) {
+          setConductScore(Number(d.conductFinal));
+        }
+        if (d?.conductReference !== undefined && d?.conductReference !== null) {
+          setConductReference(Number(d.conductReference));
+        }
+      })
+      .catch(() => {});
   }, [student.id, periodId, student.generalAverage]);
 
   const saveAnnotation = async (field: string, value: string) => {
@@ -3066,11 +3105,53 @@ function BulletinSecondairePage2({
     }
   };
 
+  // ⭐ AI Auto-fill: génère les annotations depuis l'assiduité + notes
+  const handleAutoFill = async () => {
+    if (!student.id || !periodId) return;
+    setAutoFillLoading(true);
+    try {
+      const res = await apiClient.get(`/institutional-exams/bulletins/auto-annotations?studentId=${student.id}&periodId=${periodId}`);
+      const data = res.data || {};
+      if (data.assiduite) setAssiduite(data.assiduite);
+      if (data.discipline) setDiscipline(data.discipline);
+      if (data.defautsMajeurs !== undefined) setDefautsMajeurs(data.defautsMajeurs);
+      if (data.qualitesRemarquables !== undefined) setQualitesRemarquables(data.qualitesRemarquables);
+      if (data.analyseRecommandations) setConseilAppreciation(data.analyseRecommandations);
+      // Save all to backend
+      await apiClient.patch('/institutional-exams/bulletins/annotations', {
+        studentId: student.id,
+        periodId,
+        assiduite: data.assiduite || '',
+        discipline: data.discipline || '',
+        defautsMajeurs: data.defautsMajeurs || '',
+        qualitesRemarquables: data.qualitesRemarquables || '',
+        analyseRecommandations: data.analyseRecommandations || '',
+      });
+      toastSuccess('Annotations auto-générées', { description: 'Basées sur l\'assiduité et les résultats de l\'élève. Modifiables.' });
+    } catch (err: any) {
+      toastError('Erreur', { description: err.response?.data?.message || err.message });
+    } finally { setAutoFillLoading(false); }
+  };
+
+  const conductOk = conductScore !== null && conductScore >= (conductReference ?? 17) * 0.6;
+
   return (
     <div className="space-y-3">
       {/* ⭐ Bloc Conseil de Classe — nouveau modèle */}
       <div className="bg-white rounded-lg p-3 border border-slate-200 space-y-3">
-        <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">Conseil de Classe</h4>
+        <div className="flex items-center justify-between">
+          <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">Conseil de Classe</h4>
+          <button
+            type="button"
+            onClick={handleAutoFill}
+            disabled={autoFillLoading}
+            className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+            title="Générer automatiquement les annotations basées sur l'assiduité et les notes"
+          >
+            {autoFillLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+            Auto-générer
+          </button>
+        </div>
 
         {/* 1. Mention du conseil de classe (auto-générée) */}
         <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
@@ -3084,14 +3165,19 @@ function BulletinSecondairePage2({
           </span>
         </div>
 
-        {/* 2. Conduite (depuis module Vie Scolaire) */}
-        {student.generalAverage !== null && (
-          <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
-            <span className="text-xs font-bold text-slate-700 whitespace-nowrap">Conduite :</span>
-            <div className="flex-1 border-b border-dotted border-slate-300"></div>
-            <span className="text-sm font-bold text-slate-700">— / 17</span>
-          </div>
-        )}
+        {/* 2. Conduite (depuis module Vie Scolaire — toujours affichée) */}
+        <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+          <span className="text-xs font-bold text-slate-700 whitespace-nowrap">Conduite :</span>
+          <div className="flex-1 border-b border-dotted border-slate-300"></div>
+          <span className={cn('text-sm font-bold px-2 py-0.5 rounded',
+            conductScore !== null && conductOk && 'bg-emerald-100 text-emerald-700',
+            conductScore !== null && !conductOk && 'bg-red-100 text-red-700',
+            conductScore === null && 'bg-slate-100 text-slate-500')}>
+            {conductScore !== null
+              ? `${conductScore.toFixed(2)} / ${conductReference ?? 17}`
+              : `— / ${conductReference ?? 17}`}
+          </span>
+        </div>
 
         {/* 3. Appréciation du conseil de classe (auto-générée + modifiable) */}
         <div>
@@ -3100,11 +3186,66 @@ function BulletinSecondairePage2({
             value={conseilAppreciation}
             onChange={(e) => setConseilAppreciation(e.target.value)}
             onBlur={(e) => saveAnnotation('analyseRecommandations', e.target.value)}
-            rows={4}
+            rows={3}
             placeholder="Appréciation du conseil de classe…"
             className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
           />
           {savedField === 'analyseRecommandations' && <p className="text-[9px] text-emerald-600 mt-1">✓ Enregistré</p>}
+        </div>
+      </div>
+
+      {/* ⭐ 2026-09-28 — Bloc Attitudes + observations pédagogiques (éditable) */}
+      <div className="bg-white rounded-lg p-3 border border-slate-200">
+        <h4 className="text-xs font-bold text-slate-900 uppercase mb-2">Attitudes et observations pédagogiques</h4>
+        <div className="space-y-2">
+          <div>
+            <label className="text-[10px] font-semibold text-slate-600">Assiduité</label>
+            <textarea
+              value={assiduite}
+              onChange={(e) => setAssiduite(e.target.value)}
+              onBlur={(e) => saveAnnotation('assiduite', e.target.value)}
+              rows={2}
+              placeholder="Renseigner l'assiduité de l'élève…"
+              className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+            />
+            {savedField === 'assiduite' && <p className="text-[9px] text-emerald-600 mt-1">✓ Enregistré</p>}
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold text-slate-600">Discipline</label>
+            <textarea
+              value={discipline}
+              onChange={(e) => setDiscipline(e.target.value)}
+              onBlur={(e) => saveAnnotation('discipline', e.target.value)}
+              rows={2}
+              placeholder="Renseigner la discipline de l'élève…"
+              className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+            />
+            {savedField === 'discipline' && <p className="text-[9px] text-emerald-600 mt-1">✓ Enregistré</p>}
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold text-slate-600">Défauts majeurs identifiés</label>
+            <textarea
+              value={defautsMajeurs}
+              onChange={(e) => setDefautsMajeurs(e.target.value)}
+              onBlur={(e) => saveAnnotation('defautsMajeurs', e.target.value)}
+              rows={2}
+              placeholder="Renseigner les défauts majeurs…"
+              className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+            />
+            {savedField === 'defautsMajeurs' && <p className="text-[9px] text-emerald-600 mt-1">✓ Enregistré</p>}
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold text-slate-600">Qualités remarquables</label>
+            <textarea
+              value={qualitesRemarquables}
+              onChange={(e) => setQualitesRemarquables(e.target.value)}
+              onBlur={(e) => saveAnnotation('qualitesRemarquables', e.target.value)}
+              rows={2}
+              placeholder="Renseigner les qualités remarquables…"
+              className="w-full text-xs border border-slate-300 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+            />
+            {savedField === 'qualitesRemarquables' && <p className="text-[9px] text-emerald-600 mt-1">✓ Enregistré</p>}
+          </div>
         </div>
       </div>
 

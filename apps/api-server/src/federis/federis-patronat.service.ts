@@ -994,6 +994,32 @@ export class FederisPatronatService {
 
     // ⭐ Erreurs PROPAGÉES (pattern Helm) : si Fedapay refuse, la VRAIE cause
     //    remonte au frontend au lieu du message trompeur « non configuré ».
+    // ⭐ Customer = pattern Helm signup (promoteur du draft) : le responsable
+    //    qui déclenche le paiement, avec le VRAI pays du patronat (pilote la
+    //    normalisation du téléphone : nouveau plan béninois 01XXXXXXXX, etc.).
+    const payingUser = await this.prisma.user
+      .findUnique({
+        where: { id: userId },
+        select: { firstName: true, lastName: true },
+      })
+      .catch(() => null);
+    let responsible: { firstname: string | null; lastname: string | null } | null =
+      payingUser?.firstName
+        ? { firstname: payingUser.firstName, lastname: payingUser.lastName }
+        : null;
+    if (!responsible) {
+      // Fallback : le président du bureau du patronat (créé à l'inscription).
+      const president = await this.prisma.patronatBureauMember
+        .findFirst({
+          where: { patronatId: patronat.id, role: 'PRESIDENT', isActive: true },
+          select: { firstName: true, lastName: true },
+        })
+        .catch(() => null);
+      if (president?.firstName) {
+        responsible = { firstname: president.firstName, lastname: president.lastName };
+      }
+    }
+
     const tx = await this.fedapayService.createSubscriptionTransaction({
       invoice: { id: invoice.id, number: invoice.number, amount: invoice.amount },
       patronat: {
@@ -1002,6 +1028,8 @@ export class FederisPatronatService {
         name: patronat.name,
         primaryEmail: patronat.primaryEmail,
         primaryPhone: patronat.primaryPhone,
+        countryName: patronat.country?.name ?? null,
+        responsible,
       },
       plan: { code: plan.code, name: plan.name },
     });

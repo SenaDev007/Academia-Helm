@@ -93,17 +93,13 @@ export class FederisFedapayService {
   }
 
   /**
-   * Mode live Fedapay ? (même logique de détection que le module Helm :
-   * FEDAPAY_ENVIRONMENT explicite, sinon préfixe de la clé sk_live_.)
+   * Mode live Fedapay ? ⭐ Source unique de vérité : le mode résolu par le
+   * module billing Helm (FedaPayService.isLiveModeResolved) — le SDK Fedapay
+   * est un singleton partagé, le re-déduire ici risquait une divergence
+   * (plafonnement sandbox 20 000 XOF alors que le SDK est en live, ou l'inverse).
    */
   private isLiveMode(): boolean {
-    const explicit = (this.configService.get<string>('FEDAPAY_ENVIRONMENT') || '')
-      .trim()
-      .toLowerCase();
-    if (explicit === 'live') return true;
-    if (explicit === 'sandbox') return false;
-    const apiKey = (this.configService.get<string>('FEDAPAY_API_KEY') || '').trim();
-    return apiKey.startsWith('sk_live_') || apiKey.startsWith('pk_live_');
+    return this.fedapayService.isLiveModeResolved();
   }
 
   /**
@@ -293,6 +289,10 @@ export class FederisFedapayService {
       name: string;
       primaryEmail?: string | null;
       primaryPhone?: string | null;
+      /** Pays du patronat (ex : « Bénin ») — normalisation du téléphone. */
+      countryName?: string | null;
+      /** ⭐ Pattern Helm promoteur : prénom/nom du RESPONSABLE qui règle. */
+      responsible?: { firstname?: string | null; lastname?: string | null } | null;
     };
     plan: { code: FederisPlanCode; name: string };
   }): Promise<{ paymentUrl: string | null; transactionId: string | null; amountFedapay: number }> {
@@ -340,9 +340,17 @@ export class FederisFedapayService {
         ? {
             customer: {
               email: patronat.primaryEmail,
-              firstname: patronat.name.slice(0, 60),
+              // ⭐ Pattern Helm signup (promoteur du draft) : prénom/nom du
+              //    RESPONSABLE — pas le nom du patronat en firstname. À défaut
+              //    de responsable connu, on retombe sur le nom du patronat.
+              firstname: patronat.responsible?.firstname?.trim() || patronat.name.slice(0, 60),
+              ...(patronat.responsible?.lastname?.trim()
+                ? { lastname: patronat.responsible.lastname.trim().slice(0, 60) }
+                : {}),
               ...(patronat.primaryPhone ? { phone_number: patronat.primaryPhone } : {}),
-              countryName: 'Bénin',
+              // ⭐ Vrai pays du patronat (multi-pays) — pilote la normalisation
+              //    du téléphone (indicatif à retirer) dans createTransaction.
+              countryName: patronat.countryName?.trim() || 'Bénin',
             },
           }
         : {}),

@@ -265,6 +265,18 @@ export class FedaPayService implements OnModuleInit {
   }
 
   /**
+   * Mode live RÉSOLU par ce service (source unique de vérité pour tout
+   * l'écosystème : Helm signup/renouvellement ET Federis checkout). Le SDK
+   * Fedapay étant un singleton configuré dans onModuleInit, les modules
+   * satellites (Federis) doivent demander le mode ICI plutôt que de le
+   * re-déduire de leur côté (risque de divergence → montant plafonné
+   * sandbox 20 000 XOF alors que le SDK est en live, ou l'inverse).
+   */
+  isLiveModeResolved(): boolean {
+    return this.isLiveMode;
+  }
+
+  /**
    * Vérifie le statut d'une transaction FedaPay via l'API
    * 
    * ⚠️ CRITIQUE : Cette méthode vérifie le statut réel depuis FedaPay
@@ -455,13 +467,48 @@ export class FedaPayService implements OnModuleInit {
    */
   private normalizePhoneForFedaPay(phone: string | undefined, countryCode: string): { number: string; country: string } | null {
     if (!phone || typeof phone !== 'string') return null;
-    const digits = phone.replace(/\D/g, '');
+    let digits = phone.replace(/\D/g, '');
+    // Préfixe d'accès international « 00 » (ex : 00229…) → retirer avant tout
+    if (digits.startsWith('00')) digits = digits.slice(2);
     if (digits.length < 8) return null;
     const code = countryCode.toUpperCase();
     const prefixes: Record<string, string> = { BJ: '229', TG: '228', NE: '227', BF: '226', SN: '221', ML: '223', NG: '234', GH: '233' };
     let num = digits;
     const prefix = prefixes[code];
-    if (prefix && num.startsWith(prefix)) num = num.slice(prefix.length);
+    if (prefix && num.startsWith(prefix)) {
+      // ⭐ Bénin : ne retirer l'indicatif 229 QUE si le reste est un numéro
+      //    national plausible (≥ 8 chiffres) — sinon « 2290199887766 » sans
+      //    indicatif serait amputé par erreur. Les autres pays gardent le
+      //    comportement historique (retrait inconditionnel).
+      if (code !== 'BJ' || num.length - prefix.length >= 8) num = num.slice(prefix.length);
+    }
+
+    if (code === 'BJ') {
+      // ⭐ NOUVEAU PLAN DE NUMÉROTAGE BÉNINOIS (ARCEP — 30/11/2024) : les
+      //    numéros nationaux passent à 10 chiffres commençant par 01 (mobile),
+      //    02 (fixe), 05… Le 0 INITIAL FAIT PARTIE du numéro (E.164 :
+      //    +229 01 97 22 23 34) — ce n'est PAS un préfixe trunk.
+      //    L'ancien code retirait ce 0 (« 0199887766 » → « 199887766 », 9
+      //    chiffres) et l'API FedaPay rejetait TOUTE la transaction avec un
+      //    400 silencieux (reproduit en production 28/09/2026 : tout patronat
+      //    dont le responsable a un numéro 01XXXXXXXX ne pouvait pas payer).
+      if (num.length === 9 && /^[125]/.test(num)) {
+        num = `0${num}`; // 0 omis après l'indicatif : 199887766 → 0199887766
+      } else if (num.length === 9 && num.startsWith('0')) {
+        num = num.slice(1); // ancien format 8 chiffres + trunk 0 : 097123456 → 97123456
+      }
+      // Formats réellement acceptés par FedaPay pour le Bénin : 8 chiffres
+      // (ancien plan, vérifié) ou 10 chiffres commençant par 0 (nouveau plan,
+      // vérifié). Tout autre format → on n'envoie PAS le numéro : le formulaire
+      // FedaPay laisse l'utilisateur le saisir, plutôt que de risquer un rejet
+      // 400 de la transaction complète (même philosophie que Helm : « la
+      // transaction est toujours créée même si les infos client sont
+      // incomplètes »).
+      const valid = num.length === 8 || (num.length === 10 && num.startsWith('0'));
+      if (!valid) return null;
+      return { number: num, country: code };
+    }
+
     if (num.startsWith('0')) num = num.slice(1);
     if (num.length < 8) return null;
     return { number: num, country: code };
@@ -663,15 +710,30 @@ export class FedaPayService implements OnModuleInit {
         throw error;
       }
 
-      // Gestion des erreurs du SDK FedaPay
-      const responseData = error.response?.data ?? error.data;
+      // ⭐ Structure RÉELLE de l'erreur levée par le SDK Fedapay
+      //    (Requestor.handleRequestException + Error.Base.fetchErrors) :
+      //      error.message       = "Request error: Request failed with status code 400"
+      //      error.httpStatus    = 400                    ← PAS error.status / error.statusCode
+      //      error.httpResponse  = { data: {…} }          ← PAS error.response
+      //      error.errorMessage  = data.message           ← ex. "The given data was invalid"
+      //      error.errors        = { champ: ["msg"] }     ← OBJET, PAS un tableau
+      //    L'ancien code lisait error.response?.data / error.status /
+      //    Array.isArray(error.errors) → le motif de rejet RÉEL de Fedapay
+      //    était perdu et l'utilisateur ne voyait qu'un « status code 400 »
+      //    générique (bug téléphone béninois 01XXXXXXXX invisible pendant des
+      //    semaines). On lit désormais les vraies propriétés du SDK.
+      const fedapayStatus: number | undefined =
+        error?.httpStatus ?? error?.status ?? error?.statusCode ?? undefined;
+      const responseData =
+        error?.httpResponse?.data ?? error?.response?.data ?? error?.data ?? error?.body;
+
       this.logger.error('❌ FedaPay SDK error:', {
         message: error.message,
+        fedapayMessage: error.errorMessage,
         code: error.code,
         errors: error.errors,
         cause: error.cause,
-        status: error.status ?? error.statusCode,
-        statusCode: error.statusCode ?? error.status,
+        httpStatus: fedapayStatus,
         responseBody: responseData,
       });
       if (responseData && typeof responseData === 'object') {
@@ -686,24 +748,40 @@ export class FedaPayService implements OnModuleInit {
           currency: transactionData.currency,
           description: transactionData.description,
           callback_url: transactionData.callback_url,
-          hasCustomer: !!transactionData.customer,
-          hasMetadata: !!transactionData.metadata,
+          customer: transactionData.customer,
+          metadata: transactionData.metadata,
         });
       } else {
         this.logger.error('❌ Transaction data was not initialized before error occurred');
       }
 
-      // Extraire le message d'erreur détaillé
-      let errorMessage = error.message || 'Unknown error';
-      
-      if (error.errors && Array.isArray(error.errors) && error.errors.length > 0) {
-        const errorDetails = error.errors.map((e: any) => e.message || e).join(', ');
-        errorMessage = `${errorMessage}: ${errorDetails}`;
+      // ⭐ Extraire le VRAI motif de rejet Fedapay : message global + erreurs
+      //    par champ (errors = objet { champ: [messages] } ou liste).
+      let errorMessage = error?.errorMessage || error.message || 'Unknown error';
+      const rawErrors = error?.errors ?? responseData?.errors;
+      let fieldErrors: string[] = [];
+      if (Array.isArray(rawErrors)) {
+        fieldErrors = rawErrors
+          .map((e: any) => (typeof e === 'string' ? e : e?.message || JSON.stringify(e)))
+          .filter((s: any): s is string => typeof s === 'string' && s.length > 0);
+      } else if (rawErrors && typeof rawErrors === 'object') {
+        fieldErrors = Object.entries(rawErrors).flatMap(([field, msgs]) =>
+          Array.isArray(msgs)
+            ? msgs.map((m) => `${field}: ${m}`)
+            : [`${field}: ${String(msgs)}`],
+        );
+      }
+      if (fieldErrors.length > 0) {
+        errorMessage = `${errorMessage} [${fieldErrors.join(' ; ')}]`;
       }
 
       // Erreur 400 "montant maximum 20000" = limite compte FedaPay
-      const amountErr = error.errors?.amount?.[0] ?? error.body?.errors?.amount?.[0] ?? '';
-      if ((error.status === 400 || error.statusCode === 400) && typeof amountErr === 'string' && amountErr.includes('20000')) {
+      const amountErr = rawErrors?.amount?.[0] ?? '';
+      if (
+        fedapayStatus === 400 &&
+        typeof amountErr === 'string' &&
+        amountErr.includes('20000')
+      ) {
         errorMessage += ' Le compte FedaPay a une limite de 20 000 XOF par transaction. Contactez support@fedapay.com pour augmenter la limite.';
       }
 
@@ -714,7 +792,7 @@ export class FedaPayService implements OnModuleInit {
       //      — se produit quand NODE_ENV=production ET FEDAPAY_ENVIRONMENT n'est pas défini.
       //   3. La clé a expiré ou a été révoquée dans le dashboard FedaPay.
       //   4. Mauvaise valeur de TWILIO... non, c'est FedaPay ici.
-      const httpStatus = error.status ?? error.statusCode;
+      const httpStatus = fedapayStatus;
       if (httpStatus === 401 || httpStatus === 403) {
         this.logger.error(`🚨 FedaPay authentification refusée (HTTP ${httpStatus}). Diagnostic :`);
         this.logger.error(`   → isLiveMode=${this.isLiveMode}, apiBaseUrl=${this.apiBaseUrl}`);
@@ -734,7 +812,7 @@ export class FedaPayService implements OnModuleInit {
       }
 
       // Si c'est une erreur 500, ajouter plus de détails
-      if (error.status === 500 || error.statusCode === 500) {
+      if (fedapayStatus === 500) {
         this.logger.error('❌ FedaPay server error (500). Possible causes:');
         this.logger.error('  - callback_url : FedaPay peut refuser localhost. En dev, essayer FRONTEND_URL=https://votre-tunnel.ngrok.io');
         this.logger.error('  - Invalid transaction data structure or missing required parameters');
@@ -750,13 +828,16 @@ export class FedaPayService implements OnModuleInit {
       //      → amount plafonné à 20000 + mode 'momo_test' (sandbox-only) → 400
       //   2. mode 'mtn_open' non supporté par le compte FedaPay live
       //   3. Numéro de téléphone du promoteur invalide pour le live
+      //      (ex : nouveau plan béninois 01XXXXXXXX mal normalisé)
       //   4. callback_url rejetée par FedaPay live (domaine non whitelisté)
-      const httpStatus400 = error.status ?? error.statusCode;
+      const httpStatus400 = fedapayStatus;
       if (httpStatus400 === 400) {
+        this.logger.error(`🚨 FedaPay 400 Bad Request. Motif extrait: ${errorMessage}`);
         this.logger.error(`🚨 FedaPay 400 Bad Request. Diagnostic mode LIVE :`);
         this.logger.error(`   → isLiveMode=${this.isLiveMode} (doit être 'true' en live)`);
         this.logger.error(`   → apiBaseUrl=${this.apiBaseUrl} (doit être 'https://api.fedapay.com' en live)`);
         this.logger.error(`   → amount envoyé=${transactionData?.amount} (ne doit PAS être plafonné à 20000 en live)`);
+        this.logger.error(`   → customer envoyé=${JSON.stringify(transactionData?.customer)}`);
         this.logger.error(`   → mode envoyé=${transactionData?.mode} (doit être 'mtn_open' ou 'moov_open' en live, PAS 'momo_test')`);
         this.logger.error(`   → FEDAPAY_ENVIRONMENT=${process.env.FEDAPAY_ENVIRONMENT || '(non défini)'}`);
         this.logger.error(`   → FEDAPAY_SANDBOX=${process.env.FEDAPAY_SANDBOX || '(non défini)'} — doit être ABSENT ou 'false' en live`);

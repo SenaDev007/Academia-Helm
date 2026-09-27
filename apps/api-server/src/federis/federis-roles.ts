@@ -138,6 +138,10 @@ export const WRITE_CANDIDATES: PatronatFunction[] = ['COORDONNATEUR', 'ORGANISAT
 export const MANAGE_USERS: PatronatFunction[] = ['COORDONNATEUR'];
 /** Abonnement & facturation (checkout). */
 export const MANAGE_BILLING: PatronatFunction[] = ['COORDONNATEUR', 'TRESORIER'];
+/** ⭐ Workflow délibération : saisie des notes, simulation, délibération, cas, clôture. */
+export const WRITE_DELIBERATION: PatronatFunction[] = ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR'];
+/** ⭐ Publication officielle des résultats (validation humaine — coordonnateur seul). */
+export const PUBLISH_RESULTS: PatronatFunction[] = ['COORDONNATEUR'];
 
 export function hasFunction(fn: PatronatFunction, allowed: PatronatFunction[]): boolean {
   return allowed.includes(fn);

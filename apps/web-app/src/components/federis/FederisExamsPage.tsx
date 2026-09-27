@@ -21,6 +21,7 @@ import {
   EXAM_STATUS_LABELS,
   EXAM_STATUS_STYLES,
 } from '@/hooks/useFederisExams';
+import { FedPage } from '@/components/federis/federis-motion';
 
 interface FederisExamsPageProps {
   tenantId?: string;
@@ -74,11 +75,12 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
   };
 
   return (
-    <div className="space-y-6">
+    <FedPage className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black text-gray-900 italic tracking-tighter">Examens nationaux</h1>
-          <p className="text-gray-500 font-medium mt-1">
+          <div className="fed-badge mb-3">Module examens</div>
+          <h1 className="text-2xl md:text-3xl font-black text-[#0b1d3a] tracking-tight">Examens nationaux</h1>
+          <p className="text-slate-500 font-medium mt-1 text-sm">
             {academicYear
               ? `Campagnes de l'année scolaire ${academicYear}`
               : 'Gérez vos campagnes d\u2019examens inter-écoles'}
@@ -87,7 +89,7 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
         {canOrganize && (
           <button
             onClick={() => setShowCreate((v) => !v)}
-            className="px-5 py-3 bg-blue-900 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg hover:bg-blue-800 transition-all inline-flex items-center gap-2"
+            className="fed-btn-navy px-5 py-2.5 text-sm"
           >
             <AppIcon name={showCreate ? 'close' : 'add'} size="submenu" />
             {showCreate ? 'Fermer' : 'Créer un examen'}
@@ -108,40 +110,40 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
 
       {/* Formulaire de création */}
       {showCreate && canOrganize && (
-        <form onSubmit={handleCreate} className="bg-white rounded-3xl border border-blue-100 shadow-lg p-8 space-y-5">
-          <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Nouvel examen</h3>
+        <form onSubmit={handleCreate} className="fed-card p-8 space-y-5">
+          <h3 className="text-sm font-black text-[#0b1d3a] uppercase tracking-widest">Nouvel examen</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Code</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Code</label>
               <input required value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })}
-                placeholder="CEP-2027" className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-900" />
+                placeholder="CEP-2027" className="fed-input-light px-4 py-3 font-semibold" />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Nom</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Nom</label>
               <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="CEP Patronal 2027" className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-900" />
+                placeholder="CEP Patronal 2027" className="fed-input-light px-4 py-3 font-semibold" />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Classe</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Classe</label>
               <select value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-900">
+                className="fed-input-light px-4 py-3 font-semibold">
                 {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Début</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Début</label>
               <input required type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-900" />
+                className="fed-input-light px-4 py-3 font-semibold" />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Fin</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Fin</label>
               <input required type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-900" />
+                className="fed-input-light px-4 py-3 font-semibold" />
             </div>
           </div>
           <div className="flex justify-end">
             <button type="submit" disabled={creating}
-              className="px-8 py-3.5 bg-blue-900 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-blue-800 transition-all disabled:opacity-50">
+              className="fed-btn-gold fed-btn-shimmer px-8 py-3 text-sm disabled:opacity-50">
               {creating ? 'Création…' : 'Créer'}
             </button>
           </div>
@@ -149,39 +151,39 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
       )}
 
       {/* Liste des examens */}
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="fed-card overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-[#f7f9fc]">
               <tr>
-                <th className="px-6 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Examen</th>
-                <th className="px-6 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Classe</th>
-                <th className="px-6 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Dates</th>
-                <th className="px-6 py-3 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Statut</th>
-                <th className="px-6 py-3 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest">Centres</th>
-                <th className="px-6 py-3 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest">Candidats</th>
-                <th className="px-6 py-3 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Actions</th>
+                <th className="px-6 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Examen</th>
+                <th className="px-6 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Classe</th>
+                <th className="px-6 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Dates</th>
+                <th className="px-6 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Statut</th>
+                <th className="px-6 py-3 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Centres</th>
+                <th className="px-6 py-3 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Candidats</th>
+                <th className="px-6 py-3 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Actions</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white divide-y divide-slate-200">
               {loading ? (
-                <tr><td colSpan={7} className="px-6 py-10 text-center text-sm font-bold text-gray-400">Chargement…</td></tr>
+                <tr><td colSpan={7} className="px-6 py-10 text-center text-sm font-bold text-slate-400">Chargement…</td></tr>
               ) : exams.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-10 text-center text-sm font-bold text-gray-400">
+                  <td colSpan={7} className="px-6 py-10 text-center text-sm font-bold text-slate-400">
                     Aucun examen pour l&apos;année scolaire active.
                     {canOrganize ? ' Créez votre première campagne.' : ''}
                   </td>
                 </tr>
               ) : (
                 exams.map((exam) => (
-                  <tr key={exam.id} className="hover:bg-gray-50">
+                  <tr key={exam.id} className="hover:bg-[#f7f9fc]">
                     <td className="px-6 py-4">
-                      <div className="text-sm font-black text-gray-900">{exam.name}</div>
-                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{exam.code}</div>
+                      <div className="text-sm font-black text-[#0b1d3a]">{exam.name}</div>
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{exam.code}</div>
                     </td>
-                    <td className="px-6 py-4 text-sm font-bold text-blue-900">{exam.level}</td>
-                    <td className="px-6 py-4 text-xs font-semibold text-gray-600">
+                    <td className="px-6 py-4 text-sm font-bold text-[#1e3a8a]">{exam.level}</td>
+                    <td className="px-6 py-4 text-xs font-semibold text-slate-600">
                       {new Date(exam.startDate).toLocaleDateString('fr-FR')} → {new Date(exam.endDate).toLocaleDateString('fr-FR')}
                     </td>
                     <td className="px-6 py-4">
@@ -201,16 +203,16 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-center text-sm font-black text-gray-900">{exam.centersCount}</td>
-                    <td className="px-6 py-4 text-center text-sm font-black text-gray-900">{exam.candidatesCount}</td>
+                    <td className="px-6 py-4 text-center text-sm font-black text-[#0b1d3a]">{exam.centersCount}</td>
+                    <td className="px-6 py-4 text-center text-sm font-black text-[#0b1d3a]">{exam.candidatesCount}</td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <Link href={federisPath(`/centers?exam=${exam.id}`)}
-                          className="px-3 py-1.5 bg-gray-50 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-600 hover:bg-blue-50 hover:text-blue-900 transition-all">
+                          className="px-3 py-1.5 bg-[#eff6ff] rounded-full text-[10px] font-black uppercase tracking-widest text-[#1e3a8a] hover:bg-[#1e3a8a] hover:text-white transition-all">
                           Centres
                         </Link>
                         <Link href={federisPath(`/candidates?exam=${exam.id}`)}
-                          className="px-3 py-1.5 bg-gray-50 rounded-lg text-[10px] font-black uppercase tracking-widest text-gray-600 hover:bg-blue-50 hover:text-blue-900 transition-all">
+                          className="px-3 py-1.5 bg-[#eff6ff] rounded-full text-[10px] font-black uppercase tracking-widest text-[#1e3a8a] hover:bg-[#1e3a8a] hover:text-white transition-all">
                           Candidats
                         </Link>
                       </div>
@@ -222,6 +224,6 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
           </table>
         </div>
       </div>
-    </div>
+    </FedPage>
   );
 }

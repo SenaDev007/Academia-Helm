@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react';
 import { conflictResolverService, ConflictResolutionStrategy } from '@/lib/offline/conflict-resolver.service';
 import { AlertTriangle, CheckCircle, Database, History, ArrowRight, ShieldCheck } from 'lucide-react';
+import { FedPage } from '@/components/federis/federis-motion';
 
 export default function ConflictsPage() {
   const [conflicts, setConflicts] = useState<any[]>([]);
@@ -19,14 +20,17 @@ export default function ConflictsPage() {
   const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   useEffect(() => {
-    loadConflicts();
+    let cancelled = false;
+    (async () => {
+      const list = await conflictResolverService.getPendingConflicts();
+      if (cancelled) return;
+      setConflicts(list);
+      setIsLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  async function loadConflicts() {
-    const list = await conflictResolverService.getPendingConflicts();
-    setConflicts(list);
-    setIsLoading(false);
-  }
 
   async function handleResolve(id: string, strategy: ConflictResolutionStrategy) {
     setResolvingId(id);
@@ -46,18 +50,19 @@ export default function ConflictsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <FedPage className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-black text-blue-900 flex items-center gap-3">
+          <div className="fed-badge mb-3">Module système</div>
+          <h1 className="text-2xl md:text-3xl font-black text-[#0b1d3a] flex items-center gap-3 tracking-tight">
             <AlertTriangle className="text-orange-500" />
             Gestion des Conflits
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-slate-500 mt-1">
             Résolvez les divergences entre vos données locales et le serveur institutionnel.
           </p>
         </div>
-        <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2">
+        <div className="bg-[#eff6ff] text-[#1e3a8a] px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2">
           <Database size={14} />
           {conflicts.length} conflit{conflicts.length > 1 ? 's' : ''} en attente
         </div>
@@ -74,31 +79,31 @@ export default function ConflictsPage() {
       ) : (
         <div className="grid gap-6">
           {conflicts.map((conflict) => (
-            <div key={conflict.id} className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-              <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <div key={conflict.id} className="fed-card overflow-hidden">
+              <div className="bg-[#f7f9fc] px-6 py-4 border-b border-blue-50 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="bg-blue-900 text-white text-[10px] font-black px-2 py-0.5 rounded uppercase">
+                  <span className="bg-[#0b1d3a] text-white text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest">
                     {conflict.table_name}
                   </span>
-                  <span className="text-xs text-gray-500">Détecté le {new Date(conflict.detected_at).toLocaleString()}</span>
+                  <span className="text-xs text-slate-500">Détecté le {new Date(conflict.detected_at).toLocaleString()}</span>
                 </div>
-                <ShieldCheck size={16} className="text-gray-400" />
+                <ShieldCheck size={16} className="text-slate-400" />
               </div>
               
               <div className="p-6 grid md:grid-cols-2 gap-8">
                 {/* Version Locale */}
                 <div className="space-y-4">
-                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                     <Database size={14} /> Version Locale (Vôtre)
                   </h4>
-                  <pre className="bg-gray-50 p-4 rounded-xl text-[10px] overflow-auto max-h-[200px] border border-gray-100">
+                  <pre className="bg-[#f7f9fc] p-4 rounded-xl text-[10px] overflow-auto max-h-[200px] border border-blue-100">
                     {JSON.stringify(JSON.parse(conflict.local_data), null, 2)}
                   </pre>
                 </div>
 
                 {/* Version Serveur */}
                 <div className="space-y-4">
-                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
                     <History size={14} /> Version Serveur
                   </h4>
                   <pre className="bg-blue-50 p-4 rounded-xl text-[10px] overflow-auto max-h-[200px] border border-blue-100">
@@ -107,11 +112,11 @@ export default function ConflictsPage() {
                 </div>
               </div>
 
-              <div className="bg-gray-50 px-6 py-4 flex items-center justify-end gap-3">
+              <div className="bg-[#f7f9fc] px-6 py-4 flex items-center justify-end gap-3">
                 <button
                   onClick={() => handleResolve(conflict.id, 'SERVER_WINS')}
                   disabled={resolvingId === conflict.id}
-                  className="px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+                  className="px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
                 >
                   Accepter le serveur
                 </button>
@@ -125,7 +130,7 @@ export default function ConflictsPage() {
                 <button
                   onClick={() => handleResolve(conflict.id, 'LAST_WRITE_WINS')}
                   disabled={resolvingId === conflict.id}
-                  className="px-4 py-2 text-xs font-bold text-white bg-blue-900 hover:bg-blue-800 rounded-lg shadow-md transition-all flex items-center gap-2"
+                  className="fed-btn-navy px-4 py-2 text-xs"
                 >
                   {resolvingId === conflict.id ? 'Résolution...' : 'Appliquer Stratégie Temporelle'}
                   <ArrowRight size={14} />
@@ -135,6 +140,6 @@ export default function ConflictsPage() {
           ))}
         </div>
       )}
-    </div>
+    </FedPage>
   );
 }

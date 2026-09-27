@@ -1,0 +1,509 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * FEDERIS DESIGN SYSTEM — Refonte WinAgro-inspired (2026-09-27)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ADN visuel importé de WinAgro (winagrotech.com) transposé sur la palette
+ * institutionnelle Academia Federis (navy + or/ambre) SANS changement de
+ * palette ni de police (Inter conservée) :
+ *
+ *   - Tokens couleur : navy profond (#0b1d3a), navy nuit (#071528),
+ *     carte navy (#0f2444), ambre (#f59e0b / #fbbf24), bleu pâle (#eff6ff),
+ *     fond crème nuage (#f7f9fc)
+ *   - Keyframes : pulse-slow, float, spin-slow, marquee, shimmer,
+ *     conic-light (anneau logo), fade-in
+ *   - Utilitaires : fed-grain (texture pointillée), fed-glass /
+ *     fed-glass-dark (glassmorphism), fed-btn-shimmer / fed-card-shimmer
+ *     (balayage lumineux), fed-underline-accent (surlignage or),
+ *     fed-logo-beam (anneau conique rotatif), fed-clip-slant (séparateur
+ *     incliné de section), scrollbar institutionnelle
+ *
+ * Toutes les classes sont préfixées `fed-` : aucune collision avec le
+ * design system Academia Helm existant.
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+:root {
+  /* ── Palette Academia Federis (conservée) ─────────────────────────────── */
+  --fed-navy: #0b1d3a;        /* sections sombres institutionnelles */
+  --fed-navy-deep: #071528;   /* fond nuit (équivalent noir-vert WinAgro) */
+  --fed-navy-card: #0f2444;   /* cartes sur fond sombre */
+  --fed-blue: #1e3a8a;        /* bleu institutionnel (blue-900) */
+  --fed-blue-soft: #2547a3;   /* dégradés */
+  --fed-blue-bright: #3b82f6; /* focus / liens vifs */
+  --fed-amber: #f59e0b;       /* or institutionnel (accent principal) */
+  --fed-amber-bright: #fbbf24; /* or clair — texte sur navy */
+  --fed-amber-deep: #b45309;  /* or sombre — suffixes stats */
+  --fed-amber-pale: #fffbeb;  /* fond or très pâle */
+  --fed-pale: #eff6ff;        /* bleu pâle — badges / fonds */
+  --fed-cream: #f7f9fc;       /* fond clair général (équivalent crème) */
+  --fed-text: #475569;        /* texte secondaire */
+}
+
+/* ═══ Keyframes (ADN WinAgro) ═════════════════════════════════════════ */
+
+@keyframes fed-pulse-slow {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.45);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 12px rgba(245, 158, 11, 0);
+  }
+}
+
+@keyframes fed-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes fed-spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fed-marquee {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes fed-shimmer {
+  0% { transform: translateX(-150%) skewX(-20deg); }
+  100% { transform: translateX(200%) skewX(-20deg); }
+}
+
+@keyframes fed-conic-light {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fed-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fed-slide-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══ Animations utilitaires ══════════════════════════════════════════ */
+
+.fed-animate-float {
+  animation: fed-float 6s ease-in-out infinite;
+}
+
+.fed-animate-float-delayed {
+  animation: fed-float 7s ease-in-out infinite;
+  animation-delay: 2s;
+}
+
+.fed-animate-pulse-slow {
+  animation: fed-pulse-slow 2.5s infinite ease-in-out;
+}
+
+.fed-animate-fade-in {
+  animation: fed-fade-in 0.8s ease-out both;
+}
+
+.fed-animate-slide-up {
+  animation: fed-slide-up 0.6s ease-out both;
+}
+
+.fed-marquee {
+  animation: fed-marquee 22s linear infinite;
+}
+
+/* ═══ Texture & glassmorphism ═════════════════════════════════════════ */
+
+/* Texture pointillée de luxe (équivalent bg-grain WinAgro, teinte navy) */
+.fed-grain {
+  background-image:
+    radial-gradient(rgba(11, 29, 58, 0.04) 1px, transparent 0),
+    radial-gradient(rgba(11, 29, 58, 0.04) 1px, transparent 0);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+}
+
+/* Variante claire pour fonds navy */
+.fed-grain-light {
+  background-image:
+    radial-gradient(rgba(251, 191, 36, 0.05) 1px, transparent 0),
+    radial-gradient(rgba(59, 130, 246, 0.05) 1px, transparent 0);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+}
+
+/* Panneau verre clair (navbar, cartes flottantes) */
+.fed-glass {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(191, 219, 254, 0.5);
+}
+
+/* Panneau verre navy (cartes de connexion, KPI sombres) */
+.fed-glass-dark {
+  background: rgba(15, 36, 68, 0.6);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(59, 130, 246, 0.18);
+}
+
+/* ═══ Effets lumineux (ADN WinAgro) ═══════════════════════════════════ */
+
+/* Balayage lumineux sur boutons primaires */
+.fed-btn-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.fed-btn-shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 255, 255, 0.35),
+    transparent
+  );
+  transform: translateX(-150%) skewX(-20deg);
+  animation: fed-shimmer 2.8s infinite linear;
+  pointer-events: none;
+}
+
+/* Balayage lumineux au survol des cartes premium */
+.fed-card-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.fed-card-shimmer:hover::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 255, 255, 0.35),
+    transparent
+  );
+  transform: translateX(-150%) skewX(-20deg);
+  animation: fed-shimmer 1.4s infinite linear;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Surlignage or derrière un mot-clé (titres) */
+.fed-underline-accent {
+  position: relative;
+  display: inline-block;
+}
+.fed-underline-accent::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  width: 100%;
+  height: 8px;
+  background-color: rgba(245, 158, 11, 0.85);
+  z-index: -1;
+  transform: skewX(-12deg);
+  opacity: 0.8;
+}
+
+/* Anneau conique rotatif autour du logo (lumière or → bleu) */
+.fed-logo-beam {
+  position: relative;
+  overflow: hidden;
+  border-radius: 50%;
+  clip-path: circle(50%);
+}
+.fed-logo-beam::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 120deg,
+    #3b82f6 180deg,
+    #fbbf24 240deg,
+    transparent 300deg,
+    transparent 360deg
+  );
+  animation: fed-conic-light 3.5s linear infinite;
+  z-index: 1;
+}
+.fed-logo-beam::after {
+  content: '';
+  position: absolute;
+  inset: 2.5px;
+  background: #071528;
+  border-radius: 50%;
+  z-index: 2;
+}
+.fed-logo-beam > * {
+  position: relative;
+  z-index: 3;
+}
+
+/* ═══ Séparateurs & décors de section ═════════════════════════════════ */
+
+/* Séparateur incliné (bas de hero — équivalent WinAgro clipPath) */
+.fed-clip-slant {
+  clip-path: polygon(0 100%, 100% 100%, 100% 0);
+}
+
+.fed-clip-slant-reverse {
+  clip-path: polygon(0 0, 100% 0, 0 100%);
+}
+
+/* ═══ Scrollbar institutionnelle ══════════════════════════════════════ */
+
+.fed-app ::-webkit-scrollbar,
+.fed-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.fed-app ::-webkit-scrollbar-track,
+.fed-scroll::-webkit-scrollbar-track {
+  background: #f7f9fc;
+}
+.fed-app ::-webkit-scrollbar-thumb,
+.fed-scroll::-webkit-scrollbar-thumb {
+  background: #1e3a8a;
+  border-radius: 4px;
+}
+.fed-app ::-webkit-scrollbar-thumb:hover,
+.fed-scroll::-webkit-scrollbar-thumb:hover {
+  background: #0b1d3a;
+}
+
+/* ═══ Composants récurrents ═══════════════════════════════════════════ */
+
+/* Carte institutionnelle claire (équivalent carte bg-white WinAgro) */
+.fed-card {
+  background: #ffffff;
+  border: 1px solid rgba(191, 219, 254, 0.6);
+  border-radius: 1.5rem;
+  box-shadow: 0 4px 6px -1px rgba(11, 29, 58, 0.05),
+    0 2px 4px -2px rgba(11, 29, 58, 0.05);
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.fed-card:hover {
+  border-color: rgba(59, 130, 246, 0.35);
+  box-shadow: 0 20px 25px -5px rgba(11, 29, 58, 0.09),
+    0 8px 10px -6px rgba(11, 29, 58, 0.07);
+}
+
+/* Carte sombre (équivalent bg-[#0F2214]/50 WinAgro) */
+.fed-card-dark {
+  background: rgba(15, 36, 68, 0.55);
+  border: 1px solid rgba(59, 130, 246, 0.14);
+  border-radius: 1.5rem;
+  box-shadow: 0 8px 24px -8px rgba(7, 21, 40, 0.5);
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.fed-card-dark:hover {
+  border-color: rgba(251, 191, 36, 0.35);
+  box-shadow: 0 20px 32px -8px rgba(7, 21, 40, 0.65);
+}
+
+/* Badge pilule de section (équivalent WinAgro) */
+.fed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.85rem;
+  border-radius: 9999px;
+  background: #eff6ff;
+  color: #0b1d3a;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.fed-badge-amber {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+/* Bouton or premium (CTA principal — équivalent accent-yellow WinAgro) */
+.fed-btn-gold {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #0b1d3a;
+  font-weight: 800;
+  box-shadow: 0 8px 20px -6px rgba(245, 158, 11, 0.55);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.fed-btn-gold:hover {
+  box-shadow: 0 14px 28px -8px rgba(245, 158, 11, 0.7);
+}
+.fed-btn-gold:active {
+  transform: scale(0.98);
+}
+
+/* Bouton bleu institutionnel */
+.fed-btn-navy {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #1e3a8a, #0b1d3a);
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 8px 20px -6px rgba(11, 29, 58, 0.5);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.fed-btn-navy:hover {
+  box-shadow: 0 14px 28px -8px rgba(11, 29, 58, 0.65);
+}
+.fed-btn-navy:active {
+  transform: scale(0.98);
+}
+
+/* Bouton fantôme sur fond sombre */
+.fed-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  font-weight: 700;
+  transition: background 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+}
+.fed-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+.fed-btn-ghost:active {
+  transform: scale(0.98);
+}
+
+/* Pastille live (équivalent indicateur LIVE backoffice WinAgro) */
+.fed-live-dot {
+  position: relative;
+  display: inline-flex;
+  width: 0.5rem;
+  height: 0.5rem;
+}
+.fed-live-dot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: #34d399;
+  animation: fed-pulse-slow 2s infinite ease-in-out;
+}
+
+/* Ligne de séparation animée or (sous les titres de section) */
+.fed-separator {
+  height: 4px;
+  width: 64px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #fbbf24, #f59e0b);
+  transform-origin: left center;
+}
+
+/* Champ de saisie institutionnel (formulaires login/register) */
+.fed-input {
+  width: 100%;
+  border-radius: 0.875rem;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  background: rgba(7, 21, 40, 0.45);
+  color: #ffffff;
+  font-size: 0.875rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.fed-input::placeholder {
+  color: rgba(148, 163, 184, 0.7);
+}
+.fed-input:focus {
+  outline: none;
+  border-color: rgba(251, 191, 36, 0.5);
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.15);
+}
+
+/* Variante claire du champ (formulaires sur fond blanc) */
+.fed-input-light {
+  width: 100%;
+  border-radius: 0.875rem;
+  border: 1px solid #dbeafe;
+  background: #f7f9fc;
+  color: #0b1d3a;
+  font-size: 0.875rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.fed-input-light::placeholder {
+  color: #94a3b8;
+}
+.fed-input-light:focus {
+  outline: none;
+  border-color: #1e3a8a;
+  box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.12);
+}
+
+/* Onglets à liseré inférieur (équivalent tabs backoffice WinAgro) */
+.fed-tab {
+  position: relative;
+  padding: 0.75rem 1.25rem;
+  font-weight: 700;
+  color: #64748b;
+  transition: color 0.2s ease;
+  white-space: nowrap;
+}
+.fed-tab:hover {
+  color: #0b1d3a;
+}
+.fed-tab-active {
+  color: #0b1d3a;
+}
+.fed-tab-active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #fbbf24, #f59e0b);
+}
+
+/* Respect des préférences d'accessibilité */
+@media (prefers-reduced-motion: reduce) {
+  .fed-animate-float,
+  .fed-animate-float-delayed,
+  .fed-animate-pulse-slow,
+  .fed-marquee,
+  .fed-btn-shimmer::after,
+  .fed-card-shimmer:hover::after,
+  .fed-logo-beam::before,
+  .fed-live-dot::before {
+    animation: none !important;
+  }
+}

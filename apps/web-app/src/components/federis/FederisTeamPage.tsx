@@ -25,6 +25,7 @@ import {
   PATRONAT_FUNCTION_LABELS,
   type PatronatFunctionKey,
 } from '@/lib/patronat/permissions';
+import { FedPage, FedCountUp } from '@/components/federis/federis-motion';
 
 interface Member {
   id: string;
@@ -53,8 +54,8 @@ const FUNCTION_BADGES: Record<string, string> = {
   TRESORIER: 'bg-emerald-100 text-emerald-800',
   ORGANISATEUR: 'bg-amber-100 text-amber-800',
   CHARGE_MISSION: 'bg-violet-100 text-violet-800',
-  OPERATOR: 'bg-gray-100 text-gray-700',
-  VIEWER: 'bg-gray-100 text-gray-700',
+  OPERATOR: 'bg-gray-100 text-slate-700',
+  VIEWER: 'bg-gray-100 text-slate-700',
 };
 
 export default function FederisTeamPage() {
@@ -198,20 +199,21 @@ export default function FederisTeamPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <FedPage className="space-y-8">
       {/* En-tête */}
-      <div className="bg-white p-10 rounded-[2.5rem] border border-gray-100 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-8 relative overflow-hidden">
+      <div className="fed-card p-10 flex flex-col md:flex-row md:items-center justify-between gap-8 relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16" />
         <div className="relative z-10">
-          <div className="flex items-center space-x-3 mb-4">
-            <div className="w-10 h-10 bg-blue-900 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
+          <div className="fed-badge mb-4">Module équipe</div>
+          <div className="flex items-center space-x-3 mb-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-[#1e3a8a] to-[#0b1d3a] rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
               <AppIcon name="students" size="dashboard" className="text-white" />
             </div>
-            <h1 className="text-3xl font-black text-gray-900 italic tracking-tighter">
+            <h1 className="text-2xl md:text-3xl font-black text-[#0b1d3a] tracking-tight">
               Équipe &amp; Comptes
             </h1>
           </div>
-          <p className="text-gray-500 font-medium max-w-xl">
+          <p className="text-slate-500 font-medium max-w-xl text-sm">
             Créez les comptes de votre équipe patronale. Chaque membre se connecte avec son
             email et accède uniquement aux fonctions de son rôle : secrétaire, trésorier,
             organisateur, chargé de mission.
@@ -219,14 +221,14 @@ export default function FederisTeamPage() {
         </div>
         <div className="flex items-center space-x-4 shrink-0">
           <div className="text-right">
-            <p className="text-2xl font-black text-blue-900 tracking-tighter">{members.length}</p>
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+            <p className="text-2xl font-black text-[#1e3a8a]"><FedCountUp value={members.length} /></p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
               Comptes membres
             </p>
           </div>
           <button
             onClick={() => setShowCreate((v) => !v)}
-            className="px-6 py-3 bg-blue-900 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-blue-800 transition-all"
+            className="fed-btn-navy px-5 py-2.5 text-sm"
           >
             {showCreate ? 'Fermer' : 'Créer un compte'}
           </button>
@@ -249,38 +251,38 @@ export default function FederisTeamPage() {
       {showCreate && (
         <form
           onSubmit={handleCreate}
-          className="bg-white rounded-3xl border border-blue-100 shadow-lg p-8 space-y-6"
+          className="fed-card p-8 space-y-6"
         >
-          <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">
+          <h3 className="text-sm font-black text-[#0b1d3a] uppercase tracking-widest">
             Nouveau compte membre
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
                 Prénom
               </label>
               <input
                 required
                 value={form.firstName}
                 onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-900"
+                className="fed-input-light px-4 py-3 font-semibold"
                 placeholder="Awa"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
                 Nom
               </label>
               <input
                 required
                 value={form.lastName}
                 onChange={(e) => setForm({ ...form, lastName: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-900"
+                className="fed-input-light px-4 py-3 font-semibold"
                 placeholder="Dossou"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
                 Email (identifiant de connexion)
               </label>
               <input
@@ -288,29 +290,29 @@ export default function FederisTeamPage() {
                 type="email"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-900"
+                className="fed-input-light px-4 py-3 font-semibold"
                 placeholder="awa.dossou@patronat.org"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
                 Téléphone (optionnel)
               </label>
               <input
                 value={form.phone}
                 onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-900"
+                className="fed-input-light px-4 py-3 font-semibold"
                 placeholder="+229 97 00 00 00"
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
                 Fonction
               </label>
               <select
                 value={form.function}
                 onChange={(e) => setForm({ ...form, function: e.target.value as PatronatFunctionKey })}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-900"
+                className="fed-input-light px-4 py-3 font-semibold"
               >
                 {(catalog.length > 0
                   ? catalog.map((c) => ({ key: c.key, label: c.label }))
@@ -321,12 +323,12 @@ export default function FederisTeamPage() {
                   </option>
                 ))}
               </select>
-              <p className="mt-2 text-xs text-gray-500 font-medium">
+              <p className="mt-2 text-xs text-slate-500 font-medium">
                 {PATRONAT_FUNCTION_DESCRIPTIONS[form.function]}
               </p>
             </div>
             <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
                 Mot de passe (min. 8 caractères)
               </label>
               <input
@@ -335,7 +337,7 @@ export default function FederisTeamPage() {
                 minLength={8}
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-900"
+                className="fed-input-light px-4 py-3 font-semibold"
                 placeholder="À communiquer au membre"
               />
             </div>
@@ -344,7 +346,7 @@ export default function FederisTeamPage() {
             <button
               type="submit"
               disabled={creating}
-              className="px-8 py-3.5 bg-blue-900 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-xl hover:bg-blue-800 transition-all disabled:opacity-50"
+              className="fed-btn-gold fed-btn-shimmer px-8 py-3 text-sm disabled:opacity-50"
             >
               {creating ? 'Création…' : 'Créer le compte'}
             </button>
@@ -353,9 +355,9 @@ export default function FederisTeamPage() {
       )}
 
       {/* Liste des membres */}
-      <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="p-8 border-b border-gray-50 flex items-center justify-between">
-          <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">
+      <div className="fed-card overflow-hidden">
+        <div className="p-8 border-b border-blue-50 flex items-center justify-between">
+          <h3 className="text-sm font-black text-[#0b1d3a] uppercase tracking-widest">
             Membres du patronat
           </h3>
           <div className="flex items-center space-x-2">
@@ -367,51 +369,51 @@ export default function FederisTeamPage() {
         </div>
 
         {loading ? (
-          <div className="p-12 text-center text-sm font-bold text-gray-400">
+          <div className="p-12 text-center text-sm font-bold text-slate-400">
             Chargement de l&apos;équipe…
           </div>
         ) : members.length === 0 ? (
-          <div className="p-12 text-center text-sm font-bold text-gray-400">
+          <div className="p-12 text-center text-sm font-bold text-slate-400">
             Aucun membre — créez le premier compte de votre équipe.
           </div>
         ) : (
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-slate-100">
             {members.map((m) => (
-              <div key={m.id} className="p-6 lg:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-gray-50 transition-all">
+              <div key={m.id} className="p-6 lg:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:bg-[#f7f9fc] transition-all">
                 <div className="flex items-center space-x-5">
                   <div
                     className={cn(
                       'w-14 h-14 rounded-2xl flex items-center justify-center font-black text-lg shadow-sm',
-                      m.isActive ? 'bg-blue-50 text-blue-900' : 'bg-gray-100 text-gray-400',
+                      m.isActive ? 'bg-[#eff6ff] text-[#1e3a8a]' : 'bg-slate-100 text-slate-400',
                     )}
                   >
                     {(m.firstName?.[0] ?? m.email[0]).toUpperCase()}
                   </div>
                   <div>
                     <div className="flex items-center gap-3 flex-wrap">
-                      <h4 className="text-base font-black text-gray-900">
+                      <h4 className="text-base font-black text-[#0b1d3a]">
                         {m.firstName} {m.lastName}
                         {m.isSelf && (
-                          <span className="ml-2 text-[9px] font-black uppercase tracking-widest bg-blue-900 text-white px-2 py-0.5 rounded">
+                          <span className="ml-2 text-[9px] font-black uppercase tracking-widest bg-[#0b1d3a] text-white px-2 py-0.5 rounded-full">
                             Vous
                           </span>
                         )}
                       </h4>
                       <span
                         className={cn(
-                          'text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded',
+                          'text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full',
                           FUNCTION_BADGES[m.function] ?? FUNCTION_BADGES.VIEWER,
                         )}
                       >
                         {m.functionLabel}
                       </span>
                       {!m.isActive && (
-                        <span className="text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-700 px-2.5 py-1 rounded">
+                        <span className="text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-700 px-2.5 py-1 rounded-full">
                           Désactivé
                         </span>
                       )}
                     </div>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1.5">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5">
                       {m.email}
                       {m.phone ? ` • ${m.phone}` : ''}
                       {m.lastLoginAt
@@ -426,7 +428,7 @@ export default function FederisTeamPage() {
                     value={m.function}
                     disabled={m.isSelf}
                     onChange={(e) => changeFunction(m, e.target.value as PatronatFunctionKey)}
-                    className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-900 disabled:opacity-40"
+                    className="fed-input-light px-3 py-2 text-xs font-bold !w-auto disabled:opacity-40"
                     title={m.isSelf ? 'Vous ne pouvez pas changer votre propre fonction' : 'Changer la fonction'}
                   >
                     {(catalog.length > 0
@@ -443,7 +445,7 @@ export default function FederisTeamPage() {
                       setResetTarget(m);
                       setNewPassword('');
                     }}
-                    className="px-3 py-2 bg-gray-50 rounded-lg text-xs font-bold text-gray-600 hover:bg-gray-100 hover:text-blue-900 transition-all"
+                    className="px-3 py-2 bg-[#eff6ff] border border-blue-100 rounded-lg text-xs font-bold text-[#1e3a8a] hover:bg-[#1e3a8a] hover:text-white transition-all"
                     title="Réinitialiser le mot de passe"
                   >
                     <AppIcon name="lock" size="submenu" />
@@ -473,14 +475,14 @@ export default function FederisTeamPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form
             onSubmit={handleReset}
-            className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md space-y-5"
+            className="fed-card p-8 w-full max-w-md space-y-5"
           >
-            <h3 className="text-lg font-black text-gray-900">
+            <h3 className="text-lg font-black text-[#0b1d3a]">
               Réinitialiser le mot de passe
             </h3>
-            <p className="text-sm text-gray-500 font-medium">
+            <p className="text-sm text-slate-500 font-medium">
               Nouveau mot de passe pour{' '}
-              <span className="font-bold text-gray-900">
+              <span className="font-bold text-[#0b1d3a]">
                 {resetTarget.firstName} {resetTarget.lastName}
               </span>{' '}
               ({resetTarget.email}).
@@ -491,21 +493,21 @@ export default function FederisTeamPage() {
               minLength={8}
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm font-semibold outline-none focus:ring-2 focus:ring-blue-900"
+              className="fed-input-light px-4 py-3 font-semibold"
               placeholder="Nouveau mot de passe (min. 8 caractères)"
             />
             <div className="flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setResetTarget(null)}
-                className="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all"
+                className="px-5 py-2.5 rounded-full text-xs font-black uppercase tracking-widest bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all"
               >
                 Annuler
               </button>
               <button
                 type="submit"
                 disabled={resetting}
-                className="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest bg-blue-900 text-white hover:bg-blue-800 transition-all disabled:opacity-50"
+                className="fed-btn-navy px-5 py-2.5 text-xs disabled:opacity-50"
               >
                 {resetting ? 'Validation…' : 'Réinitialiser'}
               </button>
@@ -513,6 +515,6 @@ export default function FederisTeamPage() {
           </form>
         </div>
       )}
-    </div>
+    </FedPage>
   );
 }

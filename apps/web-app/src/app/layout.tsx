@@ -11,6 +11,8 @@ import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import Script from 'next/script';
 import './globals.css';
+// ⭐ FEDERIS — Design system WinAgro-inspired (palette navy/or conservée)
+import '@/styles/federis.css';
 // ⭐ OFFLINE-FIRST RÉACTIVÉ (sept. 2026) — SW universel + cleanup des anciens SW
 import { ServiceWorkerCleanup } from '@/components/pwa/ServiceWorkerCleanup';
 import { UniversalSWRegister } from '@/components/pwa/UniversalSWRegister';

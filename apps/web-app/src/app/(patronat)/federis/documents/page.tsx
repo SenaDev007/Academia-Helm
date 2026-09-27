@@ -38,10 +38,11 @@ export default async function DocumentsPage() {
     >
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Documents</h1>
-          <p className="text-gray-600 mt-1">Listes, relevés, attestations</p>
+          <div className="fed-badge mb-3">Module ressources</div>
+          <h1 className="text-2xl md:text-3xl font-black text-[#0b1d3a] tracking-tight">Documents</h1>
+          <p className="text-slate-500 font-medium mt-1 text-sm">Listes, relevés, attestations</p>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+        <div className="fed-card p-12 text-center text-slate-500">
           Page en cours de développement
         </div>
       </div>

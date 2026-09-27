@@ -278,9 +278,11 @@ export default function FederisRegisterPage() {
   const stepLabels = ['Informations institutionnelles', 'Responsable et accès', 'Sécurité'];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#071528] relative overflow-hidden">
+      {/* Halo lumineux (ADN WinAgro) */}
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[560px] h-[560px] rounded-full bg-blue-600/10 blur-[130px] pointer-events-none" />
       <FederisHeader />
-      <div className="pt-24 pb-12">
+      <div className="pt-24 pb-12 relative z-10">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Logo & Titre */}
           <div className="text-center mb-8">
@@ -294,10 +296,10 @@ export default function FederisRegisterPage() {
                 priority
               />
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
+            <h1 className="text-2xl sm:text-3xl font-black text-white mb-2 tracking-tight">
               Créer un compte Patronat / Organisme d&rsquo;examen
             </h1>
-            <p className="text-gray-600 text-sm">
+            <p className="text-blue-100/60 text-sm">
               Inscrivez votre organisation pour coordonner vos écoles membres et organiser vos
               examens nationaux.
             </p>
@@ -310,8 +312,10 @@ export default function FederisRegisterPage() {
                 <div key={stepNumber} className="flex items-center flex-1">
                   <div
                     className={cn(
-                      'w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0',
-                      step >= stepNumber ? 'bg-blue-800 text-white' : 'bg-gray-200 text-gray-600',
+                      'w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0 border',
+                      step >= stepNumber
+                        ? 'bg-gradient-to-br from-[#fbbf24] to-[#f59e0b] text-[#0b1d3a] border-amber-300/40 shadow-lg shadow-amber-500/30'
+                        : 'bg-white/10 text-blue-100/60 border-white/10',
                     )}
                   >
                     {stepNumber}
@@ -320,7 +324,7 @@ export default function FederisRegisterPage() {
                     <div
                       className={cn(
                         'flex-1 h-0.5 mx-2',
-                        step > stepNumber ? 'bg-blue-800' : 'bg-gray-200',
+                        step > stepNumber ? 'bg-[#f59e0b]' : 'bg-white/10',
                       )}
                     />
                   )}
@@ -333,7 +337,7 @@ export default function FederisRegisterPage() {
                   key={i}
                   className={cn(
                     'text-[10px] sm:text-xs font-medium text-center flex-1',
-                    step === i + 1 ? 'text-blue-900 font-semibold' : 'text-gray-400',
+                    step === i + 1 ? 'text-amber-300 font-semibold' : 'text-blue-100/40',
                   )}
                 >
                   {label}
@@ -345,13 +349,13 @@ export default function FederisRegisterPage() {
           {/* Formulaire */}
           <form
             onSubmit={handleSubmit}
-            className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 sm:p-8"
+            className="fed-glass-dark rounded-3xl shadow-2xl p-6 sm:p-8"
           >
             {/* Étape 1 — Informations institutionnelles */}
             {step === 1 && (
               <div className="space-y-5">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
                     Pays <span className="text-red-500">*</span>
                   </label>
                   <select
@@ -366,9 +370,8 @@ export default function FederisRegisterPage() {
                     }
                     disabled={loadingCountries}
                     className={cn(
-                      'w-full px-4 py-2 border rounded-md bg-white',
-                      errors.countryId ? 'border-red-300' : 'border-gray-300',
-                      'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
+                      'fed-input px-4 py-2',
+                      errors.countryId ? '!border-red-500/60' : '',
                     )}
                   >
                     <option value="">
@@ -381,12 +384,12 @@ export default function FederisRegisterPage() {
                     ))}
                   </select>
                   {errors.countryId && (
-                    <p className="mt-1 text-sm text-red-600">{errors.countryId}</p>
+                    <p className="mt-1 text-sm text-red-400">{errors.countryId}</p>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
                     Niveau de l&rsquo;organisation <span className="text-red-500">*</span>
                   </label>
                   <select
@@ -396,9 +399,8 @@ export default function FederisRegisterPage() {
                     }
                     disabled={!formData.countryId}
                     className={cn(
-                      'w-full px-4 py-2 border rounded-md bg-white',
-                      errors.territorialLevelCode ? 'border-red-300' : 'border-gray-300',
-                      'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
+                      'fed-input px-4 py-2',
+                      errors.territorialLevelCode ? '!border-red-500/60' : '',
                     )}
                   >
                     <option value="">Sélectionner le niveau…</option>
@@ -409,16 +411,16 @@ export default function FederisRegisterPage() {
                     ))}
                   </select>
                   {errors.territorialLevelCode && (
-                    <p className="mt-1 text-sm text-red-600">{errors.territorialLevelCode}</p>
+                    <p className="mt-1 text-sm text-red-400">{errors.territorialLevelCode}</p>
                   )}
-                  <p className="mt-1.5 text-xs text-gray-400">
+                  <p className="mt-1.5 text-xs text-blue-100/50">
                     Les niveaux disponibles sont configurés selon l&rsquo;organisation réelle de
                     chaque pays.
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
                     Nom du patronat ou de l&rsquo;association{' '}
                     <span className="text-red-500">*</span>
                   </label>
@@ -427,19 +429,18 @@ export default function FederisRegisterPage() {
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className={cn(
-                      'w-full px-4 py-2 border rounded-md',
-                      errors.name ? 'border-red-300' : 'border-gray-300',
-                      'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
+                      'fed-input px-4 py-2',
+                      errors.name ? '!border-red-500/60' : '',
                     )}
                     placeholder="Ex : Patronat des Écoles Privées du Bénin"
                   />
-                  {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name}</p>}
+                  {errors.name && <p className="mt-1 text-sm text-red-400">{errors.name}</p>}
                 </div>
 
                 {!isNational && (
                   <>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
                         {territoryLabel} (département, région ou autre unité territoriale){' '}
                         <span className="text-red-500">*</span>
                       </label>
@@ -450,21 +451,20 @@ export default function FederisRegisterPage() {
                           setFormData({ ...formData, territoryName: e.target.value })
                         }
                         className={cn(
-                          'w-full px-4 py-2 border rounded-md',
-                          errors.territoryName ? 'border-red-300' : 'border-gray-300',
-                          'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
+                          'fed-input px-4 py-2',
+                          errors.territoryName ? '!border-red-500/60' : '',
                         )}
                         placeholder={
                           selectedCountry?.code === 'BJ' ? 'Ex : Atlantique' : 'Ex : Région du…'
                         }
                       />
                       {errors.territoryName && (
-                        <p className="mt-1 text-sm text-red-600">{errors.territoryName}</p>
+                        <p className="mt-1 text-sm text-red-400">{errors.territoryName}</p>
                       )}
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
                         Patronat national de rattachement{' '}
                         <span className="text-red-500">*</span>
                       </label>
@@ -475,9 +475,8 @@ export default function FederisRegisterPage() {
                         }
                         disabled={loadingNationals}
                         className={cn(
-                          'w-full px-4 py-2 border rounded-md bg-white',
-                          errors.parentPatronatId ? 'border-red-300' : 'border-gray-300',
-                          'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
+                          'fed-input px-4 py-2',
+                          errors.parentPatronatId ? '!border-red-500/60' : '',
                         )}
                       >
                         <option value="">
@@ -494,10 +493,10 @@ export default function FederisRegisterPage() {
                         ))}
                       </select>
                       {errors.parentPatronatId && (
-                        <p className="mt-1 text-sm text-red-600">{errors.parentPatronatId}</p>
+                        <p className="mt-1 text-sm text-red-400">{errors.parentPatronatId}</p>
                       )}
                       {nationalPatronats.length === 0 && !loadingNationals && (
-                        <p className="mt-1.5 text-xs text-amber-600">
+                        <p className="mt-1.5 text-xs text-amber-400/90">
                           Aucun patronat national n&rsquo;est encore enregistré pour ce pays.
                           Contactez l&rsquo;équipe pour valider le modèle local avant activation.
                         </p>
@@ -507,7 +506,7 @@ export default function FederisRegisterPage() {
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
                     Type d&rsquo;organisme <span className="text-red-500">*</span>
                   </label>
                   <select
@@ -516,9 +515,8 @@ export default function FederisRegisterPage() {
                       setFormData({ ...formData, organismType: e.target.value as OrganismType })
                     }
                     className={cn(
-                      'w-full px-4 py-2 border rounded-md bg-white',
-                      errors.organismType ? 'border-red-300' : 'border-gray-300',
-                      'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
+                      'fed-input px-4 py-2',
+                      errors.organismType ? '!border-red-500/60' : '',
                     )}
                   >
                     <option value="">Sélectionner…</option>
@@ -529,7 +527,7 @@ export default function FederisRegisterPage() {
                     ))}
                   </select>
                   {errors.organismType && (
-                    <p className="mt-1 text-sm text-red-600">{errors.organismType}</p>
+                    <p className="mt-1 text-sm text-red-400">{errors.organismType}</p>
                   )}
                 </div>
 
@@ -537,7 +535,7 @@ export default function FederisRegisterPage() {
                   <button
                     type="button"
                     onClick={handleNext}
-                    className="px-6 py-2.5 bg-blue-800 text-white rounded-md font-semibold hover:bg-blue-900 transition-colors"
+                    className="fed-btn-gold fed-btn-shimmer px-6 py-2.5 text-sm"
                   >
                     Suivant
                   </button>
@@ -549,7 +547,7 @@ export default function FederisRegisterPage() {
             {step === 2 && (
               <div className="space-y-5">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
                     Nom du responsable <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -559,19 +557,18 @@ export default function FederisRegisterPage() {
                       setFormData({ ...formData, responsibleName: e.target.value })
                     }
                     className={cn(
-                      'w-full px-4 py-2 border rounded-md',
-                      errors.responsibleName ? 'border-red-300' : 'border-gray-300',
-                      'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
+                      'fed-input px-4 py-2',
+                      errors.responsibleName ? '!border-red-500/60' : '',
                     )}
                     placeholder="Prénom et nom"
                   />
                   {errors.responsibleName && (
-                    <p className="mt-1 text-sm text-red-600">{errors.responsibleName}</p>
+                    <p className="mt-1 text-sm text-red-400">{errors.responsibleName}</p>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
                     Adresse électronique institutionnelle{' '}
                     <span className="text-red-500">*</span>
                   </label>
@@ -580,17 +577,16 @@ export default function FederisRegisterPage() {
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className={cn(
-                      'w-full px-4 py-2 border rounded-md',
-                      errors.email ? 'border-red-300' : 'border-gray-300',
-                      'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
+                      'fed-input px-4 py-2',
+                      errors.email ? '!border-red-500/60' : '',
                     )}
                     placeholder="contact@patronat.org"
                   />
-                  {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
+                  {errors.email && <p className="mt-1 text-sm text-red-400">{errors.email}</p>}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
                     Téléphone <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -598,27 +594,26 @@ export default function FederisRegisterPage() {
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     className={cn(
-                      'w-full px-4 py-2 border rounded-md',
-                      errors.phone ? 'border-red-300' : 'border-gray-300',
-                      'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
+                      'fed-input px-4 py-2',
+                      errors.phone ? '!border-red-500/60' : '',
                     )}
                     placeholder={selectedCountry?.phonePrefix ?? '+229'}
                   />
-                  {errors.phone && <p className="mt-1 text-sm text-red-600">{errors.phone}</p>}
+                  {errors.phone && <p className="mt-1 text-sm text-red-400">{errors.phone}</p>}
                 </div>
 
                 <div className="flex justify-between">
                   <button
                     type="button"
                     onClick={handleBack}
-                    className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-md font-semibold hover:bg-gray-50 transition-colors"
+                    className="fed-btn-ghost px-6 py-2.5 text-sm"
                   >
                     Précédent
                   </button>
                   <button
                     type="button"
                     onClick={handleNext}
-                    className="px-6 py-2.5 bg-blue-800 text-white rounded-md font-semibold hover:bg-blue-900 transition-colors"
+                    className="fed-btn-gold fed-btn-shimmer px-6 py-2.5 text-sm"
                   >
                     Suivant
                   </button>
@@ -629,8 +624,8 @@ export default function FederisRegisterPage() {
             {/* Étape 3 — Sécurité */}
             {step === 3 && (
               <div className="space-y-5">
-                <div className="bg-blue-50 border border-blue-100 rounded-md p-4 text-sm text-blue-900">
-                  <p className="font-semibold mb-1">Récapitulatif</p>
+                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-blue-100">
+                  <p className="font-semibold mb-1 text-white">Récapitulatif</p>
                   <p>
                     {formData.name} — {isNational ? 'Organisation nationale' : territoryLabel} de{' '}
                     {isNational
@@ -638,13 +633,13 @@ export default function FederisRegisterPage() {
                       : formData.territoryName}{' '}
                     ({selectedCountry?.name})
                   </p>
-                  <p className="text-gray-500 mt-1">
+                  <p className="text-blue-100/60 mt-1">
                     Responsable : {formData.responsibleName} — {formData.email}
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
                     Mot de passe <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -652,20 +647,19 @@ export default function FederisRegisterPage() {
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     className={cn(
-                      'w-full px-4 py-2 border rounded-md',
-                      errors.password ? 'border-red-300' : 'border-gray-300',
-                      'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
+                      'fed-input px-4 py-2',
+                      errors.password ? '!border-red-500/60' : '',
                     )}
                     placeholder="Minimum 8 caractères"
                     autoComplete="new-password"
                   />
                   {errors.password && (
-                    <p className="mt-1 text-sm text-red-600">{errors.password}</p>
+                    <p className="mt-1 text-sm text-red-400">{errors.password}</p>
                   )}
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
                     Confirmation du mot de passe <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -675,21 +669,20 @@ export default function FederisRegisterPage() {
                       setFormData({ ...formData, confirmPassword: e.target.value })
                     }
                     className={cn(
-                      'w-full px-4 py-2 border rounded-md',
-                      errors.confirmPassword ? 'border-red-300' : 'border-gray-300',
-                      'focus:ring-2 focus:ring-blue-800 focus:border-blue-800',
+                      'fed-input px-4 py-2',
+                      errors.confirmPassword ? '!border-red-500/60' : '',
                     )}
                     placeholder="Répétez le mot de passe"
                     autoComplete="new-password"
                   />
                   {errors.confirmPassword && (
-                    <p className="mt-1 text-sm text-red-600">{errors.confirmPassword}</p>
+                    <p className="mt-1 text-sm text-red-400">{errors.confirmPassword}</p>
                   )}
                 </div>
 
                 {(errors.submit || errors.form) && (
-                  <div className="p-4 bg-red-50 border border-red-200 rounded-md">
-                    <p className="text-sm text-red-600">{errors.submit || errors.form}</p>
+                  <div className="p-4 bg-red-950/40 border border-red-800/40 rounded-2xl">
+                    <p className="text-sm text-red-300">{errors.submit || errors.form}</p>
                   </div>
                 )}
 
@@ -697,14 +690,14 @@ export default function FederisRegisterPage() {
                   <button
                     type="button"
                     onClick={handleBack}
-                    className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-md font-semibold hover:bg-gray-50 transition-colors"
+                    className="fed-btn-ghost px-6 py-2.5 text-sm"
                   >
                     Précédent
                   </button>
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="px-6 py-2.5 bg-blue-800 text-white rounded-md font-semibold hover:bg-blue-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="fed-btn-gold fed-btn-shimmer px-6 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {submitting ? 'Création du compte…' : 'Créer le compte'}
                   </button>
@@ -715,11 +708,11 @@ export default function FederisRegisterPage() {
 
           {/* Lien connexion */}
           <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-blue-100/60">
               Vous avez déjà un compte ?{' '}
               <Link
                 href={`${getFederisBasePath()}/login`}
-                className="text-blue-800 font-semibold hover:text-blue-900"
+                className="text-amber-400 font-semibold hover:text-amber-300"
               >
                 Se connecter
               </Link>

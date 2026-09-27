@@ -19,6 +19,9 @@ import { FederisExamsController } from './federis-exams.controller';
 // ⭐ Portail école : validation des demandes de rattachement patronat
 import { FederisSchoolService } from './federis-school.service';
 import { FederisSchoolController } from './federis-school.controller';
+// ⭐ Workflow délibération → publication → notifications parents (miroir offline)
+import { FederisDeliberationService } from './federis-deliberation.service';
+import { FederisDeliberationController } from './federis-deliberation.controller';
 
 @Module({
   controllers: [
@@ -28,6 +31,7 @@ import { FederisSchoolController } from './federis-school.controller';
     FederisUsersController,
     FederisExamsController,
     FederisSchoolController,
+    FederisDeliberationController,
   ],
   providers: [
     FederisService,
@@ -39,6 +43,7 @@ import { FederisSchoolController } from './federis-school.controller';
     FederisUsersService,
     FederisExamsService,
     FederisSchoolService,
+    FederisDeliberationService,
   ],
   exports: [
     FederisService,
@@ -50,6 +55,7 @@ import { FederisSchoolController } from './federis-school.controller';
     FederisUsersService,
     FederisExamsService,
     FederisSchoolService,
+    FederisDeliberationService,
   ],
 })
 export class FederisModule {}

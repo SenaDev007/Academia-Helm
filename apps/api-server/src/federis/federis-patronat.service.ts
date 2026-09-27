@@ -838,84 +838,191 @@ export class FederisPatronatService {
    * Initialisation du paiement Fedapay (cahier des charges §12).
    * Crée la facture puis la transaction Fedapay ; renvoie l'URL de paiement.
    * Aucun prélèvement automatique — renouvellement manuel.
+   *
+   * ⭐ MÊME COMPORTEMENT QUE LE CHECKOUT HELM (createOnboardingPaymentSession) :
+   *   1. IDEMPOTENCE — une facture UNPAID du même plan existe déjà → on la
+   *      réutilise ; si son URL Fedapay est encore fraîche (< 12 h) elle est
+   *      renvoyée TELLE QUELLE : un double-clic ou un réessai ne crée ni
+   *      facture en double, ni transaction Fedapay en double (c'est ce qui
+   *      faisait refuser la 2e transaction par Fedapay et déclenchait le
+   *      message trompeur « non configuré »).
+   *   2. NUMÉRO GLOBALEMENT UNIQUE — l'ancien compteur PAR PATRONAT
+   *      (FED-{3 initiales du nom}-{année}-0001) entrait en collision P2002
+   *      dès que deux patronats partageaient les mêmes initiales (ex : tous
+   *      les « Patronat … » → FED-PAT-…-0001). Nouveau format : séquence
+   *      GLOBALE + retry sur collision résiduelle.
+   *   3. ERREURS FEDAPAY PROPAGÉES — plus de fallback silencieux : si Fedapay
+   *      refuse la transaction, l'utilisateur voit la VRAIE erreur (comme sur
+   *      le signup Helm). Le mode « manuel » ne reste que si la clé Fedapay
+   *      est réellement absente de l'environnement (développement local).
    */
   async initCheckout(tenantId: string, userId: string, dto: InitCheckoutDto) {
     const patronat = await this.resolvePatronat(tenantId, userId);
     const plan = FEDERIS_PLANS[dto.plan];
     if (!plan) throw new BadRequestException('Offre invalide. Offres : ESSENTIEL, INSTITUTION.');
 
-    // Facture de souscription (année scolaire en cours)
+    // ── 1. Facture impayée existante ? (pattern Helm : existingPayment PENDING) ──
+    const existing = await this.prisma.federisInvoice.findFirst({
+      where: { patronatId: patronat.id, status: 'UNPAID', type: 'SUBSCRIPTION' },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (existing) {
+      const existingMeta = (existing.metadata as Record<string, any>) ?? {};
+
+      if (existingMeta.plan !== plan.code) {
+        // Changement d'offre : l'ancienne facture (jamais réglée) est annulée
+        // pour ne laisser qu'une seule facture ouverte par patronat.
+        await this.prisma.federisInvoice.update({
+          where: { id: existing.id },
+          data: {
+            status: 'CANCELLED',
+            metadata: {
+              ...existingMeta,
+              cancelledAt: new Date().toISOString(),
+              cancelledReason: `plan_change:${plan.code}`,
+            },
+          },
+        });
+      } else if (
+        typeof existingMeta.paymentUrl === 'string' &&
+        existingMeta.paymentUrl.startsWith('https://') &&
+        Date.now() - existing.createdAt.getTime() < 12 * 3600 * 1000
+      ) {
+        // ⭐ Session Fedapay encore valide → renvoyée telle quelle (Helm
+        //    renvoie metadata.paymentUrl du paiement PENDING existant).
+        await this.prisma.auditLog.create({
+          data: {
+            tenantId: patronat.tenantId,
+            userId,
+            action: 'FEDERIS_CHECKOUT_REUSED',
+            resource: 'FederisInvoice',
+            resourceId: existing.id,
+            tableName: 'federis_invoices',
+            recordId: existing.id,
+            newData: { plan: plan.code, provider: 'FEDAPAY', reused: true },
+          },
+        });
+        return {
+          success: true,
+          invoice: { id: existing.id, number: existing.number, amount: existing.amount },
+          plan: { code: plan.code, name: plan.name, amountXOF: plan.amountXOF },
+          provider: 'FEDAPAY',
+          paymentUrl: existingMeta.paymentUrl,
+          message: 'Paiement Fedapay initialisé.',
+        };
+      }
+      // Sinon : la MÊME facture est réutilisée ci-dessous pour une nouvelle
+      // transaction (URL absente, expirée > 12 h, ou transaction refusée).
+    }
+
+    // ── 2. Facture de souscription (année scolaire, numéro GLOBALEMENT unique) ──
     const year =
       new Date().getMonth() >= 8 ? new Date().getFullYear() : new Date().getFullYear() - 1;
-    const invoiceCount = await this.prisma.federisInvoice.count({
-      where: { patronatId: patronat.id },
-    });
-    const number = `FED-${patronat.name.slice(0, 3).toUpperCase()}-${year}-${String(invoiceCount + 1).padStart(4, '0')}`;
+    // Préfixe lisible : 3 premiers caractères alphanumériques du nom (accents
+    // retirés) — l'unicité vient de la séquence GLOBALE, pas du préfixe.
+    const prefix =
+      patronat.name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9]+/g, '')
+        .slice(0, 3)
+        .toUpperCase() || 'PAT';
 
-    const invoice = await this.prisma.federisInvoice.create({
-      data: {
-        patronatId: patronat.id,
-        tenantId: patronat.tenantId,
-        number,
-        amount: plan.amountXOF,
-        currency: 'XOF',
-        dueDate: new Date(Date.now() + 14 * 24 * 3600 * 1000),
-        status: 'UNPAID',
-        type: 'SUBSCRIPTION',
-        metadata: { plan: plan.code, period: 'SCHOOL_YEAR', initiatedBy: userId },
-      },
-    });
+    let invoice =
+      existing && ((existing.metadata as any)?.plan ?? '') === plan.code ? existing : null;
+    if (!invoice) {
+      const baseSeq = await this.prisma.federisInvoice.count({});
+      for (let attempt = 0; attempt < 6 && !invoice; attempt++) {
+        const number =
+          attempt < 5
+            ? `FED-${prefix}-${year}-${String(baseSeq + 1 + attempt).padStart(4, '0')}`
+            : `FED-${prefix}-${year}-${Date.now().toString(36).toUpperCase()}`; // dernier recours
+        try {
+          invoice = await this.prisma.federisInvoice.create({
+            data: {
+              patronatId: patronat.id,
+              tenantId: patronat.tenantId,
+              number,
+              amount: plan.amountXOF,
+              currency: 'XOF',
+              dueDate: new Date(Date.now() + 14 * 24 * 3600 * 1000),
+              status: 'UNPAID',
+              type: 'SUBSCRIPTION',
+              metadata: { plan: plan.code, period: 'SCHOOL_YEAR', initiatedBy: userId },
+            },
+          });
+        } catch (err: any) {
+          // Numéro pris par une création concurrente → tenter le suivant
+          if (err?.code === 'P2002' && attempt < 5) continue;
+          throw err;
+        }
+      }
+    }
 
-    // ── Transaction Fedapay (MÊME PATTER QUE HELM — SDK officiel) ──
+    // ── 3. Transaction Fedapay (MÊME PATTER QUE HELM — SDK officiel) ──
     // La transaction porte les metadata federis (federisInvoiceId…) +
     // webhook_url propre à Federis : le webhook
     // POST /api/federis/public/fedapay/webhook active l'abonnement dès
     // l'approbation (montant vérifié, idempotent).
-    let paymentUrl: string | null = null;
-    let provider = 'MANUAL' as 'FEDAPAY' | 'MANUAL';
-    let providerTransactionId: string | null = null;
-
-    if (this.fedapayService.isConfigured()) {
-      try {
-        provider = 'FEDAPAY';
-        const tx = await this.fedapayService.createSubscriptionTransaction({
-          invoice: { id: invoice.id, number: invoice.number, amount: invoice.amount },
-          patronat: {
-            id: patronat.id,
-            tenantId: patronat.tenantId,
-            name: patronat.name,
-            primaryEmail: patronat.primaryEmail,
-            primaryPhone: patronat.primaryPhone,
-          },
-          plan: { code: plan.code, name: plan.name },
-        });
-        paymentUrl = tx.paymentUrl;
-        providerTransactionId = tx.transactionId;
-
-        // Trace la transaction sur la facture (résolution webhook + lookup
-        // by-transaction si les metadata venaient à manquer dans le payload).
-        // amountFedapay = montant réellement débité (plafonné en sandbox —
-        // pattern Helm : la facture conserve le montant RÉEL).
-        await this.prisma.federisInvoice.update({
-          where: { id: invoice.id },
-          data: {
-            metadata: {
-              ...(invoice.metadata as any),
-              provider: 'FEDAPAY',
-              providerTransactionId: providerTransactionId,
-              amountFedapay: tx.amountFedapay,
-              paymentUrl,
-            },
-          },
-        });
-      } catch (err: any) {
-        this.logger.warn(
-          `Fedapay a refusé la transaction : ${err?.message ?? err} — la facture ${invoice.number} reste payable manuellement.`,
-        );
-        paymentUrl = null;
-        providerTransactionId = null;
-      }
+    if (!this.fedapayService.isConfigured()) {
+      // Clé Fedapay réellement absente (développement local) : facture en
+      // mode manuel, finalisation par l'équipe. En production la clé est
+      // configurée (même backend que Helm) — ce bloc ne s'exécute pas.
+      await this.prisma.auditLog.create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_CHECKOUT_INITIALIZED',
+          resource: 'FederisInvoice',
+          resourceId: invoice.id,
+          tableName: 'federis_invoices',
+          recordId: invoice.id,
+          newData: { plan: plan.code, amount: plan.amountXOF, provider: 'MANUAL' },
+        },
+      });
+      return {
+        success: true,
+        invoice: { id: invoice.id, number: invoice.number, amount: invoice.amount },
+        plan: { code: plan.code, name: plan.name, amountXOF: plan.amountXOF },
+        provider: 'MANUAL',
+        paymentUrl: null,
+        message:
+          "Facture créée. Fedapay n'est pas configuré sur cet environnement (mode développement) — l'équipe activera l'abonnement après règlement.",
+      };
     }
+
+    // ⭐ Erreurs PROPAGÉES (pattern Helm) : si Fedapay refuse, la VRAIE cause
+    //    remonte au frontend au lieu du message trompeur « non configuré ».
+    const tx = await this.fedapayService.createSubscriptionTransaction({
+      invoice: { id: invoice.id, number: invoice.number, amount: invoice.amount },
+      patronat: {
+        id: patronat.id,
+        tenantId: patronat.tenantId,
+        name: patronat.name,
+        primaryEmail: patronat.primaryEmail,
+        primaryPhone: patronat.primaryPhone,
+      },
+      plan: { code: plan.code, name: plan.name },
+    });
+
+    // Trace la transaction sur la facture (résolution webhook + lookup
+    // by-transaction si les metadata venaient à manquer dans le payload).
+    // amountFedapay = montant réellement débité (plafonné en sandbox —
+    // pattern Helm : la facture conserve le montant RÉEL).
+    const invoiceMeta = (invoice.metadata as Record<string, any>) ?? {};
+    await this.prisma.federisInvoice.update({
+      where: { id: invoice.id },
+      data: {
+        metadata: {
+          ...invoiceMeta,
+          provider: 'FEDAPAY',
+          providerTransactionId: tx.transactionId,
+          amountFedapay: tx.amountFedapay,
+          paymentUrl: tx.paymentUrl,
+        },
+      },
+    });
 
     await this.prisma.auditLog.create({
       data: {
@@ -929,21 +1036,26 @@ export class FederisPatronatService {
         newData: {
           plan: plan.code,
           amount: plan.amountXOF,
-          provider,
-          providerTransactionId,
+          provider: 'FEDAPAY',
+          providerTransactionId: tx.transactionId,
+          reusedInvoice: invoice.id === existing?.id,
         },
       },
     });
+
+    if (!tx.paymentUrl) {
+      throw new BadRequestException(
+        "Fedapay a accepté la transaction mais n'a renvoyé aucune URL de paiement. Réessayez dans un instant.",
+      );
+    }
 
     return {
       success: true,
       invoice: { id: invoice.id, number: invoice.number, amount: invoice.amount },
       plan: { code: plan.code, name: plan.name, amountXOF: plan.amountXOF },
-      provider,
-      paymentUrl,
-      message: paymentUrl
-        ? 'Paiement Fedapay initialisé.'
-        : "Facture créée. Le paiement en ligne sera finalisé par l'équipe (Fedapay non configuré sur cet environnement).",
+      provider: 'FEDAPAY',
+      paymentUrl: tx.paymentUrl,
+      message: 'Paiement Fedapay initialisé.',
     };
   }
 }

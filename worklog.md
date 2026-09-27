@@ -11644,3 +11644,29 @@ Stage Summary:
 - ✅ Sélecteurs Police/Taille lisibles sur mobile (OS sombre) + cible tactile 34px
 - ✅ Autosave cahier journal opérationnel pour les sous-matières « fiches à préparer » (parité totale avec la sauvegarde manuelle)
 - Note : 7 fiches MATH dupliquées (journal 305c38aa, semaine précédente) restent en base — l'enseignante peut les supprimer depuis l'UI, ou purge sur demande
+
+---
+Task ID: fix-fedapay-checkout-2026-09-28
+Agent: Super Z (principal)
+Task: « J'ai cliqué sur Payer avec FedaPay : "Facture créée. Le paiement en ligne sera finalisé par l'équipe (Fedapay non configuré sur cet environnement)" — Mais comment ? C'est la même configuration qu'Academia Helm, le même backend, les mêmes clés »
+
+Work Log:
+- ENQUÊTE production (API https://api.academiahelm.com) : Fedapay EST configuré et fonctionne — 2 transactions réelles créées via scripts/test_federis_checkout_prod.mjs (ESSENTIEL 100 000 XOF + INSTITUTION 250 000 XOF, paymentUrl process.fedapay.com valides ~24 h, décodage JWT exp confirmé)
+- Webhook vérifié : POST /api/federis/public/fedapay/webhook déployé, fail-closed, signature invalide rejetée (« Invalid webhook signature ») → FEDAPAY_WEBHOOK_SECRET bien configuré ; sous-domaine academiafederis.academiahelm.com/checkout/success → 200 (rewrite middleware → /federis/checkout/success) ; chaîne activation complète (idempotence, vérif montant, sous-domaine patronat, email identifiants) déjà en place
+- CAUSE RACINE n°1 (reproduite en 409 P2002 !) : numéro de facture FED-{3 initiales du nom}-{année}-{seq PAR PATRONAT} avec contrainte `number @unique` GLOBALE → tous les patronats « Patronat … » généraient FED-PAT-2026-0001 → collision au 2e patronat (l'utilisateur a créé la 1re facture FED-PAT-2026-0001, mon patronat de test a pris le 409)
+- CAUSE RACINE n°2 (le message trompeur) : initCheckout avalait TOUTE erreur de createSubscriptionTransaction dans un catch silencieux et affichait « Fedapay non configuré sur cet environnement » — impossible de distinguer (a) clé absente, (b) Fedapay a refusé (ex : double-clic → 2e transaction refusée), (c) autre erreur transitoire
+- CORRECTIF initCheckout (federis-patronat.service.ts) — pattern Helm createOnboardingPaymentSession :
+  * IDEMPOTENCE : facture UNPAID du même plan → réutilisée ; si son paymentUrl a < 12 h → renvoyée TELLE QUELLE (aucune nouvelle transaction, aucun doublon — protège du double-clic ; audit FEDERIS_CHECKOUT_REUSED)
+  * CHANGEMENT D'OFFRE : ancienne facture impayée passée en CANCELLED (une seule facture ouverte)
+  * NUMÉRO GLOBALEMENT UNIQUE : séquence GLOBALE + préfixe 3 lettres sans accents + retry P2002 (6 tentatives) + dernier recours horodaté
+  * ERREURS PROPAGÉES : si Fedapay refuse, la VRAIE erreur remonte au frontend (comme signup Helm) ; mode manuel UNIQUEMENT si FEDAPAY_API_KEY réellement absente (dev) avec message honnête
+  * paymentUrl null après acceptation → BadRequestException explicite
+- VÉRIFICATIONS : esbuild 0 erreur ; tsc complet — 0 nouveau TYPE d'erreur (les 4 occurrences TS2339 ajoutées = même artefact PrismaService pré-existant, client Prisma non régénéré en sandbox, régénéré sur Railway) ; eslint — seules 2 erreurs pré-existantes (respFirst/respRest, commit 73f98565b)
+- Données de test créées en production (purge éventuelle côté admin) : patronats « Patronat TESTQA muk78n9j » (facture KO collision), « Zébu QA muk795y3 » (facture FED-ZÉB-2026-0001), « Yèdè QA » (facture FED-YÈD-2026-0001) + 2 transactions Fedapay impayées qui expireront seules
+
+Stage Summary:
+- ✅ Fedapay confirmé opérationnel en production (mêmes clés/backend que Helm — l'utilisateur a raison)
+- ✅ Collision P2002 des numéros de facture éliminée (séquence globale + retry)
+- ✅ Idempotence checkout pattern Helm (double-clic/réessai = même facture, URL fraîche renvoyée sans nouvelle transaction)
+- ✅ Fini le message trompeur : les vraies erreurs Fedapay remontent au frontend
+- ⏳ Validation E2E production après déploiement Railway (re-test : nom « Patronat … » sans 409 + réutilisation facture au 2e clic)

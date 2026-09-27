@@ -809,6 +809,30 @@ export class BulletinsController {
       // Silent fail — le bulletin reste généré sans cachets
     }
 
+    // ⭐ Résolution de la photo de l'élève depuis student_photos
+    let studentPhotoUrl: string | null = null;
+    if (body.studentMatricule && resolvedTenantId) {
+      try {
+        const photoStudent = await this.prisma.student.findFirst({
+          where: { matricule: body.studentMatricule, tenantId: resolvedTenantId },
+          select: { id: true, photoUrl: true },
+        }).catch(() => null);
+        if (photoStudent?.photoUrl) {
+          studentPhotoUrl = photoStudent.photoUrl;
+        } else if (photoStudent?.id) {
+          const photo = await this.prisma.studentPhoto.findFirst({
+            where: { studentId: photoStudent.id },
+            select: { originalUrl: true, hdUrl: true, thumbnailUrl: true },
+          }).catch(() => null);
+          if (photo) {
+            studentPhotoUrl = photo.hdUrl || photo.originalUrl || photo.thumbnailUrl || null;
+          }
+        }
+      } catch {
+        // Silent fail — pas de photo, le placeholder "Photo" s'affiche
+      }
+    }
+
     // Fusionner les données du frontend avec le branding + teacherName résolu
     const pdfData = {
       ...body,
@@ -825,6 +849,8 @@ export class BulletinsController {
       // ⭐ Champs anglophones : résolus backend (âge + admission number)
       studentAge: body.studentAge ?? studentAge,
       admissionNumber: body.admissionNumber || admissionNumber || body.studentMatricule || null,
+      // ⭐ Photo de l'élève : résolue depuis student_photos (priorité au backend)
+      studentPhotoUrl: studentPhotoUrl || body.studentPhotoUrl || null,
       // ⭐ Directeur : résolu backend depuis school_directors (par niveau + langue)
       //    Priorité au backend si trouvé, sinon fallback sur ce que le frontend a envoyé
       directorName: directorName || body.directorName || null,

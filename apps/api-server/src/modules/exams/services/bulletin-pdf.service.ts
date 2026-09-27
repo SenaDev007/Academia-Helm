@@ -42,6 +42,8 @@ export interface BulletinPdfData {
   studentName: string;
   studentMatricule?: string;
   studentGender?: string;
+  // ⭐ Photo de l'élève (data URL ou URL HTTP) — résolue depuis student_photos
+  studentPhotoUrl?: string | null;
   // Niveau scolaire
   isMaternelle: boolean;
   // ⭐ Piste linguistique (FR | EN) — déclenche le layout anglophone si 'EN'
@@ -597,12 +599,17 @@ export class BulletinPdfService {
       <!-- TITRE BULLETIN -->
       <div class="bulletin-title">Bulletin de ${data.evaluationTypeName} ${data.evaluationTypeCode ? '(' + data.evaluationTypeCode + ')' : ''} — ${data.periodName} ${data.academicYearName}</div>
 
-      <!-- INFOS ÉLÈVE -->
-      <table style="width:100%;border-collapse:collapse;background:#f8fafc;border:1px solid #e2e8f0;border-radius:2px;margin-bottom:6px;">
+      <!-- INFOS ÉLÈVE (avec photo) -->
+      <table style="width:100%;border-collapse:collapse;background:#f8fafc;border:1px solid #e2e8f0;border-radius:3px;margin-bottom:15px;">
       <tr>
-        <td style="padding:3px 5px;font-size:9px;">Élève: <strong style="color:#0A2A5E;">${data.studentName}</strong></td>
-        <td style="padding:3px 5px;font-size:9px;text-align:center;">Matricule: <strong style="color:#0A2A5E;">${data.studentMatricule || '—'}</strong></td>
-        <td style="padding:3px 5px;font-size:9px;text-align:right;">Rang: <strong style="color:#0A2A5E;">${formatRank(data.classRank, data.studentGender === 'FEMALE' || data.studentGender === 'F')}</strong></td>
+        <td style="padding:8px 10px;width:60px;text-align:center;vertical-align:middle;">
+          ${data.studentPhotoUrl
+            ? `<img src="${data.studentPhotoUrl}" class="student-photo" alt="Photo" />`
+            : `<div class="student-photo-placeholder">Photo</div>`}
+        </td>
+        <td style="padding:8px 10px;font-size:9px;">Élève: <strong style="color:#0A2A5E;">${data.studentName}</strong></td>
+        <td style="padding:8px 10px;font-size:9px;text-align:center;">Matricule: <strong style="color:#0A2A5E;">${data.studentMatricule || '—'}</strong></td>
+        <td style="padding:8px 10px;font-size:9px;text-align:right;">Rang: <strong style="color:#0A2A5E;">${formatRank(data.classRank, data.studentGender === 'FEMALE' || data.studentGender === 'F')}</strong></td>
       </tr>
       </table>
 
@@ -642,7 +649,10 @@ export class BulletinPdfService {
 
       <!-- PIED DE PAGE PAGE 1 -->
       <div style="margin-top:30px;"></div>
-      <div class="footer">Document généré par Academia Helm — ${new Date().toLocaleString('fr-FR')}</div>
+      <div class="footer">
+        Ce bulletin est établi qu'une seule fois, veuillez le conserver précieusement<br/>
+        Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0144000001'}
+      </div>
       <!-- SAUT DE PAGE -->
       <div style="page-break-after:always;"></div>`;
 
@@ -778,28 +788,30 @@ export class BulletinPdfService {
 <title>Bulletin - ${data.studentName}</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; position:relative; }
+body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; position:relative; min-height:100vh; display:flex; flex-direction:column; }
 /* ⭐ Filigrane : logo CENTRÉ et HORIZONTAL (aucune rotation) */
 .watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); opacity:0.08; z-index:0; pointer-events:none; }
-.content { position:relative; z-index:1; }
-.header { margin-bottom:6px; padding-bottom:4px; border-bottom:2px solid #0A2A5E; }
+.content { position:relative; z-index:1; flex:1; }
+.header { margin-bottom:15px; padding-bottom:8px; border-bottom:2px solid #0A2A5E; }
 .header-table { width:100%; border-collapse:collapse; }
-.header-table td { vertical-align:middle; padding:2px 4px; }
+.header-table td { vertical-align:middle; padding:4px 6px; }
 .header-left { text-align:center; width:12%; }
 .header-center { text-align:center; width:68%; }
 .header-right { text-align:center; width:20%; }
 .republique { font-size:11px; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; }
-.divider { margin:2px auto; width:50%; }
+.divider { margin:3px auto; width:50%; }
 .divider-line { height:1px; background:#0A2A5E; }
 .ministere { font-size:8px; font-weight:bold; text-transform:uppercase; letter-spacing:0.3px; line-height:1.3; }
-.school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
-.school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
-.bulletin-title { text-align:center; background:#0A2A5E; color:white; padding:4px 8px; border-radius:2px; margin-bottom:6px; font-size:10px; font-weight:bold; text-transform:uppercase; }
+.school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:4px; color:#0A2A5E; }
+.school-info { font-size:7px; color:#555; margin-top:3px; font-style:italic; }
+.bulletin-title { text-align:center; background:#0A2A5E; color:white; padding:8px 12px; border-radius:3px; margin-bottom:15px; font-size:11px; font-weight:bold; text-transform:uppercase; }
 table.notes { width:100%; border-collapse:collapse; }
-table.notes th { color:white; border:1px solid; padding:5px 3px; font-size:7px; text-transform:uppercase; }
-table.notes td { border:1px solid #cbd5e1; padding:5px 3px; }
+table.notes th { color:white; border:1px solid; padding:7px 5px; font-size:7px; text-transform:uppercase; }
+table.notes td { border:1px solid #cbd5e1; padding:7px 5px; }
 table.notes tbody tr:nth-child(even) { background:#f8fafc; }
-.footer { margin-top:4px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; padding-top:3px; position:fixed; bottom:5mm; left:0; right:0; }
+.footer { margin-top:auto; padding-top:8px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; position:fixed; bottom:5mm; left:8mm; right:8mm; }
+.student-photo { width:50px; height:55px; object-fit:cover; border:1px solid #cbd5e1; border-radius:2px; }
+.student-photo-placeholder { width:50px; height:55px; border:1px solid #cbd5e1; border-radius:2px; display:flex; align-items:center; justify-content:center; font-size:7px; color:#94a3b8; background:#f8fafc; }
 </style>
 </head>
 <body>
@@ -1966,9 +1978,12 @@ ${page2Content}
   /* ─── Title ─── */
   .bulletin-title { text-align: center; background: #0A2A5E; color: white; padding: 6px 12px; border-radius: 4px; margin-bottom: 8px; font-size: 12px; font-weight: bold; text-transform: uppercase; }
   /* ─── Student info ─── */
-  .student-info { display: flex; justify-content: space-between; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 8px 12px; margin-bottom: 8px; font-size: 10px; }
+  .student-info { display: flex; justify-content: space-between; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 3px; padding: 8px 12px; margin-bottom: 15px; font-size: 10px; }
   .student-info div { flex: 1; }
   .student-info strong { color: #0A2A5E; }
+  .student-info-table { width: 100%; border-collapse: collapse; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 3px; margin-bottom: 15px; }
+  .student-photo { width: 50px; height: 55px; object-fit: cover; border: 1px solid #cbd5e1; border-radius: 2px; }
+  .student-photo-placeholder { width: 50px; height: 55px; border: 1px solid #cbd5e1; border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 7px; color: #94a3b8; background: #f8fafc; }
   /* ─── Table ─── */
   table { width: 100%; border-collapse: collapse; font-size: 10px; }
   thead th { background: #0A2A5E; color: white; padding: 6px 8px; border: 1px solid #0D3B85; text-align: center; font-size: 9px; }
@@ -2015,13 +2030,20 @@ ${page2Content}
     Bulletin trimestriel par matière — ${data.periodName} ${data.academicYearName || ''}
   </div>
 
-  <!-- Student Info -->
-  <div class="student-info">
-    <div>Élève: <strong>${data.studentName}</strong></div>
-    <div>Matricule: <strong>${data.studentMatricule || '—'}</strong></div>
-    <div>Classe: <strong>${data.className || '—'}</strong></div>
-    <div>Rang: <strong>${rankStr}</strong></div>
-  </div>
+  <!-- Student Info (avec photo) -->
+  <table class="student-info-table">
+    <tr>
+      <td style="width:60px;text-align:center;vertical-align:middle;padding:8px 10px;">
+        ${data.studentPhotoUrl
+          ? `<img src="${data.studentPhotoUrl}" class="student-photo" alt="Photo" />`
+          : `<div class="student-photo-placeholder">Photo</div>`}
+      </td>
+      <td style="padding:8px 10px;font-size:10px;">Élève: <strong>${data.studentName}</strong></td>
+      <td style="padding:8px 10px;font-size:10px;text-align:center;">Matricule: <strong>${data.studentMatricule || '—'}</strong></td>
+      <td style="padding:8px 10px;font-size:10px;text-align:center;">Classe: <strong>${data.className || '—'}</strong></td>
+      <td style="padding:8px 10px;font-size:10px;text-align:right;">Rang: <strong>${rankStr}</strong></td>
+    </tr>
+  </table>
 
   <!-- Notes Table par matière -->
   <table>
@@ -2071,7 +2093,8 @@ ${page2Content}
   </div>
 
   <div class="footer-official">
-    Bulletin généré par Academia Helm — ${data.schoolName || ''} · ${data.periodName || ''} ${data.academicYearName || ''}
+    Ce bulletin est établi qu'une seule fois, veuillez le conserver précieusement<br/>
+    Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0144000001'}
   </div>
 
   </body></html>`;

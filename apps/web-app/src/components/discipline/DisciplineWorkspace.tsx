@@ -139,12 +139,14 @@ export default function DisciplineWorkspace({
         setClasses(secondaryClasses);
       }
 
-      // ⭐ Charger les settings de conduite (baseline configurable)
+      // ⭐ Charger les settings de conduite (baseline configurable) — force le rechargement
       const settingsRes = await fetch(`/api/discipline/conduct/settings?${params}`, { headers: { ...authHeaders }, credentials: 'include' }).catch(() => null);
       if (settingsRes?.ok) {
         const sd = await settingsRes.json();
         if (sd && typeof sd.conduct_reference === 'number') {
           setConductSettings({ conduct_reference: sd.conduct_reference, critical_threshold: sd.critical_threshold ?? 5 });
+        } else {
+          setConductSettings({ conduct_reference: 17, critical_threshold: 5 });
         }
       }
     } catch (err) { console.error('Discipline load error:', err); }
@@ -159,7 +161,8 @@ export default function DisciplineWorkspace({
     setLoadingClassStudents(prev => { const n = new Set(prev); n.add(classId); return n; });
     try {
       const authHeaders = getClientAuthorizationHeader();
-      const params = new URLSearchParams({ classId, academicYearId: academicYear?.id || '', status: 'ACTIVE,ADMITTED' });
+      const params = new URLSearchParams({ academicYearId: academicYear?.id || '' });
+      if (classId) params.set('classId', classId);
       const res = await fetch(`/api/students?${params}`, { headers: { ...authHeaders }, credentials: 'include' });
       if (res.ok) {
         const d = await res.json();
@@ -257,44 +260,29 @@ export default function DisciplineWorkspace({
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>
       ) : activeTab === 'sanctions' ? (
-        /* ── Sanctions organisées par niveau → classe ── */
-        <div className="space-y-4">
-          {levelGroups.length === 0 ? (
-            <div className="bg-white rounded-xl border p-8 text-center text-gray-500">Aucune classe disponible.</div>
-          ) : levelGroups.map(group => (
-            <div key={group.levelCode} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <button onClick={() => toggleLevel(group.levelCode)}
-                className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors">
-                <div className="flex items-center gap-2">
-                  {expandedLevels.has(group.levelCode) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                  <span className="font-bold text-gray-900">{group.levelName}</span>
-                  <span className="text-xs text-gray-500">({group.classes.length} classes)</span>
-                </div>
-                <span className="text-xs text-gray-400">
-                  {group.classes.reduce((sum, c) => sum + (sanctionsByClass.get(c.name)?.length || 0), 0)} sanctions
-                </span>
-              </button>
-              {expandedLevels.has(group.levelCode) && (
-                <div className="divide-y divide-gray-100">
-                  {group.classes.map(cls => {
-                    const clsSanctions = sanctionsByClass.get(cls.name) || [];
-                    return (
-                      <div key={cls.id}>
-                        <button onClick={() => toggleClass(cls.id)}
-                          className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-blue-50/50 transition-colors">
-                          <div className="flex items-center gap-2 ml-4">
-                            {expandedClasses.has(cls.id) ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                            <span className="text-sm font-medium text-gray-700">{cls.name}</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-xs text-gray-400">{clsSanctions.length} sanction(s)</span>
-                            <button onClick={(e) => { e.stopPropagation(); openSanctionModal(cls.id, cls.name); }}
-                              className="px-2 py-1 text-xs font-bold bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors">
-                              + Sanction
-                            </button>
-                          </div>
-                        </button>
-                        {expandedClasses.has(cls.id) && (
+        /* ── Sanctions : liste directe des classes secondaires (pas de collapse niveau) ── */
+        <div className="space-y-3">
+          {classes.length === 0 ? (
+            <div className="bg-white rounded-xl border p-8 text-center text-gray-500">Aucune classe secondaire disponible.</div>
+          ) : classes.map(cls => {
+            const clsSanctions = sanctionsByClass.get(cls.name) || [];
+            return (
+              <div key={cls.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <button onClick={() => toggleClass(cls.id)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-blue-50/50 transition-colors">
+                  <div className="flex items-center gap-2">
+                    {expandedClasses.has(cls.id) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    <span className="font-bold text-gray-900">{cls.name}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-gray-400">{clsSanctions.length} sanction(s)</span>
+                    <button onClick={(e) => { e.stopPropagation(); openSanctionModal(cls.id, cls.name); }}
+                      className="px-2 py-1 text-xs font-bold bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors">
+                      + Sanction
+                    </button>
+                  </div>
+                </button>
+                {expandedClasses.has(cls.id) && (
                           <div className="px-8 pb-3 space-y-3">
                             {/* ⭐ Liste des élèves de la classe (avec bouton + Sanction par élève) */}
                             {loadingClassStudents.has(cls.id) ? (
@@ -376,15 +364,11 @@ export default function DisciplineWorkspace({
                             )}
                           </div>
                         )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                    </div>
+                  );
+                })}
             </div>
-          ))}
-        </div>
-      ) : activeTab === 'conduct' ? (
+          ) : activeTab === 'conduct' ? (
         /* ── Compteur de conduite ── */
         <ConductTab sanctions={sanctions} searchQuery={searchQuery} setSearchQuery={setSearchQuery}
           conductReference={conductSettings.conduct_reference} criticalThreshold={conductSettings.critical_threshold} />
@@ -422,9 +406,9 @@ export default function DisciplineWorkspace({
 
       {/* ⭐ Modal d'annulation de sanction */}
       {cancellingSanctionId && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 pt-20">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" style={{ paddingTop: '5rem' }}>
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            className="bg-white rounded-xl shadow-2xl max-w-md w-full" style={{ marginTop: '2rem' }}>
             <div className="flex items-center justify-between p-4 border-b bg-red-50 rounded-t-xl">
               <h3 className="text-lg font-bold text-red-900 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5" /> Annuler la sanction
@@ -459,9 +443,9 @@ export default function DisciplineWorkspace({
       )}
       {/* ⭐ Modal de suppression de règle */}
       {deletingRuleId && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 pt-20">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" style={{ paddingTop: '5rem' }}>
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-xl shadow-2xl max-w-sm w-full">
+            className="bg-white rounded-xl shadow-2xl max-w-sm w-full" style={{ marginTop: '2rem' }}>
             <div className="flex items-center justify-between p-4 border-b bg-red-50 rounded-t-xl">
               <h3 className="text-lg font-bold text-red-900">Supprimer la règle</h3>
               <button onClick={() => setDeletingRuleId(null)} className="p-1 hover:bg-red-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
@@ -684,9 +668,9 @@ function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelI
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 pt-20">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" style={{ paddingTop: '5rem' }}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto">
+        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto" style={{ marginTop: '2rem' }}>
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2">
@@ -805,9 +789,9 @@ function RuleModal({ onClose, onSuccess, editingRule }: { onClose: () => void; o
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 pt-20">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" style={{ paddingTop: '5rem' }}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-xl shadow-2xl max-w-lg w-full">
+        className="bg-white rounded-xl shadow-2xl max-w-lg w-full" style={{ marginTop: '2rem' }}>
         <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2"><Settings className="w-5 h-5" /> {isEditing ? 'Modifier la règle' : 'Nouvelle règle de faute'}</h3>
           <button onClick={onClose} className="p-1 hover:bg-blue-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
@@ -947,9 +931,9 @@ function ConductSettingsModal({ onClose, onSuccess, academicYearId, schoolLevelI
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 pt-20">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" style={{ paddingTop: '5rem' }}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+        className="bg-white rounded-xl shadow-2xl max-w-md w-full" style={{ marginTop: '2rem' }}>
         <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <Settings className="w-5 h-5" /> Paramètres de conduite

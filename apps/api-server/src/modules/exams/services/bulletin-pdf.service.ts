@@ -1124,9 +1124,14 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   <!-- TITRE BULLETIN -->
   <div class="bulletin-title">Bulletin de notes du ${data.periodName} — ${data.academicYearName}</div>
 
-  <!-- INFOS ÉLÈVE (modèle : Année | Nom | Classe / Effectif | Matricule | Rang) -->
+  <!-- INFOS ÉLÈVE (avec photo, modèle : Photo | Année | Nom | Classe / Effectif | Matricule | Rang) -->
   <table class="info-table">
     <tr>
+      <td rowspan="2" style="width:55px;text-align:center;vertical-align:middle;border:1px solid #cbd5e1;">
+        ${data.studentPhotoUrl
+          ? `<img src="${data.studentPhotoUrl}" style="width:45px;height:50px;object-fit:cover;border:1px solid #cbd5e1;border-radius:2px;" alt="Photo" />`
+          : `<div style="width:45px;height:50px;border:1px solid #cbd5e1;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#94a3b8;background:#f8fafc;">Photo</div>`}
+      </td>
       <td>Année scolaire : <strong>${data.academicYearName}</strong></td>
       <td>Nom et prénoms : <strong style="text-transform:uppercase;">${data.studentName}</strong></td>
       <td>Classe : <strong>${data.className}</strong></td>

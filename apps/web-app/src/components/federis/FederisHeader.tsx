@@ -8,8 +8,8 @@
  *   - Liens de navigation en pilules avec soulignement or animé au survol
  *   - CTA principal or avec pulsation infinie + balayage lumineux (shimmer)
  *
- * Navigation conforme au copywriting validé :
- *   Fonctionnalités · Organisation des examens · Sécurité et traçabilité · Offres
+ * Navigation :
+ *   Fonctionnalités · Organisation des examens · Offres
  *   CTA secondaire : Se connecter — CTA principal : Créer un espace patronat
  */
 
@@ -41,7 +41,6 @@ export default function FederisHeader() {
   const menuItems = [
     { path: federisPath('/') + '#fonctionnalites', label: 'Fonctionnalités' },
     { path: federisPath('/') + '#processus', label: 'Organisation des examens' },
-    { path: federisPath('/') + '#securite', label: 'Sécurité et traçabilité' },
     { path: federisPath('/') + '#offres', label: 'Offres' },
   ];
 
@@ -101,13 +100,6 @@ export default function FederisHeader() {
 
           {/* Zone Droite — Actions CTA avec pulsation + shimmer (ADN WinAgro) */}
           <div className="hidden lg:flex items-center space-x-3 flex-shrink-0">
-            <Link
-              href="/contact?subject=demo-federis"
-              prefetch={true}
-              className="px-4 py-2.5 rounded-full text-sm font-bold text-slate-600 hover:text-[#0b1d3a] transition-all duration-200"
-            >
-              Demander une démonstration
-            </Link>
             <Link
               href={federisPath('/login')}
               prefetch={true}
@@ -188,13 +180,6 @@ export default function FederisHeader() {
                     </Link>
                   </motion.div>
                 ))}
-                <Link
-                  href="/contact?subject=demo-federis"
-                  onClick={() => setIsMenuOpen(false)}
-                  className="px-4 py-3 rounded-xl text-base font-bold text-[#0b1d3a] hover:bg-[#eff6ff] transition-all duration-200"
-                >
-                  Demander une démonstration
-                </Link>
                 <div className="pt-4 mt-4 border-t border-blue-100 space-y-3">
                   <Link
                     href={federisPath('/login')}

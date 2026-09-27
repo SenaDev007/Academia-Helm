@@ -22,6 +22,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { ArrowRight, Crown, GraduationCap, Network, ShieldCheck } from 'lucide-react';
 import FederisHeader from '../federis/FederisHeader';
@@ -727,57 +728,62 @@ export default function PatronatExamensLanding() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.12, ease: 'easeOut' }}
-              whileHover={{
-                y: -10,
-                scale: 1.02,
-                borderColor: 'rgba(245, 158, 11, 0.55)',
-                boxShadow: '0 24px 32px -8px rgba(245, 158, 11, 0.25)',
-              }}
-              className="relative p-10 rounded-3xl border-2 border-amber-500 shadow-2xl shadow-amber-500/15 bg-gradient-to-b from-white to-amber-50/40 transition-all duration-300 fed-card-shimmer flex flex-col"
+              whileHover={{ y: -10, scale: 1.02 }}
+              className="relative h-full"
             >
-              {/* Badge couronne premium (ADN WinAgro) */}
-              <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] text-[#0b1d3a] font-black text-xs uppercase tracking-widest shadow-md flex items-center gap-1.5">
+              {/* Badge couronne premium — posé sur le bord supérieur, à l’extérieur
+                  du cadre : fed-card-shimmer rogne ses enfants (overflow:hidden),
+                  le badge vit donc dans ce wrapper non rognant (ADN WinAgro) */}
+              <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 z-20 px-4 py-1 rounded-full bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] text-[#0b1d3a] font-black text-xs uppercase tracking-widest shadow-md flex items-center gap-1.5">
                 <Crown className="w-3.5 h-3.5 shrink-0" /> Recommandée
               </div>
 
-              <h3 className="text-2xl font-black text-[#0b1d3a]">Federis Institution</h3>
-              <p className="text-slate-500 text-sm mt-2 mb-8">
-                Pour les patronats qui coordonnent plusieurs établissements, centres et équipes.
-              </p>
-              <div className="flex items-baseline gap-2 mb-8">
-                <span className="text-5xl font-black text-[#0b1d3a] tracking-tight">250 000</span>
-                <span className="text-slate-500 font-semibold">FCFA / année scolaire</span>
-              </div>
-              <div className="w-12 h-1 bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] rounded-full mb-6" />
-              <ul className="space-y-4 mb-10 flex-1">
-                {[
-                  "Jusqu'à 25 écoles membres",
-                  "Jusqu'à 3 000 candidatures validées par année scolaire",
-                  "Jusqu'à 3 campagnes actives simultanément",
-                  'Toutes les fonctions d\u2019Essentiel, plus pilotage multi-campagnes et rapports étendus',
-                  'Banque d\u2019épreuves avec gestion des versions et des droits d\u2019accès',
-                  'Prise en main assistée et traitement prioritaire des demandes',
-                ].map((f, fi) => (
-                  <li key={fi} className="flex items-start space-x-3">
-                    <div className="w-5 h-5 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <AppIcon name="check" size="action" className="text-amber-600" />
-                    </div>
-                    <span className="text-slate-600 text-sm leading-relaxed">{f}</span>
-                  </li>
-                ))}
-              </ul>
               <motion.div
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                animate={{ scale: [1, 1.02, 1] }}
-                transition={{ scale: { repeat: Infinity, duration: 2.4, ease: 'easeInOut' } }}
+                whileHover={{
+                  borderColor: 'rgba(245, 158, 11, 0.55)',
+                  boxShadow: '0 24px 32px -8px rgba(245, 158, 11, 0.25)',
+                }}
+                className="p-10 rounded-3xl border-2 border-amber-500 shadow-2xl shadow-amber-500/15 bg-gradient-to-b from-white to-amber-50/40 transition-all duration-300 fed-card-shimmer flex flex-col h-full"
               >
-                <Link
-                  href="/contact?subject=demo-federis-institution"
-                  className="fed-btn-gold fed-btn-shimmer w-full py-4 text-base"
+                <h3 className="text-2xl font-black text-[#0b1d3a]">Federis Institution</h3>
+                <p className="text-slate-500 text-sm mt-2 mb-8">
+                  Pour les patronats qui coordonnent plusieurs établissements, centres et équipes.
+                </p>
+                <div className="flex items-baseline gap-2 mb-8">
+                  <span className="text-5xl font-black text-[#0b1d3a] tracking-tight">250 000</span>
+                  <span className="text-slate-500 font-semibold">FCFA / année scolaire</span>
+                </div>
+                <div className="w-12 h-1 bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] rounded-full mb-6" />
+                <ul className="space-y-4 mb-10 flex-1">
+                  {[
+                    "Jusqu'à 25 écoles membres",
+                    "Jusqu'à 3 000 candidatures validées par année scolaire",
+                    "Jusqu'à 3 campagnes actives simultanément",
+                    'Toutes les fonctions d\u2019Essentiel, plus pilotage multi-campagnes et rapports étendus',
+                    'Banque d\u2019épreuves avec gestion des versions et des droits d\u2019accès',
+                    'Prise en main assistée et traitement prioritaire des demandes',
+                  ].map((f, fi) => (
+                    <li key={fi} className="flex items-start space-x-3">
+                      <div className="w-5 h-5 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <AppIcon name="check" size="action" className="text-amber-600" />
+                      </div>
+                      <span className="text-slate-600 text-sm leading-relaxed">{f}</span>
+                    </li>
+                  ))}
+                </ul>
+                <motion.div
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  animate={{ scale: [1, 1.02, 1] }}
+                  transition={{ scale: { repeat: Infinity, duration: 2.4, ease: 'easeInOut' } }}
                 >
-                  Parler à notre équipe
-                </Link>
+                  <Link
+                    href="/contact?subject=demo-federis-institution"
+                    className="fed-btn-gold fed-btn-shimmer w-full py-4 text-base"
+                  >
+                    Parler à notre équipe
+                  </Link>
+                </motion.div>
               </motion.div>
             </motion.div>
           </div>
@@ -916,7 +922,13 @@ export default function PatronatExamensLanding() {
             <div className="space-y-5">
               <div className="flex items-center gap-3">
                 <div className="fed-logo-beam w-14 h-14 flex items-center justify-center p-1 shadow-md">
-                  <AppIcon name="exams" size="menu" className="text-amber-400" />
+                  <Image
+                    src="/images/logo-Academia Hub.webp"
+                    alt="Academia Federis — par Academia Helm"
+                    width={44}
+                    height={44}
+                    className="h-11 w-11 object-contain rounded-full"
+                  />
                 </div>
                 <div className="flex flex-col">
                   <span className="text-lg font-black leading-tight text-white tracking-wide">

@@ -21,7 +21,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Settings, Save, Loader2, RefreshCw, Zap, Plus, Trash2, Calculator,
-  Award, Trophy, FileText, ChevronRight, AlertCircle, CheckCircle2,
+  Award, Trophy, FileText, ChevronRight, AlertCircle, AlertTriangle, CheckCircle2,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -186,7 +186,7 @@ function SettingsContent() {
   const baseLevelCode = levelCode === 'NURSERY' ? 'MATERNELLE'
     : levelCode === 'PRIMARY' ? 'PRIMAIRE' : levelCode;
 
-  const [activeSubTab, setActiveSubTab] = useState<'calculation' | 'mentions' | 'ranking' | 'bulletin'>('calculation');
+  const [activeSubTab, setActiveSubTab] = useState<'calculation' | 'mentions' | 'ranking' | 'bulletin' | 'distinctions'>('calculation');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
@@ -261,6 +261,18 @@ function SettingsContent() {
   const [showCoefficients, setShowCoefficients] = useState(true);
   const [showQRCode, setShowQRCode] = useState(true);
 
+  // ⭐ Form state — Distinctions & Sanctions (Secondaire uniquement)
+  // Distinctions : Tableau d'honneur + Félicitations, Tableau d'honneur + Encouragements, Tableau d'honneur
+  // Sanctions : Avertissement travail, Blâme travail
+  // Chaque entrée : { id, label, minScore, maxScore, type: 'DISTINCTION' | 'SANCTION' }
+  const [distinctions, setDistinctions] = useState([
+    { id: 'd1', label: 'Tableau d\'honneur + Félicitations', minScore: 16, maxScore: 20, type: 'DISTINCTION' as const },
+    { id: 'd2', label: 'Tableau d\'honneur + Encouragements', minScore: 14, maxScore: 15.99, type: 'DISTINCTION' as const },
+    { id: 'd3', label: 'Tableau d\'honneur', minScore: 12, maxScore: 13.99, type: 'DISTINCTION' as const },
+    { id: 's1', label: 'Avertissement travail', minScore: 8, maxScore: 9.99, type: 'SANCTION' as const },
+    { id: 's2', label: 'Blâme travail', minScore: 0, maxScore: 7.99, type: 'SANCTION' as const },
+  ]);
+
   const isMaternelle = levelCode === 'MATERNELLE';
   const isMaternelleFR = isMaternelle && (language || 'FR') === 'FR'; // ⭐ TS/S/PS seulement pour Maternelle FR
   const isPrimaire = levelCode === 'PRIMAIRE';
@@ -329,6 +341,7 @@ function SettingsContent() {
         if (cfg.qualitativeThreshold) setQualitativeThreshold(cfg.qualitativeThreshold);
         if (cfg.qualitativeItems?.length) setQualitativeItems(cfg.qualitativeItems);
         if (cfg.mentions?.length) setMentions(cfg.mentions);
+        if (cfg.distinctions?.length) setDistinctions(cfg.distinctions);
         if (cfg.rankingScope) setRankingScope(cfg.rankingScope);
         if (cfg.tieMode) setTieMode(cfg.tieMode);
         if (cfg.excludeAbsentees != null) setExcludeAbsentees(cfg.excludeAbsentees);
@@ -415,6 +428,7 @@ function SettingsContent() {
         qualitativeThreshold,
         qualitativeItems,
         mentions,
+        distinctions: isSecondaire ? distinctions : undefined,
         rankingScope,
         tieMode,
         excludeAbsentees,
@@ -562,6 +576,7 @@ function SettingsContent() {
     { id: 'mentions' as const, label: L('Barèmes & Mentions', 'Grading Scale & Grades'), icon: Award },
     { id: 'ranking' as const, label: L('Règles de classement', 'Ranking Rules'), icon: Trophy },
     { id: 'bulletin' as const, label: L('Options du Bulletin', 'Report Card Options'), icon: FileText },
+    ...(isSecondaire ? [{ id: 'distinctions' as const, label: 'Distinctions & Sanctions', icon: Trophy }] : []),
   ];
 
   return (
@@ -981,6 +996,79 @@ function SettingsContent() {
               <ToggleRow label={L('Inclure le QR code de vérification', 'Include verification QR code')} checked={showQRCode} onChange={setShowQRCode} />
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* ═══ Sub-tab: Distinctions & Sanctions (Secondaire uniquement) ═══ */}
+      {activeSubTab === 'distinctions' && isSecondaire && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-amber-600" />
+                Distinctions
+              </CardTitle>
+              <p className="text-sm text-gray-500">
+                Configurez les seuils de notes pour chaque distinction. Ces distinctions figureront sur le bulletin de l'élève.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {distinctions.filter(d => d.type === 'DISTINCTION').map((d) => (
+                <div key={d.id} className="flex items-center gap-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+                  <span className="text-sm font-semibold text-amber-900 flex-1">{d.label}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">Entre</span>
+                    <input type="number" min={0} max={20} step={0.01} value={d.minScore}
+                      onChange={(e) => setDistinctions(distinctions.map(x => x.id === d.id ? { ...x, minScore: Number(e.target.value) } : x))}
+                      className="w-16 px-2 py-1 text-sm border border-gray-300 rounded text-center" />
+                    <span className="text-xs text-gray-500">et</span>
+                    <input type="number" min={0} max={20} step={0.01} value={d.maxScore}
+                      onChange={(e) => setDistinctions(distinctions.map(x => x.id === d.id ? { ...x, maxScore: Number(e.target.value) } : x))}
+                      className="w-16 px-2 py-1 text-sm border border-gray-300 rounded text-center" />
+                    <span className="text-xs text-gray-500">/20</span>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+                Sanctions
+              </CardTitle>
+              <p className="text-sm text-gray-500">
+                Configurez les seuils de notes pour chaque sanction. Ces sanctions figureront sur le bulletin de l'élève.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {distinctions.filter(d => d.type === 'SANCTION').map((d) => (
+                <div key={d.id} className="flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
+                  <span className="text-sm font-semibold text-red-900 flex-1">{d.label}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">Entre</span>
+                    <input type="number" min={0} max={20} step={0.01} value={d.minScore}
+                      onChange={(e) => setDistinctions(distinctions.map(x => x.id === d.id ? { ...x, minScore: Number(e.target.value) } : x))}
+                      className="w-16 px-2 py-1 text-sm border border-gray-300 rounded text-center" />
+                    <span className="text-xs text-gray-500">et</span>
+                    <input type="number" min={0} max={20} step={0.01} value={d.maxScore}
+                      onChange={(e) => setDistinctions(distinctions.map(x => x.id === d.id ? { ...x, maxScore: Number(e.target.value) } : x))}
+                      className="w-16 px-2 py-1 text-sm border border-gray-300 rounded text-center" />
+                    <span className="text-xs text-gray-500">/20</span>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <p className="text-sm text-blue-700">
+              <strong>Rappel :</strong> Ces distinctions et sanctions sont basées sur la moyenne générale de l'élève.
+              Elles seront automatiquement affichées sur le bulletin trimestriel et annuel.
+              La conduite (module Vie Scolaire) est également prise en compte dans le calcul final.
+            </p>
+          </div>
         </div>
       )}
     </div>

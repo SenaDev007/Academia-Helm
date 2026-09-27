@@ -4501,7 +4501,8 @@ function VueParMatiereAnnuel({
       const allEvals = Array.isArray(evaluations) ? evaluations : [];
 
       const periodsRes = await fetch(`/api/settings/academic-years/${academicYear.id}/periods`, { credentials: 'include' });
-      const periods = Array.isArray(await periodsRes.json()) ? await periodsRes.json() : [];
+      const periodsData = await periodsRes.json();
+      const periods = Array.isArray(periodsData) ? periodsData : [];
       if (periods.length === 0) { setStudents([]); setSubjects([]); return; }
 
       // Batch-load grading sheets

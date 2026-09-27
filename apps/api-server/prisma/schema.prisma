@@ -527,8 +527,32 @@ model Country {
   gradingPolicies GradingPolicy[]
   salaryPolicies  SalaryPolicy[]
   tenants         Tenant[]
+  territorialLevels CountryTerritorialLevel[]
+  patronats       Patronat[]
 
   @@map("countries")
+}
+
+/// ⭐ Academia Federis — Niveaux territoriaux configurables par pays.
+/// Chaque pays définit ses propres niveaux administratifs (département, région,
+/// province…) sans que le modèle béninois soit codé en dur. `order` = 1 pour le
+/// niveau national, 2+ pour les sous-niveaux territoriaux.
+model CountryTerritorialLevel {
+  id          String    @id @default(uuid())
+  countryId   String
+  code        String    // ex: DEPARTMENT, REGION, PROVINCE, COMMUNE
+  label       String    // ex: Département, Région
+  order       Int       @default(2) // 1 = national, 2 = premier sous-niveau…
+  isActive    Boolean   @default(true)
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  country     Country   @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  patronats   Patronat[]
+
+  @@unique([countryId, code])
+  @@index([countryId])
+  @@map("country_territorial_levels")
 }
 
 model AcademicYear {
@@ -10134,8 +10158,23 @@ model Patronat {
   updatedAt                        DateTime                         @updatedAt
   bureauMembers                    Json?
   officialDocs                     Json?
-  subscriptionPlan                 String                           @default("STARTER")
-  subscriptionStatus               String                           @default("ACTIVE")
+  subscriptionPlan                 String                           @default("ESSENTIEL")
+  subscriptionStatus               String                           @default("PENDING_PAYMENT")
+  /// ⭐ Federis — hiérarchie multi-pays : NATIONAL coordonne les TERRITORIAUX.
+  /// Le parent est obligatoire pour un patronat territorial, null pour le national.
+  orgLevel                         String                           @default("TERRITORIAL") // NATIONAL | TERRITORIAL
+  parentPatronatId                 String?
+  /// Unité territoriale de rattachement (libellé saisi : département, région…)
+  territoryName                    String?
+  /// Niveau institutionnel configuré pour le pays (CountryTerritorialLevel)
+  territorialLevelId               String?
+  countryId                        String?
+  /// ⭐ Federis — abonnement par année scolaire (renouvellement manuel, pas de prélèvement auto)
+  subscriptionPeriod               String                           @default("SCHOOL_YEAR")
+  subscriptionStartedAt            DateTime?
+  subscriptionExpiresAt            DateTime?
+  /// Rappels J-7 / J-3 / J-1 déjà envoyés (dates ISO)
+  billingRemindersSent             Json?
   federisCommunities               FederisCommunity[]
   federisGroups                    FederisGroup[]
   interPatronatConnectionsReceived FederisInterPatronatConnection[] @relation("ConnectionReceiver")
@@ -10149,10 +10188,16 @@ model Patronat {
   users                            PatronatUser[]                   @relation("PatronatUserPatronat")
   tenant                           Tenant                           @relation("PatronatTenant", fields: [tenantId], references: [id], onDelete: Cascade)
   questionBankResources            QuestionBankResource[]           @relation("QuestionBankPatronat")
+  parentPatronat                   Patronat?                        @relation("PatronatHierarchy", fields: [parentPatronatId], references: [id])
+  childPatronats                   Patronat[]                       @relation("PatronatHierarchy")
+  country                          Country?                         @relation(fields: [countryId], references: [id])
+  territorialLevel                 CountryTerritorialLevel?         @relation(fields: [territorialLevelId], references: [id])
 
   @@index([tenantId])
   @@index([region])
   @@index([status])
+  @@index([parentPatronatId])
+  @@index([orgLevel])
   @@map("patronats")
 }
 

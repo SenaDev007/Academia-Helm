@@ -1,0 +1,825 @@
+/**
+ * FederisPatronatService — API connectée de l'espace patronat
+ *
+ * Conforme au cahier des charges Academia Federis :
+ *  - Profil patronat avec hiérarchie (national → territorial) multi-pays
+ *  - Dashboard : cockpit institutionnel orienté décision (aucune saisie)
+ *  - Patronats territoriaux (visibles du niveau national uniquement)
+ *  - Écoles rattachées (demande de rattachement Helm, école manuelle)
+ *  - Abonnement par année scolaire (Essentiel / Institution) + Fedapay
+ *  - ORION : lecture seule — détection d'anomalies d'inscription et risques
+ */
+
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
+import { PrismaService } from '../database/prisma.service';
+
+/** Offres Federis (cahier des charges §12 + proposition tarifaire). */
+export const FEDERIS_PLANS = {
+  ESSENTIEL: {
+    code: 'ESSENTIEL',
+    name: 'Federis Essentiel',
+    amountXOF: 100_000,
+    period: 'année scolaire',
+    maxSchools: 5,
+    maxCandidates: 500,
+    maxActiveCampaigns: 1,
+  },
+  INSTITUTION: {
+    code: 'INSTITUTION',
+    name: 'Federis Institution',
+    amountXOF: 250_000,
+    period: 'année scolaire',
+    maxSchools: 25,
+    maxCandidates: 3_000,
+    maxActiveCampaigns: 3,
+  },
+} as const;
+
+export type FederisPlanCode = keyof typeof FEDERIS_PLANS;
+
+export class CreateChildPatronatDto {
+  name!: string;
+  territoryName!: string;
+  organismType!: 'PATRONAT' | 'ASSOCIATION' | 'ORGANISME';
+  responsibleName?: string;
+  email?: string;
+  phone?: string;
+}
+
+export class RequestSchoolLinkDto {
+  schoolTenantId!: string;
+}
+
+export class CreateManualSchoolDto {
+  name!: string;
+  address?: string;
+  contactPerson?: string;
+  phone?: string;
+  email?: string;
+}
+
+export class InitCheckoutDto {
+  plan!: FederisPlanCode;
+}
+
+@Injectable()
+export class FederisPatronatService {
+  private readonly logger = new Logger(FederisPatronatService.name);
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  /** Résout le patronat depuis le tenant du JWT (fallback : lien PatronatUser). */
+  async resolvePatronat(tenantId: string, userId?: string) {
+    let patronat = tenantId
+      ? await this.prisma.patronat.findFirst({
+          where: { tenantId },
+          include: {
+            tenant: { select: { id: true, name: true, slug: true, status: true } },
+            country: { select: { id: true, code: true, name: true } },
+            territorialLevel: { select: { id: true, code: true, label: true, order: true } },
+            parentPatronat: {
+              select: { id: true, name: true, orgLevel: true, territoryName: true },
+            },
+          },
+        })
+      : null;
+
+    if (!patronat && userId) {
+      const link = await this.prisma.patronatUser.findFirst({
+        where: { userId, isActive: true },
+        select: { patronat: { include: { tenant: true, country: true, territorialLevel: true, parentPatronat: true } } },
+      });
+      patronat = link?.patronat as typeof patronat;
+    }
+    if (!patronat) {
+      throw new NotFoundException('Aucun espace patronat associé à ce compte.');
+    }
+    return patronat;
+  }
+
+  /** Profil complet du patronat connecté + statut d'abonnement. */
+  async getProfile(tenantId: string, userId?: string) {
+    const patronat = await this.resolvePatronat(tenantId, userId);
+    const plan = FEDERIS_PLANS[(patronat.subscriptionPlan as FederisPlanCode)] ?? FEDERIS_PLANS.ESSENTIEL;
+    const childrenCount = await this.prisma.patronat.count({
+      where: { parentPatronatId: patronat.id },
+    });
+    return {
+      id: patronat.id,
+      name: patronat.name,
+      tenantId: patronat.tenantId,
+      orgLevel: patronat.orgLevel,
+      scope: patronat.scope,
+      territoryName: patronat.territoryName,
+      country: patronat.country,
+      territorialLevel: patronat.territorialLevel,
+      parentPatronat: patronat.parentPatronat,
+      childrenCount,
+      subscription: {
+        plan: patronat.subscriptionPlan,
+        planLabel: plan.name,
+        amountXOF: plan.amountXOF,
+        status: patronat.subscriptionStatus,
+        period: patronat.subscriptionPeriod,
+        startedAt: patronat.subscriptionStartedAt,
+        expiresAt: patronat.subscriptionExpiresAt,
+        quotas: {
+          maxSchools: plan.maxSchools,
+          maxCandidates: plan.maxCandidates,
+          maxActiveCampaigns: plan.maxActiveCampaigns,
+        },
+      },
+      createdAt: patronat.createdAt,
+    };
+  }
+
+  /** Année scolaire active du patronat (règle NO ACADEMIC YEAR = NO DATA). */
+  private async getActiveYear(tenantId: string) {
+    const year = await this.prisma.academicYear.findFirst({
+      where: { tenantId, isActive: true },
+      orderBy: { startDate: 'desc' },
+    });
+    return year;
+  }
+
+  /**
+   * Dashboard — cockpit institutionnel (cahier des charges §7.1 / §8.1).
+   * Vue macro orientée décision : KPIs + alertes ORION + anomalies.
+   */
+  async getDashboard(tenantId: string, userId?: string) {
+    const patronat = await this.resolvePatronat(tenantId, userId);
+    const academicYear = await this.getActiveYear(patronat.tenantId);
+
+    const [
+      joinedSchools,
+      pendingSchools,
+      manualSchools,
+      childPatronats,
+      exams,
+      candidatesTotal,
+      candidatesWithoutCenter,
+      duplicateGroups,
+      incidents,
+    ] = await Promise.all([
+      this.prisma.patronatSchool.count({
+        where: { patronatId: patronat.id, status: 'JOINED' },
+      }),
+      this.prisma.patronatSchool.count({
+        where: { patronatId: patronat.id, status: 'PENDING' },
+      }),
+      this.prisma.patronatManualSchool.count({
+        where: { patronatId: patronat.id },
+      }),
+      this.prisma.patronat.findMany({
+        where: { parentPatronatId: patronat.id },
+        select: {
+          id: true,
+          name: true,
+          territoryName: true,
+          status: true,
+          subscriptionStatus: true,
+          subscriptionPlan: true,
+          _count: { select: { schools: true } },
+        },
+        orderBy: { name: 'asc' },
+      }),
+      academicYear
+        ? this.prisma.nationalExam.findMany({
+            where: { patronatId: patronat.id, academicYearId: academicYear.id },
+            select: {
+              id: true,
+              name: true,
+              code: true,
+              status: true,
+              startDate: true,
+              endDate: true,
+              totalCandidates: true,
+              totalCenters: true,
+            },
+            orderBy: { startDate: 'desc' },
+            take: 20,
+          })
+        : [],
+      academicYear
+        ? this.prisma.examCandidate.count({
+            where: { tenantId: patronat.tenantId, academicYearId: academicYear.id },
+          })
+        : 0,
+      academicYear
+        ? this.prisma.examCandidate.count({
+            where: {
+              tenantId: patronat.tenantId,
+              academicYearId: academicYear.id,
+              centerId: null,
+              status: { not: 'CANCELLED' },
+            },
+          })
+        : 0,
+      academicYear
+        ? this.prisma.$queryRaw<Array<{ count: bigint }>>`
+            SELECT COUNT(*) as count FROM (
+              SELECT LOWER("firstName"), LOWER("lastName"), "dateOfBirth"
+              FROM exam_candidates
+              WHERE "tenantId" = ${patronat.tenantId}
+                AND "academicYearId" = ${academicYear.id}
+                AND status <> 'CANCELLED'
+              GROUP BY LOWER("firstName"), LOWER("lastName"), "dateOfBirth"
+              HAVING COUNT(*) > 1
+            ) d`
+        : Promise.resolve([{ count: BigInt(0) }]),
+      academicYear
+        ? this.prisma.examIncident.count({
+            where: { tenantId: patronat.tenantId },
+          })
+        : 0,
+    ]);
+
+    const now = new Date();
+    const activeExams = exams.filter(
+      (e) => e.status !== 'COMPLETED' && e.status !== 'CANCELLED' && e.status !== 'ARCHIVED',
+    );
+    const upcomingExams = activeExams.filter((e) => new Date(e.startDate) > now);
+    const inProgressExams = activeExams.filter((e) => new Date(e.startDate) <= now);
+
+    const examsWithoutCenters = activeExams.filter((e) => e.totalCenters === 0);
+
+    // ── Alertes ORION (lecture seule) ────────────────────────────
+    const orionAlerts: Array<{
+      severity: 'critical' | 'warning' | 'info';
+      category: string;
+      message: string;
+      count?: number;
+    }> = [];
+
+    if (Number(duplicateGroups[0]?.count ?? 0) > 0) {
+      orionAlerts.push({
+        severity: 'critical',
+        category: 'INSCRIPTION',
+        message: `${duplicateGroups[0].count} groupe(s) de candidats en doublon probable détecté(s).`,
+        count: Number(duplicateGroups[0].count),
+      });
+    }
+    if (candidatesWithoutCenter > 0) {
+      orionAlerts.push({
+        severity: 'warning',
+        category: 'LOGISTIQUE',
+        message: `${candidatesWithoutCenter} candidat(s) sans centre d'examen affecté.`,
+        count: candidatesWithoutCenter,
+      });
+    }
+    if (examsWithoutCenters.length > 0) {
+      orionAlerts.push({
+        severity: 'warning',
+        category: 'LOGISTIQUE',
+        message: `${examsWithoutCenters.length} examen(s) actif(s) sans centre configuré.`,
+        count: examsWithoutCenters.length,
+      });
+    }
+    if (!academicYear) {
+      orionAlerts.push({
+        severity: 'critical',
+        category: 'CONFORMITÉ',
+        message: 'Aucune année scolaire active — la création de données est bloquée.',
+      });
+    }
+    if (
+      patronat.subscriptionExpiresAt &&
+      new Date(patronat.subscriptionExpiresAt) < new Date(Date.now() + 7 * 24 * 3600 * 1000)
+    ) {
+      orionAlerts.push({
+        severity: 'info',
+        category: 'ABONNEMENT',
+        message: `Abonnement ${patronat.subscriptionPlan} arrivant à échéance ou expiré.`,
+      });
+    }
+    if (patronat.orgLevel === 'NATIONAL' && childPatronats.length === 0) {
+      orionAlerts.push({
+        severity: 'info',
+        category: 'ORGANISATION',
+        message: 'Aucun patronat territorial rattaché — créez les patronats de votre réseau.',
+      });
+    }
+
+    const plan =
+      FEDERIS_PLANS[(patronat.subscriptionPlan as FederisPlanCode)] ?? FEDERIS_PLANS.ESSENTIEL;
+    const totalSchools = joinedSchools + manualSchools;
+
+    return {
+      patronat: {
+        id: patronat.id,
+        name: patronat.name,
+        orgLevel: patronat.orgLevel,
+        territoryName: patronat.territoryName,
+        country: patronat.country,
+      },
+      academicYear: academicYear
+        ? { id: academicYear.id, label: academicYear.label, name: academicYear.name }
+        : null,
+      kpis: {
+        schoolsAttached: totalSchools,
+        schoolsPending: pendingSchools,
+        manualSchools,
+        candidates: candidatesTotal,
+        activeExams: activeExams.length,
+        upcomingExams: upcomingExams.length,
+        inProgressExams: inProgressExams.length,
+        centers: exams.reduce((sum, e) => sum + e.totalCenters, 0),
+        incidents,
+        childPatronats: childPatronats.length,
+        quotaUsage: {
+          schools: { used: totalSchools, max: plan.maxSchools },
+          candidates: { used: candidatesTotal, max: plan.maxCandidates },
+        },
+      },
+      subscription: {
+        plan: patronat.subscriptionPlan,
+        planLabel: plan.name,
+        status: patronat.subscriptionStatus,
+        expiresAt: patronat.subscriptionExpiresAt,
+      },
+      exams: exams.slice(0, 6).map((e) => ({
+        id: e.id,
+        name: e.name,
+        code: e.code,
+        status: e.status,
+        startDate: e.startDate,
+        endDate: e.endDate,
+        totalCandidates: e.totalCandidates,
+        totalCenters: e.totalCenters,
+      })),
+      childrenPatronats: childPatronats.map((c) => ({
+        id: c.id,
+        name: c.name,
+        territoryName: c.territoryName,
+        status: c.status,
+        subscriptionPlan: c.subscriptionPlan,
+        subscriptionStatus: c.subscriptionStatus,
+        schoolsCount: c._count.schools,
+      })),
+      orion: {
+        readOnly: true,
+        alerts: orionAlerts,
+        summary:
+          orionAlerts.length === 0
+            ? 'Aucune anomalie détectée sur le périmètre.'
+            : `${orionAlerts.length} alerte(s) — ${orionAlerts.filter((a) => a.severity === 'critical').length} critique(s).`,
+      },
+    };
+  }
+
+  /** Patronats territoriaux rattachés (niveau national uniquement). */
+  async getChildrenPatronats(tenantId: string, userId?: string) {
+    const patronat = await this.resolvePatronat(tenantId, userId);
+    if (patronat.orgLevel !== 'NATIONAL') {
+      throw new ForbiddenException(
+        'La gestion des patronats territoriaux est réservée au niveau national.',
+      );
+    }
+    const children = await this.prisma.patronat.findMany({
+      where: { parentPatronatId: patronat.id },
+      include: {
+        territorialLevel: { select: { label: true, code: true } },
+        _count: { select: { schools: true, exams: true, users: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+    return children.map((c) => ({
+      id: c.id,
+      name: c.name,
+      territoryName: c.territoryName,
+      territorialLevel: c.territorialLevel,
+      status: c.status,
+      subscriptionPlan: c.subscriptionPlan,
+      subscriptionStatus: c.subscriptionStatus,
+      schoolsCount: c._count.schools,
+      examsCount: c._count.exams,
+      usersCount: c._count.users,
+      createdAt: c.createdAt,
+    }));
+  }
+
+  /** Création d'un patronat territorial par le niveau national. */
+  async createChildPatronat(tenantId: string, userId: string, dto: CreateChildPatronatDto) {
+    const parent = await this.resolvePatronat(tenantId, userId);
+    if (parent.orgLevel !== 'NATIONAL') {
+      throw new ForbiddenException(
+        'Seul un patronat national peut créer des patronats territoriaux.',
+      );
+    }
+    if (!parent.countryId) {
+      throw new BadRequestException(
+        "Le patronat national n'est pas rattaché à un pays — impossible de créer un territorial.",
+      );
+    }
+
+    // Niveaux territoriaux configurés pour le pays (ordre > 1 = sous-niveau du national)
+    const levels = await this.prisma.countryTerritorialLevel.findMany({
+      where: { countryId: parent.countryId, isActive: true, order: { gt: 1 } },
+      orderBy: { order: 'asc' },
+    });
+    if (levels.length === 0) {
+      throw new BadRequestException(
+        "Aucun niveau territorial configuré pour ce pays. Configurez d'abord les niveaux du pays.",
+      );
+    }
+
+    const nameConflict = await this.prisma.patronat.findFirst({
+      where: {
+        name: { equals: dto.name.trim(), mode: 'insensitive' },
+        parentPatronatId: parent.id,
+      },
+    });
+    if (nameConflict) {
+      throw new BadRequestException('Un patronat territorial portant ce nom existe déjà.');
+    }
+
+    const slugBase =
+      dto.name
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 48) || 'patronat-territorial';
+    let slug = slugBase;
+    let suffix = 2;
+    while (await this.prisma.tenant.findUnique({ where: { slug } })) {
+      slug = `${slugBase}-${suffix++}`;
+    }
+
+    // Premier niveau territorial configuré pour le pays (ex : Département au Bénin)
+    const childLevel = levels[0];
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const tenant = await tx.tenant.create({
+        data: {
+          name: dto.name.trim(),
+          slug,
+          countryId: parent.countryId!,
+          type: 'PATRONAT',
+          status: 'active',
+          subscriptionStatus: 'TRIAL',
+        },
+      });
+
+      const [respFirst, ...respRest] = dto.responsibleName?.trim().split(/\s+/) ?? [];
+      const patronat = await tx.patronat.create({
+        data: {
+          tenantId: tenant.id,
+          name: dto.name.trim(),
+          primaryEmail: dto.email?.trim().toLowerCase() || null,
+          primaryPhone: dto.phone?.trim() || null,
+          region: dto.territoryName?.trim() || null,
+          territoryName: dto.territoryName?.trim() || null,
+          scope: childLevel?.code ?? 'TERRITORIAL',
+          orgLevel: 'TERRITORIAL',
+          parentPatronatId: parent.id,
+          territorialLevelId: childLevel?.id ?? null,
+          countryId: parent.countryId,
+          subscriptionPlan: 'ESSENTIEL',
+          subscriptionStatus: 'PENDING_PAYMENT',
+          metadata: { organismType: dto.organismType, createdBy: userId },
+        },
+      });
+
+      // Année scolaire active pour le territorial (NO ACADEMIC YEAR = NO DATA)
+      const now = new Date();
+      const startYear = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+      await tx.academicYear.create({
+        data: {
+          tenantId: tenant.id,
+          name: `${startYear}-${startYear + 1}`,
+          label: `Année scolaire ${startYear}-${startYear + 1}`,
+          startDate: new Date(`${startYear}-09-01T00:00:00Z`),
+          endDate: new Date(`${startYear + 1}-08-31T23:59:59Z`),
+          isActive: true,
+          isAutoGenerated: true,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: parent.tenantId,
+          userId,
+          action: 'FEDERIS_CHILD_PATRONAT_CREATED',
+          resource: 'Patronat',
+          resourceId: patronat.id,
+          tableName: 'patronats',
+          recordId: patronat.id,
+          newData: { name: patronat.name, territoryName: patronat.territoryName },
+        },
+      });
+
+      return patronat;
+    });
+
+    this.logger.log(`Patronat territorial créé : « ${result.name} » (parent : ${parent.name})`);
+    return { success: true, patronat: result };
+  }
+
+  /** Écoles rattachées au patronat (Helm + manuelles). */
+  async getSchools(tenantId: string, userId?: string) {
+    const patronat = await this.resolvePatronat(tenantId, userId);
+    const [linked, manual] = await Promise.all([
+      this.prisma.patronatSchool.findMany({
+        where: { patronatId: patronat.id },
+        include: {
+          schoolTenant: {
+            select: { id: true, name: true, slug: true, subdomain: true, logo: true, status: true },
+          },
+          academicYear: { select: { name: true } },
+          _count: { select: { candidates: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.patronatManualSchool.findMany({
+        where: { patronatId: patronat.id },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    return {
+      linked: linked.map((s) => ({
+        id: s.id,
+        kind: 'HELM' as const,
+        name: s.schoolTenant?.name ?? 'École',
+        slug: s.schoolTenant?.slug,
+        logo: s.schoolTenant?.logo,
+        status: s.status,
+        accessLevel: s.accessLevel,
+        joinedAt: s.joinedAt,
+        academicYear: s.academicYear?.name,
+        candidatesCount: s._count.candidates,
+      })),
+      manual: manual.map((s) => ({
+        id: s.id,
+        kind: 'MANUAL' as const,
+        name: s.name,
+        address: s.address,
+        contactPerson: s.contactPerson,
+        phone: s.phone,
+        email: s.email,
+        status: s.status,
+        createdAt: s.createdAt,
+      })),
+    };
+  }
+
+  /** Recherche d'écoles Academia Helm existantes (par nom/slug). */
+  async searchHelmSchools(query: string) {
+    const q = query?.trim();
+    if (!q || q.length < 2) return [];
+    return this.prisma.tenant.findMany({
+      where: {
+        type: 'SCHOOL',
+        status: 'active',
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { slug: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true, name: true, slug: true, subdomain: true, logo: true },
+      take: 15,
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  /** Demande de rattachement d'une école Helm existante (validation par l'école). */
+  async requestSchoolLink(tenantId: string, userId: string, dto: RequestSchoolLinkDto) {
+    const patronat = await this.resolvePatronat(tenantId, userId);
+    const school = await this.prisma.tenant.findFirst({
+      where: { id: dto.schoolTenantId, type: 'SCHOOL' },
+    });
+    if (!school) throw new NotFoundException('École Academia Helm introuvable.');
+
+    const academicYear = await this.getActiveYear(patronat.tenantId);
+    if (!academicYear) {
+      throw new BadRequestException(
+        "Aucune année scolaire active — impossible d'initier un rattachement.",
+      );
+    }
+
+    const existing = await this.prisma.patronatSchool.findFirst({
+      where: { patronatId: patronat.id, schoolTenantId: school.id },
+    });
+    if (existing) {
+      throw new BadRequestException(
+        existing.status === 'PENDING'
+          ? 'Une demande de rattachement est déjà en attente pour cette école.'
+          : 'Cette école est déjà rattachée à votre patronat.',
+      );
+    }
+
+    // Quota d'écoles du plan (alerte à 80 % / 100 %, jamais de facturation auto)
+    const plan =
+      FEDERIS_PLANS[(patronat.subscriptionPlan as FederisPlanCode)] ?? FEDERIS_PLANS.ESSENTIEL;
+    const currentCount = await this.prisma.patronatSchool.count({
+      where: { patronatId: patronat.id, status: 'JOINED' },
+    });
+    if (currentCount >= plan.maxSchools) {
+      throw new BadRequestException(
+        `Quota d'écoles atteint pour l'offre ${plan.name} (${plan.maxSchools}). Passez à l'offre Institution ou contactez l'équipe.`,
+      );
+    }
+
+    const membership = await this.prisma.patronatSchool.create({
+      data: {
+        patronatId: patronat.id,
+        tenantId: patronat.tenantId,
+        schoolTenantId: school.id,
+        academicYearId: academicYear.id,
+        status: 'PENDING',
+        accessLevel: 'READ_ONLY',
+        createdBy: userId,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: patronat.tenantId,
+        userId,
+        action: 'FEDERIS_SCHOOL_LINK_REQUESTED',
+        resource: 'PatronatSchool',
+        resourceId: membership.id,
+        tableName: 'patronat_schools',
+        recordId: membership.id,
+        newData: { school: school.name, status: 'PENDING' },
+      },
+    });
+
+    return {
+      success: true,
+      membership,
+      quota: { used: currentCount + 1, max: plan.maxSchools },
+    };
+  }
+
+  /** Création d'une école minimale (école hors Academia Helm). */
+  async createManualSchool(tenantId: string, userId: string, dto: CreateManualSchoolDto) {
+    const patronat = await this.resolvePatronat(tenantId, userId);
+    if (!dto.name?.trim()) throw new BadRequestException('Le nom de l’école est requis.');
+
+    const school = await this.prisma.patronatManualSchool.create({
+      data: {
+        patronatId: patronat.id,
+        tenantId: patronat.tenantId,
+        name: dto.name.trim(),
+        address: dto.address?.trim() || null,
+        contactPerson: dto.contactPerson?.trim() || null,
+        phone: dto.phone?.trim() || null,
+        email: dto.email?.trim().toLowerCase() || null,
+        status: 'MANUAL',
+        metadata: { createdBy: userId },
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: patronat.tenantId,
+        userId,
+        action: 'FEDERIS_MANUAL_SCHOOL_CREATED',
+        resource: 'PatronatManualSchool',
+        resourceId: school.id,
+        tableName: 'patronat_manual_schools',
+        recordId: school.id,
+        newData: { name: school.name },
+      },
+    });
+
+    return { success: true, school };
+  }
+
+  /** Statut d'abonnement + historique de facturation. */
+  async getSubscription(tenantId: string, userId?: string) {
+    const patronat = await this.resolvePatronat(tenantId, userId);
+    const plan =
+      FEDERIS_PLANS[(patronat.subscriptionPlan as FederisPlanCode)] ?? FEDERIS_PLANS.ESSENTIEL;
+    const invoices = await this.prisma.federisInvoice.findMany({
+      where: { patronatId: patronat.id },
+      include: { payments: true },
+      orderBy: { createdAt: 'desc' },
+      take: 24,
+    });
+    return {
+      plan: patronat.subscriptionPlan,
+      planLabel: plan.name,
+      amountXOF: plan.amountXOF,
+      status: patronat.subscriptionStatus,
+      period: patronat.subscriptionPeriod,
+      startedAt: patronat.subscriptionStartedAt,
+      expiresAt: patronat.subscriptionExpiresAt,
+      quotas: {
+        maxSchools: plan.maxSchools,
+        maxCandidates: plan.maxCandidates,
+        maxActiveCampaigns: plan.maxActiveCampaigns,
+      },
+      invoices: invoices.map((inv) => ({
+        id: inv.id,
+        number: inv.number,
+        amount: inv.amount,
+        currency: inv.currency,
+        status: inv.status,
+        type: inv.type,
+        dueDate: inv.dueDate,
+        createdAt: inv.createdAt,
+        paymentsCount: inv.payments.length,
+      })),
+    };
+  }
+
+  /**
+   * Initialisation du paiement Fedapay (cahier des charges §12).
+   * Crée la facture puis la transaction Fedapay ; renvoie l'URL de paiement.
+   * Aucun prélèvement automatique — renouvellement manuel.
+   */
+  async initCheckout(tenantId: string, userId: string, dto: InitCheckoutDto) {
+    const patronat = await this.resolvePatronat(tenantId, userId);
+    const plan = FEDERIS_PLANS[dto.plan];
+    if (!plan) throw new BadRequestException('Offre invalide. Offres : ESSENTIEL, INSTITUTION.');
+
+    // Facture de souscription (année scolaire en cours)
+    const year = new Date().getMonth() >= 8 ? new Date().getFullYear() : new Date().getFullYear() - 1;
+    const invoiceCount = await this.prisma.federisInvoice.count({
+      where: { patronatId: patronat.id },
+    });
+    const number = `FED-${patronat.name.slice(0, 3).toUpperCase()}-${year}-${String(invoiceCount + 1).padStart(4, '0')}`;
+
+    const invoice = await this.prisma.federisInvoice.create({
+      data: {
+        patronatId: patronat.id,
+        tenantId: patronat.tenantId,
+        number,
+        amount: plan.amountXOF,
+        currency: 'XOF',
+        dueDate: new Date(Date.now() + 14 * 24 * 3600 * 1000),
+        status: 'UNPAID',
+        type: 'SUBSCRIPTION',
+        metadata: { plan: plan.code, period: 'SCHOOL_YEAR', initiatedBy: userId },
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: patronat.tenantId,
+        userId,
+        action: 'FEDERIS_CHECKOUT_INITIALIZED',
+        resource: 'FederisInvoice',
+        resourceId: invoice.id,
+        tableName: 'federis_invoices',
+        recordId: invoice.id,
+        newData: { plan: plan.code, amount: plan.amountXOF },
+      },
+    });
+
+    // Transaction Fedapay (API v1) — si la clé est configurée.
+    const apiKey = process.env.FEDAPAY_API_KEY || '';
+    const apiBase = process.env.FEDAPAY_API_URL || 'https://api.fedapay.com';
+    let paymentUrl: string | null = null;
+    let provider = 'MANUAL' as 'FEDAPAY' | 'MANUAL';
+
+    if (apiKey) {
+      try {
+        provider = 'FEDAPAY';
+        const res = await fetch(`${apiBase}/v1/transactions`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            description: `${plan.name} — ${patronat.name} (${number})`,
+            amount: plan.amountXOF,
+            currency: { iso: 'XOF' },
+            callback_url: `${process.env.FEDERIS_CHECKOUT_RETURN_URL || 'https://academiafederis.academiahelm.com/checkout/success'}`,
+          }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { v1?: { url?: string }; url?: string };
+          paymentUrl = data?.v1?.url ?? data?.url ?? null;
+        } else {
+          this.logger.warn(`Fedapay a refusé la transaction : HTTP ${res.status}`);
+        }
+      } catch (err: any) {
+        this.logger.warn(`Fedapay indisponible : ${err?.message ?? err}`);
+      }
+    }
+
+    return {
+      success: true,
+      invoice: { id: invoice.id, number: invoice.number, amount: invoice.amount },
+      plan: { code: plan.code, name: plan.name, amountXOF: plan.amountXOF },
+      provider,
+      paymentUrl,
+      message:
+        paymentUrl
+          ? 'Paiement Fedapay initialisé.'
+          : "Facture créée. Le paiement en ligne sera finalisé par l'équipe (Fedapay non configuré sur cet environnement).",
+    };
+  }
+}

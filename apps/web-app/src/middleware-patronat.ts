@@ -1,8 +1,16 @@
 /**
- * Middleware Patronat - Protection des routes
+ * Middleware Patronat - Protection des routes Academia Federis
  *
  * Vérifie l'authentification (cookies API) et les permissions
- * pour les routes /patronat/* (sauf marketing).
+ * pour les routes /patronat/* et /federis/*.
+ *
+ * Le middleware principal réécrit le sous-domaine academiafederis.academiahelm.com
+ * vers /federis/* AVANT de déléguer ici — les deux préfixes sont donc protégés.
+ *
+ * Routes marketing (publiques) : landing /, /login, /register, /checkout.
+ * Routes connectées : dashboard, patronats (national), schools, exams,
+ * candidates, centers, documents, question-bank, deliberations, reports,
+ * orion, conflicts, settings, bureau.
  */
 
 import { NextResponse } from 'next/server';
@@ -37,41 +45,77 @@ function getPatronatUserFromCookie(request: NextRequest): { id: string; role?: s
   }
 }
 
-// Routes marketing (publiques)
-const marketingRoutes = [
+// ── Routes marketing (publiques) ─────────────────────────────────────
+// ⚠️ Le préfixe '/federis' est la landing page : correspondance EXACTE
+//    (sinon il avalerait toutes les sous-routes protégées ci-dessous).
+// Note : sur le sous-domaine academiafederis, le middleware principal
+// réécrit et RETOURNE avant ce middleware — la protection y est assurée
+// par les pages elles-mêmes (getServerSession + redirect).
+const marketingExactRoutes = new Set([
   '/federis',
+]);
+
+const marketingPrefixRoutes = [
+  '/federis/login',
+  '/federis/register',
+  '/federis/checkout',
   '/patronat/register',
   '/patronat/login',
   '/patronat/checkout',
 ];
 
-// Routes protégées
-const protectedRoutes = [
+// ── Routes protégées (session + rôle) ───────────────────────────────
+const protectedPrefixRoutes = [
+  // Sous-domaine academiafederis (réécrit vers /federis/*)
+  '/federis/dashboard',
+  '/federis/patronats',
+  '/federis/schools',
+  '/federis/bureau',
+  '/federis/exams',
+  '/federis/candidates',
+  '/federis/centers',
+  '/federis/documents',
+  '/federis/question-bank',
+  '/federis/deliberations',
+  '/federis/reports',
+  '/federis/orion',
+  '/federis/conflicts',
+  '/federis/settings',
+  // Domaine principal (chemins historiques /patronat/*)
   '/patronat/dashboard',
+  '/patronat/patronats',
   '/patronat/schools',
+  '/patronat/bureau',
   '/patronat/exams',
   '/patronat/candidates',
   '/patronat/centers',
   '/patronat/documents',
   '/patronat/question-bank',
+  '/patronat/deliberations',
   '/patronat/reports',
   '/patronat/orion',
+  '/patronat/conflicts',
   '/patronat/settings',
 ];
 
 export async function patronatMiddleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (marketingRoutes.some(route => pathname.startsWith(route) || pathname === route)) {
+  // 1. Landing page (correspondance exacte uniquement) et pages marketing
+  if (
+    marketingExactRoutes.has(pathname) ||
+    marketingPrefixRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`))
+  ) {
     return withAntiCacheHeaders(NextResponse.next());
   }
 
-  if (protectedRoutes.some(route => pathname.startsWith(route))) {
+  // 2. Routes protégées : session obligatoire + contrôle par rôle
+  if (protectedPrefixRoutes.some((route) => pathname.startsWith(route))) {
     const user = getPatronatUserFromCookie(request);
     if (!user) {
-      const loginUrl = new URL('/patronat/login', request.url);
+      const loginUrl = new URL('/federis/login', request.nextUrl.origin);
       loginUrl.searchParams.set('redirect', pathname);
-      return NextResponse.redirect(loginUrl);
+      return withAntiCacheHeaders(NextResponse.redirect(loginUrl));
     }
 
     // Rôle : depuis la session ou défaut PATRONAT_ADMIN (TODO: DB patronat_users)
@@ -92,4 +136,3 @@ export async function patronatMiddleware(request: NextRequest) {
 
   return withAntiCacheHeaders(NextResponse.next());
 }
-

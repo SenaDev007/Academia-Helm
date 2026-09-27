@@ -21,20 +21,23 @@ export async function generateMetadata(): Promise<Metadata> {
   const ogImageAbsolute = buildAbsoluteOGImageUrl(hostname);
 
   return {
-    title: 'Academia Federis - Fédérer les écoles, Organiser les examens',
-    description: "La plateforme de gouvernance, d'examens et de pilotage des réseaux scolaires privés. Centralisez la gestion des écoles membres et l'organisation des examens inter-écoles.",
+    title: 'Academia Federis — La plateforme des patronats scolaires et des examens',
+    description:
+      "Academia Federis aide les patronats scolaires à coordonner leurs écoles membres et à organiser les examens nationaux : inscriptions, centres, surveillance et résultats.",
     keywords: [
       'Academia Federis',
+      'patronat scolaire',
       'patronat écoles privées',
-      'organisation examens inter-écoles',
-      'gouvernance scolaire',
-      'fédération éducation',
-      'pilote performance scolaire',
-      'Academia Helm federis',
+      'examens nationaux',
+      'examens inter-écoles',
+      'centres de composition',
+      'coordination écoles membres',
+      'Academia Helm',
     ],
     openGraph: {
-      title: 'Academia Federis - Gouvernance & Examens',
-      description: 'La plateforme SaaS dédiée aux patronats scolaires privés.',
+      title: 'Academia Federis — La plateforme des patronats scolaires et des examens',
+      description:
+        'Organisez les sessions d’examen de votre patronat dans un espace dédié. Découvrez Academia Federis, par Academia Helm.',
       url: 'https://www.academiahelm.com/federis',
       siteName: 'Academia Helm',
       images: [
@@ -42,7 +45,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: ogImageAbsolute,
           width: 1200,
           height: 630,
-          alt: 'Academia Federis - by Academia Helm',
+          alt: 'Academia Federis — par Academia Helm',
           type: 'image/jpeg',
         },
       ],
@@ -51,8 +54,9 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     twitter: {
       card: 'summary_large_image',
-      title: 'Academia Federis - Gouvernance & Examens',
-      description: 'La plateforme SaaS dédiée aux patronats scolaires privés.',
+      title: 'Academia Federis — La plateforme des patronats scolaires et des examens',
+      description:
+        'Organisez les sessions d’examen de votre patronat dans un espace dédié. Découvrez Academia Federis, par Academia Helm.',
       images: [ogImageAbsolute],
     },
     alternates: {

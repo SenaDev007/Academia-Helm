@@ -18,6 +18,7 @@ import OfflineIndicator from '@/components/offline/OfflineIndicator';
 import OfflineGuard from '@/components/offline/OfflineGuard';
 import { offlineBootstrapService } from '@/lib/offline/offline-bootstrap.service';
 import { useFederisPath } from '@/lib/federis/useFederisPath';
+import { apiClient } from '@/lib/api/client';
 // ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service)
 import ProfileDialog from '@/components/profile/ProfileDialog';
 import { useUserProfileStore } from '@/stores/user-profile-store';
@@ -32,46 +33,59 @@ interface FederisLayoutProps {
   };
 }
 
-// Navigation items use relative sub-paths (e.g. '/dashboard' not '/federis/dashboard')
-// The useFederisPath hook prepends the correct base path depending on the domain.
-// ⭐ V5 (Phase 4 — purge des mocks) : les 16 sous-routes SIMULÉES/placeholder
-//    (dashboard, schools, connect, exam-classes, surveillance, compositions,
-//    correction, grading, results, notifications, stats, billing, archives,
-//    sara, platform-admin, communication) ont été SUPPRIMÉES avec leurs
-//    composants morts — seules les pages RÉELLES restent dans la nav.
+// Navigation institutionnelle (cahier des charges §7.1) :
+//   1. Tableau de bord  2. Patronats territoriaux (NATIONAL uniquement)
+//   3. Écoles rattachées  4. Examens nationaux  5. Candidats  6. Centres et salles
+//   7. Épreuves et documents  8. Banque d'épreuves  9. Rapports  10. ORION (lecture seule)
+//   11. Paramètres
+// « Patronats territoriaux » n'est rendu que si le profil patronat (API) indique orgLevel NATIONAL.
 const federisNavItems = [
+  {
+    category: 'PILOTAGE',
+    items: [
+      { name: 'Tableau de bord', subPath: '/dashboard', icon: 'dashboard' as const },
+    ]
+  },
   {
     category: 'GOUVERNANCE',
     items: [
+      { name: 'Patronats territoriaux', subPath: '/patronats', icon: 'network' as const, nationalOnly: true },
       { name: 'Bureau & Membres', subPath: '/bureau', icon: 'building' as const },
+    ]
+  },
+  {
+    category: 'RÉSEAU',
+    items: [
+      { name: 'Écoles rattachées', subPath: '/schools', icon: 'classes' as const },
     ]
   },
   {
     category: 'EXAMENS',
     items: [
-      { name: 'Session d\'Examens', subPath: '/exams', icon: 'exams' as const },
-      { name: 'Centres d\'Examen', subPath: '/centers', icon: 'classes' as const },
+      { name: 'Examens nationaux', subPath: '/exams', icon: 'exams' as const },
+      { name: 'Centres et salles', subPath: '/centers', icon: 'classes' as const },
       { name: 'Candidats', subPath: '/candidates', icon: 'scolarite' as const },
-      { name: 'Épreuves & Sujets', subPath: '/question-bank', icon: 'document' as const },
+      { name: 'Délibérations', subPath: '/deliberations', icon: 'document' as const },
     ]
   },
   {
-    category: 'DÉROULEMENT',
+    category: 'RESSOURCES',
     items: [
-      { name: 'Délibérations', subPath: '/deliberations', icon: 'dashboard' as const },
+      { name: 'Épreuves et documents', subPath: '/documents', icon: 'document' as const },
+      { name: 'Banque d\u2019épreuves', subPath: '/question-bank', icon: 'library' as const },
     ]
   },
   {
-    category: 'PILOTAGE',
+    category: 'ANALYSE',
     items: [
-      { name: 'Rapports', subPath: '/reports', icon: 'document' as const },
+      { name: 'Rapports et statistiques', subPath: '/reports', icon: 'grades' as const },
+      { name: 'ORION (lecture seule)', subPath: '/orion', icon: 'orion' as const },
     ]
   },
   {
     category: 'SYSTÈME',
     items: [
-      { name: 'ORION', subPath: '/orion', icon: 'sparkles' as const },
-      { name: 'Gestion des Conflits', subPath: '/conflicts', icon: 'warning' as const },
+      { name: 'Gestion des conflits', subPath: '/conflicts', icon: 'warning' as const },
       { name: 'Paramètres', subPath: '/settings', icon: 'settings' as const },
     ]
   }
@@ -86,6 +100,14 @@ export default function FederisLayout({
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const pathname = usePathname();
   const { path: federisPath } = useFederisPath();
+  // ⭐ Profil patronat (API) : orgLevel (visibilité « Patronats territoriaux »)
+  //    + statut d'abonnement (bandeau de blocage si impayé — cahier des charges §12.3)
+  const [orgLevel, setOrgLevel] = useState<string | null>(null);
+  const [subscription, setSubscription] = useState<{
+    status: string;
+    plan: string;
+    expiresAt?: string | null;
+  } | null>(null);
   // ⭐ « Mon profil » — dialogue photo de profil + mot de passe
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   // ⭐ Photo PERSO > photo du dossier RH — même priorité que « Mon profil »
@@ -98,7 +120,32 @@ export default function FederisLayout({
     void ensureProfileLoaded();
   }, [ensureProfileLoaded]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiClient.get('/federis/patronat/profile', { timeout: 20000 });
+        if (!cancelled && res.data) {
+          setOrgLevel(res.data.orgLevel ?? null);
+          setSubscription({
+            status: res.data.subscription?.status ?? 'UNKNOWN',
+            plan: res.data.subscription?.plan ?? 'ESSENTIEL',
+            expiresAt: res.data.subscription?.expiresAt ?? null,
+          });
+        }
+      } catch {
+        // Profil indisponible (API au repos) — la navigation de base reste utilisable
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const userRole = user.role || 'FEDERIS_VIEWER';
+  const isNational = orgLevel === 'NATIONAL';
+  const subscriptionBlocked =
+    subscription?.status === 'PENDING_PAYMENT' || subscription?.status === 'EXPIRED';
 
   const isActive = (href: string) => {
     return pathname === href || pathname.startsWith(`${href}/`);
@@ -174,10 +221,10 @@ export default function FederisLayout({
                   )}
                 </button>
                 {/* Logout Button (Section 20.2) */}
-                <button 
+                <button
                   onClick={async () => {
                     await offlineBootstrapService.clearCache();
-                    window.location.href = '/login';
+                    window.location.href = federisPath('/login');
                   }}
                   className="p-2 text-gray-400 hover:text-red-600 transition-colors"
                   title="Déconnexion sécurisée (Efface le cache offline)"
@@ -196,13 +243,19 @@ export default function FederisLayout({
             'lg:translate-x-0'
           )}>
             <nav className="h-full overflow-y-auto py-6 scrollbar-hide">
-              {federisNavItems.map((group) => (
+              {federisNavItems.map((group) => {
+                // « Patronats territoriaux » : visible uniquement au niveau NATIONAL (§7.1)
+                const visibleItems = group.items.filter(
+                  (item) => !('nationalOnly' in item) || !item.nationalOnly || isNational,
+                );
+                if (visibleItems.length === 0) return null;
+                return (
                 <div key={group.category} className="mb-6">
                   <h3 className="px-6 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">
                     {group.category}
                   </h3>
                   <div className="px-3 space-y-0.5">
-                    {group.items.map((item) => {
+                    {visibleItems.map((item) => {
                       const itemHref = federisPath(item.subPath);
                       return (
                       <Link
@@ -222,12 +275,40 @@ export default function FederisLayout({
                     })}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </nav>
           </aside>
 
           <main className={cn('flex-1 transition-all duration-300', sidebarOpen ? 'lg:ml-64' : 'lg:ml-0')}>
             <div className="p-6 lg:p-8">
+              {/* Bandeau abonnement (cahier des charges §12.3 — blocage si impayé,
+                  les archives restent consultables depuis les rapports) */}
+              {subscriptionBlocked && (
+                <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-amber-50 border border-amber-300 rounded-xl px-5 py-4">
+                  <div className="flex items-start gap-3">
+                    <AppIcon name="warning" size="menu" className="text-amber-600 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-bold text-amber-900">
+                        {subscription?.status === 'EXPIRED'
+                          ? 'Abonnement expiré — accès restreint'
+                          : 'Activation requise — accès restreint'}
+                      </p>
+                      <p className="text-xs text-amber-800 mt-0.5">
+                        Activez votre abonnement {subscription?.plan === 'INSTITUTION' ? 'Institution' : 'Essentiel'} pour
+                        retrouver l&rsquo;ensemble des fonctions. Les données officielles déjà publiées restent
+                        consultables depuis les rapports.
+                      </p>
+                    </div>
+                  </div>
+                  <Link
+                    href={federisPath('/checkout')}
+                    className="flex-shrink-0 px-5 py-2.5 bg-amber-500 text-blue-950 rounded-lg font-bold text-sm hover:bg-amber-400 transition-colors"
+                  >
+                    {subscription?.status === 'EXPIRED' ? 'Renouveler' : 'Activer maintenant'}
+                  </Link>
+                </div>
+              )}
               {children}
             </div>
           </main>

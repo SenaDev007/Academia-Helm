@@ -193,7 +193,8 @@ async function main() {
       SELECT s.id, s."firstName", s."lastName"
         FROM student_enrollments se
         JOIN students s ON s.id = se."studentId"
-       WHERE se."classId" = $1 AND se."academicYearId" = $2 AND se.status = 'ACTIVE'
+       WHERE se."classId" = $1 AND se."academicYearId" = $2
+         AND se.status IN ('ACTIVE', 'ADMITTED')
        ORDER BY s."firstName"
     `, [cls.id, ACADEMIC_YEAR_ID]);
     console.log(`  Élèves inscrits : ${students.rows.length}`);

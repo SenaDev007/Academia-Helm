@@ -1803,10 +1803,16 @@ function BulletinTwoPage({
       {/* Page content with flip animation */}
       <div className="relative overflow-hidden">
         <div key={page} className="animate-in fade-in slide-in-from-right duration-300">
-          {/* ⭐ 2026-09-28 — Pour le secondaire (FR + EN), on force page === 1
-              (le tableau des notes) — la page 2 est masquée de l'UI mais
-              reste dans le PDF généré. */}
-          {(isSecondaryAny || page === 1) ? (
+          {/* ⭐ 2026-09-28 — Pour le niveau SECONDAIRE (FR + EN non-maternelle),
+              on supprime RIGOUREUSEMENT la page 2 (Appréciations) de l'UI.
+              La page 2 n'est PAS valable pour le secondaire — uniquement pour
+              maternelle et primaire. On ne rend JAMAIS BulletinSecondairePage2
+              ni BulletinAnglophonePage2 dans l'UI secondaire. La page 2 reste
+              dans le PDF généré (backend bulletin-pdf.service.ts) mais
+              l'UI n'affiche QUE le tableau des notes (page 1).
+              Pour maternelle/primaire/anglophone-maternelle, on garde la
+              bascule Page 1/Page 2 normalement. */}
+          {isSecondaryAny ? (
             isSecondaryEvalMode ? (
               <BulletinSecondaireEvalPage1
                 student={student}
@@ -1832,13 +1838,14 @@ function BulletinTwoPage({
             ) : (
               <BulletinPrimairePage1 student={student} bulletinData={bulletinData} />
             )
-          ) : isSecondaryTrack && !isEn ? (
-            <BulletinSecondairePage2
-              student={student}
-              signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }}
-              periodId={selectedPeriodId}
-              directorName={directorName}
-            />
+          ) : page === 1 ? (
+            isMaternelle ? (
+              <BulletinMaternellePage1 student={student} bulletinData={bulletinData} />
+            ) : scopeLang === 'EN' ? (
+              <BulletinAnglophonePage1 student={student} bulletinData={bulletinData} selectedClassName={selectedClassName} termEndingDate={termEndingDate} sessionYear={academicYear?.label} />
+            ) : (
+              <BulletinPrimairePage1 student={student} bulletinData={bulletinData} />
+            )
           ) : scopeLang === 'EN' && !isMaternelle ? (
             <BulletinAnglophonePage2 student={student} bulletinData={bulletinData} signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }} periodId={selectedPeriodId} nextTermStartDate={nextTermStartDate} directorName={directorName} />
           ) : (

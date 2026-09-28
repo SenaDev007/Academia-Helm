@@ -1331,32 +1331,23 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
-  <!-- ═══ BLOC : Mention du conseil de classe + Appréciation ═══ -->
+  <!-- ═══ BLOC : Conseil de classe (mention + appréciation) — format propre sans pointillés ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Conseil de classe</div>
-
-    <!-- 1. Mention du conseil de classe (auto-générée depuis la moyenne, distinction/sanction cochée automatiquement) -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-      <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;white-space:nowrap;">Mention du conseil de classe :</div>
-      <div style="flex:1;border-bottom:1px dotted #94a3b8;height:14px;"></div>
-      <div style="font-size:10px;font-weight:bold;color:${data.distinctionType === 'DISTINCTION' ? '#059669' : data.distinctionType === 'SANCTION' ? '#dc2626' : '#1a1a1a'};">
-        ${data.distinctionLabel || data.councilMention || '—'}
-      </div>
-    </div>
-
-    <!-- ⭐ 2026-09-28 — Conduite retirée du bloc Conseil de classe.
-         La conduite est maintenant une matière dans la catégorie Autres
-         du tableau des notes (cf. buildSubjectRow + subjectsByCategory).
-         Elle s'affiche dans la colonne Discipline avec son score
-         conduct_final/conduct_reference. -->
-
-    <!-- 2. Appréciation du conseil de classe (auto-générée ou libre) -->
-    <div style="margin-top:6px;">
-      <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Appréciation du conseil de classe</div>
-      ${(data.councilAppreciation || data.analyseRecommandations)
-        ? `<div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:30px;">${data.councilAppreciation || data.analyseRecommandations}</div>`
-        : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:10px;"></div>').join('')}
-    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <tr>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;width:50%;">Mention du conseil de classe :</td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${data.distinctionType === 'DISTINCTION' ? '#059669' : data.distinctionType === 'SANCTION' ? '#dc2626' : '#1a1a1a'};font-size:11px;">
+          ${data.distinctionLabel || data.councilMention || '—'}
+        </td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;vertical-align:top;">Appréciation du conseil de classe :</td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;font-size:9px;color:#1a1a1a;line-height:1.5;min-height:40px;">
+          ${data.councilAppreciation || data.analyseRecommandations || '—'}
+        </td>
+      </tr>
+    </table>
   </div>
 
   <!-- ═══ SIGNATURES : Titulaire + Directeur (pas de parent pour le secondaire) ═══ -->
@@ -1607,30 +1598,23 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
-  <!-- ═══ BLOC : Conseil de classe (mention + appréciation) ═══ -->
+  <!-- ═══ BLOC : Conseil de classe (mention + appréciation) — format propre sans pointillés ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Conseil de classe</div>
-
-    <!-- 1. Mention du conseil de classe (auto-générée depuis la moyenne, distinction/sanction cochée automatiquement) -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-      <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;white-space:nowrap;">Mention du conseil de classe :</div>
-      <div style="flex:1;border-bottom:1px dotted #94a3b8;height:14px;"></div>
-      <div style="font-size:10px;font-weight:bold;color:${data.distinctionType === 'DISTINCTION' ? '#059669' : data.distinctionType === 'SANCTION' ? '#dc2626' : '#1a1a1a'};">
-        ${data.distinctionLabel || data.councilMention || '—'}
-      </div>
-    </div>
-
-    <!-- ⭐ 2026-09-28 — Conduite retirée du bloc Conseil de classe.
-         La conduite est maintenant une matière dans la catégorie Autres
-         du tableau des notes. -->
-
-    <!-- 2. Appréciation du conseil de classe (auto-générée ou libre) -->
-    <div style="margin-top:6px;">
-      <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Appréciation du conseil de classe</div>
-      ${(data.councilAppreciation || data.analyseRecommandations)
-        ? `<div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:30px;">${data.councilAppreciation || data.analyseRecommandations}</div>`
-        : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:10px;"></div>').join('')}
-    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <tr>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;width:50%;">Mention du conseil de classe :</td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${data.distinctionType === 'DISTINCTION' ? '#059669' : data.distinctionType === 'SANCTION' ? '#dc2626' : '#1a1a1a'};font-size:11px;">
+          ${data.distinctionLabel || data.councilMention || '—'}
+        </td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;vertical-align:top;">Appréciation du conseil de classe :</td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;font-size:9px;color:#1a1a1a;line-height:1.5;min-height:40px;">
+          ${data.councilAppreciation || data.analyseRecommandations || '—'}
+        </td>
+      </tr>
+    </table>
   </div>
 
   <!-- ═══ SIGNATURES : Titulaire + Directeur (pas de parent pour le secondaire) ═══ -->

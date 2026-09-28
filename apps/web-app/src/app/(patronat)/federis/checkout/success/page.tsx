@@ -49,6 +49,10 @@ interface VerifyResult {
   siteUrl: string | null;
   loginUrl: string | null;
   plan?: string | null;
+  expiresAt?: string | null;
+  /** Statut de création du domaine dédié (pattern Helm domainReports). */
+  domainStatus?: 'created' | 'failed' | 'not_configured' | null;
+  domainError?: string | null;
   outcome?: string;
   message?: string;
 }
@@ -264,6 +268,11 @@ function CheckoutSuccessContent() {
   const subdomain = result?.subdomain;
   const siteUrl = result?.siteUrl ?? (subdomain ? `https://${subdomain}` : null);
   const loginUrl = result?.loginUrl ?? (siteUrl ? `${siteUrl}/login` : null);
+  // ⭐ Domaine dédié opérationnel ? (pattern Helm domainReports — si la
+  //    création Cloudflare/Vercel a échoué, on ne redirige PAS automatiquement
+  //    vers un domaine inaccessible et on propose le portail Federis.)
+  const domainReady =
+    !result?.domainStatus || result.domainStatus === 'created' || result.domainStatus === null;
 
   return (
     <div className="fed-card p-10 text-center">
@@ -317,6 +326,21 @@ function CheckoutSuccessContent() {
         </p>
       </div>
 
+      {/* ⭐ Domaine dédié non encore opérationnel (pattern Helm domainReports) */}
+      {!domainReady && siteUrl && (
+        <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-left">
+          <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-amber-800">
+            La configuration technique de votre domaine dédié{' '}
+            <span className="font-semibold">{siteUrl.replace(/^https?:\/\//, '')}</span> n&apos;a pas
+            pu être finalisée automatiquement
+            {result?.domainError ? ` (${result.domainError})` : ''}. Notre équipe technique en a
+            été informée. Vous pouvez accéder dès maintenant à votre espace depuis la page de
+            connexion Federis — votre domaine dédié sera activé dès que possible.
+          </p>
+        </div>
+      )}
+
       {loginUrl && (
         <>
           <a
@@ -326,7 +350,20 @@ function CheckoutSuccessContent() {
             Me connecter à mon espace patronat
             <ExternalLink className="h-4 w-4" />
           </a>
-          <AutoRedirectToLogin loginUrl={loginUrl} />
+          {domainReady ? (
+            <AutoRedirectToLogin loginUrl={loginUrl} />
+          ) : (
+            <p className="text-xs text-slate-500 mt-4">
+              En attendant votre domaine dédié, connectez-vous depuis le{' '}
+              <Link
+                href={federisLink('/login')}
+                className="font-semibold text-[#1e3a8a] underline underline-offset-2"
+              >
+                portail Federis
+              </Link>
+              .
+            </p>
+          )}
         </>
       )}
       {!loginUrl && (

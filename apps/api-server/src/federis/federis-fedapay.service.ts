@@ -27,11 +27,16 @@
  *      → retrouve la facture depuis l'ID numérique Fedapay (param ?id= de la
  *        redirection) — pattern onboarding findPaymentByTransactionId.
  *
- * Sous-domaines patronat (attribution à l'activation, après paiement) :
+ * Sous-domaines patronat (attribution + CRÉATION à l'activation, après
+ * paiement) :
  *   - National    → patronatnational.academiahelm.com
  *   - Département → patronat{département}.academiahelm.com
  *     (ex: Atlantique → patronatatlantique) — suffixe -2, -3… en cas de
  *     collision (unicité tenant.subdomain), pattern Helm subdomainService.
+ *   - ⭐ CRÉATION du domaine via DomainManagementService (MÊME pattern que
+ *     l'onboarding signup Helm createSubdomains → createSchoolSubdomain) :
+ *     Cloudflare (CNAME individuel ou wildcard) + Vercel (ajout du domaine +
+ *     vérification → certificat SSL) + trace TenantDomain en DB.
  *
  * Sécurité & robustesse (identiques au module billing Helm) :
  *   - Signature obligatoire en production (jamais de mode permissif)
@@ -49,6 +54,8 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { FedaPayService } from '../billing/services/fedapay.service';
 import { EmailService } from '../communication/services/email.service';
+// ⭐ Pattern Helm onboarding : création Cloudflare + Vercel du sous-domaine
+import { DomainManagementService } from '../common/services/domain-management.service';
 import { federisEmailTemplates } from './federis-email-templates';
 import type { FederisPlanCode } from './federis-patronat.service';
 
@@ -57,6 +64,22 @@ export const FEDERIS_TX_TYPE = 'federis_subscription';
 
 /** Plafond API test Fedapay sandbox (même limite que le module Helm). */
 const FEDAPAY_SANDBOX_MAX = 20_000;
+
+/**
+ * Rapport de création du domaine patronat (pattern Helm TenantDomainReport
+ * de onboarding.service createSubdomains) : statut par étape pour un
+ * provisionnement Cloudflare + Vercel + trace DB observable.
+ */
+export interface PatronatDomainReport {
+  status: 'created' | 'failed' | 'not_configured';
+  domain: string;
+  cloudflareCreated?: boolean;
+  cloudflareSkipped?: boolean;
+  vercelAdded?: boolean;
+  vercelVerified?: boolean;
+  dbTracked?: boolean;
+  error?: string;
+}
 
 /** Slugifie un libellé (accents supprimés, minuscules, sans séparateurs). */
 function slugifyCompact(value: string): string {
@@ -80,6 +103,8 @@ export class FederisFedapayService {
     /** Passerelle Fedapay partagée avec Academia Helm (SDK + signature). */
     private readonly fedapayService: FedaPayService,
     private readonly emailService: EmailService,
+    /** ⭐ Pattern Helm onboarding : création Cloudflare + Vercel du sous-domaine. */
+    private readonly domainManagementService: DomainManagementService,
   ) {}
 
   // ══════════════════════════════════════════════════════════════════════
@@ -265,6 +290,107 @@ export class FederisFedapayService {
       `🌐 Sous-domaine patronat attribué : ${assigned} (tenant ${patronat.tenantId})`,
     );
     return assigned;
+  }
+
+  /**
+   * Domaine racine des sous-domaines — MÊME source de vérité que
+   * DomainManagementService (APP_BASE_DOMAIN || 'academiahelm.com') pour que
+   * les lookups TenantDomain collent exactement aux domaines créés.
+   */
+  private patronatBaseDomain(): string {
+    return (this.configService.get<string>('APP_BASE_DOMAIN') || '').trim() || 'academiahelm.com';
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 1bis. CRÉATION DU DOMAINE PATRONAT (pattern Helm onboarding createSubdomains)
+  // ══════════════════════════════════════════════════════════════════════
+
+  /**
+   * ⭐ Crée le sous-domaine complet du patronat — MÊME pattern que le flux de
+   *    création de l'onboarding signup Helm (onboarding.service.ts
+   *    createSubdomains → domainManagementService.createSchoolSubdomain) :
+   *
+   *    - Cloudflare : CNAME individuel proxied → cname.vercel-dns.com, OU
+   *      rien si le wildcard *.academiahelm.com proxied existe (mode optimisé
+   *      Helm — le wildcard gère déjà le DNS de tous les sous-domaines) ;
+   *    - Vercel : ajout du domaine au projet + vérification (déclenche
+   *      l'émission du certificat SSL) — indispensable, Vercel ne sert que
+   *      les domaines explicitement ajoutés ;
+   *    - DB : trace TenantDomain (upsert).
+   *
+   *    Comportement identique à Helm :
+   *    - AWAITÉ : la création fait partie intégrante de l'activation
+   *      (« du fond en comble ») — plus de fire-and-forget silencieux ;
+   *    - JAMAIS bloquant : un échec (tokens absents, API indisponible…) est
+   *      retourné dans un rapport et loggé, l'activation reste acquise ;
+   *    - Idempotent par nature : Cloudflare existant = OK, Vercel 409 =
+   *      déjà présent = OK, TenantDomain = upsert.
+   */
+  async provisionPatronatDomain(
+    subdomain: string,
+    tenantId: string,
+    context: string,
+  ): Promise<PatronatDomainReport> {
+    const baseDomain = this.patronatBaseDomain();
+
+    if (!this.domainManagementService.isConfigured()) {
+      // ⭐ Pattern Helm : sans tokens Vercel/Cloudflare l'espace est activé
+      //    SANS sous-domaine opérationnel — incident de config qui doit être
+      //    visible (ERROR), pas une simple note de log.
+      this.logger.error(
+        '❌ DOMAIN MANAGEMENT NON CONFIGURÉ — le sous-domaine patronat ne sera PAS créé dans Cloudflare/Vercel. ' +
+          'Configurez VERCEL_API_TOKEN + VERCEL_PROJECT_ID (et idéalement CLOUDFLARE_API_TOKEN + ' +
+          'CLOUDFLARE_ZONE_ID pour les CNAME individuels) sur le serveur API.',
+      );
+      return {
+        status: 'not_configured',
+        domain: `${subdomain}.${baseDomain}`,
+        error:
+          'Gestion des domaines non configurée sur le serveur API (VERCEL_API_TOKEN / VERCEL_PROJECT_ID absents)',
+      };
+    }
+
+    try {
+      const result = await this.domainManagementService.createSchoolSubdomain(
+        subdomain,
+        tenantId,
+      );
+
+      const report: PatronatDomainReport = {
+        status: result.success ? 'created' : 'failed',
+        domain: result.domain,
+        cloudflareCreated: result.cloudflareCreated,
+        cloudflareSkipped: result.cloudflareSkipped,
+        vercelAdded: result.vercelAdded,
+        vercelVerified: result.vercelVerified,
+        dbTracked: result.dbTracked,
+        error: result.error,
+      };
+
+      if (result.success) {
+        this.logger.log(
+          `✅ Domaine patronat ${result.domain} créé (${context}) — ` +
+            `CF: ${result.cloudflareSkipped ? 'wildcard' : result.cloudflareCreated ? 'CNAME' : 'sans'}, ` +
+            `Vercel: ${result.vercelAdded ? 'ajouté' : 'échec'}, ` +
+            `SSL: ${result.vercelVerified ? 'vérifié' : 'en attente'}, ` +
+            `DB: ${result.dbTracked ? 'traçé' : 'échec'}.`,
+        );
+      } else {
+        this.logger.warn(
+          `⚠️  Création du domaine patronat ${result.domain} en échec partiel/total (${context}) : ${result.error}`,
+        );
+      }
+      return report;
+    } catch (error: any) {
+      this.logger.error(
+        `❌ Erreur inattendue création domaine patronat ${subdomain}.${baseDomain} (${context}) : ${error?.message}`,
+      );
+      return {
+        status: 'failed',
+        domain: `${subdomain}.${baseDomain}`,
+        error: error?.message,
+      };
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -569,6 +695,9 @@ export class FederisFedapayService {
     siteUrl: string;
     loginUrl: string;
     expiresAt: string;
+    /** Statut de création du domaine (pattern Helm domainReports) */
+    domainStatus?: PatronatDomainReport['status'];
+    domainError?: string | null;
   }> {
     // Idempotence : déjà payée → on garantit juste le sous-domaine et on
     // renvoie l'état (l'email n'est PAS renvoyé — pattern Helm).
@@ -723,6 +852,20 @@ export class FederisFedapayService {
       `✅ Abonnement activé (${source}) : facture ${invoice.number} (${planCode}) — patronat ${invoice.patronatId} — sous-domaine ${subdomain} — expiration ${expiresAt.toISOString().slice(0, 10)}.`,
     );
 
+    // ⭐ PATTERN HELM (onboarding createSubdomains AWAITÉ après le commit de
+    //    la transaction d'activation) : création complète du sous-domaine —
+    //    Cloudflare (CNAME individuel ou wildcard) + Vercel (ajout +
+    //    vérification → certificat SSL) + trace TenantDomain en DB.
+    //    Rapporté (domainStatus) mais JAMAIS bloquant : l'activation reste
+    //    acquise même si la création du domaine échoue (même comportement
+    //    que Helm, qui retourne domainReports sans faire échouer la
+    //    signature du contrat).
+    const domainReport = await this.provisionPatronatDomain(
+      subdomain,
+      invoice.tenantId,
+      `activation ${source}, facture ${invoice.number}`,
+    );
+
     // ⭐ Email automatique avec identifiants + domaine (pattern Helm —
     //    envoyé uniquement à la PREMIÈRE activation, jamais en double).
     await this.sendSubscriptionActivatedEmail({
@@ -744,6 +887,8 @@ export class FederisFedapayService {
       siteUrl: this.buildPatronatSiteUrl(subdomain),
       loginUrl: this.buildPatronatLoginUrl(subdomain),
       expiresAt: expiresAt.toISOString(),
+      domainStatus: domainReport.status,
+      domainError: domainReport.error ?? null,
     };
   }
 
@@ -770,6 +915,35 @@ export class FederisFedapayService {
       ? await this.assignPatronatSubdomain(patronatRow).catch(() => meta.subdomain ?? 'patronat')
       : (meta.subdomain ?? 'patronat');
 
+    // ⭐ Self-heal domaine (même esprit que « garantit le sous-domaine ») :
+    //    une activation antérieure a pu réussir SANS création Cloudflare/Vercel
+    //    du domaine (tokens absents à l'époque, incident API, migration DNS…).
+    //    Si aucune trace TenantDomain active n'existe, on (re)tente la
+    //    création — idempotente par nature, jamais bloquante pour la réponse
+    //    (pattern Helm createSubdomains + retryVerification).
+    let domainStatus: PatronatDomainReport['status'] | null = null;
+    let domainError: string | null = null;
+    if (subdomain && subdomain !== 'patronat') {
+      const expectedDomain = `${subdomain}.${this.patronatBaseDomain()}`;
+      const tracked = await this.prisma.tenantDomain
+        .findFirst({
+          where: { tenantId: invoice.tenantId, domain: expectedDomain, isActive: true },
+          select: { id: true },
+        })
+        .catch(() => null);
+      if (!tracked) {
+        const report = await this.provisionPatronatDomain(
+          subdomain,
+          invoice.tenantId,
+          `self-heal facture ${invoice.number}`,
+        );
+        domainStatus = report.status;
+        domainError = report.error ?? null;
+      } else {
+        domainStatus = 'created';
+      }
+    }
+
     const patronatFull = patronatRow
       ? await this.prisma.patronat.findUnique({
           where: { id: invoice.patronatId },
@@ -787,6 +961,8 @@ export class FederisFedapayService {
         patronatFull?.subscriptionExpiresAt ??
         new Date(`${new Date().getFullYear()}-08-31T23:59:59Z`)
       ).toISOString(),
+      domainStatus: domainStatus ?? undefined,
+      domainError,
     };
   }
 
@@ -1035,6 +1211,8 @@ export class FederisFedapayService {
       siteUrl: string;
       loginUrl: string;
       expiresAt: string;
+      domainStatus?: PatronatDomainReport['status'];
+      domainError?: string | null;
     } | null,
     outcome: string,
     verifyError?: string,
@@ -1053,6 +1231,11 @@ export class FederisFedapayService {
       loginUrl: activation?.loginUrl ?? (subdomain ? this.buildPatronatLoginUrl(subdomain) : null),
       plan: activation?.planCode ?? (invoice.metadata as any)?.plan ?? null,
       expiresAt: activation?.expiresAt ?? null,
+      // ⭐ Statut de création du domaine dédié (pattern Helm domainReports) —
+      //    le frontend adapte l'affichage si le domaine n'est pas encore
+      //    opérationnel (failed / not_configured).
+      domainStatus: activation?.domainStatus ?? null,
+      domainError: activation?.domainError ?? null,
       outcome,
       // ⭐ Pattern Helm verifyPaymentStatus : l'erreur éventuelle de l'API
       //    Fedapay est renvoyée dans la réponse (le paiement reste PENDING,

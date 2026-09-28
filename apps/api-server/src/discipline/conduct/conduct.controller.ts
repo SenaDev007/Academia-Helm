@@ -440,6 +440,11 @@ export class ConductController {
     // ⭐ 2026-09-28 — Prisma upsert standard. Plus de COALESCE(NULL='NULL').
     //    On normalise schoolLevelId à null si non fourni (settings globaux).
     const schoolLevelId = body.schoolLevelId || null;
+    // ⭐ FIX 2026-09-28 — extraire academicYearId du body en variable locale
+    //    pour pouvoir utiliser le shorthand `{ tenantId, academicYearId }`
+    //    dans le where. Sinon on obtient une ReferenceError car `academicYearId`
+    //    n'existe pas en scope — seul `body.academicYearId` existe.
+    const academicYearId = body.academicYearId;
     // ⭐ upsert par clé unique (tenantId, academicYearId, schoolLevelId)
     //    ⚠️ Prisma ne supporte pas updateMany avec une clause unique null ;
     //    on utilise findFirst + update ou create (équivalent sûr).
@@ -464,7 +469,7 @@ export class ConductController {
     const created = await this.prisma.conductSetting.create({
       data: {
         tenantId,
-        academicYearId: body.academicYearId,
+        academicYearId,
         schoolLevelId,
         conductReference: body.conduct_reference ?? 20,
         criticalThreshold: body.critical_threshold ?? 5,

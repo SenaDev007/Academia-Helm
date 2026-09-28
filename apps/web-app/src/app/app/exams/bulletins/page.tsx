@@ -2387,31 +2387,31 @@ function BulletinSecondairePage1({
               return [...subjectRows, bilanRow];
             })}
 
-          {/* Totaux (4e → Terminale uniquement) */}
-          {!isJunior && (
-            <>
-              <tr className="bg-slate-200 font-bold">
-                <td colSpan={7} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-700 text-[9px]">Total des coefficients</td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-amber-700">{totalCoef}</td>
-                <td colSpan={4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">—</td>
-              </tr>
-              <tr className="bg-slate-200 font-bold">
-                <td colSpan={7} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-700 text-[9px]">Total des moyennes (Σ moy × coef)</td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-emerald-700">{totalNotesCoef.toFixed(2)}</td>
-                <td colSpan={4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">—</td>
-              </tr>
-            </>
-          )}
-          {/* Moyenne trimestrielle */}
-          <tr className="bg-blue-100 font-bold">
-            <td colSpan={6} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-900 text-[9px]">Moyenne trimestrielle</td>
-            <td colSpan={isJunior ? 1 : 2} className="border border-slate-300 px-1 py-0.5 text-center text-blue-800 text-xs">
-              {fmtS(student.generalAverage)}
-            </td>
-            <td colSpan={isJunior ? 3 : 4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">
-              {student.classRank ? `Rang : ${formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')} / ${bulletinData.results.length}` : '—'}
-            </td>
-          </tr>
+            {/* Totaux (4e → Terminale uniquement) */}
+            {!isJunior && (
+              <>
+                <tr className="bg-slate-200 font-bold">
+                  <td colSpan={7} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-700 text-[9px]">Total des coefficients</td>
+                  <td className="border border-slate-300 px-1 py-0.5 text-center text-amber-700">{totalCoef}</td>
+                  <td colSpan={4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">—</td>
+                </tr>
+                <tr className="bg-slate-200 font-bold">
+                  <td colSpan={7} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-700 text-[9px]">Total des moyennes (Σ moy × coef)</td>
+                  <td className="border border-slate-300 px-1 py-0.5 text-center text-emerald-700">{totalNotesCoef.toFixed(2)}</td>
+                  <td colSpan={4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">—</td>
+                </tr>
+              </>
+            )}
+            {/* Moyenne trimestrielle */}
+            <tr className="bg-blue-100 font-bold">
+              <td colSpan={6} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-900 text-[9px]">Moyenne trimestrielle</td>
+              <td colSpan={isJunior ? 1 : 2} className="border border-slate-300 px-1 py-0.5 text-center text-blue-800 text-xs">
+                {fmtS(student.generalAverage)}
+              </td>
+              <td colSpan={isJunior ? 3 : 4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">
+                {student.classRank ? `Rang : ${formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')} / ${bulletinData.results.length}` : '—'}
+              </td>
+            </tr>
         </tbody>
         </table>
       </div>

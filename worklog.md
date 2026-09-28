@@ -11759,3 +11759,33 @@ Stage Summary:
 - ✅ Correctif validé en production : le paiement du patronat national (facture FED-PAT-2026-0014 INSTITUTION) est CONFIRMÉ et ACTIVÉ — sous-domaine patronatnational.academiahelm.com, abonnement actif jusqu'au 2027-08-31, email identifiants envoyé
 - ✅ Parsing v1/transaction réparé (preuve sur transaction réelle) + verify résilient pattern Helm (plus jamais de 400) + routage webhook Federis opérationnel
 - 🚨 À TRAITER PAR L'UTILISATEUR : (1) certificat wildcard *.academiahelm.com EXPIRÉ depuis le 08/08/2026 — tous les sites tenants (écoles Helm + patronats Federis) sont inaccessibles en HTTPS ; renouveler dans le dashboard Vercel ; (2) la clé FEDAPAY est actuellement SANDBOX (checkout → sandbox-process.fedapay.com, plafond 20 000 XOF) — restaurer la clé live sk_live_… si les paiements réels sont attendus
+
+---
+Task ID: fix-patronat-subdomain-2026-09-28
+Agent: Super Z (principal)
+Task: « Le système n'a pas créé le sous-domaine comme au niveau de Academia Helm — rien dans Cloudflare ni Vercel, "votre connexion n'est pas privée" après le paiement. Suivre le même pattern que le flux de création de l'onboarding signup Helm. » + « Comment configurer le wildcard maintenant que la zone DNS utilise les name servers Cloudflare ? »
+
+Work Log:
+- DIAGNOSTIC (diff pattern Helm) : l'onboarding signup Helm await createSubdomains() après le commit de la transaction d'activation (onboarding.service.ts L1669) → domainManagementService.createSchoolSubdomain() = Cloudflare (CNAME individuel proxied OU détection wildcard *.academiahelm.com) + Vercel (ajout du domaine + verify → certificat SSL) + trace TenantDomain. Le flux Federis (federis-fedapay.service activateSubscriptionAfterPayment) attribuait tenant.subdomain en DB et envoyait l'email mais n'appelait JAMAIS ce service → sous-domaine absent de Cloudflare ET de Vercel → ERR_CERT (navigateur). Cause racine 100 % identifiée, aucun autre écart.
+- CORRECTIF (federis-fedapay.service.ts) — réplication EXACTE du pattern Helm :
+  * injection DomainManagementService (fourni par CommonModule @Global, comme onboarding.service)
+  * nouvelle méthode provisionPatronatDomain() (miroir createSubdomains Helm) : isConfigured() check avec log ERROR « DOMAIN MANAGEMENT NON CONFIGURÉ » (pattern Helm), createSchoolSubdomain() AWAITÉ, rapport PatronatDomainReport (status created/failed/not_configured + cloudflareCreated/cloudflareSkipped/vercelAdded/vercelVerified/dbTracked), JAMAIS bloquant (l'activation reste acquise), idempotent (CF existant = OK, Vercel 409 = OK, TenantDomain upsert)
+  * appelée dans activateSubscriptionAfterPayment() APRÈS le commit de la transaction, AVANT l'email (ordre Helm) — couvre le webhook ET le verify
+  * self-heal dans buildActivationSnapshot() (facture déjà PAYEE) : si aucune trace TenantDomain active → (re)création du domaine (répare les activations antérieures) — même esprit que « garantit le sous-domaine »
+  * réponse activation + verify enrichies de domainStatus/domainError (pattern Helm domainReports)
+- CORRECTIF FRONTEND (page succès checkout) : bandeau ambre si domainStatus failed/not_configured + pas de redirection auto vers un domaine non opérationnel + lien portail Federis en secours
+- VÉRIFICATIONS : esbuild 2/2 OK ; tsc 9399 → 9400 (unique delta : TS2339 'tenantDomain' sur PrismaService — même classe d'artefact sandbox que les 1144 préexistantes, modèle TenantDomain confirmé dans schema.prisma L3407, client régénéré sur Railway) ; eslint non exécutable en sandbox (node_modules absent, comme sessions précédentes)
+- COMMIT 78ade4056 (rebasé sur 0b61d0b01) poussé → Railway auto-déployé (flip observé 13:05, détecté par l'apparition du champ domainStatus dans la réponse verify)
+- VALIDATION E2E PRODUCTION (scripts/verify_patronat_domain_fix.mjs) :
+  * POST verify {transactionId: 514552} (patronat national réel, facture FED-PAT-2026-0014 déjà PAYEE) → SELF-HEAL déclenché → domainStatus=created, subdomain=patronatnational
+  * DNS : patronatnational.academiahelm.com → CNAME cname.vercel-dns.com → IPs Vercel (76.76.21.22, 66.33.60.129) — résolution immédiate (wildcard DNS-only déjà en place dans la zone Cloudflare)
+  * HTTPS : CERT_HAS_EXPIRES transitoire (~30 s, edge Vercel encore sur l'ancien wildcard périmé) puis HTTP/2 200 sur 10/10 sondes avec certificats VALIDES (frais : notBefore 28 Sep 2026 12:06 UTC → 27 Déc 2026 + second notBefore 3 Août → 1 Nov 2026) — Vercel a émis le certificat dédié du domaine ajouté
+  * Landing page : HTTP 200, titre « Patronat des Établissements Scolaires Privés du Bénin — Patronat national | Academia Federis » ; /login : HTTP 200 ; API patronat-info : found=true, ACTIVE/INSTITUTION
+- INCIDENT PRÉEXISTANT (Helm, hors périmètre Federis) : cspeb.academiahelm.com sert toujours le certificat expiré (10 Mai → 8 Août 2026) — rattrapage possible via l'admin Helm : POST /tenants/domains/seed + POST /tenants/domains/retry-verification (tenants.controller.ts) ou page platform/domains
+
+Stage Summary:
+- ✅ Pattern Helm onboarding signup répliqué à l'identique : chaque paiement patronat crée désormais automatiquement Cloudflare + Vercel + TenantDomain (await, non-bloquant, idempotent, rapporté)
+- ✅ Le patronat national RÉEL est réparé : https://patronatnational.academiahelm.com accessible en HTTPS (certificat valide), landing + login opérationnels
+- ✅ Self-heal : toute facture PAYEE sans TenantDomain est réparée au prochain verify (couvre les activations antérieures au correctif)
+- 📋 Configuration wildcard Cloudflare transmise à l'utilisateur (2 options valides : DNS-only actuel — vérifié fonctionnel, ou proxied orange = mode optimisé Helm)
+- ⏳ Rattrapage écoles Helm touchées par le certificat wildcard expiré (ex: cspeb) : via admin POST /tenants/domains/seed (action utilisateur)

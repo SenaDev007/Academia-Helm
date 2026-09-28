@@ -38,7 +38,6 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { motion } from 'framer-motion';
 import {
   Shield, Plus, Loader2, Search, Gavel, BookOpen, Settings, X,
   AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Trash2, Edit,
@@ -987,14 +986,16 @@ function SanctionModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
-      {/* ⭐ UN SEUL className sur <motion.div> (l'ancien en avait 2 → mx-auto perdu → modal à GAUCHE) */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="mx-auto my-8 bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto"
+    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex justify-center" style={{ paddingTop: '80px' }}>
+      {/* ⭐ 2026-09-28 — FIX « bande grise qui cache le modal » : on remplace
+          motion.div (qui avait initial opacity:0 → restait invisible pendant
+          l'animation framer-motion) par une div simple. Le centrage se fait
+          via flex justify-center sur le parent + my-8 sur la modal. Plus de
+          bande grise bloquante à l'ouverture. */}
+      <div
+        className="my-8 bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto"
       >
-        <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl sticky top-0 bg-white z-10">
+        <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2">
             <Gavel className="w-5 h-5" /> Nouvelle sanction
           </h3>
@@ -1133,7 +1134,7 @@ function SanctionModal({
             Enregistrer
           </Button>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }
@@ -1180,12 +1181,11 @@ function RuleModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
-      {/* ⭐ UN SEUL className sur <motion.div> */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="mx-auto my-8 bg-white rounded-xl shadow-2xl max-w-lg w-full"
+    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex justify-center" style={{ paddingTop: '80px' }}>
+      {/* ⭐ 2026-09-28 — FIX « bande grise » : div simple (pas de motion.div) +
+          flex justify-center pour le centrage horizontal. */}
+      <div
+        className="my-8 bg-white rounded-xl shadow-2xl max-w-lg w-full"
       >
         <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2">
@@ -1267,7 +1267,7 @@ function RuleModal({
             {isEditing ? 'Modifier' : 'Créer'}
           </Button>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }
@@ -1331,12 +1331,10 @@ function ConductSettingsModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
-      {/* ⭐ UN SEUL className sur <motion.div> */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="mx-auto my-8 bg-white rounded-xl shadow-2xl max-w-md w-full"
+    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex justify-center" style={{ paddingTop: '80px' }}>
+      {/* ⭐ 2026-09-28 — FIX « bande grise » : div simple + flex justify-center. */}
+      <div
+        className="my-8 bg-white rounded-xl shadow-2xl max-w-md w-full"
       >
         <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -1400,7 +1398,7 @@ function ConductSettingsModal({
             Sauvegarder
           </Button>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }
@@ -1416,12 +1414,10 @@ function CancelSanctionModal({
   setCancelReason: (v: string) => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
-      {/* ⭐ UN SEUL className sur <motion.div> */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="mx-auto my-8 bg-white rounded-xl shadow-2xl max-w-md w-full"
+    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex justify-center" style={{ paddingTop: '80px' }}>
+      {/* ⭐ 2026-09-28 — FIX « bande grise » : div simple + flex justify-center. */}
+      <div
+        className="my-8 bg-white rounded-xl shadow-2xl max-w-md w-full"
       >
         <div className="flex items-center justify-between p-4 border-b bg-red-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-red-900 flex items-center gap-2">
@@ -1455,7 +1451,7 @@ function CancelSanctionModal({
             <AlertTriangle className="w-4 h-4 mr-2" /> Confirmer l&apos;annulation
           </Button>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }
@@ -1464,12 +1460,10 @@ function CancelSanctionModal({
 
 function DeleteRuleModal({ onClose, onConfirm }: { onClose: () => void; onConfirm: () => void }) {
   return (
-    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
-      {/* ⭐ UN SEUL className sur <motion.div> */}
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="mx-auto my-8 bg-white rounded-xl shadow-2xl max-w-sm w-full"
+    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex justify-center" style={{ paddingTop: '80px' }}>
+      {/* ⭐ 2026-09-28 — FIX « bande grise » : div simple + flex justify-center. */}
+      <div
+        className="my-8 bg-white rounded-xl shadow-2xl max-w-sm w-full"
       >
         <div className="flex items-center justify-between p-4 border-b bg-red-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-red-900">Supprimer la règle</h3>
@@ -1488,7 +1482,7 @@ function DeleteRuleModal({ onClose, onConfirm }: { onClose: () => void; onConfir
             <Trash2 className="w-4 h-4 mr-2" /> Supprimer
           </Button>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

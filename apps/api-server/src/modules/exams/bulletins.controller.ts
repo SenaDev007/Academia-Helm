@@ -834,12 +834,19 @@ export class BulletinsController {
     }
 
     // ⭐ SECONDAIRE — Résolution de la conduite (conduct_ledger) + distinction/sanction
+    //    ⭐ 2026-09-28 — Étendu à isSecondaryEval (Bulletin d'évaluation) en plus
+    //       de isSecondary (Bulletin trimestriel). Les 2 variantes secondaires
+    //       affichent la conduite dans le bulletin PDF, donc les 2 doivent
+    //       résoudre le conduct_ledger. Avant, seul le bulletin trimestriel
+    //       récupérait la conduite — l'évaluation n'affichait jamais la ligne
+    //       « Conduite » dans le PDF.
     let conductScore: number | null = null;
     let conductReference: number | null = null;
     let distinctionLabel: string | null = null;
     let distinctionType: 'DISTINCTION' | 'SANCTION' | null = null;
 
-    if (body.isSecondary && body.studentMatricule && resolvedTenantId && academicYearId) {
+    const isAnySecondary = body.isSecondary || body.isSecondaryEval;
+    if (isAnySecondary && body.studentMatricule && resolvedTenantId && academicYearId) {
       try {
         // 1. Trouver l'élève
         const conductStudent = await this.prisma.student.findFirst({
@@ -856,17 +863,16 @@ export class BulletinsController {
 
           if (quarter.length > 0) {
             // 3. Récupérer le conduct_ledger
-            const ledger = await this.prisma.$queryRawUnsafe<any[]>(
-              `SELECT conduct_reference, total_points_deducted, conduct_final
-               FROM conduct_ledger
-               WHERE "tenantId" = $1 AND "studentId" = $2 AND "quarterId" = $3
-               LIMIT 1`,
-              resolvedTenantId, conductStudent.id, quarter[0].id,
-            ).catch(() => []);
+            //    ⭐ 2026-09-28 — Utilisation du modèle Prisma ConductLedger (cf.
+            //    refonte Vie Scolaire) au lieu de $queryRawUnsafe — plus fiable.
+            const ledgerRow = await this.prisma.conductLedger.findFirst({
+              where: { tenantId: resolvedTenantId, studentId: conductStudent.id, quarterId: quarter[0].id },
+              select: { conductReference: true, totalPointsDeducted: true, conductFinal: true },
+            }).catch(() => null);
 
-            if (ledger.length > 0) {
-              conductScore = Number(ledger[0].conduct_final) || null;
-              conductReference = Number(ledger[0].conduct_reference) || 17;
+            if (ledgerRow) {
+              conductScore = Number(ledgerRow.conductFinal) || null;
+              conductReference = Number(ledgerRow.conductReference) || 17;
             }
           }
         }

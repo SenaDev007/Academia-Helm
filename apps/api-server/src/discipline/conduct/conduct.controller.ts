@@ -41,12 +41,24 @@ export class ConductController {
     @Query('academicYearId') _academicYearId?: string,
     @Query('schoolLevelId') schoolLevelId?: string,
   ) {
-    const rows = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT * FROM discipline_rules WHERE "tenantId" = $1 AND "isActive" = true
-       ${schoolLevelId ? 'AND ("schoolLevelId" = $2 OR "schoolLevelId" IS NULL)' : ''}
-       ORDER BY severity, name`,
-      schoolLevelId ? [tenantId, schoolLevelId] : [tenantId],
-    );
+    // ⭐ FIX 2026-09-28 — Prisma $queryRawUnsafe attend des arguments POSITIONNELS
+    //    (sql, ...params), PAS un tableau. L'ancienne version passait un array
+    //    en 2e argument → Prisma traitait l'array comme $1 (un objet PG array)
+    //    → $2 n'existait pas → erreur silencieuse côté API → le frontend
+    //    voyait « Erreur lors de la sauvegarde » même quand la requête SQL
+    //    était syntaxiquement valide.
+    const rows = schoolLevelId
+      ? await this.prisma.$queryRawUnsafe<any[]>(
+          `SELECT * FROM discipline_rules WHERE "tenantId" = $1 AND "isActive" = true
+           AND ("schoolLevelId" = $2 OR "schoolLevelId" IS NULL)
+           ORDER BY severity, name`,
+          tenantId, schoolLevelId,
+        )
+      : await this.prisma.$queryRawUnsafe<any[]>(
+          `SELECT * FROM discipline_rules WHERE "tenantId" = $1 AND "isActive" = true
+           ORDER BY severity, name`,
+          tenantId,
+        );
     return rows;
   }
 
@@ -120,8 +132,10 @@ export class ConductController {
     @Query('studentId') studentId?: string,
   ) {
     if (!academicYearId) return [];
-    const rows = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT s.*, st."lastName" || ' ' || st."firstName" as "studentName",
+    // ⭐ FIX 2026-09-28 — Même bug Prisma : spread args, pas array.
+    //    On construit la requête SQL en fonction des filtres présents pour
+    //    garder le bon index $N pour chaque paramètre positionnel.
+    let sql = `SELECT s.*, st."lastName" || ' ' || st."firstName" as "studentName",
               c.name as "className"
        FROM sanctions s
        LEFT JOIN students st ON st.id = s."studentId"
@@ -130,15 +144,19 @@ export class ConductController {
          WHERE se."studentId" = s."studentId" AND se."academicYearId" = s."academicYearId"
          LIMIT 1
        )
-       WHERE s."tenantId" = $1 AND s."academicYearId" = $2
-       ${schoolLevelId ? 'AND (s."schoolLevelId" = $3 OR s."schoolLevelId" IS NULL)' : ''}
-       ${studentId ? `AND s."studentId" = ${studentId ? '$4' : 'NULL'}` : ''}
-       ORDER BY s.sanction_date DESC, s."createdAt" DESC`,
-      schoolLevelId && studentId ? [tenantId, academicYearId, schoolLevelId, studentId] :
-      schoolLevelId ? [tenantId, academicYearId, schoolLevelId] :
-      studentId ? [tenantId, academicYearId, studentId] :
-      [tenantId, academicYearId],
-    );
+       WHERE s."tenantId" = $1 AND s."academicYearId" = $2`;
+    const params: any[] = [tenantId, academicYearId];
+    let idx = 3;
+    if (schoolLevelId) {
+      sql += ` AND (s."schoolLevelId" = $${idx} OR s."schoolLevelId" IS NULL)`;
+      params.push(schoolLevelId); idx++;
+    }
+    if (studentId) {
+      sql += ` AND s."studentId" = $${idx}`;
+      params.push(studentId); idx++;
+    }
+    sql += ` ORDER BY s.sanction_date DESC, s."createdAt" DESC`;
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
     return rows.map(r => ({
       ...r,
       studentName: r.studentName || '—',
@@ -217,16 +235,18 @@ export class ConductController {
     }
 
     // Récupérer la sanction pour ajuster le ledger
+    // ⭐ FIX 2026-09-28 — spread args (était [sanctionId, tenantId]).
     const sanction = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT * FROM sanctions WHERE id = $1 AND "tenantId" = $2 AND status = 'ACTIVE'`,
-      [sanctionId, tenantId],
+      sanctionId, tenantId,
     );
     if (sanction.length === 0) throw new BadRequestException('Sanction introuvable ou déjà annulée');
 
+    // ⭐ FIX 2026-09-28 — spread args (était [sanctionId, tenantId, user?.id, body.reason]).
     await this.prisma.$executeRawUnsafe(
       `UPDATE sanctions SET status = 'CANCELLED', cancelled_by = $3, cancelled_reason = $4, cancelled_at = now(), "updatedAt" = now()
        WHERE id = $1 AND "tenantId" = $2`,
-      [sanctionId, tenantId, user?.id || '00000000-0000-0000-0000-000000000000', body.reason],
+      sanctionId, tenantId, user?.id || '00000000-0000-0000-0000-000000000000', body.reason,
     );
 
     // Ajuster le ledger (rembourser les points)
@@ -266,6 +286,7 @@ export class ConductController {
     @Query('schoolLevelId') _schoolLevelId?: string,
   ) {
     if (!academicYearId) return [];
+    // ⭐ FIX 2026-09-28 — spread args (était [tenantId, academicYearId]).
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT cl.*, st."lastName" || ' ' || st."firstName" as "studentName",
               c.name as "className"
@@ -278,7 +299,7 @@ export class ConductController {
        )
        WHERE cl."tenantId" = $1 AND cl."academicYearId" = $2
        ORDER BY cl.conduct_final ASC`,
-      [tenantId, academicYearId],
+      tenantId, academicYearId,
     );
     return rows.map(r => ({
       ...r,
@@ -295,9 +316,10 @@ export class ConductController {
     @Query('academicYearId') academicYearId: string,
   ) {
     if (!academicYearId) return { conduct_reference: 20, critical_threshold: 5 };
+    // ⭐ FIX 2026-09-28 — spread args (était [tenantId, academicYearId]).
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT * FROM conduct_settings WHERE "tenantId" = $1 AND "academicYearId" = $2 LIMIT 1`,
-      [tenantId, academicYearId],
+      tenantId, academicYearId,
     );
     return rows[0] || { conduct_reference: 20, critical_threshold: 5 };
   }
@@ -314,20 +336,29 @@ export class ConductController {
     },
   ) {
     if (!body.academicYearId) throw new BadRequestException('academicYearId est requis');
-    // ⭐ Check if settings already exist for this tenant + academicYear
-    //    (schoolLevelId can be NULL — ON CONFLICT with NULL doesn't work in PostgreSQL)
-    const existing = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT id FROM conduct_settings WHERE "tenantId" = $1 AND "academicYearId" = $2 AND COALESCE("schoolLevelId", 'NULL') = COALESCE($3, 'NULL') LIMIT 1`,
-      [tenantId, body.academicYearId, body.schoolLevelId || null],
-    );
-    if (existing.length > 0) {
-      // Update existing
-      await this.prisma.$executeRawUnsafe(
-        `UPDATE conduct_settings SET conduct_reference = $1, critical_threshold = $2, "updatedAt" = now() WHERE id = $3`,
-        [body.conduct_reference || 20, body.critical_threshold || 5, existing[0].id],
+    // ⭐ FIX 2026-09-28 — Prisma spread args (était [tenantId, body.academicYearId, body.schoolLevelId || null])
+    //    Plus de COALESCE(NULL='NULL') qui ne marche pas : on filtre côté JS
+    //    en deux branches (avec schoolLevelId / sans) — plus simple + fiable.
+    let existing: any[];
+    if (body.schoolLevelId) {
+      existing = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT id FROM conduct_settings WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "schoolLevelId" = $3 LIMIT 1`,
+        tenantId, body.academicYearId, body.schoolLevelId,
       );
     } else {
-      // Insert new
+      existing = await this.prisma.$queryRawUnsafe<any[]>(
+        `SELECT id FROM conduct_settings WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "schoolLevelId" IS NULL LIMIT 1`,
+        tenantId, body.academicYearId,
+      );
+    }
+    if (existing.length > 0) {
+      // Update existing — ⭐ FIX spread args (était [body.conduct_reference || 20, body.critical_threshold || 5, existing[0].id])
+      await this.prisma.$executeRawUnsafe(
+        `UPDATE conduct_settings SET conduct_reference = $1, critical_threshold = $2, "updatedAt" = now() WHERE id = $3`,
+        body.conduct_reference || 20, body.critical_threshold || 5, existing[0].id,
+      );
+    } else {
+      // Insert new — déjà en spread args, OK.
       const id = crypto.randomUUID();
       await this.prisma.$executeRawUnsafe(
         `INSERT INTO conduct_settings (id, "tenantId", "academicYearId", "schoolLevelId", conduct_reference, critical_threshold)
@@ -351,9 +382,10 @@ export class ConductController {
   ) {
     if (!quarterId) {
       // Si pas de trimestre, on prend le trimestre courant
+      // ⭐ FIX 2026-09-28 — spread args (était [tenantId, academicYearId]).
       const quarter = await this.prisma.$queryRawUnsafe<any[]>(
         `SELECT id FROM quarters WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "isCurrent" = true LIMIT 1`,
-        [tenantId, academicYearId],
+        tenantId, academicYearId,
       );
       if (quarter.length === 0) return; // Pas de trimestre, on ne met pas à jour le ledger
       quarterId = quarter[0].id;

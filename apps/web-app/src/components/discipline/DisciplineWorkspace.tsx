@@ -65,48 +65,13 @@ export default function DisciplineWorkspace({
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [cancellingSanctionId, setCancellingSanctionId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
-  // ⭐ Dans le SanctionModal, remplacer la recherche par un sélecteur classe + élève
-  const [modalAllClasses, setModalAllClasses] = useState<ClassInfo[]>([]);
-  const [modalClassStudents, setModalClassStudents] = useState<any[]>([]);
-  const [modalLoadingStudents, setModalLoadingStudents] = useState(false);
+  // ⭐ 2026-09-28 — modalAllClasses/modalClassStudents/modalLoadingStudents
+  //    SUPPRIMÉS : morts depuis la refonte du SanctionModal (qui utilise son
+  //    propre useEffect + fetch /api/students?classId=X). Ces états étaient
+  //    attachés à loadModalStudents qui est lui aussi supprimé.
   const [editingRule, setEditingRule] = useState<DisciplineRule | null>(null);
   const [deletingRuleId, setDeletingRuleId] = useState<string | null>(null);
 
-  // Charger toutes les classes secondaires pour le sélecteur
-  const loadModalClasses = useCallback(async () => {
-    if (!academicYear?.id) return;
-    const authHeaders = getClientAuthorizationHeader();
-    const params = new URLSearchParams({ academicYearId: academicYear.id });
-    const res = await fetch(`/api/all-classes?${params}`, { headers: { ...authHeaders }, credentials: 'include' });
-    if (res.ok) {
-      const d = await res.json();
-      const all = Array.isArray(d) ? d : [];
-      setModalAllClasses(all.filter((c: any) => c.schoolLevel?.code === 'SECONDAIRE'));
-    }
-  }, [academicYear?.id]);
-
-  // Charger les élèves d'une classe pour le sélecteur
-  const loadModalStudents = useCallback(async (classId: string) => {
-    setModalLoadingStudents(true);
-    setModalClassStudents([]);
-    try {
-      const authHeaders = getClientAuthorizationHeader();
-      const params = new URLSearchParams({ classId, academicYearId: academicYear?.id || '' });
-      const res = await fetch(`/api/students/enrollments?${params}`, { headers: { ...authHeaders }, credentials: 'include' });
-      if (res.ok) {
-        const d = await res.json();
-        const enrollments = Array.isArray(d) ? d : (d?.items || d?.data || []);
-        const students = enrollments.map((e: any) => ({
-          id: e.studentId || e.student?.id,
-          firstName: e.student?.firstName || '',
-          lastName: e.student?.lastName || '',
-          matricule: e.student?.matricule || '',
-        })).filter((s: any) => s.id);
-        setModalClassStudents(students);
-      }
-    } catch (err) { console.error('loadModalStudents error:', err); }
-    finally { setModalLoadingStudents(false); }
-  }, [academicYear?.id]);
   const { toast } = useToast();
 
   // ⭐ Annuler une sanction (DELETE /api/discipline/sanctions/:id avec reason)
@@ -237,9 +202,45 @@ export default function DisciplineWorkspace({
     }
     // ⭐ Tri : SECONDAIRE en premier (vie scolaire = secondaire uniquement)
     const ORDER = ['SECONDAIRE', 'PRIMAIRE', 'MATERNELLE', 'OTHER'];
-    return Array.from(levelMap.values()).sort((a, b) =>
+    const groups = Array.from(levelMap.values()).sort((a, b) =>
       ORDER.indexOf(a.levelCode) - ORDER.indexOf(b.levelCode)
     );
+    // ⭐ 2026-09-28 — Tri pédagogique des classes à l'intérieur de chaque
+    //    niveau : 6e → 5e → 4e → 3e → 2nde → 1ère → Terminale (exigence
+    //    promoteur). On extrait le numéro/curseur depuis le nom de classe
+    //    et on ordonne selon l'officiel français secondaire.
+    //    Patterns reconnus : « 6e », « 6ème », « 6ème A » / « 5e », « 4e »,
+    //    « 3e », « 2nde », « Seconde », « 1ère », « Première », « Terminale »,
+    //    « Tle », « Term ».
+    const PEDAGOGICAL_ORDER = [
+      '6E', '6EME', '5E', '5EME', '4E', '4EME', '3E', '3EME',
+      '2NDE', 'SECONDE',
+      '1ERE', 'PREMIERE',
+      'TERMINALE', 'TLE', 'TERM',
+    ];
+    const pedagogicalSortIndex = (name: string): number => {
+      const upper = (name || '').toUpperCase().trim();
+      // On essaie chaque pattern dans l'ordre, le 1er match gagne
+      for (let i = 0; i < PEDAGOGICAL_ORDER.length; i++) {
+        const pat = PEDAGOGICAL_ORDER[i];
+        // Match flexible : « 6E » matche « 6E », « 6E A », « 6ÈME », etc.
+        // On remplace E → È pour tolérer les accents, et on accepte un
+        // séparateur (espace, tiret, « è ») après le pattern.
+        const re = new RegExp(`(^|\\s|-)${pat.replace(/E/g, 'E[ÈE]?').replace(/DE$/, 'DE'}(\\s|$|-)`, 'i');
+        if (re.test(upper)) return i;
+      }
+      return PEDAGOGICAL_ORDER.length; // ce qui ne matche pas → à la fin
+    };
+    for (const g of groups) {
+      g.classes.sort((a, b) => {
+        const idxA = pedagogicalSortIndex(a.name || '');
+        const idxB = pedagogicalSortIndex(b.name || '');
+        if (idxA !== idxB) return idxA - idxB;
+        // En cas d'égalité, tri alphabétique secondaire (A avant B)
+        return (a.name || '').localeCompare(b.name || '', 'fr');
+      });
+    }
+    return groups;
   }, [classes]);
 
   // Sanctions par classe
@@ -252,6 +253,32 @@ export default function DisciplineWorkspace({
     }
     return map;
   }, [sanctions]);
+
+  // ⭐ 2026-09-28 — Tri pédagogique des classes pour le tab Sanctions
+  //    (6e → 5e → 4e → 3e → 2nde → 1ère → Terminale, exigence promoteur).
+  //    Réutilise le même ordre que levelGroups mais appliqué directement
+  //    sur le tableau `classes` (qui est une liste à plat, pas un groupement).
+  const sortedClasses = useMemo(() => {
+    const PEDAGOGICAL_ORDER = [
+      '6E', '6EME', '5E', '5EME', '4E', '4EME', '3E', '3EME',
+      '2NDE', 'SECONDE', '1ERE', 'PREMIERE', 'TERMINALE', 'TLE', 'TERM',
+    ];
+    const pedagogicalSortIndex = (name: string): number => {
+      const upper = (name || '').toUpperCase().trim();
+      for (let i = 0; i < PEDAGOGICAL_ORDER.length; i++) {
+        const pat = PEDAGOGICAL_ORDER[i];
+        const re = new RegExp(`(^|\\s|-)${pat.replace(/E/g, 'E[ÈE]?')}(\\s|$|-)`, 'i');
+        if (re.test(upper)) return i;
+      }
+      return PEDAGOGICAL_ORDER.length;
+    };
+    return [...classes].sort((a, b) => {
+      const idxA = pedagogicalSortIndex(a.name || '');
+      const idxB = pedagogicalSortIndex(b.name || '');
+      if (idxA !== idxB) return idxA - idxB;
+      return (a.name || '').localeCompare(b.name || '', 'fr');
+    });
+  }, [classes]);
 
   const toggleLevel = (code: string) => {
     setExpandedLevels(prev => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; });
@@ -306,7 +333,7 @@ export default function DisciplineWorkspace({
         <div className="space-y-3">
           {classes.length === 0 ? (
             <div className="bg-white rounded-xl border p-8 text-center text-gray-500">Aucune classe secondaire disponible.</div>
-          ) : classes.map(cls => {
+          ) : sortedClasses.map(cls => {
             const clsSanctions = sanctionsByClass.get(cls.name) || [];
             return (
               <div key={cls.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -430,8 +457,10 @@ export default function DisciplineWorkspace({
           className={modalClassName}
           preselectedStudentId={modalStudentId}
           preselectedStudentName={modalStudentName}
-          allClasses={classes}
-          loadStudentsForClass={loadModalStudents}
+          // ⭐ 2026-09-28 — On passe sortedClasses (tri pédagogique 6e → Terminale)
+          //    pour que le sélecteur de classe du modal affiche les classes dans
+          //    le bon ordre, pas dans l'ordre aléatoire de la BDD.
+          allClasses={sortedClasses}
         />
       )}
       {showRuleModal && (
@@ -451,8 +480,11 @@ export default function DisciplineWorkspace({
       {/* ⭐ Modal d'annulation de sanction */}
       {cancellingSanctionId && (
         <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mx-auto my-8"
-            className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+          {/* ⭐ FIX 2026-09-28 — DOUBLE className sur <motion.div> : la 2e
+              écrasait la 1re, donc `mx-auto` était perdu → modal collé à
+              GAUCHE. On fusionne les 2 className en un seul. */}
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+            className="mx-auto my-8 bg-white rounded-xl shadow-2xl max-w-md w-full">
             <div className="flex items-center justify-between p-4 border-b bg-red-50 rounded-t-xl">
               <h3 className="text-lg font-bold text-red-900 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5" /> Annuler la sanction
@@ -488,8 +520,9 @@ export default function DisciplineWorkspace({
       {/* ⭐ Modal de suppression de règle */}
       {deletingRuleId && (
         <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mx-auto my-8"
-            className="bg-white rounded-xl shadow-2xl max-w-sm w-full">
+          {/* ⭐ FIX 2026-09-28 — DOUBLE className sur <motion.div> : fusion en un seul. */}
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+            className="mx-auto my-8 bg-white rounded-xl shadow-2xl max-w-sm w-full">
             <div className="flex items-center justify-between p-4 border-b bg-red-50 rounded-t-xl">
               <h3 className="text-lg font-bold text-red-900">Supprimer la règle</h3>
               <button onClick={() => setDeletingRuleId(null)} className="p-1 hover:bg-red-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
@@ -632,12 +665,16 @@ function RulesTab({ rules, onEdit, onDelete }: {
 
 // ─── Sanction Modal ──────────────────────────────────────────────────────
 
-function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelId, classId, className, preselectedStudentId, preselectedStudentName, allClasses, loadStudentsForClass }: {
+function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelId, classId, className, preselectedStudentId, preselectedStudentName, allClasses }: {
   onClose: () => void; onSuccess: () => void; rules: DisciplineRule[];
   academicYearId?: string; schoolLevelId?: string; classId?: string | null; className?: string;
   preselectedStudentId?: string | null; preselectedStudentName?: string;
   allClasses?: ClassInfo[];
-  loadStudentsForClass?: (classId: string) => Promise<void>;
+  // ⭐ 2026-09-28 — loadStudentsForClass supprimé : il appelait /enrollments
+  //    qui ne supporte PAS classId server-side, donc la liste d'élèves était
+  //    toujours vide dans le modal. Le SanctionModal utilise déjà /api/students
+  //    ?classId=X&academicYearId=Y directement (cf. useEffect ci-dessous) qui
+  //    fonctionne (backend Students.findAllStudents filtre par classId).
 }) {
   const [selectedClassId, setSelectedClassId] = useState(classId || '');
   const [selectedStudent, setSelectedStudent] = useState<any>(preselectedStudentId ? { id: preselectedStudentId, firstName: preselectedStudentName?.split(' ')[1] || '', lastName: preselectedStudentName?.split(' ')[0] || '' } : null);
@@ -722,8 +759,10 @@ function SanctionModal({ onClose, onSuccess, rules, academicYearId, schoolLevelI
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mx-auto my-8"
-        className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto">
+      {/* ⭐ FIX 2026-09-28 — DOUBLE className sur <motion.div> : la 2e écrasait
+          la 1re (mx-auto perdu) → modal Sanction collé à GAUCHE. Fusion. */}
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+        className="mx-auto my-8 bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2">
@@ -848,8 +887,12 @@ function RuleModal({ onClose, onSuccess, editingRule }: { onClose: () => void; o
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mx-auto my-8"
-        className="bg-white rounded-xl shadow-2xl max-w-lg w-full">
+      {/* ⭐ FIX 2026-09-28 — DOUBLE className sur <motion.div> : la 2e écrasait
+          la 1re (mx-auto perdu) → modal Règle collé à GAUCHE + la bande
+          grise constatée par le promoteur venait du backdrop opaque SANS
+          modal centré visible. Fusion des className. */}
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+        className="mx-auto my-8 bg-white rounded-xl shadow-2xl max-w-lg w-full">
         <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2"><Settings className="w-5 h-5" /> {isEditing ? 'Modifier la règle' : 'Nouvelle règle de faute'}</h3>
           <button onClick={onClose} className="p-1 hover:bg-blue-100 rounded-lg"><X className="w-5 h-5 text-gray-500" /></button>
@@ -990,8 +1033,11 @@ function ConductSettingsModal({ onClose, onSuccess, academicYearId, schoolLevelI
 
   return (
     <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto" style={{ paddingTop: '80px' }}>
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="mx-auto my-8"
-        className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+      {/* ⭐ FIX 2026-09-28 — DOUBLE className sur <motion.div> : la 2e écrasait
+          la 1re (mx-auto perdu) → modal Paramètres conduite collé à GAUCHE.
+          Fusion des className. */}
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+        className="mx-auto my-8 bg-white rounded-xl shadow-2xl max-w-md w-full">
         <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <Settings className="w-5 h-5" /> Paramètres de conduite

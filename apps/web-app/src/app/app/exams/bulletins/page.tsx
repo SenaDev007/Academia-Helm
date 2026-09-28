@@ -2353,6 +2353,7 @@ function BulletinSecondairePage1({
                   <td className="border border-slate-300 h-7" />
                 </tr>
               );
+              });
               // Ligne « Bilan <catégorie> » avec la moyenne de la catégorie
               // (sous le bloc des matières de cette catégorie). Identique au
               // PDF généré : colSpan jusqu'à la colonne Moyenne, puis valeur

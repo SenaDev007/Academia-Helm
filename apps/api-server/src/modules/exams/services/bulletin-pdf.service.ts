@@ -190,20 +190,9 @@ export interface BulletinPdfData {
   // ⭐ SECONDAIRE — Conduite (depuis conduct_ledger du module Vie Scolaire)
   conductScore?: number | null;     // ex: 17/20 (conduct_final du ledger)
   conductReference?: number | null; // ex: 17 (baseline configurée par l'école)
-  // ⭐ 2026-09-28 — SECONDAIRE — Assiduité (total d'heures d'absence/punition)
-  //    calculé depuis le module Vie Scolaire (Σ sanction.hoursAttributed pour
-  //    l'élève + le trimestre courant). Affiché dans le bloc « Assiduité »
-  //    de la page 2 du bulletin secondaire.
-  assiduityHours?: number | null;   // ex: 8 (Σ heures attribuées de sanctions)
-  sanctionCount?: number | null;    // ex: 3 (nombre de sanctions actives)
   // ⭐ SECONDAIRE — Distinction/Sanction (depuis school_academic_settings.config.distinctions)
   distinctionLabel?: string | null; // ex: "Tableau d'honneur + Félicitations"
   distinctionType?: 'DISTINCTION' | 'SANCTION' | null;
-  // ⭐ 2026-09-28 — Toutes les distinctions/sanctions configurées par l'école
-  //    (pour afficher des cases à cocher dans le bloc Conseil de classe du
-  //    PDF secondaire). Chaque entrée: { label, type, minScore, maxScore }.
-  //    La distinction qui matche la moyenne de l'élève est cochée (☑).
-  allDistinctions?: Array<{ label: string; type: string; minScore: number; maxScore: number }> | null;
   // ⭐ SECONDAIRE — Mention + Appréciation du conseil de classe
   councilMention?: string | null;   // ex: "Tableau d'honneur" (déduit ou saisi)
   councilAppreciation?: string | null; // appréciation libre du conseil
@@ -1007,70 +996,26 @@ ${page2Content}
     };
 
     const buildBilanRow = (cat: string, subjects: any[]): string => {
-      // ⭐ 2026-09-28 — MOYENNE par catégorie (exigence promoteur) :
-      //    La ligne « Bilan <catégorie> » doit afficher la MOYENNE (pas la
-      //    somme) de chaque colonne calculée : moy d'interrogation, Moy,
-      //    Coef, Note coef. Pour Coef, c'est une somme (les coefficients
-      //    s'additionnent). Pour les autres (MoyInter, Moy, NoteCoef),
-      //    c'est une moyenne arithmétique sur les matières qui ont une
-      //    valeur pour cette colonne.
-      //    ⭐ CORRECTION promoteur : c'est la MOYENNE et non la SOMME pour
-      //       MoyInter, Moy, NoteCoef. Pour Coef uniquement, c'est une
-      //       somme (Σ coefficients = total points de la catégorie).
+      // Calculer la moyenne du bilan de la catégorie
+      const validMoyennes = subjects
+        .map(s => s.secMoyenne)
+        .filter((v: number | null | undefined): v is number => typeof v === 'number' && !isNaN(v));
+      const bilanMoyenne = validMoyennes.length > 0
+        ? validMoyennes.reduce((sum, v) => sum + v, 0) / validMoyennes.length
+        : null;
+      const bilanCell = bilanMoyenne !== null
+        ? `<span style="color:${bilanMoyenne >= 10 ? '#059669' : '#dc2626'};font-weight:bold;font-size:11px;">${bilanMoyenne.toFixed(2)}</span>`
+        : '—';
       const label = CATEGORY_LABELS[cat] || 'Bilan';
-      // ⭐ Moyenne arithmétique : Σ valeurs / nombre de valeurs non-null
-      const avg = (field: string): number | null => {
-        const vals = subjects
-          .map((s: any) => s[field])
-          .filter((v: any) => typeof v === 'number' && !isNaN(v));
-        return vals.length > 0
-          ? vals.reduce((sum: number, v: any) => sum + v, 0) / vals.length
-          : null;
-      };
-      // ⭐ Somme : utilisée uniquement pour les coefficients (Σ coef)
-      const sum = (field: string): number | null => {
-        const vals = subjects
-          .map((s: any) => s[field])
-          .filter((v: any) => typeof v === 'number' && !isNaN(v));
-        return vals.length > 0 ? vals.reduce((sum: number, v: any) => sum + v, 0) : null;
-      };
-      const fmtVal = (v: number | null): string =>
-        v !== null ? v.toFixed(2) : '—';
-      // ⭐ MOYENNE pour MoyInter, Moyenne, NoteCoef (pas somme)
-      const avgMoyInter = avg('secMoyInter');
-      const avgMoyenne = avg('secMoyenne');
-      const bilanMoyCell = avgMoyenne !== null
-        ? `<span style="color:${avgMoyenne >= 10 ? '#059669' : '#dc2626'};font-weight:bold;font-size:11px;">${fmtVal(avgMoyenne)}</span>`
-        : '—';
-      const bilanMoyInterCell = avgMoyInter !== null
-        ? `<span style="color:#1d4ed8;font-weight:bold;font-size:10px;">${fmtVal(avgMoyInter)}</span>`
-        : '—';
-      // ⭐ SOMME pour Coef (Σ coefficients de la catégorie)
-      const sumCoef = !isJunior ? sum('secCoef') : null;
-      // ⭐ MOYENNE pour NoteCoef
-      const avgNoteCoef = !isJunior ? avg('secNoteCoef') : null;
-      const bilanCoefCell = !isJunior
-        ? (sumCoef !== null
-          ? `<span style="color:#b45309;font-weight:bold;font-size:10px;">${fmtVal(sumCoef)}</span>`
-          : '—')
-        : '';
-      const bilanNoteCoefCell = !isJunior
-        ? (avgNoteCoef !== null
-          ? `<span style="color:#059669;font-weight:bold;font-size:11px;">${fmtVal(avgNoteCoef)}</span>`
-          : '—')
-        : '';
+      // ⭐ 2026-09-28 — Colspan ajusté : avec la nouvelle colonne « Professeur »
+      //    on a 1 discipline + 2 IE + 1 moyInter + 2 DS + 1 moy = 7 colonnes
+      //    avant coefficient/rang/appréciation/professeur/signature.
+      //    Junior : 7 colonnes à fusionner ; Senior : 9 (avec coef + noteCoef).
+      const colSpan = isJunior ? 7 : 9;
       return `<tr style="background:#e0f2fe;font-weight:bold;">
         <td style="border:1px solid #0A2A5E;padding:3px 2px;font-size:10px;text-transform:uppercase;color:#0A2A5E;">${label}</td>
-        <td style="border:1px solid #0A2A5E;"></td>
-        <td style="border:1px solid #0A2A5E;"></td>
-        <td style="border:1px solid #0A2A5E;padding:3px 2px;text-align:center;font-size:10px;background:#eff6ff;">${bilanMoyInterCell}</td>
-        <td style="border:1px solid #0A2A5E;"></td>
-        <td style="border:1px solid #0A2A5E;"></td>
-        <td style="border:1px solid #0A2A5E;padding:3px 2px;text-align:center;font-size:11px;background:#dbeafe;">${bilanMoyCell}</td>
-        ${!isJunior ? `
-        <td style="border:1px solid #0A2A5E;padding:3px 2px;text-align:center;font-size:10px;background:#fffbeb;">${bilanCoefCell}</td>
-        <td style="border:1px solid #0A2A5E;padding:3px 2px;text-align:center;font-size:11px;background:#ecfdf5;">${bilanNoteCoefCell}</td>` : ''}
-        <td style="border:1px solid #0A2A5E;"></td>
+        <td colspan="${colSpan}" style="border:1px solid #0A2A5E;"></td>
+        <td style="border:1px solid #0A2A5E;padding:3px 2px;text-align:center;font-size:11px;background:#dbeafe;">${bilanCell}</td>
         <td style="border:1px solid #0A2A5E;"></td>
         <td style="border:1px solid #0A2A5E;"></td>
         <td style="border:1px solid #0A2A5E;"></td>
@@ -1276,107 +1221,18 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
+  <!-- SYNTHÈSE STATISTIQUE -->
+  <div style="margin-top:5px;font-size:9px;">
+    <table style="width:100%;border-collapse:collapse;"><tr>
+      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne de la classe : <strong>${fmtSec(data.classAverage)}</strong></td>
+      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne la plus faible : <strong>${fmtSec(data.lowestAverage)}</strong></td>
+      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne la plus forte : <strong>${fmtSec(data.highestAverage)}</strong></td>
+    </tr></table>
+  </div>
+
   ${recapBlock}
 
-  <!-- ═════════════ SUITE SUR LA MÊME PAGE (pas de saut de page pour le secondaire) ═════════════ -->
-  <!-- ⭐ 2026-09-28 — Tout sur UNE SEULE page A4 (exigence promoteur). Les blocs
-      suivants (Assiduité + Résultats de classe + Conseil de classe + Signatures)
-      sont placés directement après le tableau des notes + récap, sur la MÊME
-      page. Pas de saut de page, pas de header raccourci (puisque l'en-tête
-      officiel est déjà en haut de la page). -->
-
-  <!-- ═══ BLOC : Assiduité (total d'heures depuis module Vie Scolaire) ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Assiduité</div>
-    <table style="width:100%;border-collapse:collapse;font-size:10px;">
-      <tr>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;text-align:right;">Total d'heures d'absence/punition :</td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.assiduityHours ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
-          ${typeof data.assiduityHours === 'number' ? `${data.assiduityHours.toFixed(2)} h` : '0.00 h'}
-        </td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;text-align:right;">Nombre de sanctions :</td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.sanctionCount ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
-          ${typeof data.sanctionCount === 'number' ? data.sanctionCount : 0}
-        </td>
-      </tr>
-    </table>
-  </div>
-
-  <!-- ═══ BLOC : Moyennes trimestrielles + récap résultats de classe ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Résultats de classe</div>
-    <table style="width:100%;border-collapse:collapse;font-size:10px;">
-      <tr>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne trimestrielle :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#0A2A5E;font-size:12px;">${fmtSec(data.generalAverage)}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Rang :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
-      </tr>
-      <tr>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne de la classe :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.classAverage)}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne la plus forte :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#059669;">${fmtSec(data.highestAverage)}</td>
-      </tr>
-      <tr>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne la plus faible :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#dc2626;">${fmtSec(data.lowestAverage)}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Effectif :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${data.totalStudents}</td>
-      </tr>
-    </table>
-  </div>
-
-  <!-- ═══ BLOC : Mention du conseil de classe — Distinctions + Sanctions (cases à cocher) ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Mention du conseil de classe</div>
-    <table style="width:100%;border-collapse:collapse;font-size:9px;">
-      ${(() => {
-        const dists = data.allDistinctions || [];
-        const distinctions = dists.filter(d => d.type === 'DISTINCTION');
-        const sanctions = dists.filter(d => d.type === 'SANCTION');
-        const checked = (d: any) => data.distinctionLabel === d.label ? '\u2611' : '\u2610';
-        const distCells = distinctions.map(d =>
-          `<td style="border:1px solid #cbd5e1;padding:2px 4px;font-size:9px;white-space:nowrap;">${checked(d)} ${d.label}</td>`
-        ).join('');
-        const sancCells = sanctions.map(d =>
-          `<td style="border:1px solid #cbd5e1;padding:2px 4px;font-size:9px;white-space:nowrap;">${checked(d)} ${d.label}</td>`
-        ).join('');
-        return `<tr><td style="border:1px solid #cbd5e1;padding:2px 4px;background:#f8fafc;font-weight:bold;vertical-align:top;width:80px;">Distinctions</td><td style="border:1px solid #cbd5e1;padding:2px 4px;">${distCells || '\u2014'}</td></tr><tr><td style="border:1px solid #cbd5e1;padding:2px 4px;background:#f8fafc;font-weight:bold;vertical-align:top;width:80px;">Sanctions</td><td style="border:1px solid #cbd5e1;padding:2px 4px;">${sancCells || '\u2014'}</td></tr>`;
-      })()}
-    </table>
-  </div>
-
-  <!-- ═══ BLOC : Appréciation du conseil de classe ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:4px;">Appréciation du conseil de classe</div>
-    <div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:40px;padding:4px 6px;border:1px solid #cbd5e1;background:#f8fafc;">
-      ${data.councilAppreciation || data.analyseRecommandations || '\u2014'}
-    </div>
-  </div>
-
-  <!-- ═══ BLOC : Visa du chef d'établissement ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <table style="width:100%;border-collapse:collapse;">
-      <tr>
-        <td style="width:50%;text-align:center;vertical-align:bottom;padding:8px 4px;">
-          <div style="height:45px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:45px;max-width:100px;object-fit:contain;" />` : ''}</div>
-          <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Titulaire de la classe</div>
-          ${data.teacherName
-            ? `<div style="font-size:8px;color:#1a1a1a;margin-top:2px;font-weight:600;">${data.teacherName}</div>`
-            : '<div style="font-size:7px;color:#64748b;margin-top:1px;">Nom et signature</div>'}
-        </td>
-        <td style="width:50%;text-align:center;vertical-align:bottom;padding:8px 4px;">
-          ${this.renderDirectorSealsZone(data, 45)}
-          ${data.directorVisa ? `<div style="font-size:8px;color:#dc2626;font-style:italic;margin-top:2px;">${data.directorVisa}</div>` : ''}
-          <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Chef d'Établissement</div>
-          ${this.renderDirectorNameLine(data, '8px', 'Nom et signature')}
-        </td>
-      </tr>
-    </table>
-  </div>
-
-  <!-- QR code + mention officielle -->
+  <!-- QR + MENTION OFFICIELLE -->
   <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
     <div style="font-size:8px;font-style:italic;font-weight:bold;color:#0A2A5E;">Ce bulletin n'est établi qu'une seule fois,<br/>veuillez le conserver précieusement.</div>
     <div style="text-align:center;">
@@ -1387,7 +1243,89 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
 
   <div class="footer">Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0141360803'}</div>
 
-  </div><!-- /.page (unique) -->
+  </div><!-- /.page 1 -->
+
+  <!-- ═══ SAUT DE PAGE ═══ -->
+  <div style="page-break-after:always;"></div>
+
+  <!-- ═════════════ PAGE 2 : Annotations + Signatures ═════════════ -->
+  <div class="page">
+
+  <!-- HEADER RACCOURCI PAGE 2 -->
+  <div style="text-align:center;margin-bottom:10px;padding-bottom:4px;border-bottom:1px solid #0A2A5E;">
+    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;">${data.schoolName} — ${data.studentName} — ${data.periodName}</div>
+    <div style="font-size:8px;color:#64748b;margin-top:2px;">Bulletin de notes — ${data.academicYearName} · Classe : ${data.className}</div>
+  </div>
+
+  <!-- ═══ BLOC UNIFIÉ : Mention du conseil de classe + Appréciation + Signatures (3 colonnes) ═══ -->
+  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:6px;margin-bottom:8px;width:100%;">
+    <table style="width:100%;border-collapse:collapse;">
+      <tr>
+        <!-- COLONNE 1 : Mention du conseil de classe (Distinctions + Sanctions en cases à cocher) -->
+        <td style="width:34%;vertical-align:top;border:1px solid #cbd5e1;padding:4px;">
+          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Mention du conseil de classe</div>
+          ${(() => {
+            const dists = data.allDistinctions || [];
+            const distinctions = dists.filter(d => d.type === 'DISTINCTION');
+            const sanctions = dists.filter(d => d.type === 'SANCTION');
+            const chk = (d: any) => data.distinctionLabel === d.label ? '\u2611' : '\u2610';
+            let html = '';
+            if (distinctions.length > 0) {
+              html += '<div style="font-size:8px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:2px;">Distinctions</div>';
+              for (const d of distinctions) {
+                html += `<div style="font-size:8px;margin-bottom:1px;">${chk(d)} ${d.label}</div>`;
+              }
+            }
+            if (sanctions.length > 0) {
+              html += '<div style="font-size:8px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-top:4px;margin-bottom:2px;">Sanctions</div>';
+              for (const d of sanctions) {
+                html += `<div style="font-size:8px;margin-bottom:1px;">${chk(d)} ${d.label}</div>`;
+              }
+            }
+            if (!html) html = '<div style="font-size:8px;color:#94a3b8;">\u2014</div>';
+            return html;
+          })()}
+        </td>
+        <!-- COLONNE 2 : Appréciation du conseil de classe + Nom/Signature professeur principal -->
+        <td style="width:33%;vertical-align:top;border:1px solid #cbd5e1;padding:4px;">
+          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Appréciation du conseil de classe</div>
+          <div style="font-size:8px;color:#1a1a1a;line-height:1.4;min-height:60px;">
+            ${data.councilAppreciation || data.analyseRecommandations || '\u2014'}
+          </div>
+          <div style="margin-top:8px;text-align:center;">
+            <div style="height:35px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:35px;max-width:80px;object-fit:contain;" />` : ''}</div>
+            <div style="border-top:1px solid #000;margin-top:3px;padding-top:2px;font-size:8px;font-weight:bold;color:#0A2A5E;">Professeur principal</div>
+            ${data.teacherName
+              ? `<div style="font-size:7px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.teacherName}</div>`
+              : '<div style="font-size:6px;color:#64748b;margin-top:1px;">Nom / Signature</div>'}
+          </div>
+        </td>
+        <!-- COLONNE 3 : Signature et cachet du chef d'établissement -->
+        <td style="width:33%;vertical-align:top;border:1px solid #cbd5e1;padding:4px;">
+          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;text-align:center;">Signature et cachet du chef d'établissement</div>
+          <div style="text-align:center;margin-top:10px;">
+            ${this.renderDirectorSealsZone(data, 40)}
+            ${data.directorVisa ? `<div style="font-size:7px;color:#dc2626;font-style:italic;margin-top:2px;">${data.directorVisa}</div>` : ''}
+            <div style="border-top:1px solid #000;margin-top:5px;padding-top:2px;font-size:8px;font-weight:bold;color:#0A2A5E;">Le Chef d'Établissement</div>
+            ${this.renderDirectorNameLine(data, '7px', 'Nom / Signature / Cachet')}
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- QR code + mention officielle page 2 -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
+    <div style="font-size:8px;font-style:italic;font-weight:bold;color:#0A2A5E;">Ce bulletin n'est établi qu'une seule fois,<br/>veuillez le conserver précieusement.</div>
+    <div style="text-align:center;">
+      <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
+      <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
+    </div>
+  </div>
+
+  <div class="footer">Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0141360803'}</div>
+
+  </div><!-- /.page 2 -->
 
 </div>
 
@@ -1546,101 +1484,13 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
-  <!-- ═════════════ SUITE SUR LA MÊME PAGE (pas de saut de page pour le secondaire) ═════════════ -->
-  <!-- ⭐ 2026-09-28 — Tout sur UNE SEULE page A4 (exigence promoteur). Les blocs
-      suivants (Assiduité + Résultats de classe + Conseil de classe + Signatures)
-      sont placés directement après le tableau des notes, sur la MÊME
-      page. Pas de saut de page, pas de header raccourci. -->
-
-  <!-- ═══ BLOC : Assiduité (total d'heures depuis module Vie Scolaire) ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Assiduité</div>
-    <table style="width:100%;border-collapse:collapse;font-size:10px;">
-      <tr>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;text-align:right;">Total d'heures d'absence/punition :</td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.assiduityHours ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
-          ${typeof data.assiduityHours === 'number' ? `${data.assiduityHours.toFixed(2)} h` : '0.00 h'}
-        </td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;text-align:right;">Nombre de sanctions :</td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.sanctionCount ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
-          ${typeof data.sanctionCount === 'number' ? data.sanctionCount : 0}
-        </td>
-      </tr>
-    </table>
-  </div>
-
-  <!-- ═══ BLOC : Résultats de classe ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Résultats de classe</div>
-    <table style="width:100%;border-collapse:collapse;font-size:10px;">
-      <tr>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne de l'évaluation :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#0A2A5E;font-size:12px;">${fmtSec(data.generalAverage)}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Rang :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
-      </tr>
-      <tr>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne de la classe :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.classAverage)}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne la plus forte :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#059669;">${fmtSec(data.highestAverage)}</td>
-      </tr>
-      <tr>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne la plus faible :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#dc2626;">${fmtSec(data.lowestAverage)}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Effectif :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${data.totalStudents}</td>
-      </tr>
-    </table>
-  </div>
-
-  <!-- ═══ BLOC : Mention du conseil de classe — Distinctions + Sanctions (cases à cocher) ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Mention du conseil de classe</div>
-    <table style="width:100%;border-collapse:collapse;font-size:9px;">
-      ${(() => {
-        const dists = data.allDistinctions || [];
-        const distinctions = dists.filter(d => d.type === 'DISTINCTION');
-        const sanctions = dists.filter(d => d.type === 'SANCTION');
-        const checked = (d: any) => data.distinctionLabel === d.label ? '\u2611' : '\u2610';
-        const distCells = distinctions.map(d =>
-          `<td style="border:1px solid #cbd5e1;padding:2px 4px;font-size:9px;white-space:nowrap;">${checked(d)} ${d.label}</td>`
-        ).join('');
-        const sancCells = sanctions.map(d =>
-          `<td style="border:1px solid #cbd5e1;padding:2px 4px;font-size:9px;white-space:nowrap;">${checked(d)} ${d.label}</td>`
-        ).join('');
-        return `<tr><td style="border:1px solid #cbd5e1;padding:2px 4px;background:#f8fafc;font-weight:bold;vertical-align:top;width:80px;">Distinctions</td><td style="border:1px solid #cbd5e1;padding:2px 4px;">${distCells || '\u2014'}</td></tr><tr><td style="border:1px solid #cbd5e1;padding:2px 4px;background:#f8fafc;font-weight:bold;vertical-align:top;width:80px;">Sanctions</td><td style="border:1px solid #cbd5e1;padding:2px 4px;">${sancCells || '\u2014'}</td></tr>`;
-      })()}
-    </table>
-  </div>
-
-  <!-- ═══ BLOC : Appréciation du conseil de classe ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:4px;">Appréciation du conseil de classe</div>
-    <div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:40px;padding:4px 6px;border:1px solid #cbd5e1;background:#f8fafc;">
-      ${data.councilAppreciation || data.analyseRecommandations || '\u2014'}
-    </div>
-  </div>
-
-  <!-- ═══ BLOC : Visa du chef d'établissement ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <table style="width:100%;border-collapse:collapse;">
-      <tr>
-        <td style="width:50%;text-align:center;vertical-align:bottom;padding:8px 4px;">
-          <div style="height:45px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:45px;max-width:100px;object-fit:contain;" />` : ''}</div>
-          <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Titulaire de la classe</div>
-          ${data.teacherName
-            ? `<div style="font-size:8px;color:#1a1a1a;margin-top:2px;font-weight:600;">${data.teacherName}</div>`
-            : '<div style="font-size:7px;color:#64748b;margin-top:1px;">Nom et signature</div>'}
-        </td>
-        <td style="width:50%;text-align:center;vertical-align:bottom;padding:8px 4px;">
-          ${this.renderDirectorSealsZone(data, 45)}
-          ${data.directorVisa ? `<div style="font-size:8px;color:#dc2626;font-style:italic;margin-top:2px;">${data.directorVisa}</div>` : ''}
-          <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Chef d'Établissement</div>
-          ${this.renderDirectorNameLine(data, '8px', 'Nom et signature')}
-        </td>
-      </tr>
-    </table>
+  <!-- SYNTHÈSE STATISTIQUE -->
+  <div style="margin-top:5px;font-size:9px;">
+    <table style="width:100%;border-collapse:collapse;"><tr>
+      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne de la classe : <strong>${fmtSec(data.classAverage)}</strong></td>
+      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne la plus faible : <strong>${fmtSec(data.lowestAverage)}</strong></td>
+      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne la plus forte : <strong>${fmtSec(data.highestAverage)}</strong></td>
+    </tr></table>
   </div>
 
   <!-- QR + MENTION OFFICIELLE -->
@@ -1654,7 +1504,89 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
 
   <div class="footer">Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0141360803'}</div>
 
-  </div><!-- /.page (unique) -->
+  </div><!-- /.page 1 -->
+
+  <!-- ═══ SAUT DE PAGE ═══ -->
+  <div style="page-break-after:always;"></div>
+
+  <!-- ═════════════ PAGE 2 : Annotations + Signatures ═════════════ -->
+  <div class="page">
+
+  <!-- HEADER RACCOURCI PAGE 2 -->
+  <div style="text-align:center;margin-bottom:10px;padding-bottom:4px;border-bottom:1px solid #0A2A5E;">
+    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;">${data.schoolName} — ${data.studentName} — ${data.periodName}</div>
+    <div style="font-size:8px;color:#64748b;margin-top:2px;">Bulletin d'évaluation — ${data.evaluationTypeName || 'Évaluation'}${data.evaluationTypeCode ? ' (' + data.evaluationTypeCode + ')' : ''} — ${data.academicYearName} · Classe : ${data.className}</div>
+  </div>
+
+  <!-- ═══ BLOC UNIFIÉ : Mention du conseil de classe + Appréciation + Signatures (3 colonnes) ═══ -->
+  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:6px;margin-bottom:8px;width:100%;">
+    <table style="width:100%;border-collapse:collapse;">
+      <tr>
+        <!-- COLONNE 1 : Mention du conseil de classe (Distinctions + Sanctions en cases à cocher) -->
+        <td style="width:34%;vertical-align:top;border:1px solid #cbd5e1;padding:4px;">
+          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Mention du conseil de classe</div>
+          ${(() => {
+            const dists = data.allDistinctions || [];
+            const distinctions = dists.filter(d => d.type === 'DISTINCTION');
+            const sanctions = dists.filter(d => d.type === 'SANCTION');
+            const chk = (d: any) => data.distinctionLabel === d.label ? '\u2611' : '\u2610';
+            let html = '';
+            if (distinctions.length > 0) {
+              html += '<div style="font-size:8px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:2px;">Distinctions</div>';
+              for (const d of distinctions) {
+                html += `<div style="font-size:8px;margin-bottom:1px;">${chk(d)} ${d.label}</div>`;
+              }
+            }
+            if (sanctions.length > 0) {
+              html += '<div style="font-size:8px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-top:4px;margin-bottom:2px;">Sanctions</div>';
+              for (const d of sanctions) {
+                html += `<div style="font-size:8px;margin-bottom:1px;">${chk(d)} ${d.label}</div>`;
+              }
+            }
+            if (!html) html = '<div style="font-size:8px;color:#94a3b8;">\u2014</div>';
+            return html;
+          })()}
+        </td>
+        <!-- COLONNE 2 : Appréciation du conseil de classe + Nom/Signature professeur principal -->
+        <td style="width:33%;vertical-align:top;border:1px solid #cbd5e1;padding:4px;">
+          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Appréciation du conseil de classe</div>
+          <div style="font-size:8px;color:#1a1a1a;line-height:1.4;min-height:60px;">
+            ${data.councilAppreciation || data.analyseRecommandations || '\u2014'}
+          </div>
+          <div style="margin-top:8px;text-align:center;">
+            <div style="height:35px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:35px;max-width:80px;object-fit:contain;" />` : ''}</div>
+            <div style="border-top:1px solid #000;margin-top:3px;padding-top:2px;font-size:8px;font-weight:bold;color:#0A2A5E;">Professeur principal</div>
+            ${data.teacherName
+              ? `<div style="font-size:7px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.teacherName}</div>`
+              : '<div style="font-size:6px;color:#64748b;margin-top:1px;">Nom / Signature</div>'}
+          </div>
+        </td>
+        <!-- COLONNE 3 : Signature et cachet du chef d'établissement -->
+        <td style="width:33%;vertical-align:top;border:1px solid #cbd5e1;padding:4px;">
+          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;text-align:center;">Signature et cachet du chef d'établissement</div>
+          <div style="text-align:center;margin-top:10px;">
+            ${this.renderDirectorSealsZone(data, 40)}
+            ${data.directorVisa ? `<div style="font-size:7px;color:#dc2626;font-style:italic;margin-top:2px;">${data.directorVisa}</div>` : ''}
+            <div style="border-top:1px solid #000;margin-top:5px;padding-top:2px;font-size:8px;font-weight:bold;color:#0A2A5E;">Le Chef d'Établissement</div>
+            ${this.renderDirectorNameLine(data, '7px', 'Nom / Signature / Cachet')}
+          </div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- QR + MENTION OFFICIELLE page 2 -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
+    <div style="font-size:8px;font-style:italic;font-weight:bold;color:#0A2A5E;">Ce bulletin n'est établi qu'une seule fois,<br/>veuillez le conserver précieusement.</div>
+    <div style="text-align:center;">
+      <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
+      <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
+    </div>
+  </div>
+
+  <div class="footer">Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0141360803'}</div>
+
+  </div><!-- /.page 2 -->
 
 </div>
 

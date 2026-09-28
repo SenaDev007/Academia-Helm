@@ -21,6 +21,9 @@ import { FederisUsersController } from './federis-users.controller';
 // ⭐ Bureau & Membres : CRUD de la composition du bureau institutionnel
 import { FederisBureauService } from './federis-bureau.service';
 import { FederisBureauController } from './federis-bureau.controller';
+// ⭐ Banque d'épreuves : recensement et sécurisation des sujets (§7.7)
+import { FederisQuestionBankService } from './federis-question-bank.service';
+import { FederisQuestionBankController } from './federis-question-bank.controller';
 // ⭐ Workflow examens : centres, salles, candidats, numéros de table, import
 import { FederisExamsService } from './federis-exams.service';
 import { FederisExamsController } from './federis-exams.controller';
@@ -46,6 +49,7 @@ import { FederisPdfController } from './federis-pdf.controller';
     FederisPatronatController,
     FederisUsersController,
     FederisBureauController,
+    FederisQuestionBankController,
     FederisExamsController,
     FederisSchoolController,
     FederisDeliberationController,
@@ -62,6 +66,7 @@ import { FederisPdfController } from './federis-pdf.controller';
     FederisPatronatService,
     FederisUsersService,
     FederisBureauService,
+    FederisQuestionBankService,
     FederisExamsService,
     FederisSchoolService,
     FederisDeliberationService,

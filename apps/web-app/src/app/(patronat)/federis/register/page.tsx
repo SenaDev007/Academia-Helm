@@ -14,6 +14,12 @@
  * territoriales de référence (CountryTerritory — ex: les 12 départements du
  * Bénin). Un pays sans liste configurée conserve un champ texte libre.
  *
+ * ⭐ Patronat national de rattachement (règle 2026-09-28) : un pays = UN SEUL
+ * patronat national (index unique en base). Il est RÉCUPÉRÉ AUTOMATIQUEMENT
+ * depuis la base et pré-rempli — plus de liste de choix, plus de patronats
+ * fictifs : tous les patronats départementaux se rattachent au patronat
+ * national unique de leur pays.
+ *
  * Type d'organisation : Federis est dédié aux patronats — le champ n'est plus
  * affiché ; PATRONAT est transmis par défaut à l'API.
  */
@@ -62,6 +68,7 @@ interface NationalPatronat {
   id: string;
   name: string;
   abbreviation?: string;
+  subscriptionStatus?: string;
 }
 
 export default function FederisRegisterPage() {
@@ -128,8 +135,16 @@ export default function FederisRegisterPage() {
   // dès qu'une liste de référence existe (ex: 12 départements du Bénin).
   const countryTerritories = selectedCountry?.territories ?? [];
 
-  // Patronats nationaux du pays sélectionné (rattachement des territoriaux)
-  const loadNationalPatronats = useCallback(async (countryId: string) => {
+  // ⭐ Patronat national de rattachement — RÉCUPÉRATION AUTOMATIQUE.
+  // Règle (2026-09-28) : un pays = UN SEUL patronat national (index unique
+  // partiel en base). Le formulaire ne propose donc PLUS une liste de
+  // choix : il récupère le patronat national du pays depuis la base et
+  // pré-remplit le rattachement automatiquement. Tous les patronats
+  // départementaux s'y rattachent.
+  // Le fetch démarre dès la sélection du PAYS (avant même le choix du
+  // niveau) : l'option « National » peut ainsi être désactivée si le
+  // patronat national du pays existe déjà.
+  const loadNationalPatronat = useCallback(async (countryId: string) => {
     setLoadingNationals(true);
     try {
       const res = await apiClient.get('/federis/public/national-patronats', {
@@ -138,7 +153,7 @@ export default function FederisRegisterPage() {
       });
       setNationalPatronats(res.data ?? []);
     } catch (err) {
-      console.error('[FederisRegister] Erreur patronats nationaux :', err);
+      console.error('[FederisRegister] Erreur patronat national :', err);
       setNationalPatronats([]);
     } finally {
       setLoadingNationals(false);
@@ -146,13 +161,25 @@ export default function FederisRegisterPage() {
   }, []);
 
   useEffect(() => {
-    if (formData.countryId && !isNational) {
-      void loadNationalPatronats(formData.countryId);
+    if (formData.countryId) {
+      void loadNationalPatronat(formData.countryId);
     } else {
       setNationalPatronats([]);
     }
-     
-  }, [formData.countryId, formData.territorialLevelCode]);
+  }, [formData.countryId]);
+
+  // Pré-remplissage automatique : dès que le patronat national UNIQUE du
+  // pays est connu et que le niveau choisi est territorial, le
+  // rattachement est rempli automatiquement — aucune sélection manuelle.
+  useEffect(() => {
+    if (!isNational && nationalPatronats.length === 1) {
+      setFormData((prev) =>
+        prev.parentPatronatId === nationalPatronats[0].id
+          ? prev
+          : { ...prev, parentPatronatId: nationalPatronats[0].id },
+      );
+    }
+  }, [isNational, nationalPatronats]);
 
   const validateStep = (stepNumber: number): boolean => {
     const newErrors: Record<string, string> = {};
@@ -165,14 +192,19 @@ export default function FederisRegisterPage() {
       if (!isNational) {
         if (!formData.territoryName.trim())
           newErrors.territoryName = `Le ${territoryLabel.toLowerCase()} est requis`;
-        if (!formData.parentPatronatId)
+        if (loadingNationals) {
           newErrors.parentPatronatId =
-            'Le patronat national de rattachement est requis pour un patronat territorial';
-        if (
-          nationalPatronats.length > 0 &&
-          !nationalPatronats.some((p) => p.id === formData.parentPatronatId)
-        ) {
-          newErrors.parentPatronatId = 'Patronat national invalide pour ce pays';
+            'Récupération du patronat national en cours — patientez un instant…';
+        } else {
+          if (!formData.parentPatronatId)
+            newErrors.parentPatronatId =
+              'Le patronat national de rattachement est requis pour un patronat territorial';
+          if (
+            nationalPatronats.length > 0 &&
+            !nationalPatronats.some((p) => p.id === formData.parentPatronatId)
+          ) {
+            newErrors.parentPatronatId = 'Patronat national invalide pour ce pays';
+          }
         }
         if (
           countryTerritories.length > 0 &&
@@ -182,6 +214,13 @@ export default function FederisRegisterPage() {
         ) {
           newErrors.territoryName = `Sélectionnez un ${territoryLabel.toLowerCase()} dans la liste`;
         }
+      } else if (
+        !loadingNationals &&
+        nationalPatronats.length > 0
+      ) {
+        // ⭐ Règle d'unicité côté formulaire : le pays a déjà son patronat
+        // national unique — la création d'un second est impossible.
+        newErrors.territorialLevelCode = `Le patronat national de ce pays existe déjà : « ${nationalPatronats[0].name} ». Choisissez le niveau « Département » pour créer un patronat départemental rattaché au national.`;
       }
     } else if (stepNumber === 2) {
       if (!formData.responsibleName.trim())
@@ -424,11 +463,20 @@ export default function FederisRegisterPage() {
                     )}
                   >
                     <option value="">Sélectionner le niveau…</option>
-                    {selectedCountry?.territorialLevels.map((l) => (
-                      <option key={l.id} value={l.code}>
-                        {l.label}
-                      </option>
-                    ))}
+                    {selectedCountry?.territorialLevels.map((l) => {
+                      // ⭐ Un pays = un seul patronat national : si le national
+                      // du pays existe déjà, l'option National est désactivée.
+                      const nationalTaken =
+                        (l.code === 'NATIONAL' || l.order === 1) &&
+                        !loadingNationals &&
+                        nationalPatronats.length > 0;
+                      return (
+                        <option key={l.id} value={l.code} disabled={nationalTaken}>
+                          {l.label}
+                          {nationalTaken ? ' — déjà créé' : ''}
+                        </option>
+                      );
+                    })}
                   </select>
                   {errors.territorialLevelCode && (
                     <p className="mt-1 text-sm text-red-400">{errors.territorialLevelCode}</p>
@@ -512,37 +560,106 @@ export default function FederisRegisterPage() {
                         Patronat national de rattachement{' '}
                         <span className="text-red-500">*</span>
                       </label>
-                      <select
-                        value={formData.parentPatronatId}
-                        onChange={(e) =>
-                          setFormData({ ...formData, parentPatronatId: e.target.value })
-                        }
-                        disabled={loadingNationals}
-                        className={cn(
-                          'fed-input px-4 py-2',
-                          errors.parentPatronatId ? '!border-red-500/60' : '',
-                        )}
-                      >
-                        <option value="">
-                          {loadingNationals
-                            ? 'Chargement…'
-                            : nationalPatronats.length === 0
-                              ? 'Aucun patronat national actif dans ce pays'
-                              : 'Sélectionner le patronat national…'}
-                        </option>
-                        {nationalPatronats.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
+
+                      {loadingNationals ? (
+                        /* Récupération automatique en cours */
+                        <div className="fed-input px-4 py-2 flex items-center gap-2.5 text-blue-100/70">
+                          <svg
+                            className="animate-spin h-4 w-4 flex-shrink-0 text-amber-400"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            aria-hidden="true"
+                          >
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            />
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                            />
+                          </svg>
+                          <span className="text-sm">
+                            Récupération du patronat national de {selectedCountry?.name}…
+                          </span>
+                        </div>
+                      ) : nationalPatronats.length === 1 ? (
+                        /* ⭐ Cas nominal : un pays = UN SEUL patronat national,
+                           récupéré automatiquement depuis la base et pré-rempli. */
+                        <>
+                          <div className="fed-input px-4 py-2.5 flex items-center gap-2.5 !border-emerald-400/30 bg-emerald-500/10">
+                            <svg
+                              className="h-5 w-5 flex-shrink-0 text-emerald-400"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                              aria-hidden="true"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                            <span className="text-sm font-semibold text-white">
+                              {nationalPatronats[0].name}
+                            </span>
+                            <span className="ml-auto text-[10px] font-bold uppercase tracking-wider text-emerald-300/90 border border-emerald-400/30 rounded-full px-2 py-0.5 flex-shrink-0">
+                              Automatique
+                            </span>
+                          </div>
+                          <p className="mt-1.5 text-xs text-emerald-300/80">
+                            Rattachement automatique au patronat national unique de{' '}
+                            {selectedCountry?.name} — tous les patronats départementaux du pays
+                            sont rattachés à ce patronat national.
+                          </p>
+                        </>
+                      ) : nationalPatronats.length > 1 ? (
+                        /* Cas transitoire (données antérieures à la règle
+                           d'unicité) : sélecteur parmi les nationaux existants. */
+                        <>
+                          <select
+                            value={formData.parentPatronatId}
+                            onChange={(e) =>
+                              setFormData({ ...formData, parentPatronatId: e.target.value })
+                            }
+                            className={cn(
+                              'fed-input px-4 py-2',
+                              errors.parentPatronatId ? '!border-red-500/60' : '',
+                            )}
+                          >
+                            <option value="">Sélectionner le patronat national…</option>
+                            {nationalPatronats.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                          <p className="mt-1.5 text-xs text-blue-100/50">
+                            Plusieurs patronats nationaux historiques existent pour ce pays —
+                            sélectionnez celui officiel.
+                          </p>
+                        </>
+                      ) : (
+                        /* Aucun patronat national pour ce pays */
+                        <div className="fed-input px-4 py-2 text-sm text-amber-300/90">
+                          Aucun patronat national actif pour {selectedCountry?.name}
+                        </div>
+                      )}
+
                       {errors.parentPatronatId && (
                         <p className="mt-1 text-sm text-red-400">{errors.parentPatronatId}</p>
                       )}
                       {nationalPatronats.length === 0 && !loadingNationals && (
                         <p className="mt-1.5 text-xs text-amber-400/90">
                           Aucun patronat national n&rsquo;est encore enregistré pour ce pays.
-                          Contactez l&rsquo;équipe pour valider le modèle local avant activation.
+                          Le patronat national doit être créé en premier : contactez
+                          l&rsquo;équipe Academia Federis pour valider le modèle local avant
+                          activation.
                         </p>
                       )}
                     </div>

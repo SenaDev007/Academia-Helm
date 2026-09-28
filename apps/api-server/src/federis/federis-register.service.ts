@@ -157,7 +157,18 @@ export class FederisRegisterService {
     }));
   }
 
-  /** Patronats nationaux actifs (pour le rattachement des territoriaux). */
+  /**
+   * Patronat national UNIQUE du pays (règle : un pays = un patronat
+   * national, auquel se rattachent tous les patronats départementaux).
+   *
+   * ⭐ Retour automatique : le sélecteur « Patronat national de rattachement »
+   * de l'inscription récupère ce patronat automatiquement — aucune création
+   * de patronat national concurrente n'est possible (index unique partiel
+   * patronats_unique_national_per_country + contrôle applicatif).
+   *
+   * Tri : abonnement ACTIVE d'abord (le national officiel du pays), puis
+   * nom — avec la règle d'unicité il ne reste de toute façon qu'une ligne.
+   */
   async getNationalPatronats(countryId?: string) {
     return this.prisma.patronat.findMany({
       where: {
@@ -171,8 +182,9 @@ export class FederisRegisterService {
         abbreviation: true,
         countryId: true,
         territoryName: true,
+        subscriptionStatus: true,
       },
-      orderBy: { name: 'asc' },
+      orderBy: [{ subscriptionStatus: 'asc' }, { name: 'asc' }],
     });
   }
 
@@ -303,6 +315,27 @@ export class FederisRegisterService {
       );
     }
     const isNational = level.code === 'NATIONAL' || level.order === 1;
+
+    // ⭐ Règle d'unicité (2026-09-28) : UN SEUL patronat national par pays.
+    // On ne peut pas créer deux patronats nationaux pour un même pays — tous
+    // les patronats départementaux / territoriaux se rattachent au patronat
+    // national unique du pays. Garanti en base par l'index unique partiel
+    // patronats_unique_national_per_country ; ce contrôle applicatif offre
+    // un message explicite (le patronat existant est nommé) au lieu d'une
+    // erreur brute P2002.
+    if (isNational) {
+      const existingNational = await this.prisma.patronat.findFirst({
+        where: { orgLevel: 'NATIONAL', countryId: country.id },
+        select: { id: true, name: true, subscriptionStatus: true },
+      });
+      if (existingNational) {
+        throw new ConflictException(
+          `Le patronat national de ce pays existe déjà : « ${existingNational.name} ». ` +
+            'Un pays ne peut avoir qu’un seul patronat national, auquel se rattachent les patronats départementaux. ' +
+            'Si vous représentez un département, choisissez le niveau « Département » à l’étape précédente et rattachez-vous au patronat national.',
+        );
+      }
+    }
 
     // Département / unité territoriale : si le pays dispose d'une liste de
     // référence (CountryTerritory), la valeur doit en faire partie — plus de

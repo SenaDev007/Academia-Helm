@@ -219,14 +219,15 @@ export default function DisciplineWorkspace({
       'TERMINALE', 'TLE', 'TERM',
     ];
     const pedagogicalSortIndex = (name: string): number => {
-      const upper = (name || '').toUpperCase().trim();
-      // On essaie chaque pattern dans l'ordre, le 1er match gagne
+      // ⭐ 2026-09-28 — On normalise le nom en MAJ sans accents pour tolérer
+      //    « 6E », « 6ÈME », « 1ère », « Terminale », etc.
+      const upper = (name || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+      // On teste chaque pattern dans l'ordre, le 1er match gagne
       for (let i = 0; i < PEDAGOGICAL_ORDER.length; i++) {
         const pat = PEDAGOGICAL_ORDER[i];
-        // Match flexible : « 6E » matche « 6E », « 6E A », « 6ÈME », etc.
-        // On remplace E → È pour tolérer les accents, et on accepte un
-        // séparateur (espace, tiret, « è ») après le pattern.
-        const re = new RegExp(`(^|\\s|-)${pat.replace(/E/g, 'E[ÈE]?').replace(/DE$/, 'DE'}(\\s|$|-)`, 'i');
+        // Match flexible : « 6E » matche « 6E », « 6E A », « 6EME », etc.
+        // On accepte un séparateur (espace, tiret, fin de chaîne) après.
+        const re = new RegExp(`(^|\\s|-)${pat}(\\s|$|-)`, 'i');
         if (re.test(upper)) return i;
       }
       return PEDAGOGICAL_ORDER.length; // ce qui ne matche pas → à la fin
@@ -264,10 +265,12 @@ export default function DisciplineWorkspace({
       '2NDE', 'SECONDE', '1ERE', 'PREMIERE', 'TERMINALE', 'TLE', 'TERM',
     ];
     const pedagogicalSortIndex = (name: string): number => {
-      const upper = (name || '').toUpperCase().trim();
+      // ⭐ 2026-09-28 — On normalise en MAJ sans accents pour tolérer
+      //    « 6E », « 6ÈME », « 1ère », « Terminale », etc.
+      const upper = (name || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
       for (let i = 0; i < PEDAGOGICAL_ORDER.length; i++) {
         const pat = PEDAGOGICAL_ORDER[i];
-        const re = new RegExp(`(^|\\s|-)${pat.replace(/E/g, 'E[ÈE]?')}(\\s|$|-)`, 'i');
+        const re = new RegExp(`(^|\\s|-)${pat}(\\s|$|-)`, 'i');
         if (re.test(upper)) return i;
       }
       return PEDAGOGICAL_ORDER.length;

@@ -304,13 +304,19 @@ export class AcademicSettingsService {
         secondaryCycle: settings.secondaryCycle,
         classId: settings.classId,
       },
-      data: { status: 'DRAFT' },
+      data: { status: 'DRAFT', isActive: false },
     });
 
     const result = await this.prisma.schoolAcademicSettings.update({
       where: { id },
       data: {
         status: 'ACTIVE',
+        // ⭐ 2026-09-28 — FIX : isActive doit être true aussi (la colonne
+        //    isActive est séparée de status dans le schéma Prisma). Sans
+        //    ça, le bulletin PDF ne trouve pas la config car la requête
+        //    filtre sur isActive = true. Le défaut isActive=false du
+        //    schéma empêchait la distinction d'être résolue.
+        isActive: true,
         activatedById: userId,
         activatedAt: new Date(),
       },

@@ -881,9 +881,16 @@ export class BulletinsController {
         }
 
         // 4. Récupérer les distinctions depuis school_academic_settings
+        //    ⭐ 2026-09-28 — FIX : on filtre sur (isActive=true OR status='ACTIVE')
+        //    pour gérer les 2 schémas (le défaut isActive=false du schéma +
+        //    status='ACTIVE' après activate()). Les anciens records créés avant
+        //    le fix n'ont pas isActive=true, mais ont status='ACTIVE' après
+        //    activation manuelle. Les nouveaux records auront isActive=true
+        //    grâce au fix de academic-settings.service.ts activate().
         const settings = await this.prisma.$queryRawUnsafe<any[]>(
           `SELECT config FROM school_academic_settings
-           WHERE "tenantId" = $1 AND "levelCode" = 'SECONDAIRE' AND "isActive" = true
+           WHERE "tenantId" = $1 AND "levelCode" = 'SECONDAIRE'
+             AND ("isActive" = true OR status = 'ACTIVE')
            ORDER BY "createdAt" DESC LIMIT 1`,
           resolvedTenantId,
         ).catch(() => []);

@@ -450,11 +450,30 @@ function SettingsContent() {
         config,
       };
 
+      let newSettingsId = settingsId;
       if (settingsId) {
         await academicSettingsService.update(settingsId, payload);
       } else {
         const result = await academicSettingsService.create(payload);
-        if (result?.id) setSettingsId(result.id);
+        if (result?.id) {
+          setSettingsId(result.id);
+          newSettingsId = result.id;
+        }
+      }
+
+      // ⭐ 2026-09-28 — Auto-activation après sauvegarde : les settings
+      //    doivent être ACTIVE pour que le bulletin PDF puisse résoudre
+      //    les distinctions (la requête filtre sur isActive=true OU
+      //    status='ACTIVE'). Sans auto-activation, l'utilisateur devait
+      //    cliquer manuellement sur « Activer » après chaque sauvegarde,
+      //    ce qui n'était pas intuitif — d'où le bug « distinction non
+      //    affichée dans le bloc Conseil de classe du bulletin ».
+      if (newSettingsId) {
+        try {
+          await academicSettingsService.activate(newSettingsId);
+        } catch (activateErr: any) {
+          console.warn('[Settings] Auto-activation échouée :', activateErr?.message);
+        }
       }
 
       // ⭐ FEATURE — Partage Nursery ↔ Primary : refléter la sauvegarde sur le

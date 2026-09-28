@@ -3,9 +3,20 @@
  * CONDUCT CONTROLLER — Module Discipline (Compteur de conduite)
  * ============================================================================
  *
+ * ⭐ 2026-09-28 — REFONTE COMPLÈTE du module Vie Scolaire.
+ *    Le contrôleur précédent utilisait $queryRawUnsafe avec des paramètres
+ *    passés en ARRAY au lieu d'arguments positionnels (spread) → échec
+ *    silencieux → « Erreur lors de la sauvegarde » côté frontend + paramètres
+ *    settings non relu après édition.
+ *
+ *    Refonte : utilisation des modèles Prisma DisciplineRule, ConductSetting,
+ *    ConductLedger, Sanction (déclarés dans schema.prisma) via prisma.<model>
+ *    standard. Plus de $queryRawUnsafe, plus de SQL manuel.
+ *
  * Endpoints :
  *   GET    /api/discipline/conduct/rules         — Liste des règles de fautes
  *   POST   /api/discipline/conduct/rules         — Créer une règle
+ *   PUT    /api/discipline/conduct/rules         — Modifier une règle
  *   GET    /api/discipline/conduct/sanctions     — Liste des sanctions
  *   POST   /api/discipline/conduct/sanctions     — Saisir une sanction (SG only)
  *   DELETE /api/discipline/conduct/sanctions/:id — Annuler une sanction (SG only)
@@ -41,25 +52,29 @@ export class ConductController {
     @Query('academicYearId') _academicYearId?: string,
     @Query('schoolLevelId') schoolLevelId?: string,
   ) {
-    // ⭐ FIX 2026-09-28 — Prisma $queryRawUnsafe attend des arguments POSITIONNELS
-    //    (sql, ...params), PAS un tableau. L'ancienne version passait un array
-    //    en 2e argument → Prisma traitait l'array comme $1 (un objet PG array)
-    //    → $2 n'existait pas → erreur silencieuse côté API → le frontend
-    //    voyait « Erreur lors de la sauvegarde » même quand la requête SQL
-    //    était syntaxiquement valide.
-    const rows = schoolLevelId
-      ? await this.prisma.$queryRawUnsafe<any[]>(
-          `SELECT * FROM discipline_rules WHERE "tenantId" = $1 AND "isActive" = true
-           AND ("schoolLevelId" = $2 OR "schoolLevelId" IS NULL)
-           ORDER BY severity, name`,
-          tenantId, schoolLevelId,
-        )
-      : await this.prisma.$queryRawUnsafe<any[]>(
-          `SELECT * FROM discipline_rules WHERE "tenantId" = $1 AND "isActive" = true
-           ORDER BY severity, name`,
-          tenantId,
-        );
-    return rows;
+    // ⭐ 2026-09-28 — Prisma model DisciplineRule — plus de $queryRawUnsafe.
+    const where: any = { tenantId, isActive: true };
+    if (schoolLevelId) {
+      where.OR = [
+        { schoolLevelId },
+        { schoolLevelId: null },
+      ];
+    }
+    const rules = await this.prisma.disciplineRule.findMany({
+      where,
+      orderBy: [{ severity: 'asc' }, { name: 'asc' }],
+    });
+    // ⭐ Renommer les champs @map pour le frontend (camelCase)
+    return rules.map(r => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      hours_penalty: r.hoursPenalty,
+      points_deducted: r.pointsDeducted,
+      severity: r.severity,
+      schoolLevelId: r.schoolLevelId,
+      isActive: r.isActive,
+    }));
   }
 
   @Post('rules')
@@ -76,16 +91,20 @@ export class ConductController {
     },
   ) {
     if (!body.name?.trim()) throw new BadRequestException('Le nom de la faute est requis');
-    const id = crypto.randomUUID();
-    await this.prisma.$executeRawUnsafe(
-      `INSERT INTO discipline_rules (id, "tenantId", name, description, hours_penalty, points_deducted, severity, "schoolLevelId", "isActive")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)`,
-      id, tenantId, body.name, body.description || null,
-      body.hours_penalty || 0, body.points_deducted || 0,
-      body.severity || 'MINOR', body.schoolLevelId || null,
-    );
+    const rule = await this.prisma.disciplineRule.create({
+      data: {
+        tenantId,
+        name: body.name.trim(),
+        description: body.description || null,
+        hoursPenalty: body.hours_penalty || 0,
+        pointsDeducted: body.points_deducted || 0,
+        severity: body.severity || 'MINOR',
+        schoolLevelId: body.schoolLevelId || null,
+        isActive: true,
+      },
+    });
     this.logger.log(`Rule created: ${body.name} by user ${user?.id}`);
-    return { id, success: true };
+    return { id: rule.id, success: true };
   }
 
   @Put('rules')
@@ -103,21 +122,20 @@ export class ConductController {
     },
   ) {
     if (!body.id) throw new BadRequestException('L\'id de la règle est requis');
-    const sets: string[] = [];
-    const params: any[] = [body.id, tenantId];
-    let idx = 3;
-    if (body.name !== undefined) { sets.push(`name = $${idx}`); params.push(body.name); idx++; }
-    if (body.description !== undefined) { sets.push(`description = $${idx}`); params.push(body.description); idx++; }
-    if (body.hours_penalty !== undefined) { sets.push(`hours_penalty = $${idx}`); params.push(body.hours_penalty); idx++; }
-    if (body.points_deducted !== undefined) { sets.push(`points_deducted = $${idx}`); params.push(body.points_deducted); idx++; }
-    if (body.severity !== undefined) { sets.push(`severity = $${idx}`); params.push(body.severity); idx++; }
-    if (body.isActive !== undefined) { sets.push(`"isActive" = $${idx}`); params.push(body.isActive); idx++; }
-    if (sets.length === 0) return { success: true };
-    sets.push(`"updatedAt" = now()`);
-    await this.prisma.$executeRawUnsafe(
-      `UPDATE discipline_rules SET ${sets.join(', ')} WHERE id = $1 AND "tenantId" = $2`,
-      ...params,
-    );
+    // ⭐ Utiliser update avec where clause tenantId pour sécurité multi-tenant
+    const data: any = {};
+    if (body.name !== undefined) data.name = body.name;
+    if (body.description !== undefined) data.description = body.description;
+    if (body.hours_penalty !== undefined) data.hoursPenalty = body.hours_penalty;
+    if (body.points_deducted !== undefined) data.pointsDeducted = body.points_deducted;
+    if (body.severity !== undefined) data.severity = body.severity;
+    if (body.isActive !== undefined) data.isActive = body.isActive;
+    if (Object.keys(data).length === 0) return { success: true };
+
+    await this.prisma.disciplineRule.updateMany({
+      where: { id: body.id, tenantId },
+      data,
+    });
     this.logger.log(`Rule updated: ${body.id} by user ${user?.id}`);
     return { success: true };
   }
@@ -132,36 +150,67 @@ export class ConductController {
     @Query('studentId') studentId?: string,
   ) {
     if (!academicYearId) return [];
-    // ⭐ FIX 2026-09-28 — Même bug Prisma : spread args, pas array.
-    //    On construit la requête SQL en fonction des filtres présents pour
-    //    garder le bon index $N pour chaque paramètre positionnel.
-    let sql = `SELECT s.*, st."lastName" || ' ' || st."firstName" as "studentName",
-              c.name as "className"
-       FROM sanctions s
-       LEFT JOIN students st ON st.id = s."studentId"
-       LEFT JOIN classes c ON c.id = (
-         SELECT se."classId" FROM student_enrollments se
-         WHERE se."studentId" = s."studentId" AND se."academicYearId" = s."academicYearId"
-         LIMIT 1
-       )
-       WHERE s."tenantId" = $1 AND s."academicYearId" = $2`;
-    const params: any[] = [tenantId, academicYearId];
-    let idx = 3;
+    // ⭐ 2026-09-28 — Prisma model Sanction + jointures Prisma pour studentName
+    //    et className. On récupère les sanctions puis on enrichit avec le nom
+    //    de l'élève et de la classe (depuis StudentEnrollment + Student + Class).
+    const where: any = { tenantId, academicYearId };
     if (schoolLevelId) {
-      sql += ` AND (s."schoolLevelId" = $${idx} OR s."schoolLevelId" IS NULL)`;
-      params.push(schoolLevelId); idx++;
+      where.OR = [
+        { schoolLevelId },
+        { schoolLevelId: null },
+      ];
     }
-    if (studentId) {
-      sql += ` AND s."studentId" = $${idx}`;
-      params.push(studentId); idx++;
+    if (studentId) where.studentId = studentId;
+    const sanctions = await this.prisma.sanction.findMany({
+      where,
+      orderBy: [{ sanctionDate: 'desc' }, { createdAt: 'desc' }],
+    });
+    if (sanctions.length === 0) return [];
+
+    // ⭐ Récupérer en batch les élèves + leurs classes (1 requête par table)
+    const studentIds = Array.from(new Set(sanctions.map(s => s.studentId)));
+    const students = await this.prisma.student.findMany({
+      where: { id: { in: studentIds } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const studentMap = new Map(students.map(s => [s.id, s]));
+
+    // ⭐ Récupérer les enrollments actifs pour ces élèves + cette année
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: { studentId: { in: studentIds }, academicYearId, status: 'ACTIVE' },
+      select: { studentId: true, classId: true },
+    });
+    const classIds = Array.from(new Set(enrollments.map(e => e.classId).filter(Boolean) as string[]));
+    const classes = classIds.length > 0
+      ? await this.prisma.class.findMany({ where: { id: { in: classIds } }, select: { id: true, name: true } })
+      : [];
+    const classMap = new Map(classes.map(c => [c.id, c.name]));
+    const studentClassMap = new Map<string, string>();
+    for (const e of enrollments) {
+      if (e.classId && classMap.has(e.classId)) {
+        studentClassMap.set(e.studentId, classMap.get(e.classId) || '—');
+      }
     }
-    sql += ` ORDER BY s.sanction_date DESC, s."createdAt" DESC`;
-    const rows = await this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
-    return rows.map(r => ({
-      ...r,
-      studentName: r.studentName || '—',
-      className: r.className || '—',
-    }));
+
+    return sanctions.map(s => {
+      const st = studentMap.get(s.studentId);
+      return {
+        id: s.id,
+        studentId: s.studentId,
+        studentName: st ? `${st.lastName} ${st.firstName}`.trim() : '—',
+        className: studentClassMap.get(s.studentId) || '—',
+        ruleId: s.ruleId,
+        fault_name: s.faultName,
+        hours_attributed: s.hoursAttributed,
+        points_deducted: s.pointsDeducted,
+        sanction_date: s.sanctionDate,
+        status: s.status,
+        comment: s.comment,
+        notificationStatus: s.notificationStatus,
+        notificationChannels: s.notificationChannels,
+        parentNotifiedAt: s.parentNotifiedAt,
+      };
+    });
   }
 
   @Post('sanctions')
@@ -184,17 +233,22 @@ export class ConductController {
       throw new BadRequestException('studentId, academicYearId et faultName sont requis');
     }
 
-    const id = crypto.randomUUID();
-    await this.prisma.$executeRawUnsafe(
-      `INSERT INTO sanctions (id, "tenantId", "academicYearId", "studentId", "ruleId",
-        "schoolLevelId", "quarterId", fault_name, hours_attributed, points_deducted,
-        sanction_date, "supervisorId", comment, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), $11, $12, 'ACTIVE')`,
-      id, tenantId, body.academicYearId, body.studentId,
-      body.ruleId || null, body.schoolLevelId || null, body.quarterId || null,
-      body.faultName, body.hoursAttributed || 0, body.pointsDeducted || 0,
-      user?.id || '00000000-0000-0000-0000-000000000000', body.comment || null,
-    );
+    const sanction = await this.prisma.sanction.create({
+      data: {
+        tenantId,
+        academicYearId: body.academicYearId,
+        studentId: body.studentId,
+        ruleId: body.ruleId || null,
+        schoolLevelId: body.schoolLevelId || null,
+        quarterId: body.quarterId || null,
+        faultName: body.faultName.trim(),
+        hoursAttributed: body.hoursAttributed || 0,
+        pointsDeducted: body.pointsDeducted || 0,
+        supervisorId: user?.id || null,
+        comment: body.comment || null,
+        status: 'ACTIVE',
+      },
+    });
 
     // Mettre à jour le conduct_ledger
     await this.updateConductLedger(tenantId, body.academicYearId, body.studentId, body.quarterId, body.pointsDeducted || 0);
@@ -203,11 +257,10 @@ export class ConductController {
 
     // ⭐ Notifier le parent (WhatsApp Business + fallback SMS) — fire-and-forget
     //    Ne bloque jamais l'API. Si ça échoue, c'est juste loggé.
-    //    Met à jour les colonnes notificationStatus / parentNotifiedAt / notificationChannels.
     this.disciplineNotificationService
       .notifyParentSanctionCreated({
         tenantId,
-        sanctionId: id,
+        sanctionId: sanction.id,
         studentId: body.studentId,
         academicYearId: body.academicYearId,
         faultName: body.faultName,
@@ -215,12 +268,12 @@ export class ConductController {
         pointsDeducted: body.pointsDeducted || 0,
         triggeredByUserId: user?.id,
       })
-      .then((result) => this.persistNotificationStatus(id, result, 'created'))
+      .then((result) => this.persistNotificationStatus(sanction.id, result, 'created'))
       .catch((err) =>
         this.logger.error(`Notification sanction_created échouée (non-bloquant): ${err.message}`),
       );
 
-    return { id, success: true };
+    return { id: sanction.id, success: true };
   }
 
   @Delete('sanctions/:id')
@@ -235,24 +288,24 @@ export class ConductController {
     }
 
     // Récupérer la sanction pour ajuster le ledger
-    // ⭐ FIX 2026-09-28 — spread args (était [sanctionId, tenantId]).
-    const sanction = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT * FROM sanctions WHERE id = $1 AND "tenantId" = $2 AND status = 'ACTIVE'`,
-      sanctionId, tenantId,
-    );
-    if (sanction.length === 0) throw new BadRequestException('Sanction introuvable ou déjà annulée');
+    const sanction = await this.prisma.sanction.findFirst({
+      where: { id: sanctionId, tenantId, status: 'ACTIVE' },
+    });
+    if (!sanction) throw new BadRequestException('Sanction introuvable ou déjà annulée');
 
-    // ⭐ FIX 2026-09-28 — spread args (était [sanctionId, tenantId, user?.id, body.reason]).
-    await this.prisma.$executeRawUnsafe(
-      `UPDATE sanctions SET status = 'CANCELLED', cancelled_by = $3, cancelled_reason = $4, cancelled_at = now(), "updatedAt" = now()
-       WHERE id = $1 AND "tenantId" = $2`,
-      sanctionId, tenantId, user?.id || '00000000-0000-0000-0000-000000000000', body.reason,
-    );
+    await this.prisma.sanction.update({
+      where: { id: sanctionId },
+      data: {
+        status: 'CANCELLED',
+        cancelledBy: user?.id || null,
+        cancelledReason: body.reason,
+        cancelledAt: new Date(),
+      },
+    });
 
     // Ajuster le ledger (rembourser les points)
-    const s = sanction[0];
-    if (s.quarterId) {
-      await this.updateConductLedger(tenantId, s.academicYearId, s.studentId, s.quarterId, -(s.points_deducted || 0));
+    if (sanction.quarterId) {
+      await this.updateConductLedger(tenantId, sanction.academicYearId, sanction.studentId, sanction.quarterId, -(sanction.pointsDeducted || 0));
     }
 
     this.logger.log(`Sanction cancelled: ${sanctionId} by ${user?.id}, reason: ${body.reason}`);
@@ -262,10 +315,10 @@ export class ConductController {
       .notifyParentSanctionCancelled({
         tenantId,
         sanctionId,
-        studentId: s.studentId,
-        academicYearId: s.academicYearId,
-        faultName: s.fault_name || '—',
-        pointsRefunded: s.points_deducted || 0,
+        studentId: sanction.studentId,
+        academicYearId: sanction.academicYearId,
+        faultName: sanction.faultName || '—',
+        pointsRefunded: sanction.pointsDeducted || 0,
         cancellationReason: body.reason,
         triggeredByUserId: user?.id,
       })
@@ -286,26 +339,48 @@ export class ConductController {
     @Query('schoolLevelId') _schoolLevelId?: string,
   ) {
     if (!academicYearId) return [];
-    // ⭐ FIX 2026-09-28 — spread args (était [tenantId, academicYearId]).
-    const rows = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT cl.*, st."lastName" || ' ' || st."firstName" as "studentName",
-              c.name as "className"
-       FROM conduct_ledger cl
-       LEFT JOIN students st ON st.id = cl."studentId"
-       LEFT JOIN classes c ON c.id = (
-         SELECT se."classId" FROM student_enrollments se
-         WHERE se."studentId" = cl."studentId" AND se."academicYearId" = cl."academicYearId"
-         LIMIT 1
-       )
-       WHERE cl."tenantId" = $1 AND cl."academicYearId" = $2
-       ORDER BY cl.conduct_final ASC`,
-      tenantId, academicYearId,
-    );
-    return rows.map(r => ({
-      ...r,
-      studentName: r.studentName || '—',
-      className: r.className || '—',
-    }));
+    const ledger = await this.prisma.conductLedger.findMany({
+      where: { tenantId, academicYearId },
+      orderBy: { conductFinal: 'asc' },
+    });
+    if (ledger.length === 0) return [];
+
+    // ⭐ Enrichir avec studentName + className (batch)
+    const studentIds = Array.from(new Set(ledger.map(l => l.studentId)));
+    const students = await this.prisma.student.findMany({
+      where: { id: { in: studentIds } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const studentMap = new Map(students.map(s => [s.id, s]));
+
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: { studentId: { in: studentIds }, academicYearId, status: 'ACTIVE' },
+      select: { studentId: true, classId: true },
+    });
+    const classIds = Array.from(new Set(enrollments.map(e => e.classId).filter(Boolean) as string[]));
+    const classes = classIds.length > 0
+      ? await this.prisma.class.findMany({ where: { id: { in: classIds } }, select: { id: true, name: true } })
+      : [];
+    const classMap = new Map(classes.map(c => [c.id, c.name]));
+    const studentClassMap = new Map<string, string>();
+    for (const e of enrollments) {
+      if (e.classId && classMap.has(e.classId)) {
+        studentClassMap.set(e.studentId, classMap.get(e.classId) || '—');
+      }
+    }
+
+    return ledger.map(l => {
+      const st = studentMap.get(l.studentId);
+      return {
+        id: l.id,
+        studentId: l.studentId,
+        studentName: st ? `${st.lastName} ${st.firstName}`.trim() : '—',
+        className: studentClassMap.get(l.studentId) || '—',
+        conduct_reference: l.conductReference,
+        total_points_deducted: l.totalPointsDeducted,
+        conduct_final: l.conductFinal,
+      };
+    });
   }
 
   // ── SETTINGS ───────────────────────────────────────────────────────────
@@ -316,12 +391,38 @@ export class ConductController {
     @Query('academicYearId') academicYearId: string,
   ) {
     if (!academicYearId) return { conduct_reference: 20, critical_threshold: 5 };
-    // ⭐ FIX 2026-09-28 — spread args (était [tenantId, academicYearId]).
-    const rows = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT * FROM conduct_settings WHERE "tenantId" = $1 AND "academicYearId" = $2 LIMIT 1`,
-      tenantId, academicYearId,
-    );
-    return rows[0] || { conduct_reference: 20, critical_threshold: 5 };
+    // ⭐ 2026-09-28 — Prisma model ConductSetting — plus de $queryRawUnsafe.
+    //    On cherche d'abord avec schoolLevelId NULL (settings globaux),
+    //    puis sans filtre schoolLevelId au cas où l'école aurait configuré
+    //    des settings par niveau.
+    const settings = await this.prisma.conductSetting.findFirst({
+      where: { tenantId, academicYearId, schoolLevelId: null },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (settings) {
+      return {
+        id: settings.id,
+        conduct_reference: settings.conductReference,
+        critical_threshold: settings.criticalThreshold,
+        academicYearId: settings.academicYearId,
+        schoolLevelId: settings.schoolLevelId,
+      };
+    }
+    // ⭐ Fallback : chercher n'importe quel setting pour cette année
+    const anySettings = await this.prisma.conductSetting.findFirst({
+      where: { tenantId, academicYearId },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (anySettings) {
+      return {
+        id: anySettings.id,
+        conduct_reference: anySettings.conductReference,
+        critical_threshold: anySettings.criticalThreshold,
+        academicYearId: anySettings.academicYearId,
+        schoolLevelId: anySettings.schoolLevelId,
+      };
+    }
+    return { conduct_reference: 20, critical_threshold: 5 };
   }
 
   @Put('settings')
@@ -336,39 +437,45 @@ export class ConductController {
     },
   ) {
     if (!body.academicYearId) throw new BadRequestException('academicYearId est requis');
-    // ⭐ FIX 2026-09-28 — Prisma spread args (était [tenantId, body.academicYearId, body.schoolLevelId || null])
-    //    Plus de COALESCE(NULL='NULL') qui ne marche pas : on filtre côté JS
-    //    en deux branches (avec schoolLevelId / sans) — plus simple + fiable.
-    let existing: any[];
-    if (body.schoolLevelId) {
-      existing = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT id FROM conduct_settings WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "schoolLevelId" = $3 LIMIT 1`,
-        tenantId, body.academicYearId, body.schoolLevelId,
-      );
-    } else {
-      existing = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT id FROM conduct_settings WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "schoolLevelId" IS NULL LIMIT 1`,
-        tenantId, body.academicYearId,
-      );
+    // ⭐ 2026-09-28 — Prisma upsert standard. Plus de COALESCE(NULL='NULL').
+    //    On normalise schoolLevelId à null si non fourni (settings globaux).
+    const schoolLevelId = body.schoolLevelId || null;
+    // ⭐ upsert par clé unique (tenantId, academicYearId, schoolLevelId)
+    //    ⚠️ Prisma ne supporte pas updateMany avec une clause unique null ;
+    //    on utilise findFirst + update ou create (équivalent sûr).
+    const existing = await this.prisma.conductSetting.findFirst({
+      where: { tenantId, academicYearId, schoolLevelId },
+    });
+    if (existing) {
+      const updated = await this.prisma.conductSetting.update({
+        where: { id: existing.id },
+        data: {
+          conductReference: body.conduct_reference ?? 20,
+          criticalThreshold: body.critical_threshold ?? 5,
+        },
+      });
+      this.logger.log(`Conduct settings updated (id=${updated.id}) by ${user?.id}`);
+      return {
+        id: updated.id,
+        conduct_reference: updated.conductReference,
+        critical_threshold: updated.criticalThreshold,
+      };
     }
-    if (existing.length > 0) {
-      // Update existing — ⭐ FIX spread args (était [body.conduct_reference || 20, body.critical_threshold || 5, existing[0].id])
-      await this.prisma.$executeRawUnsafe(
-        `UPDATE conduct_settings SET conduct_reference = $1, critical_threshold = $2, "updatedAt" = now() WHERE id = $3`,
-        body.conduct_reference || 20, body.critical_threshold || 5, existing[0].id,
-      );
-    } else {
-      // Insert new — déjà en spread args, OK.
-      const id = crypto.randomUUID();
-      await this.prisma.$executeRawUnsafe(
-        `INSERT INTO conduct_settings (id, "tenantId", "academicYearId", "schoolLevelId", conduct_reference, critical_threshold)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        id, tenantId, body.academicYearId, body.schoolLevelId || null,
-        body.conduct_reference || 20, body.critical_threshold || 5,
-      );
-    }
-    this.logger.log(`Conduct settings updated by ${user?.id}`);
-    return { success: true };
+    const created = await this.prisma.conductSetting.create({
+      data: {
+        tenantId,
+        academicYearId: body.academicYearId,
+        schoolLevelId,
+        conductReference: body.conduct_reference ?? 20,
+        criticalThreshold: body.critical_threshold ?? 5,
+      },
+    });
+    this.logger.log(`Conduct settings created (id=${created.id}) by ${user?.id}`);
+    return {
+      id: created.id,
+      conduct_reference: created.conductReference,
+      critical_threshold: created.criticalThreshold,
+    };
   }
 
   // ── HELPER : Mettre à jour le conduct_ledger ───────────────────────────
@@ -382,7 +489,6 @@ export class ConductController {
   ) {
     if (!quarterId) {
       // Si pas de trimestre, on prend le trimestre courant
-      // ⭐ FIX 2026-09-28 — spread args (était [tenantId, academicYearId]).
       const quarter = await this.prisma.$queryRawUnsafe<any[]>(
         `SELECT id FROM quarters WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "isCurrent" = true LIMIT 1`,
         tenantId, academicYearId,
@@ -391,30 +497,45 @@ export class ConductController {
       quarterId = quarter[0].id;
     }
 
-    // Upsert le ledger
-    // ⭐ Récupérer la conduct_reference depuis conduct_settings (configurable
-    //    par l'école) au lieu du hardcoded 20.
-    const settingsRows = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT conduct_reference FROM conduct_settings
-       WHERE "tenantId" = $1 AND "academicYearId" = $2
-       ORDER BY "createdAt" DESC LIMIT 1`,
-      tenantId, academicYearId,
-    );
-    const conductReference = (settingsRows.length > 0 && settingsRows[0].conduct_reference != null)
-      ? Number(settingsRows[0].conduct_reference) : 20;
+    // Récupérer la conduct_reference depuis conduct_settings (configurable
+    // par l'école) au lieu du hardcoded 20.
+    const settingsRows = await this.prisma.conductSetting.findMany({
+      where: { tenantId, academicYearId },
+      orderBy: { createdAt: 'desc' },
+      take: 1,
+    });
+    const conductReference = settingsRows.length > 0 && settingsRows[0].conductReference != null
+      ? Number(settingsRows[0].conductReference)
+      : 20;
 
-    const id = crypto.randomUUID();
-    await this.prisma.$executeRawUnsafe(
-      `INSERT INTO conduct_ledger (id, "tenantId", "academicYearId", "studentId", "quarterId",
-        conduct_reference, total_points_deducted, conduct_final)
-       VALUES ($1, $2, $3, $4, $5, $7, $6, GREATEST(0, $7 - $6))
-       ON CONFLICT ("tenantId", "studentId", "quarterId")
-       DO UPDATE SET
-         total_points_deducted = conduct_ledger.total_points_deducted + $6,
-         conduct_final = GREATEST(0, conduct_ledger.conduct_reference - (conduct_ledger.total_points_deducted + $6)),
-         calculated_at = now(), "updatedAt" = now()`,
-      id, tenantId, academicYearId, studentId, quarterId, pointsDelta, conductReference,
-    );
+    // Upsert le ledger
+    const existing = await this.prisma.conductLedger.findUnique({
+      where: { tenantId_studentId_quarterId: { tenantId, studentId, quarterId } },
+    });
+    if (existing) {
+      const newTotalDeducted = Math.max(0, existing.totalPointsDeducted + pointsDelta);
+      await this.prisma.conductLedger.update({
+        where: { id: existing.id },
+        data: {
+          totalPointsDeducted: newTotalDeducted,
+          conductFinal: Math.max(0, conductReference - newTotalDeducted),
+          calculatedAt: new Date(),
+        },
+      });
+    } else {
+      await this.prisma.conductLedger.create({
+        data: {
+          tenantId,
+          academicYearId,
+          studentId,
+          quarterId,
+          conductReference,
+          totalPointsDeducted: Math.max(0, pointsDelta),
+          conductFinal: Math.max(0, conductReference - Math.max(0, pointsDelta)),
+          calculatedAt: new Date(),
+        },
+      });
+    }
   }
 
   // ── HELPER : Persister le statut de notification sur la sanction ───────
@@ -446,15 +567,14 @@ export class ConductController {
 
       const notifiedAt = status === 'SENT' ? new Date() : null;
 
-      await this.prisma.$executeRawUnsafe(
-        `UPDATE sanctions
-         SET "notificationStatus" = $2,
-             "notificationChannels" = $3::jsonb,
-             "parentNotifiedAt" = $4,
-             "updatedAt" = now()
-         WHERE id = $1`,
-        sanctionId, status, JSON.stringify(channels), notifiedAt,
-      );
+      await this.prisma.sanction.update({
+        where: { id: sanctionId },
+        data: {
+          notificationStatus: status,
+          notificationChannels: channels as any,
+          parentNotifiedAt: notifiedAt,
+        },
+      });
 
       this.logger.log(
         `📊 Sanction ${sanctionId} notification status: ${status} (whatsapp=${waStatus}, sms=${smsStatus})`,

@@ -17576,5 +17576,99 @@ model AdmissionRequiredDocument {
   @@map("admission_required_documents")
 }
 
+// ─── DISCIPLINE / VIE SCOLAIRE ────────────────────────────────────────────
+// ⭐ 2026-09-28 — Refonte du module Vie Scolaire. Les 4 tables existaient
+//    déjà en SQL brut (cf. main.ts lignes 372-385) mais n'étaient PAS
+//    déclarées dans le schéma Prisma → le contrôleur conduct.controller.ts
+//    utilisait $queryRawUnsafe (bug : params en array au lieu de spread)
+//    → « Erreur lors de la sauvegarde » côté frontend.
+//    On les déclare maintenant en Prisma models → CRUD via prisma.<model>
+//    standard, plus de $queryRawUnsafe, plus de bug.
+
+/// Barème des fautes (catalogue des fautes configuré par l'école).
+model DisciplineRule {
+  id            String   @id @default(uuid())
+  tenantId      String
+  name          String
+  description   String?
+  hoursPenalty  Float    @default(0) @map("hours_penalty")
+  pointsDeducted Float   @default(0) @map("points_deducted")
+  severity      String   @default("MINOR")
+  schoolLevelId String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, isActive])
+  @@map("discipline_rules")
+}
+
+/// Configuration de la conduite (baseline + seuil critique) par année + niveau.
+model ConductSetting {
+  id                String   @id @default(uuid())
+  tenantId          String
+  academicYearId    String
+  schoolLevelId     String?
+  conductReference  Float    @default(20) @map("conduct_reference")
+  criticalThreshold  Float    @default(5) @map("critical_threshold")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([tenantId, academicYearId, schoolLevelId])
+  @@index([tenantId, academicYearId])
+  @@map("conduct_settings")
+}
+
+/// Compteur de conduite par élève (calculé à chaque sanction).
+model ConductLedger {
+  id                   String    @id @default(uuid())
+  tenantId             String
+  academicYearId       String
+  studentId           String
+  quarterId           String
+  conductReference    Float     @default(20) @map("conduct_reference")
+  totalPointsDeducted Float     @default(0) @map("total_points_deducted")
+  conductFinal        Float     @default(20) @map("conduct_final")
+  calculatedAt        DateTime? @map("calculated_at")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([tenantId, studentId, quarterId])
+  @@index([tenantId, academicYearId])
+  @@map("conduct_ledger")
+}
+
+/// Sanction appliquée à un élève (référence une DisciplineRule optionnelle).
+model Sanction {
+  id                  String    @id @default(uuid())
+  tenantId            String
+  academicYearId      String
+  studentId          String
+  ruleId             String?
+  schoolLevelId      String?
+  quarterId          String?
+  faultName          String    @map("fault_name")
+  hoursAttributed    Float     @default(0) @map("hours_attributed")
+  pointsDeducted     Float     @default(0) @map("points_deducted")
+  sanctionDate       DateTime  @default(now()) @map("sanction_date")
+  supervisorId       String?   @map("supervisorId")
+  comment            String?
+  status             String    @default("ACTIVE")
+  cancelledBy        String?   @map("cancelled_by")
+  cancelledReason     String?  @map("cancelled_reason")
+  cancelledAt        DateTime? @map("cancelled_at")
+  notificationStatus  String?   @map("notificationStatus")
+  notificationChannels Json?    @map("notificationChannels")
+  parentNotifiedAt   DateTime? @map("parentNotifiedAt")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([tenantId, academicYearId])
+  @@index([tenantId, studentId])
+  @@index([status])
+  @@map("sanctions")
+}
+
 // Cache bust: force prisma generate to re-run after AdmissionSettings models
 // Timestamp: 2026-09-25T13:00:00Z

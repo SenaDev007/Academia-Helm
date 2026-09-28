@@ -1280,30 +1280,12 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
 
   ${recapBlock}
 
-  <!-- QR + MENTION OFFICIELLE -->
-  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
-    <div style="font-size:8px;font-style:italic;font-weight:bold;color:#0A2A5E;">Ce bulletin n'est établi qu'une seule fois,<br/>veuillez le conserver précieusement.</div>
-    <div style="text-align:center;">
-      <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
-      <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
-    </div>
-  </div>
-
-  <div class="footer">Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0141360803'}</div>
-
-  </div><!-- /.page 1 -->
-
-  <!-- ═══ SAUT DE PAGE ═══ -->
-  <div style="page-break-after:always;"></div>
-
-  <!-- ═════════════ PAGE 2 : Annotations + Signatures ═════════════ -->
-  <div class="page">
-
-  <!-- HEADER RACCOURCI PAGE 2 -->
-  <div style="text-align:center;margin-bottom:10px;padding-bottom:4px;border-bottom:1px solid #0A2A5E;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;">${data.schoolName} — ${data.studentName} — ${data.periodName}</div>
-    <div style="font-size:8px;color:#64748b;margin-top:2px;">Bulletin de notes — ${data.academicYearName} · Classe : ${data.className}</div>
-  </div>
+  <!-- ═════════════ SUITE SUR LA MÊME PAGE (pas de saut de page pour le secondaire) ═════════════ -->
+  <!-- ⭐ 2026-09-28 — Tout sur UNE SEULE page A4 (exigence promoteur). Les blocs
+      suivants (Assiduité + Résultats de classe + Conseil de classe + Signatures)
+      sont placés directement après le tableau des notes + récap, sur la MÊME
+      page. Pas de saut de page, pas de header raccourci (puisque l'en-tête
+      officiel est déjà en haut de la page). -->
 
   <!-- ═══ BLOC : Assiduité (total d'heures depuis module Vie Scolaire) ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
@@ -1380,33 +1362,28 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </div>
   </div>
 
-  <!-- ═══ SIGNATURES : Titulaire + Directeur + Parent ═══ -->
+  <!-- ═══ SIGNATURES : Titulaire + Directeur (pas de parent pour le secondaire) ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <table style="width:100%;border-collapse:collapse;">
       <tr>
-        <td style="width:33%;text-align:center;vertical-align:bottom;padding:8px 4px;">
+        <td style="width:50%;text-align:center;vertical-align:bottom;padding:8px 4px;">
           <div style="height:45px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:45px;max-width:100px;object-fit:contain;" />` : ''}</div>
           <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Titulaire de la classe</div>
           ${data.teacherName
             ? `<div style="font-size:8px;color:#1a1a1a;margin-top:2px;font-weight:600;">${data.teacherName}</div>`
             : '<div style="font-size:7px;color:#64748b;margin-top:1px;">Nom et signature</div>'}
         </td>
-        <td style="width:34%;text-align:center;vertical-align:bottom;padding:8px 4px;">
+        <td style="width:50%;text-align:center;vertical-align:bottom;padding:8px 4px;">
           ${this.renderDirectorSealsZone(data, 45)}
           ${data.directorVisa ? `<div style="font-size:8px;color:#dc2626;font-style:italic;margin-top:2px;">${data.directorVisa}</div>` : ''}
           <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Chef d'Établissement</div>
           ${this.renderDirectorNameLine(data, '8px', 'Nom et signature')}
         </td>
-        <td style="width:33%;text-align:center;vertical-align:bottom;padding:8px 4px;">
-          <div style="height:45px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:45px;max-width:100px;object-fit:contain;" />` : ''}</div>
-          <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Les Parents</div>
-          <div style="font-size:7px;color:#64748b;">Nom, Prénoms et Signature</div>
-        </td>
       </tr>
     </table>
   </div>
 
-  <!-- QR code + mention officielle page 2 -->
+  <!-- QR code + mention officielle -->
   <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
     <div style="font-size:8px;font-style:italic;font-weight:bold;color:#0A2A5E;">Ce bulletin n'est établi qu'une seule fois,<br/>veuillez le conserver précieusement.</div>
     <div style="text-align:center;">
@@ -1417,7 +1394,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
 
   <div class="footer">Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0141360803'}</div>
 
-  </div><!-- /.page 2 -->
+  </div><!-- /.page (unique) -->
 
 </div>
 
@@ -1585,30 +1562,11 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </tr></table>
   </div>
 
-  <!-- QR + MENTION OFFICIELLE -->
-  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
-    <div style="font-size:8px;font-style:italic;font-weight:bold;color:#0A2A5E;">Ce bulletin n'est établi qu'une seule fois,<br/>veuillez le conserver précieusement.</div>
-    <div style="text-align:center;">
-      <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
-      <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
-    </div>
-  </div>
-
-  <div class="footer">Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0141360803'}</div>
-
-  </div><!-- /.page 1 -->
-
-  <!-- ═══ SAUT DE PAGE ═══ -->
-  <div style="page-break-after:always;"></div>
-
-  <!-- ═════════════ PAGE 2 : Annotations + Signatures ═════════════ -->
-  <div class="page">
-
-  <!-- HEADER RACCOURCI PAGE 2 -->
-  <div style="text-align:center;margin-bottom:10px;padding-bottom:4px;border-bottom:1px solid #0A2A5E;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;">${data.schoolName} — ${data.studentName} — ${data.periodName}</div>
-    <div style="font-size:8px;color:#64748b;margin-top:2px;">Bulletin d'évaluation — ${data.evaluationTypeName || 'Évaluation'}${data.evaluationTypeCode ? ' (' + data.evaluationTypeCode + ')' : ''} — ${data.academicYearName} · Classe : ${data.className}</div>
-  </div>
+  <!-- ═════════════ SUITE SUR LA MÊME PAGE (pas de saut de page pour le secondaire) ═════════════ -->
+  <!-- ⭐ 2026-09-28 — Tout sur UNE SEULE page A4 (exigence promoteur). Les blocs
+      suivants (Assiduité + Résultats de classe + Conseil de classe + Signatures)
+      sont placés directement après le tableau des notes + synthèse, sur la MÊME
+      page. Pas de saut de page, pas de header raccourci. -->
 
   <!-- ═══ BLOC : Assiduité (total d'heures depuis module Vie Scolaire) ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
@@ -1685,33 +1643,28 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </div>
   </div>
 
-  <!-- ═══ SIGNATURES : Titulaire + Directeur + Parent ═══ -->
+  <!-- ═══ SIGNATURES : Titulaire + Directeur (pas de parent pour le secondaire) ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <table style="width:100%;border-collapse:collapse;">
       <tr>
-        <td style="width:33%;text-align:center;vertical-align:bottom;padding:8px 4px;">
+        <td style="width:50%;text-align:center;vertical-align:bottom;padding:8px 4px;">
           <div style="height:45px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:45px;max-width:100px;object-fit:contain;" />` : ''}</div>
           <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Titulaire de la classe</div>
           ${data.teacherName
             ? `<div style="font-size:8px;color:#1a1a1a;margin-top:2px;font-weight:600;">${data.teacherName}</div>`
             : '<div style="font-size:7px;color:#64748b;margin-top:1px;">Nom et signature</div>'}
         </td>
-        <td style="width:34%;text-align:center;vertical-align:bottom;padding:8px 4px;">
+        <td style="width:50%;text-align:center;vertical-align:bottom;padding:8px 4px;">
           ${this.renderDirectorSealsZone(data, 45)}
           ${data.directorVisa ? `<div style="font-size:8px;color:#dc2626;font-style:italic;margin-top:2px;">${data.directorVisa}</div>` : ''}
           <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Le Chef d'Établissement</div>
           ${this.renderDirectorNameLine(data, '8px', 'Nom et signature')}
         </td>
-        <td style="width:33%;text-align:center;vertical-align:bottom;padding:8px 4px;">
-          <div style="height:45px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:45px;max-width:100px;object-fit:contain;" />` : ''}</div>
-          <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:9px;font-weight:bold;color:#0A2A5E;">Les Parents</div>
-          <div style="font-size:7px;color:#64748b;">Nom, Prénoms et Signature</div>
-        </td>
       </tr>
     </table>
   </div>
 
-  <!-- QR + MENTION OFFICIELLE page 2 -->
+  <!-- QR + MENTION OFFICIELLE -->
   <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
     <div style="font-size:8px;font-style:italic;font-weight:bold;color:#0A2A5E;">Ce bulletin n'est établi qu'une seule fois,<br/>veuillez le conserver précieusement.</div>
     <div style="text-align:center;">
@@ -1722,7 +1675,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
 
   <div class="footer">Document généré par Academia Helm · Tél: ${data.schoolPhone || '+229 0141360803'}</div>
 
-  </div><!-- /.page 2 -->
+  </div><!-- /.page (unique) -->
 
 </div>
 

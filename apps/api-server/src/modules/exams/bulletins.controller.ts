@@ -844,6 +844,9 @@ export class BulletinsController {
     let conductReference: number | null = null;
     let distinctionLabel: string | null = null;
     let distinctionType: 'DISTINCTION' | 'SANCTION' | null = null;
+    // ⭐ 2026-09-28 — Assiduité (total d'heures depuis module Vie Scolaire)
+    let assiduityHours: number | null = null;
+    let sanctionCount: number | null = null;
 
     const isAnySecondary = body.isSecondary || body.isSecondaryEval;
     if (isAnySecondary && body.studentMatricule && resolvedTenantId && academicYearId) {
@@ -897,6 +900,47 @@ export class BulletinsController {
                 break;
               }
             }
+          }
+        }
+
+        // 5. ⭐ 2026-09-28 — Récupérer le total d'heures d'assiduité depuis
+        //    le module Vie Scolaire (Σ sanction.hoursAttributed pour l'élève
+        //    + trimestre courant, status ACTIVE). Affiché dans le bloc
+        //    « Assiduité » de la page 2 du bulletin secondaire.
+        //    On réutilise `conductStudent` (déjà résolu ligne ~852) et le
+        //    `quarter` (déjà résolu) pour ne pas refaire 2 requêtes.
+        if (conductStudent) {
+          // Trouver le trimestre courant si pas déjà fait
+          let quarterIdForAssiduity: string | undefined;
+          const existingQuarter = (typeof quarter !== 'undefined' && quarter.length > 0)
+            ? quarter[0].id
+            : null;
+          if (existingQuarter) {
+            quarterIdForAssiduity = existingQuarter;
+          } else {
+            const quarterRetry = await this.prisma.$queryRawUnsafe<any[]>(
+              `SELECT id FROM quarters WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "isCurrent" = true LIMIT 1`,
+              resolvedTenantId, academicYearId,
+            ).catch(() => []);
+            quarterIdForAssiduity = quarterRetry.length > 0 ? quarterRetry[0].id : undefined;
+          }
+
+          if (quarterIdForAssiduity) {
+            // Récupérer toutes les sanctions actives de l'élève pour ce
+            // trimestre — on utilise le modèle Prisma Sanction (cf. refonte
+            // Vie Scolaire commit 243ce2346) au lieu de $queryRawUnsafe.
+            const sanctions = await this.prisma.sanction.findMany({
+              where: {
+                tenantId: resolvedTenantId,
+                academicYearId,
+                studentId: conductStudent.id,
+                quarterId: quarterIdForAssiduity,
+                status: 'ACTIVE',
+              },
+              select: { hoursAttributed: true },
+            }).catch(() => []);
+            assiduityHours = sanctions.reduce((sum, s) => sum + (Number(s.hoursAttributed) || 0), 0);
+            sanctionCount = sanctions.length;
           }
         }
       } catch {
@@ -1018,6 +1062,9 @@ export class BulletinsController {
       // ⭐ SECONDAIRE — Conduite + Distinction/Sanction (résolues backend)
       conductScore: conductScore ?? body.conductScore ?? null,
       conductReference: conductReference ?? body.conductReference ?? null,
+      // ⭐ 2026-09-28 — Assiduité (total d'heures depuis module Vie Scolaire)
+      assiduityHours: assiduityHours ?? body.assiduityHours ?? null,
+      sanctionCount: sanctionCount ?? body.sanctionCount ?? null,
       distinctionLabel: distinctionLabel || body.distinctionLabel || null,
       distinctionType: distinctionType || body.distinctionType || null,
       // ⭐ Directeur : résolu backend depuis school_directors (par niveau + langue)

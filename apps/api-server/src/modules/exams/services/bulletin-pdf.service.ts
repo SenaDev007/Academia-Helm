@@ -190,6 +190,12 @@ export interface BulletinPdfData {
   // ⭐ SECONDAIRE — Conduite (depuis conduct_ledger du module Vie Scolaire)
   conductScore?: number | null;     // ex: 17/20 (conduct_final du ledger)
   conductReference?: number | null; // ex: 17 (baseline configurée par l'école)
+  // ⭐ 2026-09-28 — SECONDAIRE — Assiduité (total d'heures d'absence/punition)
+  //    calculé depuis le module Vie Scolaire (Σ sanction.hoursAttributed pour
+  //    l'élève + le trimestre courant). Affiché dans le bloc « Assiduité »
+  //    de la page 2 du bulletin secondaire.
+  assiduityHours?: number | null;   // ex: 8 (Σ heures attribuées de sanctions)
+  sanctionCount?: number | null;    // ex: 3 (nombre de sanctions actives)
   // ⭐ SECONDAIRE — Distinction/Sanction (depuis school_academic_settings.config.distinctions)
   distinctionLabel?: string | null; // ex: "Tableau d'honneur + Félicitations"
   distinctionType?: 'DISTINCTION' | 'SANCTION' | null;
@@ -996,26 +1002,68 @@ ${page2Content}
     };
 
     const buildBilanRow = (cat: string, subjects: any[]): string => {
-      // Calculer la moyenne du bilan de la catégorie
-      const validMoyennes = subjects
-        .map(s => s.secMoyenne)
-        .filter((v: number | null | undefined): v is number => typeof v === 'number' && !isNaN(v));
-      const bilanMoyenne = validMoyennes.length > 0
-        ? validMoyennes.reduce((sum, v) => sum + v, 0) / validMoyennes.length
-        : null;
-      const bilanCell = bilanMoyenne !== null
-        ? `<span style="color:${bilanMoyenne >= 10 ? '#059669' : '#dc2626'};font-weight:bold;font-size:11px;">${bilanMoyenne.toFixed(2)}</span>`
-        : '—';
+      // ⭐ 2026-09-28 — TOTAUX par catégorie (exigence promoteur) :
+      //    La ligne « Bilan <catégorie> » doit afficher les TOTAUX de
+      //    chaque colonne (Σ IE1, Σ IE2, Σ moy d'interrogation, Σ DS1,
+      //    Σ DS2, Σ Moy, Σ Coef, Σ Note coef), pas seulement la moyenne
+      //    de la catégorie. C'est ce que montre la capture d'écran fournie
+      //    par le promoteur : la ligne Bilan contient des valeurs dans
+      //    chaque cellule de total.
+      //    On calcule donc :
+      //      - Σ moyInter = somme des moyennes d'interrogation (moyInter)
+      //      - Σ moy = somme des moyennes (secMoyenne) → c'est la valeur
+      //        affichée dans la cellule Moyenne (celle qui était déjà là)
+      //      - Σ coef = somme des coefficients (secCoef) — pour Senior
+      //      - Σ noteCoef = somme des notes coefficientées (secNoteCoef) — pour Senior
+      //    Pour IE1, IE2, DS1, DS2, ce sont des notes individuelles — on
+      //    n'affiche pas de total (cellule vide) car ce n'est pas pertinent
+      //    d'additionner les notes d'interrogation.
       const label = CATEGORY_LABELS[cat] || 'Bilan';
-      // ⭐ 2026-09-28 — Colspan ajusté : avec la nouvelle colonne « Professeur »
-      //    on a 1 discipline + 2 IE + 1 moyInter + 2 DS + 1 moy = 7 colonnes
-      //    avant coefficient/rang/appréciation/professeur/signature.
-      //    Junior : 7 colonnes à fusionner ; Senior : 9 (avec coef + noteCoef).
-      const colSpan = isJunior ? 7 : 9;
+      const sum = (field: string): number | null => {
+        const vals = subjects
+          .map((s: any) => s[field])
+          .filter((v: any) => typeof v === 'number' && !isNaN(v));
+        return vals.length > 0 ? vals.reduce((sum: number, v: any) => sum + v, 0) : null;
+      };
+      const fmtSum = (v: number | null): string =>
+        v !== null ? v.toFixed(2) : '—';
+      const sumMoyInter = sum('secMoyInter');
+      const sumMoyenne = sum('secMoyenne');
+      // ⭐ Pour la cellule Moyenne, on affiche la SOMME des moyennes de la
+      //    catégorie (et non la moyenne de la catégorie comme avant).
+      //    C'est ce que montre la capture : « totaux, moyenne
+      //    d'interrogation, totaux, coefficient, etc. »
+      const bilanMoyCell = sumMoyenne !== null
+        ? `<span style="color:${sumMoyenne >= 10 ? '#059669' : '#dc2626'};font-weight:bold;font-size:11px;">${fmtSum(sumMoyenne)}</span>`
+        : '—';
+      const bilanMoyInterCell = sumMoyInter !== null
+        ? `<span style="color:#1d4ed8;font-weight:bold;font-size:10px;">${fmtSum(sumMoyInter)}</span>`
+        : '—';
+      // ⭐ Cells pour Senior : Coef + Note coef
+      const sumCoef = !isJunior ? sum('secCoef') : null;
+      const sumNoteCoef = !isJunior ? sum('secNoteCoef') : null;
+      const bilanCoefCell = !isJunior
+        ? (sumCoef !== null
+          ? `<span style="color:#b45309;font-weight:bold;font-size:10px;">${fmtSum(sumCoef)}</span>`
+          : '—')
+        : '';
+      const bilanNoteCoefCell = !isJunior
+        ? (sumNoteCoef !== null
+          ? `<span style="color:#059669;font-weight:bold;font-size:11px;">${fmtSum(sumNoteCoef)}</span>`
+          : '—')
+        : '';
       return `<tr style="background:#e0f2fe;font-weight:bold;">
         <td style="border:1px solid #0A2A5E;padding:3px 2px;font-size:10px;text-transform:uppercase;color:#0A2A5E;">${label}</td>
-        <td colspan="${colSpan}" style="border:1px solid #0A2A5E;"></td>
-        <td style="border:1px solid #0A2A5E;padding:3px 2px;text-align:center;font-size:11px;background:#dbeafe;">${bilanCell}</td>
+        <td style="border:1px solid #0A2A5E;"></td>
+        <td style="border:1px solid #0A2A5E;"></td>
+        <td style="border:1px solid #0A2A5E;padding:3px 2px;text-align:center;font-size:10px;background:#eff6ff;">${bilanMoyInterCell}</td>
+        <td style="border:1px solid #0A2A5E;"></td>
+        <td style="border:1px solid #0A2A5E;"></td>
+        <td style="border:1px solid #0A2A5E;padding:3px 2px;text-align:center;font-size:11px;background:#dbeafe;">${bilanMoyCell}</td>
+        ${!isJunior ? `
+        <td style="border:1px solid #0A2A5E;padding:3px 2px;text-align:center;font-size:10px;background:#fffbeb;">${bilanCoefCell}</td>
+        <td style="border:1px solid #0A2A5E;padding:3px 2px;text-align:center;font-size:11px;background:#ecfdf5;">${bilanNoteCoefCell}</td>` : ''}
+        <td style="border:1px solid #0A2A5E;"></td>
         <td style="border:1px solid #0A2A5E;"></td>
         <td style="border:1px solid #0A2A5E;"></td>
         <td style="border:1px solid #0A2A5E;"></td>
@@ -1257,11 +1305,53 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     <div style="font-size:8px;color:#64748b;margin-top:2px;">Bulletin de notes — ${data.academicYearName} · Classe : ${data.className}</div>
   </div>
 
+  <!-- ═══ BLOC : Assiduité (total d'heures depuis module Vie Scolaire) ═══ -->
+  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
+    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Assiduité</div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <tr>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;text-align:right;">Total d'heures d'absence/punition :</td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.assiduityHours ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
+          ${typeof data.assiduityHours === 'number' ? `${data.assiduityHours.toFixed(2)} h` : '0.00 h'}
+        </td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;text-align:right;">Nombre de sanctions :</td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.sanctionCount ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
+          ${typeof data.sanctionCount === 'number' ? data.sanctionCount : 0}
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ═══ BLOC : Moyennes trimestrielles + récap résultats de classe ═══ -->
+  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
+    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Résultats de classe</div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <tr>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne trimestrielle :</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#0A2A5E;font-size:12px;">${fmtSec(data.generalAverage)}</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Rang :</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne de la classe :</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.classAverage)}</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne la plus forte :</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#059669;">${fmtSec(data.highestAverage)}</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne la plus faible :</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#dc2626;">${fmtSec(data.lowestAverage)}</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Effectif :</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${data.totalStudents}</td>
+      </tr>
+    </table>
+  </div>
+
   <!-- ═══ BLOC : Mention du conseil de classe + Conduite + Appréciation ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Conseil de classe</div>
 
-    <!-- 1. Mention du conseil de classe (auto-générée depuis la moyenne) -->
+    <!-- 1. Mention du conseil de classe (auto-générée depuis la moyenne, distinction/sanction cochée automatiquement) -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
       <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;white-space:nowrap;">Mention du conseil de classe :</div>
       <div style="flex:1;border-bottom:1px dotted #94a3b8;height:14px;"></div>
@@ -1294,9 +1384,9 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:6px;">Attitudes et observations pédagogiques</div>
 
-    <!-- Assiduité -->
+    <!-- Assiduité (texte libre, optionnel — distinct du total d'heures ci-dessus) -->
     <div style="font-size:9px;margin-bottom:6px;">
-      <strong>Assiduité :</strong>
+      <strong>Assiduité (observations) :</strong>
       ${data.assiduite
         ? `<span style="color:#1a1a1a;">${data.assiduite}</span>`
         : '<span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:12px;"></span>'}
@@ -1561,11 +1651,53 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     <div style="font-size:8px;color:#64748b;margin-top:2px;">Bulletin d'évaluation — ${data.evaluationTypeName || 'Évaluation'}${data.evaluationTypeCode ? ' (' + data.evaluationTypeCode + ')' : ''} — ${data.academicYearName} · Classe : ${data.className}</div>
   </div>
 
+  <!-- ═══ BLOC : Assiduité (total d'heures depuis module Vie Scolaire) ═══ -->
+  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
+    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Assiduité</div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <tr>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;text-align:right;">Total d'heures d'absence/punition :</td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.assiduityHours ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
+          ${typeof data.assiduityHours === 'number' ? `${data.assiduityHours.toFixed(2)} h` : '0.00 h'}
+        </td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;text-align:right;">Nombre de sanctions :</td>
+        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.sanctionCount ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
+          ${typeof data.sanctionCount === 'number' ? data.sanctionCount : 0}
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ═══ BLOC : Résultats de classe ═══ -->
+  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
+    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Résultats de classe</div>
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
+      <tr>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne de l'évaluation :</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#0A2A5E;font-size:12px;">${fmtSec(data.generalAverage)}</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Rang :</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne de la classe :</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.classAverage)}</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne la plus forte :</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#059669;">${fmtSec(data.highestAverage)}</td>
+      </tr>
+      <tr>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne la plus faible :</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#dc2626;">${fmtSec(data.lowestAverage)}</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Effectif :</td>
+        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${data.totalStudents}</td>
+      </tr>
+    </table>
+  </div>
+
   <!-- ═══ BLOC : Conseil de classe (mention + conduite + appréciation) ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Conseil de classe</div>
 
-    <!-- 1. Mention du conseil de classe (auto-générée depuis la moyenne) -->
+    <!-- 1. Mention du conseil de classe (auto-générée depuis la moyenne, distinction/sanction cochée automatiquement) -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
       <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;white-space:nowrap;">Mention du conseil de classe :</div>
       <div style="flex:1;border-bottom:1px dotted #94a3b8;height:14px;"></div>
@@ -1598,8 +1730,9 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:6px;">Attitudes et observations pédagogiques</div>
 
+    <!-- Assiduité (texte libre, optionnel) -->
     <div style="font-size:9px;margin-bottom:6px;">
-      <strong>Assiduité :</strong>
+      <strong>Assiduité (observations) :</strong>
       ${data.assiduite
         ? `<span style="color:#1a1a1a;">${data.assiduite}</span>`
         : '<span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:12px;"></span>'}

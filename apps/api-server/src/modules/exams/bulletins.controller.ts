@@ -1040,10 +1040,40 @@ export class BulletinsController {
       }
     }
 
+    // ⭐ 2026-09-28 — Injecter la Conduite comme matière synthétique dans
+    //    la catégorie Autres du tableau secondaire. La conduite est
+    //    récupérée depuis conduct_ledger (conductScore / conductReference)
+    //    et ajoutée à la fin de subjects[] avec name='Conduite',
+    //    secMoyenne=conductScore, secCoef=1 (par défaut), secNoteCoef=
+    //    conductScore*1. Le backend bulletin-pdf.service.ts la
+    //    catégorisera automatiquement en AUTRES via getSubjectCategory
+    //    (cf. AUTRES_MARKERS qui contient 'conduite').
+    //    ⭐ Uniquement pour le secondaire (FR + EN non-maternelle), et
+    //    seulement si conductScore est non-null.
+    let subjectsWithConduite = resolvedSubjects;
+    if (isAnySecondary && conductScore !== null && Array.isArray(resolvedSubjects)) {
+      const conductSubject: any = {
+        name: 'Conduite',
+        id: `conduct-synthetic-${body.studentMatricule || 'unknown'}`,
+        score: conductScore,
+        isAbsent: false,
+        appreciation: conductScore >= (conductReference ?? 17) * 0.6 ? 'Satisfaisant' : 'À améliorer',
+        // ⭐ Champs secondaire CEG (trimestriel)
+        secMoyenne: conductScore,
+        secCoef: 1,
+        secNoteCoef: conductScore * 1,
+        secRank: null,
+        secHasSlot: true,
+        // ⭐ Pour le bulletin d'évaluation (score /20 dans la cellule Note)
+        subjectPosition: null,
+      };
+      subjectsWithConduite = [...resolvedSubjects, conductSubject];
+    }
+
     // Fusionner les données du frontend avec le branding + teacherName résolu
     const pdfData = {
       ...body,
-      subjects: resolvedSubjects,
+      subjects: subjectsWithConduite,
       schoolName: body.schoolName || branding.schoolName,
       schoolLogo: body.schoolLogo || branding.schoolLogo,
       schoolAddress: body.schoolAddress || branding.schoolAddress,

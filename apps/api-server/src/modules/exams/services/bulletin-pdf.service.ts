@@ -1002,54 +1002,56 @@ ${page2Content}
     };
 
     const buildBilanRow = (cat: string, subjects: any[]): string => {
-      // ⭐ 2026-09-28 — TOTAUX par catégorie (exigence promoteur) :
-      //    La ligne « Bilan <catégorie> » doit afficher les TOTAUX de
-      //    chaque colonne (Σ IE1, Σ IE2, Σ moy d'interrogation, Σ DS1,
-      //    Σ DS2, Σ Moy, Σ Coef, Σ Note coef), pas seulement la moyenne
-      //    de la catégorie. C'est ce que montre la capture d'écran fournie
-      //    par le promoteur : la ligne Bilan contient des valeurs dans
-      //    chaque cellule de total.
-      //    On calcule donc :
-      //      - Σ moyInter = somme des moyennes d'interrogation (moyInter)
-      //      - Σ moy = somme des moyennes (secMoyenne) → c'est la valeur
-      //        affichée dans la cellule Moyenne (celle qui était déjà là)
-      //      - Σ coef = somme des coefficients (secCoef) — pour Senior
-      //      - Σ noteCoef = somme des notes coefficientées (secNoteCoef) — pour Senior
-      //    Pour IE1, IE2, DS1, DS2, ce sont des notes individuelles — on
-      //    n'affiche pas de total (cellule vide) car ce n'est pas pertinent
-      //    d'additionner les notes d'interrogation.
+      // ⭐ 2026-09-28 — MOYENNE par catégorie (exigence promoteur) :
+      //    La ligne « Bilan <catégorie> » doit afficher la MOYENNE (pas la
+      //    somme) de chaque colonne calculée : moy d'interrogation, Moy,
+      //    Coef, Note coef. Pour Coef, c'est une somme (les coefficients
+      //    s'additionnent). Pour les autres (MoyInter, Moy, NoteCoef),
+      //    c'est une moyenne arithmétique sur les matières qui ont une
+      //    valeur pour cette colonne.
+      //    ⭐ CORRECTION promoteur : c'est la MOYENNE et non la SOMME pour
+      //       MoyInter, Moy, NoteCoef. Pour Coef uniquement, c'est une
+      //       somme (Σ coefficients = total points de la catégorie).
       const label = CATEGORY_LABELS[cat] || 'Bilan';
+      // ⭐ Moyenne arithmétique : Σ valeurs / nombre de valeurs non-null
+      const avg = (field: string): number | null => {
+        const vals = subjects
+          .map((s: any) => s[field])
+          .filter((v: any) => typeof v === 'number' && !isNaN(v));
+        return vals.length > 0
+          ? vals.reduce((sum: number, v: any) => sum + v, 0) / vals.length
+          : null;
+      };
+      // ⭐ Somme : utilisée uniquement pour les coefficients (Σ coef)
       const sum = (field: string): number | null => {
         const vals = subjects
           .map((s: any) => s[field])
           .filter((v: any) => typeof v === 'number' && !isNaN(v));
         return vals.length > 0 ? vals.reduce((sum: number, v: any) => sum + v, 0) : null;
       };
-      const fmtSum = (v: number | null): string =>
+      const fmtVal = (v: number | null): string =>
         v !== null ? v.toFixed(2) : '—';
-      const sumMoyInter = sum('secMoyInter');
-      const sumMoyenne = sum('secMoyenne');
-      // ⭐ Pour la cellule Moyenne, on affiche la SOMME des moyennes de la
-      //    catégorie (et non la moyenne de la catégorie comme avant).
-      //    C'est ce que montre la capture : « totaux, moyenne
-      //    d'interrogation, totaux, coefficient, etc. »
-      const bilanMoyCell = sumMoyenne !== null
-        ? `<span style="color:${sumMoyenne >= 10 ? '#059669' : '#dc2626'};font-weight:bold;font-size:11px;">${fmtSum(sumMoyenne)}</span>`
+      // ⭐ MOYENNE pour MoyInter, Moyenne, NoteCoef (pas somme)
+      const avgMoyInter = avg('secMoyInter');
+      const avgMoyenne = avg('secMoyenne');
+      const bilanMoyCell = avgMoyenne !== null
+        ? `<span style="color:${avgMoyenne >= 10 ? '#059669' : '#dc2626'};font-weight:bold;font-size:11px;">${fmtVal(avgMoyenne)}</span>`
         : '—';
-      const bilanMoyInterCell = sumMoyInter !== null
-        ? `<span style="color:#1d4ed8;font-weight:bold;font-size:10px;">${fmtSum(sumMoyInter)}</span>`
+      const bilanMoyInterCell = avgMoyInter !== null
+        ? `<span style="color:#1d4ed8;font-weight:bold;font-size:10px;">${fmtVal(avgMoyInter)}</span>`
         : '—';
-      // ⭐ Cells pour Senior : Coef + Note coef
+      // ⭐ SOMME pour Coef (Σ coefficients de la catégorie)
       const sumCoef = !isJunior ? sum('secCoef') : null;
-      const sumNoteCoef = !isJunior ? sum('secNoteCoef') : null;
+      // ⭐ MOYENNE pour NoteCoef
+      const avgNoteCoef = !isJunior ? avg('secNoteCoef') : null;
       const bilanCoefCell = !isJunior
         ? (sumCoef !== null
-          ? `<span style="color:#b45309;font-weight:bold;font-size:10px;">${fmtSum(sumCoef)}</span>`
+          ? `<span style="color:#b45309;font-weight:bold;font-size:10px;">${fmtVal(sumCoef)}</span>`
           : '—')
         : '';
       const bilanNoteCoefCell = !isJunior
-        ? (sumNoteCoef !== null
-          ? `<span style="color:#059669;font-weight:bold;font-size:11px;">${fmtSum(sumNoteCoef)}</span>`
+        ? (avgNoteCoef !== null
+          ? `<span style="color:#059669;font-weight:bold;font-size:11px;">${fmtVal(avgNoteCoef)}</span>`
           : '—')
         : '';
       return `<tr style="background:#e0f2fe;font-weight:bold;">
@@ -1329,7 +1331,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
-  <!-- ═══ BLOC : Mention du conseil de classe + Conduite + Appréciation ═══ -->
+  <!-- ═══ BLOC : Mention du conseil de classe + Appréciation ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Conseil de classe</div>
 
@@ -1342,18 +1344,13 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
       </div>
     </div>
 
-    <!-- 2. Conduite (TOUJOURS affichée, avec placeholder si pas de donnée Vie Scolaire) -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-      <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;white-space:nowrap;">Conduite :</div>
-      <div style="flex:1;border-bottom:1px dotted #94a3b8;height:14px;"></div>
-      <div style="font-size:10px;font-weight:bold;color:${typeof data.conductScore === 'number' && data.conductScore >= (data.conductReference || 17) * 0.6 ? '#059669' : (typeof data.conductScore === 'number' ? '#dc2626' : '#94a3b8')};">
-        ${typeof data.conductScore === 'number'
-          ? `${data.conductScore.toFixed(2)}/${data.conductReference || 17}`
-          : `— / ${data.conductReference || 17}`}
-      </div>
-    </div>
+    <!-- ⭐ 2026-09-28 — Conduite retirée du bloc Conseil de classe.
+         La conduite est maintenant une matière dans la catégorie Autres
+         du tableau des notes (cf. buildSubjectRow + subjectsByCategory).
+         Elle s'affiche dans la colonne Discipline avec son score
+         conduct_final/conduct_reference. -->
 
-    <!-- 3. Appréciation du conseil de classe (auto-générée ou libre) -->
+    <!-- 2. Appréciation du conseil de classe (auto-générée ou libre) -->
     <div style="margin-top:6px;">
       <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Appréciation du conseil de classe</div>
       ${(data.councilAppreciation || data.analyseRecommandations)
@@ -1610,7 +1607,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
-  <!-- ═══ BLOC : Conseil de classe (mention + conduite + appréciation) ═══ -->
+  <!-- ═══ BLOC : Conseil de classe (mention + appréciation) ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Conseil de classe</div>
 
@@ -1623,18 +1620,11 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
       </div>
     </div>
 
-    <!-- 2. Conduite (TOUJOURS affichée) -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-      <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;white-space:nowrap;">Conduite :</div>
-      <div style="flex:1;border-bottom:1px dotted #94a3b8;height:14px;"></div>
-      <div style="font-size:10px;font-weight:bold;color:${typeof data.conductScore === 'number' && data.conductScore >= (data.conductReference || 17) * 0.6 ? '#059669' : (typeof data.conductScore === 'number' ? '#dc2626' : '#94a3b8')};">
-        ${typeof data.conductScore === 'number'
-          ? `${data.conductScore.toFixed(2)}/${data.conductReference || 17}`
-          : `— / ${data.conductReference || 17}`}
-      </div>
-    </div>
+    <!-- ⭐ 2026-09-28 — Conduite retirée du bloc Conseil de classe.
+         La conduite est maintenant une matière dans la catégorie Autres
+         du tableau des notes. -->
 
-    <!-- 3. Appréciation du conseil de classe (auto-générée ou libre) -->
+    <!-- 2. Appréciation du conseil de classe (auto-générée ou libre) -->
     <div style="margin-top:6px;">
       <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Appréciation du conseil de classe</div>
       ${(data.councilAppreciation || data.analyseRecommandations)

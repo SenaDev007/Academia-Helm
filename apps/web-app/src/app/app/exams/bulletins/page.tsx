@@ -1086,6 +1086,75 @@ function BulletinsContent() {
 
   useEffect(() => { loadBulletins(); }, [loadBulletins]);
 
+  // ⭐ 2026-09-28 — Injecter la Conduite comme matière synthétique dans la
+  //    catégorie Autres du tableau secondaire (FR + EN non-maternelle).
+  //    On récupère le conduct_ledger pour TOUS les élèves de la classe
+  //    en UN SEUL appel via /api/discipline/conduct (qui proxy vers
+  //    /discipline/conduct/ledger?academicYearId=X), puis on injecte
+  //    une matière synthétique « Conduite » pour chaque élève dans
+  //    student.subjectScores.
+  useEffect(() => {
+    if (!isSecondaryTrack || !bulletinData || !academicYear?.id) return;
+    const controller = new AbortController();
+    fetch(`/api/discipline/conduct?academicYearId=${academicYear.id}`, {
+      credentials: 'include',
+      signal: controller.signal,
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then((ledger: any[]) => {
+        if (!Array.isArray(ledger) || ledger.length === 0) return;
+        // ⭐ Map studentId → { conduct_final, conduct_reference }
+        const conductByStudent = new Map<string, { final: number; reference: number }>();
+        for (const row of ledger) {
+          if (row.studentId && typeof row.conduct_final === 'number') {
+            conductByStudent.set(row.studentId, {
+              final: Number(row.conduct_final),
+              reference: Number(row.conduct_reference) || 17,
+            });
+          }
+        }
+        // ⭐ Injecter la matière Conduite dans bulletinData.subjects
+        //    (une seule fois — on ajoute le subject si pas déjà présent)
+        //    et dans chaque student.subjectScores
+        const CONDUCT_SUBJECT_ID = '__conduct__';
+        setBulletinData(prev => {
+          if (!prev) return prev;
+          if (prev.subjects.some(s => s.id === CONDUCT_SUBJECT_ID)) return prev;
+          return {
+            ...prev,
+            subjects: [...prev.subjects, { id: CONDUCT_SUBJECT_ID, name: 'Conduite', coefficient: 1 }],
+          };
+        });
+        // ⭐ Mettre à jour les subjectScores de chaque élève dans results
+        setBulletinData(prev => {
+          if (!prev) return prev;
+          const newResults = prev.results.map(st => {
+            const conduct = conductByStudent.get(st.id);
+            if (!conduct) return st;
+            return {
+              ...st,
+              subjectScores: {
+                ...st.subjectScores,
+                [CONDUCT_SUBJECT_ID]: {
+                  score: conduct.final,
+                  qualitativeCode: null,
+                  isAbsent: false,
+                  appreciation: conduct.final >= conduct.reference * 0.6 ? 'Satisfaisant' : 'À améliorer',
+                  moyenne: conduct.final,
+                  coefficient: 1,
+                  noteCoef: conduct.final,
+                  secHasSlot: true,
+                } as any,
+              },
+            };
+          });
+          return { ...prev, results: newResults };
+        });
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [isSecondaryTrack, bulletinData?.subjects.length, academicYear?.id]);
+
   const toggleStudent = (studentId: string) => {
     setExpandedStudents(prev => {
       const next = new Set(prev);

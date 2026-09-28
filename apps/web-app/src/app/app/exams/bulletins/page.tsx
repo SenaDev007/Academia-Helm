@@ -2386,8 +2386,6 @@ function BulletinSecondairePage1({
               );
               return [...subjectRows, bilanRow];
             })}
-
-            {/* Totaux (4e → Terminale uniquement) */}
             {!isJunior && (
               <>
                 <tr className="bg-slate-200 font-bold">
@@ -2402,7 +2400,6 @@ function BulletinSecondairePage1({
                 </tr>
               </>
             )}
-            {/* Moyenne trimestrielle */}
             <tr className="bg-blue-100 font-bold">
               <td colSpan={6} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-900 text-[9px]">Moyenne trimestrielle</td>
               <td colSpan={isJunior ? 1 : 2} className="border border-slate-300 px-1 py-0.5 text-center text-blue-800 text-xs">
@@ -2608,8 +2605,6 @@ function BulletinSecondaireEvalPage1({
               );
               return [...subjectRows, bilanRow];
             })}
-
-            {/* Moyenne de l'évaluation + Rang */}
             <tr className="bg-blue-100 font-bold">
               <td colSpan={2} className="border border-slate-300 px-2 py-0.5 text-right uppercase text-slate-900 text-[9px]">Moyenne de l'évaluation</td>
               <td className="border border-slate-300 px-2 py-0.5 text-center text-blue-800 text-xs">

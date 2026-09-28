@@ -199,6 +199,11 @@ export interface BulletinPdfData {
   // ⭐ SECONDAIRE — Distinction/Sanction (depuis school_academic_settings.config.distinctions)
   distinctionLabel?: string | null; // ex: "Tableau d'honneur + Félicitations"
   distinctionType?: 'DISTINCTION' | 'SANCTION' | null;
+  // ⭐ 2026-09-28 — Toutes les distinctions/sanctions configurées par l'école
+  //    (pour afficher des cases à cocher dans le bloc Conseil de classe du
+  //    PDF secondaire). Chaque entrée: { label, type, minScore, maxScore }.
+  //    La distinction qui matche la moyenne de l'élève est cochée (☑).
+  allDistinctions?: Array<{ label: string; type: string; minScore: number; maxScore: number }> | null;
   // ⭐ SECONDAIRE — Mention + Appréciation du conseil de classe
   councilMention?: string | null;   // ex: "Tableau d'honneur" (déduit ou saisi)
   councilAppreciation?: string | null; // appréciation libre du conseil
@@ -1271,15 +1276,6 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
-  <!-- SYNTHÈSE STATISTIQUE -->
-  <div style="margin-top:5px;font-size:9px;">
-    <table style="width:100%;border-collapse:collapse;"><tr>
-      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne de la classe : <strong>${fmtSec(data.classAverage)}</strong></td>
-      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne la plus faible : <strong>${fmtSec(data.lowestAverage)}</strong></td>
-      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne la plus forte : <strong>${fmtSec(data.highestAverage)}</strong></td>
-    </tr></table>
-  </div>
-
   ${recapBlock}
 
   <!-- ═════════════ SUITE SUR LA MÊME PAGE (pas de saut de page pour le secondaire) ═════════════ -->
@@ -1331,26 +1327,35 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
-  <!-- ═══ BLOC : Conseil de classe (mention + appréciation) — format propre sans pointillés ═══ -->
+  <!-- ═══ BLOC : Mention du conseil de classe — Distinctions + Sanctions (cases à cocher) ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Conseil de classe</div>
-    <table style="width:100%;border-collapse:collapse;font-size:10px;">
-      <tr>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;width:50%;">Mention du conseil de classe :</td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${data.distinctionType === 'DISTINCTION' ? '#059669' : data.distinctionType === 'SANCTION' ? '#dc2626' : '#1a1a1a'};font-size:11px;">
-          ${data.distinctionLabel || data.councilMention || '—'}
-        </td>
-      </tr>
-      <tr>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;vertical-align:top;">Appréciation du conseil de classe :</td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;font-size:9px;color:#1a1a1a;line-height:1.5;min-height:40px;">
-          ${data.councilAppreciation || data.analyseRecommandations || '—'}
-        </td>
-      </tr>
+    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Mention du conseil de classe</div>
+    <table style="width:100%;border-collapse:collapse;font-size:9px;">
+      ${(() => {
+        const dists = data.allDistinctions || [];
+        const distinctions = dists.filter(d => d.type === 'DISTINCTION');
+        const sanctions = dists.filter(d => d.type === 'SANCTION');
+        const checked = (d: any) => data.distinctionLabel === d.label ? '\u2611' : '\u2610';
+        const distCells = distinctions.map(d =>
+          `<td style="border:1px solid #cbd5e1;padding:2px 4px;font-size:9px;white-space:nowrap;">${checked(d)} ${d.label}</td>`
+        ).join('');
+        const sancCells = sanctions.map(d =>
+          `<td style="border:1px solid #cbd5e1;padding:2px 4px;font-size:9px;white-space:nowrap;">${checked(d)} ${d.label}</td>`
+        ).join('');
+        return `<tr><td style="border:1px solid #cbd5e1;padding:2px 4px;background:#f8fafc;font-weight:bold;vertical-align:top;width:80px;">Distinctions</td><td style="border:1px solid #cbd5e1;padding:2px 4px;">${distCells || '\u2014'}</td></tr><tr><td style="border:1px solid #cbd5e1;padding:2px 4px;background:#f8fafc;font-weight:bold;vertical-align:top;width:80px;">Sanctions</td><td style="border:1px solid #cbd5e1;padding:2px 4px;">${sancCells || '\u2014'}</td></tr>`;
+      })()}
     </table>
   </div>
 
-  <!-- ═══ SIGNATURES : Titulaire + Directeur (pas de parent pour le secondaire) ═══ -->
+  <!-- ═══ BLOC : Appréciation du conseil de classe ═══ -->
+  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
+    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:4px;">Appréciation du conseil de classe</div>
+    <div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:40px;padding:4px 6px;border:1px solid #cbd5e1;background:#f8fafc;">
+      ${data.councilAppreciation || data.analyseRecommandations || '\u2014'}
+    </div>
+  </div>
+
+  <!-- ═══ BLOC : Visa du chef d'établissement ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <table style="width:100%;border-collapse:collapse;">
       <tr>
@@ -1541,19 +1546,10 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
-  <!-- SYNTHÈSE STATISTIQUE -->
-  <div style="margin-top:5px;font-size:9px;">
-    <table style="width:100%;border-collapse:collapse;"><tr>
-      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne de la classe : <strong>${fmtSec(data.classAverage)}</strong></td>
-      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne la plus faible : <strong>${fmtSec(data.lowestAverage)}</strong></td>
-      <td style="background:#f8fafc;border:1px solid #e2e8f0;padding:2px 5px;text-align:center;">Moyenne la plus forte : <strong>${fmtSec(data.highestAverage)}</strong></td>
-    </tr></table>
-  </div>
-
   <!-- ═════════════ SUITE SUR LA MÊME PAGE (pas de saut de page pour le secondaire) ═════════════ -->
   <!-- ⭐ 2026-09-28 — Tout sur UNE SEULE page A4 (exigence promoteur). Les blocs
       suivants (Assiduité + Résultats de classe + Conseil de classe + Signatures)
-      sont placés directement après le tableau des notes + synthèse, sur la MÊME
+      sont placés directement après le tableau des notes, sur la MÊME
       page. Pas de saut de page, pas de header raccourci. -->
 
   <!-- ═══ BLOC : Assiduité (total d'heures depuis module Vie Scolaire) ═══ -->
@@ -1598,26 +1594,35 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
-  <!-- ═══ BLOC : Conseil de classe (mention + appréciation) — format propre sans pointillés ═══ -->
+  <!-- ═══ BLOC : Mention du conseil de classe — Distinctions + Sanctions (cases à cocher) ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Conseil de classe</div>
-    <table style="width:100%;border-collapse:collapse;font-size:10px;">
-      <tr>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;width:50%;">Mention du conseil de classe :</td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${data.distinctionType === 'DISTINCTION' ? '#059669' : data.distinctionType === 'SANCTION' ? '#dc2626' : '#1a1a1a'};font-size:11px;">
-          ${data.distinctionLabel || data.councilMention || '—'}
-        </td>
-      </tr>
-      <tr>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;vertical-align:top;">Appréciation du conseil de classe :</td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;font-size:9px;color:#1a1a1a;line-height:1.5;min-height:40px;">
-          ${data.councilAppreciation || data.analyseRecommandations || '—'}
-        </td>
-      </tr>
+    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Mention du conseil de classe</div>
+    <table style="width:100%;border-collapse:collapse;font-size:9px;">
+      ${(() => {
+        const dists = data.allDistinctions || [];
+        const distinctions = dists.filter(d => d.type === 'DISTINCTION');
+        const sanctions = dists.filter(d => d.type === 'SANCTION');
+        const checked = (d: any) => data.distinctionLabel === d.label ? '\u2611' : '\u2610';
+        const distCells = distinctions.map(d =>
+          `<td style="border:1px solid #cbd5e1;padding:2px 4px;font-size:9px;white-space:nowrap;">${checked(d)} ${d.label}</td>`
+        ).join('');
+        const sancCells = sanctions.map(d =>
+          `<td style="border:1px solid #cbd5e1;padding:2px 4px;font-size:9px;white-space:nowrap;">${checked(d)} ${d.label}</td>`
+        ).join('');
+        return `<tr><td style="border:1px solid #cbd5e1;padding:2px 4px;background:#f8fafc;font-weight:bold;vertical-align:top;width:80px;">Distinctions</td><td style="border:1px solid #cbd5e1;padding:2px 4px;">${distCells || '\u2014'}</td></tr><tr><td style="border:1px solid #cbd5e1;padding:2px 4px;background:#f8fafc;font-weight:bold;vertical-align:top;width:80px;">Sanctions</td><td style="border:1px solid #cbd5e1;padding:2px 4px;">${sancCells || '\u2014'}</td></tr>`;
+      })()}
     </table>
   </div>
 
-  <!-- ═══ SIGNATURES : Titulaire + Directeur (pas de parent pour le secondaire) ═══ -->
+  <!-- ═══ BLOC : Appréciation du conseil de classe ═══ -->
+  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
+    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:4px;">Appréciation du conseil de classe</div>
+    <div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:40px;padding:4px 6px;border:1px solid #cbd5e1;background:#f8fafc;">
+      ${data.councilAppreciation || data.analyseRecommandations || '\u2014'}
+    </div>
+  </div>
+
+  <!-- ═══ BLOC : Visa du chef d'établissement ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <table style="width:100%;border-collapse:collapse;">
       <tr>

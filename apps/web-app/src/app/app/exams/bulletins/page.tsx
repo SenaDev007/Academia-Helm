@@ -1708,14 +1708,14 @@ function BulletinTwoPage({
   //    tableau Discipline | Note /20 | Rang | Appréciation) vs « Bulletin
   //    trimestriel » (consolidé CEG).
   const isSecondaryEvalMode = !!isSecondaryTrack && !isSecondaire && !isEn;
-  // ⭐ 2026-09-28 — Pour le niveau secondaire (FR + EN), on supprime la page
-  //    2 « appréciations » de l'interface. La page 2 reste dans le PDF
-  //    généré (buildHtmlSecondaire/buildHtmlSecondaireEval/buildHtmlAnglophone
-  //    page 2) mais n'est PLUS accessible via le bouton de bascule
-  //    Page 1/Page 2 dans l'UI. La bascule reste pour primaire/maternelle
-  //    (qui ont besoin de la page 2 pour éditer les annotations).
+  // ⭐ 2026-09-28 — Pour le niveau SECONDAIRE (FR trimestriel + FR évaluation
+  //    + EN secondaire), on supprime RIGOUREUSEMENT la page 2 (Appréciations)
+  //    de l'interface. La page 2 n'est PAS valable pour le secondaire —
+  //    uniquement pour maternelle et primaire. La bascule reste pour
+  //    primaire/maternelle/EN-primary (qui éditent les annotations sur la
+  //    page 2).
   const isSecondaryAny = isSecondaryBulletin || isSecondaryEvalMode
-    || (isEn && !isMaternelle);
+    || (isEn && isSecondaire);
   const [page, setPage] = useState<1 | 2>(1);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
   // ⭐ Signature state — initialized from workflow signatures (backend) if available
@@ -2416,21 +2416,9 @@ function BulletinSecondairePage1({
         </table>
       </div>
 
-      {/* Synthèse statistique de la classe */}
-      <div className="mt-2 grid grid-cols-3 gap-2 text-[10px]">
-        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
-          <span className="text-slate-500">Moyenne de la classe : </span>
-          <strong>{fmtS(classAvg)}</strong>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
-          <span className="text-slate-500">Moyenne la plus faible : </span>
-          <strong>{fmtS(weakestAvg)}</strong>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
-          <span className="text-slate-500">Moyenne la plus forte : </span>
-          <strong>{fmtS(strongestAvg)}</strong>
-        </div>
-      </div>
+      {/* ⭐ 2026-09-28 — Synthèse statistique supprimée : ces infos sont
+          déjà dans le bloc Résultats de classe (moyenne + rang + moyennes
+          classe + plus forte + plus faible + effectif). Doublon supprimé. */}
 
       {/* ⭐ Récap du 3e trimestre : moyennes T1 + T2 + moyenne annuelle (passage) */}
       {recap && (
@@ -2635,21 +2623,8 @@ function BulletinSecondaireEvalPage1({
         </table>
       </div>
 
-      {/* Synthèse statistique de la classe */}
-      <div className="mt-2 grid grid-cols-3 gap-2 text-[10px]">
-        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
-          <span className="text-slate-500">Moyenne de la classe : </span>
-          <strong>{fmtS(classAvg)}</strong>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
-          <span className="text-slate-500">Moyenne la plus faible : </span>
-          <strong>{fmtS(weakestAvg)}</strong>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
-          <span className="text-slate-500">Moyenne la plus forte : </span>
-          <strong>{fmtS(strongestAvg)}</strong>
-        </div>
-      </div>
+      {/* ⭐ 2026-09-28 — Synthèse statistique supprimée : doublon avec le bloc
+          Résultats de classe dans le PDF généré. */}
     </div>
   );
 }

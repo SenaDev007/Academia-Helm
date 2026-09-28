@@ -844,6 +844,8 @@ export class BulletinsController {
     let conductReference: number | null = null;
     let distinctionLabel: string | null = null;
     let distinctionType: 'DISTINCTION' | 'SANCTION' | null = null;
+    // ⭐ 2026-09-28 — Toutes les distinctions/sanctions pour affichage cases à cocher
+    let allDistinctions: Array<{ label: string; type: string; minScore: number; maxScore: number }> | null = null;
     // ⭐ 2026-09-28 — Assiduité (total d'heures depuis module Vie Scolaire)
     let assiduityHours: number | null = null;
     let sanctionCount: number | null = null;
@@ -899,12 +901,22 @@ export class BulletinsController {
           const cfg = typeof settings[0].config === 'string'
             ? JSON.parse(settings[0].config)
             : settings[0].config;
-          if (cfg.distinctions && Array.isArray(cfg.distinctions) && typeof body.generalAverage === 'number') {
-            for (const d of cfg.distinctions) {
-              if (body.generalAverage >= d.minScore && body.generalAverage <= d.maxScore) {
-                distinctionLabel = d.label;
-                distinctionType = d.type;
-                break;
+          if (cfg.distinctions && Array.isArray(cfg.distinctions)) {
+            // ⭐ 2026-09-28 — Stocker toutes les distinctions pour affichage
+            //    cases à cocher dans le bloc Conseil de classe du PDF
+            allDistinctions = cfg.distinctions.map((d: any) => ({
+              label: d.label,
+              type: d.type,
+              minScore: d.minScore,
+              maxScore: d.maxScore,
+            }));
+            if (typeof body.generalAverage === 'number') {
+              for (const d of cfg.distinctions) {
+                if (body.generalAverage >= d.minScore && body.generalAverage <= d.maxScore) {
+                  distinctionLabel = d.label;
+                  distinctionType = d.type;
+                  break;
+                }
               }
             }
           }
@@ -1104,6 +1116,8 @@ export class BulletinsController {
       sanctionCount: sanctionCount ?? body.sanctionCount ?? null,
       distinctionLabel: distinctionLabel || body.distinctionLabel || null,
       distinctionType: distinctionType || body.distinctionType || null,
+      // ⭐ 2026-09-28 — Toutes les distinctions pour cases à cocher
+      allDistinctions: allDistinctions || body.allDistinctions || null,
       // ⭐ Directeur : résolu backend depuis school_directors (par niveau + langue)
       //    Priorité au backend si trouvé, sinon fallback sur ce que le frontend a envoyé
       directorName: directorName || body.directorName || null,

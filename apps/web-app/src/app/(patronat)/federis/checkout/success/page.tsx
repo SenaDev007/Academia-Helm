@@ -132,6 +132,7 @@ function CheckoutSuccessContent() {
 
         // 2. Vérification réelle côté serveur (retries si PENDING)
         setState('verifying');
+        let lastPending: VerifyResult | null = null;
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
           if (cancelledRef.current) return;
           setMessage(
@@ -155,6 +156,9 @@ function CheckoutSuccessContent() {
               return;
             }
             if (data.status === 'PENDING') {
+              // ⭐ Le backend renvoie PENDING (et non une erreur) si l'API
+              //    FedaPay est injoignable — pattern Helm. On retente.
+              lastPending = data;
               await new Promise((r) => setTimeout(r, RETRY_INTERVAL_MS));
               continue;
             }
@@ -171,6 +175,15 @@ function CheckoutSuccessContent() {
             await new Promise((r) => setTimeout(r, RETRY_INTERVAL_MS));
           }
         }
+        // ⭐ Toutes les tentatives ont renvoyé PENDING : paiement pas encore
+        //    tranché côté FedaPay (webhook en retard / API lente). On sort
+        //    proprement avec un message + bouton « Revérifier » au lieu de
+        //    rester bloqué indéfiniment sur le spinner.
+        setState('error');
+        setMessage(
+          lastPending?.message ||
+            'Votre paiement est encore en cours de confirmation côté FedaPay. Si vous avez été débité, cliquez sur \u00ab Revérifier \u00bb dans quelques instants — votre espace patronat sera activé automatiquement.',
+        );
       } catch (err: any) {
         if (cancelledRef.current) return;
         console.error('[FederisCheckoutSuccess] Erreur :', err);

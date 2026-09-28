@@ -969,10 +969,29 @@ export class FederisFedapayService {
       );
     }
 
-    const verification = await this.fedapayService.verifyTransactionStatus(String(transactionId));
+    // ⭐ Pattern Helm verifyPaymentStatus : une erreur de l'API Fedapay
+    //    (injoignable, réponse illisible…) ne doit JAMAIS faire échouer tout
+    //    l'endpoint en 400 — le paiement reste PENDING et le webhook ou une
+    //    prochaine vérification tranchera. On n'active JAMAIS un paiement
+    //    sans confirmation du PSP (pas d'activation sur simple échec réseau).
+    let verification: { status: string; amount: number; reference?: string | null };
+    try {
+      verification = await this.fedapayService.verifyTransactionStatus(String(transactionId));
+    } catch (err: any) {
+      const verifyError = err?.message || 'Erreur inconnue';
+      this.logger.warn(
+        `⚠️  Vérification Fedapay échouée pour la facture ${invoice.number} (transaction ${transactionId}) : ${verifyError}`,
+      );
+      return this.formatVerifyResult(invoice, null, null, 'pending', verifyError);
+    }
     const status = String(verification.status || '').toLowerCase();
 
-    if (status === 'approved' || status === 'completed' || status === 'transfert') {
+    if (
+      status === 'approved' ||
+      status === 'completed' ||
+      status === 'transfert' ||
+      status === 'transferred'
+    ) {
       // ⭐ Récupérer l'objet transaction complet pour la référence (pattern
       //    Helm : verifyTransactionStatus renvoie la référence).
       const activation = await this.activateSubscriptionAfterPayment(
@@ -1018,6 +1037,7 @@ export class FederisFedapayService {
       expiresAt: string;
     } | null,
     outcome: string,
+    verifyError?: string,
   ) {
     const activated = outcome === 'verified' || outcome === 'already_paid';
     return {
@@ -1034,6 +1054,10 @@ export class FederisFedapayService {
       plan: activation?.planCode ?? (invoice.metadata as any)?.plan ?? null,
       expiresAt: activation?.expiresAt ?? null,
       outcome,
+      // ⭐ Pattern Helm verifyPaymentStatus : l'erreur éventuelle de l'API
+      //    Fedapay est renvoyée dans la réponse (le paiement reste PENDING,
+      //    l'endpoint ne lève PAS) pour affichage/diagnostic côté frontend.
+      message: verifyError ?? undefined,
     };
   }
 

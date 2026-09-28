@@ -378,16 +378,37 @@ export class FedaPayService implements OnModuleInit {
 
       const result = await response.json();
       // ⭐ FedaPay peut renvoyer la transaction sous différentes formes :
+      //   - { "v1/transaction": { id, reference, status, ... } } (format RÉEL du
+      //     retrieve — confirmé par le SDK officiel : Resource._retrieve lit
+      //     object['transaction'] après que refreshFrom a retiré le préfixe
+      //     "v1/" des clés ; cf. Util.convertToFedaPayObject → 'v1/transaction')
       //   - { transaction: { id, reference, status, ... } }  (format standard)
       //   - { id, reference, status, ... }                    (format direct)
       //   - { data: { id, reference, status, ... } }          (format SDK)
       //   - { v1/transactions: [...] }                        (format liste)
       // On essaie tous ces chemins.
-      const transaction = result?.transaction || result?.data || result?.['v1/transactions']?.[0] || result;
+      // ⚠️ BUG HISTORIQUE (28-29/09/2026) : la clé SINGULIÈRE "v1/transaction"
+      //    manquait → TOUT verify réel renvoyait « Invalid response from
+      //    FedaPay API » (le fallback `result` = enveloppe sans id/reference).
+      //    Dans le signup Helm l'erreur était masquée par le try/catch de
+      //    verifyPaymentStatus (fallback DB) ; dans Federis elle remontait en
+      //    400 « Paiement non confirmé » après un paiement réel.
+      const transaction =
+        result?.transaction ||
+        result?.data ||
+        result?.['v1/transaction'] ||
+        result?.['v1/transactions']?.[0] ||
+        result;
 
       // Log de la réponse brute pour diagnostic (en cas d'erreur de parsing)
       if (!transaction || (!transaction.id && !transaction.reference)) {
-        this.logger.error('❌ Invalid FedaPay response — no transaction.id or transaction.reference:', JSON.stringify(result).substring(0, 500));
+        this.logger.error(
+          '❌ Invalid FedaPay response — no transaction.id or transaction.reference:',
+          JSON.stringify(result).substring(0, 500),
+        );
+        this.logger.error(
+          `❌ Response top-level keys: ${Object.keys(result ?? {}).join(', ')}`,
+        );
         throw new BadRequestException('Invalid response from FedaPay API');
       }
 

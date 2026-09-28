@@ -19,11 +19,17 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import { ModuleRef } from '@nestjs/core';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SubscriptionService } from './services/subscription.service';
 import { FedaPayService } from './services/fedapay.service';
 import { BillingService } from './billing.service';
 import { Public } from '../auth/decorators/public.decorator';
+// ⭐ Routage des transactions Federis reçues sur LE webhook FedaPay historique
+//    (celui déclaré dans le dashboard FedaPay). Résolution runtime via ModuleRef
+//    pour éviter une dépendance statique BillingModule → FederisModule (cycle :
+//    FederisModule importe déjà BillingModule pour la passerelle FedaPay).
+import { FederisFedapayService, FEDERIS_TX_TYPE } from '../federis/federis-fedapay.service';
 
 @Controller('billing')
 export class BillingController {
@@ -33,6 +39,7 @@ export class BillingController {
     private readonly subscriptionService: SubscriptionService,
     private readonly fedapayService: FedaPayService,
     private readonly billingService: BillingService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   /**
@@ -128,6 +135,24 @@ export class BillingController {
       `📥 FedaPay webhook parsed: ${type} - Transaction ID: ${transactionId} - Reference: ${transactionReference}`,
     );
 
+    // ⭐ ROUTAGE FEDERIS : le dashboard FedaPay pointe vers CE webhook historique
+    //    Helm. Les transactions d'abonnement patronat Federis (metadata.type =
+    //    federis_subscription, posé au checkout et répliqué dans custom_metadata)
+    //    sont déléguées au module Federis — sinon elles échouent ici en
+    //    « Cannot resolve payment » et la facture n'est JAMAIS activée par
+    //    webhook (seul le fallback verify resterait). Résolution runtime via
+    //    ModuleRef : aucun cycle de modules (FederisModule importe déjà
+    //    BillingModule, pas l'inverse).
+    if (this.extractWebhookTransactionType(data) === FEDERIS_TX_TYPE) {
+      this.logger.log(
+        `🔀 Transaction Federis détectée (ref ${transactionReference}) → délégation au module Federis`,
+      );
+      const federisFedapayService = this.moduleRef.get(FederisFedapayService, { strict: false });
+      // handleWebhook re-vérifie la signature (HMAC idempotent) puis route
+      // l'événement (approved → activation + sous-domaine + email identifiants).
+      return federisFedapayService.handleWebhook(rawBody, signatureHeader, body);
+    }
+
     switch (type) {
       case 'transaction.approved':
       case 'transaction.completed':
@@ -149,6 +174,30 @@ export class BillingController {
     }
 
     return { received: true };
+  }
+
+  /**
+   * Extrait le type d'une transaction webhook (metadata / custom_metadata,
+   * qui peuvent être objets ou JSON string — pattern normalizeMetadata Federis).
+   */
+  private extractWebhookTransactionType(transaction: any): string | null {
+    const read = (v: unknown): Record<string, any> => {
+      if (v == null) return {};
+      if (typeof v === 'string') {
+        try {
+          const p = JSON.parse(v);
+          return typeof p === 'object' && p !== null && !Array.isArray(p) ? p : {};
+        } catch {
+          return {};
+        }
+      }
+      return typeof v === 'object' && !Array.isArray(v) ? { ...(v as Record<string, any>) } : {};
+    };
+    const meta = {
+      ...read(transaction?.metadata),
+      ...read(transaction?.custom_metadata),
+    };
+    return typeof meta.type === 'string' && meta.type.length > 0 ? meta.type : null;
   }
 
   /**

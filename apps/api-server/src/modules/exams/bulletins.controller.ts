@@ -880,6 +880,23 @@ export class BulletinsController {
               conductReference = Number(ledgerRow.conductReference) || 17;
             }
           }
+
+          // ⭐ 2026-09-28 — FALLBACK : si pas de conduct_ledger (l'élève n'a pas
+          //    été sanctionné), récupérer la conduct_reference depuis
+          //    conduct_settings (la note par défaut configurée par l'école).
+          //    Si l'élève n'a pas de sanction → sa conduite = conduct_reference
+          //    (la note de départ). Sans ça, conductScore reste null → la
+          //    conduite affiche « — » dans le tableau.
+          if (conductScore === null) {
+            const conductSettings = await this.prisma.conductSetting.findFirst({
+              where: { tenantId: resolvedTenantId, academicYearId },
+              orderBy: { createdAt: 'desc' },
+            }).catch(() => null);
+            if (conductSettings) {
+              conductReference = Number(conductSettings.conductReference) || 17;
+              conductScore = conductReference; // pas de sanction → note = baseline
+            }
+          }
         }
 
         // 4. Récupérer les distinctions depuis school_academic_settings

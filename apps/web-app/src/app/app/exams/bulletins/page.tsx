@@ -1092,48 +1092,52 @@ function BulletinsContent() {
   useEffect(() => {
     if (!isSecondaryTrack || !bulletinData || !academicYear?.id) return;
     const CONDUCT_SUBJECT_ID = '__conduct__';
-    fetch(`/api/discipline/conduct?academicYearId=${academicYear.id}`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : null)
-      .then((ledger: any[]) => {
-        if (!Array.isArray(ledger) || ledger.length === 0) return;
-        const conductByStudent = new Map<string, { final: number; reference: number }>();
+    // ⭐ Fetch en parallèle : conduct_ledger (scores par élève) + conduct_settings (baseline)
+    Promise.all([
+      fetch(`/api/discipline/conduct?academicYearId=${academicYear.id}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`/api/discipline/conduct/settings?academicYearId=${academicYear.id}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([ledger, settings]: [any[], any]) => {
+      const conductByStudent = new Map<string, { final: number; reference: number }>();
+      const defaultRef = (settings && typeof settings.conduct_reference === 'number') ? settings.conduct_reference : 17;
+      if (Array.isArray(ledger) && ledger.length > 0) {
         for (const row of ledger) {
-          if (row.studentId && typeof row.conduct_final === 'number') {
+          if (row.studentId) {
             conductByStudent.set(row.studentId, {
-              final: Number(row.conduct_final),
-              reference: Number(row.conduct_reference) || 17,
+              final: typeof row.conduct_final === 'number' ? Number(row.conduct_final) : defaultRef,
+              reference: typeof row.conduct_reference === 'number' ? Number(row.conduct_reference) : defaultRef,
             });
           }
         }
-        setBulletinData(prev => {
-          if (!prev) return prev;
-          const hasConduct = prev.subjects.some(s => s.id === CONDUCT_SUBJECT_ID);
-          const subjects = hasConduct ? prev.subjects : [...prev.subjects, { id: CONDUCT_SUBJECT_ID, name: 'Conduite', coefficient: 1 }];
-          const results = prev.results.map(st => {
-            const conduct = conductByStudent.get(st.id);
-            if (!conduct) return st;
-            return {
-              ...st,
-              subjectScores: {
-                ...st.subjectScores,
-                [CONDUCT_SUBJECT_ID]: {
-                  score: conduct.final,
-                  qualitativeCode: null,
-                  isAbsent: false,
-                  appreciation: conduct.final >= conduct.reference * 0.6 ? 'Satisfaisant' : 'À améliorer',
-                  moyenne: conduct.final,
-                  coefficient: 1,
-                  noteCoef: conduct.final,
-                  secHasSlot: true,
-                  subjectRank: null,
-                } as any,
-              },
-            };
-          });
-          return { ...prev, subjects, results };
+      }
+      setBulletinData(prev => {
+        if (!prev) return prev;
+        const hasConduct = prev.subjects.some(s => s.id === CONDUCT_SUBJECT_ID);
+        const subjects = hasConduct ? prev.subjects : [...prev.subjects, { id: CONDUCT_SUBJECT_ID, name: 'Conduite', coefficient: 1 }];
+        const results = prev.results.map(st => {
+          // ⭐ Si l'élève a un conduct_ledger → utiliser son score
+          //    Sinon → utiliser defaultRef (pas de sanction = note de départ)
+          const conduct = conductByStudent.get(st.id) || { final: defaultRef, reference: defaultRef };
+          return {
+            ...st,
+            subjectScores: {
+              ...st.subjectScores,
+              [CONDUCT_SUBJECT_ID]: {
+                score: conduct.final,
+                qualitativeCode: null,
+                isAbsent: false,
+                appreciation: conduct.final >= conduct.reference * 0.6 ? 'Satisfaisant' : 'À améliorer',
+                moyenne: conduct.final,
+                coefficient: 1,
+                noteCoef: conduct.final,
+                secHasSlot: true,
+                subjectRank: null,
+              } as any,
+            },
+          };
         });
-      })
-      .catch(() => {});
+        return { ...prev, subjects, results };
+      });
+    }).catch(() => {});
   }, [isSecondaryTrack, bulletinData?.subjects.length, academicYear?.id]);
 
   const toggleStudent = (studentId: string) => {

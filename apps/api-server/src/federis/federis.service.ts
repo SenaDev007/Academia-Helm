@@ -18,7 +18,9 @@ export class FederisService {
             name: true,
             slug: true,
             subdomain: true,
-            logo: true,
+            // ⭐ FIX « Champ logo invalide » : le modèle Tenant n'a PAS de
+            //    champ logo — le logo d'un patronat vit sur Patronat.logo et
+            //    celui d'une école Helm sur la fiche School (Tenant.schools).
           },
         },
       },
@@ -48,18 +50,23 @@ export class FederisService {
       where: { patronatId: patronat.id, status: 'JOINED' },
       include: {
         schoolTenant: {
+          // ⭐ FIX « Champ logo invalide » : logo via la fiche School (1:1),
+          //    jamais sur le Tenant (même correctif que FederisPatronatService).
           select: {
             id: true,
             name: true,
             slug: true,
             subdomain: true,
-            logo: true,
+            schools: { select: { logo: true } },
           },
         },
       },
     });
 
-    return schools.map(s => s.schoolTenant);
+    return schools.map((s) => ({
+      ...s.schoolTenant,
+      logo: s.schoolTenant?.schools?.logo ?? null,
+    }));
   }
 
   /**

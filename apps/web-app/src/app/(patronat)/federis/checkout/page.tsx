@@ -2,8 +2,15 @@
  * Page Checkout Academia Federis — Activation du compte Patronat
  *
  * Cahier des charges §12 + proposition tarifaire (27 septembre 2026) :
- *   - Deux offres publiées : Federis Essentiel (100 000 FCFA / année scolaire)
- *     et Federis Institution (250 000 FCFA / année scolaire).
+ *   - Deux offres publiées : Federis Essentiel et Federis Institution.
+ *   - ⭐ Tarification par niveau organisationnel (2026-09-28) : l'abonnement
+ *     du patronat NATIONAL est SUPÉRIEUR à celui des territoriaux /
+ *     départementaux. Les montants sont chargés depuis l'API
+ *     /federis/patronat/pricing (barème réel selon le niveau de l'abonné).
+ *   - ⭐ Paiement POUR UN PATRONAT TERRITORIAL créé par le national
+ *     (?patronatId=…) : même flux payant que l'inscription publique — le
+ *     national règle l'abonnement du territorial, l'activation attribue le
+ *     sous-domaine du territorial.
  *   - Paiement via Fedapay (création de facture + transaction).
  *   - Pas de prélèvement automatique — renouvellement manuel par année scolaire.
  *   - Le statut de l'abonnement est visible ; l'interface connectée est bloquée
@@ -74,6 +81,22 @@ interface SubscriptionInfo {
   expiresAt?: string | null;
 }
 
+/** Barème dynamique renvoyé par /federis/patronat/pricing (par niveau). */
+interface PricingInfo {
+  orgLevel: string | null;
+  patronatName: string;
+  payingForChild: boolean;
+  plans: Array<{
+    code: PlanCode;
+    name: string;
+    amountXOF: number;
+    period: string;
+    maxSchools: number;
+    maxCandidates: number;
+    maxActiveCampaigns: number;
+  }>;
+}
+
 export default function FederisCheckoutPage() {
   return (
     <Suspense
@@ -101,14 +124,37 @@ function CheckoutContent() {
     null,
   );
 
+  // ⭐ Barème dynamique par niveau organisationnel (NATIONAL > TERRITORIAL) +
+  //    paiement pour un patronat enfant créé par le national (?patronatId=…).
+  const [pricing, setPricing] = useState<PricingInfo | null>(null);
+  const childPatronatId = searchParams.get('patronatId') || null;
+  const isPayingForChild = Boolean(childPatronatId);
+
   const isNewAccount = searchParams.get('status') === 'new';
+  const isChildFlow = searchParams.get('status') === 'child';
 
   useEffect(() => {
     const name = searchParams.get('name') || '';
     if (name) setPatronatName(name);
 
-    // Si déjà connecté, charge le statut d'abonnement (renouvellement / changement de plan)
     (async () => {
+      // ⭐ Barème réel : l'API renvoie les montants selon le niveau de
+      //    l'abonné (national supérieur au territorial) et selon la cible
+      //    du paiement (patronat enfant via ?patronatId=…).
+      try {
+        const res = await apiClient.get('/federis/patronat/pricing', {
+          params: childPatronatId ? { patronatId: childPatronatId } : undefined,
+          timeout: 15000,
+        });
+        if (res.data?.plans) {
+          setPricing(res.data);
+          if (!name && res.data.patronatName) setPatronatName(res.data.patronatName);
+        }
+      } catch {
+        // Non connecté (flux d'inscription publique) — barème par défaut affiché
+      }
+
+      // Si déjà connecté, charge le statut d'abonnement (renouvellement / changement de plan)
       try {
         const res = await apiClient.get('/federis/patronat/subscription', { timeout: 15000 });
         if (res.data) {
@@ -117,7 +163,9 @@ function CheckoutContent() {
             status: res.data.status,
             expiresAt: res.data.expiresAt,
           });
-          if (!name && res.data.planLabel) setPatronatName(res.data.planLabel);
+          if (!name && !childPatronatId && res.data.patronatName) {
+            setPatronatName(res.data.patronatName);
+          }
           if (res.data.plan === 'ESSENTIEL' || res.data.plan === 'INSTITUTION') {
             setSelectedPlan(res.data.plan as PlanCode);
           }
@@ -126,8 +174,14 @@ function CheckoutContent() {
         // Non connecté (flux d'inscription) — ignore silencieusement
       }
     })();
-     
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [childPatronatId]);
+
+  /** Montant réel d'une offre selon le barème chargé (fallback statique). */
+  const planAmount = (code: PlanCode): number =>
+    pricing?.plans?.find((p) => p.code === code)?.amountXOF ??
+    PLANS.find((p) => p.code === code)?.amount ??
+    0;
 
   const handlePayment = async () => {
     setLoading(true);
@@ -135,7 +189,12 @@ function CheckoutContent() {
     try {
       const res = await apiClient.post(
         '/federis/patronat/checkout',
-        { plan: selectedPlan },
+        {
+          plan: selectedPlan,
+          // ⭐ Le national règle ici l'abonnement d'un patronat territorial
+          //    créé — la facture et l'activation ciblent l'enfant.
+          ...(childPatronatId ? { patronatId: childPatronatId } : {}),
+        },
         { timeout: 30000 },
       );
       const { paymentUrl, provider, message: apiMessage, invoice } = res.data ?? {};
@@ -177,7 +236,7 @@ function CheckoutContent() {
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-10">
             <h1 className="text-2xl sm:text-3xl font-black text-white mb-2 tracking-tight">
-              Activation du compte Patronat
+              {isPayingForChild ? "Abonnement du patronat territorial" : 'Activation du compte Patronat'}
             </h1>
             <p className="text-blue-100/60">
               {patronatName ? (
@@ -192,6 +251,17 @@ function CheckoutContent() {
               <p className="mt-3 inline-block text-sm text-emerald-300 bg-emerald-950/40 border border-emerald-700/40 rounded-full px-4 py-1.5">
                 Compte créé avec succès. Activez votre abonnement pour accéder à l&rsquo;espace
                 patronat.
+              </p>
+            )}
+            {isChildFlow && isPayingForChild && (
+              <p className="mt-3 inline-block text-sm text-amber-200 bg-amber-950/40 border border-amber-700/40 rounded-full px-4 py-1.5">
+                Patronat territorial créé — réglez son abonnement pour activer son sous-domaine
+                et notifier son responsable.
+              </p>
+            )}
+            {pricing?.orgLevel === 'NATIONAL' && !isPayingForChild && (
+              <p className="mt-3 inline-block text-sm text-blue-200 bg-blue-950/40 border border-blue-800/40 rounded-full px-4 py-1.5">
+                Barème patronat national — supérieur au barème territorial / départemental.
               </p>
             )}
           </div>
@@ -253,7 +323,7 @@ function CheckoutContent() {
 
                   <div className="flex items-baseline gap-2 mb-6">
                     <span className="text-3xl font-black text-[#0b1d3a]">
-                      {plan.amount.toLocaleString('fr-FR')}
+                      {planAmount(plan.code).toLocaleString('fr-FR')}
                     </span>
                     <span className="text-sm text-slate-500 font-medium">
                       FCFA / année scolaire
@@ -287,11 +357,18 @@ function CheckoutContent() {
               <div>
                 <h2 className="text-lg font-black text-white">Paiement de l&rsquo;abonnement</h2>
                 <p className="text-sm text-blue-100/70 mt-1">
-                  Montant à régler :{' '}
+                  {isPayingForChild && patronatName ? (
+                    <>
+                      Abonnement de <span className="font-semibold text-amber-300">{patronatName}</span>{' '}
+                      — montant à régler :{' '}
+                    </>
+                  ) : (
+                    <>
+                      Montant à régler :{' '}
+                    </>
+                  )}
                   <span className="font-bold text-amber-300">
-                    {(PLANS.find((p) => p.code === selectedPlan)?.amount ?? 0).toLocaleString(
-                      'fr-FR',
-                    )}{' '}
+                    {planAmount(selectedPlan).toLocaleString('fr-FR')}{' '}
                     FCFA
                   </span>{' '}
                   — {PLANS.find((p) => p.code === selectedPlan)?.name}, par année scolaire.

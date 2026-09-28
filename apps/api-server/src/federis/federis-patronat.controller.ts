@@ -13,8 +13,12 @@
  * Routes protégées (JWT) :
  *   GET  /federis/patronat/profile          — profil + abonnement
  *   GET  /federis/patronat/dashboard        — cockpit institutionnel + ORION
+ *   GET  /federis/patronat/identity         — identité publique (nom, logo…)
+ *   PATCH/federis/patronat/identity         — configurer nom + logo (coord.)
  *   GET  /federis/patronat/children         — patronats territoriaux (national)
  *   POST /federis/patronat/children         — créer un patronat territorial
+ *   GET  /federis/patronat/territorial-levels — niveaux configurés (national)
+ *   GET  /federis/patronat/pricing          — barème par niveau organisationnel
  *   GET  /federis/patronat/schools          — écoles rattachées
  *   GET  /federis/patronat/schools/search   — recherche écoles Academia Helm
  *   POST /federis/patronat/schools/request-link
@@ -31,6 +35,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -48,6 +53,7 @@ import {
   RequestSchoolLinkDto,
   CreateManualSchoolDto,
   InitCheckoutDto,
+  UpdatePatronatIdentityDto,
 } from './federis-patronat.service';
 
 @Controller('federis')
@@ -190,6 +196,61 @@ export class FederisPatronatController {
     return this.patronatService.getChildrenPatronats(
       req.user.tenantId,
       req.user.id || req.user.sub,
+    );
+  }
+
+  /**
+   * ⭐ Identité publique du patronat (nom, logo, coordonnées) — onglet
+   * « Informations » des Paramètres. Le logo + le nom alimentent la landing
+   * page du sous-domaine (personnalisation par patronat).
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('patronat/identity')
+  async getIdentity(@Req() req: any) {
+    return this.patronatService.getIdentity(req.user.tenantId, req.user.id || req.user.sub);
+  }
+
+  /**
+   * ⭐ Configuration de l'identité (nom, logo, coordonnées) — coordonnateur
+   * uniquement. Synchronise le nom du Tenant (topbar Helm) et personnalise
+   * la landing page du sous-domaine du patronat.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Patch('patronat/identity')
+  async updateIdentity(@Req() req: any, @Body() dto: UpdatePatronatIdentityDto) {
+    return this.patronatService.updateIdentity(
+      req.user.tenantId,
+      req.user.id || req.user.sub,
+      dto,
+    );
+  }
+
+  /**
+   * ⭐ Niveaux territoriaux configurés sous le pays du national (formulaire
+   * de création d'un patronat territorial — Département, Commune…).
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('patronat/territorial-levels')
+  async getTerritorialLevels(@Req() req: any) {
+    return this.patronatService.getTerritorialLevels(
+      req.user.tenantId,
+      req.user.id || req.user.sub,
+    );
+  }
+
+  /**
+   * ⭐ Barème dynamique par niveau organisationnel : l'abonnement du patronat
+   * NATIONAL est supérieur à celui des territoriaux / départementaux. Alimente
+   * la page checkout (montants réels), y compris quand le national règle
+   * l'abonnement d'un patronat territorial créé (?patronatId=…).
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('patronat/pricing')
+  async getPricing(@Req() req: any, @Query('patronatId') patronatId?: string) {
+    return this.patronatService.getPricing(
+      req.user.tenantId,
+      req.user.id || req.user.sub,
+      patronatId,
     );
   }
 

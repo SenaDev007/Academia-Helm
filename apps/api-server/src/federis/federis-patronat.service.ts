@@ -14,20 +14,36 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../database/prisma.service';
-import { normalizePatronatFunction, patronatFunctionLabel } from './federis-roles';
+import {
+  normalizePatronatFunction,
+  patronatFunctionLabel,
+  MANAGE_USERS,
+  type PatronatFunction,
+} from './federis-roles';
 import { FederisFedapayService } from './federis-fedapay.service';
 
-/** Offres Federis (cahier des charges §12 + proposition tarifaire). */
+/**
+ * Offres Federis (cahier des charges §12 + proposition tarifaire).
+ *
+ * ⭐ TARIFICATION PAR NIVEAU ORGANISATIONNEL (2026-09-28) : les frais
+ * d'abonnement du patronat NATIONAL sont SUPÉRIEURS à ceux des patronats
+ * TERRITORIAUX / DÉPARTEMENTAUX — même offre, barème différencié :
+ *   - Essentiel    : National 250 000 XOF · Territorial 100 000 XOF
+ *   - Institution  : National 500 000 XOF · Territorial 250 000 XOF
+ */
 export const FEDERIS_PLANS = {
   ESSENTIEL: {
     code: 'ESSENTIEL',
     name: 'Federis Essentiel',
-    amountXOF: 100_000,
+    amountXOF: 100_000, // valeur par défaut (territorial) — rétro-compat
+    amounts: { NATIONAL: 250_000, TERRITORIAL: 100_000 },
     period: 'année scolaire',
     maxSchools: 5,
     maxCandidates: 500,
@@ -36,7 +52,8 @@ export const FEDERIS_PLANS = {
   INSTITUTION: {
     code: 'INSTITUTION',
     name: 'Federis Institution',
-    amountXOF: 250_000,
+    amountXOF: 250_000, // valeur par défaut (territorial) — rétro-compat
+    amounts: { NATIONAL: 500_000, TERRITORIAL: 250_000 },
     period: 'année scolaire',
     maxSchools: 25,
     maxCandidates: 3_000,
@@ -45,6 +62,25 @@ export const FEDERIS_PLANS = {
 } as const;
 
 export type FederisPlanCode = keyof typeof FEDERIS_PLANS;
+
+/** Niveaux organisationnels tarifés (NATIONAL > TERRITORIAL / départemental). */
+export type FederisPriceLevel = 'NATIONAL' | 'TERRITORIAL';
+
+/**
+ * Montant XOF d'une offre pour un niveau organisationnel donné.
+ * Tout niveau non national (territorial, départemental, régional…) est
+ * facturé au barème TERRITORIAL.
+ */
+export function resolvePlanAmount(
+  plan: { amountXOF: number; amounts?: Partial<Record<FederisPriceLevel, number>> },
+  orgLevel?: string | null,
+): number {
+  if (orgLevel === 'NATIONAL') {
+    return plan.amounts?.NATIONAL ?? plan.amountXOF;
+  }
+  return plan.amounts?.TERRITORIAL ?? plan.amountXOF;
+}
+
 
 export class CreateChildPatronatDto {
   /**
@@ -67,6 +103,17 @@ export class CreateChildPatronatDto {
   @IsIn(['PATRONAT', 'ASSOCIATION', 'ORGANISME'])
   organismType?: 'PATRONAT' | 'ASSOCIATION' | 'ORGANISME';
 
+  /**
+   * Niveau territorial cible (code du CountryTerritorialLevel, ex: DEPARTMENT).
+   * Optionnel — par défaut le premier sous-niveau configuré pour le pays
+   * (ex : Département au Bénin). Permet au national de créer des patronats
+   * à différents étages territoriaux (départemental, communal…).
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  territorialLevelCode?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(120)
@@ -81,6 +128,16 @@ export class CreateChildPatronatDto {
   @IsString()
   @MaxLength(40)
   phone?: string;
+
+  /**
+   * ⭐ Même flux que l'inscription publique : le national définit le mot de
+   * passe du compte responsable du patronat territorial créé.
+   */
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  password?: string;
 }
 
 export class RequestSchoolLinkDto {
@@ -125,6 +182,54 @@ export class InitCheckoutDto {
    */
   @IsIn(['ESSENTIEL', 'INSTITUTION'])
   plan!: FederisPlanCode;
+
+  /**
+   * ⭐ Paiement POUR UN PATRONAT TERRITORIAL créé par le niveau national :
+   * même flux payant que l'inscription publique. Le national règle
+   * l'abonnement du patronat enfant identifié ici (la facture et
+   * l'activation — sous-domaine + email — ciblent l'enfant).
+   */
+  @IsOptional()
+  @IsString()
+  patronatId?: string;
+}
+
+export class UpdatePatronatIdentityDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  abbreviation?: string;
+
+  /** Logo institutionnel — data URL (optimisée via /media/optimize) ou URL https. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2_000_000)
+  logo?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(190)
+  primaryEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  primaryPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(190)
+  website?: string;
 }
 
 @Injectable()
@@ -198,6 +303,8 @@ export class FederisPatronatService {
     return {
       id: patronat.id,
       name: patronat.name,
+      abbreviation: patronat.abbreviation,
+      logo: patronat.logo,
       tenantId: patronat.tenantId,
       orgLevel: patronat.orgLevel,
       scope: patronat.scope,
@@ -214,7 +321,7 @@ export class FederisPatronatService {
       subscription: {
         plan: patronat.subscriptionPlan,
         planLabel: plan.name,
-        amountXOF: plan.amountXOF,
+        amountXOF: resolvePlanAmount(plan, patronat.orgLevel),
         status: patronat.subscriptionStatus,
         period: patronat.subscriptionPeriod,
         startedAt: patronat.subscriptionStartedAt,
@@ -494,7 +601,16 @@ export class FederisPatronatService {
     }));
   }
 
-  /** Création d'un patronat territorial par le niveau national. */
+  /**
+   * Création d'un patronat territorial par le niveau national.
+   *
+   * ⭐ MÊME FLUX QUE L'INSCRIPTION PUBLIQUE (2026-09-28) : la création est
+   * PAYANTE — le compte responsable est créé (User + PatronatUser + Bureau)
+   * et le parcours se poursuit vers le CHECKOUT Fedapay (nextStep), le
+   * national réglant l'abonnement du territorial créé. L'activation
+   * (webhook/verify) attribue le sous-domaine et envoie l'email identifiants,
+   * exactement comme le flux public.
+   */
   async createChildPatronat(tenantId: string, userId: string, dto: CreateChildPatronatDto) {
     const parent = await this.resolvePatronat(tenantId, userId);
     if (parent.orgLevel !== 'NATIONAL') {
@@ -530,6 +646,45 @@ export class FederisPatronatService {
       );
     }
 
+    // Niveau cible : celui demandé (ex : DEPARTMENT) sinon le premier
+    // sous-niveau configuré (ex : Département au Bénin).
+    const childLevel = dto.territorialLevelCode
+      ? levels.find((l) => l.code === dto.territorialLevelCode)
+      : levels[0];
+    if (!childLevel) {
+      throw new BadRequestException(
+        `Niveau territorial « ${dto.territorialLevelCode} » non configuré pour ce pays. Niveaux disponibles : ${levels
+          .map((l) => l.code)
+          .join(', ')}.`,
+      );
+    }
+
+    // ⭐ Validation du territoire contre la liste de référence du pays
+    //    (même règle que l'inscription publique — ex : les 12 départements
+    //    du Bénin), tolérante si la table n'est pas déployée.
+    if (dto.territoryName?.trim()) {
+      try {
+        const referenceTerritories = await this.prisma.countryTerritory.findMany({
+          where: { countryId: parent.countryId, isActive: true },
+          select: { name: true },
+        });
+        if (
+          referenceTerritories.length > 0 &&
+          !referenceTerritories.some(
+            (t) => t.name.trim().toLowerCase() === dto.territoryName.trim().toLowerCase(),
+          )
+        ) {
+          throw new BadRequestException(
+            `« ${dto.territoryName.trim()} » ne fait pas partie des unités territoriales configurées pour ce pays.`,
+          );
+        }
+      } catch (err) {
+        if (err instanceof BadRequestException) throw err;
+        const code = (err as any)?.code;
+        if (code !== 'P2021' && code !== 'P2022' && code !== 'P2024') throw err;
+      }
+    }
+
     const nameConflict = await this.prisma.patronat.findFirst({
       where: {
         name: { equals: dto.name.trim(), mode: 'insensitive' },
@@ -538,6 +693,24 @@ export class FederisPatronatService {
     });
     if (nameConflict) {
       throw new BadRequestException('Un patronat territorial portant ce nom existe déjà.');
+    }
+
+    // ⭐ Compte responsable : mêmes règles que l'inscription publique —
+    //    email unique + mot de passe ≥ 8 caractères.
+    const email = dto.email?.trim().toLowerCase() || null;
+    if (email) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new BadRequestException('Adresse électronique du responsable invalide.');
+      }
+      const existingUser = await this.prisma.user.findUnique({ where: { email } });
+      if (existingUser) {
+        throw new ConflictException(
+          'Un compte existe déjà avec cette adresse électronique. Utilisez une autre adresse pour le responsable.',
+        );
+      }
+    }
+    if (dto.password && dto.password.length < 8) {
+      throw new BadRequestException('Le mot de passe doit contenir au moins 8 caractères.');
     }
 
     const slugBase =
@@ -553,9 +726,6 @@ export class FederisPatronatService {
     while (await this.prisma.tenant.findUnique({ where: { slug } })) {
       slug = `${slugBase}-${suffix++}`;
     }
-
-    // Premier niveau territorial configuré pour le pays (ex : Département au Bénin)
-    const childLevel = levels[0];
 
     const result = await this.prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
@@ -574,7 +744,7 @@ export class FederisPatronatService {
         data: {
           tenantId: tenant.id,
           name: dto.name.trim(),
-          primaryEmail: dto.email?.trim().toLowerCase() || null,
+          primaryEmail: email,
           primaryPhone: dto.phone?.trim() || null,
           region: dto.territoryName?.trim() || null,
           territoryName: dto.territoryName?.trim() || null,
@@ -585,9 +755,52 @@ export class FederisPatronatService {
           countryId: parent.countryId,
           subscriptionPlan: 'ESSENTIEL',
           subscriptionStatus: 'PENDING_PAYMENT',
-          metadata: { organismType: dto.organismType ?? 'PATRONAT', createdBy: userId },
+          metadata: { organismType: 'PATRONAT', createdBy: userId },
         },
       });
+
+      // ⭐ Compte responsable (même flux que registerPatronat) : User +
+      //    PatronatUser (COORDONNATEUR) + membre du bureau (Président).
+      //    Le responsable se connecte sur le sous-domaine du patronat après
+      //    activation — le national lui communique ses identifiants.
+      let responsibleUser: { id: string; email: string } | null = null;
+      if (email && dto.responsibleName?.trim() && dto.password) {
+        const hashedPassword = await bcrypt.hash(dto.password, 10);
+        const user = await tx.user.create({
+          data: {
+            tenantId: tenant.id,
+            email,
+            passwordHash: hashedPassword,
+            firstName: respFirst || '',
+            lastName: respRest.join(' ') || '',
+            role: 'PATRONAT_COORDONNATEUR',
+            status: 'active',
+          },
+        });
+        await tx.patronatUser.create({
+          data: {
+            patronatId: patronat.id,
+            tenantId: tenant.id,
+            userId: user.id,
+            role: 'COORDONNATEUR',
+            isActive: true,
+          },
+        });
+        await tx.patronatBureauMember.create({
+          data: {
+            tenantId: tenant.id,
+            patronatId: patronat.id,
+            userId: user.id,
+            role: 'PRESIDENT',
+            firstName: respFirst || '',
+            lastName: respRest.join(' ') || '',
+            phone: dto.phone?.trim() || null,
+            email,
+            isActive: true,
+          },
+        });
+        responsibleUser = { id: user.id, email: user.email };
+      }
 
       // Année scolaire active pour le territorial (NO ACADEMIC YEAR = NO DATA)
       const now = new Date();
@@ -613,15 +826,40 @@ export class FederisPatronatService {
           resourceId: patronat.id,
           tableName: 'patronats',
           recordId: patronat.id,
-          newData: { name: patronat.name, territoryName: patronat.territoryName },
+          newData: {
+            name: patronat.name,
+            territoryName: patronat.territoryName,
+            responsibleAccount: responsibleUser ? 'created' : 'none',
+          },
         },
       });
 
-      return patronat;
+      return { patronat, tenant, responsibleUser };
     });
 
-    this.logger.log(`Patronat territorial créé : « ${result.name} » (parent : ${parent.name})`);
-    return { success: true, patronat: result };
+    this.logger.log(
+      `Patronat territorial créé : « ${result.patronat.name} » (parent : ${parent.name}) — responsable ${
+        result.responsibleUser ? result.responsibleUser.email : 'non créé'
+      }`,
+    );
+    // ⭐ Même flux que l'inscription publique : le parcours continue vers le
+    //    CHECKOUT — le national règle l'abonnement du territorial créé
+    //    (barème TERRITORIAL), l'activation attribue le sous-domaine.
+    return {
+      success: true,
+      patronat: {
+        id: result.patronat.id,
+        name: result.patronat.name,
+        territoryName: result.patronat.territoryName,
+        orgLevel: result.patronat.orgLevel,
+        tenantId: result.tenant.id,
+        slug: result.tenant.slug,
+        subscriptionPlan: result.patronat.subscriptionPlan,
+        subscriptionStatus: result.patronat.subscriptionStatus,
+      },
+      responsible: result.responsibleUser,
+      nextStep: 'CHECKOUT',
+    };
   }
 
   /** Écoles rattachées au patronat (Helm + manuelles). */
@@ -632,7 +870,20 @@ export class FederisPatronatService {
         where: { patronatId: patronat.id },
         include: {
           schoolTenant: {
-            select: { id: true, name: true, slug: true, subdomain: true, logo: true, status: true },
+            // ⭐ FIX « Champ logo invalide » : le modèle Tenant n'a PAS de
+            //    champ logo — le logo d'une école Helm vit sur la fiche School
+            //    (relation 1:1 Tenant.schools). L'ancien select demandait
+            //    logo sur le tenant → P2022 « Invalid prisma.patronatSchool
+            //    .findMany() invocation » et cassait toute la page Écoles
+            //    rattachées.
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              subdomain: true,
+              status: true,
+              schools: { select: { logo: true } },
+            },
           },
           academicYear: { select: { name: true } },
           _count: { select: { candidates: true } },
@@ -651,7 +902,8 @@ export class FederisPatronatService {
         kind: 'HELM' as const,
         name: s.schoolTenant?.name ?? 'École',
         slug: s.schoolTenant?.slug,
-        logo: s.schoolTenant?.logo,
+        subdomain: s.schoolTenant?.subdomain,
+        logo: s.schoolTenant?.schools?.logo ?? null,
         status: s.status,
         accessLevel: s.accessLevel,
         joinedAt: s.joinedAt,
@@ -685,7 +937,15 @@ export class FederisPatronatService {
           { slug: { contains: q, mode: 'insensitive' } },
         ],
       },
-      select: { id: true, name: true, slug: true, subdomain: true, logo: true },
+      // ⭐ Même correctif que getSchools : logo via la fiche School (1:1),
+      //    jamais sur le Tenant.
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        subdomain: true,
+        schools: { select: { logo: true } },
+      },
       take: 15,
       orderBy: { name: 'asc' },
     });
@@ -810,7 +1070,9 @@ export class FederisPatronatService {
     return {
       plan: patronat.subscriptionPlan,
       planLabel: plan.name,
-      amountXOF: plan.amountXOF,
+      amountXOF: resolvePlanAmount(plan, patronat.orgLevel),
+      orgLevel: patronat.orgLevel,
+      patronatName: patronat.name,
       status: patronat.subscriptionStatus,
       period: patronat.subscriptionPeriod,
       startedAt: patronat.subscriptionStartedAt,
@@ -832,6 +1094,204 @@ export class FederisPatronatService {
         paymentsCount: inv.payments.length,
       })),
     };
+  }
+
+  /**
+   * ⭐ Barème dynamique (par niveau organisationnel) — alimente la page
+   * checkout : montants réels selon que l'abonné est le patronat courant ou
+   * un patronat territorial créé par le national (patronatId).
+   */
+  async getPricing(tenantId: string, userId?: string, patronatId?: string) {
+    const caller = await this.resolvePatronat(tenantId, userId);
+
+    let target = caller;
+    let payingForChild = false;
+    if (patronatId && patronatId !== caller.id) {
+      target = await this.resolveChildPatronat(caller, patronatId);
+      payingForChild = true;
+    }
+
+    return {
+      orgLevel: target.orgLevel,
+      patronatName: target.name,
+      payingForChild,
+      plans: (Object.keys(FEDERIS_PLANS) as FederisPlanCode[]).map((code) => {
+        const plan = FEDERIS_PLANS[code];
+        return {
+          code: plan.code,
+          name: plan.name,
+          amountXOF: resolvePlanAmount(plan, target.orgLevel),
+          period: plan.period,
+          maxSchools: plan.maxSchools,
+          maxCandidates: plan.maxCandidates,
+          maxActiveCampaigns: plan.maxActiveCampaigns,
+        };
+      }),
+    };
+  }
+
+  /**
+   * Résout un patronat TERRITORIAL pour lequel le demandeur (national) règle
+   * l'abonnement — le demandeur doit être son patronat parent.
+   */
+  private async resolveChildPatronat(
+    caller: { id: string; orgLevel: string | null },
+    patronatId: string,
+  ) {
+    const child = await this.prisma.patronat.findFirst({
+      where: { id: patronatId },
+      include: {
+        tenant: { select: { id: true, name: true, slug: true, status: true } },
+        country: { select: { id: true, code: true, name: true } },
+        territorialLevel: { select: { id: true, code: true, label: true, order: true } },
+        parentPatronat: {
+          select: { id: true, name: true, orgLevel: true, territoryName: true },
+        },
+      },
+    });
+    if (!child) {
+      throw new NotFoundException('Patronat territorial introuvable.');
+    }
+    if (child.parentPatronatId !== caller.id) {
+      throw new ForbiddenException(
+        'Vous ne pouvez régler l\u2019abonnement que des patronats rattachés à votre réseau national.',
+      );
+    }
+    return child;
+  }
+
+  /**
+   * Niveaux territoriaux configurés sous le national (formulaire de création
+   * d'un patronat territorial — sélecteur « Département / Commune… »).
+   */
+  async getTerritorialLevels(tenantId: string, userId?: string) {
+    const patronat = await this.resolvePatronat(tenantId, userId);
+    if (patronat.orgLevel !== 'NATIONAL') {
+      throw new ForbiddenException('Réservé au patronat national.');
+    }
+    try {
+      const levels = await this.prisma.countryTerritorialLevel.findMany({
+        where: { countryId: patronat.countryId ?? undefined, isActive: true, order: { gt: 1 } },
+        select: { id: true, code: true, label: true, order: true },
+        orderBy: { order: 'asc' },
+      });
+      return { levels };
+    } catch (err) {
+      const code = (err as any)?.code;
+      if (code === 'P2021' || code === 'P2022' || code === 'P2024') {
+        return { levels: [] };
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * ⭐ Identité publique du patronat (nom, logo, coordonnées) — configurée
+   * depuis l'application par le coordonnateur. Alimente la page Paramètres
+   * (onglet Informations) et la landing page du sous-domaine via
+   * /federis/public/patronat-info.
+   */
+  async getIdentity(tenantId: string, userId?: string) {
+    const patronat = await this.resolvePatronat(tenantId, userId);
+    return {
+      id: patronat.id,
+      name: patronat.name,
+      abbreviation: patronat.abbreviation,
+      logo: patronat.logo,
+      legalName: patronat.legalName,
+      primaryEmail: patronat.primaryEmail,
+      primaryPhone: patronat.primaryPhone,
+      address: patronat.address,
+      website: patronat.website,
+      orgLevel: patronat.orgLevel,
+      territoryName: patronat.territoryName,
+      country: patronat.country,
+      territorialLevel: patronat.territorialLevel,
+    };
+  }
+
+  /**
+   * Mise à jour de l'identité du patronat (nom, logo, coordonnées).
+   * Réservée au COORDONNATEUR (même garde que la gestion des comptes).
+   * Le nom du Tenant est synchronisé (affiché dans la session / topbar) et le
+   * logo alimente la landing page du sous-domaine du patronat.
+   */
+  async updateIdentity(tenantId: string, userId: string, dto: UpdatePatronatIdentityDto) {
+    const patronat = await this.resolvePatronat(tenantId, userId);
+
+    // Garde fonction : coordonnateur uniquement (pattern FederisUsersService)
+    const link = await this.prisma.patronatUser.findFirst({
+      where: { tenantId: patronat.tenantId, userId, isActive: true },
+      select: { role: true },
+    });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    const fn = normalizePatronatFunction(link?.role ?? user?.role);
+    if (!MANAGE_USERS.includes(fn as PatronatFunction)) {
+      throw new ForbiddenException(
+        "La modification de l'identité du patronat est réservée au coordonnateur.",
+      );
+    }
+
+    // Logo : data URL (optimisée via /media/optimize) ou URL https — ou null
+    // pour retirer le logo personnalisé.
+    if (dto.logo != null && dto.logo !== '') {
+      const isHttp = /^https:\/\//i.test(dto.logo);
+      const isDataUrl = /^data:image\/(png|jpe?g|webp|svg\+xml);base64,/i.test(dto.logo);
+      if (!isHttp && !isDataUrl) {
+        throw new BadRequestException(
+          'Logo invalide : fournissez une image (PNG, JPEG, WebP, SVG) ou une URL https.',
+        );
+      }
+    }
+    if (dto.primaryEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dto.primaryEmail.trim())) {
+      throw new BadRequestException('Adresse électronique invalide.');
+    }
+
+    const data: Record<string, string | null> = {
+      name: dto.name.trim(),
+      abbreviation: dto.abbreviation?.trim() || null,
+      logo: dto.logo ? dto.logo : null,
+      primaryEmail: dto.primaryEmail?.trim().toLowerCase() || null,
+      primaryPhone: dto.primaryPhone?.trim() || null,
+      address: dto.address?.trim() || null,
+      website: dto.website?.trim() || null,
+    };
+
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.patronat.update({
+        where: { id: patronat.id },
+        data,
+        select: { id: true, name: true, logo: true, abbreviation: true },
+      }),
+      // Le nom du tenant suit (topbar / listes Helm)
+      this.prisma.tenant.update({
+        where: { id: patronat.tenantId },
+        data: { name: dto.name.trim() },
+        select: { id: true },
+      }),
+    ]);
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: patronat.tenantId,
+        userId,
+        action: 'FEDERIS_PATRONAT_IDENTITY_UPDATED',
+        resource: 'Patronat',
+        resourceId: patronat.id,
+        tableName: 'patronats',
+        recordId: patronat.id,
+        newData: {
+          name: updated.name,
+          logo: updated.logo ? '(mis à jour)' : '(retiré)',
+        },
+      },
+    });
+
+    this.logger.log(`Identité patronat mise à jour : « ${updated.name} » (tenant ${patronat.tenantId})`);
+    return { success: true, patronat: updated };
   }
 
   /**
@@ -857,9 +1317,27 @@ export class FederisPatronatService {
    *      est réellement absente de l'environnement (développement local).
    */
   async initCheckout(tenantId: string, userId: string, dto: InitCheckoutDto) {
-    const patronat = await this.resolvePatronat(tenantId, userId);
+    const caller = await this.resolvePatronat(tenantId, userId);
     const plan = FEDERIS_PLANS[dto.plan];
     if (!plan) throw new BadRequestException('Offre invalide. Offres : ESSENTIEL, INSTITUTION.');
+
+    // ── 0. Cible du paiement ──
+    // ⭐ Même flux payant que l'inscription publique : le niveau national
+    //    règle ici l'abonnement d'un patronat TERRITORIAL qu'il a créé
+    //    (dto.patronatId). Sans patronatId, l'abonné est le patronat courant.
+    //    La facture cible l'enfant → l'activation (webhook / verify) attribue
+    //    le sous-domaine et envoie l'email à L'ENFANT, exactement comme le
+    //    flux public.
+    let patronat = caller;
+    let payingForChild = false;
+    if (dto.patronatId && dto.patronatId !== caller.id) {
+      patronat = await this.resolveChildPatronat(caller, dto.patronatId);
+      payingForChild = true;
+    }
+
+    // ⭐ Tarification par niveau organisationnel : le barème du NATIONAL est
+    //    supérieur à celui des territoriaux / départementaux.
+    const amountXOF = resolvePlanAmount(plan, patronat.orgLevel);
 
     // ── 1. Facture impayée existante ? (pattern Helm : existingPayment PENDING) ──
     const existing = await this.prisma.federisInvoice.findFirst({
@@ -906,7 +1384,9 @@ export class FederisPatronatService {
         return {
           success: true,
           invoice: { id: existing.id, number: existing.number, amount: existing.amount },
-          plan: { code: plan.code, name: plan.name, amountXOF: plan.amountXOF },
+          plan: { code: plan.code, name: plan.name, amountXOF },
+          patronatId: patronat.id,
+          payingForChild,
           provider: 'FEDAPAY',
           paymentUrl: existingMeta.paymentUrl,
           message: 'Paiement Fedapay initialisé.',
@@ -944,12 +1424,17 @@ export class FederisPatronatService {
               patronatId: patronat.id,
               tenantId: patronat.tenantId,
               number,
-              amount: plan.amountXOF,
+              amount: amountXOF,
               currency: 'XOF',
               dueDate: new Date(Date.now() + 14 * 24 * 3600 * 1000),
               status: 'UNPAID',
               type: 'SUBSCRIPTION',
-              metadata: { plan: plan.code, period: 'SCHOOL_YEAR', initiatedBy: userId },
+              metadata: {
+                plan: plan.code,
+                period: 'SCHOOL_YEAR',
+                initiatedBy: userId,
+                ...(payingForChild ? { paidByParentTenantId: caller.tenantId } : {}),
+              },
             },
           });
         } catch (err: any) {
@@ -978,13 +1463,20 @@ export class FederisPatronatService {
           resourceId: invoice.id,
           tableName: 'federis_invoices',
           recordId: invoice.id,
-          newData: { plan: plan.code, amount: plan.amountXOF, provider: 'MANUAL' },
+          newData: {
+            plan: plan.code,
+            amount: amountXOF,
+            provider: 'MANUAL',
+            ...(payingForChild ? { payingFor: patronat.name } : {}),
+          },
         },
       });
       return {
         success: true,
         invoice: { id: invoice.id, number: invoice.number, amount: invoice.amount },
-        plan: { code: plan.code, name: plan.name, amountXOF: plan.amountXOF },
+        plan: { code: plan.code, name: plan.name, amountXOF },
+        patronatId: patronat.id,
+        payingForChild,
         provider: 'MANUAL',
         paymentUrl: null,
         message:
@@ -1063,10 +1555,11 @@ export class FederisPatronatService {
         recordId: invoice.id,
         newData: {
           plan: plan.code,
-          amount: plan.amountXOF,
+          amount: amountXOF,
           provider: 'FEDAPAY',
           providerTransactionId: tx.transactionId,
           reusedInvoice: invoice.id === existing?.id,
+          ...(payingForChild ? { payingFor: patronat.name } : {}),
         },
       },
     });
@@ -1080,7 +1573,9 @@ export class FederisPatronatService {
     return {
       success: true,
       invoice: { id: invoice.id, number: invoice.number, amount: invoice.amount },
-      plan: { code: plan.code, name: plan.name, amountXOF: plan.amountXOF },
+      plan: { code: plan.code, name: plan.name, amountXOF },
+      patronatId: patronat.id,
+      payingForChild,
       provider: 'FEDAPAY',
       paymentUrl: tx.paymentUrl,
       message: 'Paiement Fedapay initialisé.',

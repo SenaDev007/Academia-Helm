@@ -5,15 +5,28 @@
  *   - Écran réservé aux rôles autorisés du patronat NATIONAL.
  *   - Lister les patronats rattachés (niveau territorial, statut, activité).
  *   - Créer un patronat territorial rattaché au patronat national.
+ *
+ * ⭐ MÊME FLUX QUE L'INSCRIPTION PUBLIQUE (2026-09-28) :
+ *   1. Le national saisit l'identité du patronat territorial + le compte du
+ *      responsable (email + mot de passe — le type d'organisme n'est plus
+ *      demandé : c'est toujours un PATRONAT) ;
+ *   2. La création est PAYANTE : après l'appel POST /children, la page
+ *      redirige vers /checkout?patronatId=… où le national règle
+ *      l'abonnement du territorial (barème TERRITORIAL — inférieur au
+ *      barème NATIONAL) ;
+ *   3. L'activation (webhook / verify Fedapay) attribue le sous-domaine et
+ *      envoie l'email d'activation, exactement comme le flux public.
  */
 
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import AppIcon from '@/components/ui/AppIcon';
 import { apiClient } from '@/lib/api/client';
 import { cn } from '@/lib/utils';
 import { FedPage } from '@/components/federis/federis-motion';
+import { federisLink } from '@/lib/federis/useFederisPath';
 
 interface ChildPatronat {
   id: string;
@@ -29,6 +42,13 @@ interface ChildPatronat {
   createdAt: string;
 }
 
+interface TerritorialLevel {
+  id: string;
+  code: string;
+  label: string;
+  order: number;
+}
+
 const SUBSCRIPTION_BADGES: Record<string, { label: string; className: string }> = {
   ACTIVE: { label: 'Actif', className: 'bg-green-100 text-green-800' },
   PENDING_PAYMENT: { label: 'Paiement requis', className: 'bg-amber-100 text-amber-800' },
@@ -38,14 +58,17 @@ const SUBSCRIPTION_BADGES: Record<string, { label: string; className: string }> 
 const EMPTY_FORM = {
   name: '',
   territoryName: '',
-  organismType: 'PATRONAT',
+  territorialLevelCode: '',
   responsibleName: '',
   email: '',
   phone: '',
+  password: '',
 };
 
 export default function FederisPatronatsPage() {
+  const router = useRouter();
   const [children, setChildren] = useState<ChildPatronat[]>([]);
+  const [levels, setLevels] = useState<TerritorialLevel[]>([]);
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +100,18 @@ export default function FederisPatronatsPage() {
     }
   }, []);
 
+  // Niveaux territoriaux configurés pour le pays (Département, Commune…)
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiClient.get('/federis/patronat/territorial-levels', { timeout: 15000 });
+        setLevels(res.data?.levels ?? []);
+      } catch {
+        // Table non déployée — le territoire reste saisissable librement.
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     void loadChildren();
   }, [loadChildren]);
@@ -86,26 +121,57 @@ export default function FederisPatronatsPage() {
     const errs: Record<string, string> = {};
     if (!form.name.trim()) errs.name = 'Le nom du patronat territorial est requis';
     if (!form.territoryName.trim()) errs.territoryName = 'Le territoire est requis';
-    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
+    if (!form.responsibleName.trim())
+      errs.responsibleName = 'Le responsable est requis (compte de connexion du patronat créé)';
+    if (!form.email.trim()) {
+      errs.email = "L'email du responsable est requis (identifiant de connexion)";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       errs.email = 'Adresse électronique invalide';
+    }
+    if (!form.password) {
+      errs.password = 'Le mot de passe du responsable est requis';
+    } else if (form.password.length < 8) {
+      errs.password = 'Le mot de passe doit contenir au moins 8 caractères';
+    }
     setFormErrors(errs);
     if (Object.keys(errs).length > 0) return;
 
     setSubmitting(true);
     try {
-      await apiClient.post(
+      const res = await apiClient.post(
         '/federis/patronat/children',
         {
           name: form.name.trim(),
           territoryName: form.territoryName.trim(),
-          organismType: form.organismType,
-          ...(form.responsibleName.trim() ? { responsibleName: form.responsibleName.trim() } : {}),
-          ...(form.email.trim() ? { email: form.email.trim().toLowerCase() } : {}),
+          ...(form.territorialLevelCode
+            ? { territorialLevelCode: form.territorialLevelCode }
+            : {}),
+          responsibleName: form.responsibleName.trim(),
+          email: form.email.trim().toLowerCase(),
+          password: form.password,
           ...(form.phone.trim() ? { phone: form.phone.trim() } : {}),
         },
         { timeout: 30000 },
       );
-      setSuccessMsg(`Patronat « ${form.name.trim()} » créé et rattaché à votre réseau.`);
+
+      const created = res.data?.patronat;
+      const createdName = created?.name ?? form.name.trim();
+
+      // ⭐ Même flux que l'inscription publique : la création est PAYANTE —
+      //    redirection vers le checkout avec l'identifiant du patronat créé
+      //    (le national règle son abonnement, barème TERRITORIAL).
+      if (res.data?.nextStep === 'CHECKOUT' && created?.id) {
+        router.push(
+          federisLink(
+            `/checkout?patronatId=${encodeURIComponent(created.id)}&name=${encodeURIComponent(createdName)}&status=child`,
+          ),
+        );
+        return;
+      }
+
+      setSuccessMsg(
+        `Patronat « ${createdName} » créé et rattaché à votre réseau. Activez son abonnement depuis la liste.`,
+      );
       setForm(EMPTY_FORM);
       setShowCreate(false);
       await loadChildren();
@@ -154,7 +220,8 @@ export default function FederisPatronatsPage() {
           </h1>
           <p className="text-slate-500 font-medium mt-1 text-sm">
             Créez et suivez les patronats rattachés à votre réseau national — {children.length}{' '}
-            rattaché(s).
+            rattaché(s). Chaque création est suivie du règlement de l&apos;abonnement du patronat
+            créé (même flux que l&apos;inscription publique).
           </p>
         </div>
         <button
@@ -178,13 +245,16 @@ export default function FederisPatronatsPage() {
         </div>
       )}
 
-      {/* Formulaire de création */}
+      {/* Formulaire de création — même flux que l'inscription publique */}
       {showCreate && (
-        <form
-          onSubmit={handleCreate}
-          className="fed-card p-6 space-y-5"
-        >
-          <h2 className="text-base font-black text-[#0b1d3a]">Nouveau patronat territorial</h2>
+        <form onSubmit={handleCreate} className="fed-card p-6 space-y-5">
+          <div>
+            <h2 className="text-base font-black text-[#0b1d3a]">Nouveau patronat territorial</h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Le compte du responsable est créé immédiatement ; l&apos;abonnement du patronat est
+              réglé à l&apos;étape suivante (activation du sous-domaine après paiement).
+            </p>
+          </div>
           <div className="grid sm:grid-cols-2 gap-5">
             <div>
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
@@ -222,35 +292,48 @@ export default function FederisPatronatsPage() {
                 <p className="mt-1 text-sm text-red-600">{formErrors.territoryName}</p>
               )}
             </div>
+            {levels.length > 0 && (
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                  Niveau territorial
+                </label>
+                <select
+                  value={form.territorialLevelCode}
+                  onChange={(e) => setForm({ ...form, territorialLevelCode: e.target.value })}
+                  className="fed-input-light px-4 py-2"
+                >
+                  {levels.map((lvl) => (
+                    <option key={lvl.code} value={lvl.code}>
+                      {lvl.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Par défaut : {levels[0]?.label ?? 'premier niveau configuré'} pour votre pays.
+                </p>
+              </div>
+            )}
             <div>
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
-                Type d&rsquo;organisme
-              </label>
-              <select
-                value={form.organismType}
-                onChange={(e) => setForm({ ...form, organismType: e.target.value })}
-                className="fed-input-light px-4 py-2 !w-auto"
-              >
-                <option value="PATRONAT">Patronat</option>
-                <option value="ASSOCIATION">Association</option>
-                <option value="ORGANISME">Organisme</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
-                Responsable (optionnel)
+                Responsable — prénom et nom <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 value={form.responsibleName}
                 onChange={(e) => setForm({ ...form, responsibleName: e.target.value })}
-                className="fed-input-light px-4 py-2"
-                placeholder="Prénom et nom"
+                className={cn(
+                  'fed-input-light px-4 py-2',
+                  formErrors.responsibleName ? '!border-red-400' : '',
+                )}
+                placeholder="Prénom et nom du coordonnateur"
               />
+              {formErrors.responsibleName && (
+                <p className="mt-1 text-sm text-red-600">{formErrors.responsibleName}</p>
+              )}
             </div>
             <div>
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
-                Contact — email (optionnel)
+                Responsable — email <span className="text-red-500">*</span>
               </label>
               <input
                 type="email"
@@ -260,11 +343,36 @@ export default function FederisPatronatsPage() {
                   'fed-input-light px-4 py-2',
                   formErrors.email ? '!border-red-400' : '',
                 )}
-                placeholder="contact@patronat.org"
+                placeholder="responsable@patronat.org"
               />
               {formErrors.email && (
                 <p className="mt-1 text-sm text-red-600">{formErrors.email}</p>
               )}
+              <p className="mt-1 text-[11px] text-slate-400">
+                Identifiant de connexion du patronat créé.
+              </p>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                Responsable — mot de passe <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="password"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                className={cn(
+                  'fed-input-light px-4 py-2',
+                  formErrors.password ? '!border-red-400' : '',
+                )}
+                placeholder="8 caractères minimum"
+                autoComplete="new-password"
+              />
+              {formErrors.password && (
+                <p className="mt-1 text-sm text-red-600">{formErrors.password}</p>
+              )}
+              <p className="mt-1 text-[11px] text-slate-400">
+                À transmettre au responsable — modifiable depuis son espace.
+              </p>
             </div>
             <div>
               <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
@@ -286,13 +394,17 @@ export default function FederisPatronatsPage() {
             </div>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <p className="text-[11px] text-slate-400">
+              L&apos;abonnement sera réglé juste après la création — barème territorial (inférieur
+              au barème national).
+            </p>
             <button
               type="submit"
               disabled={submitting}
               className="fed-btn-gold fed-btn-shimmer px-6 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {submitting ? 'Création…' : 'Créer le patronat'}
+              {submitting ? 'Création…' : 'Créer et régler l\u2019abonnement'}
             </button>
           </div>
         </form>
@@ -320,6 +432,7 @@ export default function FederisPatronatsPage() {
                   <th className="px-4 py-3 font-semibold text-center">Examens</th>
                   <th className="px-4 py-3 font-semibold">Abonnement</th>
                   <th className="px-4 py-3 font-semibold">Statut</th>
+                  <th className="px-4 py-3 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -366,6 +479,24 @@ export default function FederisPatronatsPage() {
                         >
                           {child.status === 'ACTIVE' ? 'Actif' : child.status}
                         </span>
+                      </td>
+                      <td className="px-4 py-3.5 text-right">
+                        {child.subscriptionStatus === 'PENDING_PAYMENT' && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              router.push(
+                                federisLink(
+                                  `/checkout?patronatId=${encodeURIComponent(child.id)}&name=${encodeURIComponent(child.name)}&status=child`,
+                                ),
+                              )
+                            }
+                            className="fed-btn-gold px-4 py-2 text-xs"
+                            title="Régler l'abonnement de ce patronat territorial"
+                          >
+                            Régler l&apos;abonnement
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

@@ -1,10 +1,16 @@
 /**
  * Page Paramètres - Federis
+ *
+ * ⭐ VRAIES DONNÉES (2026-09-28) : le profil patronat réel (nom, niveau,
+ *    abonnement) remplace le libellé codé en dur « Federis des Écoles
+ *    Privées » — pattern dashboard.
  */
 
 import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import { getServerSession } from '@/lib/auth';
+import { getServerSession, getServerToken } from '@/lib/auth';
+import { loadFederisProfile } from '@/lib/federis/server-api';
+import { getFederisBasePath } from '@/lib/federis/useFederisPath';
 import FederisLayout from '@/components/federis/FederisLayout';
 import FederisSettingsPage from '@/components/federis/FederisSettingsPage';
 import type { User, Tenant } from '@/types';
@@ -15,30 +21,32 @@ export const metadata: Metadata = {
 
 export default async function SettingsPage() {
   const session = await getServerSession();
-  if (!session?.user) redirect('/federis/login');
+  if (!session?.user) {
+    redirect(`${getFederisBasePath()}/login?redirect=/federis/settings`);
+  }
 
   const user = session.user as User;
+  const token = await getServerToken();
+
+  // Profil patronat réel (nom, niveau, pays, abonnement) pour l'en-tête.
+  const profile = await loadFederisProfile(token);
+
   const federis: Tenant = {
-    id: user.tenantId || '',
-    name: 'Federis des Écoles Privées',
+    id: profile?.tenantId || user.tenantId || '',
+    name: profile?.name ?? 'Espace Patronat',
     slug: 'federis',
     subdomain: '',
     status: 'active',
-    subscriptionStatus: 'ACTIVE_SUBSCRIBED',
+    subscriptionStatus: profile?.subscription?.status ?? 'ACTIVE_SUBSCRIBED',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     trialEndsAt: undefined,
-    nextPaymentDueAt: undefined,
-  } as Tenant as Tenant;
+    nextPaymentDueAt: profile?.subscription?.expiresAt ?? undefined,
+  } as Tenant;
 
   return (
-    <FederisLayout
-      user={user}
-      federis={federis}
-      currentAcademicYear={{ id: 'current', label: '2024-2025' }}
-    >
+    <FederisLayout user={user} federis={federis} currentAcademicYear={undefined}>
       <FederisSettingsPage tenantId={federis.id} user={user} />
     </FederisLayout>
   );
 }
-

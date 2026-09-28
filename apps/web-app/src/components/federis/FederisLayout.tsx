@@ -129,8 +129,10 @@ export default function FederisLayout({
   // ⭐ Profil patronat (API) : orgLevel (visibilité « Patronats territoriaux »)
   //    + statut d'abonnement (bandeau de blocage si impayé — cahier des charges §12.3)
   //    + fonction du membre (userRole) → UI Shell par rôle
+  //    + logo configuré (Paramètres → Identité) → en-tête de l'application
   const [orgLevel, setOrgLevel] = useState<string | null>(null);
   const [patronatUserRole, setPatronatUserRole] = useState<string | null>(null);
+  const [patronatLogo, setPatronatLogo] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<{
     status: string;
     plan: string;
@@ -157,6 +159,8 @@ export default function FederisLayout({
           setOrgLevel(res.data.orgLevel ?? null);
           // ⭐ Fonction du membre (PatronatUser.role) — prioritaire sur User.role
           setPatronatUserRole(res.data.userRole ?? res.data.userFunction ?? null);
+          // ⭐ Logo personnalisé du patronat (configuré dans Paramètres → Identité)
+          setPatronatLogo(res.data.logo ?? null);
           setSubscription({
             status: res.data.subscription?.status ?? 'UNKNOWN',
             plan: res.data.subscription?.plan ?? 'ESSENTIEL',
@@ -192,14 +196,23 @@ export default function FederisLayout({
           <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
             <div className="flex items-center space-x-3 flex-shrink-0">
               <div className="fed-logo-beam w-11 h-11 flex items-center justify-center p-0.5 shadow-md">
-                <Image
-                  src="/images/logo-Academia Hub.webp"
-                  alt="Academia Federis"
-                  width={38}
-                  height={38}
-                  className="h-9 w-9 object-contain rounded-full"
-                  priority
-                />
+                {patronatLogo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={patronatLogo}
+                    alt={federis.name}
+                    className="h-9 w-9 object-contain rounded-full"
+                  />
+                ) : (
+                  <Image
+                    src="/images/logo-Academia Hub.webp"
+                    alt="Academia Federis"
+                    width={38}
+                    height={38}
+                    className="h-9 w-9 object-contain rounded-full"
+                    priority
+                  />
+                )}
               </div>
               <div className="hidden sm:block">
                 <div className="text-sm font-black text-[#0b1d3a] tracking-wide">FEDERIS</div>

@@ -49,6 +49,8 @@ interface PublicPatronatInfo {
     id: string;
     name: string;
     abbreviation?: string | null;
+    /** ⭐ Logo configuré depuis l'application (Paramètres → Identité). */
+    logo?: string | null;
     orgLevel: string | null;
     scope?: string | null;
     territoryName?: string | null;
@@ -199,6 +201,9 @@ export default async function PatronatPortalPage() {
       : patronat.territoryName
         ? `Patronat de ${patronat.territoryName}`
         : 'Patronat';
+  // ⭐ Logo personnalisé du patronat (configuré dans l'application) — sinon
+  //    logo Academia Federis par défaut.
+  const patronatLogo = patronat.logo || null;
 
   return (
     <main className="min-h-screen bg-white">
@@ -207,21 +212,32 @@ export default async function PatronatPortalPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
             <div className="fed-logo-beam w-12 h-12 flex items-center justify-center p-1 shadow-md flex-shrink-0">
-              <Image
-                src="/images/logo-Academia Hub.webp"
-                alt="Academia Federis — par Academia Helm"
-                width={40}
-                height={40}
-                className="h-10 w-10 object-contain rounded-full"
-                priority
-              />
+              {patronatLogo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={patronatLogo}
+                  alt={patronat.name}
+                  className="h-10 w-10 object-contain rounded-full"
+                />
+              ) : (
+                <Image
+                  src="/images/logo-Academia Hub.webp"
+                  alt="Academia Federis — par Academia Helm"
+                  width={40}
+                  height={40}
+                  className="h-10 w-10 object-contain rounded-full"
+                  priority
+                />
+              )}
             </div>
             <div className="min-w-0">
               <div className="text-sm font-black text-[#0b1d3a] leading-tight truncate">
                 {patronat.name}
               </div>
               <div className="text-[10px] font-bold text-[#1e3a8a] uppercase tracking-widest truncate">
-                Academia Federis · {levelBadge}
+                {patronat.abbreviation
+                  ? `${patronat.abbreviation} · Academia Federis`
+                  : `Academia Federis · ${levelBadge}`}
               </div>
             </div>
           </div>
@@ -413,13 +429,22 @@ export default async function PatronatPortalPage() {
       <footer className="border-t border-blue-100 bg-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Image
-              src="/images/logo-Academia Hub.webp"
-              alt="Academia Federis"
-              width={32}
-              height={32}
-              className="h-8 w-8 object-contain rounded-full"
-            />
+            {patronatLogo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={patronatLogo}
+                alt={patronat.name}
+                className="h-8 w-8 object-contain rounded-full"
+              />
+            ) : (
+              <Image
+                src="/images/logo-Academia Hub.webp"
+                alt="Academia Federis"
+                width={32}
+                height={32}
+                className="h-8 w-8 object-contain rounded-full"
+              />
+            )}
             <p className="text-xs text-slate-500">
               <span className="font-bold text-[#0b1d3a]">{patronat.name}</span> — propulsé par
               Academia Federis, par Academia Helm

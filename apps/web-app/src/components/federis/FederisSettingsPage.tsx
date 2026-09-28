@@ -1,38 +1,207 @@
 /**
- * FederisSettingsPage Component
- * 
- * Paramètres avec onglets
+ * FederisSettingsPage — Paramètres du patronat (Academia Federis)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ⭐ VRAIES DONNÉES PERSISTÉES (2026-09-28) — remplace les onglets mock :
+ *   - Identité & Logo : GET/PATCH /federis/patronat/identity — nom, sigle,
+ *     logo (ImagePicker → /api/media/optimize), coordonnées. Le nom + le logo
+ *     personnalisent l'en-tête / pied de page de la landing page publique du
+ *     sous-domaine du patronat.
+ *   - Abonnement & paiement : GET /federis/patronat/subscription — montants
+ *     réels (barème national supérieur au territorial), factures persistées,
+ *     renouvellement vers /checkout.
+ *   - Équipe : renvoie vers la page Équipe & Comptes (CRUD réel).
+ *   - Audit : GET /audit-logs (journal réel des actions patronat).
+ *   - Années scolaires : inchangé (déjà persisté).
  */
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
+import { apiClient } from '@/lib/api/client';
+import { ImagePicker } from '@/components/cms/visual/ImagePicker';
+import { federisLink } from '@/lib/federis/useFederisPath';
 import type { User } from '@/types';
-import { CalendarDays, Save, Loader2, AlertCircle, CheckCircle } from 'lucide-react';
+import { CalendarDays, Save, Loader2, AlertCircle, CheckCircle, ExternalLink } from 'lucide-react';
 import * as settingsService from '@/services/settings.service';
 
-type Tab = 'info' | 'academic-year' | 'users' | 'subscription' | 'audit';
+type Tab = 'identity' | 'academic-year' | 'subscription' | 'team' | 'audit';
+
+interface PatronatIdentity {
+  id: string;
+  name: string;
+  abbreviation?: string | null;
+  logo?: string | null;
+  legalName?: string | null;
+  primaryEmail?: string | null;
+  primaryPhone?: string | null;
+  address?: string | null;
+  website?: string | null;
+  orgLevel?: string | null;
+  territoryName?: string | null;
+  country?: { name: string; code: string } | null;
+  territorialLevel?: { label: string } | null;
+}
+
+interface SubscriptionData {
+  plan: string;
+  planLabel: string;
+  amountXOF: number;
+  orgLevel: string | null;
+  patronatName: string;
+  status: string;
+  period: string;
+  startedAt?: string | null;
+  expiresAt?: string | null;
+  quotas: { maxSchools: number; maxCandidates: number; maxActiveCampaigns: number };
+  invoices: Array<{
+    id: string;
+    number: string;
+    amount: number;
+    currency: string;
+    status: string;
+    type: string;
+    dueDate: string;
+    createdAt: string;
+    paymentsCount: number;
+  }>;
+}
+
+interface AuditEntry {
+  id: string;
+  action: string;
+  resource?: string;
+  createdAt: string;
+  newData?: unknown;
+}
+
+const SUBSCRIPTION_STATUS_LABELS: Record<string, { label: string; className: string }> = {
+  ACTIVE: { label: 'Actif', className: 'bg-green-100 text-green-800' },
+  PENDING_PAYMENT: { label: 'Paiement requis', className: 'bg-amber-100 text-amber-800' },
+  EXPIRED: { label: 'Expiré', className: 'bg-red-100 text-red-700' },
+};
 
 export default function FederisSettingsPage({ tenantId, user }: { tenantId: string; user: User }) {
   const confirmDialog = useConfirmDialog();
-  const [activeTab, setActiveTab] = useState<Tab>('info');
+  const [activeTab, setActiveTab] = useState<Tab>('identity');
 
   const tabs: Array<{ id: Tab; label: string; icon: string }> = [
-    { id: 'info', label: 'Informations Federis', icon: 'building' },
+    { id: 'identity', label: 'Identité & Logo', icon: 'building' },
     { id: 'academic-year', label: 'Années Scolaires', icon: 'calendar' },
-    { id: 'users', label: 'Utilisateurs & rôles', icon: 'user' },
     { id: 'subscription', label: 'Abonnement & paiement', icon: 'finance' },
+    { id: 'team', label: 'Équipe & Comptes', icon: 'user' },
     { id: 'audit', label: 'Audit logs', icon: 'document' },
   ];
 
-  // Academic Year State
+  // ── Identité (vraies données) ──────────────────────────────────────
+  const [identity, setIdentity] = useState<PatronatIdentity | null>(null);
+  const [identityLoading, setIdentityLoading] = useState(true);
+  const [identitySaving, setIdentitySaving] = useState(false);
+  const [identityErrors, setIdentityErrors] = useState<Record<string, string>>({});
+  const [identityNotice, setIdentityNotice] = useState<string | null>(null);
+
+  const loadIdentity = useCallback(async () => {
+    setIdentityLoading(true);
+    try {
+      const res = await apiClient.get('/federis/patronat/identity', { timeout: 20000 });
+      setIdentity(res.data ?? null);
+    } catch {
+      setIdentity(null);
+    } finally {
+      setIdentityLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'identity') void loadIdentity();
+  }, [activeTab, loadIdentity]);
+
+  const handleSaveIdentity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!identity) return;
+    const errs: Record<string, string> = {};
+    if (!identity.name || identity.name.trim().length < 2)
+      errs.name = 'Le nom du patronat est requis (2 caractères minimum)';
+    if (identity.primaryEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identity.primaryEmail.trim()))
+      errs.primaryEmail = 'Adresse électronique invalide';
+    setIdentityErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+
+    setIdentitySaving(true);
+    setIdentityNotice(null);
+    try {
+      await apiClient.patch(
+        '/federis/patronat/identity',
+        {
+          name: identity.name.trim(),
+          ...(identity.abbreviation?.trim() ? { abbreviation: identity.abbreviation.trim() } : { abbreviation: null }),
+          logo: identity.logo ?? null,
+          ...(identity.primaryEmail?.trim() ? { primaryEmail: identity.primaryEmail.trim().toLowerCase() } : { primaryEmail: null }),
+          ...(identity.primaryPhone?.trim() ? { primaryPhone: identity.primaryPhone.trim() } : { primaryPhone: null }),
+          ...(identity.address?.trim() ? { address: identity.address.trim() } : { address: null }),
+          ...(identity.website?.trim() ? { website: identity.website.trim() } : { website: null }),
+        },
+        { timeout: 30000 },
+      );
+      setIdentityNotice('Identité enregistrée — la landing page de votre sous-domaine est à jour.');
+      await loadIdentity();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? "Enregistrement impossible.";
+      setIdentityErrors({ submit: Array.isArray(msg) ? msg.join(' ') : String(msg) });
+    } finally {
+      setIdentitySaving(false);
+    }
+  };
+
+  // ── Abonnement (vraies données) ────────────────────────────────────
+  const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
+
+  const loadSubscription = useCallback(async () => {
+    setSubscriptionLoading(true);
+    try {
+      const res = await apiClient.get('/federis/patronat/subscription', { timeout: 20000 });
+      setSubscription(res.data ?? null);
+    } catch {
+      setSubscription(null);
+    } finally {
+      setSubscriptionLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'subscription') void loadSubscription();
+  }, [activeTab, loadSubscription]);
+
+  // ── Audit (vraies données) ─────────────────────────────────────────
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+  const [auditLoading, setAuditLoading] = useState(true);
+
+  const loadAudit = useCallback(async () => {
+    setAuditLoading(true);
+    try {
+      const res = await apiClient.get('/audit-logs', { timeout: 20000 });
+      const list = Array.isArray(res.data) ? res.data : (res.data?.items ?? []);
+      setAuditEntries(list.slice(0, 30));
+    } catch {
+      setAuditEntries([]);
+    } finally {
+      setAuditLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'audit') void loadAudit();
+  }, [activeTab, loadAudit]);
+
+  // ── Années scolaires (existant — déjà persisté) ────────────────────
   const [academicYears, setAcademicYears] = useState<any[]>([]);
   const [activeAcademicYear, setActiveAcademicYear] = useState<any>(null);
   const [academicYearBusy, setAcademicYearBusy] = useState(false);
-  const [toast, setToast] = useState<{type: 'success' | 'error', message: string} | null>(null);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
     if (activeTab === 'academic-year') {
@@ -67,7 +236,10 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
   };
 
   const handleActivateAcademicYear = async (id: string) => {
-    const ok = await confirmDialog.info('Cette année scolaire deviendra l\'année active. Voulez-vous continuer ?', 'Activer l\'année scolaire');
+    const ok = await confirmDialog.info(
+      "Cette année scolaire deviendra l'année active. Voulez-vous continuer ?",
+      "Activer l'année scolaire",
+    );
     if (!ok) return;
     try {
       setAcademicYearBusy(true);
@@ -82,7 +254,10 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
   };
 
   const handleCloseAcademicYear = async (id: string) => {
-    const ok = await confirmDialog.warning('Cette année scolaire passera en lecture seule. Cette action est irréversible. Voulez-vous continuer ?', 'Clôturer l\'année scolaire');
+    const ok = await confirmDialog.warning(
+      'Cette année scolaire passera en lecture seule. Cette action est irréversible. Voulez-vous continuer ?',
+      "Clôturer l'année scolaire",
+    );
     if (!ok) return;
     try {
       setAcademicYearBusy(true);
@@ -98,292 +273,549 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
 
   return (
     <>
-    {confirmDialog.dialog}
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Paramètres</h1>
-        <p className="text-gray-600 mt-1">Gérez les paramètres de votre federis</p>
-      </div>
+      {confirmDialog.dialog}
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-black text-[#0b1d3a] tracking-tight">
+            Paramètres
+          </h1>
+          <p className="text-slate-500 mt-1 text-sm">
+            Identité publique, années scolaires, abonnement et traçabilité de votre patronat.
+          </p>
+        </div>
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="flex space-x-8">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                'py-4 px-1 border-b-2 font-medium text-sm transition-colors',
-                activeTab === tab.id
-                  ? 'border-blue-700 text-blue-700'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      {/* Tab Content */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
-        {activeTab === 'info' && (
-          <div className="space-y-6">
-            <h2 className="text-xl font-semibold text-gray-900">Informations Federis</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Nom du federis</label>
-                <input
-                  type="text"
-                  defaultValue="Federis des Écoles Privées"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Région / Département</label>
-                <input
-                  type="text"
-                  defaultValue="Atlantique"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Email institutionnel</label>
-                <input
-                  type="email"
-                  defaultValue="contact@federis.bj"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Téléphone</label>
-                <input
-                  type="tel"
-                  defaultValue="+229 XX XX XX XX"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md"
-                />
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <button className="px-6 py-2 bg-blue-700 text-white rounded-md font-semibold hover:bg-blue-800">
-                Enregistrer
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'academic-year' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">Gestion des Années Scolaires</h2>
-                <p className="text-sm text-gray-500 mt-1">Configurez le cycle académique de votre réseau Federis.</p>
-              </div>
+        {/* Tabs */}
+        <div className="border-b border-gray-200 overflow-x-auto">
+          <nav className="flex space-x-8 min-w-max">
+            {tabs.map((tab) => (
               <button
-                onClick={handleGenerateNextAcademicYear}
-                disabled={academicYearBusy}
-                className="px-4 py-2 bg-blue-700 text-white rounded-md font-semibold hover:bg-blue-800 disabled:opacity-50 flex items-center space-x-2"
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  'py-4 px-1 border-b-2 font-medium text-sm transition-colors',
+                  activeTab === tab.id
+                    ? 'border-blue-700 text-blue-700'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
+                )}
               >
-                {academicYearBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarDays className="w-4 h-4" />}
-                <span>Générer la prochaine année</span>
+                {tab.label}
               </button>
-            </div>
+            ))}
+          </nav>
+        </div>
 
-            {toast && (
-              <div className={cn("p-4 rounded-md flex items-center space-x-2", toast.type === 'success' ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800")}>
-                {toast.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
-                <span>{toast.message}</span>
+        {/* Tab Content */}
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          {/* ══════════ IDENTITÉ & LOGO (vraies données) ══════════ */}
+          {activeTab === 'identity' && (
+            <form onSubmit={handleSaveIdentity} className="space-y-6">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Identité du patronat</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Ces informations personnalisent la page d&apos;accueil publique de votre
+                  sous-domaine (en-tête et pied de page) ainsi que l&apos;en-tête de vos documents
+                  officiels.
+                </p>
               </div>
-            )}
 
-            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-              <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Année</th>
-                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Statut</th>
-                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Dates</th>
-                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {academicYears.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
-                        Aucune année scolaire configurée.
-                      </td>
-                    </tr>
-                  ) : (
-                    academicYears.map((year) => (
-                      <tr key={year.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4 font-medium text-gray-900">{year.name}</td>
-                        <td className="px-6 py-4">
-                          <span className={cn(
-                            "px-2.5 py-1 text-xs font-medium rounded-full",
-                            year.status === 'ACTIVE' ? "bg-green-100 text-green-800" :
-                            year.status === 'ARCHIVED' ? "bg-gray-100 text-gray-800" :
-                            "bg-blue-100 text-blue-800"
-                          )}>
-                            {year.status === 'ACTIVE' ? 'Active' : year.status === 'ARCHIVED' ? 'Archivée' : 'Planifiée'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-600">
-                          {year.startDate ? new Date(year.startDate).toLocaleDateString('fr-FR') : '—'} 
-                          {' au '} 
-                          {year.endDate ? new Date(year.endDate).toLocaleDateString('fr-FR') : '—'}
-                        </td>
-                        <td className="px-6 py-4 text-right space-x-3">
-                          {year.status !== 'ACTIVE' && year.status !== 'ARCHIVED' && (
-                            <button
-                              onClick={() => handleActivateAcademicYear(year.id)}
-                              disabled={academicYearBusy}
-                              className="text-sm font-medium text-blue-600 hover:text-blue-800"
-                            >
-                              Activer
-                            </button>
-                          )}
-                          {year.status === 'ACTIVE' && (
-                            <>
-                              <button
-                                onClick={() => alert("Synchronisation de l'année " + year.name + " poussée vers toutes les écoles du réseau Helm. Elles hériteront de ce cadre temporel pour leurs rentrées.")}
-                                disabled={academicYearBusy}
-                                className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
-                              >
-                                Pousser vers Réseau
-                              </button>
-                              <button
-                                onClick={() => handleCloseAcademicYear(year.id)}
-                                disabled={academicYearBusy}
-                                className="text-sm font-medium text-red-600 hover:text-red-800"
-                              >
-                                Clôturer
-                              </button>
-                            </>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'subscription' && (
-          <div className="space-y-6">
-            <h2 className="text-xl font-semibold text-gray-900">Abonnement & Paiement</h2>
-            <div className="border border-gray-200 rounded-lg p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">Abonnement Mensuel</h3>
-                  <p className="text-sm text-gray-600">50 000 F CFA / mois</p>
+              {identityLoading ? (
+                <div className="space-y-4 animate-pulse">
+                  <div className="h-10 bg-gray-100 rounded-md" />
+                  <div className="h-10 bg-gray-100 rounded-md" />
+                  <div className="h-40 bg-gray-100 rounded-xl" />
                 </div>
-                <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-                  Actif
-                </span>
-              </div>
-              <div className="border-t border-gray-200 pt-4 mt-4">
-                <p className="text-sm text-gray-600 mb-2">Prochain paiement :</p>
-                <p className="text-lg font-semibold text-gray-900">15 Février 2024</p>
-              </div>
-              <div className="mt-6">
-                <button className="px-6 py-2 bg-blue-700 text-white rounded-md font-semibold hover:bg-blue-800">
-                  Renouveler l'abonnement
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Nom du patronat <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={identity?.name ?? ''}
+                        onChange={(e) =>
+                          setIdentity(identity ? { ...identity, name: e.target.value } : identity)
+                        }
+                        className={cn(
+                          'w-full px-4 py-2 border rounded-md',
+                          identityErrors.name ? 'border-red-400' : 'border-gray-300',
+                        )}
+                        placeholder="Ex : Patronat National des Écoles Privées"
+                      />
+                      {identityErrors.name && (
+                        <p className="mt-1 text-sm text-red-600">{identityErrors.name}</p>
+                      )}
+                      <p className="mt-1 text-xs text-gray-400">
+                        Affiché dans l&apos;en-tête / pied de page de votre landing page publique.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Sigle / abréviation
+                      </label>
+                      <input
+                        type="text"
+                        value={identity?.abbreviation ?? ''}
+                        onChange={(e) =>
+                          setIdentity(
+                            identity ? { ...identity, abbreviation: e.target.value } : identity,
+                          )
+                        }
+                        className="w-full px-4 py-2 border border-gray-300 rounded-md"
+                        placeholder="Ex : PNEP"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Email institutionnel
+                      </label>
+                      <input
+                        type="email"
+                        value={identity?.primaryEmail ?? ''}
+                        onChange={(e) =>
+                          setIdentity(
+                            identity ? { ...identity, primaryEmail: e.target.value } : identity,
+                          )
+                        }
+                        className={cn(
+                          'w-full px-4 py-2 border rounded-md',
+                          identityErrors.primaryEmail ? 'border-red-400' : 'border-gray-300',
+                        )}
+                        placeholder="contact@patronat.org"
+                      />
+                      {identityErrors.primaryEmail && (
+                        <p className="mt-1 text-sm text-red-600">{identityErrors.primaryEmail}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Téléphone
+                      </label>
+                      <input
+                        type="tel"
+                        value={identity?.primaryPhone ?? ''}
+                        onChange={(e) =>
+                          setIdentity(
+                            identity ? { ...identity, primaryPhone: e.target.value } : identity,
+                          )
+                        }
+                        className="w-full px-4 py-2 border border-gray-300 rounded-md"
+                        placeholder="+229 …"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Adresse</label>
+                      <input
+                        type="text"
+                        value={identity?.address ?? ''}
+                        onChange={(e) =>
+                          setIdentity(identity ? { ...identity, address: e.target.value } : identity)
+                        }
+                        className="w-full px-4 py-2 border border-gray-300 rounded-md"
+                        placeholder="Cotonou, Bénin"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Site web
+                      </label>
+                      <input
+                        type="url"
+                        value={identity?.website ?? ''}
+                        onChange={(e) =>
+                          setIdentity(identity ? { ...identity, website: e.target.value } : identity)
+                        }
+                        className="w-full px-4 py-2 border border-gray-300 rounded-md"
+                        placeholder="https://…"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Logo configurables — ImagePicker (pattern Helm CMS) */}
+                  <div className="max-w-xs">
+                    <ImagePicker
+                      value={identity?.logo ?? null}
+                      onChange={(logo) => setIdentity(identity ? { ...identity, logo } : identity)}
+                      label="Logo du patronat"
+                      aspect="square"
+                      hint="Affiché dans l'en-tête de votre landing page publique (sinon logo Academia Federis). PNG, JPG, WEBP — 8 Mo max."
+                    />
+                  </div>
+
+                  {identity?.orgLevel && (
+                    <div className="flex flex-wrap gap-2">
+                      <span className="px-3 py-1 bg-blue-50 text-blue-800 rounded-full text-xs font-semibold">
+                        {identity.orgLevel === 'NATIONAL'
+                          ? 'Patronat national'
+                          : identity.territorialLevel?.label ?? 'Patronat territorial'}
+                        {identity.territoryName ? ` — ${identity.territoryName}` : ''}
+                      </span>
+                      {identity.country && (
+                        <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-semibold">
+                          {identity.country.name}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {identityErrors.submit && (
+                    <div className="p-4 bg-red-50 border border-red-200 rounded-md flex items-start space-x-2">
+                      <AlertCircle className="w-5 h-5 text-red-500 mt-0.5" />
+                      <span className="text-sm text-red-700">{identityErrors.submit}</span>
+                    </div>
+                  )}
+                  {identityNotice && (
+                    <div className="p-4 bg-green-50 border border-green-200 rounded-md flex items-center space-x-2">
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                      <span className="text-sm text-green-800">{identityNotice}</span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={identitySaving}
+                      className="px-6 py-2 bg-blue-700 text-white rounded-md font-semibold hover:bg-blue-800 disabled:opacity-50 inline-flex items-center gap-2"
+                    >
+                      {identitySaving ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Save className="w-4 h-4" />
+                      )}
+                      {identitySaving ? 'Enregistrement…' : 'Enregistrer'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </form>
+          )}
+
+          {/* ══════════ ANNÉES SCOLAIRES (déjà persisté) ══════════ */}
+          {activeTab === 'academic-year' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">
+                    Gestion des Années Scolaires
+                  </h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Configurez le cycle académique de votre réseau patronal.
+                  </p>
+                </div>
+                <button
+                  onClick={handleGenerateNextAcademicYear}
+                  disabled={academicYearBusy}
+                  className="px-4 py-2 bg-blue-700 text-white rounded-md font-semibold hover:bg-blue-800 disabled:opacity-50 flex items-center space-x-2"
+                >
+                  {academicYearBusy ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CalendarDays className="w-4 h-4" />
+                  )}
+                  <span>Générer la prochaine année</span>
                 </button>
               </div>
+
+              {toast && (
+                <div
+                  className={cn(
+                    'p-4 rounded-md flex items-center space-x-2',
+                    toast.type === 'success'
+                      ? 'bg-green-50 text-green-800'
+                      : 'bg-red-50 text-red-800',
+                  )}
+                >
+                  {toast.type === 'success' ? (
+                    <CheckCircle className="w-5 h-5" />
+                  ) : (
+                    <AlertCircle className="w-5 h-5" />
+                  )}
+                  <span>{toast.message}</span>
+                </div>
+              )}
+
+              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">
+                          Année
+                        </th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">
+                          Statut
+                        </th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">
+                          Dates
+                        </th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-right">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {academicYears.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
+                            Aucune année scolaire configurée.
+                          </td>
+                        </tr>
+                      ) : (
+                        academicYears.map((year) => (
+                          <tr key={year.id} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-6 py-4 font-medium text-gray-900">{year.name}</td>
+                            <td className="px-6 py-4">
+                              <span
+                                className={cn(
+                                  'px-2.5 py-1 text-xs font-medium rounded-full',
+                                  year.status === 'ACTIVE'
+                                    ? 'bg-green-100 text-green-800'
+                                    : year.status === 'ARCHIVED'
+                                      ? 'bg-gray-100 text-gray-800'
+                                      : 'bg-blue-100 text-blue-800',
+                                )}
+                              >
+                                {year.status === 'ACTIVE'
+                                  ? 'Active'
+                                  : year.status === 'ARCHIVED'
+                                    ? 'Archivée'
+                                    : 'Planifiée'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-sm text-gray-600">
+                              {year.startDate
+                                ? new Date(year.startDate).toLocaleDateString('fr-FR')
+                                : '—'}
+                              {' au '}
+                              {year.endDate
+                                ? new Date(year.endDate).toLocaleDateString('fr-FR')
+                                : '—'}
+                            </td>
+                            <td className="px-6 py-4 text-right space-x-3">
+                              {year.status !== 'ACTIVE' && year.status !== 'ARCHIVED' && (
+                                <button
+                                  onClick={() => handleActivateAcademicYear(year.id)}
+                                  disabled={academicYearBusy}
+                                  className="text-sm font-medium text-blue-600 hover:text-blue-800"
+                                >
+                                  Activer
+                                </button>
+                              )}
+                              {year.status === 'ACTIVE' && (
+                                <button
+                                  onClick={() => handleCloseAcademicYear(year.id)}
+                                  disabled={academicYearBusy}
+                                  className="text-sm font-medium text-red-600 hover:text-red-800"
+                                >
+                                  Clôturer
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Historique des paiements</h3>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+          )}
+
+          {/* ══════════ ABONNEMENT (vraies données) ══════════ */}
+          {activeTab === 'subscription' && (
+            <div className="space-y-6">
+              {subscriptionLoading ? (
+                <div className="space-y-4 animate-pulse">
+                  <div className="h-24 bg-gray-100 rounded-lg" />
+                  <div className="h-10 bg-gray-100 rounded-md" />
+                </div>
+              ) : subscription ? (
+                <>
+                  <div className="border border-gray-200 rounded-lg p-6">
+                    <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">
+                          Abonnement {subscription.planLabel}
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          {subscription.amountXOF.toLocaleString('fr-FR')} F CFA /{' '}
+                          {subscription.period === 'SCHOOL_YEAR' ? 'année scolaire' : subscription.period}
+                          {subscription.orgLevel === 'NATIONAL'
+                            ? ' — barème patronat national'
+                            : ' — barème territorial / départemental'}
+                        </p>
+                      </div>
+                      <span
+                        className={cn(
+                          'px-3 py-1 rounded-full text-sm font-medium',
+                          SUBSCRIPTION_STATUS_LABELS[subscription.status]?.className ??
+                            'bg-gray-100 text-gray-800',
+                        )}
+                      >
+                        {SUBSCRIPTION_STATUS_LABELS[subscription.status]?.label ??
+                          subscription.status}
+                      </span>
+                    </div>
+                    <div className="grid sm:grid-cols-3 gap-4 text-sm text-gray-600">
+                      <p>
+                        Écoles membres :{' '}
+                        <span className="font-semibold text-gray-900">
+                          {subscription.quotas?.maxSchools ?? '—'}
+                        </span>
+                      </p>
+                      <p>
+                        Candidatures / an :{' '}
+                        <span className="font-semibold text-gray-900">
+                          {subscription.quotas?.maxCandidates?.toLocaleString('fr-FR') ?? '—'}
+                        </span>
+                      </p>
+                      <p>
+                        Échéance :{' '}
+                        <span className="font-semibold text-gray-900">
+                          {subscription.expiresAt
+                            ? new Date(subscription.expiresAt).toLocaleDateString('fr-FR')
+                            : '—'}
+                        </span>
+                      </p>
+                    </div>
+                    <div className="mt-6">
+                      <Link
+                        href={federisLink('/checkout')}
+                        className="px-6 py-2 bg-blue-700 text-white rounded-md font-semibold hover:bg-blue-800 inline-flex items-center gap-2 text-sm"
+                      >
+                        {subscription.status === 'ACTIVE' ? 'Renouveler / changer de plan' : 'Activer notre abonnement'}
+                        <ExternalLink className="w-4 h-4" />
+                      </Link>
+                    </div>
+                  </div>
+
                   <div>
-                    <p className="font-medium text-gray-900">Janvier 2024</p>
-                    <p className="text-sm text-gray-600">15 Jan 2024</p>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                      Historique des factures
+                    </h3>
+                    <div className="space-y-2">
+                      {subscription.invoices?.length === 0 && (
+                        <p className="text-sm text-gray-500">
+                          Aucune facture pour le moment — activez votre abonnement pour générer la
+                          première.
+                        </p>
+                      )}
+                      {subscription.invoices?.map((inv) => (
+                        <div
+                          key={inv.id}
+                          className="flex items-center justify-between p-4 border border-gray-200 rounded-lg"
+                        >
+                          <div>
+                            <p className="font-medium text-gray-900">
+                              Facture {inv.number}{' '}
+                              <span className="text-xs text-gray-400">({inv.type})</span>
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {new Date(inv.createdAt).toLocaleDateString('fr-FR')}
+                              {inv.dueDate
+                                ? ` · échéance ${new Date(inv.dueDate).toLocaleDateString('fr-FR')}`
+                                : ''}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold text-gray-900">
+                              {inv.amount.toLocaleString('fr-FR')} {inv.currency}
+                            </p>
+                            <span
+                              className={cn(
+                                'text-xs font-semibold',
+                                inv.status === 'PAID'
+                                  ? 'text-green-600'
+                                  : inv.status === 'UNPAID'
+                                    ? 'text-amber-600'
+                                    : 'text-gray-500',
+                              )}
+                            >
+                              {inv.status === 'PAID'
+                                ? 'Payée'
+                                : inv.status === 'UNPAID'
+                                  ? 'Impayée'
+                                  : inv.status}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-semibold text-gray-900">50 000 F CFA</p>
-                    <span className="text-xs text-green-600">Payé</span>
-                  </div>
-                </div>
-              </div>
+                </>
+              ) : (
+                <p className="text-sm text-gray-500">
+                  Abonnement indisponible — reconnectez-vous et réessayez.
+                </p>
+              )}
             </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === 'users' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
+          {/* ══════════ ÉQUIPE (redirection vers la page réelle) ══════════ */}
+          {activeTab === 'team' && (
+            <div className="space-y-6">
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">Utilisateurs & Rôles (RBAC Federis)</h2>
-                <p className="text-sm text-gray-500 mt-1">Gérez les permissions granulaires pour les acteurs nationaux.</p>
+                <h2 className="text-xl font-semibold text-gray-900">Équipe & Comptes</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Les comptes des membres du patronat (secrétaire, trésorier, organisateur, chargé
+                  de mission) sont gérés depuis la page dédiée — création, fonction, activation et
+                  réinitialisation de mot de passe.
+                </p>
               </div>
-              <button className="px-4 py-2 bg-blue-700 text-white rounded-md font-semibold hover:bg-blue-800">
-                Affecter un rôle
-              </button>
+              <Link
+                href={federisLink('/team')}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-700 text-white rounded-md font-semibold hover:bg-blue-800 text-sm"
+              >
+                Ouvrir Équipe &amp; Comptes
+                <ExternalLink className="w-4 h-4" />
+              </Link>
             </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 border border-gray-200 rounded-lg flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-900">Jean Dupont</p>
-                  <p className="text-sm text-gray-600">jean.dupont@federis.bj</p>
-                </div>
-                <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-[10px] font-black uppercase tracking-widest">
-                  PATRONAT_ADMIN
-                </span>
-              </div>
-              <div className="p-4 border border-gray-200 rounded-lg flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-900">Marie Kondo</p>
-                  <p className="text-sm text-gray-600">m.kondo@education.gouv.bj</p>
-                </div>
-                <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-[10px] font-black uppercase tracking-widest">
-                  INSPECTEUR_NATIONAL
-                </span>
-              </div>
-              <div className="p-4 border border-gray-200 rounded-lg flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-900">Albert Camus</p>
-                  <p className="text-sm text-gray-600">a.camus@centre-examen.bj</p>
-                </div>
-                <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-[10px] font-black uppercase tracking-widest">
-                  CHEF_CENTRE_EXAMEN
-                </span>
-              </div>
-              <div className="p-4 border border-gray-200 rounded-lg flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-gray-900">Sarah Connor</p>
-                  <p className="text-sm text-gray-600">s.connor@prof.bj</p>
-                </div>
-                <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-[10px] font-black uppercase tracking-widest">
-                  CORRECTEUR_NATIONAL
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === 'audit' && (
-          <div className="space-y-6">
-            <h2 className="text-xl font-semibold text-gray-900">Audit Logs</h2>
-            <div className="space-y-2">
-              <div className="p-4 border border-gray-200 rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-medium text-gray-900">Création d'examen</p>
-                  <span className="text-xs text-gray-500">20 Jan 2024, 14:30</span>
-                </div>
-                <p className="text-sm text-gray-600">Utilisateur: Jean Dupont</p>
-                <p className="text-sm text-gray-600">Action: Création de l'examen "CEP 2024"</p>
+          {/* ══════════ AUDIT (vraies données) ══════════ */}
+          {activeTab === 'audit' && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Audit logs</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Journal des actions enregistrées sur votre espace patronat (30 dernières).
+                </p>
               </div>
+              {auditLoading ? (
+                <div className="space-y-2 animate-pulse">
+                  <div className="h-16 bg-gray-100 rounded-lg" />
+                  <div className="h-16 bg-gray-100 rounded-lg" />
+                  <div className="h-16 bg-gray-100 rounded-lg" />
+                </div>
+              ) : auditEntries.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  Aucune action enregistrée pour le moment.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {auditEntries.map((entry) => (
+                    <div key={entry.id} className="p-4 border border-gray-200 rounded-lg">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="font-medium text-gray-900 text-sm">
+                          {entry.action.replaceAll('_', ' ')}
+                        </p>
+                        <span className="text-xs text-gray-500">
+                          {new Date(entry.createdAt).toLocaleString('fr-FR')}
+                        </span>
+                      </div>
+                      {entry.resource && (
+                        <p className="text-sm text-gray-600">Ressource : {entry.resource}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
     </>
   );
 }
-

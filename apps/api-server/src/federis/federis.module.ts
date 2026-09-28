@@ -18,6 +18,9 @@ import { FederisPatronatController } from './federis-patronat.controller';
 // ⭐ Gestion des comptes membres (coordonnateur → secrétaire, trésorier…)
 import { FederisUsersService } from './federis-users.service';
 import { FederisUsersController } from './federis-users.controller';
+// ⭐ Bureau & Membres : CRUD de la composition du bureau institutionnel
+import { FederisBureauService } from './federis-bureau.service';
+import { FederisBureauController } from './federis-bureau.controller';
 // ⭐ Workflow examens : centres, salles, candidats, numéros de table, import
 import { FederisExamsService } from './federis-exams.service';
 import { FederisExamsController } from './federis-exams.controller';
@@ -42,6 +45,7 @@ import { FederisPdfController } from './federis-pdf.controller';
     FederisConnectController,
     FederisPatronatController,
     FederisUsersController,
+    FederisBureauController,
     FederisExamsController,
     FederisSchoolController,
     FederisDeliberationController,
@@ -57,6 +61,7 @@ import { FederisPdfController } from './federis-pdf.controller';
     FederisFedapayService,
     FederisPatronatService,
     FederisUsersService,
+    FederisBureauService,
     FederisExamsService,
     FederisSchoolService,
     FederisDeliberationService,

@@ -217,6 +217,7 @@ export class FederisRegisterService {
         id: true,
         name: true,
         abbreviation: true,
+        logo: true,
         orgLevel: true,
         scope: true,
         territoryName: true,
@@ -238,6 +239,10 @@ export class FederisRegisterService {
         id: patronat.id,
         name: patronat.name,
         abbreviation: patronat.abbreviation,
+        // ⭐ Logo configurable depuis l'application (Paramètres → Identité) :
+        // personnalise l'en-tête et le pied de page de la landing page du
+        // sous-domaine. Null → logo Academia Federis par défaut.
+        logo: patronat.logo,
         orgLevel: patronat.orgLevel,
         scope: patronat.scope,
         territoryName: patronat.territoryName,

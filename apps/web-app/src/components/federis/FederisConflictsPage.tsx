@@ -54,7 +54,7 @@ export default function FederisConflictsPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="fed-badge mb-3">Module système</div>
-          <h1 className="text-2xl md:text-3xl font-black text-[#0b1d3a] flex items-center gap-3 tracking-tight">
+          <h1 className="text-2xl md:text-3xl font-bold text-blue-900 flex items-center gap-3 tracking-tight">
             <AlertTriangle className="text-orange-500" />
             Gestion des Conflits
           </h1>
@@ -62,14 +62,14 @@ export default function FederisConflictsPage() {
             Résolvez les divergences entre vos données locales et le serveur institutionnel.
           </p>
         </div>
-        <div className="bg-[#eff6ff] text-[#1e3a8a] px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2">
+        <div className="bg-blue-50 text-blue-800 px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2">
           <Database size={14} />
           {conflicts.length} conflit{conflicts.length > 1 ? 's' : ''} en attente
         </div>
       </div>
 
       {conflicts.length === 0 ? (
-        <div className="bg-green-50 border border-green-100 rounded-2xl p-12 text-center">
+        <div className="bg-green-50 border border-green-100 rounded-xl p-12 text-center">
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="text-green-600 w-8 h-8" />
           </div>
@@ -82,7 +82,7 @@ export default function FederisConflictsPage() {
             <div key={conflict.id} className="fed-card overflow-hidden">
               <div className="bg-[#f7f9fc] px-6 py-4 border-b border-blue-50 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="bg-[#0b1d3a] text-white text-[10px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest">
+                  <span className="bg-blue-900 text-white text-[10px] font-bold px-2.5 py-1 rounded-full uppercase">
                     {conflict.table_name}
                   </span>
                   <span className="text-xs text-slate-500">Détecté le {new Date(conflict.detected_at).toLocaleString()}</span>
@@ -93,7 +93,7 @@ export default function FederisConflictsPage() {
               <div className="p-6 grid md:grid-cols-2 gap-8">
                 {/* Version Locale */}
                 <div className="space-y-4">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
                     <Database size={14} /> Version Locale (Vôtre)
                   </h4>
                   <pre className="bg-[#f7f9fc] p-4 rounded-xl text-[10px] overflow-auto max-h-[200px] border border-blue-100">
@@ -103,7 +103,7 @@ export default function FederisConflictsPage() {
 
                 {/* Version Serveur */}
                 <div className="space-y-4">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase flex items-center gap-2">
                     <History size={14} /> Version Serveur
                   </h4>
                   <pre className="bg-blue-50 p-4 rounded-xl text-[10px] overflow-auto max-h-[200px] border border-blue-100">

@@ -101,8 +101,8 @@ export default function FederisCheckoutPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#071528] pt-24 flex items-start justify-center">
-          <div className="text-blue-100/60 text-sm">Chargement…</div>
+        <div className="min-h-screen bg-[#f7f9fc] pt-28 flex items-start justify-center">
+          <div className="text-gray-500 text-sm">Chargement…</div>
         </div>
       }
     >
@@ -228,39 +228,37 @@ function CheckoutContent() {
   };
 
   return (
-    <div className="min-h-screen bg-[#071528] relative overflow-hidden">
-      {/* Halo lumineux (ADN WinAgro) */}
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[560px] h-[560px] rounded-full bg-blue-600/10 blur-[130px] pointer-events-none" />
+    <div className="min-h-screen bg-[#f7f9fc] relative">
       <FederisHeader />
-      <div className="pt-24 pb-12 relative z-10">
+      <div className="pt-28 pb-12 relative z-10">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-10">
-            <h1 className="text-2xl sm:text-3xl font-black text-white mb-2 tracking-tight">
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">
               {isPayingForChild ? "Abonnement du patronat territorial" : 'Activation du compte Patronat'}
             </h1>
-            <p className="text-blue-100/60">
+            <p className="text-gray-500">
               {patronatName ? (
                 <>
-                  Espace : <span className="font-semibold text-amber-300">{patronatName}</span>
+                  Espace : <span className="font-semibold text-blue-800">{patronatName}</span>
                 </>
               ) : (
                 'Finalisez la configuration de votre espace'
               )}
             </p>
             {isNewAccount && (
-              <p className="mt-3 inline-block text-sm text-emerald-300 bg-emerald-950/40 border border-emerald-700/40 rounded-full px-4 py-1.5">
+              <p className="mt-3 inline-block text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-1.5">
                 Compte créé avec succès. Activez votre abonnement pour accéder à l&rsquo;espace
                 patronat.
               </p>
             )}
             {isChildFlow && isPayingForChild && (
-              <p className="mt-3 inline-block text-sm text-amber-200 bg-amber-950/40 border border-amber-700/40 rounded-full px-4 py-1.5">
+              <p className="mt-3 inline-block text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5">
                 Patronat territorial créé — réglez son abonnement pour activer son sous-domaine
                 et notifier son responsable.
               </p>
             )}
             {pricing?.orgLevel === 'NATIONAL' && !isPayingForChild && (
-              <p className="mt-3 inline-block text-sm text-blue-200 bg-blue-950/40 border border-blue-800/40 rounded-full px-4 py-1.5">
+              <p className="mt-3 inline-block text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-1.5">
                 Barème patronat national — supérieur au barème territorial / départemental.
               </p>
             )}
@@ -268,10 +266,10 @@ function CheckoutContent() {
 
           {/* Statut d'abonnement existant (renouvellement) */}
           {subscription && subscription.status === 'ACTIVE' && (
-            <div className="mb-8 p-4 fed-glass-dark rounded-2xl text-sm text-blue-100">
-              <p className="font-semibold text-white">Abonnement actif : {subscription.plan}</p>
+            <div className="mb-8 p-4 bg-white border border-gray-200 rounded-xl text-sm text-gray-600">
+              <p className="font-semibold text-gray-900">Abonnement actif : {subscription.plan}</p>
               {subscription.expiresAt && (
-                <p className="text-blue-100/60 mt-1">
+                <p className="text-gray-500 mt-1">
                   Échéance : {new Date(subscription.expiresAt).toLocaleDateString('fr-FR')} — le
                   renouvellement est manuel, sans prélèvement automatique.
                 </p>
@@ -289,7 +287,7 @@ function CheckoutContent() {
                       (le shimmer de la carte a overflow:hidden et rognerait un
                       badge positionné à l'intérieur) */}
                   {plan.recommended && (
-                    <span className="absolute -top-4 left-1/2 -translate-x-1/2 z-20 bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] text-[#0b1d3a] px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-amber-500/30 inline-flex items-center gap-1.5 whitespace-nowrap">
+                    <span className="absolute -top-4 left-1/2 -translate-x-1/2 z-20 bg-blue-800 text-white px-3 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wide inline-flex items-center gap-1.5 whitespace-nowrap">
                       <Crown size={12} />
                       Recommandée
                     </span>
@@ -298,23 +296,23 @@ function CheckoutContent() {
                     type="button"
                     onClick={() => setSelectedPlan(plan.code)}
                     className={cn(
-                      'w-full h-full text-left p-8 rounded-3xl transition-all duration-200 fed-card fed-card-shimmer',
+                      'w-full h-full text-left p-8 rounded-xl transition-all duration-200 fed-card',
                       plan.recommended
-                        ? 'border-2 border-amber-500 shadow-2xl shadow-amber-500/15'
-                        : 'border-blue-100',
-                      isSelected && 'ring-2 ring-[#1e3a8a] ring-offset-2 ring-offset-[#071528]',
+                        ? 'border-blue-700'
+                        : 'border-gray-200',
+                      isSelected && 'ring-2 ring-blue-800 ring-offset-2',
                     )}
                     aria-pressed={isSelected}
                   >
                     <div className="flex items-start justify-between mb-4">
                     <div>
-                      <h3 className="text-xl font-black text-[#0b1d3a]">{plan.name}</h3>
+                      <h3 className="text-xl font-bold text-blue-900">{plan.name}</h3>
                       <p className="text-sm text-slate-500 mt-1">{plan.positioning}</p>
                     </div>
                     <div
                       className={cn(
                         'w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-1',
-                        isSelected ? 'border-[#1e3a8a] bg-[#1e3a8a]' : 'border-slate-300',
+                        isSelected ? 'border-blue-800 bg-blue-800' : 'border-gray-300',
                       )}
                     >
                       {isSelected && <AppIcon name="check" size="action" className="text-white" />}
@@ -322,7 +320,7 @@ function CheckoutContent() {
                   </div>
 
                   <div className="flex items-baseline gap-2 mb-6">
-                    <span className="text-3xl font-black text-[#0b1d3a]">
+                    <span className="text-3xl font-bold text-blue-900">
                       {planAmount(plan.code).toLocaleString('fr-FR')}
                     </span>
                     <span className="text-sm text-slate-500 font-medium">
@@ -338,7 +336,7 @@ function CheckoutContent() {
                           size="action"
                           className={cn(
                             'flex-shrink-0 mt-0.5',
-                            plan.recommended ? 'text-amber-600' : 'text-[#1e3a8a]',
+                            plan.recommended ? 'text-blue-800' : 'text-blue-800',
                           )}
                         />
                         <span className="text-sm text-slate-600 leading-relaxed">{f}</span>
@@ -352,14 +350,14 @@ function CheckoutContent() {
           </div>
 
           {/* Paiement */}
-          <div className="fed-glass-dark rounded-3xl shadow-2xl p-8">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 sm:p-8">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
               <div>
-                <h2 className="text-lg font-black text-white">Paiement de l&rsquo;abonnement</h2>
-                <p className="text-sm text-blue-100/70 mt-1">
+                <h2 className="text-lg font-semibold text-gray-900">Paiement de l&rsquo;abonnement</h2>
+                <p className="text-sm text-gray-500 mt-1">
                   {isPayingForChild && patronatName ? (
                     <>
-                      Abonnement de <span className="font-semibold text-amber-300">{patronatName}</span>{' '}
+                      Abonnement de <span className="font-semibold text-blue-800">{patronatName}</span>{' '}
                       — montant à régler :{' '}
                     </>
                   ) : (
@@ -367,13 +365,13 @@ function CheckoutContent() {
                       Montant à régler :{' '}
                     </>
                   )}
-                  <span className="font-bold text-amber-300">
+                  <span className="font-bold text-blue-800">
                     {planAmount(selectedPlan).toLocaleString('fr-FR')}{' '}
                     FCFA
                   </span>{' '}
                   — {PLANS.find((p) => p.code === selectedPlan)?.name}, par année scolaire.
                 </p>
-                <p className="text-xs text-blue-100/50 mt-2">
+                <p className="text-xs text-gray-400 mt-2">
                   Aucun prélèvement automatique. Des rappels sont envoyés à J-7, J-3 et J-1 avant
                   l&rsquo;échéance. Les archives officielles restent accessibles en lecture après
                   expiration.
@@ -383,7 +381,7 @@ function CheckoutContent() {
                 type="button"
                 onClick={handlePayment}
                 disabled={loading}
-                className="fed-btn-gold fed-btn-shimmer w-full sm:w-auto flex-shrink-0 px-8 py-4 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                className="fed-btn-gold w-full sm:w-auto flex-shrink-0 px-8 py-4 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? 'Initialisation…' : 'Payer avec Fedapay'}
               </button>
@@ -392,7 +390,7 @@ function CheckoutContent() {
             {message && (
               <div
                 className={cn(
-                  'p-4 rounded-2xl border text-sm',
+                  'p-4 rounded-xl border text-sm',
                   message.type === 'error'
                     ? 'bg-red-950/40 border-red-800/40 text-red-300'
                     : message.type === 'success'
@@ -405,13 +403,13 @@ function CheckoutContent() {
             )}
 
             <div className="mt-6 pt-6 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <p className="text-xs text-blue-100/40">
+              <p className="text-xs text-gray-400">
                 Tarif par entité souscriptrice, TTC sauf mention contraire. Une alerte est émise à
                 80 % et 100 % des quotas — aucun dépassement n&rsquo;est facturé automatiquement.
               </p>
               <Link
                 href={federisLink('/login')}
-                className="text-sm text-amber-400 font-semibold hover:text-amber-300 flex-shrink-0"
+                className="text-sm text-blue-700 font-semibold hover:underline flex-shrink-0"
               >
                 J&rsquo;ai déjà un abonnement — me connecter
               </Link>

@@ -198,7 +198,7 @@ export default function FederisPatronatsPage() {
     return (
       <div className="fed-card p-10 text-center">
         <AppIcon name="lock" size="dashboard" className="text-gray-300 mx-auto mb-4" />
-        <h2 className="text-lg font-black text-[#0b1d3a] mb-2">
+        <h2 className="text-lg font-bold text-blue-900 mb-2">
           Gestion des patronats territoriaux
         </h2>
         <p className="text-sm text-slate-500 max-w-md mx-auto">
@@ -215,7 +215,7 @@ export default function FederisPatronatsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="fed-badge mb-3">Module gouvernance</div>
-          <h1 className="text-2xl md:text-3xl font-black text-[#0b1d3a] tracking-tight">
+          <h1 className="text-2xl md:text-3xl font-bold text-blue-900 tracking-tight">
             Patronats territoriaux
           </h1>
           <p className="text-slate-500 font-medium mt-1 text-sm">
@@ -227,7 +227,7 @@ export default function FederisPatronatsPage() {
         <button
           type="button"
           onClick={() => setShowCreate((v) => !v)}
-          className="fed-btn-navy px-5 py-2.5 text-sm flex-shrink-0"
+          className="fed-btn-gold px-4 py-2.5 text-sm flex-shrink-0"
         >
           <AppIcon name={showCreate ? 'close' : 'add'} size="submenu" />
           {showCreate ? 'Annuler' : 'Créer un patronat territorial'}
@@ -235,12 +235,12 @@ export default function FederisPatronatsPage() {
       </div>
 
       {successMsg && (
-        <div className="p-4 bg-green-50 border border-green-200 rounded-2xl text-sm text-green-800">
+        <div className="p-4 bg-green-50 border border-green-200 rounded-xl text-sm text-green-800">
           {successMsg}
         </div>
       )}
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-sm text-red-700">
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
           {error}
         </div>
       )}
@@ -249,7 +249,7 @@ export default function FederisPatronatsPage() {
       {showCreate && (
         <form onSubmit={handleCreate} className="fed-card p-6 space-y-5">
           <div>
-            <h2 className="text-base font-black text-[#0b1d3a]">Nouveau patronat territorial</h2>
+            <h2 className="text-base font-bold text-blue-900">Nouveau patronat territorial</h2>
             <p className="text-xs text-slate-500 mt-1">
               Le compte du responsable est créé immédiatement ; l&apos;abonnement du patronat est
               réglé à l&apos;étape suivante (activation du sous-domaine après paiement).
@@ -257,7 +257,7 @@ export default function FederisPatronatsPage() {
           </div>
           <div className="grid sm:grid-cols-2 gap-5">
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Nom du patronat <span className="text-red-500">*</span>
               </label>
               <input
@@ -275,7 +275,7 @@ export default function FederisPatronatsPage() {
               )}
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Territoire (département, région…) <span className="text-red-500">*</span>
               </label>
               <input
@@ -294,7 +294,7 @@ export default function FederisPatronatsPage() {
             </div>
             {levels.length > 0 && (
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                   Niveau territorial
                 </label>
                 <select
@@ -314,7 +314,7 @@ export default function FederisPatronatsPage() {
               </div>
             )}
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Responsable — prénom et nom <span className="text-red-500">*</span>
               </label>
               <input
@@ -332,7 +332,7 @@ export default function FederisPatronatsPage() {
               )}
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Responsable — email <span className="text-red-500">*</span>
               </label>
               <input
@@ -353,7 +353,7 @@ export default function FederisPatronatsPage() {
               </p>
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Responsable — mot de passe <span className="text-red-500">*</span>
               </label>
               <input
@@ -375,7 +375,7 @@ export default function FederisPatronatsPage() {
               </p>
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Contact — téléphone (optionnel)
               </label>
               <input
@@ -389,7 +389,7 @@ export default function FederisPatronatsPage() {
           </div>
 
           {formErrors.submit && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-2xl">
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
               <p className="text-sm text-red-600">{formErrors.submit}</p>
             </div>
           )}
@@ -402,7 +402,7 @@ export default function FederisPatronatsPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="fed-btn-gold fed-btn-shimmer px-6 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="fed-btn-gold px-6 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? 'Création…' : 'Créer et régler l\u2019abonnement'}
             </button>
@@ -443,7 +443,7 @@ export default function FederisPatronatsPage() {
                   return (
                     <tr key={child.id} className="border-t border-slate-100 hover:bg-[#f7f9fc]">
                       <td className="px-6 py-3.5">
-                        <div className="font-medium text-[#0b1d3a]">{child.name}</div>
+                        <div className="font-medium text-blue-900">{child.name}</div>
                         <div className="text-xs text-slate-400">
                           Créé le {new Date(child.createdAt).toLocaleDateString('fr-FR')}
                         </div>
@@ -458,7 +458,7 @@ export default function FederisPatronatsPage() {
                       <td className="px-4 py-3.5 text-center text-slate-700">{child.examsCount}</td>
                       <td className="px-4 py-3.5">
                         <span
-                          className={cn('px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest', sub.className)}
+                          className={cn('px-2.5 py-1 rounded-full text-[9px] font-bold uppercase', sub.className)}
                         >
                           {sub.label}
                         </span>
@@ -471,7 +471,7 @@ export default function FederisPatronatsPage() {
                       <td className="px-4 py-3.5">
                         <span
                           className={cn(
-                            'px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest',
+                            'px-2.5 py-1 rounded-full text-[9px] font-bold uppercase',
                             child.status === 'ACTIVE'
                               ? 'bg-green-100 text-green-800'
                               : 'bg-gray-100 text-slate-700',

@@ -52,7 +52,7 @@ export default function FederisOrionPage({ tenantId }: { tenantId: string }) {
       info: 'bg-blue-100 text-blue-800 border-blue-200',
     };
     return (
-      <span className={cn('px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border', styles[severity as keyof typeof styles])}>
+      <span className={cn('px-2.5 py-1 rounded-full text-[9px] font-bold uppercase border', styles[severity as keyof typeof styles])}>
         {severity}
       </span>
     );
@@ -63,11 +63,11 @@ export default function FederisOrionPage({ tenantId }: { tenantId: string }) {
       <div>
         <div className="fed-badge mb-3">Module analyse</div>
         <div className="flex items-center space-x-3 mb-2">
-          <div className="w-12 h-12 bg-amber-500/15 border border-amber-400/30 rounded-xl flex items-center justify-center">
+          <div className="w-12 h-12 bg-blue-50 border border-blue-100 rounded-lg flex items-center justify-center">
             <AppIcon name="sparkles" size="dashboard" className="text-amber-600" />
           </div>
           <div>
-            <h1 className="text-2xl md:text-3xl font-black text-[#0b1d3a] tracking-tight">ORION</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-blue-900 tracking-tight">ORION</h1>
             <p className="text-slate-500 font-medium text-sm">Analyse institutionnelle</p>
           </div>
         </div>
@@ -75,7 +75,7 @@ export default function FederisOrionPage({ tenantId }: { tenantId: string }) {
 
       {/* Alertes */}
       <div className="space-y-4">
-        <h2 className="text-xl font-black text-[#0b1d3a]">Alertes</h2>
+        <h2 className="text-xl font-bold text-blue-900">Alertes</h2>
 
         {loading ? (
           <div className="text-center py-8 text-slate-500">Chargement...</div>
@@ -89,7 +89,7 @@ export default function FederisOrionPage({ tenantId }: { tenantId: string }) {
             <div
               key={alert.id}
               className={cn(
-                'bg-white rounded-2xl border p-6',
+                'bg-white rounded-xl border p-6',
                 alert.severity === 'critical' && 'border-red-200 bg-red-50/30',
                 alert.severity === 'warning' && 'border-yellow-200 bg-yellow-50/30',
                 alert.severity === 'info' && 'border-blue-200 bg-blue-50/30'
@@ -98,10 +98,10 @@ export default function FederisOrionPage({ tenantId }: { tenantId: string }) {
               <div className="flex items-start justify-between mb-2">
                 <div className="flex items-center space-x-3">
                   {getSeverityBadge(alert.severity)}
-                  <h3 className="text-lg font-black text-[#0b1d3a]">{alert.category}</h3>
+                  <h3 className="text-lg font-bold text-blue-900">{alert.category}</h3>
                 </div>
                 {typeof alert.count === 'number' && (
-                  <span className="px-2.5 py-1 rounded-lg bg-[#0b1d3a] text-amber-400 text-xs font-black">
+                  <span className="px-2.5 py-1 rounded-lg bg-blue-900 text-amber-600 text-xs font-bold">
                     {alert.count}
                   </span>
                 )}
@@ -114,16 +114,16 @@ export default function FederisOrionPage({ tenantId }: { tenantId: string }) {
 
       {/* Rapports */}
       <div className="fed-card p-6">
-        <h2 className="text-xl font-black text-[#0b1d3a] mb-4">Rapports institutionnels</h2>
+        <h2 className="text-xl font-bold text-blue-900 mb-4">Rapports institutionnels</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <button className="p-4 border border-blue-100 rounded-2xl bg-[#f7f9fc] text-left hover:border-[#1e3a8a]/40 hover:shadow-md transition-all">
-            <AppIcon name="document" size="menu" className="text-[#1e3a8a] mb-2" />
-            <p className="font-bold text-[#0b1d3a]">Rapport d'inscription</p>
+          <button className="p-4 border border-blue-100 rounded-xl bg-[#f7f9fc] text-left hover:border-blue-800/40 hover:shadow-md transition-all">
+            <AppIcon name="document" size="menu" className="text-blue-800 mb-2" />
+            <p className="font-bold text-blue-900">Rapport d'inscription</p>
             <p className="text-sm text-slate-500 mt-1">Statistiques par école et par examen</p>
           </button>
-          <button className="p-4 border border-blue-100 rounded-2xl bg-[#f7f9fc] text-left hover:border-[#1e3a8a]/40 hover:shadow-md transition-all">
-            <AppIcon name="finance" size="menu" className="text-[#1e3a8a] mb-2" />
-            <p className="font-bold text-[#0b1d3a]">Rapport logistique</p>
+          <button className="p-4 border border-blue-100 rounded-xl bg-[#f7f9fc] text-left hover:border-blue-800/40 hover:shadow-md transition-all">
+            <AppIcon name="finance" size="menu" className="text-blue-800 mb-2" />
+            <p className="font-bold text-blue-900">Rapport logistique</p>
             <p className="text-sm text-slate-500 mt-1">Centres, salles, surveillants</p>
           </button>
         </div>

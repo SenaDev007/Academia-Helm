@@ -209,40 +209,37 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
 
   return (
     <FedPage className="space-y-8">
-      {/* En-tête */}
-      <div className="bg-gradient-to-br from-[#0b1d3a] to-[#071528] p-10 lg:p-12 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden border border-blue-400/10">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32 blur-3xl" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
-          <div>
-            <div className="fed-badge fed-badge-amber mb-3">Module candidats</div>
-            <h1 className="text-2xl md:text-3xl font-black mb-2 tracking-tight">Fichier national des candidats</h1>
-            <p className="text-blue-100/70 font-medium max-w-xl">
-              Registre des inscriptions, import Excel des candidatures et affectation des numéros
-              de table par centre et par salle.
-            </p>
+      {/* En-tête — style Helm : titre + description + KPI, sans panneau sombre */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <div className="fed-badge mb-2">Module candidats</div>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Fichier national des candidats</h1>
+          <p className="text-sm text-gray-500 mt-1 max-w-xl">
+            Registre des inscriptions, import Excel des candidatures et affectation des numéros
+            de table par centre et par salle.
+          </p>
+        </div>
+        <div className="flex gap-4">
+          <div className="fed-card px-6 py-4 text-center">
+            <p className="text-2xl font-bold text-gray-900"><FedCountUp value={total} /></p>
+            <p className="text-xs font-medium text-gray-500 mt-0.5">Candidats</p>
           </div>
-          <div className="flex gap-4">
-            <div className="fed-glass-dark px-6 py-4 rounded-2xl text-center">
-              <p className="text-2xl font-black"><FedCountUp value={total} /></p>
-              <p className="text-[10px] font-bold text-blue-300 uppercase tracking-widest">Candidats</p>
-            </div>
-            <div className="fed-glass-dark px-6 py-4 rounded-2xl text-center">
-              <p className="text-2xl font-black"><FedCountUp value={withoutTable} /></p>
-              <p className="text-[10px] font-bold text-blue-300 uppercase tracking-widest">Sans table</p>
-            </div>
-            {importReport?.quota && (
-              <div className="fed-glass-dark px-6 py-4 rounded-2xl text-center">
-                <p className="text-2xl font-black">{importReport.quota.used}/{importReport.quota.max}</p>
-                <p className="text-[10px] font-bold text-blue-300 uppercase tracking-widest">Quota plan</p>
-              </div>
-            )}
+          <div className="fed-card px-6 py-4 text-center">
+            <p className="text-2xl font-bold text-gray-900"><FedCountUp value={withoutTable} /></p>
+            <p className="text-xs font-medium text-gray-500 mt-0.5">Sans table</p>
           </div>
+          {importReport?.quota && (
+            <div className="fed-card px-6 py-4 text-center">
+              <p className="text-2xl font-bold text-gray-900">{importReport.quota.used}/{importReport.quota.max}</p>
+              <p className="text-xs font-medium text-gray-500 mt-0.5">Quota plan</p>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Sélecteur d'examen + actions */}
       <div className="fed-card px-6 py-4 flex flex-col lg:flex-row lg:items-center gap-4">
-        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">Examen</span>
+        <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Examen</span>
         {examsLoading ? (
           <span className="text-sm font-bold text-slate-400">Chargement…</span>
         ) : exams.length === 0 ? (
@@ -275,7 +272,7 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
             <label
               htmlFor="federis-candidates-import"
               className={cn(
-                'fed-btn-navy px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-center cursor-pointer',
+                'fed-btn-navy px-5 py-2.5 text-[10px] font-bold uppercase text-center cursor-pointer',
                 importing && 'opacity-50 pointer-events-none',
               )}
             >
@@ -287,7 +284,7 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
           <button
             onClick={assignTables}
             disabled={assigning}
-            className="fed-btn-gold fed-btn-shimmer px-5 py-2.5 text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+            className="fed-btn-gold px-5 py-2.5 text-[10px] font-bold uppercase disabled:opacity-50"
           >
             {assigning ? 'Affectation…' : 'Affecter les numéros de table'}
           </button>
@@ -297,7 +294,7 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
       {/* Options d'affectation (coordonnateur / organisateur) */}
       {canOrganize && examId && (
         <div className="fed-card px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Répartition</span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase">Répartition</span>
           <select
             value={assignOptions.orderBy}
             onChange={(e) => setAssignOptions({ ...assignOptions, orderBy: e.target.value as 'SCHOOL' | 'NAME' })}
@@ -306,7 +303,7 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
             <option value="SCHOOL">Par école puis ordre alphabétique (mélange les écoles)</option>
             <option value="NAME">Ordre alphabétique pur</option>
           </select>
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Numérotation</span>
+          <span className="text-[10px] font-bold text-slate-400 uppercase">Numérotation</span>
           <select
             value={assignOptions.numberingScope}
             onChange={(e) => setAssignOptions({ ...assignOptions, numberingScope: e.target.value as 'CENTER' | 'EXAM' })}
@@ -319,43 +316,43 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
       )}
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl px-6 py-4 text-sm font-semibold text-red-800">{error}</div>
+        <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800">{error}</div>
       )}
       {notice && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-6 py-4 text-sm font-semibold text-emerald-800">{notice}</div>
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-6 py-4 text-sm font-semibold text-emerald-800">{notice}</div>
       )}
 
       {/* Rapport d'import */}
       {importReport && (
         <div className="fed-card p-8">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-black text-[#0b1d3a] uppercase tracking-widest">Rapport d&apos;import</h3>
+            <h3 className="text-sm font-bold text-blue-900 uppercase">Rapport d&apos;import</h3>
             <button onClick={() => setImportReport(null)} className="text-xs font-bold text-slate-400 hover:text-slate-700">Fermer</button>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-            <div className="bg-emerald-50 rounded-2xl p-4 text-center">
-              <p className="text-2xl font-black text-emerald-700">{importReport.created}</p>
-              <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Créés</p>
+            <div className="bg-emerald-50 rounded-xl p-4 text-center">
+              <p className="text-2xl font-bold text-emerald-700">{importReport.created}</p>
+              <p className="text-[9px] font-bold text-emerald-600 uppercase">Créés</p>
             </div>
-            <div className="bg-amber-50 rounded-2xl p-4 text-center">
-              <p className="text-2xl font-black text-amber-700">{importReport.skipped}</p>
-              <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Ignorés</p>
+            <div className="bg-amber-50 rounded-xl p-4 text-center">
+              <p className="text-2xl font-bold text-amber-700">{importReport.skipped}</p>
+              <p className="text-[9px] font-bold text-amber-600 uppercase">Ignorés</p>
             </div>
             {importReport.totalAfter !== undefined && (
-              <div className="bg-blue-50 rounded-2xl p-4 text-center">
-                <p className="text-2xl font-black text-blue-900">{importReport.totalAfter}</p>
-                <p className="text-[9px] font-black text-blue-700 uppercase tracking-widest">Total examen</p>
+              <div className="bg-blue-50 rounded-xl p-4 text-center">
+                <p className="text-2xl font-bold text-blue-900">{importReport.totalAfter}</p>
+                <p className="text-[9px] font-bold text-blue-700 uppercase">Total examen</p>
               </div>
             )}
             {importReport.quota && (
-              <div className="bg-gray-50 rounded-2xl p-4 text-center">
-                <p className="text-2xl font-black text-slate-700">{importReport.quota.used}/{importReport.quota.max}</p>
-                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Quota plan</p>
+              <div className="bg-gray-50 rounded-xl p-4 text-center">
+                <p className="text-2xl font-bold text-slate-700">{importReport.quota.used}/{importReport.quota.max}</p>
+                <p className="text-[9px] font-bold text-slate-500 uppercase">Quota plan</p>
               </div>
             )}
           </div>
           {importReport.errors.length > 0 && (
-            <div className="bg-gray-50 rounded-2xl p-5 max-h-48 overflow-y-auto space-y-1">
+            <div className="bg-gray-50 rounded-xl p-5 max-h-48 overflow-y-auto space-y-1">
               {importReport.errors.map((errLine, i) => (
                 <p key={i} className="text-xs font-semibold text-slate-600">{errLine}</p>
               ))}
@@ -368,22 +365,22 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
       {assignResult && (
         <div className="fed-card p-8">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-black text-[#0b1d3a] uppercase tracking-widest">Plan de salle &amp; numéros de table</h3>
+            <h3 className="text-sm font-bold text-blue-900 uppercase">Plan de salle &amp; numéros de table</h3>
             <button onClick={() => setAssignResult(null)} className="text-xs font-bold text-slate-400 hover:text-slate-700">Fermer</button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {(assignResult.perCenter ?? []).map((c) => (
-              <div key={c.centerCode} className="bg-[#f7f9fc] border border-blue-100 rounded-2xl p-5">
+              <div key={c.centerCode} className="bg-[#f7f9fc] border border-blue-100 rounded-xl p-5">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-black text-[#0b1d3a]">{c.centerName}</span>
-                  <span className="text-[9px] font-black uppercase tracking-widest bg-[#0b1d3a] text-white px-2.5 py-1 rounded-full">
+                  <span className="text-sm font-bold text-blue-900">{c.centerName}</span>
+                  <span className="text-[9px] font-bold uppercase bg-blue-900 text-white px-2.5 py-1 rounded-full">
                     {c.centerCode}
                   </span>
                 </div>
                 <p className="text-xs font-bold text-blue-900 mb-3">{c.candidates} candidat(s)</p>
                 <div className="space-y-1.5">
                   {c.rooms.map((r) => (
-                    <div key={r.code} className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                    <div key={r.code} className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase">
                       <span>Salle {r.code}</span>
                       <span>{r.occupancy} / {r.capacity}</span>
                     </div>
@@ -403,10 +400,10 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
       {/* Registre */}
       <div className="fed-card overflow-hidden">
         <div className="p-6 lg:p-8 border-b border-blue-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <h3 className="text-sm font-black text-[#0b1d3a] uppercase tracking-widest">
+          <h3 className="text-sm font-bold text-blue-900 uppercase">
             Registre de candidature
             {withoutCenter > 0 && (
-              <span className="ml-3 text-[9px] font-black uppercase tracking-widest bg-amber-100 text-amber-700 px-2.5 py-1 rounded">
+              <span className="ml-3 text-[9px] font-bold uppercase bg-amber-100 text-amber-700 px-2.5 py-1 rounded">
                 {withoutCenter} sans centre
               </span>
             )}
@@ -424,12 +421,12 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
           <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-[#f7f9fc]">
               <tr>
-                <th className="px-6 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Candidat</th>
-                <th className="px-6 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Matricule</th>
-                <th className="px-6 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">École</th>
-                <th className="px-6 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Centre</th>
-                <th className="px-6 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Salle</th>
-                <th className="px-6 py-3 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">N° de table</th>
+                <th className="px-6 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Candidat</th>
+                <th className="px-6 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Matricule</th>
+                <th className="px-6 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">École</th>
+                <th className="px-6 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Centre</th>
+                <th className="px-6 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Salle</th>
+                <th className="px-6 py-3 text-center text-[10px] font-bold text-slate-400 uppercase">N° de table</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-slate-200">
@@ -446,12 +443,12 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
                   <tr key={c.id} className="hover:bg-[#f7f9fc]">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center font-black text-blue-900 text-sm shrink-0">
+                        <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center font-bold text-blue-900 text-sm shrink-0">
                           {c.firstName?.[0] ?? '?'}
                         </div>
                         <div>
-                          <div className="text-sm font-black text-[#0b1d3a]">{c.lastName} {c.firstName}</div>
-                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                          <div className="text-sm font-bold text-blue-900">{c.lastName} {c.firstName}</div>
+                          <div className="text-[9px] font-bold text-slate-400 uppercase">
                             {c.gender ?? '—'}
                             {c.dateOfBirth ? ` • ${new Date(c.dateOfBirth).toLocaleDateString('fr-FR')}` : ''}
                           </div>
@@ -468,7 +465,7 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
                     </td>
                     <td className="px-6 py-4 text-center">
                       {c.tableNumber ? (
-                        <span className="inline-block bg-blue-900 text-white font-black text-sm px-3 py-1.5 rounded-xl">
+                        <span className="inline-block bg-blue-900 text-white font-bold text-sm px-3 py-1.5 rounded-xl">
                           {c.tableNumber}
                         </span>
                       ) : (
@@ -485,16 +482,16 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
 
       {/* Aide format import */}
       {canManageCandidates && (
-        <div className="fed-card-dark p-8 text-white">
-          <div className="flex items-center space-x-3 mb-4">
-            <AppIcon name="library" size="menu" className="text-[#fbbf24]" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-blue-200">Format du fichier d&apos;import</span>
+        <div className="fed-card p-6">
+          <div className="flex items-center space-x-3 mb-3">
+            <AppIcon name="library" size="menu" className="text-blue-800" />
+            <span className="text-xs font-semibold text-gray-500 uppercase">Format du fichier d&apos;import</span>
           </div>
-          <p className="text-xs text-blue-100/80 leading-relaxed font-medium">
+          <p className="text-xs text-gray-600 leading-relaxed">
             Fichier Excel (.xlsx, .xls) ou CSV — première ligne d&apos;en-têtes, une candidature par ligne.
-            Colonnes reconnues : <span className="font-bold text-white">Prénom</span>,{' '}
-            <span className="font-bold text-white">Nom</span>, Date de naissance, Sexe,{' '}
-            <span className="font-bold text-white">École</span> (si rattachée au patronat, la liaison est
+            Colonnes reconnues : <span className="font-semibold text-gray-900">Prénom</span>,{' '}
+            <span className="font-semibold text-gray-900">Nom</span>, Date de naissance, Sexe,{' '}
+            <span className="font-semibold text-gray-900">École</span> (si rattachée au patronat, la liaison est
             automatique), Lieu de naissance, Matricule (généré automatiquement si vide), Téléphone, Email.
             Les doublons (même identité ou matricule existant) sont ignorés avec un rapport détaillé.
           </p>

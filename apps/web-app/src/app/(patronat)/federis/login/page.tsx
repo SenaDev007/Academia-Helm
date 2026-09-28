@@ -302,41 +302,34 @@ function FederisLoginForm() {
   };
 
   return (
-    <div className="min-h-screen bg-[#071528] relative overflow-hidden">
-      {/* Halo radial institutionnel (ADN login admin WinAgro) */}
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[560px] h-[560px] rounded-full bg-blue-600/10 blur-[130px] pointer-events-none" />
-      <div className="absolute bottom-[-15%] right-[-10%] w-96 h-96 rounded-full bg-amber-500/8 blur-[120px] pointer-events-none fed-animate-float-delayed" />
-      <div className="absolute inset-0 fed-grain-light opacity-[0.05] pointer-events-none" />
-
+    <div className="min-h-screen bg-[#f7f9fc] relative">
       <FederisHeader />
-      <div className="pt-24 pb-12 relative z-10">
+      <div className="pt-28 pb-12 relative z-10">
         <div className="max-w-md mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-8">
             <div className="inline-flex items-center justify-center mb-4">
-              <div className="fed-logo-beam w-20 h-20 flex items-center justify-center p-1.5 shadow-xl">
-                <Image
-                  src="/images/logo-Academia Hub.webp"
-                  alt="Academia Federis — par Academia Helm"
-                  width={64}
-                  height={64}
-                  className="h-16 w-16 object-contain rounded-full"
-                  priority
-                />
-              </div>
+              <Image
+                src="/images/logo-Academia Hub.webp"
+                alt="Academia Federis — par Academia Helm"
+                width={56}
+                height={56}
+                className="h-14 w-14 object-contain rounded-xl ring-1 ring-gray-100 bg-white"
+                priority
+              />
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-white mb-2 tracking-tight">
+            <h1 className="text-2xl font-bold text-gray-900 mb-3">
               Connexion à Academia Federis
             </h1>
-            {/* Mention obligatoire (cahier des charges §6.4) */}
-            <p className="text-xs font-black text-amber-300 bg-amber-500/10 border border-amber-400/30 rounded-full px-4 py-2 inline-block uppercase tracking-widest">
+            {/* Mention obligatoire (cahier des charges §6.4) — badge simple */}
+            <p className="text-xs font-medium text-blue-900 bg-blue-50 border border-blue-100 rounded-md px-3 py-1.5 inline-block">
               Accès réservé aux Patronats &amp; Organismes d&rsquo;examens
             </p>
           </div>
 
           {/* Session déjà valide détectée — bouton « Continuer » (pattern Helm) */}
           {validSessionDetected && !twoFactorPrompt && (
-            <div className="mb-6 fed-glass-dark rounded-2xl p-4">
-              <p className="text-sm text-blue-100/80 mb-3">
+            <div className="mb-6 bg-white border border-gray-200 rounded-xl p-4">
+              <p className="text-sm text-gray-600 mb-3">
                 Une session active a été détectée sur cet appareil.
               </p>
               <button
@@ -344,7 +337,7 @@ function FederisLoginForm() {
                 onClick={() => {
                   window.location.href = `${federisBase}/dashboard`;
                 }}
-                className="w-full py-2.5 fed-btn-gold fed-btn-shimmer font-bold text-sm"
+                className="w-full py-2.5 fed-btn-gold text-sm"
               >
                 Continuer vers le tableau de bord
                 <ArrowRight className="h-4 w-4" />
@@ -354,19 +347,19 @@ function FederisLoginForm() {
 
           <form
             onSubmit={handleSubmit}
-            className="fed-glass-dark rounded-3xl p-8 shadow-2xl fed-card-shimmer"
+            className="bg-white border border-gray-200 rounded-xl p-6 sm:p-8 shadow-sm"
           >
             {twoFactorPrompt ? (
               /* ── Panneau 2FA TOTP (pattern Helm) ── */
               <div className="space-y-5">
                 <div className="text-center">
-                  <div className="mx-auto mb-3 w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center">
-                    <KeyRound className="h-6 w-6 text-amber-400" />
+                  <div className="mx-auto mb-3 w-12 h-12 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
+                    <KeyRound className="h-6 w-6 text-blue-800" />
                   </div>
-                  <h2 className="text-lg font-bold text-white">
+                  <h2 className="text-lg font-semibold text-gray-900">
                     Double authentification requise
                   </h2>
-                  <p className="text-sm text-blue-100/60 mt-1">
+                  <p className="text-sm text-gray-500 mt-1">
                     Saisissez le code à 6 chiffres généré par votre application
                     d&rsquo;authentification
                     {twoFactorPrompt.email ? (
@@ -395,9 +388,9 @@ function FederisLoginForm() {
                 />
 
                 {twoFactorError && (
-                  <div className="p-3 bg-red-950/40 border border-red-800/40 rounded-xl flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 text-red-400 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-red-300">{twoFactorError}</p>
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-red-700">{twoFactorError}</p>
                   </div>
                 )}
 
@@ -405,7 +398,7 @@ function FederisLoginForm() {
                   type="button"
                   onClick={submitTwoFactorCode}
                   disabled={twoFactorVerifying}
-                  className="w-full py-3 fed-btn-gold fed-btn-shimmer font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full py-2.5 fed-btn-gold text-sm"
                 >
                   {twoFactorVerifying ? (
                     <>
@@ -420,7 +413,7 @@ function FederisLoginForm() {
                 <button
                   type="button"
                   onClick={cancelTwoFactor}
-                  className="w-full py-2 text-sm text-blue-100/50 hover:text-white transition-colors"
+                  className="w-full py-2 text-sm text-gray-500 hover:text-gray-900 transition-colors"
                 >
                   Annuler et revenir au formulaire
                 </button>
@@ -428,40 +421,40 @@ function FederisLoginForm() {
             ) : (
               <div className="space-y-5">
                 <div>
-                  <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
                     Adresse électronique institutionnelle
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <input
                       type="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       className={cn(
-                        'fed-input !rounded-xl pl-10 pr-4 py-3',
-                        errors.email && '!border-red-500/60',
+                        'fed-input !rounded-lg pl-10 pr-4 py-2.5',
+                        errors.email && '!border-red-400',
                       )}
                       placeholder="contact@patronat.org"
                       autoComplete="email"
                       autoFocus
                     />
                   </div>
-                  {errors.email && <p className="mt-1 text-sm text-red-400">{errors.email}</p>}
+                  {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
                 </div>
 
                 <div>
-                  <label className="block text-xs font-black text-amber-400/90 uppercase tracking-wider mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
                     Mot de passe
                   </label>
                   <div className="relative">
-                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <input
                       type={showPassword ? 'text' : 'password'}
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                       className={cn(
-                        'fed-input !rounded-xl pl-10 pr-11 py-3',
-                        errors.password && '!border-red-500/60',
+                        'fed-input !rounded-lg pl-10 pr-11 py-2.5',
+                        errors.password && '!border-red-400',
                       )}
                       placeholder="Votre mot de passe"
                       autoComplete="current-password"
@@ -469,28 +462,28 @@ function FederisLoginForm() {
                     <button
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 transition-colors"
                       aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
                   {errors.password && (
-                    <p className="mt-1 text-sm text-red-400">{errors.password}</p>
+                    <p className="mt-1 text-sm text-red-600">{errors.password}</p>
                   )}
                 </div>
 
                 {errors.submit && (
-                  <div className="p-4 bg-red-950/40 border border-red-800/40 rounded-xl flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 text-red-400 mt-0.5 flex-shrink-0" />
-                    <p className="text-sm text-red-300">{errors.submit}</p>
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-sm text-red-700">{errors.submit}</p>
                   </div>
                 )}
 
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-3.5 fed-btn-gold fed-btn-shimmer font-black text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full py-2.5 fed-btn-gold text-sm"
                 >
                   {loading ? (
                     <>
@@ -505,11 +498,11 @@ function FederisLoginForm() {
                 <div className="flex items-center justify-between text-sm">
                   <a
                     href={`${getAppBaseUrl()}/forgot-password`}
-                    className="text-blue-100/60 hover:text-amber-300 transition-colors"
+                    className="text-blue-700 hover:underline transition-colors"
                   >
                     Mot de passe oublié ?
                   </a>
-                  <span className="text-blue-100/40 inline-flex items-center gap-1">
+                  <span className="text-gray-400 inline-flex items-center gap-1">
                     <KeyRound className="h-3 w-3" />
                     2FA compatible
                   </span>
@@ -519,16 +512,16 @@ function FederisLoginForm() {
           </form>
 
           <div className="mt-6 text-center space-y-2">
-            <p className="text-sm text-blue-100/60">
+            <p className="text-sm text-gray-600">
               Pas encore d&rsquo;espace patronat ?{' '}
               <Link
                 href={`${federisBase}/register`}
-                className="text-amber-400 font-bold hover:text-amber-300 transition-colors"
+                className="text-blue-700 font-semibold hover:underline transition-colors"
               >
                 Créer un compte
               </Link>
             </p>
-            <p className="text-xs text-blue-100/40">
+            <p className="text-xs text-gray-400">
               Vous êtes une école ? Connectez-vous depuis l&rsquo;application Academia Helm de votre
               établissement.
             </p>

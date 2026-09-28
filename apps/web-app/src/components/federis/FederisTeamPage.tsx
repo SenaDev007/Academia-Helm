@@ -202,14 +202,13 @@ export default function FederisTeamPage() {
     <FedPage className="space-y-8">
       {/* En-tête */}
       <div className="fed-card p-10 flex flex-col md:flex-row md:items-center justify-between gap-8 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16" />
         <div className="relative z-10">
           <div className="fed-badge mb-4">Module équipe</div>
           <div className="flex items-center space-x-3 mb-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-[#1e3a8a] to-[#0b1d3a] rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
+            <div className="w-10 h-10 bg-blue-800 rounded-lg flex items-center justify-center ">
               <AppIcon name="students" size="dashboard" className="text-white" />
             </div>
-            <h1 className="text-2xl md:text-3xl font-black text-[#0b1d3a] tracking-tight">
+            <h1 className="text-2xl md:text-3xl font-bold text-blue-900 tracking-tight">
               Équipe &amp; Comptes
             </h1>
           </div>
@@ -221,14 +220,14 @@ export default function FederisTeamPage() {
         </div>
         <div className="flex items-center space-x-4 shrink-0">
           <div className="text-right">
-            <p className="text-2xl font-black text-[#1e3a8a]"><FedCountUp value={members.length} /></p>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            <p className="text-2xl font-bold text-blue-800"><FedCountUp value={members.length} /></p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase">
               Comptes membres
             </p>
           </div>
           <button
             onClick={() => setShowCreate((v) => !v)}
-            className="fed-btn-navy px-5 py-2.5 text-sm"
+            className="fed-btn-gold px-4 py-2.5 text-sm"
           >
             {showCreate ? 'Fermer' : 'Créer un compte'}
           </button>
@@ -237,12 +236,12 @@ export default function FederisTeamPage() {
 
       {/* Messages */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl px-6 py-4 text-sm font-semibold text-red-800">
+        <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800">
           {error}
         </div>
       )}
       {notice && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-6 py-4 text-sm font-semibold text-emerald-800">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-6 py-4 text-sm font-semibold text-emerald-800">
           {notice}
         </div>
       )}
@@ -253,12 +252,12 @@ export default function FederisTeamPage() {
           onSubmit={handleCreate}
           className="fed-card p-8 space-y-6"
         >
-          <h3 className="text-sm font-black text-[#0b1d3a] uppercase tracking-widest">
+          <h3 className="text-sm font-bold text-blue-900 uppercase">
             Nouveau compte membre
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Prénom
               </label>
               <input
@@ -270,7 +269,7 @@ export default function FederisTeamPage() {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Nom
               </label>
               <input
@@ -282,7 +281,7 @@ export default function FederisTeamPage() {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Email (identifiant de connexion)
               </label>
               <input
@@ -295,7 +294,7 @@ export default function FederisTeamPage() {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Téléphone (optionnel)
               </label>
               <input
@@ -306,7 +305,7 @@ export default function FederisTeamPage() {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Fonction
               </label>
               <select
@@ -328,7 +327,7 @@ export default function FederisTeamPage() {
               </p>
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Mot de passe (min. 8 caractères)
               </label>
               <input
@@ -346,7 +345,7 @@ export default function FederisTeamPage() {
             <button
               type="submit"
               disabled={creating}
-              className="fed-btn-gold fed-btn-shimmer px-8 py-3 text-sm disabled:opacity-50"
+              className="fed-btn-gold px-8 py-3 text-sm disabled:opacity-50"
             >
               {creating ? 'Création…' : 'Créer le compte'}
             </button>
@@ -357,12 +356,12 @@ export default function FederisTeamPage() {
       {/* Liste des membres */}
       <div className="fed-card overflow-hidden">
         <div className="p-8 border-b border-blue-50 flex items-center justify-between">
-          <h3 className="text-sm font-black text-[#0b1d3a] uppercase tracking-widest">
+          <h3 className="text-sm font-bold text-blue-900 uppercase">
             Membres du patronat
           </h3>
           <div className="flex items-center space-x-2">
             <div className="w-2 h-2 bg-green-500 rounded-full" />
-            <span className="text-[10px] font-bold text-green-600 uppercase tracking-widest">
+            <span className="text-[10px] font-bold text-green-600 uppercase">
               {members.filter((m) => m.isActive).length} actifs
             </span>
           </div>
@@ -383,37 +382,37 @@ export default function FederisTeamPage() {
                 <div className="flex items-center space-x-5">
                   <div
                     className={cn(
-                      'w-14 h-14 rounded-2xl flex items-center justify-center font-black text-lg shadow-sm',
-                      m.isActive ? 'bg-[#eff6ff] text-[#1e3a8a]' : 'bg-slate-100 text-slate-400',
+                      'w-14 h-14 rounded-xl flex items-center justify-center font-bold text-lg shadow-sm',
+                      m.isActive ? 'bg-blue-50 text-blue-800' : 'bg-slate-100 text-slate-400',
                     )}
                   >
                     {(m.firstName?.[0] ?? m.email[0]).toUpperCase()}
                   </div>
                   <div>
                     <div className="flex items-center gap-3 flex-wrap">
-                      <h4 className="text-base font-black text-[#0b1d3a]">
+                      <h4 className="text-base font-bold text-blue-900">
                         {m.firstName} {m.lastName}
                         {m.isSelf && (
-                          <span className="ml-2 text-[9px] font-black uppercase tracking-widest bg-[#0b1d3a] text-white px-2 py-0.5 rounded-full">
+                          <span className="ml-2 text-[9px] font-bold uppercase bg-blue-900 text-white px-2 py-0.5 rounded-full">
                             Vous
                           </span>
                         )}
                       </h4>
                       <span
                         className={cn(
-                          'text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full',
+                          'text-[9px] font-bold uppercase px-2.5 py-1 rounded-full',
                           FUNCTION_BADGES[m.function] ?? FUNCTION_BADGES.VIEWER,
                         )}
                       >
                         {m.functionLabel}
                       </span>
                       {!m.isActive && (
-                        <span className="text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-700 px-2.5 py-1 rounded-full">
+                        <span className="text-[9px] font-bold uppercase bg-red-100 text-red-700 px-2.5 py-1 rounded-full">
                           Désactivé
                         </span>
                       )}
                     </div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase mt-1.5">
                       {m.email}
                       {m.phone ? ` • ${m.phone}` : ''}
                       {m.lastLoginAt
@@ -445,7 +444,7 @@ export default function FederisTeamPage() {
                       setResetTarget(m);
                       setNewPassword('');
                     }}
-                    className="px-3 py-2 bg-[#eff6ff] border border-blue-100 rounded-lg text-xs font-bold text-[#1e3a8a] hover:bg-[#1e3a8a] hover:text-white transition-all"
+                    className="px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs font-bold text-blue-800 hover:bg-blue-800 hover:text-white transition-all"
                     title="Réinitialiser le mot de passe"
                   >
                     <AppIcon name="lock" size="submenu" />
@@ -477,12 +476,12 @@ export default function FederisTeamPage() {
             onSubmit={handleReset}
             className="fed-card p-8 w-full max-w-md space-y-5"
           >
-            <h3 className="text-lg font-black text-[#0b1d3a]">
+            <h3 className="text-lg font-bold text-blue-900">
               Réinitialiser le mot de passe
             </h3>
             <p className="text-sm text-slate-500 font-medium">
               Nouveau mot de passe pour{' '}
-              <span className="font-bold text-[#0b1d3a]">
+              <span className="font-bold text-blue-900">
                 {resetTarget.firstName} {resetTarget.lastName}
               </span>{' '}
               ({resetTarget.email}).
@@ -500,14 +499,14 @@ export default function FederisTeamPage() {
               <button
                 type="button"
                 onClick={() => setResetTarget(null)}
-                className="px-5 py-2.5 rounded-full text-xs font-black uppercase tracking-widest bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all"
+                className="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
               >
                 Annuler
               </button>
               <button
                 type="submit"
                 disabled={resetting}
-                className="fed-btn-navy px-5 py-2.5 text-xs disabled:opacity-50"
+                className="fed-btn-gold px-4 py-2.5 text-xs disabled:opacity-50"
               >
                 {resetting ? 'Validation…' : 'Réinitialiser'}
               </button>

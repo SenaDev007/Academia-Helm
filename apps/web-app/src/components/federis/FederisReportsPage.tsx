@@ -141,35 +141,32 @@ export default function FederisReportsPage() {
 
   return (
     <FedPage className="space-y-8">
-      {/* Header Reports */}
-      <div className="bg-gradient-to-br from-[#0b1d3a] to-[#071528] p-12 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden border border-blue-400/10">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32 blur-3xl" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
-          <div>
-            <div className="fed-badge fed-badge-amber mb-3">Module analyse</div>
-            <h1 className="text-2xl md:text-3xl font-black mb-2 tracking-tight">
-              Rapports &amp; Bilans
-            </h1>
-            <p className="text-blue-100/70 font-medium max-w-xl text-base">
-              Bilans consolidés de votre patronat — session{' '}
-              {dashboard?.academicYear?.name ?? 'en cours'}, calculés en direct depuis vos données
-              réelles : examens, candidats, centres, facturation et réseau.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="fed-btn-gold fed-btn-shimmer px-8 py-3.5 text-sm flex-shrink-0"
-          >
-            <AppIcon name="document" size="submenu" />
-            Imprimer le bilan
-          </button>
+      {/* Header — style Helm : titre + description + action, sans panneau sombre */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <div className="fed-badge mb-2">Module analyse</div>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+            Rapports &amp; Bilans
+          </h1>
+          <p className="text-sm text-gray-500 mt-1 max-w-xl leading-relaxed">
+            Bilans consolidés de votre patronat — session{' '}
+            {dashboard?.academicYear?.name ?? 'en cours'}, calculés en direct depuis vos données
+            réelles : examens, candidats, centres, facturation et réseau.
+          </p>
         </div>
+
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="fed-btn-gold px-4 py-2.5 text-sm flex-shrink-0"
+        >
+          <AppIcon name="document" size="submenu" />
+          Imprimer le bilan
+        </button>
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl px-6 py-4 text-sm font-semibold text-red-800">
+        <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800">
           {error}
         </div>
       )}
@@ -182,10 +179,10 @@ export default function FederisReportsPage() {
             type="button"
             onClick={() => setActiveReport(tab.kind)}
             className={cn(
-              'px-5 py-2.5 rounded-full text-xs font-black uppercase tracking-widest transition-all',
+              'px-4 py-2 rounded-lg text-xs font-semibold transition-colors',
               activeReport === tab.kind
-                ? 'bg-[#0b1d3a] text-white shadow-lg'
-                : 'bg-white text-slate-500 border border-blue-100 hover:border-[#1e3a8a]/40 hover:text-[#1e3a8a]',
+                ? 'bg-blue-900 text-white shadow-lg'
+                : 'bg-white text-slate-500 border border-blue-100 hover:border-blue-800/40 hover:text-blue-800',
             )}
           >
             {tab.label}
@@ -204,10 +201,10 @@ export default function FederisReportsPage() {
               { label: 'Incidents signalés', value: k?.incidents ?? 0 },
             ].map((kpi) => (
               <div key={kpi.label} className="fed-card p-6">
-                <p className="text-3xl font-black text-[#1e3a8a]">
+                <p className="text-3xl font-bold text-blue-800">
                   <FedCountUp value={kpi.value} />
                 </p>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase mt-2">
                   {kpi.label}
                 </p>
               </div>
@@ -216,7 +213,7 @@ export default function FederisReportsPage() {
 
           <div className="fed-card overflow-hidden">
             <div className="p-6 border-b border-blue-50">
-              <h3 className="text-sm font-black text-[#0b1d3a] uppercase tracking-widest">
+              <h3 className="text-sm font-bold text-blue-900 uppercase">
                 Examens de la session {dashboard?.academicYear?.name ?? ''}
               </h3>
             </div>
@@ -242,7 +239,7 @@ export default function FederisReportsPage() {
                       return (
                         <tr key={exam.id} className="border-t border-slate-100 hover:bg-[#f7f9fc]">
                           <td className="px-6 py-3.5">
-                            <div className="font-medium text-[#0b1d3a]">{exam.name}</div>
+                            <div className="font-medium text-blue-900">{exam.name}</div>
                             <div className="text-xs text-slate-400">{exam.code}</div>
                           </td>
                           <td className="px-4 py-3.5 text-slate-600 text-xs">
@@ -258,7 +255,7 @@ export default function FederisReportsPage() {
                           <td className="px-4 py-3.5">
                             <span
                               className={cn(
-                                'px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest',
+                                'px-2.5 py-1 rounded-full text-[9px] font-bold uppercase',
                                 badge.className,
                               )}
                             >
@@ -286,34 +283,34 @@ export default function FederisReportsPage() {
         <div className="space-y-6">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="fed-card p-6">
-              <p className="text-2xl font-black text-[#1e3a8a]">
+              <p className="text-2xl font-bold text-blue-800">
                 {(financialSummary?.totalPaid ?? 0).toLocaleString('fr-FR')}
               </p>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase mt-2">
                 Encaissé (F CFA)
               </p>
             </div>
             <div className="fed-card p-6">
-              <p className="text-2xl font-black text-amber-600">
+              <p className="text-2xl font-bold text-amber-600">
                 {(financialSummary?.totalUnpaid ?? 0).toLocaleString('fr-FR')}
               </p>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase mt-2">
                 En attente (F CFA)
               </p>
             </div>
             <div className="fed-card p-6">
-              <p className="text-2xl font-black text-[#1e3a8a]">
+              <p className="text-2xl font-bold text-blue-800">
                 <FedCountUp value={financialSummary?.paidCount ?? 0} />
               </p>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase mt-2">
                 Factures payées
               </p>
             </div>
             <div className="fed-card p-6">
-              <p className="text-2xl font-black text-amber-600">
+              <p className="text-2xl font-bold text-amber-600">
                 <FedCountUp value={financialSummary?.unpaidCount ?? 0} />
               </p>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase mt-2">
                 Factures impayées
               </p>
             </div>
@@ -321,7 +318,7 @@ export default function FederisReportsPage() {
 
           <div className="fed-card overflow-hidden">
             <div className="p-6 border-b border-blue-50">
-              <h3 className="text-sm font-black text-[#0b1d3a] uppercase tracking-widest">
+              <h3 className="text-sm font-bold text-blue-900 uppercase">
                 Facturation de l&apos;abonnement ({subscription?.planLabel ?? '—'})
               </h3>
             </div>
@@ -333,7 +330,7 @@ export default function FederisReportsPage() {
                     className="px-6 py-4 flex items-center justify-between hover:bg-[#f7f9fc]"
                   >
                     <div>
-                      <p className="font-medium text-[#0b1d3a] text-sm">Facture {inv.number}</p>
+                      <p className="font-medium text-blue-900 text-sm">Facture {inv.number}</p>
                       <p className="text-xs text-slate-400">
                         {new Date(inv.createdAt).toLocaleDateString('fr-FR')}
                       </p>
@@ -344,7 +341,7 @@ export default function FederisReportsPage() {
                       </p>
                       <span
                         className={cn(
-                          'px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest',
+                          'px-2.5 py-1 rounded-full text-[9px] font-bold uppercase',
                           inv.status === 'PAID'
                             ? 'bg-green-100 text-green-700'
                             : inv.status === 'UNPAID'
@@ -379,10 +376,10 @@ export default function FederisReportsPage() {
               { label: 'Patronats territoriaux', value: k?.childPatronats ?? 0 },
             ].map((kpi) => (
               <div key={kpi.label} className="fed-card p-6">
-                <p className="text-3xl font-black text-[#1e3a8a]">
+                <p className="text-3xl font-bold text-blue-800">
                   <FedCountUp value={kpi.value} />
                 </p>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase mt-2">
                   {kpi.label}
                 </p>
               </div>
@@ -393,9 +390,9 @@ export default function FederisReportsPage() {
             <FedStagger className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {dashboard.childrenPatronats.map((child) => (
                 <FedStaggerItem key={child.id}>
-                  <div className="fed-card fed-card-shimmer p-8 h-full">
-                    <h3 className="text-lg font-black text-[#0b1d3a] mb-1">{child.name}</h3>
-                    <p className="text-[#1e3a8a] text-xs font-bold uppercase tracking-widest mb-4">
+                  <div className="fed-card p-8 h-full">
+                    <h3 className="text-lg font-bold text-blue-900 mb-1">{child.name}</h3>
+                    <p className="text-blue-800 text-xs font-bold uppercase mb-4">
                       {child.territoryName ?? 'Territoire non précisé'}
                     </p>
                     <div className="pt-4 border-t border-blue-50 flex items-center justify-between">
@@ -404,7 +401,7 @@ export default function FederisReportsPage() {
                       </p>
                       <span
                         className={cn(
-                          'px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest',
+                          'px-2.5 py-1 rounded-full text-[9px] font-bold uppercase',
                           child.subscriptionStatus === 'ACTIVE'
                             ? 'bg-green-100 text-green-700'
                             : 'bg-amber-100 text-amber-800',

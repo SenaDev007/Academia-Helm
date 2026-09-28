@@ -87,14 +87,13 @@ export default function FederisDocumentsPage({ userRole }: FederisDocumentsPageP
     <FedPage className="space-y-8">
       {/* En-tête */}
       <div className="fed-card p-10 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16" />
         <div className="relative z-10">
           <div className="fed-badge mb-4">Module ressources</div>
           <div className="flex items-center space-x-3 mb-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-[#1e3a8a] to-[#0b1d3a] rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
+            <div className="w-10 h-10 bg-blue-800 rounded-lg flex items-center justify-center ">
               <AppIcon name="document" size="dashboard" className="text-white" />
             </div>
-            <h1 className="text-2xl md:text-3xl font-black text-[#0b1d3a] tracking-tight">
+            <h1 className="text-2xl md:text-3xl font-bold text-blue-900 tracking-tight">
               Épreuves et documents
             </h1>
           </div>
@@ -107,12 +106,12 @@ export default function FederisDocumentsPage({ userRole }: FederisDocumentsPageP
       </div>
 
       {(error || docError) && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl px-6 py-4 text-sm font-semibold text-red-800">
+        <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800">
           {docError ?? error}
         </div>
       )}
       {notice && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-6 py-4 text-sm font-semibold text-emerald-800">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-6 py-4 text-sm font-semibold text-emerald-800">
           {notice}
         </div>
       )}
@@ -135,12 +134,12 @@ export default function FederisDocumentsPage({ userRole }: FederisDocumentsPageP
               <div key={exam.id} className="fed-card overflow-hidden">
                 <div className="bg-[#f7f9fc] px-6 py-4 border-b border-blue-50 flex items-center justify-between flex-wrap gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 bg-[#eff6ff] rounded-xl flex items-center justify-center text-[#1e3a8a] flex-shrink-0">
+                    <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-800 flex-shrink-0">
                       <AppIcon name="exams" size="menu" />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-black text-[#0b1d3a] truncate">{exam.name}</h3>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      <h3 className="font-bold text-blue-900 truncate">{exam.name}</h3>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">
                         {exam.code} · {typeof statusLabel === 'string' ? statusLabel : exam.status}{' '}
                         · {exam.totalCandidates} candidat(s) · {exam.totalCenters} centre(s)
                       </p>
@@ -154,19 +153,19 @@ export default function FederisDocumentsPage({ userRole }: FederisDocumentsPageP
                     onClick={() => download(exam.id, 'bordereaux', `bordereaux-${exam.code}`)}
                     disabled={downloading !== null}
                     className={cn(
-                      'p-5 rounded-2xl border text-left transition-all flex items-start gap-4',
-                      'border-blue-100 bg-[#f7f9fc] hover:border-[#1e3a8a]/40 hover:shadow-md',
+                      'p-5 rounded-xl border text-left transition-all flex items-start gap-4',
+                      'border-blue-100 bg-[#f7f9fc] hover:border-blue-800/40 hover:shadow-md',
                       downloading !== null && 'opacity-50 cursor-not-allowed',
                     )}
                   >
-                    <AppIcon name="document" size="menu" className="text-[#1e3a8a] mt-0.5" />
+                    <AppIcon name="document" size="menu" className="text-blue-800 mt-0.5" />
                     <div>
-                      <p className="font-bold text-[#0b1d3a] text-sm">Bordereaux d&apos;émargement</p>
+                      <p className="font-bold text-blue-900 text-sm">Bordereaux d&apos;émargement</p>
                       <p className="text-xs text-slate-500 mt-1">
                         Listes officielles par salle, numéros de table et signatures.
                       </p>
                       {downloading === `${exam.id}:bordereaux` && (
-                        <p className="text-xs text-[#1e3a8a] font-bold mt-2">Génération…</p>
+                        <p className="text-xs text-blue-800 font-bold mt-2">Génération…</p>
                       )}
                     </div>
                   </button>
@@ -176,14 +175,14 @@ export default function FederisDocumentsPage({ userRole }: FederisDocumentsPageP
                     onClick={() => download(exam.id, 'palmares', `palmares-${exam.code}`)}
                     disabled={downloading !== null}
                     className={cn(
-                      'p-5 rounded-2xl border text-left transition-all flex items-start gap-4',
+                      'p-5 rounded-xl border text-left transition-all flex items-start gap-4',
                       'border-amber-200 bg-amber-50/40 hover:border-amber-500/50 hover:shadow-md',
                       downloading !== null && 'opacity-50 cursor-not-allowed',
                     )}
                   >
                     <AppIcon name="grades" size="menu" className="text-amber-700 mt-0.5" />
                     <div>
-                      <p className="font-bold text-[#0b1d3a] text-sm">Palmarès officiel</p>
+                      <p className="font-bold text-blue-900 text-sm">Palmarès officiel</p>
                       <p className="text-xs text-slate-500 mt-1">
                         Résultats publiés après délibération — classement et mentions.
                       </p>

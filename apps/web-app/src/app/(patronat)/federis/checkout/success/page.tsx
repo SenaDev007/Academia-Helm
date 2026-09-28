@@ -206,7 +206,7 @@ function CheckoutSuccessContent() {
         <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <AppIcon name="warning" size="dashboard" className="text-red-600" />
         </div>
-        <h1 className="text-2xl font-black text-[#0b1d3a] tracking-tight mb-2">
+        <h1 className="text-2xl font-bold text-blue-900 tracking-tight mb-2">
           Paiement non abouti
         </h1>
         <p className="text-slate-500 mb-6">
@@ -224,8 +224,8 @@ function CheckoutSuccessContent() {
   if (state !== 'success' && state !== 'error') {
     return (
       <div className="fed-card p-10 text-center">
-        <Loader2 className="w-12 h-12 animate-spin text-[#1e3a8a] mx-auto mb-4" />
-        <h1 className="text-xl font-black text-[#0b1d3a] tracking-tight mb-2">
+        <Loader2 className="w-12 h-12 animate-spin text-blue-800 mx-auto mb-4" />
+        <h1 className="text-xl font-bold text-blue-900 tracking-tight mb-2">
           Confirmation de votre paiement
         </h1>
         <p className="text-slate-500 text-sm">{message || 'Vérification de votre paiement en cours...'}</p>
@@ -243,7 +243,7 @@ function CheckoutSuccessContent() {
         <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <AppIcon name="warning" size="dashboard" className="text-red-600" />
         </div>
-        <h1 className="text-2xl font-black text-[#0b1d3a] tracking-tight mb-2">
+        <h1 className="text-2xl font-bold text-blue-900 tracking-tight mb-2">
           Paiement non confirmé
         </h1>
         <p className="text-slate-500 mb-6">{message}</p>
@@ -279,7 +279,7 @@ function CheckoutSuccessContent() {
       <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
         <CheckCircle className="w-9 h-9 text-green-600" />
       </div>
-      <h1 className="text-2xl font-black text-[#0b1d3a] tracking-tight mb-2">
+      <h1 className="text-2xl font-bold text-blue-900 tracking-tight mb-2">
         Paiement réussi — votre espace est activé
       </h1>
       <p className="text-slate-500 mb-6">
@@ -292,18 +292,18 @@ function CheckoutSuccessContent() {
 
       {/* Domaine dédié du patronat */}
       {siteUrl && (
-        <div className="mb-6 rounded-2xl border border-amber-200 bg-gradient-to-b from-amber-50 to-white p-6 text-left">
+        <div className="mb-6 rounded-xl border border-amber-200 bg-gradient-to-b from-amber-50 to-white p-6 text-left">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center flex-shrink-0">
               <Globe className="h-5 w-5 text-amber-600" />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-black text-amber-700 uppercase tracking-wider mb-1">
+              <p className="text-xs font-bold text-amber-700 uppercase tracking-wider mb-1">
                 Votre domaine dédié
               </p>
               <a
                 href={siteUrl}
-                className="text-lg font-black text-[#0b1d3a] break-all hover:text-[#1e3a8a] underline decoration-amber-400 decoration-2 underline-offset-4"
+                className="text-lg font-bold text-blue-900 break-all hover:text-blue-800 underline decoration-amber-400 decoration-2 underline-offset-4"
               >
                 {siteUrl.replace(/^https?:\/\//, '')}
               </a>
@@ -317,8 +317,8 @@ function CheckoutSuccessContent() {
       )}
 
       {/* Email identifiants envoyé */}
-      <div className="mb-6 rounded-2xl border border-blue-100 bg-blue-50/60 p-4 text-left flex items-start gap-3">
-        <Mail className="h-5 w-5 text-[#1e3a8a] mt-0.5 flex-shrink-0" />
+      <div className="mb-6 rounded-xl border border-blue-100 bg-blue-50/60 p-4 text-left flex items-start gap-3">
+        <Mail className="h-5 w-5 text-blue-800 mt-0.5 flex-shrink-0" />
         <p className="text-sm text-slate-600">
           Un email avec vos <strong>identifiants de connexion</strong> et votre domaine vient
           d&apos;être envoyé à votre adresse institutionnelle. Vous pouvez aussi vous connecter
@@ -357,7 +357,7 @@ function CheckoutSuccessContent() {
               En attendant votre domaine dédié, connectez-vous depuis le{' '}
               <Link
                 href={federisLink('/login')}
-                className="font-semibold text-[#1e3a8a] underline underline-offset-2"
+                className="font-semibold text-blue-800 underline underline-offset-2"
               >
                 portail Federis
               </Link>

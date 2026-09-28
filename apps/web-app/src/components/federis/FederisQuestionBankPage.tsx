@@ -238,49 +238,43 @@ export default function FederisQuestionBankPage() {
 
   return (
     <FedPage className="space-y-8">
-      {/* Header High-Security */}
-      <div className="bg-gradient-to-br from-[#0b1d3a] via-[#0b1d3a] to-[#071528] p-12 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden border border-blue-400/10">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full -mr-32 -mt-32 blur-3xl" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
-          <div>
-            <div className="flex items-center space-x-3 mb-4">
-              <div className="px-3 py-1 bg-red-500/20 border border-red-500/30 rounded-full text-[9px] font-black uppercase tracking-widest text-red-400">
-                Niveau de Sécurité : Maximum
-              </div>
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-            </div>
-            <h1 className="text-2xl md:text-3xl font-black tracking-tight mb-4">
-              Banque des Épreuves
-            </h1>
-            <p className="text-blue-100/70 font-medium max-w-xl text-base leading-relaxed">
-              Gestion centralisée et sécurisée des sujets d&apos;examens du patronat — {resources.length}{' '}
-              épreuve(s) recensée(s), accès restreint et traçabilité des consultations.
-            </p>
+      {/* Header — style Helm : titre + description + action, sans panneau sombre */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <div className="flex items-center space-x-2 mb-2">
+            <span className="px-2.5 py-0.5 bg-red-50 border border-red-200 rounded-md text-[11px] font-semibold text-red-700">
+              Niveau de sécurité : maximum
+            </span>
           </div>
-
-          {canManage && (
-            <div className="flex flex-col items-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowCreate((v) => !v)}
-                className="fed-btn-gold fed-btn-shimmer px-8 py-3.5 text-sm"
-              >
-                <AppIcon name={showCreate ? 'close' : 'add'} size="submenu" />
-                {showCreate ? 'Annuler' : 'Proposer un Sujet'}
-              </button>
-            </div>
-          )}
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+            Banque des Épreuves
+          </h1>
+          <p className="text-sm text-gray-500 mt-1 max-w-xl leading-relaxed">
+            Gestion centralisée et sécurisée des sujets d&apos;examens du patronat — {resources.length}{' '}
+            épreuve(s) recensée(s), accès restreint et traçabilité des consultations.
+          </p>
         </div>
+
+        {canManage && (
+          <button
+            type="button"
+            onClick={() => setShowCreate((v) => !v)}
+            className="fed-btn-gold px-4 py-2.5 text-sm flex-shrink-0"
+          >
+            <AppIcon name={showCreate ? 'close' : 'add'} size="submenu" />
+            {showCreate ? 'Annuler' : 'Proposer un Sujet'}
+          </button>
+        )}
       </div>
 
       {/* Messages */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl px-6 py-4 text-sm font-semibold text-red-800">
+        <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800">
           {error}
         </div>
       )}
       {notice && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-6 py-4 text-sm font-semibold text-emerald-800">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-6 py-4 text-sm font-semibold text-emerald-800">
           {notice}
         </div>
       )}
@@ -288,12 +282,12 @@ export default function FederisQuestionBankPage() {
       {/* Formulaire de recensement (coordonnateur / organisateur) */}
       {showCreate && canManage && (
         <form onSubmit={handleCreate} className="fed-card p-8 space-y-6">
-          <h3 className="text-sm font-black text-[#0b1d3a] uppercase tracking-widest">
+          <h3 className="text-sm font-bold text-blue-900 uppercase">
             Recenser une épreuve
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="md:col-span-2">
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Titre <span className="text-red-500">*</span>
               </label>
               <input
@@ -309,7 +303,7 @@ export default function FederisQuestionBankPage() {
               {formErrors.title && <p className="mt-1 text-sm text-red-600">{formErrors.title}</p>}
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Type de ressource <span className="text-red-500">*</span>
               </label>
               <select
@@ -327,7 +321,7 @@ export default function FederisQuestionBankPage() {
               </select>
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Matière
               </label>
               <input
@@ -338,7 +332,7 @@ export default function FederisQuestionBankPage() {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Classe / niveau
               </label>
               <input
@@ -349,7 +343,7 @@ export default function FederisQuestionBankPage() {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Session / type d&apos;examen
               </label>
               <input
@@ -360,7 +354,7 @@ export default function FederisQuestionBankPage() {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Niveau d&apos;accès
               </label>
               <select
@@ -378,7 +372,7 @@ export default function FederisQuestionBankPage() {
               </select>
             </div>
             <div className="md:col-span-2">
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Document (PDF, image…) — ou URL https <span className="text-red-500">*</span>
               </label>
               <div className="space-y-2">
@@ -400,7 +394,7 @@ export default function FederisQuestionBankPage() {
                       if (file) void handleFile(file);
                       e.target.value = '';
                     }}
-                    className="text-sm text-slate-500 file:mr-3 file:px-4 file:py-2 file:rounded-full file:border-0 file:bg-[#eff6ff] file:text-[#1e3a8a] file:text-xs file:font-black"
+                    className="text-sm text-slate-500 file:mr-3 file:px-4 file:py-2 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-800 file:text-xs file:font-semibold"
                   />
                   {fileReading && <span className="text-xs text-slate-400">Lecture…</span>}
                   {form.fileUrl.startsWith('data:') && (
@@ -413,7 +407,7 @@ export default function FederisQuestionBankPage() {
               </div>
             </div>
             <div className="md:col-span-2">
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Description (optionnel)
               </label>
               <textarea
@@ -426,7 +420,7 @@ export default function FederisQuestionBankPage() {
           </div>
 
           {formErrors.submit && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-2xl">
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
               <p className="text-sm text-red-600">{formErrors.submit}</p>
             </div>
           )}
@@ -435,7 +429,7 @@ export default function FederisQuestionBankPage() {
             <button
               type="submit"
               disabled={creating || fileReading}
-              className="fed-btn-navy px-6 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="fed-btn-gold px-5 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {creating ? 'Recensement…' : 'Recenser dans la banque'}
             </button>
@@ -447,7 +441,7 @@ export default function FederisQuestionBankPage() {
         {/* Sidebar Filtres */}
         <div className="lg:col-span-1 space-y-6">
           <div className="fed-card p-8">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase mb-6">
               Explorateur
             </h3>
             <div className="space-y-2">
@@ -459,8 +453,8 @@ export default function FederisQuestionBankPage() {
                   className={cn(
                     'w-full text-left px-4 py-3 rounded-xl text-xs font-bold transition-all',
                     filterSubject === f
-                      ? 'bg-[#0b1d3a] text-white shadow-lg'
-                      : 'text-slate-500 hover:bg-[#eff6ff]',
+                      ? 'bg-blue-900 text-white shadow-lg'
+                      : 'text-slate-500 hover:bg-blue-50',
                   )}
                 >
                   {f}
@@ -469,12 +463,12 @@ export default function FederisQuestionBankPage() {
             </div>
           </div>
 
-          <div className="fed-card-dark p-8 text-white">
-            <div className="flex items-center space-x-3 mb-4">
-              <AppIcon name="warning" size="menu" className="text-amber-400" />
-              <h4 className="text-xs font-black uppercase tracking-widest">Alerte Intégrité</h4>
+          <div className="fed-card p-6">
+            <div className="flex items-center space-x-3 mb-3">
+              <AppIcon name="warning" size="menu" className="text-amber-600" />
+              <h4 className="text-xs font-semibold text-gray-500 uppercase">Alerte Intégrité</h4>
             </div>
-            <p className="text-[11px] text-blue-100/60 leading-relaxed font-medium">
+            <p className="text-[11px] text-gray-600 leading-relaxed">
               Tout accès aux sujets verrouillés est tracé par ORION Integrity Guard. Le
               verrouillage avant les épreuves bloque toute consultation non autorisée.
             </p>
@@ -484,7 +478,7 @@ export default function FederisQuestionBankPage() {
         {/* Liste des épreuves */}
         <div className="lg:col-span-3 fed-card overflow-hidden">
           <div className="p-8 border-b border-blue-50 flex items-center justify-between gap-4 flex-wrap">
-            <h3 className="text-sm font-black text-[#0b1d3a] uppercase tracking-widest">
+            <h3 className="text-sm font-bold text-blue-900 uppercase">
               Sujets Recensés ({filtered.length})
             </h3>
             <div className="flex items-center space-x-4">
@@ -529,14 +523,14 @@ export default function FederisQuestionBankPage() {
                     className="p-8 flex items-center justify-between hover:bg-[#f7f9fc] transition-all group gap-4 flex-wrap"
                   >
                     <div className="flex items-center space-x-6 min-w-0">
-                      <div className="w-14 h-14 bg-[#eff6ff] rounded-2xl flex items-center justify-center text-[#0b1d3a] group-hover:bg-[#0b1d3a] group-hover:text-white transition-all flex-shrink-0">
+                      <div className="w-14 h-14 bg-blue-50 rounded-xl flex items-center justify-center text-blue-900 group-hover:bg-blue-900 group-hover:text-white transition-all flex-shrink-0">
                         <AppIcon name="document" size="dashboard" />
                       </div>
                       <div className="min-w-0">
-                        <h4 className="text-base font-black text-[#0b1d3a] truncate">
+                        <h4 className="text-base font-bold text-blue-900 truncate">
                           {resource.title}
                         </h4>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">
                           {resource.resourceTypeLabel}
                           {resource.subject ? ` • ${resource.subject}` : ''}
                           {resource.classLevel ? ` • ${resource.classLevel}` : ''}
@@ -556,7 +550,7 @@ export default function FederisQuestionBankPage() {
                     <div className="flex items-center space-x-3 flex-shrink-0">
                       <div
                         className={cn(
-                          'px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2',
+                          'px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2',
                           badge.className,
                         )}
                       >
@@ -569,7 +563,7 @@ export default function FederisQuestionBankPage() {
                         href={resource.fileUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="p-4 bg-[#eff6ff] rounded-2xl text-[#1e3a8a] hover:bg-[#0b1d3a] hover:text-white transition-all"
+                        className="p-4 bg-blue-50 rounded-xl text-blue-800 hover:bg-blue-900 hover:text-white transition-all"
                         title="Consulter le document"
                       >
                         <AppIcon name="view" size="submenu" />

@@ -403,22 +403,22 @@ export default function FederisDashboardPage() {
 
         {/* Colonne ORION */}
         <div className="space-y-6">
-          <section className="bg-[#0b1d3a] rounded-xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+          <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <AppIcon name="orion" size="menu" className="text-amber-400" />
-                <h2 className="text-base font-bold text-white">ORION — Analyse institutionnelle</h2>
+                <AppIcon name="orion" size="menu" className="text-blue-800" />
+                <h2 className="text-base font-bold text-gray-900">ORION — Analyse institutionnelle</h2>
               </div>
-              <span className="text-[10px] font-bold text-blue-100/50 uppercase tracking-widest">
+              <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">
                 Lecture seule
               </span>
             </div>
             <div className="px-6 py-4">
-              <p className="text-sm text-blue-100/70 mb-4">{orion.summary}</p>
+              <p className="text-sm text-gray-600 mb-4">{orion.summary}</p>
               {orion.alerts.length === 0 ? (
-                <div className="flex items-center gap-3 bg-white/5 rounded-lg px-4 py-3">
-                  <AppIcon name="success" size="menu" className="text-green-400" />
-                  <span className="text-sm text-blue-100/70">
+                <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-4 py-3">
+                  <AppIcon name="success" size="menu" className="text-green-500" />
+                  <span className="text-sm text-gray-600">
                     Aucune anomalie détectée sur le périmètre.
                   </span>
                 </div>
@@ -430,24 +430,24 @@ export default function FederisDashboardPage() {
                       className={cn(
                         'rounded-lg px-4 py-3 border',
                         alert.severity === 'critical'
-                          ? 'bg-red-500/10 border-red-500/30'
+                          ? 'bg-red-50 border-red-200'
                           : alert.severity === 'warning'
-                            ? 'bg-amber-500/10 border-amber-500/30'
-                            : 'bg-blue-500/10 border-blue-500/30',
+                            ? 'bg-amber-50 border-amber-200'
+                            : 'bg-blue-50 border-blue-200',
                       )}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-bold text-white/60 uppercase tracking-widest">
+                        <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                           {alert.category}
                         </span>
                         <span
                           className={cn(
-                            'text-[10px] font-bold uppercase tracking-wide',
+                            'text-[10px] font-semibold uppercase tracking-wide',
                             alert.severity === 'critical'
-                              ? 'text-red-400'
+                              ? 'text-red-600'
                               : alert.severity === 'warning'
-                                ? 'text-amber-400'
-                                : 'text-blue-300',
+                                ? 'text-amber-600'
+                                : 'text-blue-700',
                           )}
                         >
                           {alert.severity === 'critical'
@@ -457,14 +457,14 @@ export default function FederisDashboardPage() {
                               : 'Info'}
                         </span>
                       </div>
-                      <p className="text-sm text-white/90 leading-snug">{alert.message}</p>
+                      <p className="text-sm text-gray-700 leading-snug">{alert.message}</p>
                     </div>
                   ))}
                 </div>
               )}
               <Link
                 href={federisLink('/orion')}
-                className="mt-5 inline-flex items-center gap-2 text-sm text-amber-400 font-semibold hover:text-amber-300 transition-colors"
+                className="mt-5 inline-flex items-center gap-2 text-sm text-blue-700 font-semibold hover:underline transition-colors"
               >
                 Analyse complète
                 <AppIcon name="arrowRight" size="submenu" />
@@ -538,12 +538,12 @@ function KpiCard({
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{label}</span>
+        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{label}</span>
         <div className="w-9 h-9 bg-blue-900/10 rounded-lg flex items-center justify-center">
           <AppIcon name={icon as any} size="submenu" className="text-blue-900" />
         </div>
       </div>
-      <div className="text-3xl font-black text-gray-900">{value.toLocaleString('fr-FR')}</div>
+      <div className="text-3xl font-bold text-gray-900">{value.toLocaleString('fr-FR')}</div>
       {hint && (
         <p
           className={cn(

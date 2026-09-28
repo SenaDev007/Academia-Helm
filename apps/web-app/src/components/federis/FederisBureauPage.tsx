@@ -230,14 +230,13 @@ export default function FederisBureauPage() {
     <FedPage className="space-y-8">
       {/* ── En-tête Premium Bureau ── */}
       <div className="fed-card p-10 flex flex-col md:flex-row md:items-center justify-between gap-8 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16" />
         <div className="relative z-10">
           <div className="fed-badge mb-4">Module gouvernance</div>
           <div className="flex items-center space-x-3 mb-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-[#1e3a8a] to-[#0b1d3a] rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
+            <div className="w-10 h-10 bg-blue-800 rounded-lg flex items-center justify-center ">
               <AppIcon name="building" size="dashboard" className="text-white" />
             </div>
-            <h1 className="text-2xl md:text-3xl font-black text-[#0b1d3a] tracking-tight">
+            <h1 className="text-2xl md:text-3xl font-bold text-blue-900 tracking-tight">
               Bureau &amp; Membres
             </h1>
           </div>
@@ -248,10 +247,10 @@ export default function FederisBureauPage() {
         </div>
         <div className="flex items-center space-x-6 shrink-0 relative z-10">
           <div className="text-right">
-            <p className="text-2xl font-black text-[#1e3a8a]">
+            <p className="text-2xl font-bold text-blue-800">
               <FedCountUp value={members.filter((m) => m.isActive).length} />
             </p>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+            <p className="text-[10px] font-bold text-slate-400 uppercase">
               Membres actifs
             </p>
           </div>
@@ -261,7 +260,7 @@ export default function FederisBureauPage() {
                 setShowCreate((v) => !v);
                 setEditTarget(null);
               }}
-              className="fed-btn-gold fed-btn-shimmer px-6 py-3 text-sm"
+              className="fed-btn-gold px-6 py-3 text-sm"
             >
               <AppIcon name={showCreate ? 'close' : 'add'} size="submenu" />
               {showCreate ? 'Annuler' : 'Nouveau Membre'}
@@ -272,12 +271,12 @@ export default function FederisBureauPage() {
 
       {/* Messages */}
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl px-6 py-4 text-sm font-semibold text-red-800">
+        <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800">
           {error}
         </div>
       )}
       {notice && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-6 py-4 text-sm font-semibold text-emerald-800">
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-6 py-4 text-sm font-semibold text-emerald-800">
           {notice}
         </div>
       )}
@@ -285,12 +284,12 @@ export default function FederisBureauPage() {
       {/* ── Formulaire d'ajout (coordonnateur) ── */}
       {showCreate && canManage && (
         <form onSubmit={handleCreate} className="fed-card p-8 space-y-6">
-          <h3 className="text-sm font-black text-[#0b1d3a] uppercase tracking-widest">
+          <h3 className="text-sm font-bold text-blue-900 uppercase">
             Nouveau membre du bureau
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Prénom <span className="text-red-500">*</span>
               </label>
               <input
@@ -303,7 +302,7 @@ export default function FederisBureauPage() {
               {formErrors.firstName && <p className="mt-1 text-sm text-red-600">{formErrors.firstName}</p>}
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Nom <span className="text-red-500">*</span>
               </label>
               <input
@@ -316,7 +315,7 @@ export default function FederisBureauPage() {
               {formErrors.lastName && <p className="mt-1 text-sm text-red-600">{formErrors.lastName}</p>}
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Rôle au bureau <span className="text-red-500">*</span>
               </label>
               <select
@@ -332,7 +331,7 @@ export default function FederisBureauPage() {
               </select>
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Email (optionnel)
               </label>
               <input
@@ -345,7 +344,7 @@ export default function FederisBureauPage() {
               {formErrors.email && <p className="mt-1 text-sm text-red-600">{formErrors.email}</p>}
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Téléphone (optionnel)
               </label>
               <input
@@ -359,7 +358,7 @@ export default function FederisBureauPage() {
           </div>
 
           {formErrors.submit && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-2xl">
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
               <p className="text-sm text-red-600">{formErrors.submit}</p>
             </div>
           )}
@@ -368,7 +367,7 @@ export default function FederisBureauPage() {
             <button
               type="submit"
               disabled={creating}
-              className="fed-btn-navy px-6 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="fed-btn-gold px-5 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {creating ? 'Ajout…' : 'Ajouter au bureau'}
             </button>
@@ -379,12 +378,12 @@ export default function FederisBureauPage() {
       {/* ── Édition en ligne ── */}
       {editTarget && (
         <form onSubmit={handleUpdate} className="fed-card p-8 space-y-6 border-2 border-amber-300">
-          <h3 className="text-sm font-black text-[#0b1d3a] uppercase tracking-widest">
+          <h3 className="text-sm font-bold text-blue-900 uppercase">
             Modifier — {editTarget.firstName} {editTarget.lastName}
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Prénom</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Prénom</label>
               <input
                 required
                 value={editForm.firstName}
@@ -393,7 +392,7 @@ export default function FederisBureauPage() {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Nom</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Nom</label>
               <input
                 required
                 value={editForm.lastName}
@@ -402,7 +401,7 @@ export default function FederisBureauPage() {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Rôle</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Rôle</label>
               <select
                 value={editForm.role}
                 onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
@@ -416,7 +415,7 @@ export default function FederisBureauPage() {
               </select>
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Email</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Email</label>
               <input
                 type="email"
                 value={editForm.email}
@@ -425,7 +424,7 @@ export default function FederisBureauPage() {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Téléphone</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Téléphone</label>
               <input
                 type="tel"
                 value={editForm.phone}
@@ -445,7 +444,7 @@ export default function FederisBureauPage() {
             <button
               type="submit"
               disabled={saving}
-              className="fed-btn-navy px-6 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="fed-btn-gold px-5 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? 'Enregistrement…' : 'Enregistrer'}
             </button>
@@ -467,17 +466,17 @@ export default function FederisBureauPage() {
             <FedStaggerItem key={member.id}>
               <div
                 className={cn(
-                  'fed-card fed-card-shimmer p-8 transition-all group h-full relative',
+                  'fed-card p-8 transition-all group h-full relative',
                   !member.isActive && 'opacity-60',
                 )}
               >
                 <div className="flex items-center justify-between mb-6">
-                  <div className="w-14 h-14 bg-[#eff6ff] rounded-2xl flex items-center justify-center text-[#1e3a8a] font-black text-xl group-hover:bg-[#0b1d3a] group-hover:text-white transition-all">
+                  <div className="w-14 h-14 bg-blue-50 rounded-xl flex items-center justify-center text-blue-800 font-bold text-xl group-hover:bg-blue-900 group-hover:text-white transition-all">
                     {initials(member)}
                   </div>
                   <div
                     className={cn(
-                      'px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest',
+                      'px-3 py-1 rounded-full text-[9px] font-bold uppercase',
                       member.isActive
                         ? 'bg-green-50 text-green-700'
                         : 'bg-slate-100 text-slate-500',
@@ -489,10 +488,10 @@ export default function FederisBureauPage() {
 
                 {editTarget?.id === member.id ? null : (
                   <>
-                    <h3 className="text-lg font-black text-[#0b1d3a] mb-1">
+                    <h3 className="text-lg font-bold text-blue-900 mb-1">
                       {member.firstName} {member.lastName}
                     </h3>
-                    <p className="text-[#1e3a8a] text-xs font-bold uppercase tracking-widest mb-2">
+                    <p className="text-blue-800 text-xs font-bold uppercase mb-2">
                       {member.roleLabel}
                     </p>
                     {(member.email || member.phone) && (
@@ -507,7 +506,7 @@ export default function FederisBureauPage() {
                     )}
 
                     <div className="pt-4 border-t border-blue-50 flex items-center justify-between">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">
                         Depuis {new Date(member.createdAt).toLocaleDateString('fr-FR')}
                       </p>
                       {canManage && (
@@ -515,7 +514,7 @@ export default function FederisBureauPage() {
                           <button
                             type="button"
                             onClick={() => startEdit(member)}
-                            className="p-2 text-slate-400 hover:text-[#0b1d3a] transition-colors"
+                            className="p-2 text-slate-400 hover:text-blue-900 transition-colors"
                             title="Modifier ce membre"
                           >
                             <AppIcon name="edit" size="submenu" />

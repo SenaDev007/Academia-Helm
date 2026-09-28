@@ -119,14 +119,14 @@ export function SchoolPatronatsPage() {
   return (
     <div className="space-y-8">
       {/* En-tête */}
-      <div className="bg-white p-8 lg:p-10 rounded-[2.5rem] border border-gray-100 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16" />
+      <div className="bg-white p-6 lg:p-8 rounded-xl border border-gray-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden">
+        
         <div className="relative z-10">
           <div className="flex items-center space-x-3 mb-3">
-            <div className="w-10 h-10 bg-blue-900 rounded-xl flex items-center justify-center shadow-lg shadow-blue-900/20">
+            <div className="w-10 h-10 bg-blue-900 rounded-lg flex items-center justify-center">
               <AppIcon name="network" size="dashboard" className="text-white" />
             </div>
-            <h1 className="text-2xl lg:text-3xl font-black text-gray-900 italic tracking-tighter">
+            <h1 className="text-2xl font-bold text-gray-900">
               Patronats &amp; Examens fédérés
             </h1>
           </div>
@@ -138,8 +138,8 @@ export function SchoolPatronatsPage() {
         </div>
         {pendingCount > 0 && (
           <div className="shrink-0 bg-amber-50 border border-amber-200 rounded-2xl px-6 py-4 text-center">
-            <p className="text-2xl font-black text-amber-700">{pendingCount}</p>
-            <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">
+            <p className="text-2xl font-bold text-amber-700">{pendingCount}</p>
+            <p className="text-[10px] font-bold text-amber-600 uppercase">
               En attente
             </p>
           </div>
@@ -155,11 +155,11 @@ export function SchoolPatronatsPage() {
 
       {/* Liste */}
       {loading ? (
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-12 text-center text-sm font-bold text-gray-400">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-12 text-center text-sm font-bold text-gray-400">
           Chargement des demandes…
         </div>
       ) : links.length === 0 ? (
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-12 text-center">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-12 text-center">
           <p className="text-sm font-bold text-gray-400 mb-2">Aucune demande de rattachement</p>
           <p className="text-xs text-gray-400">
             Lorsqu&apos;un patronat sollicitera le rattachement de votre établissement, la demande
@@ -167,33 +167,33 @@ export function SchoolPatronatsPage() {
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden divide-y divide-gray-50">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-50">
           {links.map((link) => (
             <div key={link.id} className="p-6 lg:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-5 hover:bg-gray-50/60 transition-all">
               <div className="flex items-start gap-5">
-                <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center font-black text-blue-900 text-lg shadow-sm shrink-0">
+                <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center font-bold text-blue-900 text-lg shadow-sm shrink-0">
                   {link.patronat.name?.[0]?.toUpperCase() ?? 'P'}
                 </div>
                 <div>
                   <div className="flex items-center gap-3 flex-wrap">
-                    <h4 className="text-base font-black text-gray-900">{link.patronat.name}</h4>
-                    <span className={cn('text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded', STATUS_STYLES[link.status] ?? 'bg-gray-100 text-gray-600')}>
+                    <h4 className="text-base font-bold text-gray-900">{link.patronat.name}</h4>
+                    <span className={cn('text-[9px] font-bold uppercase px-2.5 py-1 rounded', STATUS_STYLES[link.status] ?? 'bg-gray-100 text-gray-600')}>
                       {link.statusLabel}
                     </span>
                   </div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1.5">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase mt-1.5">
                     {link.patronat.orgLevel === 'NATIONAL' ? 'Patronat national' : 'Patronat territorial'}
                     {link.patronat.territoryName ? ` — ${link.patronat.territoryName}` : ''}
                     {link.patronat.country ? ` • ${link.patronat.country}` : ''}
                   </p>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase mt-1">
                     {link.patronat.email ?? '—'}
                     {link.patronat.phone ? ` • ${link.patronat.phone}` : ''}
                     {` • Demande du ${new Date(link.requestedAt).toLocaleDateString('fr-FR')}`}
                     {link.academicYear ? ` • ${link.academicYear}` : ''}
                   </p>
                   {link.status === 'JOINED' && (
-                    <p className="text-[10px] font-bold text-green-600 uppercase tracking-widest mt-1">
+                    <p className="text-[10px] font-bold text-green-600 uppercase mt-1">
                       {link.candidatesCount} candidat(s) inscrit(s) via ce patronat
                     </p>
                   )}
@@ -209,13 +209,13 @@ export function SchoolPatronatsPage() {
                     <button
                       onClick={() => approve(link)}
                       disabled={busyId === link.id}
-                      className="px-5 py-2.5 bg-blue-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-blue-800 transition-all disabled:opacity-50"
+                      className="px-5 py-2.5 bg-blue-900 text-white rounded-xl text-[10px] font-bold uppercase shadow-lg hover:bg-blue-800 transition-all disabled:opacity-50"
                     >
                       {busyId === link.id ? '…' : 'Valider'}
                     </button>
                     <button
                       onClick={() => setReasonTarget({ link, action: 'reject' })}
-                      className="px-5 py-2.5 bg-red-50 text-red-700 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-100 transition-all"
+                      className="px-5 py-2.5 bg-red-50 text-red-700 rounded-xl text-[10px] font-bold uppercase hover:bg-red-100 transition-all"
                     >
                       Refuser
                     </button>
@@ -224,7 +224,7 @@ export function SchoolPatronatsPage() {
                 {link.status === 'JOINED' && (
                   <button
                     onClick={() => setReasonTarget({ link, action: 'suspend' })}
-                    className="px-5 py-2.5 bg-gray-50 text-gray-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-100 transition-all"
+                    className="px-5 py-2.5 bg-gray-50 text-gray-600 rounded-xl text-[10px] font-bold uppercase hover:bg-gray-100 transition-all"
                   >
                     Suspendre
                   </button>
@@ -238,8 +238,8 @@ export function SchoolPatronatsPage() {
       {/* Modale motif (refus / suspension) */}
       {reasonTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <form onSubmit={submitReason} className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md space-y-5">
-            <h3 className="text-lg font-black text-gray-900">
+          <form onSubmit={submitReason} className="bg-white rounded-xl shadow-lg p-6 w-full max-w-md space-y-5">
+            <h3 className="text-lg font-semibold text-gray-900">
               {reasonTarget.action === 'reject' ? 'Refuser la demande' : 'Suspendre le rattachement'}
             </h3>
             <p className="text-sm text-gray-500 font-medium">
@@ -258,7 +258,7 @@ export function SchoolPatronatsPage() {
               <button
                 type="button"
                 onClick={() => setReasonTarget(null)}
-                className="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all"
+                className="px-5 py-2.5 rounded-xl text-xs font-bold uppercase bg-gray-100 text-gray-600 hover:bg-gray-200 transition-all"
               >
                 Annuler
               </button>
@@ -266,7 +266,7 @@ export function SchoolPatronatsPage() {
                 type="submit"
                 disabled={submitting}
                 className={cn(
-                  'px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all disabled:opacity-50',
+                  'px-5 py-2.5 rounded-xl text-xs font-bold uppercase transition-all disabled:opacity-50',
                   reasonTarget.action === 'reject'
                     ? 'bg-red-600 text-white hover:bg-red-700'
                     : 'bg-blue-900 text-white hover:bg-blue-800',

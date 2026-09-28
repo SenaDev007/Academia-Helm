@@ -1,38 +1,30 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * federis-motion.tsx — Primitives d'animation & composants visuels Federis
+ * federis-motion.tsx — Composants visuels Federis (style Academia Helm)
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * ADN WinAgro transposé (palette + police Federis conservées) :
- *   - FedFadeIn / FedStagger   : révélations échelonnées au scroll
- *   - FedCountUp               : compteurs animés (KPI dashboard/stats)
- *   - FedSectionTitle          : badge pilule + titre + liseré or animé
- *   - FedCard / FedCardDark    : cartes avec hover lift + shimmer
- *   - FedGoldButton            : CTA or avec pulsation + balayage lumineux
- *   - FedLiveBadge             : indicateur LIVE (pastille ping)
- *   - FedAnimatedUnderline     : soulignement or animé sous un mot clé
+ * Alignement sur le design system Academia Helm : interfaces simples et
+ * professionnelles. Les APIs des composants sont CONSERVÉES (mêmes props)
+ * pour ne casser aucun appel existant — seuls les rendus changent :
  *
- * Toutes les animations respectent prefers-reduced-motion.
+ *   - FedFadeIn / FedStagger / FedPage : divs simples (plus d'animations
+ *     d'entrée échelonnées)
+ *   - FedCountUp : compteur conservé (fonctionnel et discret)
+ *   - FedSectionTitle : titre sobre (badge discret + trait doré statique)
+ *   - FedCard / FedCardDark : cartes blanches à bordure fine (style Helm)
+ *   - FedGoldButton : bouton bleu institutionnel plat (style Helm)
+ *   - FedLiveBadge : point vert statique (plus de ping)
+ *   - FedStatCard : carte KPI simple (pattern StatCard Helm)
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { motion, useInView, type Variants } from 'framer-motion';
+import { useInView } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
-// ── Révélations échelonnées (pattern WhyUs/Services WinAgro) ────────────────
-
-export const fedContainerVariants: Variants = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.08 } },
-};
-
-export const fedCardVariants: Variants = {
-  hidden: { opacity: 0, y: 30 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' } },
-};
+// ── Conteneurs (neutralisés — rendus statiques) ─────────────────────────────
 
 export function FedStagger({
   children,
@@ -41,17 +33,7 @@ export function FedStagger({
   children: React.ReactNode;
   className?: string;
 }) {
-  return (
-    <motion.div
-      variants={fedContainerVariants}
-      initial="hidden"
-      whileInView="visible"
-      viewport={{ once: true, margin: '-60px' }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
+  return <div className={className}>{children}</div>;
 }
 
 export function FedStaggerItem({
@@ -61,11 +43,7 @@ export function FedStaggerItem({
   children: React.ReactNode;
   className?: string;
 }) {
-  return (
-    <motion.div variants={fedCardVariants} className={className}>
-      {children}
-    </motion.div>
-  );
+  return <div className={className}>{children}</div>;
 }
 
 export function FedFadeIn({
@@ -79,20 +57,10 @@ export function FedFadeIn({
   delay?: number;
   y?: number;
 }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.6, delay, ease: 'easeOut' }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
+  return <div className={className}>{children}</div>;
 }
 
-/** Entrée de page (montage immédiat, sans attendre le scroll). */
+/** Entrée de page — div simple. */
 export function FedPage({
   children,
   className,
@@ -100,23 +68,14 @@ export function FedPage({
   children: React.ReactNode;
   className?: string;
 }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: 'easeOut' }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
+  return <div className={className}>{children}</div>;
 }
 
-// ── Compteur animé (pattern Stats WinAgro — IntersectionObserver) ───────────
+// ── Compteur animé (conservé — discret et fonctionnel) ──────────────────────
 
 export function FedCountUp({
   value,
-  duration = 1800,
+  duration = 1200,
   suffix = '',
   prefix = '',
   className,
@@ -128,7 +87,6 @@ export function FedCountUp({
   className?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
-  // framer-motion v12 : option `amount` (équivalent threshold de l'IntersectionObserver)
   const inView = useInView(ref, { once: true, amount: 0.1 });
   const [count, setCount] = useState(0);
 
@@ -138,7 +96,6 @@ export function FedCountUp({
     const start = performance.now();
     const tick = (now: number) => {
       const progress = Math.min((now - start) / duration, 1);
-      // easeOutCubic pour une décélération premium
       const eased = 1 - Math.pow(1 - progress, 3);
       setCount(Math.round(eased * value));
       if (progress < 1) raf = requestAnimationFrame(tick);
@@ -156,7 +113,7 @@ export function FedCountUp({
   );
 }
 
-// ── Titres de section (badge + liseré or animé — ADN WinAgro) ──────────────
+// ── Titres de section (sombres → clairs, style Helm) ────────────────────────
 
 export function FedSectionTitle({
   badge,
@@ -176,60 +133,30 @@ export function FedSectionTitle({
   return (
     <div className={cn(center && 'text-center', 'max-w-3xl', center && 'mx-auto', className)}>
       {badge && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className={cn(
-            'inline-block mb-4',
-            dark ? 'fed-badge fed-badge-amber' : 'fed-badge',
-          )}
-        >
-          {badge}
-        </motion.div>
+        <div className={cn('inline-block mb-3', 'fed-badge')}>{badge}</div>
       )}
-      <motion.h2
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
-        transition={{ duration: 0.6, delay: 0.08 }}
+      <h2
         className={cn(
-          'text-2xl sm:text-3xl md:text-4xl font-black leading-tight tracking-tight',
-          dark ? 'text-white' : 'text-[#0b1d3a]',
+          'text-xl sm:text-2xl md:text-3xl font-bold leading-tight',
+          dark ? 'text-gray-900' : 'text-gray-900',
         )}
       >
         {title}
-      </motion.h2>
-      {/* Liseré or animé — scaleX WinAgro */}
-      <motion.div
-        animate={{
-          scaleX: [0, 1, 1, 0],
-          transformOrigin: ['0% 50%', '0% 50%', '100% 50%', '100% 50%'],
-        }}
-        transition={{ duration: 3.5, repeat: Infinity, times: [0, 0.15, 0.85, 1], ease: 'easeInOut' }}
-        className="fed-separator mt-5"
+      </h2>
+      <div
+        className="fed-separator mt-3"
         style={center ? { marginInline: 'auto' } : undefined}
       />
       {subtitle && (
-        <motion.p
-          initial={{ opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.6, delay: 0.16 }}
-          className={cn(
-            'mt-5 text-base md:text-lg leading-relaxed',
-            dark ? 'text-blue-100/75' : 'text-[#475569]',
-          )}
-        >
+        <p className="mt-3 text-sm md:text-base leading-relaxed text-gray-500">
           {subtitle}
-        </motion.p>
+        </p>
       )}
     </div>
   );
 }
 
-// ── Soulignement or animé sous un mot clé ───────────────────────────────────
+// ── Soulignement — texte simple (plus d'animation) ──────────────────────────
 
 export function FedAnimatedUnderline({
   children,
@@ -238,22 +165,10 @@ export function FedAnimatedUnderline({
   children: React.ReactNode;
   className?: string;
 }) {
-  return (
-    <span className={cn('relative inline-block', className)}>
-      {children}
-      <motion.span
-        animate={{
-          scaleX: [0, 1, 1, 0],
-          transformOrigin: ['0% 50%', '0% 50%', '100% 50%', '100% 50%'],
-        }}
-        transition={{ duration: 3, repeat: Infinity, times: [0, 0.15, 0.85, 1], ease: 'easeInOut' }}
-        className="absolute bottom-1 left-0 w-full h-[4px] bg-[#f59e0b] rounded-full"
-      />
-    </span>
-  );
+  return <span className={cn('inline-block', className)}>{children}</span>;
 }
 
-// ── Cartes (hover lift + shimmer — ADN WinAgro) ─────────────────────────────
+// ── Cartes (style Helm : blanc, bordure fine, pas de hover lift) ────────────
 
 export function FedCard({
   children,
@@ -264,23 +179,7 @@ export function FedCard({
   className?: string;
   hoverLift?: boolean;
 }) {
-  return (
-    <motion.div
-      whileHover={
-        hoverLift
-          ? {
-              y: -6,
-              borderColor: 'rgba(30, 58, 138, 0.28)',
-              boxShadow:
-                '0 20px 25px -5px rgba(11, 29, 58, 0.09), 0 8px 10px -6px rgba(11, 29, 58, 0.07)',
-            }
-          : undefined
-      }
-      className={cn('fed-card fed-card-shimmer', className)}
-    >
-      {children}
-    </motion.div>
-  );
+  return <div className={cn('fed-card', className)}>{children}</div>;
 }
 
 export function FedCardDark({
@@ -292,21 +191,10 @@ export function FedCardDark({
   className?: string;
   hoverLift?: boolean;
 }) {
-  return (
-    <motion.div
-      whileHover={
-        hoverLift
-          ? { y: -6, borderColor: 'rgba(251, 191, 36, 0.35)' }
-          : undefined
-      }
-      className={cn('fed-card-dark fed-card-shimmer', className)}
-    >
-      {children}
-    </motion.div>
-  );
+  return <div className={cn('fed-card', className)}>{children}</div>;
 }
 
-// ── Boutons (pulsation + shimmer — ADN WinAgro) ─────────────────────────────
+// ── Boutons (aplatis — pattern Helm) ────────────────────────────────────────
 
 export function FedGoldButton({
   children,
@@ -324,22 +212,14 @@ export function FedGoldButton({
   disabled?: boolean;
 }) {
   return (
-    <motion.button
+    <button
       type={type}
       onClick={onClick}
       disabled={disabled}
-      whileHover={{ scale: 1.04, boxShadow: '0px 12px 28px rgba(245, 158, 11, 0.45)' }}
-      whileTap={{ scale: 0.97 }}
-      animate={pulse && !disabled ? { scale: [1, 1.02, 1] } : undefined}
-      transition={
-        pulse && !disabled
-          ? { scale: { repeat: Infinity, duration: 2.6, ease: 'easeInOut' } }
-          : undefined
-      }
-      className={cn('fed-btn-gold fed-btn-shimmer', className)}
+      className={cn('fed-btn-gold', className)}
     >
       {children}
-    </motion.button>
+    </button>
   );
 }
 
@@ -357,52 +237,40 @@ export function FedNavyButton({
   disabled?: boolean;
 }) {
   return (
-    <motion.button
+    <button
       type={type}
       onClick={onClick}
       disabled={disabled}
-      whileHover={{ scale: 1.03 }}
-      whileTap={{ scale: 0.97 }}
       className={cn('fed-btn-navy', className)}
     >
       {children}
-    </motion.button>
+    </button>
   );
 }
 
-// ── Indicateur LIVE (pattern backoffice WinAgro) ────────────────────────────
+// ── Indicateur live (point vert statique — pattern Helm « En ligne ») ───────
 
 export function FedLiveBadge({ label = 'LIVE' }: { label?: string }) {
   return (
     <div
-      className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#0f2444]/50 border border-blue-400/20"
+      className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-gray-50 border border-gray-200"
       title="Données synchronisées en temps réel"
     >
       <span className="fed-live-dot" />
-      <span className="text-[9px] font-black uppercase tracking-widest text-emerald-300 select-none">
+      <span className="text-[10px] font-medium uppercase tracking-wide text-gray-500 select-none">
         {label}
       </span>
     </div>
   );
 }
 
-// ── Point ping (badges héros — ADN WinAgro) ─────────────────────────────────
+// ── Point statique (plus de ping) ───────────────────────────────────────────
 
-export function FedPingDot({ color = 'bg-[#fbbf24]' }: { color?: string }) {
-  return (
-    <span className="flex h-2 w-2 relative">
-      <span
-        className={cn(
-          'animate-ping absolute inline-flex h-full w-full rounded-full opacity-75',
-          color,
-        )}
-      />
-      <span className={cn('relative inline-flex rounded-full h-2 w-2', color)} />
-    </span>
-  );
+export function FedPingDot({ color = 'bg-emerald-500' }: { color?: string }) {
+  return <span className={cn('inline-flex rounded-full h-2 w-2', color)} />;
 }
 
-// ── KPI card (pattern Stats WinAgro — compteur + liseré or évolutif) ────────
+// ── Carte KPI (pattern StatCard Helm : sobre, lisible) ──────────────────────
 
 export function FedStatCard({
   value,
@@ -420,61 +288,23 @@ export function FedStatCard({
   icon?: React.ReactNode;
 }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 30 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.6, ease: 'easeOut' }}
-      whileHover={{ y: -8, transition: { duration: 0.2 } }}
-      className={cn(
-        'relative p-6 rounded-3xl flex flex-col justify-between h-full group fed-card-shimmer',
-        dark
-          ? 'fed-card-dark'
-          : 'bg-white border border-blue-100 shadow-lg hover:shadow-xl hover:border-blue-300/50 transition-all duration-300',
-      )}
-    >
+    <div className="fed-card p-5 flex flex-col justify-between h-full">
       <div>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-start justify-between mb-2">
           <div className="flex items-baseline gap-1">
-            <span
-              className={cn(
-                'text-4xl sm:text-5xl font-black tracking-tight',
-                dark
-                  ? 'text-white group-hover:text-[#fbbf24]'
-                  : 'text-[#0b1d3a] group-hover:text-[#1e3a8a]',
-                'transition-colors duration-300',
-              )}
-            >
+            <span className="text-2xl sm:text-3xl font-bold text-gray-900">
               <FedCountUp value={value} suffix={suffix} />
             </span>
           </div>
           {icon && (
-            <div
-              className={cn(
-                'w-10 h-10 rounded-xl flex items-center justify-center',
-                dark ? 'bg-white/10 text-[#fbbf24]' : 'bg-[#eff6ff] text-[#1e3a8a]',
-              )}
-            >
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-blue-50 text-blue-800">
               {icon}
             </div>
           )}
         </div>
-        {/* Liseré or qui s'étend au survol (ADN Stats WinAgro) */}
-        <div className="w-12 h-1 bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] rounded-full mb-4 group-hover:w-20 transition-all duration-300" />
-        <h3
-          className={cn(
-            'font-bold text-base tracking-wide mb-1.5',
-            dark ? 'text-white' : 'text-[#0b1d3a]',
-          )}
-        >
-          {label}
-        </h3>
+        <h3 className="font-medium text-sm text-gray-600 mb-1">{label}</h3>
       </div>
-      {subText && (
-        <p className={cn('text-xs leading-relaxed mt-2', dark ? 'text-blue-100/60' : 'text-slate-500')}>
-          {subText}
-        </p>
-      )}
-    </motion.div>
+      {subText && <p className="text-xs leading-relaxed mt-1 text-gray-400">{subText}</p>}
+    </div>
   );
 }

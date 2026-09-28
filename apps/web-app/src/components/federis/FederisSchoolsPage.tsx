@@ -202,7 +202,7 @@ export default function FederisSchoolsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="fed-badge mb-3">Module réseau</div>
-          <h1 className="text-2xl md:text-3xl font-black text-[#0b1d3a] tracking-tight">Écoles rattachées</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-blue-900 tracking-tight">Écoles rattachées</h1>
           <p className="text-slate-500 font-medium mt-1 text-sm">
             {linked.filter((s) => s.status === 'JOINED').length} école(s) rattachée(s) ·{' '}
             {linked.filter((s) => s.status === 'PENDING').length} en attente · {manual.length}{' '}
@@ -212,7 +212,7 @@ export default function FederisSchoolsPage() {
         <button
           type="button"
           onClick={() => setShowManual((v) => !v)}
-          className="fed-btn-navy px-5 py-2.5 text-sm flex-shrink-0"
+          className="fed-btn-gold px-4 py-2.5 text-sm flex-shrink-0"
         >
           <AppIcon name={showManual ? 'close' : 'add'} size="submenu" />
           {showManual ? 'Annuler' : 'Créer une école hors Helm'}
@@ -222,7 +222,7 @@ export default function FederisSchoolsPage() {
       {message && (
         <div
           className={cn(
-            'p-4 border rounded-2xl text-sm',
+            'p-4 border rounded-xl text-sm',
             message.type === 'success'
               ? 'bg-green-50 border-green-200 text-green-800'
               : 'bg-red-50 border-red-200 text-red-700',
@@ -232,14 +232,14 @@ export default function FederisSchoolsPage() {
         </div>
       )}
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-sm text-red-700">
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
           {error}
         </div>
       )}
 
       {/* Recherche d'écoles Academia Helm */}
       <section className="fed-card p-6">
-        <h2 className="text-base font-black text-[#0b1d3a] mb-1">Rattacher une école</h2>
+        <h2 className="text-base font-bold text-blue-900 mb-1">Rattacher une école</h2>
         <p className="text-sm text-slate-500 mb-4">
           Recherchez une école déjà présente dans Academia Helm. Elle devra valider votre demande
           avant tout partage d&rsquo;informations — l&rsquo;accès reste contrôlé et jamais total.
@@ -265,14 +265,14 @@ export default function FederisSchoolsPage() {
         </div>
 
         {searchResults.length > 0 && (
-          <div className="mt-4 border border-blue-100 rounded-2xl divide-y divide-blue-50 max-h-72 overflow-y-auto">
+          <div className="mt-4 border border-blue-100 rounded-xl divide-y divide-blue-50 max-h-72 overflow-y-auto">
             {searchResults.map((school) => (
               <div
                 key={school.id}
                 className="flex items-center justify-between px-4 py-3 hover:bg-[#f7f9fc]"
               >
                 <div>
-                  <div className="text-sm font-medium text-[#0b1d3a]">{school.name}</div>
+                  <div className="text-sm font-medium text-blue-900">{school.name}</div>
                   <div className="text-xs text-slate-400">{school.slug}</div>
                 </div>
                 <button
@@ -302,7 +302,7 @@ export default function FederisSchoolsPage() {
           className="fed-card p-6 space-y-5"
         >
           <div>
-            <h2 className="text-base font-black text-[#0b1d3a]">Nouvelle école (hors Academia Helm)</h2>
+            <h2 className="text-base font-bold text-blue-900">Nouvelle école (hors Academia Helm)</h2>
             <p className="text-sm text-slate-500 mt-1">
               École minimale pour la gestion des candidats — rapprochement possible plus tard
               d&rsquo;un compte réel.
@@ -310,7 +310,7 @@ export default function FederisSchoolsPage() {
           </div>
           <div className="grid sm:grid-cols-2 gap-5">
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Nom de l&rsquo;école <span className="text-red-500">*</span>
               </label>
               <input
@@ -328,7 +328,7 @@ export default function FederisSchoolsPage() {
               )}
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Adresse</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Adresse</label>
               <input
                 type="text"
                 value={manualForm.address}
@@ -338,7 +338,7 @@ export default function FederisSchoolsPage() {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                 Personne de contact
               </label>
               <input
@@ -351,7 +351,7 @@ export default function FederisSchoolsPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Téléphone</label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Téléphone</label>
                 <input
                   type="tel"
                   value={manualForm.phone}
@@ -361,7 +361,7 @@ export default function FederisSchoolsPage() {
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Email</label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Email</label>
                 <input
                   type="email"
                   value={manualForm.email}
@@ -374,7 +374,7 @@ export default function FederisSchoolsPage() {
           </div>
 
           {manualErrors.submit && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-2xl">
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
               <p className="text-sm text-red-600">{manualErrors.submit}</p>
             </div>
           )}
@@ -383,7 +383,7 @@ export default function FederisSchoolsPage() {
             <button
               type="submit"
               disabled={submittingManual}
-              className="fed-btn-gold fed-btn-shimmer px-6 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              className="fed-btn-gold px-6 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submittingManual ? 'Création…' : 'Créer l’école'}
             </button>
@@ -423,7 +423,7 @@ export default function FederisSchoolsPage() {
                   return (
                     <tr key={school.id} className="border-t border-slate-100 hover:bg-[#f7f9fc]">
                       <td className="px-6 py-3.5">
-                        <div className="font-medium text-[#0b1d3a]">{school.name}</div>
+                        <div className="font-medium text-blue-900">{school.name}</div>
                         <div className="text-xs text-slate-400">
                           {school.joinedAt
                             ? `Rattachée le ${new Date(school.joinedAt).toLocaleDateString('fr-FR')}`
@@ -433,7 +433,7 @@ export default function FederisSchoolsPage() {
                       <td className="px-4 py-3.5 text-slate-600">Academia Helm</td>
                       <td className="px-4 py-3.5">
                         <span
-                          className={cn('px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest', badge.className)}
+                          className={cn('px-2.5 py-1 rounded-full text-[9px] font-bold uppercase', badge.className)}
                         >
                           {badge.label}
                         </span>
@@ -453,7 +453,7 @@ export default function FederisSchoolsPage() {
                   return (
                     <tr key={school.id} className="border-t border-slate-100 hover:bg-[#f7f9fc]">
                       <td className="px-6 py-3.5">
-                        <div className="font-medium text-[#0b1d3a]">{school.name}</div>
+                        <div className="font-medium text-blue-900">{school.name}</div>
                         <div className="text-xs text-slate-400">
                           {school.address ?? '—'}
                           {school.contactPerson ? ` · ${school.contactPerson}` : ''}
@@ -462,7 +462,7 @@ export default function FederisSchoolsPage() {
                       <td className="px-4 py-3.5 text-slate-600">Hors Helm</td>
                       <td className="px-4 py-3.5">
                         <span
-                          className={cn('px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest', badge.className)}
+                          className={cn('px-2.5 py-1 rounded-full text-[9px] font-bold uppercase', badge.className)}
                         >
                           {badge.label}
                         </span>

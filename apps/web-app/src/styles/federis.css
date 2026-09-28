@@ -1,337 +1,204 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- * FEDERIS DESIGN SYSTEM — Refonte WinAgro-inspired (2026-09-27)
+ * FEDERIS DESIGN SYSTEM — Style Academia Helm (2026-09-29)
  * ═══════════════════════════════════════════════════════════════════════════
  *
- * ADN visuel importé de WinAgro (winagrotech.com) transposé sur la palette
- * institutionnelle Academia Federis (navy + or/ambre) SANS changement de
- * palette ni de police (Inter conservée) :
+ * Alignement complet sur le design system de l'application Academia Helm
+ * (mêmes boutons, mêmes couleurs, mêmes tableaux, mêmes onglets) :
+ * interfaces SIMPLES et PROFESSIONNELLES — pas de cartes extravagantes.
  *
- *   - Tokens couleur : navy profond (#0b1d3a), navy nuit (#071528),
- *     carte navy (#0f2444), ambre (#f59e0b / #fbbf24), bleu pâle (#eff6ff),
- *     fond crème nuage (#f7f9fc)
- *   - Keyframes : pulse-slow, float, spin-slow, marquee, shimmer,
- *     conic-light (anneau logo), fade-in
- *   - Utilitaires : fed-grain (texture pointillée), fed-glass /
- *     fed-glass-dark (glassmorphism), fed-btn-shimmer / fed-card-shimmer
- *     (balayage lumineux), fed-underline-accent (surlignage or),
- *     fed-logo-beam (anneau conique rotatif), fed-clip-slant (séparateur
- *     incliné de section), scrollbar institutionnelle
+ *   - Header applicatif : blanc OPAQUE (bg-white + border-b) — plus aucun
+ *     effet de transparence au scroll (bug corrigé)
+ *   - Palette officielle Helm : blue-900 (#0A2A5E), blue-800 (#0D3B85),
+ *     gold-500 (#F2C94C) en accent ≤ 5 %, fond cloud (#F7F9FC)
+ *   - Cartes : bg-white, bordure gray-200, rounded-xl, ombre subtile
+ *   - Boutons : aplatis (pas de gradient), rounded-lg, font-semibold
+ *   - Onglets : segmentés style Helm (conteneur bg-gray-100, pilule active
+ *     blanche avec ombre légère)
  *
- * Toutes les classes sont préfixées `fed-` : aucune collision avec le
- * design system Academia Helm existant.
+ * Les noms de classes `fed-*` sont CONSERVÉS (compatibilité totale avec les
+ * composants existants) — seules leurs valeurs changent.
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
 :root {
-  /* ── Palette Academia Federis (conservée) ─────────────────────────────── */
-  --fed-navy: #0b1d3a;        /* sections sombres institutionnelles */
-  --fed-navy-deep: #071528;   /* fond nuit (équivalent noir-vert WinAgro) */
-  --fed-navy-card: #0f2444;   /* cartes sur fond sombre */
-  --fed-blue: #1e3a8a;        /* bleu institutionnel (blue-900) */
-  --fed-blue-soft: #2547a3;   /* dégradés */
-  --fed-blue-bright: #3b82f6; /* focus / liens vifs */
-  --fed-amber: #f59e0b;       /* or institutionnel (accent principal) */
-  --fed-amber-bright: #fbbf24; /* or clair — texte sur navy */
-  --fed-amber-deep: #b45309;  /* or sombre — suffixes stats */
-  --fed-amber-pale: #fffbeb;  /* fond or très pâle */
-  --fed-pale: #eff6ff;        /* bleu pâle — badges / fonds */
-  --fed-cream: #f7f9fc;       /* fond clair général (équivalent crème) */
-  --fed-text: #475569;        /* texte secondaire */
+  /* ── Palette Academia Helm (officielle) ──────────────────────────────── */
+  --fed-navy: #0a2a5e;        /* blue-900 — structure principale */
+  --fed-navy-deep: #0d3b85;   /* blue-800 — header, fonds structurants */
+  --fed-navy-card: #ffffff;   /* cartes = blanc, fond plat */
+  --fed-blue: #0d3b85;        /* boutons primaires */
+  --fed-blue-soft: #114fc4;   /* hover boutons (blue-700) */
+  --fed-blue-bright: #1c6fe8; /* liens actifs (blue-600) */
+  --fed-amber: #f2c94c;       /* gold-500 — accents fins uniquement */
+  --fed-amber-bright: #cfa63a;/* gold-600 — accents texte */
+  --fed-amber-deep: #b45309;  /* texte sur fond ambre */
+  --fed-amber-pale: #fffbeb;  /* fond alerte ambre */
+  --fed-pale: #eef2f8;        /* mist — fonds secondaires */
+  --fed-cream: #f7f9fc;       /* cloud — fond application */
+  --fed-text: #334155;        /* graphite-700 — texte secondaire */
 }
 
-/* ═══ Keyframes (ADN WinAgro) ═════════════════════════════════════════ */
-
-@keyframes fed-pulse-slow {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.45);
-  }
-  50% {
-    transform: scale(1.06);
-    box-shadow: 0 0 0 12px rgba(245, 158, 11, 0);
-  }
-}
-
-@keyframes fed-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-12px); }
-}
-
-@keyframes fed-spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-@keyframes fed-marquee {
-  0% { transform: translateX(0%); }
-  100% { transform: translateX(-50%); }
-}
-
-@keyframes fed-shimmer {
-  0% { transform: translateX(-150%) skewX(-20deg); }
-  100% { transform: translateX(200%) skewX(-20deg); }
-}
-
-@keyframes fed-conic-light {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
+/* ═══ Keyframes (réduites au strict minimum) ═══════════════════════════ */
 
 @keyframes fed-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
-@keyframes fed-slide-up {
-  from { opacity: 0; transform: translateY(24px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+/* ═══ Animations utilitaires ═══════════════════════════════════════════ */
 
-/* ═══ Animations utilitaires ══════════════════════════════════════════ */
+/* Toutes les animations décoratives (float, pulse, marquee…) sont
+   neutralisées — l'interface reste sobre et professionnelle. */
 
-.fed-animate-float {
-  animation: fed-float 6s ease-in-out infinite;
-}
-
-.fed-animate-float-delayed {
-  animation: fed-float 7s ease-in-out infinite;
-  animation-delay: 2s;
-}
-
-.fed-animate-pulse-slow {
-  animation: fed-pulse-slow 2.5s infinite ease-in-out;
+.fed-animate-float,
+.fed-animate-float-delayed,
+.fed-animate-pulse-slow,
+.fed-marquee {
+  animation: none;
 }
 
 .fed-animate-fade-in {
-  animation: fed-fade-in 0.8s ease-out both;
+  animation: fed-fade-in 0.2s ease-out both;
 }
 
 .fed-animate-slide-up {
-  animation: fed-slide-up 0.6s ease-out both;
+  animation: fed-fade-in 0.2s ease-out both;
 }
 
-.fed-marquee {
-  animation: fed-marquee 22s linear infinite;
-}
+/* ═══ Textures & panneaux ══════════════════════════════════════════════ */
 
-/* ═══ Texture & glassmorphism ═════════════════════════════════════════ */
-
-/* Texture pointillée de luxe (équivalent bg-grain WinAgro, teinte navy) */
-.fed-grain {
-  background-image:
-    radial-gradient(rgba(11, 29, 58, 0.04) 1px, transparent 0),
-    radial-gradient(rgba(11, 29, 58, 0.04) 1px, transparent 0);
-  background-size: 24px 24px;
-  background-position: 0 0, 12px 12px;
-}
-
-/* Variante claire pour fonds navy */
+/* Textures pointillées désactivées (design plat) */
+.fed-grain,
 .fed-grain-light {
-  background-image:
-    radial-gradient(rgba(251, 191, 36, 0.05) 1px, transparent 0),
-    radial-gradient(rgba(59, 130, 246, 0.05) 1px, transparent 0);
-  background-size: 24px 24px;
-  background-position: 0 0, 12px 12px;
+  background-image: none;
 }
 
-/* Panneau verre clair (navbar, cartes flottantes) */
+/* Panneau clair — OPAQUE (header applicatif, bug transparence corrigé) */
 .fed-glass {
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(191, 219, 254, 0.5);
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
 }
 
-/* Panneau verre navy (cartes de connexion, KPI sombres) */
+/* Panneau carte claire (anciennes cartes verre sombre → carte blanche) */
 .fed-glass-dark {
-  background: rgba(15, 36, 68, 0.6);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(59, 130, 246, 0.18);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
 }
 
-/* ═══ Effets lumineux (ADN WinAgro) ═══════════════════════════════════ */
+/* ═══ Effets lumineux — neutralisés ════════════════════════════════════ */
 
-/* Balayage lumineux sur boutons primaires */
-.fed-btn-shimmer {
-  position: relative;
-  overflow: hidden;
-}
-.fed-btn-shimmer::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(
-    to right,
-    transparent,
-    rgba(255, 255, 255, 0.35),
-    transparent
-  );
-  transform: translateX(-150%) skewX(-20deg);
-  animation: fed-shimmer 2.8s infinite linear;
-  pointer-events: none;
-}
-
-/* Balayage lumineux au survol des cartes premium */
+.fed-btn-shimmer,
 .fed-card-shimmer {
   position: relative;
-  overflow: hidden;
-}
-.fed-card-shimmer:hover::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(
-    to right,
-    transparent,
-    rgba(255, 255, 255, 0.35),
-    transparent
-  );
-  transform: translateX(-150%) skewX(-20deg);
-  animation: fed-shimmer 1.4s infinite linear;
-  pointer-events: none;
-  z-index: 10;
 }
 
-/* Surlignage or derrière un mot-clé (titres) */
+.fed-btn-shimmer::after,
+.fed-card-shimmer::after,
+.fed-btn-shimmer:hover::after,
+.fed-card-shimmer:hover::after {
+  content: none;
+}
+
+/* Surlignage or derrière les titres — supprimé */
 .fed-underline-accent {
   position: relative;
   display: inline-block;
 }
+
 .fed-underline-accent::after {
-  content: '';
-  position: absolute;
-  bottom: 4px;
-  left: 0;
-  width: 100%;
-  height: 8px;
-  background-color: rgba(245, 158, 11, 0.85);
-  z-index: -1;
-  transform: skewX(-12deg);
-  opacity: 0.8;
+  content: none;
 }
 
-/* Anneau conique rotatif autour du logo (lumière or → bleu) */
+/* Anneau logo → simple cercle plat avec anneau gris discret (pattern Helm) */
 .fed-logo-beam {
   position: relative;
+  border-radius: 0.75rem;
   overflow: hidden;
-  border-radius: 50%;
-  clip-path: circle(50%);
 }
-.fed-logo-beam::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    transparent 120deg,
-    #3b82f6 180deg,
-    #fbbf24 240deg,
-    transparent 300deg,
-    transparent 360deg
-  );
-  animation: fed-conic-light 3.5s linear infinite;
-  z-index: 1;
-}
+
+.fed-logo-beam::before,
 .fed-logo-beam::after {
-  content: '';
-  position: absolute;
-  inset: 2.5px;
-  background: #071528;
-  border-radius: 50%;
-  z-index: 2;
+  content: none;
 }
+
 .fed-logo-beam > * {
   position: relative;
-  z-index: 3;
+  z-index: 1;
 }
 
-/* ═══ Séparateurs & décors de section ═════════════════════════════════ */
+/* ═══ Séparateurs ══════════════════════════════════════════════════════ */
 
-/* Séparateur incliné (bas de hero — équivalent WinAgro clipPath) */
-.fed-clip-slant {
-  clip-path: polygon(0 100%, 100% 100%, 100% 0);
-}
-
+/* Séparateurs inclinés désactivés (sections à angle droit) */
+.fed-clip-slant,
 .fed-clip-slant-reverse {
-  clip-path: polygon(0 0, 100% 0, 0 100%);
+  clip-path: none;
 }
 
-/* ═══ Scrollbar institutionnelle ══════════════════════════════════════ */
+/* ═══ Scrollbar sobre ══════════════════════════════════════════════════ */
 
 .fed-app ::-webkit-scrollbar,
 .fed-scroll::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
+
 .fed-app ::-webkit-scrollbar-track,
 .fed-scroll::-webkit-scrollbar-track {
-  background: #f7f9fc;
+  background: #f1f5f9;
 }
+
 .fed-app ::-webkit-scrollbar-thumb,
 .fed-scroll::-webkit-scrollbar-thumb {
-  background: #1e3a8a;
+  background: #cbd5e1;
   border-radius: 4px;
 }
+
 .fed-app ::-webkit-scrollbar-thumb:hover,
 .fed-scroll::-webkit-scrollbar-thumb:hover {
-  background: #0b1d3a;
+  background: #94a3b8;
 }
 
-/* ═══ Composants récurrents ═══════════════════════════════════════════ */
+/* ═══ Composants récurrents ════════════════════════════════════════════ */
 
-/* Carte institutionnelle claire (équivalent carte bg-white WinAgro) */
+/* Carte institutionnelle — style Helm : blanc, bordure fine, radius moyen */
 .fed-card {
   background: #ffffff;
-  border: 1px solid rgba(191, 219, 254, 0.6);
-  border-radius: 1.5rem;
-  box-shadow: 0 4px 6px -1px rgba(11, 29, 58, 0.05),
-    0 2px 4px -2px rgba(11, 29, 58, 0.05);
-  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition: border-color 0.15s ease;
 }
+
 .fed-card:hover {
-  border-color: rgba(59, 130, 246, 0.35);
-  box-shadow: 0 20px 25px -5px rgba(11, 29, 58, 0.09),
-    0 8px 10px -6px rgba(11, 29, 58, 0.07);
+  border-color: #cbd5e1;
 }
 
-/* Carte sombre (équivalent bg-[#0F2214]/50 WinAgro) */
+/* Ancienne carte sombre → carte blanche uniforme */
 .fed-card-dark {
-  background: rgba(15, 36, 68, 0.55);
-  border: 1px solid rgba(59, 130, 246, 0.14);
-  border-radius: 1.5rem;
-  box-shadow: 0 8px 24px -8px rgba(7, 21, 40, 0.5);
-  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
-}
-.fed-card-dark:hover {
-  border-color: rgba(251, 191, 36, 0.35);
-  box-shadow: 0 20px 32px -8px rgba(7, 21, 40, 0.65);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition: border-color 0.15s ease;
 }
 
-/* Badge pilule de section (équivalent WinAgro) */
+.fed-card-dark:hover {
+  border-color: #cbd5e1;
+}
+
+/* Badge — style Helm : fond coloré pâle, texte sobre, radius md */
 .fed-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0.85rem;
-  border-radius: 9999px;
-  background: #eff6ff;
-  color: #0b1d3a;
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  gap: 0.375rem;
+  padding: 0.125rem 0.625rem;
+  border-radius: 0.375rem;
+  background: #eef2f8;
+  color: #0a2a5e;
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 .fed-badge-amber {
@@ -339,171 +206,176 @@
   color: #92400e;
 }
 
-/* Bouton or premium (CTA principal — équivalent accent-yellow WinAgro) */
+/* Bouton principal — style Helm : bleu institutionnel aplati, rounded-lg */
 .fed-btn-gold {
-  position: relative;
-  overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  border-radius: 9999px;
-  background: linear-gradient(135deg, #fbbf24, #f59e0b);
-  color: #0b1d3a;
-  font-weight: 800;
-  box-shadow: 0 8px 20px -6px rgba(245, 158, 11, 0.55);
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-}
-.fed-btn-gold:hover {
-  box-shadow: 0 14px 28px -8px rgba(245, 158, 11, 0.7);
-}
-.fed-btn-gold:active {
-  transform: scale(0.98);
-}
-
-/* Bouton bleu institutionnel */
-.fed-btn-navy {
-  position: relative;
-  overflow: hidden;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  border-radius: 9999px;
-  background: linear-gradient(135deg, #1e3a8a, #0b1d3a);
+  border-radius: 0.5rem;
+  background: #0d3b85;
   color: #ffffff;
-  font-weight: 700;
-  box-shadow: 0 8px 20px -6px rgba(11, 29, 58, 0.5);
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-}
-.fed-btn-navy:hover {
-  box-shadow: 0 14px 28px -8px rgba(11, 29, 58, 0.65);
-}
-.fed-btn-navy:active {
-  transform: scale(0.98);
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: background-color 0.15s ease;
 }
 
-/* Bouton fantôme sur fond sombre */
+.fed-btn-gold:hover {
+  background: #0a2a5e;
+}
+
+.fed-btn-gold:active {
+  transform: none;
+}
+
+.fed-btn-gold:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Bouton secondaire — blanc bordé (pattern Helm outline) */
+.fed-btn-navy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  color: #0d3b85;
+  border: 1px solid #cbd5e1;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.fed-btn-navy:hover {
+  background: #eef2f8;
+  border-color: #94a3b8;
+}
+
+.fed-btn-navy:active {
+  transform: none;
+}
+
+/* Bouton fantôme — discret bordé gris */
 .fed-btn-ghost {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  color: #ffffff;
-  font-weight: 700;
-  transition: background 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
-}
-.fed-btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(251, 191, 36, 0.4);
-}
-.fed-btn-ghost:active {
-  transform: scale(0.98);
+  border-radius: 0.5rem;
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-/* Pastille live (équivalent indicateur LIVE backoffice WinAgro) */
+.fed-btn-ghost:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+/* Pastille live — point vert statique, sans pulsation */
 .fed-live-dot {
   position: relative;
   display: inline-flex;
   width: 0.5rem;
   height: 0.5rem;
 }
+
 .fed-live-dot::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: 9999px;
-  background: #34d399;
-  animation: fed-pulse-slow 2s infinite ease-in-out;
+  background: #10b981;
 }
 
-/* Ligne de séparation animée or (sous les titres de section) */
+/* Ligne de séparation sous les titres — trait court doré statique */
 .fed-separator {
-  height: 4px;
-  width: 64px;
-  border-radius: 9999px;
-  background: linear-gradient(90deg, #fbbf24, #f59e0b);
-  transform-origin: left center;
+  height: 3px;
+  width: 40px;
+  border-radius: 2px;
+  background: #f2c94c;
 }
 
-/* Champ de saisie institutionnel (formulaires login/register) */
+/* Champ de saisie — style Helm : blanc, bordure gray-300, focus bleu */
 .fed-input {
   width: 100%;
-  border-radius: 0.875rem;
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  background: rgba(7, 21, 40, 0.45);
-  color: #ffffff;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
   font-size: 0.875rem;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-.fed-input::placeholder {
-  color: rgba(148, 163, 184, 0.7);
-}
-.fed-input:focus {
-  outline: none;
-  border-color: rgba(251, 191, 36, 0.5);
-  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.15);
+  padding: 0.5rem 0.75rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-/* Variante claire du champ (formulaires sur fond blanc) */
+.fed-input::placeholder {
+  color: #94a3b8;
+}
+
+.fed-input:focus {
+  outline: none;
+  border-color: #1c6fe8;
+  box-shadow: 0 0 0 3px rgba(28, 111, 232, 0.12);
+}
+
+/* Variante claire — identique (interface entièrement claire) */
 .fed-input-light {
   width: 100%;
-  border-radius: 0.875rem;
-  border: 1px solid #dbeafe;
-  background: #f7f9fc;
-  color: #0b1d3a;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
   font-size: 0.875rem;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  padding: 0.5rem 0.75rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
+
 .fed-input-light::placeholder {
   color: #94a3b8;
 }
+
 .fed-input-light:focus {
   outline: none;
-  border-color: #1e3a8a;
-  box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.12);
+  border-color: #1c6fe8;
+  box-shadow: 0 0 0 3px rgba(28, 111, 232, 0.12);
 }
 
-/* Onglets à liseré inférieur (équivalent tabs backoffice WinAgro) */
+/* Onglets — style Helm : pilule segmentée (conteneur bg-gray-100 p-1) */
 .fed-tab {
   position: relative;
-  padding: 0.75rem 1.25rem;
-  font-weight: 700;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
   color: #64748b;
-  transition: color 0.2s ease;
+  border-radius: 0.375rem;
   white-space: nowrap;
+  transition: color 0.15s ease, background-color 0.15s ease;
 }
+
 .fed-tab:hover {
-  color: #0b1d3a;
+  color: #0f172a;
+  background: #e2e8f0;
 }
+
 .fed-tab-active {
-  color: #0b1d3a;
+  color: #0f172a;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
+
 .fed-tab-active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  border-radius: 9999px;
-  background: linear-gradient(90deg, #fbbf24, #f59e0b);
+  content: none;
 }
 
 /* Respect des préférences d'accessibilité */
 @media (prefers-reduced-motion: reduce) {
-  .fed-animate-float,
-  .fed-animate-float-delayed,
-  .fed-animate-pulse-slow,
-  .fed-marquee,
-  .fed-btn-shimmer::after,
-  .fed-card-shimmer:hover::after,
-  .fed-logo-beam::before,
-  .fed-live-dot::before {
+  .fed-animate-fade-in,
+  .fed-animate-slide-up {
     animation: none !important;
   }
 }

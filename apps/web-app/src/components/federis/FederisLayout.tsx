@@ -1,13 +1,14 @@
 /**
  * FederisLayout - Portail Academia Federis
  * ═══════════════════════════════════════════════════════════════════════════
- * REFONTE DESIGN WinAgro-inspired (2026-09-27) — palette navy/or et police
- * Inter CONSERVÉES :
- *   - Sidebar navy nuit en dégradé (équivalent backoffice WinAgro) avec pilules
- *     de navigation, indicateur actif or et liseré lumineux
- *   - Header verre dépoli (fed-glass) sticky avec indicateur LIVE (ping),
- *     sélecteurs année/session institutionnels
- *   - Bandeau d'abonnement or, bouton mobile flottant, entrée animée (framer)
+ * ALIGNEMENT DESIGN ACADEMIA HELM (2026-09-29) — interfaces simples et
+ * professionnelles, identiques à l'application Academia Helm :
+ *   - Header applicatif blanc OPAQUE avec ligne dorée en haut et bordure
+ *     inférieure (pattern PilotageTopBar) — CORRIGE le bug du header
+ *     transparent au scroll dans les modules
+ *   - Sidebar navy unie (bg-blue-900) avec indicateur actif doré, icônes
+ *     gold-400 à l'état actif (pattern PilotageSidebar)
+ *   - Bandeau d'abonnement sobre, bouton mobile simple
  *
  * Layout institutionnel pour l'écosystème Academia Federis.
  * Utilisé sur toutes les pages /federis/* (espace connecté).
@@ -19,7 +20,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import Image from 'next/image';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
 import type { User, Tenant } from '@/types';
@@ -40,8 +41,6 @@ import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 // ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service)
 import ProfileDialog from '@/components/profile/ProfileDialog';
 import { useUserProfileStore } from '@/stores/user-profile-store';
-// ⭐ ADN WinAgro — indicateur LIVE (pastille ping)
-import { FedLiveBadge } from '@/components/federis/federis-motion';
 
 interface FederisLayoutProps {
   children: React.ReactNode;
@@ -177,7 +176,7 @@ export default function FederisLayout({
   }, []);
 
   // ⭐ UI Shell : le rôle effectif = fonction patronat (profil API) sinon
-  //    User.role de la session. Libellé métier (ex. « Coordonnateur ») en topbar.
+  // User.role de la session. Libellé métier (ex. « Coordonnateur ») en topbar.
   const effectiveRole = patronatUserRole ?? user.role ?? null;
   const roleLabel = patronatRoleLabel(effectiveRole);
   const isNational = orgLevel === 'NATIONAL';
@@ -191,85 +190,91 @@ export default function FederisLayout({
   return (
     <OfflineGuard>
       <div className="min-h-screen bg-[#f7f9fc] fed-app">
-        {/* ── HEADER VERRE (ADN WinAgro : glass + LIVE) ─────────────────────── */}
-        <header className="fixed top-0 left-0 right-0 z-40 fed-glass shadow-md">
-          <div className="flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8">
+        {/* ── HEADER APPLICATIF — pattern PilotageTopBar Helm ────────────────
+            Blanc OPAQUE + ligne dorée en haut + bordure inférieure :
+            plus aucune transparence au scroll (bug corrigé). */}
+        <header className="fixed top-0 left-0 right-0 z-40 bg-white">
+          {/* Ligne dorée institutionnelle (pattern Helm) */}
+          <div className="h-[2px] bg-gradient-to-r from-blue-900 via-gold-500 to-blue-900" />
+
+          <div className="flex items-center justify-between h-14 px-4 sm:px-6 lg:px-8 border-b border-gray-200">
             <div className="flex items-center space-x-3 flex-shrink-0">
-              <div className="fed-logo-beam w-11 h-11 flex items-center justify-center p-0.5 shadow-md">
+              <div className="relative">
                 {patronatLogo ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={patronatLogo}
                     alt={federis.name}
-                    className="h-9 w-9 object-contain rounded-full"
+                    className="h-9 w-9 object-cover rounded-xl ring-1 ring-gray-100"
                   />
                 ) : (
                   <Image
                     src="/images/logo-Academia Hub.webp"
                     alt="Academia Federis"
-                    width={38}
-                    height={38}
-                    className="h-9 w-9 object-contain rounded-full"
+                    width={36}
+                    height={36}
+                    className="h-9 w-9 object-contain rounded-xl ring-1 ring-gray-100 bg-white"
                     priority
                   />
                 )}
+                {/* Point de statut en ligne (pattern Helm) */}
+                <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white" />
               </div>
               <div className="hidden sm:block">
-                <div className="text-sm font-black text-[#0b1d3a] tracking-wide">FEDERIS</div>
-                <div className="text-[10px] font-bold text-[#1e3a8a] uppercase tracking-widest">
+                <div className="text-[13px] font-bold text-blue-900 leading-tight">Academia Federis</div>
+                <div className="text-[11px] text-gray-400 font-medium leading-tight max-w-[220px] truncate">
                   {federis.name}
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center space-x-4 sm:space-x-6">
-              {/* Indicateur LIVE (ADN backoffice WinAgro) */}
-              <div className="hidden lg:block">
-                <FedLiveBadge label="SESSION ACTIVE" />
-              </div>
-
-              <div className="hidden md:flex flex-col items-end mr-2 border-r border-blue-100 pr-6">
-                 <div className="flex items-center space-x-2 mb-1">
-                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Année Scolaire</span>
-                   <select className="bg-[#eff6ff] border border-blue-100 text-xs font-black text-[#0b1d3a] rounded-lg px-2 py-1 outline-none focus:border-[#1e3a8a] transition-colors">
+            <div className="flex items-center space-x-3 sm:space-x-4">
+              {/* Sélecteurs de contexte institutionnels (pattern Helm) */}
+              <div className="hidden md:flex flex-col items-end gap-1 border-r border-gray-200 pr-4">
+                 <div className="flex items-center space-x-2">
+                   <span className="text-[10px] font-medium text-gray-400">Année scolaire</span>
+                   <select className="bg-white border border-gray-300 text-xs font-medium text-gray-700 rounded-lg px-2 py-1 outline-none focus:border-blue-600 transition-colors">
                      <option value="2026-2027">{currentAcademicYear?.label ?? '2026 - 2027'} (Active)</option>
                    </select>
                  </div>
                  <div className="flex items-center space-x-2">
-                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Période/Session</span>
-                   <select className="bg-white border border-blue-100 text-xs font-bold text-slate-600 rounded-lg px-2 py-0.5 outline-none focus:border-[#1e3a8a] transition-colors">
+                   <span className="text-[10px] font-medium text-gray-400">Période/Session</span>
+                   <select className="bg-white border border-gray-300 text-xs font-medium text-gray-700 rounded-lg px-2 py-1 outline-none focus:border-blue-600 transition-colors">
                      <option value="session-annuelle">Session Annuelle Principale</option>
                    </select>
                  </div>
               </div>
 
-              <button className="p-2 text-slate-500 hover:text-[#0b1d3a] hover:bg-[#eff6ff] rounded-full transition-colors relative">
+              <button className="p-2 text-gray-500 hover:text-blue-900 hover:bg-gray-50 rounded-lg transition-colors relative">
                 <AppIcon name="bell" size="menu" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-amber-500 rounded-full border border-white animate-ping" />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white" />
               </button>
 
               <div className="flex items-center space-x-3">
                 <div className="hidden sm:block text-right">
-                  <div className="text-sm font-bold text-[#0b1d3a]">{user.firstName} {user.lastName}</div>
+                  <div className="text-[13px] font-semibold text-gray-900 leading-tight">
+                    {user.firstName} {user.lastName}
+                  </div>
                   {/* ⭐ Fonction patronat lisible (Coordonnateur, Secrétaire…) */}
-                  <div className="text-xs font-bold text-[#1e3a8a]">{roleLabel}</div>
+                  <div className="text-[11px] text-gray-400 font-medium">{roleLabel}</div>
                 </div>
                 {/* ⭐ Avatar — cliquable : ouvre « Mon profil » (photo + mot de passe) */}
                 <button
                   type="button"
                   onClick={() => setProfileDialogOpen(true)}
-                  className="rounded-full transition-transform hover:scale-105"
+                  className="rounded-xl transition-colors hover:ring-2 hover:ring-blue-100"
                   title="Mon profil — photo de profil et mot de passe"
                 >
                   {profileAvatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={profileAvatarUrl}
                       alt={`${user.firstName} ${user.lastName}`}
-                      className="w-8 h-8 rounded-full object-cover border-2 border-amber-400/60"
+                      className="w-9 h-9 rounded-xl object-cover ring-1 ring-blue-700/20"
                     />
                   ) : (
-                    <div className="w-8 h-8 bg-gradient-to-br from-[#1e3a8a] to-[#0b1d3a] rounded-full flex items-center justify-center ring-2 ring-amber-400/40">
-                      <span className="text-white text-sm font-bold">
+                    <div className="w-9 h-9 bg-gradient-to-br from-blue-800 to-blue-900 rounded-xl flex items-center justify-center ring-1 ring-blue-700/20">
+                      <span className="text-white text-sm font-semibold">
                         {user.firstName?.[0] || user.email[0].toUpperCase()}
                       </span>
                     </div>
@@ -280,7 +285,7 @@ export default function FederisLayout({
                     2) clearClientSessionSync : localStorage + Cache API + flag
                        anti-boucle (la page login saute la détection de session
                        pendant 60 s) 3) purge du cache offline + miroir Federis
-                       4) redirection */}
+                    4) redirection */}
                 <button
                   onClick={async () => {
                     await fetch('/api/auth/logout', { method: 'POST' }).catch(
@@ -293,7 +298,7 @@ export default function FederisLayout({
                     await federisMirror.clearAll().catch(() => undefined);
                     window.location.href = federisPath('/login');
                   }}
-                  className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                   title="Déconnexion sécurisée (Efface le cache offline et le miroir)"
                 >
                   <AppIcon name="logout" size="menu" />
@@ -303,19 +308,14 @@ export default function FederisLayout({
           </div>
         </header>
 
-        <div className="flex pt-16">
-          {/* ── SIDEBAR NAVY NUIT (ADN backoffice WinAgro) ──────────────────── */}
+        <div className="flex pt-[60px]">
+          {/* ── SIDEBAR — pattern PilotageSidebar Helm (navy uni + or) ─────── */}
           <aside className={cn(
-            'fixed left-0 top-16 bottom-0 w-64 bg-gradient-to-b from-[#0b1d3a] via-[#0b1d3a] to-[#071528] border-r border-blue-400/10 transition-transform duration-300 z-30',
+            'fixed left-0 top-[60px] bottom-0 w-64 bg-blue-900 border-r border-blue-950/40 transition-transform duration-300 z-30',
             sidebarOpen ? 'translate-x-0' : '-translate-x-full',
             'lg:translate-x-0'
           )}>
-            {/* Grain décoratif */}
-            <div className="absolute inset-0 fed-grain-light opacity-[0.05] pointer-events-none" />
-            {/* Liseré lumineux supérieur */}
-            <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-400/60 to-transparent" />
-
-            <nav className="h-full overflow-y-auto py-6 relative z-10 fed-scroll">
+            <nav className="h-full overflow-y-auto py-4 relative z-10 fed-scroll">
               {federisNavItems.map((group) => {
                 // « Patronats territoriaux » : NATIONAL uniquement (§7.1) ;
                 // chaque entrée est filtrée par la fonction du membre (UI Shell).
@@ -326,11 +326,11 @@ export default function FederisLayout({
                 );
                 if (visibleItems.length === 0) return null;
                 return (
-                <div key={group.category} className="mb-6">
-                  <h3 className="px-6 text-[10px] font-black text-blue-200/40 uppercase tracking-[0.2em] mb-2.5">
+                <div key={group.category} className="mb-5">
+                  <h3 className="px-6 text-[10px] font-semibold text-blue-200/80 uppercase tracking-[0.15em] mb-2">
                     {group.category}
                   </h3>
-                  <div className="px-3 space-y-1">
+                  <div className="px-3 space-y-0.5">
                     {visibleItems.map((item) => {
                       const itemHref = federisPath(item.subPath);
                       const active = isActive(itemHref);
@@ -339,28 +339,32 @@ export default function FederisLayout({
                         key={item.subPath}
                         href={itemHref}
                         className={cn(
-                          'group relative flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200',
+                          'group relative flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200',
                           active
-                            ? 'bg-gradient-to-r from-amber-500/20 to-amber-500/5 text-amber-300 shadow-md'
-                            : 'text-blue-100/60 hover:bg-white/5 hover:text-white',
+                            ? 'bg-white/[0.12] text-white shadow-lg shadow-black/10'
+                            : 'text-blue-200/80 hover:bg-white/[0.06] hover:text-white',
                         )}
                       >
-                        {/* Liseré actif or (ADN WinAgro) */}
+                        {/* Indicateur actif doré (pattern Helm) */}
                         {active && (
-                          <motion.span
-                            layoutId="fed-nav-active"
-                            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-full bg-gradient-to-b from-[#fbbf24] to-[#f59e0b]"
-                          />
+                          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-7 rounded-r-full bg-gradient-to-b from-gold-400 to-gold-600" />
                         )}
                         <AppIcon
                           name={item.icon}
                           size="menu"
                           className={cn(
-                            'transition-colors',
-                            active ? 'text-amber-400' : 'text-blue-200/50 group-hover:text-amber-300/80',
+                            'transition-colors flex-shrink-0',
+                            active
+                              ? 'text-gold-400'
+                              : 'text-blue-300/70 group-hover:text-blue-100',
                           )}
                         />
-                        <span>{item.name}</span>
+                        <span className={cn(
+                          'text-[13px] whitespace-nowrap overflow-hidden text-ellipsis',
+                          active ? 'font-semibold text-white' : 'font-medium',
+                        )}>
+                          {item.name}
+                        </span>
                       </Link>
                       );
                     })}
@@ -372,21 +376,16 @@ export default function FederisLayout({
           </aside>
 
           <main className={cn('flex-1 transition-all duration-300', sidebarOpen ? 'lg:ml-64' : 'lg:ml-0')}>
-            <div className="p-6 lg:p-8">
+            <div className="p-4 sm:p-6 lg:p-8">
               {/* Bandeau abonnement (cahier des charges §12.3 — blocage si impayé,
                   les archives restent consultables depuis les rapports) */}
               <AnimatePresence>
                 {subscriptionBlocked && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -12 }}
-                    className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-gradient-to-r from-amber-50 to-amber-100/60 border border-amber-300 rounded-2xl px-5 py-4 shadow-sm"
-                  >
+                  <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
                     <div className="flex items-start gap-3">
                       <AppIcon name="warning" size="menu" className="text-amber-600 mt-0.5" />
                       <div>
-                        <p className="text-sm font-black text-amber-900">
+                        <p className="text-sm font-semibold text-amber-900">
                           {subscription?.status === 'EXPIRED'
                             ? 'Abonnement expiré — accès restreint'
                             : 'Activation requise — accès restreint'}
@@ -400,11 +399,11 @@ export default function FederisLayout({
                     </div>
                     <Link
                       href={federisPath('/checkout')}
-                      className="flex-shrink-0 px-5 py-2.5 bg-gradient-to-r from-[#fbbf24] to-[#f59e0b] text-[#0b1d3a] rounded-full font-black text-sm hover:shadow-lg hover:shadow-amber-500/30 hover:-translate-y-0.5 transition-all fed-btn-shimmer"
+                      className="flex-shrink-0 px-4 py-2 bg-blue-800 text-white rounded-lg font-semibold text-sm hover:bg-blue-900 transition-colors"
                     >
                       {subscription?.status === 'EXPIRED' ? 'Renouveler' : 'Activer maintenant'}
                     </Link>
-                  </motion.div>
+                  </div>
                 )}
               </AnimatePresence>
               {children}
@@ -412,14 +411,14 @@ export default function FederisLayout({
           </main>
         </div>
 
-        {/* Bouton menu mobile flottant (ADN WinAgro — pilule or) */}
-        <motion.button
+        {/* Bouton menu mobile — simple et sobre */}
+        <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          whileTap={{ scale: 0.92 }}
-          className="fixed bottom-4 left-4 z-50 lg:hidden p-3 bg-gradient-to-br from-[#1e3a8a] to-[#0b1d3a] text-amber-400 rounded-full shadow-xl border border-blue-400/20"
+          className="fixed bottom-4 left-4 z-50 lg:hidden p-3 bg-blue-900 text-white rounded-lg shadow-lg"
+          aria-label={sidebarOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
         >
           <AppIcon name={sidebarOpen ? 'close' : 'menu'} size="menu" />
-        </motion.button>
+        </button>
 
         <OfflineIndicator />
 

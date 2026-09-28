@@ -276,7 +276,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
       {confirmDialog.dialog}
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-black text-[#0b1d3a] tracking-tight">
+          <h1 className="text-2xl md:text-3xl font-bold text-blue-900 tracking-tight">
             Paramètres
           </h1>
           <p className="text-slate-500 mt-1 text-sm">

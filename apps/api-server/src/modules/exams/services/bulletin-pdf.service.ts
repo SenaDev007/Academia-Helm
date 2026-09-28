@@ -1380,47 +1380,6 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </div>
   </div>
 
-  <!-- ═══ BLOC : Attitudes et observations pédagogiques ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:6px;">Attitudes et observations pédagogiques</div>
-
-    <!-- Assiduité (texte libre, optionnel — distinct du total d'heures ci-dessus) -->
-    <div style="font-size:9px;margin-bottom:6px;">
-      <strong>Assiduité (observations) :</strong>
-      ${data.assiduite
-        ? `<span style="color:#1a1a1a;">${data.assiduite}</span>`
-        : '<span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:12px;"></span>'}
-    </div>
-
-    <!-- Discipline -->
-    <div style="font-size:9px;margin-bottom:6px;">
-      <strong>Discipline :</strong>
-      ${data.discipline
-        ? `<span style="color:#1a1a1a;">${data.discipline}</span>`
-        : '<span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:12px;"></span>'}
-    </div>
-
-    <!-- Défauts majeurs identifiés -->
-    <div style="font-size:9px;margin-bottom:4px;"><strong>Défauts majeurs identifiés :</strong></div>
-    ${data.defautsMajeurs
-      ? `<div style="font-size:9px;color:#475569;margin-bottom:6px;line-height:1.5;">${data.defautsMajeurs}</div>`
-      : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:5px 0;height:10px;"></div>').join('')}
-
-    <!-- Qualités remarquables -->
-    <div style="font-size:9px;margin-top:6px;margin-bottom:4px;"><strong>Qualités remarquables :</strong></div>
-    ${data.qualitesRemarquables
-      ? `<div style="font-size:9px;color:#475569;margin-bottom:4px;line-height:1.5;">${data.qualitesRemarquables}</div>`
-      : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:5px 0;height:10px;"></div>').join('')}
-  </div>
-
-  <!-- ═══ BLOC : Analyse des résultats et recommandations ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Analyse des résultats et recommandations</div>
-    ${data.analyseRecommandations
-      ? `<div style="font-size:9px;color:#475569;line-height:1.5;">${data.analyseRecommandations}</div>`
-      : [1, 2, 3, 4].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:5px 0;height:10px;"></div>').join('')}
-  </div>
-
   <!-- ═══ SIGNATURES : Titulaire + Directeur + Parent ═══ -->
   <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <table style="width:100%;border-collapse:collapse;">
@@ -1724,44 +1683,6 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
         ? `<div style="font-size:9px;color:#1a1a1a;line-height:1.5;min-height:30px;">${data.councilAppreciation || data.analyseRecommandations}</div>`
         : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:6px 0;height:10px;"></div>').join('')}
     </div>
-  </div>
-
-  <!-- ═══ BLOC : Attitudes et observations pédagogiques ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:6px;">Attitudes et observations pédagogiques</div>
-
-    <!-- Assiduité (texte libre, optionnel) -->
-    <div style="font-size:9px;margin-bottom:6px;">
-      <strong>Assiduité (observations) :</strong>
-      ${data.assiduite
-        ? `<span style="color:#1a1a1a;">${data.assiduite}</span>`
-        : '<span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:12px;"></span>'}
-    </div>
-
-    <div style="font-size:9px;margin-bottom:6px;">
-      <strong>Discipline :</strong>
-      ${data.discipline
-        ? `<span style="color:#1a1a1a;">${data.discipline}</span>`
-        : '<span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:12px;"></span>'}
-    </div>
-
-    <div style="font-size:9px;margin-bottom:4px;"><strong>Défauts majeurs identifiés :</strong></div>
-    ${data.defautsMajeurs
-      ? `<div style="font-size:9px;color:#475569;margin-bottom:6px;line-height:1.5;">${data.defautsMajeurs}</div>`
-      : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:5px 0;height:10px;"></div>').join('')}
-
-    <div style="font-size:9px;margin-top:6px;margin-bottom:4px;"><strong>Qualités remarquables :</strong></div>
-    ${data.qualitesRemarquables
-      ? `<div style="font-size:9px;color:#475569;margin-bottom:4px;line-height:1.5;">${data.qualitesRemarquables}</div>`
-      : [1, 2].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:5px 0;height:10px;"></div>').join('')}
-  </div>
-
-  <!-- ═══ BLOC : Analyse des résultats et recommandations ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
-    <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Analyse des résultats et recommandations</div>
-    ${data.analyseRecommandations
-      ? `<div style="font-size:9px;color:#475569;line-height:1.5;">${data.analyseRecommandations}</div>`
-      : [1, 2, 3, 4].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:5px 0;height:10px;"></div>').join('')}
   </div>
 
   <!-- ═══ SIGNATURES : Titulaire + Directeur + Parent ═══ -->

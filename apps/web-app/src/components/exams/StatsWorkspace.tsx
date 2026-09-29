@@ -346,11 +346,11 @@ export default function StatsWorkspace() {
 
   return (
     <ModuleContainer
-      title="Statistiques"
-      subtitle="Statistiques des notes et des moyennes"
-      subModules={subModules}
-      examScope={examScope}
-    >
+      header={{ title: 'Statistiques', description: 'Statistiques des notes et des moyennes', icon: 'barChart3' }}
+      subModules={{ modules: subModules, activeModuleId: 'analytics' }}
+      content={{
+        layout: 'full',
+        children: (
       <div className="space-y-4">
         {/* Main tabs */}
         <div className="flex gap-1 border-b border-slate-200">
@@ -625,6 +625,8 @@ export default function StatsWorkspace() {
           </>
         )}
       </div>
-    </ModuleContainer>
+        ),
+      }}
+    />
   );
 }

@@ -291,11 +291,11 @@ export default function ProcVerbalWorkspace() {
 
   return (
     <ModuleContainer
-      title="Procès-verbal"
-      subtitle="Procès-verbal d'évaluation, trimestriel et annuel"
-      subModules={subModules}
-      examScope={examScope}
-    >
+      header={{ title: 'Procès-verbal', description: "Procès-verbal d'évaluation, trimestriel et annuel", icon: 'scrollText' }}
+      subModules={{ modules: subModules, activeModuleId: 'proc-verbal' }}
+      content={{
+        layout: 'full',
+        children: (
       <div className="space-y-4">
         {/* Header + selectors */}
         <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-3">
@@ -529,6 +529,8 @@ export default function ProcVerbalWorkspace() {
           </>
         )}
       </div>
-    </ModuleContainer>
+        ),
+      }}
+    />
   );
 }

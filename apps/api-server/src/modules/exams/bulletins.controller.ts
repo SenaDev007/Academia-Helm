@@ -882,11 +882,10 @@ export class BulletinsController {
           }
 
           // ⭐ 2026-09-28 — FALLBACK : si pas de conduct_ledger (l'élève n'a pas
-          //    été sanctionné), récupérer la conduct_reference depuis
-          //    conduct_settings (la note par défaut configurée par l'école).
-          //    Si l'élève n'a pas de sanction → sa conduite = conduct_reference
-          //    (la note de départ). Sans ça, conductScore reste null → la
-          //    conduite affiche « — » dans le tableau.
+          //    de ledger pour ce trimestre), calculer depuis les sanctions :
+          //    conductScore = conduct_reference - Σ(points_deducted des sanctions
+          //    actives). Si pas de sanction non plus → conductScore =
+          //    conduct_reference (note de départ).
           if (conductScore === null) {
             const conductSettings = await this.prisma.conductSetting.findFirst({
               where: { tenantId: resolvedTenantId, academicYearId },
@@ -894,8 +893,19 @@ export class BulletinsController {
             }).catch(() => null);
             if (conductSettings) {
               conductReference = Number(conductSettings.conductReference) || 17;
-              conductScore = conductReference; // pas de sanction → note = baseline
             }
+            // Chercher les sanctions actives de l'élève
+            const activeSanctions = await this.prisma.sanction.findMany({
+              where: {
+                tenantId: resolvedTenantId,
+                academicYearId,
+                studentId: conductStudent.id,
+                status: 'ACTIVE',
+              },
+              select: { pointsDeducted: true },
+            }).catch(() => []);
+            const totalDeducted = activeSanctions.reduce((sum, s) => sum + (Number(s.pointsDeducted) || 0), 0);
+            conductScore = Math.max(0, (conductReference ?? 17) - totalDeducted);
           }
         }
 
@@ -963,15 +973,21 @@ export class BulletinsController {
 
           if (quarterIdForAssiduity) {
             // Récupérer toutes les sanctions actives de l'élève pour ce
-            // trimestre — on utilise le modèle Prisma Sanction (cf. refonte
-            // Vie Scolaire commit 243ce2346) au lieu de $queryRawUnsafe.
+            // trimestre — on utilise le modèle Prisma Sanction.
+            // ⭐ 2026-09-28 — FIX : les sanctions peuvent avoir quarterId=null
+            //    (si créées sans trimestre explicite). On cherche donc avec
+            //    OR [quarterId = quarterIdForAssiduity, quarterId IS NULL]
+            //    pour récupérer aussi les sanctions sans trimestre.
             const sanctions = await this.prisma.sanction.findMany({
               where: {
                 tenantId: resolvedTenantId,
                 academicYearId,
                 studentId: conductStudent.id,
-                quarterId: quarterIdForAssiduity,
                 status: 'ACTIVE',
+                OR: [
+                  { quarterId: quarterIdForAssiduity },
+                  { quarterId: null },
+                ],
               },
               select: { hoursAttributed: true },
             }).catch(() => []);

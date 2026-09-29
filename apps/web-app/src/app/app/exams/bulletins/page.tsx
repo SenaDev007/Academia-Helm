@@ -1093,13 +1093,15 @@ function BulletinsContent() {
   useEffect(() => {
     if (!isSecondaryTrack || !bulletinData || !academicYear?.id) return;
     const CONDUCT_SUBJECT_ID = '__conduct__';
-    // ⭐ Fetch en parallèle : conduct_ledger (scores par élève) + conduct_settings (baseline)
+    // ⭐ Fetch en parallèle : conduct_ledger + conduct_settings + sanctions
     Promise.all([
       fetch(`/api/discipline/conduct?academicYearId=${academicYear.id}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null).catch(() => null),
       fetch(`/api/discipline/conduct/settings?academicYearId=${academicYear.id}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([ledger, settings]: [any[], any]) => {
+      fetch(`/api/discipline/sanctions?academicYearId=${academicYear.id}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([ledger, settings, sanctions]: [any[], any, any[]]) => {
       const conductByStudent = new Map<string, { final: number; reference: number }>();
       const defaultRef = (settings && typeof settings.conduct_reference === 'number') ? settings.conduct_reference : 17;
+      // 1. D'abord les scores du conduct_ledger (si l'élève a un ledger)
       if (Array.isArray(ledger) && ledger.length > 0) {
         for (const row of ledger) {
           if (row.studentId) {
@@ -1110,13 +1112,31 @@ function BulletinsContent() {
           }
         }
       }
+      // 2. Pour les élèves SANS ledger, calculer depuis les sanctions
+      //    (chaque sanction active réduit la note de conduct par points_deducted)
+      if (Array.isArray(sanctions) && sanctions.length > 0) {
+        const sanctionsByStudent = new Map<string, number>();
+        for (const s of sanctions) {
+          if (s.status === 'ACTIVE' && s.studentId) {
+            const current = sanctionsByStudent.get(s.studentId) || 0;
+            sanctionsByStudent.set(s.studentId, current + (Number(s.points_deducted) || 0));
+          }
+        }
+        // Pour chaque élève sanctionné sans ledger, calculer: baseline - total_deducted
+        for (const [studentId, totalDeducted] of sanctionsByStudent) {
+          if (!conductByStudent.has(studentId)) {
+            conductByStudent.set(studentId, {
+              final: Math.max(0, defaultRef - totalDeducted),
+              reference: defaultRef,
+            });
+          }
+        }
+      }
       setBulletinData(prev => {
         if (!prev) return prev;
         const hasConduct = prev.subjects.some(s => s.id === CONDUCT_SUBJECT_ID);
         const subjects = hasConduct ? prev.subjects : [...prev.subjects, { id: CONDUCT_SUBJECT_ID, name: 'Conduite', coefficient: 1 }];
         const results = prev.results.map(st => {
-          // ⭐ Si l'élève a un conduct_ledger → utiliser son score
-          //    Sinon → utiliser defaultRef (pas de sanction = note de départ)
           const conduct = conductByStudent.get(st.id) || { final: defaultRef, reference: defaultRef };
           return {
             ...st,

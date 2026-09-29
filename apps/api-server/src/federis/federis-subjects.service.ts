@@ -39,6 +39,8 @@ import {
   ForbiddenException,
   Logger,
   NotFoundException,
+  forwardRef,
+  Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { FederisPatronatService } from './federis-patronat.service';
@@ -377,6 +379,7 @@ export class FederisSubjectsService {
 
   constructor(
     private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => FederisPatronatService))
     private readonly patronatService: FederisPatronatService,
   ) {}
 

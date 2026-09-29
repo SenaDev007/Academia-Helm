@@ -1156,6 +1156,19 @@ export class BulletinsController {
               // ⭐ Pour FR trimestriel/évaluation : on remplit secMoyenne + secNoteCoef
               secMoyenne: s.secMoyenne ?? conductScore,
               secNoteCoef: s.secNoteCoef ?? (conductScore * (s.secCoef ?? 1)),
+              // ⭐ 2026-09-29 — FIX ABS dans colonne « Moyenne d'interrogation » :
+              //    secHasSlot: true déclenchait l'affichage « ABS » quand secInt1/
+              //    secInt2/secMoyInter étaient null (cell(v) → v === null &&
+              //    secHasSlot ? 'ABS' : '—'). Or la Conduite n'a PAS de composantes
+              //    INT1/INT2/DS1/DS2 (ce sont des notes d'évaluations), donc on
+              //    force secHasSlot: false pour que les colonnes vides affichent
+              //    « — » et non « ABS ».
+              secHasSlot: false,
+              secInt1: null,
+              secInt2: null,
+              secMoyInter: null,
+              secDs1: null,
+              secDs2: null,
               appreciation: conductScore >= (conductReference ?? 17) * 0.6 ? 'Satisfaisant' : 'À améliorer',
             };
           }
@@ -1172,10 +1185,22 @@ export class BulletinsController {
           isAbsent: false,
           appreciation: conductScore >= (conductReference ?? 17) * 0.6 ? 'Satisfaisant' : 'À améliorer',
           // Pour le bulletin FR secondaire (buildHtmlSecondaire)
+          // ⭐ 2026-09-29 — FIX ABS dans colonne « Moyenne d'interrogation » :
+          //    secHasSlot: true déclenchait l'affichage « ABS » quand secInt1/
+          //    secInt2/secMoyInter étaient null (cell(v) → v === null &&
+          //    secHasSlot ? 'ABS' : '—'). Or la Conduite n'a PAS de composantes
+          //    INT1/INT2/DS1/DS2 (ce sont des notes d'évaluations), donc on
+          //    doit mettre secHasSlot: false pour que les colonnes vides
+          //    affichent « — » et non « ABS ».
           secCoef: 1,
           secMoyenne: conductScore,
           secNoteCoef: conductScore,
-          secHasSlot: true,
+          secHasSlot: false,
+          secInt1: null,
+          secInt2: null,
+          secMoyInter: null,
+          secDs1: null,
+          secDs2: null,
           // Pour le bulletin EN Report Book (buildHtmlAnglophone)
           firstCA: null,
           secondCA: null,

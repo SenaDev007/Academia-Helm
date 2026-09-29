@@ -1140,7 +1140,17 @@ function BulletinsContent() {
                 moyenne: conductScore,
                 coefficient: 1,
                 noteCoef: conductScore,
-                secHasSlot: true,
+                // ⭐ 2026-09-29 — FIX ABS dans colonne « Moyenne d'interrogation » :
+                //    secHasSlot: true déclenchait l'affichage « ABS » quand
+                //    int1/int2/moyInter étaient null. Or la Conduite n'a PAS de
+                //    composantes INT1/INT2/DS1/DS2 → on force secHasSlot: false
+                //    pour que les colonnes vides affichent « — » et non « ABS ».
+                secHasSlot: false,
+                int1: null,
+                int2: null,
+                moyInter: null,
+                ds1: null,
+                ds2: null,
                 subjectRank: null,
                 // Pour EN Report Book (10 colonnes FCA/SCA/EXAM/Total/100) :
                 // pas de composantes CA, mais on met le score en Total.

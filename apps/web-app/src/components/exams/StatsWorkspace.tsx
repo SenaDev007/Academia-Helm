@@ -36,9 +36,9 @@ import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import apiClient from '@/lib/api/client';
-import { EXAMS_SUB_MODULES } from '../../sub-modules';
-import { useExamSubModules, useExamScope } from '../../layout';
-import { filterClassesForLevel } from '../../level-isolation';
+import { EXAMS_SUB_MODULES } from '@/app/app/exams/sub-modules';
+import { useExamSubModules, useExamScope } from '@/app/app/exams/layout';
+import { filterClassesForLevel } from '@/app/app/exams/level-isolation';
 import { cn } from '@/lib/utils';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,

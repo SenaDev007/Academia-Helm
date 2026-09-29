@@ -57,6 +57,7 @@ import { useExamSubModules, useExamScope } from '../layout';
 import { filterClassesForLevel, matchesLevelLanguage } from '../level-isolation';
 // ⭐ SECONDAIRE — appréciations normalisées (mêmes mentions que la fiche de saisie et le registre)
 import { computeAppreciationSecondaire, appreciationSecondaireClassName } from '@/components/exams/GradingSheet';
+import { getSubjectCategory, groupSubjectsByCategory, CATEGORY_ORDER, CATEGORY_LABELS } from '@/lib/exam-subject-category';
 import { cn } from '@/lib/utils';
 import { RichTextEditor } from '@/components/ui/RichTextEditor';
 import { SignatureCanvas } from '@/components/ui/SignatureCanvas';
@@ -1693,6 +1694,7 @@ function BulletinTwoPage({
   //    tableau Discipline | Note /20 | Rang | Appréciation) vs « Bulletin
   //    trimestriel » (consolidé CEG).
   const isSecondaryEvalMode = !!isSecondaryTrack && !isSecondaire && !isEn;
+  const isSecondaryAny = isSecondaryBulletin || isSecondaryEvalMode || (isEn && isSecondaire);
   const [page, setPage] = useState<1 | 2>(1);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
   // ⭐ Signature state — initialized from workflow signatures (backend) if available
@@ -1723,8 +1725,7 @@ function BulletinTwoPage({
     if (touchStart === null) return;
     const diffX = touchStart.x - e.changedTouches[0].clientX;
     const diffY = touchStart.y - e.changedTouches[0].clientY;
-    // Only flip if horizontal movement is significantly larger than vertical
-    if (Math.abs(diffX) > 80 && Math.abs(diffX) > Math.abs(diffY) * 1.5) {
+    if (!isSecondaryAny && Math.abs(diffX) > 80 && Math.abs(diffX) > Math.abs(diffY) * 1.5) {
       if (diffX > 0 && page === 1) setPage(2);
       if (diffX < 0 && page === 2) setPage(1);
     }
@@ -1754,7 +1755,8 @@ function BulletinTwoPage({
         </div>
       </div>
 
-      {/* Page navigation — ⭐ V10h : libellés EN pour la piste anglophone */}
+      {/* Page navigation — hidden for secondary (isSecondaryAny) */}
+      {!isSecondaryAny && (
       <div className="flex items-center justify-between bg-slate-100 rounded-lg px-3 py-1.5">
         <button
           onClick={() => setPage(1)}
@@ -1766,11 +1768,12 @@ function BulletinTwoPage({
           className={cn('text-xs font-bold px-3 py-1 rounded transition-colors', page === 2 ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-200')}
         >{isEn ? 'Page 2: Comments & Signatures →' : 'Page 2: Appréciations →'}</button>
       </div>
+      )}
 
       {/* Page content with flip animation */}
       <div className="relative overflow-hidden">
         <div key={page} className="animate-in fade-in slide-in-from-right duration-300">
-          {page === 1 ? (
+          {(isSecondaryAny || page === 1) ? (
             isSecondaryEvalMode ? (
               <BulletinSecondaireEvalPage1
                 student={student}
@@ -2174,6 +2177,7 @@ function BulletinSecondairePage1({
 
   const recap = student.secondaryRecap ?? null;
   const colCount = isJunior ? 10 : 12;
+  const subjectsByCategory = useMemo(() => groupSubjectsByCategory(bulletinData.subjects, (subj) => student.subjectScores[subj.id]?.moyenne ?? null), [bulletinData.subjects, student.subjectScores]);
 
   return (
     <div className="overflow-x-auto space-y-2">
@@ -2243,97 +2247,64 @@ function BulletinSecondairePage1({
             </tr>
           </thead>
           <tbody>
-            {bulletinData.subjects.map((subject, idx) => {
-              const s = student.subjectScores[subject.id];
-              return (
-                <tr key={subject.id} className={idx % 2 === 1 ? 'bg-slate-50/60' : undefined}>
-                  <td className="border border-slate-300 px-1 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
-                  <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold">
-                    {s ? noteCell(s.int1, s.int1 === null && s.secHasSlot) : '—'}
-                  </td>
-                  <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold">
-                    {s ? noteCell(s.int2, s.int2 === null && s.secHasSlot) : '—'}
-                  </td>
-                  <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold text-blue-700 bg-blue-50/50">
-                    {s ? noteCell(s.moyInter, s.isAbsent) : '—'}
-                  </td>
-                  <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold">
-                    {s ? noteCell(s.ds1, s.ds1 === null && s.secHasSlot) : '—'}
-                  </td>
-                  <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold">
-                    {s ? noteCell(s.ds2, s.ds2 === null && s.secHasSlot) : '—'}
-                  </td>
-                <td className={cn('border border-slate-300 px-1 py-0.5 text-center font-bold',
-                  s?.moyenne != null && s.moyenne >= 10 ? 'text-emerald-700 bg-emerald-50' : 'text-red-600 bg-emerald-50')}>
-                  {s ? noteCell(s.moyenne, s.isAbsent) : '—'}
-                </td>
-                {!isJunior && (
-                  <>
-                    <td className="border border-slate-300 px-1 py-0.5 text-center font-bold text-amber-700 bg-amber-50">
-                      {s?.coefficient ?? subject.coefficient ?? 1}
-                    </td>
-                    <td className={cn('border border-slate-300 px-1 py-0.5 text-center font-bold',
-                      s?.noteCoef != null && s.moyenne != null && s.moyenne >= 10 ? 'text-emerald-700' : 'text-red-600')}>
-                      {fmtS(s?.noteCoef)}
-                    </td>
-                  </>
-                )}
-                <td className="border border-slate-300 px-1 py-0.5 text-center font-bold text-slate-700">
-                  {s?.subjectRank ? formatRank(s.subjectRank, student.gender === 'FEMALE' || student.gender === 'F') : '—'}
-                </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600 text-[9px]">
-                  <span className={appreciationSecondaireClassName(s?.appreciation || '—')}>{s?.appreciation || '—'}</span>
-                </td>
-                {/* Signature du professeur (manuscrite) */}
-                <td className="border border-slate-300 h-7" />
-              </tr>
-            );
-          })}
-
-          {/* Totaux (4e → Terminale uniquement) */}
-          {!isJunior && (
-            <>
-              <tr className="bg-slate-200 font-bold">
-                <td colSpan={7} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-700 text-[9px]">Total des coefficients</td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-amber-700">{totalCoef}</td>
-                <td colSpan={4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">—</td>
-              </tr>
-              <tr className="bg-slate-200 font-bold">
-                <td colSpan={7} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-700 text-[9px]">Total des moyennes (Σ moy × coef)</td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-emerald-700">{totalNotesCoef.toFixed(2)}</td>
-                <td colSpan={4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">—</td>
-              </tr>
-            </>
-          )}
-          {/* Moyenne trimestrielle */}
-          <tr className="bg-blue-100 font-bold">
-            <td colSpan={6} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-900 text-[9px]">Moyenne trimestrielle</td>
-            <td colSpan={isJunior ? 1 : 2} className="border border-slate-300 px-1 py-0.5 text-center text-blue-800 text-xs">
-              {fmtS(student.generalAverage)}
-            </td>
-            <td colSpan={isJunior ? 3 : 4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">
-              {student.classRank ? `Rang : ${formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')} / ${bulletinData.results.length}` : '—'}
-            </td>
-          </tr>
-        </tbody>
+            {CATEGORY_ORDER.flatMap((cat) => {
+              const group = subjectsByCategory.get(cat);
+              if (!group || group.subjects.length === 0) return [];
+              const subjectRows = group.subjects.map((subject, idx) => {
+                const s = student.subjectScores[subject.id];
+                return (
+                  <tr key={subject.id} className={idx % 2 === 1 ? 'bg-slate-50/60' : undefined}>
+                    <td className="border border-slate-300 px-1 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
+                    <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.int1, s.int1 === null && s.secHasSlot) : '—'}</td>
+                    <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.int2, s.int2 === null && s.secHasSlot) : '—'}</td>
+                    <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold text-blue-700 bg-blue-50/50">{s ? noteCell(s.moyInter, s.isAbsent) : '—'}</td>
+                    <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.ds1, s.ds1 === null && s.secHasSlot) : '—'}</td>
+                    <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.ds2, s.ds2 === null && s.secHasSlot) : '—'}</td>
+                  <td className={cn('border border-slate-300 px-1 py-0.5 text-center font-bold', s?.moyenne != null && s.moyenne >= 10 ? 'text-emerald-700 bg-emerald-50' : 'text-red-600 bg-emerald-50')}>{s ? noteCell(s.moyenne, s.isAbsent) : '—'}</td>
+                  {!isJunior && (<><td className="border border-slate-300 px-1 py-0.5 text-center font-bold text-amber-700 bg-amber-50">{s?.coefficient ?? subject.coefficient ?? 1}</td><td className={cn('border border-slate-300 px-1 py-0.5 text-center font-bold', s?.noteCoef != null && s.moyenne != null && s.moyenne >= 10 ? 'text-emerald-700' : 'text-red-600')}>{fmtS(s?.noteCoef)}</td></>)}
+                  <td className="border border-slate-300 px-1 py-0.5 text-center font-bold text-slate-700">{s?.subjectRank ? formatRank(s.subjectRank, student.gender === 'FEMALE' || student.gender === 'F') : '—'}</td>
+                  <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600 text-[9px]"><span className={appreciationSecondaireClassName(s?.appreciation || '—')}>{s?.appreciation || '—'}</span></td>
+                  <td className="border border-slate-300 h-7" />
+                </tr>
+                );
+              });
+              const bilanRow = (
+                <tr key={`bilan-${cat}`} className="bg-blue-50 font-bold">
+                  <td className="border border-slate-300 px-1 py-0.5 text-[10px] uppercase text-blue-900">{CATEGORY_LABELS[cat]}</td>
+                  <td colSpan={5} className="border border-slate-300"></td>
+                  <td className="border border-slate-300 px-1 py-0.5 text-center font-bold text-blue-900 bg-blue-100">{group.average !== null ? <span className={group.average >= 10 ? 'text-emerald-700' : 'text-red-600'}>{group.average.toFixed(2)}</span> : '—'}</td>
+                  {!isJunior && (<><td className="border border-slate-300"></td><td className="border border-slate-300"></td></>)}
+                  <td className="border border-slate-300"></td>
+                  <td className="border border-slate-300"></td>
+                  <td className="border border-slate-300"></td>
+                </tr>
+              );
+              return [...subjectRows, bilanRow];
+            })}
+            {!isJunior && (
+              <>
+                <tr className="bg-slate-200 font-bold">
+                  <td colSpan={7} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-700 text-[9px]">Total des coefficients</td>
+                  <td className="border border-slate-300 px-1 py-0.5 text-center text-amber-700">{totalCoef}</td>
+                  <td colSpan={4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">—</td>
+                </tr>
+                <tr className="bg-slate-200 font-bold">
+                  <td colSpan={7} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-700 text-[9px]">Total des moyennes (Σ moy × coef)</td>
+                  <td className="border border-slate-300 px-1 py-0.5 text-center text-emerald-700">{totalNotesCoef.toFixed(2)}</td>
+                  <td colSpan={4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">—</td>
+                </tr>
+              </>
+            )}
+            <tr className="bg-blue-100 font-bold">
+              <td colSpan={6} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-900 text-[9px]">Moyenne trimestrielle</td>
+              <td colSpan={isJunior ? 1 : 2} className="border border-slate-300 px-1 py-0.5 text-center text-blue-800 text-xs">{fmtS(student.generalAverage)}</td>
+              <td colSpan={isJunior ? 3 : 4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">{student.classRank ? `Rang : ${formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')} / ${bulletinData.results.length}` : '—'}</td>
+            </tr>
+          </tbody>
         </table>
       </div>
 
-      {/* Synthèse statistique de la classe */}
-      <div className="mt-2 grid grid-cols-3 gap-2 text-[10px]">
-        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
-          <span className="text-slate-500">Moyenne de la classe : </span>
-          <strong>{fmtS(classAvg)}</strong>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
-          <span className="text-slate-500">Moyenne la plus faible : </span>
-          <strong>{fmtS(weakestAvg)}</strong>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
-          <span className="text-slate-500">Moyenne la plus forte : </span>
-          <strong>{fmtS(strongestAvg)}</strong>
-        </div>
-      </div>
+      {/* ⭐ Synthèse statistique supprimée — doublon avec bloc Résultats de classe */}
 
       {/* ⭐ Récap du 3e trimestre : moyennes T1 + T2 + moyenne annuelle (passage) */}
       {recap && (
@@ -2407,6 +2378,7 @@ function BulletinSecondaireEvalPage1({
   const navy = '#0A2A5E';      // colonnes de base (en-tête)
   const navyAlt = '#0D3B85';   // colonne calculée (Note /20)
   const feminine = student.gender === 'FEMALE' || student.gender === 'F';
+  const subjectsByCategory = useMemo(() => groupSubjectsByCategory(bulletinData.subjects, (subj) => { const s = student.subjectScores[subj.id]; return s && typeof s.score === 'number' ? s.score : null; }), [bulletinData.subjects, student.subjectScores]);
 
   /** Format d'une note : 15 → « 15.00 », null → « — ». */
   const fmtS = (n: number | null | undefined): string =>
@@ -2469,25 +2441,34 @@ function BulletinSecondaireEvalPage1({
             </tr>
           </thead>
           <tbody>
-            {bulletinData.subjects.map((subject, idx) => {
-              const s = student.subjectScores[subject.id];
-              return (
-                <tr key={subject.id} className={idx % 2 === 1 ? 'bg-slate-50/60' : undefined}>
-                  <td className="border border-slate-300 px-2 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center font-bold bg-emerald-50/50">
-                    {s && s.isAbsent ? <span className="text-red-500 text-[8px] font-bold">ABS</span>
-                      : s && typeof s.score === 'number'
-                        ? <span className={s.score >= 10 ? 'text-slate-900' : 'text-red-600'}>{s.score.toFixed(2)}</span>
-                        : <span className="text-slate-400">—</span>}
-                  </td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-slate-700">
-                    {s?.subjectRank ? formatRank(s.subjectRank, feminine) : '—'}
-                  </td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center text-slate-600 text-[9px]">
-                    <span className={appreciationSecondaireClassName(s?.appreciation || '—')}>{s?.appreciation || '—'}</span>
-                  </td>
+            {CATEGORY_ORDER.flatMap((cat) => {
+              const group = subjectsByCategory.get(cat);
+              if (!group || group.subjects.length === 0) return [];
+              const subjectRows = group.subjects.map((subject, idx) => {
+                const s = student.subjectScores[subject.id];
+                return (
+                  <tr key={subject.id} className={idx % 2 === 1 ? 'bg-slate-50/60' : undefined}>
+                    <td className="border border-slate-300 px-2 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
+                    <td className="border border-slate-300 px-2 py-0.5 text-center font-bold bg-emerald-50/50">
+                      {s && s.isAbsent ? <span className="text-red-500 text-[8px] font-bold">ABS</span>
+                        : s && typeof s.score === 'number'
+                          ? <span className={s.score >= 10 ? 'text-slate-900' : 'text-red-600'}>{s.score.toFixed(2)}</span>
+                          : <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-slate-700">{s?.subjectRank ? formatRank(s.subjectRank, feminine) : '—'}</td>
+                    <td className="border border-slate-300 px-2 py-0.5 text-center text-slate-600 text-[9px]"><span className={appreciationSecondaireClassName(s?.appreciation || '—')}>{s?.appreciation || '—'}</span></td>
+                  </tr>
+                );
+              });
+              const bilanRow = (
+                <tr key={`bilan-${cat}`} className="bg-blue-50 font-bold">
+                  <td className="border border-slate-300 px-2 py-0.5 text-[10px] uppercase text-blue-900">{CATEGORY_LABELS[cat]}</td>
+                  <td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-blue-900 bg-blue-100">{group.average !== null ? <span className={group.average >= 10 ? 'text-emerald-700' : 'text-red-600'}>{group.average.toFixed(2)}</span> : '—'}</td>
+                  <td className="border border-slate-300"></td>
+                  <td className="border border-slate-300"></td>
                 </tr>
               );
+              return [...subjectRows, bilanRow];
             })}
 
             {/* Moyenne de l'évaluation + Rang */}
@@ -2504,21 +2485,7 @@ function BulletinSecondaireEvalPage1({
         </table>
       </div>
 
-      {/* Synthèse statistique de la classe */}
-      <div className="mt-2 grid grid-cols-3 gap-2 text-[10px]">
-        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
-          <span className="text-slate-500">Moyenne de la classe : </span>
-          <strong>{fmtS(classAvg)}</strong>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
-          <span className="text-slate-500">Moyenne la plus faible : </span>
-          <strong>{fmtS(weakestAvg)}</strong>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-center">
-          <span className="text-slate-500">Moyenne la plus forte : </span>
-          <strong>{fmtS(strongestAvg)}</strong>
-        </div>
-      </div>
+      {/* ⭐ Synthèse statistique supprimée — doublon avec bloc Résultats de classe */}
     </div>
   );
 }

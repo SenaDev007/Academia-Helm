@@ -1092,13 +1092,31 @@ export class BulletinsController {
       }
     }
 
-    // ⭐ 2026-09-28 — La conduite est injectée par le frontend (useEffect
+    // ⭐ 2026-09-29 — La conduite est injectée par le frontend (useEffect
     //    __conduct__) qui envoie déjà la matière Conduite dans subjects[].
     //    Le backend ne doit PAS injecter une seconde fois — sinon doublon.
     //    On se contente de résoudre conductScore/conductReference depuis le
     //    conduct_ledger (ou conduct_settings par défaut) et de les injecter
     //    dans pdfData pour les blocs Assiduité + Conseil de classe du PDF.
-    const subjectsWithConduite = resolvedSubjects;
+    //    ⭐ 2026-09-29 — MAIS on doit mettre à jour le score de la matière
+    //    Conduite dans subjects[] avec la vraie valeur (baseline - sanctions)
+    //    si le backend a calculé une valeur différente du frontend.
+    let subjectsWithConduite = resolvedSubjects;
+    if (isAnySecondary && conductScore !== null && Array.isArray(resolvedSubjects)) {
+      subjectsWithConduite = resolvedSubjects.map((s: any) => {
+        // Identifier la matière Conduite par son nom (insensible à la casse)
+        if (s.name && s.name.toLowerCase() === 'conduite') {
+          return {
+            ...s,
+            score: conductScore,
+            secMoyenne: conductScore,
+            secNoteCoef: conductScore * (s.secCoef ?? 1),
+            appreciation: conductScore >= (conductReference ?? 17) * 0.6 ? 'Satisfaisant' : 'À améliorer',
+          };
+        }
+        return s;
+      });
+    }
 
     // Fusionner les données du frontend avec le branding + teacherName résolu
     const pdfData = {
@@ -1120,7 +1138,12 @@ export class BulletinsController {
       // ⭐ Photo de l'élève : résolue depuis student_photos (priorité au backend)
       studentPhotoUrl: studentPhotoUrl || body.studentPhotoUrl || null,
       // ⭐ SECONDAIRE — Conduite + Distinction/Sanction (résolues backend)
-      conductScore: conductScore ?? body.conductScore ?? null,
+      // ⭐ 2026-09-29 — conductScore/conductReference TOUJOURS prioritaires côté
+      //    backend (résolu depuis conduct_ledger ou calculé depuis sanctions).
+      //    Le frontend envoie aussi conductScore (depuis son useEffect __conduct__)
+      //    mais cette valeur peut être la baseline (si le frontend n'a pas trouvé
+      //    le ledger). On ignore body.conductScore si le backend a résolu une valeur.
+      conductScore: conductScore !== null ? conductScore : (body.conductScore ?? null),
       conductReference: conductReference ?? body.conductReference ?? null,
       // ⭐ 2026-09-28 — Assiduité (total d'heures depuis module Vie Scolaire)
       assiduityHours: assiduityHours ?? body.assiduityHours ?? null,

@@ -36,6 +36,7 @@ import { pedagogyFetch } from '@/lib/pedagogy/academic-structure-client';
 import { useToast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { formatWeeklyDurationWithSuffix } from '@/lib/utils/duration';
+import { Button } from '@/components/ui/button';
 
 const PRIMARY = '#1A2BA6';
 const ACCENT = '#F5A623';

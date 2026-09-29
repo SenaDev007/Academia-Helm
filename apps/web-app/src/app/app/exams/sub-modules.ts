@@ -25,7 +25,8 @@ import {
   SlidersHorizontal,
   Lock,
   Landmark,
-  ScrollText
+  ScrollText,
+  TrendingUp
 } from 'lucide-react';
 
 export const EXAMS_SUB_MODULES = [
@@ -85,6 +86,12 @@ export const EXAMS_SUB_MODULES = [
     label: 'Procès-verbal',
     href: '/app/exams/proc-verbal',
     icon: ScrollText
+  },
+  {
+    id: 'promotion',
+    label: 'Promotion & Redoublement',
+    href: '/app/exams/promotion',
+    icon: TrendingUp
   },
   {
     // ⭐ Examens nationaux (CEP / BEPC / Baccalauréat / CAP) — candidats présentés

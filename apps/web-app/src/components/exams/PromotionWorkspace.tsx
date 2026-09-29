@@ -24,6 +24,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   TrendingUp, Loader2, Users, Award, AlertCircle,
   CheckCircle2, XCircle, Sparkles, RotateCcw, ArrowUp, Download,
@@ -33,8 +34,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
-import { institutionalExamsService } from '@/services/institutional-exams.service';
-import apiClient from '@/lib/api/client';
 import { EXAMS_SUB_MODULES } from '@/app/app/exams/sub-modules';
 import { useExamSubModules, useExamScope } from '@/app/app/exams/layout';
 import { filterClassesForLevel } from '@/app/app/exams/level-isolation';
@@ -66,6 +65,7 @@ interface StudentPromotion {
 }
 
 export default function PromotionWorkspace() {
+  const router = useRouter();
   const { academicYear } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
@@ -111,125 +111,31 @@ export default function PromotionWorkspace() {
   }, [academicYear?.id, schoolLevelUuid, scopeLang]);
 
   // ── Load students with annual averages ──
-  //    ⭐ FIX 2026-09-29 — « redoublants = 0 » :
-  //    Avant : studentMap était construit SEULEMENT à partir des notes
-  //    existantes → les élèves sans aucune note n'apparaissaient JAMAIS
-  //    (ni dans passants, ni dans redoublants). Désormais on charge
-  //    d'abord la liste d'appel de la classe via /api/students?classId=...
-  //    puis on y fusionne les notes. Les élèves sans note ont avg=null
-  //    → décision REDOUBLE par défaut (exigence promoteur).
+  //    ⭐ 2026-09-30 — OPTIMISATION : on utilise le nouvel endpoint backend
+  //    GET /api/exams/promotion/class/:classId qui calcule les moyennes
+  //    annuelles côté backend (3 requêtes Prisma au total) au lieu de
+  //    getEvaluations + getGradingSheetsBatch (N requêtes HTTP côté frontend).
+  //    Avant : 30 élèves × 24 évaluations = 24 fetchs HTTP + parsing → lent
+  //    (5-10s) + élèves manquants (roster fetch + grades fetch séparés).
+  //    Désormais : 1 seul fetch HTTP → ~1s + tous les élèves figurent.
+  //    ⭐ Le backend récupère TOUS les élèves inscrits (status ACTIVE) dans
+  //    la classe → passants + redoublants = total de la classe (exigence
+  //    promoteur). Les élèves sans note ont avg=null → REDOUBLE.
   const loadStudents = useCallback(async () => {
     if (!selectedClassId || !academicYear?.id) return;
     setLoading(true);
     try {
-      // ── Step 1: Load class roster (ALL enrolled students) ──
-      const rosterRes = await fetch(
-        `/api/students?classId=${encodeURIComponent(selectedClassId)}&academicYearId=${encodeURIComponent(academicYear.id)}`,
+      const res = await fetch(
+        `/api/exams/promotion/class/${encodeURIComponent(selectedClassId)}?academicYearId=${encodeURIComponent(academicYear.id)}`,
         { credentials: 'include' },
       );
-      let roster: Array<{ id: string; firstName?: string; lastName?: string; matricule?: string; gender?: string }> = [];
-      if (rosterRes.ok) {
-        const data = await rosterRes.json();
-        const list = Array.isArray(data) ? data : (data?.data ?? data?.items ?? data?.students ?? []);
-        roster = list.map((s: any) => ({
-          id: s.id,
-          firstName: s.firstName,
-          lastName: s.lastName,
-          matricule: s.matricule,
-          gender: s.gender,
-        }));
+      if (!res.ok) {
+        setStudents([]);
+        return;
       }
-
-      // ── Step 2: Initialize studentMap from roster (so students with no grades appear too) ──
-      const studentMap = new Map<string, { id: string; matricule: string; name: string; gender?: string; scores: number[]; coefs: number[] }>();
-      for (const s of roster) {
-        const name = `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Inconnu';
-        studentMap.set(s.id, {
-          id: s.id,
-          matricule: s.matricule || '',
-          name,
-          gender: s.gender,
-          scores: [],
-          coefs: [],
-        });
-      }
-
-      // ── Step 3: Fetch all VALIDATED evaluations for this class ──
-      const evaluations = await institutionalExamsService.getEvaluations({
-        academicYearId: academicYear.id,
-        classId: selectedClassId,
-        status: 'VALIDATED',
-      });
-      const allEvals = Array.isArray(evaluations) ? evaluations : [];
-
-      // ── Step 4: Fetch grades in batch ──
-      const sheetsMap = await institutionalExamsService
-        .getGradingSheetsBatch(allEvals.map((ev: any) => ev.id))
-        .catch(() => ({}));
-
-      // ── Step 5: Merge grades into studentMap ──
-      //    Students from roster with no grades keep scores=[] → avg=null → REDOUBLE
-      //    Students appearing in grades but not in roster (legacy) are also added
-      for (const ev of allEvals) {
-        const grades = sheetsMap[ev.id] || [];
-        const coef = ev.subject?.coefficient ?? 1;
-        for (const g of grades) {
-          if (g.isAbsent || typeof g.score !== 'number') continue;
-          if (!studentMap.has(g.studentId)) {
-            studentMap.set(g.studentId, {
-              id: g.studentId,
-              matricule: g.matricule || '',
-              name: g.studentName || 'Inconnu',
-              gender: g.gender,
-              scores: [],
-              coefs: [],
-            });
-          }
-          const st = studentMap.get(g.studentId)!;
-          st.scores.push(Number(g.score));
-          st.coefs.push(coef);
-        }
-      }
-
-      // ── Step 6: Calculate annual average per student + decision ──
-      //    ⭐ Without notes → avg = null → REDOUBLE (exigence promoteur)
-      //    avg < 9 → REDOUBLE ; 9 ≤ avg < 10 → RACHAT ; avg ≥ 10 → PASSE
-      const PASS_THRESHOLD = 10;
-      const RACHAT_THRESHOLD = 9;
-
-      const result: StudentPromotion[] = Array.from(studentMap.values()).map(st => {
-        const total = st.scores.reduce((sum, s, i) => sum + s * st.coefs[i], 0);
-        const totalCoef = st.coefs.reduce((sum, c) => sum + c, 0);
-        const avg = totalCoef > 0 ? total / totalCoef : null;
-
-        let decision: 'PASSE' | 'REDOUBLE' | 'RACHAT' = 'REDOUBLE';
-        let rachatable = false;
-
-        if (avg !== null) {
-          if (avg >= PASS_THRESHOLD) {
-            decision = 'PASSE';
-          } else if (avg >= RACHAT_THRESHOLD) {
-            decision = 'RACHAT';
-            rachatable = true;
-          }
-        }
-        // avg === null (no notes) → stays REDOUBLE (default)
-
-        return {
-          id: st.id,
-          matricule: st.matricule,
-          name: st.name,
-          gender: st.gender,
-          generalAverage: avg,
-          decision,
-          rachatable,
-          rachatApplied: false,
-        };
-      });
-
-      // Sort by name
-      result.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
-      setStudents(result);
+      const data = await res.json();
+      const list: StudentPromotion[] = Array.isArray(data) ? data : [];
+      setStudents(list);
     } catch (err) {
       console.error('Promotion load error:', err);
       setStudents([]);
@@ -246,13 +152,19 @@ export default function PromotionWorkspace() {
   const rachatCandidates = useMemo(() => students.filter(s => s.decision === 'RACHAT' && !s.rachatApplied), [students]);
 
   // ── Apply rachat ──
-  const applyRachat = (studentId: string) => {
-    setStudents(prev => prev.map(s => {
-      if (s.id === studentId && s.rachatable) {
-        return { ...s, rachatApplied: true, decision: 'PASSE' as const };
-      }
-      return s;
-    }));
+  //    ⭐ 2026-09-30 — Le rachat ne suffit pas de cliquer pour que l'élève
+  //    passe en classe supérieure. Il faut rediriger vers les notes de
+  //    l'élève pour qu'on puisse voir où appliquer des corrections de
+  //    rachat pour que l'élève ait la moyenne requise.
+  //    On redirige vers l'onglet Bulletins (où l'on peut voir les notes
+  //    par élève et par matière) avec les paramètres de la classe +
+  //    l'élève sélectionné.
+  const applyRachat = (studentId: string, studentName?: string) => {
+    // Rediriger vers les notes de l'élève (onglet Bulletins)
+    // On passe les paramètres : classId + academicYearId + studentId
+    // pour que l'onglet Bulletins affiche directement l'élève concerné.
+    const url = `/app/exams/bulletins?classId=${encodeURIComponent(selectedClassId)}&academicYearId=${encodeURIComponent(academicYear?.id || '')}&studentId=${encodeURIComponent(studentId)}&rachat=1`;
+    router.push(url);
   };
 
   // ── Undo rachat ──
@@ -435,7 +347,7 @@ export default function PromotionWorkspace() {
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
                 <Sparkles className="w-5 h-5 text-amber-600 mx-auto mb-1" />
                 <p className="text-2xl font-bold text-amber-700">{rachatCandidates.length}</p>
-                <p className="text-xs text-amber-600 font-medium">Rachat possible</p>
+                <p className="text-xs text-amber-600 font-medium">Rachat (9-10)</p>
               </div>
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
                 <XCircle className="w-5 h-5 text-red-600 mx-auto mb-1" />
@@ -527,10 +439,11 @@ export default function PromotionWorkspace() {
                         </TableCell>
                         <TableCell className="text-xs text-center">
                           <button
-                            onClick={() => applyRachat(st.id)}
+                            onClick={() => applyRachat(st.id, st.name)}
                             className="px-2 py-1 text-[10px] font-bold bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors"
+                            title={`Voir les notes de ${st.name} pour appliquer un rachat`}
                           >
-                            <Sparkles className="w-3 h-3 inline mr-1" /> Racheter
+                            <Sparkles className="w-3 h-3 inline mr-1" /> Voir les notes
                           </button>
                         </TableCell>
                       </TableRow>

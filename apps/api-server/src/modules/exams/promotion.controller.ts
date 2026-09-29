@@ -24,7 +24,7 @@
  */
 
 import {
-  Controller, Post, Body, Logger, BadRequestException,
+  Controller, Post, Get, Body, Param, Query, Logger, BadRequestException,
 } from '@nestjs/common';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -56,6 +56,154 @@ export class PromotionController {
     private readonly feeStructure: FeeStructureService,
     private readonly studentAccount: StudentAccountService,
   ) {}
+
+  /**
+   * ⭐ GET /api/exams/promotion/class/:classId
+   *    Calcule les moyennes annuelles de TOUS les élèves d'une classe côté
+   *    backend (1 requête Prisma au lieu de N fetchs HTTP côté frontend).
+   *    Avant : le frontend faisait getEvaluations + getGradingSheetsBatch
+   *    (N requêtes HTTP) → lent + élèves manquants.
+   *
+   * Algorithme :
+   *   1. Récupérer TOUS les élèves inscrits dans la classe (status ACTIVE)
+   *   2. Récupérer TOUTES les évaluations VALIDATED de la classe pour l'année
+   *   3. Récupérer TOUTES les notes (grades) en 1 seule requête
+   *   4. Grouper par élève × matière → moyenne par matière
+   *   5. Moyenne générale annuelle = Σ(moy_matière × coef) / Σ(coef)
+   *   6. Décision :
+   *        avg ≥ 10 → PASSE
+   *        9 ≤ avg < 10 → RACHAT
+   *        avg < 9 ou pas de note → REDOUBLE
+   *
+   * Response : Array de {
+   *   id, matricule, name, gender, generalAverage, decision, rachatable
+   * }
+   */
+  @Get('class/:classId')
+  async getClassPromotionData(
+    @TenantId() tenantId: string,
+    @Param('classId') classId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!classId || !academicYearId || !tenantId) {
+      return [];
+    }
+
+    // 1. Récupérer TOUS les élèves inscrits dans la classe pour cette année
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: { classId, academicYearId, status: 'ACTIVE' },
+      select: { studentId: true },
+    }).catch(() => []);
+    const studentIds = enrollments.map(e => e.studentId);
+    if (studentIds.length === 0) return [];
+
+    // Récupérer les infos des élèves (nom, matricule, gender) en 1 requête
+    const students = await this.prisma.student.findMany({
+      where: { id: { in: studentIds } },
+      select: { id: true, firstName: true, lastName: true, matricule: true, gender: true },
+    }).catch(() => []);
+
+    const studentMap = new Map<string, { id: string; matricule: string; name: string; gender?: string; subjects: Map<string, { sum: number; count: number; coef: number }> }>();
+    for (const s of students) {
+      const name = `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Inconnu';
+      studentMap.set(s.id, {
+        id: s.id,
+        matricule: s.matricule || '',
+        name,
+        gender: s.gender || undefined,
+        subjects: new Map<string, { sum: number; count: number; coef: number }>(),
+      });
+    }
+
+    // 2. Récupérer TOUTES les évaluations VALIDATED de la classe pour l'année
+    const evaluations = await this.prisma.evaluation.findMany({
+      where: { tenantId, academicYearId, classId, status: 'VALIDATED' },
+      select: { id: true, subjectId: true, coefficient: true },
+    }).catch(() => []);
+
+    if (evaluations.length === 0) {
+      // Pas d'évaluations validées → tous les élèves sont REDOUBLE
+      const result = Array.from(studentMap.values()).map(st => ({
+        id: st.id,
+        matricule: st.matricule,
+        name: st.name,
+        gender: st.gender,
+        generalAverage: null,
+        decision: 'REDOUBLE' as const,
+        rachatable: false,
+      }));
+      result.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+      return result;
+    }
+
+    const evalIds = evaluations.map(e => e.id);
+    // Map evalId → { subjectId, coef }
+    const evalInfoMap = new Map(evaluations.map(e => [e.id, { subjectId: e.subjectId, coef: Number(e.coefficient) || 1 }]));
+
+    // 3. Récupérer TOUTES les notes en 1 seule requête
+    const grades = await this.prisma.grade.findMany({
+      where: { evaluationId: { in: evalIds }, studentId: { in: studentIds } },
+      select: { studentId: true, evaluationId: true, score: true, isAbsent: true },
+    }).catch(() => []);
+
+    // 4. Grouper par élève × matière → moyenne par matière
+    for (const g of grades) {
+      if (g.isAbsent || g.score === null) continue;
+      const evalInfo = evalInfoMap.get(g.evaluationId);
+      if (!evalInfo) continue;
+      const st = studentMap.get(g.studentId);
+      if (!st) continue;
+      const subj = st.subjects.get(evalInfo.subjectId) || { sum: 0, count: 0, coef: evalInfo.coef };
+      subj.sum += Number(g.score);
+      subj.count += 1;
+      st.subjects.set(evalInfo.subjectId, subj);
+    }
+
+    // 5. Calculer la moyenne générale annuelle par élève
+    //    Moyenne annuelle = Σ(moy_matière × coef) / Σ(coef)
+    //    Si l'élève n'a aucune note → avg = null → REDOUBLE
+    const PASS_THRESHOLD = 10;
+    const RACHAT_THRESHOLD = 9;
+
+    const result = Array.from(studentMap.values()).map(st => {
+      let total = 0;
+      let totalCoef = 0;
+      for (const [subjectId, subj] of st.subjects) {
+        if (subj.count === 0) continue;
+        const moyMatiere = subj.sum / subj.count;
+        total += moyMatiere * subj.coef;
+        totalCoef += subj.coef;
+      }
+      const avg = totalCoef > 0 ? total / totalCoef : null;
+
+      let decision: 'PASSE' | 'REDOUBLE' | 'RACHAT' = 'REDOUBLE';
+      let rachatable = false;
+      if (avg !== null) {
+        if (avg >= PASS_THRESHOLD) {
+          decision = 'PASSE';
+        } else if (avg >= RACHAT_THRESHOLD) {
+          decision = 'RACHAT';
+          rachatable = true;
+        }
+      }
+      // avg === null (no notes) → stays REDOUBLE (default)
+
+      return {
+        id: st.id,
+        matricule: st.matricule,
+        name: st.name,
+        gender: st.gender,
+        generalAverage: avg,
+        decision,
+        rachatable,
+        rachatApplied: false,
+      };
+    });
+
+    // Sort by name
+    result.sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+    return result;
+  }
 
   @Post('apply')
   async applyPromotion(

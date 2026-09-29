@@ -10798,6 +10798,9 @@ model ExamResult {
   maxScore       Float               @default(20.0)
   coefficient    Float               @default(1.0)
   weightedScore  Float
+  /// ⭐ Module Notes et Moyennes (2026-09-29) — candidat absent à l'épreuve :
+  /// la ligne existe (score 0) mais est EXCLUE des totaux et moyennes.
+  isAbsent       Boolean             @default(false)
   grade          String?
   rank           Int?
   status         String              @default("DRAFT")

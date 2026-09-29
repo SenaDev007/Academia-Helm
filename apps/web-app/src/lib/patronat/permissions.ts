@@ -127,6 +127,10 @@ const ROUTE_PERMISSIONS: RouteRoles = {
   '/exams': ['COORDONNATEUR', 'ORGANISATEUR'],
   '/centers': ['COORDONNATEUR', 'ORGANISATEUR'],
   '/candidates': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR', 'CHARGE_MISSION', 'OPERATOR'],
+  // ⭐ Notes et Moyennes (2026-09-29) — même chaîne que la délibération :
+  //    saisie des notes (grille CEP primaire / BEPC-BAC-CAP coefficients),
+  //    registre et relevés
+  '/grades': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR'],
   '/deliberations': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR'],
   '/documents': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR', 'CHARGE_MISSION', 'OPERATOR'],
   '/question-bank': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR'],

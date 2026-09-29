@@ -98,6 +98,11 @@ const federisNavItems = [
       //    juste après « Candidats » (le module ne contient plus que les épreuves ;
       //    le catalogue vit désormais dans la Banque d'épreuves)
       { name: 'Épreuves et documents', subPath: '/documents', icon: 'document' as const },
+      // ⭐ 2026-09-29 — module « Notes et Moyennes » (avant la délibération) :
+      //    saisie des notes (primaire CEP / secondaire avec coefficients),
+      //    registre des notes et relevés de notes — reproduit le module
+      //    Examen d'Academia Helm
+      { name: 'Notes et moyennes', subPath: '/grades', icon: 'grades' as const },
       { name: 'Délibérations', subPath: '/deliberations', icon: 'document' as const },
     ]
   },

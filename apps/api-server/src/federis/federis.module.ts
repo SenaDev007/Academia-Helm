@@ -55,6 +55,12 @@ import { FederisEpreuveController } from './federis-epreuve.controller';
 import { FederisSupervisorsService } from './federis-supervisors.service';
 import { FederisSupervisorsController } from './federis-supervisors.controller';
 import { FederisSchoolSupervisorsController } from './federis-school-supervisors.controller';
+// ⭐ Module « Notes et Moyennes » (2026-09-29) — reproduction du module
+//    Examen d'Academia Helm pour les examens nationaux : saisie des notes
+//    (grille primaire CEP / secondaire avec coefficients BEPC-BAC-CAP),
+//    registre des notes et relevés de notes (PDF backend A4 paysage)
+import { FederisGradesService } from './federis-grades.service';
+import { FederisGradesController } from './federis-grades.controller';
 
 @Module({
   imports: [BillingModule, CommunicationModule],
@@ -73,6 +79,7 @@ import { FederisSchoolSupervisorsController } from './federis-school-supervisors
     FederisEpreuveController,
     FederisSupervisorsController,
     FederisSchoolSupervisorsController,
+    FederisGradesController,
   ],
   providers: [
     FederisService,
@@ -98,6 +105,7 @@ import { FederisSchoolSupervisorsController } from './federis-school-supervisors
     FederisPdfService,
     FederisEpreuveService,
     FederisSupervisorsService,
+    FederisGradesService,
   ],
   exports: [
     FederisService,
@@ -113,6 +121,7 @@ import { FederisSchoolSupervisorsController } from './federis-school-supervisors
     FederisDeliberationService,
     FederisSchoolExamsService,
     FederisCandidatesExportService,
+    FederisGradesService,
   ],
 })
 export class FederisModule {}

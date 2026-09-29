@@ -93,4 +93,53 @@ export class FederisPdfController {
     });
     return new StreamableFile(buffer);
   }
+
+  // ── Relevés de notes (module « Notes et Moyennes » — 2026-09-29) ─────────
+  //    Modèle PRIMAIRE (sans coefficients) pour le CEP, modèle SECONDAIRE
+  //    (avec coefficients) pour le BEPC / BAC / CAP — A4 paysage, rendu
+  //    100 % backend (pattern bulletins Helm).
+
+  /** Relevé de notes d'UN candidat. */
+  @UseGuards(JwtAuthGuard)
+  @Get('exams/:examId/pdf/releve/:candidateId')
+  async downloadReleve(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Param('candidateId') candidateId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, filename } = await this.pdfService.generateRelevePdf(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+      candidateId,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    return new StreamableFile(buffer);
+  }
+
+  /** Relevés de notes de TOUS les candidats (un relevé par page). */
+  @UseGuards(JwtAuthGuard)
+  @Get('exams/:examId/pdf/releves')
+  async downloadAllReleves(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, filename } = await this.pdfService.generateRelevePdf(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    return new StreamableFile(buffer);
+  }
 }

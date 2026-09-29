@@ -33,6 +33,9 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
 import { FederisPatronatService } from './federis-patronat.service';
+// ⭐ Module « Notes et Moyennes » — données des relevés (moyennes, rangs,
+//    coefficients : calculs partagés avec la grille et le registre)
+import { FederisGradesService } from './federis-grades.service';
 import {
   ALL_PATRONAT_FUNCTIONS,
   normalizePatronatFunction,
@@ -122,6 +125,7 @@ export class FederisPdfService {
     private readonly prisma: PrismaService,
     private readonly puppeteerPool: PuppeteerPoolService,
     private readonly patronatService: FederisPatronatService,
+    private readonly gradesService: FederisGradesService,
   ) {}
 
   // ── Contexte & permissions (même structure que les autres services federis) ──
@@ -707,11 +711,16 @@ export class FederisPdfService {
   // 3. RENDU PDF (pattern Helm — PuppeteerPool + retry)
   // ══════════════════════════════════════════════════════════════════════
 
-  private async renderPdf(html: string): Promise<Buffer> {
+  private async renderPdf(html: string, opts?: { landscape?: boolean }): Promise<Buffer> {
+    // ⭐ landscape : relevés de notes (module Notes et Moyennes) — même format
+    //    A4 PAYSAGE que les bulletins Helm (bulletin-pdf.service.ts).
     const pdfOptions = {
       format: 'A4' as const,
+      landscape: opts?.landscape === true,
       printBackground: true,
-      margin: { top: '14mm', bottom: '14mm', left: '12mm', right: '12mm' },
+      margin: opts?.landscape
+        ? { top: '10mm', bottom: '10mm', left: '10mm', right: '10mm' }
+        : { top: '14mm', bottom: '14mm', left: '12mm', right: '12mm' },
     };
 
     const setContent = async (page: any) => {
@@ -1110,6 +1119,397 @@ ${sectionsHtml}
   <div class="footnote">
     Palmarès officiel généré par Academia Federis le ${esc(d.generatedAt.toLocaleDateString('fr-FR'))} — toute réclamation se fait auprès du patronat organisateur dans les délais réglementaires.
   </div>
+</body>
+</html>`;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 5. RELEVÉS DE NOTES (module « Notes et Moyennes » — 2026-09-29)
+  //    « Bulletin » dans Academia Helm → « Relevé de notes » dans Federis :
+  //      · CEP          → modèle du PRIMAIRE (sans coefficients) ;
+  //      · BEPC/BAC/CAP → modèle du SECONDAIRE avec coefficients
+  //        (note coefficient = note × coefficient, moyenne pondérée).
+  //    Rendu A4 PAYSAGE (même format que bulletin-pdf.service.ts Helm).
+  // ══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Génère le relevé de notes d'UN candidat (candidateId) ou de TOUS les
+   * candidats de l'examen (un relevé par page). Les calculs (moyennes, rangs,
+   * coefficients, mentions) sont partagés avec la grille et le registre via
+   * FederisGradesService.getReleves — aucune duplication de règle métier.
+   */
+  async generateRelevePdf(
+    tenantId: string,
+    userId: string,
+    examId: string,
+    candidateId?: string,
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    const { patronat } = await this.resolveContext(tenantId, userId);
+    const data = await this.gradesService.getReleves(tenantId, userId, examId, candidateId);
+    if (!data.releves || data.releves.length === 0) {
+      throw new BadRequestException(
+        'Aucun relevé à générer — saisissez d\u2019abord les notes (onglet Saisie des notes).',
+      );
+    }
+
+    const isPrimary = data.exam.isPrimary === true;
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+
+    const sections = data.releves
+      .map((releve, idx) =>
+        isPrimary
+          ? this.buildReleveCepSection(releve, idx)
+          : this.buildReleveSecondaireSection(releve, idx),
+      )
+      .join('');
+
+    const html = this.buildRelevesDocumentHtml({
+      patronatName: patronat.name,
+      patronatTerritory: [patronat.territoryName, patronat.country?.name]
+        .filter(Boolean)
+        .join(' — '),
+      examName: exam.name,
+      examCode: exam.code,
+      examType: exam.examType,
+      level: exam.level,
+      academicYear: data.academicYearLabel ?? '',
+      isPrimary,
+      sections,
+      count: data.releves.length,
+      generatedAt: new Date(),
+    });
+
+    const buffer = await this.renderPdf(html, { landscape: true });
+    const dateTag = new Date().toISOString().split('T')[0];
+    const filename = candidateId
+      ? `Releve_Notes_${exam.code}_${data.releves[0].candidate.matricule}_${dateTag}.pdf`
+      : `Releves_Notes_${exam.code}_${dateTag}.pdf`;
+
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_RELEVES_PDF',
+          resource: 'NationalExam',
+          resourceId: exam.id,
+          tableName: 'exam_results',
+          recordId: exam.id,
+          newData: {
+            examCode: exam.code,
+            model: isPrimary ? 'PRIMAIRE (CEP)' : 'SECONDAIRE (coefficients)',
+            releves: data.releves.length,
+            single: Boolean(candidateId),
+          },
+        },
+      })
+      .catch(() => undefined);
+
+    return { buffer, filename };
+  }
+
+  /** Note formatée : 15 → « 15 », 12.5 → « 12.50 », null → « — ». */
+  private fmtNote(n: number | null | undefined): string {
+    if (n === null || n === undefined || !Number.isFinite(n)) return '—';
+    return Number.isInteger(n) ? String(n) : n.toFixed(2);
+  }
+
+  /** Visuel ABS (rouge) pour une absence. */
+  private absOr(value: string, isAbsent: boolean): string {
+    return isAbsent ? '<span class="abs">ABS</span>' : value;
+  }
+
+  /** Section RELEVÉ — modèle PRIMAIRE (CEP, sans coefficients). */
+  private buildReleveCepSection(releve: any, idx: number): string {
+    const c = releve.candidate;
+    const comp = releve.computed ?? {};
+    const rows = (releve.lines ?? [])
+      .map((line: any) => {
+        const seuil = line.maxScore && line.maxScore !== 20 ? line.maxScore / 2 : 10;
+        const reached = line.score !== null && line.score >= seuil;
+        return `
+        <tr>
+          <td class="discipline">${esc(line.name)}</td>
+          <td class="c">${esc(seuil)}</td>
+          <td class="c note ${line.score !== null && line.score >= seuil ? 'ok' : 'ko'}">${this.absOr(this.fmtNote(line.score), line.isAbsent)}</td>
+          <td class="c">${line.isAbsent ? '' : reached ? '✓' : ''}</td>
+          <td class="c">${line.isAbsent ? '' : !reached && line.score !== null ? '✓' : ''}</td>
+          <td class="c appr">${esc(line.appreciation ?? '—')}</td>
+        </tr>`;
+      })
+      .join('');
+
+    const moyenne = comp.finalAverage ?? null;
+    const seuilAtteint = moyenne !== null && moyenne >= 10;
+    const decision = releve.decision ?? '—';
+
+    return `
+    <section class="sheet ${idx > 0 ? 'page-break' : ''}">
+      <div class="releve-title">I — Connaissance et Habiletés — Relevé de notes du ${esc(c.firstName)} ${esc(c.lastName.toUpperCase())}</div>
+      <table class="student-info">
+        <tr>
+          <td><span class="lbl">Nom et prénoms</span><strong>${esc(c.lastName.toUpperCase())} ${esc(c.firstName)}</strong></td>
+          <td><span class="lbl">Matricule</span><strong>${esc(c.matricule)}</strong></td>
+          <td><span class="lbl">Anonymat</span><strong>${esc(c.anonymatCode ?? '—')}</strong></td>
+          <td><span class="lbl">N° de table</span><strong>${esc(c.tableNumber ?? '—')}</strong></td>
+        </tr>
+        <tr>
+          <td><span class="lbl">École de provenance</span><strong>${esc(c.school)}</strong></td>
+          <td><span class="lbl">Centre d'examen</span><strong>${esc(c.centerName ?? '—')}</strong></td>
+          <td><span class="lbl">Rang</span><strong>${esc(releve.rank ? `${releve.rank}e / ${releve.totalCandidates}` : '—')}</strong></td>
+          <td><span class="lbl">Matières évaluées</span><strong>${esc(comp.nbEval ?? 0)}</strong></td>
+        </tr>
+      </table>
+
+      <table class="grid primary">
+        <thead>
+          <tr class="navy">
+            <th rowSpan="2" class="discipline">Champs de formation</th>
+            <th rowSpan="2" class="c narrow">Note min.</th>
+            <th rowSpan="2" class="c note-col">Note /20</th>
+            <th colSpan="2" class="c">Maîtrise min.</th>
+            <th colSpan="2" class="c">Seuil réussite</th>
+            <th rowSpan="2" class="c appr-col">Appréciation</th>
+          </tr>
+          <tr class="navy-sub">
+            <th class="c tiny">Oui</th><th class="c tiny">Non</th>
+            <th class="c tiny">Oui</th><th class="c tiny">Non</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+          <tr class="total-row">
+            <td colspan="2" class="right">TOTAL GÉNÉRAL</td>
+            <td class="c">${esc(this.fmtNote(comp.total ?? null))}</td>
+            <td colspan="2"></td><td colspan="2"></td>
+            <td class="c">${esc(releve.mention ?? '—')}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="synthese">
+        <div class="line"><span>Moyenne obtenue par le candidat :</span><strong>${esc(this.fmtNote(moyenne))}/20</strong></div>
+        <div class="line"><span>Plus forte moyenne de l'examen :</span><strong>${esc(this.fmtNote(releve.bestAverage ?? null))}/20</strong></div>
+        <div class="line"><span>Plus faible moyenne de l'examen :</span><strong>${esc(this.fmtNote(releve.worstAverage ?? null))}/20</strong></div>
+        <div class="line"><span>Seuil de réussite globale fixé à :</span><strong>10/20</strong></div>
+        <div class="line strong"><span>Seuil de réussite globale atteint :</span><span class="${seuilAtteint ? 'ok-text' : 'ko-text'}">${seuilAtteint ? 'OUI' : 'NON'}</span></div>
+        <div class="line decision ${seuilAtteint ? 'ok-bg' : 'ko-bg'}"><span>Décision provisoire (jury de délibération) :</span><strong>${esc(decision)}</strong></div>
+      </div>
+    </section>`;
+  }
+
+  /** Section RELEVÉ — modèle SECONDAIRE avec coefficients (BEPC / BAC / CAP). */
+  private buildReleveSecondaireSection(releve: any, idx: number): string {
+    const c = releve.candidate;
+    const comp = releve.computed ?? {};
+    const rows = (releve.lines ?? [])
+      .map((line: any) => {
+        const ok = line.score !== null && line.score >= 10;
+        return `
+        <tr>
+          <td class="discipline">${esc(line.name)}</td>
+          <td class="c note ${ok ? 'ok' : 'ko'}">${this.absOr(this.fmtNote(line.score), line.isAbsent)}</td>
+          <td class="c coef">${esc(line.coefficient)}</td>
+          <td class="c notecoef ${ok ? 'ok' : 'ko'}">${this.absOr(this.fmtNote(line.noteCoef), line.isAbsent)}</td>
+          <td class="c">${esc(line.rankInSubject ? `${line.rankInSubject}e` : '—')}</td>
+          <td class="c appr">${esc(line.appreciation ?? '—')}</td>
+          <td class="sign"></td>
+        </tr>`;
+      })
+      .join('');
+
+    const moyenne = comp.finalAverage ?? null;
+    const ok = moyenne !== null && moyenne >= 10;
+
+    return `
+    <section class="sheet ${idx > 0 ? 'page-break' : ''}">
+      <table class="student-info">
+        <tr>
+          <td><span class="lbl">Année scolaire</span><strong>${esc(releve.academicYearLabel ?? '')}</strong></td>
+          <td><span class="lbl">Examen</span><strong>${esc(releve.examName ?? '')}</strong></td>
+          <td><span class="lbl">Session / Niveau</span><strong>${esc(releve.examCode ?? '')} · ${esc(releve.level ?? '')}</strong></td>
+        </tr>
+        <tr>
+          <td><span class="lbl">Nom et prénoms</span><strong>${esc(c.lastName.toUpperCase())} ${esc(c.firstName)}</strong></td>
+          <td><span class="lbl">Matricule · Anonymat · N° table</span><strong>${esc(c.matricule)} · ${esc(c.anonymatCode ?? '—')} · ${esc(c.tableNumber ?? '—')}</strong></td>
+          <td><span class="lbl">Rang</span><strong>${esc(releve.rank ? `${releve.rank}e / ${releve.totalCandidates}` : '—')}</strong></td>
+        </tr>
+        <tr>
+          <td><span class="lbl">École de provenance</span><strong>${esc(c.school)}</strong></td>
+          <td><span class="lbl">Centre d'examen · Salle</span><strong>${esc(c.centerName ?? '—')} · ${esc(c.roomCode ?? '—')}</strong></td>
+          <td><span class="lbl">Effectif</span><strong>${esc(releve.totalCandidates)}</strong></td>
+        </tr>
+      </table>
+
+      <table class="grid secondary">
+        <thead>
+          <tr class="navy">
+            <th class="discipline">Discipline</th>
+            <th class="c note-col">Note /20</th>
+            <th class="c narrow">Coefficient</th>
+            <th class="c notecoef-col">Note coefficient</th>
+            <th class="c narrow">Rang</th>
+            <th class="c appr-col">Appréciation</th>
+            <th class="c sign-col">Signature</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+          <tr class="total-row">
+            <td colspan="3" class="right">TOTAL DES COEFFICIENTS</td>
+            <td class="c coef">${esc(this.fmtNote(comp.totalCoef ?? null))}</td>
+            <td colspan="3"></td>
+          </tr>
+          <tr class="total-row">
+            <td colspan="3" class="right">TOTAL DES NOTES (Σ note × coef)</td>
+            <td class="c ok-text">${esc(this.fmtNote(comp.totalNotesCoef ?? null))}</td>
+            <td colspan="3"></td>
+          </tr>
+          <tr class="average-row">
+            <td colspan="3" class="right">MOYENNE DE L'EXAMEN</td>
+            <td class="c ${ok ? 'ok-text' : 'ko-text'}"><strong>${esc(this.fmtNote(moyenne))}</strong></td>
+            <td colspan="2" class="c">Mention : <strong>${esc(releve.mention ?? '—')}</strong></td>
+            <td class="c decision ${ok ? 'ok-bg' : 'ko-bg'}">${esc(releve.decision ?? '—')}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="model-note">Note coefficient = Note × Coefficient · Moyenne de l'examen = Σ(Note × Coefficient) / Σ(Coefficients) · Les notes ABS sont exclues des calculs · ${esc(releve.decisionNote ?? '')}</p>
+    </section>`;
+  }
+
+  /** Document complet des relevés (CSS officiel — palette bulletins Helm). */
+  private buildRelevesDocumentHtml(d: {
+    patronatName: string;
+    patronatTerritory: string;
+    examName: string;
+    examCode: string;
+    examType: string;
+    level: string;
+    academicYear: string;
+    isPrimary: boolean;
+    sections: string;
+    count: number;
+    generatedAt: Date;
+  }): string {
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1f2937; font-size: 10px; }
+  .page-break { page-break-before: always; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+
+  .sheet { padding: 2px 0 10px 0; }
+
+  /* ── En-tête document (pattern Federis) ── */
+  .doc-header { display: flex; align-items: stretch; border: 2px solid #0b2f73; border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
+  .org { flex: 1; padding: 7px 10px; background: #f0f4fa; border-right: 1px solid #0b2f73; }
+  .org-name { font-size: 12px; font-weight: 800; color: #0b2f73; text-transform: uppercase; line-height: 1.25; }
+  .org-sub { font-size: 8px; color: #475569; margin-top: 2px; }
+  .doc-title { flex: 1.1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 7px; text-align: center; background: #0b2f73; color: #fff; }
+  .doc-kind { font-size: 14px; font-weight: 900; letter-spacing: 1px; }
+  .doc-subtitle { font-size: 8px; margin-top: 3px; color: #fde68a; }
+  .exam-box { flex: 1; padding: 7px 10px; display: flex; flex-direction: column; justify-content: center; border-left: 1px solid #0b2f73; background: #f0f4fa; }
+  .exam-name { font-size: 10.5px; font-weight: 700; color: #0b2f73; line-height: 1.2; }
+  .exam-meta { font-size: 8px; color: #475569; margin-top: 3px; }
+  .exam-meta strong { color: #0b2f73; }
+
+  .releve-title { text-align: center; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #1f2937; margin: 6px 0; }
+
+  /* ── Bloc infos candidat (modèle secondaire Helm) ── */
+  .student-info { width: 100%; border-collapse: collapse; margin-bottom: 7px; }
+  .student-info td { border: 1px solid #cbd5e1; padding: 4px 8px; background: #f8fafc; font-size: 9px; width: 33.33%; }
+  .student-info .lbl { display: block; font-size: 7px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; font-weight: 700; margin-bottom: 1px; }
+  .student-info strong { color: #0f172a; }
+
+  /* ── Tableau des notes (palette navy bulletins Helm) ── */
+  .grid { width: 100%; border-collapse: collapse; border: 2px solid #0A2A5E; }
+  .grid th { color: #fff; font-size: 8.5px; padding: 5px 4px; text-transform: uppercase; letter-spacing: 0.4px; border: 1px solid #0D3B85; }
+  .grid .navy { background: #0A2A5E; }
+  .grid .navy-sub { background: #114FC4; }
+  .grid td { border: 1px solid #cbd5e1; padding: 4px 6px; font-size: 9.5px; vertical-align: middle; background: #fff; }
+  .grid tbody tr:nth-child(even) td { background: #f8fafc; }
+  .grid .c { text-align: center; }
+  .grid .discipline { font-weight: 600; text-align: left; }
+  .grid .note { font-weight: 700; }
+  .grid .ok { color: #047857; }
+  .grid .ko { color: #dc2626; }
+  .grid .coef { font-weight: 700; color: #b45309; }
+  .grid .appr { font-size: 8.5px; color: #475569; }
+  .grid .sign { height: 20px; }
+  .grid .narrow { width: 8%; }
+  .grid .note-col { width: 10%; }
+  .grid .notecoef-col { width: 12%; }
+  .grid .appr-col { width: 14%; }
+  .grid .sign-col { width: 12%; }
+  .grid .tiny { width: 4%; font-size: 7.5px; padding: 3px 2px; }
+  .grid .right { text-align: right; text-transform: uppercase; font-size: 8.5px; color: #334155; }
+  .grid .total-row td { background: #e2e8f0 !important; font-weight: 800; }
+  .grid .average-row td { background: #dbeafe !important; font-weight: 700; }
+  .abs { color: #dc2626; font-weight: 800; font-size: 8px; }
+  .ok-text { color: #047857; }
+  .ko-text { color: #dc2626; }
+  .ok-bg { background: #d1fae5 !important; color: #065f46; }
+  .ko-bg { background: #fee2e2 !important; color: #991b1b; }
+  .decision { font-weight: 800; }
+
+  /* ── Synthèse (modèle primaire Helm) ── */
+  .synthese { margin-top: 7px; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; }
+  .synthese .line { display: flex; justify-content: space-between; padding: 4px 10px; font-size: 9.5px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+  .synthese .line strong { color: #0b2f73; }
+  .synthese .line.strong { background: #eff6ff; font-weight: 700; }
+  .synthese .line.decision { font-size: 10.5px; padding: 6px 10px; }
+
+  .model-note { margin-top: 5px; font-size: 7.5px; color: #64748b; font-style: italic; }
+
+  /* ── Signatures ── */
+  .signatures { display: flex; justify-content: space-between; gap: 14px; margin-top: 18px; page-break-inside: avoid; }
+  .sig { flex: 1; text-align: center; }
+  .sig-title { font-size: 9.5px; font-weight: 700; color: #0b2f73; }
+  .sig-sub { font-size: 7.5px; color: #64748b; margin-top: 1px; }
+  .sig-hint { font-size: 7.5px; color: #64748b; margin: 40px 8px 0 8px; border-top: 1px solid #334155; padding-top: 3px; }
+
+  .footnote { margin-top: 12px; font-size: 7.5px; color: #94a3b8; text-align: center; }
+</style>
+</head>
+<body>
+${this.buildDocHeader({
+      patronatName: d.patronatName,
+      patronatTerritory: d.patronatTerritory,
+      examName: d.examName,
+      examCode: d.examCode,
+      examType: d.examType,
+      level: d.level,
+      academicYear: d.academicYear,
+      docTitle: 'RELEVÉ DE NOTES',
+      subtitle: d.isPrimary
+        ? 'Modèle primaire — sans coefficients'
+        : 'Modèle secondaire — avec coefficients',
+    })}
+${d.sections}
+<div class="signatures">
+  <div class="sig">
+    <div class="sig-title">Le/La Coordonnateur(trice)</div>
+    <div class="sig-sub">Du patronat organisateur</div>
+    <div class="sig-hint">Nom, signature et cachet</div>
+  </div>
+  <div class="sig">
+    <div class="sig-title">Le/La Président(e) du Jury</div>
+    <div class="sig-sub">Examen ${esc(d.examCode)}</div>
+    <div class="sig-hint">Nom et signature</div>
+  </div>
+  <div class="sig">
+    <div class="sig-title">Visa de l'Organisation</div>
+    <div class="sig-sub">Cachet du patronat</div>
+    <div class="sig-hint">Cachet</div>
+  </div>
+</div>
+<div class="footnote">
+  Relevé${d.count > 1 ? 's' : ''} de notes généré${d.count > 1 ? 's' : ''} par Academia Federis le ${esc(d.generatedAt.toLocaleDateString('fr-FR'))} — ${esc(d.count)} relevé${d.count > 1 ? 's' : ''}. Document provisoire soumis à délibération.
+</div>
 </body>
 </html>`;
   }

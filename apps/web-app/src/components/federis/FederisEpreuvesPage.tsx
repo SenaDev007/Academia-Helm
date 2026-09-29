@@ -1183,8 +1183,6 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
           </div>
         </div>
       )}
-
-      )}
     </FedPage>
   );
 }

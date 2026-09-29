@@ -53,7 +53,7 @@ const pedagogicalSortIndex = (name: string): number => {
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────
-interface SubjectInfo { id: string; name: string; coefficient?: number; }
+interface SubjectInfo { id: string; name: string; code?: string; abbreviation?: string; coefficient?: number; }
 interface StudentRow {
   id: string;
   matricule: string;
@@ -85,6 +85,7 @@ export default function ProcVerbalWorkspace() {
   const [pvMode, setPvMode] = useState<PVMode>('evaluation');
   const [sortMode, setSortMode] = useState<SortMode>('merite');
   const [classes, setClasses] = useState<any[]>([]);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
   const [periods, setPeriods] = useState<any[]>([]);
   const [evalTypes, setEvalTypes] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
@@ -142,15 +143,29 @@ export default function ProcVerbalWorkspace() {
     (async () => {
       try {
         const types = await institutionalExamsService.getEvaluationTypes(schoolLevelUuid);
-        setEvalTypes(Array.isArray(types) ? types : []);
+        const list = Array.isArray(types) ? types : [];
+        setEvalTypes(list);
+        // ⭐ FIX 2026-09-29 — première évaluation sélectionnée par défaut
+        // (exigence promoteur : « lorsque la classe est sélectionnée, le trimestre
+        // est sélectionné, par défaut la première évaluation soit sélectionnée par
+        // défaut pour n'importe quel niveau scolaire »).
+        if (list.length > 0 && !selectedEvalTypeId) setSelectedEvalTypeId(list[0].id);
       } catch { setEvalTypes([]); }
     })();
-  }, [schoolLevelUuid]);
+  }, [schoolLevelUuid, selectedEvalTypeId]);
 
   // ── Load PV data ──
+  //    ⭐ FIX 2026-09-29 — PV annuel ≠ PV trimestriel :
+  //    Avant : tous les modes filtraient par `period?.id === selectedPeriodId`,
+  //    donc PV annuel == PV trimestriel (bug). Désormais :
+  //      • « evaluation »  → filtre par period + eval type (1 évaluation)
+  //      • « trimestriel » → filtre par period uniquement (toutes eval types)
+  //      • « annuel »       → AUCUN filtre période (regroupe les 3 trimestres,
+  //                         notes annuelles consolidées)
   const loadPV = useCallback(async () => {
     if (!selectedClassId || !academicYear?.id) return;
     if (pvMode === 'evaluation' && !selectedEvalTypeId) return;
+    if (pvMode !== 'annuel' && !selectedPeriodId) return;
     setLoading(true);
     try {
       // Fetch validated evaluations
@@ -161,12 +176,17 @@ export default function ProcVerbalWorkspace() {
       });
       const allEvals = Array.isArray(evaluations) ? evaluations : [];
 
-      // Filter by period + eval type
-      let filtered = allEvals.filter((ev: any) => ev.period?.id === selectedPeriodId);
-      if (pvMode === 'evaluation') {
-        filtered = filtered.filter((ev: any) => ev.evaluationType?.id === selectedEvalTypeId);
-      } else if (pvMode === 'trimestriel') {
-        // All eval types for this period (consolidated)
+      // Filter by period + eval type selon le mode
+      let filtered = allEvals;
+      if (pvMode === 'annuel') {
+        // Toutes les évaluations de l'année (3 trimestres regroupés)
+        // → pas de filtre period
+      } else {
+        filtered = allEvals.filter((ev: any) => ev.period?.id === selectedPeriodId);
+        if (pvMode === 'evaluation') {
+          filtered = filtered.filter((ev: any) => ev.evaluationType?.id === selectedEvalTypeId);
+        }
+        // trimestriel → on garde tous les eval types du trimestre
       }
 
       // Filter by language
@@ -185,6 +205,8 @@ export default function ProcVerbalWorkspace() {
           subjList.push({
             id: ev.subject.id,
             name: ev.subject.name,
+            code: ev.subject.code,
+            abbreviation: ev.subject.abbreviation,
             coefficient: typeof ev.subject.coefficient === 'number' ? ev.subject.coefficient : 1,
           });
           seenIds.add(ev.subject.id);
@@ -198,11 +220,17 @@ export default function ProcVerbalWorkspace() {
         .catch(() => ({}));
 
       // Build student rows
+      //    ⭐ FIX 2026-09-29 — accumulation correcte pour trimestriel/annuel :
+      //    Avant : `(existing + score) / 2` ne marche que pour 2 notes exactement
+      //    → pour annuel (3 trimestres × N evals) la moyenne était fausse.
+      //    Désormais on accumule sum + count et on calcule la moyenne à la fin.
       const studentMap = new Map<string, StudentRow>();
+      // Pour trimestriel/annuel : accumulator parallèle (sum, count) par subjectId
+      const accumMap = new Map<string, Record<string, { sum: number; count: number }>>();
+
       for (const ev of langFiltered) {
         const grades = sheetsMap[ev.id] || [];
         const subjectId = ev.subject?.id;
-        const evalCode = ev.evaluationType?.code;
         if (!subjectId) continue;
 
         for (const grade of grades) {
@@ -218,21 +246,34 @@ export default function ProcVerbalWorkspace() {
               moyenne: null,
               rang: 0,
             });
+            accumMap.set(grade.studentId, {});
           }
           const st = studentMap.get(grade.studentId)!;
+          const acc = accumMap.get(grade.studentId)!;
           const score = grade.isAbsent ? null : (grade.score !== null ? Number(grade.score) : null);
-          // For trimestriel/annuel, we might need to average multiple evals per subject
+
           if (pvMode === 'evaluation') {
+            // 1 seule évaluation → on prend la note telle quelle
             st.subjectScores[subjectId] = score;
           } else {
-            // Accumulate scores for averaging
-            const existing = st.subjectScores[subjectId];
-            if (existing === undefined || existing === null) {
-              st.subjectScores[subjectId] = score;
-            } else if (score !== null) {
-              // Simple average of multiple eval scores
-              st.subjectScores[subjectId] = ((existing || 0) + score) / 2;
+            // trimestriel / annuel → accumulation sum/count
+            if (score !== null) {
+              if (!acc[subjectId]) acc[subjectId] = { sum: 0, count: 0 };
+              acc[subjectId].sum += score;
+              acc[subjectId].count += 1;
+            } else if (!acc[subjectId]) {
+              acc[subjectId] = { sum: 0, count: 0 };
             }
+          }
+        }
+      }
+
+      // Pour trimestriel/annuel : finalize la moyenne par matière (sum / count)
+      if (pvMode !== 'evaluation') {
+        for (const [studentId, acc] of accumMap.entries()) {
+          const st = studentMap.get(studentId)!;
+          for (const [subjectId, { sum, count }] of Object.entries(acc)) {
+            st.subjectScores[subjectId] = count > 0 ? sum / count : null;
           }
         }
       }
@@ -293,6 +334,76 @@ export default function ProcVerbalWorkspace() {
   const selectedClassName = classes.find(c => c.id === selectedClassId)?.name || '';
   const selectedPeriodName = periods.find(p => p.id === selectedPeriodId)?.name || '';
   const selectedEvalTypeName = evalTypes.find(t => t.id === selectedEvalTypeId)?.name || '';
+  // ⭐ En mode annuel : on affiche « Année scolaire » au lieu du trimestre
+  const periodLabel = pvMode === 'annuel' ? (academicYear?.label || 'Année scolaire') : selectedPeriodName;
+
+  // ── Generate PDF (calls backend /institutional-exams/pv-stats-promotion/proces-verbal) ──
+  //    A4 paysage + en-tête officiel + tableau principal + 3 premiers/derniers + pied de page.
+  const handleGeneratePdf = async () => {
+    if (!selectedClassId || students.length === 0) {
+      alert('Veuillez sélectionner une classe et avoir des données à exporter.');
+      return;
+    }
+    setGeneratingPdf(true);
+    try {
+      const payload = {
+        academicYearName: academicYear?.label || '',
+        periodName: periodLabel,
+        evalTypeName: pvMode === 'evaluation' ? selectedEvalTypeName : undefined,
+        className: selectedClassName,
+        pvMode,
+        sortMode,
+        subjects: subjects.map(s => ({
+          id: s.id,
+          name: s.name,
+          abbreviation: (s as any).abbreviation || null,
+          code: (s as any).code || null,
+          coefficient: s.coefficient ?? 1,
+        })),
+        students: students.map(st => ({
+          id: st.id,
+          matricule: st.matricule,
+          name: st.name,
+          gender: st.gender,
+          subjectScores: st.subjectScores,
+          total: st.total,
+          totalCoef: st.totalCoef,
+          moyenne: st.moyenne,
+          rang: st.rang,
+        })),
+        top3,
+        bottom3,
+        scopeLang: scopeLang || 'FR',
+      };
+
+      const res = await fetch('/api/institutional-exams/pv-stats-promotion/proces-verbal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const safeClass = selectedClassName.replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+      const safePeriod = periodLabel.replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+      const prefix = pvMode === 'annuel' ? 'pv_annuel' : pvMode === 'trimestriel' ? 'pv_trimestriel' : 'pv_evaluation';
+      link.download = `${prefix}_${safeClass}_${safePeriod}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert('Erreur lors de la génération du PDF: ' + err.message);
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
 
   return (
     <ModuleContainer
@@ -339,19 +450,23 @@ export default function ProcVerbalWorkspace() {
                 ))}
               </select>
             </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Période</label>
-              <select
-                value={selectedPeriodId}
-                onChange={e => setSelectedPeriodId(e.target.value)}
-                className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[150px]"
-              >
-                <option value="">— Sélectionner —</option>
-                {periods.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </div>
+            {/* ⭐ FIX 2026-09-29 — sélecteur période masqué en mode annuel
+                (regroupe déjà les 3 trimestres, pas de sens à filtrer) */}
+            {pvMode !== 'annuel' && (
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Période</label>
+                <select
+                  value={selectedPeriodId}
+                  onChange={e => setSelectedPeriodId(e.target.value)}
+                  className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[150px]"
+                >
+                  <option value="">— Sélectionner —</option>
+                  {periods.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             {pvMode === 'evaluation' && (
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Évaluation</label>
@@ -395,7 +510,7 @@ export default function ProcVerbalWorkspace() {
             <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
               <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                 <h3 className="text-sm font-bold text-slate-900">
-                  Procès-verbal — {selectedClassName} — {selectedPeriodName}
+                  Procès-verbal — {selectedClassName} — {periodLabel}
                   {pvMode === 'evaluation' && selectedEvalTypeName ? ` — ${selectedEvalTypeName}` : ''}
                 </h3>
                 <Badge variant="outline" className="text-xs">
@@ -408,12 +523,16 @@ export default function ProcVerbalWorkspace() {
                   <TableRow className="bg-slate-100">
                     <TableHead className="text-xs whitespace-nowrap" rowSpan={2}>Matricule</TableHead>
                     <TableHead className="text-xs whitespace-nowrap" rowSpan={2}>Nom et prénoms</TableHead>
-                    {subjects.map(subj => (
+                    {subjects.map(subj => {
+                      // ⭐ Abréviation (priorité : abbreviation école > code > mapping auto)
+                      const abbr = subj.abbreviation || (subj.code ? (subj.code.match(/^([A-Z]{2,6})/)?.[1] || subj.name) : null) || subj.name;
+                      return (
                       <TableHead key={subj.id} className="text-xs text-center whitespace-nowrap min-w-[60px]">
-                        <div className="font-bold">{subj.name}</div>
+                        <div className="font-bold" title={subj.name}>{abbr}</div>
                         <div className="font-normal text-[9px] text-slate-500">Coef: {subj.coefficient ?? 1}</div>
                       </TableHead>
-                    ))}
+                      );
+                    })}
                     <TableHead className="text-xs text-center whitespace-nowrap" rowSpan={2}>Total</TableHead>
                     <TableHead className="text-xs text-center whitespace-nowrap" rowSpan={2}>Coef</TableHead>
                     <TableHead className="text-xs text-center whitespace-nowrap" rowSpan={2}>Moyenne</TableHead>
@@ -521,14 +640,16 @@ export default function ProcVerbalWorkspace() {
             {/* Bouton génération PDF */}
             <div className="flex justify-end">
               <Button
-                onClick={() => {
-                  // TODO: implement PDF generation
-                  alert('Génération PDF du procès-verbal — à implémenter');
-                }}
+                onClick={handleGeneratePdf}
+                disabled={generatingPdf}
                 className="bg-blue-600 hover:bg-blue-700 text-white"
               >
-                <Download className="w-4 h-4 mr-2" />
-                Générer PDF
+                {generatingPdf ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                {generatingPdf ? 'Génération…' : 'Générer PDF'}
               </Button>
             </div>
           </>

@@ -31,6 +31,9 @@ import { SettingsModule } from '../../settings/settings.module';
 import { PedagogyModule } from '../../pedagogy/pedagogy.module';
 import { FinanceModule } from '../../finance/finance.module';
 import { PromotionController } from './promotion.controller';
+// ⭐ 2026-09-29 — PDF Procès-verbal / Statistiques / Promotion
+import { PvStatsPromotionPdfService } from './services/pv-stats-promotion-pdf.service';
+import { PvStatsPromotionPdfController } from './pv-stats-promotion-pdf.controller';
 
 @Module({
   imports: [DatabaseModule, UsersModule, AuditLogsModule, ExamsGradesModule, CommonModule, CommunicationModule, SettingsModule, PedagogyModule, FinanceModule],
@@ -48,6 +51,7 @@ import { PromotionController } from './promotion.controller';
     ExamsLockController,
     UnlockRequestsController,
     PromotionController,
+    PvStatsPromotionPdfController,
   ],
   providers: [
     ExamsDashboardService,
@@ -59,6 +63,7 @@ import { PromotionController } from './promotion.controller';
     CouncilsService,
     AcademicAuditService,
     BulletinPdfService,
+    PvStatsPromotionPdfService,
   ],
   exports: [
     ExamsDashboardService,
@@ -70,6 +75,7 @@ import { PromotionController } from './promotion.controller';
     CouncilsService,
     AcademicAuditService,
     BulletinPdfService,
+    PvStatsPromotionPdfService,
   ],
 })
 export class InstitutionalExamsModule {}

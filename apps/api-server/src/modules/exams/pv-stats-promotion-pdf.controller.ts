@@ -1,0 +1,144 @@
+/**
+ * ============================================================================
+ * PV / STATS / PROMOTION PDF CONTROLLER
+ * ============================================================================
+ *
+ * Endpoints pour générer les PDF officiels du module Examen :
+ *   - POST /api/institutional-exams/pv-stats-promotion/proces-verbal
+ *   - POST /api/institutional-exams/pv-stats-promotion/statistiques
+ *   - POST /api/institutional-exams/pv-stats-promotion/promotion
+ *
+ * Tous les PDF sont au format A4 PAYSAGE avec en-tête officiel République
+ * du Bénin + drapeau + ministère + école (même charte que les bulletins).
+ *
+ * Le branding (nom école, logo, slogan, téléphone, email) est résolu côté
+ * backend via tenant_identity_profile, comme pour les bulletins.
+ * ============================================================================
+ */
+
+import {
+  Controller, Post, Body, UseGuards, Res, Headers,
+} from '@nestjs/common';
+import { PvStatsPromotionPdfService } from './services/pv-stats-promotion-pdf.service';
+import { PrismaService } from '../../database/prisma.service';
+import { Response } from 'express';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { PermissionsGuard } from '../../auth/guards/permissions.guard';
+import { Permissions } from '../../auth/decorators/permissions.decorator';
+import { TenantId } from '../../common/decorators/tenant-id.decorator';
+import { AcademicYearId } from '../../common/decorators/academic-year-id.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+
+@Controller('institutional-exams/pv-stats-promotion')
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+export class PvStatsPromotionPdfController {
+  constructor(
+    private readonly pdfService: PvStatsPromotionPdfService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  // ─── Helper : branding école (même pattern que bulletins.controller) ─────
+  private async getTenantBranding(tenantId: string) {
+    try {
+      const profile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+        select: { schoolName: true, logoUrl: true, address: true, phonePrimary: true, email: true, slogan: true },
+      });
+      if (profile?.schoolName) {
+        const apiBaseUrl = 'https://api.academiahelm.com';
+        return {
+          schoolName: profile.schoolName,
+          schoolLogo: profile.logoUrl ? `${apiBaseUrl}/api/tenants/${tenantId}/logo` : null,
+          schoolAddress: profile.address,
+          schoolPhone: profile.phonePrimary,
+          schoolEmail: profile.email,
+          schoolSlogan: profile.slogan,
+        };
+      }
+      const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
+      return { schoolName: tenant?.name || 'Établissement' };
+    } catch {
+      return { schoolName: 'Établissement' };
+    }
+  }
+
+  /**
+   * POST /api/institutional-exams/pv-stats-promotion/proces-verbal
+   * Body: ProcVerbalPdfData (sans branding — résolu côté backend)
+   */
+  @Post('proces-verbal')
+  @Permissions('exams.read')
+  async generateProcVerbalPdf(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @Body() body: any,
+    @Res() res: Response,
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
+    const branding = await this.getTenantBranding(resolvedTenantId);
+    const buffer = await this.pdfService.generateProcVerbalPdf({ ...body, branding });
+    const safeClass = (body.className || 'classe').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+    const safePeriod = (body.periodName || 'periode').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+    const modePrefix = body.pvMode === 'annuel' ? 'pv_annuel' : body.pvMode === 'trimestriel' ? 'pv_trimestriel' : 'pv_evaluation';
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${modePrefix}_${safeClass}_${safePeriod}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  /**
+   * POST /api/institutional-exams/pv-stats-promotion/statistiques
+   * Body: StatsPdfData (sans branding — résolu côté backend)
+   */
+  @Post('statistiques')
+  @Permissions('exams.read')
+  async generateStatsPdf(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @Body() body: any,
+    @Res() res: Response,
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
+    const branding = await this.getTenantBranding(resolvedTenantId);
+    const buffer = await this.pdfService.generateStatsPdf({ ...body, branding });
+    const safeClass = (body.className || 'classe').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+    const safeSubtab = body.subTab || 'stats';
+    const modePrefix = body.statMode === 'annuel' ? 'stats_annuel' : body.statMode === 'trimestriel' ? 'stats_trimestriel' : 'stats_evaluation';
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${modePrefix}_${safeSubtab}_${safeClass}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  /**
+   * POST /api/institutional-exams/pv-stats-promotion/promotion
+   * Body: PromotionPdfData (sans branding — résolu côté backend)
+   */
+  @Post('promotion')
+  @Permissions('exams.read')
+  async generatePromotionPdf(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @Body() body: any,
+    @Res() res: Response,
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
+    const branding = await this.getTenantBranding(resolvedTenantId);
+    const buffer = await this.pdfService.generatePromotionPdf({ ...body, branding });
+    const safeClass = (body.className || 'classe').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="promotion_${safeClass}.pdf"`,
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
+  }
+}

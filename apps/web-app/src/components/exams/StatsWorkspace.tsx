@@ -94,6 +94,7 @@ export default function StatsWorkspace() {
   const [selectedEvalTypeId, setSelectedEvalTypeId] = useState<string>('');
   const [topN, setTopN] = useState<number>(3);
   const [loading, setLoading] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   // Data
   const [subjects, setSubjects] = useState<any[]>([]);
@@ -146,15 +147,27 @@ export default function StatsWorkspace() {
     (async () => {
       try {
         const types = await institutionalExamsService.getEvaluationTypes(schoolLevelUuid);
-        setEvalTypes(Array.isArray(types) ? types : []);
+        const list = Array.isArray(types) ? types : [];
+        setEvalTypes(list);
+        // ⭐ FIX 2026-09-29 — première évaluation sélectionnée par défaut
+        // (exigence promoteur : « la première évaluation soit sélectionnée
+        // par défaut pour n'importe quel niveau scolaire »).
+        if (list.length > 0 && !selectedEvalTypeId) setSelectedEvalTypeId(list[0].id);
       } catch { setEvalTypes([]); }
     })();
-  }, [schoolLevelUuid]);
+  }, [schoolLevelUuid, selectedEvalTypeId]);
 
   // ── Load stats data ──
+  //    ⭐ FIX 2026-09-29 — stats annuelles ≠ stats trimestrielles :
+  //    Avant : tous les modes filtraient par `period?.id === selectedPeriodId`,
+  //    donc stats annuelles == stats trimestrielles (bug). Désormais :
+  //      • « evaluation »  → filtre par period + eval type (1 évaluation)
+  //      • « trimestriel » → filtre par period uniquement (toutes eval types)
+  //      • « annuel »       → AUCUN filtre période (regroupe les 3 trimestres)
   const loadStats = useCallback(async () => {
     if (!selectedClassId || !academicYear?.id) return;
     if (statMode === 'evaluation' && !selectedEvalTypeId) return;
+    if (statMode !== 'annuel' && !selectedPeriodId) return;
     setLoading(true);
     try {
       const evaluations = await institutionalExamsService.getEvaluations({
@@ -163,9 +176,14 @@ export default function StatsWorkspace() {
         status: 'VALIDATED',
       });
       let allEvals = Array.isArray(evaluations) ? evaluations : [];
-      let filtered = allEvals.filter((ev: any) => ev.period?.id === selectedPeriodId);
-      if (statMode === 'evaluation') {
-        filtered = filtered.filter((ev: any) => ev.evaluationType?.id === selectedEvalTypeId);
+      let filtered = allEvals;
+      if (statMode === 'annuel') {
+        // Toutes les évaluations de l'année (3 trimestres regroupés)
+      } else {
+        filtered = allEvals.filter((ev: any) => ev.period?.id === selectedPeriodId);
+        if (statMode === 'evaluation') {
+          filtered = filtered.filter((ev: any) => ev.evaluationType?.id === selectedEvalTypeId);
+        }
       }
       const langFiltered = scopeLang
         ? filtered.filter((ev: any) => {
@@ -208,16 +226,57 @@ export default function StatsWorkspace() {
 
   useEffect(() => { loadStats(); }, [loadStats]);
 
-  // ── Compute: Taux de réussite (per subject) ──
+  // ── Compute: Per-student per-subject averages (used for taux de réussite ──
+  //    and intervalle when mode = trimestriel/annuel)
+  //    ⭐ FIX 2026-09-29 — agrège les notes par élève pour ne pas compter
+  //    4 notes du même élève comme 4 élèves distincts.
+  //    En mode « evaluation » : 1 note par élève → pas d'agrégation nécessaire.
+  //    En mode « trimestriel »/« annuel » : N notes par élève → on prend la
+  //    moyenne arithmétique des notes (somme / nombre de notes non absentes).
+  const subjectStudentAverages = useMemo(() => {
+    const map: Record<string, Array<{ studentId: string; matricule: string; name: string; gender?: string; average: number }>> = {};
+    for (const subj of subjects) {
+      const grades = gradeData[subj.id] || [];
+      const byStudent = new Map<string, { studentId: string; matricule: string; name: string; gender?: string; sum: number; count: number }>();
+      for (const g of grades) {
+        if (g.isAbsent || typeof g.score !== 'number') continue;
+        if (!byStudent.has(g.studentId)) {
+          byStudent.set(g.studentId, {
+            studentId: g.studentId,
+            matricule: g.matricule || '',
+            name: g.studentName || '',
+            gender: g.gender,
+            sum: 0,
+            count: 0,
+          });
+        }
+        const st = byStudent.get(g.studentId)!;
+        st.sum += Number(g.score);
+        st.count += 1;
+      }
+      map[subj.id] = Array.from(byStudent.values()).map(st => ({
+        studentId: st.studentId,
+        matricule: st.matricule,
+        name: st.name,
+        gender: st.gender,
+        average: st.count > 0 ? st.sum / st.count : 0,
+      }));
+    }
+    return map;
+  }, [subjects, gradeData]);
+
+  // ── Compute: Taux de réussite (per subject, aggregated by student) ──
+  //    ⭐ FIX 2026-09-29 — utilise la moyenne par élève par matière (plus
+  //    1 entrée = 1 élève, pas 1 note). Cohérent en trimestriel/annuel.
   const successRateData = useMemo(() => {
     return subjects.map(subj => {
-      const grades = gradeData[subj.id] || [];
-      const present = grades.filter((g: any) => !g.isAbsent);
-      const boys = present.filter((g: any) => g.gender === 'M');
-      const girls = present.filter((g: any) => g.gender === 'F' || g.gender === 'FEMALE');
-      const admitted = present.filter((g: any) => typeof g.score === 'number' && g.score >= 10);
-      const admittedBoys = admitted.filter((g: any) => g.gender === 'M');
-      const admittedGirls = admitted.filter((g: any) => g.gender === 'F' || g.gender === 'FEMALE');
+      const students = subjectStudentAverages[subj.id] || [];
+      const present = students; // tous ont au moins 1 note
+      const boys = present.filter((s) => s.gender === 'M');
+      const girls = present.filter((s) => s.gender === 'F' || s.gender === 'FEMALE');
+      const admitted = present.filter((s) => s.average >= 10);
+      const admittedBoys = admitted.filter((s) => s.gender === 'M');
+      const admittedGirls = admitted.filter((s) => s.gender === 'F' || s.gender === 'FEMALE');
       const total = present.length;
       const passRate = total > 0 ? (admitted.length / total) * 100 : 0;
       const failRate = total > 0 ? ((total - admitted.length) / total) * 100 : 0;
@@ -237,23 +296,23 @@ export default function StatsWorkspace() {
         },
       };
     });
-  }, [subjects, gradeData]);
+  }, [subjects, subjectStudentAverages]);
 
-  // ── Compute: Intervalle des notes (per subject) ──
+  // ── Compute: Intervalle des notes (per subject, aggregated by student) ──
   const intervalData = useMemo(() => {
     return subjects.map(subj => {
-      const grades = gradeData[subj.id] || [];
-      const present = grades.filter((g: any) => !g.isAbsent && typeof g.score === 'number');
+      const students = subjectStudentAverages[subj.id] || [];
+      const present = students; // tous ont une moyenne
       const counts = INTERVALS.map(interval => {
-        const count = present.filter((g: any) => {
-          const score = Number(g.score);
+        const count = present.filter(s => {
+          const score = s.average;
           return score >= interval.min && (interval.max === 20 ? score <= interval.max : score < interval.max);
         }).length;
         return { label: interval.label, count };
       });
       return { subjectName: subj.name, effectif: present.length, intervals: counts };
     });
-  }, [subjects, gradeData]);
+  }, [subjects, subjectStudentAverages]);
 
   // ── Compute: Meilleures notes (all subjects, top N) ──
   const bestNotesData = useMemo(() => {
@@ -348,6 +407,80 @@ export default function StatsWorkspace() {
   }, [studentAverages]);
 
   const selectedClassName = classes.find(c => c.id === selectedClassId)?.name || '';
+  // ⭐ En mode annuel : on ajoute le libellé « Année scolaire » pour bien
+  //    distinguer les stats annuelles des stats trimestrielles
+  const periodLabel = statMode === 'annuel' ? (academicYear?.label || 'Année scolaire') : (
+    periods.find(p => p.id === selectedPeriodId)?.name || ''
+  );
+  const scopeLabel = `${selectedClassName} — ${periodLabel}`;
+
+  // ── Generate PDF (calls backend /institutional-exams/pv-stats-promotion/statistiques) ──
+  //    A4 paysage + en-tête officiel + tableau selon subTab + pied de page.
+  const handleGeneratePdf = async () => {
+    if (!selectedClassId || subjects.length === 0) {
+      alert('Veuillez sélectionner une classe et avoir des données à exporter.');
+      return;
+    }
+    setGeneratingPdf(true);
+    try {
+      const payload = {
+        academicYearName: academicYear?.label || '',
+        periodName: periodLabel,
+        className: selectedClassName,
+        statMode,
+        mainTab,
+        subTab,
+        subjects: subjects.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          abbreviation: s.abbreviation || null,
+          code: s.code || null,
+          coefficient: s.coefficient ?? 1,
+        })),
+        successRateRows: (mainTab === 'notes' ? successRateData : moyennesSuccessData),
+        intervalRows: (mainTab === 'notes' ? intervalData : moyennesIntervalData),
+        bestRows: mainTab === 'notes' ? bestNotesData.slice(0, topN) : studentAverages.slice(0, topN).map(s => ({
+          matricule: s.matricule || '',
+          name: s.name,
+          className: selectedClassName,
+          score: s.moyenne ?? 0,
+          appreciation: s.moyenne !== null && s.moyenne >= 16 ? 'Très Bien'
+            : s.moyenne !== null && s.moyenne >= 14 ? 'Bien'
+            : s.moyenne !== null && s.moyenne >= 12 ? 'Assez Bien'
+            : s.moyenne !== null && s.moyenne >= 10 ? 'Passable'
+            : 'Insuffisant',
+        })),
+        topN,
+        scopeLang: scopeLang || 'FR',
+      };
+
+      const res = await fetch('/api/institutional-exams/pv-stats-promotion/statistiques', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const safeClass = selectedClassName.replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+      const prefix = statMode === 'annuel' ? 'stats_annuel' : statMode === 'trimestriel' ? 'stats_trimestriel' : 'stats_evaluation';
+      link.download = `${prefix}_${subTab}_${safeClass}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert('Erreur lors de la génération du PDF: ' + err.message);
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
 
   return (
     <ModuleContainer
@@ -405,13 +538,17 @@ export default function StatsWorkspace() {
               {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Période</label>
-            <select value={selectedPeriodId} onChange={e => setSelectedPeriodId(e.target.value)} className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[150px]">
-              <option value="">—</option>
-              {periods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
+          {/* ⭐ FIX 2026-09-29 — sélecteur période masqué en mode annuel
+              (regroupe déjà les 3 trimestres, pas de sens à filtrer) */}
+          {statMode !== 'annuel' && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Période</label>
+              <select value={selectedPeriodId} onChange={e => setSelectedPeriodId(e.target.value)} className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[150px]">
+                <option value="">—</option>
+                {periods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Données</label>
             <select value={statMode} onChange={e => setStatMode(e.target.value as StatMode)} className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[150px]">
@@ -453,7 +590,7 @@ export default function StatsWorkspace() {
                 <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
                   <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
                     <h3 className="text-sm font-bold text-slate-900">
-                      Taux de réussite — {selectedClassName}
+                      Taux de réussite — {scopeLabel}
                     </h3>
                   </div>
                   <Table>
@@ -530,7 +667,7 @@ export default function StatsWorkspace() {
               <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
                 <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
                   <h3 className="text-sm font-bold text-slate-900">
-                    {mainTab === 'notes' ? 'Intervalle des notes' : 'Intervalle des moyennes'} — {selectedClassName}
+                    {mainTab === 'notes' ? 'Intervalle des notes' : 'Intervalle des moyennes'} — {scopeLabel}
                   </h3>
                 </div>
                 <Table>
@@ -621,10 +758,16 @@ export default function StatsWorkspace() {
             {/* PDF button */}
             <div className="flex justify-end">
               <Button
-                onClick={() => alert('Génération PDF des statistiques — à implémenter')}
+                onClick={handleGeneratePdf}
+                disabled={generatingPdf}
                 className="bg-blue-600 hover:bg-blue-700 text-white"
               >
-                <Download className="w-4 h-4 mr-2" /> Générer PDF
+                {generatingPdf ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4 mr-2" />
+                )}
+                {generatingPdf ? 'Génération…' : 'Générer PDF'}
               </Button>
             </div>
           </>

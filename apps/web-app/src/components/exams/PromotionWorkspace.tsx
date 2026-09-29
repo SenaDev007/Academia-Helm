@@ -26,7 +26,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   TrendingUp, Loader2, Users, Award, AlertCircle,
-  CheckCircle2, XCircle, Sparkles, RotateCcw, ArrowUp,
+  CheckCircle2, XCircle, Sparkles, RotateCcw, ArrowUp, Download,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -82,6 +82,7 @@ export default function PromotionWorkspace() {
   const [students, setStudents] = useState<StudentPromotion[]>([]);
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
   const [applyModalOpen, setApplyModalOpen] = useState(false);
 
   const subModules = useExamSubModules(EXAMS_SUB_MODULES);
@@ -110,11 +111,50 @@ export default function PromotionWorkspace() {
   }, [academicYear?.id, schoolLevelUuid, scopeLang]);
 
   // ── Load students with annual averages ──
+  //    ⭐ FIX 2026-09-29 — « redoublants = 0 » :
+  //    Avant : studentMap était construit SEULEMENT à partir des notes
+  //    existantes → les élèves sans aucune note n'apparaissaient JAMAIS
+  //    (ni dans passants, ni dans redoublants). Désormais on charge
+  //    d'abord la liste d'appel de la classe via /api/students?classId=...
+  //    puis on y fusionne les notes. Les élèves sans note ont avg=null
+  //    → décision REDOUBLE par défaut (exigence promoteur).
   const loadStudents = useCallback(async () => {
     if (!selectedClassId || !academicYear?.id) return;
     setLoading(true);
     try {
-      // Fetch all VALIDATED evaluations for this class
+      // ── Step 1: Load class roster (ALL enrolled students) ──
+      const rosterRes = await fetch(
+        `/api/students?classId=${encodeURIComponent(selectedClassId)}&academicYearId=${encodeURIComponent(academicYear.id)}`,
+        { credentials: 'include' },
+      );
+      let roster: Array<{ id: string; firstName?: string; lastName?: string; matricule?: string; gender?: string }> = [];
+      if (rosterRes.ok) {
+        const data = await rosterRes.json();
+        const list = Array.isArray(data) ? data : (data?.data ?? data?.items ?? data?.students ?? []);
+        roster = list.map((s: any) => ({
+          id: s.id,
+          firstName: s.firstName,
+          lastName: s.lastName,
+          matricule: s.matricule,
+          gender: s.gender,
+        }));
+      }
+
+      // ── Step 2: Initialize studentMap from roster (so students with no grades appear too) ──
+      const studentMap = new Map<string, { id: string; matricule: string; name: string; gender?: string; scores: number[]; coefs: number[] }>();
+      for (const s of roster) {
+        const name = `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Inconnu';
+        studentMap.set(s.id, {
+          id: s.id,
+          matricule: s.matricule || '',
+          name,
+          gender: s.gender,
+          scores: [],
+          coefs: [],
+        });
+      }
+
+      // ── Step 3: Fetch all VALIDATED evaluations for this class ──
       const evaluations = await institutionalExamsService.getEvaluations({
         academicYearId: academicYear.id,
         classId: selectedClassId,
@@ -122,14 +162,14 @@ export default function PromotionWorkspace() {
       });
       const allEvals = Array.isArray(evaluations) ? evaluations : [];
 
-      // Fetch grades in batch
+      // ── Step 4: Fetch grades in batch ──
       const sheetsMap = await institutionalExamsService
         .getGradingSheetsBatch(allEvals.map((ev: any) => ev.id))
         .catch(() => ({}));
 
-      // Build student averages
-      const studentMap = new Map<string, { id: string; matricule: string; name: string; gender?: string; scores: number[]; coefs: number[] }>();
-
+      // ── Step 5: Merge grades into studentMap ──
+      //    Students from roster with no grades keep scores=[] → avg=null → REDOUBLE
+      //    Students appearing in grades but not in roster (legacy) are also added
       for (const ev of allEvals) {
         const grades = sheetsMap[ev.id] || [];
         const coef = ev.subject?.coefficient ?? 1;
@@ -151,9 +191,11 @@ export default function PromotionWorkspace() {
         }
       }
 
-      // Calculate annual average per student
-      const PASS_THRESHOLD = 10; // ≥ 10 = pass
-      const RACHAT_THRESHOLD = 9; // 9 ≤ avg < 10 = rachat possible
+      // ── Step 6: Calculate annual average per student + decision ──
+      //    ⭐ Without notes → avg = null → REDOUBLE (exigence promoteur)
+      //    avg < 9 → REDOUBLE ; 9 ≤ avg < 10 → RACHAT ; avg ≥ 10 → PASSE
+      const PASS_THRESHOLD = 10;
+      const RACHAT_THRESHOLD = 9;
 
       const result: StudentPromotion[] = Array.from(studentMap.values()).map(st => {
         const total = st.scores.reduce((sum, s, i) => sum + s * st.coefs[i], 0);
@@ -171,6 +213,7 @@ export default function PromotionWorkspace() {
             rachatable = true;
           }
         }
+        // avg === null (no notes) → stays REDOUBLE (default)
 
         return {
           id: st.id,
@@ -269,6 +312,74 @@ export default function PromotionWorkspace() {
   };
 
   const selectedClassName = classes.find(c => c.id === selectedClassId)?.name || '';
+
+  // ── Generate PDF (calls backend /institutional-exams/pv-stats-promotion/promotion) ──
+  //    A4 paysage + en-tête officiel + tableau passants + tableau redoublants + pied de page.
+  const handleGeneratePromotionPdf = async () => {
+    if (!selectedClassId || students.length === 0) {
+      alert('Veuillez sélectionner une classe et avoir des données à exporter.');
+      return;
+    }
+    setGeneratingPdf(true);
+    try {
+      const payload = {
+        academicYearName: academicYear?.label || '',
+        className: selectedClassName,
+        passants: passants.map(s => ({
+          id: s.id,
+          matricule: s.matricule,
+          name: s.name,
+          gender: s.gender,
+          generalAverage: s.generalAverage,
+          decision: s.decision,
+          rachatApplied: s.rachatApplied,
+        })),
+        redoublants: redoublants.map(s => ({
+          id: s.id,
+          matricule: s.matricule,
+          name: s.name,
+          gender: s.gender,
+          generalAverage: s.generalAverage,
+          decision: s.decision,
+          rachatApplied: s.rachatApplied,
+        })),
+        rachatCandidates: rachatCandidates.map(s => ({
+          id: s.id,
+          matricule: s.matricule,
+          name: s.name,
+          gender: s.gender,
+          generalAverage: s.generalAverage,
+          decision: s.decision,
+        })),
+        scopeLang: scopeLang || 'FR',
+      };
+
+      const res = await fetch('/api/institutional-exams/pv-stats-promotion/promotion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const safeClass = selectedClassName.replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+      link.download = `promotion_${safeClass}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert('Erreur lors de la génération du PDF: ' + err.message);
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
 
   return (
     <ModuleContainer
@@ -396,10 +507,13 @@ export default function PromotionWorkspace() {
                         <TableCell className="text-xs">{st.matricule || '—'}</TableCell>
                         <TableCell className="text-xs font-medium">{st.name}</TableCell>
                         <TableCell className="text-xs text-center font-bold text-red-600">
-                          {st.generalAverage !== null ? st.generalAverage.toFixed(2) : '—'}
+                          {st.generalAverage !== null ? st.generalAverage.toFixed(2) : <span className="text-slate-400 italic font-normal">Pas de notes</span>}
                         </TableCell>
                         <TableCell className="text-xs text-center">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700">Redouble</span>
+                          <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold',
+                            st.generalAverage === null ? 'bg-slate-200 text-slate-700' : 'bg-red-100 text-red-700')}>
+                            {st.generalAverage === null ? 'Pas de notes' : 'Redouble'}
+                          </span>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -446,20 +560,35 @@ export default function PromotionWorkspace() {
               </div>
             </div>
 
-            {/* Bouton global Appliquer la promotion */}
+            {/* Boutons globaux : générer PDF + Appliquer la promotion */}
             <div className="flex justify-between items-center bg-blue-50 rounded-lg border border-blue-200 p-4">
               <div>
-                <p className="text-sm font-bold text-blue-900">Appliquer la promotion pour l'année scolaire suivante</p>
+                <p className="text-sm font-bold text-blue-900">Actions promotion — {selectedClassName}</p>
                 <p className="text-xs text-blue-600 mt-1">
-                  Crée l'année suivante + trimestres + classes + réinscrit les élèves (promus en classe supérieure, redoublants dans la même classe) + crée les comptes financiers.
+                  Génère le PDF (passants + redoublants par classe) ou applique la promotion (crée l'année suivante + trimestres + classes + réinscrit les élèves + crée les comptes financiers).
                 </p>
               </div>
-              <Button
-                onClick={() => setApplyModalOpen(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <TrendingUp className="w-4 h-4 mr-2" /> Appliquer la promotion
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleGeneratePromotionPdf}
+                  disabled={generatingPdf}
+                  variant="outline"
+                  className="border-blue-300 text-blue-700 hover:bg-blue-100"
+                >
+                  {generatingPdf ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4 mr-2" />
+                  )}
+                  {generatingPdf ? 'Génération…' : 'Générer PDF'}
+                </Button>
+                <Button
+                  onClick={() => setApplyModalOpen(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <TrendingUp className="w-4 h-4 mr-2" /> Appliquer la promotion
+                </Button>
+              </div>
             </div>
           </>
         )}

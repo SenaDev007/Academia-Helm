@@ -24,7 +24,8 @@ import {
   ClipboardList,
   SlidersHorizontal,
   Lock,
-  Landmark
+  Landmark,
+  ScrollText
 } from 'lucide-react';
 
 export const EXAMS_SUB_MODULES = [
@@ -78,6 +79,12 @@ export const EXAMS_SUB_MODULES = [
     label: 'Bulletins',
     href: '/app/exams/bulletins',
     icon: FileText
+  },
+  {
+    id: 'proc-verbal',
+    label: 'Procès-verbal',
+    href: '/app/exams/proc-verbal',
+    icon: ScrollText
   },
   {
     // ⭐ Examens nationaux (CEP / BEPC / Baccalauréat) — candidats présentés

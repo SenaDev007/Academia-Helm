@@ -964,6 +964,58 @@ ${page2Content}
     // Ordre des catégories
     const CATEGORY_ORDER = ['LETTRES', 'SCIENCES', 'AUTRES'];
 
+    // ⭐ 2026-09-29 — Tri canonique des matières dans chaque catégorie.
+    //    Ordre canonique (exigence promoteur) :
+    //      LETTRES  : Communication Écrite → Lecture → Français → Anglais →
+    //                 Philosophie → Histoire-Géo → Allemand → Espagnol → ...
+    //      SCIENCES : Mathématiques → PCT → SVT → EST → ...
+    //      AUTRES   : EPS → Conduite → Informatique → Arts → Musique → ...
+    //    Fallback : ordre alphabétique du nom (NFD-normalized).
+    //    L'ordre ne doit pas dépendre de l'ordre d'entrée → identique pour
+    //    tous les élèves, d'un trimestre à l'autre, et cohérent UI ↔ PDF.
+    const CANON_ORDER: Record<string, string[]> = {
+      LETTRES: [
+        'communication ecrite', 'communication ecrit',
+        'lecture', 'francais', 'anglais', 'philosophie',
+        'histoire-geographie', 'histoire geographie', 'histoire et geographie',
+        'allemand', 'espagnol', 'education sociale',
+      ],
+      SCIENCES: [
+        'mathematiques', 'mathematique',
+        'physique chimie et technologie', 'physique-chimie', 'physique chimie', 'pct',
+        'science de la vie et de la terre', 'sciences de la vie et de la terre', 'svt',
+        'education scientifique et technologique', 'education scientifique',
+        'eveil scientifique et technologique', 'eveil scientifique', 'est',
+      ],
+      AUTRES: [
+        'education physique et sportive', 'education physique', 'eps',
+        'conduite', 'informatique', 'arts plastiques', 'musique', 'dessin',
+      ],
+    };
+    const normalize = (s: string) =>
+      (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const canonIndex = (subjectName: string, category: string): number => {
+      const n = normalize(subjectName);
+      if (!n) return Number.MAX_SAFE_INTEGER;
+      const rules = CANON_ORDER[category] || [];
+      for (let i = 0; i < rules.length; i++) {
+        const p = normalize(rules[i]);
+        if (!p) continue;
+        if (p === n || n.includes(p)) return i;
+      }
+      return Number.MAX_SAFE_INTEGER;
+    };
+    for (const cat of CATEGORY_ORDER) {
+      const group = subjectsByCategory.get(cat);
+      if (!group || group.length === 0) continue;
+      group.sort((a, b) => {
+        const idxA = canonIndex(a.name, cat);
+        const idxB = canonIndex(b.name, cat);
+        if (idxA !== idxB) return idxA - idxB;
+        return normalize(a.name).localeCompare(normalize(b.name), 'fr');
+      });
+    }
+
     const buildSubjectRow = (s: any): string => {
       const cell = (v: number | null | undefined) =>
         typeof v === 'number'
@@ -1377,10 +1429,72 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     const fmtSec = (n: number | null | undefined): string =>
       (typeof n === 'number' && !isNaN(n)) ? n.toFixed(2) : '—';
 
+    // ⭐ 2026-09-29 — Tri canonique des matières (LETTRES → SCIENCES → AUTRES,
+    //    et dans chaque catégorie l'ordre canonique). L'ordre ne doit pas
+    //    dépendre de l'ordre d'entrée → identique pour tous les élèves, d'un
+    //    trimestre à l'autre, et cohérent UI ↔ PDF. (Même logique que
+    //    buildHtmlSecondaire ci-dessus.)
+    const CANON_ORDER_EVAL: Record<string, string[]> = {
+      LETTRES: [
+        'communication ecrite', 'communication ecrit',
+        'lecture', 'francais', 'anglais', 'philosophie',
+        'histoire-geographie', 'histoire geographie', 'histoire et geographie',
+        'allemand', 'espagnol', 'education sociale',
+      ],
+      SCIENCES: [
+        'mathematiques', 'mathematique',
+        'physique chimie et technologie', 'physique-chimie', 'physique chimie', 'pct',
+        'science de la vie et de la terre', 'sciences de la vie et de la terre', 'svt',
+        'education scientifique et technologique', 'education scientifique',
+        'eveil scientifique et technologique', 'eveil scientifique', 'est',
+      ],
+      AUTRES: [
+        'education physique et sportive', 'education physique', 'eps',
+        'conduite', 'informatique', 'arts plastiques', 'musique', 'dessin',
+      ],
+    };
+    const AUTRES_MARKERS_EVAL = ['eps', 'education physique', 'sport', 'informatique', 'conduite', 'arts plastiques', 'musique', 'dessin'];
+    const LETTRES_MARKERS_EVAL = ['francais', 'communication', 'lecture', 'anglais', 'allemand', 'espagnol', 'philosophie', 'histoire', 'geographie', 'histoire-geographie', 'education sociale'];
+    const SCIENCES_MARKERS_EVAL = ['mathematiques', 'mathematiques', 'maths', 'math', 'physique-chimie', 'physique chimie', 'pct', 'physique chimie et technologie', 'chimie', 'svt', 'science de la vie', 'sciences de la vie', 'est', 'education scientifique', 'eveil scientifique'];
+    const normalizeEval = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const getCategoryEval = (subjectName: string): string => {
+      const n = normalizeEval(subjectName);
+      if (!n) return 'AUTRES';
+      if (AUTRES_MARKERS_EVAL.some(m => n.includes(normalizeEval(m)))) return 'AUTRES';
+      if (LETTRES_MARKERS_EVAL.some(m => n.includes(normalizeEval(m)))) return 'LETTRES';
+      if (SCIENCES_MARKERS_EVAL.some(m => n.includes(normalizeEval(m)))) return 'SCIENCES';
+      if (n.includes('physique')) return 'SCIENCES';
+      return 'AUTRES';
+    };
+    const canonIndexEval = (subjectName: string, category: string): number => {
+      const n = normalizeEval(subjectName);
+      if (!n) return Number.MAX_SAFE_INTEGER;
+      const rules = CANON_ORDER_EVAL[category] || [];
+      for (let i = 0; i < rules.length; i++) {
+        const p = normalizeEval(rules[i]);
+        if (!p) continue;
+        if (p === n || n.includes(p)) return i;
+      }
+      return Number.MAX_SAFE_INTEGER;
+    };
+    const sortedSubjectsEval = [...data.subjects].sort((a, b) => {
+      const catA = a.subjectCategory || getCategoryEval(a.name);
+      const catB = b.subjectCategory || getCategoryEval(b.name);
+      const catOrder = ['LETTRES', 'SCIENCES', 'AUTRES'];
+      const catIdxA = catOrder.indexOf(catA);
+      const catIdxB = catOrder.indexOf(catB);
+      if (catIdxA !== catIdxB) return catIdxA - catIdxB;
+      const idxA = canonIndexEval(a.name, catA);
+      const idxB = canonIndexEval(b.name, catB);
+      if (idxA !== idxB) return idxA - idxB;
+      return normalizeEval(a.name).localeCompare(normalizeEval(b.name), 'fr');
+    });
+
     // ── Lignes du tableau (une par discipline) ──────────────────────────────
     // ⭐ 2026-09-28 — Colonne « Professeur » ajoutée pour identifier l'enseignant
     //    de chaque matière (résolu côté backend depuis TeacherClassAssignment).
-    const subjectRows = data.subjects.map((s) => {
+    // ⭐ 2026-09-29 — Tri canonique (sortedSubjectsEval) appliqué avant le map.
+    const subjectRows = sortedSubjectsEval.map((s) => {
       const noteCell = s.isAbsent
         ? '<span style="color:#dc2626;font-size:8px;font-weight:bold;">ABS</span>'
         : (typeof s.score === 'number'
@@ -1696,7 +1810,66 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     const beninFlag = `data:image/svg+xml;base64,${Buffer.from(beninFlagSvg).toString('base64')}`;
 
     // ─── Derived values ──────────────────────────────────────────────────────
-    const subjects = data.subjects;
+    // ⭐ 2026-09-29 — Tri canonique des matières (LETTRES → SCIENCES → AUTRES,
+    //    et dans chaque catégorie l'ordre canonique). L'ordre ne doit pas
+    //    dépendre de l'ordre d'entrée → identique pour tous les élèves, d'un
+    //    trimestre à l'autre, et cohérent UI ↔ PDF.
+    const CANON_ORDER_EN: Record<string, string[]> = {
+      LETTRES: [
+        'communication ecrite', 'communication ecrit',
+        'lecture', 'francais', 'anglais', 'philosophie',
+        'histoire-geographie', 'histoire geographie', 'histoire et geographie',
+        'allemand', 'espagnol', 'education sociale',
+      ],
+      SCIENCES: [
+        'mathematiques', 'mathematique',
+        'physique chimie et technologie', 'physique-chimie', 'physique chimie', 'pct',
+        'science de la vie et de la terre', 'sciences de la vie et de la terre', 'svt',
+        'education scientifique et technologique', 'education scientifique',
+        'eveil scientifique et technologique', 'eveil scientifique', 'est',
+      ],
+      AUTRES: [
+        'education physique et sportive', 'education physique', 'eps',
+        'conduite', 'informatique', 'arts plastiques', 'musique', 'dessin',
+      ],
+    };
+    const AUTRES_MARKERS_EN = ['eps', 'education physique', 'sport', 'informatique', 'conduite', 'arts plastiques', 'musique', 'dessin'];
+    const LETTRES_MARKERS_EN = ['francais', 'communication', 'lecture', 'anglais', 'allemand', 'espagnol', 'philosophie', 'histoire', 'geographie', 'histoire-geographie', 'education sociale'];
+    const SCIENCES_MARKERS_EN = ['mathematiques', 'mathematiques', 'maths', 'math', 'physique-chimie', 'physique chimie', 'pct', 'physique chimie et technologie', 'chimie', 'svt', 'science de la vie', 'sciences de la vie', 'est', 'education scientifique', 'eveil scientifique'];
+    const normalizeEn = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const getCategoryEn = (subjectName: string): string => {
+      const n = normalizeEn(subjectName);
+      if (!n) return 'AUTRES';
+      if (AUTRES_MARKERS_EN.some(m => n.includes(normalizeEn(m)))) return 'AUTRES';
+      if (LETTRES_MARKERS_EN.some(m => n.includes(normalizeEn(m)))) return 'LETTRES';
+      if (SCIENCES_MARKERS_EN.some(m => n.includes(normalizeEn(m)))) return 'SCIENCES';
+      if (n.includes('physique')) return 'SCIENCES';
+      return 'AUTRES';
+    };
+    const canonIndexEn = (subjectName: string, category: string): number => {
+      const n = normalizeEn(subjectName);
+      if (!n) return Number.MAX_SAFE_INTEGER;
+      const rules = CANON_ORDER_EN[category] || [];
+      for (let i = 0; i < rules.length; i++) {
+        const p = normalizeEn(rules[i]);
+        if (!p) continue;
+        if (p === n || n.includes(p)) return i;
+      }
+      return Number.MAX_SAFE_INTEGER;
+    };
+    const sortedSubjectsEn = [...data.subjects].sort((a, b) => {
+      const catA = (a as any).subjectCategory || getCategoryEn(a.name);
+      const catB = (b as any).subjectCategory || getCategoryEn(b.name);
+      const catOrder = ['LETTRES', 'SCIENCES', 'AUTRES'];
+      const catIdxA = catOrder.indexOf(catA);
+      const catIdxB = catOrder.indexOf(catB);
+      if (catIdxA !== catIdxB) return catIdxA - catIdxB;
+      const idxA = canonIndexEn(a.name, catA);
+      const idxB = canonIndexEn(b.name, catB);
+      if (idxA !== idxB) return idxA - idxB;
+      return normalizeEn(a.name).localeCompare(normalizeEn(b.name), 'fr');
+    });
+    const subjects = sortedSubjectsEn;
     const nbSubjects = subjects.length;
     const subjectTotals100 = subjects.map(s => {
       const fca = Number(s.firstCA ?? 0);

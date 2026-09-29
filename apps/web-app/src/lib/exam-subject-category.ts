@@ -21,9 +21,16 @@
  *    les marqueurs AUTRES (EPS / Conduite / Informatique) AVANT de
  *    retomber sur les matchs génériques (Physique → SCIENCES).
  *
+ * ⭐ 2026-09-29 — Tri canonique des matières dans chaque catégorie :
+ *    Communication Écrite → Lecture → Français → Anglais → ...,
+ *    Mathématiques → PCT → SVT → ..., EPS → Conduite → Informatique → ...
+ *    (cf. subject-canonical-order.ts).
+ *
  * Normalisation NFD (sans accents) + lowercase pour la robustesse.
  * ============================================================================
  */
+
+import { getSubjectCanonicalIndex } from './subject-canonical-order';
 
 export type SubjectCategory = 'LETTRES' | 'SCIENCES' | 'AUTRES';
 
@@ -79,6 +86,12 @@ export const CATEGORY_LABELS: Record<SubjectCategory, string> = {
  * Groupe les matières par catégorie et calcule la moyenne de chaque groupe.
  * Retourne une map ordered comme CATEGORY_ORDER (LETTRES → SCIENCES → AUTRES).
  *
+ * ⭐ 2026-09-29 — Les matières dans chaque catégorie sont triées par ordre
+ *    canonique (Communication Écrite → Lecture → Français → Anglais → ...,
+ *    Mathématiques → PCT → SVT → ..., EPS → Conduite → Informatique → ...).
+ *    L'ordre ne dépend pas de l'ordre d'entrée → identique pour tous les
+ *    élèves, d'un trimestre à l'autre, et cohérent UI ↔ PDF.
+ *
  * @param subjects - Tableau de matières (avec .name)
  * @param getScore - Fonction qui retourne la moyenne d'une matière (ou null)
  * @returns Map<SubjectCategory, { subjects: T[]; average: number | null }>
@@ -95,10 +108,28 @@ export function groupSubjectsByCategory<T extends { name: string }>(
     const cat = getSubjectCategory(s.name);
     result.get(cat)!.subjects.push(s);
   }
-  // Calculer la moyenne de chaque catégorie
+  // ⭐ 2026-09-29 — Tri canonique des matières dans chaque catégorie.
+  //    On importe dynamiquement pour éviter une dépendance circulaire (le
+  //    fichier subject-canonical-order.ts importe déjà getSubjectCategory
+  //    depuis ce fichier).
+  //    Ordre canonique :
+  //      LETTRES  : Communication Écrite → Lecture → Français → Anglais →
+  //                 Philosophie → Histoire-Géo → Allemand → Espagnol → ...
+  //      SCIENCES : Mathématiques → PCT → SVT → EST → ...
+  //      AUTRES   : EPS → Conduite → Informatique → Arts → Musique → ...
+  //    Fallback : ordre alphabétique du nom (NFD-normalized).
   for (const cat of CATEGORY_ORDER) {
     const group = result.get(cat)!;
     if (group.subjects.length === 0) continue;
+    group.subjects.sort((a, b) => {
+      const idxA = getSubjectCanonicalIndex(a.name, cat);
+      const idxB = getSubjectCanonicalIndex(b.name, cat);
+      if (idxA !== idxB) return idxA - idxB;
+      const na = (a.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+      const nb = (b.name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+      return na.localeCompare(nb, 'fr');
+    });
+    // Calculer la moyenne de chaque catégorie
     const validScores = group.subjects
       .map(s => getScore(s))
       .filter((v): v is number => v !== null && !isNaN(v));

@@ -58,6 +58,7 @@ import { filterClassesForLevel, matchesLevelLanguage } from '../level-isolation'
 // ⭐ SECONDAIRE — appréciations normalisées (mêmes mentions que la fiche de saisie et le registre)
 import { computeAppreciationSecondaire, appreciationSecondaireClassName } from '@/components/exams/GradingSheet';
 import { getSubjectCategory, groupSubjectsByCategory, CATEGORY_ORDER, CATEGORY_LABELS } from '@/lib/exam-subject-category';
+import { sortSecondarySubjects } from '@/lib/subject-canonical-order';
 import { cn } from '@/lib/utils';
 import { RichTextEditor } from '@/components/ui/RichTextEditor';
 import { SignatureCanvas } from '@/components/ui/SignatureCanvas';
@@ -2543,6 +2544,15 @@ function BulletinAnglophonePage1({
   const ageStr = student.age !== null && student.age !== undefined ? String(student.age) : '—';
   const session = sessionYear || '—';
 
+  // ⭐ 2026-09-29 — Tri canonique des matières (LETTRES → SCIENCES → AUTRES,
+  //    et dans chaque catégorie l'ordre canonique : Mathématiques → PCT → SVT,
+  //    EPS → Conduite → Informatique, etc.). L'ordre ne doit pas dépendre de
+  //    l'ordre d'entrée → identique pour tous les élèves et cohérent UI ↔ PDF.
+  const sortedSubjects = useMemo(
+    () => sortSecondarySubjects(bulletinData.subjects),
+    [bulletinData.subjects],
+  );
+
   // Ligne de formulaire — libellé + valeur (bordures pointillées façon carnet)
   const FormCell = ({ label, value, colSpan = 1, strong = true }: { label: string; value: React.ReactNode; colSpan?: number; strong?: boolean }) => (
     <td colSpan={colSpan} className="border border-slate-400 px-2 py-1 whitespace-nowrap">
@@ -2597,7 +2607,7 @@ function BulletinAnglophonePage1({
           </tr>
         </thead>
         <tbody>
-          {bulletinData.subjects.map((subject, idx) => {
+          {sortedSubjects.map((subject, idx) => {
             const score = student.subjectScores[subject.id];
             const stats = enSubjectClassStats(bulletinData, subject.id, student.id);
             const total = score?.total ?? null;
@@ -3214,9 +3224,10 @@ function BulletinSecondairePage2({
     //    Nouvel endpoint dédié /api/discipline/conduct/student qui retourne
     //    en une seule requête : conductScore + conductReference + sanctionCount
     //    + totalPointsDeducted + totalHoursAttributed + hasLedger.
-    //    Avant : on fetchait /api/discipline/conduct/ledger (tout le ledger de
-    //    l'année) puis on filtrait côté client → moins efficace et on n'avait
-    //    pas les sanctions count/hours.
+    //    ⭐ 2026-09-29 — Avant : on utilisait /api/vie-scolaire/conduct (URL
+    //       inexistante → 404 → null → la conduite n'était JAMAIS chargée →
+    //       affichait toujours le placeholder 17/20). Désormais on utilise
+    //       la BONNE URL /api/discipline/conduct/student.
     if (academicYearId) {
       fetch(`/api/discipline/conduct/student?studentId=${student.id}&periodId=${periodId}&academicYearId=${academicYearId}`, { credentials: 'include' })
         .then(r => r.ok ? r.json() : null)

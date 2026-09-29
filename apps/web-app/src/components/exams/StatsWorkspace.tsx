@@ -71,12 +71,17 @@ type SubTab = 'taux-reussite' | 'intervalle' | 'meilleurs';
 type StatMode = 'evaluation' | 'trimestriel' | 'annuel';
 
 export default function StatsWorkspace() {
-  const { academicYear, tenant, schoolLevel } = useModuleContext();
+  const { academicYear } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
-  const schoolLevelUuid = schoolLevel?.schoolLevelId || schoolLevel?.id;
-  const scopeLevel = availableLevels.find(l => l.id === schoolLevelUuid)?.code || '';
-  const scopeLang = availableLevels.find(l => l.id === schoolLevelUuid)?.language || 'FR';
+  const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
   const isMaternelle = scopeLevel === 'MATERNELLE';
+
+  // ⭐ Dériver schoolLevelUuid depuis scopeLevel (même pattern que bulletins)
+  const activeLevel = useMemo(() => {
+    if (!scopeLevel) return null;
+    return (availableLevels || []).find((l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL');
+  }, [availableLevels, scopeLevel]);
+  const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
 
   const [mainTab, setMainTab] = useState<MainTab>('notes');
   const [subTab, setSubTab] = useState<SubTab>('taux-reussite');

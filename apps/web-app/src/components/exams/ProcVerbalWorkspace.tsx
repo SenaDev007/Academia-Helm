@@ -70,12 +70,17 @@ type PVMode = 'evaluation' | 'trimestriel' | 'annuel';
 type SortMode = 'alphabetique' | 'merite';
 
 export default function ProcVerbalWorkspace() {
-  const { academicYear, tenant, schoolLevel } = useModuleContext();
+  const { academicYear } = useModuleContext();
   const { availableLevels } = useSchoolLevel();
-  const schoolLevelUuid = schoolLevel?.schoolLevelId || schoolLevel?.id;
-  const scopeLevel = availableLevels.find(l => l.id === schoolLevelUuid)?.code || '';
-  const scopeLang = availableLevels.find(l => l.id === schoolLevelUuid)?.language || 'FR';
+  const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
   const isMaternelle = scopeLevel === 'MATERNELLE';
+
+  // ⭐ Dériver schoolLevelUuid depuis scopeLevel (même pattern que bulletins)
+  const activeLevel = useMemo(() => {
+    if (!scopeLevel) return null;
+    return (availableLevels || []).find((l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL');
+  }, [availableLevels, scopeLevel]);
+  const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
 
   const [pvMode, setPvMode] = useState<PVMode>('evaluation');
   const [sortMode, setSortMode] = useState<SortMode>('merite');

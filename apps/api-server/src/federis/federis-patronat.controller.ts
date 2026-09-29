@@ -270,6 +270,24 @@ export class FederisPatronatController {
     return this.patronatService.getSchools(req.user.tenantId, req.user.id || req.user.sub);
   }
 
+  // ⭐ Fiche détail d'une école rattachée (2026-09-29 #3) — clic sur une
+  //    école JOINED : informations de l'établissement (adresse, promoteur…),
+  //    niveaux scolaires, effectifs des classes d'examen (Terminale PAR
+  //    SÉRIE, CAP PAR FILIÈRE — base de données de l'école) et candidats
+  //    officiellement présentés par sous-onglets dynamiques CEP/BEPC/BAC/CAP.
+  @UseGuards(JwtAuthGuard)
+  @Get('patronat/schools/:schoolTenantId/detail')
+  async getSchoolDetail(
+    @Req() req: any,
+    @Param('schoolTenantId') schoolTenantId: string,
+  ) {
+    return this.patronatService.getSchoolDetail(
+      req.user.tenantId,
+      req.user.id || req.user.sub,
+      schoolTenantId,
+    );
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('patronat/schools/search')
   async searchHelmSchools(@Query('q') q?: string) {

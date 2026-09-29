@@ -50,6 +50,15 @@ import {
   departmentKeys,
   territoryIncludesKeys,
 } from '../common/constants/benin-territories';
+// ⭐ Fiche détail d'une école rattachée (2026-09-29 #3) : rapprochement des
+//    classes de l'école avec les examens nationaux (CM2→CEP, 3ème→BEPC,
+//    Terminale→BAC par série, CAP par filière) — mêmes règles que le module
+//    « Examens nationaux » côté école (fonctions hissées : import sûr).
+import {
+  classMatchesExam,
+  federisLevelMatchesType,
+  resolveSeriesFromClassNames,
+} from './federis-school-exams.service';
 
 /**
  * Offres Federis (cahier des charges §12 + proposition tarifaire).
@@ -949,11 +958,56 @@ export class FederisPatronatService {
       }),
     ]);
 
+    // ⭐ Compteurs de candidats PAR EXAMEN (2026-09-29 #3) — mis à jour
+    //    GLOBALEMENT dès qu'une école présente officiellement ses élèves :
+    //    chaque ligne d'école porte ses totaux CEP/BEPC/BAC/CAP et l'en-tête
+    //    du module affiche les totaux toutes écoles confondues. Les candidats
+    //    retirés (WITHDRAWN) ne sont pas comptés.
+    const linkIds = linked.map((l) => l.id);
+    const examCandidates = linkIds.length
+      ? await this.prisma.examCandidate.findMany({
+          where: {
+            patronatSchoolId: { in: linkIds },
+            status: { not: 'WITHDRAWN' },
+          },
+          select: {
+            patronatSchoolId: true,
+            exam: { select: { level: true } },
+          },
+        })
+      : [];
+    const byExamByLink = new Map<
+      string,
+      { CEP: number; BEPC: number; BAC: number; CAP: number }
+    >();
+    const candidatesTotals = { CEP: 0, BEPC: 0, BAC: 0, CAP: 0 };
+    for (const c of examCandidates) {
+      if (!c.patronatSchoolId) continue;
+      const bucket = byExamByLink.get(c.patronatSchoolId) ?? { CEP: 0, BEPC: 0, BAC: 0, CAP: 0 };
+      const type = (['CEP', 'BEPC', 'BAC', 'CAP'] as const).find((t) =>
+        federisLevelMatchesType(c.exam?.level, t),
+      );
+      if (type) {
+        bucket[type]++;
+        candidatesTotals[type]++;
+      }
+      byExamByLink.set(c.patronatSchoolId, bucket);
+    }
+
     return {
       orgLevel: patronat.orgLevel,
+      // ⭐ Totaux globaux du module (toutes écoles rattachées confondues) —
+      //    l'en-tête « Écoles rattachées » affiche les candidats par examen.
+      totals: {
+        attached: linked.filter((s) => s.status === 'JOINED').length,
+        pending: linked.filter((s) => s.status === 'PENDING').length,
+        candidates: candidatesTotals,
+      },
       linked: linked.map((s) => ({
         id: s.id,
         kind: 'HELM' as const,
+        // ⭐ Identifiant du tenant école — ouvre la fiche détail au clic
+        schoolTenantId: s.schoolTenantId,
         name: s.schoolTenant?.name ?? 'École',
         slug: s.schoolTenant?.slug,
         subdomain: s.schoolTenant?.subdomain,
@@ -974,6 +1028,10 @@ export class FederisPatronatService {
         joinedAt: s.joinedAt,
         academicYear: s.academicYear?.name,
         candidatesCount: s._count.candidates,
+        // ⭐ Candidats présentés PAR EXAMEN (CEP / BEPC / BAC / CAP) — la
+        //    ligne de l'école affiche ces compteurs, le clic ouvre la fiche
+        //    détail avec les listes complètes par sous-onglet.
+        candidatesByExam: byExamByLink.get(s.id) ?? { CEP: 0, BEPC: 0, BAC: 0, CAP: 0 },
         // ⭐ Patronat dépositaire du lien (vision nationale uniquement)
         patronat: isNational ? (s.patronat?.name ?? null) : null,
         patronatTerritory: isNational ? (s.patronat?.territoryName ?? null) : null,
@@ -989,6 +1047,322 @@ export class FederisPatronatService {
         status: s.status,
         createdAt: s.createdAt,
       })),
+    };
+  }
+
+  // ── Fiche détail d'une école rattachée (2026-09-29 #3) ────────────────────
+  //
+  // « Dès lors qu'une école adhère (accepte l'invitation), le clic sur cette
+  //  école ouvre sa fiche complète » : informations de l'établissement
+  //  (adresse, promoteur, contacts…), niveaux scolaires couverts (primaire
+  //  CM2 → CEP, secondaire 1er cycle 3ème → BEPC, secondaire 2nd cycle
+  //  Terminale → BAC, formation professionnelle → CAP), effectifs des
+  //  classes d'examen ISSUS DE LA BASE DE DONNÉES DE L'ÉCOLE (Terminale et
+  //  CAP catégorisés PAR SÉRIE / filière), et listes officielles des
+  //  candidats présentés — un sous-onglet dynamique par examen (CEP, BEPC,
+  //  BAC, CAP) dès que l'école a transmis sa liste au patronat.
+
+  async getSchoolDetail(tenantId: string, userId: string, schoolTenantId: string) {
+    const patronat = await this.resolvePatronat(tenantId, userId);
+    const isNational = patronat.orgLevel === 'NATIONAL';
+
+    // 1. Lien JOINED — le patronat (ou, en vision nationale, le patronat
+    //    départemental du pays) doit avoir un rattachement VALIDÉ par l'école.
+    const link = await this.prisma.patronatSchool.findFirst({
+      where: isNational
+        ? {
+            schoolTenantId,
+            status: 'JOINED',
+            patronat: {
+              ...(patronat.countryId ? { countryId: patronat.countryId } : {}),
+            },
+          }
+        : { schoolTenantId, patronatId: patronat.id, status: 'JOINED' },
+      include: {
+        patronat: { select: { id: true, name: true, tenantId: true, territoryName: true } },
+        academicYear: { select: { id: true, name: true } },
+      },
+      orderBy: { joinedAt: 'desc' },
+    });
+    if (!link) {
+      throw new ForbiddenException(
+        "Cette école n'est pas rattachée à votre patronat (adhésion non encore acceptée par l'établissement).",
+      );
+    }
+
+    // 2. Fiche établissement (Tenant + School 1:1)
+    const [schoolTenant, school] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: schoolTenantId },
+        select: { id: true, name: true, slug: true, subdomain: true, status: true },
+      }),
+      this.prisma.school.findUnique({
+        where: { tenantId: schoolTenantId },
+        select: {
+          name: true,
+          logo: true,
+          address: true,
+          city: true,
+          department: true,
+          primaryPhone: true,
+          secondaryPhone: true,
+          primaryEmail: true,
+          website: true,
+          founderName: true,
+          directorPrimary: true,
+          directorSecondary: true,
+          educationLevels: true,
+        },
+      }),
+    ]);
+    if (!schoolTenant) {
+      throw new NotFoundException('École introuvable.');
+    }
+
+    // 3. Année scolaire active de l'ÉCOLE (NO ACADEMIC YEAR = NO DATA)
+    const schoolYear = await this.prisma.academicYear.findFirst({
+      where: { tenantId: schoolTenantId, isActive: true },
+      orderBy: { startDate: 'desc' },
+      select: { id: true, name: true },
+    });
+
+    // 4. Classes de l'année + effectifs actifs — base de données de l'école
+    const classes = schoolYear
+      ? await this.prisma.class.findMany({
+          where: { tenantId: schoolTenantId, academicYearId: schoolYear.id },
+          include: {
+            officialClass: {
+              select: {
+                name: true,
+                series: { select: { name: true } },
+                level: { select: { name: true } },
+              },
+            },
+            _count: {
+              select: {
+                classStudents: {
+                  where: { status: 'ACTIVE', student: { isActive: true } },
+                },
+              },
+            },
+          },
+          orderBy: { name: 'asc' },
+        })
+      : [];
+
+    // 5. Répartition par examen : CM2 (CEP), 3ème (BEPC), Terminale PAR SÉRIE
+    //    (BAC), CAP PAR FILIÈRE (le nom de classe porte la filière).
+    const classForExam = (type: 'CEP' | 'BEPC' | 'BAC' | 'CAP') =>
+      classes.filter((c) =>
+        classMatchesExam(
+          [c.name, c.officialClass?.name, c.officialClass?.level?.name],
+          type,
+        ),
+      );
+
+    const sumCount = (list: typeof classes) =>
+      list.reduce((acc, c) => acc + c._count.classStudents, 0);
+
+    const cepClasses = classForExam('CEP');
+    const bepcClasses = classForExam('BEPC');
+    const bacClasses = classForExam('BAC');
+    const capClasses = classForExam('CAP');
+
+    // Terminale — effectifs PAR SÉRIE (A1, C, D…, sinon « non précisée »)
+    const bacBySeries = new Map<string, number>();
+    for (const c of bacClasses) {
+      const serie =
+        resolveSeriesFromClassNames(
+          c.name,
+          c.officialClass?.name,
+          c.officialClass?.series?.name ?? null,
+        ) ?? 'NON PRECISEE';
+      bacBySeries.set(serie, (bacBySeries.get(serie) ?? 0) + c._count.classStudents);
+    }
+    // CAP — effectifs PAR FILIÈRE (une classe physique = une filière)
+    const capByFiliere = new Map<string, number>();
+    for (const c of capClasses) {
+      capByFiliere.set(c.name, (capByFiliere.get(c.name) ?? 0) + c._count.classStudents);
+    }
+    const sortDesc = (m: Map<string, number>) =>
+      [...m.entries()]
+        .map(([label, count]) => ({ label, count }))
+        .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'fr'));
+
+    // Niveaux scolaires couverts par l'école (dynamique, selon les classes)
+    const levels: {
+      code: 'CM2' | '3EME' | 'TERMINALE' | 'CAP';
+      cycle: string;
+      classe: string;
+      examType: 'CEP' | 'BEPC' | 'BAC' | 'CAP';
+      examLabel: string;
+      students: number;
+    }[] = [];
+    if (cepClasses.length > 0) {
+      levels.push({
+        code: 'CM2',
+        cycle: 'Enseignement primaire',
+        classe: 'CM2',
+        examType: 'CEP',
+        examLabel: 'CEP',
+        students: sumCount(cepClasses),
+      });
+    }
+    if (bepcClasses.length > 0) {
+      levels.push({
+        code: '3EME',
+        cycle: 'Secondaire — 1er cycle',
+        classe: '3ème',
+        examType: 'BEPC',
+        examLabel: 'BEPC',
+        students: sumCount(bepcClasses),
+      });
+    }
+    if (bacClasses.length > 0) {
+      levels.push({
+        code: 'TERMINALE',
+        cycle: 'Secondaire — 2nd cycle',
+        classe: 'Terminale',
+        examType: 'BAC',
+        examLabel: 'Baccalauréat',
+        students: sumCount(bacClasses),
+      });
+    }
+    if (capClasses.length > 0) {
+      levels.push({
+        code: 'CAP',
+        cycle: 'Formation professionnelle',
+        classe: 'Terminale CAP',
+        examType: 'CAP',
+        examLabel: 'CAP',
+        students: sumCount(capClasses),
+      });
+    }
+
+    // 6. Candidats officiellement présentés par l'école — sous-onglets
+    //    dynamiques CEP / BEPC / BAC / CAP. Les ExamCandidate vivent chez le
+    //    patronat dépositaire du lien (le départemental en vision nationale) ;
+    //    on filtre sur les années scolaires actives des patronats concernés
+    //    (le seul patronat en territorial, TOUS les patronats du pays en
+    //    vision nationale — les liens y sont attribués aux départementaux).
+    const countryPatronats = isNational
+      ? await this.prisma.patronat.findMany({
+          where: {
+            ...(patronat.countryId ? { countryId: patronat.countryId } : {}),
+          },
+          select: { id: true, tenantId: true },
+        })
+      : [];
+    const visiblePatronatIds = isNational
+      ? countryPatronats.map((p) => p.id)
+      : [link.patronatId ?? patronat.id];
+    const visibleYearTenantIds = isNational
+      ? countryPatronats.map((p) => p.tenantId)
+      : [link.patronat?.tenantId ?? patronat.tenantId];
+
+    const activeYears = await this.prisma.academicYear.findMany({
+      where: { tenantId: { in: visibleYearTenantIds }, isActive: true },
+      select: { id: true, name: true },
+    });
+
+    const presentedCandidates =
+      activeYears.length > 0
+        ? await this.prisma.examCandidate.findMany({
+            where: {
+              schoolTenantId,
+              status: { not: 'WITHDRAWN' },
+              exam: {
+                academicYearId: { in: activeYears.map((y) => y.id) },
+                patronatId: { in: visiblePatronatIds },
+              },
+            },
+            include: {
+              exam: { select: { code: true, name: true, level: true, status: true } },
+            },
+            orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+          })
+        : [];
+
+    // Regroupement par type d'examen (level → CEP/BEPC/BAC/CAP)
+    const EXAM_ORDER = ['CEP', 'BEPC', 'BAC', 'CAP'] as const;
+    const presentationsByType = new Map<
+      (typeof EXAM_ORDER)[number],
+      {
+        examType: (typeof EXAM_ORDER)[number];
+        exam: { code: string; name: string } | null;
+        candidates: {
+          id: string;
+          matricule: string;
+          registrationNumber: string;
+          firstName: string;
+          lastName: string;
+          gender: string | null;
+          dateOfBirth: Date | null;
+          series: string | null;
+          schoolClass: string | null;
+        }[];
+      }
+    >();
+    for (const c of presentedCandidates) {
+      const type = EXAM_ORDER.find((t) => federisLevelMatchesType(c.exam?.level, t));
+      if (!type) continue;
+      const entry =
+        presentationsByType.get(type) ??
+        {
+          examType: type,
+          exam: c.exam ? { code: c.exam.code, name: c.exam.name } : null,
+          candidates: [],
+        };
+      const meta = (c.metadata ?? {}) as Record<string, unknown>;
+      entry.candidates.push({
+        id: c.id,
+        matricule: c.matricule,
+        registrationNumber: c.registrationNumber,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        gender: c.gender,
+        dateOfBirth: c.dateOfBirth,
+        series: typeof meta.series === 'string' ? meta.series : null,
+        schoolClass: typeof meta.schoolClass === 'string' ? meta.schoolClass : null,
+      });
+      presentationsByType.set(type, entry);
+    }
+    const presentations = EXAM_ORDER.filter((t) => presentationsByType.has(t)).map(
+      (t) => presentationsByType.get(t)!,
+    );
+
+    return {
+      school: {
+        id: schoolTenant.id,
+        name: schoolTenant.name,
+        slug: schoolTenant.slug,
+        subdomain: schoolTenant.subdomain,
+        logo: school?.logo ?? null,
+        address: school?.address ?? null,
+        city: school?.city ?? null,
+        department: school?.department ?? null,
+        phone: school?.primaryPhone ?? null,
+        secondaryPhone: school?.secondaryPhone ?? null,
+        email: school?.primaryEmail ?? null,
+        website: school?.website ?? null,
+        promoteur: school?.founderName ?? null,
+        directeur: school?.directorPrimary ?? school?.directorSecondary ?? null,
+        educationLevels: school?.educationLevels ?? [],
+        joinedAt: link.joinedAt,
+        accessLevel: link.accessLevel,
+        patronat: link.patronat
+          ? { name: link.patronat.name, territoryName: link.patronat.territoryName }
+          : null,
+      },
+      academicYear: schoolYear?.name ?? null,
+      levels,
+      effectifs: {
+        CEP: { total: sumCount(cepClasses), byClass: cepClasses.map((c) => ({ label: c.name, count: c._count.classStudents })) },
+        BEPC: { total: sumCount(bepcClasses), byClass: bepcClasses.map((c) => ({ label: c.name, count: c._count.classStudents })) },
+        BAC: { total: sumCount(bacClasses), bySerie: sortDesc(bacBySeries) },
+        CAP: { total: sumCount(capClasses), byFiliere: sortDesc(capByFiliere) },
+      },
+      presentations,
     };
   }
 

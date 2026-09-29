@@ -22,10 +22,13 @@ import AppIcon from '@/components/ui/AppIcon';
 import { apiClient } from '@/lib/api/client';
 import { cn } from '@/lib/utils';
 import { FedPage } from '@/components/federis/federis-motion';
+import FederisSchoolDetail from '@/components/federis/FederisSchoolDetail';
 
 interface LinkedSchool {
   id: string;
   kind: 'HELM';
+  /** ⭐ Identifiant du tenant école — ouvre la fiche détail au clic. */
+  schoolTenantId?: string;
   name: string;
   slug?: string;
   logo?: string | null;
@@ -44,6 +47,16 @@ interface LinkedSchool {
   /** ⭐ Patronat dépositaire du lien (vision nationale uniquement). */
   patronat?: string | null;
   patronatTerritory?: string | null;
+  /** ⭐ Candidats présentés PAR EXAMEN (CEP/BEPC/BAC/CAP) — compteurs de la
+   *  ligne, ouverture de la fiche détail au clic sur l'école. */
+  candidatesByExam?: { CEP: number; BEPC: number; BAC: number; CAP: number };
+}
+
+/** ⭐ Totaux globaux du module (toutes écoles rattachées confondues). */
+interface SchoolsTotals {
+  attached: number;
+  pending: number;
+  candidates: { CEP: number; BEPC: number; BAC: number; CAP: number };
 }
 
 interface ManualSchool {
@@ -313,8 +326,14 @@ function ManualSchoolFormFields({
 export default function FederisSchoolsPage() {
   const [linked, setLinked] = useState<LinkedSchool[]>([]);
   const [manual, setManual] = useState<ManualSchool[]>([]);
+  const [totals, setTotals] = useState<SchoolsTotals | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // ⭐ Fiche détail d'une école rattachée (2026-09-29 #3) — le clic sur une
+  //    école JOINED ouvre sa fiche complète : informations, niveaux, effectifs
+  //    par série et sous-onglets dynamiques des candidats présentés.
+  const [selectedSchoolTenantId, setSelectedSchoolTenantId] = useState<string | null>(null);
 
   // ⭐ Découverte automatique — écoles du même département / pays
   const [discovery, setDiscovery] = useState<DiscoverResponse | null>(null);
@@ -342,6 +361,7 @@ export default function FederisSchoolsPage() {
       const res = await apiClient.get('/federis/patronat/schools', { timeout: 30000 });
       setLinked(res.data?.linked ?? []);
       setManual(res.data?.manual ?? []);
+      setTotals(res.data?.totals ?? null);
     } catch (err: any) {
       setError(
         err?.response?.data?.message ??
@@ -531,6 +551,17 @@ export default function FederisSchoolsPage() {
       });
   }, [linked, isNationalScope]);
 
+  // ⭐ Fiche détail d'une école — remplace la liste tant qu'une école est
+  //    sélectionnée (retour via le bouton « Retour aux écoles rattachées »).
+  if (selectedSchoolTenantId) {
+    return (
+      <FederisSchoolDetail
+        schoolTenantId={selectedSchoolTenantId}
+        onBack={() => setSelectedSchoolTenantId(null)}
+      />
+    );
+  }
+
   return (
     <FedPage className="space-y-6">
       {/* En-tête */}
@@ -543,6 +574,32 @@ export default function FederisSchoolsPage() {
             {linked.filter((s) => s.status === 'PENDING').length} en attente · {manual.length}{' '}
             hors Academia Helm
           </p>
+          {/* ⭐ Compteurs globaux de candidats PAR EXAMEN (2026-09-29 #3) —
+              mis à jour automatiquement dès qu'une école présente officiellement
+              ses élèves ; le clic sur une école ouvre ses données spécifiques. */}
+          {totals && (
+            <div className="flex flex-wrap gap-2 mt-3">
+              {(
+                [
+                  { key: 'CEP', label: 'Candidats CEP' },
+                  { key: 'BEPC', label: 'Candidats BEPC' },
+                  { key: 'BAC', label: 'Candidats Baccalauréat' },
+                  { key: 'CAP', label: 'Candidats CAP' },
+                ] as const
+              ).map((chip) => (
+                <span
+                  key={chip.key}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-900/[0.04] border border-blue-100 text-[11px] font-bold text-blue-900"
+                  title={`${chip.label} — toutes les écoles rattachées confondues`}
+                >
+                  {chip.label}
+                  <span className="px-1.5 py-0.5 rounded-full bg-blue-900 text-white tabular-nums">
+                    {totals.candidates[chip.key]}
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <button
           type="button"
@@ -815,14 +872,20 @@ export default function FederisSchoolsPage() {
                       {group.schools.length} école(s)
                     </span>
                   </div>
-                  <LinkedSchoolsTable schools={group.schools} showPatronat />
+                  <LinkedSchoolsTable
+                    schools={group.schools}
+                    showPatronat
+                    onSelectSchool={setSelectedSchoolTenantId}
+                  />
                 </div>
               ))}
             </>
           )}
 
           {/* Patronat DÉPARTEMENTAL — tableau simple */}
-          {!isNationalScope && linked.length > 0 && <LinkedSchoolsTable schools={linked} />}
+          {!isNationalScope && linked.length > 0 && (
+            <LinkedSchoolsTable schools={linked} onSelectSchool={setSelectedSchoolTenantId} />
+          )}
 
           {/* Écoles hors Academia Helm (manuelles) */}
           {manual.length > 0 && (
@@ -875,13 +938,22 @@ export default function FederisSchoolsPage() {
 }
 
 /** Tableau des écoles rattachées (Helm) — logo + informations, avec patronat
- * dépositaire en vision nationale. ⭐ Aucun badge de type. */
+ * dépositaire en vision nationale. ⭐ Aucun badge de type.
+ *
+ * ⭐ (2026-09-29 #3) Le clic sur une école RATTACHÉE (JOINED) ouvre sa fiche
+ *    complète : informations de l'établissement, niveaux scolaires, effectifs
+ *    des classes d'examen (Terminale par série, CAP par filière) et listes
+ *    officielles des candidats par sous-onglets dynamiques CEP/BEPC/BAC/CAP.
+ *    La colonne « Candidats » affiche la répartition PAR EXAMEN.
+ */
 function LinkedSchoolsTable({
   schools,
   showPatronat = false,
+  onSelectSchool,
 }: {
   schools: LinkedSchool[];
   showPatronat?: boolean;
+  onSelectSchool?: (schoolTenantId: string) => void;
 }) {
   return (
     <div className="overflow-x-auto">
@@ -893,7 +965,7 @@ function LinkedSchoolsTable({
             <th className="px-4 py-3 font-semibold">Type</th>
             {showPatronat && <th className="px-4 py-3 font-semibold">Patronat</th>}
             <th className="px-4 py-3 font-semibold">Statut</th>
-            <th className="px-4 py-3 font-semibold text-center">Candidats</th>
+            <th className="px-4 py-3 font-semibold text-center">Candidats présentés</th>
             <th className="px-4 py-3 font-semibold">Année</th>
           </tr>
         </thead>
@@ -902,13 +974,48 @@ function LinkedSchoolsTable({
             const badge =
               STATUS_BADGES[school.status] ??
               ({ label: school.status, className: 'bg-gray-100 text-slate-700' } as const);
+            // ⭐ Seule une école ayant ACCEPTÉ l'invitation (JOINED) est
+            //    consultable — l'accès aux données reste contrôlé (§10.4).
+            const clickable = school.status === 'JOINED' && !!onSelectSchool;
+            const byExam = school.candidatesByExam;
+            const exams =
+              byExam && school.candidatesCount > 0
+                ? (['CEP', 'BEPC', 'BAC', 'CAP'] as const).filter((k) => byExam[k] > 0)
+                : [];
             return (
-              <tr key={school.id} className="border-t border-slate-100 hover:bg-[#f7f9fc]">
+              <tr
+                key={school.id}
+                onClick={
+                  clickable && school.schoolTenantId
+                    ? () => onSelectSchool!(school.schoolTenantId!)
+                    : undefined
+                }
+                className={cn(
+                  'border-t border-slate-100',
+                  clickable
+                    ? 'cursor-pointer hover:bg-blue-50/60 transition-colors'
+                    : 'hover:bg-[#f7f9fc]',
+                )}
+                title={
+                  clickable
+                    ? `Consulter la fiche de ${school.name} — informations, niveaux, effectifs et candidats présentés`
+                    : undefined
+                }
+              >
                 <td className="px-6 py-3.5">
                   <div className="flex items-center gap-3">
                     <SchoolLogo name={school.name} logo={school.logo ?? null} size="sm" />
                     <div className="min-w-0">
-                      <div className="font-medium text-blue-900 truncate">{school.name}</div>
+                      <div className="font-medium text-blue-900 truncate flex items-center gap-1.5">
+                        <span className="truncate">{school.name}</span>
+                        {clickable && (
+                          <AppIcon
+                            name="chevronRight"
+                            size="submenu"
+                            className="text-slate-300 flex-shrink-0"
+                          />
+                        )}
+                      </div>
                       <div className="text-xs text-slate-400">
                         {school.joinedAt
                           ? `Rattachée le ${new Date(school.joinedAt).toLocaleDateString('fr-FR')}`
@@ -949,8 +1056,23 @@ function LinkedSchoolsTable({
                     {badge.label}
                   </span>
                 </td>
-                <td className="px-4 py-3.5 text-center text-slate-700">
-                  {school.candidatesCount}
+                <td className="px-4 py-3.5 text-center">
+                  {school.candidatesCount === 0 ? (
+                    <span className="text-xs text-slate-400 italic">Aucun</span>
+                  ) : exams.length > 0 ? (
+                    <div className="inline-flex flex-wrap gap-1 justify-center">
+                      {exams.map((k) => (
+                        <span
+                          key={k}
+                          className="px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-900 text-[10px] font-bold"
+                        >
+                          {k} {byExam![k]}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-slate-700 tabular-nums">{school.candidatesCount}</span>
+                  )}
                 </td>
                 <td className="px-4 py-3.5 text-slate-600">{school.academicYear ?? '—'}</td>
               </tr>

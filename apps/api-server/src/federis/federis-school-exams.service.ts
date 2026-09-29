@@ -182,7 +182,7 @@ function normalizeUpper(s: string | null | undefined): string {
  *              sur l'ensemble (une classe « Tle CAP Mécanique » rattachée à
  *              une classe officielle « Terminale » reste éligible CAP).
  */
-function classMatchesExam(
+export function classMatchesExam(
   names: (string | null | undefined)[],
   type: NationalExamType,
 ): boolean {
@@ -284,7 +284,7 @@ export function resolveSeriesFromClassNames(
 }
 
 /** Niveau fédéré (NationalExam.level) ↔ type d'examen national. */
-function federisLevelMatchesType(level: string | null | undefined, type: NationalExamType): boolean {
+export function federisLevelMatchesType(level: string | null | undefined, type: NationalExamType): boolean {
   const n = normalizeUpper(level);
   if (!n) return false;
   if (type === 'CEP') return n.startsWith('CM2');

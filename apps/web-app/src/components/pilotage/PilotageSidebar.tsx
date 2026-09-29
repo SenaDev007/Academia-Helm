@@ -294,12 +294,7 @@ interface MainModule {
 const MAIN_MODULES: MainModule[] = [
   { path: '/app', label: 'Tableau de pilotage', icon: LayoutDashboard },
   { path: '/app/pedagogy', label: 'Organisation Pédagogique', icon: School, featureCode: 'PEDAGOGY' },
-  // ⭐ Espace Censeur — juste après Organisation Pédagogique (Secondaire uniquement)
-  {
-    path: '/app/censeur', label: 'Espace Censeur', icon: ClipboardCheck,
-    requiresSecondary: true,
-    roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CENSEUR', 'CENSOR', 'SURVEILLANT_GENERAL', 'GENERAL_MONITOR', 'admin'],
-  },
+  // ⭐ 2026-09-29 — Espace Censeur et Espace Directeur supprimés définitivement.
   // ⭐ Ajout des DIRECTEUR_* (MATERNELLE/PRIMAIRE/SECONDAIRE/MAT_PRI) pour qu'ils voient le module Élèves
   { path: '/app/students', label: 'Élèves & Scolarité', icon: Users, iconUrl: '/icons/modules/eleves-scolarite.png', featureCode: 'STUDENTS', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'SCOLARITE', 'SECRETAIRE', 'SECRETAIRE_GENERAL', 'SECRETAIRE_COMPTABLE', 'COMPTABLE', 'CENSEUR', 'CENSOR', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'GENERAL_MONITOR', 'ECONOME', 'INTENDANT', 'RESP_SCOLARITE', 'admin'] },
   // ⭐ Vie Scolaire — juste après Élèves & Scolarité (Secondaire uniquement)
@@ -307,17 +302,6 @@ const MAIN_MODULES: MainModule[] = [
     path: '/app/discipline', label: 'Vie Scolaire', icon: Shield,
     requiresSecondary: true,
     roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'SURVEILLANT', 'SURVEILLANT_GENERAL', 'GENERAL_MONITOR', 'CENSEUR', 'CENSOR', 'admin'],
-  },
-  // ⭐ Espace Directeur — Score de risque croisé + Décrochage (Secondaire uniquement)
-  //    Le directeur a une vue globale (conduite SG + pédagogie censeur + assiduité)
-  //    Le score de risque est le différenciateur marché principal.
-  //    ℹ️ /app/director est désormais la home du PORTAIL DIRECTEUR (shell dédié) ;
-  //    le contenu analytique a déménagé vers /app/director/oversight. Cette entrée
-  //    reste visible côté UI partagée pour le promoteur/les admins (filet de sécurité).
-  {
-    path: '/app/director/oversight', label: 'Espace Directeur', icon: Brain,
-    requiresSecondary: true,
-    roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'admin'],
   },
   // ⭐ Finance : directeurs niveau-spécifiques voient le module (consultation filtrée), mais l'accès aux sous-onglets financiers sensibles (payroll, audit, settings) sera restreint au niveau sub-tab
   { path: '/app/finance', label: 'Finances & Économat', icon: Wallet, iconUrl: '/icons/modules/finance-economat.png', featureCode: 'FINANCE', roles: ['SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_SUPER_ADMIN', 'PLATFORM_BILLING', 'PROMOTER', 'PROMOTEUR', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'CAISSIER', 'COMPTABLE', 'SECRETAIRE_COMPTABLE', 'ECONOME', 'INTENDANT', 'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTEUR_MATERNELLE', 'DIRECTEUR_PRIMAIRE', 'DIRECTEUR_SECONDAIRE', 'DIRECTEUR_MAT_PRI', 'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER', 'accountant', 'admin'] },
@@ -509,8 +493,7 @@ export default function PilotageSidebar({
     if (path.startsWith('/app/hr')) return 'hr';
     if (path.startsWith('/app/communication')) return 'communication';
     if (path.startsWith('/app/discipline')) return 'discipline';
-    if (path.startsWith('/app/censeur')) return 'censeur';
-    if (path.startsWith('/app/director')) return 'director';
+    // ⭐ 2026-09-29 — Espace Censeur et Espace Directeur supprimés.
     // ⭐ 2026-09-27 — Patronats fédérés (Academia Federis)
     if (path.startsWith('/app/federis')) return 'federis';
     if (path.startsWith('/app/cms')) return 'cms';

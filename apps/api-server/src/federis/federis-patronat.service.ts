@@ -53,12 +53,18 @@ import {
 // ⭐ Fiche détail d'une école rattachée (2026-09-29 #3) : rapprochement des
 //    classes de l'école avec les examens nationaux (CM2→CEP, 3ème→BEPC,
 //    Terminale→BAC par série, CAP par filière) — mêmes règles que le module
-//    « Examens nationaux » côté école (fonctions hissées : import sûr).
+//    « Examens nationaux » côté école.
+// ⭐ FIX CYCLE D'IMPORTS (2026-09-30) : ces fonctions sont importées depuis
+//    le module FEUILLE federis-exam-matching (zéro import) et NON PLUS depuis
+//    federis-school-exams.service — l'ancienne arête créait le cycle runtime
+//    patronat → school-exams → deliberation/grades/pdf → patronat, lequel
+//    crashait le boot en TDZ sous SWC (« Cannot access 'FederisPatronatService
+//    before initialization » — crash-loop Railway).
 import {
   classMatchesExam,
   federisLevelMatchesType,
   resolveSeriesFromClassNames,
-} from './federis-school-exams.service';
+} from './federis-exam-matching';
 
 /**
  * Offres Federis (cahier des charges §12 + proposition tarifaire).

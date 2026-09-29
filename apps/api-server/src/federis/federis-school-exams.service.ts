@@ -59,6 +59,24 @@ import { isSchoolTenantType } from '../common/constants/school-tenant-types';
 import { FederisDeliberationService } from './federis-deliberation.service';
 import { FederisGradesService } from './federis-grades.service';
 import { FederisPdfService } from './federis-pdf.service';
+// ⭐ FIX CYCLE D'IMPORTS (2026-09-30) : les fonctions de rapprochement
+//    (classMatchesExam, resolveSeriesFromClassNames, federisLevelMatchesType)
+//    et le type NationalExamType vivent désormais dans le module FEUILLE
+//    federis-exam-matching (zéro import) — federis-patronat.service les
+//    consomme SANS importer ce service (avant : patronat → school-exams →
+//    deliberation/grades/pdf → patronat = cycle runtime → TDZ au boot SWC,
+//    crash-loop Railway « Cannot access 'FederisPatronatService' before
+//    initialization »).
+import {
+  classMatchesExam,
+  federisLevelMatchesType,
+  resolveSeriesFromClassNames,
+  type NationalExamType,
+} from './federis-exam-matching';
+
+// Ré-export du type pour la compatibilité de l'API publique (type-only :
+// éliminé par SWC — aucune arête runtime).
+export type { NationalExamType } from './federis-exam-matching';
 
 // ── DTO ─────────────────────────────────────────────────────────────────────
 
@@ -91,7 +109,7 @@ export class SubmitSelectionDto {
 
 // ── Définitions des examens nationaux ───────────────────────────────────────
 
-export type NationalExamType = 'CEP' | 'BEPC' | 'BAC' | 'CAP';
+// (type NationalExamType : importé + ré-exporté depuis federis-exam-matching.ts)
 
 interface ExamTypeDef {
   type: NationalExamType;
@@ -173,148 +191,6 @@ const SCHOOL_DIRECTION_ROLES = [
 
 const SCHOOL_DIRECTION_ROLE_PREFIX =
   /^(PROMOTEUR|DIRECTEUR|DIRECTRICE|SECRETAIRE|SECRETAIRE_COMPTABLE)_(MAT|PRI|SEC|MAT_PRI)/;
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-/** Normalisation insensible à la casse/accents. */
-function normalizeUpper(s: string | null | undefined): string {
-  return (s ?? '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toUpperCase()
-    .trim();
-}
-
-/**
- * Une classe physique (ou officielle) correspond-elle au type d'examen ?
- *   CEP  : « CM2 A », « CM2 »…
- *   BEPC : « 3ème 1 », « 3E A », « 3A »…
- *   BAC  : « Terminale C », « Tle D », « Term A1 »… (hors classes CAP)
- *   CAP  : « Terminale CAP », « Tle CAP Mécanique », « CAP 2 », « 2CAP »…
- *          ⭐ + TOUTES les classes du DOMAINE TECHNIQUE (filières
- *          professionnelles : mécanique, couture, électricité, menuiserie,
- *          coiffure, bâtiment…) hors séries du baccalauréat (A-G) et du
- *          Brevet de Technicien (BT) — ces classes présentent le CAP, le
- *          système les récupère donc automatiquement pour le niveau CAP.
- *    ⚠️ Les classes CAP sont exclues du BAC : elles présentent le CAP,
- *    pas le baccalauréat général/technique.
- *
- * @param names noms candidats de la classe : nom physique, classe officielle
- *              (Pédagogie) et niveau académique — le rapprochement se fait
- *              sur l'ensemble (une classe « Tle CAP Mécanique » rattachée à
- *              une classe officielle « Terminale » reste éligible CAP).
- */
-export function classMatchesExam(
-  names: (string | null | undefined)[],
-  type: NationalExamType,
-): boolean {
-  const normalized = names.map((n) => normalizeUpper(n)).filter(Boolean) as string[];
-  if (normalized.length === 0) return false;
-
-  if (type === 'CEP') return normalized.some((n) => n.startsWith('CM2'));
-  if (type === 'BEPC') return normalized.some((n) => /^3($|[^0-9])/.test(n));
-  if (type === 'CAP') {
-    // 1. Mention explicite « CAP » dans le nom (physique, officiel ou niveau)
-    if (normalized.some((n) => n.includes('CAP'))) return true;
-    // 2. Domaine technique / filière professionnelle — hors classes portant
-    //    une série du baccalauréat (A1…G2 — elles présentent le BAC) et hors
-    //    Brevet de Technicien (BT).
-    const hasBacSeries = normalized.some((n) => BAC_SERIES_ANYWHERE.test(n));
-    const hasBt = normalized.some((n) => /\bBT\b/.test(n));
-    if (hasBacSeries || hasBt) return false;
-    return normalized.some((n) => CAP_TECHNICAL_KEYWORDS.some((k) => n.includes(k)));
-  }
-  // BAC — les filières professionnelles (CAP) ne présentent pas le bac
-  return normalized.some(
-    (n) => !n.includes('CAP') && (n.startsWith('TERM') || n.startsWith('TLE') || n.startsWith('BAC')),
-  );
-}
-
-/**
- * ⭐ Mots-clés du domaine technique & professionnel (CAP) — filières
- * présentées au Certificat d'Aptitude Professionnelle au Bénin.
- */
-const CAP_TECHNICAL_KEYWORDS = [
-  'TECHNIQUE',
-  'TECHNOLOGIQUE',
-  'PROFESSIONNEL',
-  'VOCATIONNEL',
-  'METIER',
-  'APPRENTISSAGE',
-  'ARTISANAT',
-  'FILIERE',
-  'MECANIQUE',
-  'AUTOMOBILE',
-  'COUTURE',
-  'BRODERIE',
-  'ELECTRICITE',
-  'ELECTRONIQUE',
-  'ELECTROTECHNIQUE',
-  'MENUISERIE',
-  'CHARPENTE',
-  'COIFFURE',
-  'ESTHETIQUE',
-  'BATIMENT',
-  'MACONNERIE',
-  'SOUDURE',
-  'PLOMBERIE',
-  'PEINTURE',
-  'VENTE',
-  'HOTELLERIE',
-  'RESTAURATION',
-  'CUISINE',
-  'PATISSERIE',
-  'BOULANGERIE',
-  'AGRICULTURE',
-  'ELEVAGE',
-  'PISCICULTURE',
-  'MAINTENANCE',
-  'INFORMATIQUE',
-] as const;
-
-/** Série de bac explicite (A1, A2, B, C, D, E, F1-F4, G1-G2) après le préfixe d'année. */
-const BAC_SERIES_ANYWHERE =
-  /(?:TERM(?:INALE)?|TLE|BAC|1ERE|1RE|PREMIERE|2NDE|SECONDE)\s+(?:SERIE\s+)?[A-G]\d?\b/;
-
-/**
- * Extrait la série d'un nom de classe de Terminale (« Terminale C » → « C »).
- * Tolère un numéro de division en fin de nom (« Terminale D 1 » → « D »).
- */
-function seriesFromClassName(className: string | null | undefined): string | null {
-  const n = normalizeUpper(className);
-  if (!n) return null;
-  const match = n.match(
-    /(?:TERM(?:INALE)?|TLE|BAC)\s*(?:SERIE\s*)?([A-Z]\d?|[A-Z]{2})(?:\s+\d+)?\s*$/,
-  );
-  return match?.[1] ?? null;
-}
-
-/**
- * Série d'élève pour l'envoi officiel (Bac) : classe officielle (AcademicSeries)
- * en priorité, sinon extraction depuis le nom de classe. Exporté pour le
- * regroupement par série côté patronat (federis-exams.service).
- */
-export function resolveSeriesFromClassNames(
-  physicalName: string | null | undefined,
-  officialName: string | null | undefined,
-  officialSeriesName: string | null | undefined,
-): string | null {
-  if (officialSeriesName) return officialSeriesName.toUpperCase();
-  return (
-    seriesFromClassName(physicalName) ?? seriesFromClassName(officialName) ?? null
-  );
-}
-
-/** Niveau fédéré (NationalExam.level) ↔ type d'examen national. */
-export function federisLevelMatchesType(level: string | null | undefined, type: NationalExamType): boolean {
-  const n = normalizeUpper(level);
-  if (!n) return false;
-  if (type === 'CEP') return n.startsWith('CM2');
-  if (type === 'BEPC') return /^3/.test(n);
-  if (type === 'CAP') return n.includes('CAP');
-  // BAC — exclut les niveaux CAP (filières techniques/professionnelles)
-  return (n.startsWith('TERM') || n.startsWith('TLE')) && !n.includes('CAP');
-}
 
 @Injectable()
 export class FederisSchoolExamsService {

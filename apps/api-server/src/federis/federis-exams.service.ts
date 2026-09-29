@@ -35,7 +35,9 @@ import { FederisPatronatService, FEDERIS_PLANS, type FederisPlanCode } from './f
 import { FederisSubjectsService } from './federis-subjects.service';
 // ⭐ Série (Baccalauréat) — les listes officielles transmises par les écoles
 //    sont regroupées PAR SÉRIE côté patronat (jamais un mélange).
-import { resolveSeriesFromClassNames } from './federis-school-exams.service';
+//    (FIX CYCLE D'IMPORTS 2026-09-30 : importé depuis le module feuille
+//    federis-exam-matching — cf. federis-patronat.service.ts.)
+import { resolveSeriesFromClassNames } from './federis-exam-matching';
 import {
   ALL_PATRONAT_FUNCTIONS,
   WRITE_CANDIDATES,

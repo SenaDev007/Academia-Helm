@@ -28,6 +28,21 @@ import {
   type PatronatFunction,
 } from './federis-roles';
 import { FederisFedapayService } from './federis-fedapay.service';
+// ⭐ FIX « tenant SCHOOL » (2026-09-29) : l'onboarding Helm crée les tenants
+//    écoles avec le TYPE D'ÉTABLISSEMENT (MATERNELLE / PRIMAIRE / SECONDAIRE /
+//    MIXTE — cf. OnboardingService.activate : `type: draft.schoolType`), PAS
+//    avec 'SCHOOL'. Toute requête `type: 'SCHOOL'` excluait donc TOUTES les
+//    écoles réelles : recherche vide, rattachement impossible. Source unique
+//    de vérité : common/constants/school-tenant-types (pattern school-search).
+import { schoolTenantTypeFilter } from '../common/constants/school-tenant-types';
+// ⭐ Découverte territoriale (2026-09-29) : carte officielle des 77 communes
+//    du Bénin + alias de départements (renommages 2016) — permet de rattacher
+//    les écoles à leur patronat départemental via leur VILLE (l'onboarding
+//    Helm ne collecte pas le département).
+import {
+  normalizeTerritoryKey,
+  territoryIncludesCity,
+} from '../common/constants/benin-territories';
 
 /**
  * Offres Federis (cahier des charges §12 + proposition tarifaire).
@@ -882,7 +897,18 @@ export class FederisPatronatService {
               slug: true,
               subdomain: true,
               status: true,
-              schools: { select: { logo: true } },
+              // ⭐ Infos établissement (fiche School 1:1) — affichage côté
+              //    patronat une fois le rattachement validé par l'école.
+              schools: {
+                select: {
+                  logo: true,
+                  city: true,
+                  department: true,
+                  address: true,
+                  primaryPhone: true,
+                  primaryEmail: true,
+                },
+              },
             },
           },
           academicYear: { select: { name: true } },
@@ -904,6 +930,11 @@ export class FederisPatronatService {
         slug: s.schoolTenant?.slug,
         subdomain: s.schoolTenant?.subdomain,
         logo: s.schoolTenant?.schools?.logo ?? null,
+        city: s.schoolTenant?.schools?.city ?? null,
+        department: s.schoolTenant?.schools?.department ?? null,
+        address: s.schoolTenant?.schools?.address ?? null,
+        phone: s.schoolTenant?.schools?.primaryPhone ?? null,
+        email: s.schoolTenant?.schools?.primaryEmail ?? null,
         status: s.status,
         accessLevel: s.accessLevel,
         joinedAt: s.joinedAt,
@@ -930,7 +961,8 @@ export class FederisPatronatService {
     if (!q || q.length < 2) return [];
     return this.prisma.tenant.findMany({
       where: {
-        type: 'SCHOOL',
+        // ⭐ FIX : écoles réelles = MATERNELLE/PRIMAIRE/SECONDAIRE/MIXTE/SCHOOL
+        type: schoolTenantTypeFilter(),
         status: 'active',
         OR: [
           { name: { contains: q, mode: 'insensitive' } },
@@ -951,11 +983,124 @@ export class FederisPatronatService {
     });
   }
 
+  // ── Découverte automatique des écoles du territoire (2026-09-29) ──────────
+
+  /**
+   * ⭐ Écoles Academia Helm du périmètre du patronat — listage AUTOMATIQUE et
+   * dynamique (« Écoles de votre territoire ») :
+   *   - Patronat TERRITORIAL : écoles dont la fiche School correspond au
+   *     territoire du patronat (territoryName, sinon region) ;
+   *   - Patronat NATIONAL : toutes les écoles du pays du patronat.
+   *
+   * Rapprochement territorial (dans l'ordre) :
+   *   1. School.department — libellé exact (accents/tirets/casse tolérés) ;
+   *   2. School.city → commune → département (carte officielle des 77 communes
+   *      du Bénin — l'onboarding Helm ne collecte que la VILLE, le champ
+   *      department reste vide pour la plupart des écoles réelles) ;
+   *   3. School.city comparé directement au libellé du territoire (patronats
+   *      couvrant une commune, ex. « Cotonou »).
+   *
+   * Chaque école est accompagnée de son statut de rattachement actuel
+   * (PENDING / JOINED / REJECTED / SUSPENDED / null = jamais sollicitée).
+   */
+  async discoverTerritorySchools(tenantId: string, userId?: string) {
+    const patronat = await this.resolvePatronat(tenantId, userId);
+
+    const isNational = patronat.orgLevel === 'NATIONAL';
+    const territory = patronat.territoryName ?? patronat.region ?? null;
+
+    if (!isNational && !territory) {
+      return {
+        scope: null as string | null,
+        territoryName: null as string | null,
+        country: patronat.country?.name ?? null,
+        message:
+          'Aucun territoire configuré pour ce patronat — précisez le département dans Paramètres pour la découverte automatique.',
+        schools: [] as unknown[],
+      };
+    }
+
+    // Écoles Helm actives du même pays (le filtre territorial est appliqué
+    // ensuite en code — normalisation des libellés de départements).
+    const tenants = await this.prisma.tenant.findMany({
+      where: {
+        type: schoolTenantTypeFilter(),
+        status: 'active',
+        ...(patronat.countryId ? { countryId: patronat.countryId } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        subdomain: true,
+        type: true,
+        schools: {
+          select: {
+            logo: true,
+            city: true,
+            department: true,
+            address: true,
+            primaryPhone: true,
+            primaryEmail: true,
+          },
+        },
+      },
+      take: 500,
+      orderBy: { name: 'asc' },
+    });
+
+    // Statuts de rattachement existants pour ce patronat
+    const links = await this.prisma.patronatSchool.findMany({
+      where: { patronatId: patronat.id },
+      select: { schoolTenantId: true, status: true },
+    });
+    const linkBySchool = new Map(links.map((l) => [l.schoolTenantId, l.status]));
+
+    // Filtre territorial (patronat territorial uniquement) :
+    // département exact → commune→département (Bénin) → ville = territoire.
+    const territoryKey = normalizeTerritoryKey(territory);
+    const inScope = isNational
+      ? tenants
+      : tenants.filter((t) => {
+          const dept = t.schools?.department ?? null;
+          if (dept && normalizeTerritoryKey(dept) === territoryKey) return true;
+          const city = t.schools?.city ?? null;
+          if (city && territoryIncludesCity(territory, city)) return true;
+          return false;
+        });
+
+    return {
+      scope: isNational ? 'COUNTRY' : 'DEPARTMENT',
+      territoryName: isNational ? patronat.country?.name ?? null : territory,
+      country: patronat.country?.name ?? null,
+      orgLevel: patronat.orgLevel,
+      message: null as string | null,
+      total: inScope.length,
+      schools: inScope.map((t) => ({
+        id: t.id,
+        name: t.name,
+        slug: t.slug,
+        subdomain: t.subdomain,
+        tenantType: t.type,
+        logo: t.schools?.logo ?? null,
+        city: t.schools?.city ?? null,
+        department: t.schools?.department ?? null,
+        address: t.schools?.address ?? null,
+        phone: t.schools?.primaryPhone ?? null,
+        email: t.schools?.primaryEmail ?? null,
+        linkStatus: linkBySchool.get(t.id) ?? null,
+      })),
+    };
+  }
+
   /** Demande de rattachement d'une école Helm existante (validation par l'école). */
   async requestSchoolLink(tenantId: string, userId: string, dto: RequestSchoolLinkDto) {
     const patronat = await this.resolvePatronat(tenantId, userId);
     const school = await this.prisma.tenant.findFirst({
-      where: { id: dto.schoolTenantId, type: 'SCHOOL' },
+      // ⭐ FIX : accepter TOUS les types d'établissement (MATERNELLE/PRIMAIRE/
+      //    SECONDAIRE/MIXTE/SCHOOL) — sinon « École Academia Helm introuvable »
+      //    pour toutes les écoles réelles créées par l'onboarding Helm.
+      where: { id: dto.schoolTenantId, type: schoolTenantTypeFilter() },
     });
     if (!school) throw new NotFoundException('École Academia Helm introuvable.');
 

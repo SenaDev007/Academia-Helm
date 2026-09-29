@@ -2,7 +2,7 @@
  * FederisSchoolExamsController — Examens nationaux côté établissement Helm
  *
  * Onglet « Examens nationaux » du module Examen (sous-onglets CEP / BEPC /
- * Baccalauréat — affichage dynamique selon les niveaux activés et les classes
+ * Baccalauréat / CAP — affichage dynamique selon les niveaux activés et les classes
  * réelles de l'école).
  *
  *   GET  /federis/school/national-exams

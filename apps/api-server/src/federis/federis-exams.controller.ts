@@ -10,6 +10,7 @@
  *   POST   /federis/centers/:centerId/rooms            — créer une salle
  *   PATCH  /federis/rooms/:roomId                      — modifier une salle
  *   GET    /federis/exams/:examId/candidates           — candidats (recherche)
+ *   GET    /federis/exams/:examId/school-lists         — listes officielles par école
  *   POST   /federis/exams/:examId/candidates           — ajout manuel
  *   POST   /federis/exams/:examId/candidates/import    — import par lot (Excel)
  *   POST   /federis/exams/:examId/assign-tables        — numéros de table
@@ -113,6 +114,15 @@ export class FederisExamsController {
     @Query('q') q?: string,
   ) {
     return this.examsService.listCandidates(req.user.tenantId, this.uid(req), examId, q);
+  }
+
+  // ⭐ Listes officielles transmises par les écoles rattachées (2026-09-29) —
+  //    candidats de la campagne regroupés PAR ÉCOLE + informations de
+  //    l'établissement (ville, département, contact).
+  @UseGuards(JwtAuthGuard)
+  @Get('exams/:examId/school-lists')
+  async listSchoolLists(@Req() req: any, @Param('examId') examId: string) {
+    return this.examsService.listSchoolLists(req.user.tenantId, this.uid(req), examId);
   }
 
   @UseGuards(JwtAuthGuard)

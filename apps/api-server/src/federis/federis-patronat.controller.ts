@@ -276,6 +276,18 @@ export class FederisPatronatController {
     return this.patronatService.searchHelmSchools(q ?? '');
   }
 
+  // ⭐ Découverte automatique (2026-09-29) : écoles Academia Helm du même
+  //    département (patronat territorial) ou du même pays (patronat national),
+  //    avec statut de rattachement — alimente « Écoles de votre territoire ».
+  @UseGuards(JwtAuthGuard)
+  @Get('patronat/schools/discover')
+  async discoverTerritorySchools(@Req() req: any) {
+    return this.patronatService.discoverTerritorySchools(
+      req.user.tenantId,
+      req.user.id || req.user.sub,
+    );
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post('patronat/schools/request-link')
   async requestSchoolLink(@Req() req: any, @Body() dto: RequestSchoolLinkDto) {

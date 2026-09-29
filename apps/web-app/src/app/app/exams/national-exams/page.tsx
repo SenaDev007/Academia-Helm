@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- * EXAMENS NATIONAUX — CEP / BEPC / BACCALAURÉAT (page établissement)
+ * EXAMENS NATIONAUX — CEP / BEPC / BACCALAURÉAT / CAP (page établissement)
  * ============================================================================
  *
  * Onglet du module Examen (Academia Helm) dédié aux examens organisés par le
@@ -9,10 +9,12 @@
  *   • CEP  — Certificat d'Études Primaires     → élèves de CM2
  *   • BEPC — Brevet d'Études du Premier Cycle  → élèves de 3ème
  *   • BAC  — Baccalauréat (séries A1, C, D…)   → élèves de Terminale
+ *   • CAP  — Certificat d'Aptitude Professionnelle → élèves de Terminale CAP
+ *          (filières techniques et professionnelles — ajouté le 2026-09-29)
  *
  * AFFICHAGE DYNAMIQUE : seuls les sous-onglets correspondant aux classes
  * réellement existantes dans l'école s'affichent (CM2 → CEP, 3ème → BEPC,
- * Terminale → Bac) — API GET /federis/school/national-exams.
+ * Terminale → Bac, Terminale CAP → CAP) — API GET /federis/school/national-exams.
  *
  * FLUX :
  *   1. L'école consulte la liste de ses élèves éligibles (année courante).
@@ -50,7 +52,7 @@ import { fr } from 'date-fns/locale';
 // ─── Types (réponses API) ────────────────────────────────────────────────────
 
 interface EligibilityExam {
-  type: 'CEP' | 'BEPC' | 'BAC';
+  type: 'CEP' | 'BEPC' | 'BAC' | 'CAP';
   label: string;
   fullLabel: string;
   eligibleClass: string;
@@ -83,7 +85,7 @@ interface CandidateStudent {
 }
 
 interface CandidatesResponse {
-  examType: 'CEP' | 'BEPC' | 'BAC';
+  examType: 'CEP' | 'BEPC' | 'BAC' | 'CAP';
   label: string;
   fullLabel: string;
   hasSeries: boolean;
@@ -100,7 +102,7 @@ export default function NationalExamsPage() {
 
   const [eligibility, setEligibility] = useState<Eligibility | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeType, setActiveType] = useState<'CEP' | 'BEPC' | 'BAC' | null>(null);
+  const [activeType, setActiveType] = useState<'CEP' | 'BEPC' | 'BAC' | 'CAP' | null>(null);
 
   // État du sous-onglet actif
   const [candidates, setCandidates] = useState<CandidatesResponse | null>(null);
@@ -131,7 +133,7 @@ export default function NationalExamsPage() {
   }, [loadEligibility]);
 
   // ── Chargement des candidats du sous-onglet actif ────────────────────────
-  const loadCandidates = useCallback(async (type: 'CEP' | 'BEPC' | 'BAC') => {
+  const loadCandidates = useCallback(async (type: 'CEP' | 'BEPC' | 'BAC' | 'CAP') => {
     setLoadingCandidates(true);
     try {
       const res = await apiClient.get(`/federis/school/national-exams/${type}/candidates`, {
@@ -247,7 +249,7 @@ export default function NationalExamsPage() {
       header={{
         title: 'Examens nationaux',
         description:
-          'CEP, BEPC et Baccalauréat — sélectionnez les élèves que votre établissement présente aux examens organisés par le patronat, puis envoyez la liste officielle.',
+          'CEP, BEPC, Baccalauréat et CAP — sélectionnez les élèves que votre établissement présente aux examens organisés par le patronat, puis envoyez la liste officielle.',
         icon: 'fileText',
       }}
       subModules={{ modules: scopedSubModules, activeModuleId: 'national-exams' }}
@@ -357,8 +359,9 @@ export default function NationalExamsPage() {
                       <Landmark className="w-10 h-10 text-slate-300 mx-auto" />
                       <p className="font-bold text-slate-700">Aucun examen national disponible</p>
                       <p className="text-sm text-slate-500 max-w-lg mx-auto">
-                        Votre établissement n&apos;a aucune classe de CM2, 3ème ou Terminale pour
-                        l&apos;année scolaire courante. Les sous-onglets CEP, BEPC et Baccalauréat
+                        Votre établissement n&apos;a aucune classe de CM2, 3ème, Terminale ou
+                        Terminale CAP pour
+                        l&apos;année scolaire courante. Les sous-onglets CEP, BEPC, Baccalauréat et CAP
                         apparaîtront automatiquement dès qu&apos;une classe éligible existera dans
                         votre structure.
                       </p>
@@ -381,7 +384,7 @@ export default function NationalExamsPage() {
                             )}
                           >
                             <Landmark className="w-4 h-4" />
-                            {exam.type === 'BAC' ? 'Baccalauréat' : exam.label}
+                            {exam.type === 'BAC' ? 'Baccalauréat' : exam.type === 'CAP' ? 'CAP (filières techniques)' : exam.label}
                             <span
                               className={cn(
                                 'px-2 py-0.5 rounded-full text-[10px] font-black',
@@ -422,7 +425,11 @@ export default function NationalExamsPage() {
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                               <CardTitle className="flex items-center gap-2 text-lg">
-                                {candidates.examType === 'BAC' ? 'Baccalauréat' : candidates.label}
+                                {candidates.examType === 'BAC'
+                                  ? 'Baccalauréat'
+                                  : candidates.examType === 'CAP'
+                                    ? 'CAP (filières techniques)'
+                                    : candidates.label}
                                 <Badge className="bg-blue-900 text-white hover:bg-blue-900">
                                   {candidates.students.length} élèves
                                 </Badge>

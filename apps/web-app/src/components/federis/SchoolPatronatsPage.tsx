@@ -132,8 +132,9 @@ export function SchoolPatronatsPage() {
           </div>
           <p className="text-gray-500 font-medium max-w-2xl">
             Les patronats scolaires (Academia Federis) vous demandent le rattachement de votre
-            établissement pour organiser les examens nationaux — CEP, BEPC, BAC. Validez ou
-            refusez chaque demande : votre accord conditionne l&apos;inscription de vos élèves.
+            établissement pour organiser les examens nationaux — CEP, BEPC, Baccalauréat et CAP.
+            Validez ou refusez chaque demande : votre accord conditionne l&apos;inscription de vos
+            élèves.
           </p>
         </div>
         {pendingCount > 0 && (

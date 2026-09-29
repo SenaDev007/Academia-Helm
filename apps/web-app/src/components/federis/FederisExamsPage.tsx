@@ -5,11 +5,19 @@
  * Création (POST /federis/exams) et changement de statut (PATCH) réservés au
  * coordonnateur et à l'organisateur (canWrite 'exam_org' — la garde finale
  * est appliquée par l'API). Liens croisés vers Centres et Candidats.
+ *
+ * ⭐ SOUS-ONGLETS PAR EXAMEN NATIONAL (2026-09-29) :
+ * CEP / BEPC / Baccalauréat / CAP — répartition des campagnes selon la
+ * classe (CM2 → CEP, 3ème → BEPC, Terminale → Baccalauréat, Terminale CAP
+ * → CAP). Dans chaque sous-onglet, le patronat consulte les LISTES
+ * OFFICIELLES transmises par les écoles rattachées (adhésion acceptée) :
+ * GET /federis/exams/:id/school-lists — candidats regroupés par école avec
+ * les informations de l'établissement (ville, département, contact).
  */
 
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
@@ -29,7 +37,86 @@ interface FederisExamsPageProps {
   userRole?: string | null;
 }
 
-const LEVELS = ['CM2', '3EME', 'TERMINALE'];
+// ── Sous-onglets : répartition des examens nationaux par classe ─────────────
+
+const EXAM_TABS = [
+  { id: 'ALL', label: 'Toutes', matchLevels: null as string[] | null },
+  { id: 'CEP', label: 'CEP', matchLevels: ['CM2'] },
+  { id: 'BEPC', label: 'BEPC', matchLevels: ['3EME'] },
+  { id: 'BAC', label: 'Baccalauréat', matchLevels: ['TERMINALE'] },
+  { id: 'CAP', label: 'CAP', matchLevels: ['CAP'] },
+] as const;
+
+/** Libellé lisible du niveau (classe) d'une campagne. */
+const LEVEL_LABELS: Record<string, string> = {
+  CM2: 'CM2 — CEP',
+  '3EME': '3ème — BEPC',
+  TERMINALE: 'Terminale — Baccalauréat',
+  CAP: 'Terminale CAP — CAP',
+};
+
+const CANDIDATE_STATUS_LABELS: Record<string, string> = {
+  REGISTERED: 'Inscrit',
+  WITHDRAWN: 'Retiré',
+  ABSENT: 'Absent',
+  PASSED: 'Admis',
+  FAILED: 'Non admis',
+};
+
+// ── Types de la vue « listes officielles par école » ────────────────────────
+
+interface SchoolListStudent {
+  id: string;
+  matricule: string | null;
+  tableNumber: string | null;
+  firstName: string;
+  lastName: string;
+  gender: string | null;
+  dateOfBirth: string | null;
+  status: string;
+  schoolClass: string | null;
+  series: string | null;
+  submittedAt: string | null;
+  source: string | null;
+  center: { code: string; name: string } | null;
+}
+
+interface SchoolListEntry {
+  schoolTenantId: string | null;
+  name: string;
+  subdomain: string | null;
+  tenantType: string | null;
+  logo: string | null;
+  city: string | null;
+  department: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  students: SchoolListStudent[];
+}
+
+interface SchoolListsResponse {
+  exam: {
+    id: string;
+    code: string;
+    name: string;
+    level: string;
+    status: string;
+    startDate: string;
+    endDate: string;
+  };
+  totalSchools: number;
+  totalCandidates: number;
+  schools: SchoolListEntry[];
+}
+
+const TENANT_TYPE_LABELS: Record<string, string> = {
+  MATERNELLE: 'Maternelle',
+  PRIMAIRE: 'Primaire',
+  SECONDAIRE: 'Secondaire',
+  MIXTE: 'Mixte',
+  SCHOOL: 'École',
+};
 
 export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
   const { path: federisPath } = useFederisPath();
@@ -47,7 +134,74 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
     description: '',
   });
 
+  // ⭐ Sous-onglet actif (Toutes / CEP / BEPC / Baccalauréat / CAP)
+  const [activeTab, setActiveTab] = useState<string>('ALL');
+
+  // ⭐ Vue « listes officielles par école » de la campagne sélectionnée
+  const [listsExamId, setListsExamId] = useState<string | null>(null);
+  const [schoolLists, setSchoolLists] = useState<SchoolListsResponse | null>(null);
+  const [listsLoading, setListsLoading] = useState(false);
+  const [listsError, setListsError] = useState<string | null>(null);
+
   const canOrganize = canWrite(userRole, 'exam_org');
+
+  // ── Filtrage des campagnes selon le sous-onglet ──────────────────────────
+  const levelOf = (level: string | null | undefined) => (level ?? '').trim().toUpperCase();
+  const filteredExams = exams.filter((exam) => {
+    const tab = EXAM_TABS.find((t) => t.id === activeTab);
+    if (!tab || !tab.matchLevels) return true;
+    const lv = levelOf(exam.level);
+    return tab.matchLevels.some((m) => lv === m || lv.startsWith(m));
+  });
+
+  // Compteurs par sous-onglet (badges)
+  const tabCount = (tabId: string) => {
+    const tab = EXAM_TABS.find((t) => t.id === tabId);
+    if (!tab || !tab.matchLevels) return exams.length;
+    return exams.filter((e) => {
+      const lv = levelOf(e.level);
+      return tab.matchLevels!.some((m) => lv === m || lv.startsWith(m));
+    }).length;
+  };
+
+  // ── Chargement des listes officielles d'une campagne ─────────────────────
+  const loadSchoolLists = useCallback(async (examId: string) => {
+    setListsLoading(true);
+    setListsError(null);
+    try {
+      const res = await apiClient.get(`/federis/exams/${examId}/school-lists`, {
+        timeout: 30000,
+      });
+      setSchoolLists(res.data ?? null);
+    } catch (err: any) {
+      setSchoolLists(null);
+      setListsError(
+        err?.response?.data?.message ?? 'Impossible de charger les listes officielles.',
+      );
+    } finally {
+      setListsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (listsExamId) void loadSchoolLists(listsExamId);
+  }, [listsExamId, loadSchoolLists]);
+
+  const openSchoolLists = (examId: string) => {
+    setListsExamId(examId);
+    setSchoolLists(null);
+    setListsError(null);
+    // Ancre la vue listes (sous le tableau des campagnes)
+    requestAnimationFrame(() => {
+      document.getElementById('listes-officielles')?.scrollIntoView({ behavior: 'smooth' });
+    });
+  };
+
+  const closeSchoolLists = () => {
+    setListsExamId(null);
+    setSchoolLists(null);
+    setListsError(null);
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,6 +227,8 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
       setFormError(err?.response?.data?.message ?? 'Modification impossible.');
     }
   };
+
+  const listsExam = exams.find((e) => e.id === listsExamId) ?? null;
 
   return (
     <FedPage className="space-y-6">
@@ -124,10 +280,13 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
                 placeholder="CEP Patronal 2027" className="fed-input-light px-4 py-3 font-semibold" />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Classe</label>
+              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Classe / examen</label>
               <select value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })}
                 className="fed-input-light px-4 py-3 font-semibold">
-                {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                <option value="CM2">CM2 — CEP</option>
+                <option value="3EME">3ème — BEPC</option>
+                <option value="TERMINALE">Terminale — Baccalauréat</option>
+                <option value="CAP">Terminale CAP — CAP (filières techniques)</option>
               </select>
             </div>
             <div>
@@ -150,7 +309,38 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
         </form>
       )}
 
-      {/* Liste des examens */}
+      {/* ⭐ Sous-onglets par examen national — pattern onglets segmentés Helm */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl overflow-x-auto">
+        {EXAM_TABS.map((tab) => {
+          const active = activeTab === tab.id;
+          const count = tabCount(tab.id);
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-lg text-xs whitespace-nowrap transition-all',
+                active
+                  ? 'bg-white shadow-sm text-blue-900 font-bold'
+                  : 'text-slate-500 font-semibold hover:text-blue-900',
+              )}
+            >
+              {tab.label}
+              <span
+                className={cn(
+                  'px-1.5 py-0.5 rounded-full text-[10px] font-bold',
+                  active ? 'bg-blue-900 text-white' : 'bg-slate-200 text-slate-600',
+                )}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Liste des examens (filtrée par sous-onglet) */}
       <div className="fed-card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-200">
@@ -168,21 +358,28 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
             <tbody className="bg-white divide-y divide-slate-200">
               {loading ? (
                 <tr><td colSpan={7} className="px-6 py-10 text-center text-sm font-bold text-slate-400">Chargement…</td></tr>
-              ) : exams.length === 0 ? (
+              ) : filteredExams.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-6 py-10 text-center text-sm font-bold text-slate-400">
-                    Aucun examen pour l&apos;année scolaire active.
+                    {activeTab === 'ALL'
+                      ? 'Aucun examen pour l\u2019année scolaire active.'
+                      : `Aucune campagne ${EXAM_TABS.find((t) => t.id === activeTab)?.label} pour l\u2019année scolaire active.`}
                     {canOrganize ? ' Créez votre première campagne.' : ''}
                   </td>
                 </tr>
               ) : (
-                exams.map((exam) => (
-                  <tr key={exam.id} className="hover:bg-[#f7f9fc]">
+                filteredExams.map((exam) => (
+                  <tr
+                    key={exam.id}
+                    className={cn('hover:bg-[#f7f9fc]', listsExamId === exam.id && 'bg-blue-50/60')}
+                  >
                     <td className="px-6 py-4">
                       <div className="text-sm font-bold text-blue-900">{exam.name}</div>
                       <div className="text-[10px] font-bold text-slate-400 uppercase">{exam.code}</div>
                     </td>
-                    <td className="px-6 py-4 text-sm font-bold text-blue-800">{exam.level}</td>
+                    <td className="px-6 py-4 text-sm font-bold text-blue-800">
+                      {LEVEL_LABELS[levelOf(exam.level)] ?? exam.level}
+                    </td>
                     <td className="px-6 py-4 text-xs font-semibold text-slate-600">
                       {new Date(exam.startDate).toLocaleDateString('fr-FR')} → {new Date(exam.endDate).toLocaleDateString('fr-FR')}
                     </td>
@@ -207,6 +404,19 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
                     <td className="px-6 py-4 text-center text-sm font-bold text-blue-900">{exam.candidatesCount}</td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => (listsExamId === exam.id ? closeSchoolLists() : openSchoolLists(exam.id))}
+                          className={cn(
+                            'px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors',
+                            listsExamId === exam.id
+                              ? 'bg-blue-900 text-white'
+                              : 'bg-gold-500/25 text-blue-900 hover:bg-blue-900 hover:text-white',
+                          )}
+                          title="Listes officielles transmises par les écoles rattachées"
+                        >
+                          Listes écoles
+                        </button>
                         <Link href={federisPath(`/centers?exam=${exam.id}`)}
                           className="px-3 py-1.5 bg-blue-50 rounded-lg text-[11px] font-semibold text-blue-800 hover:bg-blue-800 hover:text-white transition-colors">
                           Centres
@@ -224,6 +434,227 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
           </table>
         </div>
       </div>
+
+      {/* ⭐ LISTES OFFICIELLES PAR ÉCOLE — campagne sélectionnée ─────────── */}
+      {listsExamId && (
+        <section id="listes-officielles" className="space-y-4">
+          {/* En-tête de la vue */}
+          <div className="fed-card p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-base font-bold text-blue-900 flex items-center gap-2">
+                  <AppIcon name="classes" size="submenu" className="text-blue-900" />
+                  Listes officielles des écoles
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  {listsExam ? (
+                    <>
+                      <span className="font-bold text-blue-900">{listsExam.name}</span>{' '}
+                      (<span className="uppercase">{listsExam.code}</span>) ·{' '}
+                      {LEVEL_LABELS[levelOf(listsExam.level)] ?? listsExam.level}
+                    </>
+                  ) : (
+                    'Chargement de la campagne…'
+                  )}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Candidats présentés officiellement par les écoles rattachées (adhésion
+                  acceptée) — transmis depuis le module Examen de chaque établissement
+                  Academia Helm.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                {schoolLists && !listsLoading && (
+                  <div className="hidden sm:flex items-center gap-4 text-center">
+                    <div>
+                      <div className="text-xl font-bold text-blue-900">{schoolLists.totalSchools}</div>
+                      <div className="text-[9px] font-bold text-slate-400 uppercase">Écoles</div>
+                    </div>
+                    <div className="w-px h-8 bg-slate-200" />
+                    <div>
+                      <div className="text-xl font-bold text-blue-900">{schoolLists.totalCandidates}</div>
+                      <div className="text-[9px] font-bold text-slate-400 uppercase">Candidats</div>
+                    </div>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => listsExamId && loadSchoolLists(listsExamId)}
+                  disabled={listsLoading}
+                  className="px-3 py-2 bg-blue-50 text-blue-900 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-colors disabled:opacity-50"
+                  title="Rafraîchir les listes officielles"
+                >
+                  <AppIcon name="refresh" size="submenu" />
+                </button>
+                <button
+                  type="button"
+                  onClick={closeSchoolLists}
+                  className="px-3 py-2 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold hover:bg-slate-200 transition-colors"
+                >
+                  Fermer
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Erreur de chargement */}
+          {listsError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800">
+              {listsError}
+            </div>
+          )}
+
+          {/* Squelette de chargement */}
+          {listsLoading && (
+            <div className="space-y-3">
+              {[0, 1].map((i) => (
+                <div key={i} className="fed-card p-6 space-y-3">
+                  <div className="h-5 w-64 rounded bg-slate-100 animate-pulse" />
+                  <div className="h-9 w-full rounded bg-slate-100 animate-pulse" />
+                  <div className="h-9 w-11/12 rounded bg-slate-100 animate-pulse" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Aucune école / aucun candidat */}
+          {!listsLoading && schoolLists && schoolLists.schools.length === 0 && (
+            <div className="fed-card p-10 text-center">
+              <AppIcon name="classes" size="submenu" className="w-10 h-10 text-slate-300 mx-auto" />
+              <p className="font-bold text-slate-700 mt-2">Aucune liste transmise pour cette campagne</p>
+              <p className="text-sm text-slate-500 max-w-lg mx-auto mt-1">
+                Les écoles rattachées remplissent leur liste officielle dans leur module
+                Examen (sous-onglet correspondant à cet examen), puis la transmettent.
+                Elle apparaîtra ici automatiquement.
+              </p>
+            </div>
+          )}
+
+          {/* Carte par école : informations + liste officielle des élèves */}
+          {!listsLoading && schoolLists && schoolLists.schools.length > 0 && (
+            <div className="space-y-4">
+              {schoolLists.schools.map((school) => (
+                <div key={school.schoolTenantId ?? school.name} className="fed-card overflow-hidden">
+                  {/* En-tête école — informations de l'établissement */}
+                  <div className="px-6 py-4 bg-[#f7f9fc] border-b border-slate-200">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {school.logo ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={school.logo}
+                            alt={school.name}
+                            className="h-10 w-10 rounded-lg object-cover ring-1 ring-slate-200 bg-white flex-shrink-0"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded-lg bg-blue-900 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">
+                            {school.name.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-bold text-blue-900">{school.name}</span>
+                            {school.tenantType && (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-800">
+                                {TENANT_TYPE_LABELS[school.tenantType] ?? school.tenantType}
+                              </span>
+                            )}
+                            {!school.schoolTenantId && (
+                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-slate-100 text-slate-600">
+                                Saisie patronat
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-400 mt-0.5">
+                            {[school.city, school.department, school.phone, school.email]
+                              .filter(Boolean)
+                              .join(' · ') || 'Informations non partagées'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-center flex-shrink-0">
+                        <span className="text-lg font-bold text-blue-900">{school.students.length}</span>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase ml-1">
+                          candidat{school.students.length > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Table des élèves (liste officielle) */}
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-slate-200">
+                      <thead className="bg-white">
+                        <tr>
+                          <th className="px-4 py-2.5 text-left text-[9px] font-bold text-slate-400 uppercase">Matricule</th>
+                          <th className="px-4 py-2.5 text-left text-[9px] font-bold text-slate-400 uppercase">Élève</th>
+                          <th className="px-4 py-2.5 text-left text-[9px] font-bold text-slate-400 uppercase">Classe</th>
+                          <th className="px-4 py-2.5 text-center text-[9px] font-bold text-slate-400 uppercase">Né(e) le</th>
+                          <th className="px-4 py-2.5 text-center text-[9px] font-bold text-slate-400 uppercase">Table</th>
+                          <th className="px-4 py-2.5 text-center text-[9px] font-bold text-slate-400 uppercase">Centre</th>
+                          <th className="px-4 py-2.5 text-left text-[9px] font-bold text-slate-400 uppercase">Statut</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-slate-100">
+                        {school.students.map((st) => (
+                          <tr key={st.id} className="hover:bg-[#f7f9fc]">
+                            <td className="px-4 py-2.5 text-[11px] font-bold text-blue-800 whitespace-nowrap">
+                              {st.matricule ?? '—'}
+                            </td>
+                            <td className="px-4 py-2.5 text-xs font-semibold text-slate-700">
+                              {st.lastName} {st.firstName}
+                              {st.gender && (
+                                <span className="ml-1.5 text-[9px] font-bold text-slate-400">
+                                  {st.gender === 'F' ? 'F' : 'M'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 text-xs text-slate-600">
+                              {st.schoolClass ?? '—'}
+                              {st.series && (
+                                <span className="ml-1 text-[9px] font-bold text-blue-700 uppercase">
+                                  Série {st.series}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 text-center text-xs text-slate-500 whitespace-nowrap">
+                              {st.dateOfBirth
+                                ? new Date(st.dateOfBirth).toLocaleDateString('fr-FR')
+                                : '—'}
+                            </td>
+                            <td className="px-4 py-2.5 text-center text-xs font-bold text-slate-600">
+                              {st.tableNumber ?? '—'}
+                            </td>
+                            <td className="px-4 py-2.5 text-center text-xs text-slate-500 whitespace-nowrap">
+                              {st.center ? `${st.center.code}` : '—'}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <span
+                                className={cn(
+                                  'px-2 py-0.5 rounded text-[9px] font-bold uppercase inline-block',
+                                  st.status === 'WITHDRAWN'
+                                    ? 'bg-red-50 text-red-700'
+                                    : st.status === 'PASSED'
+                                      ? 'bg-green-100 text-green-800'
+                                      : st.status === 'FAILED'
+                                        ? 'bg-red-100 text-red-700'
+                                        : 'bg-blue-50 text-blue-800',
+                                )}
+                              >
+                                {CANDIDATE_STATUS_LABELS[st.status] ?? st.status}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
     </FedPage>
   );
 }

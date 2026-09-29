@@ -87,9 +87,9 @@ export const EXAMS_SUB_MODULES = [
     icon: ScrollText
   },
   {
-    // ⭐ Examens nationaux (CEP / BEPC / Baccalauréat) — candidats présentés
+    // ⭐ Examens nationaux (CEP / BEPC / Baccalauréat / CAP) — candidats présentés
     //    par l'école aux patronats (Academia Federis). Onglet dynamique :
-    //    sous-onglets CEP/BEPC/Bac selon les classes CM2/3ème/Terminale.
+    //    sous-onglets CEP/BEPC/Bac/CAP selon les classes CM2/3ème/Terminale/Terminale CAP.
     //    Masqué pour Maternelle et les pistes anglophones (useExamSubModules).
     id: 'national-exams',
     label: 'Examens nationaux',

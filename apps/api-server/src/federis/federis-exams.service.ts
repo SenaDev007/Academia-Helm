@@ -44,7 +44,7 @@ export class CreateExamDto {
   code!: string;
   name!: string;
   examType!: string;
-  /** CM2 | 3EME | TERMINALE (classes prioritaires §2) */
+  /** CM2 (CEP) | 3EME (BEPC) | TERMINALE (Baccalauréat) | CAP (filières techniques) */
   level!: string;
   startDate!: string;
   endDate!: string;
@@ -632,6 +632,126 @@ export class FederisExamsService {
         center: c.center ? { code: c.center.code, name: c.center.name } : null,
         room: c.room ? { code: c.room.code, name: c.room.name } : null,
       })),
+    };
+  }
+
+  // ── 4 bis. Listes officielles transmises par les écoles (2026-09-29) ─────
+  //
+  // Une fois l'adhésion acceptée par l'école (PatronatSchool JOINED), celle-ci
+  // transmet sa liste officielle de candidats (module Examen → Examens
+  // nationaux → sous-onglet CEP / BEPC / Baccalauréat / CAP). Cette vue
+  // regroupe les candidats de la campagne PAR ÉCOLE, avec les informations de
+  // l'établissement (ville, département, contact) — « les informations de
+  // l'école peuvent dorénavant s'afficher » côté patronat.
+
+  async listSchoolLists(tenantId: string, userId: string, examId: string) {
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertRead(fn);
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+
+    const candidates = await this.prisma.examCandidate.findMany({
+      where: { examId: exam.id },
+      include: {
+        schoolTenant: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            subdomain: true,
+            type: true,
+            schools: {
+              select: {
+                logo: true,
+                city: true,
+                department: true,
+                address: true,
+                primaryPhone: true,
+                primaryEmail: true,
+              },
+            },
+          },
+        },
+        center: { select: { code: true, name: true } },
+      },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+    });
+
+    // Regroupement par école (les saisies manuelles du patronat sont
+    // regroupées sous « Saisie patronat » — elles ne proviennent d'aucune
+    // école rattachée).
+    const groups = new Map<
+      string,
+      {
+        schoolTenantId: string | null;
+        name: string;
+        slug: string | null;
+        subdomain: string | null;
+        tenantType: string | null;
+        logo: string | null;
+        city: string | null;
+        department: string | null;
+        address: string | null;
+        phone: string | null;
+        email: string | null;
+        students: any[];
+      }
+    >();
+
+    for (const c of candidates) {
+      const key = c.schoolTenantId ?? '__PATRONAT__';
+      if (!groups.has(key)) {
+        const t = c.schoolTenant;
+        groups.set(key, {
+          schoolTenantId: c.schoolTenantId,
+          name: t?.name ?? (c.metadata as any)?.schoolName ?? 'Saisie patronat',
+          slug: t?.slug ?? null,
+          subdomain: t?.subdomain ?? null,
+          tenantType: t?.type ?? null,
+          logo: t?.schools?.logo ?? null,
+          city: t?.schools?.city ?? null,
+          department: t?.schools?.department ?? null,
+          address: t?.schools?.address ?? null,
+          phone: t?.schools?.primaryPhone ?? null,
+          email: t?.schools?.primaryEmail ?? null,
+          students: [],
+        });
+      }
+      const meta = (c.metadata as any) ?? {};
+      groups.get(key)!.students.push({
+        id: c.id,
+        matricule: c.matricule,
+        registrationNumber: c.registrationNumber,
+        tableNumber: c.tableNumber,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        gender: c.gender,
+        dateOfBirth: c.dateOfBirth,
+        status: c.status,
+        schoolClass: meta.schoolClass ?? null,
+        series: meta.series ?? null,
+        submittedAt: meta.submittedAt ?? null,
+        source: meta.source ?? null,
+        center: c.center ? { code: c.center.code, name: c.center.name } : null,
+      });
+    }
+
+    const schools = [...groups.values()].sort((a, b) =>
+      a.name.localeCompare(b.name, 'fr'),
+    );
+
+    return {
+      exam: {
+        id: exam.id,
+        code: exam.code,
+        name: exam.name,
+        level: exam.level,
+        status: exam.status,
+        startDate: exam.startDate,
+        endDate: exam.endDate,
+      },
+      totalSchools: schools.filter((s) => s.schoolTenantId).length,
+      totalCandidates: candidates.length,
+      schools,
     };
   }
 

@@ -23,6 +23,13 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+// ⭐ FIX « tenant SCHOOL » (2026-09-29) : les écoles réelles créées par
+//    l'onboarding Helm ont type = MATERNELLE / PRIMAIRE / SECONDAIRE / MIXTE
+//    (et non 'SCHOOL'). La garde stricte `type !== 'SCHOOL'` rejetait donc
+//    TOUTES les écoles réelles avec « réservées aux établissements (tenant
+//    SCHOOL) » — exactement le blocage signalé. Source unique de vérité :
+//    common/constants/school-tenant-types (pattern school-search).
+import { isSchoolTenantType } from '../common/constants/school-tenant-types';
 
 /** Rôles de direction autorisés à valider un rattachement (pattern Helm). */
 const SCHOOL_DIRECTION_ROLES = [
@@ -64,9 +71,9 @@ export class FederisSchoolService {
     if (!tenant || tenant.status !== 'active') {
       throw new ForbiddenException('Tenant introuvable ou inactif.');
     }
-    if (tenant.type !== 'SCHOOL') {
+    if (!isSchoolTenantType(tenant.type)) {
       throw new ForbiddenException(
-        "Ces fonctions sont réservées aux établissements Academia Helm (tenant SCHOOL).",
+        "Ces fonctions sont réservées aux établissements Academia Helm.",
       );
     }
 

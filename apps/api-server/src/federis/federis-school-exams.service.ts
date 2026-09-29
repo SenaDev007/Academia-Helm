@@ -1,24 +1,28 @@
 /**
- * FederisSchoolExamsService — Examens nationaux côté établissement (CEP / BEPC / Bac)
+ * FederisSchoolExamsService — Examens nationaux côté établissement (CEP / BEPC / Bac / CAP)
  * ═══════════════════════════════════════════════════════════════════════════
- * Academia Helm ↔ Academia Federis (2026-09-27).
+ * Academia Helm ↔ Academia Federis (2026-09-27 — CAP ajouté le 2026-09-29).
  *
  * Le patronat regroupe les écoles privées d'un département et organise les
- * examens inter-écoles. Trois examens nationaux sanctionnent la fin de cycle :
+ * examens inter-écoles. Quatre examens nationaux sanctionnent la fin de cycle :
  *
- *   CEP  — Certificat d'Études Primaires    → élèves de CM2
- *   BEPC — Brevet d'Études du Premier Cycle → élèves de 3ème
- *   BAC  — Baccalauréat (séries A1, C, D…)  → élèves de Terminale
+ *   CEP  — Certificat d'Études Primaires       → élèves de CM2
+ *   BEPC — Brevet d'Études du Premier Cycle    → élèves de 3ème
+ *   BAC  — Baccalauréat (séries A1, C, D…)     → élèves de Terminale
+ *   CAP  — Certificat d'Aptitude Professionnelle → élèves de Terminale CAP
+ *          (filières techniques et professionnelles : mécanique, couture,
+ *          électricité, menuiserie, coiffure…)
  *
  * Depuis le module Examen de l'école (onglet « Examens nationaux ») :
  *
  *   GET  /federis/school/national-exams
  *        Éligibilité dynamique : selon les niveaux activés (structure) et les
- *        classes réellement existantes (CM2 / 3ème / Terminale), seuls les
- *        sous-onglets correspondants s'affichent.
+ *        classes réellement existantes (CM2 / 3ème / Terminale / Terminale
+ *        CAP), seuls les sous-onglets correspondants s'affichent.
  *   GET  /federis/school/national-exams/:examType/candidates
  *        Liste des élèves éligibles pour l'année courante — CM2 (CEP),
- *        3ème (BEPC), Terminale catégorisés PAR SÉRIE (Bac).
+ *        3ème (BEPC), Terminale catégorisés PAR SÉRIE (Bac), classes CAP
+ *        regroupées par FILIÈRE (le nom de classe porte la filière).
  *   POST /federis/school/national-exams/:examType/selection
  *        Sélection officielle (cases à cocher) — l'école écarte les élèves
  *        en carence qu'elle ne s'engage pas à présenter.
@@ -46,6 +50,10 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { FEDERIS_PLANS, type FederisPlanCode } from './federis-patronat.service';
+// ⭐ FIX « tenant SCHOOL » (2026-09-29) : les écoles réelles créées par
+//    l'onboarding Helm ont type = MATERNELLE / PRIMAIRE / SECONDAIRE / MIXTE
+//    (et non 'SCHOOL'). Source unique : common/constants/school-tenant-types.
+import { isSchoolTenantType } from '../common/constants/school-tenant-types';
 
 // ── DTO ─────────────────────────────────────────────────────────────────────
 
@@ -61,7 +69,7 @@ export class SubmitSelectionDto {
 
 // ── Définitions des examens nationaux ───────────────────────────────────────
 
-export type NationalExamType = 'CEP' | 'BEPC' | 'BAC';
+export type NationalExamType = 'CEP' | 'BEPC' | 'BAC' | 'CAP';
 
 interface ExamTypeDef {
   type: NationalExamType;
@@ -103,6 +111,19 @@ const EXAM_DEFS: Record<NationalExamType, ExamTypeDef> = {
     order: 3,
     eligibleClass: 'Élèves de Terminale, par série (fin du second cycle)',
     hasSeries: true,
+  },
+  // ⭐ CAP (2026-09-29) — 4e examen national : filières techniques et
+  //    professionnelles. Regroupement PAR CLASSE (le nom de classe porte la
+  //    filière : « Terminale CAP Mécanique », « CAP 2 Couture »…).
+  CAP: {
+    type: 'CAP',
+    label: 'CAP',
+    fullLabel: 'Certificat d\u2019Aptitude Professionnelle',
+    federisLevel: 'CAP',
+    order: 4,
+    eligibleClass:
+      'Élèves de Terminale CAP, par filière professionnelle et technique (mécanique, couture, électricité, menuiserie…)',
+    hasSeries: false,
   },
 };
 
@@ -146,14 +167,19 @@ function normalizeUpper(s: string | null | undefined): string {
  * Une classe physique (ou officielle) correspond-elle au type d'examen ?
  *   CEP  : « CM2 A », « CM2 »…
  *   BEPC : « 3ème 1 », « 3E A », « 3A »…
- *   BAC  : « Terminale C », « Tle D », « Term A1 »…
+ *   BAC  : « Terminale C », « Tle D », « Term A1 »… (hors classes CAP)
+ *   CAP  : « Terminale CAP », « Tle CAP Mécanique », « CAP 2 », « 2CAP »…
+ *    ⚠️ Les classes CAP sont exclues du BAC : elles présentent le CAP,
+ *    pas le baccalauréat général/technique.
  */
 function classMatchesExam(className: string | null | undefined, type: NationalExamType): boolean {
   const n = normalizeUpper(className);
   if (!n) return false;
   if (type === 'CEP') return n.startsWith('CM2');
   if (type === 'BEPC') return /^3($|[^0-9])/.test(n);
-  // BAC
+  if (type === 'CAP') return n.includes('CAP');
+  // BAC — les filières professionnelles (CAP) ne présentent pas le bac
+  if (n.includes('CAP')) return false;
   return n.startsWith('TERM') || n.startsWith('TLE') || n.startsWith('BAC');
 }
 
@@ -171,7 +197,9 @@ function federisLevelMatchesType(level: string | null | undefined, type: Nationa
   if (!n) return false;
   if (type === 'CEP') return n.startsWith('CM2');
   if (type === 'BEPC') return /^3/.test(n);
-  return n.startsWith('TERM') || n.startsWith('TLE');
+  if (type === 'CAP') return n.includes('CAP');
+  // BAC — exclut les niveaux CAP (filières techniques/professionnelles)
+  return (n.startsWith('TERM') || n.startsWith('TLE')) && !n.includes('CAP');
 }
 
 @Injectable()
@@ -203,7 +231,7 @@ export class FederisSchoolExamsService {
     if (!tenant || tenant.status !== 'active') {
       throw new ForbiddenException('Tenant introuvable ou inactif.');
     }
-    if (tenant.type !== 'SCHOOL') {
+    if (!isSchoolTenantType(tenant.type)) {
       throw new ForbiddenException(
         'Les examens nationaux sont réservés aux établissements Academia Helm.',
       );
@@ -256,7 +284,7 @@ export class FederisSchoolExamsService {
     const t = (examType ?? '').toUpperCase() as NationalExamType;
     if (!(t in EXAM_DEFS)) {
       throw new BadRequestException(
-        `Type d'examen inconnu : ${examType} (valeurs attendues : CEP, BEPC, BAC).`,
+        `Type d'examen inconnu : ${examType} (valeurs attendues : CEP, BEPC, BAC, CAP).`,
       );
     }
     return t;

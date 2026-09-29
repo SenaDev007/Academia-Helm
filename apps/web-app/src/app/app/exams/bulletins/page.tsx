@@ -1105,67 +1105,71 @@ function BulletinsContent() {
     // ⭐ Uniquement pour les bulletins secondaires (FR trimestriel/évaluation +
     //    EN Report Book). Pas pour maternelle/primaire qui n'ont pas de conduite.
     const isAnySecondary = isSecondaire && (scopeLang === 'EN' || isSecondaryTrack);
-    if (!isAnySecondary || !bulletinData || !academicYear?.id || !selectedPeriodId) return;
+    if (!isAnySecondary || !bulletinData || !academicYear?.id || !selectedPeriodId || !selectedClassId) return;
     const CONDUCT_SUBJECT_ID = '__conduct__';
-    // ⭐ Fetch en parallèle : conduite de chaque élève via /student (1 requête
-    //    par élève — pour l'instant on accepte ce coût, car il n'y a pas
-    //    d'endpoint batch). Optimisation future : ajouter /api/discipline/
-    //    conduct/students-batch?studentIds=X,Y,Z&periodId=P&academicYearId=Y.
-    const studentIds = bulletinData.results.map(r => r.id);
-    if (studentIds.length === 0) return;
-    Promise.all(
-      studentIds.map(sid =>
-        fetch(`/api/discipline/conduct/student?studentId=${sid}&periodId=${selectedPeriodId}&academicYearId=${academicYear.id}`, { credentials: 'include' })
-          .then(r => r.ok ? r.json() : null)
-          .catch(() => null)
-      )
-    ).then((conductResults: any[]) => {
-      setBulletinData(prev => {
-        if (!prev) return prev;
-        const hasConduct = prev.subjects.some(s => s.id === CONDUCT_SUBJECT_ID);
-        const subjects = hasConduct ? prev.subjects : [...prev.subjects, { id: CONDUCT_SUBJECT_ID, name: 'Conduite', coefficient: 1 }];
-        const results = prev.results.map((st, idx) => {
-          const conduct = conductResults[idx];
-          const conductScore = conduct && typeof conduct.conductScore === 'number' ? conduct.conductScore : null;
-          const conductRef = conduct && typeof conduct.conductReference === 'number' ? conduct.conductReference : 17;
-          return {
-            ...st,
-            subjectScores: {
-              ...st.subjectScores,
-              [CONDUCT_SUBJECT_ID]: {
-                score: conductScore,
-                qualitativeCode: null,
-                isAbsent: false,
-                appreciation: conductScore !== null && conductScore >= conductRef * 0.6 ? 'Satisfaisant' : 'À améliorer',
-                moyenne: conductScore,
-                coefficient: 1,
-                noteCoef: conductScore,
-                // ⭐ 2026-09-29 — FIX ABS dans colonne « Moyenne d'interrogation » :
-                //    secHasSlot: true déclenchait l'affichage « ABS » quand
-                //    int1/int2/moyInter étaient null. Or la Conduite n'a PAS de
-                //    composantes INT1/INT2/DS1/DS2 → on force secHasSlot: false
-                //    pour que les colonnes vides affichent « — » et non « ABS ».
-                secHasSlot: false,
-                int1: null,
-                int2: null,
-                moyInter: null,
-                ds1: null,
-                ds2: null,
-                subjectRank: null,
-                // Pour EN Report Book (10 colonnes FCA/SCA/EXAM/Total/100) :
-                // pas de composantes CA, mais on met le score en Total.
-                firstCA: null,
-                secondCA: null,
-                exam: null,
-                total: conductScore,
-              } as any,
-            },
-          };
+    // ⭐ 2026-09-30 — OPTIMISATION : on utilise l'endpoint batch
+    //    /api/discipline/conduct/students-batch qui récupère la conduite de
+    //    TOUS les élèves de la classe en UNE SEULE requête (au lieu de N
+    //    requêtes /student par élève). Avant : 30 élèves → 30 fetchs
+    //    parallèles qui pouvaient échouer (504) → conductScore null →
+    //    « — » dans le tableau. Désormais : 1 seul fetch qui retourne un
+    //    tableau de { studentId, conductScore, ... }.
+    fetch(`/api/discipline/conduct/students-batch?classId=${selectedClassId}&periodId=${selectedPeriodId}&academicYearId=${academicYear.id}`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then((batchResults: any[]) => {
+        if (!Array.isArray(batchResults) || batchResults.length === 0) return;
+        // Construire une map studentId → conductScore (pour lookup rapide)
+        const conductByStudentId = new Map<string, any>();
+        for (const row of batchResults) {
+          if (row.studentId) conductByStudentId.set(row.studentId, row);
+        }
+        setBulletinData(prev => {
+          if (!prev) return prev;
+          const hasConduct = prev.subjects.some(s => s.id === CONDUCT_SUBJECT_ID);
+          const subjects = hasConduct ? prev.subjects : [...prev.subjects, { id: CONDUCT_SUBJECT_ID, name: 'Conduite', coefficient: 1 }];
+          const results = prev.results.map((st) => {
+            const conduct = conductByStudentId.get(st.id);
+            const conductScore = conduct && typeof conduct.conductScore === 'number' ? conduct.conductScore : null;
+            const conductRef = conduct && typeof conduct.conductReference === 'number' ? conduct.conductReference : 17;
+            return {
+              ...st,
+              subjectScores: {
+                ...st.subjectScores,
+                [CONDUCT_SUBJECT_ID]: {
+                  score: conductScore,
+                  qualitativeCode: null,
+                  isAbsent: false,
+                  appreciation: conductScore !== null && conductScore >= conductRef * 0.6 ? 'Satisfaisant' : 'À améliorer',
+                  moyenne: conductScore,
+                  coefficient: 1,
+                  noteCoef: conductScore,
+                  // ⭐ 2026-09-29 — FIX ABS dans colonne « Moyenne d'interrogation » :
+                  //    secHasSlot: true déclenchait l'affichage « ABS » quand
+                  //    int1/int2/moyInter étaient null. Or la Conduite n'a PAS de
+                  //    composantes INT1/INT2/DS1/DS2 → on force secHasSlot: false
+                  //    pour que les colonnes vides affichent « — » et non « ABS ».
+                  secHasSlot: false,
+                  int1: null,
+                  int2: null,
+                  moyInter: null,
+                  ds1: null,
+                  ds2: null,
+                  subjectRank: null,
+                  // Pour EN Report Book (10 colonnes FCA/SCA/EXAM/Total/100) :
+                  // pas de composantes CA, mais on met le score en Total.
+                  firstCA: null,
+                  secondCA: null,
+                  exam: null,
+                  total: conductScore,
+                } as any,
+              },
+            };
+          });
+          return { ...prev, subjects, results };
         });
-        return { ...prev, subjects, results };
-      });
-    }).catch(() => {});
-  }, [isSecondaire, scopeLang, isSecondaryTrack, bulletinData?.subjects.length, bulletinData?.results.length, academicYear?.id, selectedPeriodId]);
+      })
+      .catch(() => {});
+  }, [isSecondaire, scopeLang, isSecondaryTrack, bulletinData?.subjects.length, bulletinData?.results.length, academicYear?.id, selectedPeriodId, selectedClassId]);
 
   const toggleStudent = (studentId: string) => {
     setExpandedStudents(prev => {

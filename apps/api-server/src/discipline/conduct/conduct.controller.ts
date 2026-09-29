@@ -355,6 +355,120 @@ export class ConductController {
    *     hasLedger: boolean,           // true si l'élève a un conduct_ledger pour ce trimestre
    *   }
    */
+  /**
+   * ⭐ 2026-09-29 — GET /api/discipline/conduct/students-batch
+   *    Récupère la conduite de TOUS les élèves d'une classe en UNE SEULE requête
+   *    (au lieu de N requêtes /student par élève). Utilisé par le frontend
+   *    bulletin pour afficher la conduite dans le tableau UI (FR secondary).
+   *
+   * Query params :
+   *   - classId (required) — la classe dont on veut la conduite des élèves
+   *   - periodId (= quarterId, required)
+   *   - academicYearId (required)
+   *
+   * Response : Array de { studentId, conductScore, conductReference,
+   *   totalPointsDeducted, sanctionCount, totalHoursAttributed, hasLedger }
+   */
+  @Get('students-batch')
+  async getStudentsConductBatch(
+    @TenantId() tenantId: string,
+    @Query('classId') classId: string,
+    @Query('periodId') periodId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!classId || !periodId || !academicYearId) {
+      return [];
+    }
+
+    // 1. Récupérer la baseline configurée par l'école
+    const conductSettings = await this.prisma.conductSetting.findFirst({
+      where: { tenantId, academicYearId },
+      orderBy: { createdAt: 'desc' },
+    }).catch(() => null);
+    const baseline = conductSettings ? Number(conductSettings.conductReference) : 17;
+
+    // 2. Récupérer TOUS les élèves inscrits dans cette classe pour cette année
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: { classId, academicYearId, status: 'ACTIVE' },
+      select: { studentId: true },
+    }).catch(() => []);
+    const studentIds = enrollments.map(e => e.studentId);
+    if (studentIds.length === 0) return [];
+
+    // 3. Vérifier que le periodId correspond bien à un quarter
+    const periodRow = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id FROM quarters WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
+      periodId, tenantId,
+    ).catch(() => []);
+    const quarterId = periodRow.length > 0 ? periodRow[0].id : null;
+
+    // 4. Récupérer TOUS les conduct_ledger de ces élèves pour ce trimestre (1 requête)
+    const ledgerRows = quarterId
+      ? await this.prisma.conductLedger.findMany({
+          where: { tenantId, quarterId, studentId: { in: studentIds } },
+          select: { studentId: true, conductReference: true, totalPointsDeducted: true, conductFinal: true },
+        }).catch(() => [])
+      : [];
+    const ledgerByStudent = new Map(ledgerRows.map(l => [l.studentId, l]));
+
+    // 5. Récupérer TOUTES les sanctions actives de ces élèves pour cette année (1 requête)
+    const allSanctions = await this.prisma.sanction.findMany({
+      where: { tenantId, academicYearId, status: 'ACTIVE', studentId: { in: studentIds } },
+      select: { studentId: true, pointsDeducted: true, hoursAttributed: true, quarterId: true },
+    }).catch(() => []);
+    // Grouper les sanctions par élève (filtrer par quarterId si on l'a)
+    const sanctionsByStudent = new Map<string, { totalPoints: number; totalHours: number; count: number }>();
+    for (const s of allSanctions) {
+      // ⭐ Si on a un quarterId, ne compter QUE les sanctions de ce trimestre
+      //    (ou sans quarterId = legacy).
+      if (quarterId && s.quarterId && s.quarterId !== quarterId) continue;
+      const cur = sanctionsByStudent.get(s.studentId) || { totalPoints: 0, totalHours: 0, count: 0 };
+      cur.totalPoints += Number(s.pointsDeducted) || 0;
+      cur.totalHours += Number(s.hoursAttributed) || 0;
+      cur.count += 1;
+      sanctionsByStudent.set(s.studentId, cur);
+    }
+
+    // 6. Construire la réponse : pour chaque élève, conductScore + détail
+    return studentIds.map(studentId => {
+      const ledger = ledgerByStudent.get(studentId);
+      const sanctions = sanctionsByStudent.get(studentId);
+      if (ledger) {
+        // L'élève a un conduct_ledger → utiliser conductFinal
+        const conductScore = Number(ledger.conductFinal) || null;
+        const conductReference = Number(ledger.conductReference) || baseline;
+        const totalPointsDeducted = Number(ledger.totalPointsDeducted) || 0;
+        const sanctionCount = sanctions?.count || 0;
+        const totalHoursAttributed = sanctions?.totalHours || 0;
+        return {
+          studentId,
+          conductScore,
+          conductReference,
+          totalPointsDeducted,
+          sanctionCount,
+          totalHoursAttributed,
+          hasLedger: true,
+        };
+      } else {
+        // Pas de ledger → calculer depuis les sanctions (baseline - totalPoints)
+        const totalPointsDeducted = sanctions?.totalPoints || 0;
+        const sanctionCount = sanctions?.count || 0;
+        const totalHoursAttributed = sanctions?.totalHours || 0;
+        const conductReference = baseline;
+        const conductScore = Math.max(0, conductReference - totalPointsDeducted);
+        return {
+          studentId,
+          conductScore,
+          conductReference,
+          totalPointsDeducted,
+          sanctionCount,
+          totalHoursAttributed,
+          hasLedger: false,
+        };
+      }
+    });
+  }
+
   @Get('student')
   async getStudentConduct(
     @TenantId() tenantId: string,

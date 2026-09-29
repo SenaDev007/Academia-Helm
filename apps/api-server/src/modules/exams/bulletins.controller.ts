@@ -865,49 +865,59 @@ export class BulletinsController {
     let resolvedQuarterId: string | null = null;
     if (isAnySecondary && body.studentMatricule && resolvedTenantId && academicYearId) {
       try {
-        // 1. Trouver l'élève
-        const conductStudent = await this.prisma.student.findFirst({
-          where: { matricule: body.studentMatricule, tenantId: resolvedTenantId },
-          select: { id: true },
-        }).catch(() => null);
+        // ⭐ 2026-09-30 — OPTIMISATION : paralléliser les requêtes indépendantes
+        //    pour réduire le temps de réponse et éviter le 504 (gateway timeout).
+        //    Avant : 6 requêtes séquentielles → ~3-6s sur Neon (cold start) →
+        //    504 sur Railway (gateway timeout 30s). Désormais : 2 vagues
+        //    parallèles (élève+quarter, puis ledger+settings+sanctions).
+
+        // Vague 1 (parallèle) : trouver l'élève + vérifier le quarterId
+        const [conductStudent, periodRow] = await Promise.all([
+          this.prisma.student.findFirst({
+            where: { matricule: body.studentMatricule, tenantId: resolvedTenantId },
+            select: { id: true },
+          }).catch(() => null),
+          body.periodId
+            ? this.prisma.$queryRawUnsafe<any[]>(
+                `SELECT id FROM quarters WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
+                body.periodId, resolvedTenantId,
+              ).catch(() => [])
+            : Promise.resolve([]),
+        ]);
+
+        if (periodRow.length > 0) resolvedQuarterId = periodRow[0].id;
+        if (!resolvedQuarterId) {
+          // Fallback : trimestre isCurrent=true (1 requête supplémentaire)
+          const currentQuarter = await this.prisma.$queryRawUnsafe<any[]>(
+            `SELECT id FROM quarters WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "isCurrent" = true LIMIT 1`,
+            resolvedTenantId, academicYearId,
+          ).catch(() => []);
+          if (currentQuarter.length > 0) resolvedQuarterId = currentQuarter[0].id;
+        }
 
         if (conductStudent) {
-          // 2. Trouver le trimestre ciblé par le bulletin
-          //    ⭐ 2026-09-29 — Priorité 1 : body.periodId (le periodId envoyé par
-          //    le frontend = quarterId du bulletin). Priorité 2 : trimestre
-          //    marqué isCurrent=true. Avant, seul isCurrent=true était utilisé
-          //    → si l'école n'avait pas marqué de trimestre courant, la
-          //    conduite n'était jamais résolue depuis le ledger.
-          if (body.periodId) {
-            // Vérifier que le periodId correspond bien à un quarter
-            const periodRow = await this.prisma.$queryRawUnsafe<any[]>(
-              `SELECT id FROM quarters WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
-              body.periodId, resolvedTenantId,
-            ).catch(() => []);
-            if (periodRow.length > 0) resolvedQuarterId = periodRow[0].id;
-          }
-          if (!resolvedQuarterId) {
-            // Fallback : trimestre isCurrent=true
-            const currentQuarter = await this.prisma.$queryRawUnsafe<any[]>(
-              `SELECT id FROM quarters WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "isCurrent" = true LIMIT 1`,
-              resolvedTenantId, academicYearId,
-            ).catch(() => []);
-            if (currentQuarter.length > 0) resolvedQuarterId = currentQuarter[0].id;
-          }
+          // Vague 2 (parallèle) : conduct_ledger + conductSetting + sanctions
+          //    Ces 3 requêtes sont indépendantes → on les lance en parallèle.
+          const [ledgerRow, conductSettings, activeSanctions] = await Promise.all([
+            resolvedQuarterId
+              ? this.prisma.conductLedger.findFirst({
+                  where: { tenantId: resolvedTenantId, studentId: conductStudent.id, quarterId: resolvedQuarterId },
+                  select: { conductReference: true, totalPointsDeducted: true, conductFinal: true },
+                }).catch(() => null)
+              : Promise.resolve(null),
+            this.prisma.conductSetting.findFirst({
+              where: { tenantId: resolvedTenantId, academicYearId },
+              orderBy: { createdAt: 'desc' },
+            }).catch(() => null),
+            this.prisma.sanction.findMany({
+              where: { tenantId: resolvedTenantId, academicYearId, studentId: conductStudent.id, status: 'ACTIVE' },
+              select: { pointsDeducted: true, hoursAttributed: true, quarterId: true },
+            }).catch(() => []),
+          ]);
 
-          if (resolvedQuarterId) {
-            // 3. Récupérer le conduct_ledger
-            //    ⭐ 2026-09-28 — Utilisation du modèle Prisma ConductLedger (cf.
-            //    refonte Vie Scolaire) au lieu de $queryRawUnsafe — plus fiable.
-            const ledgerRow = await this.prisma.conductLedger.findFirst({
-              where: { tenantId: resolvedTenantId, studentId: conductStudent.id, quarterId: resolvedQuarterId },
-              select: { conductReference: true, totalPointsDeducted: true, conductFinal: true },
-            }).catch(() => null);
-
-            if (ledgerRow) {
-              conductScore = Number(ledgerRow.conductFinal) || null;
-              conductReference = Number(ledgerRow.conductReference) || 17;
-            }
+          if (ledgerRow) {
+            conductScore = Number(ledgerRow.conductFinal) || null;
+            conductReference = Number(ledgerRow.conductReference) || 17;
           }
 
           // ⭐ 2026-09-28 — FALLBACK : si pas de conduct_ledger (l'élève n'a pas
@@ -916,26 +926,9 @@ export class BulletinsController {
           //    actives). Si pas de sanction non plus → conductScore =
           //    conduct_reference (note de départ).
           if (conductScore === null) {
-            const conductSettings = await this.prisma.conductSetting.findFirst({
-              where: { tenantId: resolvedTenantId, academicYearId },
-              orderBy: { createdAt: 'desc' },
-            }).catch(() => null);
             if (conductSettings) {
               conductReference = Number(conductSettings.conductReference) || 17;
             }
-            // ⭐ 2026-09-29 — Filtre par quarterId si on l'a, sinon par année
-            //    (les sanctions sans quarterId sont aussi incluses pour
-            //    rétro-compatibilité).
-            const sanctionWhere: any = {
-              tenantId: resolvedTenantId,
-              academicYearId,
-              studentId: conductStudent.id,
-              status: 'ACTIVE',
-            };
-            const activeSanctions = await this.prisma.sanction.findMany({
-              where: sanctionWhere,
-              select: { pointsDeducted: true, quarterId: true },
-            }).catch(() => []);
             // ⭐ Si on a un quarterId, ne compter QUE les sanctions de ce
             //    trimestre (ou sans quarterId = legacy).
             const filteredSanctions = resolvedQuarterId
@@ -992,33 +985,22 @@ export class BulletinsController {
         //    « Assiduité » de la page 2 du bulletin secondaire.
         //    On réutilise `conductStudent` (déjà résolu) et `resolvedQuarterId`
         //    (déjà résolu plus haut — priorité body.periodId, fallback isCurrent).
+        //    ⭐ 2026-09-30 — OPTIMISATION : on réutilise `activeSanctions` déjà
+        //    récupéré dans la vague 2 (pas besoin de refaire une requête).
         if (conductStudent) {
-          // ⭐ 2026-09-29 — On réutilise le resolvedQuarterId déjà résolu plus haut
+          // ⭐ On réutilise le resolvedQuarterId déjà résolu plus haut
           //    (pas besoin de refaire la requête). Si resolvedQuarterId est null
           //    (pas de body.periodId et pas de trimestre isCurrent), on saute
           //    l'assiduité (sans erreur).
           if (resolvedQuarterId) {
-            // Récupérer toutes les sanctions actives de l'élève pour ce
-            // trimestre — on utilise le modèle Prisma Sanction.
-            // ⭐ 2026-09-28 — FIX : les sanctions peuvent avoir quarterId=null
-            //    (si créées sans trimestre explicite). On cherche donc avec
-            //    OR [quarterId = resolvedQuarterId, quarterId IS NULL]
-            //    pour récupérer aussi les sanctions sans trimestre.
-            const sanctions = await this.prisma.sanction.findMany({
-              where: {
-                tenantId: resolvedTenantId,
-                academicYearId,
-                studentId: conductStudent.id,
-                status: 'ACTIVE',
-                OR: [
-                  { quarterId: resolvedQuarterId },
-                  { quarterId: null },
-                ],
-              },
-              select: { hoursAttributed: true },
-            }).catch(() => []);
-            assiduityHours = sanctions.reduce((sum, s) => sum + (Number(s.hoursAttributed) || 0), 0);
-            sanctionCount = sanctions.length;
+            // ⭐ 2026-09-30 — On réutilise activeSanctions (déjà récupéré dans
+            //    la vague 2). On filtre par quarterId (ou quarterId=null pour
+            //    les sanctions legacy sans trimestre).
+            const filteredAssiduitySanctions = activeSanctions.filter(
+              s => !s.quarterId || s.quarterId === resolvedQuarterId,
+            );
+            assiduityHours = filteredAssiduitySanctions.reduce((sum, s) => sum + (Number(s.hoursAttributed) || 0), 0);
+            sanctionCount = filteredAssiduitySanctions.length;
           }
         }
       } catch {

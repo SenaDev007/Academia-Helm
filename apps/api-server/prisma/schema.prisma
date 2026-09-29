@@ -10566,6 +10566,10 @@ model FederisExamPaper {
   examCategory       String
   /// Matière (Mathématiques, Français, Physique…)
   subject            String?
+  /// ⭐ Module Matières (2026-09-29) — lien EXACT vers la matière du
+  /// catalogue (federis_subjects) : le signal « épreuves à préparer » matche
+  /// par FK en priorité, avec repli sur le nom normalisé (anciennes épreuves)
+  subjectId          String?
   /// Titre de l'épreuve
   title              String
   /// Session (ex : « Session normale 2027 »)
@@ -10599,10 +10603,63 @@ model FederisExamPaper {
   createdBy          String
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
+  /// ⭐ Matière du catalogue (module Matières) — suppression de la matière →
+  /// l'épreuve conserve son intitulé texte (subjectId mis à null)
+  subjectRef         FederisSubject? @relation("FederisExamPaperSubject", fields: [subjectId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, academicYearId, examCategory])
   @@index([tenantId, status])
+  @@index([subjectId])
   @@map("federis_exam_papers")
+}
+
+/// ⭐ Module Matières (2026-09-29) — catalogue des matières D'EXAMEN du
+/// patronat, par type (CEP | BEPC | BAC | CAP) et par série (BAC : A1, A2,
+/// C, D… — CAP : filières). Ces matières alimentent TOUT le workflow :
+///   1. au lancement d'un examen, elles sont attachées à la campagne
+///      (NationalExamSubject — copie avec sourceSubjectId en metadata) ;
+///   2. le module Épreuves y puise ses matières (FK subjectId) et signale
+///      les épreuves non préparées tant que chaque matière lancée n'a pas
+///      son épreuve (signal orange → vert) ;
+///   3. le module Notes et Moyennes affiche les matières attachées.
+/// Pattern du modèle Subject du module Pédagogie Helm (code + coefficient),
+/// adapté au contexte des examens nationaux (type + série au lieu de niveau).
+model FederisSubject {
+  id             String   @id @default(uuid())
+  /// Tenant du patronat (isolation territoriale)
+  tenantId       String
+  /// Année scolaire du patronat (NO ACADEMIC YEAR = NO DATA)
+  academicYearId String
+  /// CEP | BEPC | BAC | CAP
+  examType       String
+  /// Série (BAC : A1, A2, C, D… / CAP : filière) — "" = tronc commun du type
+  series         String   @default("")
+  /// Code court unique (ex. FR, MATH, PHI)
+  code           String
+  /// Intitulé complet (ex. Mathématiques)
+  name           String
+  description    String?
+  /// Poids de la matière (moyennes pondérées BEPC/BAC/CAP)
+  coefficient    Float    @default(1.0)
+  /// Barème (défaut 20)
+  maxScore       Float    @default(20.0)
+  /// Durée de l'épreuve en minutes
+  duration       Int?
+  /// Ordre d'affichage
+  order          Int      @default(0)
+  /// Désactivation sans suppression (matières retirées du catalogue)
+  isActive       Boolean  @default(true)
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  createdBy      String?
+  /// Épreuves liées (module Épreuves — signal « à préparer »)
+  papers         FederisExamPaper[] @relation("FederisExamPaperSubject")
+
+  @@unique([tenantId, academicYearId, examType, series, code])
+  @@index([tenantId, academicYearId, examType])
+  @@index([tenantId, examType, series])
+  @@map("federis_subjects")
 }
 
 model ExamRoom {

@@ -29,6 +29,10 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { FederisPatronatService, FEDERIS_PLANS, type FederisPlanCode } from './federis-patronat.service';
+// ⭐ Module Matières — attachement automatique du catalogue au LANCEMENT
+//    d'une campagne (statut REGISTRATION_OPEN / IN_PROGRESS) : les matières
+//    paramétrées deviennent les matières de l'examen (NationalExamSubject).
+import { FederisSubjectsService } from './federis-subjects.service';
 // ⭐ Série (Baccalauréat) — les listes officielles transmises par les écoles
 //    sont regroupées PAR SÉRIE côté patronat (jamais un mélange).
 import { resolveSeriesFromClassNames } from './federis-school-exams.service';
@@ -126,7 +130,7 @@ export class UpdateExamDto {
   name?: string;
 
   @IsOptional()
-  @IsIn(['DRAFT', 'REGISTRATION_OPEN', 'ONGOING', 'COMPLETED', 'CANCELLED', 'ARCHIVED'])
+  @IsIn(['DRAFT', 'REGISTRATION_OPEN', 'REGISTRATION_CLOSED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'ARCHIVED'])
   status?: string;
 
   @IsOptional()
@@ -498,6 +502,7 @@ export class FederisExamsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly patronatService: FederisPatronatService,
+    private readonly subjectsService: FederisSubjectsService,
   ) {}
 
   // ── Auto-guérison du schéma (pattern FederisSupervisorsService) ──────────
@@ -758,7 +763,32 @@ export class FederisExamsService {
     if (dto.endDate) data.endDate = new Date(dto.endDate);
 
     const updated = await this.prisma.nationalExam.update({ where: { id: exam.id }, data });
-    return { success: true, exam: updated };
+
+    // ⭐ LANCEMENT OFFICIEL (2026-09-29 — module Matières) : dès qu'une
+    //    campagne passe à REGISTRATION_OPEN ou IN_PROGRESS, les matières du
+    //    CATALOGUE du type sont attachées à l'examen (codes manquants
+    //    uniquement — jamais d'écrasement). Le signal « épreuves à préparer »
+    //    (module Épreuves) devient actif pour ces matières.
+    //    Non bloquant : un catalogue vide n'empêche pas le lancement.
+    let subjectsSync: any = null;
+    if (
+      dto.status === 'REGISTRATION_OPEN' ||
+      dto.status === 'IN_PROGRESS'
+    ) {
+      try {
+        subjectsSync = await this.subjectsService.syncCatalogToExam(
+          tenantId,
+          userId,
+          exam.id,
+        );
+      } catch (e: any) {
+        this.logger.warn(
+          `Attachement du catalogue de matières impossible pour ${exam.code} : ${String(e?.message ?? e)}`,
+        );
+      }
+    }
+
+    return { success: true, exam: updated, subjectsSync };
   }
 
   // ── 2. Centres d'examen ──────────────────────────────────────────────────

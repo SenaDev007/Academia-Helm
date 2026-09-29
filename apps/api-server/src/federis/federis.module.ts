@@ -61,6 +61,12 @@ import { FederisSchoolSupervisorsController } from './federis-school-supervisors
 //    registre des notes et relevés de notes (PDF backend A4 paysage)
 import { FederisGradesService } from './federis-grades.service';
 import { FederisGradesController } from './federis-grades.controller';
+// ⭐ Module « Matières » (2026-09-29) — catalogue des matières d'examen par
+//    type (CEP/BEPC/BAC/CAP) et par série (BAC), reproduction du CRUD du
+//    module Pédagogie Helm ; alimente le lancement des examens, le module
+//    Épreuves (signal « épreuves à préparer ») et le module Notes et Moyennes
+import { FederisSubjectsService } from './federis-subjects.service';
+import { FederisSubjectsController } from './federis-subjects.controller';
 
 @Module({
   imports: [BillingModule, CommunicationModule],
@@ -80,6 +86,7 @@ import { FederisGradesController } from './federis-grades.controller';
     FederisSupervisorsController,
     FederisSchoolSupervisorsController,
     FederisGradesController,
+    FederisSubjectsController,
   ],
   providers: [
     FederisService,
@@ -106,6 +113,7 @@ import { FederisGradesController } from './federis-grades.controller';
     FederisEpreuveService,
     FederisSupervisorsService,
     FederisGradesService,
+    FederisSubjectsService,
   ],
   exports: [
     FederisService,
@@ -122,6 +130,7 @@ import { FederisGradesController } from './federis-grades.controller';
     FederisSchoolExamsService,
     FederisCandidatesExportService,
     FederisGradesService,
+    FederisSubjectsService,
   ],
 })
 export class FederisModule {}

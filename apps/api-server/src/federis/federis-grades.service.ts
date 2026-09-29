@@ -39,6 +39,10 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { FederisPatronatService } from './federis-patronat.service';
+// ⭐ Module Matières — l'initialisation des matières d'un examen puise
+//    D'ABORD dans le catalogue du patronat (module Matières) ; le jeu
+//    intégré DEFAULT_SUBJECTS_BY_TYPE n'est qu'un repli (catalogue vide).
+import { FederisSubjectsService } from './federis-subjects.service';
 import {
   ALL_PATRONAT_FUNCTIONS,
   WRITE_DELIBERATION,
@@ -389,6 +393,7 @@ export class FederisGradesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly patronatService: FederisPatronatService,
+    private readonly subjectsService: FederisSubjectsService,
   ) {}
 
   // ── Auto-guérison du schéma (pattern FederisExamsService) ────────────────
@@ -539,13 +544,37 @@ export class FederisGradesService {
     };
   }
 
-  /** Crée le jeu officiel de matières du type d'examen (ignore les codes existants). */
+  /** Crée le jeu de matières de l'examen — D'ABORD depuis le CATALOGUE du
+   *  patronat (module Matières : matières paramétrées par type/série), avec
+   * repli sur le jeu officiel intégré si le catalogue est vide. */
   async initDefaultSubjects(tenantId: string, userId: string, examId: string) {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertWriteGrades(fn);
     const exam = await this.getOwnedExam(patronat.tenantId, examId);
     const year = await this.getActiveYear(patronat.tenantId);
 
+    // ⭐ 1. Catalogue du patronat (module Matières) — source de vérité
+    const catalogCount = await this.prisma.federisSubject
+      .count({
+        where: {
+          tenantId: patronat.tenantId,
+          academicYearId: year.id,
+          examType: exam.examType,
+          isActive: true,
+        },
+      })
+      .catch(() => 0);
+
+    if (catalogCount > 0) {
+      const res = await this.subjectsService.syncCatalogToExam(tenantId, userId, examId);
+      return {
+        ...res,
+        fromCatalog: true,
+        message: `${res.message} (catalogue du module Matières — ${catalogCount} matière(s) paramétrée(s) pour le type ${exam.examType}).`,
+      };
+    }
+
+    // ⭐ 2. Repli : jeu officiel intégré (catalogue vide)
     const defaults = DEFAULT_SUBJECTS_BY_TYPE[exam.examType] ?? [];
     if (defaults.length === 0) {
       throw new BadRequestException(`Aucun jeu de matières prédéfini pour le type ${exam.examType}.`);

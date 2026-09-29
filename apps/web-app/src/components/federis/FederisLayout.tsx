@@ -88,6 +88,11 @@ const federisNavItems = [
   {
     category: 'EXAMENS',
     items: [
+      // ⭐ 2026-09-29 — module « Matières » en PREMIÈRE POSITION du périmètre
+      //    EXAMENS : catalogue des matières à examiner (CEP/BEPC/BAC par
+      //    série/CAP, coefficients et barèmes) — alimente le lancement des
+      //    campagnes, la préparation des épreuves et la saisie des notes
+      { name: 'Matières', subPath: '/subjects', icon: 'bookOpen' as const },
       { name: 'Examens nationaux', subPath: '/exams', icon: 'exams' as const },
       // ⭐ 2026-09-29 — le module couvre centres, salles ET surveillants
       //    (sous-onglet « Gestion des surveillants » : demandes aux écoles,

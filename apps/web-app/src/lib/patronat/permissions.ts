@@ -125,6 +125,9 @@ const ROUTE_PERMISSIONS: RouteRoles = {
   '/bureau': ['COORDONNATEUR', 'SECRETAIRE'],
   '/schools': ['COORDONNATEUR', 'SECRETAIRE', 'TRESORIER', 'ORGANISATEUR', 'CHARGE_MISSION', 'OPERATOR'],
   '/exams': ['COORDONNATEUR', 'ORGANISATEUR'],
+  // ⭐ Matières (2026-09-29) — catalogue des matières d'examen (première
+  //    position EXAMENS) : même périmètre que les épreuves et les notes
+  '/subjects': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR'],
   '/centers': ['COORDONNATEUR', 'ORGANISATEUR'],
   '/candidates': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR', 'CHARGE_MISSION', 'OPERATOR'],
   // ⭐ Notes et Moyennes (2026-09-29) — même chaîne que la délibération :

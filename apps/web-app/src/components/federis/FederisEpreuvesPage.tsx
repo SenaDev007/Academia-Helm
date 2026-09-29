@@ -67,6 +67,7 @@ interface EpreuveListItem {
 interface EpreuveDetail extends EpreuveListItem {
   maxScoreLabel: string | null;
   coefficient: string | null;
+  subjectId: string | null;
   showIdentityFields: boolean;
   customHeader: string;
   situation: string;
@@ -83,6 +84,41 @@ interface ListResponse {
   activeYearId: string | null;
   canManage: boolean;
   epreuves: EpreuveListItem[];
+}
+
+// ⭐ Module Matières (2026-09-29) — catalogue des matières d'examen (le
+//    champ Matière de l'éditeur puise dedans) + signal « épreuves à
+//    préparer » pour les examens officiellement lancés (orange → vert).
+interface SubjectOption {
+  id: string;
+  examType: string;
+  series: string;
+  code: string;
+  name: string;
+}
+
+interface ReadinessMissing {
+  subjectId: string;
+  code: string;
+  name: string;
+  series: string;
+  hasPaper: boolean;
+}
+
+interface ReadinessData {
+  launchedExams: number;
+  totalMissing: number;
+  allReady: boolean;
+  exams: Array<{
+    examId: string;
+    code: string;
+    name: string;
+    examType: string;
+    ready: boolean;
+    subjectsCount: number;
+    missingCount: number;
+    missing: ReadinessMissing[];
+  }>;
 }
 
 const CATEGORIES = [
@@ -102,6 +138,8 @@ const EMPTY_FORM = {
   title: '',
   examCategory: 'CEP',
   subject: '',
+  // ⭐ Lien exact vers la matière du catalogue (module Matières)
+  subjectId: '' as string | null,
   sessionLabel: '',
   durationLabel: '',
   maxScoreLabel: '',
@@ -126,6 +164,10 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
   const [list, setList] = useState<ListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // ── Module Matières — catalogue + signal « épreuves à préparer » ──────
+  const [subjectsCatalog, setSubjectsCatalog] = useState<SubjectOption[]>([]);
+  const [readiness, setReadiness] = useState<ReadinessData | null>(null);
 
   // ── En-tête réutilisable du patronat ────────────────────────────────────
   const [headerHtml, setHeaderHtml] = useState('');
@@ -173,10 +215,38 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
     }
   }, []);
 
+  // ⭐ Module Matières — catalogue (champ Matière) + signal « épreuves à
+  //    préparer » (bandeau) ; échec silencieux : le module reste utilisable.
+  const loadSubjectsContext = useCallback(async () => {
+    try {
+      const [subjectsRes, readinessRes] = await Promise.all([
+        apiClient.get('/federis/subjects', { timeout: 20000 }).catch(() => null),
+        apiClient.get('/federis/subjects/readiness', { timeout: 20000 }).catch(() => null),
+      ]);
+      if (subjectsRes?.data?.subjects) {
+        setSubjectsCatalog(
+          (subjectsRes.data.subjects as any[])
+            .filter((s: any) => s.isActive !== false)
+            .map((s: any) => ({
+              id: s.id,
+              examType: s.examType,
+              series: s.series ?? '',
+              code: s.code,
+              name: s.name,
+            })),
+        );
+      }
+      if (readinessRes?.data) setReadiness(readinessRes.data);
+    } catch {
+      /* silencieux */
+    }
+  }, []);
+
   useEffect(() => {
     void load();
     void loadHeader();
-  }, [load, loadHeader]);
+    void loadSubjectsContext();
+  }, [load, loadHeader, loadSubjectsContext]);
 
   // ── En-tête réutilisable : enregistrement ───────────────────────────────
   const saveHeader = async () => {
@@ -221,6 +291,7 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
         title: d.title ?? '',
         examCategory: d.examCategory ?? 'CEP',
         subject: d.subject ?? '',
+        subjectId: d.subjectId ?? null,
         sessionLabel: d.sessionLabel ?? '',
         durationLabel: d.durationLabel ?? '',
         maxScoreLabel: d.maxScoreLabel ?? '',
@@ -265,6 +336,8 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
     title: form.title.trim() || 'Épreuve sans titre',
     examCategory: form.examCategory,
     subject: form.subject || null,
+    // ⭐ Lien exact vers la matière du catalogue (module Matières)
+    subjectId: form.subjectId || null,
     sessionLabel: form.sessionLabel || null,
     durationLabel: form.durationLabel || null,
     maxScoreLabel: form.maxScoreLabel || null,
@@ -296,6 +369,8 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
           );
           dirtyRef.current = false;
           await load();
+          // ⭐ Le signal « épreuves à préparer » peut passer au vert
+          void loadSubjectsContext();
           if (!silent) setNotice('Épreuve créée — les modifications sont désormais enregistrées automatiquement.');
           return id;
         }
@@ -324,7 +399,7 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [editor, form, load],
+    [editor, form, load, loadSubjectsContext],
   );
 
   // ── Autosave (10 s — pattern fiches pédagogiques Helm) ──────────────────
@@ -504,6 +579,76 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
         </div>
       )}
 
+      {/* ⭐ Module Matières — signal « épreuves à préparer » (examens lancés) :
+          orange tant qu'une matière d'un examen lancé n'a pas son épreuve,
+          vert dès que tout est préparé. */}
+      {readiness && readiness.launchedExams > 0 && !editorOpen && (
+        <div
+          className={cn(
+            'rounded-xl px-6 py-5 border space-y-3',
+            readiness.allReady
+              ? 'bg-emerald-50 border-emerald-200'
+              : 'bg-amber-50 border-amber-200',
+          )}
+        >
+          <div className="flex items-start gap-3">
+            <AppIcon
+              name={readiness.allReady ? 'success' : 'warning'}
+              size="menu"
+              className={cn(
+                'mt-0.5',
+                readiness.allReady ? 'text-emerald-600' : 'text-amber-600',
+              )}
+            />
+            <div className="flex-1">
+              <p
+                className={cn(
+                  'text-sm font-bold',
+                  readiness.allReady ? 'text-emerald-900' : 'text-amber-900',
+                )}
+              >
+                {readiness.allReady
+                  ? 'Toutes les épreuves des examens lancés sont préparées — tout est au vert.'
+                  : `${readiness.totalMissing} épreuve(s) à préparer sur ${readiness.launchedExams} examen(s) officiellement lancé(s).`}
+              </p>
+              <p className="text-xs mt-1 text-slate-600 font-medium">
+                Les matières des examens lancés sont définies dans le module Matières —
+                préparez l&apos;épreuve de chaque matière ci-dessous pour passer au vert.
+              </p>
+            </div>
+            {canManage && !readiness.allReady && (
+              <button onClick={openNew} className="fed-btn-gold px-4 py-2.5 text-xs shrink-0">
+                Préparer une épreuve
+              </button>
+            )}
+          </div>
+          {!readiness.allReady && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+              {readiness.exams
+                .filter((e) => !e.ready)
+                .map((exam) => (
+                  <div
+                    key={exam.examId}
+                    className="rounded-xl px-4 py-3 border border-amber-200 bg-white/70"
+                  >
+                    <p className="text-xs font-bold text-blue-900">
+                      {exam.code} — {exam.name}
+                    </p>
+                    <p className="text-[10px] font-semibold text-amber-800 mt-1 leading-relaxed">
+                      À préparer :{' '}
+                      {exam.missing
+                        .slice(0, 6)
+                        .map((m) => m.name)
+                        .join(', ')}
+                      {exam.missing.length > 6 ? `… (+${exam.missing.length - 6})` : ''}
+                    </p>
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ════════════════════════════════════════════════════════════════════
           ÉDITEUR (création / modification d'une épreuve)
          ════════════════════════════════════════════════════════════════════ */}
@@ -642,16 +787,53 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
                   Matière
                 </label>
-                <input
-                  value={form.subject}
-                  onChange={(e) => {
-                    setForm({ ...form, subject: e.target.value });
-                    markDirty();
-                  }}
-                  disabled={locked}
-                  placeholder="Mathématiques"
-                  className="fed-input-light px-4 py-3 font-semibold"
-                />
+                {/* ⭐ Module Matières — la matière est choisie dans le CATALOGUE
+                    du type d'examen (lien exact subjectId → signal vert) ;
+                    l'ancienne valeur texte est conservée si elle n'y figure
+                    pas (épreuves antérieures au module). */}
+                {(() => {
+                  const options = subjectsCatalog.filter(
+                    (s) => s.examType === form.examCategory,
+                  );
+                  const currentId =
+                    form.subjectId && options.some((o) => o.id === form.subjectId)
+                      ? form.subjectId
+                      : form.subject
+                        ? '__custom__'
+                        : '';
+                  return (
+                    <select
+                      value={currentId}
+                      disabled={locked}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === '' || v === '__custom__') {
+                          setForm({ ...form, subjectId: null });
+                        } else {
+                          const opt = options.find((o) => o.id === v);
+                          setForm({
+                            ...form,
+                            subjectId: v,
+                            subject: opt ? opt.name : form.subject,
+                          });
+                        }
+                        markDirty();
+                      }}
+                      className="fed-input-light px-4 py-3 font-semibold"
+                    >
+                      <option value="">— Aucune —</option>
+                      {options.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                          {s.series ? ` (${s.series})` : ''} · {s.code}
+                        </option>
+                      ))}
+                      {currentId === '__custom__' && (
+                        <option value="__custom__">{form.subject} (hors catalogue)</option>
+                      )}
+                    </select>
+                  );
+                })()}
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">

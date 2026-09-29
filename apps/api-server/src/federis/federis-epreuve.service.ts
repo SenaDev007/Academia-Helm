@@ -108,6 +108,13 @@ export class CreateEpreuveDto {
   @MaxLength(120)
   subject?: string;
 
+  /** ⭐ Module Matières — lien exact vers la matière du catalogue
+   *  (federis_subjects) : alimente le signal « épreuves à préparer ». */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  subjectId?: string | null;
+
   @IsOptional()
   @IsString()
   @MaxLength(120)
@@ -181,6 +188,12 @@ export class UpdateEpreuveDto {
   @IsString()
   @MaxLength(120)
   subject?: string;
+
+  /** ⭐ Module Matières — lien exact vers la matière du catalogue. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  subjectId?: string | null;
 
   @IsOptional()
   @IsString()
@@ -403,6 +416,22 @@ export class FederisEpreuveService {
           END IF;
       END $$`,
       `ALTER TABLE "patronats" ADD COLUMN IF NOT EXISTS "epreuveHeader" TEXT`,
+      // ⭐ Module Matières (2026-09-29) — lien exact épreuve ↔ matière du
+      //    catalogue (federis_subjects) : signal « épreuves à préparer ».
+      //    La table federis_subjects est créée par FederisSubjectsService
+      //    (miroir de la migration 20260929190000) — la FK douce est posée
+      //    par la migration / le service matières si la table existe.
+      `ALTER TABLE "federis_exam_papers" ADD COLUMN IF NOT EXISTS "subjectId" TEXT`,
+      `CREATE INDEX IF NOT EXISTS "federis_exam_papers_subjectId_idx"
+          ON "federis_exam_papers"("subjectId")`,
+      `DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'federis_exam_papers_subjectId_fkey')
+             AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'federis_subjects') THEN
+              ALTER TABLE "federis_exam_papers"
+                  ADD CONSTRAINT "federis_exam_papers_subjectId_fkey"
+                  FOREIGN KEY ("subjectId") REFERENCES "federis_subjects"("id") ON DELETE SET NULL;
+          END IF;
+      END $$`,
     ];
 
     for (const stmt of statements) {
@@ -482,6 +511,8 @@ export class FederisEpreuveService {
         examCategoryLabel:
           CATEGORY_SHORT_LABELS[p.examCategory as EpreuveCategory] ?? p.examCategory,
         subject: p.subject,
+        // ⭐ Lien exact vers la matière du catalogue (module Matières)
+        subjectId: (p as any).subjectId ?? null,
         title: p.title,
         sessionLabel: p.sessionLabel,
         durationLabel: p.durationLabel,
@@ -514,6 +545,8 @@ export class FederisEpreuveService {
         academicYearId: year.id,
         examCategory: dto.examCategory,
         subject: dto.subject?.trim() || null,
+        // ⭐ Lien exact vers la matière du catalogue (module Matières)
+        subjectId: dto.subjectId?.trim() || null,
         title: dto.title.trim(),
         sessionLabel: dto.sessionLabel?.trim() || null,
         durationLabel: dto.durationLabel?.trim() || null,
@@ -589,6 +622,8 @@ export class FederisEpreuveService {
     if (dto.title !== undefined) data.title = dto.title.trim();
     if (dto.examCategory !== undefined) data.examCategory = dto.examCategory;
     if (dto.subject !== undefined) data.subject = dto.subject?.trim() || null;
+    // ⭐ Lien exact vers la matière du catalogue (module Matières)
+    if (dto.subjectId !== undefined) data.subjectId = dto.subjectId?.trim() || null;
     if (dto.sessionLabel !== undefined) data.sessionLabel = dto.sessionLabel?.trim() || null;
     if (dto.durationLabel !== undefined) data.durationLabel = dto.durationLabel?.trim() || null;
     if (dto.maxScoreLabel !== undefined) data.maxScoreLabel = dto.maxScoreLabel?.trim() || null;
@@ -1066,6 +1101,8 @@ ${pages.join('\n')}
       examCategoryLabel:
         CATEGORY_SHORT_LABELS[paper.examCategory as EpreuveCategory] ?? paper.examCategory,
       subject: paper.subject,
+      // ⭐ Lien exact vers la matière du catalogue (module Matières)
+      subjectId: paper.subjectId ?? null,
       title: paper.title,
       sessionLabel: paper.sessionLabel,
       durationLabel: paper.durationLabel,

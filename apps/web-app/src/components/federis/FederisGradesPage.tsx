@@ -373,9 +373,9 @@ export default function FederisGradesPage({ userRole }: FederisGradesPageProps) 
               onClick={initDefaults}
               disabled={working}
               className="fed-btn-navy px-5 py-2.5 text-[10px] font-bold uppercase disabled:opacity-50 shrink-0"
-              title="Ajouter le jeu officiel de matières du type d'examen (les codes déjà présents sont ignorés)"
+              title="Attache les matières du CATALOGUE (module Matières) — repli sur le jeu officiel intégré si le catalogue est vide"
             >
-              {working ? '…' : 'Initialiser les matières officielles'}
+              {working ? '…' : 'Initialiser depuis le catalogue'}
             </button>
           </div>
 

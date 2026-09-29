@@ -332,6 +332,138 @@ export class ConductController {
 
   // ── CONDUCT LEDGER ─────────────────────────────────────────────────────
 
+  /**
+   * ⭐ 2026-09-29 — GET /api/discipline/conduct/student
+   *    Récupère la conduite d'un élève pour un trimestre donné (periodId =
+   *    quarterId) avec le détail des sanctions (count + total points deducted
+   *    + total hours attributed). Source de vérité = backend (conduct_ledger
+   *    + sanctions). Utilisé par le frontend bulletin pour afficher la
+   *    conduite dans l'UI (FR secondary + EN Report Book).
+   *
+   * Query params :
+   *   - studentId (required)
+   *   - periodId (= quarterId, required)
+   *   - academicYearId (required)
+   *
+   * Response :
+   *   {
+   *     conductScore: number,         // ex: 12.5 (conductReference - totalPointsDeducted)
+   *     conductReference: number,     // ex: 17 (baseline configurée par l'école)
+   *     totalPointsDeducted: number,  // ex: 4.5 (Σ points_deducted des sanctions)
+   *     sanctionCount: number,        // ex: 3 (nombre de sanctions actives ce trimestre)
+   *     totalHoursAttributed: number, // ex: 6 (Σ hours_attributed des sanctions)
+   *     hasLedger: boolean,           // true si l'élève a un conduct_ledger pour ce trimestre
+   *   }
+   */
+  @Get('student')
+  async getStudentConduct(
+    @TenantId() tenantId: string,
+    @Query('studentId') studentId: string,
+    @Query('periodId') periodId: string,
+    @Query('academicYearId') academicYearId: string,
+  ) {
+    if (!studentId || !periodId || !academicYearId) {
+      return {
+        conductScore: null,
+        conductReference: null,
+        totalPointsDeducted: 0,
+        sanctionCount: 0,
+        totalHoursAttributed: 0,
+        hasLedger: false,
+      };
+    }
+
+    // 1. Récupérer le conduct_setting (baseline configurée par l'école)
+    const conductSettings = await this.prisma.conductSetting.findFirst({
+      where: { tenantId, academicYearId },
+      orderBy: { createdAt: 'desc' },
+    }).catch(() => null);
+    const baseline = conductSettings ? Number(conductSettings.conductReference) : 17;
+
+    // 2. Vérifier que le periodId correspond bien à un quarter
+    const periodRow = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id FROM quarters WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
+      periodId, tenantId,
+    ).catch(() => []);
+    const quarterId = periodRow.length > 0 ? periodRow[0].id : null;
+
+    // 3. Récupérer le conduct_ledger de l'élève pour ce trimestre
+    let conductScore: number | null = null;
+    let conductReference: number = baseline;
+    let totalPointsDeducted = 0;
+    let hasLedger = false;
+    if (quarterId) {
+      const ledgerRow = await this.prisma.conductLedger.findFirst({
+        where: { tenantId, studentId, quarterId },
+        select: { conductReference: true, totalPointsDeducted: true, conductFinal: true },
+      }).catch(() => null);
+      if (ledgerRow) {
+        hasLedger = true;
+        conductScore = Number(ledgerRow.conductFinal) || null;
+        conductReference = Number(ledgerRow.conductReference) || baseline;
+        totalPointsDeducted = Number(ledgerRow.totalPointsDeducted) || 0;
+      }
+    }
+
+    // 4. Fallback : si pas de ledger, calculer depuis les sanctions actives
+    //    de ce trimestre (ou sans quarterId = legacy)
+    if (conductScore === null) {
+      const sanctionsWhere: any = {
+        tenantId,
+        academicYearId,
+        studentId,
+        status: 'ACTIVE',
+      };
+      const allSanctions = await this.prisma.sanction.findMany({
+        where: sanctionsWhere,
+        select: { pointsDeducted: true, hoursAttributed: true, quarterId: true },
+      }).catch(() => []);
+      // ⭐ Si on a un quarterId, ne compter QUE les sanctions de ce trimestre
+      //    (ou sans quarterId = legacy).
+      const filteredSanctions = quarterId
+        ? allSanctions.filter(s => !s.quarterId || s.quarterId === quarterId)
+        : allSanctions;
+      totalPointsDeducted = filteredSanctions.reduce((sum, s) => sum + (Number(s.pointsDeducted) || 0), 0);
+      const totalHoursAttributed = filteredSanctions.reduce((sum, s) => sum + (Number(s.hoursAttributed) || 0), 0);
+      const sanctionCount = filteredSanctions.length;
+      conductScore = Math.max(0, conductReference - totalPointsDeducted);
+      return {
+        conductScore,
+        conductReference,
+        totalPointsDeducted,
+        sanctionCount,
+        totalHoursAttributed,
+        hasLedger: false,
+      };
+    }
+
+    // 5. Si on a un ledger, récupérer aussi les sanctions pour count + hours
+    const sanctionsWhere: any = {
+      tenantId,
+      academicYearId,
+      studentId,
+      status: 'ACTIVE',
+    };
+    const allSanctions = await this.prisma.sanction.findMany({
+      where: sanctionsWhere,
+      select: { pointsDeducted: true, hoursAttributed: true, quarterId: true },
+    }).catch(() => []);
+    const filteredSanctions = quarterId
+      ? allSanctions.filter(s => !s.quarterId || s.quarterId === quarterId)
+      : allSanctions;
+    const totalHoursAttributed = filteredSanctions.reduce((sum, s) => sum + (Number(s.hoursAttributed) || 0), 0);
+    const sanctionCount = filteredSanctions.length;
+
+    return {
+      conductScore,
+      conductReference,
+      totalPointsDeducted,
+      sanctionCount,
+      totalHoursAttributed,
+      hasLedger,
+    };
+  }
+
   @Get('ledger')
   async listConductLedger(
     @TenantId() tenantId: string,

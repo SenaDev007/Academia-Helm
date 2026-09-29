@@ -1092,11 +1092,69 @@ function BulletinsContent() {
   //    aussi) et injectait Conduite comme matière synthétique avec score = defaultRef
   //    (puisque les fetchs retournaient null) → TOUS les élèves affichaient 17/20
   //    (la valeur par défaut), même ceux ayant des sanctions.
-  //    Désormais : le frontend n'injecte PLUS Conduite. Le backend résout la
-  //    conduite depuis conduct_ledger + sanctions (module Vie Scolaire) pour
-  //    chaque élève et injecte la matière Conduite avec la vraie valeur.
-  //    Cf. bulletins.controller.ts lignes ~836-910 + 1105-1118.
-  // (Ce bloc est intentionnellement vide — l'injection se fait côté backend.)
+  //    Désormais : le frontend fetch la conduite de chaque élève via le nouvel
+  //    endpoint dédié /api/discipline/conduct/student (URL correcte) et injecte
+  //    une matière synthétique « Conduite » dans bulletinData.subjects pour qu'elle
+  //    apparaisse dans le tableau des notes de l'UI (FR secondary + EN Report Book).
+  //    Le backend fait de même côté PDF (cf. bulletins.controller.ts lignes
+  //    ~1100-1190 — injection dans subjects[]).
+  //    ⭐ Source de vérité = backend (conduct_ledger + sanctions du module
+  //    Vie Scolaire, configuré par l'école).
+  useEffect(() => {
+    // ⭐ Uniquement pour les bulletins secondaires (FR trimestriel/évaluation +
+    //    EN Report Book). Pas pour maternelle/primaire qui n'ont pas de conduite.
+    const isAnySecondary = isSecondaire && (scopeLang === 'EN' || isSecondaryTrack);
+    if (!isAnySecondary || !bulletinData || !academicYear?.id || !selectedPeriodId) return;
+    const CONDUCT_SUBJECT_ID = '__conduct__';
+    // ⭐ Fetch en parallèle : conduite de chaque élève via /student (1 requête
+    //    par élève — pour l'instant on accepte ce coût, car il n'y a pas
+    //    d'endpoint batch). Optimisation future : ajouter /api/discipline/
+    //    conduct/students-batch?studentIds=X,Y,Z&periodId=P&academicYearId=Y.
+    const studentIds = bulletinData.results.map(r => r.id);
+    if (studentIds.length === 0) return;
+    Promise.all(
+      studentIds.map(sid =>
+        fetch(`/api/discipline/conduct/student?studentId=${sid}&periodId=${selectedPeriodId}&academicYearId=${academicYear.id}`, { credentials: 'include' })
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null)
+      )
+    ).then((conductResults: any[]) => {
+      setBulletinData(prev => {
+        if (!prev) return prev;
+        const hasConduct = prev.subjects.some(s => s.id === CONDUCT_SUBJECT_ID);
+        const subjects = hasConduct ? prev.subjects : [...prev.subjects, { id: CONDUCT_SUBJECT_ID, name: 'Conduite', coefficient: 1 }];
+        const results = prev.results.map((st, idx) => {
+          const conduct = conductResults[idx];
+          const conductScore = conduct && typeof conduct.conductScore === 'number' ? conduct.conductScore : null;
+          const conductRef = conduct && typeof conduct.conductReference === 'number' ? conduct.conductReference : 17;
+          return {
+            ...st,
+            subjectScores: {
+              ...st.subjectScores,
+              [CONDUCT_SUBJECT_ID]: {
+                score: conductScore,
+                qualitativeCode: null,
+                isAbsent: false,
+                appreciation: conductScore !== null && conductScore >= conductRef * 0.6 ? 'Satisfaisant' : 'À améliorer',
+                moyenne: conductScore,
+                coefficient: 1,
+                noteCoef: conductScore,
+                secHasSlot: true,
+                subjectRank: null,
+                // Pour EN Report Book (10 colonnes FCA/SCA/EXAM/Total/100) :
+                // pas de composantes CA, mais on met le score en Total.
+                firstCA: null,
+                secondCA: null,
+                exam: null,
+                total: conductScore,
+              } as any,
+            },
+          };
+        });
+        return { ...prev, subjects, results };
+      });
+    }).catch(() => {});
+  }, [isSecondaire, scopeLang, isSecondaryTrack, bulletinData?.subjects.length, bulletinData?.results.length, academicYear?.id, selectedPeriodId]);
 
   const toggleStudent = (studentId: string) => {
     setExpandedStudents(prev => {
@@ -1774,9 +1832,10 @@ function BulletinTwoPage({
               signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }}
               periodId={selectedPeriodId}
               directorName={directorName}
+              academicYearId={academicYear?.id}
             />
           ) : scopeLang === 'EN' && !isMaternelle ? (
-            <BulletinAnglophonePage2 student={student} bulletinData={bulletinData} signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }} periodId={selectedPeriodId} nextTermStartDate={nextTermStartDate} directorName={directorName} />
+            <BulletinAnglophonePage2 student={student} bulletinData={bulletinData} signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }} periodId={selectedPeriodId} nextTermStartDate={nextTermStartDate} directorName={directorName} academicYearId={academicYear?.id} />
           ) : (
             <BulletinPage2 student={student} isMaternelle={isMaternelle} signatures={{ teacherSig, directorSig, parentSig, setTeacherSig, setDirectorSig, setParentSig }} periodId={selectedPeriodId} directorName={directorName} />
           )}
@@ -2619,7 +2678,7 @@ function BulletinAnglophonePage1({
 //    Headmaster / Parent).
 
 function BulletinAnglophonePage2({
-  student, bulletinData, signatures, periodId, nextTermStartDate, directorName,
+  student, bulletinData, signatures, periodId, nextTermStartDate, directorName, academicYearId,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
@@ -2627,6 +2686,7 @@ function BulletinAnglophonePage2({
   periodId?: string;
   nextTermStartDate?: string | null;
   directorName?: string | null;   // ⭐ Nom du directeur — résolu depuis le module RH
+  academicYearId?: string;        // ⭐ 2026-09-29 — pour fetcher la conduite
 }) {
   // ⭐ Grille + stats de l'élève
   const tier = enTierFor(student.generalAverage);
@@ -2656,6 +2716,20 @@ function BulletinAnglophonePage2({
   const [psychomotorMap, setPsychomotorMap] = useState<Record<string, string>>({});
   const [autoFillLoading, setAutoFillLoading] = useState(false);
   const [savedAt, setSavedAt] = useState(false);
+
+  // ⭐ 2026-09-29 — Conduct (résolu depuis le backend : conduct_ledger +
+  //    sanctions du module Vie Scolaire). Affiché dans l'UI comme une section
+  //    dédiée (entre « Mark Obtainable » et « Teacher's Appreciation »),
+  //    identique au PDF. Le frontend ne calcule RIEN — il fetch la valeur
+  //    via /api/discipline/conduct/student.
+  const [conductData, setConductData] = useState<{
+    conductScore: number | null;
+    conductReference: number | null;
+    totalPointsDeducted: number;
+    sanctionCount: number;
+    totalHoursAttributed: number;
+    hasLedger: boolean;
+  } | null>(null);
 
   // ─── Auto-fill A–E depuis la moyenne /100 ─────────────────────────────────
   const baseLevel = (avg: number): string =>
@@ -2721,6 +2795,21 @@ function BulletinAnglophonePage2({
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [student.id, periodId, pupilAvg]);
+
+  // ⭐ 2026-09-29 — Fetcher la conduite depuis le backend (source de vérité).
+  //    Endpoint dédié /api/discipline/conduct/student qui retourne :
+  //    conductScore + conductReference + totalPointsDeducted + sanctionCount +
+  //    totalHoursAttributed + hasLedger. Affiché dans une section dédiée de
+  //    l'UI (identique au PDF).
+  useEffect(() => {
+    if (!student.id || !periodId || !academicYearId) return;
+    let cancelled = false;
+    fetch(`/api/discipline/conduct/student?studentId=${student.id}&periodId=${periodId}&academicYearId=${academicYearId}`, { credentials: 'include' })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d) setConductData(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [student.id, periodId, academicYearId]);
 
   // ─── Auto-save (best-effort) ──────────────────────────────────────────────
   const saveAnnotations = async (fields: Record<string, any>) => {
@@ -2822,6 +2911,50 @@ function BulletinAnglophonePage2({
           <p className="text-blue-700 font-bold text-base">{bulletinData.results.length}</p>
         </div>
       </div>
+
+      {/* ⭐ 2026-09-29 — CONDUCT SECTION (résolu depuis le backend — module
+          Vie Scolaire). Source de vérité = backend (conduct_ledger +
+          sanctions). Affiché dans l'UI ET dans le PDF (même section).
+          Affiche : conduct score / reference + sanctions count + hours +
+          total points deducted. */}
+      {conductData && (
+        <div className="border border-blue-300 rounded-lg p-2 bg-blue-50">
+          <p className="text-[10px] font-bold text-blue-900 uppercase mb-2 text-center">Conduct</p>
+          <div className="grid grid-cols-4 gap-2 text-[10px]">
+            <div className="bg-white rounded p-2 border border-blue-200 text-center">
+              <p className="text-slate-500 uppercase font-bold">Conduct Score</p>
+              <p className={cn(
+                'font-bold text-base',
+                conductData.conductScore !== null && conductData.conductScore >= (conductData.conductReference ?? 17) * 0.6 && 'text-emerald-700',
+                conductData.conductScore !== null && conductData.conductScore < (conductData.conductReference ?? 17) * 0.6 && 'text-red-600',
+                conductData.conductScore === null && 'text-slate-400',
+              )}>
+                {conductData.conductScore !== null ? `${Number(conductData.conductScore).toFixed(2)} / ${conductData.conductReference ?? 17}` : `— / ${conductData.conductReference ?? 17}`}
+              </p>
+            </div>
+            <div className="bg-white rounded p-2 border border-blue-200 text-center">
+              <p className="text-slate-500 uppercase font-bold">Sanctions</p>
+              <p className="font-bold text-base text-amber-700">{conductData.sanctionCount}</p>
+            </div>
+            <div className="bg-white rounded p-2 border border-blue-200 text-center">
+              <p className="text-slate-500 uppercase font-bold">Points Deducted</p>
+              <p className="font-bold text-base text-red-600">{Number(conductData.totalPointsDeducted).toFixed(2)}</p>
+            </div>
+            <div className="bg-white rounded p-2 border border-blue-200 text-center">
+              <p className="text-slate-500 uppercase font-bold">Hours Attributed</p>
+              <p className="font-bold text-base text-orange-600">{Number(conductData.totalHoursAttributed).toFixed(1)} h</p>
+            </div>
+          </div>
+          {conductData.conductScore !== null && (
+            <p className="text-[9px] text-slate-500 italic text-center mt-2">
+              {conductData.conductScore >= (conductData.conductReference ?? 17) * 0.6
+                ? 'Satisfactory'
+                : 'Needs improvement'}
+              {conductData.hasLedger && ' · Calculé depuis le compteur de conduite'}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Teacher's Appreciation (grille /100) */}
       <div className="border border-slate-300 rounded-lg p-2">
@@ -3004,11 +3137,13 @@ function BulletinSecondairePage2({
   signatures,
   periodId,
   directorName,
+  academicYearId,
 }: {
   student: StudentResult;
   signatures: { teacherSig: string | null; directorSig: string | null; parentSig: string | null; setTeacherSig: (v: string | null) => void; setDirectorSig: (v: string | null) => void; setParentSig: (v: string | null) => void };
   periodId?: string;
   directorName?: string | null;
+  academicYearId?: string;
 }) {
   // ⭐ 2026-09-28 — Annotations secondaires COMPLÈTES (assiduité, discipline,
   //    défauts majeurs, qualités remarquables, analyse/recommandations) avec
@@ -3030,8 +3165,17 @@ function BulletinSecondairePage2({
 
   // ⭐ 2026-09-28 — Conduite résolue depuis conduct_ledger (module Vie Scolaire).
   //    Affichée même si pas de donnée (placeholder « — / 17 »).
+  //    ⭐ 2026-09-29 — Refonte : on utilise le nouvel endpoint dédié
+  //    /api/discipline/conduct/student qui retourne aussi le nombre de
+  //    sanctions + le total d'heures attribuées + les points déduits, en une
+  //    seule requête (avant : on récupérait tout le ledger de l'année et on
+  //    filtrait côté client — moins efficace).
   const [conductScore, setConductScore] = useState<number | null>(null);
   const [conductReference, setConductReference] = useState<number | null>(17);
+  const [conductSanctionCount, setConductSanctionCount] = useState<number>(0);
+  const [conductTotalHours, setConductTotalHours] = useState<number>(0);
+  const [conductPointsDeducted, setConductPointsDeducted] = useState<number>(0);
+  const [conductHasLedger, setConductHasLedger] = useState<boolean>(false);
 
   useEffect(() => {
     if (!student.id || !periodId) return;
@@ -3066,31 +3210,27 @@ function BulletinSecondairePage2({
         .catch(() => {});
     }
 
-    // ⭐ 2026-09-29 — Charger la conduite depuis le backend (conduct_ledger).
-    //    ⚠️ FIX : avant, on utilisait /api/vie-scolaire/conduct?studentId=X&periodId=Y
-    //       (URL inexistante → 404 → null → la conduite n'était JAMAIS chargée
-    //       dans l'UI → affichait toujours le placeholder 17/20). Désormais on
-    //       utilise /api/discipline/conduct/ledger (URL réelle du controller
-    //       ConductController) puis on filtre côté client par studentId +
-    //       quarterId (le periodId du bulletin correspond au quarterId).
-    //    ⭐ Source de vérité = backend. Le frontend ne calcule RIEN, il
-    //       récupère simplement la valeur calculée par le module Vie Scolaire.
-    fetch(`/api/discipline/conduct/ledger?academicYearId=${academicYearId}`, { credentials: 'include' })
-      .then(r => r.ok ? r.json() : null)
-      .then((ledger: any[]) => {
-        if (!Array.isArray(ledger) || ledger.length === 0) return;
-        // ⭐ Trouver la ligne du ledger correspondant à cet élève + ce
-        //    trimestre (periodId = quarterId dans le schéma Vie Scolaire)
-        const row = ledger.find(l => l.studentId === student.id && l.quarterId === periodId);
-        if (!row) return;
-        if (typeof row.conduct_final === 'number') {
-          setConductScore(Number(row.conduct_final));
-        }
-        if (typeof row.conduct_reference === 'number') {
-          setConductReference(Number(row.conduct_reference));
-        }
-      })
-      .catch(() => {});
+    // ⭐ 2026-09-29 — Charger la conduite depuis le backend (source de vérité).
+    //    Nouvel endpoint dédié /api/discipline/conduct/student qui retourne
+    //    en une seule requête : conductScore + conductReference + sanctionCount
+    //    + totalPointsDeducted + totalHoursAttributed + hasLedger.
+    //    Avant : on fetchait /api/discipline/conduct/ledger (tout le ledger de
+    //    l'année) puis on filtrait côté client → moins efficace et on n'avait
+    //    pas les sanctions count/hours.
+    if (academicYearId) {
+      fetch(`/api/discipline/conduct/student?studentId=${student.id}&periodId=${periodId}&academicYearId=${academicYearId}`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : null)
+        .then((d) => {
+          if (!d) return;
+          if (typeof d.conductScore === 'number') setConductScore(d.conductScore);
+          if (typeof d.conductReference === 'number') setConductReference(d.conductReference);
+          if (typeof d.sanctionCount === 'number') setConductSanctionCount(d.sanctionCount);
+          if (typeof d.totalHoursAttributed === 'number') setConductTotalHours(d.totalHoursAttributed);
+          if (typeof d.totalPointsDeducted === 'number') setConductPointsDeducted(d.totalPointsDeducted);
+          if (typeof d.hasLedger === 'boolean') setConductHasLedger(d.hasLedger);
+        })
+        .catch(() => {});
+    }
   }, [student.id, periodId, student.generalAverage, academicYearId]);
 
   const saveAnnotation = async (field: string, value: string) => {
@@ -3169,17 +3309,44 @@ function BulletinSecondairePage2({
         </div>
 
         {/* 2. Conduite (depuis module Vie Scolaire — toujours affichée) */}
-        <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
-          <span className="text-xs font-bold text-slate-700 whitespace-nowrap">Conduite :</span>
-          <div className="flex-1 border-b border-dotted border-slate-300"></div>
-          <span className={cn('text-sm font-bold px-2 py-0.5 rounded',
-            conductScore !== null && conductOk && 'bg-emerald-100 text-emerald-700',
-            conductScore !== null && !conductOk && 'bg-red-100 text-red-700',
-            conductScore === null && 'bg-slate-100 text-slate-500')}>
-            {conductScore !== null
-              ? `${conductScore.toFixed(2)} / ${conductReference ?? 17}`
-              : `— / ${conductReference ?? 17}`}
-          </span>
+        <div className="p-2 bg-slate-50 rounded-lg space-y-2">
+          {/* Ligne 1 : score + reference + appreciation */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-700 whitespace-nowrap">Conduite :</span>
+            <div className="flex-1 border-b border-dotted border-slate-300"></div>
+            <span className={cn('text-sm font-bold px-2 py-0.5 rounded',
+              conductScore !== null && conductOk && 'bg-emerald-100 text-emerald-700',
+              conductScore !== null && !conductOk && 'bg-red-100 text-red-700',
+              conductScore === null && 'bg-slate-100 text-slate-500')}>
+              {conductScore !== null
+                ? `${conductScore.toFixed(2)} / ${conductReference ?? 17}`
+                : `— / ${conductReference ?? 17}`}
+            </span>
+          </div>
+          {/* ⭐ 2026-09-29 — Ligne 2 : détail des sanctions (count + points
+              déduits + heures attribuées). Affiché seulement si l'élève a
+              au moins 1 sanction ce trimestre. */}
+          {conductSanctionCount > 0 && (
+            <div className="grid grid-cols-3 gap-2 text-[10px]">
+              <div className="bg-white rounded p-1.5 border border-amber-200 text-center">
+                <p className="text-slate-500 uppercase font-bold">Sanctions</p>
+                <p className="font-bold text-amber-700">{conductSanctionCount}</p>
+              </div>
+              <div className="bg-white rounded p-1.5 border border-red-200 text-center">
+                <p className="text-slate-500 uppercase font-bold">Points déduits</p>
+                <p className="font-bold text-red-600">{conductPointsDeducted.toFixed(2)}</p>
+              </div>
+              <div className="bg-white rounded p-1.5 border border-orange-200 text-center">
+                <p className="text-slate-500 uppercase font-bold">Heures attribuées</p>
+                <p className="font-bold text-orange-600">{conductTotalHours.toFixed(1)} h</p>
+              </div>
+            </div>
+          )}
+          {conductHasLedger && (
+            <p className="text-[9px] text-slate-500 italic text-center">
+              Calculé depuis le compteur de conduite (module Vie Scolaire)
+            </p>
+          )}
         </div>
 
         {/* 3. Appréciation du conseil de classe (auto-générée + modifiable) */}

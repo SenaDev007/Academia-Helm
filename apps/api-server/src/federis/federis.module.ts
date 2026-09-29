@@ -89,6 +89,12 @@ import { FederisSchoolSupervisorsController } from './federis-school-supervisors
     FederisSchoolService,
     FederisDeliberationService,
     FederisSchoolExamsService,
+    // ⭐ 2026-09-29 — FIX build Railway : FederisCandidatesExportService
+    //    était dans exports mais PAS dans providers → Nest plantait au
+    //    démarrage avec « Nest cannot export a provider/module that is not
+    //    a part of the currently processed module (FederisModule) ».
+    //    Ajouté aux providers pour qu'il soit instanciable ET exportable.
+    FederisCandidatesExportService,
     FederisPdfService,
     FederisEpreuveService,
     FederisSupervisorsService,

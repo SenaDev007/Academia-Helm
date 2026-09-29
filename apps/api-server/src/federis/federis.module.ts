@@ -40,6 +40,11 @@ import { FederisSchoolExamsController } from './federis-school-exams.controller'
 // pattern que les PDF Helm — rendu backend, aucune génération frontend)
 import { FederisPdfService } from './federis-pdf.service';
 import { FederisPdfController } from './federis-pdf.controller';
+// ⭐ Épreuves & catalogue : création d'épreuves avec champs enrichis (pattern
+// fiches pédagogiques / épreuves enseignants Helm) + catalogue année →
+// examen (CEP/BEPC/BAC/CAP) → épreuves + PDF backend
+import { FederisEpreuveService } from './federis-epreuve.service';
+import { FederisEpreuveController } from './federis-epreuve.controller';
 
 @Module({
   imports: [BillingModule, CommunicationModule],
@@ -55,6 +60,7 @@ import { FederisPdfController } from './federis-pdf.controller';
     FederisDeliberationController,
     FederisSchoolExamsController,
     FederisPdfController,
+    FederisEpreuveController,
   ],
   providers: [
     FederisService,
@@ -72,6 +78,7 @@ import { FederisPdfController } from './federis-pdf.controller';
     FederisDeliberationService,
     FederisSchoolExamsService,
     FederisPdfService,
+    FederisEpreuveService,
   ],
   exports: [
     FederisService,

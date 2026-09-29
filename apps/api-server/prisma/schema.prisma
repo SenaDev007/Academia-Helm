@@ -10203,6 +10203,9 @@ model Patronat {
   subscriptionExpiresAt            DateTime?
   /// Rappels J-7 / J-3 / J-1 déjà envoyés (dates ISO)
   billingRemindersSent             Json?
+  /// ⭐ Federis — en-tête personnalisé des épreuves (HTML riche), réutilisable
+  ///    pour toutes les épreuves créées par le patronat (module Épreuves).
+  epreuveHeader                    String?
   federisCommunities               FederisCommunity[]
   federisGroups                    FederisGroup[]
   interPatronatConnectionsReceived FederisInterPatronatConnection[] @relation("ConnectionReceiver")
@@ -10477,6 +10480,61 @@ model SchoolExamSubmission {
   @@index([tenantId, academicYearId])
   @@index([examType])
   @@map("school_exam_submissions")
+}
+
+/// ⭐ Federis — Épreuve créée par le patronat (module « Épreuves et documents »).
+/// Contenu riche HTML (RichTextEditor — mêmes insertions que les fiches
+/// pédagogiques Helm : figures SVG, maths, opérations posées, fractions,
+/// tableaux, calligraphie, images). Catalogue : année scolaire → examen
+/// (CEP / BEPC / BAC / CAP) → épreuves.
+model FederisExamPaper {
+  id                 String    @id @default(uuid())
+  /// Tenant du patronat propriétaire (isolation territoriale stricte)
+  tenantId           String
+  patronatId         String
+  /// Année scolaire du patronat (dossier racine du catalogue)
+  academicYearId     String
+  /// Dossier examen : CEP | BEPC | BAC | CAP
+  examCategory       String
+  /// Matière (Mathématiques, Français, Physique…)
+  subject            String?
+  /// Titre de l'épreuve
+  title              String
+  /// Session (ex : « Session normale 2027 »)
+  sessionLabel       String?
+  /// Durée affichée (ex : « 2h »)
+  durationLabel      String?
+  /// Barème affiché (ex : « 20 pts »)
+  maxScoreLabel      String?
+  /// Coefficient affiché
+  coefficient        String?
+  /// Afficher les champs Nom / Prénoms (pointillés) dans le PDF
+  showIdentityFields Boolean   @default(true)
+  /// En-tête personnalisé PONCTUEL (HTML riche) — sinon en-tête patronat
+  customHeader       String?
+  /// Corps — Situation d'évaluation (contexte de l'épreuve, HTML riche)
+  situation          String?
+  /// Corps — Tâche (HTML riche)
+  tache              String?
+  /// Sections libres structurées par le patronat (libre arbitre — pas de
+  /// modèle standard par matière) : [{ id, title, content }]
+  /// ex : Problème 1 / Problème 2 / Problème 3 (maths), Exercice 1…
+  sections           Json?
+  /// Clé de correction (HTML riche) — page séparée dans le PDF
+  cleCorrection      String?
+  /// Grille de correction (HTML riche) — page séparée dans le PDF
+  grilleCorrection   String?
+  /// Pied de page personnalisé (HTML simple)
+  footerText         String?
+  /// DRAFT (brouillon) | VALIDATED (validée) | LOCKED (verrouillée)
+  status             String    @default("DRAFT")
+  createdBy          String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([tenantId, academicYearId, examCategory])
+  @@index([tenantId, status])
+  @@map("federis_exam_papers")
 }
 
 model ExamRoom {

@@ -1,8 +1,12 @@
 /**
- * Page Documents - Federis
+ * Page Épreuves et documents - Federis
  *
- * ⭐ VRAIES DONNÉES (2026-09-28) — remplace le placeholder : bordereaux
- *    d'émargement et palmarès officiels par examen (PDF backend Puppeteer).
+ * ⭐ REFONTE (2026-09-29) — module scindé en deux onglets :
+ *    1. « Épreuves » : création d'épreuves avec les champs enrichis
+ *       d'Academia Helm (RichTextEditor : images, figures, maths, tableaux,
+ *       calligraphie…) + en-tête réutilisable du patronat + PDF backend ;
+ *    2. « Catalogue » : épreuves classées par année scolaire puis par
+ *       examen (CEP / BEPC / Baccalauréat / CAP).
  */
 
 import { Metadata } from 'next';
@@ -11,7 +15,7 @@ import { getServerSession, getServerToken } from '@/lib/auth';
 import { loadFederisProfile } from '@/lib/federis/server-api';
 import { getFederisBasePath } from '@/lib/federis/useFederisPath';
 import FederisLayout from '@/components/federis/FederisLayout';
-import FederisDocumentsPage from '@/components/federis/FederisDocumentsPage';
+import FederisEpreuvesPage from '@/components/federis/FederisEpreuvesPage';
 import type { User, Tenant } from '@/types';
 
 export const metadata: Metadata = {
@@ -46,7 +50,7 @@ export default async function DocumentsPage() {
   return (
     <FederisLayout user={user} federis={federis} currentAcademicYear={undefined}>
       {/* userRole = User.role de la session — normalisé côté composant */}
-      <FederisDocumentsPage userRole={user.role} />
+      <FederisEpreuvesPage userRole={user.role} />
     </FederisLayout>
   );
 }

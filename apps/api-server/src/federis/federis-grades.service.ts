@@ -296,14 +296,16 @@ export interface CandidateComputed {
 
 /**
  * Calcule les statistiques d'un candidat à partir de ses notes.
- *   - Modèle PRIMAIRE (CEP)  : total + moyenne simple ;
- *   - Modèle SECONDAIRE (BEPC/BAC/CAP) : + coefficients, note coefficient et
- *     moyenne pondérée — les ABSENTS sont exclus de tous les calculs.
+ *   - useSimpleAverage = true  (modèle SIMPLE) : moyenne = Σ notes / nb ;
+ *   - useSimpleAverage = false (modèle PONDÉRÉ) : moyenne = Σ(note×coef)/Σcoef ;
+ *   Le modèle EFFECTIF vient des règles de calcul (Paramètres → Règles de
+ *   calcul) : défaut backend (CEP simple, BEPC/BAC/CAP pondérée) ou règle
+ *   personnalisée du patronat (source de vérité). Les ABSENTS sont exclus.
  */
 export function computeCandidateStats(
   scores: Record<string, GradeCellLite>,
   subjects: GradeSubjectLite[],
-  isPrimary: boolean,
+  useSimpleAverage: boolean,
 ): CandidateComputed {
   let total = 0;
   let nbEval = 0;
@@ -328,7 +330,7 @@ export function computeCandidateStats(
     totalCoef: round2(totalCoef),
     totalNotesCoef: round2(totalNotesCoef),
     averagePondernee,
-    finalAverage: isPrimary ? average : averagePondernee,
+    finalAverage: useSimpleAverage ? average : averagePondernee,
   };
 }
 
@@ -767,11 +769,15 @@ export class FederisGradesService {
 
     // ⭐ Règles de calcul effectives (module Paramètres — 2026-09-30) :
     //    surcharge du patronat si définie (source de vérité), sinon défauts
-    //    backend (admission 10/20). Les seuils pilotent stats + décisions.
+    //    backend (admission 10/20). Les seuils pilotent stats + décisions et
+    //    le MODÈLE DE CALCUL (simple / pondérée) pilote la moyenne retenue.
     const rules = await this.gradingRulesService.resolveEffectiveRules(
       patronatTenantId,
       exam.examType,
     );
+    // Modèle de calcul effectif — indépendant du template d'affichage
+    // (isPrimary : grille primaire CEP / secondaire avec coefficients).
+    const useSimpleAverage = rules.averageModel === 'simple';
 
     const [academicYear, subjectsRaw, candidatesRaw] = await Promise.all([
       this.prisma.academicYear.findUnique({ where: { id: exam.academicYearId } }),
@@ -860,9 +866,10 @@ export class FederisGradesService {
     }));
 
     // ── Statistiques par candidat + rangs (pattern Helm) ──
+    //    ⭐ Moyenne retenue = MODÈLE DE CALCUL des règles effectives.
     const computed = new Map<string, CandidateComputed>();
     for (const c of candidates) {
-      computed.set(c.id, computeCandidateStats(c.scores, subjects, isPrimary));
+      computed.set(c.id, computeCandidateStats(c.scores, subjects, useSimpleAverage));
     }
     const denseRanks = computeDenseRanks(
       candidates.map((c) => ({ id: c.id, value: computed.get(c.id)?.finalAverage ?? null })),
@@ -1001,6 +1008,8 @@ export class FederisGradesService {
     return {
       exam: ds.exam,
       academicYearLabel: ds.academicYearLabel,
+      // ⭐ Règles effectives (seuils + modèle de calcul) — calculs LIVE du miroir
+      rules: ds.rules,
       subjects: ds.subjects,
       session: ds.session,
       filling: ds.filling,

@@ -3,10 +3,13 @@
  *
  * Miroir exact des helpers backend (federis-grades.service.ts) pour les
  * calculs LIVE côté client pendant la saisie (pattern GradingSheet Helm) :
- *   - CEP (modèle PRIMAIRE)          : total + moyenne simple, sans coefficient ;
- *   - BEPC / BAC / CAP (SECONDAIRE)  : note × coefficient, total des
+ *   - MODÈLE SIMPLE (moyenne simple)  : total + Σ notes / nb matières ;
+ *   - MODÈLE PONDÉRÉ (avec coefficients) : note × coefficient, total des
  *     coefficients, total des notes coefficient, moyenne pondérée
  *     Σ(note×coef) / Σ(coef) ;
+ *   - Le modèle EFFECTIF vient des règles de calcul (Paramètres → Règles de
+ *     calcul) : défaut backend (CEP simple, BEPC/BAC/CAP pondérée) ou règle
+ *     personnalisée du patronat (source de vérité) ;
  *   - Les ABSENTS sont exclus de tous les calculs ;
  *   - Rangs denses (ex æquo), appréciations et mentions nationales.
  */
@@ -52,20 +55,26 @@ export interface GComputed {
   finalAverage: number | null;
 }
 
-/** Le CEP suit le modèle du PRIMAIRE (sans coefficients) ? */
+/** Le CEP suit le modèle du PRIMAIRE (template sans coefficients) ? */
 export function isPrimaryExam(examType: string | null | undefined): boolean {
   return (examType ?? '').toUpperCase() === 'CEP';
+}
+
+/** Modèle de calcul par DÉFAUT du backend pour un type (miroir backend). */
+export function defaultAverageModel(examType: string | null | undefined): 'simple' | 'ponderee' {
+  return isPrimaryExam(examType) ? 'simple' : 'ponderee';
 }
 
 export function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-/** Statistiques d'un candidat (moyennes Helm primaire / secondaire). */
+/** Statistiques d'un candidat — useSimpleAverage = modèle de calcul effectif
+ *  (règles de calcul : 'simple' → moyenne simple, sinon pondérée). */
 export function computeTotals(
   scores: Record<string, GCell>,
   subjects: GSubject[],
-  isPrimary: boolean,
+  useSimpleAverage: boolean,
 ): GComputed {
   let total = 0;
   let nbEval = 0;
@@ -90,7 +99,7 @@ export function computeTotals(
     totalCoef: round2(totalCoef),
     totalNotesCoef: round2(totalNotesCoef),
     averagePondernee,
-    finalAverage: isPrimary ? average : averagePondernee,
+    finalAverage: useSimpleAverage ? average : averagePondernee,
   };
 }
 

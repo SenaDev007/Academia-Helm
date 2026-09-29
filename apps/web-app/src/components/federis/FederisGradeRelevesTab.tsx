@@ -72,6 +72,14 @@ interface Releve {
 
 interface RelevesData {
   exam: { id: string; code: string; name: string; examType: string; isPrimary: boolean };
+  /** ⭐ Règles de calcul effectives (seuils + modèle — Paramètres). */
+  rules?: {
+    passMark: number;
+    rescueMark: number;
+    averageModel: 'simple' | 'ponderee';
+    isCustom: boolean;
+    averageModelCustom?: boolean;
+  } | null;
   academicYearLabel: string | null;
   stats: { composed: number; totalCandidates: number };
   releves: Releve[];
@@ -325,7 +333,7 @@ export default function FederisGradeRelevesTab({
                     </div>
                   </div>
                   <div className="text-right shrink-0">
-                    <div className={cn('text-xs font-black', avg !== null && avg >= 10 ? 'text-emerald-700' : 'text-red-600')}>
+                    <div className={cn('text-xs font-black', avg !== null && avg >= (data?.rules?.passMark ?? 10) ? 'text-emerald-700' : 'text-red-600')}>
                       {avg !== null ? fmtNote(avg) : '—'}
                     </div>
                     <div className="text-[8px] font-bold text-slate-400 uppercase">{r.decision}</div>
@@ -363,9 +371,13 @@ export default function FederisGradeRelevesTab({
             {/* Feuille A4 paysage simulée */}
             <div className="bg-white border-2 border-slate-200 rounded-lg shadow-sm p-5 overflow-x-auto">
               {isPrimary ? (
-                <ReleveCepPreview releve={selected} />
+                <ReleveCepPreview releve={selected} passMark={data?.rules?.passMark ?? 10} />
               ) : (
-                <ReleveSecondairePreview releve={selected} female={female} />
+                <ReleveSecondairePreview
+                  releve={selected}
+                  female={female}
+                  passMark={data?.rules?.passMark ?? 10}
+                />
               )}
             </div>
           </div>
@@ -379,11 +391,11 @@ export default function FederisGradeRelevesTab({
 // Aperçu — modèle PRIMAIRE (CEP) : reproduction du BulletinPrimairePage1 Helm
 // ═══════════════════════════════════════════════════════════════════════════
 
-function ReleveCepPreview({ releve }: { releve: Releve }) {
+function ReleveCepPreview({ releve, passMark = 10 }: { releve: Releve; passMark?: number }) {
   const c = releve.candidate;
   const comp = releve.computed;
   const moyenne = comp?.finalAverage ?? null;
-  const seuilAtteint = moyenne !== null && moyenne >= 10;
+  const seuilAtteint = moyenne !== null && moyenne >= passMark;
 
   return (
     <div className="min-w-[820px]">
@@ -527,11 +539,11 @@ function ReleveCepPreview({ releve }: { releve: Releve }) {
 // coefficient, Rang, Appréciation, Signature + totaux + moyenne pondérée)
 // ═══════════════════════════════════════════════════════════════════════════
 
-function ReleveSecondairePreview({ releve, female }: { releve: Releve; female: boolean }) {
+function ReleveSecondairePreview({ releve, female, passMark = 10 }: { releve: Releve; female: boolean; passMark?: number }) {
   const c = releve.candidate;
   const comp = releve.computed;
   const moyenne = comp?.finalAverage ?? null;
-  const ok = moyenne !== null && moyenne >= 10;
+  const ok = moyenne !== null && moyenne >= passMark;
   const navy = '#0A2A5E';
   const navyAlt = '#0D3B85';
 

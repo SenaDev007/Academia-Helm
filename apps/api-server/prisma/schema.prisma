@@ -10677,6 +10677,8 @@ model FederisGradingRule {
   passMark    Float    @default(10)
   /// Seuil de rachat — cas limites soumis au jury (défaut backend : 9,5)
   rescueMark  Float    @default(9.5)
+  /// Modèle de calcul de la moyenne — 'simple' | 'ponderee' (NULL = défaut backend : CEP simple, autres pondérée)
+  averageModel String?
   updatedBy   String?
   metadata    Json?
   createdAt   DateTime @default(now())

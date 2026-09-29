@@ -7,16 +7,14 @@
  *   1. Par défaut, les règles du BACKEND s'appliquent :
  *        · seuil d'admission (passMark)  = 10/20
  *        · seuil de rachat  (rescueMark) = 9,5/20
+ *        · modèle de calcul (averageModel) : CEP → SIMPLE (primaire),
+ *          BEPC/BAC/CAP → PONDÉRÉE (secondaire, coefficients)
  *      Le module Paramètres AFFICHE ces défauts (jamais un écran vide).
  *   2. Dès qu'une règle est définie dans le module Paramètres (ligne
  *      federis_grading_rules), ELLE DEVIENT la source de vérité du backend :
- *      délibération (seuils du jury), décisions provisoires des relevés,
- *      statistiques du registre et PDF.
+ *      délibération (seuils du jury), modèle de calcul des moyennes,
+ *      décisions provisoires des relevés, statistiques du registre et PDF.
  *   3. « Réinitialiser » supprime la ligne → retour immédiat aux défauts.
- *
- * Modèle de moyenne (structurel, non paramétrable — affiché à titre indicatif) :
- *   · CEP          → moyenne SIMPLE (primaire, sans coefficients)
- *   · BEPC/BAC/CAP → moyenne PONDÉRÉE (secondaire, Σ(note×coef) / Σcoef)
  *
  * Endpoints (exposés par FederisExamsController, espace « settings ») :
  *   GET    /federis/settings/grading-rules            — configuration complète
@@ -25,7 +23,7 @@
  */
 
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
-import { IsNumber, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, MaxLength } from 'class-validator';
 import { PrismaService } from '../database/prisma.service';
 import { FederisPatronatService } from './federis-patronat.service';
 import {
@@ -47,6 +45,11 @@ export class UpdateGradingRuleDto {
   @IsNumber()
   rescueMark!: number;
 
+  /** Modèle de calcul de la moyenne — 'simple' | 'ponderee' (facultatif : défaut backend si absent). */
+  @IsOptional()
+  @IsIn(['simple', 'ponderee'])
+  averageModel?: 'simple' | 'ponderee';
+
   @IsOptional()
   @IsString()
   @MaxLength(500)
@@ -60,8 +63,10 @@ export interface EffectiveGradingRules {
   rescueMark: number;
   /** Une règle personnalisée existe (source de vérité = Paramètres). */
   isCustom: boolean;
-  /** Modèle de moyenne appliqué par le backend (informatif). */
+  /** Modèle de moyenne EFFECTIF (règle personnalisée si définie, sinon défaut backend). */
   averageModel: 'simple' | 'ponderee';
+  /** Le modèle de calcul provient d'une règle personnalisée (source de vérité). */
+  averageModelCustom: boolean;
 }
 
 /** Types d'examen gérés par les règles de calcul. */
@@ -74,6 +79,20 @@ export const DEFAULT_GRADING_RULES: Record<string, { passMark: number; rescueMar
   BEPC: { passMark: 10, rescueMark: 9.5 },
   BAC: { passMark: 10, rescueMark: 9.5 },
   CAP: { passMark: 10, rescueMark: 9.5 },
+};
+
+/** Modèle de calcul par DÉFAUT du backend (structure des niveaux) :
+ *  primaire (CEP) = moyenne simple ; secondaire (BEPC/BAC/CAP) = pondérée. */
+export const DEFAULT_AVERAGE_MODEL: Record<string, 'simple' | 'ponderee'> = {
+  CEP: 'simple',
+  BEPC: 'ponderee',
+  BAC: 'ponderee',
+  CAP: 'ponderee',
+};
+
+export const AVERAGE_MODEL_LABELS: Record<'simple' | 'ponderee', string> = {
+  simple: 'Moyenne simple — Σ notes / nombre d\u2019épreuves',
+  ponderee: 'Moyenne pondérée — Σ(note × coefficient) / Σ coefficients',
 };
 
 export const GRADING_TYPE_LABELS: Record<string, string> = {
@@ -127,6 +146,7 @@ export class FederisGradingRulesService {
           "examType" TEXT NOT NULL,
           "passMark" DOUBLE PRECISION NOT NULL DEFAULT 10,
           "rescueMark" DOUBLE PRECISION NOT NULL DEFAULT 9.5,
+          "averageModel" TEXT,
           "updatedBy" TEXT,
           "metadata" JSONB,
           "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -137,6 +157,8 @@ export class FederisGradingRulesService {
           ON "federis_grading_rules"("tenantId")`,
       `CREATE UNIQUE INDEX IF NOT EXISTS "federis_grading_rules_tenantId_examType_key"
           ON "federis_grading_rules"("tenantId", "examType")`,
+      // ⭐ 20260930110000 — colonne averageModel (modèle de calcul paramétrable)
+      `ALTER TABLE "federis_grading_rules" ADD COLUMN IF NOT EXISTS "averageModel" TEXT`,
     ];
     for (const sql of statements) {
       await this.prisma.$executeRawUnsafe(sql);
@@ -190,13 +212,16 @@ export class FederisGradingRulesService {
   ): Promise<EffectiveGradingRules> {
     const type = normalizeExamType(examType ?? '') ?? 'CEP';
     const def = DEFAULT_GRADING_RULES[type];
+    const defaultModel = DEFAULT_AVERAGE_MODEL[type];
     let isCustom = false;
     let passMark = def.passMark;
     let rescueMark = def.rescueMark;
+    let averageModel = defaultModel;
+    let averageModelCustom = false;
     try {
       await this.ensureSchema();
       const rule = await this.prisma.$queryRawUnsafe(
-        `SELECT "passMark", "rescueMark" FROM "federis_grading_rules"
+        `SELECT "passMark", "rescueMark", "averageModel" FROM "federis_grading_rules"
          WHERE "tenantId" = $1 AND "examType" = $2 LIMIT 1`,
         patronatTenantId,
         type,
@@ -206,6 +231,13 @@ export class FederisGradingRulesService {
         passMark = Number(row.passMark);
         rescueMark = Number(row.rescueMark);
         isCustom = true;
+        // ⭐ Modèle de calcul : règle personnalisée = source de vérité,
+        //    sinon défaut structurel du backend pour ce niveau.
+        const customModel = String(row.averageModel ?? '').toLowerCase();
+        if (customModel === 'simple' || customModel === 'ponderee') {
+          averageModel = customModel;
+          averageModelCustom = true;
+        }
       }
     } catch (err: any) {
       this.logger.warn(`resolveEffectiveRules — repli sur les défauts : ${err?.message}`);
@@ -214,7 +246,8 @@ export class FederisGradingRulesService {
       passMark,
       rescueMark,
       isCustom,
-      averageModel: type === 'CEP' ? 'simple' : 'ponderee',
+      averageModel,
+      averageModelCustom,
     };
   }
 
@@ -233,7 +266,7 @@ export class FederisGradingRulesService {
     this.assertRead(fn);
 
     const rules = (await this.prisma.$queryRawUnsafe(
-      `SELECT "examType", "passMark", "rescueMark", "updatedAt", "updatedBy"
+      `SELECT "examType", "passMark", "rescueMark", "averageModel", "updatedAt", "updatedBy"
        FROM "federis_grading_rules" WHERE "tenantId" = $1`,
       patronat.tenantId,
     )) as any[];
@@ -241,7 +274,10 @@ export class FederisGradingRulesService {
 
     const types = GRADING_EXAM_TYPES.map((type) => {
       const def = DEFAULT_GRADING_RULES[type];
+      const defaultModel = DEFAULT_AVERAGE_MODEL[type];
       const custom = byType.get(type);
+      const customModel = String(custom?.averageModel ?? '').toLowerCase();
+      const averageModelCustom = customModel === 'simple' || customModel === 'ponderee';
       return {
         examType: type,
         label: GRADING_TYPE_LABELS[type],
@@ -250,11 +286,14 @@ export class FederisGradingRulesService {
         defaultPassMark: def.passMark,
         defaultRescueMark: def.rescueMark,
         isCustom: Boolean(custom),
-        averageModel: type === 'CEP' ? 'simple' : 'ponderee',
-        averageModelLabel:
-          type === 'CEP'
-            ? 'Moyenne simple — total / nombre d\u2019épreuves (primaire, sans coefficients)'
-            : 'Moyenne pondérée — Σ(note × coefficient) / Σcoefficients (secondaire)',
+        // ⭐ Modèle de calcul effectif (source de vérité si personnalisé)
+        averageModel: averageModelCustom ? (customModel as 'simple' | 'ponderee') : defaultModel,
+        averageModelCustom,
+        defaultAverageModel: defaultModel,
+        averageModelLabel: AVERAGE_MODEL_LABELS[
+          averageModelCustom ? (customModel as 'simple' | 'ponderee') : defaultModel
+        ],
+        defaultAverageModelLabel: AVERAGE_MODEL_LABELS[defaultModel],
         updatedAt: custom?.updatedAt ?? null,
       };
     });
@@ -263,7 +302,7 @@ export class FederisGradingRulesService {
       types,
       customCount: types.filter((t) => t.isCustom).length,
       semantics:
-        'Par défaut, les règles du backend s\u2019appliquent (admission 10/20, rachat 9,5/20). Dès qu\u2019une règle est définie ici, elle devient la source de vérité du backend pour la délibération, les décisions et les documents officiels.',
+        'Par défaut, les règles du backend s\u2019appliquent (admission 10/20, rachat 9,5/20 ; moyenne simple pour le CEP, pondérée pour le BEPC/BAC/CAP). Dès qu\u2019une règle est définie ici, elle devient la source de vérité du backend pour la délibération, le modèle de calcul des moyennes, les décisions et les documents officiels.',
       canManage: WRITE_DELIBERATION.includes(fn),
     };
   }
@@ -304,14 +343,21 @@ export class FederisGradingRulesService {
       );
     }
 
+    // ⭐ Modèle de calcul — facultatif : NULL = défaut structurel du backend.
+    const averageModel =
+      dto.averageModel === 'simple' || dto.averageModel === 'ponderee'
+        ? dto.averageModel
+        : null;
+
     await this.prisma.$executeRawUnsafe(
       `INSERT INTO "federis_grading_rules"
-          ("id", "tenantId", "examType", "passMark", "rescueMark", "updatedBy", "metadata", "createdAt", "updatedAt")
-       VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6::jsonb, NOW(), NOW())
+          ("id", "tenantId", "examType", "passMark", "rescueMark", "averageModel", "updatedBy", "metadata", "createdAt", "updatedAt")
+       VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7::jsonb, NOW(), NOW())
        ON CONFLICT ("tenantId", "examType")
        DO UPDATE SET
           "passMark" = EXCLUDED."passMark",
           "rescueMark" = EXCLUDED."rescueMark",
+          "averageModel" = EXCLUDED."averageModel",
           "updatedBy" = EXCLUDED."updatedBy",
           "metadata" = EXCLUDED."metadata",
           "updatedAt" = NOW()`,
@@ -319,8 +365,9 @@ export class FederisGradingRulesService {
       type,
       passMark,
       rescueMark,
+      averageModel,
       userId,
-      JSON.stringify({ comment: dto.comment ?? null, updatedAtIso: new Date().toISOString() }),
+      JSON.stringify({ comment: dto.comment ?? null, averageModel, updatedAtIso: new Date().toISOString() }),
     );
 
     await this.prisma.auditLog
@@ -333,13 +380,15 @@ export class FederisGradingRulesService {
           resourceId: `${patronat.tenantId}:${type}`,
           tableName: 'federis_grading_rules',
           recordId: `${patronat.tenantId}:${type}`,
-          newData: { examType: type, passMark, rescueMark },
+          newData: { examType: type, passMark, rescueMark, averageModel },
         },
       })
       .catch(() => undefined);
 
     this.logger.log(
-      `Règle de calcul ${type} définie : admission ${passMark}/20, rachat ${rescueMark}/20 (${patronat.name})`,
+      `Règle de calcul ${type} définie : admission ${passMark}/20, rachat ${rescueMark}/20, modèle ${
+        averageModel ?? 'défaut backend'
+      } (${patronat.name})`,
     );
 
     return this.getGradingRulesConfig(tenantId, userId);

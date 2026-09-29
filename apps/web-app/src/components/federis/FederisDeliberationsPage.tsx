@@ -127,6 +127,8 @@ interface BoardData {
     rescueMark: number;
     isCustom: boolean;
     averageModel: 'simple' | 'ponderee';
+    /** Le modèle de calcul vient d'une règle personnalisée (source de vérité). */
+    averageModelCustom?: boolean;
   };
   session: { draftCount: number; submittedCount: number; allSubmitted: boolean; locked: boolean };
   filling: { gradedCells: number; totalCells: number; absentCells: number; fullyGraded: number };
@@ -158,6 +160,20 @@ const TYPE_MODEL_LABEL: Record<string, string> = {
   BAC: 'Moyenne pondérée — secondaire (avec coefficients)',
   CAP: 'Moyenne pondérée — secondaire (avec coefficients)',
 };
+
+/** Libellé du modèle de calcul EFFECTIF d'un type : règles du board si
+ *  chargées (source de vérité le cas échéant), sinon défaut structurel. */
+function effectiveModelLabel(
+  activeType: string | null,
+  board: BoardData | null,
+): string {
+  if (board && activeType && board.rules?.averageModel) {
+    return board.rules.averageModel === 'simple'
+      ? 'Moyenne simple — Σ notes / nombre d\u2019épreuves'
+      : 'Moyenne pondérée — Σ(note × coef) / Σ coef';
+  }
+  return activeType ? (TYPE_MODEL_LABEL[activeType] ?? '') : '';
+}
 
 /** Couleur de pastille selon la provenance de la décision. */
 function decisionPill(row: BoardRow): { label: string; className: string } {
@@ -630,7 +646,7 @@ export default function FederisDeliberationsPage({
           )}
           {activeType && (
             <span className="text-[9px] font-black uppercase tracking-wide bg-blue-50 text-blue-900 border border-blue-100 px-3 py-1.5 rounded-lg">
-              {TYPE_MODEL_LABEL[activeType]}
+              {effectiveModelLabel(activeType, board)}
             </span>
           )}
           <span className={cn('px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase', workflow.className)}>
@@ -656,9 +672,19 @@ export default function FederisDeliberationsPage({
                   défauts du backend (personnalisables dans Paramètres → Règles de calcul)
                 </span>
               )}
-              {board.rules.averageModel === 'simple'
-                ? ' · moyenne simple (primaire)'
-                : ' · moyenne pondérée par coefficients'}
+              {board.rules.averageModelCustom ? (
+                <span>
+                  {' · modèle de calcul : '}
+                  <span className="font-bold text-emerald-700">
+                    {board.rules.averageModel === 'simple' ? 'moyenne simple' : 'moyenne pondérée'}
+                    (source de vérité)
+                  </span>
+                </span>
+              ) : board.rules.averageModel === 'simple' ? (
+                ' · moyenne simple (primaire)'
+              ) : (
+                ' · moyenne pondérée par coefficients'
+              )}
             </p>
 
             <div className="flex flex-wrap items-center gap-2">

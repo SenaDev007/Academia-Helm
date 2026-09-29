@@ -37,6 +37,14 @@ const PAGE_SIZE = 25;
 
 interface SheetData {
   exam: { id: string; code: string; name: string; examType: string; level: string; isPrimary: boolean };
+  /** ⭐ Règles de calcul effectives (Paramètres) — seuils + modèle de calcul. */
+  rules?: {
+    passMark: number;
+    rescueMark: number;
+    averageModel: 'simple' | 'ponderee';
+    isCustom: boolean;
+    averageModelCustom?: boolean;
+  } | null;
   subjects: GSubject[];
   session: { draftCount: number; submittedCount: number; allSubmitted: boolean; locked: boolean; editable: boolean };
   filling: { gradedCells: number; totalCells: number; absentCells: number; fullyGraded: number };
@@ -91,6 +99,13 @@ export default function FederisGradeSheetTab({
   }, [load, subjectsVersion]);
 
   const isPrimary = data?.exam.isPrimary ?? false;
+  // ⭐ Modèle de calcul EFFECTIF (règles de calcul — source de vérité si
+  //    personnalisée, sinon défaut backend : CEP simple, autres pondérée).
+  //    Indépendant du template d'affichage (isPrimary).
+  const useSimpleAverage = data?.rules?.averageModel
+    ? data.rules.averageModel === 'simple'
+    : isPrimary;
+  const passMark = data?.rules?.passMark ?? 10;
   const subjects = data?.subjects ?? [];
   const candidates = data?.candidates ?? [];
   const editable = canWrite && (data?.session.editable ?? false);
@@ -99,13 +114,13 @@ export default function FederisGradeSheetTab({
   const computedAll = useMemo(() => {
     const map = new Map<string, ReturnType<typeof computeTotals>>();
     for (const c of candidates) {
-      map.set(c.id, computeTotals(cells[c.id] ?? {}, subjects, isPrimary));
+      map.set(c.id, computeTotals(cells[c.id] ?? {}, subjects, useSimpleAverage));
     }
     const ranks = denseRanks(
       candidates.map((c) => ({ id: c.id, value: map.get(c.id)?.finalAverage ?? null })),
     );
     return { map, ranks };
-  }, [candidates, cells, subjects, isPrimary]);
+  }, [candidates, cells, subjects, useSimpleAverage]);
 
   // ── Filtre + pagination ─────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -268,12 +283,13 @@ export default function FederisGradeSheetTab({
           <p className="text-sm font-bold text-blue-900 mt-0.5">
             {isPrimary
               ? 'Tableau du primaire — une note /20 par épreuve, sans coefficient (CEP)'
-              : 'Tableau du secondaire — notes /20 pondérées par coefficients (BEPC / BAC / CAP)'}
+              : 'Tableau du secondaire — notes /20 avec coefficients (BEPC / BAC / CAP)'}
           </p>
           <p className="text-[10px] text-slate-500 mt-1">
-            {isPrimary
-              ? 'Total = Σ notes · Moyenne = Total / nb matières évaluées · Seuil de réussite : 10/20'
-              : 'Note coefficient = Note × Coefficient · Moyenne = Σ(Note × Coefficient) / Σ(Coefficients) · Les absents sont exclus'}
+            {useSimpleAverage
+              ? `Moyenne retenue = SIMPLE : Σ notes / nb matières évaluées · Seuil d'admission : ${String(passMark).replace('.', ',')}/20`
+              : `Moyenne retenue = PONDÉRÉE : Σ(Note × Coefficient) / Σ(Coefficients) · Seuil d'admission : ${String(passMark).replace('.', ',')}/20 · Les absents sont exclus`}
+            {data?.rules?.averageModelCustom ? ' · modèle personnalisé (Paramètres → Règles de calcul = source de vérité)' : ''}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -438,7 +454,7 @@ export default function FederisGradeSheetTab({
                 <th className="px-2 py-3 text-center text-[9px] font-bold text-blue-900 uppercase">Moyenne</th>
                 <th className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase">Rang</th>
                 <th className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase min-w-[80px]">
-                  {isPrimary ? 'Seuil 10/20' : 'Appréciation'}
+                  {isPrimary ? `Seuil ${String(passMark).replace('.', ',')}/20` : 'Appréciation'}
                 </th>
               </tr>
             </thead>
@@ -534,7 +550,7 @@ export default function FederisGradeSheetTab({
                         {comp?.finalAverage != null ? (
                           <span className={cn(
                             'inline-block text-xs font-black px-2.5 py-1 rounded-lg',
-                            comp.finalAverage >= 10 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700',
+                            comp.finalAverage >= passMark ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700',
                           )}>
                             {comp.finalAverage.toFixed(2).replace('.', ',')}
                           </span>
@@ -546,8 +562,8 @@ export default function FederisGradeSheetTab({
                       <td className="px-2 py-2 text-center text-[9px] font-bold">
                         {isPrimary ? (
                           comp?.finalAverage != null ? (
-                            <span className={comp.finalAverage >= 10 ? 'text-emerald-700' : 'text-red-600'}>
-                              {comp.finalAverage >= 10 ? 'OUI' : 'NON'}
+                            <span className={comp.finalAverage >= passMark ? 'text-emerald-700' : 'text-red-600'}>
+                              {comp.finalAverage >= passMark ? 'OUI' : 'NON'}
                             </span>
                           ) : '—'
                         ) : (
@@ -564,9 +580,9 @@ export default function FederisGradeSheetTab({
 
         <div className="px-6 py-4 border-t border-blue-50 flex items-center justify-between gap-3 flex-wrap">
           <p className="text-[10px] text-slate-400 font-semibold">
-            {isPrimary
-              ? 'A = absent (exclu du total) · Moyenne = Total / matières évaluées · Rangs ex æquo sur l\u2019ensemble de l\u2019examen'
-              : 'A = absent (exclu des totaux) · Moyenne = Σ(Note × Coefficient) / Σ(Coefficients) · Rangs ex æquo sur l\u2019ensemble de l\u2019examen'}
+            {useSimpleAverage
+              ? `A = absent (exclu du total) · Moyenne retenue = Σ notes / matières évaluées · Seuil : ${String(passMark).replace('.', ',')}/20 · Rangs ex æquo sur l\u2019ensemble de l\u2019examen`
+              : `A = absent (exclu des totaux) · Moyenne retenue = Σ(Note × Coefficient) / Σ(Coefficients) · Seuil : ${String(passMark).replace('.', ',')}/20 · Rangs ex æquo sur l\u2019ensemble de l\u2019examen`}
           </p>
           <p className="text-[10px] text-slate-400 font-bold uppercase">
             {filtered.length} candidat(s) affiché(s) · page {safePage + 1}/{totalPages}

@@ -39,7 +39,7 @@ interface MatriculeSettings {
   canManage: boolean;
 }
 
-/** ⭐ Règles de calcul (2026-09-30) — seuils par type d'examen. */
+/** ⭐ Règles de calcul (2026-09-30) — seuils + modèle de calcul par type d'examen. */
 interface GradingRuleType {
   examType: 'CEP' | 'BEPC' | 'BAC' | 'CAP';
   label: string;
@@ -49,7 +49,12 @@ interface GradingRuleType {
   defaultRescueMark: number;
   isCustom: boolean;
   averageModel: 'simple' | 'ponderee';
+  /** Le modèle de calcul provient d'une règle personnalisée (source de vérité). */
+  averageModelCustom: boolean;
+  /** Modèle par DÉFAUT du backend pour ce niveau (CEP simple, autres pondérée). */
+  defaultAverageModel: 'simple' | 'ponderee';
   averageModelLabel: string;
+  defaultAverageModelLabel: string;
   updatedAt: string | null;
 }
 
@@ -187,24 +192,29 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
   const [gradingSaving, setGradingSaving] = useState<string | null>(null);
   const [gradingNotice, setGradingNotice] = useState<string | null>(null);
   const [gradingError, setGradingError] = useState<string | null>(null);
-  /** Brouillons locaux : examType → { passMark, rescueMark } */
+  /** Brouillons locaux : examType → { passMark, rescueMark, averageModel } */
   const [gradingDrafts, setGradingDrafts] = useState<
-    Record<string, { passMark: string; rescueMark: string }>
+    Record<string, { passMark: string; rescueMark: string; averageModel: 'simple' | 'ponderee' }>
   >({});
+
+  const buildDrafts = (config: GradingRulesConfig | null) => {
+    const drafts: Record<string, { passMark: string; rescueMark: string; averageModel: 'simple' | 'ponderee' }> = {};
+    for (const t of config?.types ?? []) {
+      drafts[t.examType] = {
+        passMark: String(t.passMark).replace('.', ','),
+        rescueMark: String(t.rescueMark).replace('.', ','),
+        averageModel: t.averageModel,
+      };
+    }
+    return drafts;
+  };
 
   const loadGradingRules = useCallback(async () => {
     setGradingLoading(true);
     try {
       const res = await apiClient.get('/federis/settings/grading-rules', { timeout: 20000 });
       setGradingRules(res.data ?? null);
-      const drafts: Record<string, { passMark: string; rescueMark: string }> = {};
-      for (const t of res.data?.types ?? []) {
-        drafts[t.examType] = {
-          passMark: String(t.passMark).replace('.', ','),
-          rescueMark: String(t.rescueMark).replace('.', ','),
-        };
-      }
-      setGradingDrafts(drafts);
+      setGradingDrafts(buildDrafts(res.data));
     } catch (err: any) {
       setGradingRules(null);
       setGradingError(
@@ -245,21 +255,17 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
     try {
       const res = await apiClient.put(
         `/federis/settings/grading-rules/${examType}`,
-        { passMark, rescueMark },
+        { passMark, rescueMark, averageModel: draft.averageModel },
         { timeout: 20000 },
       );
       setGradingRules(res.data ?? null);
+      setGradingDrafts(buildDrafts(res.data));
       const saved = (res.data?.types ?? []).find((t: GradingRuleType) => t.examType === examType);
-      const drafts: Record<string, { passMark: string; rescueMark: string }> = {};
-      for (const t of res.data?.types ?? []) {
-        drafts[t.examType] = {
-          passMark: String(t.passMark).replace('.', ','),
-          rescueMark: String(t.rescueMark).replace('.', ','),
-        };
-      }
-      setGradingDrafts(drafts);
       setGradingNotice(
-        `Règle ${examType} enregistrée — admission ${saved?.passMark ?? passMark}/20, rachat ${saved?.rescueMark ?? rescueMark}/20. Cette règle est désormais la source de vérité du backend.`,
+        `Règle ${examType} enregistrée — admission ${saved?.passMark ?? passMark}/20, rachat ${
+          saved?.rescueMark ?? rescueMark
+        }/20, modèle ${saved?.averageModel === 'simple' ? 'moyenne simple' : 'moyenne pondérée'}. ` +
+          'Cette règle est désormais la source de vérité du backend.',
       );
     } catch (err: any) {
       const msg = err?.response?.data?.message;
@@ -278,15 +284,8 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
         timeout: 20000,
       });
       setGradingRules(res.data ?? null);
-      const drafts: Record<string, { passMark: string; rescueMark: string }> = {};
-      for (const t of res.data?.types ?? []) {
-        drafts[t.examType] = {
-          passMark: String(t.passMark).replace('.', ','),
-          rescueMark: String(t.rescueMark).replace('.', ','),
-        };
-      }
-      setGradingDrafts(drafts);
-      setGradingNotice(`Règle ${examType} réinitialisée — les défauts du backend s\u2019appliquent à nouveau.`);
+      setGradingDrafts(buildDrafts(res.data));
+      setGradingNotice(`Règle ${examType} réinitialisée — les défauts du backend s\u2019appliquent à nouveau (seuils et modèle de calcul).`);
     } catch (err: any) {
       const msg = err?.response?.data?.message;
       setGradingError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Réinitialisation impossible.');
@@ -920,12 +919,15 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Règles de calcul des résultats</h2>
                 <p className="text-sm text-gray-500 mt-1 max-w-3xl">
-                  Définissez, pour chaque type d&apos;examen, la <b>moyenne d&apos;admission</b> et le{' '}
-                  <b>seuil de rachat</b> (cas limites soumis au jury). Par défaut, les règles du{' '}
-                  <b>backend</b> s&apos;appliquent (admission 10/20, rachat 9,5/20) — elles sont
-                  affichées ci-dessous. Dès qu&apos;une règle est définie ici, elle devient la{' '}
-                  <b>source de vérité</b> du backend : délibération, décisions des relevés,
-                  statistiques du registre et documents officiels.
+                  Définissez, pour chaque niveau (primaire, BEPC, baccalauréat, CAP), la{' '}
+                  <b>moyenne d&apos;admission</b>, le <b>seuil de rachat</b> (cas limites soumis au
+                  jury) et le <b>modèle de calcul des moyennes</b> (simple ou pondérée par
+                  coefficients). Par défaut, les règles du <b>backend</b> s&apos;appliquent
+                  (admission 10/20, rachat 9,5/20 ; moyenne simple pour le CEP, pondérée pour le
+                  BEPC/BAC/CAP) — elles sont affichées ci-dessous. Dès qu&apos;une règle est
+                  définie ici, elle devient la <b>source de vérité</b> du backend : calcul des
+                  moyennes, délibération, décisions des relevés, statistiques du registre et
+                  documents officiels.
                 </p>
               </div>
 
@@ -965,8 +967,8 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                       )}
                     >
                       {gradingRules.customCount > 0
-                        ? `${gradingRules.customCount} règle(s) personnalisée(s) sur 4 — le backend applique VOS seuils pour ces types (source de vérité). Les autres types suivent les défauts du backend.`
-                        : 'Aucune règle personnalisée — le backend applique ses défauts (admission 10/20, rachat 9,5/20) pour les quatre types. Modifiez un type ci-dessous pour prendre la main.'}
+                        ? `${gradingRules.customCount} règle(s) personnalisée(s) sur 4 — le backend applique VOS seuils et VOTRE modèle de calcul pour ces types (source de vérité). Les autres types suivent les défauts du backend.`
+                        : 'Aucune règle personnalisée — le backend applique ses défauts (admission 10/20, rachat 9,5/20 ; moyenne simple pour le CEP, pondérée pour les autres) pour les quatre types. Modifiez un type ci-dessous pour prendre la main.'}
                     </p>
                   </div>
 
@@ -976,6 +978,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                       const draft = gradingDrafts[t.examType] ?? {
                         passMark: String(t.passMark),
                         rescueMark: String(t.rescueMark),
+                        averageModel: t.averageModel,
                       };
                       return (
                         <div
@@ -990,7 +993,9 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="text-sm font-bold text-gray-900">{t.label}</p>
-                              <p className="text-[11px] text-gray-500 mt-0.5">{t.averageModelLabel}</p>
+                              <p className="text-[11px] text-gray-500 mt-0.5">
+                                Modèle effectif : {t.averageModelLabel}
+                              </p>
                             </div>
                             <span
                               className={cn(
@@ -1049,6 +1054,48 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                                 Défaut backend : {String(t.defaultRescueMark).replace('.', ',')}/20
                               </p>
                             </div>
+                          </div>
+
+                          {/* ⭐ Modèle de calcul — latitude demandée : simple ou pondérée */}
+                          <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label className="block text-[11px] font-bold uppercase text-gray-500">
+                                Modèle de calcul des moyennes
+                              </label>
+                              {t.averageModelCustom ? (
+                                <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-emerald-100 text-emerald-700">
+                                  Modèle personnalisé — source de vérité
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-100 text-slate-500">
+                                  Défaut du backend
+                                </span>
+                              )}
+                            </div>
+                            <select
+                              value={draft.averageModel}
+                              disabled={!gradingRules.canManage}
+                              onChange={(e) =>
+                                setGradingDrafts((prev) => ({
+                                  ...prev,
+                                  [t.examType]: {
+                                    ...draft,
+                                    averageModel: e.target.value as 'simple' | 'ponderee',
+                                  },
+                                }))
+                              }
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm font-bold text-blue-900 disabled:bg-gray-50 bg-white"
+                            >
+                              <option value="simple">
+                                Moyenne simple — Σ notes / nombre d&apos;épreuves (sans coefficients)
+                              </option>
+                              <option value="ponderee">
+                                Moyenne pondérée — Σ(note × coefficient) / Σ coefficients
+                              </option>
+                            </select>
+                            <p className="mt-1 text-[10px] text-gray-400">
+                              Défaut backend : {t.defaultAverageModelLabel}
+                            </p>
                           </div>
 
                           <div className="flex items-center gap-2 pt-1">

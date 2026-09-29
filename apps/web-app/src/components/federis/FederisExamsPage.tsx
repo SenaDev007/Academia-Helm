@@ -17,7 +17,7 @@
 
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
@@ -105,18 +105,15 @@ interface SchoolListsResponse {
     startDate: string;
     endDate: string;
   };
+  /** ⭐ Baccalauréat : listes catégorisées PAR SÉRIE (A1, C, D…). */
+  hasSeries: boolean;
   totalSchools: number;
   totalCandidates: number;
   schools: SchoolListEntry[];
 }
 
-const TENANT_TYPE_LABELS: Record<string, string> = {
-  MATERNELLE: 'Maternelle',
-  PRIMAIRE: 'Primaire',
-  SECONDAIRE: 'Secondaire',
-  MIXTE: 'Mixte',
-  SCHOOL: 'École',
-};
+// ⭐ (2026-09-29) Plus AUCUN badge de type d'établissement (mixte / école /
+//    ministère…) — seuls les logos des écoles sont affichés.
 
 export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
   const { path: federisPath } = useFederisPath();
@@ -554,11 +551,6 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-bold text-blue-900">{school.name}</span>
-                            {school.tenantType && (
-                              <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-800">
-                                {TENANT_TYPE_LABELS[school.tenantType] ?? school.tenantType}
-                              </span>
-                            )}
                             {!school.schoolTenantId && (
                               <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-slate-100 text-slate-600">
                                 Saisie patronat
@@ -581,74 +573,13 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
                     </div>
                   </div>
 
-                  {/* Table des élèves (liste officielle) */}
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-slate-200">
-                      <thead className="bg-white">
-                        <tr>
-                          <th className="px-4 py-2.5 text-left text-[9px] font-bold text-slate-400 uppercase">Matricule</th>
-                          <th className="px-4 py-2.5 text-left text-[9px] font-bold text-slate-400 uppercase">Élève</th>
-                          <th className="px-4 py-2.5 text-left text-[9px] font-bold text-slate-400 uppercase">Classe</th>
-                          <th className="px-4 py-2.5 text-center text-[9px] font-bold text-slate-400 uppercase">Né(e) le</th>
-                          <th className="px-4 py-2.5 text-center text-[9px] font-bold text-slate-400 uppercase">Table</th>
-                          <th className="px-4 py-2.5 text-center text-[9px] font-bold text-slate-400 uppercase">Centre</th>
-                          <th className="px-4 py-2.5 text-left text-[9px] font-bold text-slate-400 uppercase">Statut</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-slate-100">
-                        {school.students.map((st) => (
-                          <tr key={st.id} className="hover:bg-[#f7f9fc]">
-                            <td className="px-4 py-2.5 text-[11px] font-bold text-blue-800 whitespace-nowrap">
-                              {st.matricule ?? '—'}
-                            </td>
-                            <td className="px-4 py-2.5 text-xs font-semibold text-slate-700">
-                              {st.lastName} {st.firstName}
-                              {st.gender && (
-                                <span className="ml-1.5 text-[9px] font-bold text-slate-400">
-                                  {st.gender === 'F' ? 'F' : 'M'}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-4 py-2.5 text-xs text-slate-600">
-                              {st.schoolClass ?? '—'}
-                              {st.series && (
-                                <span className="ml-1 text-[9px] font-bold text-blue-700 uppercase">
-                                  Série {st.series}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-4 py-2.5 text-center text-xs text-slate-500 whitespace-nowrap">
-                              {st.dateOfBirth
-                                ? new Date(st.dateOfBirth).toLocaleDateString('fr-FR')
-                                : '—'}
-                            </td>
-                            <td className="px-4 py-2.5 text-center text-xs font-bold text-slate-600">
-                              {st.tableNumber ?? '—'}
-                            </td>
-                            <td className="px-4 py-2.5 text-center text-xs text-slate-500 whitespace-nowrap">
-                              {st.center ? `${st.center.code}` : '—'}
-                            </td>
-                            <td className="px-4 py-2.5">
-                              <span
-                                className={cn(
-                                  'px-2 py-0.5 rounded text-[9px] font-bold uppercase inline-block',
-                                  st.status === 'WITHDRAWN'
-                                    ? 'bg-red-50 text-red-700'
-                                    : st.status === 'PASSED'
-                                      ? 'bg-green-100 text-green-800'
-                                      : st.status === 'FAILED'
-                                        ? 'bg-red-100 text-red-700'
-                                        : 'bg-blue-50 text-blue-800',
-                                )}
-                              >
-                                {CANDIDATE_STATUS_LABELS[st.status] ?? st.status}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  {/* Table des élèves (liste officielle) — ⭐ Baccalauréat :
+                      liste catégorisée PAR SÉRIE, jamais un mélange. */}
+                  {schoolLists.hasSeries ? (
+                    <SchoolListBySeries students={school.students} />
+                  ) : (
+                    <SchoolListTable students={school.students} />
+                  )}
                 </div>
               ))}
             </div>
@@ -656,5 +587,122 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
         </section>
       )}
     </FedPage>
+  );
+}
+
+/** Tableau plat d'une liste officielle (CEP / BEPC / CAP). */
+function SchoolListTable({ students }: { students: SchoolListStudent[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-slate-200">
+        <thead className="bg-white">
+          <tr>
+            <th className="px-4 py-2.5 text-left text-[9px] font-bold text-slate-400 uppercase">Matricule</th>
+            <th className="px-4 py-2.5 text-left text-[9px] font-bold text-slate-400 uppercase">Élève</th>
+            <th className="px-4 py-2.5 text-left text-[9px] font-bold text-slate-400 uppercase">Classe</th>
+            <th className="px-4 py-2.5 text-center text-[9px] font-bold text-slate-400 uppercase">Né(e) le</th>
+            <th className="px-4 py-2.5 text-center text-[9px] font-bold text-slate-400 uppercase">Table</th>
+            <th className="px-4 py-2.5 text-center text-[9px] font-bold text-slate-400 uppercase">Centre</th>
+            <th className="px-4 py-2.5 text-left text-[9px] font-bold text-slate-400 uppercase">Statut</th>
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-slate-100">
+          {students.map((st) => (
+            <tr key={st.id} className="hover:bg-[#f7f9fc]">
+              <td className="px-4 py-2.5 text-[11px] font-bold text-blue-800 whitespace-nowrap">
+                {st.matricule ?? '—'}
+              </td>
+              <td className="px-4 py-2.5 text-xs font-semibold text-slate-700">
+                {st.lastName} {st.firstName}
+                {st.gender && (
+                  <span className="ml-1.5 text-[9px] font-bold text-slate-400">
+                    {st.gender === 'F' ? 'F' : 'M'}
+                  </span>
+                )}
+              </td>
+              <td className="px-4 py-2.5 text-xs text-slate-600">
+                {st.schoolClass ?? '—'}
+                {st.series && (
+                  <span className="ml-1 text-[9px] font-bold text-blue-700 uppercase">
+                    Série {st.series}
+                  </span>
+                )}
+              </td>
+              <td className="px-4 py-2.5 text-center text-xs text-slate-500 whitespace-nowrap">
+                {st.dateOfBirth ? new Date(st.dateOfBirth).toLocaleDateString('fr-FR') : '—'}
+              </td>
+              <td className="px-4 py-2.5 text-center text-xs font-bold text-slate-600">
+                {st.tableNumber ?? '—'}
+              </td>
+              <td className="px-4 py-2.5 text-center text-xs text-slate-500 whitespace-nowrap">
+                {st.center ? `${st.center.code}` : '—'}
+              </td>
+              <td className="px-4 py-2.5">
+                <span
+                  className={cn(
+                    'px-2 py-0.5 rounded text-[9px] font-bold uppercase inline-block',
+                    st.status === 'WITHDRAWN'
+                      ? 'bg-red-50 text-red-700'
+                      : st.status === 'PASSED'
+                        ? 'bg-green-100 text-green-800'
+                        : st.status === 'FAILED'
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-blue-50 text-blue-800',
+                  )}
+                >
+                  {CANDIDATE_STATUS_LABELS[st.status] ?? st.status}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * ⭐ Liste officielle du BACCALAURÉAT — catégorisée PAR SÉRIE : chaque série
+ * (A1, A2, C, D…) dispose de sa propre section avec son effectif, comme
+ * l'envoi transmis par l'école (jamais un mélange).
+ */
+function SchoolListBySeries({ students }: { students: SchoolListStudent[] }) {
+  const groups = useMemo(() => {
+    const bySeries = new Map<string, SchoolListStudent[]>();
+    for (const st of students) {
+      const key = st.series ?? 'NON PRECISEE';
+      if (!bySeries.has(key)) bySeries.set(key, []);
+      bySeries.get(key)!.push(st);
+    }
+    return [...bySeries.entries()]
+      .map(([series, list]) => ({
+        series,
+        students: [...list].sort((a, b) =>
+          `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`, 'fr'),
+        ),
+      }))
+      .sort((a, b) => {
+        if (a.series === 'NON PRECISEE') return 1;
+        if (b.series === 'NON PRECISEE') return -1;
+        return a.series.localeCompare(b.series);
+      });
+  }, [students]);
+
+  return (
+    <div className="divide-y divide-slate-200">
+      {groups.map((group) => (
+        <div key={group.series}>
+          <div className="px-4 py-2 bg-blue-900/[0.04] border-b border-slate-100 flex items-center justify-between gap-3">
+            <span className="text-xs font-bold text-blue-900 uppercase tracking-wide">
+              {group.series === 'NON PRECISEE' ? 'Série non précisée' : `Série ${group.series}`}
+            </span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase">
+              {group.students.length} candidat{group.students.length > 1 ? 's' : ''}
+            </span>
+          </div>
+          <SchoolListTable students={group.students} />
+        </div>
+      ))}
+    </div>
   );
 }

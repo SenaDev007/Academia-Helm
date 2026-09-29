@@ -169,26 +169,118 @@ function normalizeUpper(s: string | null | undefined): string {
  *   BEPC : « 3ème 1 », « 3E A », « 3A »…
  *   BAC  : « Terminale C », « Tle D », « Term A1 »… (hors classes CAP)
  *   CAP  : « Terminale CAP », « Tle CAP Mécanique », « CAP 2 », « 2CAP »…
+ *          ⭐ + TOUTES les classes du DOMAINE TECHNIQUE (filières
+ *          professionnelles : mécanique, couture, électricité, menuiserie,
+ *          coiffure, bâtiment…) hors séries du baccalauréat (A-G) et du
+ *          Brevet de Technicien (BT) — ces classes présentent le CAP, le
+ *          système les récupère donc automatiquement pour le niveau CAP.
  *    ⚠️ Les classes CAP sont exclues du BAC : elles présentent le CAP,
  *    pas le baccalauréat général/technique.
+ *
+ * @param names noms candidats de la classe : nom physique, classe officielle
+ *              (Pédagogie) et niveau académique — le rapprochement se fait
+ *              sur l'ensemble (une classe « Tle CAP Mécanique » rattachée à
+ *              une classe officielle « Terminale » reste éligible CAP).
  */
-function classMatchesExam(className: string | null | undefined, type: NationalExamType): boolean {
-  const n = normalizeUpper(className);
-  if (!n) return false;
-  if (type === 'CEP') return n.startsWith('CM2');
-  if (type === 'BEPC') return /^3($|[^0-9])/.test(n);
-  if (type === 'CAP') return n.includes('CAP');
+function classMatchesExam(
+  names: (string | null | undefined)[],
+  type: NationalExamType,
+): boolean {
+  const normalized = names.map((n) => normalizeUpper(n)).filter(Boolean) as string[];
+  if (normalized.length === 0) return false;
+
+  if (type === 'CEP') return normalized.some((n) => n.startsWith('CM2'));
+  if (type === 'BEPC') return normalized.some((n) => /^3($|[^0-9])/.test(n));
+  if (type === 'CAP') {
+    // 1. Mention explicite « CAP » dans le nom (physique, officiel ou niveau)
+    if (normalized.some((n) => n.includes('CAP'))) return true;
+    // 2. Domaine technique / filière professionnelle — hors classes portant
+    //    une série du baccalauréat (A1…G2 — elles présentent le BAC) et hors
+    //    Brevet de Technicien (BT).
+    const hasBacSeries = normalized.some((n) => BAC_SERIES_ANYWHERE.test(n));
+    const hasBt = normalized.some((n) => /\bBT\b/.test(n));
+    if (hasBacSeries || hasBt) return false;
+    return normalized.some((n) => CAP_TECHNICAL_KEYWORDS.some((k) => n.includes(k)));
+  }
   // BAC — les filières professionnelles (CAP) ne présentent pas le bac
-  if (n.includes('CAP')) return false;
-  return n.startsWith('TERM') || n.startsWith('TLE') || n.startsWith('BAC');
+  return normalized.some(
+    (n) => !n.includes('CAP') && (n.startsWith('TERM') || n.startsWith('TLE') || n.startsWith('BAC')),
+  );
 }
 
-/** Extrait la série d'un nom de classe de Terminale (« Terminale C » → « C »). */
+/**
+ * ⭐ Mots-clés du domaine technique & professionnel (CAP) — filières
+ * présentées au Certificat d'Aptitude Professionnelle au Bénin.
+ */
+const CAP_TECHNICAL_KEYWORDS = [
+  'TECHNIQUE',
+  'TECHNOLOGIQUE',
+  'PROFESSIONNEL',
+  'VOCATIONNEL',
+  'METIER',
+  'APPRENTISSAGE',
+  'ARTISANAT',
+  'FILIERE',
+  'MECANIQUE',
+  'AUTOMOBILE',
+  'COUTURE',
+  'BRODERIE',
+  'ELECTRICITE',
+  'ELECTRONIQUE',
+  'ELECTROTECHNIQUE',
+  'MENUISERIE',
+  'CHARPENTE',
+  'COIFFURE',
+  'ESTHETIQUE',
+  'BATIMENT',
+  'MACONNERIE',
+  'SOUDURE',
+  'PLOMBERIE',
+  'PEINTURE',
+  'VENTE',
+  'HOTELLERIE',
+  'RESTAURATION',
+  'CUISINE',
+  'PATISSERIE',
+  'BOULANGERIE',
+  'AGRICULTURE',
+  'ELEVAGE',
+  'PISCICULTURE',
+  'MAINTENANCE',
+  'INFORMATIQUE',
+] as const;
+
+/** Série de bac explicite (A1, A2, B, C, D, E, F1-F4, G1-G2) après le préfixe d'année. */
+const BAC_SERIES_ANYWHERE =
+  /(?:TERM(?:INALE)?|TLE|BAC|1ERE|1RE|PREMIERE|2NDE|SECONDE)\s+(?:SERIE\s+)?[A-G]\d?\b/;
+
+/**
+ * Extrait la série d'un nom de classe de Terminale (« Terminale C » → « C »).
+ * Tolère un numéro de division en fin de nom (« Terminale D 1 » → « D »).
+ */
 function seriesFromClassName(className: string | null | undefined): string | null {
   const n = normalizeUpper(className);
   if (!n) return null;
-  const match = n.match(/(?:TERM(?:INALE)?|TLE|BAC)\s*(?:SERIE\s*)?([A-Z]\d?|[A-Z]{2})\s*$/);
+  const match = n.match(
+    /(?:TERM(?:INALE)?|TLE|BAC)\s*(?:SERIE\s*)?([A-Z]\d?|[A-Z]{2})(?:\s+\d+)?\s*$/,
+  );
   return match?.[1] ?? null;
+}
+
+/**
+ * Série d'élève pour l'envoi officiel (Bac) : classe officielle (AcademicSeries)
+ * en priorité, sinon extraction depuis le nom de classe. Exporté pour le
+ * regroupement par série côté patronat (federis-exams.service).
+ */
+export function resolveSeriesFromClassNames(
+  physicalName: string | null | undefined,
+  officialName: string | null | undefined,
+  officialSeriesName: string | null | undefined,
+): string | null {
+  if (officialSeriesName) return officialSeriesName.toUpperCase();
+  return (
+    seriesFromClassName(physicalName) ?? seriesFromClassName(officialName) ?? null
+  );
 }
 
 /** Niveau fédéré (NationalExam.level) ↔ type d'examen national. */
@@ -292,21 +384,32 @@ export class FederisSchoolExamsService {
 
   /**
    * Classes éligibles au type d'examen pour l'année courante :
- * rapprochement par nom de classe physique OU de classe officielle
- * (AcademicClass via officialClassId), avec série éventuelle.
+   * rapprochement par nom de classe physique, de classe officielle
+   * (AcademicClass via officialClassId) ET de niveau académique — le
+   * domaine technique (CAP) se détecte aussi via la classe officielle et
+   * son niveau (ex. niveau « Technique » / « CAP » du module Pédagogie).
    */
   private async getEligibleClasses(tenantId: string, academicYearId: string, type: NationalExamType) {
     const classes = await this.prisma.class.findMany({
       where: { tenantId, academicYearId },
       include: {
-        officialClass: { select: { id: true, name: true, series: { select: { name: true } } } },
+        officialClass: {
+          select: {
+            id: true,
+            name: true,
+            series: { select: { name: true } },
+            level: { select: { name: true } },
+          },
+        },
       },
       orderBy: { name: 'asc' },
     });
 
-    return classes.filter(
-      (c) =>
-        classMatchesExam(c.name, type) || classMatchesExam(c.officialClass?.name, type),
+    return classes.filter((c) =>
+      classMatchesExam(
+        [c.name, c.officialClass?.name, c.officialClass?.level?.name],
+        type,
+      ),
     );
   }
 
@@ -533,9 +636,11 @@ export class FederisSchoolExamsService {
       const klass = classById.get(e.classId);
 
       // Série : classe officielle (AcademicSeries) en priorité, sinon le nom
-      let series: string | null = klass?.officialClass?.series?.name ?? null;
-      if (!series) series = seriesFromClassName(klass?.name);
-      if (!series) series = seriesFromClassName(klass?.officialClass?.name);
+      const series = resolveSeriesFromClassNames(
+        klass?.name,
+        klass?.officialClass?.name,
+        klass?.officialClass?.series?.name ?? null,
+      );
 
       students.push({
         id: e.student.id,
@@ -547,7 +652,7 @@ export class FederisSchoolExamsService {
         gender: e.student.gender,
         photoUrl: e.student.photoUrl,
         className: klass?.name ?? null,
-        series: series ? series.toUpperCase() : null,
+        series,
       });
     }
 
@@ -775,10 +880,19 @@ export class FederisSchoolExamsService {
         studentId: { in: studentIds },
       },
     });
-    const classByStudent = new Map<string, string>();
+    const classByStudent = new Map<string, { className: string | null; series: string | null }>();
     for (const e of enrollments) {
       if (!classByStudent.has(e.studentId)) {
-        classByStudent.set(e.studentId, classById.get(e.classId)?.name ?? null);
+        const klass = classById.get(e.classId);
+        classByStudent.set(e.studentId, {
+          className: klass?.name ?? null,
+          // ⭐ Série (Bac) : transmise au patronat pour un traitement PAR SÉRIE
+          series: resolveSeriesFromClassNames(
+            klass?.name,
+            klass?.officialClass?.name,
+            klass?.officialClass?.series?.name ?? null,
+          ),
+        });
       }
     }
 
@@ -842,7 +956,9 @@ export class FederisSchoolExamsService {
         for (const sid of studentIds) {
           const s = studentById.get(sid);
           if (!s) continue;
-          const klass = classByStudent.get(sid) ?? null;
+          const info = classByStudent.get(sid) ?? { className: null, series: null };
+          const klass = info.className;
+          const series = info.series;
           const already = existingByStudent.get(sid);
 
           if (already) {
@@ -859,6 +975,8 @@ export class FederisSchoolExamsService {
                   ...((already.metadata as any) ?? {}),
                   studentId: sid,
                   schoolClass: klass,
+                  // ⭐ Série (Bac) — l'envoi est traité PAR SÉRIE côté patronat
+                  ...(series ? { series } : {}),
                   submissionUpdatedAt: new Date().toISOString(),
                 },
               },
@@ -893,6 +1011,8 @@ export class FederisSchoolExamsService {
                   studentId: sid,
                   studentMatricule: s.matricule ?? s.studentCode ?? null,
                   schoolClass: klass,
+                  // ⭐ Série (Bac) — l'envoi est traité PAR SÉRIE côté patronat
+                  ...(series ? { series } : {}),
                   schoolName: school.name,
                   submittedAt: new Date().toISOString(),
                 },
@@ -980,6 +1100,21 @@ export class FederisSchoolExamsService {
       where: { tenantId, academicYearId: year.id, examType: type },
     });
     const now = new Date();
+
+    // ⭐ Répartition par série (Baccalauréat) — l'envoi est PAR SÉRIE, jamais
+    //    un mélange : chaque série compte ses candidats transmis.
+    const seriesBreakdown = def.hasSeries
+      ? Object.entries(
+          studentIds.reduce<Record<string, number>>((acc, sid) => {
+            const series = classByStudent.get(sid)?.series ?? 'NON PRECISEE';
+            acc[series] = (acc[series] ?? 0) + 1;
+            return acc;
+          }, {}),
+        )
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([series, count]) => ({ series, count }))
+      : [];
+
     const submissionData = {
       candidateIds: studentIds as any,
       status: 'SUBMITTED',
@@ -989,6 +1124,7 @@ export class FederisSchoolExamsService {
       metadata: {
         ...((existingSubmission?.metadata as any) ?? {}),
         reports,
+        ...(seriesBreakdown.length > 0 ? { seriesBreakdown } : {}),
         lastSubmissionAt: now.toISOString(),
       },
     };
@@ -1028,6 +1164,9 @@ export class FederisSchoolExamsService {
       label: def.label,
       submittedAt: now.toISOString(),
       candidates: studentIds.length,
+      // ⭐ Répartition par série (Bac) — l'école voit exactement ce qui est
+      //    transmis au patronat, série par série (jamais un mélange).
+      seriesBreakdown,
       reports,
       skipped: targets
         .filter((t) => !t.exam)

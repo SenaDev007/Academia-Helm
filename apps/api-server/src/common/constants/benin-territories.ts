@@ -222,6 +222,30 @@ export function cityKeysOf(city: string | null | undefined): Set<string> | null 
   return COMMUNE_DEPARTMENT_KEYS.get(normalizeTerritoryKey(city)) ?? null;
 }
 
+/** Map normalisée commune → libellé canonique du département (construite une fois). */
+const COMMUNE_DEPARTMENT_NAME: Map<string, string> = (() => {
+  const map = new Map<string, string>();
+  for (const [commune, department] of Object.entries(BENIN_COMMUNE_TO_DEPARTMENT)) {
+    map.set(normalizeTerritoryKey(commune), department);
+  }
+  for (const [alias, commune] of Object.entries(BENIN_COMMUNE_ALIASES)) {
+    map.set(normalizeTerritoryKey(alias), BENIN_COMMUNE_TO_DEPARTMENT[commune] ?? commune);
+  }
+  return map;
+})();
+
+/**
+ * ⭐ Département canonique d'une ville béninoise (null si ville inconnue).
+ * Ex. « Parakou » → « Borgou », « Abomey-Calavi » → « Atlantique ».
+ * Utilisé pour catégoriser les écoles par département (vision patronat
+ * national) et pour attribuer une demande d'adhésion au patronat
+ * départemental de l'école.
+ */
+export function cityToDepartment(city: string | null | undefined): string | null {
+  if (!city) return null;
+  return COMMUNE_DEPARTMENT_NAME.get(normalizeTerritoryKey(city)) ?? null;
+}
+
 /** Le territoire donné (tout libellé) couvre-t-il l'ensemble de clées ? */
 export function territoryIncludesKeys(
   territory: string | null | undefined,

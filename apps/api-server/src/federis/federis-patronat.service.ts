@@ -39,9 +39,16 @@ import { schoolTenantTypeFilter } from '../common/constants/school-tenant-types'
 //    du Bénin + alias de départements (renommages 2016) — permet de rattacher
 //    les écoles à leur patronat départemental via leur VILLE (l'onboarding
 //    Helm ne collecte pas le département).
+// ⭐ Catégorisation par département (2026-09-29 #2) : cityToDepartment résout
+//    le département canonique d'une école (fiche School.department, sinon la
+//    ville) — vision globale du patronat national + attribution automatique
+//    des demandes d'adhésion au patronat départemental de l'école.
 import {
   normalizeTerritoryKey,
   territoryIncludesCity,
+  cityToDepartment,
+  departmentKeys,
+  territoryIncludesKeys,
 } from '../common/constants/benin-territories';
 
 /**
@@ -877,13 +884,33 @@ export class FederisPatronatService {
     };
   }
 
-  /** Écoles rattachées au patronat (Helm + manuelles). */
+  /**
+   * Écoles rattachées au patronat (Helm + manuelles).
+   *
+   * ⭐ VISION NATIONALE (2026-09-29 #2) : pour le patronat NATIONAL, la liste
+   * agrège les liens de TOUS les patronats du pays (les demandes émises par
+   * le national sont attribuées aux patronats départementaux) — chaque école
+   * est accompagnée du patronat dépositaire (patronat) et de son département
+   * résolu (department), pour un affichage catégorisé par département.
+   * Un patronat TERRITORIAL ne voit que ses propres liens (isolation des
+   * données entre départements).
+   */
   async getSchools(tenantId: string, userId?: string) {
     const patronat = await this.resolvePatronat(tenantId, userId);
+    const isNational = patronat.orgLevel === 'NATIONAL';
+
     const [linked, manual] = await Promise.all([
       this.prisma.patronatSchool.findMany({
-        where: { patronatId: patronat.id },
+        where: isNational
+          ? {
+              // Vision globale du national : liens de tous les patronats du pays
+              patronat: {
+                ...(patronat.countryId ? { countryId: patronat.countryId } : {}),
+              },
+            }
+          : { patronatId: patronat.id },
         include: {
+          patronat: { select: { id: true, name: true, territoryName: true } },
           schoolTenant: {
             // ⭐ FIX « Champ logo invalide » : le modèle Tenant n'a PAS de
             //    champ logo — le logo d'une école Helm vit sur la fiche School
@@ -923,6 +950,7 @@ export class FederisPatronatService {
     ]);
 
     return {
+      orgLevel: patronat.orgLevel,
       linked: linked.map((s) => ({
         id: s.id,
         kind: 'HELM' as const,
@@ -932,6 +960,12 @@ export class FederisPatronatService {
         logo: s.schoolTenant?.schools?.logo ?? null,
         city: s.schoolTenant?.schools?.city ?? null,
         department: s.schoolTenant?.schools?.department ?? null,
+        // ⭐ Département résolu (fiche, sinon ville → département) — regroup
+        // par département côté patronat national.
+        resolvedDepartment:
+          s.schoolTenant?.schools?.department ??
+          cityToDepartment(s.schoolTenant?.schools?.city) ??
+          null,
         address: s.schoolTenant?.schools?.address ?? null,
         phone: s.schoolTenant?.schools?.primaryPhone ?? null,
         email: s.schoolTenant?.schools?.primaryEmail ?? null,
@@ -940,6 +974,9 @@ export class FederisPatronatService {
         joinedAt: s.joinedAt,
         academicYear: s.academicYear?.name,
         candidatesCount: s._count.candidates,
+        // ⭐ Patronat dépositaire du lien (vision nationale uniquement)
+        patronat: isNational ? (s.patronat?.name ?? null) : null,
+        patronatTerritory: isNational ? (s.patronat?.territoryName ?? null) : null,
       })),
       manual: manual.map((s) => ({
         id: s.id,
@@ -989,8 +1026,15 @@ export class FederisPatronatService {
    * ⭐ Écoles Academia Helm du périmètre du patronat — listage AUTOMATIQUE et
    * dynamique (« Écoles de votre territoire ») :
    *   - Patronat TERRITORIAL : écoles dont la fiche School correspond au
-   *     territoire du patronat (territoryName, sinon region) ;
-   *   - Patronat NATIONAL : toutes les écoles du pays du patronat.
+   *     territoire du patronat (territoryName, sinon region) + ⭐ les écoles
+   *     sans localisation renseignée (ville ET département vides) proposées
+   *     dans un groupe « Localisation non renseignée » (ex. CSPEB) ;
+   *   - Patronat NATIONAL : toutes les écoles du pays du patronat,
+   *     ⭐ CATÉGORISÉES PAR DÉPARTEMENT (resolvedDepartment = fiche
+   *     School.department, sinon ville → département via la carte officielle
+   *     des 77 communes du Bénin) — le national a la vision globale : le
+   *     statut de rattachement agrégé de TOUS les patronats du pays
+   *     (linkPatronat = patronat dépositaire du lien).
    *
    * Rapprochement territorial (dans l'ordre) :
    *   1. School.department — libellé exact (accents/tirets/casse tolérés) ;
@@ -1049,15 +1093,54 @@ export class FederisPatronatService {
       orderBy: { name: 'asc' },
     });
 
-    // Statuts de rattachement existants pour ce patronat
+    // ⭐ Statuts de rattachement :
+    //   - Patronat NATIONAL : vision globale — liens de TOUS les patronats du
+    //     pays (préférence : JOINED > PENDING > REJECTED > SUSPENDED), avec le
+    //     nom du patronat dépositaire (linkPatronat) ;
+    //   - Patronat TERRITORIAL : ses propres liens uniquement (isolation des
+    //     données — jamais la vision des autres départements).
+    const linkWhere = isNational
+      ? {
+          patronat: {
+            ...(patronat.countryId ? { countryId: patronat.countryId } : {}),
+          },
+        }
+      : { patronatId: patronat.id };
     const links = await this.prisma.patronatSchool.findMany({
-      where: { patronatId: patronat.id },
-      select: { schoolTenantId: true, status: true },
+      where: linkWhere,
+      select: {
+        schoolTenantId: true,
+        status: true,
+        patronat: { select: { id: true, name: true, orgLevel: true } },
+      },
     });
-    const linkBySchool = new Map(links.map((l) => [l.schoolTenantId, l.status]));
+    const STATUS_PRIORITY: Record<string, number> = {
+      JOINED: 4,
+      PENDING: 3,
+      REJECTED: 2,
+      SUSPENDED: 1,
+    };
+    const linkAgg = new Map<
+      string,
+      { status: string; patronatName: string | null; priority: number }
+    >();
+    for (const l of links) {
+      const priority = STATUS_PRIORITY[l.status] ?? 0;
+      const current = linkAgg.get(l.schoolTenantId);
+      if (!current || priority > current.priority) {
+        linkAgg.set(l.schoolTenantId, {
+          status: l.status,
+          patronatName: l.patronat?.name ?? null,
+          priority,
+        });
+      }
+    }
 
     // Filtre territorial (patronat territorial uniquement) :
     // département exact → commune→département (Bénin) → ville = territoire.
+    // ⭐ Les écoles SANS ville NI département (ex. CSPEB avant correction de
+    //    sa fiche) restent proposées — flag locationUnknown — pour ne jamais
+    //    exclure une école réelle de la découverte automatique.
     const territoryKey = normalizeTerritoryKey(territory);
     const inScope = isNational
       ? tenants
@@ -1068,15 +1151,15 @@ export class FederisPatronatService {
           if (city && territoryIncludesCity(territory, city)) return true;
           return false;
         });
+    const unknownLocation = !isNational
+      ? tenants.filter(
+          (t) => !t.schools?.department && !t.schools?.city,
+        )
+      : [];
 
-    return {
-      scope: isNational ? 'COUNTRY' : 'DEPARTMENT',
-      territoryName: isNational ? patronat.country?.name ?? null : territory,
-      country: patronat.country?.name ?? null,
-      orgLevel: patronat.orgLevel,
-      message: null as string | null,
-      total: inScope.length,
-      schools: inScope.map((t) => ({
+    const toSchoolDto = (t: (typeof tenants)[number], locationUnknown = false) => {
+      const link = linkAgg.get(t.id);
+      return {
         id: t.id,
         name: t.name,
         slug: t.slug,
@@ -1085,15 +1168,49 @@ export class FederisPatronatService {
         logo: t.schools?.logo ?? null,
         city: t.schools?.city ?? null,
         department: t.schools?.department ?? null,
+        // ⭐ Département résolu : fiche School.department, sinon ville →
+        //    département (carte des 77 communes) — catégorisation par
+        //    département pour le patronat national.
+        resolvedDepartment:
+          t.schools?.department ?? cityToDepartment(t.schools?.city) ?? null,
+        locationUnknown,
         address: t.schools?.address ?? null,
         phone: t.schools?.primaryPhone ?? null,
         email: t.schools?.primaryEmail ?? null,
-        linkStatus: linkBySchool.get(t.id) ?? null,
-      })),
+        linkStatus: link?.status ?? null,
+        // ⭐ Patronat dépositaire du lien (vision nationale) — ex. « Patronat
+        //    des Établissements Scolaires Privés du Borgou ».
+        linkPatronat: link?.patronatName ?? null,
+      };
+    };
+
+    return {
+      scope: isNational ? 'COUNTRY' : 'DEPARTMENT',
+      territoryName: isNational ? patronat.country?.name ?? null : territory,
+      country: patronat.country?.name ?? null,
+      orgLevel: patronat.orgLevel,
+      message: null as string | null,
+      total: inScope.length + unknownLocation.length,
+      schools: inScope.map((t) => toSchoolDto(t)),
+      // ⭐ Écoles sans localisation renseignée (patronat territorial) —
+      //    proposées séparément pour ne bloquer aucune adhésion.
+      unlocatedSchools: unknownLocation.map((t) => toSchoolDto(t, true)),
     };
   }
 
-  /** Demande de rattachement d'une école Helm existante (validation par l'école). */
+  /**
+   * Demande de rattachement d'une école Helm existante (validation par l'école).
+   *
+   * ⭐ ATTRIBUTATION DÉPARTEMENTALE (2026-09-29 #2) : lorsque la demande est
+   * émise par le patronat NATIONAL, le système considère qu'elle se joue
+   * « sous le département de l'école » : le lien est créé au nom du patronat
+   * TERRITORIAL (défaut : enfant du national) couvrant le département de
+   * l'école (fiche School.department, sinon ville → département). Lorsque
+   * l'école accepte, elle se retrouve donc rattachée au patronat de SON
+   * département — et non au national. À défaut de patronat départemental
+   * couvrant le département (ou d'année scolaire active chez lui), la demande
+   * retombe sur le patronat national lui-même.
+   */
   async requestSchoolLink(tenantId: string, userId: string, dto: RequestSchoolLinkDto) {
     const patronat = await this.resolvePatronat(tenantId, userId);
     const school = await this.prisma.tenant.findFirst({
@@ -1101,50 +1218,145 @@ export class FederisPatronatService {
       //    SECONDAIRE/MIXTE/SCHOOL) — sinon « École Academia Helm introuvable »
       //    pour toutes les écoles réelles créées par l'onboarding Helm.
       where: { id: dto.schoolTenantId, type: schoolTenantTypeFilter() },
+      include: { schools: { select: { city: true, department: true } } },
     });
     if (!school) throw new NotFoundException('École Academia Helm introuvable.');
 
-    const academicYear = await this.getActiveYear(patronat.tenantId);
+    // ── Attribution au patronat départemental de l'école (demande nationale) ──
+    let targetPatronat = patronat as {
+      id: string;
+      tenantId: string;
+      name: string;
+      territoryName: string | null;
+      orgLevel: string;
+      subscriptionPlan: string;
+    };
+    let attributedTo: { name: string; territoryName: string | null } | null = null;
+
+    const schoolDepartment =
+      school.schools?.department ?? cityToDepartment(school.schools?.city) ?? null;
+
+    if (patronat.orgLevel === 'NATIONAL' && schoolDepartment) {
+      const deptKeys = departmentKeys(schoolDepartment);
+      // Patronats territoriaux du pays — enfants du national en priorité,
+      // puis tous les territoriaux du pays (même pays, couverture du dept).
+      const territorial = await this.prisma.patronat.findMany({
+        where: {
+          orgLevel: 'TERRITORIAL',
+          ...(patronat.countryId ? { countryId: patronat.countryId } : {}),
+        },
+        select: {
+          id: true,
+          tenantId: true,
+          name: true,
+          territoryName: true,
+          orgLevel: true,
+          subscriptionPlan: true,
+          parentPatronatId: true,
+        },
+      });
+      const match =
+        territorial.find(
+          (p) =>
+            p.parentPatronatId === patronat.id &&
+            territoryIncludesKeys(p.territoryName, deptKeys),
+        ) ??
+        territorial.find((p) => territoryIncludesKeys(p.territoryName, deptKeys)) ??
+        null;
+
+      if (match) {
+        // Le patronat départemental doit disposer d'une année scolaire active
+        // pour porter le lien (academicYearId obligatoire).
+        const territorialYear = await this.getActiveYear(match.tenantId);
+        if (territorialYear) {
+          targetPatronat = match;
+          attributedTo = { name: match.name, territoryName: match.territoryName };
+        }
+      }
+    }
+
+    const academicYear = await this.getActiveYear(targetPatronat.tenantId);
     if (!academicYear) {
       throw new BadRequestException(
         "Aucune année scolaire active — impossible d'initier un rattachement.",
       );
     }
 
+    // Un lien existe-t-il déjà pour le patronat cible ?
     const existing = await this.prisma.patronatSchool.findFirst({
-      where: { patronatId: patronat.id, schoolTenantId: school.id },
+      where: { patronatId: targetPatronat.id, schoolTenantId: school.id },
     });
-    if (existing) {
+    if (existing && (existing.status === 'PENDING' || existing.status === 'JOINED')) {
       throw new BadRequestException(
         existing.status === 'PENDING'
-          ? 'Une demande de rattachement est déjà en attente pour cette école.'
-          : 'Cette école est déjà rattachée à votre patronat.',
+          ? `Une demande de rattachement est déjà en attente pour cette école${
+              attributedTo ? ` auprès du ${attributedTo.name}` : ''
+            }.`
+          : `Cette école est déjà rattachée${
+              attributedTo ? ` au ${attributedTo.name}` : ' à votre patronat'
+            }.`,
       );
     }
 
     // Quota d'écoles du plan (alerte à 80 % / 100 %, jamais de facturation auto)
     const plan =
-      FEDERIS_PLANS[patronat.subscriptionPlan as FederisPlanCode] ?? FEDERIS_PLANS.ESSENTIEL;
+      FEDERIS_PLANS[targetPatronat.subscriptionPlan as FederisPlanCode] ??
+      FEDERIS_PLANS.ESSENTIEL;
     const currentCount = await this.prisma.patronatSchool.count({
-      where: { patronatId: patronat.id, status: 'JOINED' },
+      where: { patronatId: targetPatronat.id, status: 'JOINED' },
     });
     if (currentCount >= plan.maxSchools) {
       throw new BadRequestException(
-        `Quota d'écoles atteint pour l'offre ${plan.name} (${plan.maxSchools}). Passez à l'offre Institution ou contactez l'équipe.`,
+        `Quota d'écoles atteint pour l'offre ${plan.name}${
+          attributedTo ? ` du ${attributedTo.name}` : ''
+        } (${plan.maxSchools}). Passez à l'offre Institution ou contactez l'équipe.`,
       );
     }
 
-    const membership = await this.prisma.patronatSchool.create({
-      data: {
-        patronatId: patronat.id,
-        tenantId: patronat.tenantId,
-        schoolTenantId: school.id,
-        academicYearId: academicYear.id,
-        status: 'PENDING',
-        accessLevel: 'READ_ONLY',
-        createdBy: userId,
-      },
-    });
+    // ⭐ Re-sollicitation : un lien REJECTED/SUSPENDED est réactivé en PENDING
+    //    (nouvelle demande) plutôt que bloqué — l'école statue à nouveau.
+    const membership = existing
+      ? await this.prisma.patronatSchool.update({
+          where: { id: existing.id },
+          data: {
+            status: 'PENDING',
+            academicYearId: academicYear.id,
+            suspendedAt: null,
+            suspendedBy: null,
+            suspendedReason: null,
+            metadata: {
+              ...((existing.metadata as object) ?? {}),
+              ...(attributedTo
+                ? {
+                    requestedByNational: true,
+                    requestedByPatronatId: patronat.id,
+                    requestedByPatronatName: patronat.name,
+                  }
+                : {}),
+              reRequestedAt: new Date().toISOString(),
+            },
+          },
+        })
+      : await this.prisma.patronatSchool.create({
+          data: {
+            patronatId: targetPatronat.id,
+            tenantId: targetPatronat.tenantId,
+            schoolTenantId: school.id,
+            academicYearId: academicYear.id,
+            status: 'PENDING',
+            accessLevel: 'READ_ONLY',
+            createdBy: userId,
+            ...(attributedTo
+              ? {
+                  metadata: {
+                    requestedByNational: true,
+                    requestedByPatronatId: patronat.id,
+                    requestedByPatronatName: patronat.name,
+                  },
+                }
+              : {}),
+          },
+        });
 
     await this.prisma.auditLog.create({
       data: {
@@ -1155,13 +1367,45 @@ export class FederisPatronatService {
         resourceId: membership.id,
         tableName: 'patronat_schools',
         recordId: membership.id,
-        newData: { school: school.name, status: 'PENDING' },
+        newData: {
+          school: school.name,
+          status: 'PENDING',
+          ...(attributedTo
+            ? { attributedTo: attributedTo.name, department: schoolDepartment }
+            : {}),
+        },
       },
     });
+    // Double traçabilité côté patronat dépositaire du lien
+    if (attributedTo && targetPatronat.tenantId !== patronat.tenantId) {
+      await this.prisma.auditLog
+        .create({
+          data: {
+            tenantId: targetPatronat.tenantId,
+            userId,
+            action: 'FEDERIS_SCHOOL_LINK_REQUESTED',
+            resource: 'PatronatSchool',
+            resourceId: membership.id,
+            tableName: 'patronat_schools',
+            recordId: membership.id,
+            newData: {
+              school: school.name,
+              status: 'PENDING',
+              requestedBy: patronat.name,
+              department: schoolDepartment,
+            },
+          },
+        })
+        .catch(() => undefined);
+    }
 
     return {
       success: true,
       membership,
+      // ⭐ Patronat départemental dépositaire de la demande (null = le
+      //    patronat demandeur lui-même porte le lien).
+      attributedTo,
+      department: schoolDepartment,
       quota: { used: currentCount + 1, max: plan.maxSchools },
     };
   }

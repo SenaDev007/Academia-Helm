@@ -17,7 +17,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AppIcon from '@/components/ui/AppIcon';
 import { apiClient } from '@/lib/api/client';
 import { cn } from '@/lib/utils';
@@ -31,6 +31,8 @@ interface LinkedSchool {
   logo?: string | null;
   city?: string | null;
   department?: string | null;
+  /** ⭐ Département résolu (fiche, sinon ville → département) — vision nationale. */
+  resolvedDepartment?: string | null;
   address?: string | null;
   phone?: string | null;
   email?: string | null;
@@ -39,6 +41,9 @@ interface LinkedSchool {
   joinedAt?: string | null;
   academicYear?: string;
   candidatesCount: number;
+  /** ⭐ Patronat dépositaire du lien (vision nationale uniquement). */
+  patronat?: string | null;
+  patronatTerritory?: string | null;
 }
 
 interface ManualSchool {
@@ -70,11 +75,17 @@ interface DiscoveredSchool {
   logo?: string | null;
   city?: string | null;
   department?: string | null;
+  /** ⭐ Département résolu (fiche, sinon ville → département) — catégorisation. */
+  resolvedDepartment?: string | null;
+  /** ⭐ Ville ET département absents de la fiche — proposée à confirmer. */
+  locationUnknown?: boolean;
   address?: string | null;
   phone?: string | null;
   email?: string | null;
   /** PENDING / JOINED / REJECTED / SUSPENDED / null = jamais sollicitée */
   linkStatus: string | null;
+  /** ⭐ Patronat dépositaire du lien (vision nationale — ex. patronat du Borgou). */
+  linkPatronat?: string | null;
 }
 
 interface DiscoverResponse {
@@ -85,6 +96,8 @@ interface DiscoverResponse {
   message?: string | null;
   total: number;
   schools: DiscoveredSchool[];
+  /** ⭐ Écoles sans localisation renseignée (patronat territorial uniquement). */
+  unlocatedSchools?: DiscoveredSchool[];
 }
 
 const STATUS_BADGES: Record<string, { label: string; className: string }> = {
@@ -95,14 +108,8 @@ const STATUS_BADGES: Record<string, { label: string; className: string }> = {
   MANUAL: { label: 'Hors Helm (manuelle)', className: 'bg-gray-100 text-slate-700' },
 };
 
-/** Libellé lisible du type d'établissement (tenant.type Helm). */
-const TENANT_TYPE_LABELS: Record<string, string> = {
-  MATERNELLE: 'Maternelle',
-  PRIMAIRE: 'Primaire',
-  SECONDAIRE: 'Secondaire',
-  MIXTE: 'Mixte',
-  SCHOOL: 'École',
-};
+// ⭐ (2026-09-29) Plus AUCUN badge de type d'établissement (mixte / école /
+//    ministère…) : seuls les logos des écoles sont affichés.
 
 const EMPTY_MANUAL_FORM = {
   name: '',
@@ -111,6 +118,197 @@ const EMPTY_MANUAL_FORM = {
   phone: '',
   email: '',
 };
+
+/** Logo d'école (image ou initiales) — ⭐ aucun badge de type (mixte/école/ministère). */
+function SchoolLogo({
+  name,
+  logo,
+  size = 'md',
+}: {
+  name: string;
+  logo?: string | null;
+  size?: 'sm' | 'md';
+}) {
+  const cls = size === 'sm' ? 'h-8 w-8 text-[10px]' : 'h-10 w-10 text-xs';
+  if (logo) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={logo}
+        alt={name}
+        className={`${cls} rounded-lg object-cover ring-1 ring-slate-200 bg-white flex-shrink-0`}
+      />
+    );
+  }
+  return (
+    <div
+      className={`${cls} rounded-lg bg-blue-900 text-white flex items-center justify-center font-bold flex-shrink-0`}
+    >
+      {name.slice(0, 2).toUpperCase()}
+    </div>
+  );
+}
+
+/**
+ * Ligne d'école découverte — logo + nom + localisation + statut de
+ * rattachement + action. ⭐ Aucun badge de type d'établissement : seule la
+ * workflow (demande en attente / rattachée) est indiquée, avec le patronat
+ * dépositaire du lien le cas échéant (vision nationale).
+ */
+function SchoolRow({
+  school,
+  linking,
+  onRequestLink,
+}: {
+  school: DiscoveredSchool;
+  linking: string | null;
+  onRequestLink: (school: { id: string; name: string }) => Promise<void>;
+}) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 hover:bg-[#f7f9fc]">
+      <div className="flex items-center gap-3 min-w-0">
+        <SchoolLogo name={school.name} logo={school.logo} />
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-blue-900 truncate">{school.name}</div>
+          <div className="text-xs text-slate-400 mt-0.5 truncate">
+            {[school.city, school.department, school.phone].filter(Boolean).join(' · ') ||
+              school.slug}
+          </div>
+        </div>
+      </div>
+      {!school.linkStatus || school.linkStatus === 'REJECTED' || school.linkStatus === 'SUSPENDED' ? (
+        <button
+          type="button"
+          onClick={() => onRequestLink(school)}
+          disabled={linking === school.id}
+          className="fed-btn-navy px-4 py-1.5 text-xs disabled:opacity-50 flex-shrink-0"
+        >
+          {linking === school.id ? 'Envoi…' : 'Demander l\u2019adhésion'}
+        </button>
+      ) : (
+        <span className="text-xs text-slate-400 flex-shrink-0 italic sm:text-right max-w-[16rem]">
+          {school.linkStatus === 'PENDING' ? (
+            <>
+              Demande envoyée — en attente de l&rsquo;école
+              {school.linkPatronat ? (
+                <span className="block not-italic text-slate-500">{school.linkPatronat}</span>
+              ) : null}
+            </>
+          ) : (
+            <>
+              Rattachée
+              {school.linkPatronat ? (
+                <span className="block not-italic text-slate-500">{school.linkPatronat}</span>
+              ) : null}
+            </>
+          )}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Champs du formulaire « école hors Academia Helm ». */
+function ManualSchoolFormFields({
+  manualForm,
+  setManualForm,
+  manualErrors,
+  submittingManual,
+}: {
+  manualForm: typeof EMPTY_MANUAL_FORM;
+  setManualForm: React.Dispatch<React.SetStateAction<typeof EMPTY_MANUAL_FORM>>;
+  manualErrors: Record<string, string>;
+  submittingManual: boolean;
+}) {
+  return (
+    <>
+      <div className="grid sm:grid-cols-2 gap-5">
+        <div>
+          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
+            Nom de l&rsquo;école <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={manualForm.name}
+            onChange={(e) => setManualForm({ ...manualForm, name: e.target.value })}
+            className={cn(
+              'fed-input-light px-4 py-2',
+              manualErrors.name ? '!border-red-400' : '',
+            )}
+            placeholder="Ex : Complexe Scolaire La Réussite"
+          />
+          {manualErrors.name && <p className="mt-1 text-sm text-red-600">{manualErrors.name}</p>}
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
+            Adresse
+          </label>
+          <input
+            type="text"
+            value={manualForm.address}
+            onChange={(e) => setManualForm({ ...manualForm, address: e.target.value })}
+            className="fed-input-light px-4 py-2"
+            placeholder="Ville, quartier…"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
+            Personne de contact
+          </label>
+          <input
+            type="text"
+            value={manualForm.contactPerson}
+            onChange={(e) => setManualForm({ ...manualForm, contactPerson: e.target.value })}
+            className="fed-input-light px-4 py-2"
+            placeholder="Directeur / Directrice"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
+              Téléphone
+            </label>
+            <input
+              type="tel"
+              value={manualForm.phone}
+              onChange={(e) => setManualForm({ ...manualForm, phone: e.target.value })}
+              className="fed-input-light px-4 py-2"
+              placeholder="+229 …"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
+              Email
+            </label>
+            <input
+              type="email"
+              value={manualForm.email}
+              onChange={(e) => setManualForm({ ...manualForm, email: e.target.value })}
+              className="fed-input-light px-4 py-2"
+              placeholder="contact@ecole.com"
+            />
+          </div>
+        </div>
+      </div>
+
+      {manualErrors.submit && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+          <p className="text-sm text-red-600">{manualErrors.submit}</p>
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <button
+          type="submit"
+          disabled={submittingManual}
+          className="fed-btn-gold px-6 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {submittingManual ? 'Création…' : 'Créer l’école'}
+        </button>
+      </div>
+    </>
+  );
+}
 
 export default function FederisSchoolsPage() {
   const [linked, setLinked] = useState<LinkedSchool[]>([]);
@@ -207,14 +405,21 @@ export default function FederisSchoolsPage() {
     setLinking(school.id);
     setMessage(null);
     try {
-      await apiClient.post(
+      const res = await apiClient.post(
         '/federis/patronat/schools/request-link',
         { schoolTenantId: school.id },
         { timeout: 30000 },
       );
+      // ⭐ Attribution départementale : lorsque la demande est émise par le
+      //    patronat NATIONAL, le lien est porté par le patronat du
+      //    département de l'école — à l'acceptation, l'école se retrouve
+      //    rattachée au patronat de SON département.
+      const attributedTo = res.data?.attributedTo as { name: string; territoryName: string | null } | null | undefined;
       setMessage({
         type: 'success',
-        text: `Demande d'adhésion envoyée à « ${school.name} ». L'école doit accepter la demande avant que ses informations deviennent accessibles.`,
+        text: attributedTo
+          ? `Demande d'adhésion envoyée à « ${school.name} » — elle est gérée par le patronat départemental de ${attributedTo.territoryName ?? 'son département'} (${attributedTo.name}). Lorsque l'école acceptera, elle sera rattachée au patronat de son département.`
+          : `Demande d'adhésion envoyée à « ${school.name} ». L'école doit accepter la demande avant que ses informations deviennent accessibles.`,
       });
       setSearchQuery('');
       setSearchResults([]);
@@ -267,12 +472,64 @@ export default function FederisSchoolsPage() {
   // ── Écoles suggérées : jamais sollicitées ou refusées/suspendues
   //    (rattachées & en attente = déjà dans le flux, affichées avec statut)
   const discovered = discovery?.schools ?? [];
+  const unlocatedSchools = discovery?.unlocatedSchools ?? [];
   const suggestedSchools = discovered.filter(
     (s) => !s.linkStatus || s.linkStatus === 'REJECTED' || s.linkStatus === 'SUSPENDED',
   );
   const alreadyInFlow = discovered.filter(
     (s) => s.linkStatus === 'PENDING' || s.linkStatus === 'JOINED',
   );
+
+  // ⭐ Patronat NATIONAL — catégorisation PAR DÉPARTEMENT : chaque école est
+  //    rangée sous son département résolu (fiche, sinon ville → département) ;
+  //    les écoles sans département identifiable forment un groupe dédié.
+  const isNationalScope = discovery?.scope === 'COUNTRY';
+  const departmentGroups = useMemo(() => {
+    if (!isNationalScope) return [];
+    const byDept = new Map<string, DiscoveredSchool[]>();
+    for (const s of discovered) {
+      const key = s.resolvedDepartment ?? '__NON_RENSEIGNE__';
+      if (!byDept.has(key)) byDept.set(key, []);
+      byDept.get(key)!.push(s);
+    }
+    return [...byDept.entries()]
+      .map(([dept, schools]) => ({
+        department: dept === '__NON_RENSEIGNE__' ? null : dept,
+        schools,
+        attached: schools.filter(
+          (s) => s.linkStatus === 'PENDING' || s.linkStatus === 'JOINED',
+        ).length,
+      }))
+      .sort((a, b) => {
+        // Départements avec écoles rattachées d'abord, puis ordre alphabétique ;
+        // « non renseigné » toujours en dernier.
+        if (a.department === null) return 1;
+        if (b.department === null) return -1;
+        if (b.attached !== a.attached) return b.attached - a.attached;
+        return a.department.localeCompare(b.department, 'fr');
+      });
+  }, [discovered, isNationalScope]);
+
+  // ⭐ Tableau des rattachées — catégorisé par département (patronat national)
+  const linkedByDepartment = useMemo(() => {
+    if (!isNationalScope) return [];
+    const byDept = new Map<string, LinkedSchool[]>();
+    for (const s of linked) {
+      const key = s.resolvedDepartment ?? s.department ?? '__NON_RENSEIGNE__';
+      if (!byDept.has(key)) byDept.set(key, []);
+      byDept.get(key)!.push(s);
+    }
+    return [...byDept.entries()]
+      .map(([dept, schools]) => ({
+        department: dept === '__NON_RENSEIGNE__' ? null : dept,
+        schools,
+      }))
+      .sort((a, b) => {
+        if (a.department === null) return 1;
+        if (b.department === null) return -1;
+        return a.department!.localeCompare(b.department!, 'fr');
+      });
+  }, [linked, isNationalScope]);
 
   return (
     <FedPage className="space-y-6">
@@ -315,123 +572,7 @@ export default function FederisSchoolsPage() {
         </div>
       )}
 
-      {/* ⭐ Écoles de votre territoire — listage automatique et dynamique */}
-      <section className="fed-card p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
-          <div>
-            <h2 className="text-base font-bold text-blue-900 flex items-center gap-2">
-              <AppIcon name="network" size="submenu" className="text-blue-900" />
-              Écoles de votre territoire
-            </h2>
-            <p className="text-sm text-slate-500 mt-1">
-              {discovering
-                ? 'Recherche des écoles Academia Helm de votre périmètre…'
-                : discovery?.scope === 'DEPARTMENT'
-                  ? `Établissements Academia Helm du département de ${discovery.territoryName ?? 'votre territoire'} — cliquez sur « Demander l'adhésion » pour lancer le rattachement.`
-                  : discovery?.scope === 'COUNTRY'
-                    ? `Établissements Academia Helm de ${discovery.territoryName ?? 'votre pays'} — le patronat national coordonne l'ensemble du réseau.`
-                    : (discovery?.message ??
-                      'Les écoles de votre département apparaîtront ici automatiquement.')}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => void loadDiscovery()}
-            disabled={discovering}
-            className="flex-shrink-0 px-3 py-2 bg-blue-50 text-blue-900 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-colors disabled:opacity-50"
-            title="Rafraîchir la liste des écoles du territoire"
-          >
-            <AppIcon name="refresh" size="submenu" />
-            Actualiser
-          </button>
-        </div>
-
-        {discovering ? (
-          <div className="mt-4 space-y-2">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-14 rounded-xl bg-slate-100 animate-pulse" />
-            ))}
-          </div>
-        ) : discovery && discovered.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500">
-            Aucune école Academia Helm trouvée dans votre périmètre pour le moment. Utilisez la
-            recherche ci-dessous pour trouver un établissement par son nom, ou créez une école
-            hors Academia Helm.
-          </p>
-        ) : (
-          <>
-            {(suggestedSchools.length > 0 || alreadyInFlow.length > 0) && (
-              <p className="mt-3 text-[10px] font-bold text-slate-400 uppercase">
-                {discovery?.total ?? 0} école(s) Academia Helm dans le périmètre
-                {suggestedSchools.length > 0 && ` · ${suggestedSchools.length} à solliciter`}
-                {alreadyInFlow.length > 0 && ` · ${alreadyInFlow.length} déjà en rattachement`}
-              </p>
-            )}
-            {discovered.length > 0 && (
-              <div className="mt-3 border border-blue-100 rounded-xl divide-y divide-blue-50 max-h-96 overflow-y-auto">
-                {discovered.map((school) => {
-                  const badge = school.linkStatus
-                    ? (STATUS_BADGES[school.linkStatus] ?? {
-                        label: school.linkStatus,
-                        className: 'bg-gray-100 text-slate-700',
-                      })
-                    : null;
-                  return (
-                    <div
-                      key={school.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 hover:bg-[#f7f9fc]"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-medium text-blue-900">{school.name}</span>
-                          {school.tenantType && (
-                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-blue-50 text-blue-800">
-                              {TENANT_TYPE_LABELS[school.tenantType] ?? school.tenantType}
-                            </span>
-                          )}
-                          {badge && (
-                            <span
-                              className={cn(
-                                'px-2.5 py-1 rounded-full text-[9px] font-bold uppercase',
-                                badge.className,
-                              )}
-                            >
-                              {badge.label}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-slate-400 mt-0.5">
-                          {[school.city, school.department, school.phone]
-                            .filter(Boolean)
-                            .join(' · ') || school.slug}
-                        </div>
-                      </div>
-                      {!school.linkStatus || school.linkStatus === 'REJECTED' || school.linkStatus === 'SUSPENDED' ? (
-                        <button
-                          type="button"
-                          onClick={() => handleRequestLink(school)}
-                          disabled={linking === school.id}
-                          className="fed-btn-navy px-4 py-1.5 text-xs disabled:opacity-50 flex-shrink-0"
-                        >
-                          {linking === school.id ? 'Envoi…' : 'Demander l\u2019adhésion'}
-                        </button>
-                      ) : (
-                        <span className="text-xs text-slate-400 flex-shrink-0 italic">
-                          {school.linkStatus === 'PENDING'
-                            ? 'Demande envoyée — en attente de l\u2019école'
-                            : 'Rattachée'}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
-      </section>
-
-      {/* Recherche d'écoles Academia Helm */}
+      {/* ⭐ Recherche d'écoles Academia Helm — EN HAUT, juste après le bouton Créer */}
       <section className="fed-card p-6">
         <h2 className="text-base font-bold text-blue-900 mb-1">Rechercher une école</h2>
         <p className="text-sm text-slate-500 mb-4">
@@ -466,15 +607,18 @@ export default function FederisSchoolsPage() {
                 key={school.id}
                 className="flex items-center justify-between px-4 py-3 hover:bg-[#f7f9fc]"
               >
-                <div>
-                  <div className="text-sm font-medium text-blue-900">{school.name}</div>
-                  <div className="text-xs text-slate-400">{school.slug}</div>
+                <div className="flex items-center gap-3 min-w-0">
+                  <SchoolLogo name={school.name} logo={school.logo ?? null} />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-blue-900 truncate">{school.name}</div>
+                    <div className="text-xs text-slate-400">{school.slug}</div>
+                  </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => handleRequestLink(school)}
                   disabled={linking === school.id}
-                  className="fed-btn-navy px-4 py-1.5 text-xs disabled:opacity-50"
+                  className="fed-btn-navy px-4 py-1.5 text-xs disabled:opacity-50 flex-shrink-0"
                 >
                   {linking === school.id ? 'Envoi…' : 'Demander le rattachement'}
                 </button>
@@ -503,88 +647,142 @@ export default function FederisSchoolsPage() {
               d&rsquo;un compte réel.
             </p>
           </div>
-          <div className="grid sm:grid-cols-2 gap-5">
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
-                Nom de l&rsquo;école <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={manualForm.name}
-                onChange={(e) => setManualForm({ ...manualForm, name: e.target.value })}
-                className={cn(
-                  'fed-input-light px-4 py-2',
-                  manualErrors.name ? '!border-red-400' : '',
-                )}
-                placeholder="Ex : Complexe Scolaire La Réussite"
-              />
-              {manualErrors.name && (
-                <p className="mt-1 text-sm text-red-600">{manualErrors.name}</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Adresse</label>
-              <input
-                type="text"
-                value={manualForm.address}
-                onChange={(e) => setManualForm({ ...manualForm, address: e.target.value })}
-                className="fed-input-light px-4 py-2"
-                placeholder="Ville, quartier…"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
-                Personne de contact
-              </label>
-              <input
-                type="text"
-                value={manualForm.contactPerson}
-                onChange={(e) => setManualForm({ ...manualForm, contactPerson: e.target.value })}
-                className="fed-input-light px-4 py-2"
-                placeholder="Directeur / Directrice"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Téléphone</label>
-                <input
-                  type="tel"
-                  value={manualForm.phone}
-                  onChange={(e) => setManualForm({ ...manualForm, phone: e.target.value })}
-                  className="fed-input-light px-4 py-2"
-                  placeholder="+229 …"
-                />
-              </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Email</label>
-                <input
-                  type="email"
-                  value={manualForm.email}
-                  onChange={(e) => setManualForm({ ...manualForm, email: e.target.value })}
-                  className="fed-input-light px-4 py-2"
-                  placeholder="contact@ecole.com"
-                />
-              </div>
-            </div>
-          </div>
-
-          {manualErrors.submit && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
-              <p className="text-sm text-red-600">{manualErrors.submit}</p>
-            </div>
-          )}
-
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={submittingManual}
-              className="fed-btn-gold px-6 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {submittingManual ? 'Création…' : 'Créer l’école'}
-            </button>
-          </div>
+          <ManualSchoolFormFields
+            manualForm={manualForm}
+            setManualForm={setManualForm}
+            manualErrors={manualErrors}
+            submittingManual={submittingManual}
+          />
         </form>
       )}
+
+      {/* ⭐ Écoles de votre territoire — listage automatique et dynamique.
+          Patronat NATIONAL : catégorisé PAR DÉPARTEMENT. */}
+      <section className="fed-card p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
+          <div>
+            <h2 className="text-base font-bold text-blue-900 flex items-center gap-2">
+              <AppIcon name="network" size="submenu" className="text-blue-900" />
+              Écoles de votre territoire
+            </h2>
+            <p className="text-sm text-slate-500 mt-1">
+              {discovering
+                ? 'Recherche des écoles Academia Helm de votre périmètre…'
+                : discovery?.scope === 'DEPARTMENT'
+                  ? `Établissements Academia Helm du département de ${discovery.territoryName ?? 'votre territoire'} — cliquez sur « Demander l'adhésion » pour lancer le rattachement.`
+                  : discovery?.scope === 'COUNTRY'
+                    ? `Établissements Academia Helm de ${discovery.territoryName ?? 'votre pays'}, catégorisés par département — le patronat national coordonne l'ensemble du réseau.`
+                    : (discovery?.message ??
+                      'Les écoles de votre département apparaîtront ici automatiquement.')}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadDiscovery()}
+            disabled={discovering}
+            className="flex-shrink-0 px-3 py-2 bg-blue-50 text-blue-900 rounded-lg text-xs font-semibold hover:bg-blue-100 transition-colors disabled:opacity-50"
+            title="Rafraîchir la liste des écoles du territoire"
+          >
+            <AppIcon name="refresh" size="submenu" />
+            Actualiser
+          </button>
+        </div>
+
+        {discovering ? (
+          <div className="mt-4 space-y-2">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-14 rounded-xl bg-slate-100 animate-pulse" />
+            ))}
+          </div>
+        ) : discovery && discovered.length === 0 && unlocatedSchools.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-500">
+            Aucune école Academia Helm trouvée dans votre périmètre pour le moment. Utilisez la
+            recherche ci-dessus pour trouver un établissement par son nom, ou créez une école
+            hors Academia Helm.
+          </p>
+        ) : isNationalScope ? (
+          /* ── PATRONAT NATIONAL — écoles catégorisées PAR DÉPARTEMENT ── */
+          <div className="mt-3 space-y-4">
+            <p className="text-[10px] font-bold text-slate-400 uppercase">
+              {discovery?.total ?? 0} école(s) Academia Helm dans le pays ·{' '}
+              {departmentGroups.length} département(s)
+            </p>
+            {departmentGroups.map((group) => (
+              <div key={group.department ?? '__unknown__'} className="border border-blue-100 rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 bg-[#f7f9fc] border-b border-blue-50 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <AppIcon name="building" size="submenu" className="text-blue-900 flex-shrink-0" />
+                    <span className="text-sm font-bold text-blue-900 truncate">
+                      {group.department ? `Département de ${group.department}` : 'Département non renseigné'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase flex-shrink-0">
+                    {group.schools.length} école(s)
+                    {group.attached > 0 && ` · ${group.attached} en rattachement`}
+                  </span>
+                </div>
+                <div className="divide-y divide-blue-50">
+                  {group.schools.map((school) => (
+                    <SchoolRow
+                      key={school.id}
+                      school={school}
+                      linking={linking}
+                      onRequestLink={handleRequestLink}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          /* ── PATRONAT DÉPARTEMENTAL — écoles du département ── */
+          <>
+            {(suggestedSchools.length > 0 || alreadyInFlow.length > 0) && (
+              <p className="mt-3 text-[10px] font-bold text-slate-400 uppercase">
+                {discovered.length} école(s) Academia Helm dans le périmètre
+                {suggestedSchools.length > 0 && ` · ${suggestedSchools.length} à solliciter`}
+                {alreadyInFlow.length > 0 && ` · ${alreadyInFlow.length} déjà en rattachement`}
+              </p>
+            )}
+            {discovered.length > 0 && (
+              <div className="mt-3 border border-blue-100 rounded-xl divide-y divide-blue-50 max-h-96 overflow-y-auto">
+                {discovered.map((school) => (
+                  <SchoolRow
+                    key={school.id}
+                    school={school}
+                    linking={linking}
+                    onRequestLink={handleRequestLink}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* ⭐ Écoles sans localisation renseignée (ville + département
+                absents) — proposées pour ne bloquer aucune adhésion. */}
+            {unlocatedSchools.length > 0 && (
+              <div className="mt-4 border border-amber-200 bg-amber-50/40 rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-amber-200/60">
+                  <p className="text-sm font-bold text-amber-800">Localisation non renseignée</p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    Ces écoles Academia Helm n&rsquo;ont pas encore précisé leur ville ni leur
+                    département — sollicitez-les ici si elles se trouvent dans votre périmètre.
+                  </p>
+                </div>
+                <div className="divide-y divide-amber-100 bg-white">
+                  {unlocatedSchools.map((school) => (
+                    <SchoolRow
+                      key={school.id}
+                      school={school}
+                      linking={linking}
+                      onRequestLink={handleRequestLink}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </section>
 
       {/* Liste des écoles rattachées — informations complètes de l'établissement */}
       {loading ? (
@@ -599,98 +797,167 @@ export default function FederisSchoolsPage() {
         </div>
       ) : (
         <section className="fed-card overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-[#f7f9fc] text-left text-xs text-slate-500 uppercase tracking-wide">
-                  <th className="px-6 py-3 font-semibold">École</th>
-                  <th className="px-4 py-3 font-semibold">Localisation</th>
-                  <th className="px-4 py-3 font-semibold">Type</th>
-                  <th className="px-4 py-3 font-semibold">Statut</th>
-                  <th className="px-4 py-3 font-semibold text-center">Candidats</th>
-                  <th className="px-4 py-3 font-semibold">Année</th>
-                </tr>
-              </thead>
-              <tbody>
-                {linked.map((school) => {
-                  const badge =
-                    STATUS_BADGES[school.status] ??
-                    ({ label: school.status, className: 'bg-gray-100 text-slate-700' } as const);
-                  return (
-                    <tr key={school.id} className="border-t border-slate-100 hover:bg-[#f7f9fc]">
-                      <td className="px-6 py-3.5">
-                        <div className="font-medium text-blue-900">{school.name}</div>
-                        <div className="text-xs text-slate-400">
-                          {school.joinedAt
-                            ? `Rattachée le ${new Date(school.joinedAt).toLocaleDateString('fr-FR')}`
-                            : 'Demande en attente'}
-                        </div>
-                        {(school.phone || school.email) && (
-                          <div className="text-xs text-slate-400 mt-0.5">
-                            {[school.phone, school.email].filter(Boolean).join(' · ')}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3.5 text-slate-600">
-                        {school.city || school.department ? (
-                          <div>
-                            {school.city ?? '—'}
-                            {school.department ? (
-                              <div className="text-xs text-slate-400">{school.department}</div>
-                            ) : null}
-                          </div>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td className="px-4 py-3.5 text-slate-600">Academia Helm</td>
-                      <td className="px-4 py-3.5">
-                        <span
-                          className={cn('px-2.5 py-1 rounded-full text-[9px] font-bold uppercase', badge.className)}
-                        >
-                          {badge.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 text-center text-slate-700">
-                        {school.candidatesCount}
-                      </td>
-                      <td className="px-4 py-3.5 text-slate-600">{school.academicYear ?? '—'}</td>
-                    </tr>
-                  );
-                })}
-                {manual.map((school) => {
-                  const badge = STATUS_BADGES[school.status] ?? {
-                    label: school.status,
-                    className: 'bg-gray-100 text-slate-700',
-                  };
-                  return (
-                    <tr key={school.id} className="border-t border-slate-100 hover:bg-[#f7f9fc]">
-                      <td className="px-6 py-3.5">
-                        <div className="font-medium text-blue-900">{school.name}</div>
-                        <div className="text-xs text-slate-400">
-                          {school.address ?? '—'}
-                          {school.contactPerson ? ` · ${school.contactPerson}` : ''}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3.5 text-slate-400">—</td>
-                      <td className="px-4 py-3.5 text-slate-600">Hors Helm</td>
-                      <td className="px-4 py-3.5">
-                        <span
-                          className={cn('px-2.5 py-1 rounded-full text-[9px] font-bold uppercase', badge.className)}
-                        >
-                          {badge.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3.5 text-center text-slate-400">—</td>
-                      <td className="px-4 py-3.5 text-slate-600">—</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {/* ⭐ Patronat NATIONAL — écoles rattachées catégorisées PAR DÉPARTEMENT */}
+          {isNationalScope && linkedByDepartment.length > 0 && (
+            <>
+              <div className="px-6 py-3 bg-blue-900/[0.03] border-b border-slate-100">
+                <p className="text-[10px] font-bold text-slate-400 uppercase">
+                  Écoles rattachées par département — vision nationale
+                </p>
+              </div>
+              {linkedByDepartment.map((group) => (
+                <div key={group.department ?? '__unknown__'}>
+                  <div className="px-6 py-2.5 bg-[#f7f9fc] border-b border-slate-100 flex items-center justify-between gap-3">
+                    <span className="text-sm font-bold text-blue-900">
+                      {group.department ? `Département de ${group.department}` : 'Département non renseigné'}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">
+                      {group.schools.length} école(s)
+                    </span>
+                  </div>
+                  <LinkedSchoolsTable schools={group.schools} showPatronat />
+                </div>
+              ))}
+            </>
+          )}
+
+          {/* Patronat DÉPARTEMENTAL — tableau simple */}
+          {!isNationalScope && linked.length > 0 && <LinkedSchoolsTable schools={linked} />}
+
+          {/* Écoles hors Academia Helm (manuelles) */}
+          {manual.length > 0 && (
+            <>
+              <div className="px-6 py-2.5 bg-[#f7f9fc] border-y border-slate-100">
+                <span className="text-sm font-bold text-blue-900">
+                  Hors Academia Helm ({manual.length})
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <tbody>
+                    {manual.map((school) => {
+                      const badge = STATUS_BADGES[school.status] ?? {
+                        label: school.status,
+                        className: 'bg-gray-100 text-slate-700',
+                      };
+                      return (
+                        <tr key={school.id} className="border-t border-slate-100 hover:bg-[#f7f9fc]">
+                          <td className="px-6 py-3.5">
+                            <div className="font-medium text-blue-900">{school.name}</div>
+                            <div className="text-xs text-slate-400">
+                              {school.address ?? '—'}
+                              {school.contactPerson ? ` · ${school.contactPerson}` : ''}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3.5 text-slate-400">—</td>
+                          <td className="px-4 py-3.5 text-slate-600">Hors Helm</td>
+                          <td className="px-4 py-3.5">
+                            <span
+                              className={cn('px-2.5 py-1 rounded-full text-[9px] font-bold uppercase', badge.className)}
+                            >
+                              {badge.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 text-center text-slate-400">—</td>
+                          <td className="px-4 py-3.5 text-slate-600">—</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </section>
       )}
     </FedPage>
+  );
+}
+
+/** Tableau des écoles rattachées (Helm) — logo + informations, avec patronat
+ * dépositaire en vision nationale. ⭐ Aucun badge de type. */
+function LinkedSchoolsTable({
+  schools,
+  showPatronat = false,
+}: {
+  schools: LinkedSchool[];
+  showPatronat?: boolean;
+}) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-[#f7f9fc] text-left text-xs text-slate-500 uppercase tracking-wide">
+            <th className="px-6 py-3 font-semibold">École</th>
+            <th className="px-4 py-3 font-semibold">Localisation</th>
+            <th className="px-4 py-3 font-semibold">Type</th>
+            {showPatronat && <th className="px-4 py-3 font-semibold">Patronat</th>}
+            <th className="px-4 py-3 font-semibold">Statut</th>
+            <th className="px-4 py-3 font-semibold text-center">Candidats</th>
+            <th className="px-4 py-3 font-semibold">Année</th>
+          </tr>
+        </thead>
+        <tbody>
+          {schools.map((school) => {
+            const badge =
+              STATUS_BADGES[school.status] ??
+              ({ label: school.status, className: 'bg-gray-100 text-slate-700' } as const);
+            return (
+              <tr key={school.id} className="border-t border-slate-100 hover:bg-[#f7f9fc]">
+                <td className="px-6 py-3.5">
+                  <div className="flex items-center gap-3">
+                    <SchoolLogo name={school.name} logo={school.logo ?? null} size="sm" />
+                    <div className="min-w-0">
+                      <div className="font-medium text-blue-900 truncate">{school.name}</div>
+                      <div className="text-xs text-slate-400">
+                        {school.joinedAt
+                          ? `Rattachée le ${new Date(school.joinedAt).toLocaleDateString('fr-FR')}`
+                          : 'Demande en attente'}
+                      </div>
+                      {(school.phone || school.email) && (
+                        <div className="text-xs text-slate-400 mt-0.5">
+                          {[school.phone, school.email].filter(Boolean).join(' · ')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </td>
+                <td className="px-4 py-3.5 text-slate-600">
+                  {school.city || school.department || school.resolvedDepartment ? (
+                    <div>
+                      {school.city ?? '—'}
+                      {(school.department ?? school.resolvedDepartment) && (
+                        <div className="text-xs text-slate-400">
+                          {school.department ?? school.resolvedDepartment}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td className="px-4 py-3.5 text-slate-600">Academia Helm</td>
+                {showPatronat && (
+                  <td className="px-4 py-3.5 text-slate-600 text-xs">
+                    {school.patronat ?? '—'}
+                  </td>
+                )}
+                <td className="px-4 py-3.5">
+                  <span
+                    className={cn('px-2.5 py-1 rounded-full text-[9px] font-bold uppercase', badge.className)}
+                  >
+                    {badge.label}
+                  </span>
+                </td>
+                <td className="px-4 py-3.5 text-center text-slate-700">
+                  {school.candidatesCount}
+                </td>
+                <td className="px-4 py-3.5 text-slate-600">{school.academicYear ?? '—'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }

@@ -225,8 +225,21 @@ export default function NationalExamsPage() {
       );
       const reports = res.data?.reports ?? [];
       const patronatsNames = reports.map((r: any) => r.patronat).join(', ');
+      // ⭐ Baccalauréat — l'envoi est PAR SÉRIE : répartition transmise au
+      //    patronat, jamais un mélange.
+      const seriesBreakdown: { series: string; count: number }[] =
+        res.data?.seriesBreakdown ?? [];
+      const breakdownText =
+        seriesBreakdown.length > 0
+          ? ` (${seriesBreakdown
+              .map(
+                (s) =>
+                  `${s.count} en série ${s.series === 'NON PRECISEE' ? 'non précisée' : s.series}`,
+              )
+              .join(', ')})`
+          : '';
       toastSuccess(
-        `${selected.size} candidat(s) envoyé(s) à ${patronatsNames || 'votre patronat'}.`,
+        `${selected.size} candidat(s) envoyé(s) à ${patronatsNames || 'votre patronat'}${breakdownText}.`,
       );
       // Rechargement de l'état complet
       await loadEligibility();

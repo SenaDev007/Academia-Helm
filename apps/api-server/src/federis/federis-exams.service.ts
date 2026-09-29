@@ -29,6 +29,9 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { FederisPatronatService, FEDERIS_PLANS, type FederisPlanCode } from './federis-patronat.service';
+// ⭐ Série (Baccalauréat) — les listes officielles transmises par les écoles
+//    sont regroupées PAR SÉRIE côté patronat (jamais un mélange).
+import { resolveSeriesFromClassNames } from './federis-school-exams.service';
 import {
   ALL_PATRONAT_FUNCTIONS,
   WRITE_CANDIDATES,
@@ -39,6 +42,21 @@ import {
 } from './federis-roles';
 
 // ── DTO ─────────────────────────────────────────────────────────────────────
+
+/**
+ * ⭐ La campagne d'examen est-elle une campagne de Baccalauréat (niveau
+ * Terminale) ? Ces listes sont catégorisées PAR SÉRIE (A1, C, D…) —
+ * contrairement au CEP/BEPC/CAP.
+ */
+function isBacLevel(level: string | null | undefined): boolean {
+  const n = (level ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .trim();
+  if (!n) return false;
+  return (n.startsWith('TERM') || n.startsWith('TLE') || n.startsWith('BAC')) && !n.includes('CAP');
+}
 
 export class CreateExamDto {
   code!: string;
@@ -717,6 +735,12 @@ export class FederisExamsService {
         });
       }
       const meta = (c.metadata as any) ?? {};
+      // ⭐ Série (Baccalauréat) : série transmise par l'école (metadata.series),
+      //    sinon inférée depuis le nom de classe — regroupement PAR SÉRIE.
+      const series =
+        (typeof meta.series === 'string' && meta.series) ||
+        resolveSeriesFromClassNames(meta.schoolClass, null, null) ||
+        null;
       groups.get(key)!.students.push({
         id: c.id,
         matricule: c.matricule,
@@ -728,7 +752,7 @@ export class FederisExamsService {
         dateOfBirth: c.dateOfBirth,
         status: c.status,
         schoolClass: meta.schoolClass ?? null,
-        series: meta.series ?? null,
+        series,
         submittedAt: meta.submittedAt ?? null,
         source: meta.source ?? null,
         center: c.center ? { code: c.center.code, name: c.center.name } : null,
@@ -749,6 +773,9 @@ export class FederisExamsService {
         startDate: exam.startDate,
         endDate: exam.endDate,
       },
+      // ⭐ Baccalauréat : listes catégorisées PAR SÉRIE (l'école transmet la
+      //    série de chaque candidat — jamais un mélange).
+      hasSeries: isBacLevel(exam.level),
       totalSchools: schools.filter((s) => s.schoolTenantId).length,
       totalCandidates: candidates.length,
       schools,

@@ -10,7 +10,7 @@
  *
  *   • Sous-sous-onglets CEP | BEPC | BAC | CAP (seuls les types avec classes
  *     éligibles s'affichent — pilotés par la page parente) ;
- *   • Par campagne : liste des ADMISSIBLES + liste des non admis (colonnes
+ *   • Par campagne : liste des ADMISSIBLES + liste des ajournés (colonnes
  *     matricule / nom prénom / moyenne / décision du jury — pattern Promotion
  *     & Redoublement Helm) ;
  *   • Clic sur un candidat → relevé de notes VISUALISÉ dans l'interface
@@ -338,12 +338,12 @@ export default function SchoolDeliberationView({
                     selectedCandidateId={selected?.row.candidateId ?? null}
                   />
                 </div>
-                {/* Non admis */}
+                {/* Ajournés */}
                 <div>
                   <div className="bg-red-50 border-b border-red-100 px-4 py-2.5 flex items-center gap-2">
                     <Users className="w-4 h-4 text-red-500" />
                     <p className="text-xs font-bold uppercase text-red-700">
-                      Non admis ({examResult.ajournes.length})
+                      Ajournés ({examResult.ajournes.length})
                     </p>
                   </div>
                   <SchoolResultTable
@@ -374,7 +374,7 @@ export default function SchoolDeliberationView({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Tableau des résultats d'une campagne (admissibles / non admis)
+// Tableau des résultats d'une campagne (admissibles / ajournés)
 // ═══════════════════════════════════════════════════════════════════════════
 
 function SchoolResultTable({

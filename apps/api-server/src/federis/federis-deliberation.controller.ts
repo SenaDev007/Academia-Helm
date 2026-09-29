@@ -6,7 +6,7 @@
  *    Règles de calcul ». Le module = délibération et publication officielle.
  *
  *   GET  /federis/exams/:examId/deliberation/board   — tableau de délibération
- *        (admissibles / non admis, moyennes, décision du jury, dispatch)
+ *        (admissibles / ajournés, moyennes, décision du jury, dispatch)
  *   POST /federis/exams/:examId/deliberation         — délibérer (jury)
  *   POST /federis/deliberations/:id/cases/:caseId    — trancher un cas
  *   POST /federis/deliberations/:id/close            — clôturer

@@ -8,7 +8,7 @@
  *   (source de vérité). Le module devient la salle de délibération du jury :
  *
  *   1. Tableau de délibération   GET  /federis/exams/:examId/deliberation/board
- *      (admissibles / non admis, moyenne, décision du jury — moyennes
+ *      (admissibles / ajournés, moyenne, décision du jury — moyennes
  *       UNIFIÉES avec le module Notes : CEP moyenne simple, BEPC/BAC/CAP
  *       moyenne pondérée, ABSENTS exclus — buildGradesDataset)
  *   2. Délibération              POST /federis/exams/:examId/deliberation
@@ -201,12 +201,12 @@ export class FederisDeliberationService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 1. TABLEAU DE DÉLIBÉRATION (admissibles / non admis — décision du jury)
+  // 1. TABLEAU DE DÉLIBÉRATION (admissibles / ajournés — décision du jury)
   // ═══════════════════════════════════════════════════════════════════════
 
   /**
    * Tout l'état de délibération d'un examen sur UNE seule réponse :
-   * règles effectives, session de saisie, admissibles, non admis, cas du
+   * règles effectives, session de saisie, admissibles, ajournés, cas du
    * jury, historique des délibérations et état de distribution des relevés.
    *
    * Décision par candidat (ordre de priorité) :

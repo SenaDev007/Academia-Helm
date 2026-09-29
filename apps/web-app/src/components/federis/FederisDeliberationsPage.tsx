@@ -13,8 +13,8 @@
  *      campagne de ce type ;
  *   2. DEUX TABLEAUX — chacun occupe la moitié de l'interface :
  *        · GAUCHE  : Liste des admissibles (moyenne ≥ seuil d'admission) ;
- *        · DROITE  : Candidats non admis (sous le seuil — cas du jury,
- *                    ajournés, sans note) ;
+ *        · DROITE  : Candidats ajournés (sous le seuil — cas du jury,
+ *                    sans note) ;
  *      Colonnes : matricule / nom prénom / moyenne / décision du jury
  *      (pattern Promotion & Redoublement Helm) ;
  *   3. Workflow du jury : lancer la délibération (nom du jury) → trancher
@@ -975,12 +975,12 @@ export default function FederisDeliberationsPage({
             <DecisionTable rows={admissibles} tone="emerald" />
           </div>
 
-          {/* ── DROITE : Candidats non admis ── */}
+          {/* ── DROITE : Candidats ajournés ── */}
           <div className="fed-card overflow-hidden">
             <div className="bg-red-50 border-b border-red-100 px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
               <Users className="w-5 h-5 text-red-500 shrink-0" />
               <div className="flex-1 min-w-0">
-                <h3 className="text-sm font-bold text-red-700 uppercase">Candidats non admis</h3>
+                <h3 className="text-sm font-bold text-red-700 uppercase">Candidats ajournés</h3>
                 <p className="text-[10px] text-red-600 font-semibold mt-0.5">
                   Sous le seuil d&apos;admission ({fmtNote(board.rules.passMark)}/20) —{' '}
                   {board.ajournes.length} candidat(s)

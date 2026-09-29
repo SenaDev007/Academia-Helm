@@ -60,7 +60,7 @@ const CANDIDATE_STATUS_LABELS: Record<string, string> = {
   WITHDRAWN: 'Retiré',
   ABSENT: 'Absent',
   PASSED: 'Admis',
-  FAILED: 'Non admis',
+  FAILED: 'Ajourné',
 };
 
 // ── Types de la vue « listes officielles par école » ────────────────────────

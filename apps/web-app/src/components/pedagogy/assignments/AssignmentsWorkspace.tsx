@@ -49,6 +49,8 @@ interface AcademicClass {
   level?: { id: string; name: string };
   series?: { id: string; name: string };
   isActive: boolean;
+  mainTeacherId?: string | null;
+  mainTeacher?: { id: string; firstName: string; lastName: string } | null;
 }
 
 interface PhysicalClass {
@@ -173,6 +175,9 @@ export default function AssignmentsWorkspace() {
   const [itinerantGaps, setItinerantGaps] = useState<Array<{ officialClass: AcademicClass; candidate: CatalogSubject | null }>>([]);
   const [itinerantGapsLoading, setItinerantGapsLoading] = useState(false);
   const [itinerantAutoAdd, setItinerantAutoAdd] = useState(true);
+  // ⭐ 2026-09-29 — Professeur Principal (Secondaire)
+  const [mainTeacherModalOpen, setMainTeacherModalOpen] = useState(false);
+  const [mainTeacherSaving, setMainTeacherSaving] = useState(false);
 
   // --- Loaders ---
 
@@ -340,6 +345,36 @@ export default function AssignmentsWorkspace() {
 
   const homeroomFullyAssigned = isHomeroom && regularSubjects.length > 0 &&
     regularSubjects.every(cs => (cs.assignments || []).some(a => a.classId === selectedPhysicalClassId || !a.classId));
+
+  // ⭐ 2026-09-29 — Professeur Principal (Secondaire uniquement)
+  //    Récupéré depuis mainTeacherId sur AcademicClass.
+  const currentMainTeacher = selectedOfficialClass?.mainTeacher || null;
+
+  const saveMainTeacher = async (teacherId: string | null) => {
+    if (!selectedOfficialClass?.id) return;
+    setMainTeacherSaving(true);
+    try {
+      const res = await fetch(`/api/pedagogy/academic-structure/classes/${selectedOfficialClass.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ mainTeacherId: teacherId }),
+      });
+      if (!res.ok) throw new Error('Erreur lors de la sauvegarde');
+      // Mettre à jour localement
+      setAcademicClasses(prev => prev.map(ac =>
+        ac.id === selectedOfficialClass.id
+          ? { ...ac, mainTeacherId: teacherId, mainTeacher: teacherId ? teachers.find(t => t.teacherId === teacherId)?.teacher || null : null }
+          : ac
+      ));
+      toast({ title: teacherId ? '✅ Professeur principal désigné' : '✅ Professeur principal retiré' });
+      setMainTeacherModalOpen(false);
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e.message || 'Erreur lors de la sauvegarde', variant: 'destructive' });
+    } finally {
+      setMainTeacherSaving(false);
+    }
+  };
 
   // ─────────────────────────────────────────────────────────────────────────
   // ⭐ MATIÈRES ITINÉRANTES ABSENTES DU PROGRAMME (2026-09-15)
@@ -1281,6 +1316,52 @@ export default function AssignmentsWorkspace() {
             ) : (
               /* ══ MODE SPÉCIALISTE (Secondaire) ══ */
               <div className="space-y-3">
+                {/* ⭐ 2026-09-29 — Section Professeur Principal (Secondaire) */}
+                <div className="rounded-lg border-2 border-blue-200 bg-blue-50/30 p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-lg overflow-hidden flex items-center justify-center bg-blue-100">
+                      <Star className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-blue-900 uppercase tracking-wider">Professeur Principal</p>
+                      {currentMainTeacher ? (
+                        <p className="text-base font-bold text-slate-900">
+                          {currentMainTeacher.lastName} {currentMainTeacher.firstName}
+                        </p>
+                      ) : (
+                        <p className="text-base font-bold text-slate-400">Non désigné</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    {currentMainTeacher ? (
+                      <>
+                        <button
+                          onClick={() => setMainTeacherModalOpen(true)}
+                          className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all"
+                        >
+                          <Replace className="w-3.5 h-3.5" /> Remplacer
+                        </button>
+                        <button
+                          onClick={() => saveMainTeacher(null)}
+                          disabled={mainTeacherSaving}
+                          className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-all"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" /> Retirer
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => setMainTeacherModalOpen(true)}
+                        className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg text-white shadow-sm bg-blue-600 hover:bg-blue-700 transition-all"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" /> Désigner le professeur principal
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Matières et affectations par enseignant */}
                 {classSubjects.length === 0 ? (
                   <div className="text-center py-8 text-xs text-slate-400 italic">
                     Aucune matière affectée à cette classe officielle.
@@ -1803,6 +1884,53 @@ export default function AssignmentsWorkspace() {
             : 'Voulez-vous vraiment retirer cette affectation ?'}
         </p>
       </ConfirmModal>
+
+      {/* ⭐ 2026-09-29 — Modal: Professeur Principal (Secondaire) */}
+      {mainTeacherModalOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex justify-center" style={{ paddingTop: '80px' }}>
+          <div className="my-8 bg-white rounded-xl shadow-2xl max-w-md w-full">
+            <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
+              <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2">
+                <Star className="w-5 h-5" /> Professeur Principal
+              </h3>
+              <button onClick={() => setMainTeacherModalOpen(false)} className="p-1 hover:bg-blue-100 rounded-lg">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-sm text-slate-600">
+                Sélectionnez le professeur principal pour la classe <strong>{selectedOfficialClass?.name}</strong>.
+              </p>
+              <select
+                id="main-teacher-select"
+                defaultValue={selectedOfficialClass?.mainTeacherId || ''}
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"
+              >
+                <option value="">— Sélectionner un enseignant —</option>
+                {teachers.map(t => (
+                  <option key={t.teacherId} value={t.teacherId}>
+                    {t.teacher.lastName} {t.teacher.firstName}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t">
+              <Button variant="outline" onClick={() => setMainTeacherModalOpen(false)}>Annuler</Button>
+              <Button
+                onClick={() => {
+                  const sel = document.getElementById('main-teacher-select') as HTMLSelectElement;
+                  saveMainTeacher(sel?.value || null);
+                }}
+                disabled={mainTeacherSaving}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {mainTeacherSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UserPlus className="w-4 h-4 mr-2" />}
+                Confirmer
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

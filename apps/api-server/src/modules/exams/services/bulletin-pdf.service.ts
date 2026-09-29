@@ -48,6 +48,12 @@ export interface BulletinPdfData {
   isMaternelle: boolean;
   // ⭐ Piste linguistique (FR | EN) — déclenche le layout anglophone si 'EN'
   scopeLang?: 'FR' | 'EN' | null;
+  // ⭐ 2026-09-29 — isSecondaryLevel : vrai pour TOUS les bulletins
+  //    secondaires (FR trimestriel, FR évaluation, ET EN Report Book).
+  //    Utilisé par buildHtmlAnglophone pour savoir si on doit afficher la
+  //    section Conduct (résolue côté backend depuis conduct_ledger +
+  //    sanctions du module Vie Scolaire).
+  isSecondaryLevel?: boolean;
   // ⭐ SECONDAIRE — « Bulletin d'évaluation » (un seul type d'évaluation à la
   //    fois : Interrogation écrite 1, Devoir surveillé 2, …) : même standard
   //    graphique que le bulletin trimestriel CEG, mais tableau simple
@@ -1914,6 +1920,35 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
           <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border:1px solid #cbd5e1;">${noInClass}</td>
         </tr>
       </table>
+
+      ${data.isSecondaryLevel ? `
+      <!-- ⭐ 2026-09-29 — CONDUCT SECTION (résolu depuis le module Vie Scolaire) -->
+      <!--    La conduite est calculée côté backend : conduct_ledger (compteur de
+           conduite) → fallback (baseline - Σ sanctions). Source de vérité =
+           backend, pas de calcul frontend. Affichée même si null (placeholder
+           « — / reference »). Uniquement pour le bulletin EN SECONDARY (pas
+           pour EN primary qui n'a pas de conduite). -->
+      <table style="width:100%;border-collapse:collapse;border:1px solid #0A2A5E;border-radius:2px;margin-bottom:6px;">
+        <tr style="background:#0A2A5E;color:white;">
+          <th style="padding:5px;font-size:9px;text-transform:uppercase;border:1px solid #0D3B85;">Conduct</th>
+          <th style="padding:5px;font-size:9px;text-transform:uppercase;border:1px solid #0D3B85;">Reference</th>
+          <th style="padding:5px;font-size:9px;text-transform:uppercase;border:1px solid #0D3B85;">Appreciation</th>
+        </tr>
+        <tr>
+          <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;border:1px solid #cbd5e1;${data.conductScore !== null && data.conductScore !== undefined && data.conductScore >= (data.conductReference ?? 17) * 0.6 ? 'color:#065f46;background:#dcfce7;' : 'color:#dc2626;background:#fee2e2;'}">
+            ${data.conductScore !== null && data.conductScore !== undefined ? Number(data.conductScore).toFixed(2) : '—'}
+          </td>
+          <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border:1px solid #cbd5e1;">
+            ${data.conductReference ?? 17}
+          </td>
+          <td style="padding:5px;text-align:center;font-size:9px;color:#1a1a1a;border:1px solid #cbd5e1;font-style:italic;">
+            ${(data.conductScore !== null && data.conductScore !== undefined)
+              ? (data.conductScore >= (data.conductReference ?? 17) * 0.6 ? 'Satisfactory' : 'Needs improvement')
+              : '—'}
+          </td>
+        </tr>
+      </table>
+      ` : ''}
 
       <!-- CLASS TEACHER'S COMMENT (Teacher's Appreciation + Comments — grille /100) -->
       <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">

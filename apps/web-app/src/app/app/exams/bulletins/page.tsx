@@ -1086,80 +1086,17 @@ function BulletinsContent() {
 
   useEffect(() => { loadBulletins(); }, [loadBulletins]);
 
-  // ⭐ 2026-09-28 — Injecter la Conduite comme matière synthétique dans la
-  //    catégorie Autres du tableau secondaire. On récupère le conduct_ledger
-  //    pour TOUS les élèves en UN SEUL appel via /api/discipline/conduct,
-  //    puis on injecte une matière synthétique « Conduite » pour chaque élève.
-  useEffect(() => {
-    if (!isSecondaryTrack || !bulletinData || !academicYear?.id) return;
-    const CONDUCT_SUBJECT_ID = '__conduct__';
-    // ⭐ Fetch en parallèle : conduct_ledger + conduct_settings + sanctions
-    Promise.all([
-      fetch(`/api/discipline/conduct?academicYearId=${academicYear.id}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch(`/api/discipline/conduct/settings?academicYearId=${academicYear.id}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch(`/api/discipline/sanctions?academicYearId=${academicYear.id}`, { credentials: 'include' }).then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([ledger, settings, sanctions]: [any[], any, any[]]) => {
-      const conductByStudent = new Map<string, { final: number; reference: number }>();
-      const defaultRef = (settings && typeof settings.conduct_reference === 'number') ? settings.conduct_reference : 17;
-      // 1. D'abord les scores du conduct_ledger (si l'élève a un ledger)
-      if (Array.isArray(ledger) && ledger.length > 0) {
-        for (const row of ledger) {
-          if (row.studentId) {
-            conductByStudent.set(row.studentId, {
-              final: typeof row.conduct_final === 'number' ? Number(row.conduct_final) : defaultRef,
-              reference: typeof row.conduct_reference === 'number' ? Number(row.conduct_reference) : defaultRef,
-            });
-          }
-        }
-      }
-      // 2. Pour les élèves SANS ledger, calculer depuis les sanctions
-      //    (chaque sanction active réduit la note de conduct par points_deducted)
-      if (Array.isArray(sanctions) && sanctions.length > 0) {
-        const sanctionsByStudent = new Map<string, number>();
-        for (const s of sanctions) {
-          if (s.status === 'ACTIVE' && s.studentId) {
-            const current = sanctionsByStudent.get(s.studentId) || 0;
-            sanctionsByStudent.set(s.studentId, current + (Number(s.points_deducted) || 0));
-          }
-        }
-        // Pour chaque élève sanctionné sans ledger, calculer: baseline - total_deducted
-        for (const [studentId, totalDeducted] of sanctionsByStudent) {
-          if (!conductByStudent.has(studentId)) {
-            conductByStudent.set(studentId, {
-              final: Math.max(0, defaultRef - totalDeducted),
-              reference: defaultRef,
-            });
-          }
-        }
-      }
-      setBulletinData(prev => {
-        if (!prev) return prev;
-        const hasConduct = prev.subjects.some(s => s.id === CONDUCT_SUBJECT_ID);
-        const subjects = hasConduct ? prev.subjects : [...prev.subjects, { id: CONDUCT_SUBJECT_ID, name: 'Conduite', coefficient: 1 }];
-        const results = prev.results.map(st => {
-          const conduct = conductByStudent.get(st.id) || { final: defaultRef, reference: defaultRef };
-          return {
-            ...st,
-            subjectScores: {
-              ...st.subjectScores,
-              [CONDUCT_SUBJECT_ID]: {
-                score: conduct.final,
-                qualitativeCode: null,
-                isAbsent: false,
-                appreciation: conduct.final >= conduct.reference * 0.6 ? 'Satisfaisant' : 'À améliorer',
-                moyenne: conduct.final,
-                coefficient: 1,
-                noteCoef: conduct.final,
-                secHasSlot: true,
-                subjectRank: null,
-              } as any,
-            },
-          };
-        });
-        return { ...prev, subjects, results };
-      });
-    }).catch(() => {});
-  }, [isSecondaryTrack, bulletinData?.subjects.length, academicYear?.id]);
+  // ⭐ 2026-09-29 — REFONTE : la source de vérité pour la conduite est le BACKEND.
+  //    Avant : le frontend faisait un useEffect qui fetchait /api/discipline/conduct
+  //    (URL incorrecte — pas d'endpoint), /api/discipline/sanctions (URL incorrecte
+  //    aussi) et injectait Conduite comme matière synthétique avec score = defaultRef
+  //    (puisque les fetchs retournaient null) → TOUS les élèves affichaient 17/20
+  //    (la valeur par défaut), même ceux ayant des sanctions.
+  //    Désormais : le frontend n'injecte PLUS Conduite. Le backend résout la
+  //    conduite depuis conduct_ledger + sanctions (module Vie Scolaire) pour
+  //    chaque élève et injecte la matière Conduite avec la vraie valeur.
+  //    Cf. bulletins.controller.ts lignes ~836-910 + 1105-1118.
+  // (Ce bloc est intentionnellement vide — l'injection se fait côté backend.)
 
   const toggleStudent = (studentId: string) => {
     setExpandedStudents(prev => {
@@ -1192,6 +1129,10 @@ function BulletinsContent() {
         schoolSlogan: school?.slogan,
         academicYearName: academicYear?.label || '',
         periodName: selectedPeriodName,
+        // ⭐ 2026-09-29 — periodId envoyé au backend pour qu'il puisse résoudre
+        //    la conduite depuis conduct_ledger WHERE quarterId = periodId
+        //    (au lieu de isCurrent=true qui peut ne pas être marqué).
+        periodId: selectedPeriodId,
         evaluationTypeName: selectedEvalTypeName,
         evaluationTypeCode: selectedEvalTypeCode,
         className: selectedClassName,
@@ -1203,6 +1144,13 @@ function BulletinsContent() {
         studentBirthDate: student.birthDate ?? null,
         admissionNumber: student.matricule || null,
         isMaternelle,
+        // ⭐ 2026-09-29 — isSecondaryLevel : vrai pour TOUS les bulletins
+        //    secondaires (FR trimestriel, FR évaluation, ET EN Report Book).
+        //    Utilisé par le backend pour résoudre la conduite depuis
+        //    conduct_ledger + sanctions (module Vie Scolaire) — source de vérité
+        //    côté backend. Sans ce flag, le backend ignorait la conduite pour
+        //    les bulletins EN (car isSecondary/isSecondaryEval étaient false).
+        isSecondaryLevel: isSecondaire,
         // ⭐ SECONDAIRE « Bulletin trimestriel » uniquement — modèle CEG (Interrogation
         //    écrite 1/2 + Devoir surveillé 1/2 + Moyenne + Coefficient + Note coefficient).
         isSecondary: secondaryConsolidated,
@@ -1811,6 +1759,7 @@ function BulletinTwoPage({
                 className={selectedClassName}
                 periodName={selectedPeriodName}
                 academicYearLabel={academicYear?.label}
+                academicYearId={academicYear?.id}
               />
             ) : isMaternelle ? (
               <BulletinMaternellePage1 student={student} bulletinData={bulletinData} />
@@ -2152,12 +2101,14 @@ function BulletinSecondairePage1({
   className,
   periodName,
   academicYearLabel,
+  academicYearId,
 }: {
   student: StudentResult;
   bulletinData: BulletinData;
   className: string;
   periodName: string;
   academicYearLabel?: string;
+  academicYearId?: string;
 }) {
   const isJunior = isJuniorSecondaryClass2(className || '');
   const navy = '#0A2A5E';      // colonnes de base (en-tête row 1)
@@ -3115,22 +3066,32 @@ function BulletinSecondairePage2({
         .catch(() => {});
     }
 
-    // ⭐ 2026-09-28 — Charger la conduite depuis le backend (conduct_ledger).
-    //    L'endpoint /api/vie-scolaire/conduct retourne la fiche de l'élève
-    //    avec le conduct_final. Si l'endpoint échoue (module Vie Scolaire non
-    //    activé ou pas de données pour le trimestre), on garde le placeholder.
-    fetch(`/api/vie-scolaire/conduct?studentId=${student.id}&periodId=${periodId}`, { credentials: 'include' })
+    // ⭐ 2026-09-29 — Charger la conduite depuis le backend (conduct_ledger).
+    //    ⚠️ FIX : avant, on utilisait /api/vie-scolaire/conduct?studentId=X&periodId=Y
+    //       (URL inexistante → 404 → null → la conduite n'était JAMAIS chargée
+    //       dans l'UI → affichait toujours le placeholder 17/20). Désormais on
+    //       utilise /api/discipline/conduct/ledger (URL réelle du controller
+    //       ConductController) puis on filtre côté client par studentId +
+    //       quarterId (le periodId du bulletin correspond au quarterId).
+    //    ⭐ Source de vérité = backend. Le frontend ne calcule RIEN, il
+    //       récupère simplement la valeur calculée par le module Vie Scolaire.
+    fetch(`/api/discipline/conduct/ledger?academicYearId=${academicYearId}`, { credentials: 'include' })
       .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        if (d?.conductFinal !== undefined && d?.conductFinal !== null) {
-          setConductScore(Number(d.conductFinal));
+      .then((ledger: any[]) => {
+        if (!Array.isArray(ledger) || ledger.length === 0) return;
+        // ⭐ Trouver la ligne du ledger correspondant à cet élève + ce
+        //    trimestre (periodId = quarterId dans le schéma Vie Scolaire)
+        const row = ledger.find(l => l.studentId === student.id && l.quarterId === periodId);
+        if (!row) return;
+        if (typeof row.conduct_final === 'number') {
+          setConductScore(Number(row.conduct_final));
         }
-        if (d?.conductReference !== undefined && d?.conductReference !== null) {
-          setConductReference(Number(d.conductReference));
+        if (typeof row.conduct_reference === 'number') {
+          setConductReference(Number(row.conduct_reference));
         }
       })
       .catch(() => {});
-  }, [student.id, periodId, student.generalAverage]);
+  }, [student.id, periodId, student.generalAverage, academicYearId]);
 
   const saveAnnotation = async (field: string, value: string) => {
     if (!student.id || !periodId) return;

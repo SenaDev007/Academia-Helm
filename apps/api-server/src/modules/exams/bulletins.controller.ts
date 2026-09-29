@@ -850,7 +850,19 @@ export class BulletinsController {
     let assiduityHours: number | null = null;
     let sanctionCount: number | null = null;
 
-    const isAnySecondary = body.isSecondary || body.isSecondaryEval;
+    // ⭐ 2026-09-29 — isAnySecondary étendu pour inclure aussi le bulletin EN
+    //    Report Book (body.isSecondaryLevel). Avant, seuls isSecondary (FR
+    //    trimestriel) et isSecondaryEval (FR évaluation) déclenchaient la
+    //    résolution de la conduite. Désormais le bulletin EN secondaire
+    //    (Report Book) résout aussi la conduite depuis le module Vie Scolaire.
+    //    ⭐ Source de vérité = backend (conduct_ledger + sanctions).
+    const isAnySecondary = body.isSecondary || body.isSecondaryEval || body.isSecondaryLevel;
+    // ⭐ 2026-09-29 — quarterId déclaré dans la portée externe pour être
+    //    accessible à la fois par le bloc conduct_ledger (lignes 868-942)
+    //    ET par le bloc assiduité (lignes 990-1018). Avant, quarterId était
+    //    déclaré à l'intérieur du premier `if (conductStudent)` → hors de
+    //    portée pour le second.
+    let resolvedQuarterId: string | null = null;
     if (isAnySecondary && body.studentMatricule && resolvedTenantId && academicYearId) {
       try {
         // 1. Trouver l'élève
@@ -860,18 +872,35 @@ export class BulletinsController {
         }).catch(() => null);
 
         if (conductStudent) {
-          // 2. Trouver le trimestre courant
-          const quarter = await this.prisma.$queryRawUnsafe<any[]>(
-            `SELECT id FROM quarters WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "isCurrent" = true LIMIT 1`,
-            resolvedTenantId, academicYearId,
-          ).catch(() => []);
+          // 2. Trouver le trimestre ciblé par le bulletin
+          //    ⭐ 2026-09-29 — Priorité 1 : body.periodId (le periodId envoyé par
+          //    le frontend = quarterId du bulletin). Priorité 2 : trimestre
+          //    marqué isCurrent=true. Avant, seul isCurrent=true était utilisé
+          //    → si l'école n'avait pas marqué de trimestre courant, la
+          //    conduite n'était jamais résolue depuis le ledger.
+          if (body.periodId) {
+            // Vérifier que le periodId correspond bien à un quarter
+            const periodRow = await this.prisma.$queryRawUnsafe<any[]>(
+              `SELECT id FROM quarters WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
+              body.periodId, resolvedTenantId,
+            ).catch(() => []);
+            if (periodRow.length > 0) resolvedQuarterId = periodRow[0].id;
+          }
+          if (!resolvedQuarterId) {
+            // Fallback : trimestre isCurrent=true
+            const currentQuarter = await this.prisma.$queryRawUnsafe<any[]>(
+              `SELECT id FROM quarters WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "isCurrent" = true LIMIT 1`,
+              resolvedTenantId, academicYearId,
+            ).catch(() => []);
+            if (currentQuarter.length > 0) resolvedQuarterId = currentQuarter[0].id;
+          }
 
-          if (quarter.length > 0) {
+          if (resolvedQuarterId) {
             // 3. Récupérer le conduct_ledger
             //    ⭐ 2026-09-28 — Utilisation du modèle Prisma ConductLedger (cf.
             //    refonte Vie Scolaire) au lieu de $queryRawUnsafe — plus fiable.
             const ledgerRow = await this.prisma.conductLedger.findFirst({
-              where: { tenantId: resolvedTenantId, studentId: conductStudent.id, quarterId: quarter[0].id },
+              where: { tenantId: resolvedTenantId, studentId: conductStudent.id, quarterId: resolvedQuarterId },
               select: { conductReference: true, totalPointsDeducted: true, conductFinal: true },
             }).catch(() => null);
 
@@ -894,17 +923,25 @@ export class BulletinsController {
             if (conductSettings) {
               conductReference = Number(conductSettings.conductReference) || 17;
             }
-            // Chercher les sanctions actives de l'élève
+            // ⭐ 2026-09-29 — Filtre par quarterId si on l'a, sinon par année
+            //    (les sanctions sans quarterId sont aussi incluses pour
+            //    rétro-compatibilité).
+            const sanctionWhere: any = {
+              tenantId: resolvedTenantId,
+              academicYearId,
+              studentId: conductStudent.id,
+              status: 'ACTIVE',
+            };
             const activeSanctions = await this.prisma.sanction.findMany({
-              where: {
-                tenantId: resolvedTenantId,
-                academicYearId,
-                studentId: conductStudent.id,
-                status: 'ACTIVE',
-              },
-              select: { pointsDeducted: true },
+              where: sanctionWhere,
+              select: { pointsDeducted: true, quarterId: true },
             }).catch(() => []);
-            const totalDeducted = activeSanctions.reduce((sum, s) => sum + (Number(s.pointsDeducted) || 0), 0);
+            // ⭐ Si on a un quarterId, ne compter QUE les sanctions de ce
+            //    trimestre (ou sans quarterId = legacy).
+            const filteredSanctions = resolvedQuarterId
+              ? activeSanctions.filter(s => !s.quarterId || s.quarterId === resolvedQuarterId)
+              : activeSanctions;
+            const totalDeducted = filteredSanctions.reduce((sum, s) => sum + (Number(s.pointsDeducted) || 0), 0);
             conductScore = Math.max(0, (conductReference ?? 17) - totalDeducted);
           }
         }
@@ -953,30 +990,19 @@ export class BulletinsController {
         //    le module Vie Scolaire (Σ sanction.hoursAttributed pour l'élève
         //    + trimestre courant, status ACTIVE). Affiché dans le bloc
         //    « Assiduité » de la page 2 du bulletin secondaire.
-        //    On réutilise `conductStudent` (déjà résolu ligne ~852) et le
-        //    `quarter` (déjà résolu) pour ne pas refaire 2 requêtes.
+        //    On réutilise `conductStudent` (déjà résolu) et `resolvedQuarterId`
+        //    (déjà résolu plus haut — priorité body.periodId, fallback isCurrent).
         if (conductStudent) {
-          // Trouver le trimestre courant si pas déjà fait
-          let quarterIdForAssiduity: string | undefined;
-          const existingQuarter = (typeof quarter !== 'undefined' && quarter.length > 0)
-            ? quarter[0].id
-            : null;
-          if (existingQuarter) {
-            quarterIdForAssiduity = existingQuarter;
-          } else {
-            const quarterRetry = await this.prisma.$queryRawUnsafe<any[]>(
-              `SELECT id FROM quarters WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "isCurrent" = true LIMIT 1`,
-              resolvedTenantId, academicYearId,
-            ).catch(() => []);
-            quarterIdForAssiduity = quarterRetry.length > 0 ? quarterRetry[0].id : undefined;
-          }
-
-          if (quarterIdForAssiduity) {
+          // ⭐ 2026-09-29 — On réutilise le resolvedQuarterId déjà résolu plus haut
+          //    (pas besoin de refaire la requête). Si resolvedQuarterId est null
+          //    (pas de body.periodId et pas de trimestre isCurrent), on saute
+          //    l'assiduité (sans erreur).
+          if (resolvedQuarterId) {
             // Récupérer toutes les sanctions actives de l'élève pour ce
             // trimestre — on utilise le modèle Prisma Sanction.
             // ⭐ 2026-09-28 — FIX : les sanctions peuvent avoir quarterId=null
             //    (si créées sans trimestre explicite). On cherche donc avec
-            //    OR [quarterId = quarterIdForAssiduity, quarterId IS NULL]
+            //    OR [quarterId = resolvedQuarterId, quarterId IS NULL]
             //    pour récupérer aussi les sanctions sans trimestre.
             const sanctions = await this.prisma.sanction.findMany({
               where: {
@@ -985,7 +1011,7 @@ export class BulletinsController {
                 studentId: conductStudent.id,
                 status: 'ACTIVE',
                 OR: [
-                  { quarterId: quarterIdForAssiduity },
+                  { quarterId: resolvedQuarterId },
                   { quarterId: null },
                 ],
               },
@@ -1092,30 +1118,72 @@ export class BulletinsController {
       }
     }
 
-    // ⭐ 2026-09-29 — La conduite est injectée par le frontend (useEffect
-    //    __conduct__) qui envoie déjà la matière Conduite dans subjects[].
-    //    Le backend ne doit PAS injecter une seconde fois — sinon doublon.
-    //    On se contente de résoudre conductScore/conductReference depuis le
-    //    conduct_ledger (ou conduct_settings par défaut) et de les injecter
-    //    dans pdfData pour les blocs Assiduité + Conseil de classe du PDF.
-    //    ⭐ 2026-09-29 — MAIS on doit mettre à jour le score de la matière
-    //    Conduite dans subjects[] avec la vraie valeur (baseline - sanctions)
-    //    si le backend a calculé une valeur différente du frontend.
+    // ⭐ 2026-09-29 — REFONTE : le backend est la SOURCE DE VÉRITÉ pour la conduite.
+    //    Avant : le frontend injectait une matière « Conduite » (synthetic subject
+    //    id __conduct__) avec un score calculé côté frontend (mais les URLs
+    //    /api/discipline/conduct et /api/discipline/sanctions étaient fausses →
+    //    fetchs retournaient null → tous les élèves affichaient 17/20 = default).
+    //    Désormais : le frontend n'injecte PLUS Conduite. Le backend :
+    //      1. résout conductScore depuis conduct_ledger (ou calcul depuis sanctions)
+    //      2. INJECTE la matière Conduite dans subjects[] si elle n'existe pas
+    //         (notamment pour le bulletin EN Report Book où le frontend n'envoie
+    //         jamais de matière Conduite)
+    //      3. ou MET À JOUR le score de la matière Conduite existante si le
+    //         frontend en a envoyé une (rétro-compatibilité)
+    //    ⭐ Source de vérité = backend (conduct_ledger + sanctions du module
+    //    Vie Scolaire, configuré par l'école).
     let subjectsWithConduite = resolvedSubjects;
     if (isAnySecondary && conductScore !== null && Array.isArray(resolvedSubjects)) {
-      subjectsWithConduite = resolvedSubjects.map((s: any) => {
-        // Identifier la matière Conduite par son nom (insensible à la casse)
-        if (s.name && s.name.toLowerCase() === 'conduite') {
-          return {
-            ...s,
-            score: conductScore,
-            secMoyenne: conductScore,
-            secNoteCoef: conductScore * (s.secCoef ?? 1),
-            appreciation: conductScore >= (conductReference ?? 17) * 0.6 ? 'Satisfaisant' : 'À améliorer',
-          };
-        }
-        return s;
-      });
+      const existingConduiteIdx = resolvedSubjects.findIndex(
+        (s: any) => s.name && s.name.toLowerCase() === 'conduite',
+      );
+      if (existingConduiteIdx >= 0) {
+        // Mise à jour de la matière existante
+        subjectsWithConduite = resolvedSubjects.map((s: any) => {
+          if (s.name && s.name.toLowerCase() === 'conduite') {
+            return {
+              ...s,
+              score: conductScore,
+              // ⭐ Pour EN Report Book : on remplit aussi firstCA/secondCA/exam/total
+              //    pour que la matière Conduite s'affiche correctement dans le
+              //    tableau 10 colonnes (FCA/SCA/EXAM/Total/100). On met le score
+              //    en Total /100 et on calcule firstCA/secondCA/exam à 0 (la
+              //    matière Conduite n'a pas de composantes CA).
+              firstCA: s.firstCA ?? null,
+              secondCA: s.secondCA ?? null,
+              exam: s.exam ?? null,
+              total: s.total ?? conductScore,
+              // ⭐ Pour FR trimestriel/évaluation : on remplit secMoyenne + secNoteCoef
+              secMoyenne: s.secMoyenne ?? conductScore,
+              secNoteCoef: s.secNoteCoef ?? (conductScore * (s.secCoef ?? 1)),
+              appreciation: conductScore >= (conductReference ?? 17) * 0.6 ? 'Satisfaisant' : 'À améliorer',
+            };
+          }
+          return s;
+        });
+      } else {
+        // ⭐ Injection de la matière Conduite (cas du bulletin EN Report Book
+        //    où le frontend n'envoie pas de matière Conduite)
+        const conductSubject: any = {
+          id: '__conduct__',
+          name: 'Conduite',
+          coefficient: 1,
+          score: conductScore,
+          isAbsent: false,
+          appreciation: conductScore >= (conductReference ?? 17) * 0.6 ? 'Satisfaisant' : 'À améliorer',
+          // Pour le bulletin FR secondaire (buildHtmlSecondaire)
+          secCoef: 1,
+          secMoyenne: conductScore,
+          secNoteCoef: conductScore,
+          secHasSlot: true,
+          // Pour le bulletin EN Report Book (buildHtmlAnglophone)
+          firstCA: null,
+          secondCA: null,
+          exam: null,
+          total: conductScore,
+        };
+        subjectsWithConduite = [...resolvedSubjects, conductSubject];
+      }
     }
 
     // Fusionner les données du frontend avec le branding + teacherName résolu
@@ -1145,6 +1213,10 @@ export class BulletinsController {
       //    le ledger). On ignore body.conductScore si le backend a résolu une valeur.
       conductScore: conductScore !== null ? conductScore : (body.conductScore ?? null),
       conductReference: conductReference ?? body.conductReference ?? null,
+      // ⭐ 2026-09-29 — isSecondaryLevel : passé explicitement au PDF service
+      //    pour que buildHtmlAnglophone sache s'il doit afficher la section
+      //    Conduct (uniquement pour le bulletin EN secondary, pas EN primary).
+      isSecondaryLevel: body.isSecondaryLevel ?? false,
       // ⭐ 2026-09-28 — Assiduité (total d'heures depuis module Vie Scolaire)
       assiduityHours: assiduityHours ?? body.assiduityHours ?? null,
       sanctionCount: sanctionCount ?? body.sanctionCount ?? null,

@@ -1,10 +1,17 @@
 /**
- * FederisCentersPage — Centres d'examen et salles (Academia Federis)
+ * FederisCentersPage — Centres d'examen, salles ET surveillants (Academia Federis)
  *
- * Workflow logistique §9 : sélection d'examen → registre des centres
- * (GET /federis/exams/:id/centers), création de centres et de salles,
- * capacités et occupation. Écritures réservées au coordonnateur et à
- * l'organisateur (canWrite 'exam_org' — garde finale côté API).
+ * ⭐ 2026-09-29 — le module devient « Centres, salles & Surveillants » :
+ *    1. Onglet « Centres et salles » — workflow logistique §9 : sélection
+ *       d'examen → registre des centres (GET /federis/exams/:id/centers),
+ *       création de centres et de salles, capacités et occupation ;
+ *    2. Onglet « Gestion des surveillants » — demande aux écoles rattachées,
+ *       listes d'enseignants reçues par école + récapitulatif global,
+ *       répartition par centre et par salle, registre des affectations
+ *       (composant FederisSupervisorsTab — workflow patronat ↔ écoles Helm).
+ *
+ * Écritures réservées au coordonnateur et à l'organisateur (canWrite
+ * 'exam_org' — garde finale côté API).
  */
 
 'use client';
@@ -16,6 +23,7 @@ import { apiClient } from '@/lib/api/client';
 import { canWrite } from '@/lib/patronat/permissions';
 import { useFederisExams, EXAM_STATUS_LABELS } from '@/hooks/useFederisExams';
 import { FedPage, FedCountUp } from '@/components/federis/federis-motion';
+import FederisSupervisorsTab from './FederisSupervisorsTab';
 
 interface Room {
   id: string;
@@ -50,6 +58,8 @@ interface FederisCentersPageProps {
 
 export default function FederisCentersPage({ userRole }: FederisCentersPageProps) {
   const { exams, examId, setExamId, loading: examsLoading } = useFederisExams();
+  // ⭐ Onglet du module : « Centres et salles » | « Gestion des surveillants »
+  const [tab, setTab] = useState<'centres' | 'surveillants'>('centres');
   const [centers, setCenters] = useState<Center[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,11 +166,12 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
             <div className="w-10 h-10 bg-blue-800 rounded-lg flex items-center justify-center ">
               <AppIcon name="classes" size="dashboard" className="text-white" />
             </div>
-            <h1 className="text-2xl md:text-3xl font-bold text-blue-900 tracking-tight">Centres et salles</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-blue-900 tracking-tight">Centres, salles &amp; Surveillants</h1>
           </div>
           <p className="text-slate-500 font-medium max-w-xl text-sm mt-3">
-            Organisez le réseau des centres d&apos;accueil et leurs salles. L&apos;affectation des
-            candidats aux numéros de table s&apos;appuie sur ces capacités.
+            Organisez le réseau des centres d&apos;accueil et leurs salles, et gérez les
+            surveillants : demande aux écoles rattachées, répartition par centre et par
+            salle, notifications aux enseignants.
           </p>
         </div>
         <div className="flex items-center gap-6 shrink-0">
@@ -176,7 +187,7 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
             <p className="text-2xl font-bold text-blue-800"><FedCountUp value={totalCapacity} /></p>
             <p className="text-[10px] font-bold text-slate-400 uppercase">Places</p>
           </div>
-          {canOrganize && (
+          {canOrganize && tab === 'centres' && (
             <button
               onClick={() => setShowCenterForm((v) => !v)}
               disabled={!examId}
@@ -188,7 +199,35 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
         </div>
       </div>
 
-      {/* Sélecteur d'examen */}
+      {/* ⭐ Onglets du module (pattern Helm) : Centres et salles | Gestion des surveillants */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        <button
+          type="button"
+          onClick={() => setTab('centres')}
+          className={cn(
+            'px-5 py-2 rounded-lg text-xs transition-all',
+            tab === 'centres'
+              ? 'bg-white shadow-sm text-blue-900 font-bold'
+              : 'text-slate-500 font-semibold hover:text-blue-900',
+          )}
+        >
+          Centres et salles
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('surveillants')}
+          className={cn(
+            'px-5 py-2 rounded-lg text-xs transition-all',
+            tab === 'surveillants'
+              ? 'bg-white shadow-sm text-blue-900 font-bold'
+              : 'text-slate-500 font-semibold hover:text-blue-900',
+          )}
+        >
+          Gestion des surveillants
+        </button>
+      </div>
+
+      {/* Sélecteur d'examen — partagé par les deux onglets */}
       <div className="fed-card px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
         <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Examen</span>
         {examsLoading ? (
@@ -222,8 +261,8 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-6 py-4 text-sm font-semibold text-emerald-800">{notice}</div>
       )}
 
-      {/* Formulaire centre */}
-      {showCenterForm && canOrganize && examId && (
+      {/* Formulaire centre (onglet « Centres et salles ») */}
+      {tab === 'centres' && showCenterForm && canOrganize && examId && (
         <form onSubmit={createCenter} className="fed-card p-8 space-y-5">
           <h3 className="text-sm font-bold text-blue-900 uppercase">Nouveau centre d&apos;accueil</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -261,8 +300,8 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
         </form>
       )}
 
-      {/* Liste des centres */}
-      {loading ? (
+      {/* Liste des centres (onglet « Centres et salles ») */}
+      {tab === 'centres' && (loading ? (
         <div className="fed-card p-12 text-center text-sm font-bold text-slate-400">
           Chargement des centres…
         </div>
@@ -416,6 +455,20 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
             </div>
           ))}
         </div>
+      ))}
+
+      {/* ⭐ Onglet « Gestion des surveillants » — demande aux écoles, listes
+          reçues, répartition par centre/salle et registre des affectations */}
+      {tab === 'surveillants' && (
+        <FederisSupervisorsTab
+          examId={examId}
+          examLabel={
+            exams.find((e) => e.id === examId)
+              ? `${exams.find((e) => e.id === examId)!.code} — ${exams.find((e) => e.id === examId)!.name}`
+              : null
+          }
+          userRole={userRole}
+        />
       )}
     </FedPage>
   );

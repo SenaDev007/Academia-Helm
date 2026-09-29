@@ -10482,6 +10482,63 @@ model SchoolExamSubmission {
   @@map("school_exam_submissions")
 }
 
+/// ⭐ Federis — Demande du patronat aux écoles rattachées : « présentez vos
+/// enseignants comme surveillants » (module Centres, salles & Surveillants →
+/// onglet « Gestion des surveillants », 2026-09-29).
+/// Émise par le patronat (tenantId), visible par toutes les écoles JOINED via
+/// le portail Helm « Patronats & Examens → Gestion des surveillants ».
+/// Champs bruts sans relations Prisma — pattern SchoolExamSubmission.
+model SupervisorRequest {
+  id             String        @id @default(uuid())
+  /// Tenant du PATRONAT émetteur (isolation territoriale).
+  tenantId       String
+  academicYearId String
+  /// NationalExam concerné (optionnel — demande générique possible).
+  examId         String?
+  /// Examen lisible (ex : « BEPC 2027 ») si examId absent.
+  examLabel      String?
+  title          String
+  message        String?
+  /// OPEN (les écoles peuvent répondre) | CLOSED
+  status         String        @default("OPEN")
+  deadline       DateTime?
+  createdBy      String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([tenantId])
+  @@index([academicYearId])
+  @@index([examId])
+  @@index([status])
+  @@map("supervisor_requests")
+}
+
+/// ⭐ Federis — Réponse d'une école à une demande de surveillants : la liste
+/// des enseignants que l'école présente comme surveillants (sélection depuis
+/// sa base Teacher). Snapshot des données enseignants conservé pour la
+/// robustesse (le patronat n'a pas besoin de lire la base de l'école).
+model SchoolSupervisorSubmission {
+  id          String    @id @default(uuid())
+  /// Tenant de l'ÉCOLE émettrice (type MATERNELLE/PRIMAIRE/SECONDAIRE/MIXTE).
+  tenantId    String
+  requestId   String
+  /// Sélection officielle : [Teacher.id]
+  teacherIds  Json
+  /// Snapshot [{ id, firstName, lastName, matricule, phone, email, subject }]
+  teachers    Json?
+  status      String    @default("SUBMITTED")
+  submittedAt DateTime  @default(now())
+  submittedBy String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([tenantId, requestId])
+  @@index([tenantId])
+  @@index([requestId])
+  @@index([status])
+  @@map("school_supervisor_submissions")
+}
+
 /// ⭐ Federis — Épreuve créée par le patronat (module « Épreuves et documents »).
 /// Contenu riche HTML (RichTextEditor — mêmes insertions que les fiches
 /// pédagogiques Helm : figures SVG, maths, opérations posées, fractions,
@@ -10588,6 +10645,22 @@ model ExamSupervisor {
   status         String       @default("ASSIGNED")
   assignedDate   DateTime     @default(now())
   metadata       Json?
+  /// ⭐ 2026-09-29 — Gestion des surveillants (module Centres, salles &
+  ///    Surveillants) : origine de la nomination et traçabilité.
+  ///    MANUAL : créé directement par le patronat (champs ci-dessus).
+  ///    SCHOOL_NOMINATION : enseignant proposé par une école rattachée
+  ///    (demande du patronat → sélection par l'école → répartition patronat).
+  source          String       @default("MANUAL")
+  /// Tenant ÉCOLE d'où provient la nomination (si SCHOOL_NOMINATION).
+  schoolTenantId  String?
+  /// Teacher (base de données de l'école) à l'origine de la nomination.
+  teacherId       String?
+  /// SupervisorRequest ayant déclenché la nomination.
+  requestId       String?
+  /// SchoolSupervisorSubmission de l'école (réponse à la demande).
+  submissionId    String?
+  /// Date à laquelle l'école a transmis l'affectation à l'UI de l'enseignant.
+  teacherNotifiedAt DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   createdBy      String?
@@ -10605,6 +10678,9 @@ model ExamSupervisor {
   @@index([centerId])
   @@index([roomId])
   @@index([status])
+  @@index([schoolTenantId])
+  @@index([requestId])
+  @@index([submissionId])
   @@map("exam_supervisors")
 }
 

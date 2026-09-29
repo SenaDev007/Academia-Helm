@@ -45,6 +45,13 @@ import { FederisPdfController } from './federis-pdf.controller';
 // examen (CEP/BEPC/BAC/CAP) → épreuves + PDF backend
 import { FederisEpreuveService } from './federis-epreuve.service';
 import { FederisEpreuveController } from './federis-epreuve.controller';
+// ⭐ Gestion des surveillants (2026-09-29) : module « Centres, salles &
+//    Surveillants » — demande aux écoles, sélection des enseignants côté
+//    Helm, répartition par centre et par salle, notifications écoles ↔
+//    enseignants (workflow complet patronat ↔ écoles rattachées)
+import { FederisSupervisorsService } from './federis-supervisors.service';
+import { FederisSupervisorsController } from './federis-supervisors.controller';
+import { FederisSchoolSupervisorsController } from './federis-school-supervisors.controller';
 
 @Module({
   imports: [BillingModule, CommunicationModule],
@@ -61,6 +68,8 @@ import { FederisEpreuveController } from './federis-epreuve.controller';
     FederisSchoolExamsController,
     FederisPdfController,
     FederisEpreuveController,
+    FederisSupervisorsController,
+    FederisSchoolSupervisorsController,
   ],
   providers: [
     FederisService,
@@ -79,6 +88,7 @@ import { FederisEpreuveController } from './federis-epreuve.controller';
     FederisSchoolExamsService,
     FederisPdfService,
     FederisEpreuveService,
+    FederisSupervisorsService,
   ],
   exports: [
     FederisService,

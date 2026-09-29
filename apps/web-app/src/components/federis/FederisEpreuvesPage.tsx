@@ -1,23 +1,23 @@
 /**
- * FederisEpreuvesPage — Épreuves & catalogue (module « Épreuves et documents »)
+ * FederisEpreuvesPage — Épreuves officielles (module « Épreuves et documents »)
  * ═══════════════════════════════════════════════════════════════════════════
- * Deux onglets (2026-09-29) :
+ * ⭐ 2026-09-29 (refonte) — le module ne contient UNIQUEMENT que les épreuves :
+ *    le sous-onglet « Catalogue » a été déplacé vers le module
+ *    « Banque d'épreuves » (FederisQuestionBankPage — onglet Catalogue).
+ *    Lien croisé : le catalogue ouvre l'éditeur d'une épreuve via
+ *    /documents?edit=<id> (paramètre lu au montage → openEdit).
  *
- *   1. « ÉPREUVES » — création des épreuves avec les MÊMES champs enrichis
- *      que les fiches pédagogiques / épreuves enseignants d'Academia Helm
- *      (RichTextEditor : images, diagrammes, symboles maths, opérations
- *      posées, fractions, tableaux, calligraphie, formes Word…) :
- *        - En-tête RÉUTILISABLE du patronat (une fois défini, appliqué à
- *          toutes les épreuves) + en-tête ponctuel par épreuve ;
- *        - Corps : Situation d'évaluation → Tâche → sections LIBRES
- *          (Problème 1/2/3, Exercices… — libre arbitre selon la matière,
- *          AUCUN modèle standard imposé) ;
- *        - Clé / grille de correction (pages séparées du PDF) ;
- *        - PDF généré 100 % côté BACKEND (Puppeteer — pattern Helm).
- *
- *   2. « CATALOGUE » — épreuves catégorisées en dossiers :
- *        année scolaire (ex : 2025-2026) → examen (CEP / BEPC /
- *        Baccalauréat / CAP) → épreuves.
+ * Création des épreuves avec les MÊMES champs enrichis que les fiches
+ * pédagogiques / épreuves enseignants d'Academia Helm (RichTextEditor :
+ * images, diagrammes, symboles maths, opérations posées, fractions,
+ * tableaux, calligraphie, formes Word…) :
+ *   - En-tête RÉUTILISABLE du patronat (une fois défini, appliqué à
+ *     toutes les épreuves) + en-tête ponctuel par épreuve ;
+ *   - Corps : Situation d'évaluation → Tâche → sections LIBRES
+ *     (Problème 1/2/3, Exercices… — libre arbitre selon la matière,
+ *     AUCUN modèle standard imposé) ;
+ *   - Clé / grille de correction (pages séparées du PDF) ;
+ *   - PDF généré 100 % côté BACKEND (Puppeteer — pattern Helm).
  *
  * Isolation territoriale : chaque patronat ne voit QUE ses épreuves
  * (le patronat national dispose de la vue d'ensemble de son réseau).
@@ -85,21 +85,6 @@ interface ListResponse {
   epreuves: EpreuveListItem[];
 }
 
-interface CatalogueYear {
-  academicYearId: string;
-  label: string;
-  isActive: boolean;
-  total: number;
-  categories: { code: string; label: string; count: number }[];
-}
-
-interface CatalogueResponse {
-  categories: { code: string; label: string; fullLabel: string }[];
-  years: CatalogueYear[];
-  network: { patronatId: string; name: string; territory: string | null; totalEpreuves: number }[] | null;
-  orgLevel: string;
-}
-
 const CATEGORIES = [
   { code: 'CEP', label: 'CEP', full: 'CEP — Certificat d\u2019Études Primaires' },
   { code: 'BEPC', label: 'BEPC', full: 'BEPC — Brevet du Premier Cycle' },
@@ -137,9 +122,6 @@ type EditorState =
   | { mode: 'edit'; id: string; status: string };
 
 export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPageProps) {
-  // ── Onglet actif ────────────────────────────────────────────────────────
-  const [tab, setTab] = useState<'epreuves' | 'catalogue'>('epreuves');
-
   // ── Données liste ───────────────────────────────────────────────────────
   const [list, setList] = useState<ListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -162,12 +144,6 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
   const [showCorrection, setShowCorrection] = useState(false);
   const [showCustomHeader, setShowCustomHeader] = useState(false);
   const dirtyRef = useRef(false);
-
-  // ── Catalogue ───────────────────────────────────────────────────────────
-  const [catalogue, setCatalogue] = useState<CatalogueResponse | null>(null);
-  const [catalogueLoading, setCatalogueLoading] = useState(false);
-  const [openYear, setOpenYear] = useState<string | null>(null);
-  const [openCategory, setOpenCategory] = useState<string | null>(null);
 
   const fallbackCanManage = canWrite(userRole, 'exam_org');
   const canManage = list?.canManage ?? fallbackCanManage;
@@ -197,33 +173,10 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
     }
   }, []);
 
-  const loadCatalogue = useCallback(async () => {
-    setCatalogueLoading(true);
-    try {
-      const res = await apiClient.get('/federis/patronat/epreuves/catalogue', {
-        timeout: 30000,
-      });
-      setCatalogue(res.data ?? null);
-      // Ouvre par défaut la première année (l'active ou la plus récente)
-      const years = res.data?.years ?? [];
-      if (years.length > 0) {
-        setOpenYear((prev) => prev ?? (years.find((y) => y.isActive)?.academicYearId ?? years[0].academicYearId));
-      }
-    } catch {
-      setCatalogue(null);
-    } finally {
-      setCatalogueLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     void load();
     void loadHeader();
   }, [load, loadHeader]);
-
-  useEffect(() => {
-    if (tab === 'catalogue' && !catalogue && !catalogueLoading) void loadCatalogue();
-  }, [tab, catalogue, catalogueLoading, loadCatalogue]);
 
   // ── En-tête réutilisable : enregistrement ───────────────────────────────
   const saveHeader = async () => {
@@ -253,14 +206,12 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
     setShowCorrection(false);
     setShowCustomHeader(false);
     dirtyRef.current = false;
-    setTab('epreuves');
   };
 
   const openEdit = async (id: string) => {
     setEditor({ mode: 'edit', id, status: 'DRAFT' });
     setFormError(null);
     setSavedAt(null);
-    setTab('epreuves');
     setShowCorrection(false);
     setShowCustomHeader(false);
     try {
@@ -298,6 +249,16 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
     setFormError(null);
     setNotice(null);
   };
+
+  // ── Lien croisé Banque d'épreuves → Éditeur ────────────────────────────
+  // Le catalogue (module « Banque d'épreuves ») ouvre une épreuve via
+  // /documents?edit=<id> : on lit le paramètre au montage et on ouvre
+  // directement l'éditeur.
+  useEffect(() => {
+    const editId = new URLSearchParams(window.location.search).get('edit');
+    if (editId) void openEdit(editId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Éditeur : enregistrement (création / mise à jour) ───────────────────
   const buildPayload = () => ({
@@ -410,7 +371,6 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
       await apiClient.delete(`/federis/patronat/epreuves/${id}`, { timeout: 30000 });
       if (editor.mode === 'edit' && editor.id === id) closeEditor();
       await load();
-      setCatalogue(null); // force le rechargement du catalogue
       setNotice('Épreuve supprimée.');
     } catch (err: any) {
       const msg = err?.response?.data?.message;
@@ -519,8 +479,9 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
             Épreuves et documents
           </h1>
           <p className="text-slate-500 font-medium mt-1 text-sm">
-            Créez vos épreuves (CEP, BEPC, Baccalauréat, CAP) avec la mise en forme
-            enrichie d&apos;Academia Helm, puis consultez le catalogue par année scolaire.
+            Créez vos épreuves officielles (CEP, BEPC, Baccalauréat, CAP) avec la
+            mise en forme enrichie d&apos;Academia Helm — le catalogue par année
+            scolaire est disponible dans la Banque d&apos;épreuves.
           </p>
         </div>
         {canManage && !editorOpen && (
@@ -540,36 +501,6 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
       {notice && (
         <div className="bg-green-50 border border-green-200 rounded-xl px-6 py-3 text-sm font-semibold text-green-800">
           {notice}
-        </div>
-      )}
-
-      {/* ⭐ Onglets segmentés (pattern Helm) : Épreuves | Catalogue */}
-      {!editorOpen && (
-        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-          <button
-            type="button"
-            onClick={() => setTab('epreuves')}
-            className={cn(
-              'px-5 py-2 rounded-lg text-xs transition-all',
-              tab === 'epreuves'
-                ? 'bg-white shadow-sm text-blue-900 font-bold'
-                : 'text-slate-500 font-semibold hover:text-blue-900',
-            )}
-          >
-            Épreuves
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('catalogue')}
-            className={cn(
-              'px-5 py-2 rounded-lg text-xs transition-all',
-              tab === 'catalogue'
-                ? 'bg-white shadow-sm text-blue-900 font-bold'
-                : 'text-slate-500 font-semibold hover:text-blue-900',
-            )}
-          >
-            Catalogue
-          </button>
         </div>
       )}
 
@@ -1101,9 +1032,9 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
       )}
 
       {/* ════════════════════════════════════════════════════════════════════
-          ONGLET « ÉPREUVES » (liste + en-tête réutilisable)
+          LISTE DES ÉPREUVES + EN-TÊTE RÉUTILISABLE
          ════════════════════════════════════════════════════════════════════ */}
-      {!editorOpen && tab === 'epreuves' && (
+      {!editorOpen && (
         <div className="space-y-5">
           {/* En-tête réutilisable du patronat */}
           <div className="fed-card p-6">
@@ -1253,204 +1184,6 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
         </div>
       )}
 
-      {/* ════════════════════════════════════════════════════════════════════
-          ONGLET « CATALOGUE » (année scolaire → examen → épreuves)
-         ════════════════════════════════════════════════════════════════════ */}
-      {!editorOpen && tab === 'catalogue' && (
-        <div className="space-y-5">
-          {/* Vue réseau — patronat national uniquement */}
-          {catalogue?.orgLevel === 'NATIONAL' && (catalogue.network ?? []).length > 0 && (
-            <div className="fed-card p-6">
-              <h2 className="text-sm font-bold text-blue-900 flex items-center gap-2">
-                <AppIcon name="network" size="submenu" className="text-blue-900" />
-                Vue d&apos;ensemble du réseau (patronat national)
-              </h2>
-              <p className="text-xs text-slate-500 mt-1 mb-4">
-                Volumes d&apos;épreuves des patronats territoriaux rattachés — vous
-                consultez vos propres épreuves ci-dessous.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {(catalogue.network ?? []).map((n) => (
-                  <div
-                    key={n.patronatId}
-                    className="flex items-center justify-between border border-slate-200 rounded-xl px-4 py-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-blue-900 truncate">{n.name}</div>
-                      <div className="text-[10px] text-slate-400">{n.territory ?? '—'}</div>
-                    </div>
-                    <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-900 text-xs font-bold flex-shrink-0 ml-3">
-                      {n.totalEpreuves}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {catalogueLoading ? (
-            <div className="space-y-3">
-              {[0, 1].map((i) => (
-                <div key={i} className="fed-card p-6 space-y-3">
-                  <div className="h-5 w-56 rounded bg-slate-100 animate-pulse" />
-                  <div className="h-16 w-full rounded bg-slate-100 animate-pulse" />
-                </div>
-              ))}
-            </div>
-          ) : (catalogue?.years ?? []).length === 0 ? (
-            <div className="fed-card p-10 text-center">
-              <AppIcon name="library" size="submenu" className="w-10 h-10 text-slate-300 mx-auto" />
-              <p className="font-bold text-slate-700 mt-2">Catalogue vide</p>
-              <p className="text-sm text-slate-500 max-w-lg mx-auto mt-1">
-                Les épreuves créées dans l&apos;onglet « Épreuves » sont automatiquement
-                classées ici par année scolaire puis par examen (CEP, BEPC,
-                Baccalauréat, CAP).
-              </p>
-            </div>
-          ) : (
-            (catalogue?.years ?? []).map((year) => (
-              <div key={year.academicYearId} className="fed-card overflow-hidden">
-                {/* Dossier année scolaire */}
-                <button
-                  type="button"
-                  onClick={() =>
-                    setOpenYear(openYear === year.academicYearId ? null : year.academicYearId)
-                  }
-                  className="w-full flex items-center justify-between px-6 py-4 bg-[#f7f9fc] border-b border-slate-200 hover:bg-blue-50/50 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <AppIcon name="library" size="submenu" className="text-blue-900" />
-                    <span className="text-sm font-bold text-blue-900">
-                      Année scolaire {year.label}
-                    </span>
-                    {year.isActive && (
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-green-100 text-green-800">
-                        Active
-                      </span>
-                    )}
-                  </div>
-                  <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-900 text-xs font-bold">
-                    {year.total} épreuve{year.total > 1 ? 's' : ''}
-                  </span>
-                </button>
-
-                {openYear === year.academicYearId && (
-                  <div className="p-6 space-y-4">
-                    {/* Dossiers examens */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                      {year.categories.map((cat) => {
-                        const active = openCategory === cat.code;
-                        return (
-                          <button
-                            key={cat.code}
-                            type="button"
-                            onClick={() => setOpenCategory(active ? null : cat.code)}
-                            className={cn(
-                              'flex items-center justify-between rounded-xl border px-4 py-3 transition-colors text-left',
-                              active
-                                ? 'border-blue-800 bg-blue-900 text-white'
-                                : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/50',
-                            )}
-                          >
-                            <div className="min-w-0">
-                              <div
-                                className={cn(
-                                  'text-xs font-bold truncate',
-                                  active ? 'text-white' : 'text-blue-900',
-                                )}
-                              >
-                                {cat.label}
-                              </div>
-                              <div
-                                className={cn(
-                                  'text-[10px]',
-                                  active ? 'text-blue-200' : 'text-slate-400',
-                                )}
-                              >
-                                dossier
-                              </div>
-                            </div>
-                            <span
-                              className={cn(
-                                'px-2 py-0.5 rounded-lg text-[11px] font-bold flex-shrink-0 ml-2',
-                                active ? 'bg-white/15 text-white' : 'bg-blue-50 text-blue-900',
-                              )}
-                            >
-                              {cat.count}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Épreuves du dossier sélectionné */}
-                    {openCategory && (
-                      <div className="border border-slate-200 rounded-xl divide-y divide-slate-100">
-                        {(list?.epreuves ?? [])
-                          .filter(
-                            (e) =>
-                              e.academicYearId === year.academicYearId &&
-                              e.examCategory === openCategory,
-                          )
-                          .map((e) => (
-                            <div
-                              key={e.id}
-                              className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 hover:bg-[#f7f9fc]"
-                            >
-                              <div className="min-w-0">
-                                <div className="text-sm font-semibold text-blue-900 truncate">
-                                  {e.title}
-                                </div>
-                                <div className="text-[10px] text-slate-400">
-                                  {[e.subject, e.sessionLabel, e.durationLabel]
-                                    .filter(Boolean)
-                                    .join(' · ') || '—'}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                <span
-                                  className={cn(
-                                    'px-2 py-0.5 rounded text-[9px] font-bold uppercase',
-                                    STATUS_STYLES[e.status] ?? 'bg-slate-100 text-slate-600',
-                                  )}
-                                >
-                                  {e.statusLabel}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => void openEdit(e.id)}
-                                  className="px-3 py-1.5 bg-blue-50 rounded-lg text-[11px] font-semibold text-blue-800 hover:bg-blue-800 hover:text-white transition-colors"
-                                >
-                                  Ouvrir
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void downloadPdf(e.id, e.subject || e.title)}
-                                  disabled={downloading !== null}
-                                  className="px-3 py-1.5 bg-blue-50 rounded-lg text-[11px] font-semibold text-blue-800 hover:bg-blue-800 hover:text-white transition-colors disabled:opacity-50"
-                                >
-                                  {downloading === e.id ? '…' : 'PDF'}
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        {(list?.epreuves ?? []).filter(
-                          (e) =>
-                            e.academicYearId === year.academicYearId &&
-                            e.examCategory === openCategory,
-                        ).length === 0 && (
-                          <p className="px-4 py-6 text-center text-xs text-slate-400">
-                            Aucune épreuve dans ce dossier.
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
       )}
     </FedPage>
   );

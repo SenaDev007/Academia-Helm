@@ -54,9 +54,10 @@ interface FederisLayoutProps {
 
 // Navigation institutionnelle (cahier des charges §7.1) :
 //   1. Tableau de bord  2. Patronats territoriaux (NATIONAL uniquement)
-//   3. Écoles rattachées  4. Examens nationaux  5. Candidats  6. Centres et salles
-//   7. Épreuves et documents  8. Banque d'épreuves  9. Rapports  10. ORION (lecture seule)
-//   11. Paramètres  12. Équipe & Comptes (coordonnateur)
+//   3. Écoles rattachées  4. Examens nationaux  5. Centres, salles & Surveillants
+//   6. Candidats  7. Épreuves et documents (catégorie EXAMENS, après Candidats)
+//   8. Délibérations  9. Banque d'épreuves (+ catalogue)  10. Rapports
+//   11. ORION (lecture seule)  12. Paramètres  13. Équipe & Comptes (coordonnateur)
 // « Patronats territoriaux » n'est rendu que si le profil patronat (API) indique
 // orgLevel NATIONAL. Chaque entrée est en outre filtrée par la FONCTION du
 // membre connecté (canAccessRoute) : le coordonnateur voit toute l'application,
@@ -88,15 +89,21 @@ const federisNavItems = [
     category: 'EXAMENS',
     items: [
       { name: 'Examens nationaux', subPath: '/exams', icon: 'exams' as const },
-      { name: 'Centres et salles', subPath: '/centers', icon: 'classes' as const },
+      // ⭐ 2026-09-29 — le module couvre centres, salles ET surveillants
+      //    (sous-onglet « Gestion des surveillants » : demandes aux écoles,
+      //    répartition par centre et par salle, registre des affectations)
+      { name: 'Centres, salles & Surveillants', subPath: '/centers', icon: 'classes' as const },
       { name: 'Candidats', subPath: '/candidates', icon: 'scolarite' as const },
+      // ⭐ 2026-09-29 — « Épreuves et documents » rattaché au périmètre EXAMENS,
+      //    juste après « Candidats » (le module ne contient plus que les épreuves ;
+      //    le catalogue vit désormais dans la Banque d'épreuves)
+      { name: 'Épreuves et documents', subPath: '/documents', icon: 'document' as const },
       { name: 'Délibérations', subPath: '/deliberations', icon: 'document' as const },
     ]
   },
   {
     category: 'RESSOURCES',
     items: [
-      { name: 'Épreuves et documents', subPath: '/documents', icon: 'document' as const },
       { name: 'Banque d\u2019épreuves', subPath: '/question-bank', icon: 'library' as const },
     ]
   },

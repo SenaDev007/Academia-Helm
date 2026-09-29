@@ -1,10 +1,19 @@
 /**
  * SchoolPatronatsPage — Patronats & Examens fédérés (portail école Helm)
  *
- * Validation par l'ÉTABLISSEMENT des demandes de rattachement émises par les
- * patronats scolaires (Academia Federis) :
- *   - PENDING → Valider (JOINED) / Refuser (REJECTED, motif)
- *   - JOINED  → Suspendre (le patronat perd l'accès aux données de l'école)
+ * Deux sections (2026-09-29) :
+ *   1. « RATTACHEMENTS » — validation par l'ÉTABLISSEMENT des demandes de
+ *      rattachement émises par les patronats scolaires (Academia Federis) :
+ *      PENDING → Valider (JOINED) / Refuser (REJECTED, motif) ;
+ *      JOINED → Suspendre (le patronat perd l'accès aux données de l'école).
+ *   2. « GESTION DES SURVEILLANTS » — demandes des patronats de présenter
+ *      les enseignants comme surveillants : sélection des enseignants de
+ *      l'école (base Teacher), envoi de la liste officielle au patronat,
+ *      affectations reçues (centre + salle) et transmission des
+ *      notifications à l'UI de chaque enseignant (SchoolSupervisorsTab).
+ *
+ * Le paramètre d'URL ?tab=surveillants ouvre directement la section 2
+ * (utilisé par les notifications envoyées par le patronat).
  *
  * Pattern Helm PedagogicalDirectorController / AccessRequestsController :
  * workflow PENDING → approuvé / refusé réservé à la direction et au
@@ -17,6 +26,7 @@ import { useCallback, useEffect, useState } from 'react';
 import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
+import SchoolSupervisorsTab from './SchoolSupervisorsTab';
 
 interface PatronatInfo {
   id?: string;
@@ -50,6 +60,16 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export function SchoolPatronatsPage() {
+  // ⭐ Section active : Rattachements | Gestion des surveillants
+  // (?tab=surveillant ouvre directement la section — lien des notifications)
+  const [tab, setTab] = useState<'rattachements' | 'surveillants'>(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search).get('tab');
+      if (p === 'surveillants') return 'surveillants';
+    }
+    return 'rattachements';
+  });
+
   const [links, setLinks] = useState<PatronatLink[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -147,12 +167,50 @@ export function SchoolPatronatsPage() {
         )}
       </div>
 
-      {error && (
+      {error && tab === 'rattachements' && (
         <div className="bg-red-50 border border-red-200 rounded-2xl px-6 py-4 text-sm font-semibold text-red-800">{error}</div>
       )}
-      {notice && (
+      {notice && tab === 'rattachements' && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-6 py-4 text-sm font-semibold text-emerald-800">{notice}</div>
       )}
+
+      {/* ⭐ Onglets du module : Rattachements | Gestion des surveillants */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        <button
+          type="button"
+          onClick={() => setTab('rattachements')}
+          className={cn(
+            'px-5 py-2 rounded-lg text-xs transition-all',
+            tab === 'rattachements'
+              ? 'bg-white shadow-sm text-blue-900 font-bold'
+              : 'text-slate-500 font-semibold hover:text-blue-900',
+          )}
+        >
+          Rattachements
+          {pendingCount > 0 && (
+            <span className="ml-2 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold">
+              {pendingCount}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('surveillants')}
+          className={cn(
+            'px-5 py-2 rounded-lg text-xs transition-all',
+            tab === 'surveillants'
+              ? 'bg-white shadow-sm text-blue-900 font-bold'
+              : 'text-slate-500 font-semibold hover:text-blue-900',
+          )}
+        >
+          Gestion des surveillants
+        </button>
+      </div>
+
+      {tab === 'surveillants' ? (
+        <SchoolSupervisorsTab />
+      ) : (
+      <>
 
       {/* Liste */}
       {loading ? (
@@ -236,7 +294,7 @@ export function SchoolPatronatsPage() {
         </div>
       )}
 
-      {/* Modale motif (refus / suspension) */}
+      {/* Modale motif (refus / suspension) — onglet Rattachements */}
       {reasonTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <form onSubmit={submitReason} className="bg-white rounded-xl shadow-lg p-6 w-full max-w-md space-y-5">
@@ -278,6 +336,8 @@ export function SchoolPatronatsPage() {
             </div>
           </form>
         </div>
+      )}
+      </>
       )}
     </div>
   );

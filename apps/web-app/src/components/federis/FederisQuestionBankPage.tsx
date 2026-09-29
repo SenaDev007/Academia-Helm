@@ -12,6 +12,13 @@
  *      PATCH  /federis/patronat/question-bank/:id  — statut / accès
  *      DELETE /federis/patronat/question-bank/:id  — retirer une épreuve
  *
+ * ⭐ 2026-09-29 (refonte) — le module accueille également le CATALOGUE des
+ *    épreuves (déplacé depuis « Épreuves et documents ») : deux onglets —
+ *      1. « RESSOURCES » : sujets recensés et sécurisés (existant) ;
+ *      2. « CATALOGUE » : épreuves du patronat classées par année scolaire
+ *         puis par examen (CEP / BEPC / Baccalauréat / CAP) — lien croisé
+ *         vers l'éditeur (/documents?edit=<id>) + téléchargement PDF.
+ *
  * Rôles : lecture pour tous les membres ; gestion réservée au
  * COORDONNATEUR et à l'ORGANISATEUR (garde API → canManage).
  */
@@ -22,6 +29,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
+import { federisLink } from '@/lib/federis/useFederisPath';
 import { FedPage } from '@/components/federis/federis-motion';
 
 interface BankResource {
@@ -49,6 +57,37 @@ interface Catalog {
   accessLevels: Array<{ key: string; label: string }>;
 }
 
+// ── Catalogue des épreuves (déplacé du module « Épreuves et documents ») ────
+
+interface CatalogueEpreuve {
+  id: string;
+  academicYearId: string;
+  academicYearLabel: string | null;
+  examCategory: string;
+  examCategoryLabel: string;
+  subject: string | null;
+  title: string;
+  sessionLabel: string | null;
+  durationLabel: string | null;
+  status: string;
+  statusLabel: string;
+}
+
+interface CatalogueYear {
+  academicYearId: string;
+  label: string;
+  isActive: boolean;
+  total: number;
+  categories: { code: string; label: string; count: number }[];
+}
+
+interface CatalogueResponse {
+  categories: { code: string; label: string; fullLabel: string }[];
+  years: CatalogueYear[];
+  network: { patronatId: string; name: string; territory: string | null; totalEpreuves: number }[] | null;
+  orgLevel: string;
+}
+
 const STATUS_BADGES: Record<string, { label: string; className: string }> = {
   DRAFT: { label: 'Brouillon', className: 'bg-slate-100 text-slate-600' },
   VALIDATED: { label: 'Validé', className: 'bg-green-50 text-green-700' },
@@ -70,12 +109,23 @@ const EMPTY_FORM = {
 const MAX_FILE_SIZE = 8 * 1024 * 1024; // 8 Mo
 
 export default function FederisQuestionBankPage() {
+  // ── Onglet actif : Ressources (sujets recensés) | Catalogue (épreuves) ──
+  const [tab, setTab] = useState<'ressources' | 'catalogue'>('ressources');
+
   const [resources, setResources] = useState<BankResource[]>([]);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [canManage, setCanManage] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // ── Catalogue (épreuves du patronat — année → examen → épreuves) ────────
+  const [catalogue, setCatalogue] = useState<CatalogueResponse | null>(null);
+  const [catalogueEpreuves, setCatalogueEpreuves] = useState<CatalogueEpreuve[]>([]);
+  const [catalogueLoading, setCatalogueLoading] = useState(false);
+  const [openYear, setOpenYear] = useState<string | null>(null);
+  const [openCategory, setOpenCategory] = useState<string | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
 
   // Filtres (côté client — sujet, niveau, type)
   const [filterSubject, setFilterSubject] = useState('Tous les sujets');
@@ -109,6 +159,72 @@ export default function FederisQuestionBankPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // ── Catalogue : chargement à la demande (onglet « Catalogue ») ──────────
+  const loadCatalogue = useCallback(async () => {
+    setCatalogueLoading(true);
+    try {
+      const [cat, list] = await Promise.all([
+        apiClient.get('/federis/patronat/epreuves/catalogue', { timeout: 30000 }),
+        apiClient.get('/federis/patronat/epreuves', { timeout: 30000 }),
+      ]);
+      setCatalogue(cat.data ?? null);
+      setCatalogueEpreuves(list.data?.epreuves ?? []);
+      // Ouvre par défaut la première année (l'active ou la plus récente)
+      const years: CatalogueYear[] = cat.data?.years ?? [];
+      if (years.length > 0) {
+        setOpenYear(
+          (prev) => prev ?? (years.find((y) => y.isActive)?.academicYearId ?? years[0].academicYearId),
+        );
+      }
+    } catch {
+      setCatalogue(null);
+      setCatalogueEpreuves([]);
+    } finally {
+      setCatalogueLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'catalogue' && !catalogue && !catalogueLoading) void loadCatalogue();
+  }, [tab, catalogue, catalogueLoading, loadCatalogue]);
+
+  // ── Catalogue : téléchargement PDF d'une épreuve (génération backend) ────
+  const downloadEpreuvePdf = async (epreuve: CatalogueEpreuve) => {
+    setDownloadingPdf(epreuve.id);
+    setNotice(null);
+    setError(null);
+    try {
+      const res = await apiClient.get(`/federis/patronat/epreuves/${epreuve.id}/pdf`, {
+        responseType: 'blob',
+        timeout: 120000,
+      });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `epreuve-${epreuve.subject || epreuve.title}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      setNotice(`Téléchargement de « ${epreuve.title} » lancé.`);
+    } catch (err: any) {
+      let text: string | null = null;
+      if (err?.response?.data instanceof Blob) {
+        try {
+          text = (await err.response.data.text()).slice(0, 300);
+          const parsed = JSON.parse(text);
+          text = parsed?.message ?? text;
+        } catch {
+          /* garde le brut */
+        }
+      }
+      setError(text ?? 'Génération du PDF impossible.');
+    } finally {
+      setDownloadingPdf(null);
+    }
+  };
 
   const subjects = useMemo(() => {
     const set = new Set<string>();
@@ -251,11 +367,12 @@ export default function FederisQuestionBankPage() {
           </h1>
           <p className="text-sm text-gray-500 mt-1 max-w-xl leading-relaxed">
             Gestion centralisée et sécurisée des sujets d&apos;examens du patronat — {resources.length}{' '}
-            épreuve(s) recensée(s), accès restreint et traçabilité des consultations.
+            épreuve(s) recensée(s) — et catalogue des épreuves officielles classées par
+            année scolaire puis par examen (CEP, BEPC, Baccalauréat, CAP).
           </p>
         </div>
 
-        {canManage && (
+        {canManage && tab === 'ressources' && (
           <button
             type="button"
             onClick={() => setShowCreate((v) => !v)}
@@ -279,8 +396,36 @@ export default function FederisQuestionBankPage() {
         </div>
       )}
 
+      {/* ⭐ Onglets segmentés (pattern Helm) : Ressources | Catalogue */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        <button
+          type="button"
+          onClick={() => setTab('ressources')}
+          className={cn(
+            'px-5 py-2 rounded-lg text-xs transition-all',
+            tab === 'ressources'
+              ? 'bg-white shadow-sm text-blue-900 font-bold'
+              : 'text-slate-500 font-semibold hover:text-blue-900',
+          )}
+        >
+          Ressources
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('catalogue')}
+          className={cn(
+            'px-5 py-2 rounded-lg text-xs transition-all',
+            tab === 'catalogue'
+              ? 'bg-white shadow-sm text-blue-900 font-bold'
+              : 'text-slate-500 font-semibold hover:text-blue-900',
+          )}
+        >
+          Catalogue
+        </button>
+      </div>
+
       {/* Formulaire de recensement (coordonnateur / organisateur) */}
-      {showCreate && canManage && (
+      {tab === 'ressources' && showCreate && canManage && (
         <form onSubmit={handleCreate} className="fed-card p-8 space-y-6">
           <h3 className="text-sm font-bold text-blue-900 uppercase">
             Recenser une épreuve
@@ -437,6 +582,8 @@ export default function FederisQuestionBankPage() {
         </form>
       )}
 
+      {/* Explorateur des ressources recensées (onglet « Ressources ») */}
+      {tab === 'ressources' && (
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         {/* Sidebar Filtres */}
         <div className="lg:col-span-1 space-y-6">
@@ -618,6 +765,210 @@ export default function FederisQuestionBankPage() {
           </div>
         </div>
       </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════════
+          ONGLET « CATALOGUE » (année scolaire → examen → épreuves)
+          Déplacé depuis le module « Épreuves et documents » (2026-09-29).
+         ════════════════════════════════════════════════════════════════════ */}
+      {tab === 'catalogue' && (
+        <div className="space-y-5">
+          {/* Vue réseau — patronat national uniquement */}
+          {catalogue?.orgLevel === 'NATIONAL' && (catalogue.network ?? []).length > 0 && (
+            <div className="fed-card p-6">
+              <h2 className="text-sm font-bold text-blue-900 flex items-center gap-2">
+                <AppIcon name="network" size="submenu" className="text-blue-900" />
+                Vue d&apos;ensemble du réseau (patronat national)
+              </h2>
+              <p className="text-xs text-slate-500 mt-1 mb-4">
+                Volumes d&apos;épreuves des patronats territoriaux rattachés — vous
+                consultez vos propres épreuves ci-dessous.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {(catalogue.network ?? []).map((n) => (
+                  <div
+                    key={n.patronatId}
+                    className="flex items-center justify-between border border-slate-200 rounded-xl px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-blue-900 truncate">{n.name}</div>
+                      <div className="text-[10px] text-slate-400">{n.territory ?? '—'}</div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-900 text-xs font-bold flex-shrink-0 ml-3">
+                      {n.totalEpreuves}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {catalogueLoading ? (
+            <div className="space-y-3">
+              {[0, 1].map((i) => (
+                <div key={i} className="fed-card p-6 space-y-3">
+                  <div className="h-5 w-56 rounded bg-slate-100 animate-pulse" />
+                  <div className="h-16 w-full rounded bg-slate-100 animate-pulse" />
+                </div>
+              ))}
+            </div>
+          ) : (catalogue?.years ?? []).length === 0 ? (
+            <div className="fed-card p-10 text-center">
+              <AppIcon name="library" size="submenu" className="w-10 h-10 text-slate-300 mx-auto" />
+              <p className="font-bold text-slate-700 mt-2">Catalogue vide</p>
+              <p className="text-sm text-slate-500 max-w-lg mx-auto mt-1">
+                Les épreuves créées dans le module « Épreuves et documents » sont
+                automatiquement classées ici par année scolaire puis par examen
+                (CEP, BEPC, Baccalauréat, CAP).
+              </p>
+            </div>
+          ) : (
+            (catalogue?.years ?? []).map((year) => (
+              <div key={year.academicYearId} className="fed-card overflow-hidden">
+                {/* Dossier année scolaire */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setOpenYear(openYear === year.academicYearId ? null : year.academicYearId)
+                  }
+                  className="w-full flex items-center justify-between px-6 py-4 bg-[#f7f9fc] border-b border-slate-200 hover:bg-blue-50/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <AppIcon name="library" size="submenu" className="text-blue-900" />
+                    <span className="text-sm font-bold text-blue-900">
+                      Année scolaire {year.label}
+                    </span>
+                    {year.isActive && (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-green-100 text-green-800">
+                        Active
+                      </span>
+                    )}
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-900 text-xs font-bold">
+                    {year.total} épreuve{year.total > 1 ? 's' : ''}
+                  </span>
+                </button>
+
+                {openYear === year.academicYearId && (
+                  <div className="p-6 space-y-4">
+                    {/* Dossiers examens */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                      {year.categories.map((cat) => {
+                        const active = openCategory === cat.code;
+                        return (
+                          <button
+                            key={cat.code}
+                            type="button"
+                            onClick={() => setOpenCategory(active ? null : cat.code)}
+                            className={cn(
+                              'flex items-center justify-between rounded-xl border px-4 py-3 transition-colors text-left',
+                              active
+                                ? 'border-blue-800 bg-blue-900 text-white'
+                                : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/50',
+                            )}
+                          >
+                            <div className="min-w-0">
+                              <div
+                                className={cn(
+                                  'text-xs font-bold truncate',
+                                  active ? 'text-white' : 'text-blue-900',
+                                )}
+                              >
+                                {cat.label}
+                              </div>
+                              <div
+                                className={cn(
+                                  'text-[10px]',
+                                  active ? 'text-blue-200' : 'text-slate-400',
+                                )}
+                              >
+                                dossier
+                              </div>
+                            </div>
+                            <span
+                              className={cn(
+                                'px-2 py-0.5 rounded-lg text-[11px] font-bold flex-shrink-0 ml-2',
+                                active ? 'bg-white/15 text-white' : 'bg-blue-50 text-blue-900',
+                              )}
+                            >
+                              {cat.count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Épreuves du dossier sélectionné */}
+                    {openCategory && (
+                      <div className="border border-slate-200 rounded-xl divide-y divide-slate-100">
+                        {catalogueEpreuves
+                          .filter(
+                            (e) =>
+                              e.academicYearId === year.academicYearId &&
+                              e.examCategory === openCategory,
+                          )
+                          .map((e) => (
+                            <div
+                              key={e.id}
+                              className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-4 py-3 hover:bg-[#f7f9fc]"
+                            >
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-blue-900 truncate">
+                                  {e.title}
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  {[e.subject, e.sessionLabel, e.durationLabel]
+                                    .filter(Boolean)
+                                    .join(' · ') || '—'}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <span
+                                  className={cn(
+                                    'px-2 py-0.5 rounded text-[9px] font-bold uppercase',
+                                    STATUS_BADGES[e.status]?.className ??
+                                      'bg-slate-100 text-slate-600',
+                                  )}
+                                >
+                                  {e.statusLabel}
+                                </span>
+                                {/* Lien croisé vers l'éditeur du module
+                                    « Épreuves et documents » (/documents?edit=) */}
+                                <a
+                                  href={federisLink(`/documents?edit=${e.id}`)}
+                                  className="px-3 py-1.5 bg-blue-50 rounded-lg text-[11px] font-semibold text-blue-800 hover:bg-blue-800 hover:text-white transition-colors"
+                                >
+                                  Ouvrir
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => void downloadEpreuvePdf(e)}
+                                  disabled={downloadingPdf !== null}
+                                  className="px-3 py-1.5 bg-blue-50 rounded-lg text-[11px] font-semibold text-blue-800 hover:bg-blue-800 hover:text-white transition-colors disabled:opacity-50"
+                                >
+                                  {downloadingPdf === e.id ? '…' : 'PDF'}
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        {catalogueEpreuves.filter(
+                          (e) =>
+                            e.academicYearId === year.academicYearId &&
+                            e.examCategory === openCategory,
+                        ).length === 0 && (
+                          <p className="px-4 py-6 text-center text-xs text-slate-400">
+                            Aucune épreuve dans ce dossier.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </FedPage>
   );
 }

@@ -41,6 +41,14 @@ import { ModuleContainer } from '@/components/modules/blueprint';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules } from '../layout';
 import apiClient from '@/lib/api/client';
@@ -206,16 +214,36 @@ export default function NationalExamsPage() {
     }));
   }, [candidates]);
 
-  // ── Envoi officiel au(x) patronat(s) ─────────────────────────────────────
-  const handleSubmit = async () => {
-    if (!activeType || selected.size === 0) return;
-    if (
-      !window.confirm(
-        `Confirmer l'envoi officiel de ${selected.size} candidat(s) ${candidates?.label ?? ''} au(x) patronat(s) rattaché(s) ?`,
-      )
-    ) {
-      return;
+  // ── Envoi officiel au(x) patronat(s) — modale personnalisée ──────────────
+  // ⭐ 2026-09-29 : remplace le window.confirm générique par un Dialogue
+  //    personnalisé (palette Helm) qui récapitule l'examen, le nombre de
+  //    candidats sélectionnés, la répartition par série (Bac) et les
+  //    patronats destinataires AVANT la confirmation d'envoi.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  /** Répartition par série des candidats sélectionnés (Bac uniquement). */
+  const selectedSeriesBreakdown = useMemo(() => {
+    if (!candidates || !candidates.hasSeries) return [];
+    const bySeries = new Map<string, number>();
+    for (const s of candidates.students) {
+      if (!selected.has(s.id)) continue;
+      const key = s.series ?? 'NON PRECISEE';
+      bySeries.set(key, (bySeries.get(key) ?? 0) + 1);
     }
+    return [...bySeries.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], 'fr'))
+      .map(([series, count]) => ({ series, count }));
+  }, [candidates, selected]);
+
+  /** Ouvre la modale de confirmation (bouton « Envoyer au patronat »). */
+  const handleSubmit = () => {
+    if (!activeType || selected.size === 0 || joinedPatronats.length === 0) return;
+    setConfirmOpen(true);
+  };
+
+  /** Envoi effectif — déclenché par « Confirmer l'envoi » dans la modale. */
+  const confirmSend = async () => {
+    if (!activeType || selected.size === 0) return;
     setSending(true);
     try {
       const res = await apiClient.post(
@@ -241,11 +269,17 @@ export default function NationalExamsPage() {
       toastSuccess(
         `${selected.size} candidat(s) envoyé(s) à ${patronatsNames || 'votre patronat'}${breakdownText}.`,
       );
+      setConfirmOpen(false);
       // Rechargement de l'état complet
       await loadEligibility();
       if (activeType) await loadCandidates(activeType);
     } catch (err: any) {
-      toastError(err?.response?.data?.message || "Échec de l'envoi au patronat.");
+      const msg = err?.response?.data?.message;
+      toastError(
+        (Array.isArray(msg) ? msg.join(' ') : msg) ||
+          err?.message ||
+          "Échec de l'envoi au patronat.",
+      );
     } finally {
       setSending(false);
     }
@@ -269,6 +303,7 @@ export default function NationalExamsPage() {
       content={{
         layout: 'full',
         children: (
+          <>
           <div className="space-y-6">
             {/* ── État général : année scolaire + patronats rattachés ── */}
             {loading ? (
@@ -663,6 +698,152 @@ export default function NationalExamsPage() {
               </>
             )}
           </div>
+
+          {/* ⭐ Modale personnalisée « Envoyer au patronat » (2026-09-29) —
+              remplace le window.confirm générique. Récapitulatif complet :
+              examen, effectif sélectionné, répartition par série (Bac),
+              patronats destinataires, caractère officiel de l'engagement. */}
+          <Dialog open={confirmOpen} onOpenChange={(open) => !sending && setConfirmOpen(open)}>
+            <DialogContent className="max-w-lg p-0 overflow-hidden bg-white rounded-2xl">
+              {/* Bandeau en-tête — palette Helm (Royal Blue) */}
+              <div className="bg-blue-900 px-6 py-5 text-white">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
+                    <Send className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <DialogTitle className="text-base font-bold leading-tight">
+                      Envoi officiel au patronat
+                    </DialogTitle>
+                    <DialogDescription className="text-blue-100 text-xs mt-0.5">
+                      Transmission de la liste officielle des candidats
+                    </DialogDescription>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 py-5 space-y-4">
+                {/* Examen + effectif */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      Examen
+                    </p>
+                    <p className="text-sm font-bold text-slate-800 mt-1">
+                      {candidates?.examType === 'BAC'
+                        ? 'Baccalauréat'
+                        : candidates?.examType === 'CAP'
+                          ? 'CAP (filières techniques)'
+                          : (candidates?.label ?? activeType)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                      Candidats sélectionnés
+                    </p>
+                    <p className="text-sm font-bold text-amber-800 mt-1">
+                      <Users className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
+                      {selected.size} élève(s)
+                    </p>
+                  </div>
+                </div>
+
+                {/* Répartition par série (Baccalauréat uniquement) */}
+                {selectedSeriesBreakdown.length > 0 && (
+                  <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-blue-900 mb-2">
+                      Répartition par série
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedSeriesBreakdown.map((s) => (
+                        <Badge
+                          key={s.series}
+                          variant="outline"
+                          className="bg-white border-blue-200 text-blue-900 text-[11px] font-bold"
+                        >
+                          {s.series === 'NON PRECISEE' ? 'Série non précisée' : `Série ${s.series}`}
+                          {' : '}
+                          {s.count}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Patronats destinataires */}
+                <div className="rounded-xl border border-slate-200 px-4 py-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                    Destinataires
+                  </p>
+                  <div className="space-y-1.5">
+                    {(candidates?.patronatTargets ?? []).length > 0 ? (
+                      (candidates?.patronatTargets ?? []).map((t, i) => (
+                        <div key={i} className="flex items-center gap-2 text-xs">
+                          {t.ready ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          ) : (
+                            <XCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          )}
+                          <span className="font-bold text-slate-700">{t.name}</span>
+                          <span className="text-slate-500 truncate">
+                            {t.exam ? `${t.exam.code} — ${t.exam.name}` : (t.reason ?? '')}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      (joinedPatronats ?? []).map((p) => (
+                        <div key={p.id} className="flex items-center gap-2 text-xs">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          <span className="font-bold text-slate-700">{p.name}</span>
+                          {p.territoryName && (
+                            <span className="text-slate-500">({p.territoryName})</span>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Avertissement — engagement officiel */}
+                <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 flex items-start gap-2.5">
+                  <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800 leading-relaxed">
+                    Cette transmission vaut <b>engagement officiel</b> de votre établissement à
+                    présenter ces élèves à l&apos;examen. Le patronat enregistrera la liste comme
+                    inscription officielle et en sera notifié immédiatement.
+                  </p>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <DialogFooter className="px-6 py-4 bg-slate-50 border-t border-slate-200 sm:justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setConfirmOpen(false)}
+                  disabled={sending}
+                  className="font-bold"
+                >
+                  Annuler
+                </Button>
+                <Button
+                  onClick={confirmSend}
+                  disabled={sending}
+                  className="bg-amber-500 hover:bg-amber-600 text-white font-bold min-w-40"
+                >
+                  {sending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Envoi en cours…
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4 mr-2" /> Confirmer l&apos;envoi
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          </>
         ),
       }}
     />

@@ -491,6 +491,219 @@ export class FederisPdfService {
   }
 
   // ══════════════════════════════════════════════════════════════════════
+  // 2 bis. LISTE OFFICIELLE DES CANDIDATS (2026-09-29)
+  // ══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Liste officielle des candidats de l'examen (module Candidats) :
+   * identité complète (nom, matricule, école de provenance, centre, salle,
+   * n° de table, anonymat) — un tableau par centre, récapitulatif global,
+   * mention de l'année scolaire et bloc de signatures officielles.
+   */
+  async generateCandidatesListPdf(
+    tenantId: string,
+    userId: string,
+    examId: string,
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertRead(fn);
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+
+    const [academicYear, candidates] = await Promise.all([
+      this.prisma.academicYear.findUnique({ where: { id: exam.academicYearId } }),
+      this.prisma.examCandidate.findMany({
+        where: { examId: exam.id, status: { not: 'CANCELLED' } },
+        include: {
+          center: { select: { code: true, name: true } },
+          room: { select: { code: true, name: true } },
+          schoolTenant: { select: { name: true } },
+        },
+        orderBy: [
+          { center: { code: 'asc' } },
+          { room: { code: 'asc' } },
+          { tableNumber: 'asc' },
+        ],
+      }),
+    ]);
+
+    if (candidates.length === 0) {
+      throw new BadRequestException('Aucun candidat enregistré pour cet examen.');
+    }
+
+    // ⭐ anonymatCode : colonne récente — lecture brute de secours si le
+    //    client Prisma local n'a pas été régénéré (pattern federis-exams).
+    let anonymatById = new Map<string, string | null>();
+    try {
+      const rows: any[] = (await this.prisma.$queryRawUnsafe(
+        `SELECT "id", "anonymatCode" FROM "exam_candidates" WHERE "examId" = $1`,
+        exam.id,
+      )) as any[];
+      anonymatById = new Map(rows.map((r) => [r.id, r.anonymatCode ?? null]));
+    } catch {
+      /* colonne absente → anonymats non affichés */
+    }
+
+    const rows = candidates.map((c, i) => ({
+      order: i + 1,
+      matricule: c.matricule,
+      name: `${c.lastName} ${c.firstName}`,
+      gender: c.gender,
+      dob: formatDate(c.dateOfBirth),
+      school: c.schoolTenant?.name ?? (c.metadata as any)?.schoolName ?? '—',
+      center: c.center ? `${c.center.code} — ${c.center.name}` : 'Non affecté',
+      room: c.room?.code ?? '—',
+      tableNumber: c.tableNumber ?? '—',
+      anonymat: (c as any).anonymatCode ?? anonymatById.get(c.id) ?? '—',
+    }));
+
+    // Regroupement par centre pour le récapitulatif
+    const byCenter = new Map<string, number>();
+    for (const r of rows) {
+      byCenter.set(r.center, (byCenter.get(r.center) ?? 0) + 1);
+    }
+
+    const html = `
+      <!DOCTYPE html>
+      <html lang="fr">
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; font-size: 10.5px; }
+            .doc { padding: 4px 6px; }
+            .header { text-align: center; border-bottom: 3px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 14px; }
+            .header h1 { font-size: 17px; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.5px; }
+            .header .sub { font-size: 11px; color: #475569; margin-top: 3px; }
+            .meta { display: flex; justify-content: space-between; font-size: 10px; color: #475569; margin-bottom: 10px; }
+            .meta b { color: #1e293b; }
+            h2 { font-size: 12.5px; color: #1e3a8a; margin: 14px 0 6px; border-left: 4px solid #d97706; padding-left: 8px; text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+            th { background: #1e3a8a; color: #fff; font-size: 9px; text-transform: uppercase; padding: 5px 6px; text-align: left; font-weight: 600; }
+            td { border: 1px solid #e2e8f0; padding: 4px 6px; font-size: 9.5px; }
+            tr:nth-child(even) td { background: #f8fafc; }
+            .center-cell { font-weight: 600; color: #1e3a8a; }
+            .table-num { font-weight: 700; text-align: center; }
+            .anonymat { font-family: 'Courier New', monospace; font-weight: 700; color: #92400e; }
+            .summary { display: flex; gap: 8px; margin: 10px 0 4px; }
+            .stat { flex: 1; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 9px; text-align: center; background: #f8fafc; }
+            .stat .num { font-size: 15px; font-weight: 800; color: #1e3a8a; }
+            .stat .lbl { font-size: 8px; text-transform: uppercase; color: #64748b; letter-spacing: 0.4px; }
+            .signatures { margin-top: 26px; display: flex; justify-content: space-around; gap: 30px; }
+            .sig { text-align: center; font-size: 9.5px; color: #334155; }
+            .sig .line { margin-top: 38px; border-top: 1px solid #94a3b8; padding-top: 4px; width: 200px; }
+            .footer-note { margin-top: 16px; font-size: 8.5px; color: #94a3b8; text-align: center; font-style: italic; }
+          </style>
+        </head>
+        <body>
+          <div class="doc">
+            <div class="header">
+              <h1>${esc(patronat.legalName || patronat.name)}</h1>
+              <div class="sub">${esc([patronat.territoryName, patronat.country?.name].filter(Boolean).join(' — '))}</div>
+              <h1 style="margin-top:8px; font-size:14px;">Liste officielle des candidats</h1>
+              <div class="sub">${esc(exam.name)} (${esc(exam.code)}) — ${esc(exam.examType)} — ${esc(academicYear?.label ?? academicYear?.name ?? '')}</div>
+            </div>
+
+            <div class="meta">
+              <span>Établie le <b>${formatLongDate(new Date())}</b></span>
+              <span>Candidats actifs : <b>${rows.length}</b></span>
+              <span>Centres : <b>${byCenter.size}</b></span>
+            </div>
+
+            <div class="summary">
+              <div class="stat"><div class="num">${rows.length}</div><div class="lbl">Candidats</div></div>
+              <div class="stat"><div class="num">${byCenter.size}</div><div class="lbl">Centres</div></div>
+              <div class="stat"><div class="num">${rows.filter((r) => r.tableNumber !== '—').length}</div><div class="lbl">Tables affectées</div></div>
+              <div class="stat"><div class="num">${rows.filter((r) => r.anonymat !== '—').length}</div><div class="lbl">Anonymats émis</div></div>
+            </div>
+
+            <h2>Registre général (${esc(exam.code)})</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:3%">N°</th>
+                  <th style="width:13%">Matricule</th>
+                  <th style="width:17%">Nom et prénoms</th>
+                  <th style="width:3%">S</th>
+                  <th style="width:6%">Naissance</th>
+                  <th style="width:16%">École de provenance</th>
+                  <th style="width:16%">Centre</th>
+                  <th style="width:5%">Salle</th>
+                  <th style="width:5%">Table</th>
+                  <th style="width:9%">Anonymat</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows
+                  .map(
+                    (r) => `<tr>
+                      <td>${r.order}</td>
+                      <td>${esc(r.matricule)}</td>
+                      <td><b>${esc(r.name)}</b></td>
+                      <td>${esc(r.gender === 'M' ? 'M' : r.gender === 'F' ? 'F' : '—')}</td>
+                      <td>${esc(r.dob)}</td>
+                      <td>${esc(r.school)}</td>
+                      <td class="center-cell">${esc(r.center)}</td>
+                      <td>${esc(r.room)}</td>
+                      <td class="table-num">${esc(r.tableNumber)}</td>
+                      <td class="anonymat">${esc(r.anonymat)}</td>
+                    </tr>`,
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+
+            <h2>Répartition par centre</h2>
+            <table>
+              <thead>
+                <tr><th style="width:70%">Centre d'examen</th><th style="width:30%">Effectif</th></tr>
+              </thead>
+              <tbody>
+                ${[...byCenter.entries()]
+                  .map(
+                    ([center, count]) =>
+                      `<tr><td class="center-cell">${esc(center)}</td><td class="table-num">${count}</td></tr>`,
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+
+            <div class="signatures">
+              <div class="sig">Le/La Coordonnateur(trice)<div class="line"></div></div>
+              <div class="sig">Le/La Secrétaire général(e)<div class="line"></div></div>
+              <div class="sig">Le/La Président(e) du patronat<div class="line"></div></div>
+            </div>
+
+            <div class="footer-note">
+              Document officiel généré par Academia Federis — ${esc(patronat.name)}.
+              L'anonymat est utilisé pour la saisie des notes et la correction (identités masquées).
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const buffer = await this.renderPdf(html);
+    const filename = `Liste_Officielle_Candidats_${exam.code}_${new Date().toISOString().split('T')[0]}.pdf`;
+
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_CANDIDATES_LIST_PDF',
+          resource: 'NationalExam',
+          resourceId: exam.id,
+          tableName: 'national_exams',
+          recordId: exam.id,
+          newData: { examCode: exam.code, candidates: rows.length, centers: byCenter.size },
+        },
+      })
+      .catch(() => undefined);
+
+    return { buffer, filename };
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
   // 3. RENDU PDF (pattern Helm — PuppeteerPool + retry)
   // ══════════════════════════════════════════════════════════════════════
 

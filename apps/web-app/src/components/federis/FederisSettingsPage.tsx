@@ -16,7 +16,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import AppIcon from '@/components/ui/AppIcon';
@@ -28,7 +28,16 @@ import type { User } from '@/types';
 import { CalendarDays, Save, Loader2, AlertCircle, CheckCircle, ExternalLink } from 'lucide-react';
 import * as settingsService from '@/services/settings.service';
 
-type Tab = 'identity' | 'academic-year' | 'subscription' | 'team' | 'audit';
+type Tab = 'identity' | 'matricule' | 'academic-year' | 'subscription' | 'team' | 'audit';
+
+interface MatriculeSettings {
+  format: string | null;
+  defaultFormat: string;
+  isDefault: boolean;
+  tokens: Array<{ token: string; description: string }>;
+  preview: string;
+  canManage: boolean;
+}
 
 interface PatronatIdentity {
   id: string;
@@ -90,6 +99,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
 
   const tabs: Array<{ id: Tab; label: string; icon: string }> = [
     { id: 'identity', label: 'Identité & Logo', icon: 'building' },
+    { id: 'matricule', label: 'Matricule & Anonymat', icon: 'idcard' },
     { id: 'academic-year', label: 'Années Scolaires', icon: 'calendar' },
     { id: 'subscription', label: 'Abonnement & paiement', icon: 'finance' },
     { id: 'team', label: 'Équipe & Comptes', icon: 'user' },
@@ -118,6 +128,100 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
   useEffect(() => {
     if (activeTab === 'identity') void loadIdentity();
   }, [activeTab, loadIdentity]);
+
+  // ── Matricule & Anonymat (2026-09-29 — format de génération) ──────
+  const [matricule, setMatricule] = useState<MatriculeSettings | null>(null);
+  const [matriculeDraft, setMatriculeDraft] = useState('');
+  const [matriculeLoading, setMatriculeLoading] = useState(true);
+  const [matriculeSaving, setMatriculeSaving] = useState(false);
+  const [matriculeNotice, setMatriculeNotice] = useState<string | null>(null);
+  const [matriculeError, setMatriculeError] = useState<string | null>(null);
+
+  const loadMatricule = useCallback(async () => {
+    setMatriculeLoading(true);
+    try {
+      const res = await apiClient.get('/federis/settings/matricule', { timeout: 20000 });
+      setMatricule(res.data ?? null);
+      setMatriculeDraft(res.data?.format ?? '');
+    } catch (err: any) {
+      setMatricule(null);
+      setMatriculeError(
+        (Array.isArray(err?.response?.data?.message)
+          ? err.response.data.message.join(' ')
+          : err?.response?.data?.message) ?? 'Impossible de charger le format de matricule.',
+      );
+    } finally {
+      setMatriculeLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'matricule') void loadMatricule();
+  }, [activeTab, loadMatricule]);
+
+  /** Aperçu local (même moteur de jetons que le backend). */
+  const matriculePreview = useMemo(() => {
+    const format = matriculeDraft.trim() || matricule?.defaultFormat || '{EXAM}-{ANNEE}-{SEQ:5}';
+    const year = new Date().getFullYear();
+    return format.replace(
+      /\{(EXAM|EXAMTYPE|ANNEE|ANNEE2|SEQ(?::\d+)?|PATRONAT)\}/g,
+      (_m: string, token: string) => {
+        switch (token) {
+          case 'EXAM':
+            return 'BAC26';
+          case 'EXAMTYPE':
+            return 'BAC';
+          case 'ANNEE':
+            return String(year);
+          case 'ANNEE2':
+            return String(year).slice(-2);
+          case 'PATRONAT':
+            return 'PNEPB';
+          default: {
+            const width = token.startsWith('SEQ:') ? parseInt(token.slice(4), 10) : NaN;
+            return Number.isFinite(width) && width > 0
+              ? String(42).padStart(width, '0')
+              : '42';
+          }
+        }
+      },
+    );
+  }, [matriculeDraft, matricule]);
+
+  /** Jeton {SEQ} présent ? (validation locale — le backend revalide) */
+  const matriculeDraftValid = useMemo(
+    () => /\{SEQ(:\d+)?\}/.test(matriculeDraft.trim()) || matriculeDraft.trim() === '',
+    [matriculeDraft],
+  );
+
+  const handleSaveMatricule = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!matricule) return;
+    setMatriculeSaving(true);
+    setMatriculeNotice(null);
+    setMatriculeError(null);
+    try {
+      const res = await apiClient.put(
+        '/federis/settings/matricule',
+        { format: matriculeDraft.trim() || null },
+        { timeout: 20000 },
+      );
+      setMatricule(res.data ?? null);
+      setMatriculeDraft(res.data?.format ?? '');
+      setMatriculeNotice(
+        res.data?.isDefault
+          ? 'Format réinitialisé au défaut — les prochains matricules suivront ce modèle.'
+          : 'Format enregistré — les prochains matricules générés suivront ce modèle.',
+      );
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      setMatriculeError(
+        (Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Enregistrement impossible.',
+      );
+    } finally {
+      setMatriculeSaving(false);
+    }
+  };
 
   const handleSaveIdentity = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -486,6 +590,188 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                       )}
                       {identitySaving ? 'Enregistrement…' : 'Enregistrer'}
                     </button>
+                  </div>
+                </>
+              )}
+            </form>
+          )}
+
+          {/* ══════════ MATRICULE & ANONYMAT (2026-09-29) ══════════ */}
+          {activeTab === 'matricule' && (
+            <form onSubmit={handleSaveMatricule} className="space-y-6">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Matricule &amp; anonymat des candidats</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Définissez librement le modèle de génération des matricules candidats.
+                  Si vous ne définissez rien, le backend applique le format par défaut
+                  établi. Les anonymats (codes de saisie des notes) sont générés dans le
+                  module Candidats.
+                </p>
+              </div>
+
+              {matriculeLoading ? (
+                <div className="space-y-4 animate-pulse">
+                  <div className="h-10 bg-gray-100 rounded-md" />
+                  <div className="h-24 bg-gray-100 rounded-xl" />
+                </div>
+              ) : !matricule ? (
+                <div className="flex items-start space-x-3 bg-red-50 border border-red-200 rounded-lg p-4">
+                  <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-red-800">
+                      {matriculeError ?? 'Format de matricule indisponible.'}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Format actuel */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+                      <p className="text-[10px] font-bold uppercase text-blue-700">
+                        Format appliqué actuellement
+                      </p>
+                      <p className="mt-1.5 font-mono font-bold text-blue-900 text-sm break-all">
+                        {matricule.format ?? matricule.defaultFormat}
+                      </p>
+                      <span
+                        className={cn(
+                          'inline-block mt-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase',
+                          matricule.isDefault
+                            ? 'bg-slate-100 text-slate-500'
+                            : 'bg-emerald-100 text-emerald-700',
+                        )}
+                      >
+                        {matricule.isDefault ? 'Défaut (aucune personnalisation)' : 'Personnalisé'}
+                      </span>
+                    </div>
+                    <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                      <p className="text-[10px] font-bold uppercase text-slate-500">
+                        Format par défaut du système
+                      </p>
+                      <p className="mt-1.5 font-mono font-bold text-slate-700 text-sm break-all">
+                        {matricule.defaultFormat}
+                      </p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Exemple : BAC26-2026-00042
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Éditeur de modèle */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Votre modèle de matricule{' '}
+                      <span className="text-gray-400 font-normal">
+                        (vide = format par défaut)
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      value={matriculeDraft}
+                      onChange={(e) => setMatriculeDraft(e.target.value)}
+                      disabled={!matricule.canManage}
+                      maxLength={60}
+                      className={cn(
+                        'w-full px-4 py-2.5 border rounded-md font-mono font-semibold',
+                        matriculeDraftValid ? 'border-gray-300' : 'border-red-400',
+                      )}
+                      placeholder={matricule.defaultFormat}
+                    />
+                    {!matriculeDraftValid && (
+                      <p className="mt-1 text-sm text-red-600">
+                        Le jeton {'{SEQ}'} (ou {'{SEQ:n}'}) est obligatoire pour garantir
+                        l&apos;unicité des matricules.
+                      </p>
+                    )}
+
+                    {/* Aperçu en direct */}
+                    <div className="mt-3 flex items-center gap-3 bg-white border border-blue-900/15 rounded-lg px-4 py-3">
+                      <span className="text-[10px] font-bold uppercase text-slate-400 shrink-0">
+                        Aperçu (candidat n° 42)
+                      </span>
+                      <span className="font-mono font-bold text-blue-900 break-all">
+                        {matriculePreview}
+                      </span>
+                    </div>
+
+                    {/* Jetons disponibles */}
+                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {(matricule.tokens ?? []).map((t) => (
+                        <button
+                          key={t.token}
+                          type="button"
+                          disabled={!matricule.canManage}
+                          onClick={() => setMatriculeDraft((d) => `${d}${t.token}`)}
+                          className="flex items-start gap-2.5 text-left px-3 py-2 rounded-lg border border-gray-200 hover:border-blue-700/40 hover:bg-blue-50/50 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                        >
+                          <code className="text-[11px] font-bold text-blue-900 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">
+                            {t.token}
+                          </code>
+                          <span className="text-[11px] text-gray-600">{t.description}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {matriculeError && (
+                    <div className="flex items-start space-x-3 bg-red-50 border border-red-200 rounded-lg p-4">
+                      <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                      <p className="text-sm font-semibold text-red-800">{matriculeError}</p>
+                    </div>
+                  )}
+                  {matriculeNotice && (
+                    <div className="flex items-start space-x-3 bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                      <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                      <p className="text-sm font-semibold text-emerald-800">{matriculeNotice}</p>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="submit"
+                      disabled={matriculeSaving || !matricule.canManage || !matriculeDraftValid}
+                      className="px-4 py-2 bg-blue-700 text-white rounded-md font-semibold hover:bg-blue-800 disabled:opacity-50 flex items-center space-x-2"
+                    >
+                      {matriculeSaving ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Save className="w-4 h-4" />
+                      )}
+                      <span>Enregistrer le format</span>
+                    </button>
+                    {(matricule.format || matriculeDraft.trim()) && (
+                      <button
+                        type="button"
+                        disabled={matriculeSaving || !matricule.canManage}
+                        onClick={() => {
+                          setMatriculeDraft('');
+                          setMatriculeNotice(null);
+                          setMatriculeError(null);
+                        }}
+                        className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md font-semibold hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        Revenir au format par défaut
+                      </button>
+                    )}
+                    {!matricule.canManage && (
+                      <p className="text-xs text-gray-500">
+                        La modification du format est réservée au coordonnateur, à
+                        l&apos;organisateur et au secrétaire.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Note anonymats */}
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+                    <CalendarDays className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      <b>Anonymats :</b> indépendants du matricule, ils sont générés par examen
+                      dans le module Candidats (bouton « Générer les anonymats ») sous la forme
+                      <span className="font-mono font-bold"> 26B00001</span> — année sur 2 chiffres +
+                      initiale de l&apos;examen + séquence. Ils masquent l&apos;identité des candidats
+                      pour la saisie des notes et toute la correction.
+                    </p>
                   </div>
                 </>
               )}

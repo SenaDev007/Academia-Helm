@@ -52,27 +52,76 @@ import {
 
 // ── DTO ─────────────────────────────────────────────────────────────────────
 
+// ⭐ FIX 2026-09-29 — décorateurs class-validator OBLIGATOIRES (ValidationPipe
+//    global whitelist + forbidNonWhitelisted, pattern federis-patronat.service).
+import {
+  IsArray,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class BulkResultRowDto {
+  @IsString()
+  @MaxLength(60)
+  matricule!: string;
+
+  @IsString()
+  @MaxLength(40)
+  subjectCode!: string;
+
+  @IsNumber()
+  score!: number;
+}
+
 export class BulkResultsDto {
   /** Lignes de notes : [{ matricule, subjectCode, score }] */
-  rows!: { matricule: string; subjectCode: string; score: number }[];
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BulkResultRowDto)
+  rows!: BulkResultRowDto[];
 }
 
 export class SimulateDeliberationDto {
   /** Moyenne d'admission (défaut 10/20). */
+  @IsOptional()
+  @IsNumber()
   passMark?: number;
+
   /** Seuil de rachat — cas limites soumis au jury (défaut 9.5/20). */
+  @IsOptional()
+  @IsNumber()
   rescueMark?: number;
 }
 
 export class RunDeliberationDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(190)
   juryName!: string;
+
+  @IsOptional()
+  @IsNumber()
   passMark?: number;
+
+  @IsOptional()
+  @IsNumber()
   rescueMark?: number;
 }
 
 export class DecideCaseDto {
   /** APPROVED → admis sur délibération | REJECTED → ajourné. */
+  @IsIn(['APPROVED', 'REJECTED'])
   decision!: 'APPROVED' | 'REJECTED';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
   comments?: string;
 }
 

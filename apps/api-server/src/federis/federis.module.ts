@@ -36,6 +36,9 @@ import { FederisDeliberationController } from './federis-deliberation.controller
 // ⭐ Examens nationaux côté école : CEP/BEPC/Bac (sélection + envoi patronat)
 import { FederisSchoolExamsService } from './federis-school-exams.service';
 import { FederisSchoolExamsController } from './federis-school-exams.controller';
+// ⭐ Export Excel de la liste officielle des candidats (2026-09-29) — même
+//    pattern que les exports Helm (educmaster-excel-export.service.ts)
+import { FederisCandidatesExportService } from './federis-candidates-export.service';
 // ⭐ PDF officiels : bordereaux d'émargement + palmarès (Puppeteer, même
 // pattern que les PDF Helm — rendu backend, aucune génération frontend)
 import { FederisPdfService } from './federis-pdf.service';
@@ -103,6 +106,7 @@ import { FederisSchoolSupervisorsController } from './federis-school-supervisors
     FederisSchoolService,
     FederisDeliberationService,
     FederisSchoolExamsService,
+    FederisCandidatesExportService,
   ],
 })
 export class FederisModule {}

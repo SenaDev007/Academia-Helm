@@ -35,25 +35,87 @@ import {
   type PatronatFunctionKey,
 } from './federis-roles';
 
+// ⭐ FIX 2026-09-29 — décorateurs class-validator OBLIGATOIRES (ValidationPipe
+//    global whitelist + forbidNonWhitelisted, pattern federis-patronat.service).
+import {
+  IsBoolean,
+  IsEmail,
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+
+const PATRONAT_FUNCTION_KEYS = [
+  'COORDONNATEUR',
+  'SECRETAIRE',
+  'TRESORIER',
+  'ORGANISATEUR',
+  'CHARGE_MISSION',
+] as const;
+
 export class CreatePatronatUserDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
   firstName!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
   lastName!: string;
+
+  @IsEmail()
+  @MaxLength(190)
   email!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
   phone?: string;
+
   /** Fonction : COORDONNATEUR | SECRETAIRE | TRESORIER | ORGANISATEUR | CHARGE_MISSION */
+  @IsIn(PATRONAT_FUNCTION_KEYS as unknown as string[])
   function!: PatronatFunctionKey;
+
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
   password!: string;
 }
 
 export class UpdatePatronatUserDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
   firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
   lastName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
   phone?: string;
+
+  @IsOptional()
+  @IsIn(PATRONAT_FUNCTION_KEYS as unknown as string[])
   function?: PatronatFunctionKey;
+
+  @IsOptional()
+  @IsBoolean()
   isActive?: boolean;
 }
 
 export class ResetPatronatUserPasswordDto {
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
   password!: string;
 }
 

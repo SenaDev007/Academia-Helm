@@ -10206,6 +10206,11 @@ model Patronat {
   /// ⭐ Federis — en-tête personnalisé des épreuves (HTML riche), réutilisable
   ///    pour toutes les épreuves créées par le patronat (module Épreuves).
   epreuveHeader                    String?
+  /// ⭐ Federis — format personnalisé de génération des matricules candidats
+  ///    (2026-09-29, module Paramètres). Modèle à jetons : {EXAM}, {EXAMTYPE},
+  ///    {ANNEE}, {SEQ}, {SEQ:n}, {PATRONAT}. Null → format par défaut
+  ///    {EXAM}-{ANNEE}-{SEQ:5} (ex. BAC26-2026-00001).
+  matriculeFormat                  String?
   federisCommunities               FederisCommunity[]
   federisGroups                    FederisGroup[]
   interPatronatConnectionsReceived FederisInterPatronatConnection[] @relation("ConnectionReceiver")
@@ -10412,6 +10417,11 @@ model ExamCandidate {
   registrationNumber String                 @unique
   matricule          String                 @unique
   tableNumber        String?
+  /// ⭐ Anonymat (2026-09-29) — code anonyme utilisé pour la saisie des notes
+  ///    et tout le post-composition (correction sans identité du candidat).
+  ///    Unique PAR EXAMEN (géré applicativement) : ex. « 26C00001 ».
+  anonymatCode       String?
+  anonymatIssuedAt   DateTime?
   firstName          String
   lastName           String
   dateOfBirth        DateTime?
@@ -10450,6 +10460,7 @@ model ExamCandidate {
   @@index([tableNumber])
   @@index([status])
   @@index([centerId])
+  @@index([examId, anonymatCode])
   @@map("exam_candidates")
 }
 

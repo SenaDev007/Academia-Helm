@@ -1,15 +1,24 @@
 /**
  * FederisCandidatesPage — Fichier national des candidats (Academia Federis)
  *
- * §8.4 du cahier des charges :
- *   - registre des candidats par examen (recherche)
+ * §8.4 du cahier des charges + refonte 2026-09-29 :
+ *   - CATÉGORISATION PAR EXAMEN : les candidats au CEP, BEPC, BAC et CAP sont
+ *     affichés dans LEUR PROPRE onglet — jamais de mélange. Chaque onglet
+ *     regroupe les campagnes du type (sélecteur si plusieurs campagnes).
+ *   - Registre par candidat : nom, matricule, école de provenance, centre
+ *     d'examen, salle de composition, n° de table ET anonymat.
+ *   - NUMÉROS DE TABLE dynamiques : POST /federis/exams/:id/assign-tables
+ *     répartit les candidats dans les salles (capacité) — numérotation au
+ *     choix PAR CENTRE, PAR SALLE (redémarre dans chaque salle) ou globale.
+ *   - ANONYMATS : POST /federis/exams/:id/anonymats/generate — code anonyme
+ *     par candidat pour la saisie des notes / le post-composition (les
+ *     correcteurs ne voient plus les identités).
+ *   - LISTE OFFICIELLE : PDF (GET /federis/exams/:id/pdf/candidats) et Excel
+ *     (GET /federis/exams/:id/excel/candidats) générés 100 % côté backend
+ *     (Puppeteer / ExcelJS — pattern Helm), téléchargés en blob authentifié.
  *   - IMPORT EXCEL : le fichier (.xlsx/.xls/.csv) est analysé côté client
- *     avec SheetJS (loader CDN — même pattern que les exports Helm), puis les
- *     lignes sont envoyées en JSON à POST /federis/exams/:id/candidates/import
- *     (validations + quota + doublons côté API)
- *   - AFFECTATION DES NUMÉROS DE TABLE : POST /federis/exams/:id/assign-tables
- *     répartit les candidats dans les salles (capacité) et attribue un numéro
- *     séquentiel par centre (001, 002, …)
+ *     avec SheetJS puis envoyé en JSON à POST /federis/exams/:id/candidates/import
+ *     — pour les écoles qui ne sont PAS sur Academia Helm (schoolName libre).
  *
  * Colonnes Excel attendues (en-têtes souples) :
  *   Prénom | Nom | Date de naissance | Sexe | École | Matricule
@@ -17,7 +26,7 @@
 
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
@@ -26,11 +35,14 @@ import { useFederisExams, EXAM_STATUS_LABELS } from '@/hooks/useFederisExams';
 import { loadXlsx } from '@/lib/exports/xlsx-loader';
 import { FedPage, FedCountUp } from '@/components/federis/federis-motion';
 
+// ── Types ───────────────────────────────────────────────────────────────────
+
 interface Candidate {
   id: string;
   registrationNumber: string;
   matricule: string;
   tableNumber: string | null;
+  anonymatCode?: string | null;
   firstName: string;
   lastName: string;
   gender: string | null;
@@ -66,6 +78,14 @@ interface FederisCandidatesPageProps {
   userRole?: string | null;
 }
 
+/** Ordre canonique des types d'examen (catégorisation — jamais de mélange). */
+const EXAM_TYPES: Array<{ type: 'CEP' | 'BEPC' | 'BAC' | 'CAP'; label: string }> = [
+  { type: 'CEP', label: 'CEP' },
+  { type: 'BEPC', label: 'BEPC' },
+  { type: 'BAC', label: 'Baccalauréat' },
+  { type: 'CAP', label: 'CAP' },
+];
+
 /** Mapping souple des en-têtes Excel → champs candidat. */
 function mapRow(row: Record<string, any>): Record<string, string | undefined> {
   const get = (...keys: string[]) => {
@@ -92,12 +112,32 @@ function mapRow(row: Record<string, any>): Record<string, string | undefined> {
   };
 }
 
+/** Téléchargement authentifié (blob) — pattern FederisQuestionBankPage. */
+async function downloadFile(
+  url: string,
+  filename: string,
+  mime: string,
+  timeout = 120000,
+): Promise<void> {
+  const res = await apiClient.get(url, { responseType: 'blob', timeout });
+  const blob = new Blob([res.data], { type: mime });
+  const objectUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(objectUrl);
+}
+
 export default function FederisCandidatesPage({ userRole }: FederisCandidatesPageProps) {
   const { exams, examId, setExamId, loading: examsLoading } = useFederisExams();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [total, setTotal] = useState(0);
   const [withoutCenter, setWithoutCenter] = useState(0);
   const [withoutTable, setWithoutTable] = useState(0);
+  const [withoutAnonymat, setWithoutAnonymat] = useState(0);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,14 +149,39 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
 
   const [assignResult, setAssignResult] = useState<AssignResult | null>(null);
   const [assigning, setAssigning] = useState(false);
-  const [assignOptions, setAssignOptions] = useState<{ orderBy: 'SCHOOL' | 'NAME'; numberingScope: 'CENTER' | 'EXAM' }>({
-    orderBy: 'SCHOOL',
-    numberingScope: 'CENTER',
-  });
+  const [assignOptions, setAssignOptions] = useState<{
+    orderBy: 'SCHOOL' | 'NAME';
+    numberingScope: 'CENTER' | 'ROOM' | 'EXAM';
+  }>({ orderBy: 'SCHOOL', numberingScope: 'CENTER' });
+
+  const [generatingAnonymats, setGeneratingAnonymats] = useState(false);
+  const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
 
   const canManageCandidates = canWrite(userRole, 'candidates');
   const canOrganize = canWrite(userRole, 'exam_org');
 
+  // ── Catégorisation par type d'examen (CEP / BEPC / BAC / CAP) ───────────
+  const examsByType = useMemo(() => {
+    const map = new Map<string, typeof exams>();
+    for (const ex of exams) {
+      const key = ex.examType ?? 'CEP';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(ex);
+    }
+    return map;
+  }, [exams]);
+
+  const selectedExam = exams.find((e) => e.id === examId) ?? null;
+  const activeType = selectedExam?.examType ?? null;
+  const activeTypeExams = activeType ? (examsByType.get(activeType) ?? []) : [];
+
+  /** Changement d'onglet CEP/BEPC/BAC/CAP → première campagne du type. */
+  const switchType = (type: string) => {
+    const first = (examsByType.get(type) ?? [])[0];
+    if (first) setExamId(first.id);
+  };
+
+  // ── Chargement du registre ──────────────────────────────────────────────
   const load = useCallback(async () => {
     if (!examId) {
       setCandidates([]);
@@ -133,6 +198,7 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
       setTotal(res.data?.total ?? 0);
       setWithoutCenter(res.data?.withoutCenter ?? 0);
       setWithoutTable(res.data?.withoutTable ?? 0);
+      setWithoutAnonymat(res.data?.withoutAnonymat ?? 0);
     } catch (err: any) {
       setError(err?.response?.data?.message ?? 'Impossible de charger les candidats.');
     } finally {
@@ -181,7 +247,8 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
       setNotice(`${res.data?.created ?? 0} candidat(s) importé(s)${res.data?.skipped ? `, ${res.data.skipped} ligne(s) ignorée(s)` : ''}.`);
       await load();
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? err?.message ?? 'Import impossible.');
+      const msg = err?.response?.data?.message;
+      setError((Array.isArray(msg) ? msg.join(' ') : msg) ?? err?.message ?? 'Import impossible.');
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -201,22 +268,86 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
       setNotice(res.data?.message ?? 'Affectation terminée.');
       await load();
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Affectation impossible.');
+      const msg = err?.response?.data?.message;
+      setError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Affectation impossible.');
     } finally {
       setAssigning(false);
     }
   };
 
+  // ── Génération des anonymats (post-composition) ─────────────────────────
+  const generateAnonymats = async (regenerate: boolean) => {
+    if (!examId) return;
+    setGeneratingAnonymats(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiClient.post(
+        `/federis/exams/${examId}/anonymats/generate`,
+        { regenerate },
+        { timeout: 60000 },
+      );
+      setNotice(res.data?.message ?? 'Anonymats générés.');
+      await load();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      setError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Génération impossible.');
+    } finally {
+      setGeneratingAnonymats(false);
+    }
+  };
+
+  // ── Exports de la liste officielle (backend : PDF Puppeteer / Excel ExcelJS) ──
+  const exportList = async (kind: 'pdf' | 'excel') => {
+    if (!examId || !selectedExam) return;
+    setExporting(kind);
+    setError(null);
+    try {
+      if (kind === 'pdf') {
+        await downloadFile(
+          `/federis/exams/${examId}/pdf/candidats`,
+          `Liste_Officielle_Candidats_${selectedExam.code}.pdf`,
+          'application/pdf',
+        );
+        setNotice('Liste officielle PDF générée (backend) — téléchargement lancé.');
+      } else {
+        await downloadFile(
+          `/federis/exams/${examId}/excel/candidats`,
+          `Liste_Candidats_${selectedExam.code}.xlsx`,
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+        setNotice('Classeur Excel généré (backend) — téléchargement lancé.');
+      }
+    } catch (err: any) {
+      let msg = err?.response?.data?.message ?? err?.message ?? 'Export impossible.';
+      if (err?.response?.data instanceof Blob) {
+        try {
+          const parsed = JSON.parse(await err.response.data.text());
+          msg = parsed?.message ?? msg;
+        } catch { /* garde le brut */ }
+      }
+      setError((Array.isArray(msg) ? msg.join(' ') : String(msg)));
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  // ── Onglets visibles : uniquement les types avec au moins une campagne ──
+  const visibleTypes = EXAM_TYPES.filter((t) => (examsByType.get(t.type) ?? []).length > 0);
+  const typeCount = (type: string) =>
+    (examsByType.get(type) ?? []).reduce((sum, ex) => sum + (ex.candidatesCount ?? 0), 0);
+
   return (
     <FedPage className="space-y-8">
-      {/* En-tête — style Helm : titre + description + KPI, sans panneau sombre */}
+      {/* En-tête — style Helm : titre + description + KPI */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <div className="fed-badge mb-2">Module candidats</div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Fichier national des candidats</h1>
           <p className="text-sm text-gray-500 mt-1 max-w-xl">
-            Registre des inscriptions, import Excel des candidatures et affectation des numéros
-            de table par centre et par salle.
+            Registre catégorisé par examen — CEP, BEPC, Baccalauréat et CAP dans leurs
+            onglets dédiés. Matricules, écoles de provenance, centres, salles, numéros de
+            table et anonymats (saisie des notes).
           </p>
         </div>
         <div className="flex gap-4">
@@ -228,6 +359,10 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
             <p className="text-2xl font-bold text-gray-900"><FedCountUp value={withoutTable} /></p>
             <p className="text-xs font-medium text-gray-500 mt-0.5">Sans table</p>
           </div>
+          <div className="fed-card px-6 py-4 text-center">
+            <p className="text-2xl font-bold text-gray-900"><FedCountUp value={withoutAnonymat} /></p>
+            <p className="text-xs font-medium text-gray-500 mt-0.5">Sans anonymat</p>
+          </div>
           {importReport?.quota && (
             <div className="fed-card px-6 py-4 text-center">
               <p className="text-2xl font-bold text-gray-900">{importReport.quota.used}/{importReport.quota.max}</p>
@@ -237,63 +372,139 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
         </div>
       </div>
 
-      {/* Sélecteur d'examen + actions */}
-      <div className="fed-card px-6 py-4 flex flex-col lg:flex-row lg:items-center gap-4">
-        <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Examen</span>
-        {examsLoading ? (
-          <span className="text-sm font-bold text-slate-400">Chargement…</span>
-        ) : exams.length === 0 ? (
-          <span className="text-sm font-bold text-slate-400">Aucun examen — créez d&apos;abord une campagne.</span>
-        ) : (
-          <select
-            value={examId ?? ''}
-            onChange={(e) => setExamId(e.target.value)}
-            className="fed-input-light flex-1 !w-auto font-bold px-4 py-2.5"
-          >
-            {exams.map((exam) => (
-              <option key={exam.id} value={exam.id}>
-                {exam.code} — {exam.name} ({EXAM_STATUS_LABELS[exam.status] ?? exam.status})
-              </option>
-            ))}
-          </select>
-        )}
+      {/* ⭐ Onglets de catégorisation : CEP | BEPC | BAC | CAP — jamais de mélange */}
+      {examsLoading ? (
+        <div className="fed-card px-6 py-4 text-sm font-bold text-slate-400">Chargement des campagnes…</div>
+      ) : visibleTypes.length === 0 ? (
+        <div className="fed-card px-6 py-8 text-center">
+          <p className="text-sm font-bold text-slate-500">
+            Aucun examen — créez d&apos;abord une campagne dans le module Examens.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Catégorisation par examen">
+          {visibleTypes.map((t) => {
+            const isActive = activeType === t.type;
+            return (
+              <button
+                key={t.type}
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => switchType(t.type)}
+                className={cn(
+                  'px-5 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-wide border transition-all',
+                  isActive
+                    ? 'bg-blue-900 text-white border-blue-900 shadow-sm'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-blue-900/40 hover:text-blue-900',
+                )}
+              >
+                {t.label}
+                <span
+                  className={cn(
+                    'ml-2.5 px-2 py-0.5 rounded-full text-[10px] font-bold',
+                    isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500',
+                  )}
+                >
+                  {typeCount(t.type)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-        {canManageCandidates && examId && (
-          <>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              onChange={handleFile}
-              disabled={importing}
-              className="hidden"
-              id="federis-candidates-import"
-            />
-            <label
-              htmlFor="federis-candidates-import"
-              className={cn(
-                'fed-btn-navy px-5 py-2.5 text-[10px] font-bold uppercase text-center cursor-pointer',
-                importing && 'opacity-50 pointer-events-none',
-              )}
+      {/* Sélecteur de campagne (si plusieurs campagnes du même type) + actions */}
+      {examId && (
+        <div className="fed-card px-6 py-4 flex flex-col lg:flex-row lg:items-center gap-4 flex-wrap">
+          <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Campagne</span>
+          {activeTypeExams.length === 1 ? (
+            <span className="text-sm font-bold text-blue-900">
+              {selectedExam?.code} — {selectedExam?.name}
+            </span>
+          ) : (
+            <select
+              value={examId ?? ''}
+              onChange={(e) => setExamId(e.target.value)}
+              className="fed-input-light flex-1 !w-auto font-bold px-4 py-2.5"
             >
-              {importing ? 'Import en cours…' : 'Import Excel'}
-            </label>
-          </>
-        )}
-        {canOrganize && examId && (
-          <button
-            onClick={assignTables}
-            disabled={assigning}
-            className="fed-btn-gold px-5 py-2.5 text-[10px] font-bold uppercase disabled:opacity-50"
-          >
-            {assigning ? 'Affectation…' : 'Affecter les numéros de table'}
-          </button>
-        )}
-      </div>
+              {activeTypeExams.map((exam) => (
+                <option key={exam.id} value={exam.id}>
+                  {exam.code} — {exam.name} ({EXAM_STATUS_LABELS[exam.status] ?? exam.status})
+                </option>
+              ))}
+            </select>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
+            {canManageCandidates && (
+              <>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleFile}
+                  disabled={importing}
+                  className="hidden"
+                  id="federis-candidates-import"
+                />
+                <label
+                  htmlFor="federis-candidates-import"
+                  className={cn(
+                    'fed-btn-navy px-5 py-2.5 text-[10px] font-bold uppercase text-center cursor-pointer',
+                    importing && 'opacity-50 pointer-events-none',
+                  )}
+                >
+                  {importing ? 'Import en cours…' : 'Import Excel'}
+                </label>
+                <button
+                  onClick={() => generateAnonymats(false)}
+                  disabled={generatingAnonymats}
+                  className="fed-btn-navy px-5 py-2.5 text-[10px] font-bold uppercase disabled:opacity-50"
+                >
+                  {generatingAnonymats ? 'Génération…' : 'Générer les anonymats'}
+                </button>
+                {withoutAnonymat < total && (
+                  <button
+                    onClick={() => generateAnonymats(true)}
+                    disabled={generatingAnonymats}
+                    title="Réattribuer une nouvelle série complète d'anonymats"
+                    className="px-4 py-2.5 text-[10px] font-bold uppercase rounded-xl border border-blue-200 text-blue-900 hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    Régénérer
+                  </button>
+                )}
+              </>
+            )}
+            <button
+              onClick={() => exportList('pdf')}
+              disabled={exporting !== null || total === 0}
+              className="px-5 py-2.5 text-[10px] font-bold uppercase rounded-xl bg-white border border-blue-900/20 text-blue-900 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {exporting === 'pdf' ? 'PDF…' : 'Liste PDF'}
+            </button>
+            <button
+              onClick={() => exportList('excel')}
+              disabled={exporting !== null || total === 0}
+              className="px-5 py-2.5 text-[10px] font-bold uppercase rounded-xl bg-white border border-blue-900/20 text-blue-900 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {exporting === 'excel' ? 'Excel…' : 'Liste Excel'}
+            </button>
+            {canOrganize && (
+              <button
+                onClick={assignTables}
+                disabled={assigning}
+                className="fed-btn-gold px-5 py-2.5 text-[10px] font-bold uppercase disabled:opacity-50"
+              >
+                {assigning ? 'Affectation…' : 'Affecter les n° de table'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Options d'affectation (coordonnateur / organisateur) */}
       {canOrganize && examId && (
-        <div className="fed-card px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="fed-card px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-4 flex-wrap">
           <span className="text-[10px] font-bold text-slate-400 uppercase">Répartition</span>
           <select
             value={assignOptions.orderBy}
@@ -306,12 +517,20 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
           <span className="text-[10px] font-bold text-slate-400 uppercase">Numérotation</span>
           <select
             value={assignOptions.numberingScope}
-            onChange={(e) => setAssignOptions({ ...assignOptions, numberingScope: e.target.value as 'CENTER' | 'EXAM' })}
+            onChange={(e) =>
+              setAssignOptions({ ...assignOptions, numberingScope: e.target.value as 'CENTER' | 'ROOM' | 'EXAM' })
+            }
             className="fed-input-light px-4 py-2 text-xs font-bold !w-auto"
           >
             <option value="CENTER">Séquentielle par centre (001, 002…)</option>
+            <option value="ROOM">Par salle — redémarre dans chaque salle</option>
             <option value="EXAM">Globale à l&apos;examen</option>
           </select>
+          {withoutCenter > 0 && (
+            <span className="text-[10px] font-bold uppercase bg-amber-100 text-amber-700 px-2.5 py-1 rounded">
+              {withoutCenter} sans centre
+            </span>
+          )}
         </div>
       )}
 
@@ -401,19 +620,15 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
       <div className="fed-card overflow-hidden">
         <div className="p-6 lg:p-8 border-b border-blue-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <h3 className="text-sm font-bold text-blue-900 uppercase">
-            Registre de candidature
-            {withoutCenter > 0 && (
-              <span className="ml-3 text-[9px] font-bold uppercase bg-amber-100 text-amber-700 px-2.5 py-1 rounded">
-                {withoutCenter} sans centre
-              </span>
-            )}
+            Registre de candidature {activeType ? `— ${EXAM_TYPES.find((t) => t.type === activeType)?.label ?? activeType}` : ''}
+            {selectedExam && <span className="ml-3 text-[10px] text-slate-400 normal-case font-semibold">{selectedExam.code}</span>}
           </h3>
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Rechercher (nom, matricule, n° de table…)"
-            className="fed-input-light px-5 py-3 text-xs font-bold w-full sm:w-72"
+            placeholder="Rechercher (nom, matricule, n° de table, anonymat…)"
+            className="fed-input-light px-5 py-3 text-xs font-bold w-full sm:w-80"
           />
         </div>
 
@@ -423,19 +638,20 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
               <tr>
                 <th className="px-6 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Candidat</th>
                 <th className="px-6 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Matricule</th>
-                <th className="px-6 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">École</th>
+                <th className="px-6 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">École de provenance</th>
                 <th className="px-6 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Centre</th>
                 <th className="px-6 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Salle</th>
                 <th className="px-6 py-3 text-center text-[10px] font-bold text-slate-400 uppercase">N° de table</th>
+                <th className="px-6 py-3 text-center text-[10px] font-bold text-slate-400 uppercase">Anonymat</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-slate-200">
               {loading ? (
-                <tr><td colSpan={6} className="px-6 py-10 text-center text-sm font-bold text-slate-400">Chargement…</td></tr>
+                <tr><td colSpan={7} className="px-6 py-10 text-center text-sm font-bold text-slate-400">Chargement…</td></tr>
               ) : candidates.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-10 text-center text-sm font-bold text-slate-400">
-                    Aucun candidat. {canManageCandidates ? 'Importez votre fichier Excel de candidatures.' : ''}
+                  <td colSpan={7} className="px-6 py-10 text-center text-sm font-bold text-slate-400">
+                    Aucun candidat. {canManageCandidates ? 'Importez votre fichier Excel de candidatures ou attendez les listes officielles des écoles rattachées.' : ''}
                   </td>
                 </tr>
               ) : (
@@ -472,6 +688,15 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
                         <span className="text-slate-400 text-xs font-bold">—</span>
                       )}
                     </td>
+                    <td className="px-6 py-4 text-center">
+                      {c.anonymatCode ? (
+                        <span className="inline-block bg-amber-50 border border-amber-200 text-amber-800 font-mono font-bold text-sm px-3 py-1.5 rounded-xl">
+                          {c.anonymatCode}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-xs font-bold">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))
               )}
@@ -492,8 +717,10 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
             Colonnes reconnues : <span className="font-semibold text-gray-900">Prénom</span>,{' '}
             <span className="font-semibold text-gray-900">Nom</span>, Date de naissance, Sexe,{' '}
             <span className="font-semibold text-gray-900">École</span> (si rattachée au patronat, la liaison est
-            automatique), Lieu de naissance, Matricule (généré automatiquement si vide), Téléphone, Email.
-            Les doublons (même identité ou matricule existant) sont ignorés avec un rapport détaillé.
+            automatique — sinon l&apos;école est conservée telle quelle, pour les établissements non présents sur
+            Academia Helm), Lieu de naissance, Matricule (généré automatiquement selon le format défini dans
+            Paramètres si vide), Téléphone, Email. Les doublons (même identité ou matricule existant) sont
+            ignorés avec un rapport détaillé.
           </p>
         </div>
       )}

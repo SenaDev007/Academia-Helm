@@ -72,4 +72,25 @@ export class FederisPdfController {
     });
     return new StreamableFile(buffer);
   }
+
+  /** ⭐ Liste officielle des candidats (module Candidats — 2026-09-29). */
+  @UseGuards(JwtAuthGuard)
+  @Get('exams/:examId/pdf/candidats')
+  async downloadCandidatesList(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, filename } = await this.pdfService.generateCandidatesListPdf(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    return new StreamableFile(buffer);
+  }
 }

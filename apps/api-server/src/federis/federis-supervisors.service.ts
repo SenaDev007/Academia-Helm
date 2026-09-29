@@ -62,57 +62,136 @@ import { isSchoolTenantType } from '../common/constants/school-tenant-types';
 
 // ── DTO ─────────────────────────────────────────────────────────────────────
 
+// ⭐ FIX 2026-09-29 — décorateurs class-validator OBLIGATOIRES : le
+//    ValidationPipe global (whitelist + forbidNonWhitelisted) rejette toute
+//    propriété sans décorateur et l'AcademicYearEnforcementInterceptor injecte
+//    academicYearId quand le DTO n'a aucune règle → double rejet 400 sur tous
+//    les POST/PATCH du module surveillants (pattern federis-patronat.service).
+import {
+  IsArray,
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
 export class CreateSupervisorRequestDto {
   /** Titre lisible (ex : « Enseignants surveillants — BEPC 2027 »). */
+  @IsString()
+  @MinLength(3)
+  @MaxLength(190)
   title!: string;
+
   /** Message adressé aux écoles (consigne, nombre attendu…). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
   message?: string;
+
   /** NationalExam concerné — REQUIS (la répartition se fait par centre et
    *  par salle DE l'examen, pattern ExamCenter/ExamRoom). */
+  @IsString()
   examId!: string;
+
   /** Date limite de réponse des écoles (optionnelle). */
+  @IsOptional()
+  @IsString()
   deadline?: string;
 }
 
 export class UpdateSupervisorRequestDto {
+  @IsIn(['OPEN', 'CLOSED'])
   status!: 'OPEN' | 'CLOSED';
 }
 
 export class SubmitNominationDto {
   /** Identifiants des enseignants présentés (Teacher.id de l'école). */
+  @IsArray()
+  @IsString({ each: true })
   teacherIds!: string[];
 }
 
 export class SupervisorAssignmentDto {
   /** SchoolSupervisorSubmission d'où provient l'enseignant. */
+  @IsString()
   submissionId!: string;
+
   /** Teacher (BD de l'école) à affecter. */
+  @IsString()
   teacherId!: string;
+
   /** ExamCenter cible. */
+  @IsString()
   centerId!: string;
+
   /** ExamRoom cible (optionnelle — centre seul). */
+  @IsOptional()
+  @IsString()
   roomId?: string;
 }
 
 export class AssignSupervisorsDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SupervisorAssignmentDto)
   assignments!: SupervisorAssignmentDto[];
 }
 
 export class CreateSupervisorDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
   firstName!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
   lastName!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(190)
   email?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
   phone?: string;
+
+  @IsString()
   examId!: string;
+
+  @IsOptional()
+  @IsString()
   centerId?: string;
+
+  @IsOptional()
+  @IsString()
   roomId?: string;
+
+  @IsOptional()
+  @IsIn(['SURVEILLANT', 'CHEF_DE_SALLE', 'CHEF_DE_CENTRE'])
   role?: string;
 }
 
 export class UpdateSupervisorDto {
+  @IsOptional()
+  @IsString()
   centerId?: string | null;
+
+  @IsOptional()
+  @IsString()
   roomId?: string | null;
+
+  @IsOptional()
+  @IsString()
   status?: string;
+
+  @IsOptional()
+  @IsString()
   role?: string;
 }
 

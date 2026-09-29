@@ -13,12 +13,30 @@
  *   GET    /federis/exams/:examId/school-lists         — listes officielles par école
  *   POST   /federis/exams/:examId/candidates           — ajout manuel
  *   POST   /federis/exams/:examId/candidates/import    — import par lot (Excel)
- *   POST   /federis/exams/:examId/assign-tables        — numéros de table
+ *   POST   /federis/exams/:examId/assign-tables        — numéros de table (CENTER | ROOM | EXAM)
+ *   POST   /federis/exams/:examId/anonymats/generate   — anonymats (2026-09-29)
+ *   GET    /federis/exams/:examId/excel/candidats      — export Excel (2026-09-29)
+ *   GET    /federis/settings/matricule                 — format matricule (Paramètres)
+ *   PUT    /federis/settings/matricule                 — enregistrer le format
  */
 
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Request } from 'express';
+import type { Response } from 'express';
+import { StreamableFile } from '@nestjs/common';
 import {
   FederisExamsService,
   CreateExamDto,
@@ -30,11 +48,17 @@ import {
   ImportCandidatesDto,
   AddCandidateDto,
   AssignTablesDto,
+  GenerateAnonymatsDto,
+  UpdateMatriculeFormatDto,
 } from './federis-exams.service';
+import { FederisCandidatesExportService } from './federis-candidates-export.service';
 
 @Controller('federis')
 export class FederisExamsController {
-  constructor(private readonly examsService: FederisExamsService) {}
+  constructor(
+    private readonly examsService: FederisExamsService,
+    private readonly candidatesExport: FederisCandidatesExportService,
+  ) {}
 
   private uid(req: any): string {
     return req.user.id || req.user.sub;
@@ -155,5 +179,55 @@ export class FederisExamsController {
     @Body() dto: AssignTablesDto,
   ) {
     return this.examsService.assignTableNumbers(req.user.tenantId, this.uid(req), examId, dto);
+  }
+
+  // ── Anonymats (post-composition — 2026-09-29) ──────────────────────────
+
+  /** Génère (ou régénère) les codes d'anonymat des candidats de l'examen. */
+  @UseGuards(JwtAuthGuard)
+  @Post('exams/:examId/anonymats/generate')
+  async generateAnonymats(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Body() dto: GenerateAnonymatsDto,
+  ) {
+    return this.examsService.generateAnonymats(req.user.tenantId, this.uid(req), examId, dto);
+  }
+
+  // ── Export Excel de la liste officielle (2026-09-29) ────────────────────
+
+  /** Liste officielle des candidats — classeur Excel (Synthèse + 1 feuille/centre). */
+  @UseGuards(JwtAuthGuard)
+  @Get('exams/:examId/excel/candidats')
+  async exportCandidatesExcel(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, filename } = await this.candidatesExport.generateCandidatesExcel(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+    );
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    return new StreamableFile(buffer);
+  }
+
+  // ── Format de matricule (module Paramètres — 2026-09-29) ────────────────
+
+  @UseGuards(JwtAuthGuard)
+  @Get('settings/matricule')
+  async getMatriculeSettings(@Req() req: any) {
+    return this.examsService.getMatriculeSettings(req.user.tenantId, this.uid(req));
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('settings/matricule')
+  async updateMatriculeSettings(@Req() req: any, @Body() dto: UpdateMatriculeFormatDto) {
+    return this.examsService.updateMatriculeSettings(req.user.tenantId, this.uid(req), dto);
   }
 }

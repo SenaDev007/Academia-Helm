@@ -57,13 +57,30 @@ import { isSchoolTenantType } from '../common/constants/school-tenant-types';
 
 // ── DTO ─────────────────────────────────────────────────────────────────────
 
+// ⭐ FIX 2026-09-29 « property studentIds should not exist / property
+//    academicYearId should not exist » (envoi au patronat — Examens nationaux) :
+//    le ValidationPipe global (main.ts — whitelist: true + forbidNonWhitelisted:
+//    true) rejette TOUTE propriété dépourvue de décorateur class-validator
+//    (pattern documenté dans federis-patronat.service.ts — InitCheckoutDto).
+//    De plus, l'AcademicYearEnforcementInterceptor juge l'injection de
+//    academicYearId « sûre » quand le DTO n'a AUCUNE règle de validation et
+//    l'injecte dans le body → double rejet 400. Les décorateurs rétablissent :
+//    1) studentIds accepté, 2) injection bloquée (DTO avec règles mais sans
+//    academicYearId déclaré).
+import { IsArray, IsOptional, IsString } from 'class-validator';
+
 export class SaveSelectionDto {
   /** Identifiants des élèves officiellement présentés (Student.id). */
+  @IsArray()
+  @IsString({ each: true })
   studentIds!: string[];
 }
 
 export class SubmitSelectionDto {
   /** Optionnel : remplace la sélection enregistrée si fournie. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   studentIds?: string[];
 }
 

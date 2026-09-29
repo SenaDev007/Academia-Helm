@@ -58,97 +58,435 @@ function isBacLevel(level: string | null | undefined): boolean {
   return (n.startsWith('TERM') || n.startsWith('TLE') || n.startsWith('BAC')) && !n.includes('CAP');
 }
 
+// ⭐ FIX 2026-09-29 — décorateurs class-validator OBLIGATOIRES sur TOUS les
+//    DTOs : le ValidationPipe global (whitelist + forbidNonWhitelisted) rejette
+//    toute propriété sans décorateur (« property X should not exist ») et
+//    l'AcademicYearEnforcementInterceptor injecte academicYearId dans le body
+//    quand le DTO n'a aucune règle → double rejet 400 sur TOUS les POST/PATCH
+//    du workflow examens (pattern documenté dans federis-patronat.service.ts).
+import {
+  IsArray,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
 export class CreateExamDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(60)
   code!: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(190)
   name!: string;
+
+  @IsIn(['CEP', 'BEPC', 'BAC', 'CAP'])
   examType!: string;
+
   /** CM2 (CEP) | 3EME (BEPC) | TERMINALE (Baccalauréat) | CAP (filières techniques) */
+  @IsString()
+  @MinLength(2)
+  @MaxLength(30)
   level!: string;
+
+  @IsString()
   startDate!: string;
+
+  @IsString()
   endDate!: string;
+
+  @IsOptional()
+  @IsString()
   registrationStartDate?: string;
+
+  @IsOptional()
+  @IsString()
   registrationEndDate?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
   description?: string;
 }
 
 export class UpdateExamDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(190)
   name?: string;
+
+  @IsOptional()
+  @IsIn(['DRAFT', 'REGISTRATION_OPEN', 'ONGOING', 'COMPLETED', 'CANCELLED', 'ARCHIVED'])
   status?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
   description?: string;
+
+  @IsOptional()
+  @IsString()
   startDate?: string;
+
+  @IsOptional()
+  @IsString()
   endDate?: string;
 }
 
 export class CreateCenterDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
   code!: string;
+
+  @IsString()
+  @MinLength(2)
+  @MaxLength(190)
   name!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
   address?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
   contactName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
   contactPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(190)
   contactEmail?: string;
 }
 
 export class UpdateCenterDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(190)
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
   address?: string;
+
+  @IsOptional()
+  @IsIn(['ACTIVE', 'INACTIVE'])
   status?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
   contactName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
   contactPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(190)
   contactEmail?: string;
 }
 
 export class CreateRoomDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(40)
   code!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
   name?: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(2000)
   capacity!: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(50)
   floor?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
   building?: string;
 }
 
 export class UpdateRoomDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
   name?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(2000)
   capacity?: number;
+
+  @IsOptional()
+  @IsIn(['AVAILABLE', 'FULL', 'CLOSED'])
   status?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(50)
   floor?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
   building?: string;
+}
+
+export class ImportCandidateRow {
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  lastName?: string;
+
+  @IsOptional()
+  @IsString()
+  dateOfBirth?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  gender?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  placeOfBirth?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(190)
+  schoolName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  matricule?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  registrationNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(190)
+  email?: string;
 }
 
 export class ImportCandidatesDto {
   /** Lignes déjà normalisées (analyse Excel côté client). */
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ImportCandidateRow)
   rows!: ImportCandidateRow[];
 }
 
-export class ImportCandidateRow {
-  firstName?: string;
-  lastName?: string;
-  dateOfBirth?: string;
-  gender?: string;
-  placeOfBirth?: string;
-  schoolName?: string;
-  matricule?: string;
-  registrationNumber?: string;
-  phone?: string;
-  email?: string;
-}
-
 export class AddCandidateDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
   firstName!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
   lastName!: string;
+
+  @IsOptional()
+  @IsString()
   dateOfBirth?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
   gender?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(190)
   schoolName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
   matricule?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
   phone?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(190)
   email?: string;
 }
 
 export class AssignTablesDto {
   /** Ordre de répartition : NAME (alphabétique) ou SCHOOL (par école puis nom). */
+  @IsOptional()
+  @IsIn(['NAME', 'SCHOOL'])
   orderBy?: 'NAME' | 'SCHOOL';
-  /** Portée de la numérotation : par CENTRE (défaut) ou globale à l'examen. */
-  numberingScope?: 'CENTER' | 'EXAM';
+
+  /**
+   * Portée de la numérotation :
+   *   CENTER (défaut) — séquentielle par centre ;
+   *   ROOM — redémarre dans CHAQUE salle (2026-09-29) ;
+   *   EXAM — globale à l'examen.
+   */
+  @IsOptional()
+  @IsIn(['CENTER', 'ROOM', 'EXAM'])
+  numberingScope?: 'CENTER' | 'ROOM' | 'EXAM';
+
   /** Premier numéro (défaut 1). */
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(9999)
   startNumber?: number;
+}
+
+// ── DTO : format de matricule (module Paramètres — 2026-09-29) ──────────────
+
+export class UpdateMatriculeFormatDto {
+  /**
+   * Modèle de génération, jetons : {EXAM} {EXAMTYPE} {ANNEE} {ANNEE2}
+   * {SEQ} {SEQ:n} {PATRONAT}. Vide/null → réinitialise au format par défaut.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  format?: string | null;
+}
+
+// ── DTO : génération des anonymats ──────────────────────────────────────────
+
+export class GenerateAnonymatsDto {
+  /** true → régénère AUSSI les anonymats déjà émis (nouvelle série complète). */
+  @IsOptional()
+  regenerate?: boolean;
+}
+
+// ── Jetons du format de matricule ───────────────────────────────────────────
+
+/**
+ * Jetons reconnus dans le modèle de matricule :
+ *   {EXAM}      — code de la campagne (ex. BAC26)
+ *   {EXAMTYPE}  — type d'examen (CEP | BEPC | BAC | CAP)
+ *   {ANNEE}     — année complète (2026)
+ *   {ANNEE2}    — année sur 2 chiffres (26)
+ *   {SEQ}       — numéro séquentiel brut
+ *   {SEQ:n}     — séquentiel complété à n chiffres (ex. {SEQ:5} → 00042)
+ *   {PATRONAT}  — sigle du patronat (accentué, majuscules, sans espaces)
+ */
+export const MATRICULE_TOKEN_RE = /\{(EXAM|EXAMTYPE|ANNEE|ANNEE2|SEQ(?::\d+)?|PATRONAT)\}/g;
+
+/** Format appliqué quand le patronat n'a rien défini (module Paramètres). */
+export const DEFAULT_MATRICULE_FORMAT = '{EXAM}-{ANNEE}-{SEQ:5}';
+
+/** Construit un matricule à partir du modèle + du contexte. */
+export function renderMatricule(
+  format: string,
+  ctx: {
+    examCode: string;
+    examType: string;
+    year: number;
+    seq: number;
+    patronatName?: string | null;
+  },
+): string {
+  return format.replace(MATRICULE_TOKEN_RE, (_m, token: string) => {
+    switch (token) {
+      case 'EXAM':
+        return ctx.examCode;
+      case 'EXAMTYPE':
+        return ctx.examType;
+      case 'ANNEE':
+        return String(ctx.year);
+      case 'ANNEE2':
+        return String(ctx.year).slice(-2);
+      case 'PATRONAT':
+        return (ctx.patronatName ?? '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, '')
+          .slice(0, 12);
+      default:
+        if (token.startsWith('SEQ')) {
+          const width = parseInt(token.slice(4), 10);
+          if (Number.isFinite(width) && width >= 1 && width <= 10) {
+            return String(ctx.seq).padStart(width, '0');
+          }
+          return String(ctx.seq);
+        }
+        return '';
+    }
+  });
+}
+
+/** Valide un modèle de matricule : jetons reconnus + longueur utile ≥ 4. */
+export function validateMatriculeFormat(format: string): string[] {
+  const errors: string[] = [];
+  // Retire tous les jetons VALIDES du modèle — tout {XXX} restant est inconnu
+  // (approche sans état : le regex global MATRICULE_TOKEN_RE garde lastIndex).
+  const stripped = format.replace(MATRICULE_TOKEN_RE, '');
+  const unknown = stripped.match(/\{[^}]*\}/g) ?? [];
+  for (const raw of unknown) {
+    errors.push(
+      `Jeton inconnu ${raw} — jetons reconnus : {EXAM} {EXAMTYPE} {ANNEE} {ANNEE2} {SEQ} {SEQ:n} {PATRONAT}.`,
+    );
+  }
+  if (!/{SEQ(:\d+)?}/.test(format)) {
+    errors.push(
+      'Le jeton {SEQ} (ou {SEQ:n}) est obligatoire pour garantir l\u2019unicité des matricules.',
+    );
+  }
+  if (format.length > 60) {
+    errors.push('Le modèle ne peut dépasser 60 caractères.');
+  }
+  return errors;
 }
 
 const EXAM_BLOCKED_STATUSES = ['COMPLETED', 'CANCELLED', 'ARCHIVED'];
@@ -161,6 +499,50 @@ export class FederisExamsService {
     private readonly prisma: PrismaService,
     private readonly patronatService: FederisPatronatService,
   ) {}
+
+  // ── Auto-guérison du schéma (pattern FederisSupervisorsService) ──────────
+  //
+  // Miroir EXACT de la migration 20260929170000_federis_candidates_anonymats :
+  // le déploiement Railway n'exécute pas prisma migrate deploy au démarrage
+  // (SKIP_MIGRATIONS=true) — les colonnes sont créées idempotemment au
+  // premier appel du service.
+  //  - exam_candidates.anonymatCode + anonymatIssuedAt (+ index composite)
+  //  - patronats.matriculeFormat (format personnalisé, module Paramètres)
+
+  private schemaReady = false;
+
+  private async ensureSchema(): Promise<void> {
+    if (this.schemaReady) return;
+    try {
+      const cols: any[] = (await this.prisma.$queryRawUnsafe(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_name='exam_candidates' AND column_name IN ('anonymatCode','anonymatIssuedAt')`,
+      )) as any[];
+      if (!cols || cols.length < 2) throw new Error('colonnes anonymat absentes');
+      const pcols: any[] = (await this.prisma.$queryRawUnsafe(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_name='patronats' AND column_name='matriculeFormat'`,
+      )) as any[];
+      if (!pcols || pcols.length < 1) throw new Error('colonne matriculeFormat absente');
+      this.schemaReady = true;
+      return;
+    } catch {
+      /* colonnes absentes → création idempotente ci-dessous */
+    }
+
+    const statements = [
+      `ALTER TABLE "exam_candidates" ADD COLUMN IF NOT EXISTS "anonymatCode" TEXT`,
+      `ALTER TABLE "exam_candidates" ADD COLUMN IF NOT EXISTS "anonymatIssuedAt" TIMESTAMP(3)`,
+      `CREATE INDEX IF NOT EXISTS "exam_candidates_examId_anonymatCode_idx"
+          ON "exam_candidates"("examId", "anonymatCode")`,
+      `ALTER TABLE "patronats" ADD COLUMN IF NOT EXISTS "matriculeFormat" TEXT`,
+    ];
+    for (const sql of statements) {
+      await this.prisma.$executeRawUnsafe(sql);
+    }
+    this.schemaReady = true;
+    this.logger.log('Schéma candidats/anonymats assuré (migration 20260929170000)');
+  }
 
   // ── Contexte & permissions ───────────────────────────────────────────────
 
@@ -601,6 +983,7 @@ export class FederisExamsService {
   // ── 4. Candidats (liste, ajout manuel, import Excel) ─────────────────────
 
   async listCandidates(tenantId: string, userId: string, examId: string, search?: string) {
+    await this.ensureSchema();
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertRead(fn);
     const exam = await this.getOwnedExam(patronat.tenantId, examId);
@@ -614,10 +997,11 @@ export class FederisExamsService {
         { matricule: { contains: q, mode: 'insensitive' } },
         { registrationNumber: { contains: q, mode: 'insensitive' } },
         { tableNumber: { contains: q } },
+        { anonymatCode: { contains: q } },
       ];
     }
 
-    const [candidates, total] = await Promise.all([
+    const [candidatesRaw, total] = await Promise.all([
       this.prisma.examCandidate.findMany({
         where,
         include: {
@@ -631,16 +1015,44 @@ export class FederisExamsService {
       this.prisma.examCandidate.count({ where: { examId: exam.id } }),
     ]);
 
+    // ⭐ anonymatCode : colonne récente — le client Prisma déployé la renvoie,
+    //    en sandbox locale elle peut manquer → lecture brute de secours.
+    let anonymatById = new Map<string, string | null>();
+    try {
+      const rows: any[] = (await this.prisma.$queryRawUnsafe(
+        `SELECT "id", "anonymatCode" FROM "exam_candidates" WHERE "examId" = $1`,
+        exam.id,
+      )) as any[];
+      anonymatById = new Map(rows.map((r) => [r.id, r.anonymatCode ?? null]));
+    } catch {
+      /* colonne absente → anonymats à null partout */
+    }
+
+    const candidates = candidatesRaw.map((c) => ({
+      ...c,
+      anonymatCode:
+        (c as any).anonymatCode ?? anonymatById.get(c.id) ?? null,
+    }));
+
     return {
-      exam: { id: exam.id, code: exam.code, name: exam.name, status: exam.status },
+      exam: {
+        id: exam.id,
+        code: exam.code,
+        name: exam.name,
+        status: exam.status,
+        examType: exam.examType,
+        level: exam.level,
+      },
       total,
       withoutCenter: candidates.filter((c) => !c.centerId).length,
       withoutTable: candidates.filter((c) => !c.tableNumber).length,
+      withoutAnonymat: candidates.filter((c) => !c.anonymatCode).length,
       candidates: candidates.map((c) => ({
         id: c.id,
         registrationNumber: c.registrationNumber,
         matricule: c.matricule,
         tableNumber: c.tableNumber,
+        anonymatCode: c.anonymatCode,
         firstName: c.firstName,
         lastName: c.lastName,
         gender: c.gender,
@@ -782,21 +1194,130 @@ export class FederisExamsService {
     };
   }
 
-  /** Génère un matricule séquentiel unique : <CODE EXAM>-<année>-<séquence>. */
-  private async nextMatricule(examCode: string, tenantId: string): Promise<string> {
-    const count = await this.prisma.examCandidate.count({ where: { tenantId } });
+  // ── 4 ter. Format de matricule (module Paramètres — 2026-09-29) ──────────
+  //
+  // Le patronat définit LIBREMENT le modèle de génération des matricules
+  // candidats (jetons {EXAM} {EXAMTYPE} {ANNEE} {ANNEE2} {SEQ} {SEQ:n}
+  // {PATRONAT}). Quand il ne définit RIEN, le backend applique le format par
+  // défaut établi : {EXAM}-{ANNEE}-{SEQ:5} (ex. BAC26-2026-00001).
+
+  async getMatriculeSettings(tenantId: string, userId: string) {
+    await this.ensureSchema();
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertRead(fn);
+    const format = (patronat as any).matriculeFormat ?? null;
     const year = new Date().getFullYear();
+    return {
+      format,
+      defaultFormat: DEFAULT_MATRICULE_FORMAT,
+      isDefault: !format,
+      tokens: [
+        { token: '{EXAM}', description: 'Code de la campagne (ex. BAC26)' },
+        { token: '{EXAMTYPE}', description: 'Type d\u2019examen (CEP, BEPC, BAC, CAP)' },
+        { token: '{ANNEE}', description: `Année complète (${year})` },
+        { token: '{ANNEE2}', description: `Année sur 2 chiffres (${String(year).slice(-2)})` },
+        { token: '{SEQ}', description: 'Numéro séquentiel (1, 2, 3…)' },
+        { token: '{SEQ:n}', description: 'Séquentiel complété à n chiffres ({SEQ:5} → 00042)' },
+        { token: '{PATRONAT}', description: 'Sigle du patronat (majuscules, sans espaces)' },
+      ],
+      // Aperçu pour l'UI (module Paramètres) : séquence d'exemple 42
+      preview: renderMatricule(format ?? DEFAULT_MATRICULE_FORMAT, {
+        examCode: 'BAC26',
+        examType: 'BAC',
+        year,
+        seq: 42,
+        patronatName: patronat.name,
+      }),
+      canManage: WRITE_CANDIDATES.includes(fn),
+    };
+  }
+
+  async updateMatriculeSettings(tenantId: string, userId: string, dto: UpdateMatriculeFormatDto) {
+    await this.ensureSchema();
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertWriteCandidates(fn);
+
+    // null/'' → retour au format par défaut
+    const format = dto.format?.trim() || null;
+    if (format) {
+      const errors = validateMatriculeFormat(format);
+      if (errors.length > 0) {
+        throw new BadRequestException(errors.join(' '));
+      }
+    }
+
+    await this.prisma.$executeRawUnsafe(
+      `UPDATE "patronats" SET "matriculeFormat" = $1, "updatedAt" = NOW() WHERE "id" = $2`,
+      format,
+      patronat.id,
+    );
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: patronat.tenantId,
+        userId,
+        action: 'FEDERIS_MATRICULE_FORMAT_UPDATE',
+        resource: 'Patronat',
+        resourceId: patronat.id,
+        tableName: 'patronats',
+        recordId: patronat.id,
+        newData: { format: format ?? '(défaut)' },
+      },
+    });
+
+    this.logger.log(
+      `Format matricule ${format ? `« ${format} »` : '(défaut)'} enregistré (${patronat.name})`,
+    );
+
+    return this.getMatriculeSettings(tenantId, userId);
+  }
+
+  /** Génère le matricule suivant, selon le format du patronat (ou le défaut). */
+  private async nextMatricule(
+    exam: { code: string; examType: string },
+    patronat: { tenantId: string; name: string },
+  ): Promise<string> {
+    await this.ensureSchema();
+    // Format personnalisé (lecture brute — robuste client Prisma non régénéré)
+    let format: string | null = null;
+    try {
+      const rows: any[] = (await this.prisma.$queryRawUnsafe(
+        `SELECT "matriculeFormat" FROM "patronats" WHERE "tenantId" = $1 LIMIT 1`,
+        patronat.tenantId,
+      )) as any[];
+      format = rows?.[0]?.matriculeFormat ?? null;
+    } catch {
+      format = null;
+    }
+    const template = format ?? DEFAULT_MATRICULE_FORMAT;
+    const year = new Date().getFullYear();
+
+    const count = await this.prisma.examCandidate.count({
+      where: { tenantId: patronat.tenantId },
+    });
     let seq = count + 1;
-    // Garde-fou collision (peu probable) : incrémente jusqu'à disponibilité
-    for (let i = 0; i < 50; i++) {
-      const candidate = `${examCode}-${year}-${String(seq).padStart(5, '0')}`;
+    // Garde-fou collision : incrémente jusqu'à disponibilité (unicité globale)
+    for (let i = 0; i < 200; i++) {
+      const candidate = renderMatricule(template, {
+        examCode: exam.code,
+        examType: exam.examType,
+        year,
+        seq,
+        patronatName: patronat.name,
+      });
       const exists = await this.prisma.examCandidate.findUnique({
         where: { matricule: candidate },
       });
       if (!exists) return candidate;
       seq++;
     }
-    return `${examCode}-${year}-${Date.now()}`;
+    return renderMatricule('{EXAM}-{ANNEE}-{SEQ}-{SEQ:6}', {
+      examCode: exam.code,
+      examType: exam.examType,
+      year,
+      seq: Date.now(),
+      patronatName: patronat.name,
+    });
   }
 
   async addCandidate(tenantId: string, userId: string, examId: string, dto: AddCandidateDto) {
@@ -944,7 +1465,7 @@ export class FederisExamsService {
     if (toCreate.length > 0) {
       await this.prisma.$transaction(async (tx) => {
         for (const c of toCreate) {
-          if (!c.matricule) c.matricule = await this.nextMatricule(exam.code, patronat.tenantId);
+          if (!c.matricule) c.matricule = await this.nextMatricule(exam, patronat);
           if (!c.registrationNumber) c.registrationNumber = c.matricule;
           const created = await tx.examCandidate.create({
             data: {
@@ -1009,6 +1530,129 @@ export class FederisExamsService {
     };
   }
 
+  // ── 4 quater. Anonymats (post-composition — 2026-09-29) ──────────────────
+  //
+  // L'anonymat remplace l'identité du candidat pour la saisie des notes et
+  // toute la correction : après l'évaluation, les correcteurs ne voient PLUS
+  // les noms — uniquement un code. Chaque candidat de l'examen reçoit un code
+  // unique AU SEIN DE L'EXAMEN, attribué dans l'ordre alphabétique :
+  //   <année 2 chiffres><initiale du type d'examen><séquence 5 chiffres>
+  //   ex. BEPC 2026 → 26B00001, 26B00002… / CEP 2026 → 26C00001…
+  // (l'initiale CEP/BEPC/BAC/CAP peut coïncider entre deux examens DIFFÉRENTS
+  //  — pas de collision : les codes sont uniques PAR examen.)
+
+  async generateAnonymats(
+    tenantId: string,
+    userId: string,
+    examId: string,
+    dto: GenerateAnonymatsDto,
+  ) {
+    await this.ensureSchema();
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertWriteCandidates(fn);
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    if (EXAM_BLOCKED_STATUSES.includes(exam.status)) {
+      throw new BadRequestException("Examen terminé ou annulé — anonymats verrouillés.");
+    }
+
+    const candidates = await this.prisma.examCandidate.findMany({
+      where: {
+        examId: exam.id,
+        status: { not: 'CANCELLED' },
+        ...(dto.regenerate ? {} : { anonymatCode: null }),
+      },
+      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+      select: { id: true, anonymatCode: true },
+    });
+
+    if (candidates.length === 0) {
+      return {
+        success: true,
+        generated: 0,
+        message: dto.regenerate
+          ? 'Aucun candidat actif sur cet examen.'
+          : 'Tous les candidats ont déjà un anonymat (utilisez « Régénérer » pour une nouvelle série).',
+      };
+    }
+
+    // Codes déjà utilisés DANS CET EXAMEN (pour éviter toute collision lors
+    // d'une génération partielle). En régénération complète, la série est
+    // réinitialisée (00001) après effacement des anciens codes.
+    const existing: any[] = (await this.prisma.$queryRawUnsafe(
+      `SELECT "anonymatCode" FROM "exam_candidates"
+       WHERE "examId" = $1 AND "anonymatCode" IS NOT NULL`,
+      exam.id,
+    )) as any[];
+    const used = new Set<string>(
+      dto.regenerate ? [] : existing.map((r) => r.anonymatCode as string),
+    );
+
+    const yy = String(new Date().getFullYear()).slice(-2);
+    const initial = (exam.examType ?? 'X').charAt(0).toUpperCase();
+    const issuedAt = new Date();
+
+    let seq = 1;
+    const updates: Array<{ id: string; code: string }> = [];
+    for (const c of candidates) {
+      let code = `${yy}${initial}${String(seq).padStart(5, '0')}`;
+      // Collision (génération partielle après retraits) → avance la séquence
+      while (used.has(code)) {
+        seq++;
+        code = `${yy}${initial}${String(seq).padStart(5, '0')}`;
+      }
+      used.add(code);
+      updates.push({ id: c.id, code });
+      seq++;
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      // Régénération : efface l'ancienne série (contrainte de cohérence en fin
+      // de transaction — les nouveaux codes sont posés juste après).
+      if (dto.regenerate) {
+        await tx.$executeRawUnsafe(
+          `UPDATE "exam_candidates" SET "anonymatCode" = NULL, "anonymatIssuedAt" = NULL
+           WHERE "examId" = $1`,
+          exam.id,
+        );
+      }
+      for (const u of updates) {
+        await tx.$executeRawUnsafe(
+          `UPDATE "exam_candidates" SET "anonymatCode" = $1, "anonymatIssuedAt" = $2
+           WHERE "id" = $3`,
+          u.code,
+          issuedAt,
+          u.id,
+        );
+      }
+      await tx.auditLog.create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_ANONYMATS_GENERATED',
+          resource: 'ExamCandidate',
+          resourceId: exam.id,
+          tableName: 'exam_candidates',
+          recordId: exam.id,
+          newData: {
+            exam: exam.code,
+            generated: updates.length,
+            regenerate: !!dto.regenerate,
+          },
+        },
+      });
+    });
+
+    this.logger.log(
+      `Anonymats générés ${exam.code} : ${updates.length} candidat(s)${dto.regenerate ? ' (régénération)' : ''} (${patronat.name})`,
+    );
+
+    return {
+      success: true,
+      generated: updates.length,
+      message: `${updates.length} anonymat(s) généré(s) — les correcteurs utiliseront ces codes pour la saisie des notes (identités masquées).`,
+    };
+  }
+
   // ── 5. Affectation des numéros de table ──────────────────────────────────
 
   /**
@@ -1020,8 +1664,11 @@ export class FederisExamsService {
    *      voisins) ou alphabétique pur (NAME)
    *   2. Parallélisation logistique : on remplit chaque salle du centre
    *      jusqu'à sa capacité, centre par centre (ordre code)
-   *   3. Numérotation séquentielle par CENTRE (défaut, ex. CTR-001 → 001)
-   *      ou globale à l'EXAM
+   *   3. Numérotation séquentielle :
+   *      • CENTER (défaut) — redémarre à chaque centre ;
+   *      • ROOM (2026-09-29) — redémarre dans CHAQUE SALLE de composition
+   *        (001, 002… par salle — repérage immédiat pour les surveillants) ;
+   *      • EXAM — globale à l'examen
    *   4. Mise à jour transactionnelle : candidates.centerId/roomId/tableNumber
    *      + salles currentOccupancy/status + audit
    */
@@ -1096,6 +1743,10 @@ export class FederisExamsService {
 
       if (scope === 'EXAM') {
         globalCounter++;
+      } else if (scope === 'ROOM') {
+        // ⭐ Numérotation PAR SALLE (2026-09-29) : la série redémarre à chaque
+        //    salle de composition — 001, 002… dans CHAQUE salle.
+        globalCounter = start + occupied - 1;
       } else {
         // Compteur par centre : nombre déjà affecté dans CE centre + start
         const perCenter = assignments.filter((a) => a.centerId === target.center.id).length;

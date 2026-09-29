@@ -222,21 +222,44 @@ export default function PromotionWorkspace() {
     }));
   };
 
-  // ── Apply promotion (global) ──
+  // ── Apply promotion (global) — calls backend API ──
   const handleApplyPromotion = async () => {
     setApplying(true);
     try {
-      // TODO: Call backend API to:
-      // 1. Create next academic year (following pattern in Settings > Année scolaire)
-      // 2. Create quarters for next year
-      // 3. Create classes/sections for next year (duplicate from current year)
-      // 4. Re-enroll students: promus → class supérieure, redoublants → same class
-      // 5. Create financial accounts for next year
-      // 6. Copy fee configuration from current year to next year
+      const payload = {
+        academicYearId: academicYear?.id,
+        students: students.map(s => ({
+          studentId: s.id,
+          matricule: s.matricule,
+          name: s.name,
+          generalAverage: s.generalAverage,
+          decision: s.decision,
+          rachatApplied: s.rachatApplied,
+          currentClassId: selectedClassId,
+        })),
+      };
 
-      // For now, show a success message
-      await new Promise(resolve => setTimeout(resolve, 2000)); // simulate API call
-      alert('Promotion appliquée ! L\'année scolaire suivante a été créée avec les trimestres, classes et réinscriptions. (À implémenter côté backend)');
+      const res = await fetch('/api/exams/promotion/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.message || `HTTP ${res.status}`);
+      }
+
+      const result = await res.json();
+      alert(
+        `✅ Promotion appliquée !\n\n` +
+        `Année suivante : ${result.nextYearLabel}\n` +
+        `Élèves promus : ${result.promoted}\n` +
+        `Redoublants réinscrits : ${result.repeated}\n` +
+        `Comptes financiers créés : ${result.accountsCreated}\n\n` +
+        result.steps?.join('\n') || ''
+      );
       setApplyModalOpen(false);
     } catch (err: any) {
       alert('Erreur lors de l\'application: ' + err.message);

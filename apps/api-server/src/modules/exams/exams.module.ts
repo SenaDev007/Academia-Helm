@@ -27,9 +27,13 @@ import { ExamsLockController } from './exams-lock.controller';
 import { UnlockRequestsController } from './unlock-requests.controller';
 // ⭐ 2026-09-16 — Cachets/signatures automatiques sur les bulletins
 import { SettingsModule } from '../../settings/settings.module';
+// ⭐ 2026-09-29 — Promotion & Redoublement
+import { PedagogyModule } from '../../pedagogy/pedagogy.module';
+import { FinanceModule } from '../../finance/finance.module';
+import { PromotionController } from './promotion.controller';
 
 @Module({
-  imports: [DatabaseModule, UsersModule, AuditLogsModule, ExamsGradesModule, CommonModule, CommunicationModule, SettingsModule],
+  imports: [DatabaseModule, UsersModule, AuditLogsModule, ExamsGradesModule, CommonModule, CommunicationModule, SettingsModule, PedagogyModule, FinanceModule],
   controllers: [
     ExamsDashboardController,
     EvaluationsController,
@@ -43,6 +47,7 @@ import { SettingsModule } from '../../settings/settings.module';
     ExamsSpecConfigController,
     ExamsLockController,
     UnlockRequestsController,
+    PromotionController,
   ],
   providers: [
     ExamsDashboardService,

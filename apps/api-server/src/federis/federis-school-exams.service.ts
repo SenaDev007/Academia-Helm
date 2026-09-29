@@ -54,6 +54,11 @@ import { FEDERIS_PLANS, type FederisPlanCode } from './federis-patronat.service'
 //    l'onboarding Helm ont type = MATERNELLE / PRIMAIRE / SECONDAIRE / MIXTE
 //    (et non 'SCHOOL'). Source unique : common/constants/school-tenant-types.
 import { isSchoolTenantType } from '../common/constants/school-tenant-types';
+// ⭐ Délibération et relevés de notes (2026-09-30) — réception côté école :
+//    board unifié du patronat + accès sécurisé aux relevés distribués
+import { FederisDeliberationService } from './federis-deliberation.service';
+import { FederisGradesService } from './federis-grades.service';
+import { FederisPdfService } from './federis-pdf.service';
 
 // ── DTO ─────────────────────────────────────────────────────────────────────
 
@@ -318,6 +323,9 @@ export class FederisSchoolExamsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationService: NotificationService,
+    private readonly deliberationService: FederisDeliberationService,
+    private readonly gradesService: FederisGradesService,
+    private readonly pdfService: FederisPdfService,
   ) {}
 
   // ── Contexte école ────────────────────────────────────────────────────────
@@ -1189,6 +1197,189 @@ export class FederisSchoolExamsService {
         .filter((t) => !t.exam)
         .map((t) => ({ patronat: t.patronatName, reason: t.reason })),
     };
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // 5. DÉLIBÉRATION ET RELEVÉS DE NOTES (réception — 2026-09-30)
+  //    Le patronat publie les résultats puis distribue les relevés : chaque
+  //    école retrouve ici les décisions de SES candidats et leurs relevés.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Résultats de délibération + relevés distribués pour un type d'examen :
+   * par campagne des patronats rattachés, la liste des admissibles et des
+   * ajournés de l'école (matricule, nom, moyenne, décision du jury) et
+   * l'état de distribution des relevés de notes.
+   *
+   * Confidentialité : une campagne n'apparaît que si ses résultats sont
+   * publiés OU si au moins un relevé a été distribué aux écoles.
+   */
+  async getDeliberationResults(
+    tenantId: string,
+    userId: string,
+    role: string | undefined,
+    examType: string,
+  ) {
+    await this.resolveSchoolContext(tenantId, userId, role);
+    const type = this.assertExamType(examType);
+    const def = EXAM_DEFS[type];
+
+    // Patronats rattachés (JOINED)
+    const links = await this.prisma.patronatSchool.findMany({
+      where: { schoolTenantId: tenantId, status: 'JOINED' },
+      select: {
+        tenantId: true,
+        patronat: { select: { name: true } },
+      },
+    });
+    const patronatTenantIds = links.map((l) => l.tenantId);
+    if (patronatTenantIds.length === 0) {
+      return {
+        examType: type,
+        label: def.label,
+        fullLabel: def.fullLabel,
+        message:
+          'Aucun patronat rattaché — validez les demandes de rattachement dans le module « Patronats & Examens fédérés ».',
+        exams: [],
+      };
+    }
+
+    // Candidats de CETTE école pour les campagnes du type (patronats rattachés)
+    const candidates: Array<{ id: string; examId: string; status: string }> =
+      await this.prisma.examCandidate.findMany({
+        where: {
+          schoolTenantId: tenantId,
+          exam: { tenantId: { in: patronatTenantIds }, examType: type },
+        },
+        select: { id: true, examId: true, status: true },
+      });
+    const examIds = [...new Set(candidates.map((c) => c.examId))];
+    if (examIds.length === 0) {
+      return {
+        examType: type,
+        label: def.label,
+        fullLabel: def.fullLabel,
+        message:
+          'Aucun candidat transmis pour ce type d\u2019examen — les résultats apparaîtront ici dès que le patronat délibère.',
+        exams: [],
+      };
+    }
+
+    const exams = [];
+    for (const examId of examIds) {
+      const examRow = await this.prisma.nationalExam.findUnique({
+        where: { id: examId },
+        select: {
+          id: true,
+          code: true,
+          name: true,
+          examType: true,
+          level: true,
+          status: true,
+          tenantId: true,
+        },
+      });
+      if (!examRow) continue;
+
+      // Confidentialité : campagnes publiées ou relevés déjà distribués
+      const dispatchCount = await this.prisma.examDocument.count({
+        where: { examId, documentType: 'RELEVE_NOTES', status: 'PUBLISHED' },
+      });
+      if (examRow.status !== 'RESULTS_PUBLISHED' && dispatchCount === 0) continue;
+
+      const board = await this.deliberationService.buildDeliberationBoard(
+        examRow.tenantId,
+        examId,
+      );
+      const schoolCandidateIds = new Set(
+        candidates.filter((c) => c.examId === examId).map((c) => c.id),
+      );
+      const admissibles = board.admissibles.filter((r) => schoolCandidateIds.has(r.candidateId));
+      const ajournes = board.ajournes.filter((r) => schoolCandidateIds.has(r.candidateId));
+      const releves = [...admissibles, ...ajournes].filter((r) => r.releveDispatched);
+      const patronatLink = links.find((l) => l.tenantId === examRow.tenantId);
+
+      exams.push({
+        exam: {
+          id: examRow.id,
+          code: examRow.code,
+          name: examRow.name,
+          examType: examRow.examType,
+          level: examRow.level,
+          status: examRow.status,
+          isPrimary: board.exam.isPrimary,
+        },
+        patronatName: patronatLink?.patronat?.name ?? 'Patronat',
+        academicYearLabel: board.academicYearLabel,
+        deliberation: board.deliberation
+          ? {
+              juryName: board.deliberation.juryName,
+              status: board.deliberation.status,
+              deliberatedAt: board.deliberation.deliberatedAt,
+              publication: board.deliberation.publication,
+            }
+          : null,
+        rules: board.rules,
+        stats: {
+          total: admissibles.length + ajournes.length,
+          admissibles: admissibles.length,
+          ajournes: ajournes.filter((r) => r.decision === 'AJOURNE').length,
+          releves: releves.length,
+        },
+        dispatchedAt: board.dispatch.lastDispatchAt,
+        relevesDispatched: releves.length,
+        admissibles,
+        ajournes,
+      });
+    }
+
+    return {
+      examType: type,
+      label: def.label,
+      fullLabel: def.fullLabel,
+      hasSeries: def.hasSeries,
+      exams,
+    };
+  }
+
+  /**
+   * Relevé de notes d'un candidat (données structurées pour la visualisation
+   * dans l'interface) — réservé à l'école qui a présenté le candidat et
+   * uniquement si le relevé lui a été distribué.
+   */
+  async getSchoolReleve(
+    tenantId: string,
+    userId: string,
+    role: string | undefined,
+    examType: string,
+    examId: string,
+    candidateId: string,
+  ) {
+    await this.resolveSchoolContext(tenantId, userId, role);
+    this.assertExamType(examType);
+    return this.gradesService.getReleveForSchool(tenantId, userId, examId, candidateId);
+  }
+
+  /**
+   * PDF du relevé de notes d'un candidat (généré par le backend, rendu
+   * identique au document officiel du patronat) — mêmes garde-fous école.
+   */
+  async getSchoolRelevePdf(
+    tenantId: string,
+    userId: string,
+    role: string | undefined,
+    examType: string,
+    examId: string,
+    candidateId: string,
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    await this.resolveSchoolContext(tenantId, userId, role);
+    this.assertExamType(examType);
+    return this.pdfService.generateRelevePdfForSchool(
+      tenantId,
+      userId,
+      examId,
+      candidateId,
+    );
   }
 
   /** Matricule candidat séquentiel (pattern federis-exams.service). */

@@ -28,7 +28,7 @@ import type { User } from '@/types';
 import { CalendarDays, Save, Loader2, AlertCircle, CheckCircle, ExternalLink } from 'lucide-react';
 import * as settingsService from '@/services/settings.service';
 
-type Tab = 'identity' | 'matricule' | 'academic-year' | 'subscription' | 'team' | 'audit';
+type Tab = 'identity' | 'matricule' | 'grading' | 'academic-year' | 'subscription' | 'team' | 'audit';
 
 interface MatriculeSettings {
   format: string | null;
@@ -36,6 +36,27 @@ interface MatriculeSettings {
   isDefault: boolean;
   tokens: Array<{ token: string; description: string }>;
   preview: string;
+  canManage: boolean;
+}
+
+/** ⭐ Règles de calcul (2026-09-30) — seuils par type d'examen. */
+interface GradingRuleType {
+  examType: 'CEP' | 'BEPC' | 'BAC' | 'CAP';
+  label: string;
+  passMark: number;
+  rescueMark: number;
+  defaultPassMark: number;
+  defaultRescueMark: number;
+  isCustom: boolean;
+  averageModel: 'simple' | 'ponderee';
+  averageModelLabel: string;
+  updatedAt: string | null;
+}
+
+interface GradingRulesConfig {
+  types: GradingRuleType[];
+  customCount: number;
+  semantics: string;
   canManage: boolean;
 }
 
@@ -100,6 +121,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
   const tabs: Array<{ id: Tab; label: string; icon: string }> = [
     { id: 'identity', label: 'Identité & Logo', icon: 'building' },
     { id: 'matricule', label: 'Matricule & Anonymat', icon: 'idcard' },
+    { id: 'grading', label: 'Règles de calcul', icon: 'calculator' },
     { id: 'academic-year', label: 'Années Scolaires', icon: 'calendar' },
     { id: 'subscription', label: 'Abonnement & paiement', icon: 'finance' },
     { id: 'team', label: 'Équipe & Comptes', icon: 'user' },
@@ -158,6 +180,120 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
   useEffect(() => {
     if (activeTab === 'matricule') void loadMatricule();
   }, [activeTab, loadMatricule]);
+
+  // ── Règles de calcul (2026-09-30 — seuils admission / rachat par type) ──
+  const [gradingRules, setGradingRules] = useState<GradingRulesConfig | null>(null);
+  const [gradingLoading, setGradingLoading] = useState(true);
+  const [gradingSaving, setGradingSaving] = useState<string | null>(null);
+  const [gradingNotice, setGradingNotice] = useState<string | null>(null);
+  const [gradingError, setGradingError] = useState<string | null>(null);
+  /** Brouillons locaux : examType → { passMark, rescueMark } */
+  const [gradingDrafts, setGradingDrafts] = useState<
+    Record<string, { passMark: string; rescueMark: string }>
+  >({});
+
+  const loadGradingRules = useCallback(async () => {
+    setGradingLoading(true);
+    try {
+      const res = await apiClient.get('/federis/settings/grading-rules', { timeout: 20000 });
+      setGradingRules(res.data ?? null);
+      const drafts: Record<string, { passMark: string; rescueMark: string }> = {};
+      for (const t of res.data?.types ?? []) {
+        drafts[t.examType] = {
+          passMark: String(t.passMark).replace('.', ','),
+          rescueMark: String(t.rescueMark).replace('.', ','),
+        };
+      }
+      setGradingDrafts(drafts);
+    } catch (err: any) {
+      setGradingRules(null);
+      setGradingError(
+        (Array.isArray(err?.response?.data?.message)
+          ? err.response.data.message.join(' ')
+          : err?.response?.data?.message) ?? 'Impossible de charger les règles de calcul.',
+      );
+    } finally {
+      setGradingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'grading') void loadGradingRules();
+  }, [activeTab, loadGradingRules]);
+
+  const parseFrNumber = (value: string): number | null => {
+    const n = Number(value.trim().replace(',', '.'));
+    return value.trim() !== '' && !Number.isNaN(n) ? n : null;
+  };
+
+  const saveGradingRule = async (examType: string) => {
+    const draft = gradingDrafts[examType];
+    if (!draft) return;
+    const passMark = parseFrNumber(draft.passMark);
+    const rescueMark = parseFrNumber(draft.rescueMark);
+    if (passMark === null || rescueMark === null) {
+      setGradingError('Seuils invalides — saisissez des nombres entre 0 et 20.');
+      return;
+    }
+    if (rescueMark >= passMark) {
+      setGradingError('Le seuil de rachat doit être inférieur à la moyenne d\u2019admission.');
+      return;
+    }
+    setGradingSaving(examType);
+    setGradingError(null);
+    setGradingNotice(null);
+    try {
+      const res = await apiClient.put(
+        `/federis/settings/grading-rules/${examType}`,
+        { passMark, rescueMark },
+        { timeout: 20000 },
+      );
+      setGradingRules(res.data ?? null);
+      const saved = (res.data?.types ?? []).find((t: GradingRuleType) => t.examType === examType);
+      const drafts: Record<string, { passMark: string; rescueMark: string }> = {};
+      for (const t of res.data?.types ?? []) {
+        drafts[t.examType] = {
+          passMark: String(t.passMark).replace('.', ','),
+          rescueMark: String(t.rescueMark).replace('.', ','),
+        };
+      }
+      setGradingDrafts(drafts);
+      setGradingNotice(
+        `Règle ${examType} enregistrée — admission ${saved?.passMark ?? passMark}/20, rachat ${saved?.rescueMark ?? rescueMark}/20. Cette règle est désormais la source de vérité du backend.`,
+      );
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      setGradingError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Enregistrement impossible.');
+    } finally {
+      setGradingSaving(null);
+    }
+  };
+
+  const resetGradingRule = async (examType: string) => {
+    setGradingSaving(examType);
+    setGradingError(null);
+    setGradingNotice(null);
+    try {
+      const res = await apiClient.delete(`/federis/settings/grading-rules/${examType}`, {
+        timeout: 20000,
+      });
+      setGradingRules(res.data ?? null);
+      const drafts: Record<string, { passMark: string; rescueMark: string }> = {};
+      for (const t of res.data?.types ?? []) {
+        drafts[t.examType] = {
+          passMark: String(t.passMark).replace('.', ','),
+          rescueMark: String(t.rescueMark).replace('.', ','),
+        };
+      }
+      setGradingDrafts(drafts);
+      setGradingNotice(`Règle ${examType} réinitialisée — les défauts du backend s\u2019appliquent à nouveau.`);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      setGradingError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Réinitialisation impossible.');
+    } finally {
+      setGradingSaving(null);
+    }
+  };
 
   /** Aperçu local (même moteur de jetons que le backend). */
   const matriculePreview = useMemo(() => {
@@ -776,6 +912,213 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                 </>
               )}
             </form>
+          )}
+
+          {/* ══════════ RÈGLES DE CALCUL (2026-09-30) ══════════ */}
+          {activeTab === 'grading' && (
+            <div className="space-y-6">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Règles de calcul des résultats</h2>
+                <p className="text-sm text-gray-500 mt-1 max-w-3xl">
+                  Définissez, pour chaque type d&apos;examen, la <b>moyenne d&apos;admission</b> et le{' '}
+                  <b>seuil de rachat</b> (cas limites soumis au jury). Par défaut, les règles du{' '}
+                  <b>backend</b> s&apos;appliquent (admission 10/20, rachat 9,5/20) — elles sont
+                  affichées ci-dessous. Dès qu&apos;une règle est définie ici, elle devient la{' '}
+                  <b>source de vérité</b> du backend : délibération, décisions des relevés,
+                  statistiques du registre et documents officiels.
+                </p>
+              </div>
+
+              {gradingLoading ? (
+                <div className="space-y-4 animate-pulse">
+                  <div className="h-10 bg-gray-100 rounded-md" />
+                  <div className="h-40 bg-gray-100 rounded-xl" />
+                  <div className="h-40 bg-gray-100 rounded-xl" />
+                </div>
+              ) : !gradingRules ? (
+                <div className="flex items-start space-x-3 bg-red-50 border border-red-200 rounded-lg p-4">
+                  <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                  <p className="text-sm font-semibold text-red-800">
+                    {gradingError ?? 'Règles de calcul indisponibles.'}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Bandeau d'état global */}
+                  <div
+                    className={cn(
+                      'rounded-xl border p-4 flex items-start gap-3',
+                      gradingRules.customCount > 0
+                        ? 'bg-emerald-50 border-emerald-200'
+                        : 'bg-blue-50 border-blue-100',
+                    )}
+                  >
+                    {gradingRules.customCount > 0 ? (
+                      <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <CalendarDays className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                    )}
+                    <p
+                      className={cn(
+                        'text-xs leading-relaxed',
+                        gradingRules.customCount > 0 ? 'text-emerald-800' : 'text-blue-900',
+                      )}
+                    >
+                      {gradingRules.customCount > 0
+                        ? `${gradingRules.customCount} règle(s) personnalisée(s) sur 4 — le backend applique VOS seuils pour ces types (source de vérité). Les autres types suivent les défauts du backend.`
+                        : 'Aucune règle personnalisée — le backend applique ses défauts (admission 10/20, rachat 9,5/20) pour les quatre types. Modifiez un type ci-dessous pour prendre la main.'}
+                    </p>
+                  </div>
+
+                  {/* Une carte par type d'examen */}
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+                    {(gradingRules.types ?? []).map((t) => {
+                      const draft = gradingDrafts[t.examType] ?? {
+                        passMark: String(t.passMark),
+                        rescueMark: String(t.rescueMark),
+                      };
+                      return (
+                        <div
+                          key={t.examType}
+                          className={cn(
+                            'rounded-xl border p-5 space-y-4',
+                            t.isCustom
+                              ? 'border-emerald-300 bg-emerald-50/40'
+                              : 'border-gray-200 bg-white',
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-bold text-gray-900">{t.label}</p>
+                              <p className="text-[11px] text-gray-500 mt-0.5">{t.averageModelLabel}</p>
+                            </div>
+                            <span
+                              className={cn(
+                                'shrink-0 px-2 py-0.5 rounded text-[10px] font-bold uppercase',
+                                t.isCustom
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'bg-slate-100 text-slate-500',
+                              )}
+                            >
+                              {t.isCustom ? 'Source de vérité' : 'Défaut du backend'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-[11px] font-bold uppercase text-gray-500 mb-1.5">
+                                Moyenne d&apos;admission /20
+                              </label>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={draft.passMark}
+                                disabled={!gradingRules.canManage}
+                                onChange={(e) =>
+                                  setGradingDrafts((prev) => ({
+                                    ...prev,
+                                    [t.examType]: { ...draft, passMark: e.target.value },
+                                  }))
+                                }
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md font-bold text-blue-900 disabled:bg-gray-50"
+                                placeholder={String(t.defaultPassMark)}
+                              />
+                              <p className="mt-1 text-[10px] text-gray-400">
+                                Défaut backend : {String(t.defaultPassMark).replace('.', ',')}/20
+                              </p>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold uppercase text-gray-500 mb-1.5">
+                                Seuil de rachat /20
+                              </label>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={draft.rescueMark}
+                                disabled={!gradingRules.canManage}
+                                onChange={(e) =>
+                                  setGradingDrafts((prev) => ({
+                                    ...prev,
+                                    [t.examType]: { ...draft, rescueMark: e.target.value },
+                                  }))
+                                }
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md font-bold text-blue-900 disabled:bg-gray-50"
+                                placeholder={String(t.defaultRescueMark)}
+                              />
+                              <p className="mt-1 text-[10px] text-gray-400">
+                                Défaut backend : {String(t.defaultRescueMark).replace('.', ',')}/20
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => saveGradingRule(t.examType)}
+                              disabled={!gradingRules.canManage || gradingSaving !== null}
+                              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-900 text-white text-xs font-bold hover:bg-blue-800 disabled:opacity-50"
+                            >
+                              {gradingSaving === t.examType ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Save className="w-3.5 h-3.5" />
+                              )}
+                              Définir cette règle
+                            </button>
+                            {t.isCustom && (
+                              <button
+                                type="button"
+                                onClick={() => resetGradingRule(t.examType)}
+                                disabled={!gradingRules.canManage || gradingSaving !== null}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-gray-300 text-gray-600 text-xs font-bold hover:bg-gray-50 disabled:opacity-50"
+                              >
+                                {gradingSaving === t.examType ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <CalendarDays className="w-3.5 h-3.5" />
+                                )}
+                                Réinitialiser
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Explication de la sémantique */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                    <p className="text-[11px] text-gray-600 leading-relaxed">
+                      <b>Comment ça marche :</b> {gradingRules.semantics} Le seuil de rachat doit
+                      toujours rester inférieur à la moyenne d&apos;admission : les candidats dont
+                      la moyenne se situe entre les deux seuils forment les « cas limites » que le
+                      jury tranche lors de la délibération (module Délibérations). Le modèle de
+                      moyenne (simple pour le CEP, pondérée par coefficients pour le BEPC / BAC /
+                      CAP) est structurel et s&apos;affiche à titre indicatif.
+                    </p>
+                  </div>
+
+                  {gradingError && (
+                    <div className="flex items-start space-x-3 bg-red-50 border border-red-200 rounded-lg p-4">
+                      <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                      <p className="text-sm font-semibold text-red-800">{gradingError}</p>
+                    </div>
+                  )}
+                  {gradingNotice && (
+                    <div className="flex items-start space-x-3 bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                      <CheckCircle className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
+                      <p className="text-sm font-semibold text-emerald-800">{gradingNotice}</p>
+                    </div>
+                  )}
+                  {!gradingRules.canManage && (
+                    <p className="text-xs text-gray-500">
+                      La modification des règles de calcul est réservée au coordonnateur, à
+                      l&apos;organisateur et au secrétaire.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
           )}
 
           {/* ══════════ ANNÉES SCOLAIRES (déjà persisté) ══════════ */}

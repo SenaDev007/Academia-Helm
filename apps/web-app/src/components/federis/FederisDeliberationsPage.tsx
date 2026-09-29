@@ -1,1207 +1,1134 @@
 /**
- * FederisDeliberationsPage — Workflow délibération → publication → notifications
+ * FederisDeliberationsPage — Délibération du jury & publication des résultats
  * ═══════════════════════════════════════════════════════════════════════════
- * REFONTE DESIGN WinAgro-inspired + workflow réel complet (2026-09-27) :
+ * ⭐ REFONTE 2026-09-30 (cahier des charges utilisateur) :
  *
- *   1. Saisie des notes      — collage par lot (matricule;matière;note) avec
- *                              couverture par matière (ExamResult DRAFT)
- *   2. Simulation            — seuils admission/rachat, distribution + mentions
- *   3. Délibération (jury)   — lancement, cas limites à trancher, clôture
- *   4. Publication           — validation finale (coordonnateur) + notifications
- *                              parents + consultation des résultats publiés
+ *   Le module n'est PLUS un espace de saisie des notes ni de simulation de
+ *   seuils — la saisie vit dans « Notes et Moyennes », les seuils dans
+ *   « Paramètres — Règles de calcul » (source de vérité : défauts backend
+ *   10/20 et 9,5/20 tant qu'aucune règle n'est définie).
  *
- * Miroir offline : chaque chargement est miroiré (IndexedDB/SQLite) et servi
- * en repli hors connexion avec bandeau « Miroir ».
+ *   1. Sélection du TYPE D'EXAMEN : CEP | BEPC | BAC | CAP (jamais de
+ *      mélange — pattern module Candidats / Notes et Moyennes), puis
+ *      campagne de ce type ;
+ *   2. DEUX TABLEAUX — chacun occupe la moitié de l'interface :
+ *        · GAUCHE  : Liste des admissibles (moyenne ≥ seuil d'admission) ;
+ *        · DROITE  : Candidats non admis (sous le seuil — cas du jury,
+ *                    ajournés, sans note) ;
+ *      Colonnes : matricule / nom prénom / moyenne / décision du jury
+ *      (pattern Promotion & Redoublement Helm) ;
+ *   3. Workflow du jury : lancer la délibération (nom du jury) → trancher
+ *      les cas limites → clôturer → publier (coordonnateur) ;
+ *   4. Documents & distribution :
+ *        · « Générer la liste PDF » — liste officielle backend (admissibles
+ *          + ajournés, décision du jury, bandeau provisoire avant
+ *          publication) ;
+ *        · « Envoyer les relevés de notes » — chaque relevé est distribué à
+ *          l'école du candidat (les écoles consultent dans Examen →
+ *          Examens nationaux → Délibération et relevés de notes).
  *
- * Rôles : délibération = coordonnateur/secrétaire/organisateur ;
- * publication = coordonnateur uniquement (gardes API + UI).
+ * API : GET  /federis/exams/:examId/deliberation/board
+ *       POST /federis/exams/:examId/deliberation            (juryName)
+ *       POST /federis/deliberations/:id/cases/:caseId       (APPROVED|REJECTED)
+ *       POST /federis/deliberations/:id/close
+ *       POST /federis/deliberations/:id/publish
+ *       POST /federis/exams/:examId/releves/dispatch
+ *       GET  /federis/exams/:examId/pdf/deliberation
  */
 
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ClipboardList,
   Gavel,
+  Loader2,
+  RefreshCw,
+  Search,
+  Send,
+  FileDown,
+  Lock,
   CheckCircle2,
   XCircle,
-  Loader2,
-  Upload,
   PlayCircle,
-  Send,
-  Lock,
-  RefreshCw,
-  Database,
+  Scale,
+  ShieldCheck,
   Award,
+  Users,
+  X,
   AlertTriangle,
-  FileCheck2,
 } from 'lucide-react';
-import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
-import { useFederisExams } from '@/hooks/useFederisExams';
-import { federisMirror, MIRROR_KEYS } from '@/lib/federis/federis-mirror.service';
-import {
-  FedPage,
-  FedSectionTitle,
-  FedCountUp,
-} from '@/components/federis/federis-motion';
+import { canWrite, normalizePatronatRole } from '@/lib/patronat/permissions';
+import { useFederisExams, EXAM_STATUS_LABELS } from '@/hooks/useFederisExams';
+import { federisMirror } from '@/lib/federis/federis-mirror.service';
+import { FedPage, FedCountUp, FedSectionTitle } from '@/components/federis/federis-motion';
 
-// ── Types ───────────────────────────────────────────────────────────────────
+// ─── Types (réponses API) ────────────────────────────────────────────────────
 
-interface DeliberationSubject {
-  id: string;
-  code: string;
-  name: string;
-  coefficient: number;
-  maxScore: number;
-  passingScore: number | null;
+type ExamType = 'CEP' | 'BEPC' | 'BAC' | 'CAP';
+
+interface BoardRow {
+  candidateId: string;
+  matricule: string;
+  fullName: string;
+  school: string;
+  centerName: string | null;
+  moyenne: number | null;
+  rank: number | null;
+  nbEval: number;
+  complete: boolean;
+  mention: string | null;
+  decision: 'ADMIS' | 'AJOURNE' | 'EN_ATTENTE' | 'NON_DELIBERE';
+  decisionLabel: string;
+  source: 'PUBLIE' | 'JURY' | 'CAS_JURY' | 'PROJECTION';
+  caseId: string | null;
+  caseDecision: 'PENDING' | 'APPROVED' | 'REJECTED' | null;
+  caseReason: string | null;
+  releveDispatched: boolean;
 }
 
-interface DeliberationCaseItem {
+interface DeliberationCase {
   id: string;
   reason: string;
-  decision: string;
+  decision: 'PENDING' | 'APPROVED' | 'REJECTED';
   comments: string | null;
   candidate: { id: string; matricule: string; firstName: string; lastName: string };
   average: number | null;
 }
 
-interface DeliberationItem {
+interface DeliberationInfo {
   id: string;
   juryName: string | null;
   deliberatedAt: string;
-  status: string;
-  totalCandidates: number;
+  status: 'IN_PROGRESS' | 'COMPLETED' | 'PUBLISHED' | string;
   passedCount: number;
   failedCount: number;
   successRate: number;
   thresholds: { passMark: number; rescueMark: number } | null;
-  publication: { publishedAt: string; publishedBy: string } | null;
+  publication: { publishedAt: string; publishedBy: string; admitted: number; failed: number } | null;
   pendingCases: number;
-  cases: DeliberationCaseItem[];
+  cases: DeliberationCase[];
 }
 
-interface DeliberationState {
-  exam: { id: string; code: string; name: string; level: string; status: string; candidatesCount: number };
-  subjects: DeliberationSubject[];
-  readiness: {
-    totalCandidates: number;
-    complete: number;
-    partial: number;
-    missing: number;
-    resultsEntered: number;
-    totalExpected: number;
-  };
-  deliberations: DeliberationItem[];
-}
-
-interface SimulationResult {
-  thresholds: { passMark: number; rescueMark: number };
-  distribution: {
-    admitted: number;
-    rescuePending: number;
-    failed: number;
-    incomplete: number;
-    total: number;
-    decided: number;
-  };
-  successRate: number;
-  mentions: Record<string, number>;
-  rescueSample: { matricule: string; name: string; average: number }[];
-}
-
-interface ResultsState {
-  exam: { id: string; code: string; name: string; status: string };
-  published: boolean;
-  candidates: {
-    matricule: string;
+interface BoardData {
+  exam: {
+    id: string;
+    code: string;
     name: string;
-    scores: { subject: string; code: string; score: number; coefficient: number }[];
+    examType: string;
+    level: string;
     status: string;
-    finalDecision: string | null;
-    finalAverage: number | null;
-    mention: string | null;
-  }[];
+    isPrimary: boolean;
+  };
+  academicYearLabel: string | null;
+  rules: {
+    passMark: number;
+    rescueMark: number;
+    isCustom: boolean;
+    averageModel: 'simple' | 'ponderee';
+  };
+  session: { draftCount: number; submittedCount: number; allSubmitted: boolean; locked: boolean };
+  filling: { gradedCells: number; totalCells: number; absentCells: number; fullyGraded: number };
+  subjectsCount: number;
+  stats: {
+    totalCandidates: number;
+    admissibles: number;
+    ajournes: number;
+    enAttente: number;
+    nonDeliberes: number;
+    successRate: number | null;
+  };
+  deliberation: DeliberationInfo | null;
+  dispatch: { dispatchedCount: number; lastDispatchAt: string | null; schoolsCount: number };
+  admissibles: BoardRow[];
+  ajournes: BoardRow[];
 }
 
-type TabKey = 'notes' | 'simulation' | 'jury' | 'results';
+const EXAM_TYPES: Array<{ type: ExamType; label: string }> = [
+  { type: 'CEP', label: 'CEP' },
+  { type: 'BEPC', label: 'BEPC' },
+  { type: 'BAC', label: 'Baccalauréat' },
+  { type: 'CAP', label: 'CAP' },
+];
 
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Brouillon',
-  IN_PROGRESS: 'En cours',
-  COMPLETED: 'Clôturée',
-  PUBLISHED: 'Publiée',
+const TYPE_MODEL_LABEL: Record<string, string> = {
+  CEP: 'Moyenne simple — primaire (sans coefficients)',
+  BEPC: 'Moyenne pondérée — secondaire (avec coefficients)',
+  BAC: 'Moyenne pondérée — secondaire (avec coefficients)',
+  CAP: 'Moyenne pondérée — secondaire (avec coefficients)',
 };
 
-// ── Composant ───────────────────────────────────────────────────────────────
+/** Couleur de pastille selon la provenance de la décision. */
+function decisionPill(row: BoardRow): { label: string; className: string } {
+  switch (row.decision) {
+    case 'ADMIS':
+      return {
+        label: row.source === 'PROJECTION' ? 'Admis (projeté)' : 'Admis',
+        className: 'bg-emerald-100 text-emerald-800',
+      };
+    case 'AJOURNE':
+      return {
+        label: row.decisionLabel,
+        className: 'bg-red-100 text-red-700',
+      };
+    case 'EN_ATTENTE':
+      return { label: 'Cas du jury', className: 'bg-amber-100 text-amber-800' };
+    default:
+      return { label: 'À délibérer', className: 'bg-slate-100 text-slate-500' };
+  }
+}
 
-export default function FederisDeliberationsPage() {
-  const { exams, examId, setExamId, selectedExam, loading: examsLoading } = useFederisExams();
-  const [tab, setTab] = useState<TabKey>('notes');
-  const [state, setState] = useState<DeliberationState | null>(null);
-  const [fromMirror, setFromMirror] = useState(false);
-  const [mirrorAt, setMirrorAt] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+function fmtNote(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '—';
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace('.', ',');
+}
+
+/** Téléchargement authentifié (blob) — pattern FederisGradeRelevesTab. */
+async function downloadFile(url: string, filename: string, timeout = 120000): Promise<void> {
+  const res = await apiClient.get(url, { responseType: 'blob', timeout });
+  const blob = new Blob([res.data], { type: 'application/pdf' });
+  const objectUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(objectUrl);
+}
+
+// ─── Composant principal ─────────────────────────────────────────────────────
+
+export default function FederisDeliberationsPage({
+  userRole,
+}: {
+  tenantId?: string;
+  userRole?: string | null;
+}) {
+  const { exams, examId, setExamId, loading: examsLoading } = useFederisExams();
+
+  const [board, setBoard] = useState<BoardData | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionMsg, setActionMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [working, setWorking] = useState<string | null>(null);
 
-  // Saisie des notes
-  const [scoresText, setScoresText] = useState('');
+  // Recherche dans chaque tableau
+  const [searchAdm, setSearchAdm] = useState('');
+  const [searchAjo, setSearchAjo] = useState('');
 
-  // Simulation
-  const [passMark, setPassMark] = useState(10);
-  const [rescueMark, setRescueMark] = useState(9.5);
-  const [simulation, setSimulation] = useState<SimulationResult | null>(null);
-  const [simulating, setSimulating] = useState(false);
-
-  // Délibération
+  // Modale de lancement (nom du jury)
+  const [runOpen, setRunOpen] = useState(false);
   const [juryName, setJuryName] = useState('');
-  const [busy, setBusy] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+
+  // Panneau des cas limites
+  const [casesOpen, setCasesOpen] = useState(false);
   const [caseComments, setCaseComments] = useState<Record<string, string>>({});
 
-  // Résultats
-  const [results, setResults] = useState<ResultsState | null>(null);
+  const fn = normalizePatronatRole(userRole);
+  const canDeliberate = canWrite(userRole, 'candidates'); // coordonnateur / secrétaire / organisateur
+  const canPublish = fn === 'COORDONNATEUR';
 
-  // ── Chargement de l'état (avec miroir offline) ────────────────────────────
-  const load = useCallback(async () => {
-    if (!examId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await apiClient.get(`/federis/exams/${examId}/deliberation`, { timeout: 25000 });
-      setState(res.data);
-      setFromMirror(false);
-      setMirrorAt(new Date().toISOString());
-      // ⭐ Miroir offline — snapshot après chaque chargement réussi
-      await federisMirror.saveSnapshot(MIRROR_KEYS.deliberation(examId), res.data);
-    } catch (err: any) {
-      // ⭐ Repli miroir (IndexedDB/SQLite) si l'API est injoignable
-      const entry = await federisMirror.loadSnapshot<DeliberationState>(
-        MIRROR_KEYS.deliberation(examId),
-      );
-      if (entry) {
-        setState(entry.data);
-        setFromMirror(true);
-        setMirrorAt(entry.syncedAt);
-      } else {
-        setError(err?.response?.data?.message ?? 'Impossible de charger la délibération.');
+  // ── Chargement du tableau de délibération ────────────────────────────────
+  const load = useCallback(
+    async (silent = false) => {
+      if (!examId) return;
+      if (!silent) setLoading(true);
+      setError(null);
+      try {
+        const res = await apiClient.get(`/federis/exams/${examId}/deliberation/board`, {
+          timeout: 30000,
+        });
+        setBoard(res.data);
+        // Miroir offline (repli hors connexion)
+        void federisMirror
+          .saveSnapshot(`deliberation:${examId}`, res.data)
+          .catch(() => undefined);
+      } catch (err: any) {
+        // Repli miroir hors connexion
+        try {
+          const mirrored = await federisMirror.loadSnapshot<BoardData>(`deliberation:${examId}`);
+          if (mirrored?.data) {
+            setBoard(mirrored.data);
+            setNotice('Mode hors connexion — données miroir (dernière consultation).');
+            return;
+          }
+        } catch {
+          /* pas de miroir */
+        }
+        setError(
+          (Array.isArray(err?.response?.data?.message)
+            ? err.response.data.message.join(' ')
+            : err?.response?.data?.message) ?? 'Impossible de charger la délibération.',
+        );
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, [examId]);
+    },
+    [examId],
+  );
 
   useEffect(() => {
+    setNotice(null);
+    setCasesOpen(false);
+    setRunOpen(false);
     void load();
   }, [load]);
 
-  // ── Chargement des résultats (onglet résultats, avec miroir) ─────────────
-  const loadResults = useCallback(async () => {
-    if (!examId) return;
-    try {
-      const res = await apiClient.get(`/federis/exams/${examId}/results`, { timeout: 25000 });
-      setResults(res.data);
-      await federisMirror.saveSnapshot(MIRROR_KEYS.results(examId), res.data);
-    } catch {
-      const entry = await federisMirror.loadSnapshot<ResultsState>(MIRROR_KEYS.results(examId));
-      if (entry) setResults(entry.data);
-    }
-  }, [examId]);
-
   useEffect(() => {
-    if (tab === 'results') void loadResults();
-  }, [tab, loadResults]);
+    if (board?.deliberation && board.deliberation.pendingCases > 0) setCasesOpen(true);
+  }, [board?.deliberation?.id, board?.deliberation?.pendingCases]);
 
-  // ── Actions ──────────────────────────────────────────────────────────────
-
-  const runAction = async (key: string, fn: () => Promise<any>, okMsg: string) => {
-    setBusy(key);
-    setActionMsg(null);
-    try {
-      await fn();
-      setActionMsg({ type: 'ok', text: okMsg });
-      await load();
-    } catch (err: any) {
-      setActionMsg({
-        type: 'err',
-        text: err?.response?.data?.message ?? 'L\u2019opération a échoué.',
-      });
-    } finally {
-      setBusy(null);
+  // ── Catégorisation par type (pattern FederisGradesPage) ──────────────────
+  const examsByType = useMemo(() => {
+    const map = new Map<string, typeof exams>();
+    for (const ex of exams) {
+      const key = ex.examType ?? 'CEP';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(ex);
     }
+    return map;
+  }, [exams]);
+
+  const selectedExam = exams.find((e) => e.id === examId) ?? null;
+  const activeType = selectedExam?.examType ?? null;
+  const activeTypeExams = activeType ? (examsByType.get(activeType) ?? []) : [];
+  const visibleTypes = EXAM_TYPES.filter((t) => (examsByType.get(t.type) ?? []).length > 0);
+  const typeCount = (type: string) =>
+    (examsByType.get(type) ?? []).reduce((sum, ex) => sum + (ex.candidatesCount ?? 0), 0);
+  const switchType = (type: string) => {
+    const first = (examsByType.get(type) ?? [])[0];
+    if (first) setExamId(first.id);
   };
 
-  const submitScores = () =>
-    runAction(
-      'scores',
-      async () => {
-        // Analyse des lignes « matricule;matière;note » (séparateurs ; , ou tab)
-        const rows = scoresText
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .filter(Boolean)
-          .map((line) => {
-            const parts = line.split(/[;,\t]/).map((p) => p.trim());
-            return {
-              matricule: parts[0] ?? '',
-              subjectCode: parts[1] ?? '',
-              score: Number(parts[2]),
-            };
-          })
-          .filter((r) => r.matricule && r.subjectCode && !Number.isNaN(r.score));
-        if (rows.length === 0) throw new Error('Aucune ligne valide détectée.');
-        return apiClient.post(`/federis/exams/${examId}/results/bulk`, { rows });
-      },
-      'Notes enregistrées avec succès.',
-    ).then(() => setScoresText(''));
+  // ── Filtrage des tableaux ────────────────────────────────────────────────
+  const filterRows = (rows: BoardRow[], q: string) => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter(
+      (r) =>
+        r.fullName.toLowerCase().includes(needle) ||
+        r.matricule?.toLowerCase().includes(needle) ||
+        (r.school ?? '').toLowerCase().includes(needle),
+    );
+  };
+  const admissibles = useMemo(
+    () => filterRows(board?.admissibles ?? [], searchAdm),
+    [board?.admissibles, searchAdm],
+  );
+  const ajournes = useMemo(
+    () => filterRows(board?.ajournes ?? [], searchAjo),
+    [board?.ajournes, searchAjo],
+  );
 
-  const runSimulation = async () => {
-    setSimulating(true);
-    setActionMsg(null);
+  // ── Actions du workflow ──────────────────────────────────────────────────
+
+  const runDeliberation = async () => {
+    if (!examId || !juryName.trim()) {
+      setRunError('Le nom du jury est obligatoire.');
+      return;
+    }
+    setWorking('run');
+    setRunError(null);
     try {
       const res = await apiClient.post(
-        `/federis/exams/${examId}/deliberation/simulate`,
-        { passMark, rescueMark },
-        { timeout: 25000 },
+        `/federis/exams/${examId}/deliberation`,
+        { juryName: juryName.trim() },
+        { timeout: 30000 },
       );
-      setSimulation(res.data);
+      setNotice(
+        res.data?.message ??
+          `Délibération lancée par le jury « ${res.data?.juryName ?? juryName} ».`,
+      );
+      setRunOpen(false);
+      setJuryName('');
+      await load(true);
     } catch (err: any) {
-      setActionMsg({
-        type: 'err',
-        text: err?.response?.data?.message ?? 'Simulation impossible.',
-      });
+      const msg = err?.response?.data?.message;
+      setRunError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Lancement impossible.');
     } finally {
-      setSimulating(false);
+      setWorking(null);
     }
   };
 
-  const latestDeliberation = state?.deliberations?.[0] ?? null;
-  const readinessPct =
-    state && state.readiness.totalExpected > 0
-      ? Math.round((state.readiness.resultsEntered / state.readiness.totalExpected) * 100)
-      : 0;
+  const decideCase = async (deliberationId: string, kase: DeliberationCase, decision: 'APPROVED' | 'REJECTED') => {
+    setWorking(`case-${kase.id}`);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiClient.post(
+        `/federis/deliberations/${deliberationId}/cases/${kase.id}`,
+        { decision, comments: caseComments[kase.id]?.trim() || undefined },
+        { timeout: 20000 },
+      );
+      setNotice(
+        `${kase.candidate.firstName} ${kase.candidate.lastName} — ${
+          decision === 'APPROVED' ? 'admis(e) par le jury' : 'ajourné(e) par le jury'
+        }.`,
+      );
+      await load(true);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      setError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Décision impossible.');
+    } finally {
+      setWorking(null);
+    }
+  };
 
-  const tabs: { key: TabKey; label: string; icon: React.ReactNode; badge?: number }[] = [
-    { key: 'notes', label: 'Saisie des notes', icon: <ClipboardList className="w-4 h-4" /> },
-    { key: 'simulation', label: 'Simulation', icon: <PlayCircle className="w-4 h-4" /> },
-    {
-      key: 'jury',
-      label: 'Délibération & Jury',
-      icon: <Gavel className="w-4 h-4" />,
-      badge: latestDeliberation?.pendingCases ?? 0,
-    },
-    { key: 'results', label: 'Résultats & Publication', icon: <FileCheck2 className="w-4 h-4" /> },
-  ];
+  const closeDeliberation = async () => {
+    if (!board?.deliberation) return;
+    setWorking('close');
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiClient.post(
+        `/federis/deliberations/${board.deliberation.id}/close`,
+        {},
+        { timeout: 20000 },
+      );
+      setNotice(
+        `Délibération clôturée — ${res.data?.passedCount ?? 0} admis(e)s, ${res.data?.failedCount ?? 0} ajourné(e)s, taux de réussite ${fmtNote(res.data?.successRate)} %.`,
+      );
+      await load(true);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      setError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Clôture impossible.');
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  const publishResults = async () => {
+    if (!board?.deliberation) return;
+    if (
+      !window.confirm(
+        'Publier officiellement les résultats ? Les parents et les écoles sont notifiés, ' +
+          'les notes sont définitivement verrouillées et l\u2019examen passe en « Résultats publiés ».',
+      )
+    ) {
+      return;
+    }
+    setWorking('publish');
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiClient.post(
+        `/federis/deliberations/${board.deliberation.id}/publish`,
+        {},
+        { timeout: 30000 },
+      );
+      setNotice(
+        `Résultats publiés — ${res.data?.admitted ?? 0} admis(e)s, ${res.data?.failed ?? 0} ajourné(e)s. ` +
+          (res.data?.message ?? 'Pensez à envoyer les relevés de notes aux écoles.'),
+      );
+      await load(true);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      setError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Publication impossible.');
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  const dispatchReleves = async () => {
+    if (!examId) return;
+    if (
+      !window.confirm(
+        'Envoyer les relevés de notes aux écoles ? Chaque école rattachée recevra les relevés ' +
+          'des candidats qu\u2019elle a présentés et sera notifiée immédiatement.',
+      )
+    ) {
+      return;
+    }
+    setWorking('dispatch');
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiClient.post(
+        `/federis/exams/${examId}/releves/dispatch`,
+        {},
+        { timeout: 60000 },
+      );
+      setNotice(res.data?.message ?? 'Relevés envoyés aux écoles.');
+      await load(true);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      setError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Envoi impossible.');
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  const downloadPdf = async () => {
+    if (!examId || !board) return;
+    setWorking('pdf');
+    setError(null);
+    setNotice(null);
+    try {
+      await downloadFile(
+        `/federis/exams/${examId}/pdf/deliberation`,
+        `Liste_Deliberation_${board.exam.code}.pdf`,
+      );
+      setNotice('Liste de délibération générée (backend) — téléchargement lancé.');
+    } catch (err: any) {
+      let msg = err?.response?.data?.message ?? err?.message ?? 'Téléchargement impossible.';
+      if (err?.response?.data instanceof Blob) {
+        try {
+          const parsed = JSON.parse(await err.response.data.text());
+          msg = parsed?.message ?? msg;
+        } catch {
+          /* garde le brut */
+        }
+      }
+      setError(Array.isArray(msg) ? msg.join(' ') : String(msg));
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  // ── État du workflow pour l'affichage ────────────────────────────────────
+  const d = board?.deliberation ?? null;
+  const examStatus = board?.exam.status ?? '';
+  const hasNotes = (board?.filling.gradedCells ?? 0) + (board?.filling.absentCells ?? 0) > 0;
+  const pendingCases = d?.pendingCases ?? 0;
+  const workflowStep: 'saisie' | 'pret' | 'en_cours' | 'cloturee' | 'publiee' =
+    examStatus === 'RESULTS_PUBLISHED'
+      ? 'publiee'
+      : d?.status === 'PUBLISHED'
+        ? 'publiee'
+        : d?.status === 'IN_PROGRESS'
+          ? 'en_cours'
+          : d?.status === 'COMPLETED'
+            ? 'cloturee'
+            : hasNotes
+              ? 'pret'
+              : 'saisie';
+
+  const WORKFLOW_LABELS: Record<string, { label: string; className: string }> = {
+    saisie: { label: 'Notes en cours de saisie', className: 'bg-slate-100 text-slate-600' },
+    pret: { label: 'Prêt à délibérer', className: 'bg-blue-100 text-blue-800' },
+    en_cours: { label: 'Délibération en cours — cas à trancher', className: 'bg-amber-100 text-amber-800' },
+    cloturee: { label: 'Délibération clôturée — publication possible', className: 'bg-indigo-100 text-indigo-800' },
+    publiee: { label: 'Résultats publiés', className: 'bg-emerald-100 text-emerald-800' },
+  };
+  const workflow = WORKFLOW_LABELS[workflowStep];
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // Rendu
+  // ═════════════════════════════════════════════════════════════════════════
 
   return (
     <FedPage className="space-y-8">
-      {/* ── En-tête ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      {/* En-tête */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <div className="fed-badge mb-3">Module délibérations</div>
-          <h1 className="text-2xl md:text-3xl font-bold text-blue-900 tracking-tight">
-            Délibérations & Rachat
-          </h1>
-          <p className="text-slate-500 font-medium mt-1 text-sm">
-            Saisissez les notes, simulez les seuils, délibérez puis publiez les résultats officiels.
+          <div className="fed-badge mb-2">Module délibération</div>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Délibération</h1>
+          <p className="text-sm text-gray-500 mt-1 max-w-2xl">
+            Délibération du jury et publication officielle des résultats. La saisie des notes se
+            fait dans le module <strong>Notes et Moyennes</strong> ; les seuils d&apos;admission et
+            de rachat sont pilotés dans <strong>Paramètres → Règles de calcul</strong>.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Sélecteur d'examen */}
-          <select
-            value={examId ?? ''}
-            onChange={(e) => setExamId(e.target.value)}
-            className="fed-input-light !w-auto font-bold cursor-pointer"
-          >
-            {exams.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.code} — {e.name}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={() => void load()}
-            className="p-2.5 rounded-lg bg-white border border-gray-200 text-blue-800 hover:bg-blue-50 transition-colors shadow-sm"
-            title="Rafraîchir"
-          >
-            <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
-          </button>
+        <div className="flex gap-4">
+          <div className="fed-card px-6 py-4 text-center">
+            <p className="text-2xl font-bold text-gray-900">
+              <FedCountUp value={board?.stats.totalCandidates ?? 0} />
+            </p>
+            <p className="text-xs font-medium text-gray-500 mt-0.5">Candidats</p>
+          </div>
+          <div className="fed-card px-6 py-4 text-center">
+            <p className="text-2xl font-bold text-emerald-700">
+              <FedCountUp value={board?.stats.admissibles ?? 0} />
+            </p>
+            <p className="text-xs font-medium text-gray-500 mt-0.5">Admissibles</p>
+          </div>
+          <div className="fed-card px-6 py-4 text-center">
+            <p className="text-2xl font-bold text-red-600">
+              <FedCountUp value={board?.stats.ajournes ?? 0} />
+            </p>
+            <p className="text-xs font-medium text-gray-500 mt-0.5">Ajournés</p>
+          </div>
+          <div className="fed-card px-6 py-4 text-center">
+            <p className="text-2xl font-bold text-gray-900">
+              {board?.stats.successRate != null ? (
+                <FedCountUp value={board.stats.successRate} suffix=" %" />
+              ) : (
+                '—'
+              )}
+            </p>
+            <p className="text-xs font-medium text-gray-500 mt-0.5">Taux de réussite</p>
+          </div>
         </div>
       </div>
 
-      {/* Bandeau miroir offline */}
-      <AnimatePresence>
-        {fromMirror && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="flex items-center gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3"
-          >
-            <Database className="w-4 h-4 text-blue-800 shrink-0" />
-            <p className="text-xs font-bold text-blue-900">
-              Mode hors connexion — données servies depuis le miroir offline
-              {mirrorAt ? ` (synchronisé à ${new Date(mirrorAt).toLocaleTimeString('fr-FR')})` : ''}.
-              Les actions d&rsquo;écriture reprendront au retour de la connexion.
-            </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Message d'action */}
-      <AnimatePresence>
-        {actionMsg && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className={cn(
-              'flex items-center gap-2.5 rounded-xl px-4 py-3 border',
-              actionMsg.type === 'ok'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                : 'bg-red-50 border-red-200 text-red-800',
-            )}
-          >
-            {actionMsg.type === 'ok' ? (
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-            ) : (
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-            )}
-            <p className="text-sm font-bold">{actionMsg.text}</p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {examsLoading || (loading && !state) ? (
-        <div className="flex items-center justify-center py-24">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-800" />
+      {/* Sélection du type d'examen */}
+      {examsLoading ? (
+        <div className="fed-card px-6 py-4 text-sm font-bold text-slate-400">
+          Chargement des campagnes…
         </div>
-      ) : error && !state ? (
-        <div className="fed-card p-10 text-center">
-          <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-4" />
-          <p className="text-sm font-bold text-slate-600">{error}</p>
-        </div>
-      ) : !selectedExam || !state ? (
-        <div className="fed-card p-10 text-center">
-          <Gavel className="w-10 h-10 text-blue-800 mx-auto mb-4" />
-          <p className="text-sm font-bold text-slate-600">
-            Sélectionnez un examen pour accéder aux délibérations.
+      ) : visibleTypes.length === 0 ? (
+        <div className="fed-card px-6 py-8 text-center">
+          <p className="text-sm font-bold text-slate-500">
+            Aucun examen — créez d&apos;abord une campagne dans le module Examens nationaux.
           </p>
         </div>
       ) : (
-        <>
-          {/* ── KPI de préparation (compteurs animés — ADN Stats WinAgro) ── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <motion.div
-              whileHover={{ y: -6 }}
-              className="fed-card p-5"
-            >
-              <p className="text-[10px] font-bold uppercase text-slate-400 mb-2">
-                Candidats inscrits
-              </p>
-              <p className="text-3xl font-bold text-blue-900">
-                <FedCountUp value={state.readiness.totalCandidates} />
-              </p>
-            </motion.div>
-            <motion.div whileHover={{ y: -6 }} className="fed-card p-5">
-              <p className="text-[10px] font-bold uppercase text-slate-400 mb-2">
-                Dossiers complets
-              </p>
-              <p className="text-3xl font-bold text-emerald-600">
-                <FedCountUp value={state.readiness.complete} />
-              </p>
-            </motion.div>
-            <motion.div whileHover={{ y: -6 }} className="fed-card p-5">
-              <p className="text-[10px] font-bold uppercase text-slate-400 mb-2">
-                Notes saisies
-              </p>
-              <p className="text-3xl font-bold text-blue-800">
-                <FedCountUp value={state.readiness.resultsEntered} />
-                <span className="text-sm text-slate-400 font-bold">
-                  {' '}/ {state.readiness.totalExpected}
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Type d'examen">
+          {visibleTypes.map((t) => {
+            const isActive = activeType === t.type;
+            return (
+              <button
+                key={t.type}
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => switchType(t.type)}
+                className={cn(
+                  'px-5 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-wide border transition-all',
+                  isActive
+                    ? 'bg-blue-900 text-white border-blue-900 shadow-sm'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-blue-900/40 hover:text-blue-900',
+                )}
+              >
+                {t.label}
+                <span
+                  className={cn(
+                    'ml-2.5 px-2 py-0.5 rounded-full text-[10px] font-bold',
+                    isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500',
+                  )}
+                >
+                  {typeCount(t.type)}
                 </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Sélecteur de campagne */}
+      {examId && (
+        <div className="fed-card px-6 py-4 flex flex-col lg:flex-row lg:items-center gap-4 flex-wrap">
+          <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">Campagne</span>
+          {activeTypeExams.length === 1 ? (
+            <span className="text-sm font-bold text-blue-900">
+              {selectedExam?.code} — {selectedExam?.name}
+            </span>
+          ) : (
+            <select
+              value={examId}
+              onChange={(e) => setExamId(e.target.value)}
+              className="fed-input-light flex-1 !w-auto font-bold px-4 py-2.5"
+            >
+              {activeTypeExams.map((exam) => (
+                <option key={exam.id} value={exam.id}>
+                  {exam.code} — {exam.name} ({EXAM_STATUS_LABELS[exam.status] ?? exam.status})
+                </option>
+              ))}
+            </select>
+          )}
+          {activeType && (
+            <span className="text-[9px] font-black uppercase tracking-wide bg-blue-50 text-blue-900 border border-blue-100 px-3 py-1.5 rounded-lg">
+              {TYPE_MODEL_LABEL[activeType]}
+            </span>
+          )}
+          <span className={cn('px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase', workflow.className)}>
+            {workflow.label}
+          </span>
+        </div>
+      )}
+
+      {/* Bandeau règles + actions */}
+      {board && (
+        <div className="fed-card px-6 py-5 space-y-4">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-4 flex-wrap">
+            <Scale className="w-5 h-5 text-blue-900 shrink-0" />
+            <p className="text-xs text-slate-600 flex-1 min-w-[240px]">
+              Seuils appliqués : <b>admission ≥ {fmtNote(board.rules.passMark)}/20</b> ·{' '}
+              <b>rachat ≥ {fmtNote(board.rules.rescueMark)}/20</b> —{' '}
+              {board.rules.isCustom ? (
+                <span className="font-bold text-emerald-700">
+                  règle personnalisée (Paramètres → Règles de calcul) = source de vérité
+                </span>
+              ) : (
+                <span>
+                  défauts du backend (personnalisables dans Paramètres → Règles de calcul)
+                </span>
+              )}
+              {board.rules.averageModel === 'simple'
+                ? ' · moyenne simple (primaire)'
+                : ' · moyenne pondérée par coefficients'}
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Étape : lancer la délibération */}
+              {(workflowStep === 'pret' || workflowStep === 'saisie') && canDeliberate && (
+                <button
+                  onClick={() => {
+                    setRunOpen(true);
+                    setRunError(null);
+                  }}
+                  disabled={!hasNotes || working !== null}
+                  title={
+                    hasNotes
+                      ? 'Lancer la délibération du jury (les seuils des règles de calcul sont appliqués)'
+                      : 'Aucune note saisie — complétez la saisie dans Notes et Moyennes'
+                  }
+                  className="fed-btn-navy px-5 py-2.5 text-[10px] font-bold uppercase disabled:opacity-50 inline-flex items-center gap-2"
+                >
+                  <PlayCircle className="w-4 h-4" />
+                  Lancer la délibération
+                </button>
+              )}
+
+              {/* Cas à trancher (badge sur le panneau) */}
+              {d && pendingCases > 0 && canDeliberate && (
+                <button
+                  onClick={() => setCasesOpen((v) => !v)}
+                  className="px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase bg-amber-500 text-white hover:bg-amber-600 inline-flex items-center gap-2"
+                >
+                  <Gavel className="w-4 h-4" />
+                  Cas limites ({pendingCases})
+                </button>
+              )}
+
+              {/* Clôturer */}
+              {d?.status === 'IN_PROGRESS' && pendingCases === 0 && canDeliberate && (
+                <button
+                  onClick={closeDeliberation}
+                  disabled={working !== null}
+                  className="px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 inline-flex items-center gap-2"
+                >
+                  {working === 'close' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Lock className="w-4 h-4" />
+                  )}
+                  Clôturer
+                </button>
+              )}
+
+              {/* Publier */}
+              {d?.status === 'COMPLETED' && canPublish && (
+                <button
+                  onClick={publishResults}
+                  disabled={working !== null}
+                  className="px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center gap-2"
+                >
+                  {working === 'publish' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="w-4 h-4" />
+                  )}
+                  Publier les résultats
+                </button>
+              )}
+
+              {/* PDF liste de délibération */}
+              {(workflowStep === 'en_cours' || workflowStep === 'cloturee' || workflowStep === 'publiee') && (
+                <button
+                  onClick={downloadPdf}
+                  disabled={working !== null}
+                  className="px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase bg-white border border-blue-900/25 text-blue-900 hover:bg-blue-50 disabled:opacity-50 inline-flex items-center gap-2"
+                >
+                  {working === 'pdf' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <FileDown className="w-4 h-4" />
+                  )}
+                  Liste PDF
+                </button>
+              )}
+
+              {/* Envoyer les relevés de notes aux écoles */}
+              {(workflowStep === 'cloturee' || workflowStep === 'publiee' || examStatus === 'DELIBERATED') &&
+                canDeliberate && (
+                  <button
+                    onClick={dispatchReleves}
+                    disabled={working !== null}
+                    title="Distribue le relevé de notes de chaque candidat à son école de provenance"
+                    className="fed-btn-gold px-5 py-2.5 text-[10px] font-bold uppercase disabled:opacity-50 inline-flex items-center gap-2"
+                  >
+                    {working === 'dispatch' ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                    Envoyer les relevés
+                  </button>
+                )}
+            </div>
+          </div>
+
+          {/* Distribution des relevés */}
+          {board.dispatch.dispatchedCount > 0 && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
+              <Send className="w-4 h-4 text-emerald-600 shrink-0" />
+              <p className="text-xs text-emerald-800 font-semibold">
+                {board.dispatch.dispatchedCount} relevé(s) déjà envoyé(s) à{' '}
+                {board.dispatch.schoolsCount} école(s)
+                {board.dispatch.lastDispatchAt
+                  ? ` — dernier envoi le ${new Date(board.dispatch.lastDispatchAt).toLocaleDateString('fr-FR')}`
+                  : ''}
+                . Un nouvel envoi actualise les documents (décisions à jour).
               </p>
-              {/* Barre de progression or */}
-              <div className="mt-2 h-1.5 bg-blue-50 rounded-full overflow-hidden">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${readinessPct}%` }}
-                  transition={{ duration: 0.8, ease: 'easeOut' }}
-                  className="h-full bg-amber-500 rounded-full"
+            </div>
+          )}
+
+          {/* Session de saisie (renvoi vers Notes et Moyennes) */}
+          {!hasNotes && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">
+                Aucune note saisie pour cette campagne — la saisie se fait dans le module{' '}
+                <b>Notes et Moyennes</b> (onglet « Saisie des notes »), puis la délibération peut
+                être lancée ici.
+              </p>
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3 text-sm font-semibold text-red-800">
+              {error}
+            </div>
+          )}
+          {notice && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-3 text-sm font-semibold text-emerald-800">
+              {notice}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Panneau des cas limites */}
+      {d && casesOpen && (d.cases ?? []).length > 0 && (
+        <div className="fed-card p-6 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <FedSectionTitle
+              title="Cas limites du jury"
+              subtitle={`Moyennes comprises entre le seuil de rachat (${fmtNote(d.thresholds?.rescueMark ?? board?.rules.rescueMark)}) et la moyenne d'admission (${fmtNote(d.thresholds?.passMark ?? board?.rules.passMark)}) — jury « ${d.juryName ?? '—'} »`}
+            />
+            <button
+              onClick={() => setCasesOpen(false)}
+              className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
+              aria-label="Fermer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200">
+              <thead className="bg-[#f7f9fc]">
+                <tr>
+                  <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Candidat</th>
+                  <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-400 uppercase">Moyenne</th>
+                  <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Motif</th>
+                  <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-400 uppercase">Décision du jury</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-slate-200">
+                {d.cases.map((kase) => (
+                  <tr key={kase.id} className={kase.decision === 'PENDING' ? '' : 'bg-slate-50/60'}>
+                    <td className="px-4 py-3">
+                      <p className="text-xs font-bold text-blue-900">
+                        {kase.candidate.lastName} {kase.candidate.firstName}
+                      </p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase">{kase.candidate.matricule}</p>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="text-xs font-black text-amber-700">{fmtNote(kase.average)}/20</span>
+                    </td>
+                    <td className="px-4 py-3 max-w-[280px]">
+                      <p className="text-[11px] text-slate-600">{kase.reason}</p>
+                      {kase.decision !== 'PENDING' && kase.comments && (
+                        <p className="text-[10px] text-slate-500 mt-1 italic">« {kase.comments} »</p>
+                      )}
+                      {kase.decision === 'PENDING' && (
+                        <input
+                          type="text"
+                          value={caseComments[kase.id] ?? ''}
+                          onChange={(e) =>
+                            setCaseComments((prev) => ({ ...prev, [kase.id]: e.target.value }))
+                          }
+                          placeholder="Motif de la décision (optionnel)…"
+                          className="fed-input-light px-3 py-1.5 text-[11px] !w-64 mt-1.5"
+                        />
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {kase.decision === 'PENDING' ? (
+                        canDeliberate ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => decideCase(d.id, kase, 'APPROVED')}
+                              disabled={working !== null}
+                              className="px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+                            >
+                              {working === `case-${kase.id}` ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <CheckCircle2 className="w-3 h-3" />
+                              )}
+                              Admettre
+                            </button>
+                            <button
+                              onClick={() => decideCase(d.id, kase, 'REJECTED')}
+                              disabled={working !== null}
+                              className="px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+                            >
+                              {working === `case-${kase.id}` ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <XCircle className="w-3 h-3" />
+                              )}
+                              Ajourner
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] font-bold text-slate-400 uppercase">En attente</span>
+                        )
+                      ) : kase.decision === 'APPROVED' ? (
+                        <span className="px-2.5 py-1 rounded-full text-[9px] font-bold uppercase bg-emerald-100 text-emerald-800">
+                          Admis (jury)
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full text-[9px] font-bold uppercase bg-red-100 text-red-700">
+                          Ajourné (jury)
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Chargement / erreur du board */}
+      {loading && !board && (
+        <div className="fed-card px-6 py-10 text-center text-sm font-bold text-slate-400">
+          Chargement de la délibération…
+        </div>
+      )}
+      {error && !board && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800">
+          {error}
+        </div>
+      )}
+
+      {/* ⭐ DEUX TABLEAUX — chacun occupe la moitié de l'interface */}
+      {board && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
+          {/* ── GAUCHE : Liste des admissibles ── */}
+          <div className="fed-card overflow-hidden">
+            <div className="bg-emerald-50 border-b border-emerald-100 px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+              <Award className="w-5 h-5 text-emerald-600 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-bold text-emerald-800 uppercase">
+                  Liste des admissibles
+                </h3>
+                <p className="text-[10px] text-emerald-700 font-semibold mt-0.5">
+                  Moyenne ≥ {fmtNote(board.rules.passMark)}/20 ·{' '}
+                  {board.stats.admissibles} candidat(s)
+                </p>
+              </div>
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchAdm}
+                  onChange={(e) => setSearchAdm(e.target.value)}
+                  placeholder="Rechercher…"
+                  className="fed-input-light pl-8 pr-3 py-2 text-[11px] font-bold !w-44"
                 />
               </div>
-            </motion.div>
-            <motion.div whileHover={{ y: -6 }} className="fed-card p-5">
-              <p className="text-[10px] font-bold uppercase text-slate-400 mb-2">
-                Statut examen
-              </p>
-              <p className="text-sm font-bold text-blue-900 leading-tight">
-                {state.exam.status === 'RESULTS_PUBLISHED'
-                  ? 'Résultats publiés'
-                  : state.exam.status === 'DELIBERATED'
-                    ? 'Délibéré'
-                    : state.exam.status === 'IN_PROGRESS'
-                      ? 'Épreuves en cours'
-                      : state.exam.status}
-              </p>
-            </motion.div>
-          </div>
-
-          {/* ── Onglets segmentés (style Helm) ────────── */}
-          <div className="flex overflow-x-auto fed-scroll whitespace-nowrap">
-            <div className="inline-flex bg-gray-100 rounded-lg p-1 gap-0.5">
-              {tabs.map((t) => (
-                <button
-                  key={t.key}
-                  onClick={() => setTab(t.key)}
-                  className={cn(
-                    'fed-tab inline-flex items-center gap-2',
-                    tab === t.key && 'fed-tab-active',
-                  )}
-                >
-                  <span className={cn(tab === t.key ? 'text-blue-800' : 'text-slate-400')}>
-                    {t.icon}
-                  </span>
-                  {t.label}
-                  {t.badge ? (
-                    <span className="w-5 h-5 rounded-full bg-amber-500 text-[10px] font-bold text-blue-900 flex items-center justify-center">
-                      {t.badge}
-                    </span>
-                  ) : null}
-                </button>
-              ))}
             </div>
+            <DecisionTable rows={admissibles} tone="emerald" />
           </div>
 
-          {/* ═══ ONGLET 1 : SAISIE DES NOTES ═══════════════════════════════ */}
-          {tab === 'notes' && (
-            <div className="grid lg:grid-cols-12 gap-6">
-              {/* Formulaire de saisie par lot */}
-              <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="lg:col-span-7 fed-card p-6"
-              >
-                <h3 className="text-sm font-bold text-blue-900 uppercase mb-2 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-amber-500" />
-                  Saisie des notes par lot
-                </h3>
-                <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-                  Collez une ligne par note au format{' '}
-                  <code className="px-1.5 py-0.5 bg-blue-50 rounded text-blue-800 font-bold">
-                    matricule ; code-matière ; note
-                  </code>{' '}
-                  (séparateurs ; , ou tabulation — export Excel/CSV directement collable).
-                  Les notes sont enregistrées en brouillon puis verrouillées à la délibération.
+          {/* ── DROITE : Candidats non admis ── */}
+          <div className="fed-card overflow-hidden">
+            <div className="bg-red-50 border-b border-red-100 px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+              <Users className="w-5 h-5 text-red-500 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-bold text-red-700 uppercase">Candidats non admis</h3>
+                <p className="text-[10px] text-red-600 font-semibold mt-0.5">
+                  Sous le seuil d&apos;admission ({fmtNote(board.rules.passMark)}/20) —{' '}
+                  {board.ajournes.length} candidat(s)
+                  {board.stats.enAttente > 0 ? ` dont ${board.stats.enAttente} cas du jury` : ''}
                 </p>
-                <textarea
-                  value={scoresText}
-                  onChange={(e) => setScoresText(e.target.value)}
-                  rows={10}
-                  placeholder={'EXAM-2026-00001 ; MATH ; 14.5\nEXAM-2026-00001 ; FR ; 11\nEXAM-2026-00002 ; MATH ; 8.25'}
-                  className="fed-input-light font-mono text-xs !rounded-xl mb-4"
+              </div>
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={searchAjo}
+                  onChange={(e) => setSearchAjo(e.target.value)}
+                  placeholder="Rechercher…"
+                  className="fed-input-light pl-8 pr-3 py-2 text-[11px] font-bold !w-44"
                 />
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[11px] text-slate-400 font-semibold">
-                    {scoresText.split(/\r?\n/).filter((l) => l.trim()).length} ligne(s) détectée(s)
-                  </p>
-                  <motion.button
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.97 }}
-                    onClick={submitScores}
-                    disabled={busy === 'scores' || !scoresText.trim()}
-                    className="fed-btn-gold px-5 py-2.5 text-sm disabled:opacity-50"
-                  >
-                    {busy === 'scores' ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Upload className="w-4 h-4" />
-                    )}
-                    Enregistrer les notes
-                  </motion.button>
-                </div>
-              </motion.div>
+              </div>
+            </div>
+            <DecisionTable rows={ajournes} tone="red" />
+          </div>
+        </div>
+      )}
 
-              {/* Matières + couverture */}
-              <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.08 }}
-                className="lg:col-span-5 fed-card p-6"
+      {/* Modale de lancement de la délibération */}
+      {runOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+            onClick={() => setRunOpen(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-blue-900">Lancer la délibération</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Jury « {board?.exam.code} » · seuils : admission{' '}
+                  {fmtNote(board?.rules.passMark)}/20, rachat {fmtNote(board?.rules.rescueMark)}/20
+                  {board?.rules.isCustom ? ' (règle personnalisée)' : ' (défauts backend)'}
+                </p>
+              </div>
+              <button
+                onClick={() => setRunOpen(false)}
+                className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
+                aria-label="Fermer"
               >
-                <h3 className="text-sm font-bold text-blue-900 uppercase mb-4 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-[#1e3a8a]" />
-                  Matières de l&rsquo;examen
-                </h3>
-                {state.subjects.length === 0 ? (
-                  <p className="text-xs text-slate-500 italic">
-                    Aucune matière définie pour cet examen.
-                  </p>
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">
+                Nom officiel du jury
+              </label>
+              <input
+                type="text"
+                value={juryName}
+                onChange={(e) => setJuryName(e.target.value)}
+                autoFocus
+                maxLength={190}
+                placeholder="ex : Jury national BEPC 2026 — Session principale"
+                className="fed-input-light px-4 py-2.5 text-sm font-bold w-full"
+              />
+            </div>
+
+            <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+              <p className="text-[11px] text-blue-900 leading-relaxed">
+                La délibération applique les <b>règles de calcul</b> en vigueur : moyenne ≥{' '}
+                {fmtNote(board?.rules.passMark)}/20 → <b>admis</b> ; entre{' '}
+                {fmtNote(board?.rules.rescueMark)} et {fmtNote(board?.rules.passMark)} →{' '}
+                <b>cas limite</b> à trancher ; en dessous → <b>ajourné</b>. Les notes sont
+                verrouillées (VALIDATED) et l&apos;examen passe en « Délibéré ».
+              </p>
+            </div>
+
+            {runError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs font-semibold text-red-800">
+                {runError}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                onClick={() => setRunOpen(false)}
+                className="px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase bg-white border border-slate-200 text-slate-600"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={runDeliberation}
+                disabled={working !== null || !juryName.trim()}
+                className="fed-btn-navy px-5 py-2.5 text-[10px] font-bold uppercase disabled:opacity-50 inline-flex items-center gap-2"
+              >
+                {working === 'run' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <div className="space-y-2.5">
-                    {state.subjects.map((s, i) => (
-                      <motion.div
-                        key={s.id}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.1 + i * 0.04 }}
-                        className="flex items-center justify-between bg-[#f7f9fc] border border-blue-100 rounded-xl px-4 py-3"
-                      >
-                        <div>
-                          <p className="text-sm font-bold text-blue-900">{s.name}</p>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase">
-                            {s.code} · coef. {s.coefficient} · /{s.maxScore}
-                          </p>
-                        </div>
-                        <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-800 font-bold text-xs flex items-center justify-center">
-                          ×{s.coefficient}
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
+                  <Gavel className="w-4 h-4" />
                 )}
-                <div className="mt-5 pt-4 border-t border-blue-50 grid grid-cols-3 gap-2 text-center">
-                  <div>
-                    <p className="text-lg font-bold text-emerald-600">{state.readiness.complete}</p>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase">Complets</p>
-                  </div>
-                  <div>
-                    <p className="text-lg font-bold text-amber-500">{state.readiness.partial}</p>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase">Partiels</p>
-                  </div>
-                  <div>
-                    <p className="text-lg font-bold text-slate-400">{state.readiness.missing}</p>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase">Sans notes</p>
-                  </div>
-                </div>
-              </motion.div>
+                Délibérer
+              </button>
             </div>
-          )}
-
-          {/* ═══ ONGLET 2 : SIMULATION ═════════════════════════════════════ */}
-          {tab === 'simulation' && (
-            <div className="grid lg:grid-cols-12 gap-6">
-              {/* Seuils */}
-              <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="lg:col-span-5 space-y-6"
-              >
-                <div className="fed-card p-6">
-                  <h3 className="text-sm font-bold text-blue-900 uppercase mb-6 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-amber-500" />
-                    Critères d&rsquo;admission
-                  </h3>
-                  <div className="space-y-7">
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                          Moyenne d&rsquo;admission
-                        </label>
-                        <span className="text-xl font-bold text-blue-900 bg-blue-50 px-3 py-1 rounded-xl">
-                          {passMark.toFixed(1)}/20
-                        </span>
-                      </div>
-                      <input
-                        type="range" min="8" max="14" step="0.5"
-                        value={passMark}
-                        onChange={(e) => setPassMark(parseFloat(e.target.value))}
-                        className="w-full h-2 bg-blue-50 rounded-lg appearance-none cursor-pointer accent-[#1e3a8a]"
-                      />
-                    </div>
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                          Seuil de rachat (cas limites)
-                        </label>
-                        <span className="text-xl font-bold text-amber-600 bg-amber-50 px-3 py-1 rounded-xl">
-                          {rescueMark.toFixed(1)}/20
-                        </span>
-                      </div>
-                      <input
-                        type="range" min="7" max="13" step="0.5"
-                        value={rescueMark}
-                        onChange={(e) => setRescueMark(parseFloat(e.target.value))}
-                        className="w-full h-2 bg-amber-50 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                      />
-                    </div>
-                    <motion.button
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.97 }}
-                      onClick={runSimulation}
-                      disabled={simulating}
-                      className="fed-btn-gold w-full py-4 text-sm disabled:opacity-50"
-                    >
-                      {simulating ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <PlayCircle className="w-4 h-4" />
-                      )}
-                      Lancer la simulation
-                    </motion.button>
-                  </div>
-                </div>
-
-                {/* Échantillon des cas limites */}
-                {simulation && simulation.rescueSample.length > 0 && (
-                  <div className="fed-card p-6">
-                    <h4 className="text-xs font-bold text-blue-900 uppercase mb-3">
-                      Aperçu des cas limites
-                    </h4>
-                    <div className="space-y-1.5 max-h-56 overflow-y-auto fed-scroll">
-                      {simulation.rescueSample.map((r) => (
-                        <div
-                          key={r.matricule}
-                          className="flex items-center justify-between text-xs bg-amber-50/60 border border-amber-100 rounded-lg px-3 py-2"
-                        >
-                          <span className="font-bold text-blue-900">{r.name}</span>
-                          <span className="font-bold text-amber-600">{r.average}/20</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </motion.div>
-
-              {/* Distribution */}
-              <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.08 }}
-                className="lg:col-span-7"
-              >
-                <div className="fed-card p-7 h-full">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-sm font-bold text-gray-900 uppercase flex items-center gap-2">
-                      <Award className="w-4 h-4 text-amber-500" />
-                      Distribution simulée
-                    </h3>
-                    {simulation && (
-                      <span className="fed-badge fed-badge-amber">
-                        Réussite ≈ {simulation.successRate}%
-                      </span>
-                    )}
-                  </div>
-                  {!simulation ? (
-                    <div className="flex flex-col items-center justify-center py-16 text-center">
-                      <PlayCircle className="w-12 h-12 text-gray-200 mb-4" />
-                      <p className="text-sm text-gray-500 max-w-xs">
-                        Réglez les seuils puis lancez la simulation pour visualiser la distribution
-                        des résultats sans aucune écriture.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-5">
-                      {[
-                        { label: 'Admis', value: simulation.distribution.admitted, color: 'from-emerald-400 to-emerald-500', text: 'text-emerald-600' },
-                        { label: 'Cas limites (rachat)', value: simulation.distribution.rescuePending, color: 'from-amber-300 to-amber-500', text: 'text-amber-600' },
-                        { label: 'Ajournés', value: simulation.distribution.failed, color: 'from-red-400 to-red-500', text: 'text-red-600' },
-                        { label: 'Dossiers incomplets', value: simulation.distribution.incomplete, color: 'from-slate-400 to-slate-500', text: 'text-slate-500' },
-                      ].map((row, i) => {
-                        const pct =
-                          simulation.distribution.total > 0
-                            ? Math.round((row.value / simulation.distribution.total) * 100)
-                            : 0;
-                        return (
-                          <div key={row.label}>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <span className="text-xs font-semibold text-gray-600">{row.label}</span>
-                              <span className={cn('text-sm font-bold', row.text)}>
-                                {row.value}
-                                <span className="text-[10px] text-gray-400 font-medium"> ({pct}%)</span>
-                              </span>
-                            </div>
-                            <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                              <motion.div
-                                initial={{ width: 0 }}
-                                animate={{ width: `${pct}%` }}
-                                transition={{ duration: 0.7, delay: i * 0.1, ease: 'easeOut' }}
-                                className={cn('h-full rounded-full bg-gradient-to-r', row.color)}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {/* Mentions */}
-                      <div className="pt-4 border-t border-gray-100">
-                        <p className="text-[10px] font-semibold text-gray-400 uppercase mb-3">
-                          Mentions (admis)
-                        </p>
-                        <div className="grid grid-cols-5 gap-2 text-center">
-                          {Object.entries(simulation.mentions).map(([mention, count]) => (
-                            <div key={mention} className="bg-gray-50 rounded-lg px-2 py-2.5">
-                              <p className="text-base font-bold text-amber-500">{count}</p>
-                              <p className="text-[8px] font-semibold text-gray-500 uppercase tracking-wide leading-tight">
-                                {mention}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            </div>
-          )}
-
-          {/* ═══ ONGLET 3 : DÉLIBÉRATION & JURY ════════════════════════════ */}
-          {tab === 'jury' && (
-            <div className="space-y-6">
-              {/* Lancement de délibération */}
-              <motion.div
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="fed-card p-6"
-              >
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-5">
-                  <div className="flex-1">
-                    <h3 className="text-sm font-bold text-blue-900 uppercase mb-2 flex items-center gap-2">
-                      <Gavel className="w-4 h-4 text-blue-800" />
-                      Convoquer le jury de délibération
-                    </h3>
-                    <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                      La délibération calcule les moyennes pondérées, prononce les admissions,
-                      ouvre les cas limites (rachat) et verrouille les notes. Seuls les candidats
-                      avec un dossier de notes complet sont délibérés.
-                    </p>
-                    <input
-                      value={juryName}
-                      onChange={(e) => setJuryName(e.target.value)}
-                      placeholder="Nom du jury (ex. Jury n°1 — CEPD 2027)"
-                      className="fed-input-light !rounded-xl"
-                    />
-                  </div>
-                  <motion.button
-                    whileHover={{ scale: 1.03 }}
-                    whileTap={{ scale: 0.97 }}
-                    onClick={() =>
-                      runAction(
-                        'run',
-                        () =>
-                          apiClient.post(`/federis/exams/${examId}/deliberation`, {
-                            juryName,
-                            passMark,
-                            rescueMark,
-                          }),
-                        'Délibération enregistrée — les cas limites attendent la décision du jury.',
-                      )
-                    }
-                    disabled={
-                      busy === 'run' ||
-                      !juryName.trim() ||
-                      state.readiness.complete === 0 ||
-                      state.exam.status === 'RESULTS_PUBLISHED'
-                    }
-                    className="fed-btn-gold px-8 py-3.5 text-sm disabled:opacity-40 shrink-0"
-                  >
-                    {busy === 'run' ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Gavel className="w-4 h-4" />
-                    )}
-                    Délibérer
-                  </motion.button>
-                </div>
-              </motion.div>
-
-              {/* Délibérations existantes */}
-              {state.deliberations.map((d, di) => (
-                <motion.div
-                  key={d.id}
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: di * 0.06 }}
-                  className="fed-card p-6"
-                >
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-xl bg-blue-800 flex items-center justify-center shadow-md">
-                        <Gavel className="w-5 h-5 text-amber-500" />
-                      </div>
-                      <div>
-                        <h4 className="text-base font-bold text-blue-900">
-                          {d.juryName ?? 'Jury'}
-                        </h4>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase">
-                          {new Date(d.deliberatedAt).toLocaleString('fr-FR')} ·{' '}
-                          {d.thresholds
-                            ? `admission ≥ ${d.thresholds.passMark}/20 · rachat ≥ ${d.thresholds.rescueMark}/20`
-                            : 'seuils n/a'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={cn(
-                          'text-[9px] font-bold uppercase px-3 py-1 rounded-full',
-                          d.status === 'PUBLISHED'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : d.status === 'COMPLETED'
-                              ? 'bg-blue-100 text-blue-700'
-                              : 'bg-amber-100 text-amber-700 animate-pulse',
-                        )}
-                      >
-                        {STATUS_LABELS[d.status] ?? d.status}
-                      </span>
-                      <div className="flex gap-4 text-center">
-                        <div>
-                          <p className="text-lg font-bold text-emerald-600">{d.passedCount}</p>
-                          <p className="text-[8px] font-bold text-slate-400 uppercase">Admis</p>
-                        </div>
-                        <div>
-                          <p className="text-lg font-bold text-red-500">{d.failedCount}</p>
-                          <p className="text-[8px] font-bold text-slate-400 uppercase">Ajournés</p>
-                        </div>
-                        <div>
-                          <p className="text-lg font-bold text-blue-800">{Math.round(d.successRate)}%</p>
-                          <p className="text-[8px] font-bold text-slate-400 uppercase">Réussite</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Cas limites à trancher */}
-                  {d.cases.length > 0 && (
-                    <div className="space-y-2.5">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">
-                        Cas limites soumis au jury ({d.cases.filter((c) => c.decision === 'PENDING').length} en attente)
-                      </p>
-                      {d.cases.map((c) => (
-                        <div
-                          key={c.id}
-                          className={cn(
-                            'flex flex-col md:flex-row md:items-center justify-between gap-3 rounded-xl px-4 py-3 border transition-all',
-                            c.decision === 'PENDING'
-                              ? 'bg-amber-50/70 border-amber-200'
-                              : c.decision === 'APPROVED'
-                                ? 'bg-emerald-50/70 border-emerald-200'
-                                : 'bg-red-50/60 border-red-200',
-                          )}
-                        >
-                          <div className="flex items-center gap-3 flex-1 min-w-0">
-                            <div
-                              className={cn(
-                                'w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0',
-                                c.decision === 'PENDING'
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : c.decision === 'APPROVED'
-                                    ? 'bg-emerald-100 text-emerald-700'
-                                    : 'bg-red-100 text-red-600',
-                              )}
-                            >
-                              {c.average ?? '—'}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-sm font-bold text-blue-900 truncate">
-                                {c.candidate.firstName} {c.candidate.lastName}
-                                <span className="ml-2 text-[10px] font-bold text-slate-400 uppercase">
-                                  {c.candidate.matricule}
-                                </span>
-                              </p>
-                              <p className="text-[11px] text-slate-500 truncate">{c.reason}</p>
-                              {c.decision !== 'PENDING' && c.comments && (
-                                <p className="text-[11px] italic text-slate-400 mt-0.5">
-                                  « {c.comments} »
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          {c.decision === 'PENDING' && d.status === 'IN_PROGRESS' ? (
-                            <div className="flex items-center gap-2 shrink-0">
-                              <input
-                                value={caseComments[c.id] ?? ''}
-                                onChange={(e) =>
-                                  setCaseComments((prev) => ({ ...prev, [c.id]: e.target.value }))
-                                }
-                                placeholder="Motif (optionnel)"
-                                className="fed-input-light !rounded-lg !py-2 text-xs !w-40"
-                              />
-                              <motion.button
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                                onClick={() =>
-                                  runAction(
-                                    `case-${c.id}`,
-                                    () =>
-                                      apiClient.post(
-                                        `/federis/deliberations/${d.id}/cases/${c.id}`,
-                                        {
-                                          decision: 'APPROVED',
-                                          comments: caseComments[c.id] || undefined,
-                                        },
-                                      ),
-                                    'Cas approuvé — candidat admis sur délibération.',
-                                  )
-                                }
-                                disabled={busy === `case-${c.id}`}
-                                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors flex items-center gap-1.5"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5" /> Admettre
-                              </motion.button>
-                              <motion.button
-                                whileHover={{ scale: 1.05 }}
-                                whileTap={{ scale: 0.95 }}
-                                onClick={() =>
-                                  runAction(
-                                    `case-${c.id}`,
-                                    () =>
-                                      apiClient.post(
-                                        `/federis/deliberations/${d.id}/cases/${c.id}`,
-                                        {
-                                          decision: 'REJECTED',
-                                          comments: caseComments[c.id] || undefined,
-                                        },
-                                      ),
-                                    'Cas rejeté — candidat ajourné.',
-                                  )
-                                }
-                                disabled={busy === `case-${c.id}`}
-                                className="px-4 py-2 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors flex items-center gap-1.5"
-                              >
-                                <XCircle className="w-3.5 h-3.5" /> Ajourné
-                              </motion.button>
-                            </div>
-                          ) : (
-                            <span
-                              className={cn(
-                                'text-[9px] font-bold uppercase px-3 py-1 rounded-full shrink-0',
-                                c.decision === 'APPROVED'
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : 'bg-red-100 text-red-600',
-                              )}
-                            >
-                              {c.decision === 'APPROVED' ? 'Admis' : 'Ajourné'}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Actions clôture / publication */}
-                  <div className="mt-5 pt-4 border-t border-blue-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                    <p className="text-[11px] text-slate-400 font-semibold">
-                      {d.status === 'IN_PROGRESS' &&
-                        'Tranchez tous les cas limites avant de clôturer la délibération.'}
-                      {d.status === 'COMPLETED' &&
-                        !d.publication &&
-                        'Délibération clôturée — prête pour la publication officielle (coordonnateur).'}
-                      {d.publication &&
-                        `Publiée le ${new Date(d.publication.publishedAt).toLocaleString('fr-FR')}.`}
-                    </p>
-                    <div className="flex gap-3">
-                      {d.status === 'IN_PROGRESS' && (
-                        <motion.button
-                          whileHover={{ scale: 1.03 }}
-                          whileTap={{ scale: 0.97 }}
-                          onClick={() =>
-                            runAction(
-                              'close',
-                              () =>
-                                apiClient.post(`/federis/deliberations/${d.id}/close`),
-                              'Délibération clôturée.',
-                            )
-                          }
-                          disabled={busy === 'close' || d.pendingCases > 0}
-                          className="fed-btn-gold px-5 py-2.5 text-xs disabled:opacity-40"
-                        >
-                          <Lock className="w-3.5 h-3.5" />
-                          Clôturer
-                        </motion.button>
-                      )}
-                      {d.status === 'COMPLETED' && !d.publication && (
-                        <motion.button
-                          whileHover={{ scale: 1.03 }}
-                          whileTap={{ scale: 0.97 }}
-                          onClick={() =>
-                            runAction(
-                              'publish',
-                              () =>
-                                apiClient.post(`/federis/deliberations/${d.id}/publish`),
-                              'Résultats publiés — parents et écoles notifiés via Academia Helm.',
-                            )
-                          }
-                          disabled={busy === 'publish'}
-                          className="fed-btn-gold px-6 py-2.5 text-xs"
-                        >
-                          <Send className="w-3.5 h-3.5" />
-                          Publier les résultats
-                        </motion.button>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-
-              {state.deliberations.length === 0 && (
-                <div className="fed-card p-12 text-center">
-                  <Gavel className="w-12 h-12 text-gray-200 mx-auto mb-4" />
-                  <p className="text-sm font-bold text-slate-500">
-                    Aucune délibération pour cet examen — saisissez les notes puis convoquez le jury.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ═══ ONGLET 4 : RÉSULTATS & PUBLICATION ════════════════════════ */}
-          {tab === 'results' && (
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-5"
-            >
-              {!results ? (
-                <div className="flex items-center justify-center py-20">
-                  <Loader2 className="w-7 h-7 animate-spin text-blue-800" />
-                </div>
-              ) : (
-                <>
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={cn(
-                          'text-[9px] font-bold uppercase px-3 py-1 rounded-full',
-                          results.published
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-slate-100 text-slate-500',
-                        )}
-                      >
-                        {results.published ? 'Résultats officiels publiés' : 'Non publiés'}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => void loadResults()}
-                      className="p-2 rounded-full bg-white border border-blue-100 text-blue-800 hover:bg-blue-50 transition-colors shadow-sm"
-                      title="Rafraîchir les résultats"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  {/* Table des résultats */}
-                  <div className="fed-card overflow-hidden">
-                    <div className="overflow-x-auto fed-scroll">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-gray-50 text-gray-700 text-left">
-                            <th className="px-4 py-3.5 text-[10px] font-bold uppercase">
-                              Candidat
-                            </th>
-                            <th className="px-4 py-3.5 text-[10px] font-bold uppercase">
-                              Matricule
-                            </th>
-                            <th className="px-4 py-3.5 text-[10px] font-bold uppercase">
-                              Notes
-                            </th>
-                            <th className="px-4 py-3.5 text-[10px] font-bold uppercase">
-                              Moyenne
-                            </th>
-                            <th className="px-4 py-3.5 text-[10px] font-bold uppercase">
-                              Décision
-                            </th>
-                            <th className="px-4 py-3.5 text-[10px] font-bold uppercase">
-                              Mention
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {results.candidates.map((c, i) => (
-                            <motion.tr
-                              key={c.matricule}
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              transition={{ delay: Math.min(i * 0.02, 0.4) }}
-                              className={cn(
-                                'border-b border-blue-50 last:border-0 hover:bg-blue-50/50 transition-colors',
-                                i % 2 === 1 && 'bg-[#f7f9fc]/60',
-                              )}
-                            >
-                              <td className="px-4 py-3 font-bold text-blue-900">{c.name}</td>
-                              <td className="px-4 py-3 text-xs font-mono text-slate-500">
-                                {c.matricule}
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex flex-wrap gap-1">
-                                  {c.scores.slice(0, 4).map((s) => (
-                                    <span
-                                      key={s.code}
-                                      title={`${s.subject} (coef. ${s.coefficient})`}
-                                      className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 text-[10px] font-bold"
-                                    >
-                                      {s.code} {s.score}
-                                    </span>
-                                  ))}
-                                  {c.scores.length > 4 && (
-                                    <span className="text-[10px] font-bold text-slate-400 self-center">
-                                      +{c.scores.length - 4}
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 font-bold text-blue-900">
-                                {c.finalAverage !== null ? `${c.finalAverage}/20` : '—'}
-                              </td>
-                              <td className="px-4 py-3">
-                                {c.finalDecision ? (
-                                  <span
-                                    className={cn(
-                                      'text-[9px] font-bold uppercase px-2.5 py-1 rounded-full',
-                                      c.finalDecision === 'ADMIS'
-                                        ? 'bg-emerald-100 text-emerald-700'
-                                        : 'bg-red-100 text-red-600',
-                                    )}
-                                  >
-                                    {c.finalDecision === 'ADMIS' ? 'Admis' : 'Ajourné'}
-                                  </span>
-                                ) : (
-                                  <span className="text-xs text-slate-400">En attente</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3">
-                                {c.mention ? (
-                                  <span className="text-xs font-bold text-amber-600">{c.mention}</span>
-                                ) : (
-                                  <span className="text-xs text-slate-400">—</span>
-                                )}
-                              </td>
-                            </motion.tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {results.candidates.length === 0 && (
-                    <div className="fed-card p-12 text-center">
-                      <FileCheck2 className="w-12 h-12 text-gray-200 mx-auto mb-4" />
-                      <p className="text-sm font-bold text-slate-500">
-                        Aucun résultat enregistré pour cet examen.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Note notifications parents */}
-                  {results.published && (
-                    <div className="fed-card p-5 flex items-start gap-3">
-                      <Send className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-                      <p className="text-xs text-gray-600 leading-relaxed">
-                        Les résultats officiels ont été publiés : les parents des candidats rattachés
-                        à des écoles Academia Helm ont été notifiés (notification in-app + push), de
-                        même que les équipes de direction des écoles concernées. Ce tableau reste
-                        consultable hors connexion grâce au miroir offline.
-                      </p>
-                    </div>
-                  )}
-                </>
-              )}
-            </motion.div>
-          )}
-        </>
+          </div>
+        </div>
       )}
     </FedPage>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tableau de décision (pattern Promotion & Redoublement Helm :
+// matricule / nom prénom / moyenne / décision du jury — zébrures, pastilles)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function DecisionTable({ rows, tone }: { rows: BoardRow[]; tone: 'emerald' | 'red' }) {
+  if (rows.length === 0) {
+    return (
+      <div className="px-6 py-10 text-center">
+        <p className="text-xs font-bold text-slate-400">Aucun candidat dans cette liste.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-x-auto max-h-[560px] overflow-y-auto">
+      <table className="min-w-full divide-y divide-slate-200">
+        <thead className="bg-[#f7f9fc] sticky top-0 z-10">
+          <tr>
+            <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Matricule</th>
+            <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Nom prénom</th>
+            <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-400 uppercase">Moyenne</th>
+            <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-400 uppercase">Décision du jury</th>
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-slate-100">
+          {rows.map((r, idx) => {
+            const pill = decisionPill(r);
+            return (
+              <tr key={r.candidateId} className={idx % 2 === 1 ? 'bg-slate-50/60' : ''}>
+                <td className="px-4 py-2.5">
+                  <span className="font-mono text-[11px] font-bold text-slate-600">{r.matricule}</span>
+                </td>
+                <td className="px-4 py-2.5">
+                  <p className="text-xs font-bold text-blue-900 truncate max-w-[220px]">{r.fullName}</p>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase truncate max-w-[220px]">
+                    {r.school}
+                    {r.releveDispatched ? ' · relevé envoyé' : ''}
+                  </p>
+                </td>
+                <td className="px-4 py-2.5 text-center">
+                  <span
+                    className={cn(
+                      'text-xs font-black',
+                      r.moyenne === null
+                        ? 'text-slate-400'
+                        : tone === 'emerald'
+                          ? 'text-emerald-700'
+                          : r.moyenne >= 10
+                            ? 'text-emerald-600'
+                            : 'text-red-600',
+                    )}
+                  >
+                    {r.moyenne === null ? '—' : fmtNote(r.moyenne)}
+                  </span>
+                  {r.mention && (
+                    <p className="text-[9px] font-bold text-slate-400 uppercase">{r.mention}</p>
+                  )}
+                </td>
+                <td className="px-4 py-2.5 text-center">
+                  <span className={cn('px-2.5 py-1 rounded-full text-[9px] font-bold uppercase', pill.className)}>
+                    {pill.label}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }

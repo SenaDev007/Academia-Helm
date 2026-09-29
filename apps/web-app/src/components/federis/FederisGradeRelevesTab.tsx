@@ -105,6 +105,10 @@ export default function FederisGradeRelevesTab({
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<'all' | string | null>(null);
+  // ⭐ Distribution des relevés aux écoles (2026-09-30)
+  const [dispatching, setDispatching] = useState(false);
+  const [dispatchNotice, setDispatchNotice] = useState<string | null>(null);
+  const [dispatchError, setDispatchError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!examId) return;
@@ -198,6 +202,33 @@ export default function FederisGradeRelevesTab({
     }
   };
 
+  /** ⭐ Distribution intelligente : chaque relevé part à l'école du candidat. */
+  const dispatchToSchools = async () => {
+    if (!data?.exam) return;
+    if (
+      !window.confirm(
+        'Envoyer les relevés de notes aux écoles ? Chaque école rattachée recevra les relevés ' +
+          'des candidats qu\u2019elle a présentés (module Délibération → distribution) et sera notifiée immédiatement.',
+      )
+    ) {
+      return;
+    }
+    setDispatching(true);
+    setDispatchError(null);
+    setDispatchNotice(null);
+    try {
+      const res = await apiClient.post(`/federis/exams/${examId}/releves/dispatch`, {}, { timeout: 60000 });
+      setDispatchNotice(res.data?.message ?? 'Relevés envoyés aux écoles.');
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      setDispatchError(
+        (Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Envoi impossible — l\u2019examen doit être délibéré.',
+      );
+    } finally {
+      setDispatching(false);
+    }
+  };
+
   if (loading && !data) {
     return <div className="fed-card px-6 py-10 text-center text-sm font-bold text-slate-400">Chargement des relevés…</div>;
   }
@@ -239,15 +270,26 @@ export default function FederisGradeRelevesTab({
         />
         <button
           onClick={downloadAll}
-          disabled={downloading !== null}
+          disabled={downloading !== null || dispatching}
           className="fed-btn-navy px-5 py-2.5 text-[10px] font-bold uppercase disabled:opacity-50"
         >
           {downloading === 'all' ? 'Génération…' : `Tous les relevés PDF (${releves.length})`}
+        </button>
+        {/* ⭐ Distribution : chaque relevé part à l'école du candidat (2026-09-30) */}
+        <button
+          onClick={dispatchToSchools}
+          disabled={downloading !== null || dispatching}
+          title="Chaque école rattachée reçoit les relevés des candidats qu'elle a présentés et est notifiée"
+          className="fed-btn-gold px-5 py-2.5 text-[10px] font-bold uppercase disabled:opacity-50"
+        >
+          {dispatching ? 'Envoi en cours…' : 'Envoyer aux écoles'}
         </button>
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800">{error}</div>}
       {notice && <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-6 py-4 text-sm font-semibold text-emerald-800">{notice}</div>}
+      {dispatchError && <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800">{dispatchError}</div>}
+      {dispatchNotice && <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-6 py-4 text-sm font-semibold text-emerald-800">{dispatchNotice}</div>}
 
       <div className="grid grid-cols-1 xl:grid-cols-[340px_1fr] gap-5 items-start">
         {/* Liste des candidats (triée par rang) */}

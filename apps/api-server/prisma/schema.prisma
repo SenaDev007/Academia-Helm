@@ -10662,6 +10662,31 @@ model FederisSubject {
   @@map("federis_subjects")
 }
 
+/// ⭐ Règles de calcul par type d'examen (module Paramètres — 2026-09-30) :
+/// seuils d'admission et de rachat personnalisables par type (CEP, BEPC,
+/// BAC, CAP). SANS ligne → les DÉFAUTS DU BACKEND s'appliquent (admission
+/// 10/20, rachat 9,5/20) ; AVEC ligne → cette configuration devient la
+/// SOURCE DE VÉRITÉ du backend (délibération, décisions, registre, PDF).
+model FederisGradingRule {
+  id          String   @id @default(uuid())
+  /// Tenant du patronat (isolation — une règle par type et par patronat)
+  tenantId    String
+  /// CEP | BEPC | BAC | CAP
+  examType    String
+  /// Moyenne d'admission (défaut backend : 10)
+  passMark    Float    @default(10)
+  /// Seuil de rachat — cas limites soumis au jury (défaut backend : 9,5)
+  rescueMark  Float    @default(9.5)
+  updatedBy   String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, examType])
+  @@index([tenantId])
+  @@map("federis_grading_rules")
+}
+
 model ExamRoom {
   id               String           @id @default(uuid())
   tenantId         String

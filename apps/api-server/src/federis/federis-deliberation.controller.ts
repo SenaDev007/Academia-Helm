@@ -1,14 +1,19 @@
 /**
- * FederisDeliberationController — Workflow délibération → publication
+ * FederisDeliberationController — Délibération du jury & publication
  *
- *   GET  /federis/exams/:examId/deliberation            — état de préparation
- *   POST /federis/exams/:examId/results/bulk            — saisie des notes
- *   POST /federis/exams/:examId/deliberation/simulate   — simulation (lecture)
- *   POST /federis/exams/:examId/deliberation            — délibérer (jury)
- *   POST /federis/deliberations/:id/cases/:caseId       — trancher un cas
- *   POST /federis/deliberations/:id/close               — clôturer
- *   POST /federis/deliberations/:id/publish             — publier + notifs parents
- *   GET  /federis/exams/:examId/results                 — résultats détaillés
+ * ⭐ REFONTE 2026-09-30 : plus NI saisie des notes NI simulation de seuils —
+ *    la saisie vit dans « Notes et Moyennes », les seuils dans « Paramètres —
+ *    Règles de calcul ». Le module = délibération et publication officielle.
+ *
+ *   GET  /federis/exams/:examId/deliberation/board   — tableau de délibération
+ *        (admissibles / non admis, moyennes, décision du jury, dispatch)
+ *   POST /federis/exams/:examId/deliberation         — délibérer (jury)
+ *   POST /federis/deliberations/:id/cases/:caseId    — trancher un cas
+ *   POST /federis/deliberations/:id/close            — clôturer
+ *   POST /federis/deliberations/:id/publish          — publier + notifs parents
+ *   POST /federis/exams/:examId/releves/dispatch     — envoyer les relevés
+ *        de notes aux écoles (distribution intelligente par candidat)
+ *   GET  /federis/exams/:examId/results              — résultats détaillés
  */
 
 import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
@@ -16,8 +21,6 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Request } from 'express';
 import {
   FederisDeliberationService,
-  BulkResultsDto,
-  SimulateDeliberationDto,
   RunDeliberationDto,
   DecideCaseDto,
 } from './federis-deliberation.service';
@@ -31,38 +34,13 @@ export class FederisDeliberationController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Get('exams/:examId/deliberation')
-  async getDeliberationState(@Req() req: any, @Param('examId') examId: string) {
-    return this.deliberationService.getDeliberationState(
+  @Get('exams/:examId/deliberation/board')
+  async getDeliberationBoard(@Req() req: any, @Param('examId') examId: string) {
+    return this.deliberationService.getDeliberationBoard(
       req.user.tenantId,
       this.uid(req),
       examId,
     );
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('exams/:examId/results/bulk')
-  async bulkUpsertResults(
-    @Req() req: any,
-    @Param('examId') examId: string,
-    @Body() dto: BulkResultsDto,
-  ) {
-    return this.deliberationService.bulkUpsertResults(
-      req.user.tenantId,
-      this.uid(req),
-      examId,
-      dto,
-    );
-  }
-
-  @UseGuards(JwtAuthGuard)
-  @Post('exams/:examId/deliberation/simulate')
-  async simulate(
-    @Req() req: any,
-    @Param('examId') examId: string,
-    @Body() dto: SimulateDeliberationDto,
-  ) {
-    return this.deliberationService.simulate(req.user.tenantId, this.uid(req), examId, dto);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -120,6 +98,17 @@ export class FederisDeliberationController {
       req.user.tenantId,
       this.uid(req),
       deliberationId,
+    );
+  }
+
+  /** Distribution des relevés de notes aux écoles (délibération + notes). */
+  @UseGuards(JwtAuthGuard)
+  @Post('exams/:examId/releves/dispatch')
+  async dispatchReleves(@Req() req: any, @Param('examId') examId: string) {
+    return this.deliberationService.dispatchReleves(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
     );
   }
 

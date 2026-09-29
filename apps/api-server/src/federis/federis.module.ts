@@ -67,6 +67,12 @@ import { FederisGradesController } from './federis-grades.controller';
 //    Épreuves (signal « épreuves à préparer ») et le module Notes et Moyennes
 import { FederisSubjectsService } from './federis-subjects.service';
 import { FederisSubjectsController } from './federis-subjects.controller';
+// ⭐ Module « Paramètres — Règles de calcul » (2026-09-30) : seuils
+//    d'admission/rahcat par type d'examen (CEP/BEPC/BAC/CAP). Défauts du
+//    backend affichés dans le module Paramètres ; dès qu'une règle est
+//    définie, elle devient la SOURCE DE VÉRITÉ du backend (délibération,
+//    décisions des relevés, registre, PDF).
+import { FederisGradingRulesService } from './federis-grading-rules.service';
 
 @Module({
   imports: [BillingModule, CommunicationModule],
@@ -114,6 +120,7 @@ import { FederisSubjectsController } from './federis-subjects.controller';
     FederisSupervisorsService,
     FederisGradesService,
     FederisSubjectsService,
+    FederisGradingRulesService,
   ],
   exports: [
     FederisService,
@@ -131,6 +138,7 @@ import { FederisSubjectsController } from './federis-subjects.controller';
     FederisCandidatesExportService,
     FederisGradesService,
     FederisSubjectsService,
+    FederisGradingRulesService,
   ],
 })
 export class FederisModule {}

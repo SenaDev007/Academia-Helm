@@ -43,6 +43,7 @@ import { FederisPatronatService } from './federis-patronat.service';
 //    D'ABORD dans le catalogue du patronat (module Matières) ; le jeu
 //    intégré DEFAULT_SUBJECTS_BY_TYPE n'est qu'un repli (catalogue vide).
 import { FederisSubjectsService } from './federis-subjects.service';
+import { FederisGradingRulesService } from './federis-grading-rules.service';
 import {
   ALL_PATRONAT_FUNCTIONS,
   WRITE_DELIBERATION,
@@ -198,7 +199,7 @@ export class BulkSaveGradesDto {
 
 export const DEFAULT_SUBJECTS_BY_TYPE: Record<
   string,
-  Array<{ code: string; name: string; coefficient: number; maxScore?: number; duration?: number }>
+  Array<{ code: string; name: string; coefficient: number; maxScore?: number; duration?: number; order?: number }>
 > = {
   // CEP — modèle PRIMAIRE : une note /20 par épreuve, SANS coefficient.
   CEP: [
@@ -394,6 +395,7 @@ export class FederisGradesService {
     private readonly prisma: PrismaService,
     private readonly patronatService: FederisPatronatService,
     private readonly subjectsService: FederisSubjectsService,
+    private readonly gradingRulesService: FederisGradingRulesService,
   ) {}
 
   // ── Auto-guérison du schéma (pattern FederisExamsService) ────────────────
@@ -763,6 +765,14 @@ export class FederisGradesService {
     const exam = await this.getOwnedExam(patronatTenantId, examId);
     const isPrimary = isPrimaryExamType(exam.examType);
 
+    // ⭐ Règles de calcul effectives (module Paramètres — 2026-09-30) :
+    //    surcharge du patronat si définie (source de vérité), sinon défauts
+    //    backend (admission 10/20). Les seuils pilotent stats + décisions.
+    const rules = await this.gradingRulesService.resolveEffectiveRules(
+      patronatTenantId,
+      exam.examType,
+    );
+
     const [academicYear, subjectsRaw, candidatesRaw] = await Promise.all([
       this.prisma.academicYear.findUnique({ where: { id: exam.academicYearId } }),
       this.prisma.nationalExamSubject.findMany({
@@ -881,11 +891,12 @@ export class FederisGradesService {
     const allSubmitted = submittedCount > 0 && draftCount === 0;
 
     // ── Récapitulatif (pattern « Récapitulatif de l'évaluation » Helm) ──
+    //    ⭐ Seuil d'admission = règles de calcul effectives (Paramètres).
     const composed = candidates.filter((c) => (computed.get(c.id)?.nbEval ?? 0) > 0);
     const finalAverages = composed
       .map((c) => computed.get(c.id)?.finalAverage ?? null)
       .filter((v): v is number => v !== null);
-    const passed = finalAverages.filter((v) => v >= 10).length;
+    const passed = finalAverages.filter((v) => v >= rules.passMark).length;
 
     const stats = {
       totalCandidates: candidates.length,
@@ -920,7 +931,7 @@ export class FederisGradesService {
           .map((id) => computed.get(id)?.finalAverage ?? null)
           .filter((v): v is number => v !== null);
         const centerComposed = values.length;
-        const centerPassed = values.filter((v) => v >= 10).length;
+        const centerPassed = values.filter((v) => v >= rules.passMark).length;
         return {
           centerCode: center.centerCode,
           centerName: center.centerName,
@@ -951,6 +962,7 @@ export class FederisGradesService {
         status: exam.status,
         isPrimary,
       },
+      rules,
       academicYearLabel: academicYear?.label ?? academicYear?.name ?? null,
       subjects,
       candidates,
@@ -1230,13 +1242,78 @@ export class FederisGradesService {
    * Relevés complets, triés par rang : pour chaque candidat, lignes par
    * matière (note, coefficient, note coefficient, rang dans la matière,
    * appréciation), totaux, moyenne retenue, rang, mention et décision
-   * provisoire (seuil 10/20 — la décision officielle relève du jury).
+   * provisoire au seuil des RÈGLES DE CALCUL EFFECTIVES (Paramètres — la
+   * décision officielle relève du jury de délibération).
    */
   async getReleves(tenantId: string, userId: string, examId: string, candidateId?: string) {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertRead(fn);
     const ds = await this.buildGradesDataset(patronat.tenantId, examId);
+    return this.buildRelevesPayload(ds, candidateId);
+  }
 
+  /**
+   * ⭐ Accès ÉCOLE (2026-09-30) — relevé d'un candidat pour l'établissement
+   * Helm qui l'a présenté : vérifie l'appartenance du candidat à l'école ET
+   * que le relevé lui a été distribué (ExamDocument PUBLISHED — module
+   * Délibération « Envoyer les relevés »), puis reconstruit le relevé sur le
+   * dataset du patronat propriétaire (aucune duplication de règle métier).
+   */
+  async getReleveForSchool(
+    schoolTenantId: string,
+    userId: string,
+    examId: string,
+    candidateId: string,
+  ) {
+    const candidate = await this.prisma.examCandidate.findFirst({
+      where: { id: candidateId, examId },
+      select: { id: true, schoolTenantId: true },
+    });
+    if (!candidate) throw new NotFoundException('Candidat introuvable pour cet examen.');
+    if (candidate.schoolTenantId !== schoolTenantId) {
+      throw new ForbiddenException('Ce candidat n\u2019appartient pas à votre établissement.');
+    }
+
+    // Relevé distribué à l'école (ledger ExamDocument du module Délibération)
+    const doc = await this.prisma.examDocument.findFirst({
+      where: {
+        examId,
+        candidateId,
+        documentType: 'RELEVE_NOTES',
+        status: 'PUBLISHED',
+      },
+      select: { id: true, publishedAt: true, metadata: true },
+    });
+    if (!doc) {
+      throw new ForbiddenException(
+        'Le relevé de notes de ce candidat n\u2019a pas encore été distribué à votre établissement par le patronat.',
+      );
+    }
+
+    const exam = await this.prisma.nationalExam.findUnique({
+      where: { id: examId },
+      select: { tenantId: true },
+    });
+    if (!exam) throw new NotFoundException('Examen introuvable.');
+
+    const ds = await this.buildGradesDataset(exam.tenantId, examId);
+    const payload = await this.buildRelevesPayload(ds, candidateId);
+    const releve = payload.releves[0] ?? null;
+    return {
+      releve,
+      exam: payload.exam,
+      rules: payload.rules,
+      dispatchedAt: doc.publishedAt,
+      dispatchMetadata: (doc.metadata as any) ?? null,
+    };
+  }
+
+  /** Construction du payload relevés à partir d'un dataset déjà calculé. */
+  private async buildRelevesPayload(
+    ds: Awaited<ReturnType<FederisGradesService['buildGradesDataset']>>,
+    candidateId?: string,
+  ) {
+    const passMark = ds.rules?.passMark ?? 10;
     const ordered = [...ds.candidates].sort(
       (a, b) => (ds.ranks.get(a.id) ?? 99999) - (ds.ranks.get(b.id) ?? 99999),
     );
@@ -1290,14 +1367,14 @@ export class FederisGradesService {
           rank: ds.ranks.get(c.id) ?? null,
           totalCandidates: ds.candidates.length,
           mention: nationalMentionFor(finalAverage),
-          decision: finalAverage === null ? '—' : finalAverage >= 10 ? 'ADMIS' : 'AJOURNÉ',
-          decisionNote:
-            'Décision provisoire au seuil de 10/20 — la décision officielle relève du jury de délibération.',
+          decision: finalAverage === null ? '—' : finalAverage >= passMark ? 'ADMIS' : 'AJOURNÉ',
+          decisionNote: `Décision provisoire au seuil de ${passMark}/20 (règles de calcul du patronat) — la décision officielle relève du jury de délibération.`,
         };
       });
 
     return {
       exam: ds.exam,
+      rules: ds.rules,
       academicYearLabel: ds.academicYearLabel,
       session: ds.session,
       stats: ds.stats,

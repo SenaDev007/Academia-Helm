@@ -35,7 +35,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Landmark, Loader2, RefreshCw, CheckSquare, Square, Send, Users,
   GraduationCap, AlertCircle, CheckCircle2, Info, ChevronDown, ChevronRight,
-  School, ShieldCheck, FileText, XCircle,
+  School, ShieldCheck, FileText, XCircle, Gavel, ClipboardCheck,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -51,6 +51,9 @@ import {
 } from '@/components/ui/dialog';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules } from '../layout';
+// ⭐ Délibération et relevés de notes (2026-09-30) — réception des résultats
+//    publiés + relevés distribués par le patronat (Academia Federis)
+import SchoolDeliberationView from '@/components/exams/SchoolDeliberationView';
 import apiClient from '@/lib/api/client';
 import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 import { cn } from '@/lib/utils';
@@ -111,6 +114,17 @@ export default function NationalExamsPage() {
   const [eligibility, setEligibility] = useState<Eligibility | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeType, setActiveType] = useState<'CEP' | 'BEPC' | 'BAC' | 'CAP' | null>(null);
+
+  // ⭐ Vue active : Candidats (sélection/envoi) | Délibération et relevés de
+  //    notes (réception des résultats publiés — lien direct ?view=deliberation
+  //    depuis les notifications de publication / distribution)
+  const [activeView, setActiveView] = useState<'candidats' | 'deliberation'>('candidats');
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const view = new URLSearchParams(window.location.search).get('view');
+      if (view === 'deliberation') setActiveView('deliberation');
+    }
+  }, []);
 
   // État du sous-onglet actif
   const [candidates, setCandidates] = useState<CandidatesResponse | null>(null);
@@ -393,6 +407,43 @@ export default function NationalExamsPage() {
                     </div>
                   </div>
                 )}
+
+                {/* ⭐ Sélecteur de vue : Candidats | Délibération et relevés de notes */}
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-1.5">
+                  <button
+                    onClick={() => setActiveView('candidats')}
+                    className={cn(
+                      'inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all',
+                      activeView === 'candidats'
+                        ? 'bg-blue-900 text-white shadow-sm'
+                        : 'text-slate-600 hover:bg-slate-50',
+                    )}
+                  >
+                    <Send className="w-4 h-4" />
+                    Candidats aux examens
+                  </button>
+                  <button
+                    onClick={() => setActiveView('deliberation')}
+                    className={cn(
+                      'inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all',
+                      activeView === 'deliberation'
+                        ? 'bg-blue-900 text-white shadow-sm'
+                        : 'text-slate-600 hover:bg-slate-50',
+                    )}
+                  >
+                    <Gavel className="w-4 h-4" />
+                    Délibération et relevés de notes
+                  </button>
+                </div>
+
+                {activeView === 'deliberation' ? (
+                  /* ⭐ Réception : décisions du jury + relevés distribués par le
+                     patronat, par type d'examen (CEP / BEPC / BAC / CAP). */
+                  <SchoolDeliberationView
+                    availableTypes={availableExams.map((e) => e.type)}
+                  />
+                ) : (
+                <>
 
                 {/* ── Sous-onglets dynamiques CEP / BEPC / Baccalauréat ── */}
                 {eligibility.message ? (
@@ -694,6 +745,8 @@ export default function NationalExamsPage() {
                       </Card>
                     )}
                   </>
+                )}
+                </>
                 )}
               </>
             )}

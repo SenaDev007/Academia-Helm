@@ -73,6 +73,31 @@ export class FederisPdfController {
     return new StreamableFile(buffer);
   }
 
+  /**
+   * ⭐ Liste officielle de délibération (module Délibérations — 2026-09-30) :
+   * admissibles + ajournés avec décision du jury. Générable dès la phase
+   * DÉLIBERATED (bandeau provisoire) — liste définitive après publication.
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('exams/:examId/pdf/deliberation')
+  async downloadDeliberationList(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, filename } = await this.pdfService.generateDeliberationPdf(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    return new StreamableFile(buffer);
+  }
+
   /** ⭐ Liste officielle des candidats (module Candidats — 2026-09-29). */
   @UseGuards(JwtAuthGuard)
   @Get('exams/:examId/pdf/candidats')

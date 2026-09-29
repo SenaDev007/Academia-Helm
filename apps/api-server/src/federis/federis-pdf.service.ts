@@ -36,6 +36,9 @@ import { FederisPatronatService } from './federis-patronat.service';
 // ⭐ Module « Notes et Moyennes » — données des relevés (moyennes, rangs,
 //    coefficients : calculs partagés avec la grille et le registre)
 import { FederisGradesService } from './federis-grades.service';
+// ⭐ Module Délibération — board unifié (décisions du jury) pour la liste
+//    officielle de délibération (2026-09-30)
+import { FederisDeliberationService } from './federis-deliberation.service';
 import {
   ALL_PATRONAT_FUNCTIONS,
   normalizePatronatFunction,
@@ -115,6 +118,8 @@ interface PalmaresRow {
   average: number | null;
   mention: string | null;
   decision: string;
+  /** Libellé de décision spécifique (ex. « EN COURS ») — défaut ADMIS/AJOURNÉ. */
+  decisionLabel?: string;
 }
 
 @Injectable()
@@ -126,6 +131,7 @@ export class FederisPdfService {
     private readonly puppeteerPool: PuppeteerPoolService,
     private readonly patronatService: FederisPatronatService,
     private readonly gradesService: FederisGradesService,
+    private readonly deliberationService: FederisDeliberationService,
   ) {}
 
   // ── Contexte & permissions (même structure que les autres services federis) ──
@@ -380,7 +386,15 @@ export class FederisPdfService {
     const acc = new Map<string, { sum: number; coef: number }>();
     const decisionMeta = new Map<
       string,
-      { decision?: string; average?: number; mention?: string }
+      {
+        decision?: string;
+        average?: number;
+        mention?: string;
+        // ⭐ Clés écrites par publishResults (2026-09-30) — anciennes clés
+        //    decision/average conservées en repli.
+        finalDecision?: string;
+        finalAverage?: number;
+      }
     >();
     for (const r of results) {
       if (!decisionMeta.has(r.candidateId)) {
@@ -397,10 +411,21 @@ export class FederisPdfService {
       const a = acc.get(c.id);
       const meta = decisionMeta.get(c.id) ?? {};
       const computed = a && a.coef > 0 ? round2(a.sum / a.coef) : null;
-      const decision =
-        meta.decision === 'ADMIS' || meta.decision === 'AJOURNE' ? meta.decision : null;
-      const average =
-        typeof meta.average === 'number' && meta.average !== null ? round2(meta.average) : computed;
+      // ⭐ FIX 2026-09-30 — publishResults écrit finalDecision / finalAverage
+      //    (anciennes clés decision / average conservées en repli).
+      const finalDecision =
+        meta.finalDecision === 'ADMIS' || meta.finalDecision === 'AJOURNE'
+          ? meta.finalDecision
+          : meta.decision === 'ADMIS' || meta.decision === 'AJOURNE'
+            ? meta.decision
+            : null;
+      const metaAverage =
+        typeof meta.finalAverage === 'number' && meta.finalAverage !== null
+          ? meta.finalAverage
+          : typeof meta.average === 'number' && meta.average !== null
+            ? meta.average
+            : null;
+      const average = metaAverage !== null ? round2(metaAverage) : computed;
       return {
         rank: null,
         matricule: c.matricule,
@@ -408,10 +433,10 @@ export class FederisPdfService {
         school: c.schoolTenant?.name ?? (c.metadata as any)?.schoolName ?? '—',
         average,
         mention:
-          decision === 'ADMIS'
+          finalDecision === 'ADMIS'
             ? (meta.mention ?? (average != null ? mentionFor(average) : null))
             : null,
-        decision: decision ?? (average != null && average >= 10 ? 'ADMIS' : 'AJOURNE'),
+        decision: finalDecision ?? (average != null && average >= 10 ? 'ADMIS' : 'AJOURNE'),
       };
     });
 
@@ -486,6 +511,148 @@ export class FederisPdfService {
             admitted: admittedCount,
             failed: failedCount,
             successRate,
+          },
+        },
+      })
+      .catch(() => undefined);
+
+    return { buffer, filename };
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 1 bis. LISTE OFFICIELLE DE DÉLIBÉRATION (module Délibération — 2026-09-30)
+  // ══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Liste officielle de délibération — admissibles et ajournés avec la
+   * décision du jury (module Délibération). Générable dès que l'examen est
+   * DÉLIBÉRÉ (bandeau PROVISOIRE) ; devient la liste définitive après
+   * publication des résultats.
+   *
+   * Décisions et moyennes proviennent du board unifié (moyennes du module
+   * Notes : CEP simple / BEPC-BAC-CAP pondérée, absents exclus) — aucune
+   * duplication de règle métier.
+   */
+  async generateDeliberationPdf(
+    tenantId: string,
+    userId: string,
+    examId: string,
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertRead(fn);
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+
+    if (exam.status !== 'DELIBERATED' && exam.status !== 'RESULTS_PUBLISHED') {
+      throw new BadRequestException(
+        'La liste de délibération est générable après le lancement de la délibération du jury (module Délibérations).',
+      );
+    }
+
+    const board = await this.deliberationService.getDeliberationBoard(
+      tenantId,
+      userId,
+      examId,
+    );
+    const published = exam.status === 'RESULTS_PUBLISHED';
+
+    // Classement des admissibles (moyenne décroissante, ex æquo = même rang)
+    const admissibles = [...board.admissibles];
+    let currentRank = 0;
+    let previousAvg: number | null = null;
+    const rows: PalmaresRow[] = admissibles.map((r, i) => {
+      if (previousAvg === null || r.moyenne !== previousAvg) {
+        currentRank = i + 1;
+        previousAvg = r.moyenne;
+      }
+      return {
+        rank: currentRank,
+        matricule: r.matricule,
+        name: r.fullName,
+        school: r.school,
+        average: r.moyenne,
+        mention: r.mention,
+        decision: 'ADMIS',
+      };
+    });
+    for (const r of board.ajournes) {
+      const label =
+        r.decision === 'EN_ATTENTE'
+          ? 'EN COURS'
+          : r.decision === 'NON_DELIBERE'
+            ? '—'
+            : 'AJOURNÉ';
+      rows.push({
+        rank: null,
+        matricule: r.matricule,
+        name: r.fullName,
+        school: r.school,
+        average: r.moyenne,
+        mention: null,
+        decision: r.decision === 'AJOURNE' ? 'AJOURNE' : r.decision,
+        decisionLabel: label,
+      });
+    }
+
+    const decided = board.stats.admissibles + board.stats.ajournes;
+    const mentions: Record<string, number> = {
+      Excellent: 0,
+      'Très Bien': 0,
+      Bien: 0,
+      'Assez Bien': 0,
+      Passable: 0,
+    };
+    for (const r of admissibles) {
+      const m = r.mention != null && r.mention in mentions ? r.mention : 'Passable';
+      mentions[m]++;
+    }
+
+    const html = this.buildPalmaresHtml({
+      patronatName: patronat.name,
+      patronatTerritory: [patronat.territoryName, patronat.country?.name]
+        .filter(Boolean)
+        .join(' — '),
+      examName: exam.name,
+      examCode: exam.code,
+      examType: exam.examType,
+      level: exam.level,
+      academicYear: board.academicYearLabel ?? '',
+      juryName: board.deliberation?.juryName ?? null,
+      publishedAt: board.deliberation?.publication?.publishedAt ?? null,
+      stats: {
+        total: board.stats.totalCandidates,
+        admitted: board.stats.admissibles,
+        failed: board.stats.ajournes,
+        successRate:
+          decided > 0 ? round2((board.stats.admissibles / decided) * 100) : 0,
+      },
+      mentions,
+      rows,
+      generatedAt: new Date(),
+      docTitle: published ? 'LISTE DE DÉLIBÉRATION' : 'LISTE DE DÉLIBÉRATION (TRAVAIL)',
+      docSubtitle: `Admissibles et ajournés — décision du jury · seuil ${board.rules.passMark}/20`,
+      publicationLabel: 'Délibération',
+      provisoire: !published,
+    });
+
+    const buffer = await this.renderPdf(html);
+    const filename = `Liste_Deliberation_${exam.code}_${new Date().toISOString().split('T')[0]}.pdf`;
+
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_DELIBERATION_PDF',
+          resource: 'NationalExam',
+          resourceId: exam.id,
+          tableName: 'national_exams',
+          recordId: exam.id,
+          newData: {
+            examCode: exam.code,
+            candidates: rows.length,
+            admissibles: board.stats.admissibles,
+            ajournes: board.stats.ajournes,
+            published,
           },
         },
       })
@@ -969,7 +1136,18 @@ ${sectionsHtml}
     mentions: Record<string, number>;
     rows: PalmaresRow[];
     generatedAt: Date;
+    /** Titre du document (défaut « PALMARÈS OFFICIEL »). */
+    docTitle?: string;
+    /** Sous-titre du document. */
+    docSubtitle?: string;
+    /** Libellé de la ligne « Publication » de la barre d'état. */
+    publicationLabel?: string;
+    /** Bandeau provisoire (document de travail avant publication). */
+    provisoire?: boolean;
   }): string {
+    const docTitle = d.docTitle ?? 'PALMARÈS OFFICIEL';
+    const docSubtitle = d.docSubtitle ?? 'Résultats définitifs après délibération du jury';
+    const publicationLabel = d.publicationLabel ?? 'Publication';
     const rowsHtml = d.rows
       .map((r) => {
         const admitted = r.decision === 'ADMIS';
@@ -981,7 +1159,7 @@ ${sectionsHtml}
           <td class="school">${esc(r.school)}</td>
           <td class="c avg">${r.average != null ? formatNumber(r.average) : '—'}</td>
           <td class="c">${esc(r.mention ?? '—')}</td>
-          <td class="c decision ${admitted ? 'admitted' : ''}">${admitted ? 'ADMIS' : 'AJOURNÉ'}</td>
+          <td class="c decision ${admitted ? 'admitted' : ''}">${esc(r.decisionLabel ?? (admitted ? 'ADMIS' : 'AJOURNÉ'))}</td>
         </tr>`;
       })
       .join('');
@@ -1064,8 +1242,9 @@ ${sectionsHtml}
       <div class="org-sub">Année scolaire ${esc(d.academicYear || '—')}</div>
     </div>
     <div class="doc-title">
-      <div class="doc-kind">PALMARÈS OFFICIEL</div>
-      <div class="doc-subtitle">Résultats définitifs après délibération du jury</div>
+      <div class="doc-kind">${esc(docTitle)}</div>
+      <div class="doc-subtitle">${esc(docSubtitle)}</div>
+      ${d.provisoire ? '<div class="doc-subtitle" style="color:#fbbf24; font-weight:800;">DOCUMENT PROVISOIRE — résultats non encore publiés</div>' : ''}
     </div>
     <div class="exam-box">
       <div class="exam-name">${esc(d.examName)}</div>
@@ -1075,7 +1254,7 @@ ${sectionsHtml}
 
   <div class="publish-bar">
     <span>Jury : <strong>${esc(d.juryName ?? 'Jury de délibération')}</strong></span>
-    <span>Publication : <strong>${esc(d.publishedAt ? formatDate(d.publishedAt) : '—')}</strong></span>
+    <span>${esc(publicationLabel)} : <strong>${esc(d.publishedAt ? formatDate(d.publishedAt) : '—')}</strong></span>
     <span>Établi le ${esc(formatLongDate(d.generatedAt))}</span>
   </div>
 
@@ -1200,6 +1379,91 @@ ${sectionsHtml}
             model: isPrimary ? 'PRIMAIRE (CEP)' : 'SECONDAIRE (coefficients)',
             releves: data.releves.length,
             single: Boolean(candidateId),
+          },
+        },
+      })
+      .catch(() => undefined);
+
+    return { buffer, filename };
+  }
+
+  /**
+   * ⭐ Relevé de notes — accès ÉCOLE (2026-09-30) : génère le PDF d'un relevé
+   * distribué pour l'établissement Helm qui a présenté le candidat. Garde-fous :
+   *   1. le candidat appartient à l'école (ExamCandidate.schoolTenantId) ;
+   *   2. le relevé a été distribué à l'école (ExamDocument RELEVE_NOTES PUBLISHED).
+   * Le rendu est IDENTIQUE au PDF patronat (même template, mêmes calculs via
+   * le dataset du patronat propriétaire de l'examen).
+   */
+  async generateRelevePdfForSchool(
+    schoolTenantId: string,
+    userId: string,
+    examId: string,
+    candidateId: string,
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    // 1-2. Vérifications d'accès école (appartenance + distribution)
+    const schoolData = await this.gradesService.getReleveForSchool(
+      schoolTenantId,
+      userId,
+      examId,
+      candidateId,
+    );
+    const releve = schoolData.releve;
+    if (!releve) {
+      throw new BadRequestException('Aucun relevé disponible pour ce candidat.');
+    }
+
+    // Identité du patronat organisateur (en-tête du document officiel)
+    const exam = await this.prisma.nationalExam.findUnique({
+      where: { id: examId },
+      select: { id: true, code: true, name: true, examType: true, level: true, tenantId: true },
+    });
+    if (!exam) throw new NotFoundException('Examen introuvable.');
+    const patronat = await this.prisma.patronat.findFirst({
+      where: { tenantId: exam.tenantId },
+      include: { country: { select: { name: true } } },
+    });
+
+    const isPrimary = schoolData.exam?.isPrimary === true;
+    const sections = isPrimary
+      ? this.buildReleveCepSection(releve, 0)
+      : this.buildReleveSecondaireSection(releve, 0);
+
+    const html = this.buildRelevesDocumentHtml({
+      patronatName: patronat?.name ?? 'Academia Federis',
+      patronatTerritory: [patronat?.territoryName, patronat?.country?.name]
+        .filter(Boolean)
+        .join(' — '),
+      examName: exam.name,
+      examCode: exam.code,
+      examType: exam.examType,
+      level: exam.level,
+      academicYear: releve.academicYearLabel ?? '',
+      isPrimary,
+      sections,
+      count: 1,
+      generatedAt: new Date(),
+    });
+
+    const buffer = await this.renderPdf(html, { landscape: true });
+    const dateTag = new Date().toISOString().split('T')[0];
+    const filename = `Releve_Notes_${exam.code}_${releve.candidate.matricule}_${dateTag}.pdf`;
+
+    // Audit côté école (traçabilité du téléchargement)
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: schoolTenantId,
+          userId,
+          action: 'FEDERIS_SCHOOL_RELEVE_PDF',
+          resource: 'ExamDocument',
+          resourceId: candidateId,
+          tableName: 'exam_documents',
+          recordId: examId,
+          newData: {
+            examCode: exam.code,
+            candidate: `${releve.candidate.firstName} ${releve.candidate.lastName}`,
+            matricule: releve.candidate.matricule,
           },
         },
       })

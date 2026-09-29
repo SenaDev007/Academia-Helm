@@ -13,11 +13,32 @@
  *        → sélection officielle (direction / secrétariat)
  *   POST /federis/school/national-exams/:examType/submit
  *        → envoi temps réel au(x) patronat(s) rattaché(s) + notifications
+ *
+ *   ⭐ Délibération et relevés de notes (2026-09-30) :
+ *   GET  /federis/school/national-exams/:examType/results
+ *        → décisions du jury pour les candidats de l'école + relevés distribués
+ *   GET  /federis/school/national-exams/:examType/releve/:candidateId?examId=
+ *        → relevé de notes structuré (visualisation dans l'interface)
+ *   GET  /federis/school/national-exams/:examType/releve/:candidateId/pdf?examId=
+ *        → PDF officiel du relevé (généré par le backend)
  */
 
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Request } from 'express';
+import type { Response } from 'express';
+import { StreamableFile } from '@nestjs/common';
 import {
   FederisSchoolExamsService,
   SaveSelectionDto,
@@ -83,5 +104,73 @@ export class FederisSchoolExamsController {
       examType,
       dto,
     );
+  }
+
+  // ── Délibération et relevés de notes (réception — 2026-09-30) ───────────
+
+  /** Décisions du jury + relevés distribués pour les candidats de l'école. */
+  @UseGuards(JwtAuthGuard)
+  @Get(':examType/results')
+  async getDeliberationResults(
+    @Req() req: any,
+    @Param('examType') examType: string,
+  ) {
+    return this.schoolExamsService.getDeliberationResults(
+      req.user.tenantId,
+      this.uid(req),
+      req.user.role,
+      examType,
+    );
+  }
+
+  /** Relevé de notes structuré (visualisation dans l'interface école). */
+  @UseGuards(JwtAuthGuard)
+  @Get(':examType/releve/:candidateId')
+  async getSchoolReleve(
+    @Req() req: any,
+    @Param('examType') examType: string,
+    @Param('candidateId') candidateId: string,
+    @Query('examId') examId: string,
+  ) {
+    if (!examId) {
+      throw new BadRequestException('Paramètre examId requis.');
+    }
+    return this.schoolExamsService.getSchoolReleve(
+      req.user.tenantId,
+      this.uid(req),
+      req.user.role,
+      examType,
+      examId,
+      candidateId,
+    );
+  }
+
+  /** PDF officiel du relevé de notes (généré par le backend). */
+  @UseGuards(JwtAuthGuard)
+  @Get(':examType/releve/:candidateId/pdf')
+  async downloadSchoolReleve(
+    @Req() req: any,
+    @Param('examType') examType: string,
+    @Param('candidateId') candidateId: string,
+    @Query('examId') examId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (!examId) {
+      throw new BadRequestException('Paramètre examId requis.');
+    }
+    const { buffer, filename } = await this.schoolExamsService.getSchoolRelevePdf(
+      req.user.tenantId,
+      this.uid(req),
+      req.user.role,
+      examType,
+      examId,
+      candidateId,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    return new StreamableFile(buffer);
   }
 }

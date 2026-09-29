@@ -1,34 +1,37 @@
 /**
- * FederisDeliberationService — Workflow délibération → publication → notifications
+ * FederisDeliberationService — Délibération du jury & publication des résultats
  * ═══════════════════════════════════════════════════════════════════════════
- * Academia Federis (cahier des charges §9-10 + règle « délibération obligatoire
- * avant publication »).
+ * ⭐ REFONTE 2026-09-30 (cahier des charges utilisateur) :
+ *   Le module Délibération n'est PLUS un espace de saisie des notes ni de
+ *   simulation de seuils — la saisie vit dans le module « Notes et Moyennes »,
+ *   les seuils vivent dans le module « Paramètres — Règles de calcul »
+ *   (source de vérité). Le module devient la salle de délibération du jury :
  *
- * Chaîne opérationnelle complète :
- *   1. Saisie des notes       POST /federis/exams/:examId/results/bulk
- *      (upsert ExamResult par candidat × matière — statut DRAFT)
- *   2. État de préparation    GET  /federis/exams/:examId/deliberation
- *      (matières, couverture des notes, candidats complets/partiels/sans notes)
- *   3. Simulation             POST /federis/exams/:examId/deliberation/simulate
- *      (calcul des moyennes pondérées SANS écriture — aperçu de la distribution)
- *   4. Délibération           POST /federis/exams/:examId/deliberation
- *      (jury : moyennes → ADMIS / AJOURNÉ + cas limites ExamDeliberationCase
- *       PENDING ; notes verrouillées VALIDATED ; examen → DELIBERATED)
- *   5. Décision des cas       POST /federis/deliberations/:id/cases/:caseId
- *      (APPROVED → ADMIS | REJECTED → AJOURNÉ, avec motif)
- *   6. Clôture                POST /federis/deliberations/:id/close
- *      (tous les cas tranchés → COMPLETED, compteurs + taux de réussite finaux)
- *   7. Publication            POST /federis/deliberations/:id/publish
+ *   1. Tableau de délibération   GET  /federis/exams/:examId/deliberation/board
+ *      (admissibles / non admis, moyenne, décision du jury — moyennes
+ *       UNIFIÉES avec le module Notes : CEP moyenne simple, BEPC/BAC/CAP
+ *       moyenne pondérée, ABSENTS exclus — buildGradesDataset)
+ *   2. Délibération              POST /federis/exams/:examId/deliberation
+ *      (jury : seuils des règles effectives → ADMIS / AJOURNÉ + cas limites
+ *       ExamDeliberationCase PENDING ; notes verrouillées VALIDATED ;
+ *       examen → DELIBERATED)
+ *   3. Décision des cas          POST /federis/deliberations/:id/cases/:caseId
+ *   4. Clôture                   POST /federis/deliberations/:id/close
+ *   5. Publication               POST /federis/deliberations/:id/publish
  *      (résultats → PUBLISHED + mention, examen → RESULTS_PUBLISHED,
- *       NOTIFICATIONS PARENTS via Academia Helm — matching élève → tuteurs →
- *       comptes parents — + notification des équipes des écoles)
- *   8. Consultation           GET  /federis/exams/:examId/results
- *      (résultats publiés — alimente aussi le miroir offline)
+ *       notifications parents + écoles via Academia Helm)
+ *   6. Envoi des relevés         POST /federis/exams/:examId/releves/dispatch
+ *      (chaque relevé de notes est distribué à l'école du candidat :
+ *       ledger ExamDocument + notification de direction — les écoles
+ *       consultent dans Examen → Examens nationaux → Délibération et relevés)
+ *   7. Consultation              GET  /federis/exams/:examId/results
  *
  * Règles transverses :
  *   - NO ACADEMIC YEAR = NO DATA ; jamais de suppression physique
  *   - Délibération = coordonnateur / secrétaire / organisateur ;
  *     PUBLICATION = coordonnateur uniquement (validation humaine §Sécurité)
+ *   - Seuils TOUJOURS issus des règles de calcul effectives (Paramètres >
+ *     défauts backend 10/20 et 9,5/20) — jamais saisis dans l'interface
  *   - AuditLog sur chaque mutation + traçabilité publishedBy/publishedAt
  */
 
@@ -42,6 +45,8 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { FederisPatronatService } from './federis-patronat.service';
+import { FederisGradesService } from './federis-grades.service';
+import { FederisGradingRulesService } from './federis-grading-rules.service';
 import {
   ALL_PATRONAT_FUNCTIONS,
   WRITE_DELIBERATION,
@@ -54,64 +59,14 @@ import {
 
 // ⭐ FIX 2026-09-29 — décorateurs class-validator OBLIGATOIRES (ValidationPipe
 //    global whitelist + forbidNonWhitelisted, pattern federis-patronat.service).
-import {
-  IsArray,
-  IsIn,
-  IsNumber,
-  IsOptional,
-  IsString,
-  MaxLength,
-  MinLength,
-  ValidateNested,
-} from 'class-validator';
-import { Type } from 'class-transformer';
-
-export class BulkResultRowDto {
-  @IsString()
-  @MaxLength(60)
-  matricule!: string;
-
-  @IsString()
-  @MaxLength(40)
-  subjectCode!: string;
-
-  @IsNumber()
-  score!: number;
-}
-
-export class BulkResultsDto {
-  /** Lignes de notes : [{ matricule, subjectCode, score }] */
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => BulkResultRowDto)
-  rows!: BulkResultRowDto[];
-}
-
-export class SimulateDeliberationDto {
-  /** Moyenne d'admission (défaut 10/20). */
-  @IsOptional()
-  @IsNumber()
-  passMark?: number;
-
-  /** Seuil de rachat — cas limites soumis au jury (défaut 9.5/20). */
-  @IsOptional()
-  @IsNumber()
-  rescueMark?: number;
-}
+import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class RunDeliberationDto {
+  /** Nom officiel du jury (ex. « Jury national BEPC 2026 — Session principale »). */
   @IsString()
   @MinLength(2)
   @MaxLength(190)
   juryName!: string;
-
-  @IsOptional()
-  @IsNumber()
-  passMark?: number;
-
-  @IsOptional()
-  @IsNumber()
-  rescueMark?: number;
 }
 
 export class DecideCaseDto {
@@ -149,7 +104,7 @@ function normalizeName(s: string): string {
     .replace(/[^a-z0-9]/g, '');
 }
 
-/** Rôles des équipes d'école à notifier lors d'une publication. */
+/** Rôles des équipes d'école à notifier (publication + distribution relevés). */
 const SCHOOL_STAFF_ROLES = [
   'DIRECTOR',
   'DIRECTRICE',
@@ -160,6 +115,32 @@ const SCHOOL_STAFF_ROLES = [
   'SECRETAIRE_COMPTABLE',
 ];
 
+/** Décision affichée dans le tableau de délibération. */
+export type DeliberationDecision = 'ADMIS' | 'AJOURNE' | 'EN_ATTENTE' | 'NON_DELIBERE';
+
+/** Provenance de la décision (couleur du badge UI). */
+export type DecisionSource = 'PUBLIE' | 'JURY' | 'CAS_JURY' | 'PROJECTION';
+
+export interface DeliberationBoardRow {
+  candidateId: string;
+  matricule: string;
+  fullName: string;
+  school: string;
+  centerName: string | null;
+  moyenne: number | null;
+  rank: number | null;
+  nbEval: number;
+  complete: boolean;
+  mention: string | null;
+  decision: DeliberationDecision;
+  decisionLabel: string;
+  source: DecisionSource;
+  caseId: string | null;
+  caseDecision: 'PENDING' | 'APPROVED' | 'REJECTED' | null;
+  caseReason: string | null;
+  releveDispatched: boolean;
+}
+
 @Injectable()
 export class FederisDeliberationService {
   private readonly logger = new Logger(FederisDeliberationService.name);
@@ -168,6 +149,8 @@ export class FederisDeliberationService {
     private readonly prisma: PrismaService,
     private readonly patronatService: FederisPatronatService,
     private readonly notificationService: NotificationService,
+    private readonly gradesService: FederisGradesService,
+    private readonly gradingRulesService: FederisGradingRulesService,
   ) {}
 
   // ── Contexte & permissions ───────────────────────────────────────────────
@@ -217,388 +200,302 @@ export class FederisDeliberationService {
     return exam;
   }
 
-  // ── 1. Saisie des notes (upsert par candidat × matière) ───────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  // 1. TABLEAU DE DÉLIBÉRATION (admissibles / non admis — décision du jury)
+  // ═══════════════════════════════════════════════════════════════════════
 
-  async bulkUpsertResults(
-    tenantId: string,
-    userId: string,
-    examId: string,
-    dto: BulkResultsDto,
-  ) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
-    this.assertDeliberation(fn);
-    const exam = await this.getOwnedExam(patronat.tenantId, examId);
-    if (exam.status === 'RESULTS_PUBLISHED') {
-      throw new BadRequestException(
-        'Les résultats de cet examen sont déjà publiés — la saisie des notes est verrouillée.',
-      );
-    }
-
-    const year = await this.prisma.academicYear.findFirst({
-      where: { tenantId: patronat.tenantId, isActive: true },
-    });
-    if (!year) {
-      throw new BadRequestException('Aucune année scolaire active (NO ACADEMIC YEAR = NO DATA).');
-    }
-
-    if (!dto.rows?.length) {
-      throw new BadRequestException('Aucune ligne de note transmise.');
-    }
-    if (dto.rows.length > 5000) {
-      throw new BadRequestException('Trop de lignes (max 5000 par lot).');
-    }
-
-    // Index candidats par matricule + matières par code
-    const candidates = await this.prisma.examCandidate.findMany({
-      where: { examId, tenantId: patronat.tenantId },
-      select: { id: true, matricule: true },
-    });
-    const candidateByMatricule = new Map(candidates.map((c) => [c.matricule, c.id]));
-    const subjectByCode = new Map(exam.subjects.map((s) => [s.code, s]));
-
-    let created = 0;
-    let updated = 0;
-    const errors: string[] = [];
-
-    for (const row of dto.rows) {
-      const candidateId = candidateByMatricule.get(row.matricule?.trim());
-      const subject = subjectByCode.get(row.subjectCode?.trim());
-      if (!candidateId) {
-        errors.push(`Matricule inconnu : ${row.matricule}`);
-        continue;
-      }
-      if (!subject) {
-        errors.push(`Matière inconnue : ${row.subjectCode}`);
-        continue;
-      }
-      if (row.score === null || row.score === undefined || Number.isNaN(Number(row.score))) {
-        errors.push(`Note invalide pour ${row.matricule} / ${row.subjectCode}`);
-        continue;
-      }
-      const score = Math.max(0, Math.min(Number(row.score), subject.maxScore ?? 20));
-      const coefficient = subject.coefficient ?? 1;
-      const data = {
-        score,
-        coefficient,
-        weightedScore: round2(score * coefficient),
-        enteredBy: userId,
-        status: 'DRAFT',
-      };
-      const res = await this.prisma.examResult.upsert({
-        where: {
-          tenantId_academicYearId_examId_candidateId_subjectId: {
-            tenantId: patronat.tenantId,
-            academicYearId: year.id,
-            examId,
-            candidateId,
-            subjectId: subject.id,
-          },
-        },
-        create: {
-          tenantId: patronat.tenantId,
-          academicYearId: year.id,
-          examId,
-          candidateId,
-          subjectId: subject.id,
-          maxScore: subject.maxScore ?? 20,
-          ...data,
-        },
-        update: {
-          ...data,
-          // Une nouvelle saisie rouvre le brouillon (délibération précédente invalidée)
-          validatedBy: null,
-          validatedAt: null,
-        },
-      });
-      if (res) {
-        const existing = await this.prisma.examResult.count({
-          where: { examId, candidateId, subjectId: subject.id, createdAt: { lt: res.createdAt } },
-        });
-        if (existing > 0) updated++;
-        else created++;
-      }
-    }
-
-    await this.prisma.auditLog.create({
-      data: {
-        tenantId: patronat.tenantId,
-        userId,
-        action: 'FEDERIS_RESULTS_BULK_UPSERT',
-        resource: 'NationalExam',
-        resourceId: examId,
-        tableName: 'exam_results',
-        recordId: examId,
-        newData: {
-          examCode: exam.code,
-          received: dto.rows.length,
-          created,
-          updated,
-          errors: errors.length,
-        },
-      },
-    }).catch(() => undefined);
-
-    return {
-      received: dto.rows.length,
-      created,
-      updated,
-      errors: errors.slice(0, 50),
-      errorCount: errors.length,
-    };
-  }
-
-  // ── 2. État de préparation de la délibération ─────────────────────────────
-
-  async getDeliberationState(tenantId: string, userId: string, examId: string) {
+  /**
+   * Tout l'état de délibération d'un examen sur UNE seule réponse :
+   * règles effectives, session de saisie, admissibles, non admis, cas du
+   * jury, historique des délibérations et état de distribution des relevés.
+   *
+   * Décision par candidat (ordre de priorité) :
+   *   1. PUBLIÉ  → ExamResult.metadata.finalDecision (résultats publiés) ;
+   *   2. CAS JURY→ cas tranché (APPROVED=ADMIS / REJECTED=AJOURNÉ) ou
+   *                PENDING (cas limite en attente) ;
+   *   3. JURY    → seuils de la délibération (passants / ajournés directs) ;
+   *   4. PROJECTION → règles effectives (aucune délibération lancée).
+   */
+  async getDeliberationBoard(tenantId: string, userId: string, examId: string) {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertRead(fn);
-    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    return this.buildDeliberationBoard(patronat.tenantId, examId);
+  }
 
-    const [candidates, results, deliberations] = await Promise.all([
-      this.prisma.examCandidate.findMany({
-        where: { examId },
-        select: { id: true },
-      }),
-      this.prisma.examResult.findMany({
-        where: { examId },
-        select: { candidateId: true, subjectId: true, score: true, status: true },
-      }),
+  /**
+   * Board brut, scopé au tenant patronat propriétaire de l'examen — sans
+   * vérification d'utilisateur. Réutilisé par l'accès ÉCOLE (FederisSchool-
+   * ExamsService) après ses propres garde-fous d'appartenance.
+   */
+  async buildDeliberationBoard(patronatTenantId: string, examId: string) {
+    const ds = await this.gradesService.buildGradesDataset(patronatTenantId, examId);
+    const rules = ds.rules;
+    const exam = await this.getOwnedExam(patronatTenantId, examId);
+
+    const [deliberations, dispatchDocs, publishedMetaRows] = await Promise.all([
       this.prisma.examDeliberation.findMany({
         where: { examId },
         include: { cases: { include: { candidate: true } } },
         orderBy: { createdAt: 'desc' },
       }),
+      this.prisma.examDocument.findMany({
+        where: { examId, documentType: 'RELEVE_NOTES', status: 'PUBLISHED' },
+        select: { candidateId: true, publishedAt: true, metadata: true },
+      }),
+      ds.exam.status === 'RESULTS_PUBLISHED'
+        ? this.prisma.examResult.findMany({
+            where: { examId, tenantId: patronatTenantId },
+            select: { candidateId: true, metadata: true },
+          })
+        : Promise.resolve([] as Array<{ candidateId: string; metadata: any }>),
     ]);
 
-    const subjectIds = new Set(exam.subjects.map((s) => s.id));
-    const scoresByCandidate = new Map<string, Set<string>>();
-    for (const r of results) {
-      if (!scoresByCandidate.has(r.candidateId)) {
-        scoresByCandidate.set(r.candidateId, new Set());
-      }
-      if (subjectIds.has(r.subjectId)) {
-        scoresByCandidate.get(r.candidateId)!.add(r.subjectId);
-      }
+    const latest = deliberations[0] ?? null;
+    const publishedMeta = new Map<string, any>();
+    for (const row of publishedMetaRows) {
+      if (!publishedMeta.has(row.candidateId)) publishedMeta.set(row.candidateId, row.metadata);
     }
+    const caseByCandidate = new Map<string, (typeof deliberations)[number]['cases'][number]>();
+    if (latest) {
+      for (const kase of latest.cases) caseByCandidate.set(kase.candidateId, kase);
+    }
+    const dispatchedAt = new Map<string, Date | null>();
+    for (const doc of dispatchDocs) dispatchedAt.set(doc.candidateId, doc.publishedAt);
 
-    let complete = 0;
-    let partial = 0;
-    let missing = 0;
-    for (const c of candidates) {
-      const covered = scoresByCandidate.get(c.id)?.size ?? 0;
-      if (exam.subjects.length > 0 && covered >= exam.subjects.length) complete++;
-      else if (covered > 0) partial++;
-      else missing++;
-    }
+    // Seuils de la délibération en cours (figés au lancement) sinon règles effectives
+    const activeThresholds = (latest?.metadata as any)?.thresholds ?? {
+      passMark: rules.passMark,
+      rescueMark: rules.rescueMark,
+    };
+
+    const rows: DeliberationBoardRow[] = ds.candidates.map((c) => {
+      const comp = ds.computed.get(c.id);
+      const moyenne = comp?.finalAverage ?? null;
+      const nbEval = comp?.nbEval ?? 0;
+      const hasRows = Object.keys(c.scores).length > 0;
+      const kase = caseByCandidate.get(c.id) ?? null;
+      const meta = publishedMeta.get(c.id) ?? null;
+
+      let decision: DeliberationDecision = 'NON_DELIBERE';
+      let source: DecisionSource = 'PROJECTION';
+      let decisionLabel = 'À délibérer';
+
+      const finalDecision = meta?.finalDecision ?? meta?.decision;
+      if (finalDecision === 'ADMIS' || finalDecision === 'AJOURNE') {
+        decision = finalDecision;
+        source = 'PUBLIE';
+        decisionLabel = finalDecision === 'ADMIS' ? 'Admis' : 'Ajourné';
+      } else if (kase) {
+        source = 'CAS_JURY';
+        if (kase.decision === 'APPROVED') {
+          decision = 'ADMIS';
+          decisionLabel = 'Admis (jury)';
+        } else if (kase.decision === 'REJECTED') {
+          decision = 'AJOURNE';
+          decisionLabel = 'Ajourné (jury)';
+        } else {
+          decision = 'EN_ATTENTE';
+          decisionLabel = 'Cas du jury — à trancher';
+        }
+      } else if (latest) {
+        source = 'JURY';
+        if (moyenne === null) {
+          decision = hasRows ? 'AJOURNE' : 'NON_DELIBERE';
+          decisionLabel = hasRows ? 'Ajourné (sans note)' : 'À délibérer';
+        } else if (moyenne >= activeThresholds.passMark) {
+          decision = 'ADMIS';
+          decisionLabel = 'Admis';
+        } else if (moyenne < activeThresholds.rescueMark) {
+          decision = 'AJOURNE';
+          decisionLabel = 'Ajourné';
+        } else {
+          decision = 'EN_ATTENTE';
+          decisionLabel = 'Cas du jury — à trancher';
+        }
+      } else {
+        // Projection au seuil des règles effectives (aucune délibération lancée)
+        if (moyenne === null) {
+          decision = 'NON_DELIBERE';
+          decisionLabel = hasRows ? 'Ajourné (sans note)' : 'À délibérer';
+        } else if (moyenne >= activeThresholds.passMark) {
+          decision = 'ADMIS';
+          decisionLabel = 'Admis (projeté)';
+        } else if (moyenne >= activeThresholds.rescueMark) {
+          decision = 'EN_ATTENTE';
+          decisionLabel = 'Cas limite (projeté)';
+        } else {
+          decision = 'AJOURNE';
+          decisionLabel = 'Ajourné (projeté)';
+        }
+      }
+
+      return {
+        candidateId: c.id,
+        matricule: c.matricule,
+        fullName: `${c.lastName} ${c.firstName}`,
+        school: c.school,
+        centerName: c.centerName,
+        moyenne,
+        rank: ds.ranks.get(c.id) ?? null,
+        nbEval,
+        complete: ds.subjects.length > 0 && nbEval === ds.subjects.length,
+        mention: decision === 'ADMIS' ? (meta?.mention ?? (moyenne !== null ? mentionFor(moyenne) : null)) : null,
+        decision,
+        decisionLabel,
+        source,
+        caseId: kase?.id ?? null,
+        caseDecision: (kase?.decision as any) ?? null,
+        caseReason: kase?.reason ?? null,
+        releveDispatched: dispatchedAt.has(c.id),
+      };
+    });
+
+    const admissibles = rows
+      .filter((r) => r.decision === 'ADMIS')
+      .sort((a, b) => (b.moyenne ?? -1) - (a.moyenne ?? -1));
+    const ajournes = rows
+      .filter((r) => r.decision !== 'ADMIS')
+      .sort((a, b) => a.fullName.localeCompare(b.fullName, 'fr'));
+
+    const decided = rows.filter((r) => r.decision === 'ADMIS' || r.decision === 'AJOURNE').length;
+    const stats = {
+      totalCandidates: rows.length,
+      admissibles: admissibles.length,
+      ajournes: rows.filter((r) => r.decision === 'AJOURNE').length,
+      enAttente: rows.filter((r) => r.decision === 'EN_ATTENTE').length,
+      nonDeliberes: rows.filter((r) => r.decision === 'NON_DELIBERE').length,
+      successRate: decided > 0 ? round2((admissibles.length / decided) * 100) : null,
+    };
+
+    const dispatchDates = dispatchDocs.map((d) => d.publishedAt).filter(Boolean) as Date[];
 
     return {
       exam: {
         id: exam.id,
         code: exam.code,
         name: exam.name,
+        examType: exam.examType,
         level: exam.level,
         status: exam.status,
-        candidatesCount: candidates.length,
+        isPrimary: ds.exam.isPrimary,
       },
-      subjects: exam.subjects.map((s) => ({
-        id: s.id,
-        code: s.code,
-        name: s.name,
-        coefficient: s.coefficient,
-        maxScore: s.maxScore,
-        passingScore: s.passingScore,
-      })),
-      readiness: {
-        totalCandidates: candidates.length,
-        complete,
-        partial,
-        missing,
-        resultsEntered: results.length,
-        totalExpected: candidates.length * exam.subjects.length,
+      academicYearLabel: ds.academicYearLabel,
+      rules: {
+        ...rules,
+        ...activeThresholds,
+        fromDeliberation: Boolean((latest?.metadata as any)?.thresholds),
       },
-      deliberations: deliberations.map((d) => ({
+      session: ds.session,
+      filling: ds.filling,
+      subjectsCount: ds.subjects.length,
+      stats,
+      deliberation: latest
+        ? {
+            id: latest.id,
+            juryName: latest.juryName,
+            deliberatedAt: latest.deliberatedAt,
+            status: latest.status,
+            totalCandidates: latest.totalCandidates,
+            passedCount: latest.passedCount,
+            failedCount: latest.failedCount,
+            successRate: latest.successRate,
+            thresholds: (latest.metadata as any)?.thresholds ?? null,
+            publication: (latest.metadata as any)?.publication ?? null,
+            closedAt: (latest.metadata as any)?.closedAt ?? null,
+            pendingCases: latest.cases.filter((c) => c.decision === 'PENDING').length,
+            cases: latest.cases.map((c) => ({
+              id: c.id,
+              reason: c.reason,
+              decision: c.decision,
+              comments: c.comments,
+              candidate: {
+                id: c.candidateId,
+                matricule: c.candidate.matricule,
+                firstName: c.candidate.firstName,
+                lastName: c.candidate.lastName,
+              },
+              average: (c.metadata as any)?.average ?? null,
+            })),
+          }
+        : null,
+      deliberationsHistory: deliberations.slice(1, 6).map((d) => ({
         id: d.id,
         juryName: d.juryName,
-        deliberatedAt: d.deliberatedAt,
         status: d.status,
-        totalCandidates: d.totalCandidates,
+        deliberatedAt: d.deliberatedAt,
         passedCount: d.passedCount,
         failedCount: d.failedCount,
-        successRate: d.successRate,
-        thresholds: (d.metadata as any)?.thresholds ?? null,
-        publication: (d.metadata as any)?.publication ?? null,
-        pendingCases: d.cases.filter((c) => c.decision === 'PENDING').length,
-        cases: d.cases.map((c) => ({
-          id: c.id,
-          reason: c.reason,
-          decision: c.decision,
-          comments: c.comments,
-          candidate: {
-            id: c.candidateId,
-            matricule: c.candidate.matricule,
-            firstName: c.candidate.firstName,
-            lastName: c.candidate.lastName,
-          },
-          average: (c.metadata as any)?.average ?? null,
-        })),
       })),
-    };
-  }
-
-  // ── 3-4. Calcul des moyennes (partagé simulation / délibération) ──────────
-
-  /** Calcule la moyenne pondérée de chaque candidat + la décision proposée. */
-  private async computeAverages(patronatTenantId: string, examId: string) {
-    const exam = await this.getOwnedExam(patronatTenantId, examId);
-    const [candidates, results] = await Promise.all([
-      this.prisma.examCandidate.findMany({
-        where: { examId },
-        select: { id: true, matricule: true, firstName: true, lastName: true },
-      }),
-      this.prisma.examResult.findMany({
-        where: { examId },
-        select: { candidateId: true, subjectId: true, score: true, coefficient: true },
-      }),
-    ]);
-
-    const subjectIds = new Set(exam.subjects.map((s) => s.id));
-    const coefBySubject = new Map(exam.subjects.map((s) => [s.id, s.coefficient ?? 1]));
-    const byCandidate = new Map<string, { sum: number; coef: number; subjects: Set<string> }>();
-    for (const r of results) {
-      if (!subjectIds.has(r.subjectId)) continue;
-      if (!byCandidate.has(r.candidateId)) {
-        byCandidate.set(r.candidateId, { sum: 0, coef: 0, subjects: new Set() });
-      }
-      const acc = byCandidate.get(r.candidateId)!;
-      const coef = r.coefficient ?? coefBySubject.get(r.subjectId) ?? 1;
-      acc.sum += r.score * coef;
-      acc.coef += coef;
-      acc.subjects.add(r.subjectId);
-    }
-
-    const rows = candidates.map((c) => {
-      const acc = byCandidate.get(c.id);
-      const covered = acc?.subjects.size ?? 0;
-      const average = acc && acc.coef > 0 ? round2(acc.sum / acc.coef) : null;
-      return {
-        candidateId: c.id,
-        matricule: c.matricule,
-        firstName: c.firstName,
-        lastName: c.lastName,
-        subjectsCovered: covered,
-        subjectsTotal: exam.subjects.length,
-        complete: exam.subjects.length > 0 && covered >= exam.subjects.length,
-        average,
-      };
-    });
-    return { exam, rows };
-  }
-
-  /** Distribution simulée — SANS aucune écriture. */
-  async simulate(
-    tenantId: string,
-    userId: string,
-    examId: string,
-    dto: SimulateDeliberationDto,
-  ) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
-    this.assertRead(fn);
-    const passMark = dto.passMark ?? 10;
-    const rescueMark = dto.rescueMark ?? 9.5;
-    if (rescueMark >= passMark) {
-      throw new BadRequestException('Le seuil de rachat doit être inférieur à la moyenne d\u2019admission.');
-    }
-
-    const { rows } = await this.computeAverages(patronat.tenantId, examId);
-    let admitted = 0;
-    let rescue = 0;
-    let failed = 0;
-    let incomplete = 0;
-    const mentions = { Excellent: 0, 'Très Bien': 0, Bien: 0, 'Assez Bien': 0, Passable: 0 };
-
-    for (const r of rows) {
-      if (!r.complete || r.average === null) {
-        incomplete++;
-        continue;
-      }
-      if (r.average >= passMark) {
-        admitted++;
-        mentions[mentionFor(r.average) as keyof typeof mentions]++;
-      } else if (r.average >= rescueMark) {
-        rescue++;
-      } else {
-        failed++;
-      }
-    }
-
-    const decided = admitted + rescue + failed;
-    return {
-      thresholds: { passMark, rescueMark },
-      distribution: {
-        admitted,
-        rescuePending: rescue,
-        failed,
-        incomplete,
-        total: rows.length,
-        decided,
+      dispatch: {
+        dispatchedCount: dispatchDocs.length,
+        lastDispatchAt: dispatchDates.length > 0 ? new Date(Math.max(...dispatchDates.map((x) => x.getTime()))) : null,
+        schoolsCount: new Set(
+          dispatchDocs.map((d) => (d.metadata as any)?.schoolTenantId).filter(Boolean),
+        ).size,
       },
-      successRate: decided > 0 ? round2(((admitted + rescue * 0.5) / decided) * 100) : 0,
-      mentions,
-      /** Échantillon des cas limites (max 20) pour préparer le jury. */
-      rescueSample: rows
-        .filter((r) => r.average !== null && r.average >= rescueMark && r.average < passMark)
-        .slice(0, 20)
-        .map((r) => ({
-          matricule: r.matricule,
-          name: `${r.firstName} ${r.lastName}`,
-          average: r.average,
-        })),
+      admissibles,
+      ajournes,
     };
   }
 
-  /** Délibération officielle — écrit les décisions + ouvre les cas limites. */
+  // ═══════════════════════════════════════════════════════════════════════
+  // 2. DÉLIBÉRATION OFFICIELLE (jury — seuils = règles de calcul effectives)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Délibération officielle du jury. Les seuils ne sont PLUS saisis dans
+   * l'interface : ils proviennent des règles de calcul effectives (module
+   * Paramètres — source de vérité — ou défauts backend 10/20 et 9,5/20).
+   *
+   * Sont délibérés TOUS les candidats ayant au moins une ligne de note
+   * (notes ou absences) — pattern Promotion & Redoublement Helm : un candidat
+   * absent à toutes les épreuves est AJOURNÉ (moyenne nulle).
+   */
   async runDeliberation(tenantId: string, userId: string, examId: string, dto: RunDeliberationDto) {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertDeliberation(fn);
-    const { exam, rows } = await this.computeAverages(patronat.tenantId, examId);
+
+    const ds = await this.gradesService.buildGradesDataset(patronat.tenantId, examId);
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
     if (exam.status === 'RESULTS_PUBLISHED') {
       throw new BadRequestException('Les résultats sont déjà publiés — délibération close.');
     }
-    if (exam.subjects.length === 0) {
+    if (ds.subjects.length === 0) {
       throw new BadRequestException('Aucune matière définie pour cet examen.');
     }
     if (!dto.juryName?.trim()) {
       throw new BadRequestException('Le nom du jury est requis.');
     }
-    const passMark = dto.passMark ?? 10;
-    const rescueMark = dto.rescueMark ?? 9.5;
-    if (rescueMark >= passMark) {
-      throw new BadRequestException('Le seuil de rachat doit être inférieur à la moyenne d\u2019admission.');
+    if (ds.filling.gradedCells + ds.filling.absentCells === 0) {
+      throw new BadRequestException(
+        'Aucune note saisie pour cet examen — complétez la saisie dans le module « Notes et Moyennes ».',
+      );
     }
 
-    // Uniquement les candidats avec un dossier de notes COMPLET sont délibérés
-    const complete = rows.filter((r) => r.complete && r.average !== null);
-    if (complete.length === 0) {
-      throw new BadRequestException(
-        'Aucun candidat ne dispose de notes complètes sur toutes les matières.',
-      );
+    // ⭐ Seuils = règles de calcul effectives (Paramètres > défauts backend)
+    const rules = await this.gradingRulesService.resolveEffectiveRules(
+      patronat.tenantId,
+      exam.examType,
+    );
+    const { passMark, rescueMark } = rules;
+
+    // Candidats délibérables : au moins une ligne de note (évaluée ou absence)
+    const deliberable = ds.candidates.filter((c) => Object.keys(c.scores).length > 0);
+    if (deliberable.length === 0) {
+      throw new BadRequestException('Aucun candidat ne dispose de notes pour cet examen.');
     }
 
     let passedCount = 0;
     let failedCount = 0;
-    const caseRows: {
-      candidateId: string;
-      reason: string;
-      average: number;
-    }[] = [];
+    const caseRows: { candidateId: string; reason: string; average: number | null }[] = [];
 
-    for (const r of complete) {
-      const avg = r.average as number;
-      if (avg >= passMark) {
+    for (const c of deliberable) {
+      const avg = ds.computed.get(c.id)?.finalAverage ?? null;
+      if (avg !== null && avg >= passMark) {
         passedCount++;
-      } else if (avg >= rescueMark) {
+      } else if (avg !== null && avg >= rescueMark) {
         caseRows.push({
-          candidateId: r.candidateId,
+          candidateId: c.id,
           reason: `Moyenne ${avg}/20 comprise entre le seuil de rachat (${rescueMark}) et la moyenne d\u2019admission (${passMark})`,
           average: avg,
         });
@@ -615,14 +512,16 @@ export class FederisDeliberationService {
           examId,
           juryName: dto.juryName.trim(),
           deliberatedAt: new Date(),
-          totalCandidates: complete.length,
+          totalCandidates: deliberable.length,
           passedCount,
           failedCount,
-          successRate: complete.length > 0 ? round2((passedCount / complete.length) * 100) : 0,
+          successRate:
+            deliberable.length > 0 ? round2((passedCount / deliberable.length) * 100) : 0,
           status: caseRows.length > 0 ? 'IN_PROGRESS' : 'COMPLETED',
           metadata: {
             thresholds: { passMark, rescueMark },
-            incompleteCandidates: rows.length - complete.length,
+            rulesSource: rules.isCustom ? 'PARAMETRES' : 'DEFAUTS_BACKEND',
+            candidatesWithoutNotes: ds.candidates.length - deliberable.length,
             createdBy: userId,
           },
         },
@@ -659,43 +558,51 @@ export class FederisDeliberationService {
       return d;
     });
 
-    await this.prisma.auditLog.create({
-      data: {
-        tenantId: patronat.tenantId,
-        userId,
-        action: 'FEDERIS_DELIBERATION_RUN',
-        resource: 'ExamDeliberation',
-        resourceId: deliberation.id,
-        tableName: 'exam_deliberations',
-        recordId: deliberation.id,
-        newData: {
-          examCode: exam.code,
-          juryName: dto.juryName,
-          passMark,
-          rescueMark,
-          total: complete.length,
-          passed: passedCount,
-          failed: failedCount,
-          pendingCases: caseRows.length,
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_DELIBERATION_RUN',
+          resource: 'ExamDeliberation',
+          resourceId: deliberation.id,
+          tableName: 'exam_deliberations',
+          recordId: deliberation.id,
+          newData: {
+            examCode: exam.code,
+            juryName: dto.juryName,
+            passMark,
+            rescueMark,
+            rulesSource: rules.isCustom ? 'PARAMETRES' : 'DEFAUTS_BACKEND',
+            total: deliberable.length,
+            passed: passedCount,
+            failed: failedCount,
+            pendingCases: caseRows.length,
+          },
         },
-      },
-    }).catch(() => undefined);
+      })
+      .catch(() => undefined);
 
     return {
       deliberationId: deliberation.id,
       status: deliberation.status,
       juryName: deliberation.juryName,
       thresholds: { passMark, rescueMark },
-      totalCandidates: complete.length,
+      rulesSource: rules.isCustom ? 'PARAMETRES' : 'DEFAUTS_BACKEND',
+      totalCandidates: deliberable.length,
       passedCount,
       failedCount,
       pendingCases: caseRows.length,
-      incompleteCandidates: rows.length - complete.length,
+      candidatesWithoutNotes: ds.candidates.length - deliberable.length,
       successRate: deliberation.successRate,
+      message:
+        caseRows.length > 0
+          ? `Délibération lancée — ${caseRows.length} cas(s) limite(s) à trancher par le jury.`
+          : 'Délibération lancée et terminée — clôture puis publication possibles.',
     };
   }
 
-  // ── 5. Décision d'un cas limite (jury) ────────────────────────────────────
+  // ── 3. Décision d'un cas limite (jury) ────────────────────────────────────
 
   async decideCase(
     tenantId: string,
@@ -743,23 +650,25 @@ export class FederisDeliberationService {
     // Recalcul immédiat des compteurs
     await this.refreshCounts(patronat.tenantId, deliberationId);
 
-    await this.prisma.auditLog.create({
-      data: {
-        tenantId: patronat.tenantId,
-        userId,
-        action: 'FEDERIS_DELIBERATION_CASE_DECIDED',
-        resource: 'ExamDeliberationCase',
-        resourceId: caseId,
-        tableName: 'exam_deliberation_cases',
-        recordId: caseId,
-        newData: {
-          deliberationId,
-          candidate: `${kase.candidate.firstName} ${kase.candidate.lastName}`,
-          decision: dto.decision,
-          comments: dto.comments ?? null,
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_DELIBERATION_CASE_DECIDED',
+          resource: 'ExamDeliberationCase',
+          resourceId: caseId,
+          tableName: 'exam_deliberation_cases',
+          recordId: caseId,
+          newData: {
+            deliberationId,
+            candidate: `${kase.candidate.firstName} ${kase.candidate.lastName}`,
+            decision: dto.decision,
+            comments: dto.comments ?? null,
+          },
         },
-      },
-    }).catch(() => undefined);
+      })
+      .catch(() => undefined);
 
     return {
       caseId: updated.id,
@@ -797,7 +706,7 @@ export class FederisDeliberationService {
     });
   }
 
-  // ── 6. Clôture de la délibération ─────────────────────────────────────────
+  // ── 4. Clôture de la délibération ─────────────────────────────────────────
 
   async closeDeliberation(tenantId: string, userId: string, deliberationId: string) {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
@@ -832,22 +741,24 @@ export class FederisDeliberationService {
       },
     });
 
-    await this.prisma.auditLog.create({
-      data: {
-        tenantId: patronat.tenantId,
-        userId,
-        action: 'FEDERIS_DELIBERATION_CLOSED',
-        resource: 'ExamDeliberation',
-        resourceId: deliberationId,
-        tableName: 'exam_deliberations',
-        recordId: deliberationId,
-        newData: {
-          examCode: d.exam.code,
-          passed: closed.passedCount,
-          failed: closed.failedCount,
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_DELIBERATION_CLOSED',
+          resource: 'ExamDeliberation',
+          resourceId: deliberationId,
+          tableName: 'exam_deliberations',
+          recordId: deliberationId,
+          newData: {
+            examCode: d.exam.code,
+            passed: closed.passedCount,
+            failed: closed.failedCount,
+          },
         },
-      },
-    }).catch(() => undefined);
+      })
+      .catch(() => undefined);
 
     return {
       deliberationId: closed.id,
@@ -858,7 +769,7 @@ export class FederisDeliberationService {
     };
   }
 
-  // ── 7. PUBLICATION + NOTIFICATIONS PARENTS (via Academia Helm) ────────────
+  // ── 5. PUBLICATION + NOTIFICATIONS PARENTS (via Academia Helm) ────────────
 
   async publishResults(tenantId: string, userId: string, deliberationId: string) {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
@@ -878,8 +789,13 @@ export class FederisDeliberationService {
       );
     }
 
-    const thresholds = (d.metadata as any)?.thresholds ?? { passMark: 10, rescueMark: 9.5 };
-    const { rows } = await this.computeAverages(patronat.tenantId, d.examId);
+    const thresholds =
+      (d.metadata as any)?.thresholds ??
+      (await this.gradingRulesService.resolveEffectiveRules(patronat.tenantId, d.exam.examType));
+
+    // ⭐ Moyennes UNIFIÉES avec le module Notes (CEP simple / autres pondérée,
+    //    absents exclus) — plus jamais de double calcul divergent.
+    const ds = await this.gradesService.buildGradesDataset(patronat.tenantId, d.examId);
     const approvedCases = new Set(
       d.cases.filter((c) => c.decision === 'APPROVED').map((c) => c.candidateId),
     );
@@ -887,32 +803,33 @@ export class FederisDeliberationService {
       d.cases.filter((c) => c.decision === 'REJECTED').map((c) => c.candidateId),
     );
 
-    // Décision finale par candidat + mention
+    // Décision finale par candidat + mention (tous les candidats délibérés,
+    // pattern Promotion Helm : sans note → AJOURNÉ)
     const decisions = new Map<
       string,
       { decision: string; mention: string | null; average: number | null }
     >();
-    for (const r of rows) {
-      if (approvedCases.has(r.candidateId)) {
-        decisions.set(r.candidateId, {
+    for (const c of ds.candidates) {
+      if (Object.keys(c.scores).length === 0) continue; // jamais délibéré
+      const average = ds.computed.get(c.id)?.finalAverage ?? null;
+      if (approvedCases.has(c.id)) {
+        decisions.set(c.id, {
           decision: 'ADMIS',
-          mention: mentionFor(r.average ?? 10),
-          average: r.average,
+          mention: average !== null ? mentionFor(average) : 'Passable',
+          average,
         });
-      } else if (rejectedCases.has(r.candidateId)) {
-        decisions.set(r.candidateId, { decision: 'AJOURNE', mention: null, average: r.average });
-      } else if (r.complete && r.average !== null) {
-        if (r.average >= thresholds.passMark) {
-          decisions.set(r.candidateId, {
-            decision: 'ADMIS',
-            mention: mentionFor(r.average),
-            average: r.average,
-          });
-        } else if (r.average < thresholds.rescueMark) {
-          decisions.set(r.candidateId, { decision: 'AJOURNE', mention: null, average: r.average });
-        }
-        // Entre les deux sans cas → ne devrait pas arriver (cas créés à la
-        // délibération) — on n'écrit rien pour rester conservateur.
+      } else if (rejectedCases.has(c.id)) {
+        decisions.set(c.id, { decision: 'AJOURNE', mention: null, average });
+      } else if (average !== null && average >= thresholds.passMark) {
+        decisions.set(c.id, {
+          decision: 'ADMIS',
+          mention: mentionFor(average),
+          average,
+        });
+      } else {
+        // Sous le seuil d'admission sans cas tranché (seuils modifiés après
+        // délibération, ou absent à toutes les épreuves) → AJOURNÉ conservateur
+        decisions.set(c.id, { decision: 'AJOURNE', mention: null, average });
       }
     }
 
@@ -955,22 +872,24 @@ export class FederisDeliberationService {
       });
     });
 
-    await this.prisma.auditLog.create({
-      data: {
-        tenantId: patronat.tenantId,
-        userId,
-        action: 'FEDERIS_RESULTS_PUBLISHED',
-        resource: 'ExamDeliberation',
-        resourceId: deliberationId,
-        tableName: 'exam_results',
-        recordId: d.examId,
-        newData: {
-          examCode: d.exam.code,
-          publishedAt: publishedAt.toISOString(),
-          candidates: decisions.size,
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_RESULTS_PUBLISHED',
+          resource: 'ExamDeliberation',
+          resourceId: deliberationId,
+          tableName: 'exam_results',
+          recordId: d.examId,
+          newData: {
+            examCode: d.exam.code,
+            publishedAt: publishedAt.toISOString(),
+            candidates: decisions.size,
+          },
         },
-      },
-    }).catch(() => undefined);
+      })
+      .catch(() => undefined);
 
     // ⭐ NOTIFICATIONS (fire-and-forget — jamais bloquantes)
     const notificationReport = await this.notifyParentsAndSchools(
@@ -990,6 +909,8 @@ export class FederisDeliberationService {
       failed: [...decisions.values()].filter((v) => v.decision === 'AJOURNE').length,
       successRate: d.successRate,
       notifications: notificationReport,
+      message:
+        'Résultats publiés — pensez à envoyer les relevés de notes aux écoles (bouton « Envoyer les relevés »).',
     };
   }
 
@@ -1070,7 +991,7 @@ export class FederisDeliberationService {
         ? `Admis(e)${decision.mention ? ` avec la mention « ${decision.mention} »` : ''}${
             decision.average !== null ? ` (moyenne ${decision.average}/20)` : ''
           }. Le détail des résultats est disponible dans l'espace Academia.`
-        : `Le jury de délibération n\u2019a pas retenu l\u2019admission pour cette session. Le détail des résultats est disponible dans l\u2019espace Academia.`;
+        : `Le jury de délibération n\u2019a pas retenu l\u2019admission pour cette session. Le détail des résultats est disponible dans l'espace Academia.`;
 
       await this.notificationService
         .create({
@@ -1110,9 +1031,13 @@ export class FederisDeliberationService {
             recipientId: member.id,
             type: 'FEDERIS_RESULTS_PUBLISHED_SCHOOL',
             title: `Résultats publiés — ${exam.name}`,
-            body: `Le patronat a publié les résultats officiels de l\u2019examen ${exam.name}. Les résultats de vos candidats sont consultables et les parents ont été notifiés.`,
+            body: `Le patronat a publié les résultats officiels de l\u2019examen ${exam.name}. Les résultats de vos candidats sont consultables dans Examen → Examens nationaux → Délibération et relevés de notes.`,
             priority: 'MEDIUM',
-            data: { url: '/app/federis', examId: exam.id, examName: exam.name },
+            data: {
+              url: '/app/exams/national-exams?view=deliberation',
+              examId: exam.id,
+              examName: exam.name,
+            },
             relatedEntityType: 'ExamDeliberation',
             relatedEntityId: exam.id,
           })
@@ -1128,7 +1053,185 @@ export class FederisDeliberationService {
     return { parents: parentsNotified, schoolStaff: staffNotified, schools: schools.size };
   }
 
-  // ── 8. Consultation des résultats (publiés / délibérés) ──────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  // 6. ENVOI DES RELEVÉS DE NOTES AUX ÉCOLES (distribution intelligente)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Distribue le relevé de notes de CHAQUE candidat à son école de
+   * provenance : une ligne ExamDocument (documentType RELEVE_NOTES, statut
+   * PUBLISHED) par candidat — l'école consulte le relevé et le télécharge
+   * dans Examen → Examens nationaux → « Délibération et relevés de notes ».
+   *
+   * Idempotent : un nouvel envoi actualise les documents existants
+   * (décision/moyenne à jour) sans créer de doublons.
+   *
+   * Accessible depuis le module Délibération ET le module Notes et Moyennes
+   * (onglet Relevés de notes) — même endpoint, mêmes garde-fous.
+   */
+  async dispatchReleves(tenantId: string, userId: string, examId: string) {
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertDeliberation(fn);
+
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    if (exam.status !== 'DELIBERATED' && exam.status !== 'RESULTS_PUBLISHED') {
+      throw new BadRequestException(
+        'L\u2019examen doit être délibéré avant l\u2019envoi des relevés — lancez la délibération du jury.',
+      );
+    }
+
+    const board = await this.getDeliberationBoard(tenantId, userId, examId);
+    const deliberation = board.deliberation;
+
+    // Candidats délibérés (ayant composé / au moins une ligne de note)
+    const dispatchable = [...board.admissibles, ...board.ajournes].filter(
+      (r) => r.decision !== 'NON_DELIBERE',
+    );
+    if (dispatchable.length === 0) {
+      throw new BadRequestException('Aucun candidat délibéré — rien à envoyer.');
+    }
+
+    const now = new Date();
+    let created = 0;
+    let updated = 0;
+    let withoutSchool = 0;
+    const schools = new Map<string, string[]>(); // schoolTenantId → candidate names
+
+    for (const row of dispatchable) {
+      // Rattachement école du candidat (ExamCandidate.schoolTenantId)
+      const candidate = await this.prisma.examCandidate.findUnique({
+        where: { id: row.candidateId },
+        select: { schoolTenantId: true, metadata: true },
+      });
+      const schoolTenantId = candidate?.schoolTenantId ?? null;
+      if (!schoolTenantId) {
+        withoutSchool++;
+        continue;
+      }
+
+      const metadata = {
+        schoolTenantId,
+        examCode: exam.code,
+        examName: exam.name,
+        examType: exam.examType,
+        decision: row.decision,
+        decisionLabel: row.decisionLabel,
+        average: row.moyenne,
+        mention: row.mention,
+        rank: row.rank,
+        juryName: deliberation?.juryName ?? null,
+        deliberationStatus: deliberation?.status ?? null,
+        published: exam.status === 'RESULTS_PUBLISHED',
+      };
+
+      const existing = await this.prisma.examDocument.findFirst({
+        where: { examId, candidateId: row.candidateId, documentType: 'RELEVE_NOTES' },
+        select: { id: true },
+      });
+      if (existing) {
+        await this.prisma.examDocument.update({
+          where: { id: existing.id },
+          data: { status: 'PUBLISHED', publishedBy: userId, publishedAt: now, metadata: metadata as any },
+        });
+        updated++;
+      } else {
+        await this.prisma.examDocument.create({
+          data: {
+            tenantId: patronat.tenantId,
+            academicYearId: exam.academicYearId,
+            examId,
+            candidateId: row.candidateId,
+            documentType: 'RELEVE_NOTES',
+            title: `Relevé de notes — ${row.fullName} (${exam.code})`,
+            fileUrl: `/federis/exams/${examId}/pdf/releve/${row.candidateId}`,
+            status: 'PUBLISHED',
+            generatedBy: userId,
+            generatedAt: now,
+            publishedBy: userId,
+            publishedAt: now,
+            metadata: metadata as any,
+          },
+        });
+        created++;
+      }
+      if (!schools.has(schoolTenantId)) schools.set(schoolTenantId, []);
+      schools.get(schoolTenantId)!.push(row.fullName);
+    }
+
+    // ⭐ Notification de la direction de chaque école (pattern superviseurs)
+    let staffNotified = 0;
+    for (const [schoolTenantId, names] of schools) {
+      const staff = await this.prisma.user.findMany({
+        where: { tenantId: schoolTenantId, role: { in: SCHOOL_STAFF_ROLES }, status: 'active' },
+        select: { id: true },
+        take: 25,
+      });
+      for (const member of staff) {
+        await this.notificationService
+          .create({
+            tenantId: schoolTenantId,
+            recipientId: member.id,
+            type: 'FEDERIS_RELEVES_DISPATCHED',
+            title: `Relevés de notes reçus — ${exam.name}`,
+            body: `Le patronat a transmis ${names.length} relevé(s) de notes de vos candidats à l'examen ${exam.name}. Consultez-les dans Examen → Examens nationaux → Délibération et relevés de notes.`,
+            priority: 'HIGH',
+            data: {
+              url: '/app/exams/national-exams?view=deliberation',
+              examId,
+              examName: exam.name,
+              examType: exam.examType,
+              count: names.length,
+            },
+            relatedEntityType: 'ExamDocument',
+            relatedEntityId: examId,
+          })
+          .catch((e) => this.logger.warn(`Notif distribution échouée : ${e.message}`));
+        staffNotified++;
+      }
+    }
+
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_RELEVES_DISPATCHED',
+          resource: 'ExamDocument',
+          resourceId: examId,
+          tableName: 'exam_documents',
+          recordId: examId,
+          newData: {
+            examCode: exam.code,
+            created,
+            updated,
+            schools: schools.size,
+            withoutSchool,
+            staffNotified,
+          },
+        },
+      })
+      .catch(() => undefined);
+
+    this.logger.log(
+      `Relevés ${exam.code} distribués : ${created + updated} document(s) à ${schools.size} école(s)${withoutSchool > 0 ? `, ${withoutSchool} candidat(s) sans école rattachée` : ''}.`,
+    );
+
+    return {
+      documents: created + updated,
+      created,
+      updated,
+      schools: schools.size,
+      schoolStaff: schools.size > 0 ? [...schools.keys()] : [],
+      withoutSchool,
+      staffNotified,
+      message:
+        schools.size > 0
+          ? `${created + updated} relevé(s) envoyé(s) à ${schools.size} école(s)${withoutSchool > 0 ? ` — ${withoutSchool} candidat(s) sans école rattachée ignoré(s)` : ''}.`
+          : `Aucune école rattachée à ces candidats — ${withoutSchool} candidat(s) sans rattachement.`,
+    };
+  }
+
+  // ── 7. Consultation des résultats (publiés / délibérés) ──────────────────
 
   async listResults(tenantId: string, userId: string, examId: string) {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
@@ -1164,8 +1267,8 @@ export class FederisDeliberationService {
           name: `${r.candidate.firstName} ${r.candidate.lastName}`,
           scores: [],
           status: r.status,
-          finalDecision: meta.finalDecision ?? null,
-          finalAverage: meta.finalAverage ?? null,
+          finalDecision: meta.finalDecision ?? meta.decision ?? null,
+          finalAverage: meta.finalAverage ?? meta.average ?? null,
           mention: meta.mention ?? null,
         });
       }

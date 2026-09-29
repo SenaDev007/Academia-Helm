@@ -18,11 +18,15 @@
  *   GET    /federis/exams/:examId/excel/candidats      — export Excel (2026-09-29)
  *   GET    /federis/settings/matricule                 — format matricule (Paramètres)
  *   PUT    /federis/settings/matricule                 — enregistrer le format
+ *   GET    /federis/settings/grading-rules             — règles de calcul (2026-09-30)
+ *   PUT    /federis/settings/grading-rules/:examType   — définir (source de vérité)
+ *   DELETE /federis/settings/grading-rules/:examType   — réinitialiser (défauts)
  */
 
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -52,12 +56,14 @@ import {
   UpdateMatriculeFormatDto,
 } from './federis-exams.service';
 import { FederisCandidatesExportService } from './federis-candidates-export.service';
+import { FederisGradingRulesService, UpdateGradingRuleDto } from './federis-grading-rules.service';
 
 @Controller('federis')
 export class FederisExamsController {
   constructor(
     private readonly examsService: FederisExamsService,
     private readonly candidatesExport: FederisCandidatesExportService,
+    private readonly gradingRulesService: FederisGradingRulesService,
   ) {}
 
   private uid(req: any): string {
@@ -229,5 +235,40 @@ export class FederisExamsController {
   @Put('settings/matricule')
   async updateMatriculeSettings(@Req() req: any, @Body() dto: UpdateMatriculeFormatDto) {
     return this.examsService.updateMatriculeSettings(req.user.tenantId, this.uid(req), dto);
+  }
+
+  // ── Règles de calcul (module Paramètres — 2026-09-30) ──────────────────
+  //    Défauts du backend affichés tant qu'aucune surcharge n'existe ;
+  //    dès qu'une règle est définie, elle devient la source de vérité.
+
+  @UseGuards(JwtAuthGuard)
+  @Get('settings/grading-rules')
+  async getGradingRules(@Req() req: any) {
+    return this.gradingRulesService.getGradingRulesConfig(req.user.tenantId, this.uid(req));
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Put('settings/grading-rules/:examType')
+  async updateGradingRule(
+    @Req() req: any,
+    @Param('examType') examType: string,
+    @Body() dto: UpdateGradingRuleDto,
+  ) {
+    return this.gradingRulesService.upsertGradingRule(
+      req.user.tenantId,
+      this.uid(req),
+      examType,
+      dto,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('settings/grading-rules/:examType')
+  async resetGradingRule(@Req() req: any, @Param('examType') examType: string) {
+    return this.gradingRulesService.resetGradingRule(
+      req.user.tenantId,
+      this.uid(req),
+      examType,
+    );
   }
 }

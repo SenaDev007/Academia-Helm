@@ -11893,3 +11893,27 @@ Stage Summary:
 - L'onglet « documents » (bordereaux/palmarès) retiré de l'UI ; la Banque d'épreuves (module séparé) conserve le recensement des épreuves antérieures téléversées
 - Isolation territoriale vérifiée et propre ; migration idempotente + auto-guérison → zéro action manuelle requise au déploiement
 - 8 fichiers (2 nouveaux backend, 1 nouveau frontend, migration, schéma, module, page, suppression ancien composant) ; commit poussé → Vercel + Railway déploient automatiquement
+
+---
+Task ID: 11
+Agent: Super Z (agent principal)
+Task: Corrections des lenteurs de chargement > 30 s (Helm /app/federis Rattachements + Gestion des surveillants, Academia Federis en général) + erreur 400 création d'examen « Exam type must be one of the following values: CP, BEPC, BAC, CAP »
+
+Work Log:
+- CLONAGE FRAIS du dépôt (sandbox réinitialisé) + vérification : les fixes dépendance circulaire (fb7dc991a + 9fd3f3948, forwardRef FederisPatronatService) sont déjà sur main → conteneur API up 12 h, plus de crash-loop
+- DIAGNOSTIC API EN DIRECT (scripts/diag_federis_perf.mjs, production https://api.academiahelm.com/api) : création d'un patronat QA départemental réel (register → login JWT) puis mesure de TOUS les endpoints federis (profile, exams, identity, schools/discover, pricing, supervisors/requests, supervisors, bureau, school/patronats, school/supervisors) : TOUS répondent en 200-600 ms ; rafale parallèle x8 /federis/exams = 536 ms max ; POST login erroné = 337 ms (DB Neon réactive) → L'API N'EST PAS LE GOULOT D'ÉTRANGLEMENT
+- REPRODUCTION NAVIGATEUR (agent-browser, compte QA patronat créé pour l'occasion) : après login l'app reste bloquée « Chargement des données... PROGRESSION 35 % » pendant 45-60 s SUR CONNEXION RAPIDE ; ~190 requêtes page trackées mais gap d'IDs 423 → 1151 = ~700 fetch Service Worker invisibles : le pré-cache offline (112 routes HTML via PRECACHE_MODULE + ~230 endpoints API via PRECACHE_API + requêtes de découverte) démarre 15-20 s après le login et SATURE le thread SW + la bande passante + le sémaphore ConcurrentConnectionInterceptor (20 slots/user côté backend) → les requêtes VISIBLES des modules métier (timeouts axios 20 s) meurent de faim → « Impossible de charger les patronats / les demandes de surveillants » ; chaque bump de version SW (chaque déploiement) ré-arme la tempête (SW_ACTIVATED invalide le flag 24 h) ; sur connexion école lente (Bénin) chaque requête est multipliée par 3-10 → minutes de famine → Federis « pire » car l'utilisateur teste les deux apps dans le même navigateur (SW partagé à l'origine)
+- CAUSE DU 400 EXAMEN : FederisExamsPage n'expose PAS de champ type d'examen mais POSTait la valeur initiale résiduelle 'NATIONAL' → rejet CreateExamDto @IsIn(['CEP','BEPC','BAC','CAP']) (l'utilisateur a lu « CP » pour « CEP »)
+- FIX sw.js v4.9.0 (public/sw.js) : compteur pageRequestsInFlight + trackedRespondWith sur les 9 points d'interception fetch + waitForIdlePageTraffic() appelé avant CHAQUE lot du pré-cache (precacheApiEndpoints, precacheModule HTML/chunks/RSC) — le pré-cache ne progresse que dans les creux d'activité ; BATCH API 6 → 4, chunks 5 → 4 ; SW_VERSION bump v4.8.1 → v4.9.0 (re-déploiement immédiat chez tous les clients)
+- FIX module-precache.service.ts : isConnectionTooSlowForPrecache() (saveData ou effectiveType 2g/slow-2g) → skip complet des DEUX pré-caches sur connexion manifestement trop juste (flag 24 h non posé → reprise sur meilleure connexion)
+- FIX layout-client.tsx : espacement des tempêtes de fond — pré-cache routes 15 s → 30 s post-login, pré-cache API 5 s → 30 s après le début du pré-cache routes (≈ 60 s post-login) : le bootstrap des données est TERMINÉ avant que le fond ne démarre
+- FIX FederisExamsPage.tsx : examType DÉRIVÉ du niveau sélectionné (CM2→CEP, 3EME→BEPC, TERMINALE→BAC, CAP→CAP, fallback CEP) dans le payload POST + nettoyage de la valeur résiduelle 'NATIONAL' de l'état du formulaire
+- VÉRIFICATIONS : node --check sw.js OK ; tsc ciblé sur les 3 fichiers TS/TSX — aucune erreur réelle (bruit sandbox sans node_modules filtré : TS2307/TS2503 préexistants) ; rebase propre sur 19ac391e9 (conduite/promotion — aucun chevauchement de fichiers)
+- COMMIT + PUSH : 71f0f4e73 sur origin/main → Vercel redéploie le web-app (SW v4.9.0 pris en charge au 2e rechargement chez chaque client via registration.update au focus d'onglet)
+
+Stage Summary:
+- L'API était saine (200-600 ms partout) : la cause des « plus de 30 secondes » était la tempête de pré-cache offline post-login qui affamait les requêtes visibles (thread SW + bande passante + sémaphore 20 slots) — corrigée par cession de priorité (SW v4.9.0), skip sur connexions lentes, et espacement des déclenchements
+- Création d'examen réparée : examType dérivé du niveau (l'erreur « CP/BEPC/BAC/CAP » était le DTO qui recevait 'NATIONAL')
+- La fonctionnalité offline-first est PRÉSERVÉE (pré-cache complet, juste poli et prioritaire aux données visibles)
+- Validation post-déploiement recommandée : recharger 2× l'app (bump SW), ouvrir Rattachements + Gestion des surveillants (attendu < 5 s), créer un examen, laisser la « Préparation hors ligne » tourner à l'arrière-plan
+- Artefacts sandbox : scripts/diag_federis_perf.mjs + scripts/create_qa_browser_account.mjs (comptes QA jetables testqa.perf.*@academiahelm.test / qa.browser.*@academiahelm.test créés sur la production — supprimables)

@@ -1,5 +1,9 @@
 /**
- * FederisGradeRelevesTab — Relevés de notes (module Notes et Moyennes)
+ * FederisGradeRelevesTab — Relevés de notes (⭐ 2026-10-01 : déplacé du module
+ * Notes et Moyennes VERS le module Délibération — sous-onglet « Relevé de
+ * notes » de chaque type d'examen CEP | BEPC | BAC | CAP, car l'envoi aux
+ * écoles exige que la délibération du jury ait été lancée : les deux étapes
+ * vivent désormais dans le MÊME module).
  *
  * Le « bulletin » d'Academia Helm, renommé RELEVÉ DE NOTES dans Federis :
  *   - CEP          → modèle du PRIMAIRE (Champs de formation, note min.,
@@ -13,14 +17,18 @@
  * Aperçu fidèle au PDF backend (A4 paysage) + téléchargements :
  *   GET /federis/exams/:examId/pdf/releve/:candidateId (un candidat)
  *   GET /federis/exams/:examId/pdf/releves             (tous les candidats)
+ * ⭐ « Envoyer aux écoles » : modale de confirmation PROFESSIONNELLE
+ *    (FederisConfirmModal — remplace le window.confirm générique).
  */
 
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
 import { fmtNote } from '@/lib/federis/grade-computations';
+import FederisConfirmModal from '@/components/federis/federis-confirm-modal';
 
 interface ReleveLine {
   subjectId: string;
@@ -88,6 +96,10 @@ interface Releve {
     matieresRequises: number;
     admisCep: boolean;
     admisSixieme: boolean;
+    /** ⭐ Moyenne des matières étoilées (*) — base de la décision 6ème. */
+    moyenneEtoiles: number | null;
+    /** Matières étoilées effectivement notées. */
+    matieresEtoiles: number;
   } | null;
   /** ⭐ BEPC / BAC / CAP — sous-totaux BILAN. */
   bilan: {
@@ -143,9 +155,17 @@ async function downloadFile(url: string, filename: string, timeout = 120000): Pr
 export default function FederisGradeRelevesTab({
   examId,
   subjectsVersion,
+  onNeedDeliberation,
+  deliberationReady,
 }: {
   examId: string;
   subjectsVersion: number;
+  /** ⭐ Renvoi vers l'onglet Délibération du module (l'envoi des relevés
+   *    exige que la délibération du jury ait été lancée). */
+  onNeedDeliberation?: () => void;
+  /** ⭐ true si une délibération existe déjà pour l'examen — sinon bannière
+   *    d'avertissement proactive (l'envoi aux écoles sera refusé). */
+  deliberationReady?: boolean;
 }) {
   const [data, setData] = useState<RelevesData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -154,7 +174,9 @@ export default function FederisGradeRelevesTab({
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<'all' | string | null>(null);
-  // ⭐ Distribution des relevés aux écoles (2026-09-30)
+  // ⭐ Distribution des relevés aux écoles (2026-09-30) — modale professionnelle
+  //    de confirmation au lieu du window.confirm générique (2026-10-01).
+  const [confirmDispatch, setConfirmDispatch] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchNotice, setDispatchNotice] = useState<string | null>(null);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
@@ -251,28 +273,23 @@ export default function FederisGradeRelevesTab({
     }
   };
 
-  /** ⭐ Distribution intelligente : chaque relevé part à l'école du candidat. */
+  /** ⭐ Distribution intelligente : chaque relevé part à l'école du candidat.
+   *    Confirmation via modale professionnelle (FederisConfirmModal). */
   const dispatchToSchools = async () => {
     if (!data?.exam) return;
-    if (
-      !window.confirm(
-        'Envoyer les relevés de notes aux écoles ? Chaque école rattachée recevra les relevés ' +
-          'des candidats qu\u2019elle a présentés (module Délibération → distribution) et sera notifiée immédiatement.',
-      )
-    ) {
-      return;
-    }
     setDispatching(true);
     setDispatchError(null);
     setDispatchNotice(null);
     try {
       const res = await apiClient.post(`/federis/exams/${examId}/releves/dispatch`, {}, { timeout: 60000 });
       setDispatchNotice(res.data?.message ?? 'Relevés envoyés aux écoles.');
+      setConfirmDispatch(false);
     } catch (err: any) {
       const msg = err?.response?.data?.message;
       setDispatchError(
         (Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Envoi impossible — l\u2019examen doit être délibéré.',
       );
+      setConfirmDispatch(false);
     } finally {
       setDispatching(false);
     }
@@ -300,6 +317,29 @@ export default function FederisGradeRelevesTab({
 
   return (
     <div className="space-y-5">
+      {/* ⭐ Bannière proactive : la délibération du jury n'a pas été lancée —
+          l'envoi aux écoles sera refusé par le backend (règle officielle). */}
+      {onNeedDeliberation && deliberationReady === false && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <Send className="w-5 h-5 text-amber-600 shrink-0" />
+          <div className="flex-1">
+            <p className="text-xs font-bold text-amber-800">
+              La délibération du jury n&apos;a pas encore été lancée pour cet examen
+            </p>
+            <p className="text-[11px] text-amber-700 mt-0.5">
+              Les relevés peuvent être consultés et téléchargés, mais l&apos;envoi aux écoles
+              exige que la délibération ait été lancée au préalable (même module).
+            </p>
+          </div>
+          <button
+            onClick={onNeedDeliberation}
+            className="shrink-0 px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase bg-blue-900 text-white hover:bg-blue-800 inline-flex items-center gap-2"
+          >
+            Ouvrir la délibération
+          </button>
+        </div>
+      )}
+
       {/* Barre d'actions */}
       <div className="fed-card px-6 py-4 flex flex-col lg:flex-row lg:items-center gap-3 flex-wrap">
         <h3 className="text-sm font-bold text-blue-900 uppercase flex-1">
@@ -322,9 +362,13 @@ export default function FederisGradeRelevesTab({
         >
           {downloading === 'all' ? 'Génération…' : `Tous les relevés PDF (${releves.length})`}
         </button>
-        {/* ⭐ Distribution : chaque relevé part à l'école du candidat (2026-09-30) */}
+        {/* ⭐ Distribution : chaque relevé part à l'école du candidat (2026-09-30)
+            — confirmation via modale professionnelle (2026-10-01) */}
         <button
-          onClick={dispatchToSchools}
+          onClick={() => {
+            setDispatchError(null);
+            setConfirmDispatch(true);
+          }}
           disabled={downloading !== null || dispatching}
           title="Chaque école rattachée reçoit les relevés des candidats qu'elle a présentés et est notifiée"
           className="fed-btn-gold px-5 py-2.5 text-[10px] font-bold uppercase disabled:opacity-50"
@@ -335,7 +379,22 @@ export default function FederisGradeRelevesTab({
 
       {error && <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800">{error}</div>}
       {notice && <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-6 py-4 text-sm font-semibold text-emerald-800">{notice}</div>}
-      {dispatchError && <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800">{dispatchError}</div>}
+      {dispatchError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800 flex flex-col sm:flex-row sm:items-center gap-3">
+          <span className="flex-1">{dispatchError}</span>
+          {/* ⭐ Renvoi direct vers l'onglet Délibération (même module) : l'envoi
+              exige que la délibération du jury ait été lancée. */}
+          {onNeedDeliberation && (
+            <button
+              onClick={onNeedDeliberation}
+              className="shrink-0 px-4 py-2 rounded-xl text-[10px] font-bold uppercase bg-blue-900 text-white hover:bg-blue-800 inline-flex items-center gap-2"
+            >
+              <Send className="w-3.5 h-3.5" />
+              Ouvrir la délibération
+            </button>
+          )}
+        </div>
+      )}
       {dispatchNotice && <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-6 py-4 text-sm font-semibold text-emerald-800">{dispatchNotice}</div>}
 
       <div className="grid grid-cols-1 xl:grid-cols-[340px_1fr] gap-5 items-start">
@@ -421,6 +480,41 @@ export default function FederisGradeRelevesTab({
           </div>
         )}
       </div>
+
+      {/* ⭐ Modale professionnelle « Envoyer aux écoles » (remplace le
+          window.confirm générique) — données clés, prérequis de délibération. */}
+      <FederisConfirmModal
+        open={confirmDispatch}
+        title="Envoyer les relevés de notes aux écoles ?"
+        message={
+          <>
+            Chaque école rattachée recevra les relevés de notes des candidats qu&apos;elle a
+            présentés et sera notifiée immédiatement dans son espace Academia Helm.
+          </>
+        }
+        icon={Send}
+        tone="gold"
+        details={[
+          { label: 'Examen', value: `${data.exam.code} — ${data.exam.name}` },
+          { label: 'Candidats concernés', value: releves.length },
+          {
+            label: 'Écoles destinataires',
+            value: new Set(releves.map((r) => r.candidate.school).filter(Boolean)).size,
+          },
+        ]}
+        note={
+          <>
+            L&apos;envoi exige que la <b>délibération du jury</b> ait été lancée (onglet
+            « Délibération » de ce module). Un nouvel envoi actualise les documents déjà
+            distribués (décisions à jour).
+          </>
+        }
+        confirmLabel="Envoyer aux écoles"
+        cancelLabel="Annuler"
+        loading={dispatching}
+        onConfirm={dispatchToSchools}
+        onCancel={() => setConfirmDispatch(false)}
+      />
     </div>
   );
 }
@@ -638,7 +732,14 @@ function ReleveCepPreview({ releve, patronat }: { releve: Releve; patronat: Patr
           </tr>
           <tr>
             <td className="border-r border-black px-3 py-1 text-[10px] font-bold">ENTRÉE EN SIXIÈME</td>
-            <td className={cn('px-3 py-1 text-center text-[11px] font-bold uppercase', adm?.admisSixieme ? 'text-emerald-700' : 'text-red-700')}>
+            <td
+              title={
+                adm?.moyenneEtoiles != null
+                  ? `Moyenne des matières * : ${String(adm.moyenneEtoiles).replace('.', ',')}/20 (admission ≥ 10/20)`
+                  : undefined
+              }
+              className={cn('px-3 py-1 text-center text-[11px] font-bold uppercase', adm?.admisSixieme ? 'text-emerald-700' : 'text-red-700')}
+            >
               {adm?.admisSixieme ? 'Admis' : 'Ajourné(e)'}
             </td>
           </tr>
@@ -652,7 +753,7 @@ function ReleveCepPreview({ releve, patronat }: { releve: Releve; patronat: Patr
           Est déclaré(e) admis(e) au CEP tout(e) candidat(e) ayant obtenu la note minimale exigée dans au moins {adm?.matieresRequises ?? 6} des {nbMatieres || 9} matières.
         </p>
         <p className="text-[8px] text-justify leading-snug">
-          Est déclaré(e) admis(e) à l'entrée en 6ème tout(e) candidat(e) reçu(e) au CEP et ayant obtenu une note de perfectionnement différente de zéro (0) dans l'une des trois (03) matières marquées d'un astérisque (*).
+          Est déclaré(e) admis(e) à l'entrée en 6ème tout(e) candidat(e) ayant obtenu une moyenne au moins égale à dix (10) sur 20 dans les trois (03) matières marquées d'un astérisque (*).
         </p>
         <p className="text-[8px] text-justify leading-snug">
           La note de perfectionnement n'est attribuée que quand le (la) candidat(e) a obtenu la note minimale exigée.

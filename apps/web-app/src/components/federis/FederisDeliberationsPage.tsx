@@ -11,15 +11,21 @@
  *   1. Sélection du TYPE D'EXAMEN : CEP | BEPC | BAC | CAP (jamais de
  *      mélange — pattern module Candidats / Notes et Moyennes), puis
  *      campagne de ce type ;
- *   2. DEUX TABLEAUX — chacun occupe la moitié de l'interface :
+ *   2. ⭐ 2026-10-01 — DEUX SOUS-ONGLETS PAR TYPE D'EXAMEN : « Délibération »
+ *      et « Relevé de notes » (déplacé du module Notes et Moyennes) : l'envoi
+ *      des relevés exige que la délibération du jury ait été lancée → les
+ *      deux étapes vivent dans le MÊME module (règle : le relevé du CEP
+ *      reste au CEP, celui du BEPC au BEPC, etc.) ;
+ *   3. Sous-onglet DÉLIBÉRATION — DEUX TABLEAUX, chacun occupe la moitié de
+ *      l'interface :
  *        · GAUCHE  : Liste des admissibles (moyenne ≥ seuil d'admission) ;
  *        · DROITE  : Candidats ajournés (sous le seuil — cas du jury,
  *                    sans note) ;
  *      Colonnes : matricule / nom prénom / moyenne / décision du jury
  *      (pattern Promotion & Redoublement Helm) ;
- *   3. Workflow du jury : lancer la délibération (nom du jury) → trancher
+ *   4. Workflow du jury : lancer la délibération (nom du jury) → trancher
  *      les cas limites → clôturer → publier (coordonnateur) ;
- *   4. Documents & distribution :
+ *   5. Documents & distribution :
  *        · « Générer la liste PDF » — liste officielle backend (admissibles
  *          + ajournés, décision du jury, bandeau provisoire avant
  *          publication) ;
@@ -34,6 +40,7 @@
  *       POST /federis/deliberations/:id/publish
  *       POST /federis/exams/:examId/releves/dispatch
  *       GET  /federis/exams/:examId/pdf/deliberation
+ *       GET  /federis/exams/:examId/grades/releves   (sous-onglet Relevé de notes)
  */
 
 'use client';
@@ -42,7 +49,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Gavel,
   Loader2,
-  RefreshCw,
   Search,
   Send,
   FileDown,
@@ -63,6 +69,10 @@ import { canWrite, normalizePatronatRole } from '@/lib/patronat/permissions';
 import { useFederisExams, EXAM_STATUS_LABELS } from '@/hooks/useFederisExams';
 import { federisMirror } from '@/lib/federis/federis-mirror.service';
 import { FedPage, FedCountUp, FedSectionTitle } from '@/components/federis/federis-motion';
+// ⭐ 2026-10-01 — sous-onglet « Relevé de notes » (déplacé du module Notes et
+//    Moyennes) + modale de confirmation professionnelle (window.confirm →)
+import FederisGradeRelevesTab from '@/components/federis/FederisGradeRelevesTab';
+import FederisConfirmModal from '@/components/federis/federis-confirm-modal';
 
 // ─── Types (réponses API) ────────────────────────────────────────────────────
 
@@ -154,6 +164,16 @@ const EXAM_TYPES: Array<{ type: ExamType; label: string }> = [
   { type: 'CAP', label: 'CAP' },
 ];
 
+/** ⭐ 2026-10-01 — Sous-onglets du module Délibération (par type d'examen) :
+ *    la délibération du jury et les relevés de notes vivent dans le MÊME
+ *    module car l'envoi des relevés exige une délibération préalable. */
+type ModuleTab = 'deliberation' | 'releves';
+
+const MODULE_TABS: Array<{ key: ModuleTab; label: string }> = [
+  { key: 'deliberation', label: 'Délibération' },
+  { key: 'releves', label: 'Relevé de notes' },
+];
+
 const TYPE_MODEL_LABEL: Record<string, string> = {
   CEP: 'Moyenne simple — primaire (sans coefficients)',
   BEPC: 'Moyenne pondérée — secondaire (avec coefficients)',
@@ -234,10 +254,17 @@ export default function FederisDeliberationsPage({
   const [searchAdm, setSearchAdm] = useState('');
   const [searchAjo, setSearchAjo] = useState('');
 
+  // ⭐ Sous-onglet actif : Délibération | Relevé de notes (reset par campagne)
+  const [moduleTab, setModuleTab] = useState<ModuleTab>('deliberation');
+
   // Modale de lancement (nom du jury)
   const [runOpen, setRunOpen] = useState(false);
   const [juryName, setJuryName] = useState('');
   const [runError, setRunError] = useState<string | null>(null);
+
+  // ⭐ Confirmations professionnelles (remplacent les window.confirm génériques)
+  const [confirmDispatch, setConfirmDispatch] = useState(false);
+  const [confirmPublish, setConfirmPublish] = useState(false);
 
   // Panneau des cas limites
   const [casesOpen, setCasesOpen] = useState(false);
@@ -290,6 +317,7 @@ export default function FederisDeliberationsPage({
     setNotice(null);
     setCasesOpen(false);
     setRunOpen(false);
+    setModuleTab('deliberation');
     void load();
   }, [load]);
 
@@ -418,14 +446,6 @@ export default function FederisDeliberationsPage({
 
   const publishResults = async () => {
     if (!board?.deliberation) return;
-    if (
-      !window.confirm(
-        'Publier officiellement les résultats ? Les parents et les écoles sont notifiés, ' +
-          'les notes sont définitivement verrouillées et l\u2019examen passe en « Résultats publiés ».',
-      )
-    ) {
-      return;
-    }
     setWorking('publish');
     setError(null);
     setNotice(null);
@@ -439,10 +459,12 @@ export default function FederisDeliberationsPage({
         `Résultats publiés — ${res.data?.admitted ?? 0} admis(e)s, ${res.data?.failed ?? 0} ajourné(e)s. ` +
           (res.data?.message ?? 'Pensez à envoyer les relevés de notes aux écoles.'),
       );
+      setConfirmPublish(false);
       await load(true);
     } catch (err: any) {
       const msg = err?.response?.data?.message;
       setError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Publication impossible.');
+      setConfirmPublish(false);
     } finally {
       setWorking(null);
     }
@@ -450,14 +472,6 @@ export default function FederisDeliberationsPage({
 
   const dispatchReleves = async () => {
     if (!examId) return;
-    if (
-      !window.confirm(
-        'Envoyer les relevés de notes aux écoles ? Chaque école rattachée recevra les relevés ' +
-          'des candidats qu\u2019elle a présentés et sera notifiée immédiatement.',
-      )
-    ) {
-      return;
-    }
     setWorking('dispatch');
     setError(null);
     setNotice(null);
@@ -468,10 +482,12 @@ export default function FederisDeliberationsPage({
         { timeout: 60000 },
       );
       setNotice(res.data?.message ?? 'Relevés envoyés aux écoles.');
+      setConfirmDispatch(false);
       await load(true);
     } catch (err: any) {
       const msg = err?.response?.data?.message;
       setError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Envoi impossible.');
+      setConfirmDispatch(false);
     } finally {
       setWorking(null);
     }
@@ -543,9 +559,12 @@ export default function FederisDeliberationsPage({
           <div className="fed-badge mb-2">Module délibération</div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Délibération</h1>
           <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-            Délibération du jury et publication officielle des résultats. La saisie des notes se
-            fait dans le module <strong>Notes et Moyennes</strong> ; les seuils d&apos;admission et
-            de rachat sont pilotés dans <strong>Paramètres → Règles de calcul</strong>.
+            Délibération du jury, publication officielle des résultats et <strong>relevés de
+            notes</strong> — chaque examen (CEP, BEPC, Baccalauréat, CAP) réunit ses deux
+            sous-onglets : délibérez, publiez, puis envoyez les relevés aux écoles depuis le
+            même module. La saisie des notes se fait dans <strong>Notes et Moyennes</strong> ;
+            les seuils d&apos;admission et de rachat sont pilotés dans{' '}
+            <strong>Paramètres → Règles de calcul</strong>.
           </p>
         </div>
         <div className="flex gap-4">
@@ -655,8 +674,34 @@ export default function FederisDeliberationsPage({
         </div>
       )}
 
-      {/* Bandeau règles + actions */}
-      {board && (
+      {/* ⭐ Sous-onglets du module : Délibération | Relevé de notes
+          (pattern FederisGradesPage — reset au changement de campagne) */}
+      {examId && (
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Sections du module délibération">
+          {MODULE_TABS.map((t) => {
+            const isActive = moduleTab === t.key;
+            return (
+              <button
+                key={t.key}
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setModuleTab(t.key)}
+                className={cn(
+                  'px-5 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-wide border transition-all',
+                  isActive
+                    ? 'bg-white text-blue-900 border-blue-900 shadow-sm'
+                    : 'bg-white/60 text-slate-500 border-slate-200 hover:border-blue-900/40 hover:text-blue-900',
+                )}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Bandeau règles + actions (sous-onglet Délibération) */}
+      {moduleTab === 'deliberation' && board && (
         <div className="fed-card px-6 py-5 space-y-4">
           <div className="flex flex-col lg:flex-row lg:items-center gap-4 flex-wrap">
             <Scale className="w-5 h-5 text-blue-900 shrink-0" />
@@ -735,10 +780,10 @@ export default function FederisDeliberationsPage({
                 </button>
               )}
 
-              {/* Publier */}
+              {/* Publier — confirmation via modale professionnelle */}
               {d?.status === 'COMPLETED' && canPublish && (
                 <button
-                  onClick={publishResults}
+                  onClick={() => setConfirmPublish(true)}
                   disabled={working !== null}
                   className="px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center gap-2"
                 >
@@ -767,11 +812,12 @@ export default function FederisDeliberationsPage({
                 </button>
               )}
 
-              {/* Envoyer les relevés de notes aux écoles */}
+              {/* Envoyer les relevés de notes aux écoles — confirmation via
+                  modale professionnelle */}
               {(workflowStep === 'cloturee' || workflowStep === 'publiee' || examStatus === 'DELIBERATED') &&
                 canDeliberate && (
                   <button
-                    onClick={dispatchReleves}
+                    onClick={() => setConfirmDispatch(true)}
                     disabled={working !== null}
                     title="Distribue le relevé de notes de chaque candidat à son école de provenance"
                     className="fed-btn-gold px-5 py-2.5 text-[10px] font-bold uppercase disabled:opacity-50 inline-flex items-center gap-2"
@@ -827,8 +873,8 @@ export default function FederisDeliberationsPage({
         </div>
       )}
 
-      {/* Panneau des cas limites */}
-      {d && casesOpen && (d.cases ?? []).length > 0 && (
+      {/* Panneau des cas limites (sous-onglet Délibération) */}
+      {moduleTab === 'deliberation' && d && casesOpen && (d.cases ?? []).length > 0 && (
         <div className="fed-card p-6 space-y-4">
           <div className="flex items-center justify-between gap-3">
             <FedSectionTitle
@@ -933,20 +979,21 @@ export default function FederisDeliberationsPage({
         </div>
       )}
 
-      {/* Chargement / erreur du board */}
-      {loading && !board && (
+      {/* Chargement / erreur du board (sous-onglet Délibération) */}
+      {moduleTab === 'deliberation' && loading && !board && (
         <div className="fed-card px-6 py-10 text-center text-sm font-bold text-slate-400">
           Chargement de la délibération…
         </div>
       )}
-      {error && !board && (
+      {moduleTab === 'deliberation' && error && !board && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800">
           {error}
         </div>
       )}
 
-      {/* ⭐ DEUX TABLEAUX — chacun occupe la moitié de l'interface */}
-      {board && (
+      {/* ⭐ DEUX TABLEAUX — chacun occupe la moitié de l'interface
+          (sous-onglet Délibération) */}
+      {moduleTab === 'deliberation' && board && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
           {/* ── GAUCHE : Liste des admissibles ── */}
           <div className="fed-card overflow-hidden">
@@ -1003,8 +1050,22 @@ export default function FederisDeliberationsPage({
         </div>
       )}
 
-      {/* Modale de lancement de la délibération */}
-      {runOpen && (
+      {/* ⭐ Sous-onglet RELEVÉ DE NOTES — déplacé du module Notes et Moyennes :
+          aperçu officiel par candidat + PDF + envoi aux écoles (la décision
+          d'envoi échoue tant que la délibération n'est pas lancée → bouton de
+          renvoi « Ouvrir la délibération » vers le sous-onglet Délibération). */}
+      {moduleTab === 'releves' && examId && (
+        <FederisGradeRelevesTab
+          key={`releves-${examId}`}
+          examId={examId}
+          subjectsVersion={0}
+          onNeedDeliberation={() => setModuleTab('deliberation')}
+          deliberationReady={board ? !!board.deliberation : undefined}
+        />
+      )}
+
+      {/* Modale de lancement de la délibération (sous-onglet Délibération) */}
+      {moduleTab === 'deliberation' && runOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
@@ -1083,6 +1144,83 @@ export default function FederisDeliberationsPage({
           </div>
         </div>
       )}
+
+      {/* ⭐ Modale professionnelle « Envoyer les relevés de notes aux écoles »
+          (remplace le window.confirm générique) — données clés du board. */}
+      <FederisConfirmModal
+        open={confirmDispatch}
+        title="Envoyer les relevés de notes aux écoles ?"
+        message={
+          <>
+            Chaque école rattachée recevra les relevés de notes des candidats qu&apos;elle a
+            présentés et sera notifiée immédiatement dans son espace Academia Helm.
+          </>
+        }
+        icon={Send}
+        tone="gold"
+        details={
+          board
+            ? [
+                { label: 'Examen', value: `${board.exam.code} — ${board.exam.name}` },
+                { label: 'Candidats', value: board.stats.totalCandidates },
+                { label: 'Admissibles', value: board.stats.admissibles },
+                { label: 'Écoles destinataires', value: board.dispatch.schoolsCount },
+              ]
+            : undefined
+        }
+        note={
+          <>
+            Un nouvel envoi actualise les documents déjà distribués (décisions à jour).
+            Le détail et l&apos;aperçu de chaque relevé se trouvent dans le sous-onglet
+            « Relevé de notes » de ce module.
+          </>
+        }
+        confirmLabel="Envoyer aux écoles"
+        cancelLabel="Annuler"
+        loading={working === 'dispatch'}
+        onConfirm={dispatchReleves}
+        onCancel={() => setConfirmDispatch(false)}
+      />
+
+      {/* ⭐ Modale professionnelle « Publier les résultats » (remplace le
+          window.confirm générique) — avertissement d'irréversibilité. */}
+      <FederisConfirmModal
+        open={confirmPublish}
+        title="Publier officiellement les résultats ?"
+        message={
+          <>
+            La liste de délibération devient officielle pour l&apos;examen{' '}
+            <b>{board?.exam.code}</b> : les parents et les écoles sont notifiés et les
+            relevés peuvent être envoyés.
+          </>
+        }
+        icon={ShieldCheck}
+        tone="emerald"
+        details={
+          board
+            ? [
+                { label: 'Admis(e)s', value: board.stats.admissibles },
+                { label: 'Ajourné(e)s', value: board.stats.ajournes },
+                {
+                  label: 'Taux de réussite',
+                  value: board.stats.successRate != null ? `${fmtNote(board.stats.successRate)} %` : '—',
+                },
+              ]
+            : undefined
+        }
+        warning={
+          <>
+            Action <b>officielle et irréversible</b> : les notes sont définitivement
+            verrouillées et l&apos;examen passe en « Résultats publiés ».
+          </>
+        }
+        note="Pensez ensuite à envoyer les relevés de notes aux écoles."
+        confirmLabel="Publier les résultats"
+        cancelLabel="Annuler"
+        loading={working === 'publish'}
+        onConfirm={publishResults}
+        onCancel={() => setConfirmPublish(false)}
+      />
     </FedPage>
   );
 }

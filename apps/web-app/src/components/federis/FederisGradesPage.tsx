@@ -8,8 +8,12 @@
  *   2. Le tableau de saisie s'adapte au type :
  *        · CEP → saisie du PRIMAIRE (sans coefficients) ;
  *        · BEPC / BAC / CAP → saisie du SECONDAIRE avec coefficients ;
- *   3. Trois sous-onglets : Saisie des notes | Registre des notes |
- *      Relevés de notes (le « bulletin » Helm, renommé relevé) ;
+ *   3. Sous-onglets : Saisie des notes | Registre des notes |
+ *      Suivi temps réel — ⭐ 2026-10-01 : le sous-onglet « Relevés de notes »
+ *      a DÉMÉNAGÉ dans le module Délibération (sous-onglet de chaque type
+ *      d'examen CEP | BEPC | BAC | CAP), car l'envoi aux écoles exige que
+ *      la délibération du jury ait été lancée : les deux étapes vivent
+ *      désormais dans le MÊME module ;
  *   4. Gestion des matières et coefficients (jeu officiel initialisable en
  *      un clic, puis ajustable — séries du BAC, filières du CAP…).
  */
@@ -24,9 +28,10 @@ import { useFederisExams, EXAM_STATUS_LABELS } from '@/hooks/useFederisExams';
 import { FedPage, FedCountUp } from '@/components/federis/federis-motion';
 import FederisGradeSheetTab from '@/components/federis/FederisGradeSheetTab';
 import FederisGradeRegistryTab from '@/components/federis/FederisGradeRegistryTab';
-import FederisGradeRelevesTab from '@/components/federis/FederisGradeRelevesTab';
 // ⭐ 2026-10-01 — Suivi TEMPS RÉEL de la saisie par les secrétaires
 import FederisGradeLiveTab from '@/components/federis/FederisGradeLiveTab';
+// ⭐ 2026-10-01 — « Relevés de notes » déménage dans le module Délibération
+//    (FederisDeliberationsPage — sous-onglet de chaque type d'examen).
 
 /** Ordre canonique des types d'examen (catégorisation — jamais de mélange). */
 const EXAM_TYPES: Array<{ type: 'CEP' | 'BEPC' | 'BAC' | 'CAP'; label: string }> = [
@@ -43,15 +48,15 @@ const TYPE_MODEL_LABEL: Record<string, string> = {
   CAP: 'Saisie du secondaire — avec coefficients',
 };
 
-type SubTab = 'saisie' | 'registre' | 'releves' | 'live';
+type SubTab = 'saisie' | 'registre' | 'live';
 
 const SUB_TABS: Array<{ key: SubTab; label: string }> = [
   { key: 'saisie', label: 'Saisie des notes' },
   { key: 'registre', label: 'Registre des notes' },
-  { key: 'releves', label: 'Relevés de notes' },
   // ⭐ 2026-10-01 — suivi en direct de la saisie déléguée aux secrétaires
   //    (comptes provisoires) : progression par centre / salle / secrétaire
   { key: 'live', label: 'Suivi temps réel' },
+  // ⭐ « Relevés de notes » vit désormais dans le module Délibération
 ];
 
 interface SubjectRow {
@@ -255,9 +260,10 @@ export default function FederisGradesPage({ userRole }: FederisGradesPageProps) 
           <div className="fed-badge mb-2">Module notes et moyennes</div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Notes et moyennes</h1>
           <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-            Saisie des notes, registre et relevés des examens nationaux — reproduit le module Examen
+            Saisie et registre des notes des examens nationaux — reproduit le module Examen
             d&apos;Academia Helm : saisie du <strong>primaire</strong> pour le CEP (sans coefficients),
             saisie du <strong>secondaire avec coefficients</strong> pour le BEPC, le BAC et le CAP.
+            Les <strong>relevés de notes</strong> sont générés dans le module <strong>Délibération</strong>.
           </p>
         </div>
         <div className="flex gap-4">
@@ -544,7 +550,8 @@ export default function FederisGradesPage({ userRole }: FederisGradesPageProps) 
         </div>
       )}
 
-      {/* ⭐ 2. Sous-onglets : Saisie | Registre | Relevés */}
+      {/* ⭐ 2. Sous-onglets : Saisie | Registre | Suivi temps réel
+          (Relevés de notes → module Délibération) */}
       {examId && (
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Sections du module notes">
           {SUB_TABS.map((t) => {
@@ -581,9 +588,6 @@ export default function FederisGradesPage({ userRole }: FederisGradesPageProps) 
       )}
       {examId && subTab === 'registre' && (
         <FederisGradeRegistryTab key={`registre-${examId}`} examId={examId} subjectsVersion={subjectsVersion} />
-      )}
-      {examId && subTab === 'releves' && (
-        <FederisGradeRelevesTab key={`releves-${examId}`} examId={examId} subjectsVersion={subjectsVersion} />
       )}
       {examId && subTab === 'live' && (
         <FederisGradeLiveTab key={`live-${examId}`} examId={examId} userRole={userRole} />

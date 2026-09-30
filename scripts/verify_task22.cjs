@@ -121,7 +121,7 @@ function evalBackendHelpers() {
         .replace(/\\s+/g, ' ').trim();
     }
     function round2(n) { return Math.round(n * 100) / 100; }
-    const CEP_CM_MAX = 18; const CEP_CP_MAX = 2;
+    const CEP_CM_MAX = 18; const CEP_CP_MAX = 2; const CEP_SIXIEME_THRESHOLD = 10;
   `;
   for (const n of names) code += '\n' + extractFunction(src, n) + '\n';
   const js = transpileSnippet(code);
@@ -199,7 +199,10 @@ const linesOfficiel = mkLines([
 ]);
 const adm1 = B.computeCepAdmission(linesOfficiel, 9);
 check('Cas officiel : admis au CEP (8 matières ≥ min)', adm1.admisCep === true);
-check('Cas officiel : admis en 6ème (CP > 0 sur matière étoilée)', adm1.admisSixieme === true);
+// ⭐ Task 25 (2026-10-01) : la 6ème est décidée par la MOYENNE des matières
+//    étoilées (≥ 10/20) — plus de condition de perfectionnement (CP > 0).
+check('Cas officiel : admis en 6ème (moyenne étoilées 12,83 ≥ 10 — règle Task 25)',
+  adm1.admisSixieme === true && adm1.moyenneEtoiles === 12.83 && adm1.matieresEtoiles === 3);
 check('Cas officiel : 6 matières requises sur 9', adm1.matieresRequises === 6);
 check('Cas officiel : 8 matières réussies', adm1.matieresReussies === 8);
 
@@ -210,7 +213,8 @@ const adm2 = B.computeCepAdmission(
   9,
 );
 check('5/9 réussies → ajourné au CEP', adm2.admisCep === false);
-check('Ajourné CEP → ajourné 6ème même avec CP étoilé', adm2.admisSixieme === false);
+check('Ajourné CEP mais moyenne étoilées 10,50 → admis 6ème (règle indépendante Task 25)',
+  adm2.admisSixieme === true && adm2.moyenneEtoiles === 10.5);
 
 // Admis CEP mais CP = 0 partout → admis CEP, ajourné 6ème
 const adm3 = B.computeCepAdmission(
@@ -219,7 +223,8 @@ const adm3 = B.computeCepAdmission(
   9,
 );
 check('9/9 réussies sans CP → admis CEP', adm3.admisCep === true);
-check('Admis CEP sans perfectionnement → ajourné 6ème', adm3.admisSixieme === false);
+check('CP = 0 partout mais moyenne étoilées 13,67 → admis 6ème (règle Task 25)',
+  adm3.admisSixieme === true && adm3.moyenneEtoiles === 13.67);
 
 // Absents exclus du décompte
 const adm4 = B.computeCepAdmission(

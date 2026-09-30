@@ -104,15 +104,19 @@ const federisNavItems = [
       //    le catalogue vit désormais dans la Banque d'épreuves)
       { name: 'Épreuves et documents', subPath: '/documents', icon: 'document' as const },
       // ⭐ 2026-09-29 — module « Notes et Moyennes » (avant la délibération) :
-      //    saisie des notes (primaire CEP / secondaire avec coefficients),
-      //    registre des notes et relevés de notes — reproduit le module
-      //    Examen d'Academia Helm
+      //    saisie des notes (primaire CEP / secondaire avec coefficients)
+      //    et registre des notes — reproduit le module Examen d'Academia Helm.
+      //    ⭐ 2026-10-01 : les RELEVÉS DE NOTES vivent désormais dans le module
+      //    Délibération (leur envoi exige une délibération préalable)
       { name: 'Notes et moyennes', subPath: '/grades', icon: 'grades' as const },
       // ⭐ 2026-10-01 — UI dédiée des secrétaires de saisie (comptes
       //    provisoires créés à l'affectation SECRÉTARIAT) — filtrée par
       //    canAccessRoute : visible UNIQUEMENT pour la fonction SAISIE_NOTES.
       { name: 'Saisie des notes', subPath: '/saisie', icon: 'grades' as const },
-      { name: 'Délibérations', subPath: '/deliberations', icon: 'document' as const },
+      // ⭐ 2026-10-01 — le module couvre la délibération du jury ET les relevés
+      //    de notes (sous-onglets de chaque type d'examen CEP/BEPC/BAC/CAP) :
+      //    l'envoi des relevés exige que la délibération ait été lancée
+      { name: 'Délibération & relevés', subPath: '/deliberations', icon: 'document' as const },
     ]
   },
   {

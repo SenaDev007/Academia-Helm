@@ -2145,7 +2145,7 @@ ${sectionsHtml}
 
       <div class="rules">
         <p>Est d\u00e9clar\u00e9(e) admis(e) au CEP tout(e) candidat(e) ayant obtenu la note minimale exig\u00e9e dans au moins ${esc(String(adm?.matieresRequises ?? 6))} des ${esc(String(nbMatieres || 9))} mati\u00e8res.</p>
-        <p>Est d\u00e9clar\u00e9(e) admis(e) \u00e0 l\u2019entr\u00e9e en 6\u00e8me tout(e) candidat(e) re\u00e7u(e) au CEP et ayant obtenu une note de perfectionnement diff\u00e9rente de z\u00e9ro (0) dans l\u2019une des trois (03) mati\u00e8res marqu\u00e9es d\u2019un ast\u00e9risque (*).</p>
+        <p>Est d\u00e9clar\u00e9(e) admis(e) \u00e0 l\u2019entr\u00e9e en 6\u00e8me tout(e) candidat(e) ayant obtenu une moyenne au moins \u00e9gale \u00e0 dix (10) sur 20 dans les trois (03) mati\u00e8res marqu\u00e9es d\u2019un ast\u00e9risque (*).</p>
         <p>La note de perfectionnement n\u2019est attribu\u00e9e que quand le (la) candidat(e) a obtenu la note minimale exig\u00e9e.</p>
       </div>
     </section>`;

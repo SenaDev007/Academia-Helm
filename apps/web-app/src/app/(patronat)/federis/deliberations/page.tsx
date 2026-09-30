@@ -6,6 +6,10 @@
  *    isolé SANS FederisLayout ni vérification de session — le clic dans la
  *    sidebar « sortait » de l'application. Pattern des autres pages : composant
  *    serveur + session + layout institutionnel.
+ * ⭐ FIX BOUTONS (2026-10-01) : userRole n'était PAS transmis au composant →
+ *    canDeliberate/canPublish toujours faux → les boutons « Lancer la
+ *    délibération », « Clôturer », « Publier » et « Envoyer les relevés »
+ *    étaient INVISIBLES (patronat dans l'impossibilité de délibérer).
  */
 
 import { Metadata } from 'next';
@@ -48,7 +52,7 @@ export default async function DeliberationsPage() {
 
   return (
     <FederisLayout user={user} federis={federis} currentAcademicYear={undefined}>
-      <FederisDeliberationsPage />
+      <FederisDeliberationsPage userRole={user.role} />
     </FederisLayout>
   );
 }

@@ -295,9 +295,9 @@ export function cepCpGate(cm: number | null, minRequise: number): number | null 
   return cm !== null && cm >= minRequise ? null : 0;
 }
 
-/** Matières « étoilées » du CEP : le perfectionnement dans l'une d'elles
- *  conditionne l'admission en 6ème (Expression Écrite, Compréhension de
- *  l'Écrit / Lecture, Mathématiques — astérisque du relevé officiel). */
+/** Matières « étoilées » du CEP (astérisque du relevé officiel : Expression
+ *  Écrite, Compréhension de l'Écrit / Lecture, Mathématiques) — ⭐ leur
+ *  MOYENNE conditionne l'admission en 6ème (règle utilisateur 2026-10-01). */
 export function isCepPerfectionnementSubject(code: string, name: string): boolean {
   const n = normalizeSubjectName(`${code} ${name}`);
   return (
@@ -313,14 +313,24 @@ export function isCepPerfectionnementSubject(code: string, name: string): boolea
 /** Décision du jury du CEP (règles officielles du relevé) :
  *   - ADMIS AU CEP : note minimale exigée atteinte dans au moins 6 des
  *     9 matières (générique : les 2/3 des matières de l'examen) ;
- *   - ADMIS EN 6ÈME : admis au CEP + note de perfectionnement non nulle
- *     dans l'une des matières étoilées. */
+ *   - ADMIS EN 6ÈME : ⭐ règle utilisateur (2026-10-01) — la MOYENNE des
+ *     matières marquées d'un astérisque (*) détermine seule l'admission :
+ *     moyenne ≥ 10/20 → admis(e) en 6ème. Repli : si aucune matière
+ *     étoilée n'est définie (jeu de matières personnalisé), la moyenne
+ *     générale de l'examen est utilisée. */
+export const CEP_SIXIEME_THRESHOLD = 10;
+
 export interface CepAdmission {
   matieresNotees: number;
   matieresReussies: number;
   matieresRequises: number;
   admisCep: boolean;
   admisSixieme: boolean;
+  /** ⭐ Moyenne des matières étoilées (note /20 = CM + CP) — base de la
+   *    décision d'admission en 6ème ; null si aucune note exploitable. */
+  moyenneEtoiles: number | null;
+  /** Matières étoilées effectivement notées (non absentes). */
+  matieresEtoiles: number;
 }
 
 export function computeCepAdmission(
@@ -336,20 +346,38 @@ export function computeCepAdmission(
   const matieresRequises = Math.max(1, Math.ceil((nbMatieresExamen * 2) / 3));
   let matieresNotees = 0;
   let matieresReussies = 0;
-  let cpEtoile = false;
+  // ⭐ Admission en 6ème : moyenne des matières étoilées (note /20).
+  let sommeEtoiles = 0;
+  let matieresEtoiles = 0;
+  // Repli : moyenne générale si aucune matière étoilée n'est définie.
+  let sommeToutes = 0;
   for (const l of lines) {
     if (l.isAbsent || l.score === null) continue;
     matieresNotees += 1;
+    sommeToutes += l.score;
     if (l.score >= (l.passingScore ?? 10)) matieresReussies += 1;
-    if (l.perfectionnement && (l.cp ?? 0) > 0) cpEtoile = true;
+    if (l.perfectionnement) {
+      sommeEtoiles += l.score;
+      matieresEtoiles += 1;
+    }
   }
   const admisCep = matieresReussies >= matieresRequises;
+  const moyenneEtoiles =
+    matieresEtoiles > 0
+      ? round2(sommeEtoiles / matieresEtoiles)
+      : matieresNotees > 0
+        ? round2(sommeToutes / matieresNotees)
+        : null;
   return {
     matieresNotees,
     matieresReussies,
     matieresRequises,
     admisCep,
-    admisSixieme: admisCep && cpEtoile,
+    // ⭐ Règle : la moyenne des matières étoilées (≥ 10/20) détermine SEULE
+    //    l'admission en 6ème — plus de condition de perfectionnement (CP).
+    admisSixieme: moyenneEtoiles !== null && moyenneEtoiles >= CEP_SIXIEME_THRESHOLD,
+    moyenneEtoiles,
+    matieresEtoiles,
   };
 }
 

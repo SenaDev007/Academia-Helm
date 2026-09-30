@@ -27,6 +27,9 @@ import { Secondaire } from './Secondaire';
 import { toDataUri, qrSvg, prepare } from './assets';
 import type { BoardInput, DistinctionInput, Level, PreparedDistinction } from './types';
 
+/** Fichier individuel d'un lot de certificats (PDF unitaire + entrée source). */
+export interface BatchFile { fileName: string; pdf: Buffer; input: DistinctionInput }
+
 function Certificate({ d }: { d: PreparedDistinction }) {
   const theme = THEMES[d.code];
   switch (theme.level) {
@@ -81,8 +84,6 @@ export class DistinctionsRenderService {
   async generateBoardPdf(board: BoardInput): Promise<Buffer> {
     return this.htmlToPdf(await this.renderBoardHtml(board));
   }
-
-  export interface BatchFile { fileName: string; pdf: Buffer; input: DistinctionInput }
 
   async generateBatch(inputs: DistinctionInput[]): Promise<{ merged: Buffer; files: BatchFile[] }> {
     if (inputs.length === 0) throw new Error('Aucun certificat à générer');

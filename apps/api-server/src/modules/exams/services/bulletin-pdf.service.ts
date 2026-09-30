@@ -363,8 +363,58 @@ export class BulletinPdfService {
     // Pour Primaire/Secondaire : moyenne >= 16 → 🏆, >= 14 → 🌟, >= 12 → 👍, >= 10 → ✅, < 10 → ⚠️
     const symboleMerite = data.symboleMerite || this.computeSymboleMerite(data);
 
+    // ⭐ 2026-09-30 — Tri canonique des matières maternelle par domaine (1→5)
+    //    L'ordre ne dépend pas de l'API → identique pour tous les élèves.
+    //    Domaines : 1=Éducation pour la santé, 2=Éducation du mouvement,
+    //    3=Observation/Pré-lecture/Pré-écriture/Pré-mathématique,
+    //    4=Expression plastique/émotionnelle, 5=Langage/Conte/Comptine/Poésie/Chant
+    const MAT_DOMAIN_RULES: Array<{ domain: number; markers: string[] }> = [
+      { domain: 1, markers: ['education pour la sante', 'reflexions de sante', 'reflexes de sante'] },
+      { domain: 2, markers: ['education du mouvement', 'gestuelle', 'rythmique', 'expression corporelle'] },
+      { domain: 3, markers: ['observation', 'education sensorielle', 'pre-lecture', 'pre-ecriture', 'pre-mathematique', 'eveil scientifique'] },
+      { domain: 4, markers: ['expression plastique', 'expression emotionnelle', 'dessin', 'peinture'] },
+      { domain: 5, markers: ['langage', 'conte', 'comptine', 'poesie', 'chant', 'expression orale'] },
+    ];
+    const MAT_DOMAIN_ORDER: Record<number, string[]> = {
+      1: ['education pour la sante', 'reflexions de sante', 'reflexes de sante'],
+      2: ['education du mouvement', 'gestuelle', 'rythmique', 'expression corporelle'],
+      3: ['observation', 'education sensorielle', 'pre-lecture', 'pre-ecriture', 'pre-mathematique', 'eveil scientifique'],
+      4: ['expression plastique', 'expression emotionnelle'],
+      5: ['langage', 'conte', 'comptine', 'poesie', 'chant', 'expression orale'],
+    };
+    const matNorm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    const matDomainIdx = (name: string): number => {
+      const n = matNorm(name);
+      if (!n) return 5;
+      for (const rule of MAT_DOMAIN_RULES) {
+        for (const m of rule.markers) {
+          if (n.includes(matNorm(m))) return rule.domain;
+        }
+      }
+      return 5;
+    };
+    const matCanonIdx = (name: string, domain: number): number => {
+      const n = matNorm(name);
+      const order = MAT_DOMAIN_ORDER[domain] || [];
+      for (let i = 0; i < order.length; i++) {
+        if (n.includes(matNorm(order[i]))) return i;
+      }
+      return Number.MAX_SAFE_INTEGER;
+    };
+    const sortedSubjects = data.isMaternelle
+      ? [...data.subjects].sort((a, b) => {
+          const domA = matDomainIdx(a.name);
+          const domB = matDomainIdx(b.name);
+          if (domA !== domB) return domA - domB;
+          const idxA = matCanonIdx(a.name, domA);
+          const idxB = matCanonIdx(b.name, domB);
+          if (idxA !== idxB) return idxA - idxB;
+          return matNorm(a.name).localeCompare(matNorm(b.name), 'fr');
+        })
+      : data.subjects;
+
     // Build subject rows
-    const subjectRows = data.subjects.map((s) => {
+    const subjectRows = sortedSubjects.map((s) => {
       if (data.isMaternelle) {
         const code = s.qualitativeCode;
         // ⭐ Use "X" instead of ✓ to avoid font rendering issues in PDF

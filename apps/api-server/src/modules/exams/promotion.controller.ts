@@ -146,20 +146,35 @@ export class PromotionController {
     const evalInfoMap = new Map(evaluations.map(e => [e.id, { subjectId: e.subjectId, coef: Number(e.coefficient) || 1 }]));
 
     // 3. Récupérer TOUTES les notes en 1 seule requête
+    //    ⭐ 2026-09-30 — Inclure qualitativeCode pour la maternelle (TS/S/PS)
+    //    car les notes maternelle sont qualitatives (score peut être null).
     const grades = await this.prisma.grade.findMany({
       where: { evaluationId: { in: evalIds }, studentId: { in: studentIds } },
-      select: { studentId: true, evaluationId: true, score: true, isAbsent: true },
+      select: { studentId: true, evaluationId: true, score: true, isAbsent: true, qualitativeCode: true },
     }).catch(() => []);
 
     // 4. Grouper par élève × matière → moyenne par matière
+    //    ⭐ 2026-09-30 — Maternelle : convertir TS=3, S=2, PS=1 si score est null
     for (const g of grades) {
-      if (g.isAbsent || g.score === null) continue;
+      if (g.isAbsent) continue;
+      // ⭐ Maternelle : si score est null mais qualitativeCode existe,
+      //    convertir TS→3, S→2, PS→1
+      let scoreNum: number | null = null;
+      if (g.score !== null) {
+        scoreNum = Number(g.score);
+      } else if (g.qualitativeCode) {
+        const code = String(g.qualitativeCode).toUpperCase();
+        if (code === 'TS') scoreNum = 3;
+        else if (code === 'S') scoreNum = 2;
+        else if (code === 'PS') scoreNum = 1;
+      }
+      if (scoreNum === null) continue;
       const evalInfo = evalInfoMap.get(g.evaluationId);
       if (!evalInfo) continue;
       const st = studentMap.get(g.studentId);
       if (!st) continue;
       const subj = st.subjects.get(evalInfo.subjectId) || { sum: 0, count: 0, coef: evalInfo.coef };
-      subj.sum += Number(g.score);
+      subj.sum += scoreNum;
       subj.count += 1;
       st.subjects.set(evalInfo.subjectId, subj);
     }
@@ -167,8 +182,14 @@ export class PromotionController {
     // 5. Calculer la moyenne générale annuelle par élève
     //    Moyenne annuelle = Σ(moy_matière × coef) / Σ(coef)
     //    Si l'élève n'a aucune note → avg = null → REDOUBLE
-    const PASS_THRESHOLD = 10;
-    const RACHAT_THRESHOLD = 9;
+    //    ⭐ 2026-09-30 — Maternelle : échelle 1-3 (TS=3, S=2, PS=1)
+    //    PASSE si avg ≥ 2 (Satisfaisant ou mieux), REDOUBLE si avg < 2
+    //    Primaire/Secondaire : échelle /20, PASSE si avg ≥ 10, RACHAT si 9-10
+    //    On détecte la maternelle en regardant si toutes les notes sont
+    //    qualitatives (score null + qualitativeCode non-null).
+    const isMaternelleGrades = grades.length > 0 && grades.every(g => g.score === null && g.qualitativeCode !== null);
+    const PASS_THRESHOLD = isMaternelleGrades ? 2 : 10;
+    const RACHAT_THRESHOLD = isMaternelleGrades ? 1.5 : 9;
 
     const result = Array.from(studentMap.values()).map(st => {
       let total = 0;

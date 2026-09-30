@@ -76,6 +76,14 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+
+// ⭐ 2026-10-01 — FIX Railway : SUPERVISOR_POSTS doit être défini AVANT les
+//    DTOs qui l'utilisent dans @IsIn(SUPERVISOR_POSTS). Sinon, en JS compilé,
+//    le décorateur s'exécute avant l'initialisation du const (temporal dead
+//    zone) → ReferenceError: Cannot access 'SUPERVISOR_POSTS' before
+//    initialization.
+export type SupervisorPost = 'SURVEILLANCE' | 'CORRECTION' | 'SECRETARIAT';
+export const SUPERVISOR_POSTS: SupervisorPost[] = ['SURVEILLANCE', 'CORRECTION', 'SECRETARIAT'];
 import { Type } from 'class-transformer';
 
 export class CreateSupervisorRequestDto {
@@ -213,13 +221,9 @@ export class UpdateSupervisorDto {
 
 // ── Constantes ──────────────────────────────────────────────────────────────
 
-/** ⭐ 2026-10-01 — Postes de répartition des enseignants envoyés par les
- *    écoles : surveillance des épreuves, correction des copies, secrétariat
- *    (saisie des notes). Le patronat répartit chaque enseignant sur l'un de
- *    ces trois postes au moment de la validation de la répartition. */
-export type SupervisorPost = 'SURVEILLANCE' | 'CORRECTION' | 'SECRETARIAT';
-
-export const SUPERVISOR_POSTS: SupervisorPost[] = ['SURVEILLANCE', 'CORRECTION', 'SECRETARIAT'];
+// ⭐ 2026-10-01 — SUPERVISOR_POSTS et SupervisorPost sont déjà définis plus
+//    haut (avant les DTOs) pour éviter le temporal dead zone en JS compilé.
+//    On garde juste les fonctions utilitaires ici.
 
 export function normalizeSupervisorPost(value?: string | null): SupervisorPost {
   return SUPERVISOR_POSTS.includes(value as SupervisorPost)

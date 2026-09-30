@@ -513,6 +513,32 @@ export function initModulePrecacheInvalidation(): void {
  *
  * @param onProgress callback optionnel (current, total)
  */
+
+/**
+ * ⭐ v4.9.0 (2026-09-30 — fix « chargements > 30 s » production) :
+ * le pré-cache de fond (112 routes + ~230 endpoints) est SKIPPÉ sur
+ * connexion lente ou économique. Sur une connexion école 2G/lente ou en
+ * mode économie de données, la tempête de requêtes de fond affamait les
+ * données VISIBLES de l'utilisateur (même thread SW + bande passante +
+ * sémaphore backend 20 slots) → timeouts 20-30 s « Impossible de charger
+ * les patronats / les demandes de surveillants ». Le SW céde désormais la
+ * priorité (v4.9.0) ET on n'amorce pas la tempête du tout si la connexion
+ * est manifestement trop juste — la préparation hors ligne reprendra sur
+ * une connexion meilleure (garde 24 h non posée en cas de skip).
+ */
+function isConnectionTooSlowForPrecache(): boolean {
+  try {
+    const conn = (navigator as any)?.connection;
+    if (!conn) return false;
+    if (conn.saveData === true) return true;
+    const type = String(conn.effectiveType || '');
+    if (type === 'slow-2g' || type === '2g') return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export async function precacheAllModules(
   onProgress?: (current: number, total: number) => void,
 ): Promise<void> {
@@ -520,6 +546,11 @@ export async function precacheAllModules(
   if (!('serviceWorker' in navigator)) return;
   if (!navigator.onLine) {
     console.log('[ModulePrecache] Offline — skipping');
+    return;
+  }
+  // ⭐ v4.9.0 — connexion trop lente / économie de données → pas de tempête.
+  if (isConnectionTooSlowForPrecache()) {
+    console.log('[ModulePrecache] Connexion lente (2G/saveData) — pré-cache différé');
     return;
   }
 
@@ -1776,6 +1807,12 @@ export async function precacheApiData(): Promise<void> {
   if (!('serviceWorker' in navigator)) return;
   if (!navigator.onLine) {
     console.log('[ApiPrecache] Offline — skipping');
+    return;
+  }
+  // ⭐ v4.9.0 — connexion trop lente / économie de données → pas de tempête
+  //    (230 endpoints en fond affamaient les données visibles).
+  if (isConnectionTooSlowForPrecache()) {
+    console.log('[ApiPrecache] Connexion lente (2G/saveData) — pré-cache API différé');
     return;
   }
   if (isApiPrecacheFresh()) {

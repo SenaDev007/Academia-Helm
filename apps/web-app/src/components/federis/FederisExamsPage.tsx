@@ -115,6 +115,19 @@ interface SchoolListsResponse {
 // ⭐ (2026-09-29) Plus AUCUN badge de type d'établissement (mixte / école /
 //    ministère…) — seuls les logos des écoles sont affichés.
 
+/** ⭐ FIX (2026-09-30) — Le formulaire n'expose PAS de champ « type d'examen »
+ *    (le sélecteur Classe/examen le détermine) mais le POST envoyait la
+ *    valeur initiale 'NATIONAL' → rejet 400 du backend :
+ *    « examType must be one of the following values: CEP, BEPC, BAC, CAP ».
+ *    Le type est désormais DÉRIVÉ du niveau sélectionné :
+ *    CM2 → CEP · 3EME → BEPC · TERMINALE → BAC · CAP → CAP. */
+const LEVEL_TO_EXAM_TYPE: Record<string, string> = {
+  CM2: 'CEP',
+  '3EME': 'BEPC',
+  TERMINALE: 'BAC',
+  CAP: 'CAP',
+};
+
 export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
   const { path: federisPath } = useFederisPath();
   const { exams, academicYear, loading, error, reload } = useFederisExams();
@@ -124,7 +137,6 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
   const [form, setForm] = useState({
     code: '',
     name: '',
-    examType: 'NATIONAL',
     level: 'CM2',
     startDate: '',
     endDate: '',
@@ -205,9 +217,15 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
     setCreating(true);
     setFormError(null);
     try {
-      await apiClient.post('/federis/exams', form, { timeout: 20000 });
+      // ⭐ examType dérivé du niveau — le DTO backend exige CEP|BEPC|BAC|CAP
+      //    (l'ancien envoi d'un 'NATIONAL' résiduel provoquait le 400).
+      const payload = {
+        ...form,
+        examType: LEVEL_TO_EXAM_TYPE[form.level] ?? 'CEP',
+      };
+      await apiClient.post('/federis/exams', payload, { timeout: 20000 });
       setShowCreate(false);
-      setForm({ code: '', name: '', examType: 'NATIONAL', level: 'CM2', startDate: '', endDate: '', description: '' });
+      setForm({ code: '', name: '', level: 'CM2', startDate: '', endDate: '', description: '' });
       await reload();
     } catch (err: any) {
       setFormError(err?.response?.data?.message ?? 'Création impossible.');

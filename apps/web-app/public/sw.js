@@ -263,7 +263,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.8.1';
+const SW_VERSION = 'v4.9.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -594,6 +594,46 @@ self.addEventListener('activate', (event) => {
 });
 
 // ─── FETCH : stratégies de cache prudentes ────────────────────────────────
+// ⭐ v4.9.0 (2026-09-30 — « chargements > 30 s » signalés en production) :
+//    COMPTEUR DE REQUÊTES PAGE EN COURS. Le pré-cache (PRECACHE_MODULE /
+//    PRECACHE_API) est la seule charge réseau de fond de l'app — il tirait
+//    ses ~230 endpoints + 112 routes HTML pendant que les requêtes VISIBLES
+//    de la page (rattachements patronat, demandes de surveillants, KPIs…)
+//    attendaient : même thread SW + même pool de connexions + sémaphore
+//    utilisateur backend (20 slots) → famine de 30-60 s des données de la
+//    page, aggravée sur connexion école lente. Désormais chaque boucle de
+//    pré-cache ATTEND que ce compteur retombe à 0 avant chaque lot — le
+//    pré-cache ne progresse que pendant les creux d'activité réels.
+let pageRequestsInFlight = 0;
+
+/** Attend que plus aucune requête de page interceptée ne soit en cours.
+ * Retourne dès que le compteur est à 0 (ou après maxWaitMs pour ne jamais
+ * bloquer indéfiniment un pré-cache si une requête page pendait). */
+function waitForIdlePageTraffic(maxWaitMs = 20000) {
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const tick = () => {
+      if (pageRequestsInFlight <= 0 || Date.now() - startedAt >= maxWaitMs) {
+        resolve();
+        return;
+      }
+      setTimeout(tick, 250);
+    };
+    tick();
+  });
+}
+
+/** Enveloppe respondWith qui comptabilise la requête page en cours —
+ *    le pré-cache consulte ce compteur pour lui céder la priorité. */
+function trackedRespondWith(event, responsePromise) {
+  pageRequestsInFlight++;
+  event.respondWith(
+    Promise.resolve(responsePromise).finally(() => {
+      pageRequestsInFlight = Math.max(0, pageRequestsInFlight - 1);
+    }),
+  );
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
 
@@ -621,7 +661,7 @@ self.addEventListener('fetch', (event) => {
     if (!mutationIsSameOrigin && !mutationIsApiOrigin) return;
     if (!mutationUrl.pathname.startsWith('/api/')) return;
     if (NEVER_INTERCEPT.some((pattern) => pattern.test(mutationUrl.pathname))) return;
-    event.respondWith(handleApiMutation(request));
+    trackedRespondWith(event, handleApiMutation(request));
     return;
   }
 
@@ -653,7 +693,7 @@ self.addEventListener('fetch', (event) => {
   //    Timeout élargi (25 s) : cf. CROSS_API_TIMEOUT — pas de régression
   //    sur les cold starts Neon.
   if (isApiOrigin && !isSameOrigin) {
-    event.respondWith(handleApiGet(request, CROSS_API_TIMEOUT));
+    trackedRespondWith(event, handleApiGet(request, CROSS_API_TIMEOUT));
     return;
   }
 
@@ -663,7 +703,7 @@ self.addEventListener('fetch', (event) => {
   //    AVANT : aucune interception → hors ligne, échec réseau direct →
   //    SPINNER INFINI au changement de module. MAINTENANT : cache + 503 rapide.
   if (isRscRequest(request, url)) {
-    event.respondWith(handleRsc(request));
+    trackedRespondWith(event, handleRsc(request));
     return;
   }
 
@@ -671,19 +711,20 @@ self.addEventListener('fetch', (event) => {
   //    offline (les chemins auth/sync/webhooks ont déjà été exclus par
   //    NEVER_INTERCEPT ci-dessus ; les non-GET sont sortis en tête de handler).
   if (pathname.startsWith('/api/')) {
-    event.respondWith(handleApiGet(request));
+    trackedRespondWith(event, handleApiGet(request));
     return;
   }
 
   // ⭐ Chunks immuables /_next/static/ → cache PERSISTANT + retry réseau
   if (IMMUTABLE_ASSET_PATTERNS.some((pattern) => pattern.test(request.url))) {
-    event.respondWith(serveImmutable(request));
+    trackedRespondWith(event, serveImmutable(request));
     return;
   }
 
   // ─── Assets statiques (mutables) : CacheFirst ────────────────────────
   if (STATIC_ASSET_PATTERNS.some((pattern) => pattern.test(request.url))) {
-    event.respondWith(
+    trackedRespondWith(
+      event,
       caches.match(request).then((cached) => {
         if (cached) return cached;
         return fetch(request).then((response) => {
@@ -707,13 +748,13 @@ self.addEventListener('fetch', (event) => {
     //    pré-caché → l'app React démarre depuis le cache, les données viennent
     //    d'IndexedDB. AUCUNE page « hors ligne » n'est jamais substituée.
     if (pathname.startsWith('/app')) {
-      event.respondWith(handleAppShellNavigation(request));
+      trackedRespondWith(event, handleAppShellNavigation(request));
       return;
     }
 
     // Pages publiques autorisées au cache HTML
     if (CACHEABLE_HTML_PATTERNS.some((pattern) => pattern.test(pathname))) {
-      event.respondWith(handlePublicPageNavigation(request));
+      trackedRespondWith(event, handlePublicPageNavigation(request));
       return;
     }
 
@@ -723,7 +764,7 @@ self.addEventListener('fetch', (event) => {
 
   // Chunks JS/CSS dynamiques Next.js (hors /static/) → cache persistant + retry
   if (url.pathname.includes('/_next/') && (pathname.endsWith('.js') || pathname.endsWith('.css'))) {
-    event.respondWith(serveImmutable(request));
+    trackedRespondWith(event, serveImmutable(request));
     return;
   }
 
@@ -3883,7 +3924,13 @@ async function precacheApiEndpoints(urls, headers, sourceClient) {
   let skipCount = 0;
   // ⭐ v3.6.0 — 6 en parallèle (au lieu de 4) : ~230 endpoints + vague
   //    dynamique à pré-cacher en arrière-plan sans occuper la journée.
-  const BATCH = 6;
+  //    ⭐ v4.9.0 — retour à 4 EN PARALLÈLE + CESSION DE PRIORITÉ : avant chaque
+  //    lot, on attend que les requêtes VISIBLES de la page (compteur
+  //    pageRequestsInFlight) soient terminées — le pré-cache ne doit JAMAIS
+  //    affamer les données que l'utilisateur regarde (fix « chargements
+  //    > 30 s » production 2026-09-30 : connexion école + 6 fetch permanents
+  //    + sémaphore backend 20 slots → famine des modules métier).
+  const BATCH = 4;
   for (let i = 0; i < urls.length; i += BATCH) {
     const batch = urls.slice(i, i + BATCH);
     if (!self.navigator || self.navigator.onLine === false) {
@@ -3891,6 +3938,8 @@ async function precacheApiEndpoints(urls, headers, sourceClient) {
       // au retour du réseau — le flag n'est posé qu'en cas de succès).
       break;
     }
+    // ⭐ v4.9.0 — Les requêtes de la page passent TOUJOURS d'abord.
+    await waitForIdlePageTraffic();
     await Promise.allSettled(
       batch.map(async (rawUrl) => {
         try {
@@ -4047,6 +4096,10 @@ async function precacheModule(routeUrl, sourceClient, anonymous) {
   let htmlOk = false;
   let rscOk = false;
   try {
+    // ⭐ v4.9.0 — CESSION DE PRIORITÉ aux requêtes visibles de la page avant
+    //    chaque route pré-cachée (112 routes × HTML+RSC+chunks : la tempête
+    //    de fond ne doit pas affamer les données de l'utilisateur).
+    await waitForIdlePageTraffic();
     const cache = await caches.open(PAGE_CACHE);
     const staticCache = await caches.open(IMMUTABLE_CACHE); // ⭐ chunks immuables — cache persistant
 
@@ -4102,9 +4155,10 @@ async function precacheModule(routeUrl, sourceClient, anonymous) {
       }
 
       const chunks = Array.from(chunkUrls);
-      const BATCH = 5;
+      const BATCH = 4; // ⭐ v4.9.0 — 5 → 4 + cession de priorité par lot
       for (let i = 0; i < chunks.length; i += BATCH) {
         const batch = chunks.slice(i, i + BATCH);
+        await waitForIdlePageTraffic();
         await Promise.allSettled(
           batch.map(async (chunkUrl) => {
             try {
@@ -4136,6 +4190,7 @@ async function precacheModule(routeUrl, sourceClient, anonymous) {
     //    priorité) : payload flight de la route sous clé normalisée (sans
     //    _rsc). Ne bloque JAMAIS l'ACK HTML.
     try {
+      await waitForIdlePageTraffic(); // ⭐ v4.9.0 — page d'abord
       const rscCache = await caches.open(RSC_CACHE);
       const rscUrl = routeUrl + (routeUrl.includes('?') ? '&' : '?') + '_rsc=precache';
       const rscRes = await fetchWithTimeout(new Request(rscUrl, {

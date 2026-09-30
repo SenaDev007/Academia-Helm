@@ -318,21 +318,30 @@ export default function AppLayoutClient({
               console.log(`[ModulePrecache] Progress: ${current}/${total}`);
             }
           });
-          // ⭐ v3.5.0 — données KPI des dashboards (5 s après le début du
-          //    pré-cache des routes : priorité — c'est ce que l'utilisateur
-          //    voit en premier quand il coupe le réseau)
+          // ⭐ v4.9.0 (2026-09-30 — fix « chargements > 30 s ») — données KPI
+          //    des dashboards, 30 s APRÈS le début du pré-cache des routes
+          //    (au lieu de 5 s) : les ~230 endpoints de fond ne doivent
+          //    concurrencer NI le bootstrap des données NI le pré-cache des
+          //    routes. Le SW v4.9.0 céde de toute façon la priorité aux
+          //    requêtes visibles (waitForIdlePageTraffic) — ce délai limite
+          //    la superposition des DEUX tempêtes de fond.
           setTimeout(() => {
             if (cancelled) return;
             import('@/lib/offline/module-precache.service')
               .then(({ precacheApiData }) => precacheApiData())
               .catch((err) => console.warn('[ApiPrecache] Failed to start:', err));
-          }, 5000);
+          }, 30000);
         })
         .catch((err) => {
           console.warn('[ModulePrecache] Failed to start:', err);
         });
     };
     // Délai : ne pas concurrencer le bootstrap des données ni le rendu initial
+    // ⭐ v4.9.0 (2026-09-30) — 15 s → 30 s : le bootstrap post-login (année
+    //    scolaire, sélecteurs, KPIs, données modules) doit être TERMINÉ avant
+    //    que la tempête de fond (112 routes HTML) ne démarre — le SW céde
+    //    désormais la priorité aux requêtes visibles, ce délai réduit en plus
+    //    la superposition des deux pré-caches (routes puis API).
     const timer = setTimeout(() => {
       if (cancelled) return;
       if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
@@ -340,7 +349,7 @@ export default function AppLayoutClient({
       } else {
         run();
       }
-    }, 15000);
+    }, 30000);
     const runDirect = () => {
       // Retour de réseau : lancement direct (cas hors-ligne → online, l'UI est déjà prête)
       run();

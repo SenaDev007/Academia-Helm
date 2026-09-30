@@ -55,6 +55,12 @@ import {
   InitCheckoutDto,
   UpdatePatronatIdentityDto,
 } from './federis-patronat.service';
+// ⭐ Répertoire officiel des établissements (2026-09-30) — suggestions
+//    départementales pour écoles provisoires & centres d'examen.
+import {
+  FederisSchoolDirectoryService,
+  CreateProvisionalSchoolDto,
+} from './federis-school-directory.service';
 
 @Controller('federis')
 export class FederisPatronatController {
@@ -64,6 +70,7 @@ export class FederisPatronatController {
     private readonly registerService: FederisRegisterService,
     private readonly patronatService: FederisPatronatService,
     private readonly fedapayService: FederisFedapayService,
+    private readonly schoolDirectoryService: FederisSchoolDirectoryService,
   ) {}
 
   // ══════════════════════════ ROUTES PUBLIQUES ══════════════════════════
@@ -321,6 +328,51 @@ export class FederisPatronatController {
   async createManualSchool(@Req() req: any, @Body() dto: CreateManualSchoolDto) {
     return this.patronatService.createManualSchool(
       req.user.tenantId,
+      req.user.id || req.user.sub,
+      dto,
+    );
+  }
+
+  // ⭐ RÉPERTOIRE OFFICIEL DES ÉTABLISSEMENTS (2026-09-30) — suggestions du
+  //    département du patronat pour créer rapidement une école PROVISOIRE
+  //    (module Écoles rattachées) ou désigner un CENTRE d'examen (module
+  //    Centres). Sources : répertoires ministériels du Bénin (initial :
+  //    1 406 établissements secondaires privés 2022-2023, 12 départements).
+  @UseGuards(JwtAuthGuard)
+  @Get('patronat/schools/directory/search')
+  async searchSchoolDirectory(
+    @Req() req: any,
+    @Query('q') q?: string,
+    @Query('level') level?: string,
+    @Query('sector') sector?: string,
+  ) {
+    const patronat = await this.patronatService.resolvePatronat(
+      req.user.tenantId,
+      req.user.id || req.user.sub,
+    );
+    return this.schoolDirectoryService.searchDirectory(patronat, {
+      q,
+      level,
+      sector,
+    });
+  }
+
+  // ⭐ Création d'une école PROVISOIRE depuis le répertoire officiel : fiche
+  //    pré-remplie (nom, commune, directeur, téléphone) + message automatique
+  //    du patronat invitant le responsable à créer son école sur Academia
+  //    Helm (email si adresse connue, message transmissible sinon).
+  @UseGuards(JwtAuthGuard)
+  @Post('patronat/schools/provisional')
+  async createProvisionalSchool(
+    @Req() req: any,
+    @Body() dto: CreateProvisionalSchoolDto,
+  ) {
+    const patronat = await this.patronatService.resolvePatronat(
+      req.user.tenantId,
+      req.user.id || req.user.sub,
+    );
+    return this.schoolDirectoryService.createProvisionalSchool(
+      patronat,
       req.user.id || req.user.sub,
       dto,
     );

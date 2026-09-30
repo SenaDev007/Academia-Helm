@@ -23,6 +23,13 @@ import { apiClient } from '@/lib/api/client';
 import { cn } from '@/lib/utils';
 import { FedPage } from '@/components/federis/federis-motion';
 import FederisSchoolDetail from '@/components/federis/FederisSchoolDetail';
+// ⭐ 2026-09-30 — RÉPERTOIRE OFFICIEL : suggestions des établissements du
+//    département (répertoires ministériels du Bénin) pour créer rapidement
+//    des écoles PROVISOIRES hors Academia Helm + invitation automatique du
+//    responsable à créer son école sur la plateforme.
+import SchoolDirectoryPicker, {
+  type DirectoryEntry,
+} from '@/components/federis/SchoolDirectoryPicker';
 
 interface LinkedSchool {
   id: string;
@@ -69,6 +76,11 @@ interface ManualSchool {
   email?: string | null;
   status: string;
   createdAt: string;
+  // ⭐ 2026-09-30 — écoles provisoires du répertoire officiel
+  source?: string | null;
+  department?: string | null;
+  commune?: string | null;
+  invitedAt?: string | null;
 }
 
 interface HelmSchoolResult {
@@ -119,6 +131,11 @@ const STATUS_BADGES: Record<string, { label: string; className: string }> = {
   REJECTED: { label: 'Demande refusée', className: 'bg-red-100 text-red-700' },
   SUSPENDED: { label: 'Suspendue', className: 'bg-red-100 text-red-700' },
   MANUAL: { label: 'Hors Helm (manuelle)', className: 'bg-gray-100 text-slate-700' },
+  // ⭐ 2026-09-30 — écoles PROVISOIRES issues du répertoire officiel
+  PROVISIONAL: {
+    label: 'Provisoire — répertoire officiel',
+    className: 'bg-indigo-100 text-indigo-800',
+  },
 };
 
 // ⭐ (2026-09-29) Plus AUCUN badge de type d'établissement (mixte / école /
@@ -351,6 +368,18 @@ export default function FederisSchoolsPage() {
   const [manualForm, setManualForm] = useState(EMPTY_MANUAL_FORM);
   const [manualErrors, setManualErrors] = useState<Record<string, string>>({});
   const [submittingManual, setSubmittingManual] = useState(false);
+  // ⭐ 2026-09-30 — entrée du RÉPERTOIRE OFFICIEL sélectionnée (école
+  //    provisoire) : pré-remplit le formulaire et déclenche, à l'enregistrement,
+  //    l'invitation automatique du responsable à créer son école sur Helm.
+  const [directoryPick, setDirectoryPick] = useState<DirectoryEntry | null>(null);
+  // Message d'invitation retourné par le backend (transmission manuelle par
+  // le promoteur — téléphone / WhatsApp — quand aucun email n'est connu).
+  const [invitation, setInvitation] = useState<{
+    schoolName: string;
+    channel: string;
+    message: string;
+    link: string;
+  } | null>(null);
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -452,6 +481,20 @@ export default function FederisSchoolsPage() {
     }
   };
 
+  /** ⭐ Sélection d'un établissement du répertoire officiel → pré-remplissage
+   *    du formulaire (nom, commune/arrondissement, directeur, téléphone). */
+  const handlePickDirectoryEntry = (entry: DirectoryEntry) => {
+    setDirectoryPick(entry);
+    setManualForm({
+      name: entry.name,
+      address: [entry.commune, entry.arrondissement].filter(Boolean).join(', '),
+      contactPerson: entry.directorName ?? entry.founderName ?? '',
+      phone: entry.directorPhone ?? entry.founderPhone ?? '',
+      email: '',
+    });
+    setManualErrors({});
+  };
+
   const handleCreateManual = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
@@ -460,25 +503,60 @@ export default function FederisSchoolsPage() {
     if (Object.keys(errs).length > 0) return;
 
     setSubmittingManual(true);
+    setInvitation(null);
     try {
-      await apiClient.post(
-        '/federis/patronat/schools/manual',
-        {
-          name: manualForm.name.trim(),
-          ...(manualForm.address.trim() ? { address: manualForm.address.trim() } : {}),
-          ...(manualForm.contactPerson.trim()
-            ? { contactPerson: manualForm.contactPerson.trim() }
-            : {}),
-          ...(manualForm.phone.trim() ? { phone: manualForm.phone.trim() } : {}),
-          ...(manualForm.email.trim() ? { email: manualForm.email.trim().toLowerCase() } : {}),
-        },
-        { timeout: 30000 },
-      );
-      setMessage({
-        type: 'success',
-        text: `École « ${manualForm.name.trim()} » créée. Elle pourra être rapprochée d'un compte Academia Helm réel ultérieurement.`,
-      });
+      // ⭐ École PROVISOIRE issue du répertoire officiel : endpoint dédié —
+      //    fiche enrichie (département, commune, référence du répertoire) +
+      //    message AUTOMATIQUE du patronat invitant le responsable à créer
+      //    son école sur Academia Helm (email si connu, message transmissible
+      //    sinon).
+      if (directoryPick) {
+        const res = await apiClient.post(
+          '/federis/patronat/schools/provisional',
+          {
+            directoryEntryId: directoryPick.id,
+            ...(manualForm.email.trim() ? { email: manualForm.email.trim().toLowerCase() } : {}),
+            ...(manualForm.phone.trim() ? { phone: manualForm.phone.trim() } : {}),
+          },
+          { timeout: 30000 },
+        );
+        const inv = res.data?.invitation;
+        setMessage({
+          type: 'success',
+          text: inv?.sent
+            ? `École « ${manualForm.name.trim()} » créée à titre provisoire — l'invitation a été envoyée par email au responsable pour créer son école sur Academia Helm.`
+            : `École « ${manualForm.name.trim()} » créée à titre provisoire. Le répertoire officiel ne fournit pas d'adresse email : transmettez le message d'invitation ci-dessous au responsable (téléphone / WhatsApp) pour qu'il crée son école sur Academia Helm.`,
+        });
+        if (inv && !inv.sent) {
+          setInvitation({
+            schoolName: manualForm.name.trim(),
+            channel: inv.channel ?? 'MANUAL',
+            message: inv.message ?? '',
+            link: inv.link ?? '',
+          });
+        }
+      } else {
+        // Création manuelle classique (aucune entrée du répertoire sélectionnée)
+        await apiClient.post(
+          '/federis/patronat/schools/manual',
+          {
+            name: manualForm.name.trim(),
+            ...(manualForm.address.trim() ? { address: manualForm.address.trim() } : {}),
+            ...(manualForm.contactPerson.trim()
+              ? { contactPerson: manualForm.contactPerson.trim() }
+              : {}),
+            ...(manualForm.phone.trim() ? { phone: manualForm.phone.trim() } : {}),
+            ...(manualForm.email.trim() ? { email: manualForm.email.trim().toLowerCase() } : {}),
+          },
+          { timeout: 30000 },
+        );
+        setMessage({
+          type: 'success',
+          text: `École « ${manualForm.name.trim()} » créée. Elle pourra être rapprochée d'un compte Academia Helm réel ultérieurement.`,
+        });
+      }
       setManualForm(EMPTY_MANUAL_FORM);
+      setDirectoryPick(null);
       setShowManual(false);
       await loadSchools();
     } catch (err: any) {
@@ -691,7 +769,10 @@ export default function FederisSchoolsPage() {
         )}
       </section>
 
-      {/* Formulaire école manuelle */}
+      {/* Formulaire école manuelle — ⭐ enrichi du RÉPERTOIRE OFFICIEL : les
+          établissements du département hors Academia Helm sont suggérés, la
+          fiche est pré-remplie et l'invitation automatique part au
+          responsable à l'enregistrement. */}
       {showManual && (
         <form
           onSubmit={handleCreateManual}
@@ -700,10 +781,34 @@ export default function FederisSchoolsPage() {
           <div>
             <h2 className="text-base font-bold text-blue-900">Nouvelle école (hors Academia Helm)</h2>
             <p className="text-sm text-slate-500 mt-1">
-              École minimale pour la gestion des candidats — rapprochement possible plus tard
-              d&rsquo;un compte réel.
+              Recherchez l&apos;école dans le <strong>répertoire officiel</strong> des établissements
+              de votre département : la fiche se pré-remplit et une invitation à rejoindre Academia
+              Helm sera automatiquement adressée au responsable. Vous pouvez aussi saisir
+              l&apos;établissement manuellement.
             </p>
           </div>
+
+          {/* ⭐ Suggestions du répertoire officiel (par département) */}
+          <SchoolDirectoryPicker
+            onPick={handlePickDirectoryEntry}
+            placeholder="Rechercher l'école dans le répertoire officiel (nom, commune)…"
+          />
+
+          {/* ⭐ Indication quand une entrée du répertoire est sélectionnée */}
+          {directoryPick && (
+            <div className="flex items-start gap-3 rounded-xl bg-indigo-50 border border-indigo-100 px-4 py-3">
+              <AppIcon name="network" size="submenu" className="text-indigo-700 mt-0.5" />
+              <div className="text-xs text-indigo-900 font-semibold leading-relaxed">
+                Établissement sélectionné dans le répertoire officiel : à l&apos;enregistrement,
+                l&apos;école sera créée <strong>à titre provisoire</strong> et le patronat
+                invitera automatiquement son responsable à créer son école sur Academia Helm
+                {manualForm.email.trim()
+                  ? ' (invitation par email).'
+                  : ' — saisissez un email ci-dessous pour l\u2019inviter par email, sinon un message transmissible vous sera proposé.'}
+              </div>
+            </div>
+          )}
+
           <ManualSchoolFormFields
             manualForm={manualForm}
             setManualForm={setManualForm}
@@ -711,6 +816,63 @@ export default function FederisSchoolsPage() {
             submittingManual={submittingManual}
           />
         </form>
+      )}
+
+      {/* ⭐ Message d'invitation à transmettre au responsable de l'école
+          provisoire (le répertoire officiel ne fournit pas d'emails). */}
+      {invitation && (
+        <section className="fed-card p-6 space-y-4 border-indigo-200">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-base font-bold text-blue-900">
+                Invitation à transmettre — {invitation.schoolName}
+              </h2>
+              <p className="text-sm text-slate-500 mt-1">
+                Le répertoire officiel ne fournit pas d&apos;adresse email pour cet établissement :
+                transmettez ce message du patronat au responsable (téléphone / WhatsApp) pour
+                qu&apos;il crée le compte de son école sur Academia Helm.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setInvitation(null)}
+              className="text-slate-400 hover:text-slate-600 text-xs font-bold uppercase shrink-0"
+            >
+              Fermer
+            </button>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-[#f7f9fc] p-5 max-h-56 overflow-y-auto">
+            <pre className="whitespace-pre-wrap text-xs text-slate-700 font-medium leading-relaxed">
+              {invitation.message}
+            </pre>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard
+                  ?.writeText(invitation.message)
+                  .then(() => setMessage({ type: 'success', text: 'Message d\u2019invitation copié — collez-le dans WhatsApp ou un SMS.' }))
+                  .catch(() => undefined);
+              }}
+              className="fed-btn-gold px-4 py-2 text-xs"
+            >
+              Copier le message
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void navigator.clipboard
+                  ?.writeText(invitation.link)
+                  .then(() => setMessage({ type: 'success', text: 'Lien d\u2019inscription copié.' }))
+                  .catch(() => undefined);
+              }}
+              className="fed-btn-navy px-4 py-2 text-xs"
+            >
+              Copier le lien d&apos;inscription
+            </button>
+          </div>
+        </section>
       )}
 
       {/* ⭐ Écoles de votre territoire — listage automatique et dynamique.
@@ -911,6 +1073,17 @@ export default function FederisSchoolsPage() {
                               {school.address ?? '—'}
                               {school.contactPerson ? ` · ${school.contactPerson}` : ''}
                             </div>
+                            {/* ⭐ École provisoire issue du répertoire officiel :
+                                département d'origine + invitation du responsable. */}
+                            {school.source === 'OFFICIAL_DIRECTORY' && (
+                              <div className="text-[10px] font-bold text-indigo-600 mt-1 uppercase tracking-wide">
+                                Répertoire officiel{school.department ? ` · ${school.department}` : ''}
+                                {school.commune ? ` · ${school.commune}` : ''}
+                                {school.invitedAt
+                                  ? ` · Invité le ${new Date(school.invitedAt).toLocaleDateString('fr-FR')}`
+                                  : ''}
+                              </div>
+                            )}
                           </td>
                           <td className="px-4 py-3.5 text-slate-400">—</td>
                           <td className="px-4 py-3.5 text-slate-600">Hors Helm</td>

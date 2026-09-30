@@ -60,7 +60,7 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export function SchoolPatronatsPage() {
-  // ⭐ Section active : Rattachements | Gestion des surveillants
+  // ⭐ Section active : Rattachements | Gestion des surveillants / Correction
   // (?tab=surveillant ouvre directement la section — lien des notifications)
   const [tab, setTab] = useState<'rattachements' | 'surveillants'>(() => {
     if (typeof window !== 'undefined') {
@@ -174,7 +174,7 @@ export function SchoolPatronatsPage() {
         <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-6 py-4 text-sm font-semibold text-emerald-800">{notice}</div>
       )}
 
-      {/* ⭐ Onglets du module : Rattachements | Gestion des surveillants */}
+      {/* ⭐ Onglets du module : Rattachements | Gestion des surveillants / Correction */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
         <button
           type="button"
@@ -203,7 +203,7 @@ export function SchoolPatronatsPage() {
               : 'text-slate-500 font-semibold hover:text-blue-900',
           )}
         >
-          Gestion des surveillants
+          Gestion des surveillants / Correction
         </button>
       </div>
 

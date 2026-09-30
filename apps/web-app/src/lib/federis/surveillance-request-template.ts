@@ -161,7 +161,7 @@ export function buildSurveillanceRequestDraft(
     `4. Absence de lien de parenté avec un candidat de la salle ou du poste d\u2019affectation, afin de préserver l\u2019objectivité et l\u2019intégrité de l\u2019examen.`,
     ``,
     `MODALITÉS DE RÉPONSE`,
-    `La liste des enseignants proposés (nom, prénoms, téléphone, e-mail, poste souhaité) devra être transmise via votre espace Academia Helm — module « Patronats & Examens », onglet « Gestion des surveillants »${deadlinePhrase}. Le Patronat procédera ensuite à la répartition des enseignants entre les trois postes (surveillance, correction, secrétariat) et, pour la surveillance, par centre et par salle de composition ; les affectations seront notifiées individuellement aux enseignants après validation des listes.`,
+    `La liste des enseignants proposés (nom, prénoms, téléphone, e-mail, poste souhaité) devra être transmise via votre espace Academia Helm — module « Patronats & Examens », onglet « Gestion des surveillants / Correction »${deadlinePhrase}. Le Patronat procédera ensuite à la répartition des enseignants entre les trois postes (surveillance, correction, secrétariat) et, pour la surveillance, par centre et par salle de composition ; les affectations seront notifiées individuellement aux enseignants après validation des listes.`,
     ``,
     `Le Patronat vous remercie de votre collaboration habituelle et compte sur votre prompte réponse pour la bonne organisation de cette session.`,
     ``,

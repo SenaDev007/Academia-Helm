@@ -73,6 +73,11 @@ import { FederisSubjectsController } from './federis-subjects.controller';
 //    définie, elle devient la SOURCE DE VÉRITÉ du backend (délibération,
 //    décisions des relevés, registre, PDF).
 import { FederisGradingRulesService } from './federis-grading-rules.service';
+// ⭐ Répertoire officiel des établissements du Bénin (2026-09-30) — base de
+//    suggestions pour la création d'écoles PROVISOIRES (module Écoles
+//    rattachées) et la désignation des CENTRES d'examen (module Centres).
+//    Source initiale : 1 406 établissements secondaires privés (2022-2023).
+import { FederisSchoolDirectoryService } from './federis-school-directory.service';
 
 @Module({
   imports: [BillingModule, CommunicationModule],
@@ -121,6 +126,7 @@ import { FederisGradingRulesService } from './federis-grading-rules.service';
     FederisGradesService,
     FederisSubjectsService,
     FederisGradingRulesService,
+    FederisSchoolDirectoryService,
   ],
   exports: [
     FederisService,

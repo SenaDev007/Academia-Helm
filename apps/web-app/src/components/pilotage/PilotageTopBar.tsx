@@ -19,7 +19,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Image from 'next/image';
-import { Bell, RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, ChevronDown, Settings, HelpCircle, School, Globe, Star } from 'lucide-react';
+import { RefreshCw, User as UserIcon, LogOut, Wifi, WifiOff, ChevronDown, Settings, HelpCircle, School, Globe, Star } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 // ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service)
@@ -244,7 +244,10 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
   // const { isSyncing, pendingCount } = useSyncStatus();
   const isSyncing = false;
   const pendingCount = 0;
-  const [orionAlertsCount, setOrionAlertsCount] = useState(0);
+  // ⭐ 2026-09-30 — ALERTE ORION SUPPRIMÉE DÉFINITIVEMENT de la navbar
+  //    (demande utilisateur) : plus de state, plus de polling périodique des
+  //    alertes, plus de badge cloche rouge. Les alertes restent consultables
+  //    via la carte ORION du tableau de bord.
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   // ⭐ « Mon profil » — dialogue photo de profil + mot de passe
@@ -325,32 +328,10 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
     };
   }, [loadSchoolIdentity, isPlatformAdmin]);
 
-  useEffect(() => {
-    // ⭐ Les admins platform n'ont pas de tenant — skip les alertes ORION
-    // (endpoint tenant-scoped qui retourne 401 pour les admins).
-    if (isPlatformAdmin) return;
-
-    const loadOrionAlerts = async () => {
-      try {
-        // ⭐ PERF (chantier GTMetrix — spéc. §7) : le dashboard charge la même
-        //    URL au même moment (OrionAlertsCard) → dédup in-flight via
-        //    cachedGet (TTL 30 s) : 1 requête partagée au chargement au lieu
-        //    de 2. Le polling 60 s reste actif (intervalle > TTL = fetch réel).
-        const alerts = await cachedGet<any[]>('/api/orion/alerts?status=active', async () => {
-          const response = await fetch('/api/orion/alerts?status=active');
-          if (!response.ok) throw new Error(`orion ${response.status}`);
-          return response.json();
-        }, { ttl: 30_000 });
-        setOrionAlertsCount(Array.isArray(alerts) ? alerts.length : 0);
-      } catch (error) {
-        console.error('Failed to load ORION alerts:', error);
-      }
-    };
-
-    loadOrionAlerts();
-    const interval = setInterval(loadOrionAlerts, 60000);
-    return () => clearInterval(interval);
-  }, [isPlatformAdmin]);
+  // ⭐ 2026-09-30 — chargement des alertes ORION SUPPRIMÉ (avec le badge
+  //    navbar associé) : le polling périodique consommait des requêtes pour
+  //    une information déjà portée par la cloche de notifications et la
+  //    carte ORION du dashboard.
 
   const handleLogout = async () => {
     try {
@@ -521,22 +502,9 @@ export default function PilotageTopBar({ user, tenant, onMenuClick, mobileDrawer
             {/* ⛔ OFFLINE-FIRST DÉSACTIVÉ — SyncButton supprimé */}
             {/* <SyncButton /> */}
 
-            {/* Alertes ORION — ⭐ ouvre le dropdown de notifications au lieu de rediriger */}
-            {orionAlertsCount > 0 && (
-              <button
-                onClick={() => {
-                  // ⭐ Déclencher l'ouverture du NotificationDropdown via un event custom
-                  window.dispatchEvent(new CustomEvent('open-notifications'));
-                }}
-                className="relative p-2 rounded-lg hover:bg-gray-50 transition-all duration-200 hover:scale-105 active:scale-95 group"
-                title="Alertes ORION — cliquez pour voir les notifications"
-              >
-                <Bell className="w-[18px] h-[18px] text-gray-500 group-hover:text-blue-900 transition-colors" />
-                <span className="absolute -top-0.5 -right-0.5 bg-gradient-to-r from-red-500 to-red-600 text-white text-[10px] rounded-full w-4.5 h-4.5 flex items-center justify-center font-bold shadow-sm animate-pulse leading-none" style={{ minWidth: '18px', height: '18px' }}>
-                  {orionAlertsCount > 9 ? '9+' : orionAlertsCount}
-                </span>
-              </button>
-            )}
+            {/* ⭐ 2026-09-30 — BADGE ALERTES ORION SUPPRIMÉ DÉFINITIVEMENT
+                (demande utilisateur). Les notifications passent uniquement
+                par la cloche NotificationDropdown ci-dessus. */}
 
             {/* Bouton Donner mon avis — masqué sur le back-office admin */}
             {!isPlatformAdmin && (

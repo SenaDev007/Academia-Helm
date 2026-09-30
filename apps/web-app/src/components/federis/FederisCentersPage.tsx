@@ -24,6 +24,12 @@ import { canWrite } from '@/lib/patronat/permissions';
 import { useFederisExams, EXAM_STATUS_LABELS } from '@/hooks/useFederisExams';
 import { FedPage, FedCountUp } from '@/components/federis/federis-motion';
 import FederisSupervisorsTab from './FederisSupervisorsTab';
+// ⭐ 2026-09-30 — Répertoire officiel des établissements du Bénin : le
+//    patronat sélectionne une école de SON département comme centre
+//    d'accueil (pré-remplissage nom / commune / directeur / téléphone).
+import SchoolDirectoryPicker, {
+  type DirectoryEntry,
+} from './SchoolDirectoryPicker';
 
 interface Room {
   id: string;
@@ -110,6 +116,19 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
     } finally {
       setBusy(false);
     }
+  };
+
+  // ⭐ Sélection d'un établissement du répertoire officiel → pré-remplissage
+  //    de la fiche du centre (nom, adresse communale, contact du directeur).
+  //    Le code du centre reste à la main du patronat (logique propre).
+  const pickDirectoryCenter = (entry: DirectoryEntry) => {
+    setCenterForm((f) => ({
+      ...f,
+      name: entry.name,
+      address: [entry.commune, entry.arrondissement].filter(Boolean).join(', ') || f.address,
+      contactName: entry.directorName ?? f.contactName,
+      contactPhone: entry.directorPhone ?? entry.founderPhone ?? f.contactPhone,
+    }));
   };
 
   const createRoom = async (e: React.FormEvent) => {
@@ -223,7 +242,7 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
               : 'text-slate-500 font-semibold hover:text-blue-900',
           )}
         >
-          Gestion des surveillants
+          Gestion des surveillants / Correction
         </button>
       </div>
 
@@ -264,7 +283,25 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
       {/* Formulaire centre (onglet « Centres et salles ») */}
       {tab === 'centres' && showCenterForm && canOrganize && examId && (
         <form onSubmit={createCenter} className="fed-card p-8 space-y-5">
-          <h3 className="text-sm font-bold text-blue-900 uppercase">Nouveau centre d&apos;accueil</h3>
+          <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-blue-900 uppercase">Nouveau centre d&apos;accueil</h3>
+              <p className="text-xs text-slate-500 font-medium mt-1 max-w-xl">
+                Recherchez un établissement du répertoire officiel de votre département pour
+                pré-remplir la fiche, ou saisissez les informations manuellement. Un examen
+                peut mobiliser PLUSIEURS centres — ajoutez-en autant que les besoins du
+                terrain l&apos;exigent.
+              </p>
+            </div>
+          </div>
+
+          {/* ⭐ Répertoire officiel — suggestions d'établissements du département */}
+          <SchoolDirectoryPicker
+            context="center"
+            onPick={pickDirectoryCenter}
+            placeholder="Rechercher un établissement d'accueil (lycée, CPEG, collège…)…"
+          />
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Code</label>

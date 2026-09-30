@@ -1095,6 +1095,14 @@ export class FederisPatronatService {
         email: s.email,
         status: s.status,
         createdAt: s.createdAt,
+        // ⭐ 2026-09-30 — écoles PROVISOIRES issues du répertoire officiel :
+        //    source + territorialité + invitation du responsable (badge et
+        //    suivi côté front).
+        source: (s.metadata as any)?.source ?? null,
+        department: (s.metadata as any)?.department ?? null,
+        commune: (s.metadata as any)?.commune ?? null,
+        directoryExternalRef: (s.metadata as any)?.directoryExternalRef ?? null,
+        invitedAt: (s.metadata as any)?.invitedAt ?? null,
       })),
     };
   }

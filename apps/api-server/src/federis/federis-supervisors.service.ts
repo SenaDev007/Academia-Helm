@@ -76,15 +76,19 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
-
-// ⭐ 2026-10-01 — FIX Railway : SUPERVISOR_POSTS doit être défini AVANT les
-//    DTOs qui l'utilisent dans @IsIn(SUPERVISOR_POSTS). Sinon, en JS compilé,
-//    le décorateur s'exécute avant l'initialisation du const (temporal dead
-//    zone) → ReferenceError: Cannot access 'SUPERVISOR_POSTS' before
-//    initialization.
-export type SupervisorPost = 'SURVEILLANCE' | 'CORRECTION' | 'SECRETARIAT';
-export const SUPERVISOR_POSTS: SupervisorPost[] = ['SURVEILLANCE', 'CORRECTION', 'SECRETARIAT'];
 import { Type } from 'class-transformer';
+
+// ── Postes de répartition (déclarés AVANT les DTO : les décorateurs
+//    @IsIn(SUPERVISOR_POSTS) s'évaluent à l'import du module — un usage
+//    avant déclaration produirait @IsIn(undefined) au runtime) ───────────
+
+/** ⭐ 2026-10-01 — Postes de répartition des enseignants envoyés par les
+ *    écoles : surveillance des épreuves, correction des copies, secrétariat
+ *    (saisie des notes). Le patronat répartit chaque enseignant sur l'un de
+ *    ces trois postes au moment de la validation de la répartition. */
+export type SupervisorPost = 'SURVEILLANCE' | 'CORRECTION' | 'SECRETARIAT';
+
+export const SUPERVISOR_POSTS: SupervisorPost[] = ['SURVEILLANCE', 'CORRECTION', 'SECRETARIAT'];
 
 export class CreateSupervisorRequestDto {
   /** Titre lisible (ex : « Enseignants surveillants — BEPC 2027 »). */
@@ -220,10 +224,6 @@ export class UpdateSupervisorDto {
 }
 
 // ── Constantes ──────────────────────────────────────────────────────────────
-
-// ⭐ 2026-10-01 — SUPERVISOR_POSTS et SupervisorPost sont déjà définis plus
-//    haut (avant les DTOs) pour éviter le temporal dead zone en JS compilé.
-//    On garde juste les fonctions utilitaires ici.
 
 export function normalizeSupervisorPost(value?: string | null): SupervisorPost {
   return SUPERVISOR_POSTS.includes(value as SupervisorPost)
@@ -669,7 +669,7 @@ export class FederisSupervisorsService {
         school.tenantId,
         {
           title: `Désignation d'enseignants — ${exam.name}`,
-          body: `${patronat.name} sollicite votre établissement : présentez vos enseignants pour l'organisation de l'examen ${exam.name} (${exam.code}) — surveillance des épreuves, correction des copies et secrétariat (saisie des notes). Ouvrez le module « Patronats & Examens → Gestion des surveillants » pour sélectionner vos enseignants.`,
+          body: `${patronat.name} sollicite votre établissement : présentez vos enseignants pour l'organisation de l'examen ${exam.name} (${exam.code}) — surveillance des épreuves, correction des copies et secrétariat (saisie des notes). Ouvrez le module « Patronats & Examens → Gestion des surveillants / Correction » pour sélectionner vos enseignants.`,
           priority: 'HIGH',
           data: {
             url: '/app/federis?tab=surveillants',
@@ -796,7 +796,7 @@ export class FederisSupervisorsService {
         school.tenantId,
         {
           title: `Note circulaire (rappel) — ${request.title}`,
-          body: `${patronat.name} vous rappelle sa demande de désignation d'enseignants pour ${examLabel} : « ${noteExcerpt}${noteSuffix} ». Ouvrez le module « Patronats & Examens → Gestion des surveillants » de votre espace Academia Helm pour sélectionner vos enseignants (surveillance, correction, secrétariat).${deadlineTxt}`,
+          body: `${patronat.name} vous rappelle sa demande de désignation d'enseignants pour ${examLabel} : « ${noteExcerpt}${noteSuffix} ». Ouvrez le module « Patronats & Examens → Gestion des surveillants / Correction » de votre espace Academia Helm pour sélectionner vos enseignants (surveillance, correction, secrétariat).${deadlineTxt}`,
           priority: 'HIGH',
           data: {
             url: '/app/federis?tab=surveillants',
@@ -1105,7 +1105,7 @@ export class FederisSupervisorsService {
         schoolTenantId,
         {
           title: `Affectation de vos enseignants surveillants — ${exam.name}`,
-          body: `${patronat.name} a validé la répartition de ${info.items.length} enseignant(s) de votre établissement : ${info.items.join(' ; ')}. Ouvrez « Patronats & Examens → Gestion des surveillants » pour transmettre ces affectations à vos enseignants.`,
+          body: `${patronat.name} a validé la répartition de ${info.items.length} enseignant(s) de votre établissement : ${info.items.join(' ; ')}. Ouvrez « Patronats & Examens → Gestion des surveillants / Correction » pour transmettre ces affectations à vos enseignants.`,
           priority: 'HIGH',
           data: {
             url: '/app/federis?tab=surveillants',
@@ -1400,6 +1400,18 @@ export class FederisSupervisorsService {
                 submittedAt: sub.submittedAt,
                 teachersCount: teachers.length,
                 teacherIds: teachers.map((t) => t.id),
+                // ⭐ 2026-09-30 — liste nominative des enseignants envoyés
+                //    (sous-onglet « Enseignants envoyés » côté Helm : l'école
+                //    voit QUI a été transmis au patronat, en attente des
+                //    affectations).
+                teachers: teachers.map((t) => ({
+                  id: t.id,
+                  firstName: t.firstName,
+                  lastName: t.lastName,
+                  matricule: t.matricule,
+                  phone: t.phone,
+                  subject: t.subject,
+                })),
               }
             : null,
         };

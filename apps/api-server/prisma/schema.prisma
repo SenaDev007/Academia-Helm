@@ -14642,6 +14642,49 @@ model PatronatManualSchool {
   @@map("patronat_manual_schools")
 }
 
+/// ⭐ 2026-09-30 — RÉPERTOIRE OFFICIEL des établissements du Bénin (base de
+///    données de référence, pays par pays). Source initiale : répertoire
+///    ministériel des 1 406 établissements secondaires PRIVÉS (2022-2023).
+///    Le patronat s'en sert pour (1) créer rapidement des écoles PROVISOIRES
+///    hors Academia Helm (module Écoles rattachées) et (2) désigner les
+///    CENTRES d'examen (module Centres) — suggestions filtrées par SON
+///    département. Extensible : PRIMAIRE/PUBLIC dès qu'un répertoire
+///    nominatif officiel sera disponible.
+model SchoolDirectoryEntry {
+  id               String   @id @default(uuid())
+  /// Code pays ISO (BJ = Bénin).
+  countryCode      String   @default("BJ")
+  /// Référence stable du répertoire source (ex. BJ-SEC-PRIVE-2023-0001) — idempotence du seed.
+  externalRef      String   @unique
+  name             String
+  /// PRIMAIRE | SECONDAIRE
+  level            String
+  /// PUBLIC | PRIVE
+  sector           String
+  /// Département canonique (Alibori, Atlantique… — 12 départements du Bénin).
+  department       String
+  /// Libellé brut du répertoire source (ex. « DEPARTEMENT DE L'ALIBORI »).
+  departmentLabel  String?
+  commune          String?
+  arrondissement   String?
+  /// Cycle d'enseignement (ex. « I », « I ET II »).
+  cycle            String?
+  founderName      String?
+  founderPhone     String?
+  directorName     String?
+  directorPhone    String?
+  /// Classes autorisées fonctionnelles (résumé du répertoire).
+  classesSummary   String?
+  metadata         Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([countryCode, department])
+  @@index([department, sector, level])
+  @@index([name])
+  @@map("school_directory_entries")
+}
+
 model FederisInvoice {
   id         String           @id @default(uuid())
   patronatId String

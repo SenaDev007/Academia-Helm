@@ -7,7 +7,9 @@
  *      SECRÉTARIAT (module Centres, salles & Surveillants), un compte
  *      provisoire (User.role = PATRONAT_SAISIE_NOTES, tenant du patronat)
  *      est créé AUTOMATIQUEMENT. Identifiants retournés au patronat qui les
- *      transmet à l'enseignant. Le compte est GELÉ (suspended) après
+ *      transmet à l'enseignant. ⭐ Task 24 : l'identifiant est l'EMAIL RÉEL
+ *      de l'enseignant (repli simulé prenom.nom@academiafederis.com, un seul
+ *      compte réutilisé par enseignant). Le compte est GELÉ (suspended) après
  *      l'examen, puis SUPPRIMÉ — jamais un membre du bureau (pas de
  *      PatronatUser) : la connexion passe par user.tenantId (portail
  *      PATRONAT, pattern auth.service).
@@ -70,9 +72,12 @@ import {
 /** Rôle technique du compte provisoire (User.role — portail PATRONAT). */
 export const SAISIE_USER_ROLE = 'PATRONAT_SAISIE_NOTES';
 
-/** Domaine des identifiants provisoires (jamais l'email réel de l'enseignant :
- *  son compte Helm éventuel ne doit pas être bloqué par l'unicité email). */
-const SAISIE_LOGIN_DOMAIN = '@saisie-examen.bj';
+/** ⭐ Task 24 (2026-10-01) — Identifiant du compte de saisie : EMAIL RÉEL de
+ *  l'enseignant en priorité (ExamSupervisor.email, repli Teacher.email) ; ce
+ *  domaine ne sert qu'aux adresses SIMULÉES des enseignants sans email
+ *  (prenom.nom@academiafederis.com) et aux replis d'unicité (email déjà pris
+ *  par un compte Helm / homonyme…). */
+const SAISIE_FALLBACK_EMAIL_DOMAIN = '@academiafederis.com';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DTOs (décorateurs class-validator obligatoires — ValidationPipe whitelist)
@@ -135,6 +140,19 @@ export interface ProvisionAccountResult {
   centerName?: string | null;
 }
 
+/** Affectation SECRÉTARIAT + contexte examen/centre (provisionnement saisie). */
+type SaisieSupervisorContext = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  teacherId: string | null;
+  createdBy: string | null;
+  metadata: unknown;
+  exam?: { id: string; name: string; code: string } | null;
+  center?: { id: string; name: string } | null;
+};
+
 /** Génère un mot de passe temporaire lisible (sans caractères ambigus). */
 function generateTempPassword(length = 10): string {
   const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
@@ -152,6 +170,14 @@ function slugifyName(raw: string | null | undefined): string {
     .replace(/[^a-z0-9]+/g, '.')
     .replace(/^\.+|\.+$/g, '')
     .slice(0, 24);
+}
+
+/** Format d'adresse email minimal et valide (local@domaine.tld). */
+function isEmail(raw: string | null | undefined): boolean {
+  return (
+    typeof raw === 'string' &&
+    /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(raw.trim().toLowerCase())
+  );
 }
 
 @Injectable()
@@ -295,13 +321,17 @@ export class FederisSaisieService {
       }
     }
 
-    // Identifiant provisoire : prenom.nom.sec.xxxxxx@saisie-examen.bj
-    // (déterministe par affectation — recréable après suppression ; JAMAIS
-    // l'email réel de l'enseignant pour ne pas bloquer son compte Helm).
-    let login = `${slugifyName(supervisor.firstName)}.${slugifyName(supervisor.lastName)}.sec.${supervisor.id.slice(0, 6)}${SAISIE_LOGIN_DOMAIN}`;
-    if (await this.prisma.user.findUnique({ where: { email: login } })) {
-      login = `${slugifyName(supervisor.firstName)}.${slugifyName(supervisor.lastName)}.sec.${supervisor.id.slice(0, 10)}${SAISIE_LOGIN_DOMAIN}`;
+    // ⭐ Task 24 — Identifiant du compte de saisie = EMAIL RÉEL de l'enseignant
+    // (ExamSupervisor.email, repli Teacher.email). Sans email → adresse simulée
+    // prenom.nom@academiafederis.com. Si l'adresse est déjà prise par le compte
+    // de saisie du MÊME enseignant (autre examen) → RÉUTILISATION du compte (un
+    // seul identifiant par enseignant) ; prise par un autre compte (Helm,
+    // patronat…) → repli sur l'adresse simulée (unicité globale User.email).
+    const resolved = await this.resolveSaisieAccount(tenantId, supervisor);
+    if (resolved.kind === 'reuse') {
+      return this.attachExistingSaisieAccount(tenantId, supervisor, resolved.user, createdBy);
     }
+    const login = resolved.login;
     const tempPassword = generateTempPassword();
     const user = await this.prisma.user.create({
       data: {
@@ -338,6 +368,165 @@ export class FederisSaisieService {
       login,
       tempPassword,
       userId: user.id,
+      examName: supervisor.exam?.name,
+      centerName: supervisor.center?.name ?? null,
+    };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // ⭐ Task 24 — Résolution de l'identifiant du compte de saisie
+  // ───────────────────────────────────────────────────────────────────────
+
+  /** Email réel de l'enseignant : ExamSupervisor.email (copié à la nomination
+   *  d'école / à la création manuelle), repli Teacher.email via teacherId.
+   *  Normalisé en minuscules, format vérifié. */
+  private async resolveTeacherEmail(supervisor: {
+    email: string | null;
+    teacherId: string | null;
+  }): Promise<string | null> {
+    const direct = (supervisor.email ?? '').trim().toLowerCase();
+    if (isEmail(direct)) return direct;
+    if (supervisor.teacherId) {
+      const teacher = await this.prisma.teacher.findUnique({
+        where: { id: supervisor.teacherId },
+        select: { email: true },
+      });
+      const fromTeacher = (teacher?.email ?? '').trim().toLowerCase();
+      if (isEmail(fromTeacher)) return fromTeacher;
+    }
+    return null;
+  }
+
+  /**
+   * Résout l'identifiant (User.email) du compte de saisie :
+   *   1. EMAIL RÉEL de l'enseignant s'il est libre ;
+   *   2. RÉUTILISATION du compte existant si l'adresse appartient au compte
+   *      de saisie du MÊME enseignant (autre examen / ré-affectation) ;
+   *   3. Adresse simulée prenom.nom@academiafederis.com (enseignant sans
+   *      email, ou email déjà pris par un autre compte — Helm, patronat…) ;
+   *   4. Suffixe numérique (prenom.nom2@…) si la simulée est prise, puis
+   *      repli déterministe prenom.nom.sec.{id}@academiafederis.com.
+   */
+  private async resolveSaisieAccount(
+    tenantId: string,
+    supervisor: SaisieSupervisorContext,
+  ): Promise<
+    | { kind: 'login'; login: string }
+    | { kind: 'reuse'; user: { id: string; email: string; status: string } }
+  > {
+    const teacherEmail = await this.resolveTeacherEmail(supervisor);
+    const nameBase =
+      [slugifyName(supervisor.firstName), slugifyName(supervisor.lastName)]
+        .filter(Boolean)
+        .join('.') || 'enseignant';
+    const candidates: string[] = [];
+    if (teacherEmail) candidates.push(teacherEmail);
+    candidates.push(`${nameBase}${SAISIE_FALLBACK_EMAIL_DOMAIN}`);
+
+    for (const candidate of candidates) {
+      const existing = await this.prisma.user.findUnique({
+        where: { email: candidate },
+        select: { id: true, email: true, status: true, role: true, tenantId: true },
+      });
+      if (!existing) return { kind: 'login', login: candidate };
+      if (
+        existing.role === SAISIE_USER_ROLE &&
+        existing.tenantId === tenantId &&
+        (await this.isSameTeacherAsAccount(supervisor, existing.id))
+      ) {
+        return { kind: 'reuse', user: existing };
+      }
+    }
+
+    // Adresse simulée déjà prise (homonyme sans email, autre tenant…) →
+    // suffixe numérique, puis repli déterministe sur l'id de l'affectation.
+    for (let n = 2; n <= 25; n++) {
+      const candidate = `${nameBase}${n}${SAISIE_FALLBACK_EMAIL_DOMAIN}`;
+      const taken = await this.prisma.user.findUnique({
+        where: { email: candidate },
+        select: { id: true },
+      });
+      if (!taken) return { kind: 'login', login: candidate };
+    }
+    return {
+      kind: 'login',
+      login: `${nameBase}.sec.${supervisor.id}${SAISIE_FALLBACK_EMAIL_DOMAIN}`,
+    };
+  }
+
+  /** Le compte de saisie existant appartient-il au MÊME enseignant ? Vérifié
+   *  via une autre affectation liée à ce compte : même teacherId (nomination
+   *  d'école) ou, à défaut, mêmes nom + prénom normalisés (création manuelle
+   *  — un homonyme parfait resterait théoriquement possible). */
+  private async isSameTeacherAsAccount(
+    supervisor: { id: string; teacherId: string | null; firstName: string; lastName: string },
+    accountId: string,
+  ): Promise<boolean> {
+    const other = await this.prisma.examSupervisor.findFirst({
+      where: { userId: accountId, id: { not: supervisor.id } },
+      select: { teacherId: true, firstName: true, lastName: true },
+    });
+    if (!other) return false;
+    if (other.teacherId && supervisor.teacherId) {
+      return other.teacherId === supervisor.teacherId;
+    }
+    return (
+      slugifyName(other.firstName) === slugifyName(supervisor.firstName) &&
+      slugifyName(other.lastName) === slugifyName(supervisor.lastName)
+    );
+  }
+
+  /** Rattache un compte de saisie EXISTANT (même enseignant, autre examen) à
+   *  cette affectation : UN SEUL identifiant par enseignant. Compte gelé →
+   *  réactivation + nouveau mot de passe temporaire (retourné une seule fois). */
+  private async attachExistingSaisieAccount(
+    tenantId: string,
+    supervisor: SaisieSupervisorContext,
+    existing: { id: string; email: string; status: string },
+    createdBy?: string,
+  ): Promise<ProvisionAccountResult> {
+    const teacherName = `${supervisor.firstName} ${supervisor.lastName}`.trim();
+    const md = ((supervisor.metadata ?? {}) as Record<string, any>) ?? {};
+    let tempPassword: string | null = null;
+    if (existing.status === 'suspended') {
+      tempPassword = generateTempPassword();
+      await this.prisma.user.update({
+        where: { id: existing.id },
+        data: { passwordHash: await bcrypt.hash(tempPassword, 10), status: 'active' },
+      });
+    }
+    await this.prisma.examSupervisor.update({
+      where: { id: supervisor.id },
+      data: {
+        userId: existing.id,
+        metadata: {
+          ...md,
+          provisionalAccount: {
+            userId: existing.id,
+            login: existing.email,
+            createdAt: new Date().toISOString(),
+            createdBy: createdBy ?? null,
+          },
+        },
+      },
+    });
+    await this.audit(
+      tenantId,
+      createdBy ?? supervisor.createdBy ?? '',
+      tempPassword ? 'FEDERIS_SAISIE_ACCOUNT_REACTIVATED' : 'FEDERIS_SAISIE_ACCOUNT_ATTACHED',
+      supervisor.id,
+      { login: existing.email, reused: true },
+    );
+    this.logger.log(
+      `Compte de saisie ${tempPassword ? 'réactivé' : 'rattaché'} — ${teacherName} (${existing.email})`,
+    );
+    return {
+      status: tempPassword ? 'reactivated' : 'exists',
+      supervisorId: supervisor.id,
+      teacherName,
+      login: existing.email,
+      tempPassword,
+      userId: existing.id,
       examName: supervisor.exam?.name,
       centerName: supervisor.center?.name ?? null,
     };

@@ -2143,8 +2143,6 @@ ${sectionsHtml}
 
       ${this.releveSignatureBlock(header)}
 
-      <p class="nb">NB : Le pr\u00e9sent Relev\u00e9 de notes tient lieu d\u2019attestation provisoire de dipl\u00f4me, valable pour six (06) mois.</p>
-
       <div class="rules">
         <p>Est d\u00e9clar\u00e9(e) admis(e) au CEP tout(e) candidat(e) ayant obtenu la note minimale exig\u00e9e dans au moins ${esc(String(adm?.matieresRequises ?? 6))} des ${esc(String(nbMatieres || 9))} mati\u00e8res.</p>
         <p>Est d\u00e9clar\u00e9(e) admis(e) \u00e0 l\u2019entr\u00e9e en 6\u00e8me tout(e) candidat(e) re\u00e7u(e) au CEP et ayant obtenu une note de perfectionnement diff\u00e9rente de z\u00e9ro (0) dans l\u2019une des trois (03) mati\u00e8res marqu\u00e9es d\u2019un ast\u00e9risque (*).</p>
@@ -2244,8 +2242,6 @@ ${sectionsHtml}
       </table>
 
       ${this.releveSignatureBlock(header)}
-
-      <p class="nb">NB : Toute rature ou surcharge ou photocopie non certifi\u00e9e conforme \u00e0 l\u2019original annule la validit\u00e9 de ce relev\u00e9.</p>
     </section>`;
   }
 
@@ -2262,7 +2258,7 @@ ${sectionsHtml}
   .sheet { padding: 4px 2px; }
 
   /* ── En-tête officiel ── */
-  .header { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+  .header { width: 100%; border-collapse: separate; border-spacing: 0; margin-bottom: 4px; }
   .header td { vertical-align: top; border: none; padding: 2px 4px; }
   .org { width: 34%; text-align: left; }
   .org-line { font-size: 10px; font-weight: bold; text-transform: uppercase; line-height: 1.35; }
@@ -2276,16 +2272,24 @@ ${sectionsHtml}
   .session { font-size: 11px; font-weight: bold; margin-top: 6px; }
   .ref { font-size: 10.5px; font-weight: bold; margin: 4px 0 8px 2px; }
 
-  /* ── État civil (libellé / valeur) ── */
-  .civil { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-  .civil td { border: 1px solid #000; padding: 3px 8px; font-size: 10.5px; }
+  /* ── État civil (libellé / valeur) — coins arrondis ── */
+  .civil { width: 100%; border-collapse: separate; border-spacing: 0; margin-bottom: 10px; border: 1px solid #000; border-radius: 6px; overflow: hidden; }
+  .civil td { border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 3px 8px; font-size: 10.5px; }
+  .civil td:last-child { border-right: none; }
+  .civil tr:last-child td { border-bottom: none; }
   .civil .lbl { width: 32%; text-transform: uppercase; font-size: 9px; font-weight: bold; letter-spacing: 0.4px; }
   .civil .val { font-weight: bold; }
 
-  /* ── Tableau des notes ── */
-  .cep-grid, .sec-grid { width: 100%; border-collapse: collapse; border: 2px solid #000; }
-  .cep-grid th, .sec-grid th { border: 1px solid #000; background: #fff; color: #000; font-size: 10px; font-weight: bold; text-transform: uppercase; padding: 5px 4px; text-align: center; }
-  .cep-grid td, .sec-grid td { border: 1px solid #000; padding: 5px 8px; font-size: 11px; vertical-align: middle; background: #fff; }
+  /* ── Tableau des notes — coins arrondis (cadre 2px arrondi, filets 1px) ── */
+  .cep-grid, .sec-grid { width: 100%; border-collapse: separate; border-spacing: 0; border: 2px solid #000; border-radius: 8px; overflow: hidden; }
+  .cep-grid th, .sec-grid th { border-right: 1px solid #000; border-bottom: 1px solid #000; background: #fff; color: #000; font-size: 10px; font-weight: bold; text-transform: uppercase; padding: 5px 4px; text-align: center; }
+  .cep-grid td, .sec-grid td { border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 5px 8px; font-size: 11px; vertical-align: middle; background: #fff; }
+  .cep-grid th:last-child, .sec-grid th:last-child,
+  .cep-grid td:last-child, .sec-grid td:last-child { border-right: none; }
+  .cep-grid tr:last-child td, .sec-grid tr:last-child td { border-bottom: none; }
+  /* En-tête CEP à 2 niveaux (rowSpan/colSpan) : la dernière cellule de la
+     ligne « sub » n'est PAS la dernière colonne du tableau → filet rétabli. */
+  .cep-grid .sub th:last-child { border-right: 1px solid #000; }
   .cep-grid .sub th, .sec-grid .sub th { font-size: 9.5px; }
   .matiere { text-align: left; font-weight: bold; }
   .c { text-align: center; }
@@ -2306,13 +2310,14 @@ ${sectionsHtml}
   .bilan-value { font-size: 12px; font-weight: bold; }
   .abs { color: #b91c1c; font-weight: bold; font-size: 9.5px; }
 
-  /* ── Décision du jury ── */
-  .decision { width: 78%; border-collapse: collapse; margin: 12px auto 0 auto; }
-  .decision th { border: 1.5px solid #000; background: #fff; padding: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
-  .decision td { border: 1.5px solid #000; padding: 4px 10px; font-size: 11px; font-weight: bold; }
+  /* ── Décision du jury — coins arrondis ── */
+  .decision { width: 78%; border-collapse: separate; border-spacing: 0; margin: 12px auto 0 auto; border: 1.5px solid #000; border-radius: 6px; overflow: hidden; }
+  .decision th { border-bottom: 1.5px solid #000; background: #fff; padding: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+  .decision td { border-right: 1.5px solid #000; border-bottom: 1.5px solid #000; padding: 4px 10px; font-size: 11px; font-weight: bold; }
+  .decision td:last-child { border-right: none; }
+  .decision tr:last-child td { border-bottom: none; }
   .decision td:first-child { width: 62%; text-align: left; }
   .decision .dec { text-align: center; text-transform: uppercase; }
-  .decision.single td:first-child { border: none; border-top: none; }
 
   /* ── Date + signature ── */
   .sig-block { width: 42%; margin: 18px 6px 0 auto; text-align: center; }
@@ -2320,8 +2325,6 @@ ${sectionsHtml}
   .sig-title { font-size: 11px; font-weight: bold; text-transform: uppercase; }
   .sig-space { height: 52px; }
   .sig-name { font-size: 11px; font-weight: bold; border-top: 1px solid #000; margin: 0 18px; padding-top: 3px; }
-
-  .nb { font-size: 9.5px; font-style: italic; margin-top: 12px; }
 
   /* ── Règles d'admission (bas de page CEP) ── */
   .rules { margin-top: 14px; border-top: 1px solid #000; padding-top: 5px; }

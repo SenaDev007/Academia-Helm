@@ -513,16 +513,31 @@ function SignatureBlock({ patronat }: { patronat: PatronatHeader | null }) {
   );
 }
 
-const civilTd = 'border border-black px-2 py-1 align-top';
+const civilTd = 'px-2 py-1 align-top border-black';
 const civilLbl = 'w-[32%] text-[8px] font-bold uppercase tracking-wide';
 const civilVal = 'text-[10px] font-bold';
 
-function CivilRow({ label, value }: { label: string; value: string }) {
+/** Ligne d'état civil — filets internes 1px (droite + bas), dernier rang sans
+ *  bas : le cadre arrondi du tableau (border-separate) fournit les bords. */
+function CivilRow({ label, value, last }: { label: string; value: string; last?: boolean }) {
   return (
     <tr>
-      <td className={civilTd}><span className={civilLbl}>{label}</span></td>
-      <td className={civilTd}><span className={civilVal}>{value}</span></td>
+      <td className={cn(civilTd, 'border-r', !last && 'border-b')}><span className={civilLbl}>{label}</span></td>
+      <td className={cn(civilTd, !last && 'border-b')}><span className={civilVal}>{value}</span></td>
     </tr>
+  );
+}
+
+/** État civil du candidat — tableau à coins arrondis (6px), identique au PDF. */
+function CivilTable({ rows }: { rows: Array<[string, string]> }) {
+  return (
+    <table className="w-full mb-4 border-separate border-spacing-0 rounded-md overflow-hidden border border-black">
+      <tbody>
+        {rows.map(([label, value], i) => (
+          <CivilRow key={label} label={label} value={value} last={i === rows.length - 1} />
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -557,49 +572,50 @@ function ReleveCepPreview({ releve, patronat }: { releve: Releve; patronat: Patr
         N° {c.registrationNumber ?? c.matricule}/{releve.examCode}
       </div>
 
-      {/* État civil */}
-      <table className="w-full border-collapse mb-4">
-        <tbody>
-          <CivilRow label="NOM" value={c.lastName.toUpperCase()} />
-          <CivilRow label="PRÉNOMS" value={c.firstName || '—'} />
-          <CivilRow label="SEXE" value={genderShort(c.gender)} />
-          <CivilRow label="MATRICULE" value={c.matricule} />
-          <CivilRow label="DATE ET LIEU DE NAISSANCE" value={fmtNaissance(c.dateOfBirth, c.placeOfBirth)} />
-          <CivilRow label="CENTRE DE COMPOSITION" value={c.centerName ?? '—'} />
-          <CivilRow label="NUMÉRO D'INSCRIPTION" value={c.registrationNumber ?? c.matricule} />
-          <CivilRow label="NATURE DE LA CANDIDATURE" value={c.candidatureNature ?? 'Officiel'} />
-        </tbody>
-      </table>
+      {/* État civil — coins arrondis */}
+      <CivilTable
+        rows={[
+          ['NOM', c.lastName.toUpperCase()],
+          ['PRÉNOMS', c.firstName || '—'],
+          ['SEXE', genderShort(c.gender)],
+          ['MATRICULE', c.matricule],
+          ['DATE ET LIEU DE NAISSANCE', fmtNaissance(c.dateOfBirth, c.placeOfBirth)],
+          ['CENTRE DE COMPOSITION', c.centerName ?? '—'],
+          ["NUMÉRO D'INSCRIPTION", c.registrationNumber ?? c.matricule],
+          ['NATURE DE LA CANDIDATURE', c.candidatureNature ?? 'Officiel'],
+        ]}
+      />
 
-      {/* Tableau officiel CEP */}
-      <table className="w-full border-collapse border-2 border-black">
+      {/* Tableau officiel CEP — coins arrondis (8px), cadre 2px, filets 1px */}
+      <table className="w-full border-separate border-spacing-0 rounded-lg overflow-hidden border-2 border-black">
         <thead>
           <tr>
-            <th rowSpan={2} className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase text-left">Matière</th>
-            <th colSpan={2} className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase">CEP</th>
-            <th rowSpan={2} className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[18%]">Note de perfection-<br />nement obtenue</th>
+            <th rowSpan={2} className="border-r border-b border-black px-2 py-1.5 text-[10px] font-bold uppercase text-left">Matière</th>
+            <th colSpan={2} className="border-r border-b border-black px-2 py-1.5 text-[10px] font-bold uppercase">CEP</th>
+            <th rowSpan={2} className="border-b border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[18%]">Note de perfection-<br />nement obtenue</th>
           </tr>
           <tr>
-            <th className="border border-black px-2 py-1 text-[9px] font-bold uppercase">Note obtenue</th>
-            <th className="border border-black px-2 py-1 text-[9px] font-bold uppercase">Note minimale exigée</th>
+            <th className="border-r border-b border-black px-2 py-1 text-[9px] font-bold uppercase">Note obtenue</th>
+            <th className="border-r border-b border-black px-2 py-1 text-[9px] font-bold uppercase">Note minimale exigée</th>
           </tr>
         </thead>
         <tbody>
-          {releve.lines.map((line) => {
+          {releve.lines.map((line, i) => {
             const minReq = line.passingScore ?? 10;
             const ok = line.score !== null && line.score >= minReq;
+            const rowB = i < releve.lines.length - 1 ? 'border-b' : '';
             return (
               <tr key={line.subjectId}>
-                <td className="border border-black px-2 py-1 text-[10px] font-bold">
+                <td className={cn('border-r border-black px-2 py-1 text-[10px] font-bold', rowB)}>
                   {line.name}{line.perfectionnement ? ' *' : ''}
                 </td>
-                <td className={cn('border border-black px-2 py-1 text-center text-[11px] font-bold', ok ? 'text-emerald-700' : 'text-red-700')}>
+                <td className={cn('border-r border-black px-2 py-1 text-center text-[11px] font-bold', ok ? 'text-emerald-700' : 'text-red-700', rowB)}>
                   {line.isAbsent ? <span className="text-red-600 text-[9px]">ABS</span> : fmtOfficial(line.cm ?? line.score)}
                 </td>
-                <td className="border border-black px-2 py-1 text-center text-[10px]">
+                <td className={cn('border-r border-black px-2 py-1 text-center text-[10px]', rowB)}>
                   {String(minReq).replace('.', ',')}
                 </td>
-                <td className={cn('border border-black px-2 py-1 text-center text-[11px] font-bold', line.cp != null && line.cp > 0 ? 'text-emerald-700' : '')}>
+                <td className={cn('border-black px-2 py-1 text-center text-[11px] font-bold', line.cp != null && line.cp > 0 ? 'text-emerald-700' : '', rowB)}>
                   {line.isAbsent ? <span className="text-red-600 text-[9px]">ABS</span> : fmtOfficial(line.cp)}
                 </td>
               </tr>
@@ -608,21 +624,21 @@ function ReleveCepPreview({ releve, patronat }: { releve: Releve; patronat: Patr
         </tbody>
       </table>
 
-      {/* Décision du jury */}
-      <table className="w-[78%] border-collapse mx-auto mt-5">
+      {/* Décision du jury — coins arrondis (6px) */}
+      <table className="w-[78%] mx-auto mt-5 border-separate border-spacing-0 rounded-md overflow-hidden border-2 border-black">
         <tbody>
           <tr>
-            <th colSpan={2} className="border-2 border-black px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest">Décision du jury</th>
+            <th colSpan={2} className="border-b border-black px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest">Décision du jury</th>
           </tr>
           <tr>
-            <td className="border-2 border-black px-3 py-1 text-[10px] font-bold">CERTIFICAT D'ÉTUDES PRIMAIRES</td>
-            <td className={cn('border-2 border-black px-3 py-1 text-center text-[11px] font-bold uppercase', adm?.admisCep ? 'text-emerald-700' : 'text-red-700')}>
+            <td className="border-r border-b border-black px-3 py-1 text-[10px] font-bold">CERTIFICAT D'ÉTUDES PRIMAIRES</td>
+            <td className={cn('px-3 py-1 text-center text-[11px] font-bold uppercase', adm?.admisCep ? 'text-emerald-700' : 'text-red-700')}>
               {adm?.admisCep ? 'Admis' : 'Ajourné(e)'}
             </td>
           </tr>
           <tr>
-            <td className="border-2 border-black px-3 py-1 text-[10px] font-bold">ENTRÉE EN SIXIÈME</td>
-            <td className={cn('border-2 border-black px-3 py-1 text-center text-[11px] font-bold uppercase', adm?.admisSixieme ? 'text-emerald-700' : 'text-red-700')}>
+            <td className="border-r border-black px-3 py-1 text-[10px] font-bold">ENTRÉE EN SIXIÈME</td>
+            <td className={cn('px-3 py-1 text-center text-[11px] font-bold uppercase', adm?.admisSixieme ? 'text-emerald-700' : 'text-red-700')}>
               {adm?.admisSixieme ? 'Admis' : 'Ajourné(e)'}
             </td>
           </tr>
@@ -630,10 +646,6 @@ function ReleveCepPreview({ releve, patronat }: { releve: Releve; patronat: Patr
       </table>
 
       <SignatureBlock patronat={patronat} />
-
-      <p className="text-[9px] italic mt-6">
-        NB : Le présent Relevé de notes tient lieu d'attestation provisoire de diplôme, valable pour six (06) mois.
-      </p>
 
       <div className="border-t border-black mt-4 pt-2 space-y-1">
         <p className="text-[8px] text-justify leading-snug">
@@ -699,46 +711,47 @@ function ReleveSecondairePreview({ releve, patronat }: { releve: Releve; patrona
         N° {c.registrationNumber ?? c.matricule}/{releve.examCode}
       </div>
 
-      {/* État civil */}
-      <table className="w-full border-collapse mb-4">
-        <tbody>
-          <CivilRow label="NOM" value={c.lastName.toUpperCase()} />
-          <CivilRow label="PRÉNOMS" value={c.firstName || '—'} />
-          <CivilRow label="SEXE" value={genderLong(c.gender)} />
-          <CivilRow label="MATRICULE" value={c.matricule} />
-          <CivilRow label="DATE ET LIEU DE NAISSANCE" value={fmtNaissance(c.dateOfBirth, c.placeOfBirth)} />
-          <CivilRow label="CENTRE DE COMPOSITION" value={c.centerName ?? '—'} />
-          <CivilRow label="NUMÉRO D'INSCRIPTION" value={c.registrationNumber ?? c.matricule} />
-        </tbody>
-      </table>
+      {/* État civil — coins arrondis */}
+      <CivilTable
+        rows={[
+          ['NOM', c.lastName.toUpperCase()],
+          ['PRÉNOMS', c.firstName || '—'],
+          ['SEXE', genderLong(c.gender)],
+          ['MATRICULE', c.matricule],
+          ['DATE ET LIEU DE NAISSANCE', fmtNaissance(c.dateOfBirth, c.placeOfBirth)],
+          ['CENTRE DE COMPOSITION', c.centerName ?? '—'],
+          ["NUMÉRO D'INSCRIPTION", c.registrationNumber ?? c.matricule],
+        ]}
+      />
 
-      {/* Tableau officiel secondaire */}
-      <table className="w-full border-collapse border-2 border-black">
+      {/* Tableau officiel secondaire — coins arrondis (8px), cadre 2px, filets 1px */}
+      <table className="w-full border-separate border-spacing-0 rounded-lg overflow-hidden border-2 border-black">
         <thead>
           <tr>
-            <th className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase text-left">Matières</th>
-            <th className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[9%]">Coef.</th>
-            <th className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[12%]">Note/20</th>
-            <th className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[14%]">Note coef.</th>
-            <th className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[20%]">Bilan</th>
+            <th className="border-r border-b border-black px-2 py-1.5 text-[10px] font-bold uppercase text-left">Matières</th>
+            <th className="border-r border-b border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[9%]">Coef.</th>
+            <th className="border-r border-b border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[12%]">Note/20</th>
+            <th className="border-r border-b border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[14%]">Note coef.</th>
+            <th className="border-b border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[20%]">Bilan</th>
           </tr>
         </thead>
         <tbody>
           {lines.map((line, i) => {
             const bilanCell = bilanByRow.get(i);
+            const rowB = i < lines.length - 1 ? 'border-b' : '';
             return (
               <tr key={line.subjectId}>
-                <td className="border border-black px-2 py-1 text-[10px] font-bold">{line.name}</td>
-                <td className="border border-black px-2 py-1 text-center text-[10px] font-bold">
+                <td className={cn('border-r border-black px-2 py-1 text-[10px] font-bold', rowB)}>{line.name}</td>
+                <td className={cn('border-r border-black px-2 py-1 text-center text-[10px] font-bold', rowB)}>
                   {String(line.coefficient ?? 1).replace('.', ',')}
                 </td>
-                <td className="border border-black px-2 py-1 text-center text-[11px] font-bold">
+                <td className={cn('border-r border-black px-2 py-1 text-center text-[11px] font-bold', rowB)}>
                   {line.isAbsent ? <span className="text-red-600 text-[9px]">ABS</span> : fmtOfficial(line.score)}
                 </td>
-                <td className="border border-black px-2 py-1 text-center text-[11px] font-bold">
+                <td className={cn('border-r border-black px-2 py-1 text-center text-[11px] font-bold', rowB)}>
                   {line.isAbsent ? <span className="text-red-600 text-[9px]">ABS</span> : fmtOfficial(line.noteCoef)}
                 </td>
-                <td className="border border-black px-2 py-1 text-center">
+                <td className={cn('px-2 py-1 text-center border-black', rowB)}>
                   {bilanCell ? (
                     <div>
                       <div className="text-[8px] font-bold uppercase">{bilanCell.label}</div>
@@ -752,15 +765,15 @@ function ReleveSecondairePreview({ releve, patronat }: { releve: Releve; patrona
         </tbody>
       </table>
 
-      {/* Décision du jury */}
-      <table className="w-[78%] border-collapse mx-auto mt-5">
+      {/* Décision du jury — coins arrondis (6px) */}
+      <table className="w-[78%] mx-auto mt-5 border-separate border-spacing-0 rounded-md overflow-hidden border-2 border-black">
         <tbody>
           <tr>
-            <th colSpan={2} className="border-2 border-black px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest">Décision du jury</th>
+            <th colSpan={2} className="border-b border-black px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest">Décision du jury</th>
           </tr>
           <tr>
-            <td className="border-2 border-black px-3 py-1 text-[10px] font-bold">MOYENNE : {fmtBilan(bilan?.moyenne ?? releve.computed?.finalAverage ?? null)}/20</td>
-            <td className={cn('border-2 border-black px-3 py-1 text-center text-[11px] font-bold uppercase', releve.decision === 'ADMIS' ? 'text-emerald-700' : 'text-red-700')}>
+            <td className="border-r border-black px-3 py-1 text-[10px] font-bold">MOYENNE : {fmtBilan(bilan?.moyenne ?? releve.computed?.finalAverage ?? null)}/20</td>
+            <td className={cn('px-3 py-1 text-center text-[11px] font-bold uppercase', releve.decision === 'ADMIS' ? 'text-emerald-700' : 'text-red-700')}>
               {releve.decision === 'ADMIS' ? 'Admis' : 'Ajourné(e)'}
             </td>
           </tr>
@@ -768,10 +781,6 @@ function ReleveSecondairePreview({ releve, patronat }: { releve: Releve; patrona
       </table>
 
       <SignatureBlock patronat={patronat} />
-
-      <p className="text-[9px] italic mt-6">
-        NB : Toute rature ou surcharge ou photocopie non certifiée conforme à l'original annule la validité de ce relevé.
-      </p>
     </div>
   );
 }

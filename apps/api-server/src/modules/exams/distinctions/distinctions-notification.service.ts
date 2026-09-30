@@ -21,7 +21,7 @@ import { EmailService } from '../../../communication/services/email.service';
 import { ChatService } from '../../../communication/services/chat.service';
 import { NotificationService } from '../../../notifications/notification.service';
 import { ParentUserProvisioningService } from '../../../students/services/parent-user-provisioning.service';
-import { renderEmail, escHtml } from '../../hr/recruitment-email-templates';
+import { renderEmail, escHtml } from '../../../hr/recruitment-email-templates';
 import { buildCertificateHtml } from './html-builder';
 import type { DistinctionInput, Level } from './html-builder';
 

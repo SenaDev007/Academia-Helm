@@ -1,5 +1,5 @@
-import { Icon } from '../icons.js';
-import { fill, fitFont, fmtAverage, fmtDate, fmtNumber, fmtRank } from '../format.js';
+import { Icon } from './icons.js';
+import { fill, fitFont, fmtAverage, fmtDate, fmtNumber, fmtRank } from './format.js';
 import { Footer, LevelFrame, SchoolHeader, VerifyBlock, vars, type CertProps } from './shared.js';
 
 export function Secondaire({ d, theme }: CertProps) {

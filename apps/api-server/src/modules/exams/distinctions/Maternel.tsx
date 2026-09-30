@@ -1,5 +1,5 @@
-import { Icon } from '../icons.js';
-import { fill, fitFont, fmtPct } from '../format.js';
+import { Icon } from './icons.js';
+import { fill, fitFont, fmtPct } from './format.js';
 import { Footer, LevelFrame, SchoolHeader, vars, type CertProps } from './shared.js';
 
 export function Maternel({ d, theme }: CertProps) {

@@ -1,6 +1,6 @@
 import { makeVerificationCode, verificationUrl } from './security.js';
 import { GRADUATION_CODE, resolveDistinction, type Rule } from './rules.js';
-import { generateBatch, generateBoardPdf, type BatchFile } from './render.js';
+import { generateBatch, generateBoardPdf, type BatchFile } from './render.service.js';
 import type { BoardRow, DistinctionCode, DistinctionInput, Level, PeriodInfo, SchoolInfo } from './types.js';
 
 export interface PackStudent {

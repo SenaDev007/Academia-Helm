@@ -1,8 +1,8 @@
 import type { CSSProperties } from 'react';
-import { Icon } from '../icons.js';
-import { BOARD_BASE, BOARD_TITLE, THEMES } from '../themes.js';
-import { fmtAverage, fmtPct } from '../format.js';
-import type { BoardInput, BoardRow, IconName, Level } from '../types.js';
+import { Icon } from './icons.js';
+import { BOARD_BASE, BOARD_TITLE, THEMES } from './themes.js';
+import { fmtAverage, fmtPct } from './format.js';
+import type { BoardInput, BoardRow, IconName, Level } from './types.js';
 import { LevelFrame, vars } from './shared.js';
 
 const CLS: Record<Level, string> = { maternel: 'mat', primaire: 'pri', secondaire: 'sec' };

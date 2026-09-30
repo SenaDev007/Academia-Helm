@@ -1,8 +1,8 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { Icon } from '../icons.js';
-import { DEFAULT_SIGNERS } from '../themes.js';
-import { fmtDate } from '../format.js';
-import type { IconName, Level, Palette, PreparedDistinction, SchoolInfo, Theme } from '../types.js';
+import { Icon } from './icons.js';
+import { DEFAULT_SIGNERS } from './themes.js';
+import { fmtDate } from './format.js';
+import type { IconName, Level, Palette, PreparedDistinction, SchoolInfo, Theme } from './types.js';
 
 export interface CertProps { d: PreparedDistinction; theme: Theme }
 

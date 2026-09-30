@@ -12114,3 +12114,31 @@ Stage Summary:
 - Les fractions/formules du panneau Maths vivent désormais DANS le texte : insertion à la position du curseur (le panneau reste ouvert), déplacement par glisser natif, suppression en bloc, AUCUN habillage proposé (plus de déformation de la ligne A/B/C)
 - Bouton unique « Ajouter » avec choix du type et numérotation auto (Problème 1/2, Item 1/2, Partie A/B…) ; un bloc peut en contenir d'autres (« Ajouter dedans » : Consigne → Problème 1, Problème 2) — visible dans l'éditeur ET dans le PDF (sous-blocs indentés)
 - À valider post-déploiement : (1) écrire « A) [fraction] B) [fraction] C) [fraction] » sur une seule ligne, (2) cliquer une fraction (sélection bleue) puis la glisser plus loin sur la ligne, (3) Suppr retire la fraction entière, (4) habillage toujours disponible sur les IMAGES/figures/tableaux (et seulement eux), (5) bouton « Ajouter » → types + numérotation, (6) « Ajouter dedans » sur une Consigne → Problème 1/2 puis PDF (blocs indentés)
+
+---
+Task ID: 21
+Agent: Super Z (principal)
+Task: Erreur build Vercel (globals.css bloc non fermé) + règle « épreuve préparée » avant saisie des notes + comptes provisoires des secrétaires (saisie déléguée) + suivi temps réel patronat
+
+Work Log:
+- FIX BUILD VERCEL (bloquant) : globals.css:1571 — @font-face Carlito sans accolade fermante (CssSyntaxError « Unclosed block ») → } restauré + validateur d'équilibre de blocs (parseur commentaires/chaînes) — 1 686 lignes toutes fermées
+- RÈGLE ÉPREUVE PRÉPARÉE : computeEpreuvePreparedMap exporté de federis-grades.service (correspondance IDENTIQUE au signal du module Épreuves : metadata.sourceSubjectId → FederisExamPaper.subjectId, ou nom/code normalisés) + marquage manuel « déjà préparée » dans NationalExamSubject.metadata (epreuvePreparedAt/By/ByName) — ZÉRO migration Prisma
+- Grille patronat (FederisGradeSheetTab) : subjects[].epreuvePrepared/preparedSource → colonnes verrouillées (🔒, inputs + ABS désactivés) + bandeau avec bouton « Marquer comme déjà préparée » + retrait du marquage ; bulkSaveGrades REFUSE les cellules des matières non préparées ; endpoints POST mark-prepared / unmark-prepared (WRITE_DELIBERATION + audit)
+- COMPTES PROVISOIRES (federis-saisie.service/controller NOUVEAUX) : provisionAccountForSupervisor — User role PATRONAT_SAISIE_NOTES, tenant du patronat (connexion via user.tenantId — PAS de PatronatUser), login dédié prenom.nom.sec.xxxxxx@saisie-examen.bj (JAMAIS l'email réel → compte Helm de l'enseignant protégé), MDP temporaire 10 car. sans ambigus (bcrypt 10 rounds), lien ExamSupervisor.userId + metadata.provisionalAccount ; idempotent (exists/created/reactivated)
+- Provisionnement AUTOMATIQUE : assignSupervisors (post=SECRETARIAT → lot après transaction, réponse provisionedAccounts) + createSupervisor manuel + bouton « Provisionner » du registre (affectations antérieures)
+- Gestion des comptes : POST supervisors/:id/provision-account · account/freeze · account/reactivate · account/reset-password (MDP affiché 1 fois) · DELETE account (notes conservées — enteredBy SetNull)
+- Login/portail : PATRONAT_SAISIE_NOTES autorisé portail PATRONAT ; fonction SAISIE_NOTES (federis-roles, HORS catalogue du bureau) ; permissions web /saisie réservé ; nav « Saisie des notes » ; page login → redirection directe /federis/saisie
+- UI SECRÉTAIRE (/federis/saisie — FederisSaisiePage + page/loading) : bandeau compte provisoire, carte examen (badge CEP/BEPC/BAC/CAP + session + année) + périmètre (centre + salle) + progression, matières verrouillées si épreuve non préparée, grille candidats × matières avec ABS, recherche + pagination, Enregistrer / Soumettre (verrou après soumission, purge du dirty au changement d'affectation)
+- API secrétaire : GET /federis/saisie/me · POST assignments/:id/grades/bulk (périmètre vérifié, garde épreuve préparée, verrous RESULTS_PUBLISHED + cellules SUBMITTED, upsert clé identique à la grille patronat, enteredBy = secrétaire) · POST assignments/:id/submit — loadResults : raw SQL par examId (pattern éprouvé $1) + filtre JS + repli client Prisma
+- SUIVI TEMPS RÉEL : GET /federis/exams/:id/grades/live + onglet « Suivi temps réel » (FederisGradeLiveTab — polling 10 s onglet visible, bascule pause, compteurs globaux, par secrétaire : centre/salle, saisies/total, statut, dernière activité, statut compte + actions, activité récente nominative 20 lignes)
+- MODULE SURVEILLANTS : secrétariat = « Centre de saisie » (requis) + « Salle de saisie » (toutes si vide) dans la répartition ET le formulaire manuel (sélecteur de poste) ; panneau identifiants copiables ; registre : colonne « Compte saisie » + actions Provisionner/Geler/Réactiver/MDP/Supprimer ; en-têtes réordonnés École avant Poste (inversion corrigée) ; TeacherRow : centre/salle pour le secrétariat ; notifications : libellé secrétariat avec centre/salle
+- Vérification : scripts/verify_task21.cjs — 54/54 (blocs CSS, RUNTIME computeEpreuvePreparedMap 5 cas via extraction de fonction TS réelle + transpilation, RUNTIME generateTempPassword 200 tirages + slugifyName, structurels backend + web) ; transpilation TS/TSX 19 fichiers OK
+- Commit poussé : a29c54fe8 (code, 20 fichiers) sur origin/main → Vercel + Railway redéploient
+
+Stage Summary:
+- Le build Vercel repasse (bloc CSS restauré) — déploiement immédiat
+- Aucune note ne peut être saisie pour une matière sans épreuve préparée (grille patronat ET secrétaires) : préparer l'épreuve dans le module OU la marquer « déjà préparée » en un clic (épreuve hors application)
+- L'affectation d'un enseignant au poste de SECRÉTARIAT (centre + salle de saisie) crée AUTOMATIQUEMENT son compte provisoire — identifiants copiables affichés une fois, compte gelable/réinitialisable/supprimable (registre ou suivi temps réel)
+- Le secrétaire connecté voit son poste, son examen (type + session), son centre/salle et saisit les notes des candidats de son périmètre ; soumission = verrou + mise au propre
+- Le patronat suit la saisie EN DIRECT (polling 10 s) : progression par secrétaire, compteurs globaux, activité récente nominative
+- À valider post-déploiement : répartition Secrétariat avec centre+salle → panneau identifiants → connexion secrétaire → /federis/saisie (grille + soumission) → onglet Suivi temps réel patronat ; grille avec matière non préparée (🔒 + « Marquer comme déjà préparée »)

@@ -862,7 +862,14 @@ export class BulletinsController {
     //    ET par le bloc assiduité (lignes 990-1018). Avant, quarterId était
     //    déclaré à l'intérieur du premier `if (conductStudent)` → hors de
     //    portée pour le second.
+    // ⭐ 2026-09-30 — FIX RÉGRESSION : activeSanctions doit aussi être dans
+    //    la portée externe car le bloc assiduité (second if conductStudent)
+    //    le réutilise. Avant, activeSanctions était const à l'intérieur du
+    //    premier if → inaccessible depuis le second if → assiduityHours et
+    //    sanctionCount restaient null → le PDF n'affichait plus les sanctions.
     let resolvedQuarterId: string | null = null;
+    let resolvedActiveSanctions: any[] = [];
+    let resolvedConductStudent: { id: string } | null = null;
     if (isAnySecondary && body.studentMatricule && resolvedTenantId && academicYearId) {
       try {
         // ⭐ 2026-09-30 — OPTIMISATION : paralléliser les requêtes indépendantes
@@ -890,6 +897,7 @@ export class BulletinsController {
         // ⭐ FIX 2026-09-30 : utiliser directement body.periodId comme quarterId
         //    (le conduct_ledger.quarterId stocke l'AcademicPeriod.id).
         resolvedQuarterId = body.periodId || null;
+        resolvedConductStudent = conductStudent;
 
         if (conductStudent) {
           // Vague 2 (parallèle) : conduct_ledger + sanctions
@@ -906,6 +914,10 @@ export class BulletinsController {
               select: { pointsDeducted: true, hoursAttributed: true, quarterId: true },
             }).catch(() => []),
           ]);
+
+          // ⭐ 2026-09-30 — Sauvegarder activeSanctions dans la portée externe
+          //    pour que le bloc assiduité puisse le réutiliser.
+          resolvedActiveSanctions = activeSanctions;
 
           if (ledgerRow) {
             conductScore = Number(ledgerRow.conductFinal) || null;
@@ -975,20 +987,19 @@ export class BulletinsController {
         //    le module Vie Scolaire (Σ sanction.hoursAttributed pour l'élève
         //    + trimestre courant, status ACTIVE). Affiché dans le bloc
         //    « Assiduité » de la page 2 du bulletin secondaire.
-        //    On réutilise `conductStudent` (déjà résolu) et `resolvedQuarterId`
-        //    (déjà résolu plus haut — priorité body.periodId, fallback isCurrent).
-        //    ⭐ 2026-09-30 — OPTIMISATION : on réutilise `activeSanctions` déjà
-        //    récupéré dans la vague 2 (pas besoin de refaire une requête).
-        if (conductStudent) {
-          // ⭐ On réutilise le resolvedQuarterId déjà résolu plus haut
-          //    (pas besoin de refaire la requête). Si resolvedQuarterId est null
-          //    (pas de body.periodId et pas de trimestre isCurrent), on saute
-          //    l'assiduité (sans erreur).
+        //    On réutilise `resolvedConductStudent` et `resolvedActiveSanctions`
+        //    (déclarés dans la portée externe) et `resolvedQuarterId`
+        //    (déjà résolu plus haut — priorité body.periodId).
+        //    ⭐ 2026-09-30 — FIX RÉGRESSION : avant, activeSanctions était
+        //    inaccessible depuis ce bloc (portée de bloc const) →
+        //    assiduityHours et sanctionCount restaient null → le PDF
+        //    n'affichait plus les sanctions.
+        if (resolvedConductStudent) {
           if (resolvedQuarterId) {
-            // ⭐ 2026-09-30 — On réutilise activeSanctions (déjà récupéré dans
-            //    la vague 2). On filtre par quarterId (ou quarterId=null pour
-            //    les sanctions legacy sans trimestre).
-            const filteredAssiduitySanctions = activeSanctions.filter(
+            // ⭐ On réutilise resolvedActiveSanctions (sauvegardé dans la
+            //    portée externe). On filtre par quarterId (ou quarterId=null
+            //    pour les sanctions legacy sans trimestre).
+            const filteredAssiduitySanctions = resolvedActiveSanctions.filter(
               s => !s.quarterId || s.quarterId === resolvedQuarterId,
             );
             assiduityHours = filteredAssiduitySanctions.reduce((sum, s) => sum + (Number(s.hoursAttributed) || 0), 0);

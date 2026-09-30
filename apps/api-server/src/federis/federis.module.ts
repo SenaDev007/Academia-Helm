@@ -78,6 +78,8 @@ import { FederisGradingRulesService } from './federis-grading-rules.service';
 //    rattachées) et la désignation des CENTRES d'examen (module Centres).
 //    Source initiale : 1 406 établissements secondaires privés (2022-2023).
 import { FederisSchoolDirectoryService } from './federis-school-directory.service';
+// ⭐ 2026-09-30 — exports Excel « Centres, salles & Surveillants »
+import { FederisLogisticsExportService } from './federis-logistics-export.service';
 
 @Module({
   imports: [BillingModule, CommunicationModule],
@@ -120,6 +122,7 @@ import { FederisSchoolDirectoryService } from './federis-school-directory.servic
     //    a part of the currently processed module (FederisModule) ».
     //    Ajouté aux providers pour qu'il soit instanciable ET exportable.
     FederisCandidatesExportService,
+    FederisLogisticsExportService,
     FederisPdfService,
     FederisEpreuveService,
     FederisSupervisorsService,

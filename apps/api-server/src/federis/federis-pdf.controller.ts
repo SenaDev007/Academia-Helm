@@ -119,6 +119,56 @@ export class FederisPdfController {
     return new StreamableFile(buffer);
   }
 
+  // ── Listes officielles « Centres, salles & Surveillants » (2026-09-30) ───
+  //    Sous-onglet « Centres et salles » : registre des centres + salles par
+  //    centre (capacités, chef de centre, adresse, statuts).
+  //    Sous-onglet « Gestion des surveillants » : liste du personnel par poste
+  //    (?post=SURVEILLANCE | SECRETARIAT | CORRECTION — sans filtre = tout).
+
+  /** Liste officielle des centres d'accueil et de leurs salles. */
+  @UseGuards(JwtAuthGuard)
+  @Get('exams/:examId/pdf/centres')
+  async downloadCentersList(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, filename } = await this.pdfService.generateCentersListPdf(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    return new StreamableFile(buffer);
+  }
+
+  /** Liste officielle du personnel d'examen (filtrable par poste). */
+  @UseGuards(JwtAuthGuard)
+  @Get('exams/:examId/pdf/surveillants')
+  async downloadSupervisorsList(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Res({ passthrough: true }) res: Response,
+    @Query('post') post?: string,
+  ) {
+    const { buffer, filename } = await this.pdfService.generateSupervisorsListPdf(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+      post,
+    );
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    return new StreamableFile(buffer);
+  }
+
   // ── Relevés de notes (module « Notes et Moyennes » — 2026-09-29) ─────────
   //    Modèle PRIMAIRE (sans coefficients) pour le CEP, modèle SECONDAIRE
   //    (avec coefficients) pour le BEPC / BAC / CAP — A4 paysage, rendu

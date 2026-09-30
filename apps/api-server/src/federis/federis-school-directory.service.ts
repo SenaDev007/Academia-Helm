@@ -44,6 +44,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
@@ -95,12 +96,30 @@ export function normalizeBeninPhone(phone: string | null | undefined): string | 
   return `01 ${trimmed}`;
 }
 
-/** DTO — création d'une école provisoire depuis une entrée du répertoire. */
+/** DTO — création d'une école provisoire depuis une entrée du répertoire.
+ * ⭐ FIX 2026-09-30 « property directoryEntryId should not exist / property
+ *    phone should not exist » : le ValidationPipe global
+ *    (whitelist: true + forbidNonWhitelisted: true, main.ts) rejette toute
+ *    propriété dépourvue de décorateur class-validator — la création d'une
+ *    école hors Academia Helm depuis le répertoire officiel était rejetée en
+ *    400 AVANT d'atteindre le service. Décorateurs OBLIGATOIRES ci-dessous
+ *    (même règle que CreateChildPatronatDto / CreateManualSchoolDto). */
 export class CreateProvisionalSchoolDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
   directoryEntryId!: string;
+
   /** Email du responsable (optionnel — déclenche l'invitation par email). */
+  @IsOptional()
+  @IsEmail({}, { message: 'Adresse email invalide.' })
+  @MaxLength(190)
   email?: string;
+
   /** Téléphone du responsable (défaut : celui du répertoire). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
   phone?: string;
 }
 
@@ -453,7 +472,13 @@ export class FederisSchoolDirectoryService {
     // Adresse lisible : « Commune, Arrondissement »
     const addressParts = [entry.commune, entry.arrondissement].filter(Boolean);
     const email = dto.email?.trim().toLowerCase() || null;
-    const phone = dto.phone?.trim() || entry.directorPhone || entry.founderPhone || null;
+    // ⭐ Format national « 01 … » : le téléphone saisi/confirmé par le
+    //    promoteur est normalisé comme toutes les autres entrées.
+    const phone =
+      normalizeBeninPhone(dto.phone?.trim()) ||
+      entry.directorPhone ||
+      entry.founderPhone ||
+      null;
     const invitationToken = randomBytes(16).toString('hex');
 
     const school = await this.prisma.patronatManualSchool.create({

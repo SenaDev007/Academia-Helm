@@ -67,6 +67,27 @@ interface FederisCentersPageProps {
   userRole?: string | null;
 }
 
+// ⭐ 2026-09-30 — Listes officielles PDF / Excel (générées 100 % côté
+//    backend, pattern FederisCandidatesPage) : téléchargement en blob
+//    authentifié puis clic sur un lien temporaire.
+async function downloadFile(
+  url: string,
+  filename: string,
+  mime: string,
+  timeout = 120000,
+): Promise<void> {
+  const res = await apiClient.get(url, { responseType: 'blob', timeout });
+  const blob = new Blob([res.data], { type: mime });
+  const objectUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(objectUrl);
+}
+
 export default function FederisCentersPage({ userRole }: FederisCentersPageProps) {
   const { exams, examId, setExamId, loading: examsLoading } = useFederisExams();
   // ⭐ Onglet du module : « Centres et salles » | « Gestion des surveillants »
@@ -84,6 +105,8 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
   const [roomFormTarget, setRoomFormTarget] = useState<string | null>(null);
   const [roomForm, setRoomForm] = useState({ code: '', name: '', capacity: '', building: '', floor: '' });
   const [busy, setBusy] = useState(false);
+  // ⭐ 2026-09-30 — export de la liste officielle des centres et salles
+  const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
 
   const canOrganize = canWrite(userRole, 'exam_org');
 
@@ -182,6 +205,47 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
   const totalRooms = centers.reduce((s, c) => s + c.roomsCount, 0);
   const totalCapacity = centers.reduce((s, c) => s + c.roomsCapacity, 0);
   const totalAssigned = centers.reduce((s, c) => s + c.assignedCandidates, 0);
+
+  const selectedExam = exams.find((e) => e.id === examId) ?? null;
+
+  // ⭐ Liste officielle des centres et des salles (PDF / Excel backend) —
+  //    pour l'examen sélectionné (chaque type d'examen a sa propre liste).
+  const exportCentersList = async (kind: 'pdf' | 'excel') => {
+    if (!examId) return;
+    setExporting(kind);
+    setError(null);
+    setNotice(null);
+    try {
+      if (kind === 'pdf') {
+        await downloadFile(
+          `/federis/exams/${examId}/pdf/centres`,
+          `Liste_Centres_Salles_${selectedExam?.code ?? 'examen'}.pdf`,
+          'application/pdf',
+        );
+        setNotice('Liste des centres et salles PDF générée (backend) — téléchargement lancé.');
+      } else {
+        await downloadFile(
+          `/federis/exams/${examId}/excel/centres`,
+          `Liste_Centres_Salles_${selectedExam?.code ?? 'examen'}.xlsx`,
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+        setNotice('Classeur Excel des centres et salles généré (backend) — téléchargement lancé.');
+      }
+    } catch (err: any) {
+      let msg = err?.response?.data?.message ?? err?.message ?? 'Export impossible.';
+      if (err?.response?.data instanceof Blob) {
+        try {
+          const parsed = JSON.parse(await err.response.data.text());
+          msg = parsed?.message ?? msg;
+        } catch {
+          /* garde le brut */
+        }
+      }
+      setError(Array.isArray(msg) ? msg.join(' ') : String(msg));
+    } finally {
+      setExporting(null);
+    }
+  };
 
   return (
     <FedPage className="space-y-8">
@@ -287,6 +351,29 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
           <span className="text-[10px] font-bold text-slate-400 uppercase shrink-0">
             {totalAssigned} / {totalCapacity} affectés
           </span>
+        )}
+        {/* ⭐ 2026-09-30 — Liste officielle des centres et des salles de
+            l'examen sélectionné (PDF / Excel générés côté backend). */}
+        {tab === 'centres' && examId && (
+          <div className="flex items-center gap-2 sm:ml-auto shrink-0">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Exporter</span>
+            <button
+              type="button"
+              onClick={() => void exportCentersList('pdf')}
+              disabled={exporting !== null || centers.length === 0}
+              className="px-5 py-2.5 text-[10px] font-bold uppercase rounded-xl bg-white border border-blue-900/20 text-blue-900 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {exporting === 'pdf' ? 'PDF…' : 'Liste PDF'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void exportCentersList('excel')}
+              disabled={exporting !== null || centers.length === 0}
+              className="px-5 py-2.5 text-[10px] font-bold uppercase rounded-xl bg-white border border-blue-900/20 text-blue-900 hover:bg-blue-50 disabled:opacity-50"
+            >
+              {exporting === 'excel' ? 'Excel…' : 'Liste Excel'}
+            </button>
+          </div>
         )}
       </div>
 

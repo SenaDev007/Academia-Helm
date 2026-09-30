@@ -49,6 +49,60 @@ const POST_SHORT_LABELS: Record<string, string> = {
   SECRETARIAT: 'Secrétariat',
 };
 
+// ⭐ 2026-09-30 — Listes officielles PDF / Excel du personnel d'examen :
+//    chaque poste dispose de sa liste À PART (surveillance / secrétariat /
+//    correction) + une liste complète du personnel. Rendu 100 % backend.
+const STAFF_EXPORT_ROWS: {
+  post: SupervisorPostKey | 'ALL';
+  title: string;
+  hint: string;
+  suffix: string;
+}[] = [
+  {
+    post: 'SURVEILLANCE',
+    title: 'Surveillants',
+    hint: 'Surveillance des épreuves — centre et salle',
+    suffix: 'Surveillants',
+  },
+  {
+    post: 'SECRETARIAT',
+    title: 'Secrétariat',
+    hint: 'Saisie des notes',
+    suffix: 'Secretariat',
+  },
+  {
+    post: 'CORRECTION',
+    title: 'Correcteurs',
+    hint: 'Correction des copies',
+    suffix: 'Correcteurs',
+  },
+  {
+    post: 'ALL',
+    title: 'Personnel complet',
+    hint: 'Tous postes confondus — colonne Poste',
+    suffix: 'Personnel',
+  },
+];
+
+/** Téléchargement authentifié (blob) — pattern FederisCandidatesPage. */
+async function downloadFile(
+  url: string,
+  filename: string,
+  mime: string,
+  timeout = 120000,
+): Promise<void> {
+  const res = await apiClient.get(url, { responseType: 'blob', timeout });
+  const blob = new Blob([res.data], { type: mime });
+  const objectUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(objectUrl);
+}
+
 /** Marqueur du bloc signature dans la note circulaire. */
 const SIGNATURE_MARKER = 'Pour le Patronat du département,';
 
@@ -249,6 +303,8 @@ export default function FederisSupervisorsTab({
   const [showManualForm, setShowManualForm] = useState(false);
   const [manualForm, setManualForm] = useState(EMPTY_MANUAL_FORM);
   const [creatingManual, setCreatingManual] = useState(false);
+  // ⭐ 2026-09-30 — export des listes officielles (clé = `${post}-${kind}`)
+  const [exportingKey, setExportingKey] = useState<string | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -402,6 +458,50 @@ export default function FederisSupervisorsTab({
   useEffect(() => {
     void loadRegistry();
   }, [loadRegistry]);
+
+  // ⭐ 2026-09-30 — Liste officielle du personnel d'examen (PDF / Excel
+  //    backend), pour l'examen sélectionné : chaque poste a sa liste à part
+  //    (surveillance / secrétariat / correction) + liste complète.
+  const exportStaffList = async (post: SupervisorPostKey | 'ALL', kind: 'pdf' | 'excel') => {
+    if (!examId) return;
+    const key = `${post}-${kind}`;
+    setExportingKey(key);
+    setError(null);
+    setNotice(null);
+    try {
+      const query = post === 'ALL' ? '' : `?post=${post}`;
+      const suffix = STAFF_EXPORT_ROWS.find((r) => r.post === post)?.suffix ?? 'Personnel';
+      const code = exam?.code ?? 'examen';
+      if (kind === 'pdf') {
+        await downloadFile(
+          `/federis/exams/${examId}/pdf/surveillants${query}`,
+          `Liste_${suffix}_${code}.pdf`,
+          'application/pdf',
+        );
+        setNotice(`Liste « ${suffix} » PDF générée (backend) — téléchargement lancé.`);
+      } else {
+        await downloadFile(
+          `/federis/exams/${examId}/excel/surveillants${query}`,
+          `Liste_${suffix}_${code}.xlsx`,
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+        setNotice(`Classeur Excel « ${suffix} » généré (backend) — téléchargement lancé.`);
+      }
+    } catch (err: any) {
+      let msg = err?.response?.data?.message ?? err?.message ?? 'Export impossible.';
+      if (err?.response?.data instanceof Blob) {
+        try {
+          const parsed = JSON.parse(await err.response.data.text());
+          msg = parsed?.message ?? msg;
+        } catch {
+          /* garde le brut */
+        }
+      }
+      setError(Array.isArray(msg) ? msg.join(' ') : String(msg));
+    } finally {
+      setExportingKey(null);
+    }
+  };
 
   // ── Chargement du détail d'une demande ──────────────────────────────────
   const loadDetail = useCallback(async (requestId: string) => {
@@ -1164,6 +1264,53 @@ export default function FederisSupervisorsTab({
             </button>
           )}
         </div>
+
+        {/* ⭐ 2026-09-30 — Listes officielles PDF / Excel (générées côté
+            backend, design Helm) : une liste À PART par poste (surveillance /
+            secrétariat / correction) + le personnel complet, pour l'examen
+            sélectionné — centre d'affectation, salle, école de provenance. */}
+        {examId && (
+          <div className="border border-slate-200 rounded-xl p-4 lg:p-5 mb-6 bg-[#f7f9fc]">
+            <div className="flex items-center gap-2 mb-3">
+              <AppIcon name="download" size="submenu" className="text-blue-900" />
+              <h3 className="text-xs font-bold text-blue-900 uppercase">
+                Listes officielles — export PDF / Excel
+                {examLabel ? <span className="text-slate-400 normal-case"> · {examLabel}</span> : null}
+              </h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+              {STAFF_EXPORT_ROWS.map((row) => (
+                <div
+                  key={row.post}
+                  className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex flex-col gap-3"
+                >
+                  <div>
+                    <p className="text-xs font-bold text-blue-900">{row.title}</p>
+                    <p className="text-[10px] text-slate-400 font-medium mt-0.5">{row.hint}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void exportStaffList(row.post, 'pdf')}
+                      disabled={exportingKey !== null}
+                      className="flex-1 px-3 py-2 text-[10px] font-bold uppercase rounded-xl bg-white border border-blue-900/20 text-blue-900 hover:bg-blue-50 disabled:opacity-50"
+                    >
+                      {exportingKey === `${row.post}-pdf` ? 'PDF…' : 'PDF'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void exportStaffList(row.post, 'excel')}
+                      disabled={exportingKey !== null}
+                      className="flex-1 px-3 py-2 text-[10px] font-bold uppercase rounded-xl bg-white border border-blue-900/20 text-blue-900 hover:bg-blue-50 disabled:opacity-50"
+                    >
+                      {exportingKey === `${row.post}-excel` ? 'Excel…' : 'Excel'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Formulaire de création manuelle */}
         {showManualForm && canManage && examId && (

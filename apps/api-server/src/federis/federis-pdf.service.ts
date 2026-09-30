@@ -92,6 +92,66 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+// ── Libellés postes / rôles / statuts (module Centres, salles & Surveillants)
+//    Locaux — zéro import croisé (pattern anti-dépendance circulaire).
+
+const LOGISTICS_POST_KEYS = ['SURVEILLANCE', 'CORRECTION', 'SECRETARIAT'] as const;
+
+function normalizeLogisticsPost(value?: string | null): string | undefined {
+  return LOGISTICS_POST_KEYS.includes(value as any) ? (value as string) : undefined;
+}
+
+function logisticsPostLabel(post?: string | null): string {
+  switch (post) {
+    case 'CORRECTION':
+      return 'Correction des épreuves';
+    case 'SECRETARIAT':
+      return 'Secrétariat — saisie des notes';
+    case 'SURVEILLANCE':
+      return 'Surveillance des épreuves';
+    default:
+      return '—';
+  }
+}
+
+/** Titre du document selon le poste filtré (listes générées À PART). */
+function logisticsPostDocTitle(post?: string | null): string {
+  switch (post) {
+    case 'CORRECTION':
+      return 'Liste des correcteurs';
+    case 'SECRETARIAT':
+      return 'Liste du personnel de secrétariat';
+    case 'SURVEILLANCE':
+      return 'Liste des surveillants des épreuves';
+    default:
+      return 'Liste du personnel d’examen';
+  }
+}
+
+function logisticsRoleLabel(role?: string | null): string {
+  const map: Record<string, string> = {
+    SURVEILLANT: 'Surveillant',
+    CHEF_DE_SALLE: 'Chef de salle',
+    CHEF_DE_CENTRE: 'Chef de centre',
+    CORRECTEUR: 'Correcteur',
+    SECRETAIRE: 'Secrétaire',
+  };
+  if (!role) return '—';
+  return map[role] ?? role;
+}
+
+function logisticsStatusLabel(status?: string | null): string {
+  const map: Record<string, string> = {
+    ACTIVE: 'Actif',
+    INACTIVE: 'Inactif',
+    AVAILABLE: 'Disponible',
+    OCCUPIED: 'Occupée',
+    BLOCKED: 'Bloquée',
+  };
+  if (!status) return '—';
+  return map[status] ?? status;
+}
+
 // ── Types de rendu ──────────────────────────────────────────────────────────
 
 interface BordereauSection {
@@ -867,6 +927,447 @@ export class FederisPdfService {
           tableName: 'national_exams',
           recordId: exam.id,
           newData: { examCode: exam.code, candidates: rows.length, centers: byCenter.size },
+        },
+      })
+      .catch(() => undefined);
+
+    return { buffer, filename };
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 2bis. LISTES OFFICIELLES DU MODULE « CENTRES, SALLES & SURVEILLANTS »
+  //       (2026-09-30 — demande utilisateur) — même design que la liste
+  //       officielle des candidats : en-tête institutionnel, statistiques,
+  //       tableaux professionnels, signatures et pied de document.
+  // ══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Liste officielle des CENTRES D'ACCUEIL et de leurs SALLES —
+   * sous-onglet « Centres et salles » (PDF généré 100 % backend).
+   */
+  async generateCentersListPdf(
+    tenantId: string,
+    userId: string,
+    examId: string,
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertRead(fn);
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+
+    const [academicYear, centers] = await Promise.all([
+      this.prisma.academicYear.findUnique({ where: { id: exam.academicYearId } }),
+      this.prisma.examCenter.findMany({
+        where: { examId: exam.id, status: { not: 'ARCHIVED' } },
+        include: {
+          _count: { select: { candidates: true } },
+          examRooms: { orderBy: { code: 'asc' } },
+        },
+        orderBy: { code: 'asc' },
+      }),
+    ]);
+
+    if (centers.length === 0) {
+      throw new BadRequestException('Aucun centre enregistré pour cet examen.');
+    }
+
+    const totalRooms = centers.reduce((s, c) => s + c.examRooms.length, 0);
+    const totalCapacity = centers.reduce(
+      (s, c) => s + c.examRooms.reduce((x, r) => x + r.capacity, 0),
+      0,
+    );
+    const totalAssigned = centers.reduce((s, c) => s + c._count.candidates, 0);
+
+    const centerRows = centers
+      .map(
+        (c) => `<tr>
+          <td class="mono">${esc(c.code)}</td>
+          <td><b>${esc(c.name)}</b></td>
+          <td>${esc(c.address ?? '—')}</td>
+          <td>${esc(c.contactName ?? '—')}</td>
+          <td>${esc(c.contactPhone ?? '—')}</td>
+          <td class="table-num">${c.examRooms.length}</td>
+          <td class="table-num">${c.examRooms.reduce((x, r) => x + r.capacity, 0)}</td>
+          <td class="table-num">${c._count.candidates}</td>
+          <td>${esc(logisticsStatusLabel(c.status))}</td>
+        </tr>`,
+      )
+      .join('');
+
+    const roomBlocks = centers
+      .map(
+        (c) => `
+        <div class="center-block">
+          <div class="cb-title">${esc(c.code)} — ${esc(c.name)}</div>
+          <div class="cb-sub">${esc(c.address ?? 'Localité non renseignée')}${c.contactName ? ` · Chef de centre : ${esc(c.contactName)}` : ''}${c.contactPhone ? ` · ${esc(c.contactPhone)}` : ''}</div>
+          ${
+            c.examRooms.length === 0
+              ? '<p class="no-room">Aucune salle enregistrée pour ce centre.</p>'
+              : `<table>
+            <thead>
+              <tr>
+                <th style="width:12%">Code</th>
+                <th style="width:34%">Désignation</th>
+                <th style="width:13%">Capacité</th>
+                <th style="width:14%">Occupation</th>
+                <th style="width:16%">Bâtiment / Étage</th>
+                <th style="width:11%">Statut</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${c.examRooms
+                .map(
+                  (r) => `<tr>
+                <td class="mono">${esc(r.code)}</td>
+                <td>${esc(r.name)}</td>
+                <td class="table-num">${r.capacity} pl.</td>
+                <td class="table-num">${r.currentOccupancy} / ${r.capacity}</td>
+                <td>${esc([r.building, r.floor != null ? `Étage ${r.floor}` : null].filter(Boolean).join(' · ') || '—')}</td>
+                <td>${esc(logisticsStatusLabel(r.status))}</td>
+              </tr>`,
+                )
+                .join('')}
+            </tbody>
+          </table>`
+          }
+        </div>`,
+      )
+      .join('');
+
+    const html = `
+      <!DOCTYPE html>
+      <html lang="fr">
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; font-size: 10.5px; }
+            .doc { padding: 4px 6px; }
+            .header { text-align: center; border-bottom: 3px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 14px; }
+            .header h1 { font-size: 17px; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.5px; }
+            .header .sub { font-size: 11px; color: #475569; margin-top: 3px; }
+            .meta { display: flex; justify-content: space-between; font-size: 10px; color: #475569; margin-bottom: 10px; }
+            .meta b { color: #1e293b; }
+            h2 { font-size: 12.5px; color: #1e3a8a; margin: 14px 0 6px; border-left: 4px solid #d97706; padding-left: 8px; text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+            th { background: #1e3a8a; color: #fff; font-size: 9px; text-transform: uppercase; padding: 5px 6px; text-align: left; font-weight: 600; }
+            td { border: 1px solid #e2e8f0; padding: 4px 6px; font-size: 9.5px; }
+            tr:nth-child(even) td { background: #f8fafc; }
+            .mono { font-family: 'Courier New', monospace; font-weight: 700; color: #1e3a8a; }
+            .table-num { font-weight: 700; text-align: center; }
+            .summary { display: flex; gap: 8px; margin: 10px 0 4px; }
+            .stat { flex: 1; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 9px; text-align: center; background: #f8fafc; }
+            .stat .num { font-size: 15px; font-weight: 800; color: #1e3a8a; }
+            .stat .lbl { font-size: 8px; text-transform: uppercase; color: #64748b; letter-spacing: 0.4px; }
+            .center-block { border: 1px solid #e2e8f0; border-left: 4px solid #1e3a8a; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; page-break-inside: avoid; }
+            .center-block .cb-title { font-size: 11px; font-weight: 800; color: #1e3a8a; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.3px; }
+            .center-block .cb-sub { font-size: 9px; color: #64748b; margin-bottom: 8px; }
+            .no-room { font-size: 9.5px; color: #94a3b8; font-style: italic; padding: 4px 0; }
+            .signatures { margin-top: 26px; display: flex; justify-content: space-around; gap: 30px; }
+            .sig { text-align: center; font-size: 9.5px; color: #334155; }
+            .sig .line { margin-top: 38px; border-top: 1px solid #94a3b8; padding-top: 4px; width: 200px; }
+            .footer-note { margin-top: 16px; font-size: 8.5px; color: #94a3b8; text-align: center; font-style: italic; }
+          </style>
+        </head>
+        <body>
+          <div class="doc">
+            <div class="header">
+              <h1>${esc(patronat.legalName || patronat.name)}</h1>
+              <div class="sub">${esc([patronat.territoryName, patronat.country?.name].filter(Boolean).join(' — '))}</div>
+              <h1 style="margin-top:8px; font-size:14px;">Liste des centres et des salles d'accueil</h1>
+              <div class="sub">${esc(exam.name)} (${esc(exam.code)}) — ${esc(exam.examType)} — ${esc(academicYear?.label ?? academicYear?.name ?? '')}</div>
+            </div>
+
+            <div class="meta">
+              <span>Établie le <b>${formatLongDate(new Date())}</b></span>
+              <span>Centres : <b>${centers.length}</b></span>
+              <span>Salles : <b>${totalRooms}</b></span>
+            </div>
+
+            <div class="summary">
+              <div class="stat"><div class="num">${centers.length}</div><div class="lbl">Centres d'accueil</div></div>
+              <div class="stat"><div class="num">${totalRooms}</div><div class="lbl">Salles</div></div>
+              <div class="stat"><div class="num">${totalCapacity}</div><div class="lbl">Capacité (places)</div></div>
+              <div class="stat"><div class="num">${totalAssigned}</div><div class="lbl">Candidats affectés</div></div>
+            </div>
+
+            <h2>Registre des centres (${esc(exam.code)})</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:9%">Code</th>
+                  <th style="width:20%">Établissement d'accueil</th>
+                  <th style="width:19%">Adresse / Localité</th>
+                  <th style="width:14%">Chef de centre</th>
+                  <th style="width:11%">Téléphone</th>
+                  <th style="width:6%">Salles</th>
+                  <th style="width:7%">Capacité</th>
+                  <th style="width:8%">Affectés</th>
+                  <th style="width:6%">Statut</th>
+                </tr>
+              </thead>
+              <tbody>${centerRows}</tbody>
+            </table>
+
+            <h2>Salles de composition par centre</h2>
+            ${roomBlocks}
+
+            <div class="signatures">
+              <div class="sig">Le/La Coordonnateur(trice)<div class="line"></div></div>
+              <div class="sig">Le/La Secrétaire général(e)<div class="line"></div></div>
+              <div class="sig">Le/La Président(e) du patronat<div class="line"></div></div>
+            </div>
+
+            <div class="footer-note">
+              Document officiel généré par Academia Federis — ${esc(patronat.name)}.
+              Un examen peut mobiliser plusieurs centres d'accueil selon les besoins du terrain.
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const buffer = await this.renderPdf(html);
+    const filename = `Liste_Centres_Salles_${exam.code}_${new Date().toISOString().split('T')[0]}.pdf`;
+
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_CENTERS_LIST_PDF',
+          resource: 'NationalExam',
+          resourceId: exam.id,
+          tableName: 'national_exams',
+          recordId: exam.id,
+          newData: { examCode: exam.code, centers: centers.length, rooms: totalRooms },
+        },
+      })
+      .catch(() => undefined);
+
+    return { buffer, filename };
+  }
+
+  /**
+   * Liste officielle du PERSONNEL D'EXAMEN — sous-onglet « Gestion des
+   * surveillants ». Chaque poste dispose de sa liste À PART :
+   *   ?post=SURVEILLANCE → surveillants des épreuves (centre + salle) ;
+   *   ?post=SECRETARIAT  → personnel de secrétariat (saisie des notes) ;
+   *   ?post=CORRECTION   → correcteurs ;
+   *   (sans paramètre)   → personnel complet (colonne Poste).
+   */
+  async generateSupervisorsListPdf(
+    tenantId: string,
+    userId: string,
+    examId: string,
+    post?: string,
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertRead(fn);
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const postFilter = normalizeLogisticsPost(post);
+
+    const [academicYear, supervisors] = await Promise.all([
+      this.prisma.academicYear.findUnique({ where: { id: exam.academicYearId } }),
+      this.prisma.examSupervisor.findMany({
+        where: {
+          examId: exam.id,
+          tenantId: patronat.tenantId,
+          ...(postFilter ? { post: postFilter } : {}),
+        },
+        include: {
+          center: { select: { code: true, name: true } },
+          room: { select: { code: true, name: true } },
+        },
+        orderBy: [
+          { center: { code: 'asc' } },
+          { room: { code: 'asc' } },
+          { lastName: 'asc' },
+          { firstName: 'asc' },
+        ],
+      }),
+    ]);
+
+    if (supervisors.length === 0) {
+      throw postFilter
+        ? new BadRequestException(
+            `Aucun personnel enregistré pour ce poste (${logisticsPostLabel(postFilter)}).`,
+          )
+        : new BadRequestException('Aucun surveillant enregistré pour cet examen.');
+    }
+
+    // Noms des écoles d'origine (nominations des écoles rattachées)
+    const schoolIds = Array.from(
+      new Set(supervisors.map((s) => s.schoolTenantId).filter((v): v is string => !!v)),
+    );
+    const schoolTenants = schoolIds.length
+      ? await this.prisma.tenant.findMany({
+          where: { id: { in: schoolIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const schoolNameById = new Map(schoolTenants.map((t) => [t.id, t.name]));
+
+    const rows = supervisors.map((s, i) => ({
+      order: i + 1,
+      name: `${s.lastName} ${s.firstName}`,
+      phone: s.phone ?? '—',
+      school: s.schoolTenantId ? (schoolNameById.get(s.schoolTenantId) ?? 'École') : '—',
+      center: s.center ? `${s.center.code} — ${s.center.name}` : 'Non affecté',
+      room: s.room ? `${s.room.code} — ${s.room.name}` : '—',
+      post: logisticsPostLabel(s.post),
+      role: logisticsRoleLabel(s.role),
+      source: s.source === 'SCHOOL_NOMINATION' ? 'Nomination d\u2019école' : 'Saisie patronat',
+    }));
+
+    const byCenter = new Map<string, number>();
+    for (const r of rows) {
+      byCenter.set(r.center, (byCenter.get(r.center) ?? 0) + 1);
+    }
+
+    const docTitle = logisticsPostDocTitle(postFilter);
+    const postCol = postFilter
+      ? ''
+      : '<th style="width:12%">Poste</th>';
+    const postCell = (r: (typeof rows)[number]) => (postFilter ? '' : `<td class="post-cell">${esc(r.post)}</td>`);
+
+    const html = `
+      <!DOCTYPE html>
+      <html lang="fr">
+        <head>
+          <meta charset="utf-8" />
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; font-size: 10.5px; }
+            .doc { padding: 4px 6px; }
+            .header { text-align: center; border-bottom: 3px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 14px; }
+            .header h1 { font-size: 17px; color: #1e3a8a; text-transform: uppercase; letter-spacing: 0.5px; }
+            .header .sub { font-size: 11px; color: #475569; margin-top: 3px; }
+            .meta { display: flex; justify-content: space-between; font-size: 10px; color: #475569; margin-bottom: 10px; }
+            .meta b { color: #1e293b; }
+            h2 { font-size: 12.5px; color: #1e3a8a; margin: 14px 0 6px; border-left: 4px solid #d97706; padding-left: 8px; text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+            th { background: #1e3a8a; color: #fff; font-size: 9px; text-transform: uppercase; padding: 5px 6px; text-align: left; font-weight: 600; }
+            td { border: 1px solid #e2e8f0; padding: 4px 6px; font-size: 9.5px; }
+            tr:nth-child(even) td { background: #f8fafc; }
+            .center-cell { font-weight: 600; color: #1e3a8a; }
+            .post-cell { font-weight: 600; color: #92400e; }
+            .table-num { font-weight: 700; text-align: center; }
+            .summary { display: flex; gap: 8px; margin: 10px 0 4px; }
+            .stat { flex: 1; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 9px; text-align: center; background: #f8fafc; }
+            .stat .num { font-size: 15px; font-weight: 800; color: #1e3a8a; }
+            .stat .lbl { font-size: 8px; text-transform: uppercase; color: #64748b; letter-spacing: 0.4px; }
+            .signatures { margin-top: 26px; display: flex; justify-content: space-around; gap: 30px; }
+            .sig { text-align: center; font-size: 9.5px; color: #334155; }
+            .sig .line { margin-top: 38px; border-top: 1px solid #94a3b8; padding-top: 4px; width: 200px; }
+            .footer-note { margin-top: 16px; font-size: 8.5px; color: #94a3b8; text-align: center; font-style: italic; }
+          </style>
+        </head>
+        <body>
+          <div class="doc">
+            <div class="header">
+              <h1>${esc(patronat.legalName || patronat.name)}</h1>
+              <div class="sub">${esc([patronat.territoryName, patronat.country?.name].filter(Boolean).join(' — '))}</div>
+              <h1 style="margin-top:8px; font-size:14px;">${esc(docTitle)}</h1>
+              <div class="sub">${esc(exam.name)} (${esc(exam.code)}) — ${esc(exam.examType)} — ${esc(academicYear?.label ?? academicYear?.name ?? '')}</div>
+            </div>
+
+            <div class="meta">
+              <span>Établie le <b>${formatLongDate(new Date())}</b></span>
+              <span>Effectif : <b>${rows.length}</b></span>
+              <span>Centres mobilisés : <b>${byCenter.size}</b></span>
+            </div>
+
+            <div class="summary">
+              <div class="stat"><div class="num">${rows.length}</div><div class="lbl">Effectif</div></div>
+              <div class="stat"><div class="num">${byCenter.size}</div><div class="lbl">Centres mobilisés</div></div>
+              <div class="stat"><div class="num">${rows.filter((r) => r.school !== '—').length}</div><div class="lbl">Nominations d'écoles</div></div>
+              <div class="stat"><div class="num">${rows.filter((r) => r.school === '—').length}</div><div class="lbl">Saisies patronat</div></div>
+            </div>
+
+            <h2>${esc(docTitle)} (${esc(exam.code)})</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:3%">N°</th>
+                  <th style="width:17%">Nom et prénoms</th>
+                  <th style="width:10%">Téléphone</th>
+                  <th style="width:16%">École de provenance</th>
+                  <th style="width:18%">Centre d'affectation</th>
+                  <th style="width:11%">Salle</th>
+                  ${postCol}
+                  <th style="width:10%">Rôle</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows
+                  .map(
+                    (r) => `<tr>
+                      <td>${r.order}</td>
+                      <td><b>${esc(r.name)}</b></td>
+                      <td>${esc(r.phone)}</td>
+                      <td>${esc(r.school)}</td>
+                      <td class="center-cell">${esc(r.center)}</td>
+                      <td>${esc(r.room)}</td>
+                      ${postCell(r)}
+                      <td>${esc(r.role)}</td>
+                    </tr>`,
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+
+            <h2>Répartition par centre</h2>
+            <table>
+              <thead>
+                <tr><th style="width:70%">Centre d'accueil</th><th style="width:30%">Effectif</th></tr>
+              </thead>
+              <tbody>
+                ${[...byCenter.entries()]
+                  .map(
+                    ([center, count]) =>
+                      `<tr><td class="center-cell">${esc(center)}</td><td class="table-num">${count}</td></tr>`,
+                  )
+                  .join('')}
+              </tbody>
+            </table>
+
+            <div class="signatures">
+              <div class="sig">Le/La Coordonnateur(trice)<div class="line"></div></div>
+              <div class="sig">Le/La Secrétaire général(e)<div class="line"></div></div>
+              <div class="sig">Le/La Président(e) du patronat<div class="line"></div></div>
+            </div>
+
+            <div class="footer-note">
+              Document officiel généré par Academia Federis — ${esc(patronat.name)}.
+              ${postFilter ? esc(logisticsPostLabel(postFilter)) : 'Surveillance des épreuves, correction et secrétariat (saisie des notes)'}.
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const buffer = await this.renderPdf(html);
+    const fileSuffix =
+      postFilter === 'CORRECTION'
+        ? 'Correcteurs'
+        : postFilter === 'SECRETARIAT'
+          ? 'Secretariat'
+          : postFilter === 'SURVEILLANCE'
+            ? 'Surveillants'
+            : 'Personnel';
+    const filename = `Liste_${fileSuffix}_${exam.code}_${new Date().toISOString().split('T')[0]}.pdf`;
+
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_SUPERVISORS_LIST_PDF',
+          resource: 'NationalExam',
+          resourceId: exam.id,
+          tableName: 'national_exams',
+          recordId: exam.id,
+          newData: { examCode: exam.code, post: postFilter ?? 'ALL', count: rows.length },
         },
       })
       .catch(() => undefined);

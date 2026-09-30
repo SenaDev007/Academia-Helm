@@ -16,6 +16,8 @@
  *   POST   /federis/exams/:examId/assign-tables        — numéros de table (CENTER | ROOM | EXAM)
  *   POST   /federis/exams/:examId/anonymats/generate   — anonymats (2026-09-29)
  *   GET    /federis/exams/:examId/excel/candidats      — export Excel (2026-09-29)
+ *   GET    /federis/exams/:examId/excel/centres        — export Excel (2026-09-30)
+ *   GET    /federis/exams/:examId/excel/surveillants   — export Excel (2026-09-30)
  *   GET    /federis/settings/matricule                 — format matricule (Paramètres)
  *   PUT    /federis/settings/matricule                 — enregistrer le format
  *   GET    /federis/settings/grading-rules             — règles de calcul (2026-09-30)
@@ -56,6 +58,8 @@ import {
   UpdateMatriculeFormatDto,
 } from './federis-exams.service';
 import { FederisCandidatesExportService } from './federis-candidates-export.service';
+// ⭐ 2026-09-30 — exports Excel du module « Centres, salles & Surveillants »
+import { FederisLogisticsExportService } from './federis-logistics-export.service';
 import { FederisGradingRulesService, UpdateGradingRuleDto } from './federis-grading-rules.service';
 
 @Controller('federis')
@@ -63,6 +67,7 @@ export class FederisExamsController {
   constructor(
     private readonly examsService: FederisExamsService,
     private readonly candidatesExport: FederisCandidatesExportService,
+    private readonly logisticsExport: FederisLogisticsExportService,
     private readonly gradingRulesService: FederisGradingRulesService,
   ) {}
 
@@ -214,6 +219,55 @@ export class FederisExamsController {
       req.user.tenantId,
       this.uid(req),
       examId,
+    );
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    return new StreamableFile(buffer);
+  }
+
+  // ── Exports Excel « Centres, salles & Surveillants » (2026-09-30) ───────
+
+  /** Liste officielle des centres et des salles — classeur Excel
+   *  (Synthèse + Centres + Salles). Sous-onglet « Centres et salles ». */
+  @UseGuards(JwtAuthGuard)
+  @Get('exams/:examId/excel/centres')
+  async exportCentersExcel(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { buffer, filename } = await this.logisticsExport.generateCentersExcel(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+    );
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    return new StreamableFile(buffer);
+  }
+
+  /** Liste officielle du personnel d'examen — classeur Excel, un poste à la
+   *  fois (?post=SURVEILLANCE | SECRETARIAT | CORRECTION ; sans = complet).
+   *  Sous-onglet « Gestion des surveillants ». */
+  @UseGuards(JwtAuthGuard)
+  @Get('exams/:examId/excel/surveillants')
+  async exportSupervisorsExcel(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Res({ passthrough: true }) res: Response,
+    @Query('post') post?: string,
+  ) {
+    const { buffer, filename } = await this.logisticsExport.generateSupervisorsExcel(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+      post,
     );
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

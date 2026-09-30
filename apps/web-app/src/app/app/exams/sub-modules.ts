@@ -26,7 +26,8 @@ import {
   Lock,
   Landmark,
   ScrollText,
-  TrendingUp
+  TrendingUp,
+  Award,
 } from 'lucide-react';
 
 export const EXAMS_SUB_MODULES = [
@@ -82,6 +83,15 @@ export const EXAMS_SUB_MODULES = [
     icon: FileText
   },
   {
+    // ⭐ 2026-09-30 — Tableau d'honneur / Distinctions (par niveau scolaire)
+    //    Génère certificats individuels + tableau collectif à partir des
+    //    moyennes des élèves. Connecté aux notes/moyennes du trimestre.
+    id: 'distinction',
+    label: 'Distinction',
+    href: '/app/exams/distinction',
+    icon: Award
+  },
+  {
     id: 'proc-verbal',
     label: 'Procès-verbal',
     href: '/app/exams/proc-verbal',
@@ -94,20 +104,21 @@ export const EXAMS_SUB_MODULES = [
     icon: TrendingUp
   },
   {
-    // ⭐ Examens nationaux (CEP / BEPC / Baccalauréat / CAP) — candidats présentés
-    //    par l'école aux patronats (Academia Federis). Onglet dynamique :
-    //    sous-onglets CEP/BEPC/Bac/CAP selon les classes CM2/3ème/Terminale/Terminale CAP.
-    //    Masqué pour Maternelle et les pistes anglophones (useExamSubModules).
-    id: 'national-exams',
-    label: 'Examens nationaux',
-    href: '/app/exams/national-exams',
-    icon: Landmark
-  },
-  {
     id: 'analytics',
     label: 'Statistiques',
     href: '/app/exams/analytics',
     icon: BarChart3
+  },
+  {
+    // ⭐ Examens nationaux (CEP / BEPC / Baccalauréat / CAP) — candidats présentés
+    //    par l'école aux patronats (Academia Federis). Onglet dynamique :
+    //    sous-onglets CEP/BEPC/Bac/CAP selon les classes CM2/3ème/Terminale/Terminale CAP.
+    //    Masqué pour Maternelle et les pistes anglophones (useExamSubModules).
+    //    ⭐ 2026-09-30 — Déplacé APRÈS Statistiques (au lieu d'avant).
+    id: 'national-exams',
+    label: 'Examens nationaux',
+    href: '/app/exams/national-exams',
+    icon: Landmark
   },
   {
     id: 'audit',

@@ -36,9 +36,12 @@ import { PvStatsPromotionPdfService } from './services/pv-stats-promotion-pdf.se
 import { PvStatsPromotionPdfController } from './pv-stats-promotion-pdf.controller';
 // ⭐ 2026-09-30 — Distinctions / Tableau d'honneur
 import { DistinctionsController } from './distinctions/distinctions.controller';
+import { DistinctionsNotificationService } from './distinctions/distinctions-notification.service';
+// ⭐ 2026-09-30 — ParentProvisioningModule pour l'envoi email/Helm Connect aux parents
+import { ParentProvisioningModule } from '../../students/parent-provisioning.module';
 
 @Module({
-  imports: [DatabaseModule, UsersModule, AuditLogsModule, ExamsGradesModule, CommonModule, CommunicationModule, SettingsModule, PedagogyModule, FinanceModule],
+  imports: [DatabaseModule, UsersModule, AuditLogsModule, ExamsGradesModule, CommonModule, CommunicationModule, SettingsModule, PedagogyModule, FinanceModule, ParentProvisioningModule],
   controllers: [
     ExamsDashboardController,
     EvaluationsController,
@@ -67,6 +70,7 @@ import { DistinctionsController } from './distinctions/distinctions.controller';
     AcademicAuditService,
     BulletinPdfService,
     PvStatsPromotionPdfService,
+    DistinctionsNotificationService,
   ],
   exports: [
     ExamsDashboardService,

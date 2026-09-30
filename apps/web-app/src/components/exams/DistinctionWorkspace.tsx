@@ -235,10 +235,32 @@ export default function DistinctionWorkspace() {
     if (!student.distinctionCode) return;
     setSending(student.id);
     try {
-      // TODO: implémenter l'envoi email backend
-      alert(`Envoi du certificat de ${student.name} à ses parents — à implémenter côté backend (email + notification UI parent)`);
+      const response = await apiClient.post('/institutional-exams/distinctions/send-certificate', {
+        studentId: student.id,
+        studentName: student.name,
+        classId: selectedClassId,
+        className: selectedClassName,
+        periodId: selectedPeriodId,
+        academicYearId: academicYear?.id,
+        level: scopeLevel || 'PRIMAIRE',
+        code: student.distinctionCode,
+        average: student.average,
+        rank: student.rank,
+        classSize: students.length,
+        distinctionLabel: student.distinctionLabel,
+      }, { timeout: 120000 });
+      const results = response.data?.results || {};
+      const parts = [];
+      if (results.email === 'sent') parts.push('✅ Email envoyé');
+      else if (results.email) parts.push(`❌ Email: ${results.email}`);
+      else parts.push('⚠️ Pas d\'email parent');
+      if (results.helmConnect === 'sent') parts.push('✅ Helm Connect');
+      else if (results.helmConnect) parts.push(`❌ Helm Connect: ${results.helmConnect}`);
+      if (results.bellIcon === 'sent') parts.push('✅ Notification parent');
+      else if (results.bellIcon) parts.push(`❌ Notification: ${results.bellIcon}`);
+      alert(`Certificat de ${student.name} envoyé !\n\n${parts.join('\n')}`);
     } catch (err: any) {
-      alert('Erreur envoi: ' + err.message);
+      alert('Erreur envoi: ' + (err.response?.data?.error || err.message));
     } finally {
       setSending(null);
     }
@@ -250,8 +272,30 @@ export default function DistinctionWorkspace() {
     if (!confirm(`Envoyer ${awardedStudents.length} certificats par email aux parents ?`)) return;
     setSending('ALL');
     try {
-      // TODO: implémenter l'envoi groupé backend
-      alert(`Envoi de ${awardedStudents.length} certificats par email — à implémenter côté backend`);
+      let sent = 0;
+      let failed = 0;
+      for (const student of awardedStudents) {
+        try {
+          await apiClient.post('/institutional-exams/distinctions/send-certificate', {
+            studentId: student.id,
+            studentName: student.name,
+            classId: selectedClassId,
+            className: selectedClassName,
+            periodId: selectedPeriodId,
+            academicYearId: academicYear?.id,
+            level: scopeLevel || 'PRIMAIRE',
+            code: student.distinctionCode,
+            average: student.average,
+            rank: student.rank,
+            classSize: students.length,
+            distinctionLabel: student.distinctionLabel,
+          }, { timeout: 120000 });
+          sent++;
+        } catch {
+          failed++;
+        }
+      }
+      alert(`Envoi terminé !\n\n✅ Envoyés : ${sent}\n❌ Échoués : ${failed}`);
     } catch (err: any) {
       alert('Erreur envoi: ' + err.message);
     } finally {

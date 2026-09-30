@@ -31,6 +31,7 @@ import { PuppeteerPoolService } from '../../../common/services/puppeteer-pool.se
 import { buildBoardHtml, buildCertificateHtml } from './html-builder';
 import { resolveDistinction, makeVerificationCode, verificationUrl, THEMES } from './html-builder';
 import type { BoardInput, BoardRow, DistinctionInput, Level } from './html-builder';
+import { DistinctionsNotificationService } from './distinctions-notification.service';
 
 @Controller('institutional-exams/distinctions')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
@@ -40,6 +41,7 @@ export class DistinctionsController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly puppeteerPool: PuppeteerPoolService,
+    private readonly notificationService: DistinctionsNotificationService,
   ) {}
 
   private mapLevel(scopeLevel: string): Level {
@@ -311,6 +313,93 @@ export class DistinctionsController {
     } catch (err: any) {
       this.logger.error('Erreur génération certificat:', err);
       res.status(500).json({ error: err.message || 'Erreur lors de la génération' });
+    }
+  }
+
+  /**
+   * POST /api/institutional-exams/distinctions/send-certificate
+   * Génère le certificat PDF + envoie par email + Helm Connect + bell icon au parent
+   * Body: { studentId, studentName, classId, className, periodId, academicYearId, level, code, average, rank, classSize, distinctionLabel }
+   * Response: { success, results: { email, helmConnect, bellIcon } }
+   */
+  @Post('send-certificate')
+  @Permissions('exams.read')
+  async sendCertificate(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @Body() body: any,
+    @Res() res: Response,
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
+    const { studentId, studentName, classId, className, periodId, academicYearId, level: bodyLevel, code: bodyCode, average, rank, classSize, distinctionLabel } = body;
+    if (!studentId || !classId || !periodId || !academicYearId) {
+      return res.status(400).json({ error: 'studentId, classId, periodId et academicYearId sont requis' });
+    }
+
+    const level = this.mapLevel(bodyLevel || 'PRIMAIRE');
+    const branding = await this.getTenantBranding(resolvedTenantId);
+
+    try {
+      const base = level === 'maternel' ? 3 : 20;
+      const avg = typeof average === 'number' ? average : null;
+      const code = bodyCode || (avg !== null ? resolveDistinction(level, avg, base) : null);
+
+      if (!code) {
+        return res.status(400).json({ error: 'Aucune distinction pour cet élève' });
+      }
+
+      const theme = THEMES[code];
+      const label = distinctionLabel || theme?.shortLabel || 'Distinction';
+
+      const secret = process.env.DISTINCTION_SECRET || 'academia-helm-dev-secret';
+      const verifyBaseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://academia-helm.academiahelm.com';
+
+      const period = await this.prisma.academicPeriod.findUnique({ where: { id: periodId }, select: { name: true } }).catch(() => null);
+      const academicYear = await this.prisma.academicYear.findUnique({ where: { id: academicYearId }, select: { label: true } }).catch(() => null);
+
+      const vcode = makeVerificationCode(secret, {
+        schoolId: resolvedTenantId || 'school',
+        studentId,
+        periodId,
+        code,
+        schoolYear: academicYear?.label || '2025-2026',
+      });
+
+      const input: DistinctionInput = {
+        code,
+        school: { name: branding.name, logoUrl: branding.logoUrl, city: branding.city },
+        student: { fullName: studentName || 'Élève', className: className || 'Classe' },
+        period: {
+          label: period?.name || 'Trimestre',
+          schoolYear: academicYear?.label || '2025-2026',
+          issuedOn: new Date().toISOString().slice(0, 10),
+        },
+        results: avg !== null ? { average: avg, base, rank: rank || undefined, classSize: classSize || undefined } : undefined,
+        verification: { code: vcode, url: verificationUrl(verifyBaseUrl, vcode) },
+      };
+
+      // Générer le PDF
+      const html = await buildCertificateHtml(input);
+      const pdfBuffer = await this.htmlToPdf(html);
+
+      // Envoyer les notifications (email + Helm Connect + bell icon)
+      const results = await this.notificationService.sendDistinctionNotification(
+        resolvedTenantId,
+        studentId,
+        studentName || 'Élève',
+        label,
+        code,
+        pdfBuffer,
+        period?.name || 'Trimestre',
+        className || 'Classe',
+        user?.id || 'system',
+      );
+
+      res.json({ success: true, results });
+    } catch (err: any) {
+      this.logger.error('Erreur envoi certificat:', err);
+      res.status(500).json({ error: err.message || 'Erreur lors de l\'envoi' });
     }
   }
 }

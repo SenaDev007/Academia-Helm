@@ -34,6 +34,8 @@ import { PromotionController } from './promotion.controller';
 // ⭐ 2026-09-29 — PDF Procès-verbal / Statistiques / Promotion
 import { PvStatsPromotionPdfService } from './services/pv-stats-promotion-pdf.service';
 import { PvStatsPromotionPdfController } from './pv-stats-promotion-pdf.controller';
+// ⭐ 2026-09-30 — Distinctions / Tableau d'honneur
+import { DistinctionsController } from './distinctions/distinctions.controller';
 
 @Module({
   imports: [DatabaseModule, UsersModule, AuditLogsModule, ExamsGradesModule, CommonModule, CommunicationModule, SettingsModule, PedagogyModule, FinanceModule],
@@ -52,6 +54,7 @@ import { PvStatsPromotionPdfController } from './pv-stats-promotion-pdf.controll
     UnlockRequestsController,
     PromotionController,
     PvStatsPromotionPdfController,
+    DistinctionsController,
   ],
   providers: [
     ExamsDashboardService,

@@ -395,20 +395,22 @@ export class ConductController {
     const studentIds = enrollments.map(e => e.studentId);
     if (studentIds.length === 0) return [];
 
-    // 3. Vérifier que le periodId correspond bien à un quarter
-    const periodRow = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT id FROM quarters WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
-      periodId, tenantId,
-    ).catch(() => []);
-    const quarterId = periodRow.length > 0 ? periodRow[0].id : null;
+    // ⭐ 2026-09-30 — FIX : le periodId envoyé par le frontend est un
+    //    AcademicPeriod.id, PAS un Quarter.id. Le conduct_ledger.quarterId
+    //    stocke en réalité l'AcademicPeriod.id (le module Vie Scolaire
+    //    utilise periodId comme quarterId). On cherche donc directement
+    //    avec quarterId = periodId, sans vérifier la table quarters.
+    //    (Avant, on vérifait si periodId était un Quarter.id → ça ne
+    //    matchait JAMAIS car les academic_periods et les quarters sont deux
+    //    tables différentes → le conductLedger n'était jamais trouvé →
+    //    la conduite n'était jamais affichée dans l'UI.)
+    const quarterId = periodId;
 
-    // 4. Récupérer TOUS les conduct_ledger de ces élèves pour ce trimestre (1 requête)
-    const ledgerRows = quarterId
-      ? await this.prisma.conductLedger.findMany({
-          where: { tenantId, quarterId, studentId: { in: studentIds } },
-          select: { studentId: true, conductReference: true, totalPointsDeducted: true, conductFinal: true },
-        }).catch(() => [])
-      : [];
+    // 3. Récupérer TOUS les conduct_ledger de ces élèves pour ce trimestre (1 requête)
+    const ledgerRows = await this.prisma.conductLedger.findMany({
+      where: { tenantId, quarterId, studentId: { in: studentIds } },
+      select: { studentId: true, conductReference: true, totalPointsDeducted: true, conductFinal: true },
+    }).catch(() => []);
     const ledgerByStudent = new Map(ledgerRows.map(l => [l.studentId, l]));
 
     // 5. Récupérer TOUTES les sanctions actives de ces élèves pour cette année (1 requête)
@@ -494,29 +496,27 @@ export class ConductController {
     }).catch(() => null);
     const baseline = conductSettings ? Number(conductSettings.conductReference) : 17;
 
-    // 2. Vérifier que le periodId correspond bien à un quarter
-    const periodRow = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT id FROM quarters WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
-      periodId, tenantId,
-    ).catch(() => []);
-    const quarterId = periodRow.length > 0 ? periodRow[0].id : null;
+    // ⭐ 2026-09-30 — FIX : le periodId envoyé par le frontend est un
+    //    AcademicPeriod.id, PAS un Quarter.id. Le conduct_ledger.quarterId
+    //    stocke en réalité l'AcademicPeriod.id (le module Vie Scolaire
+    //    utilise periodId comme quarterId). On cherche donc directement
+    //    avec quarterId = periodId, sans vérifier la table quarters.
+    const quarterId = periodId;
 
     // 3. Récupérer le conduct_ledger de l'élève pour ce trimestre
     let conductScore: number | null = null;
     let conductReference: number = baseline;
     let totalPointsDeducted = 0;
     let hasLedger = false;
-    if (quarterId) {
-      const ledgerRow = await this.prisma.conductLedger.findFirst({
-        where: { tenantId, studentId, quarterId },
-        select: { conductReference: true, totalPointsDeducted: true, conductFinal: true },
-      }).catch(() => null);
-      if (ledgerRow) {
-        hasLedger = true;
-        conductScore = Number(ledgerRow.conductFinal) || null;
-        conductReference = Number(ledgerRow.conductReference) || baseline;
-        totalPointsDeducted = Number(ledgerRow.totalPointsDeducted) || 0;
-      }
+    const ledgerRow = await this.prisma.conductLedger.findFirst({
+      where: { tenantId, studentId, quarterId },
+      select: { conductReference: true, totalPointsDeducted: true, conductFinal: true },
+    }).catch(() => null);
+    if (ledgerRow) {
+      hasLedger = true;
+      conductScore = Number(ledgerRow.conductFinal) || null;
+      conductReference = Number(ledgerRow.conductReference) || baseline;
+      totalPointsDeducted = Number(ledgerRow.totalPointsDeducted) || 0;
     }
 
     // 4. Fallback : si pas de ledger, calculer depuis les sanctions actives

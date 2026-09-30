@@ -870,45 +870,37 @@ export class BulletinsController {
         //    Avant : 6 requêtes séquentielles → ~3-6s sur Neon (cold start) →
         //    504 sur Railway (gateway timeout 30s). Désormais : 2 vagues
         //    parallèles (élève+quarter, puis ledger+settings+sanctions).
+        //    ⭐ FIX 2026-09-30 : le periodId envoyé par le frontend est un
+        //    AcademicPeriod.id, PAS un Quarter.id. Le conduct_ledger.quarterId
+        //    stocke en réalité l'AcademicPeriod.id. On utilise donc directement
+        //    body.periodId comme quarterId, sans vérifier la table quarters.
 
-        // Vague 1 (parallèle) : trouver l'élève + vérifier le quarterId
-        const [conductStudent, periodRow] = await Promise.all([
+        // Vague 1 (parallèle) : trouver l'élève + le conductSetting
+        const [conductStudent, conductSettings] = await Promise.all([
           this.prisma.student.findFirst({
             where: { matricule: body.studentMatricule, tenantId: resolvedTenantId },
             select: { id: true },
           }).catch(() => null),
-          body.periodId
-            ? this.prisma.$queryRawUnsafe<any[]>(
-                `SELECT id FROM quarters WHERE id = $1 AND "tenantId" = $2 LIMIT 1`,
-                body.periodId, resolvedTenantId,
-              ).catch(() => [])
-            : Promise.resolve([]),
+          this.prisma.conductSetting.findFirst({
+            where: { tenantId: resolvedTenantId, academicYearId },
+            orderBy: { createdAt: 'desc' },
+          }).catch(() => null),
         ]);
 
-        if (periodRow.length > 0) resolvedQuarterId = periodRow[0].id;
-        if (!resolvedQuarterId) {
-          // Fallback : trimestre isCurrent=true (1 requête supplémentaire)
-          const currentQuarter = await this.prisma.$queryRawUnsafe<any[]>(
-            `SELECT id FROM quarters WHERE "tenantId" = $1 AND "academicYearId" = $2 AND "isCurrent" = true LIMIT 1`,
-            resolvedTenantId, academicYearId,
-          ).catch(() => []);
-          if (currentQuarter.length > 0) resolvedQuarterId = currentQuarter[0].id;
-        }
+        // ⭐ FIX 2026-09-30 : utiliser directement body.periodId comme quarterId
+        //    (le conduct_ledger.quarterId stocke l'AcademicPeriod.id).
+        resolvedQuarterId = body.periodId || null;
 
         if (conductStudent) {
-          // Vague 2 (parallèle) : conduct_ledger + conductSetting + sanctions
-          //    Ces 3 requêtes sont indépendantes → on les lance en parallèle.
-          const [ledgerRow, conductSettings, activeSanctions] = await Promise.all([
+          // Vague 2 (parallèle) : conduct_ledger + sanctions
+          //    Ces 2 requêtes sont indépendantes → on les lance en parallèle.
+          const [ledgerRow, activeSanctions] = await Promise.all([
             resolvedQuarterId
               ? this.prisma.conductLedger.findFirst({
                   where: { tenantId: resolvedTenantId, studentId: conductStudent.id, quarterId: resolvedQuarterId },
                   select: { conductReference: true, totalPointsDeducted: true, conductFinal: true },
                 }).catch(() => null)
               : Promise.resolve(null),
-            this.prisma.conductSetting.findFirst({
-              where: { tenantId: resolvedTenantId, academicYearId },
-              orderBy: { createdAt: 'desc' },
-            }).catch(() => null),
             this.prisma.sanction.findMany({
               where: { tenantId: resolvedTenantId, academicYearId, studentId: conductStudent.id, status: 'ACTIVE' },
               select: { pointsDeducted: true, hoursAttributed: true, quarterId: true },

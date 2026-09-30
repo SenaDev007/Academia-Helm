@@ -1125,7 +1125,6 @@ ${page2Content}
           <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;font-weight:bold;">${rang}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:9px;color:#475569;">${s.appreciation || '—'}</td>
           <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:8px;">${teacherCell}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 2px;height:20px;"></td>
         </tr>`;
     };
 
@@ -1150,7 +1149,6 @@ ${page2Content}
         <td style="border:1px solid #0A2A5E;padding:3px 2px;font-size:10px;text-transform:uppercase;color:#0A2A5E;">${label}</td>
         <td colspan="${colSpan}" style="border:1px solid #0A2A5E;"></td>
         <td style="border:1px solid #0A2A5E;padding:3px 2px;text-align:center;font-size:11px;background:#dbeafe;">${bilanCell}</td>
-        <td style="border:1px solid #0A2A5E;"></td>
         <td style="border:1px solid #0A2A5E;"></td>
         <td style="border:1px solid #0A2A5E;"></td>
       </tr>`;
@@ -1204,7 +1202,6 @@ ${page2Content}
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;">Rang</th>
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;">Appréciation</th>
         <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;">Professeur</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;">Signature</th>
       </tr>
       <tr style="background:#114FC4;color:white;">
         <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">IE1</th>
@@ -1213,26 +1210,26 @@ ${page2Content}
         <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">DS2</th>
       </tr>`;
 
-    // ── Lignes de totaux + moyenne trimestrielle (colspans : 6e/5e = 12
-    //    colonnes, 4e → Terminale = 14) ────────────────────────────────
-    //    ⭐ 2026-09-28 — +2 colonnes : ajout de « Professeur » + ajustement
-    //    des colspans des lignes de totaux pour la nouvelle structure.
+    // ── Lignes de totaux + moyenne trimestrielle (colspans : 6e/5e = 11
+    //    colonnes, 4e → Terminale = 13) ────────────────────────────────
+    //    ⭐ 2026-09-30 — Suppression colonne « Signature » → -1 colspan.
+    //    Avant : 12 (junior) / 14 (senior). Maintenant : 11 / 13.
     const totalRows = `
       ${!isJunior ? `
       <tr style="background:#e2e8f0;font-weight:bold;">
         <td colspan="7" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Total des coefficients</td>
         <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:10px;color:#b45309;">${totalCoef ?? '—'}</td>
-        <td colspan="6" style="border:1px solid #cbd5e1;"></td>
+        <td colspan="5" style="border:1px solid #cbd5e1;"></td>
       </tr>
       <tr style="background:#e2e8f0;font-weight:bold;">
         <td colspan="7" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Total des moyennes (Σ moy × coef)</td>
         <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:10px;color:#059669;">${totalNotesCoef !== null ? totalNotesCoef.toFixed(2) : '—'}</td>
-        <td colspan="6" style="border:1px solid #cbd5e1;"></td>
+        <td colspan="5" style="border:1px solid #cbd5e1;"></td>
       </tr>` : ''}
       <tr style="background:#dbeafe;font-weight:bold;">
         <td colspan="6" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Moyenne trimestrielle</td>
         <td colspan="${isJunior ? 1 : 2}" style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:11px;color:#0A2A5E;">${fmtSec(data.generalAverage)}</td>
-        <td colspan="${isJunior ? 5 : 6}" style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;color:#0A2A5E;">Rang : ${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
+        <td colspan="${isJunior ? 4 : 5}" style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;color:#0A2A5E;">Rang : ${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
       </tr>`;
 
     // ── Récap du 3e trimestre (moyennes T1 + T2 + moyenne annuelle + passage) ──

@@ -10598,6 +10598,18 @@ model FederisExamPaper {
   grilleCorrection   String?
   /// Pied de page personnalisé (HTML simple)
   footerText         String?
+  /// ⭐ 2026-09-30 — Mise en valeur des intitulés structurants (« Situation
+  /// d'évaluation », « Tâche », titres des sections) : { bold, underline,
+  /// italic, fontSize } (panneau « Mise en page du sujet »)
+  labelStyle         Json?
+  /// ⭐ 2026-09-30 — Copies du sujet par page A4 : 1 (normale), 2 ou 3
+  /// (petites épreuves — bandes de hauteur fixe + lignes de découpe)
+  copiesPerPage      Int       @default(1)
+  /// ⭐ 2026-09-30 — Filigrane : none | logo (logo du patronat, module
+  /// Paramètres) | text (texte personnalisé)
+  watermarkMode      String    @default("none")
+  /// ⭐ 2026-09-30 — Texte du filigrane (mode « text » uniquement)
+  watermarkText      String?
   /// DRAFT (brouillon) | VALIDATED (validée) | LOCKED (verrouillée)
   status             String    @default("DRAFT")
   createdBy          String

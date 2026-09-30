@@ -83,8 +83,32 @@ interface EpreuveDetail extends EpreuveListItem {
   cleCorrection: string;
   grilleCorrection: string;
   footerText: string;
+  // ⭐ 2026-09-30 — mise en page du sujet (intitulés, copies, filigrane)
+  labelStyle: LabelStyle | null;
+  copiesPerPage: number;
+  watermarkMode: 'none' | 'logo' | 'text';
+  watermarkText: string | null;
   canManage?: boolean;
 }
+
+/** ⭐ 2026-09-30 — Mise en valeur des intitulés structurants (« Situation
+ *  d'évaluation », « Tâche », titres des sections) sur le PDF. */
+interface LabelStyle {
+  bold: boolean;
+  underline: boolean;
+  italic: boolean;
+  fontSize: number;
+}
+
+const DEFAULT_LABEL_STYLE: LabelStyle = {
+  bold: true,
+  underline: false,
+  italic: false,
+  fontSize: 12,
+};
+
+/** Tailles proposées pour les intitulés (px). */
+const LABEL_SIZE_OPTIONS = [10, 11, 12, 14, 16, 18, 20];
 
 interface ListResponse {
   academicYears: { id: string; label: string; name: string; isActive: boolean }[];
@@ -162,6 +186,11 @@ const EMPTY_FORM = {
   cleCorrection: '',
   grilleCorrection: '',
   footerText: '',
+  // ⭐ 2026-09-30 — mise en page du sujet (PDF)
+  labelStyle: { ...DEFAULT_LABEL_STYLE },
+  copiesPerPage: 1,
+  watermarkMode: 'none' as 'none' | 'logo' | 'text',
+  watermarkText: '',
 };
 
 type EditorState =
@@ -315,6 +344,15 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
         cleCorrection: d.cleCorrection ?? '',
         grilleCorrection: d.grilleCorrection ?? '',
         footerText: d.footerText ?? '',
+        // ⭐ 2026-09-30 — mise en page du sujet (valeurs tolérantes aux
+        //    épreuves créées avant l'ajout des champs)
+        labelStyle: { ...DEFAULT_LABEL_STYLE, ...(d.labelStyle ?? {}) },
+        copiesPerPage: d.copiesPerPage === 2 || d.copiesPerPage === 3 ? d.copiesPerPage : 1,
+        watermarkMode:
+          d.watermarkMode === 'logo' || d.watermarkMode === 'text'
+            ? d.watermarkMode
+            : 'none',
+        watermarkText: d.watermarkText ?? '',
       });
       setShowCorrection(!!(d.cleCorrection || d.grilleCorrection));
       setShowCustomHeader(!!d.customHeader);
@@ -361,6 +399,11 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
     cleCorrection: form.cleCorrection || null,
     grilleCorrection: form.grilleCorrection || null,
     footerText: form.footerText || null,
+    // ⭐ 2026-09-30 — mise en page du sujet (intitulés, copies, filigrane)
+    labelStyle: form.labelStyle,
+    copiesPerPage: form.copiesPerPage,
+    watermarkMode: form.watermarkMode,
+    watermarkText: form.watermarkMode === 'text' ? form.watermarkText || null : null,
   });
 
   const save = useCallback(
@@ -773,6 +816,13 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
                   placeholder="Épreuve de Mathématiques — BEPC 2027"
                   className="fed-input-light px-4 py-3 font-semibold"
                 />
+                {/* ⭐ 2026-09-30 — si le titre est laissé vide, le PDF affiche
+                    la ligne système « ÉPREUVE : {matière} » CENTRÉTÉE ; dès
+                    qu'un titre est saisi, la ligne système disparaît. */}
+                <p className="text-[10px] text-slate-400 mt-1.5">
+                  Laissez vide pour que le PDF affiche « ÉPREUVE : {form.subject || 'matière'} »
+                  centré — dès que vous saisissez un titre, cette ligne système disparaît.
+                </p>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
@@ -1127,6 +1177,190 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
                   />
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* ⭐ 2026-09-30 — MISE EN PAGE DU SUJET (PDF) : mise en valeur des
+              intitulés, duplication du sujet sur un seul A4 (petites
+              épreuves, lignes de découpe) et filigrane (logo du patronat
+              depuis le module Paramètres, ou texte personnalisé). */}
+          <div className="fed-card p-6 space-y-5">
+            <div>
+              <h3 className="text-xs font-bold text-blue-900 uppercase">Mise en page du sujet (PDF)</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Ces options façonnent le PDF généré : intitulés mis en valeur,
+                sujet dupliqué sur un seul A4 pour les petites épreuves, et
+                filigrane de sécurité.
+              </p>
+            </div>
+
+            {/* 1. Mise en valeur des intitulés */}
+            <div className="rounded-xl border border-slate-200 bg-[#f7f9fc] p-4 space-y-3">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                Mise en valeur des intitulés (Situation d&apos;évaluation, Tâche, titres des sections)
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                {([
+                  ['bold', 'Gras'],
+                  ['underline', 'Souligné'],
+                  ['italic', 'Italique'],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    disabled={locked}
+                    onClick={() => {
+                      setForm({
+                        ...form,
+                        labelStyle: { ...form.labelStyle, [key]: !form.labelStyle[key] },
+                      });
+                      markDirty();
+                    }}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors disabled:opacity-50',
+                      form.labelStyle[key]
+                        ? 'bg-blue-800 text-white border-blue-800'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300',
+                      key === 'bold' && 'font-bold',
+                      key === 'italic' && 'italic',
+                      key === 'underline' && 'underline',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Taille</span>
+                  <select
+                    value={form.labelStyle.fontSize}
+                    disabled={locked}
+                    onChange={(e) => {
+                      setForm({
+                        ...form,
+                        labelStyle: { ...form.labelStyle, fontSize: Number(e.target.value) },
+                      });
+                      markDirty();
+                    }}
+                    className="fed-input-light px-2 py-1.5 text-[11px] font-semibold"
+                  >
+                    {LABEL_SIZE_OPTIONS.map((s) => (
+                      <option key={s} value={s}>{s} px</option>
+                    ))}
+                  </select>
+                </div>
+                {/* Aperçu en direct du style appliqué aux intitulés */}
+                <span
+                  className="ml-2 text-blue-900"
+                  style={{
+                    fontWeight: form.labelStyle.bold ? 700 : 400,
+                    textDecoration: form.labelStyle.underline ? 'underline' : 'none',
+                    fontStyle: form.labelStyle.italic ? 'italic' : 'normal',
+                    fontSize: form.labelStyle.fontSize,
+                  }}
+                >
+                  Situation d&apos;évaluation
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Le même style est appliqué à « Situation d&apos;évaluation », « Tâche » et aux
+                titres des sections libres (Problème 1, Exercice 2, Consigne…).
+              </p>
+            </div>
+
+            {/* 2. Copies du sujet par page A4 */}
+            <div className="rounded-xl border border-slate-200 bg-[#f7f9fc] p-4 space-y-3">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                Copies du sujet par page A4 (petites épreuves)
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                {([
+                  [1, '1 — page normale'],
+                  [2, '2× — deux sujets par A4'],
+                  [3, '3× — trois sujets par A4'],
+                ] as const).map(([n, label]) => (
+                  <button
+                    key={n}
+                    type="button"
+                    disabled={locked}
+                    onClick={() => {
+                      setForm({ ...form, copiesPerPage: n });
+                      markDirty();
+                    }}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors disabled:opacity-50',
+                      form.copiesPerPage === n
+                        ? 'bg-blue-800 text-white border-blue-800'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-400">
+                Le sujet complet est dupliqué 2 ou 3 fois sur un seul A4, séparé par des
+                lignes de découpe (✂) — idéal pour les petites épreuves à découper avant
+                distribution. Choisissez le nombre de copies selon le contenu : ce qui
+                déborde de la bande est rogné. Les pages de correction restent à part
+                (une par page).
+              </p>
+            </div>
+
+            {/* 3. Filigrane */}
+            <div className="rounded-xl border border-slate-200 bg-[#f7f9fc] p-4 space-y-3">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                Filigrane (toutes les pages du PDF)
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                {([
+                  ['none', 'Aucun'],
+                  ['logo', 'Logo du patronat'],
+                  ['text', 'Texte personnalisé'],
+                ] as const).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    disabled={locked}
+                    onClick={() => {
+                      setForm({ ...form, watermarkMode: mode });
+                      markDirty();
+                    }}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors disabled:opacity-50',
+                      form.watermarkMode === mode
+                        ? 'bg-blue-800 text-white border-blue-800'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {form.watermarkMode === 'logo' && (
+                <p className="text-[10px] text-slate-400">
+                  Le logo du patronat (défini dans le module Paramètres de Fédéris) est
+                  posé en filigrane incliné et très clair sur chaque page du PDF. Si aucun
+                  logo n&apos;est encore défini, aucun filigrane n&apos;est appliqué.
+                </p>
+              )}
+              {form.watermarkMode === 'text' && (
+                <div>
+                  <input
+                    value={form.watermarkText}
+                    onChange={(e) => {
+                      setForm({ ...form, watermarkText: e.target.value });
+                      markDirty();
+                    }}
+                    disabled={locked}
+                    maxLength={60}
+                    placeholder="Ex : EXAMEN BLANC — NE PAS DIFFUSER"
+                    className="fed-input-light px-4 py-2.5 text-sm font-semibold uppercase"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1.5">
+                    Texte posé en diagonale, en très clair, sur chaque page du PDF (60 caractères max).
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 

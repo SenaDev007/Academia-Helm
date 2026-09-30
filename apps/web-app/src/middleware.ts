@@ -14,6 +14,33 @@ import { getApiBaseUrl, getAppBaseUrl } from '@/lib/utils/urls';
 const SESSION_COOKIE = 'academia_session';
 const ADMIN_SESSION_COOKIE = 'academia_admin_session';
 
+/** ⭐ Dossiers statiques PUBLICS (fichiers servis depuis /public) : ils ne
+ *  doivent JAMAIS être réécrits par les satellites (academiafederis…), les
+ *  sous-domaines patronat (patronatXXX…) ou saisiemaster — sinon
+ *  /pedagogy-assets/anatomie/cerveau.svg devient /federis/pedagogy-assets/…
+ *  (route inexistante → 404 → images de la bibliothèque de l'éditeur
+ *  enrichi CASSÉES dans les épreuves du patronat — bug 2026-09-30).
+ *  Ces préfixes sont AUSSI exclus du matcher (config.config) — cette liste
+ *  sert de garde-fou pour les branches de rewrite ci-dessous. */
+const PUBLIC_STATIC_PREFIXES = [
+  '/images/',
+  '/fonts/',
+  '/uploads/',
+  '/videos/',
+  '/sounds/',
+  '/logos/',
+  '/icons/',
+  '/legal/',
+  '/orion-rules/',
+  '/pedagogy-assets/',
+  '/pedagogy-images/',
+];
+
+/** Le pathname vise-t-il un fichier statique public (jamais réécrit) ? */
+function isPublicStaticAsset(pathname: string): boolean {
+  return PUBLIC_STATIC_PREFIXES.some((p) => pathname.startsWith(p));
+}
+
 /** Récupère l'utilisateur et le tenant depuis le cookie de session (Edge). */
 function getUserFromSessionCookie(request: NextRequest): { 
   id: string; 
@@ -350,6 +377,12 @@ export async function middleware(request: NextRequest) {
   if (hostParts.length >= 3 && isReservedSubdomain(hostParts[0]) && hostParts[0] !== 'www') {
     // ── Academia Federis satellite app ──
     if (hostParts[0] === 'academiafederis') {
+      // ⭐ Fichiers statiques publics (bibliothèque d'images pédagogiques de
+      //    l'éditeur, polices, médias…) : servis tels quels, JAMAIS réécrits
+      //    vers /federis/* (sinon 404 → images cassées dans les épreuves).
+      if (isPublicStaticAsset(pathname)) {
+        return NextResponse.next();
+      }
       // Rewrite academiafederis.academiahelm.com/* → /federis/*
       // Root path → /federis
       // Sub-paths → /federis/<path> (unless already prefixed)
@@ -377,6 +410,10 @@ export async function middleware(request: NextRequest) {
     // telles quelles pour que les BFF routes (/api/saisiemaster/signup, etc.)
     // fonctionnent correctement.
     if (hostParts[0] === 'saisiemaster' && !pathname.startsWith('/api/')) {
+      // ⭐ Fichiers statiques publics : jamais réécrits vers /saisiemaster/*
+      if (isPublicStaticAsset(pathname)) {
+        return NextResponse.next();
+      }
       let saisiePath: string;
       if (pathname === '/') {
         saisiePath = '/saisiemaster';
@@ -528,6 +565,7 @@ export async function middleware(request: NextRequest) {
       pathname.startsWith('/images/') ||
       pathname.startsWith('/fonts/') ||
       pathname.startsWith('/uploads/') ||
+      isPublicStaticAsset(pathname) ||
       pathname === '/favicon.ico' ||
       pathname === '/manifest.json' ||
       pathname === '/robots.txt' ||
@@ -835,6 +873,10 @@ export const config = {
     // ✅ PWA : /pwa-icon (icônes dynamiques par école, résout le tenant
     // elle-même) et les manifests dynamiques (*.webmanifest) sont exclus —
     // leurs routes gèrent leur propre contexte + Cache-Control.
-    '/((?!_next/static|_next/image|favicon.ico|images/|fonts/|uploads/|sw.js|sw-site.js|sw-chat.js|manifest.json|manifest-site.webmanifest|manifest-app.webmanifest|pwa-icon|apple-touch-icon.png|robots.txt|sitemap.xml|api/).*)',
+    // ✅ Fichiers statiques PUBLICS (/pedagogy-assets, /pedagogy-images,
+    // vidéos, sons…) : servis tels quels sur TOUS les domaines (satellites
+    // academiafederis/patronatXXX compris) — sinon le rewrite satellite les
+    // transforme en /federis/… → 404 → images de la bibliothèque cassées.
+    '/((?!_next/static|_next/image|favicon.ico|images/|fonts/|uploads/|videos/|sounds/|logos/|icons/|legal/|orion-rules/|pedagogy-assets/|pedagogy-images/|sw.js|sw-site.js|sw-chat.js|manifest.json|manifest-site.webmanifest|manifest-app.webmanifest|pwa-icon|apple-touch-icon.png|robots.txt|sitemap.xml|api/).*)',
   ],
 };

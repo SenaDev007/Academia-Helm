@@ -1440,3 +1440,245 @@ html {
     transform: scale(1.05);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ⭐ RESTAURATION (2026-09-30) — STYLES DU RICH TEXT EDITOR (V10 → V14)
+   ═══════════════════════════════════════════════════════════════════════════
+   Ces règles (affordances de survol/sélection des insertions, poignées de
+   redimensionnement, fantôme de déplacement, habillage devant/derrière le
+   texte, outils tableau V14 et 14 polices @font-face auto-hébergées) avaient
+   été SUPPRIMÉES PAR ERREUR de globals.css par le commit « Win Agro » du
+   2026-09-25 (refonte landing page) — l'éditeur enrichi perdait alors ses
+   poignées, son curseur main et ses polices PARTOUT (Helm ET Federis) :
+   images impossibles à déplacer/redimensionner, double-clic = sélection
+   bleue native sans contour ni barre d'objet. Bloc restauré à l'identique
+   depuis l'état d'origine (commit parent) — https://github.com/SenaDev007 */
+.ah-media-hover {
+  outline: 2px dashed rgba(37, 99, 235, 0.55) !important;
+  outline-offset: 2px;
+  cursor: pointer;
+}
+
+/* ============================================================
+   CDC RESPONSIVE — règles globales mobile-first
+/* ⭐ V12 (2026-09-22) — POLICES D'ÉCRITURE SCOLAIRE (auto-hébergées, OFL)
+   Playwrite FR Moderne / Playwrite FR Trad : cursives scolaires françaises
+   (projet Google Fonts dédié à l'enseignement). Comic Neue : écriture script
+   (lettres imprimées). Utilisées par les lignes calligraphiques insérées via
+   le RichTextEditor (fiches, cahier journal, épreuves) — rendu identique à
+   l'écran, dans les PDF et hors-ligne (fichiers servis depuis /fonts,
+   pré-cachés par le service worker). */
+@font-face {
+  font-family: 'Playwrite FR Moderne';
+  src: url('/fonts/playwrite-fr-moderne.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Playwrite FR Trad';
+  src: url('/fonts/playwrite-fr-trad.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Comic Neue';
+  src: url('/fonts/comic-neue.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ⭐ V13 (2026-09-22) — POLICES PROFESSIONNELLES de l'éditeur enrichi
+   (cahier journal, fiches pédagogiques, épreuves). 11 polices choisissables
+   dans le menu « Police » du RichTextEditor — auto-hébergées (sous-ensemble
+   latin, OFL, ~310 Ko), servies depuis /fonts et mises en cache par le
+   service worker (pattern /fonts/). Les MÊMES fichiers sont embarqués en
+   base64 dans les templates PDF (api-server : pdf-school-fonts.ts) → rendu
+   écran / PDF identique. Arimo/Tinos/Carlito sont les équivalents
+   métriques d'Arial / Times New Roman / Calibri. */
+@font-face {
+  font-family: 'Montserrat';
+  src: url('/fonts/montserrat.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Playfair Display';
+  src: url('/fonts/playfair-display.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'EB Garamond';
+  src: url('/fonts/eb-garamond.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Merriweather';
+  src: url('/fonts/merriweather.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Dancing Script';
+  src: url('/fonts/dancing-script.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Caveat';
+  src: url('/fonts/caveat.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Patrick Hand';
+  src: url('/fonts/patrick-hand.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Lobster Two';
+  src: url('/fonts/lobster-two.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Arimo';
+  src: url('/fonts/arimo.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Tinos';
+  src: url('/fonts/tinos.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Carlito';
+  src: url('/fonts/carlito.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+
+/* ⭐ V13 — ÉDITEUR ENRICHI : redimensionnement / habillage des insertions.
+   Poignées de taille (coins) posées dynamiquement par le composant sur
+   l'insertion sélectionnée — purement affichage écran, jamais sérialisées
+   (serializeClean retire .ah-media-hover ET .ah-selected avant onChange).
+   .ah-fig svg bénéficie d'un redimensionnement fluide quand une largeur
+   explicite est posée sur le wrapper (l'inline SVG garde son ratio). */
+.ah-media-selected {
+  outline: 2px solid rgba(37, 99, 235, 0.8) !important;
+  outline-offset: 2px;
+  cursor: move;
+}
+.ah-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #ffffff;
+  border: 2px solid rgb(37, 99, 235);
+  border-radius: 2px;
+  z-index: 30;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.35);
+}
+.ah-handle[data-dir="nw"] { cursor: nwse-resize; }
+.ah-handle[data-dir="ne"] { cursor: nesw-resize; }
+.ah-handle[data-dir="sw"] { cursor: nesw-resize; }
+.ah-handle[data-dir="se"] { cursor: nwse-resize; }
+/* l'élément en cours de déplacement/déformation prend un aspect « fantôme » */
+.ah-media-dragging {
+  opacity: 0.55;
+}
+/* les insertions en habillage « devant / derrière le texte » restent
+   sélectionnables au clic (elles chevauchent le texte) */
+[contenteditable] .ah-float-devant,
+[contenteditable] .ah-float-derriere {
+  cursor: move;
+}
+
+/* ⭐ V13 — Filet de sécurité pour le CONTENU HISTORIQUE (V7→V12) : la
+   sanitisation Chromium de execCommand insertHTML retirait les attributs
+   style des SVG insérés → SVG viewBox-only sans dimensions, DANS un wrapper
+   span.ah-fig inline-block (shrink-to-fit) → largeur calculée 0 px →
+   illustrations de la bibliothèque d'images INVISIBLES. Ce sélecteur
+   chirurgical ne vise QUE ce cas (wrapper inline-block + SVG sans width NI
+   style) et lui redonne une taille lisible — les nouvelles insertions V13
+   (style width:100% posé et préservé) et les figures/graphiques en
+   display:block ne sont PAS affectés. */
+span.ah-fig[style*="inline-block"] > svg[viewBox]:not([width]):not([style]) {
+  width: 280px;
+  height: auto;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   ⭐ V14 (2026-09-22) — OUTILS TABLEAU + TABULATIONS du RichTextEditor
+   ══════════════════════════════════════════════════════════════════ */
+
+/* Taquet de tabulation (touche Tab) : espaceur invisible d'un seul bloc,
+   supprimé d'un seul Backspace — largeur posée en style inline par le
+   composant (prochain arrêt tous les 48 px, comme Word). */
+.ah-tab {
+  display: inline-block;
+  user-select: none;
+}
+
+/* Poignée ⬛ de sélection OBJET du tableau (coin supérieur gauche,
+   apparaît au survol — comme Word / Google Docs). Rendue dans le wrapper
+   de l'éditeur → jamais sérialisée. */
+.ah-tablehandle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  border: 2px solid rgb(37, 99, 235);
+  border-radius: 3px;
+  cursor: move;
+  z-index: 32;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.35);
+}
+.ah-tablehandle:hover {
+  background: rgb(219, 234, 254);
+}
+
+/* Séparateur de COLONNE redimensionnable (tableau sélectionné comme
+   objet) : glisser comme dans Word/Excel. Rendu dans le wrapper → jamais
+   sérialisé. */
+.ah-colhandle {
+  position: absolute;
+  width: 7px;
+  height: 24px;
+  background: #ffffff;
+  border: 2px solid rgb(37, 99, 235);
+  border-radius: 4px;
+  cursor: col-resize;
+  z-index: 32;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.35);
+  touch-action: none;
+}
+.ah-colhandle:hover,
+.ah-colhandle:active {
+  background: rgb(37, 99, 235);
+}
+
+/* Cellules des tableaux ah-table : curseur texte (elles sont éditables —
+   V14 : plus de contenteditable=false) ; la bordure extérieure du tableau
+   garde le curseur « move » de la sélection objet. */
+table.ah-table td,
+table.ah-table th {
+  cursor: text;
+}

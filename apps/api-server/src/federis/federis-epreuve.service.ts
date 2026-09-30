@@ -61,6 +61,12 @@ import {
 
 // ── Constantes ──────────────────────────────────────────────────────────────
 
+/** ⭐ 2026-09-30 — Copies du sujet par page A4 (petites épreuves). */
+export const EPREUVE_COPIES_PER_PAGE = [1, 2, 3] as const;
+
+/** ⭐ 2026-09-30 — Modes de filigrane du sujet. */
+export const EPREUVE_WATERMARK_MODES = ['none', 'logo', 'text'] as const;
+
 /** Catégories d'examen = dossiers du catalogue. */
 export const EPREUVE_CATEGORIES = ['CEP', 'BEPC', 'BAC', 'CAP'] as const;
 export type EpreuveCategory = (typeof EPREUVE_CATEGORIES)[number];
@@ -171,6 +177,28 @@ export class CreateEpreuveDto {
   @IsString()
   @MaxLength(2000)
   footerText?: string;
+
+  /** ⭐ 2026-09-30 — Mise en valeur des intitulés (Situation d'évaluation,
+   *  Tâche, titres de sections) : { bold, underline, italic, fontSize }. */
+  @IsOptional()
+  labelStyle?: any;
+
+  /** ⭐ 2026-09-30 — Copies du sujet par page A4 : 1 (normale), 2 ou 3
+   *  (petites épreuves, bandes de hauteur fixe + lignes de découpe). */
+  @IsOptional()
+  @IsIn(EPREUVE_COPIES_PER_PAGE as unknown as number[])
+  copiesPerPage?: number;
+
+  /** ⭐ 2026-09-30 — Filigrane : none | logo (logo du patronat, module
+   *  Paramètres) | text (texte personnalisé). */
+  @IsOptional()
+  @IsIn(EPREUVE_WATERMARK_MODES as unknown as string[])
+  watermarkMode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  watermarkText?: string;
 }
 
 export class UpdateEpreuveDto {
@@ -254,6 +282,27 @@ export class UpdateEpreuveDto {
   @IsOptional()
   @IsIn(EPREUVE_STATUSES as unknown as string[])
   status?: EpreuveStatus;
+
+  /** ⭐ 2026-09-30 — Mise en valeur des intitulés ({ bold, underline,
+   *  italic, fontSize }) — appliquée à « Situation d'évaluation », « Tâche »
+   *  et aux titres des sections libres. */
+  @IsOptional()
+  labelStyle?: any;
+
+  /** ⭐ 2026-09-30 — Copies du sujet par page A4 (1 | 2 | 3). */
+  @IsOptional()
+  @IsIn(EPREUVE_COPIES_PER_PAGE as unknown as number[])
+  copiesPerPage?: number;
+
+  /** ⭐ 2026-09-30 — Filigrane : none | logo | text. */
+  @IsOptional()
+  @IsIn(EPREUVE_WATERMARK_MODES as unknown as string[])
+  watermarkMode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  watermarkText?: string;
 }
 
 export class UpdateEpreuveHeaderDto {
@@ -364,6 +413,13 @@ export class FederisEpreuveService {
       ).then((r: any[]) => {
         if (!r || r.length === 0) throw new Error('colonne epreuveHeader absente');
       });
+      // ⭐ 2026-09-30 — mise en page du sujet : si une colonne récente manque
+      //    (bases existantes), on DOIT passer par les ALTER ci-dessous.
+      await this.prisma.$queryRawUnsafe(
+        `SELECT 1 FROM information_schema.columns WHERE table_name='federis_exam_papers' AND column_name='watermarkMode' LIMIT 1`,
+      ).then((r: any[]) => {
+        if (!r || r.length === 0) throw new Error('colonne watermarkMode absente');
+      });
       this.schemaReady = true;
       return;
     } catch {
@@ -432,6 +488,13 @@ export class FederisEpreuveService {
                   FOREIGN KEY ("subjectId") REFERENCES "federis_subjects"("id") ON DELETE SET NULL;
           END IF;
       END $$`,
+      // ⭐ 2026-09-30 — MISE EN PAGE DU SUJET : mise en valeur des intitulés
+      //    (labelStyle), copies du sujet par A4 avec lignes de découpe
+      //    (copiesPerPage) et filigrane logo/texte (watermarkMode/Text).
+      `ALTER TABLE "federis_exam_papers" ADD COLUMN IF NOT EXISTS "labelStyle" JSONB`,
+      `ALTER TABLE "federis_exam_papers" ADD COLUMN IF NOT EXISTS "copiesPerPage" INTEGER NOT NULL DEFAULT 1`,
+      `ALTER TABLE "federis_exam_papers" ADD COLUMN IF NOT EXISTS "watermarkMode" TEXT NOT NULL DEFAULT 'none'`,
+      `ALTER TABLE "federis_exam_papers" ADD COLUMN IF NOT EXISTS "watermarkText" TEXT`,
     ];
 
     for (const stmt of statements) {
@@ -474,6 +537,56 @@ export class FederisEpreuveService {
         content: typeof s.content === 'string' ? s.content.slice(0, RICH_FIELD_MAX) : '',
       }));
     return cleaned;
+  }
+
+  /** ⭐ 2026-09-30 — Style des intitulés structurants (« Situation
+   *  d'évaluation », « Tâche », titres des sections) : { bold, underline,
+   *  italic, fontSize }. Tolérant aux valeurs absentes / corrompues
+   *  (épreuves créées avant la colonne, payloads partiels d'autosave). */
+  private sanitizeLabelStyle(raw: unknown): {
+    bold: boolean;
+    underline: boolean;
+    italic: boolean;
+    fontSize: number;
+  } {
+    const src = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<
+      string,
+      unknown
+    >;
+    const fontSize = Number(src.fontSize);
+    return {
+      bold: src.bold === undefined ? true : !!src.bold,
+      underline: !!src.underline,
+      italic: !!src.italic,
+      fontSize:
+        Number.isFinite(fontSize) && fontSize >= 8 && fontSize <= 28
+          ? Math.round(fontSize)
+          : 12,
+    };
+  }
+
+  /** ⭐ 2026-09-30 — Copies du sujet par A4 (1 | 2 | 3 — défaut 1). */
+  private sanitizeCopiesPerPage(raw: unknown): number {
+    const n = Number(raw);
+    return n === 2 || n === 3 ? n : 1;
+  }
+
+  /** ⭐ 2026-09-30 — Mode de filigrane (none | logo | text — défaut none). */
+  private sanitizeWatermarkMode(raw: unknown): 'none' | 'logo' | 'text' {
+    return raw === 'logo' || raw === 'text' ? raw : 'none';
+  }
+
+  /** ⭐ 2026-09-30 — Retire le préfixe redondant « Année scolaire » /
+   *  « Année académique » du label d'année scolaire : le template affiche
+   *  déjà « Année scolaire : » avant la valeur (sinon le PDF montrait
+   *  « Année scolaire : Année scolaire 2026-2027 »). */
+  private stripAcademicYearPrefix(label: string | null | undefined): string | null {
+    if (!label) return null;
+    const stripped = label
+      .replace(/^\s*ann[ée]e\s+(scolaire|acad[ée]mique)\s*[:\-—]?\s*/i, '')
+      .replace(/^\s*academic\s+year\s*[:\-—]?\s*/i, '')
+      .trim();
+    return stripped || label;
   }
 
   // ── Onglet « Épreuves » : liste + CRUD ────────────────────────────────────
@@ -560,6 +673,11 @@ export class FederisEpreuveService {
         cleCorrection: dto.cleCorrection || null,
         grilleCorrection: dto.grilleCorrection || null,
         footerText: dto.footerText?.trim() || null,
+        // ⭐ 2026-09-30 — mise en page du sujet (intitulés, copies, filigrane)
+        labelStyle: (dto.labelStyle ? this.sanitizeLabelStyle(dto.labelStyle) : undefined) as any,
+        copiesPerPage: this.sanitizeCopiesPerPage(dto.copiesPerPage),
+        watermarkMode: this.sanitizeWatermarkMode(dto.watermarkMode),
+        watermarkText: dto.watermarkText?.trim() || null,
         status: 'DRAFT',
         createdBy: userId,
       },
@@ -638,6 +756,19 @@ export class FederisEpreuveService {
     if (dto.cleCorrection !== undefined) data.cleCorrection = dto.cleCorrection || null;
     if (dto.grilleCorrection !== undefined) data.grilleCorrection = dto.grilleCorrection || null;
     if (dto.footerText !== undefined) data.footerText = dto.footerText?.trim() || null;
+    // ⭐ 2026-09-30 — mise en page du sujet (intitulés, copies, filigrane)
+    if (dto.labelStyle !== undefined) {
+      data.labelStyle = this.sanitizeLabelStyle(dto.labelStyle) as any;
+    }
+    if (dto.copiesPerPage !== undefined) {
+      data.copiesPerPage = this.sanitizeCopiesPerPage(dto.copiesPerPage);
+    }
+    if (dto.watermarkMode !== undefined) {
+      data.watermarkMode = this.sanitizeWatermarkMode(dto.watermarkMode);
+    }
+    if (dto.watermarkText !== undefined) {
+      data.watermarkText = dto.watermarkText?.trim() || null;
+    }
     if (dto.status !== undefined) data.status = dto.status;
 
     const updated = await this.prisma.federisExamPaper.update({
@@ -909,7 +1040,20 @@ export class FederisEpreuveService {
       ? (paper.sections as EpreuveSection[])
       : [];
 
+    // ⭐ 2026-09-30 — MISE EN PAGE DU SUJET (panneau « Mise en page du sujet »)
+    const ls = this.sanitizeLabelStyle((paper as any).labelStyle);
+    const copiesPerPage = this.sanitizeCopiesPerPage((paper as any).copiesPerPage);
+    const wmMode = this.sanitizeWatermarkMode((paper as any).watermarkMode);
+
+    // ⭐ 2026-09-30 — plus de doublon « Année scolaire : Année scolaire
+    //    2026-2027 » : le préfixe redondant du label est retiré (le template
+    //    affiche déjà « Année scolaire : » avant la valeur).
+    const yearLabel = this.stripAcademicYearPrefix(ctx.academicYearLabel);
+
     // ── EN-TÊTE : personnalisé (ponctuel > réutilisable) ou par défaut ──
+    // ⭐ 2026-09-30 : la SESSION (ex : « Examen blanc ») ne fait PLUS partie
+    //    du bloc en-tête — elle s'affiche sur sa propre ligne, SOUS l'en-tête
+    //    (tous modes : défaut, réutilisable, ponctuel).
     const headerHtml = customHeader
       ? `<div class="custom-header">${customHeader}</div>`
       : reusableHeader
@@ -924,11 +1068,32 @@ export class FederisEpreuveService {
             ? `<div class="sub-line">${[ctx.abbreviation, ctx.country].filter(Boolean).map(esc).join(' · ')}</div>`
             : ''}
           <div class="meta-row">
-            <div class="meta-left">${ctx.academicYearLabel ? `Année scolaire : ${esc(ctx.academicYearLabel)}` : ''}</div>
-            <div class="meta-center">${paper.sessionLabel ? esc(paper.sessionLabel) : ''}</div>
+            <div class="meta-left">${yearLabel ? `Année scolaire : ${esc(yearLabel)}` : ''}</div>
             <div class="meta-right">${esc(categoryShort)}</div>
           </div>
         </div>`;
+
+    // Session (ex : « Examen blanc », « Session normale 2027 ») — ligne
+    // dédiée SOUS l'en-tête (visible quel que soit le mode d'en-tête).
+    const sessionLine = paper.sessionLabel
+      ? `<div class="session-line">${esc(paper.sessionLabel)}</div>`
+      : '';
+
+    // ⭐ 2026-09-30 — TITRE : si le patronat a SAISI un titre, la ligne
+    //    système « ÉPREUVE : {matière} » DISPARAÎT (plus de doublon
+    //    « Épreuve de expression écrite » + « ÉPREUVE : EXPRESSION ÉCRITE »).
+    //    Sans titre personnalisé, la ligne système reste — CENTRÉE comme un
+    //    titre (plus de badge bleu aligné à gauche).
+    const rawTitle = (paper.title || '').trim();
+    const hasCustomTitle =
+      rawTitle.length > 0 && !/^épreuve sans titre$/i.test(rawTitle);
+    const titleHtml = hasCustomTitle
+      ? `<div class="eval-title">${esc(rawTitle).toUpperCase()}</div>`
+      : `<div class="eval-title">${
+          paper.subject
+            ? `ÉPREUVE : ${esc(paper.subject).toUpperCase()}`
+            : 'ÉPREUVE'
+        }</div>`;
 
     const identityBlock =
       paper.showIdentityFields !== false
@@ -953,12 +1118,12 @@ export class FederisEpreuveService {
 
     const pages: string[] = [];
 
-    // Page principale du sujet (distribuée aux candidats)
-    pages.push(`
-      <div class="epreuve-page">
+    // Contenu du sujet (partagé par toutes les copies) — en-tête, session,
+    // titre, durée, identité, corps, barème, pied de page.
+    const subjectInner = `
         ${headerHtml}
-        <div class="eval-title">${esc(paper.title || 'ÉPREUVE').toUpperCase()}</div>
-        ${paper.subject ? `<div class="epreuve-title">ÉPREUVE : ${esc(paper.subject).toUpperCase()}</div>` : ''}
+        ${sessionLine}
+        ${titleHtml}
         ${paper.durationLabel ? `<div class="duration">Durée : ${esc(paper.durationLabel)}</div>` : ''}
         ${identityBlock}
 
@@ -988,8 +1153,24 @@ export class FederisEpreuveService {
         </div>`
           : ''}
 
-        ${paper.footerText ? `<div class="custom-footer">${this.sanitizeRichHtml(paper.footerText)}</div>` : ''}
+        ${paper.footerText ? `<div class="custom-footer">${this.sanitizeRichHtml(paper.footerText)}</div>` : ''}`;
+
+    // ⭐ 2026-09-30 — COPIES DU SUJET PAR PAGE A4 : pour les petites
+    //    épreuves, le patronat peut dupliquer le sujet 2 ou 3 fois sur un
+    //    seul A4 (bandes de hauteur fixe + lignes de découpe ✂) — il choisit
+    //    le nombre de copies selon le contenu.
+    if (copiesPerPage > 1) {
+      const bands = Array.from({ length: copiesPerPage }, (_, i) => `
+          ${i > 0 ? '<div class="cut-line"><span>✂ Découper ici</span></div>' : ''}
+          <div class="copy copy-${copiesPerPage}">${subjectInner}</div>`).join('');
+      pages.push(`<div class="epreuve-page copies-wrap">${bands}</div>`);
+    } else {
+      // Page principale du sujet (distribuée aux candidats)
+      pages.push(`
+      <div class="epreuve-page">
+        ${subjectInner}
       </div>`);
+    }
 
     // Clé de correction — page séparée (document organisateur)
     if (cle) {
@@ -1006,6 +1187,19 @@ export class FederisEpreuveService {
         <div class="correction-banner">GRILLE DE CORRECTION — ${esc(paper.subject || paper.title).toUpperCase()} <span>(document organisateur — ${esc(categoryShort)})</span></div>
         <div class="section-body">${grille}</div>
       </div>`);
+    }
+
+    // ⭐ 2026-09-30 — FILIGRANE : logo du patronat (module Paramètres de
+    //    Fédéris) ou texte personnalisé, répété sur TOUTES les pages du PDF
+    //    (position:fixed en impression Chromium). Aucun filigrane si le mode
+    //    est « logo » mais qu'aucun logo n'est défini (repli silencieux).
+    let watermarkHtml = '';
+    if (wmMode === 'logo' && ctx.logo) {
+      watermarkHtml = `<div class="wm"><img src="${esc(ctx.logo)}" alt="" /></div>`;
+    } else if (wmMode === 'text' && (paper as any).watermarkText) {
+      watermarkHtml = `<div class="wm"><span class="wm-text">${esc(
+        String((paper as any).watermarkText).toUpperCase(),
+      )}</span></div>`;
     }
 
     return `<!DOCTYPE html>
@@ -1026,8 +1220,9 @@ ${SCHOOL_FONTS_CSS}
   .school-name { font-size: 15px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.4px; }
   .sub-line { font-size: 10.5px; margin-top: 2px; color: #333; }
   .meta-row { display: flex; justify-content: space-between; font-size: 10.5px; margin-top: 4px; gap: 8px; }
+  /* ⭐ 2026-09-30 — session SOUS l'en-tête (plus DANS le bloc en-tête) */
+  .session-line { text-align: center; font-size: 11.5px; font-weight: bold; letter-spacing: 0.3px; margin-top: 8px; }
   .eval-title { font-size: 14px; font-weight: bold; margin-top: 10px; text-decoration: underline; text-align: center; }
-  .epreuve-title { font-size: 13px; font-weight: bold; margin-top: 12px; padding: 4px 10px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 3px; display: inline-block; }
   .duration { font-size: 11px; margin-top: 6px; font-weight: bold; text-align: center; }
 
   .identity { display: flex; gap: 24px; margin-top: 12px; font-size: 11.5px; }
@@ -1035,12 +1230,63 @@ ${SCHOOL_FONTS_CSS}
   .id-field .dots { flex: 1; border-bottom: 1px dotted #444; height: 14px; }
 
   .section { margin-top: 14px; }
-  .section-label { font-weight: bold; font-size: 12px; margin-bottom: 4px; color: #1e3a8a; }
+  /* ⭐ 2026-09-30 — INTITULÉS PARAMÉTRABLES (panneau « Mise en page du
+     sujet ») : gras / souligné / italique / taille appliqués à « Situation
+     d'évaluation », « Tâche » et aux titres des sections libres. */
+  .section-label { font-weight: ${ls.bold ? '700' : '400'}; font-size: ${ls.fontSize}px; text-decoration: ${ls.underline ? 'underline' : 'none'}; font-style: ${ls.italic ? 'italic' : 'normal'}; margin-bottom: 4px; color: #1e3a8a; }
   .section-body { font-size: 12px; }
   .section-body img { max-width: 100%; height: auto; }
   .section-body table { border-collapse: collapse; width: 100%; margin: 6px 0; }
   .section-body td, .section-body th { border: 1px solid #444; padding: 4px 6px; vertical-align: top; }
   .section-body svg { max-width: 100%; height: auto; }
+
+  /* ⭐ 2026-09-30 — COPIES DU SUJET PAR PAGE A4 (petites épreuves) : bandes
+     de hauteur fixe + police réduite + lignes de découpe entre les copies.
+     Le contenu qui déborde est rogné (le patronat choisit 2 ou 3 copies
+     SELON le contenu — hint dans l'éditeur). */
+  .copies-wrap { padding: 0 2mm; }
+  .cut-line { position: relative; border-top: 1.5px dashed #555; margin: 1.5mm 0; }
+  .cut-line span { position: absolute; top: -7px; left: 2mm; font-size: 8.5px; color: #555; background: #fff; padding: 0 3px; letter-spacing: 0.5px; }
+  .copy { overflow: hidden; }
+  .copy-2 { height: 124mm; }
+  .copy-3 { height: 80mm; }
+  .copy-2 .section-body, .copy-2 .section-label { font-size: 10px; }
+  .copy-3 .section-body, .copy-3 .section-label { font-size: 8.5px; }
+  .copy-2 .section { margin-top: 8px; }
+  .copy-3 .section { margin-top: 5px; }
+  .copy-2 .header { padding-bottom: 4px; margin-bottom: 6px; }
+  .copy-3 .header { padding-bottom: 3px; margin-bottom: 4px; }
+  .copy-2 .logo { height: 34px; }
+  .copy-3 .logo { height: 26px; }
+  .copy-2 .school-name { font-size: 11px; }
+  .copy-3 .school-name { font-size: 9.5px; }
+  .copy-2 .sub-line { font-size: 9px; }
+  .copy-3 .sub-line { font-size: 8px; }
+  .copy-2 .meta-row { font-size: 9px; margin-top: 3px; }
+  .copy-3 .meta-row { font-size: 8px; margin-top: 2px; }
+  .copy-2 .session-line { font-size: 10px; margin-top: 5px; }
+  .copy-3 .session-line { font-size: 9px; margin-top: 3px; }
+  .copy-2 .eval-title { font-size: 11px; margin-top: 6px; }
+  .copy-3 .eval-title { font-size: 9.5px; margin-top: 4px; }
+  .copy-2 .duration { font-size: 9.5px; margin-top: 4px; }
+  .copy-3 .duration { font-size: 8.5px; margin-top: 3px; }
+  .copy-2 .identity { margin-top: 7px; font-size: 10px; gap: 14px; }
+  .copy-3 .identity { margin-top: 5px; font-size: 8.5px; gap: 10px; }
+  .copy-2 .id-field .dots { height: 11px; }
+  .copy-3 .id-field .dots { height: 9px; }
+  .copy-2 .score-line { font-size: 9.5px; margin-top: 6px; }
+  .copy-3 .score-line { font-size: 8.5px; margin-top: 4px; }
+  .copy-2 .custom-footer { font-size: 9px; margin-top: 8px; padding-top: 4px; }
+  .copy-3 .custom-footer { font-size: 8px; margin-top: 6px; padding-top: 3px; }
+  .copy-2 .section-body td, .copy-2 .section-body th { padding: 2px 4px; }
+  .copy-3 .section-body td, .copy-3 .section-body th { padding: 1px 3px; }
+
+  /* ⭐ 2026-09-30 — FILIGRANE (toutes les pages) : logo du patronat (module
+     Paramètres) ou texte personnalisé — position:fixed = répété sur CHAQUE
+     page du PDF, sous le contenu (opacité faible). */
+  .wm { position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 999; }
+  .wm img { width: 140mm; max-height: 100mm; object-fit: contain; opacity: 0.10; transform: rotate(-25deg); }
+  .wm .wm-text { font-size: 52px; font-weight: 900; color: rgba(30, 58, 138, 0.10); transform: rotate(-25deg); letter-spacing: 8px; white-space: nowrap; font-family: Arial, Helvetica, sans-serif; }
 
   /* En-tête personnalisé du patronat (HTML riche) */
   .custom-header { border-bottom: 2px solid #111; padding-bottom: 8px; margin-bottom: 12px; }
@@ -1064,6 +1310,7 @@ ${SCHOOL_FONTS_CSS}
 </style>
 </head>
 <body>
+${watermarkHtml}
 ${pages.join('\n')}
 </body>
 </html>`;
@@ -1116,6 +1363,12 @@ ${pages.join('\n')}
       cleCorrection: paper.cleCorrection ?? '',
       grilleCorrection: paper.grilleCorrection ?? '',
       footerText: paper.footerText ?? '',
+      // ⭐ 2026-09-30 — mise en page du sujet (valeurs tolérantes aux
+      //    épreuves créées avant l'ajout des colonnes)
+      labelStyle: this.sanitizeLabelStyle((paper as any).labelStyle),
+      copiesPerPage: this.sanitizeCopiesPerPage((paper as any).copiesPerPage),
+      watermarkMode: this.sanitizeWatermarkMode((paper as any).watermarkMode),
+      watermarkText: (paper as any).watermarkText ?? null,
       status: paper.status,
       statusLabel: STATUS_LABELS[paper.status as EpreuveStatus] ?? paper.status,
       updatedAt: paper.updatedAt,

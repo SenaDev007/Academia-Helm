@@ -51,7 +51,15 @@ import { Type } from 'class-transformer';
 import { PrismaService } from '../database/prisma.service';
 import { FederisPatronatService } from './federis-patronat.service';
 // ⭐ Règle épreuve préparée — même calcul que la grille patronat
-import { computeEpreuvePreparedMap } from './federis-grades.service';
+// ⭐ Modèle CEP (CM/18 + CP/2 = note/20) — mêmes règles que la grille patronat
+import {
+  computeEpreuvePreparedMap,
+  isPrimaryExamType,
+  isCepPerfectionnementSubject,
+  splitCepScore,
+  CEP_CM_MAX,
+  CEP_CP_MAX,
+} from './federis-grades.service';
 import {
   ALL_PATRONAT_FUNCTIONS,
   WRITE_EXAM_ORG,
@@ -70,7 +78,8 @@ const SAISIE_LOGIN_DOMAIN = '@saisie-examen.bj';
 // DTOs (décorateurs class-validator obligatoires — ValidationPipe whitelist)
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Cellule de note (candidateId × subjectId) — même forme que la grille. */
+/** Cellule de note (candidateId × subjectId) — même forme que la grille.
+ *  ⭐ CEP : détail CM (/18) + CP (/2) ; note /20 = CM + CP. */
 export class SaisieGradeCellDto {
   @IsString()
   candidateId!: string;
@@ -84,6 +93,20 @@ export class SaisieGradeCellDto {
   @Min(0)
   @Max(100)
   score?: number | null;
+
+  /** CEP — note de base sur 18. */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(18)
+  cm?: number | null;
+
+  /** CEP — note de perfectionnement sur 2 (0 si CM < note minimale exigée). */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(2)
+  cp?: number | null;
 
   /** Candidat absent → score 0 exclu des calculs. */
   @IsOptional()
@@ -485,7 +508,7 @@ export class FederisSaisieService {
     const scope = new Set(candidateIds);
     try {
       const rows = (await this.prisma.$queryRawUnsafe(
-        `SELECT "candidateId", "subjectId", "score", "isAbsent", "status", "enteredBy", "updatedAt"
+        `SELECT "candidateId", "subjectId", "score", "isAbsent", "status", "enteredBy", "updatedAt", "metadata"
          FROM "exam_results" WHERE "examId" = $1`,
         examId,
       )) as Array<{
@@ -496,12 +519,13 @@ export class FederisSaisieService {
         status: string;
         enteredBy: string | null;
         updatedAt: Date;
+        metadata: unknown;
       }>;
       return rows.filter((r) => scope.has(r.candidateId));
     } catch {
       const rows = await this.prisma.examResult.findMany({
         where: { examId, candidateId: { in: candidateIds } },
-        select: { candidateId: true, subjectId: true, score: true, status: true, updatedAt: true },
+        select: { candidateId: true, subjectId: true, score: true, status: true, updatedAt: true, metadata: true },
       });
       return rows.map((r) => ({
         ...r,
@@ -555,16 +579,40 @@ export class FederisSaisieService {
         maxScore: sub.maxScore ?? 20,
         epreuvePrepared: preparedMap.get(sub.id)?.prepared ?? false,
         preparedSource: preparedMap.get(sub.id)?.source ?? null,
+        // ⭐ CEP — note minimale exigée (porte du CP) + matière étoilée.
+        passingScore: sub.passingScore ?? 10,
+        perfectionnement: isCepPerfectionnementSubject(sub.code, sub.name),
       }));
       const candidateIds = candidatesRaw.map((c) => c.id);
       const results = await this.loadResults(s.exam.id, candidateIds);
-      const scores = new Map<string, Record<string, { score: number; isAbsent: boolean; status: string }>>();
+      // ⭐ CEP : scission automatique des notes héritées (CM/18 + CP/2).
+      const isCep = isPrimaryExamType(s.exam.examType);
+      const scores = new Map<
+        string,
+        Record<string, { score: number; isAbsent: boolean; status: string; cm: number | null; cp: number | null }>
+      >();
       for (const r of results) {
         if (!scores.has(r.candidateId)) scores.set(r.candidateId, {});
+        const md = (r.metadata ?? {}) as any;
+        let cm: number | null =
+          md.cm !== undefined && md.cm !== null && Number.isFinite(Number(md.cm)) ? Number(md.cm) : null;
+        let cp: number | null =
+          md.cp !== undefined && md.cp !== null && Number.isFinite(Number(md.cp)) ? Number(md.cp) : null;
+        if (isCep && !r.isAbsent && r.score != null && cm === null) {
+          const split = splitCepScore(r.score);
+          cm = split.cm;
+          cp = split.cp;
+        }
+        if (!isCep) {
+          cm = null;
+          cp = null;
+        }
         scores.get(r.candidateId)![r.subjectId] = {
           score: r.score,
           isAbsent: Boolean((r as any).isAbsent),
           status: r.status,
+          cm,
+          cp,
         };
       }
       const preparedCount = subjects.filter((x) => x.epreuvePrepared).length;
@@ -650,7 +698,7 @@ export class FederisSaisieService {
       this.scopeCandidates(s.exam.id, s.centerId, s.roomId),
       this.prisma.nationalExamSubject.findMany({
         where: { examId: s.exam.id },
-        select: { id: true, name: true, code: true, coefficient: true, maxScore: true, metadata: true },
+        select: { id: true, name: true, code: true, coefficient: true, maxScore: true, passingScore: true, metadata: true },
       }),
     ]);
     const candidateIds = new Set(candidates.map((c) => c.id));
@@ -680,6 +728,10 @@ export class FederisSaisieService {
     const existing = await this.loadResults(s.exam.id, Array.from(candidateIds));
     const submittedCells = new Set(
       existing.filter((r) => r.status === 'SUBMITTED').map((r) => `${r.candidateId}|${r.subjectId}`),
+    );
+    // ⭐ Métadonnées existantes (décisions jury éventuelles) — fusion CM/CP.
+    const metaByCell = new Map<string, any>(
+      existing.map((r) => [`${r.candidateId}|${r.subjectId}`, (r.metadata ?? {}) as any]),
     );
     const hitSubmitted = dto.grades.find((c) => submittedCells.has(`${c.candidateId}|${c.subjectId}`));
     if (hitSubmitted) {
@@ -712,7 +764,8 @@ export class FederisSaisieService {
       const isAbsent = cell.isAbsent === true;
       const scoreEmpty =
         cell.score === null || cell.score === undefined || Number.isNaN(Number(cell.score));
-      if (!isAbsent && scoreEmpty) {
+      const cmEmpty = cell.cm === null || cell.cm === undefined || Number.isNaN(Number(cell.cm));
+      if (!isAbsent && scoreEmpty && cmEmpty) {
         const res = await this.prisma.examResult
           .deleteMany({
             where: { examId: s.exam.id, candidateId: cell.candidateId, subjectId: subject.id },
@@ -721,7 +774,36 @@ export class FederisSaisieService {
         deleted += res.count ?? 0;
         continue;
       }
-      const score = isAbsent ? 0 : Math.max(0, Math.min(Number(cell.score), subject.maxScore ?? 20));
+      // ⭐ CEP — CM (/18) + CP (/2) = note (/20), CP forcé à 0 sous la note
+      //    minimale exigée (règle officielle — même logique que la grille
+      //    patronat). Si seul `score` est transmis : scission automatique.
+      const isCep = isPrimaryExamType(s.exam.examType);
+      let score: number;
+      let cepDetail: { cm: number; cp: number } | null = null;
+      if (isCep) {
+        const minRequise = subject.passingScore ?? 10;
+        let cm: number;
+        let cp: number;
+        if (!cmEmpty) {
+          cm = Math.max(0, Math.min(Number(cell.cm), CEP_CM_MAX));
+          cp =
+            cell.cp !== undefined && cell.cp !== null && Number.isFinite(Number(cell.cp))
+              ? Math.max(0, Math.min(Number(cell.cp), CEP_CP_MAX))
+              : 0;
+          if (cm < minRequise) cp = 0;
+        } else {
+          const split = splitCepScore(isAbsent ? 0 : Number(cell.score) || 0);
+          cm = split.cm;
+          cp = split.cp;
+        }
+        cepDetail = { cm, cp };
+        score = isAbsent ? 0 : Math.max(0, Math.min(Math.round((cm + cp) * 100) / 100, subject.maxScore ?? 20));
+        // Fusion avec les métadonnées existantes (décisions jury conservées).
+        const prevMeta = metaByCell.get(`${cell.candidateId}|${subject.id}`) ?? {};
+        cepDetail = { ...prevMeta, cm, cp };
+      } else {
+        score = isAbsent ? 0 : Math.max(0, Math.min(Number(cell.score), subject.maxScore ?? 20));
+      }
       const coefficient = subject.coefficient ?? 1;
       await this.prisma.examResult
         .upsert({
@@ -747,6 +829,7 @@ export class FederisSaisieService {
             isAbsent,
             status: 'DRAFT',
             enteredBy: userId,
+            ...(cepDetail ? { metadata: { cm: cepDetail.cm, cp: cepDetail.cp } } : {}),
           },
           update: {
             score,
@@ -756,6 +839,7 @@ export class FederisSaisieService {
             isAbsent,
             status: 'DRAFT',
             enteredBy: userId,
+            ...(cepDetail ? { metadata: { cm: cepDetail.cm, cp: cepDetail.cp } } : {}),
           },
         })
         .catch((e: any) => {

@@ -20,7 +20,7 @@
 
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
 import {
@@ -31,6 +31,11 @@ import {
   denseRanks,
   appreciationFor,
   candidateDisplayName,
+  isPrimaryExam,
+  CEP_CM_MAX,
+  CEP_CP_MAX,
+  cepNote,
+  withCepDetail,
 } from '@/lib/federis/grade-computations';
 
 const PAGE_SIZE = 25;
@@ -85,8 +90,16 @@ export default function FederisGradeSheetTab({
       const res = await apiClient.get(`/federis/exams/${examId}/grades/sheet`, { timeout: 30000 });
       const sheet: SheetData = res.data;
       setData(sheet);
+      const isCep = isPrimaryExam(sheet.exam?.examType);
       const next: Record<string, Record<string, GCell>> = {};
-      for (const c of sheet.candidates ?? []) next[c.id] = { ...(c.scores ?? {}) };
+      for (const c of sheet.candidates ?? []) {
+        const row: Record<string, GCell> = {};
+        for (const [subjectId, cell] of Object.entries(c.scores ?? {})) {
+          // ⭐ CEP : scission des notes héritées en CM (/18) + CP (/2).
+          row[subjectId] = isCep ? withCepDetail(cell) : cell;
+        }
+        next[c.id] = row;
+      }
       setCells(next);
       setDirty(new Set());
     } catch (err: any) {
@@ -176,6 +189,47 @@ export default function FederisGradeSheetTab({
     });
   };
 
+  // ── ⭐ CEP — saisie CM (/18) + CP (/2) = note (/20) ───────────────────
+  // Même règle que le module Examen Helm (primaire) : le CP (perfectionnement)
+  // n'est saisissable que si le CM atteint la note minimale exigée.
+  const handleCm = (candidateId: string, subject: GSubject, raw: string) => {
+    if (raw === '') {
+      setCell(candidateId, subject.id, { score: null, cm: null, cp: null });
+      return;
+    }
+    const value = Number(raw.replace(',', '.'));
+    if (Number.isNaN(value)) return;
+    const cm = Math.max(0, Math.min(value, CEP_CM_MAX));
+    const minRequise = subject.passingScore ?? 10;
+    const existingCp = cells[candidateId]?.[subject.id]?.cp ?? 0;
+    const cp = cm >= minRequise ? Math.max(0, Math.min(existingCp, CEP_CP_MAX)) : 0;
+    setCell(candidateId, subject.id, {
+      score: Math.round((cm + cp) * 100) / 100,
+      cm,
+      cp,
+      isAbsent: false,
+    });
+  };
+
+  const handleCp = (candidateId: string, subject: GSubject, raw: string) => {
+    const cell = cells[candidateId]?.[subject.id];
+    const cm = cell?.cm ?? null;
+    const minRequise = subject.passingScore ?? 10;
+    if (cm === null || cm < minRequise) return; // CP réservé aux CM ≥ min
+    if (raw === '') {
+      setCell(candidateId, subject.id, { cp: 0, score: cm });
+      return;
+    }
+    const value = Number(raw.replace(',', '.'));
+    if (Number.isNaN(value)) return;
+    const cp = Math.max(0, Math.min(value, CEP_CP_MAX));
+    setCell(candidateId, subject.id, {
+      score: Math.round((cm + cp) * 100) / 100,
+      cp,
+      isAbsent: false,
+    });
+  };
+
   const toggleAbsent = (candidateId: string, subjectId: string, current: GCell | undefined) => {
     setCell(candidateId, subjectId, { isAbsent: !(current?.isAbsent ?? false) });
   };
@@ -190,6 +244,17 @@ export default function FederisGradeSheetTab({
       const grades = [...dirty].map((key) => {
         const [candidateId, subjectId] = key.split('|');
         const cell = cells[candidateId]?.[subjectId] ?? { score: null, isAbsent: false };
+        // ⭐ CEP : CM + CP transmis au backend (note /20 = somme).
+        if (isPrimary && !cell.isAbsent && cell.cm != null) {
+          return {
+            candidateId,
+            subjectId,
+            cm: cell.cm,
+            cp: cell.cp ?? 0,
+            score: Math.round((cell.cm + (cell.cp ?? 0)) * 100) / 100,
+            isAbsent: false,
+          };
+        }
         return {
           candidateId,
           subjectId,
@@ -311,7 +376,7 @@ export default function FederisGradeSheetTab({
           <p className="text-[10px] font-bold text-slate-400 uppercase">Modèle de saisie</p>
           <p className="text-sm font-bold text-blue-900 mt-0.5">
             {isPrimary
-              ? 'Tableau du primaire — une note /20 par épreuve, sans coefficient (CEP)'
+              ? 'Tableau du primaire — CM /18 + CP /2 (perfectionnement) = note /20, sans coefficient (CEP)'
               : 'Tableau du secondaire — notes /20 avec coefficients (BEPC / BAC / CAP)'}
           </p>
           <p className="text-[10px] text-slate-500 mt-1">
@@ -516,13 +581,14 @@ export default function FederisGradeSheetTab({
           <table className="min-w-full divide-y divide-slate-200 text-xs">
             <thead className="bg-[#f7f9fc]">
               <tr>
-                <th className="px-3 py-3 text-left text-[9px] font-bold text-slate-400 uppercase sticky left-0 bg-[#f7f9fc] z-10 min-w-[200px]">Candidat</th>
-                <th className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase">Sexe</th>
-                <th className="px-2 py-3 text-left text-[9px] font-bold text-slate-400 uppercase min-w-[130px]">École de provenance</th>
-                <th className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase min-w-[90px]">Centre · Salle · Table</th>
+                <th rowSpan={isPrimary ? 2 : 1} className="px-3 py-3 text-left text-[9px] font-bold text-slate-400 uppercase sticky left-0 bg-[#f7f9fc] z-10 min-w-[200px]">Candidat</th>
+                <th rowSpan={isPrimary ? 2 : 1} className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase">Sexe</th>
+                <th rowSpan={isPrimary ? 2 : 1} className="px-2 py-3 text-left text-[9px] font-bold text-slate-400 uppercase min-w-[130px]">École de provenance</th>
+                <th rowSpan={isPrimary ? 2 : 1} className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase min-w-[90px]">Centre · Salle · Table</th>
                 {subjects.map((s) => (
                   <th
                     key={s.id}
+                    colSpan={isPrimary ? 3 : 1}
                     className={cn(
                       'px-2 py-3 text-center border-l border-slate-200',
                       !s.epreuvePrepared && 'bg-amber-50/70',
@@ -530,7 +596,7 @@ export default function FederisGradeSheetTab({
                   >
                     <div
                       className={cn(
-                        'text-[9px] font-bold uppercase leading-tight max-w-[90px]',
+                        'text-[9px] font-bold uppercase leading-tight max-w-[110px]',
                         s.epreuvePrepared ? 'text-blue-900' : 'text-amber-700',
                       )}
                       title={
@@ -542,32 +608,48 @@ export default function FederisGradeSheetTab({
                       }
                     >
                       {s.code}
+                      {s.perfectionnement ? ' *' : ''}
                       {!s.epreuvePrepared && ' 🔒'}
                     </div>
                     <div className="text-[8px] font-semibold text-slate-400">
-                      /{s.maxScore}
-                      {!isPrimary && <span className="text-amber-600"> · coef {s.coefficient}</span>}
+                      {isPrimary ? (
+                        <span>min. {String(s.passingScore ?? 10).replace('.', ',')}</span>
+                      ) : (
+                        <>
+                          /{s.maxScore}
+                          <span className="text-amber-600"> · coef {s.coefficient}</span>
+                        </>
+                      )}
                     </div>
                   </th>
                 ))}
-                <th className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase border-l-2 border-slate-200">Total</th>
+                <th rowSpan={isPrimary ? 2 : 1} className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase border-l-2 border-slate-200">Total</th>
                 {!isPrimary && (
                   <>
                     <th className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase">Σ coef</th>
                     <th className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase">Σ note×coef</th>
                   </>
                 )}
-                <th className="px-2 py-3 text-center text-[9px] font-bold text-blue-900 uppercase">Moyenne</th>
-                <th className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase">Rang</th>
-                <th className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase min-w-[80px]">
+                <th rowSpan={isPrimary ? 2 : 1} className="px-2 py-3 text-center text-[9px] font-bold text-blue-900 uppercase">Moyenne</th>
+                <th rowSpan={isPrimary ? 2 : 1} className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase">Rang</th>
+                <th rowSpan={isPrimary ? 2 : 1} className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase min-w-[80px]">
                   {isPrimary ? `Seuil ${String(passMark).replace('.', ',')}/20` : 'Appréciation'}
                 </th>
               </tr>
+              {isPrimary && (
+                <tr className="bg-[#f0f4fa]">
+                  {subjects.flatMap((s) => [
+                    <th key={`${s.id}-cm`} className="px-1 py-1 text-center text-[8px] font-bold text-blue-900 border-l border-slate-200">CM<br />/18</th>,
+                    <th key={`${s.id}-cp`} className="px-1 py-1 text-center text-[8px] font-bold text-amber-700">CP<br />/2</th>,
+                    <th key={`${s.id}-note`} className="px-1 py-1 text-center text-[8px] font-bold text-emerald-700">Note<br />/20</th>,
+                  ])}
+                </tr>
+              )}
             </thead>
             <tbody className="bg-white divide-y divide-slate-200">
               {pageRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6 + subjects.length + (isPrimary ? 3 : 5)} className="px-6 py-10 text-center text-sm font-bold text-slate-400">
+                  <td colSpan={(isPrimary ? subjects.length * 3 + 9 : subjects.length + 11)} className="px-6 py-10 text-center text-sm font-bold text-slate-400">
                     Aucun candidat ne correspond à la recherche.
                   </td>
                 </tr>
@@ -599,6 +681,122 @@ export default function FederisGradeSheetTab({
                         const absent = cell?.isAbsent === true;
                         // ⭐ Règle épreuve préparée : matière verrouillée
                         const subjectLocked = !s.epreuvePrepared;
+                        const minRequise = s.passingScore ?? 10;
+
+                        // ── CEP : CM (/18) + CP (/2) = Note (/20) ──
+                        if (isPrimary) {
+                          const cm = absent ? null : cell?.cm ?? null;
+                          const cp = absent ? null : cell?.cp ?? null;
+                          const note = cepNote(cell);
+                          const cpEnabled = !absent && !subjectLocked && cm !== null && cm >= minRequise;
+                          return (
+                            <Fragment key={s.id}>
+                              <td
+                                key={`${s.id}-cm`}
+                                className={cn(
+                                  'px-1 py-1.5 border-l border-slate-100',
+                                  absent && 'bg-red-50/60',
+                                  subjectLocked && !absent && 'bg-amber-50/40',
+                                )}
+                              >
+                                <input
+                                  type="number"
+                                  inputMode="decimal"
+                                  step={0.25}
+                                  min={0}
+                                  max={CEP_CM_MAX}
+                                  disabled={!editable || absent || subjectLocked}
+                                  value={cm ?? ''}
+                                  onChange={(e) => handleCm(c.id, s, e.target.value)}
+                                  placeholder="—"
+                                  className={cn(
+                                    'w-12 text-center text-xs font-bold rounded-lg border px-1 py-1.5 outline-none transition-colors',
+                                    absent
+                                      ? 'border-red-200 bg-red-50 text-red-400'
+                                      : subjectLocked
+                                        ? 'border-amber-100 bg-amber-50/60 text-slate-300 cursor-not-allowed'
+                                        : cm != null && cm >= minRequise
+                                          ? 'border-blue-200 bg-blue-50/60 text-blue-900 focus:border-blue-600'
+                                          : 'border-slate-200 bg-white text-slate-800 focus:border-blue-600',
+                                    !editable && !absent && !subjectLocked && 'opacity-70 cursor-not-allowed',
+                                  )}
+                                  title={absent ? 'Absent' : subjectLocked ? `${s.name} — épreuve non préparée` : `${s.name} — CM sur 18 (note de base)`}
+                                />
+                              </td>
+                              <td
+                                key={`${s.id}-cp`}
+                                className={cn('px-1 py-1.5', absent && 'bg-red-50/60', subjectLocked && !absent && 'bg-amber-50/40')}
+                              >
+                                <input
+                                  type="number"
+                                  inputMode="decimal"
+                                  step={0.25}
+                                  min={0}
+                                  max={CEP_CP_MAX}
+                                  disabled={!editable || !cpEnabled}
+                                  value={cp ?? ''}
+                                  onChange={(e) => handleCp(c.id, s, e.target.value)}
+                                  placeholder="—"
+                                  className={cn(
+                                    'w-12 text-center text-xs font-bold rounded-lg border px-1 py-1.5 outline-none transition-colors',
+                                    absent
+                                      ? 'border-red-200 bg-red-50 text-red-400'
+                                      : subjectLocked
+                                        ? 'border-amber-100 bg-amber-50/60 text-slate-300 cursor-not-allowed'
+                                        : cpEnabled
+                                          ? 'border-amber-200 bg-amber-50/70 text-amber-800 focus:border-amber-500'
+                                          : 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed',
+                                    !editable && cpEnabled && 'opacity-70 cursor-not-allowed',
+                                  )}
+                                  title={
+                                    absent
+                                      ? 'Absent'
+                                      : !cpEnabled
+                                        ? `CP (perfectionnement) — réservé aux CM ≥ ${String(minRequise).replace('.', ',')}/18`
+                                        : `${s.name} — CP sur 2 (perfectionnement${s.perfectionnement ? ' — matière étoilée ★' : ''})`
+                                  }
+                                />
+                              </td>
+                              <td
+                                key={`${s.id}-note`}
+                                className={cn('px-1 py-1.5', absent && 'bg-red-50/60', subjectLocked && !absent && 'bg-amber-50/40')}
+                              >
+                                <div className="flex items-center gap-1 justify-center">
+                                  <span
+                                    className={cn(
+                                      'inline-block min-w-[2.2rem] text-center text-xs font-black px-1.5 py-1.5 rounded-lg',
+                                      absent
+                                        ? 'bg-red-50 text-red-400'
+                                        : note != null
+                                          ? note >= (s.maxScore ?? 20) / 2
+                                            ? 'bg-emerald-100 text-emerald-800'
+                                            : 'bg-red-100 text-red-700'
+                                          : 'bg-slate-50 text-slate-300',
+                                    )}
+                                  >
+                                    {absent ? 'ABS' : note != null ? String(note).replace('.', ',') : '—'}
+                                  </span>
+                                  {editable && !subjectLocked && (
+                                    <button
+                                      onClick={() => toggleAbsent(c.id, s.id, cell)}
+                                      className={cn(
+                                        'w-5 h-5 rounded text-[8px] font-black transition-colors',
+                                        absent
+                                          ? 'bg-red-500 text-white'
+                                          : 'bg-slate-100 text-slate-400 hover:bg-red-100 hover:text-red-600',
+                                      )}
+                                      title={absent ? `Présent — ${s.code}` : `Marquer ABSENT — ${s.code} (exclu des calculs)`}
+                                    >
+                                      A
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </Fragment>
+                          );
+                        }
+
+                        // ── BEPC / BAC / CAP : note /20 unique ──
                         return (
                           <td
                             key={s.id}

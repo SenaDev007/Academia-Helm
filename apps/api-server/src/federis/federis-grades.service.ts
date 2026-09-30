@@ -164,7 +164,9 @@ export class UpdateSubjectDto {
   order?: number;
 }
 
-/** Une cellule de la grille : note /20 (null = effacer) + marquage absent. */
+/** Une cellule de la grille : note /20 (null = effacer) + marquage absent.
+ *  ⭐ 2026-10-01 — CEP : détail CM (/18) + CP (/2) ; la note /20 = CM + CP
+ *  (si seul `score` est transmis, il est scindé automatiquement). */
 export class GradeCellDto {
   @IsString()
   candidateId!: string;
@@ -178,6 +180,20 @@ export class GradeCellDto {
   @Min(0)
   @Max(100)
   score?: number | null;
+
+  /** CEP — note de base sur 18. */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(18)
+  cm?: number | null;
+
+  /** CEP — note de perfectionnement sur 2 (0 si CM < note minimale exigée). */
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(2)
+  cp?: number | null;
 
   @IsOptional()
   @IsBoolean()
@@ -251,6 +267,196 @@ export function isPrimaryExamType(examType: string | null | undefined): boolean 
   return (examType ?? '').toUpperCase() === 'CEP';
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ⭐ 2026-10-01 — MODÈLE OFFICIEL DU CEP : CM (/18) + CP (/2) = NOTE (/20)
+// Même règle que le module Examen d'Academia Helm (niveau primaire) :
+//   - CM (note de base) sur 18 ;
+//   - CP (note de perfectionnement) sur 2 — attribuée UNIQUEMENT si le
+//     candidat a obtenu la note minimale exigée (défaut 10) ; valeur dans
+//     [0 ; 2] (le relevé officiel admet des dixièmes, ex. 1,25) ;
+//   - Note /20 = CM + CP (somme — stockée dans ExamResult.score, les
+//     totaux/moyennes restent inchangés).
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const CEP_CM_MAX = 18;
+export const CEP_CP_MAX = 2;
+
+/** Scinde une note /20 héritée en CM (/18) + CP (/2) — reprise des données
+ *  existantes : la part au-delà de 18 devient du perfectionnement. */
+export function splitCepScore(score: number): { cm: number; cp: number } {
+  const cm = Math.min(Math.max(Number(score) || 0, 0), CEP_CM_MAX);
+  return { cm: round2(cm), cp: round2(Math.max(0, (Number(score) || 0) - cm)) };
+}
+
+/** Règle officielle : la note de perfectionnement (CP) n'est attribuée que
+ *  si le candidat a obtenu la note minimale exigée (défaut 10) — pattern
+ *  GradingSheet Helm : CP forcé à 0 sous le seuil. */
+export function cepCpGate(cm: number | null, minRequise: number): number | null {
+  return cm !== null && cm >= minRequise ? null : 0;
+}
+
+/** Matières « étoilées » du CEP : le perfectionnement dans l'une d'elles
+ *  conditionne l'admission en 6ème (Expression Écrite, Compréhension de
+ *  l'Écrit / Lecture, Mathématiques — astérisque du relevé officiel). */
+export function isCepPerfectionnementSubject(code: string, name: string): boolean {
+  const n = normalizeSubjectName(`${code} ${name}`);
+  return (
+    n.includes('expression ecrite') ||
+    n.includes('redaction') ||
+    n.includes('comprehension') ||
+    n.includes('lecture') ||
+    n.includes('mathematique') ||
+    n.includes('calcul')
+  );
+}
+
+/** Décision du jury du CEP (règles officielles du relevé) :
+ *   - ADMIS AU CEP : note minimale exigée atteinte dans au moins 6 des
+ *     9 matières (générique : les 2/3 des matières de l'examen) ;
+ *   - ADMIS EN 6ÈME : admis au CEP + note de perfectionnement non nulle
+ *     dans l'une des matières étoilées. */
+export interface CepAdmission {
+  matieresNotees: number;
+  matieresReussies: number;
+  matieresRequises: number;
+  admisCep: boolean;
+  admisSixieme: boolean;
+}
+
+export function computeCepAdmission(
+  lines: Array<{
+    score: number | null;
+    isAbsent: boolean;
+    passingScore: number | null;
+    cp: number | null;
+    perfectionnement: boolean;
+  }>,
+  nbMatieresExamen: number,
+): CepAdmission {
+  const matieresRequises = Math.max(1, Math.ceil((nbMatieresExamen * 2) / 3));
+  let matieresNotees = 0;
+  let matieresReussies = 0;
+  let cpEtoile = false;
+  for (const l of lines) {
+    if (l.isAbsent || l.score === null) continue;
+    matieresNotees += 1;
+    if (l.score >= (l.passingScore ?? 10)) matieresReussies += 1;
+    if (l.perfectionnement && (l.cp ?? 0) > 0) cpEtoile = true;
+  }
+  const admisCep = matieresReussies >= matieresRequises;
+  return {
+    matieresNotees,
+    matieresReussies,
+    matieresRequises,
+    admisCep,
+    admisSixieme: admisCep && cpEtoile,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ⭐ 2026-10-01 — COLONNE BILAN du relevé BEPC / BAC / CAP (modèle officiel) :
+// Total Français (groupe français) · Total Écrit (hors oraux et EPS) ·
+// Total Final (toutes matières) · Moyenne = Total Final / Σ coefficients.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Matière du groupe FRANÇAIS (Total Français du bilan). */
+export function isFrenchGroupSubject(name: string): boolean {
+  const n = normalizeSubjectName(name);
+  return (
+    n.includes('communication ecrite') ||
+    n.includes('lecture') ||
+    n.includes('francais') ||
+    n.includes('expression ecrite') ||
+    n.includes('redaction') ||
+    n.includes('dictee') ||
+    n.includes('comprehension')
+  );
+}
+
+/** Épreuve ORALE (exclue du Total Écrit). */
+export function isOralSubject(name: string): boolean {
+  return normalizeSubjectName(name).includes('oral');
+}
+
+/** EPS (exclue du Total Écrit) — « Éducation Physique et Sportive », « E.P.S. ». */
+export function isEpsSubject(name: string): boolean {
+  const n = normalizeSubjectName(name).replace(/\./g, '');
+  return n.includes('education physique') || n.includes('eps') || n.includes('sport');
+}
+
+export interface ReleveBilan {
+  hasFrancais: boolean;
+  totalFrancais: number | null;
+  totalEcrit: number | null;
+  totalFinal: number | null;
+  moyenne: number | null;
+}
+
+/** Sous-totaux de la colonne BILAN (relevé officiel BEPC / BAC / CAP). */
+export function computeReleveBilan(
+  lines: Array<{ name: string; score: number | null; isAbsent: boolean; coefficient: number }>,
+): ReleveBilan {
+  let sumFrancais = 0;
+  let sumEcrit = 0;
+  let sumFinal = 0;
+  let sumCoef = 0;
+  let hasFrancais = false;
+  let nbFrancaisNotes = 0;
+  for (const l of lines) {
+    const coef = l.coefficient ?? 1;
+    if (l.isAbsent || l.score === null) continue;
+    const noteCoef = l.score * coef;
+    sumFinal += noteCoef;
+    sumCoef += coef;
+    if (isFrenchGroupSubject(l.name)) {
+      hasFrancais = true;
+      nbFrancaisNotes += 1;
+      sumFrancais += noteCoef;
+    }
+    if (!isOralSubject(l.name) && !isEpsSubject(l.name)) sumEcrit += noteCoef;
+  }
+  return {
+    hasFrancais: hasFrancais && nbFrancaisNotes > 0,
+    totalFrancais: hasFrancais && nbFrancaisNotes > 0 ? round2(sumFrancais) : null,
+    totalEcrit: round2(sumEcrit),
+    totalFinal: round2(sumFinal),
+    moyenne: sumCoef > 0 ? round2(sumFinal / sumCoef) : null,
+  };
+}
+
+/** Libellé de session du relevé officiel : « Session de mai 2027 » depuis la
+ *  date de début d'examen, repli sur l'année scolaire. */
+export function examSessionLabel(
+  exam: { startDate?: Date | null },
+  academicYearLabel?: string | null,
+): string {
+  if (exam?.startDate) {
+    const d = new Date(exam.startDate);
+    const mois = d.toLocaleDateString('fr-FR', { month: 'long' });
+    return `Session de ${mois} ${d.getFullYear()}`;
+  }
+  return academicYearLabel ? `Session ${academicYearLabel}` : '';
+}
+
+/** Intitulé officiel de l'examen pour l'en-tête du relevé. */
+export function officialExamTitle(
+  examType: string | null | undefined,
+  series?: string | null,
+): { main: string; sub: string } {
+  switch ((examType ?? '').toUpperCase()) {
+    case 'CEP':
+      return { main: "CERTIFICAT D'ÉTUDES PRIMAIRES", sub: '(C.E.P.)' };
+    case 'BEPC':
+      return { main: "Brevet d'Études du Premier Cycle", sub: '(B.E.P.C)' };
+    case 'BAC':
+      return { main: 'Baccalauréat', sub: series ? `Série ${series}` : '' };
+    case 'CAP':
+      return { main: "Certificat d'Aptitude Professionnelle", sub: '(C.A.P)' };
+    default:
+      return { main: (examType ?? 'Examen').toUpperCase(), sub: '' };
+  }
+}
+
 export interface GradeSubjectLite {
   id: string;
   code: string;
@@ -266,6 +472,11 @@ export interface GradeSubjectLite {
   epreuvePrepared: boolean;
   /** 'paper' = épreuve dans le module · 'manual' = marquée « déjà préparée » · null. */
   preparedSource: 'paper' | 'manual' | null;
+  /** ⭐ 2026-10-01 — Note minimale exigée (relevé officiel CEP : « NOTE
+   *  MINIMALE EXIGEE » ; porte du CP — défaut 10). */
+  passingScore: number | null;
+  /** ⭐ 2026-10-01 — Matière « étoilée » du CEP (perfectionnement → 6ème). */
+  perfectionnement: boolean;
 }
 
 /** Infos de préparation d'une matière (règle épreuve préparée). */
@@ -318,6 +529,10 @@ export async function computeEpreuvePreparedMap(
 export interface GradeCellLite {
   score: number | null;
   isAbsent: boolean;
+  /** ⭐ 2026-10-01 — Détail CEP : CM (/18) et CP (/2) — note = CM + CP.
+   *  Null pour les examens secondaires (BEPC / BAC / CAP). */
+  cm: number | null;
+  cp: number | null;
 }
 
 export interface GradeCandidateLite {
@@ -963,6 +1178,8 @@ export class FederisGradesService {
       order: s.order ?? 0,
       epreuvePrepared: preparedMap.get(s.id)?.prepared ?? false,
       preparedSource: preparedMap.get(s.id)?.source ?? null,
+      passingScore: s.passingScore ?? null,
+      perfectionnement: isCepPerfectionnementSubject(s.code, s.name),
     }));
 
     // ⭐ Notes : lecture brute de secours pour isAbsent (colonne récente —
@@ -973,10 +1190,11 @@ export class FederisGradesService {
       score: number;
       isAbsent: boolean;
       status: string;
+      metadata: unknown;
     }> = [];
     try {
       results = (await this.prisma.$queryRawUnsafe(
-        `SELECT "candidateId", "subjectId", "score", "isAbsent", "status"
+        `SELECT "candidateId", "subjectId", "score", "isAbsent", "status", "metadata"
          FROM "exam_results" WHERE "examId" = $1`,
         exam.id,
       )) as any[];
@@ -988,7 +1206,7 @@ export class FederisGradesService {
       // Fallback client Prisma (isAbsent inconnu localement → false).
       const fallback = await this.prisma.examResult.findMany({
         where: { examId: exam.id },
-        select: { candidateId: true, subjectId: true, score: true, status: true },
+        select: { candidateId: true, subjectId: true, score: true, status: true, metadata: true },
       });
       results = fallback.map((r) => ({
         candidateId: r.candidateId,
@@ -996,16 +1214,39 @@ export class FederisGradesService {
         score: r.score,
         isAbsent: false,
         status: r.status,
+        metadata: r.metadata,
       }));
     }
 
-    // scores[candidateId][subjectId] = { score, isAbsent }
+    // scores[candidateId][subjectId] = { score, isAbsent, cm, cp }
+    // ⭐ CEP : reprise des notes héritées (sans détail CM/CP en base) par
+    //    scission automatique — CM = min(note, 18), CP = le reste.
     const scoreMap = new Map<string, Record<string, GradeCellLite>>();
     for (const r of results) {
       if (!scoreMap.has(r.candidateId)) scoreMap.set(r.candidateId, {});
+      const md = (r.metadata ?? {}) as any;
+      let cm: number | null =
+        md.cm !== undefined && md.cm !== null && Number.isFinite(Number(md.cm))
+          ? Number(md.cm)
+          : null;
+      let cp: number | null =
+        md.cp !== undefined && md.cp !== null && Number.isFinite(Number(md.cp))
+          ? Number(md.cp)
+          : null;
+      if (isPrimary && !r.isAbsent && r.score != null && cm === null) {
+        const split = splitCepScore(r.score);
+        cm = split.cm;
+        cp = split.cp;
+      }
+      if (!isPrimary) {
+        cm = null;
+        cp = null;
+      }
       scoreMap.get(r.candidateId)![r.subjectId] = {
         score: r.score,
         isAbsent: Boolean((r as any).isAbsent),
+        cm,
+        cp,
       };
     }
 
@@ -1128,6 +1369,8 @@ export class FederisGradesService {
         level: exam.level,
         status: exam.status,
         isPrimary,
+        startDate: exam.startDate ?? null,
+        session: examSessionLabel(exam, academicYear?.label ?? academicYear?.name ?? null),
       },
       rules,
       academicYearLabel: academicYear?.label ?? academicYear?.name ?? null,
@@ -1232,11 +1475,26 @@ export class FederisGradesService {
       }),
       this.prisma.nationalExamSubject.findMany({
         where: { examId: exam.id },
-        select: { id: true, name: true, code: true, coefficient: true, maxScore: true, metadata: true },
+        select: { id: true, name: true, code: true, coefficient: true, maxScore: true, passingScore: true, metadata: true },
       }),
     ]);
     const candidateIds = new Set(candidates.map((c) => c.id));
     const subjectById = new Map(subjects.map((s) => [s.id, s]));
+    // ⭐ Modèle CEP : CM (/18) + CP (/2) = note (/20).
+    const isPrimary = isPrimaryExamType(exam.examType);
+
+    // ⭐ Métadonnées existantes (décisions de délibération éventuelles) —
+    //    le détail CM/CP est FUSIONNÉ, jamais écrasé.
+    let metaByCell = new Map<string, any>();
+    if (isPrimary) {
+      const existingRows = await this.prisma.examResult.findMany({
+        where: { examId: exam.id },
+        select: { candidateId: true, subjectId: true, metadata: true },
+      });
+      metaByCell = new Map(
+        existingRows.map((m) => [`${m.candidateId}|${m.subjectId}`, (m.metadata ?? {}) as any]),
+      );
+    }
 
     // ⭐ 2026-10-01 — RÈGLE ÉPREUVE PRÉPARÉE : refus de toute cellule d'une
     //    matière dont l'épreuve n'est PAS préparée (ni dans le module
@@ -1281,11 +1539,14 @@ export class FederisGradesService {
       }
 
       // Effacement : score null et non absent → suppression de la ligne.
+      // (CEP : effacement seulement si CM ET note sont vides.)
       const isAbsent = cell.isAbsent === true;
       const scoreEmpty =
         cell.score === null || cell.score === undefined || Number.isNaN(Number(cell.score));
+      const cmEmpty =
+        cell.cm === null || cell.cm === undefined || Number.isNaN(Number(cell.cm));
 
-      if (!isAbsent && scoreEmpty) {
+      if (!isAbsent && scoreEmpty && cmEmpty) {
         const res = await this.prisma.examResult
           .deleteMany({
             where: {
@@ -1301,8 +1562,40 @@ export class FederisGradesService {
 
       // Absent → score 0 (contrainte NOT NULL) mais EXCLU des calculs ;
       // note → bornée au barème de la matière.
-      const score = isAbsent ? 0 : Math.max(0, Math.min(Number(cell.score), subject.maxScore ?? 20));
+      // ⭐ CEP — détail CM (/18) + CP (/2) :
+      //   · cm transmis → borne [0 ; 18] ;
+      //   · cp transmis → borne [0 ; 2] ET forcé à 0 si CM < note minimale
+      //     exigée (règle officielle du perfectionnement — pattern Helm) ;
+      //   · note /20 = CM + CP ;
+      //   · si seul `score` est transmis (reprise), il est scindé : CM =
+      //     min(note, 18), CP = le reste.
       const coefficient = subject.coefficient ?? 1;
+      let score: number;
+      let cepDetail: { cm: number; cp: number } | null = null;
+      if (isPrimary) {
+        const minRequise = subject.passingScore ?? 10;
+        let cm: number;
+        let cp: number;
+        if (cell.cm !== undefined && cell.cm !== null && Number.isFinite(Number(cell.cm))) {
+          cm = Math.max(0, Math.min(Number(cell.cm), CEP_CM_MAX));
+          cp =
+            cell.cp !== undefined && cell.cp !== null && Number.isFinite(Number(cell.cp))
+              ? Math.max(0, Math.min(Number(cell.cp), CEP_CP_MAX))
+              : 0;
+          if (cm < minRequise) cp = 0;
+        } else {
+          const split = splitCepScore(isAbsent ? 0 : Number(cell.score) || 0);
+          cm = split.cm;
+          cp = split.cp;
+        }
+        cepDetail = { cm, cp };
+        score = isAbsent ? 0 : Math.max(0, Math.min(round2(cm + cp), subject.maxScore ?? 20));
+        // Fusion avec les métadonnées existantes (décisions jury conservées).
+        const prevMeta = metaByCell.get(`${cell.candidateId}|${subject.id}`) ?? {};
+        cepDetail = { ...prevMeta, cm, cp };
+      } else {
+        score = isAbsent ? 0 : Math.max(0, Math.min(Number(cell.score), subject.maxScore ?? 20));
+      }
 
       await this.prisma.examResult
         .upsert({
@@ -1328,6 +1621,7 @@ export class FederisGradesService {
             isAbsent,
             status: 'DRAFT',
             enteredBy: userId,
+            ...(cepDetail ? { metadata: { cm: cepDetail.cm, cp: cepDetail.cp } } : {}),
           },
           update: {
             score,
@@ -1338,6 +1632,7 @@ export class FederisGradesService {
             enteredBy: userId,
             validatedBy: null,
             validatedAt: null,
+            ...(cepDetail ? { metadata: { cm: cepDetail.cm, cp: cepDetail.cp } } : {}),
           },
         })
         .catch((err: any) => {
@@ -1444,7 +1739,8 @@ export class FederisGradesService {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertRead(fn);
     const ds = await this.buildGradesDataset(patronat.tenantId, examId);
-    return this.buildRelevesPayload(ds, candidateId);
+    const header = await this.loadPatronatHeaderInfo(patronat.tenantId);
+    return this.buildRelevesPayload(ds, header, candidateId);
   }
 
   /**
@@ -1492,7 +1788,8 @@ export class FederisGradesService {
     if (!exam) throw new NotFoundException('Examen introuvable.');
 
     const ds = await this.buildGradesDataset(exam.tenantId, examId);
-    const payload = await this.buildRelevesPayload(ds, candidateId);
+    const header = await this.loadPatronatHeaderInfo(exam.tenantId);
+    const payload = await this.buildRelevesPayload(ds, header, candidateId);
     const releve = payload.releves[0] ?? null;
     return {
       releve,
@@ -1503,24 +1800,114 @@ export class FederisGradesService {
     };
   }
 
-  /** Construction du payload relevés à partir d'un dataset déjà calculé. */
+  /** En-tête patronat du relevé officiel : nom, territoire, coordonnateur
+   *  (signataire) — remplace le bloc ministériel du modèle officiel. */
+  /** (public — réutilisé par FederisPdfService pour l.en-tête du relevé officiel) */
+  async loadPatronatHeaderInfo(tenantId: string) {
+    const patronat = await this.prisma.patronat.findFirst({
+      where: { tenantId },
+      select: {
+        name: true,
+        abbreviation: true,
+        territoryName: true,
+        address: true,
+        primaryPhone: true,
+        primaryEmail: true,
+        country: { select: { name: true } },
+      },
+    });
+    let coordinatorName: string | null = null;
+    try {
+      const link = await this.prisma.patronatUser.findFirst({
+        where: { tenantId, isActive: true, role: 'COORDONNATEUR' },
+        select: { user: { select: { firstName: true, lastName: true } } },
+      });
+      if (link?.user) {
+        coordinatorName = `${link.user.firstName ?? ''} ${link.user.lastName ?? ''}`.trim() || null;
+      }
+      if (!coordinatorName) {
+        const bureau = await this.prisma.patronatBureauMember.findFirst({
+          where: {
+            patronat: { tenantId },
+            isActive: true,
+            role: { contains: 'COORDONNATEUR', mode: 'insensitive' },
+          },
+          select: { firstName: true, lastName: true },
+        });
+        if (bureau) coordinatorName = `${bureau.firstName} ${bureau.lastName}`.trim();
+      }
+    } catch {
+      /* bureau optionnel — signature générique si absent */
+    }
+    const place =
+      patronat?.address?.split(/[\n,]/)[0]?.trim() ||
+      patronat?.territoryName ||
+      patronat?.country?.name ||
+      '';
+    return {
+      name: patronat?.name ?? 'Patronat',
+      abbreviation: patronat?.abbreviation ?? null,
+      territoryName: patronat?.territoryName ?? null,
+      address: patronat?.address ?? null,
+      phone: patronat?.primaryPhone ?? null,
+      email: patronat?.primaryEmail ?? null,
+      country: patronat?.country?.name ?? null,
+      coordinatorName,
+      place,
+    };
+  }
+
+  /** Construction du payload relevés à partir d'un dataset déjà calculé.
+   *  ⭐ 2026-10-01 — MODÈLES OFFICIELS :
+   *     · CEP  → MATIÈRE | CEP {NOTE OBTENUE (= CM /18) | NOTE MINIMALE
+   *       EXIGÉE} | NOTE DE PERFECTIONNEMENT OBTENUE (= CP /2) + décision
+   *       du jury (Admis CEP / Admis entrée en 6ème) ;
+   *     · BEPC / BAC / CAP → MATIÈRES | COEF. | NOTE/20 | NOTE COEF. |
+   *       BILAN (Total Français, Total Écrit, Total Final, Moyenne). */
   private async buildRelevesPayload(
     ds: Awaited<ReturnType<FederisGradesService['buildGradesDataset']>>,
+    header: Awaited<ReturnType<FederisGradesService['loadPatronatHeaderInfo']>>,
     candidateId?: string,
   ) {
     const passMark = ds.rules?.passMark ?? 10;
+    const isPrimary = ds.exam.isPrimary === true;
     const ordered = [...ds.candidates].sort(
       (a, b) => (ds.ranks.get(a.id) ?? 99999) - (ds.ranks.get(b.id) ?? 99999),
     );
+    const scoped = ordered.filter((c) => !candidateId || c.id === candidateId);
 
-    const releves = ordered
-      .filter((c) => !candidateId || c.id === candidateId)
+    // Détails d'état civil des candidats (relevé officiel : date et lieu de
+    // naissance, n° d'inscription, nature de la candidature).
+    const candIds = scoped.map((c) => c.id);
+    const civilRows = candIds.length
+      ? await this.prisma.examCandidate.findMany({
+          where: { id: { in: candIds } },
+          select: { id: true, dateOfBirth: true, placeOfBirth: true, registrationNumber: true, metadata: true },
+        })
+      : [];
+    const civilById = new Map(civilRows.map((r) => [r.id, r]));
+
+    // Série unique (BAC — intitulé officiel « Baccalauréat — Série D »).
+    const subjectsMeta = await this.prisma.nationalExamSubject
+      .findMany({ where: { examId: ds.exam.id }, select: { code: true, metadata: true } })
+      .catch(() => [] as Array<{ code: string; metadata: unknown }>);
+    const seriesSet = new Set<string>();
+    for (const s of subjectsMeta) {
+      const ser = (s.metadata as any)?.series;
+      if (ser && typeof ser === 'string' && ser.trim()) seriesSet.add(ser.trim());
+    }
+    const series = seriesSet.size === 1 ? [...seriesSet][0] : null;
+
+    const releves = scoped
       .map((c) => {
         const comp = ds.computed.get(c.id);
+        const civil = civilById.get(c.id);
         const lines = ds.subjects.map((subject) => {
           const cell = c.scores[subject.id];
           const isAbsent = cell?.isAbsent === true;
           const score = !isAbsent && cell?.score != null ? cell.score : null;
+          const cm = isPrimary && !isAbsent && cell?.cm != null ? cell.cm : null;
+          const cp = isPrimary && !isAbsent && cell?.cp != null ? cell.cp : null;
           return {
             subjectId: subject.id,
             code: subject.code,
@@ -1529,12 +1916,59 @@ export class FederisGradesService {
             maxScore: subject.maxScore,
             score,
             isAbsent,
+            // ⭐ CEP — détail officiel CM / CP + minimale exigée + étoile.
+            cm,
+            cp,
+            passingScore: subject.passingScore ?? 10,
+            perfectionnement: subject.perfectionnement,
+            // ⭐ BEPC / BAC / CAP — matière du groupe Français (BILAN).
+            francais: !isPrimary && isFrenchGroupSubject(subject.name),
             noteCoef: score !== null ? round2(score * subject.coefficient) : null,
             rankInSubject: ds.subjectRanks.get(subject.id)?.get(c.id) ?? null,
             appreciation: score === null ? '—' : appreciationFor(score),
           };
         });
         const finalAverage = comp?.finalAverage ?? null;
+
+        // ⭐ Décision du jury CEP (règles officielles du relevé).
+        const cepAdmission = isPrimary
+          ? computeCepAdmission(
+              lines.map((l) => ({
+                score: l.score,
+                isAbsent: l.isAbsent,
+                passingScore: l.passingScore,
+                cp: l.cp,
+                perfectionnement: l.perfectionnement,
+              })),
+              ds.subjects.length,
+            )
+          : null;
+
+        // ⭐ Colonne BILAN du relevé secondaire (BEPC / BAC / CAP).
+        const bilan = !isPrimary
+          ? computeReleveBilan(
+              lines.map((l) => ({
+                name: l.name,
+                score: l.score,
+                isAbsent: l.isAbsent,
+                coefficient: l.coefficient,
+              })),
+            )
+          : null;
+
+        const decision = isPrimary
+          ? cepAdmission
+            ? cepAdmission.admisCep
+              ? 'ADMIS'
+              : 'AJOURNÉ'
+            : '—'
+          : finalAverage === null
+            ? '—'
+            : finalAverage >= passMark
+              ? 'ADMIS'
+              : 'AJOURNÉ';
+
+        const civilMeta = (civil?.metadata ?? {}) as any;
         return {
           // Contexte d'examen transporté dans chaque relevé (aperçu + PDF).
           academicYearLabel: ds.academicYearLabel,
@@ -1542,6 +1976,8 @@ export class FederisGradesService {
           examCode: ds.exam.code,
           examType: ds.exam.examType,
           level: ds.exam.level,
+          session: ds.exam.session,
+          officialTitle: officialExamTitle(ds.exam.examType, series),
           bestAverage: ds.stats.bestAverage,
           worstAverage: ds.stats.worstAverage,
           candidate: {
@@ -1556,14 +1992,23 @@ export class FederisGradesService {
             centerName: c.centerName,
             roomCode: c.roomCode,
             tableNumber: c.tableNumber,
+            // État civil du relevé officiel.
+            dateOfBirth: civil?.dateOfBirth ?? null,
+            placeOfBirth: civil?.placeOfBirth ?? null,
+            registrationNumber: civil?.registrationNumber ?? c.matricule,
+            candidatureNature: civilMeta.candidatureNature ?? civilMeta.nature ?? 'Officiel',
           },
           lines,
           computed: comp ?? null,
           rank: ds.ranks.get(c.id) ?? null,
           totalCandidates: ds.candidates.length,
           mention: nationalMentionFor(finalAverage),
-          decision: finalAverage === null ? '—' : finalAverage >= passMark ? 'ADMIS' : 'AJOURNÉ',
+          decision,
           decisionNote: `Décision provisoire au seuil de ${passMark}/20 (règles de calcul du patronat) — la décision officielle relève du jury de délibération.`,
+          // ⭐ CEP — décision du jury officielle.
+          cepAdmission,
+          // ⭐ BEPC / BAC / CAP — sous-totaux de la colonne BILAN.
+          bilan,
         };
       });
 
@@ -1574,9 +2019,9 @@ export class FederisGradesService {
       session: ds.session,
       stats: ds.stats,
       perCenter: ds.perCenter,
+      // ⭐ En-tête patronat (remplace le bloc ministériel du modèle officiel).
+      patronat: header,
       releves,
     };
   }
 }
-
-

@@ -16,10 +16,17 @@
 
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
 import AppIcon from '@/components/ui/AppIcon';
+import {
+  isPrimaryExam,
+  CEP_CM_MAX,
+  CEP_CP_MAX,
+  cepNote,
+  withCepDetail,
+} from '@/lib/federis/grade-computations';
 
 const PAGE_SIZE = 25;
 
@@ -34,6 +41,9 @@ interface SaisieCell {
   score: number | null;
   isAbsent: boolean;
   status?: string;
+  /** ⭐ CEP — détail CM (/18) + CP (/2), note /20 = CM + CP. */
+  cm?: number | null;
+  cp?: number | null;
 }
 
 interface SaisieSubject {
@@ -44,6 +54,9 @@ interface SaisieSubject {
   maxScore: number;
   epreuvePrepared: boolean;
   preparedSource: 'paper' | 'manual' | null;
+  /** ⭐ CEP — note minimale exigée (porte du CP) + matière étoilée. */
+  passingScore?: number | null;
+  perfectionnement?: boolean;
 }
 
 interface SaisieCandidate {
@@ -119,7 +132,15 @@ export default function FederisSaisiePage({ userRole }: { userRole?: string | nu
       }
       const next: Record<string, Record<string, SaisieCell>> = {};
       for (const a of payload.assignments ?? []) {
-        for (const c of a.candidates ?? []) next[c.id] = { ...(c.scores ?? {}) };
+        // ⭐ CEP : scission des notes héritées en CM (/18) + CP (/2).
+        const isCep = isPrimaryExam(a.exam?.examType);
+        for (const c of a.candidates ?? []) {
+          const row: Record<string, SaisieCell> = {};
+          for (const [subjectId, cell] of Object.entries(c.scores ?? {})) {
+            row[subjectId] = isCep ? (withCepDetail(cell) as SaisieCell) : cell;
+          }
+          next[c.id] = row;
+        }
       }
       setCells(next);
       setDirty(new Set());
@@ -203,6 +224,47 @@ export default function FederisSaisiePage({ userRole }: { userRole?: string | nu
     });
   };
 
+  // ── ⭐ CEP — saisie CM (/18) + CP (/2) = note (/20) ───────────────────
+  const isCepExam = isPrimaryExam(assignment?.exam?.examType);
+
+  const handleCm = (candidateId: string, subject: SaisieSubject, raw: string) => {
+    if (raw === '') {
+      setCell(candidateId, subject.id, { score: null, cm: null, cp: null });
+      return;
+    }
+    const value = Number(raw.replace(',', '.'));
+    if (Number.isNaN(value)) return;
+    const cm = Math.max(0, Math.min(value, CEP_CM_MAX));
+    const minRequise = subject.passingScore ?? 10;
+    const existingCp = cells[candidateId]?.[subject.id]?.cp ?? 0;
+    const cp = cm >= minRequise ? Math.max(0, Math.min(existingCp, CEP_CP_MAX)) : 0;
+    setCell(candidateId, subject.id, {
+      score: Math.round((cm + cp) * 100) / 100,
+      cm,
+      cp,
+      isAbsent: false,
+    });
+  };
+
+  const handleCp = (candidateId: string, subject: SaisieSubject, raw: string) => {
+    const cell = cells[candidateId]?.[subject.id];
+    const cm = cell?.cm ?? null;
+    const minRequise = subject.passingScore ?? 10;
+    if (cm === null || cm < minRequise) return; // CP réservé aux CM ≥ min
+    if (raw === '') {
+      setCell(candidateId, subject.id, { cp: 0, score: cm });
+      return;
+    }
+    const value = Number(raw.replace(',', '.'));
+    if (Number.isNaN(value)) return;
+    const cp = Math.max(0, Math.min(value, CEP_CP_MAX));
+    setCell(candidateId, subject.id, {
+      score: Math.round((cm + cp) * 100) / 100,
+      cp,
+      isAbsent: false,
+    });
+  };
+
   // ── Enregistrer / Soumettre ─────────────────────────────────────────────
   const save = async (): Promise<boolean> => {
     if (!assignment || dirty.size === 0) return true;
@@ -213,6 +275,17 @@ export default function FederisSaisiePage({ userRole }: { userRole?: string | nu
       const grades = [...dirty].map((key) => {
         const [candidateId, subjectId] = key.split('|');
         const cell = cells[candidateId]?.[subjectId] ?? { score: null, isAbsent: false };
+        // ⭐ CEP : CM + CP transmis au backend (note /20 = somme).
+        if (isCepExam && !cell.isAbsent && cell.cm != null) {
+          return {
+            candidateId,
+            subjectId,
+            cm: cell.cm,
+            cp: cell.cp ?? 0,
+            score: Math.round((cell.cm + (cell.cp ?? 0)) * 100) / 100,
+            isAbsent: false,
+          };
+        }
         return {
           candidateId,
           subjectId,
@@ -478,11 +551,11 @@ export default function FederisSaisiePage({ userRole }: { userRole?: string | nu
                 <table className="min-w-full divide-y divide-slate-200">
                   <thead className="bg-[#f7f9fc]">
                     <tr className="text-left">
-                      <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase sticky left-0 bg-[#f7f9fc] z-10">
+                      <th rowSpan={isCepExam ? 2 : 1} className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase sticky left-0 bg-[#f7f9fc] z-10">
                         Candidat
                       </th>
                       {subjects.map((s) => (
-                        <th key={s.id} className="px-3 py-3 text-center min-w-[110px]">
+                        <th key={s.id} colSpan={isCepExam ? 3 : 1} className="px-3 py-3 text-center min-w-[110px]">
                           <div
                             className={cn(
                               'text-[11px] font-bold',
@@ -497,15 +570,26 @@ export default function FederisSaisiePage({ userRole }: { userRole?: string | nu
                             }
                           >
                             {s.name}
+                            {s.perfectionnement && isCepExam ? ' *' : ''}
                             {!s.epreuvePrepared && ' 🔒'}
                           </div>
                           <div className="text-[9px] text-slate-400 font-semibold mt-0.5">
-                            /{s.maxScore ?? 20}
-                            {s.coefficient && s.coefficient !== 1 ? ` · coef ${s.coefficient}` : ''}
+                            {isCepExam
+                              ? `min. ${String(s.passingScore ?? 10).replace('.', ',')}`
+                              : `/${s.maxScore ?? 20}${s.coefficient && s.coefficient !== 1 ? ` · coef ${s.coefficient}` : ''}`}
                           </div>
                         </th>
                       ))}
                     </tr>
+                    {isCepExam && (
+                      <tr className="bg-[#f0f4fa]">
+                        {subjects.flatMap((s) => [
+                          <th key={`${s.id}-cm`} className="px-1 py-1 text-center text-[9px] font-bold text-blue-900">CM /18</th>,
+                          <th key={`${s.id}-cp`} className="px-1 py-1 text-center text-[9px] font-bold text-amber-700">CP /2</th>,
+                          <th key={`${s.id}-note`} className="px-1 py-1 text-center text-[9px] font-bold text-emerald-700">Note /20</th>,
+                        ])}
+                      </tr>
+                    )}
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {pageRows.map((c) => (
@@ -527,6 +611,99 @@ export default function FederisSaisiePage({ userRole }: { userRole?: string | nu
                         {subjects.map((s) => {
                           const cell = cells[c.id]?.[s.id];
                           const locked = !s.epreuvePrepared || !editable;
+
+                          // ── CEP : CM (/18) + CP (/2) = Note (/20) ──
+                          if (isCepExam) {
+                            const absent = cell?.isAbsent === true;
+                            const minRequise = s.passingScore ?? 10;
+                            const cm = absent ? null : cell?.cm ?? null;
+                            const cp = absent ? null : cell?.cp ?? null;
+                            const note = cepNote(cell);
+                            const cpEnabled = !absent && !locked && cm !== null && cm >= minRequise;
+                            return (
+                              <Fragment key={s.id}>
+                                <td className={cn('px-1.5 py-2.5 text-center', absent && 'bg-red-50/60')}>
+                                  <input
+                                    value={cm ?? ''}
+                                    onChange={(e) => handleCm(c.id, s, e.target.value)}
+                                    disabled={locked || absent}
+                                    inputMode="decimal"
+                                    placeholder="—"
+                                    className={cn(
+                                      'w-12 px-1 py-1.5 text-center text-sm font-bold rounded-lg border transition-colors',
+                                      locked
+                                        ? 'bg-amber-50/60 border-amber-100 text-slate-300 cursor-not-allowed'
+                                        : 'bg-white border-slate-200 text-blue-900 focus:border-blue-600 focus:outline-none',
+                                      cm != null && !locked && (cm >= minRequise ? ' text-blue-900' : ' text-slate-800'),
+                                    )}
+                                    title={locked ? 'Matière verrouillée (épreuve non préparée ou saisie soumise)' : `${s.name} — CM sur 18`}
+                                  />
+                                </td>
+                                <td className={cn('px-1.5 py-2.5 text-center', absent && 'bg-red-50/60')}>
+                                  <input
+                                    value={cp ?? ''}
+                                    onChange={(e) => handleCp(c.id, s, e.target.value)}
+                                    disabled={!cpEnabled}
+                                    inputMode="decimal"
+                                    placeholder="—"
+                                    className={cn(
+                                      'w-12 px-1 py-1.5 text-center text-sm font-bold rounded-lg border transition-colors',
+                                      cpEnabled
+                                        ? 'bg-amber-50/70 border-amber-200 text-amber-800 focus:border-amber-500 focus:outline-none'
+                                        : 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed',
+                                    )}
+                                    title={
+                                      cpEnabled
+                                        ? `${s.name} — CP sur 2 (perfectionnement${s.perfectionnement ? ' — matière étoilée ★' : ''})`
+                                        : `CP réservé aux CM ≥ ${String(minRequise).replace('.', ',')}/18`
+                                    }
+                                  />
+                                </td>
+                                <td className={cn('px-1.5 py-2.5 text-center', absent && 'bg-red-50/60')}>
+                                  <div className="flex items-center justify-center gap-1">
+                                    <span
+                                      className={cn(
+                                        'inline-block min-w-[2.4rem] text-center text-sm font-black px-1.5 py-1.5 rounded-lg',
+                                        absent
+                                          ? 'bg-red-50 text-red-500 text-[10px]'
+                                          : note != null
+                                            ? note >= 10
+                                              ? 'bg-emerald-100 text-emerald-800'
+                                              : 'bg-red-100 text-red-700'
+                                            : 'bg-slate-50 text-slate-300',
+                                      )}
+                                    >
+                                      {absent ? 'ABS' : note != null ? String(note).replace('.', ',') : '—'}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setCell(c.id, s.id, {
+                                          isAbsent: !(cell?.isAbsent ?? false),
+                                          score: !(cell?.isAbsent ?? false) ? 0 : null,
+                                          cm: !(cell?.isAbsent ?? false) ? 0 : null,
+                                          cp: !(cell?.isAbsent ?? false) ? 0 : null,
+                                        })
+                                      }
+                                      disabled={locked}
+                                      className={cn(
+                                        'px-1.5 py-1 rounded text-[9px] font-bold border transition-colors',
+                                        cell?.isAbsent
+                                          ? 'bg-red-50 border-red-200 text-red-700'
+                                          : 'bg-white border-slate-200 text-slate-400 hover:text-red-600',
+                                        locked && 'opacity-30 cursor-not-allowed',
+                                      )}
+                                      title="Marquer absent (exclu des calculs)"
+                                    >
+                                      ABS
+                                    </button>
+                                  </div>
+                                </td>
+                              </Fragment>
+                            );
+                          }
+
+                          // ── BEPC / BAC / CAP : note /20 unique ──
                           return (
                             <td key={s.id} className="px-3 py-2.5 text-center">
                               <div className="flex items-center justify-center gap-1.5">

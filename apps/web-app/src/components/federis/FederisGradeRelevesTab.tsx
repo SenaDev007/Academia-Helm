@@ -20,7 +20,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
-import { fmtNote, formatRankFr } from '@/lib/federis/grade-computations';
+import { fmtNote } from '@/lib/federis/grade-computations';
 
 interface ReleveLine {
   subjectId: string;
@@ -33,6 +33,13 @@ interface ReleveLine {
   noteCoef: number | null;
   rankInSubject: number | null;
   appreciation: string;
+  /** ⭐ 2026-10-01 — CEP : CM (/18), CP (/2), minimale exigée, étoile. */
+  cm: number | null;
+  cp: number | null;
+  passingScore: number;
+  perfectionnement: boolean;
+  /** ⭐ BEPC / BAC / CAP — matière du groupe Français (BILAN). */
+  francais: boolean;
 }
 
 interface Releve {
@@ -40,6 +47,8 @@ interface Releve {
   examName: string;
   examCode: string;
   level: string;
+  session: string | null;
+  officialTitle: { main: string; sub: string } | null;
   bestAverage: number | null;
   worstAverage: number | null;
   candidate: {
@@ -54,6 +63,10 @@ interface Releve {
     centerName: string | null;
     roomCode: string | null;
     tableNumber: string | null;
+    dateOfBirth: string | null;
+    placeOfBirth: string | null;
+    registrationNumber: string;
+    candidatureNature: string;
   };
   lines: ReleveLine[];
   computed: {
@@ -68,6 +81,22 @@ interface Releve {
   mention: string;
   decision: string;
   decisionNote: string;
+  /** ⭐ CEP — décision du jury officielle. */
+  cepAdmission: {
+    matieresNotees: number;
+    matieresReussies: number;
+    matieresRequises: number;
+    admisCep: boolean;
+    admisSixieme: boolean;
+  } | null;
+  /** ⭐ BEPC / BAC / CAP — sous-totaux BILAN. */
+  bilan: {
+    hasFrancais: boolean;
+    totalFrancais: number | null;
+    totalEcrit: number | null;
+    totalFinal: number | null;
+    moyenne: number | null;
+  } | null;
 }
 
 interface RelevesData {
@@ -82,6 +111,18 @@ interface RelevesData {
   } | null;
   academicYearLabel: string | null;
   stats: { composed: number; totalCandidates: number };
+  /** ⭐ En-tête patronat du relevé officiel (bloc ministériel remplacé). */
+  patronat: {
+    name: string;
+    abbreviation: string | null;
+    territoryName: string | null;
+    address: string | null;
+    phone: string | null;
+    email: string | null;
+    country: string | null;
+    coordinatorName: string | null;
+    place: string;
+  } | null;
   releves: Releve[];
 }
 
@@ -257,8 +298,6 @@ export default function FederisGradeRelevesTab({
     );
   }
 
-  const female = selected?.candidate.gender === 'FEMALE' || selected?.candidate.gender === 'F';
-
   return (
     <div className="space-y-5">
       {/* Barre d'actions */}
@@ -266,7 +305,7 @@ export default function FederisGradeRelevesTab({
         <h3 className="text-sm font-bold text-blue-900 uppercase flex-1">
           Relevés de notes — {data.exam.code}
           <span className="ml-3 text-[10px] text-slate-400 normal-case font-semibold">
-            {isPrimary ? 'modèle primaire (CEP — sans coefficients)' : 'modèle secondaire (avec coefficients)'}
+            {isPrimary ? 'modèle officiel CEP (CM/18 + CP/2 + perfectionnement)' : 'modèle officiel BEPC/BAC/CAP (coefficients + bilan)'}
           </span>
         </h3>
         <input
@@ -347,7 +386,7 @@ export default function FederisGradeRelevesTab({
           </div>
         </div>
 
-        {/* Aperçu du relevé (fidèle au PDF backend — A4 paysage) */}
+        {/* Aperçu du relevé (fidèle au PDF backend — A4 portrait) */}
         {selected && (
           <div className="space-y-4">
             <div className="fed-card px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-wrap">
@@ -356,7 +395,7 @@ export default function FederisGradeRelevesTab({
                   Aperçu — {selected.candidate.lastName} {selected.candidate.firstName}
                 </p>
                 <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
-                  {isPrimary ? 'Modèle primaire' : 'Modèle secondaire avec coefficients'} · A4 paysage (identique au PDF)
+                  {isPrimary ? 'Modèle officiel CEP' : 'Modèle officiel BEPC / BAC / CAP'} · A4 portrait (identique au PDF)
                 </p>
               </div>
               <button
@@ -368,15 +407,14 @@ export default function FederisGradeRelevesTab({
               </button>
             </div>
 
-            {/* Feuille A4 paysage simulée */}
-            <div className="bg-white border-2 border-slate-200 rounded-lg shadow-sm p-5 overflow-x-auto">
+            {/* Feuille A4 portrait simulée — relevé officiel */}
+            <div className="bg-white border-2 border-slate-200 rounded-lg shadow-sm p-5 sm:p-8 overflow-x-auto">
               {isPrimary ? (
-                <ReleveCepPreview releve={selected} passMark={data?.rules?.passMark ?? 10} />
+                <ReleveCepPreview releve={selected} patronat={data?.patronat ?? null} />
               ) : (
                 <ReleveSecondairePreview
                   releve={selected}
-                  female={female}
-                  passMark={data?.rules?.passMark ?? 10}
+                  patronat={data?.patronat ?? null}
                 />
               )}
             </div>
@@ -387,292 +425,352 @@ export default function FederisGradeRelevesTab({
   );
 }
 
+
 // ═══════════════════════════════════════════════════════════════════════════
-// Aperçu — modèle PRIMAIRE (CEP) : reproduction du BulletinPrimairePage1 Helm
+// ⭐ 2026-10-01 — APERÇUS OFFICIELS (fidèles aux PDF générés par le backend)
+// CEP : en-tête patronat + MATIÈRE | CEP{NOTE OBTENUE, NOTE MINIMALE EXIGÉE} |
+//       NOTE DE PERFECTIONNEMENT OBTENUE + décision du jury + signature.
+// BEPC/BAC/CAP : MATIÈRES | COEF. | NOTE/20 | NOTE COEF. | BILAN.
 // ═══════════════════════════════════════════════════════════════════════════
 
-function ReleveCepPreview({ releve, passMark = 10 }: { releve: Releve; passMark?: number }) {
+interface PatronatHeader {
+  name: string;
+  abbreviation: string | null;
+  territoryName: string | null;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  country: string | null;
+  coordinatorName: string | null;
+  place: string;
+}
+
+/** Note officielle : 2 décimales avec zéro de tête (00.00, 01.25, 12.50). */
+function fmtOfficial(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '—';
+  const v = Math.round(n * 100) / 100;
+  return (v < 10 && v >= 0 ? '0' : '') + Math.abs(v).toFixed(2);
+}
+
+function fmtBilan(n: number | null | undefined): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '—';
+  return (Math.round(n * 100) / 100).toFixed(2);
+}
+
+function fmtNaissance(dob: string | null | undefined, place: string | null | undefined): string {
+  if (!dob) return place ? `à ${place}` : '—';
+  const d = new Date(dob);
+  const date = Number.isNaN(d.getTime())
+    ? String(dob)
+    : d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return place ? `${date} à ${place}` : date;
+}
+
+function genderShort(g: string | null | undefined): string {
+  return g === 'F' || g === 'FEMALE' ? 'F' : g ? 'M' : '—';
+}
+
+function genderLong(g: string | null | undefined): string {
+  return g === 'F' || g === 'FEMALE' ? 'Féminin' : g ? 'Masculin' : '—';
+}
+
+/** Bloc organisation (patronat) — remplace le bloc ministériel. */
+function OrgBlock({ patronat, compact = false }: { patronat: PatronatHeader | null; compact?: boolean }) {
+  const name = (patronat?.name ?? 'Patronat').toUpperCase();
+  const territory = patronat?.territoryName
+    ? `Département ${patronat.territoryName}`
+    : patronat?.country ?? '';
+  return (
+    <div className="text-left">
+      <div className="text-[9px] font-bold uppercase leading-snug">{name}</div>
+      <div className="text-[8px] text-slate-500 my-0.5">------------------</div>
+      {territory ? (
+        <>
+          <div className="text-[9px] font-bold uppercase leading-snug">{territory}</div>
+          <div className="text-[8px] text-slate-500 my-0.5">------------------</div>
+        </>
+      ) : null}
+      {!compact ? (
+        <div className="text-[9px] font-bold uppercase leading-snug">Coordination des Examens et Concours</div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Bloc date + signature (coordonnateur du patronat). */
+function SignatureBlock({ patronat }: { patronat: PatronatHeader | null }) {
+  const place = patronat?.place || patronat?.territoryName || '';
+  const date = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  return (
+    <div className="w-[42%] ml-auto mt-6 text-center">
+      <div className="text-[10px] font-bold">{place}{place ? ', ' : ''}le {date}</div>
+      <div className="text-[10px] font-bold uppercase mt-1">Le Coordonnateur du Patronat</div>
+      <div className="h-12" />
+      <div className="text-[10px] font-bold uppercase border-t border-black mx-4 pt-1">
+        {(patronat?.coordinatorName ?? '').toUpperCase()}
+      </div>
+    </div>
+  );
+}
+
+const civilTd = 'border border-black px-2 py-1 align-top';
+const civilLbl = 'w-[32%] text-[8px] font-bold uppercase tracking-wide';
+const civilVal = 'text-[10px] font-bold';
+
+function CivilRow({ label, value }: { label: string; value: string }) {
+  return (
+    <tr>
+      <td className={civilTd}><span className={civilLbl}>{label}</span></td>
+      <td className={civilTd}><span className={civilVal}>{value}</span></td>
+    </tr>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Aperçu — RELEVÉ OFFICIEL DU CEP
+// ═══════════════════════════════════════════════════════════════════════════
+
+function ReleveCepPreview({ releve, patronat }: { releve: Releve; patronat: PatronatHeader | null }) {
   const c = releve.candidate;
-  const comp = releve.computed;
-  const moyenne = comp?.finalAverage ?? null;
-  const seuilAtteint = moyenne !== null && moyenne >= passMark;
+  const adm = releve.cepAdmission;
+  const nbMatieres = releve.lines.length;
+  const title = releve.officialTitle ?? { main: "CERTIFICAT D'ÉTUDES PRIMAIRES", sub: '(C.E.P.)' };
 
   return (
-    <div className="min-w-[820px]">
-      <div className="text-center mb-3">
-        <h4 className="text-xs font-bold text-slate-900 uppercase">Relevé de notes — {releve.examName}</h4>
-        <p className="text-[9px] text-slate-500 font-semibold mt-0.5">
-          {releve.academicYearLabel ?? '—'} · Session {releve.examCode} · Modèle primaire (sans coefficients)
+    <div className="min-w-[680px] max-w-[760px] mx-auto text-black" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
+      {/* En-tête officiel : patronat (gauche) + titres (centre) */}
+      <table className="w-full border-collapse mb-2">
+        <tbody>
+          <tr>
+            <td className="w-[34%] align-top px-1"><OrgBlock patronat={patronat} /></td>
+            <td className="w-[46%] align-top text-center px-1">
+              <div className="text-[16px] font-bold tracking-wide">RELEVE DE NOTES</div>
+              <div className="text-[14px] font-bold mt-1">{title.main}</div>
+              <div className="text-[12px] font-bold">{title.sub}</div>
+              <div className="text-[10px] font-bold mt-2">{releve.session ?? ''}</div>
+            </td>
+            <td className="w-[20%]" />
+          </tr>
+        </tbody>
+      </table>
+      <div className="text-[10px] font-bold mb-3">
+        N° {c.registrationNumber ?? c.matricule}/{releve.examCode}
+      </div>
+
+      {/* État civil */}
+      <table className="w-full border-collapse mb-4">
+        <tbody>
+          <CivilRow label="NOM" value={c.lastName.toUpperCase()} />
+          <CivilRow label="PRÉNOMS" value={c.firstName || '—'} />
+          <CivilRow label="SEXE" value={genderShort(c.gender)} />
+          <CivilRow label="MATRICULE" value={c.matricule} />
+          <CivilRow label="DATE ET LIEU DE NAISSANCE" value={fmtNaissance(c.dateOfBirth, c.placeOfBirth)} />
+          <CivilRow label="CENTRE DE COMPOSITION" value={c.centerName ?? '—'} />
+          <CivilRow label="NUMÉRO D'INSCRIPTION" value={c.registrationNumber ?? c.matricule} />
+          <CivilRow label="NATURE DE LA CANDIDATURE" value={c.candidatureNature ?? 'Officiel'} />
+        </tbody>
+      </table>
+
+      {/* Tableau officiel CEP */}
+      <table className="w-full border-collapse border-2 border-black">
+        <thead>
+          <tr>
+            <th rowSpan={2} className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase text-left">Matière</th>
+            <th colSpan={2} className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase">CEP</th>
+            <th rowSpan={2} className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[18%]">Note de perfection-<br />nement obtenue</th>
+          </tr>
+          <tr>
+            <th className="border border-black px-2 py-1 text-[9px] font-bold uppercase">Note obtenue</th>
+            <th className="border border-black px-2 py-1 text-[9px] font-bold uppercase">Note minimale exigée</th>
+          </tr>
+        </thead>
+        <tbody>
+          {releve.lines.map((line) => {
+            const minReq = line.passingScore ?? 10;
+            const ok = line.score !== null && line.score >= minReq;
+            return (
+              <tr key={line.subjectId}>
+                <td className="border border-black px-2 py-1 text-[10px] font-bold">
+                  {line.name}{line.perfectionnement ? ' *' : ''}
+                </td>
+                <td className={cn('border border-black px-2 py-1 text-center text-[11px] font-bold', ok ? 'text-emerald-700' : 'text-red-700')}>
+                  {line.isAbsent ? <span className="text-red-600 text-[9px]">ABS</span> : fmtOfficial(line.cm ?? line.score)}
+                </td>
+                <td className="border border-black px-2 py-1 text-center text-[10px]">
+                  {String(minReq).replace('.', ',')}
+                </td>
+                <td className={cn('border border-black px-2 py-1 text-center text-[11px] font-bold', line.cp != null && line.cp > 0 ? 'text-emerald-700' : '')}>
+                  {line.isAbsent ? <span className="text-red-600 text-[9px]">ABS</span> : fmtOfficial(line.cp)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {/* Décision du jury */}
+      <table className="w-[78%] border-collapse mx-auto mt-5">
+        <tbody>
+          <tr>
+            <th colSpan={2} className="border-2 border-black px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest">Décision du jury</th>
+          </tr>
+          <tr>
+            <td className="border-2 border-black px-3 py-1 text-[10px] font-bold">CERTIFICAT D'ÉTUDES PRIMAIRES</td>
+            <td className={cn('border-2 border-black px-3 py-1 text-center text-[11px] font-bold uppercase', adm?.admisCep ? 'text-emerald-700' : 'text-red-700')}>
+              {adm?.admisCep ? 'Admis' : 'Ajourné(e)'}
+            </td>
+          </tr>
+          <tr>
+            <td className="border-2 border-black px-3 py-1 text-[10px] font-bold">ENTRÉE EN SIXIÈME</td>
+            <td className={cn('border-2 border-black px-3 py-1 text-center text-[11px] font-bold uppercase', adm?.admisSixieme ? 'text-emerald-700' : 'text-red-700')}>
+              {adm?.admisSixieme ? 'Admis' : 'Ajourné(e)'}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <SignatureBlock patronat={patronat} />
+
+      <p className="text-[9px] italic mt-6">
+        NB : Le présent Relevé de notes tient lieu d'attestation provisoire de diplôme, valable pour six (06) mois.
+      </p>
+
+      <div className="border-t border-black mt-4 pt-2 space-y-1">
+        <p className="text-[8px] text-justify leading-snug">
+          Est déclaré(e) admis(e) au CEP tout(e) candidat(e) ayant obtenu la note minimale exigée dans au moins {adm?.matieresRequises ?? 6} des {nbMatieres || 9} matières.
         </p>
-      </div>
-
-      {/* Infos candidat */}
-      <div className="rounded-lg overflow-hidden mb-3" style={{ border: '1px solid #0A2A5E' }}>
-        <table className="w-full border-collapse text-[10px]">
-          <tbody>
-            <tr>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/4">
-                Nom et prénoms : <span className="font-bold text-slate-900 uppercase">{c.lastName} {c.firstName}</span>
-              </td>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/4">
-                Matricule : <span className="font-bold text-slate-900">{c.matricule}</span>
-              </td>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/4">
-                Anonymat : <span className="font-bold text-slate-900 font-mono">{c.anonymatCode ?? '—'}</span>
-              </td>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/4">
-                N° de table : <span className="font-bold text-slate-900">{c.tableNumber ?? '—'}</span>
-              </td>
-            </tr>
-            <tr>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
-                École : <span className="font-bold text-slate-900">{c.school}</span>
-              </td>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold" colSpan={2}>
-                Centre : <span className="font-bold text-slate-900">{c.centerName ?? '—'}</span>
-              </td>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
-                Rang : <span className="font-bold text-slate-900">
-                  {releve.rank ? `${releve.rank}e / ${releve.totalCandidates}` : '—'}
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      {/* Tableau primaire — Champs de formation */}
-      <div className="text-center mb-1">
-        <h5 className="text-[10px] font-bold text-slate-900 uppercase">I — Connaissance et Habiletés</h5>
-      </div>
-      <div className="rounded-lg overflow-hidden" style={{ border: '2px solid #0A2A5E' }}>
-        <table className="w-full border-collapse text-[10px]">
-          <thead>
-            <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
-              <th rowSpan={2} className="border px-2 py-1 font-bold uppercase text-left min-w-[160px]" style={{ borderColor: '#0D3B85' }}>Champs de formation</th>
-              <th rowSpan={2} className="border px-2 py-1 font-bold uppercase text-center w-14" style={{ borderColor: '#0D3B85' }}>Note min.</th>
-              <th rowSpan={2} className="border px-2 py-1 font-bold uppercase text-center w-16" style={{ borderColor: '#0D3B85' }}>Note /20</th>
-              <th colSpan={2} className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Maîtrise min.</th>
-              <th colSpan={2} className="border px-2 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Seuil réussite</th>
-              <th rowSpan={2} className="border px-2 py-1 font-bold uppercase text-center min-w-[80px]" style={{ borderColor: '#0D3B85' }}>Appréciation</th>
-            </tr>
-            <tr className="text-white" style={{ backgroundColor: '#114FC4' }}>
-              <th className="border px-1 py-0.5 font-bold text-center text-[8px] w-9" style={{ borderColor: '#114FC4' }}>Oui</th>
-              <th className="border px-1 py-0.5 font-bold text-center text-[8px] w-9" style={{ borderColor: '#114FC4' }}>Non</th>
-              <th className="border px-1 py-0.5 font-bold text-center text-[8px] w-9" style={{ borderColor: '#114FC4' }}>Oui</th>
-              <th className="border px-1 py-0.5 font-bold text-center text-[8px] w-9" style={{ borderColor: '#114FC4' }}>Non</th>
-            </tr>
-          </thead>
-          <tbody>
-            {releve.lines.map((line, idx) => {
-              const seuil = line.maxScore !== 20 ? line.maxScore / 2 : 10;
-              const reached = line.score !== null && line.score >= seuil;
-              return (
-                <tr key={line.subjectId} className={cn(idx % 2 === 1 && 'bg-slate-50/60')}>
-                  <td className="border border-slate-300 px-2 py-0.5 font-medium text-slate-900 whitespace-nowrap">{line.name}</td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center text-slate-400 text-[9px]">{String(seuil).replace('.', ',')}</td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center font-bold">
-                    {line.isAbsent ? (
-                      <span className="text-red-500 text-[8px] font-black">ABS</span>
-                    ) : line.score !== null ? (
-                      <span className={line.score >= seuil ? 'text-emerald-700' : 'text-red-600'}>{fmtNote(line.score)}</span>
-                    ) : (
-                      <span className="text-slate-400">—</span>
-                    )}
-                  </td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center">{!line.isAbsent && reached ? '✓' : ''}</td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center">{!line.isAbsent && !reached && line.score !== null ? '✓' : ''}</td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center">{!line.isAbsent && reached ? '✓' : ''}</td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center">{!line.isAbsent && !reached && line.score !== null ? '✓' : ''}</td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center text-slate-600 text-[9px]">{line.appreciation}</td>
-                </tr>
-              );
-            })}
-            <tr className="bg-slate-200 font-bold">
-              <td className="border border-slate-300 px-2 py-0.5 uppercase text-slate-900" colSpan={2}>Total général</td>
-              <td className="border border-slate-300 px-2 py-0.5 text-center text-blue-700">{comp ? fmtNote(comp.total) : '—'}</td>
-              <td className="border border-slate-300 px-2 py-0.5 text-center" colSpan={4}></td>
-              <td className="border border-slate-300 px-2 py-0.5 text-center bg-blue-100 text-blue-900 text-[9px]">{releve.mention}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      {/* Synthèse (modèle primaire Helm) */}
-      <div className="mt-2 space-y-1 text-[10px] text-slate-700">
-        <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
-          <span>Moyenne obtenue par le candidat :</span>
-          <strong className="text-blue-700">{moyenne !== null ? `${fmtNote(moyenne)}/20` : '—'}</strong>
-        </div>
-        <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
-          <span>Plus forte moyenne de l&apos;examen :</span>
-          <strong>{releve.bestAverage !== null ? `${fmtNote(releve.bestAverage)}/20` : '—'}</strong>
-        </div>
-        <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
-          <span>Plus faible moyenne de l&apos;examen :</span>
-          <strong>{releve.worstAverage !== null ? `${fmtNote(releve.worstAverage)}/20` : '—'}</strong>
-        </div>
-        <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
-          <span>Seuil de réussite globale fixé à :</span>
-          <strong>10/20</strong>
-        </div>
-        <div className="flex justify-between bg-blue-50 px-2 py-1 rounded font-bold">
-          <span>Seuil de réussite globale atteint :</span>
-          <span className={seuilAtteint ? 'text-emerald-700' : 'text-red-600'}>{seuilAtteint ? 'OUI' : 'NON'}</span>
-        </div>
-        <div className={cn(
-          'flex justify-between px-2 py-1.5 rounded font-bold',
-          seuilAtteint ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700',
-        )}>
-          <span>Décision provisoire (jury de délibération) :</span>
-          <span>{releve.decision}</span>
-        </div>
-        <p className="text-[8px] text-slate-400 italic pt-1">{releve.decisionNote}</p>
+        <p className="text-[8px] text-justify leading-snug">
+          Est déclaré(e) admis(e) à l'entrée en 6ème tout(e) candidat(e) reçu(e) au CEP et ayant obtenu une note de perfectionnement différente de zéro (0) dans l'une des trois (03) matières marquées d'un astérisque (*).
+        </p>
+        <p className="text-[8px] text-justify leading-snug">
+          La note de perfectionnement n'est attribuée que quand le (la) candidat(e) a obtenu la note minimale exigée.
+        </p>
       </div>
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Aperçu — modèle SECONDAIRE avec coefficients : reproduction du
-// BulletinSecondairePage1 Helm (Discipline, Note, Coefficient, Note
-// coefficient, Rang, Appréciation, Signature + totaux + moyenne pondérée)
+// Aperçu — RELEVÉ OFFICIEL BEPC / BAC / CAP (MATIÈRES | COEF. | NOTE/20 |
+// NOTE COEF. | BILAN)
 // ═══════════════════════════════════════════════════════════════════════════
 
-function ReleveSecondairePreview({ releve, female, passMark = 10 }: { releve: Releve; female: boolean; passMark?: number }) {
+function ReleveSecondairePreview({ releve, patronat }: { releve: Releve; patronat: PatronatHeader | null }) {
   const c = releve.candidate;
-  const comp = releve.computed;
-  const moyenne = comp?.finalAverage ?? null;
-  const ok = moyenne !== null && moyenne >= passMark;
-  const navy = '#0A2A5E';
-  const navyAlt = '#0D3B85';
+  const bilan = releve.bilan;
+  const title = releve.officialTitle ?? { main: releve.examName, sub: '' };
+  const lines = releve.lines;
+
+  // Entrées BILAN empilées (modèle officiel).
+  const bilanEntries: Array<{ label: string; value: string }> = [];
+  if (bilan?.hasFrancais) {
+    bilanEntries.push({ label: 'Total Français', value: fmtBilan(bilan.totalFrancais) });
+  }
+  bilanEntries.push({ label: 'Total Écrit', value: fmtBilan(bilan?.totalEcrit ?? null) });
+  bilanEntries.push({ label: 'Total Final', value: fmtBilan(bilan?.totalFinal ?? null) });
+  bilanEntries.push({ label: 'Moyenne', value: fmtBilan(bilan?.moyenne ?? null) });
+
+  const lastFrenchIdx = lines.reduce((acc, l, i) => (l.francais ? i : acc), -1);
+  const startRow = Math.max(0, Math.min(lastFrenchIdx + 1, Math.max(0, lines.length - bilanEntries.length)));
+  const bilanByRow = new Map<number, { label: string; value: string }>();
+  bilanEntries.forEach((e, i) => bilanByRow.set(startRow + i, e));
 
   return (
-    <div className="min-w-[820px]">
-      {/* En-tête d'informations (modèle CEG Helm) */}
-      <div className="rounded-lg overflow-hidden mb-3" style={{ border: `1px solid ${navy}` }}>
-        <table className="w-full border-collapse text-[10px]">
-          <tbody>
-            <tr>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
-                Année scolaire : <span className="font-bold text-slate-900">{releve.academicYearLabel ?? '—'}</span>
-              </td>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
-                Examen : <span className="font-bold text-slate-900">{releve.examName}</span>
-              </td>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
-                Session / Niveau : <span className="font-bold text-slate-900">{releve.examCode} · {releve.level}</span>
-              </td>
-            </tr>
-            <tr>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
-                Nom et prénoms : <span className="font-bold text-slate-900 uppercase">{c.lastName} {c.firstName}</span>
-              </td>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
-                Matricule : <span className="font-bold text-slate-900">{c.matricule}</span>
-                {' '}· Anonymat : <span className="font-bold text-slate-900 font-mono">{c.anonymatCode ?? '—'}</span>
-                {' '}· N° table : <span className="font-bold text-slate-900">{c.tableNumber ?? '—'}</span>
-              </td>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
-                Rang : <span className="font-bold text-slate-900">
-                  {releve.rank ? `${formatRankFr(releve.rank, female)} / ${releve.totalCandidates}` : '—'}
-                </span>
-              </td>
-            </tr>
-            <tr>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
-                École de provenance : <span className="font-bold text-slate-900">{c.school}</span>
-              </td>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
-                Centre : <span className="font-bold text-slate-900">{c.centerName ?? '—'}</span>
-                {' '}· Salle : <span className="font-bold text-slate-900">{c.roomCode ?? '—'}</span>
-              </td>
-              <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
-                Effectif : <span className="font-bold text-slate-900">{releve.totalCandidates}</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+    <div className="min-w-[680px] max-w-[760px] mx-auto text-black" style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}>
+      {/* En-tête officiel : patronat (gauche) + titres (centre) + session (droite) */}
+      <table className="w-full border-collapse mb-2">
+        <tbody>
+          <tr>
+            <td className="w-[30%] align-top px-1"><OrgBlock patronat={patronat} compact /></td>
+            <td className="w-[48%] align-middle text-center px-1">
+              <div className="text-[16px] font-bold tracking-wide">RELEVÉ DE NOTES</div>
+              <div className="text-[9px] italic mt-0.5">Tenant lieu d'attestation provisoire valable 12 mois</div>
+              <div className="text-[13px] font-bold mt-1">
+                {title.main} {title.sub ? <span className="text-[11px]">{title.sub}</span> : null}
+              </div>
+            </td>
+            <td className="w-[22%] align-middle text-right px-1 text-[10px] font-bold">
+              {releve.session ?? ''}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div className="text-[10px] font-bold mb-3">
+        N° {c.registrationNumber ?? c.matricule}/{releve.examCode}
       </div>
 
-      {/* Tableau secondaire avec coefficients */}
-      <div className="rounded-lg overflow-hidden" style={{ border: `2px solid ${navy}` }}>
-        <table className="w-full border-collapse text-[10px]">
-          <thead>
-            <tr className="text-white" style={{ backgroundColor: navy }}>
-              <th className="border px-2 py-1 font-bold uppercase text-left min-w-[170px]" style={{ borderColor: navyAlt }}>Discipline</th>
-              <th className="border px-2 py-1 font-bold uppercase text-center w-16" style={{ borderColor: navyAlt }}>Note /20</th>
-              <th className="border px-2 py-1 font-bold uppercase text-center w-16" style={{ borderColor: navyAlt }}>Coefficient</th>
-              <th className="border px-2 py-1 font-bold uppercase text-center w-20" style={{ borderColor: navyAlt, backgroundColor: navyAlt }}>Note coefficient</th>
-              <th className="border px-2 py-1 font-bold uppercase text-center w-12" style={{ borderColor: navyAlt }}>Rang</th>
-              <th className="border px-2 py-1 font-bold uppercase text-center min-w-[80px]" style={{ borderColor: navyAlt }}>Appréciation</th>
-              <th className="border px-2 py-1 font-bold uppercase text-center w-20" style={{ borderColor: navyAlt }}>Signature</th>
-            </tr>
-          </thead>
-          <tbody>
-            {releve.lines.map((line, idx) => {
-              const lineOk = line.score !== null && line.score >= 10;
-              return (
-                <tr key={line.subjectId} className={cn(idx % 2 === 1 && 'bg-slate-50/60')}>
-                  <td className="border border-slate-300 px-2 py-0.5 font-medium text-slate-900 whitespace-nowrap">{line.name}</td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center font-bold">
-                    {line.isAbsent ? (
-                      <span className="text-red-500 text-[8px] font-black">ABS</span>
-                    ) : line.score !== null ? (
-                      <span className={lineOk ? 'text-slate-900' : 'text-red-600'}>{fmtNote(line.score)}</span>
-                    ) : (
-                      <span className="text-slate-400">—</span>
-                    )}
-                  </td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-amber-700 bg-amber-50">
-                    {String(line.coefficient).replace('.', ',')}
-                  </td>
-                  <td className={cn(
-                    'border border-slate-300 px-2 py-0.5 text-center font-bold bg-blue-50/50',
-                    line.isAbsent || line.noteCoef === null ? 'text-slate-400' : lineOk ? 'text-emerald-700' : 'text-red-600',
-                  )}>
-                    {line.isAbsent ? <span className="text-red-500 text-[8px] font-black">ABS</span> : fmtNote(line.noteCoef)}
-                  </td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-slate-700">
-                    {line.rankInSubject ? formatRankFr(line.rankInSubject, female) : '—'}
-                  </td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center text-slate-600 text-[9px]">{line.appreciation}</td>
-                  <td className="border border-slate-300 h-7" />
-                </tr>
-              );
-            })}
-            <tr className="bg-slate-200 font-bold">
-              <td className="border border-slate-300 px-2 py-0.5 text-right uppercase text-slate-700 text-[9px]" colSpan={3}>Total des coefficients</td>
-              <td className="border border-slate-300 px-2 py-0.5 text-center text-amber-700">{comp ? String(comp.totalCoef).replace('.', ',') : '—'}</td>
-              <td className="border border-slate-300 px-2 py-0.5 text-center text-slate-800 text-[9px]" colSpan={3}>—</td>
-            </tr>
-            <tr className="bg-slate-200 font-bold">
-              <td className="border border-slate-300 px-2 py-0.5 text-right uppercase text-slate-700 text-[9px]" colSpan={3}>Total des notes (Σ note × coef)</td>
-              <td className="border border-slate-300 px-2 py-0.5 text-center text-emerald-700">{comp ? fmtNote(comp.totalNotesCoef) : '—'}</td>
-              <td className="border border-slate-300 px-2 py-0.5 text-center text-slate-800 text-[9px]" colSpan={3}>—</td>
-            </tr>
-            <tr className="bg-blue-100 font-bold">
-              <td className="border border-slate-300 px-2 py-0.5 text-right uppercase text-slate-900 text-[9px]" colSpan={3}>Moyenne de l&apos;examen</td>
-              <td className={cn('border border-slate-300 px-2 py-0.5 text-center text-blue-800 text-xs', !ok && 'text-red-700')}>
-                {moyenne !== null ? fmtNote(moyenne) : '—'}
-              </td>
-              <td className="border border-slate-300 px-2 py-0.5 text-center text-slate-800 text-[9px]" colSpan={2}>
-                Mention : <span className="text-blue-900">{releve.mention}</span>
-              </td>
-              <td className={cn(
-                'border border-slate-300 px-2 py-0.5 text-center text-[9px] font-black uppercase rounded',
-                ok ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700',
-              )}>
-                {releve.decision}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      {/* État civil */}
+      <table className="w-full border-collapse mb-4">
+        <tbody>
+          <CivilRow label="NOM" value={c.lastName.toUpperCase()} />
+          <CivilRow label="PRÉNOMS" value={c.firstName || '—'} />
+          <CivilRow label="SEXE" value={genderLong(c.gender)} />
+          <CivilRow label="MATRICULE" value={c.matricule} />
+          <CivilRow label="DATE ET LIEU DE NAISSANCE" value={fmtNaissance(c.dateOfBirth, c.placeOfBirth)} />
+          <CivilRow label="CENTRE DE COMPOSITION" value={c.centerName ?? '—'} />
+          <CivilRow label="NUMÉRO D'INSCRIPTION" value={c.registrationNumber ?? c.matricule} />
+        </tbody>
+      </table>
 
-      <p className="text-[8px] text-slate-400 mt-1.5 italic">
-        Note coefficient = Note × Coefficient · Moyenne de l&apos;examen = Σ(Note × Coefficient) / Σ(Coefficients) ·
-        {' '}Les notes ABS sont exclues des calculs · {releve.decisionNote}
+      {/* Tableau officiel secondaire */}
+      <table className="w-full border-collapse border-2 border-black">
+        <thead>
+          <tr>
+            <th className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase text-left">Matières</th>
+            <th className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[9%]">Coef.</th>
+            <th className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[12%]">Note/20</th>
+            <th className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[14%]">Note coef.</th>
+            <th className="border border-black px-2 py-1.5 text-[10px] font-bold uppercase w-[20%]">Bilan</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line, i) => {
+            const bilanCell = bilanByRow.get(i);
+            return (
+              <tr key={line.subjectId}>
+                <td className="border border-black px-2 py-1 text-[10px] font-bold">{line.name}</td>
+                <td className="border border-black px-2 py-1 text-center text-[10px] font-bold">
+                  {String(line.coefficient ?? 1).replace('.', ',')}
+                </td>
+                <td className="border border-black px-2 py-1 text-center text-[11px] font-bold">
+                  {line.isAbsent ? <span className="text-red-600 text-[9px]">ABS</span> : fmtOfficial(line.score)}
+                </td>
+                <td className="border border-black px-2 py-1 text-center text-[11px] font-bold">
+                  {line.isAbsent ? <span className="text-red-600 text-[9px]">ABS</span> : fmtOfficial(line.noteCoef)}
+                </td>
+                <td className="border border-black px-2 py-1 text-center">
+                  {bilanCell ? (
+                    <div>
+                      <div className="text-[8px] font-bold uppercase">{bilanCell.label}</div>
+                      <div className="text-[12px] font-bold">{bilanCell.value}</div>
+                    </div>
+                  ) : null}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {/* Décision du jury */}
+      <table className="w-[78%] border-collapse mx-auto mt-5">
+        <tbody>
+          <tr>
+            <th colSpan={2} className="border-2 border-black px-3 py-1.5 text-[11px] font-bold uppercase tracking-widest">Décision du jury</th>
+          </tr>
+          <tr>
+            <td className="border-2 border-black px-3 py-1 text-[10px] font-bold">MOYENNE : {fmtBilan(bilan?.moyenne ?? releve.computed?.finalAverage ?? null)}/20</td>
+            <td className={cn('border-2 border-black px-3 py-1 text-center text-[11px] font-bold uppercase', releve.decision === 'ADMIS' ? 'text-emerald-700' : 'text-red-700')}>
+              {releve.decision === 'ADMIS' ? 'Admis' : 'Ajourné(e)'}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <SignatureBlock patronat={patronat} />
+
+      <p className="text-[9px] italic mt-6">
+        NB : Toute rature ou surcharge ou photocopie non certifiée conforme à l'original annule la validité de ce relevé.
       </p>
     </div>
   );

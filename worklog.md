@@ -12212,3 +12212,22 @@ Stage Summary:
 - « Envoyer aux parents » livre chaque relevé par EMAIL (PDF joint) + Helm Connect (PDF dans le chat, compte parent auto-créé) + cloche de notification, ET les parents consultent les résultats dans leur espace (onglet « Examens nationaux » de /app/parent/results avec téléchargement du relevé officiel) — exactement le canal des bulletins/distinctions ; rapport détaillé par candidat (sans rattachage élève / sans email signalés)
 - Tous les bulletins FR (évaluation + trimestriel × maternel/primaire/secondaire, UI ET PDF backend) partagent le corps « Frederis » : cadre noir arrondi, en-têtes blancs, filets fins, couleurs sémantiques en texte, bandeau navy unique pour les totaux — plus aucune couleur extravagante ; en-têtes/pieds de page existants conservés ; piste anglophone inchangée
 - À valider post-déploiement : carte Ajournés = compte du tableau (avec un cas limite) ; boutons ZIP (ouvrir l'archive : noms accents normalisés, PDF conformes) ; « Envoyer aux parents » → email reçu avec PDF joint + message Helm Connect + cloche → onglet Examens nationaux côté parent avec téléchargement ; bulletins des 3 niveaux (UI + PDF) : en-têtes blancs, total navy, plus de pastilles colorées ; bulletins anglophones inchangés
+
+---
+Task ID: 28
+Agent: Super Z (principal)
+Task: HOTFIX crash conteneur Railway (boucle de redémarrage) — ReferenceError: Cannot access 'PUBLIC_LINK_MAX_HOURS' before initialization dans dist/federis/federis-deliberation.service.js:128, remontée depuis federis.module.js:33 (introduit par la Task 26)
+
+Work Log:
+- Diagnostic : dans federis-deliberation.service.ts, les DTO PublishResultsDto/PublicLinkDto référençaient PUBLIC_LINK_MAX_HOURS dans leurs décorateurs @Max() alors que la constante (l.139) était déclarée APRÈS les classes (l.102/111) — le build SWC/CJS évalue les décorateurs au chargement du module, pendant que la const est encore en zone morte temporelle (TDZ) → ReferenceError → crash au boot → Railway redémarre en boucle
+- Fix : PUBLIC_LINK_DEFAULT_HOURS (720) et PUBLIC_LINK_MAX_HOURS (8760) déplacées AVANT les deux DTO, avec commentaire de garde ⚠️ explicite documentant le piège (décorateurs évalués au chargement, déclaration après la classe = crash) pour éviter toute récidive
+- Audit TDZ complet du codebase : balayage de tous les décorateurs référençant des identifiants — RICH_FIELD_MAX (federis-epreuve, l.99 avant l.149+ : OK), RESYNC_INTERVAL_MS (helm-connect-bootstrap, l.40 avant l.63 : OK), BUREAU_ROLE_KEYS (federis-bureau, l.51 avant l.64/97 : OK), SUPERVISOR_POSTS (federis-supervisors, l.93 avant l.147/194 : OK — piège déjà documenté l.84) ; seul federis-deliberation était touché
+- Environnement local : node_modules absent (session redémarrée) → npm install --ignore-scripts (postinstall prisma generate OOM-tué : exit 137, 4 Go RAM) ; build SWC OK sans Prisma (transpilation sans résolution de types) : 1096 fichiers compilés
+- Vérification triple : (1) source — constantes avant les DTO ; (2) dist compilé — const PUBLIC_LINK_* aux l.122-123 AVANT les (0, _classvalidator.Max)(PUBLIC_LINK_MAX_HOURS) des l.130/139 (inversé par rapport au crash l.128) ; (3) RUNTIME — script de vérification reproduisant la pile exacte du crash (require de dist/federis/federis.module.js → federis-deliberation.service.js, stub @prisma/client car prisma generate indisponible localement) : chargement OK, constantes exportées 8760/720 correctes
+- Commit poussé : 72039a542 sur origin/main → Railway redéploie l'API
+
+Stage Summary:
+- Le conteneur Railway redémarre : plus aucune erreur TDZ au chargement du module Federis, le serveur boote
+- Constante du lien public (Task 26) intacte fonctionnellement : max 8760 h, défaut 720 h — seul l'ordre de déclaration a changé
+- Audit anti-récidive : aucun autre décorateur du codebase ne référence une constante déclarée après sa classe
+- À valider post-déploiement : conteneur Up sans boucle de redémarrage dans les logs Railway, puis re-tester le flux complet de la Task 26 (publication → lien public → consultation parents)

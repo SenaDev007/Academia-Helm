@@ -1913,54 +1913,56 @@ function BulletinMaternellePage1({ student, bulletinData }: { student: StudentRe
         <h4 className="text-xs font-bold text-slate-900 uppercase">Évaluation Sommative Mensuelle</h4>
         <p className="text-[10px] text-slate-500">(à remplir après avoir observé l'enfant)</p>
       </div>
-      {/* ⭐ Tableau à coins arrondis (bordure navy) */}
-      <div className="rounded-lg overflow-hidden" style={{ border: '2px solid #0A2A5E' }}>
-      <table className="w-full border-collapse text-[10px]">
+      {/* ⭐ T27 — Corps refondu « façon Frederis » : cadre arrondi noir, en-tête
+          BLANC sur filets noirs fins (plus de fond navy ni de couleurs de cellules). */}
+      <div className="rounded-lg overflow-hidden border-2 border-black">
+      <table className="w-full border-separate border-spacing-0 text-[10px]">
         <thead>
-          <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
-            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '120px', borderColor: '#0D3B85' }}>Matière</th>
-            <th colSpan={3} className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Résultats</th>
-            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '80px', borderColor: '#0D3B85' }}>Appréciation enseignant</th>
-            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '80px', borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}>Visa Directeur</th>
-            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px', borderColor: '#0D3B85' }}>Visa Parents</th>
+          <tr className="bg-white">
+            <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '120px' }}>Matière</th>
+            <th colSpan={3} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">Résultats</th>
+            <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '80px' }}>Appréciation enseignant</th>
+            <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '80px' }}>Visa Directeur</th>
+            <th rowSpan={2} className="border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px' }}>Visa Parents</th>
           </tr>
-          <tr className="text-white" style={{ backgroundColor: '#0D3B85' }}>
-            <th className="border px-1 py-0.5 font-bold text-center" style={{ borderColor: '#114FC4' }}>TS</th>
-            <th className="border px-1 py-0.5 font-bold text-center" style={{ borderColor: '#114FC4' }}>S</th>
-            <th className="border px-1 py-0.5 font-bold text-center" style={{ borderColor: '#114FC4' }}>PS</th>
+          <tr className="bg-white">
+            <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px]">TS</th>
+            <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px]">S</th>
+            <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px]">PS</th>
           </tr>
         </thead>
         <tbody>
           {sortedSubjects.map((subject, idx) => {
             const score = student.subjectScores[subject.id];
             const code = score?.qualitativeCode;
+            const rowB = idx === sortedSubjects.length - 1 ? '' : 'border-b';
             return (
-              <tr key={subject.id} className={cn(idx % 2 === 1 && 'bg-slate-50/50')}>
-                <td className="border border-slate-300 px-1 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center">
-                  {code === 'TS' && <span className="font-bold text-emerald-600">✓</span>}
-                  {score?.isAbsent && <span className="text-red-500 text-[8px]">ABS</span>}
+              <tr key={subject.id}>
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 font-medium text-slate-900 whitespace-nowrap`}>{subject.name}</td>
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center`}>
+                  {code === 'TS' && <span className="font-black text-emerald-700">✓</span>}
+                  {score?.isAbsent && <span className="text-red-600 text-[8px] font-bold">ABS</span>}
                 </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center">
-                  {code === 'S' && <span className="font-bold text-blue-600">✓</span>}
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center`}>
+                  {code === 'S' && <span className="font-black text-slate-900">✓</span>}
                 </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center">
-                  {code === 'PS' && <span className="font-bold text-amber-600">✓</span>}
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center`}>
+                  {code === 'PS' && <span className="font-black text-amber-700">✓</span>}
                 </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600">{score?.appreciation || '—'}</td>
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center text-slate-600`}>{score?.appreciation || '—'}</td>
                 {/* ⭐ Visa Directeur éditable — auto-save on blur */}
-                <td className="border border-slate-300 px-1 py-0.5 text-center bg-blue-50/30">
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center bg-slate-50`}>
                   <input
                     type="text"
                     value={directorVisas[subject.id] ?? ''}
                     onChange={(e) => setDirectorVisas(prev => ({ ...prev, [subject.id]: e.target.value }))}
                     onBlur={(e) => handleVisaBlur(subject.id, e.target.value)}
                     placeholder="—"
-                    className="w-full bg-transparent text-center text-[9px] text-blue-900 font-semibold outline-none focus:bg-blue-100 rounded px-1 py-0.5"
+                    className="w-full bg-transparent text-center text-[9px] text-slate-900 font-semibold outline-none focus:bg-slate-100 rounded px-1 py-0.5"
                     title="Visa du directeur (auto-enregistré à la sortie de la ligne)"
                   />
                 </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-300">—</td>
+                <td className={`${rowB} border-black px-1 py-0.5 text-center text-slate-300`}>—</td>
               </tr>
             );
           })}
@@ -2048,28 +2050,29 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
       <div className="text-center mb-2">
         <h4 className="text-xs font-bold text-slate-900 uppercase">I — Connaissance et Habiletés</h4>
       </div>
-      {/* ⭐ Tableau à coins arrondis (bordure navy) */}
-      <div className="rounded-lg overflow-hidden" style={{ border: '2px solid #0A2A5E' }}>
-      <table className="w-full border-collapse text-[10px]">
+      {/* ⭐ T27 — Corps refondu « façon Frederis » : cadre arrondi noir, en-tête
+          BLANC sur filets noirs fins, total en bandeau navy (seul accent). */}
+      <div className="rounded-lg overflow-hidden border-2 border-black">
+      <table className="w-full border-separate border-spacing-0 text-[10px]">
         <thead>
-          <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
-            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-left" style={{ minWidth: '120px', borderColor: '#0D3B85' }}>Champs de formation</th>
-            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-12" style={{ borderColor: '#0D3B85' }}>Note min.</th>
-            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>CM</th>
-            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>CP</th>
-            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-12" style={{ borderColor: '#0D3B85' }}>Total /20</th>
-            <th colSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Maîtrise min.</th>
-            <th colSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Seuil réussite</th>
-            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px', borderColor: '#0D3B85' }}>Appréciation</th>
-            <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '70px', borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}>Visa Directeur</th>
+          <tr className="bg-white">
+            <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-left" style={{ minWidth: '120px' }}>Champs de formation</th>
+            <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center w-12">Note min.</th>
+            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">CM</th>
+            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">CP</th>
+            <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center w-12">Total /20</th>
+            <th colSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">Maîtrise min.</th>
+            <th colSpan={2} className="border-b border-black px-1 py-1 font-bold uppercase text-center">Seuil réussite</th>
+            <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px' }}>Appréciation</th>
+            <th rowSpan={2} className="border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '70px' }}>Visa Directeur</th>
           </tr>
-          <tr className="text-white" style={{ backgroundColor: '#0D3B85' }}>
-            <th className="border px-1 py-0.5 font-bold text-center text-[8px]" style={{ borderColor: '#114FC4' }}>/18</th>
-            <th className="border px-1 py-0.5 font-bold text-center text-[8px]" style={{ borderColor: '#114FC4' }}>/02</th>
-            <th className="border px-1 py-0.5 font-bold text-center text-[8px]" style={{ borderColor: '#114FC4' }}>Oui</th>
-            <th className="border px-1 py-0.5 font-bold text-center text-[8px]" style={{ borderColor: '#114FC4' }}>Non</th>
-            <th className="border px-1 py-0.5 font-bold text-center text-[8px]" style={{ borderColor: '#114FC4' }}>Oui</th>
-            <th className="border px-1 py-0.5 font-bold text-center text-[8px]" style={{ borderColor: '#114FC4' }}>Non</th>
+          <tr className="bg-white">
+            <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[8px]">/18</th>
+            <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[8px]">/02</th>
+            <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[8px]">Oui</th>
+            <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[8px]">Non</th>
+            <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[8px]">Oui</th>
+            <th className="border-b border-black px-1 py-0.5 font-bold text-center text-[8px]">Non</th>
           </tr>
         </thead>
         <tbody>
@@ -2079,80 +2082,81 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
             const cmVal = score?.cm !== null && typeof score?.cm === 'number' ? score.cm : null;
             const cpVal = score?.cp !== null && typeof score?.cp === 'number' ? score.cp : null;
             const reached = note !== null && note >= 10;
+            const rowB = idx === sortedSubjects.length - 1 ? '' : 'border-b';
             return (
-              <tr key={subject.id} className={cn(idx % 2 === 1 && 'bg-slate-50/50')}>
-                <td className="border border-slate-300 px-1 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-400 text-[8px]">10</td>
+              <tr key={subject.id}>
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 font-medium text-slate-900 whitespace-nowrap`}>{subject.name}</td>
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center text-slate-400 text-[8px]`}>10</td>
                 {/* CM /18 — depuis le champ cm du SubjectScore (parsé depuis comment JSON) */}
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-700">
-                  {score?.isAbsent ? <span className="text-red-500 text-[8px]">ABS</span> : cmVal !== null ? cmVal : '—'}
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center text-slate-700`}>
+                  {score?.isAbsent ? <span className="text-red-600 text-[8px] font-bold">ABS</span> : cmVal !== null ? cmVal : '—'}
                 </td>
                 {/* CP /2 — depuis le champ cp du SubjectScore (parsé depuis comment JSON) */}
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-700">
-                  {score?.isAbsent ? <span className="text-red-500 text-[8px]">ABS</span> : cpVal !== null ? cpVal : '—'}
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center text-slate-700`}>
+                  {score?.isAbsent ? <span className="text-red-600 text-[8px] font-bold">ABS</span> : cpVal !== null ? cpVal : '—'}
                 </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center font-bold">
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center font-bold`}>
                   {/* ⭐ Afficher la note sans décimales (entier) si la note est entière */}
-                  {score?.isAbsent ? <span className="text-red-500 text-[8px]">ABS</span> :
+                  {score?.isAbsent ? <span className="text-red-600 text-[8px] font-bold">ABS</span> :
                     note !== null ? <span className={note >= 10 ? 'text-emerald-700' : 'text-red-600'}>{Number.isInteger(note) ? note : note.toFixed(2)}</span> : '—'}
                 </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center">{reached ? '✓' : ''}</td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center">{!reached && note !== null ? '✓' : ''}</td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center">{reached ? '✓' : ''}</td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center">{!reached && note !== null ? '✓' : ''}</td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600 text-[9px]">{score?.appreciation || '—'}</td>
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center`}>{reached ? '✓' : ''}</td>
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center`}>{!reached && note !== null ? '✓' : ''}</td>
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center`}>{reached ? '✓' : ''}</td>
+                <td className={`border-b ${rowB} border-black px-1 py-0.5 text-center`}>{!reached && note !== null ? '✓' : ''}</td>
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center text-slate-600 text-[9px]`}>{score?.appreciation || '—'}</td>
                 {/* ⭐ Visa Directeur éditable — auto-save on blur */}
-                <td className="border border-slate-300 px-1 py-0.5 text-center bg-blue-50/30">
+                <td className={`${rowB} border-black px-1 py-0.5 text-center bg-slate-50`}>
                   <input
                     type="text"
                     value={directorVisas[subject.id] ?? ''}
                     onChange={(e) => setDirectorVisas(prev => ({ ...prev, [subject.id]: e.target.value }))}
-                    onBlur={(e) => setDirectorVisas(prev => ({ ...prev, [subject.id]: e.target.value }))}
+                    onBlur={(e) => handleVisaBlur(subject.id, e.target.value)}
                     placeholder="—"
-                    className="w-full bg-transparent text-center text-[9px] text-blue-900 font-semibold outline-none focus:bg-blue-100 rounded px-1 py-0.5"
+                    className="w-full bg-transparent text-center text-[9px] text-slate-900 font-semibold outline-none focus:bg-slate-100 rounded px-1 py-0.5"
                     title="Visa du directeur (auto-enregistré à la sortie de la ligne)"
                   />
                 </td>
               </tr>
             );
           })}
-          {/* Total General */}
-          <tr className="bg-slate-200 font-bold">
-            <td className="border border-slate-300 px-1 py-0.5 uppercase text-slate-900" colSpan={4}>TOTAL GENERAL</td>
-            <td className="border border-slate-300 px-1 py-0.5 text-center text-blue-700">{Number.isInteger(totalGeneral) ? totalGeneral : totalGeneral.toFixed(2)}</td>
-            <td className="border border-slate-300 px-1 py-0.5 text-center" colSpan={2}></td>
-            <td className="border border-slate-300 px-1 py-0.5 text-center" colSpan={2}></td>
-            <td className="border border-slate-300 px-1 py-0.5 text-center"></td>
-            <td className="border border-slate-300 px-1 py-0.5 text-center bg-blue-100 text-blue-900 text-[9px]">{mentionGenerale}</td>
+          {/* Total General — bandeau navy, seul accent de couleur du tableau */}
+          <tr className="bg-[#0A2A5E] text-white font-bold">
+            <td className="px-1 py-0.5 uppercase" colSpan={4}>Total général</td>
+            <td className="px-1 py-0.5 text-center">{Number.isInteger(totalGeneral) ? totalGeneral : totalGeneral.toFixed(2)}</td>
+            <td colSpan={2}></td>
+            <td colSpan={2}></td>
+            <td></td>
+            <td className="px-1 py-0.5 text-center text-[9px] font-bold">{mentionGenerale}</td>
           </tr>
         </tbody>
       </table>
       </div>
-      {/* Synthèse */}
-      <div className="mt-2 space-y-1 text-[10px] text-slate-700">
-        <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
-          <span>Moyenne obtenue par l'élève:</span>
-          <strong className="text-blue-700">{student.generalAverage !== null ? (Number.isInteger(student.generalAverage) ? student.generalAverage : student.generalAverage.toFixed(2)) : '—'}/20</strong>
+      {/* ⭐ T27 — Synthèse : carte unique divisible, valeurs emerald/rouge en TEXTE seul */}
+      <div className="mt-2 rounded-lg border border-slate-200 bg-white divide-y divide-slate-100 text-[10px]">
+        <div className="flex justify-between px-3 py-1.5">
+          <span className="text-slate-500">Moyenne obtenue par l'élève :</span>
+          <strong className="text-slate-900">{student.generalAverage !== null ? (Number.isInteger(student.generalAverage) ? student.generalAverage : student.generalAverage.toFixed(2)) : '—'}/20</strong>
         </div>
-        <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
-          <span>Plus forte moyenne de la classe:</span>
-          <strong>{bulletinData.stats.classAverage !== null ? (() => { const v = Math.max(...bulletinData.results.map(r => r.generalAverage || 0)); return Number.isInteger(v) ? v : v.toFixed(2); })() : '—'}/20</strong>
+        <div className="flex justify-between px-3 py-1.5">
+          <span className="text-slate-500">Plus forte moyenne de la classe :</span>
+          <strong className="text-slate-900">{bulletinData.stats.classAverage !== null ? (() => { const v = Math.max(...bulletinData.results.map(r => r.generalAverage || 0)); return Number.isInteger(v) ? v : v.toFixed(2); })() : '—'}/20</strong>
         </div>
-        <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
-          <span>Plus faible moyenne de la classe:</span>
-          <strong>{bulletinData.stats.classAverage !== null ? (() => { const v = Math.min(...bulletinData.results.map(r => r.generalAverage || 0)); return Number.isInteger(v) ? v : v.toFixed(2); })() : '—'}/20</strong>
+        <div className="flex justify-between px-3 py-1.5">
+          <span className="text-slate-500">Plus faible moyenne de la classe :</span>
+          <strong className="text-slate-900">{bulletinData.stats.classAverage !== null ? (() => { const v = Math.min(...bulletinData.results.map(r => r.generalAverage || 0)); return Number.isInteger(v) ? v : v.toFixed(2); })() : '—'}/20</strong>
         </div>
-        <div className="flex justify-between bg-slate-50 px-2 py-1 rounded">
-          <span>Seuil de réussite globale fixé à:</span>
-          <strong>10/20</strong>
+        <div className="flex justify-between px-3 py-1.5">
+          <span className="text-slate-500">Seuil de réussite globale fixé à :</span>
+          <strong className="text-slate-900">10/20</strong>
         </div>
-        <div className="flex justify-between bg-emerald-50 px-2 py-1 rounded font-bold">
-          <span>Seuil de réussite globale atteint:</span>
+        <div className="flex justify-between px-3 py-1.5 font-bold bg-slate-50 rounded-b-lg">
+          <span>Seuil de réussite globale atteint :</span>
           <span className={seuilAtteint ? 'text-emerald-700' : 'text-red-600'}>{seuilAtteint ? 'OUI' : 'NON'}</span>
         </div>
-        <div className="flex justify-between bg-blue-50 px-2 py-1 rounded">
-          <span>Nombre de matières évaluées:</span>
-          <strong>{validSubjects}</strong>
+        <div className="flex justify-between px-3 py-1.5">
+          <span className="text-slate-500">Nombre de matières évaluées :</span>
+          <strong className="text-slate-900">{validSubjects}</strong>
         </div>
       </div>
       {/* ⭐ Symbole mérité (emoji) — distinct de l'appréciation globale */}
@@ -2207,9 +2211,6 @@ function BulletinSecondairePage1({
   academicYearId?: string;
 }) {
   const isJunior = isJuniorSecondaryClass2(className || '');
-  const navy = '#0A2A5E';      // colonnes de base (en-tête row 1)
-  const navyAlt = '#0D3B85';    // colonnes calculées (Moyenne d'interrogation, Moyenne, Note coefficient)
-  const navySub = '#114FC4';   // sous-colonnes abrégées (IE1/IE2, DS1/DS2)
 
   /** Format d'une note : 15 → « 15.00 », null → « — ». */
   const fmtS = (n: number | null | undefined): string =>
@@ -2217,9 +2218,9 @@ function BulletinSecondairePage1({
 
   /** Cellule de note : undefined → « — », null → ABS, number → note colorée. */
   const noteCell = (n: number | null | undefined, isAbsent: boolean | undefined) => {
-    if (isAbsent) return <span className="text-red-500 text-[8px] font-bold">ABS</span>;
+    if (isAbsent) return <span className="text-red-600 text-[8px] font-bold">ABS</span>;
     if (typeof n !== 'number') return <span className="text-slate-400">—</span>;
-    return <span className={n >= 10 ? 'text-slate-900' : 'text-red-600'}>{n.toFixed(2)}</span>;
+    return <span className={n >= 10 ? 'text-emerald-700' : 'text-red-600'}>{n.toFixed(2)}</span>;
   };
 
   // Totaux (4e → Terminale) — uniquement les matières où la moyenne existe
@@ -2248,31 +2249,32 @@ function BulletinSecondairePage1({
 
   return (
     <div className="overflow-x-auto space-y-2">
-      {/* En-tête d'informations (modèle : Année | Nom | Classe | Effectif | Rang) */}
-      <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${navy}` }}>
-        <table className="w-full border-collapse text-[10px]">
+      {/* ⭐ T27 — En-tête d'informations refondu « façon Frederis » : cadre
+          arrondi noir, libellés sur fond slate, filets noirs fins. */}
+      <div className="rounded-md overflow-hidden border border-black">
+        <table className="w-full border-separate border-spacing-0 text-[10px]">
           <tbody>
           <tr>
-            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
-              Année scolaire : <span className="font-bold text-slate-900">{academicYearLabel || '—'}</span>
+            <td className="border-r border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700 w-1/3">
+              Année scolaire : <span className="text-slate-900">{academicYearLabel || '—'}</span>
             </td>
-            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
-              Trimestre : <span className="font-bold text-slate-900">{periodName || '—'}</span>
+            <td className="border-r border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700 w-1/3">
+              Trimestre : <span className="text-slate-900">{periodName || '—'}</span>
             </td>
-            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
-              Classe : <span className="font-bold text-slate-900">{className || '—'}</span>
+            <td className="border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700 w-1/3">
+              Classe : <span className="text-slate-900">{className || '—'}</span>
             </td>
           </tr>
           <tr>
-            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
-              Nom et prénoms : <span className="font-bold text-slate-900 uppercase">{student.studentName}</span>
+            <td className="border-r border-black px-2 py-1 bg-slate-100 font-bold text-slate-700">
+              Nom et prénoms : <span className="text-slate-900 uppercase">{student.studentName}</span>
             </td>
-            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
-              Effectif : <span className="font-bold text-slate-900">{bulletinData.results.length}</span>
-              {' '}· Matricule : <span className="font-bold text-slate-900">{student.matricule || '—'}</span>
+            <td className="border-r border-black px-2 py-1 bg-slate-100 font-bold text-slate-700">
+              Effectif : <span className="text-slate-900">{bulletinData.results.length}</span>
+              {' '}· Matricule : <span className="text-slate-900">{student.matricule || '—'}</span>
             </td>
-            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
-              Rang : <span className="font-bold text-slate-900">
+            <td className="px-2 py-1 bg-slate-100 font-bold text-slate-700">
+              Rang : <span className="text-slate-900">
                 {student.classRank ? formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F') : '—'}
               </span>
             </td>
@@ -2281,91 +2283,89 @@ function BulletinSecondairePage1({
         </table>
       </div>
 
-      {/* Tableau des notes — Discipline | Interrogation écrite [IE1, IE2] |
-          Moyenne d'interrogation | Devoir surveillé [DS1, DS2] | Moyenne |
-          [Coefficient | Note coefficient] | Rang | Appréciation | Signature */}
-      <div className="rounded-lg overflow-hidden" style={{ border: `2px solid ${navy}` }}>
-        <table className="w-full border-collapse text-[10px]">
+      {/* ⭐ T27 — Tableau des notes refondu « façon Frederis » : en-tête BLANC,
+          filets noirs fins, lignes de catégorie sobres (slate), moyennes et
+          rangs colorés en TEXTE (plus aucun fond coloré par cellule). */}
+      <div className="rounded-lg overflow-hidden border-2 border-black">
+        <table className="w-full border-separate border-spacing-0 text-[10px]">
           <thead>
-            <tr className="text-white" style={{ backgroundColor: navy }}>
-              <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-left text-white" style={{ minWidth: '110px', borderColor: navyAlt }}>Discipline</th>
-              <th colSpan={2} className="border px-1 py-1 font-bold uppercase text-center text-white" style={{ borderColor: navyAlt }}>Interrogation écrite</th>
-              <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-16 leading-tight text-white" style={{ borderColor: navyAlt, backgroundColor: navyAlt }}>Moyenne d'interrogation</th>
-              <th colSpan={2} className="border px-1 py-1 font-bold uppercase text-center text-white" style={{ borderColor: navyAlt }}>Devoir surveillé</th>
-              <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-12 text-white" style={{ borderColor: navyAlt, backgroundColor: navyAlt }}>Moyenne</th>
+            <tr className="bg-white">
+              <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-left" style={{ minWidth: '110px' }}>Discipline</th>
+              <th colSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">Interrogation écrite</th>
+              <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center w-16 leading-tight">Moyenne d'interrogation</th>
+              <th colSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">Devoir surveillé</th>
+              <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center w-12">Moyenne</th>
               {!isJunior && (
                 <>
-                  <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-12 text-white" style={{ borderColor: navyAlt }}>Coefficient</th>
-                  <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-14 text-white" style={{ borderColor: navyAlt, backgroundColor: navyAlt }}>Note coefficient</th>
+                  <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center w-12">Coefficient</th>
+                  <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center w-14">Note coefficient</th>
                 </>
               )}
-              <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-10 text-white" style={{ borderColor: navyAlt }}>Rang</th>
-              <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center text-white" style={{ minWidth: '70px', borderColor: navyAlt }}>Appréciation</th>
-              <th rowSpan={2} className="border px-1 py-1 font-bold uppercase text-center w-14 text-white" style={{ borderColor: navyAlt }}>Signature</th>
+              <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center w-10">Rang</th>
+              <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '70px' }}>Appréciation</th>
+              <th rowSpan={2} className="border-b border-black px-1 py-1 font-bold uppercase text-center w-14">Signature</th>
             </tr>
             {/* Sous-colonnes abrégées IE1/IE2 (Interrogation écrite) + DS1/DS2
-                (Devoir surveillé) — libellés courts pour ne pas coincer le
-                tableau ; TOUJOURS sous leur colonne parente */}
-            <tr className="text-white" style={{ backgroundColor: navySub }}>
-              <th className="border px-1 py-0.5 font-bold text-center text-[9px] uppercase text-white min-w-[36px]" style={{ borderColor: navySub }}>IE1</th>
-              <th className="border px-1 py-0.5 font-bold text-center text-[9px] uppercase text-white min-w-[36px]" style={{ borderColor: navySub }}>IE2</th>
-              <th className="border px-1 py-0.5 font-bold text-center text-[9px] uppercase text-white min-w-[36px]" style={{ borderColor: navySub }}>DS1</th>
-              <th className="border px-1 py-0.5 font-bold text-center text-[9px] uppercase text-white min-w-[36px]" style={{ borderColor: navySub }}>DS2</th>
+                (Devoir surveillé) — TOUJOURS sous leur colonne parente */}
+            <tr className="bg-white">
+              <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px] uppercase min-w-[36px]">IE1</th>
+              <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px] uppercase min-w-[36px]">IE2</th>
+              <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px] uppercase min-w-[36px]">DS1</th>
+              <th className="border-b border-black px-1 py-0.5 font-bold text-center text-[9px] uppercase min-w-[36px]">DS2</th>
             </tr>
           </thead>
           <tbody>
             {CATEGORY_ORDER.flatMap((cat) => {
               const group = subjectsByCategory.get(cat);
               if (!group || group.subjects.length === 0) return [];
-              const subjectRows = group.subjects.map((subject, idx) => {
+              const subjectRows = group.subjects.map((subject) => {
                 const s = student.subjectScores[subject.id];
                 return (
-                  <tr key={subject.id} className={idx % 2 === 1 ? 'bg-slate-50/60' : undefined}>
-                    <td className="border border-slate-300 px-1 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
-                    <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.int1, s.int1 === null && s.secHasSlot) : '—'}</td>
-                    <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.int2, s.int2 === null && s.secHasSlot) : '—'}</td>
-                    <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold text-blue-700 bg-blue-50/50">{s ? noteCell(s.moyInter, s.isAbsent) : '—'}</td>
-                    <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.ds1, s.ds1 === null && s.secHasSlot) : '—'}</td>
-                    <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.ds2, s.ds2 === null && s.secHasSlot) : '—'}</td>
-                  <td className={cn('border border-slate-300 px-1 py-0.5 text-center font-bold', s?.moyenne != null && s.moyenne >= 10 ? 'text-emerald-700 bg-emerald-50' : 'text-red-600 bg-emerald-50')}>{s ? noteCell(s.moyenne, s.isAbsent) : '—'}</td>
-                  {!isJunior && (<><td className="border border-slate-300 px-1 py-0.5 text-center font-bold text-amber-700 bg-amber-50">{s?.coefficient ?? subject.coefficient ?? 1}</td><td className={cn('border border-slate-300 px-1 py-0.5 text-center font-bold', s?.noteCoef != null && s.moyenne != null && s.moyenne >= 10 ? 'text-emerald-700' : 'text-red-600')}>{fmtS(s?.noteCoef)}</td></>)}
-                  <td className="border border-slate-300 px-1 py-0.5 text-center font-bold text-slate-700">{s?.subjectRank ? formatRank(s.subjectRank, student.gender === 'FEMALE' || student.gender === 'F') : '—'}</td>
-                  <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600 text-[9px]"><span className={appreciationSecondaireClassName(s?.appreciation || '—')}>{s?.appreciation || '—'}</span></td>
-                  <td className="border border-slate-300 h-7" />
-                </tr>
+                  <tr key={subject.id}>
+                    <td className="border-r border-b border-black px-1 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
+                    <td className="border-r border-b border-black px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.int1, s.int1 === null && s.secHasSlot) : '—'}</td>
+                    <td className="border-r border-b border-black px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.int2, s.int2 === null && s.secHasSlot) : '—'}</td>
+                    <td className="border-r border-b border-black px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.moyInter, s.isAbsent) : '—'}</td>
+                    <td className="border-r border-b border-black px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.ds1, s.ds1 === null && s.secHasSlot) : '—'}</td>
+                    <td className="border-b border-black px-1 py-0.5 text-center font-bold">{s ? noteCell(s.moyenne, s.isAbsent) : '—'}</td>
+                    {!isJunior && (<><td className="border-r border-b border-black px-1 py-0.5 text-center font-bold">{s?.coefficient ?? subject.coefficient ?? 1}</td><td className="border-r border-b border-black px-1 py-0.5 text-center font-bold">{fmtS(s?.noteCoef)}</td></>)}
+                    <td className="border-r border-b border-black px-1 py-0.5 text-center font-bold text-slate-700">{s?.subjectRank ? formatRank(s.subjectRank, student.gender === 'FEMALE' || student.gender === 'F') : '—'}</td>
+                    <td className="border-r border-b border-black px-1 py-0.5 text-center text-slate-600 text-[9px]"><span className={appreciationSecondaireClassName(s?.appreciation || '—')}>{s?.appreciation || '—'}</span></td>
+                    <td className="border-b border-black h-7" />
+                  </tr>
                 );
               });
               const bilanRow = (
-                <tr key={`bilan-${cat}`} className="bg-blue-50 font-bold">
-                  <td className="border border-slate-300 px-1 py-0.5 text-[10px] uppercase text-blue-900">{CATEGORY_LABELS[cat]}</td>
-                  <td colSpan={5} className="border border-slate-300"></td>
-                  <td className="border border-slate-300 px-1 py-0.5 text-center font-bold text-blue-900 bg-blue-100">{group.average !== null ? <span className={group.average >= 10 ? 'text-emerald-700' : 'text-red-600'}>{group.average.toFixed(2)}</span> : '—'}</td>
-                  {!isJunior && (<><td className="border border-slate-300"></td><td className="border border-slate-300"></td></>)}
-                  <td className="border border-slate-300"></td>
-                  <td className="border border-slate-300"></td>
-                  <td className="border border-slate-300"></td>
+                <tr key={`bilan-${cat}`} className="bg-slate-100 font-bold">
+                  <td className="border-r border-b border-black px-1 py-0.5 text-[10px] uppercase text-slate-900">{CATEGORY_LABELS[cat]}</td>
+                  <td colSpan={5} className="border-b border-black"></td>
+                  <td className="border-r border-b border-black px-1 py-0.5 text-center font-bold text-slate-900">{group.average !== null ? <span className={group.average >= 10 ? 'text-emerald-700' : 'text-red-600'}>{group.average.toFixed(2)}</span> : '—'}</td>
+                  {!isJunior && (<><td className="border-b border-black"></td><td className="border-b border-black"></td></>)}
+                  <td className="border-b border-black"></td>
+                  <td className="border-r border-b border-black"></td>
+                  <td className="border-b border-black"></td>
                 </tr>
               );
               return [...subjectRows, bilanRow];
             })}
             {!isJunior && (
               <>
-                <tr className="bg-slate-200 font-bold">
-                  <td colSpan={7} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-700 text-[9px]">Total des coefficients</td>
-                  <td className="border border-slate-300 px-1 py-0.5 text-center text-amber-700">{totalCoef}</td>
-                  <td colSpan={4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">—</td>
+                <tr className="bg-slate-100 font-bold">
+                  <td colSpan={7} className="border-b border-black px-1 py-0.5 text-right uppercase text-slate-700 text-[9px]">Total des coefficients</td>
+                  <td className="border-r border-b border-black px-1 py-0.5 text-center font-bold text-slate-900">{totalCoef}</td>
+                  <td colSpan={4} className="border-b border-black px-1 py-0.5 text-center text-slate-500 text-[9px]">—</td>
                 </tr>
-                <tr className="bg-slate-200 font-bold">
-                  <td colSpan={7} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-700 text-[9px]">Total des moyennes (Σ moy × coef)</td>
-                  <td className="border border-slate-300 px-1 py-0.5 text-center text-emerald-700">{totalNotesCoef.toFixed(2)}</td>
-                  <td colSpan={4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">—</td>
+                <tr className="bg-slate-100 font-bold">
+                  <td colSpan={7} className="border-b border-black px-1 py-0.5 text-right uppercase text-slate-700 text-[9px]">Total des moyennes (Σ moy × coef)</td>
+                  <td className="border-r border-b border-black px-1 py-0.5 text-center font-bold text-slate-900">{totalNotesCoef.toFixed(2)}</td>
+                  <td colSpan={4} className="border-b border-black px-1 py-0.5 text-center text-slate-500 text-[9px]">—</td>
                 </tr>
               </>
             )}
-            <tr className="bg-blue-100 font-bold">
-              <td colSpan={6} className="border border-slate-300 px-1 py-0.5 text-right uppercase text-slate-900 text-[9px]">Moyenne trimestrielle</td>
-              <td colSpan={isJunior ? 1 : 2} className="border border-slate-300 px-1 py-0.5 text-center text-blue-800 text-xs">{fmtS(student.generalAverage)}</td>
-              <td colSpan={isJunior ? 3 : 4} className="border border-slate-300 px-1 py-0.5 text-center text-slate-800 text-[9px]">{student.classRank ? `Rang : ${formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')} / ${bulletinData.results.length}` : '—'}</td>
+            <tr className="bg-[#0A2A5E] text-white font-bold">
+              <td colSpan={6} className="px-1 py-0.5 text-right uppercase text-[9px]">Moyenne trimestrielle</td>
+              <td colSpan={isJunior ? 1 : 2} className="px-1 py-0.5 text-center text-sm">{fmtS(student.generalAverage)}</td>
+              <td colSpan={isJunior ? 3 : 4} className="px-1 py-0.5 text-center text-[9px]">{student.classRank ? `Rang : ${formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F')} / ${bulletinData.results.length}` : '—'}</td>
             </tr>
           </tbody>
         </table>
@@ -2373,33 +2373,35 @@ function BulletinSecondairePage1({
 
       {/* ⭐ Synthèse statistique supprimée — doublon avec bloc Résultats de classe */}
 
-      {/* ⭐ Récap du 3e trimestre : moyennes T1 + T2 + moyenne annuelle (passage) */}
+      {/* ⭐ T27 — Récap du 3e trimestre : cadre arrondi noir + bandeau navy,
+          filets fins (plus de fond bleu épais). */}
       {recap && (
-        <div className="mt-2 border-2 border-blue-800 rounded-lg overflow-hidden">
-          <div className="bg-blue-800 text-white text-[10px] font-bold uppercase text-center py-1">
+        <div className="mt-2 rounded-lg overflow-hidden border-2 border-black">
+          <div className="bg-[#0A2A5E] text-white text-[10px] font-bold uppercase text-center py-1">
             Récapitulatif de l'année (3e trimestre)
           </div>
-          <table className="w-full border-collapse text-[10px]">
+          <table className="w-full border-separate border-spacing-0 text-[10px]">
             <tbody>
               <tr>
-                <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">Moyenne 1er trimestre</td>
-                <td className="border border-slate-300 px-2 py-1 text-center font-bold">{fmtS(recap.period1Average)}</td>
-                <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">Moyenne 2e trimestre</td>
-                <td className="border border-slate-300 px-2 py-1 text-center font-bold">{fmtS(recap.period2Average)}</td>
+                <td className="border-r border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700">Moyenne 1er trimestre</td>
+                <td className="border-r border-b border-black px-2 py-1 text-center font-bold text-slate-900">{fmtS(recap.period1Average)}</td>
+                <td className="border-r border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700">Moyenne 2e trimestre</td>
+                <td className="border-b border-black px-2 py-1 text-center font-bold text-slate-900">{fmtS(recap.period2Average)}</td>
               </tr>
               <tr>
-                <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">Moyenne annuelle</td>
-                <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-800">{fmtS(recap.annualAverage)}</td>
-                <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">Rang annuel</td>
-                <td className="border border-slate-300 px-2 py-1 text-center font-bold">
+                <td className="border-r border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700">Moyenne annuelle</td>
+                <td className="border-r border-b border-black px-2 py-1 text-center font-bold text-slate-900">{fmtS(recap.annualAverage)}</td>
+                <td className="border-r border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700">Rang annuel</td>
+                <td className="border-b border-black px-2 py-1 text-center font-bold text-slate-900">
                   {recap.annualRank ? formatRank(recap.annualRank, student.gender === 'FEMALE' || student.gender === 'F') : '—'}
                 </td>
               </tr>
               <tr>
-                <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">Décision du conseil</td>
-                <td colSpan={3} className={cn('border border-slate-300 px-2 py-1 text-center font-bold',
-                  recap.decision === 'Passe en classe supérieure' ? 'text-emerald-700' : 'text-red-600')}>
-                  {recap.decision || '—'}
+                <td className="border-r border-black px-2 py-1 bg-slate-100 font-bold text-slate-700">Décision du conseil</td>
+                <td colSpan={3} className="px-2 py-1 text-center font-bold text-slate-900">
+                  <span className={recap.decision === 'Passe en classe supérieure' ? 'text-emerald-700' : 'text-red-600'}>
+                    {recap.decision || '—'}
+                  </span>
                 </td>
               </tr>
             </tbody>
@@ -2442,8 +2444,6 @@ function BulletinSecondaireEvalPage1({
   evalTypeName?: string;
   evalTypeCode?: string;
 }) {
-  const navy = '#0A2A5E';      // colonnes de base (en-tête)
-  const navyAlt = '#0D3B85';   // colonne calculée (Note /20)
   const feminine = student.gender === 'FEMALE' || student.gender === 'F';
   const subjectsByCategory = useMemo(() => groupSubjectsByCategory(bulletinData.subjects, (subj) => { const s = student.subjectScores[subj.id]; return s && typeof s.score === 'number' ? s.score : null; }), [bulletinData.subjects, student.subjectScores]);
 
@@ -2463,31 +2463,32 @@ function BulletinSecondaireEvalPage1({
 
   return (
     <div className="overflow-x-auto space-y-2">
-      {/* En-tête d'informations (Année | Trimestre | Évaluation / Nom | Effectif·Matricule | Rang) */}
-      <div className="rounded-lg overflow-hidden" style={{ border: `1px solid ${navy}` }}>
-        <table className="w-full border-collapse text-[10px]">
+      {/* ⭐ T27 — En-tête d'informations refondu « façon Frederis » : cadre
+          arrondi noir, libellés sur fond slate, filets noirs fins. */}
+      <div className="rounded-md overflow-hidden border border-black">
+        <table className="w-full border-separate border-spacing-0 text-[10px]">
           <tbody>
           <tr>
-            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
-              Année scolaire : <span className="font-bold text-slate-900">{academicYearLabel || '—'}</span>
+            <td className="border-r border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700 w-1/3">
+              Année scolaire : <span className="text-slate-900">{academicYearLabel || '—'}</span>
             </td>
-            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
-              Trimestre : <span className="font-bold text-slate-900">{periodName || '—'}</span>
+            <td className="border-r border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700 w-1/3">
+              Trimestre : <span className="text-slate-900">{periodName || '—'}</span>
             </td>
-            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold w-1/3">
-              Évaluation : <span className="font-bold text-slate-900">{evalTypeCode ? `[${evalTypeCode}] ` : ''}{evalTypeName || '—'}</span>
+            <td className="border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700 w-1/3">
+              Évaluation : <span className="text-slate-900">{evalTypeCode ? `[${evalTypeCode}] ` : ''}{evalTypeName || '—'}</span>
             </td>
           </tr>
           <tr>
-            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
-              Nom et prénoms : <span className="font-bold text-slate-900 uppercase">{student.studentName}</span>
+            <td className="border-r border-black px-2 py-1 bg-slate-100 font-bold text-slate-700">
+              Nom et prénoms : <span className="text-slate-900 uppercase">{student.studentName}</span>
             </td>
-            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
-              Effectif : <span className="font-bold text-slate-900">{bulletinData.results.length}</span>
-              {' '}· Matricule : <span className="font-bold text-slate-900">{student.matricule || '—'}</span>
+            <td className="border-r border-black px-2 py-1 bg-slate-100 font-bold text-slate-700">
+              Effectif : <span className="text-slate-900">{bulletinData.results.length}</span>
+              {' '}· Matricule : <span className="text-slate-900">{student.matricule || '—'}</span>
             </td>
-            <td className="border border-slate-300 px-2 py-1 bg-slate-50 font-semibold">
-              Rang : <span className="font-bold text-slate-900">
+            <td className="px-2 py-1 bg-slate-100 font-bold text-slate-700">
+              Rang : <span className="text-slate-900">
                 {student.classRank ? formatRank(student.classRank, feminine) : '—'}
               </span>
             </td>
@@ -2496,55 +2497,57 @@ function BulletinSecondaireEvalPage1({
         </table>
       </div>
 
-      {/* Tableau des notes — Discipline | Note /20 | Rang | Appréciation (coins arrondis) */}
-      <div className="rounded-lg overflow-hidden" style={{ border: `2px solid ${navy}` }}>
-        <table className="w-full border-collapse text-[10px]">
+      {/* ⭐ T27 — Tableau simple refondu « façon Frederis » : en-tête BLANC,
+          filets noirs fins, lignes de catégorie sobres (slate), note colorée
+          en TEXTE (plus aucun fond coloré par cellule). */}
+      <div className="rounded-lg overflow-hidden border-2 border-black">
+        <table className="w-full border-separate border-spacing-0 text-[10px]">
           <thead>
-            <tr className="text-white" style={{ backgroundColor: navy }}>
-              <th className="border px-2 py-1 font-bold uppercase text-left text-white" style={{ minWidth: '140px', borderColor: navyAlt }}>Discipline</th>
-              <th className="border px-2 py-1 font-bold uppercase text-center w-24 text-white" style={{ borderColor: navyAlt, backgroundColor: navyAlt }}>Note /20</th>
-              <th className="border px-2 py-1 font-bold uppercase text-center w-16 text-white" style={{ borderColor: navyAlt }}>Rang</th>
-              <th className="border px-2 py-1 font-bold uppercase text-center text-white" style={{ minWidth: '110px', borderColor: navyAlt }}>Appréciation</th>
+            <tr className="bg-white">
+              <th className="border-r border-b border-black px-2 py-1 font-bold uppercase text-left" style={{ minWidth: '140px' }}>Discipline</th>
+              <th className="border-r border-b border-black px-2 py-1 font-bold uppercase text-center w-24">Note /20</th>
+              <th className="border-r border-b border-black px-2 py-1 font-bold uppercase text-center w-16">Rang</th>
+              <th className="border-b border-black px-2 py-1 font-bold uppercase text-center" style={{ minWidth: '110px' }}>Appréciation</th>
             </tr>
           </thead>
           <tbody>
             {CATEGORY_ORDER.flatMap((cat) => {
               const group = subjectsByCategory.get(cat);
               if (!group || group.subjects.length === 0) return [];
-              const subjectRows = group.subjects.map((subject, idx) => {
+              const subjectRows = group.subjects.map((subject) => {
                 const s = student.subjectScores[subject.id];
                 return (
-                  <tr key={subject.id} className={idx % 2 === 1 ? 'bg-slate-50/60' : undefined}>
-                    <td className="border border-slate-300 px-2 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
-                    <td className="border border-slate-300 px-2 py-0.5 text-center font-bold bg-emerald-50/50">
-                      {s && s.isAbsent ? <span className="text-red-500 text-[8px] font-bold">ABS</span>
+                  <tr key={subject.id}>
+                    <td className="border-r border-b border-black px-2 py-0.5 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
+                    <td className="border-r border-b border-black px-2 py-0.5 text-center font-bold">
+                      {s && s.isAbsent ? <span className="text-red-600 text-[8px] font-bold">ABS</span>
                         : s && typeof s.score === 'number'
-                          ? <span className={s.score >= 10 ? 'text-slate-900' : 'text-red-600'}>{s.score.toFixed(2)}</span>
+                          ? <span className={s.score >= 10 ? 'text-emerald-700' : 'text-red-600'}>{s.score.toFixed(2)}</span>
                           : <span className="text-slate-400">—</span>}
                     </td>
-                    <td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-slate-700">{s?.subjectRank ? formatRank(s.subjectRank, feminine) : '—'}</td>
-                    <td className="border border-slate-300 px-2 py-0.5 text-center text-slate-600 text-[9px]"><span className={appreciationSecondaireClassName(s?.appreciation || '—')}>{s?.appreciation || '—'}</span></td>
+                    <td className="border-r border-b border-black px-2 py-0.5 text-center font-bold text-slate-700">{s?.subjectRank ? formatRank(s.subjectRank, feminine) : '—'}</td>
+                    <td className="border-b border-black px-2 py-0.5 text-center text-slate-600 text-[9px]"><span className={appreciationSecondaireClassName(s?.appreciation || '—')}>{s?.appreciation || '—'}</span></td>
                   </tr>
                 );
               });
               const bilanRow = (
-                <tr key={`bilan-${cat}`} className="bg-blue-50 font-bold">
-                  <td className="border border-slate-300 px-2 py-0.5 text-[10px] uppercase text-blue-900">{CATEGORY_LABELS[cat]}</td>
-                  <td className="border border-slate-300 px-2 py-0.5 text-center font-bold text-blue-900 bg-blue-100">{group.average !== null ? <span className={group.average >= 10 ? 'text-emerald-700' : 'text-red-600'}>{group.average.toFixed(2)}</span> : '—'}</td>
-                  <td className="border border-slate-300"></td>
-                  <td className="border border-slate-300"></td>
+                <tr key={`bilan-${cat}`} className="bg-slate-100 font-bold">
+                  <td className="border-r border-b border-black px-2 py-0.5 text-[10px] uppercase text-slate-900">{CATEGORY_LABELS[cat]}</td>
+                  <td className="border-r border-b border-black px-2 py-0.5 text-center font-bold text-slate-900">{group.average !== null ? <span className={group.average >= 10 ? 'text-emerald-700' : 'text-red-600'}>{group.average.toFixed(2)}</span> : '—'}</td>
+                  <td className="border-r border-b border-black"></td>
+                  <td className="border-b border-black"></td>
                 </tr>
               );
               return [...subjectRows, bilanRow];
             })}
 
-            {/* Moyenne de l'évaluation + Rang */}
-            <tr className="bg-blue-100 font-bold">
-              <td colSpan={2} className="border border-slate-300 px-2 py-0.5 text-right uppercase text-slate-900 text-[9px]">Moyenne de l'évaluation</td>
-              <td className="border border-slate-300 px-2 py-0.5 text-center text-blue-800 text-xs">
+            {/* Moyenne de l'évaluation + Rang — bandeau navy */}
+            <tr className="bg-[#0A2A5E] text-white font-bold">
+              <td colSpan={2} className="px-2 py-0.5 text-right uppercase text-[9px]">Moyenne de l'évaluation</td>
+              <td className="px-2 py-0.5 text-center text-sm">
                 {fmtS(student.generalAverage)}
               </td>
-              <td className="border border-slate-300 px-2 py-0.5 text-center text-slate-800 text-[9px]">
+              <td className="px-2 py-0.5 text-center text-[9px]">
                 {student.classRank ? `Rang : ${formatRank(student.classRank, feminine)} / ${bulletinData.results.length}` : '—'}
               </td>
             </tr>
@@ -4666,9 +4669,10 @@ function VueParMatiereTrimestriel({
     return val.toFixed(2);
   };
   const qColor = (val: number | null | undefined): string => {
-    if (val === null || val === undefined) return 'bg-slate-100 text-slate-400';
-    return val >= 2.5 ? 'bg-emerald-100 text-emerald-700'
-      : val >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700';
+    // ⭐ T27 — couleur TEXTE seule (plus de pastille de fond) : sobre, lisible.
+    if (val === null || val === undefined) return 'text-slate-400';
+    return val >= 2.5 ? 'text-emerald-700'
+      : val >= 1.5 ? 'text-slate-900' : 'text-amber-700';
   };
   const nColor = (val: number | null | undefined): string => {
     if (val === null || val === undefined) return 'text-slate-400';
@@ -4758,16 +4762,16 @@ function VueParMatiereTrimestriel({
                   {isExpanded && (
                     <div className="border-t border-slate-100 p-4">
                       {/* Tableau par matière */}
-                      <div className="overflow-x-auto rounded-lg border border-slate-200">
-                        <table className="w-full border-collapse text-xs">
+                      <div className="overflow-x-auto rounded-lg border-2 border-black">
+                        <table className="w-full border-separate border-spacing-0 text-xs">
                           <thead>
-                            <tr style={{ backgroundColor: '#0A2A5E', color: 'white' }}>
-                              <th className="border px-3 py-2 font-bold uppercase text-left" style={{ borderColor: '#0D3B85', minWidth: '200px' }}>Matière</th>
-                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>EM1</th>
-                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>EM2</th>
-                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}>Moy. EM</th>
-                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>EC</th>
-                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}>Moyenne générale</th>
+                            <tr className="bg-white">
+                              <th className="border-r border-b border-black px-3 py-2 font-bold uppercase text-left" style={{ minWidth: '200px' }}>Matière</th>
+                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">EM1</th>
+                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">EM2</th>
+                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">Moy. EM</th>
+                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">EC</th>
+                              <th className="border-b border-black px-2 py-2 font-bold uppercase text-center">Moyenne générale</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -4777,62 +4781,42 @@ function VueParMatiereTrimestriel({
                                 ? ((sc.em1 as number) + (sc.em2 as number)) / 2
                                 : (sc?.em1 !== null && sc?.em1 !== undefined ? sc.em1
                                   : (sc?.em2 !== null && sc?.em2 !== undefined ? sc.em2 : null));
+                              const rowB = idx === subjects.length - 1 ? '' : 'border-b';
                               return (
-                                <tr key={subject.id} className={cn(idx % 2 === 1 && 'bg-slate-50/60')}>
-                                  <td className="border border-slate-300 px-3 py-1.5 font-medium text-slate-900">{subject.name}</td>
+                                <tr key={subject.id}>
+                                  <td className={`border-r ${rowB} border-black px-3 py-1.5 font-medium text-slate-900`}>{subject.name}</td>
                                   {isMaternelle ? (
                                     <>
-                                      <td className="border border-slate-300 px-2 py-1.5 text-center">
-                                        <span className={cn('inline-flex min-w-[36px] px-2 py-0.5 rounded-full text-[10px] font-bold', qColor(sc?.em1))}>
-                                          {fmtQ(sc?.em1)}
-                                        </span>
+                                      <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center`}>
+                                        <span className={cn('text-[10px] font-black', qColor(sc?.em1))}>{fmtQ(sc?.em1)}</span>
                                       </td>
-                                      <td className="border border-slate-300 px-2 py-1.5 text-center">
-                                        <span className={cn('inline-flex min-w-[36px] px-2 py-0.5 rounded-full text-[10px] font-bold', qColor(sc?.em2))}>
-                                          {fmtQ(sc?.em2)}
-                                        </span>
+                                      <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center`}>
+                                        <span className={cn('text-[10px] font-black', qColor(sc?.em2))}>{fmtQ(sc?.em2)}</span>
                                       </td>
-                                      <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold bg-slate-100/70">
-                                        <span className={cn('inline-flex min-w-[40px] px-2 py-0.5 rounded-full text-[10px] font-bold', qColor(moyEm))}>
-                                          {fmtQ(moyEm)}
-                                        </span>
+                                      <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                                        <span className={cn('text-[10px]', qColor(moyEm))}>{fmtQ(moyEm)}</span>
                                       </td>
-                                      <td className="border border-slate-300 px-2 py-1.5 text-center">
-                                        <span className={cn('inline-flex min-w-[36px] px-2 py-0.5 rounded-full text-[10px] font-bold', qColor(sc?.ec))}>
-                                          {fmtQ(sc?.ec)}
-                                        </span>
+                                      <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center`}>
+                                        <span className={cn('text-[10px] font-black', qColor(sc?.ec))}>{fmtQ(sc?.ec)}</span>
                                       </td>
-                                      <td className="border border-slate-300 px-2 py-1.5 text-center font-bold bg-blue-50/70">
-                                        <span className={cn('inline-flex min-w-[100px] px-2 py-1 rounded-full text-[10px] font-bold',
-                                          sc?.appreciation === 'Très Satisfaisant' && 'bg-emerald-100 text-emerald-700',
-                                          sc?.appreciation === 'Satisfaisant' && 'bg-blue-100 text-blue-700',
-                                          sc?.appreciation === 'Peu Satisfaisant' && 'bg-amber-100 text-amber-700',
-                                          (!sc?.appreciation || sc.appreciation === '—') && 'bg-slate-100 text-slate-400',
-                                        )}>
-                                          {sc?.appreciation || '—'}
-                                        </span>
-                                      </td>
+                                      <td className={`${rowB} border-black px-2 py-1.5 text-center font-bold text-slate-900 text-[10px]`}>{sc?.appreciation || '—'}</td>
                                     </>
                                   ) : (
                                     <>
-                                      <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold">
+                                      <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-semibold`}>
                                         <span className={cn(nColor(sc?.em1))}>{fmtN(sc?.em1)}</span>
                                       </td>
-                                      <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold">
+                                      <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-semibold`}>
                                         <span className={cn(nColor(sc?.em2))}>{fmtN(sc?.em2)}</span>
                                       </td>
-                                      <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold bg-slate-100/70">
-                                        <span className={cn('inline-flex min-w-[44px] justify-center px-2 py-0.5 rounded-md text-xs font-bold bg-white/80', nColor(moyEm))}>
-                                          {fmtN(moyEm)}
-                                        </span>
+                                      <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-semibold`}>
+                                        <span className={cn(nColor(moyEm))}>{fmtN(moyEm)}</span>
                                       </td>
-                                      <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold">
+                                      <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-semibold`}>
                                         <span className={cn(nColor(sc?.ec))}>{fmtN(sc?.ec)}</span>
                                       </td>
-                                      <td className="border border-slate-300 px-2 py-1.5 text-center font-bold bg-blue-50/70">
-                                        <span className={cn('inline-flex min-w-[60px] justify-center px-2 py-0.5 rounded-md text-sm font-bold bg-white', nColor(sc?.moyenne))}>
-                                          {fmtN(sc?.moyenne)}
-                                        </span>
+                                      <td className={`${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                                        <span className={cn('text-sm', nColor(sc?.moyenne))}>{fmtN(sc?.moyenne)}</span>
                                       </td>
                                     </>
                                   )}
@@ -4841,17 +4825,15 @@ function VueParMatiereTrimestriel({
                             })}
                           </tbody>
                           <tfoot>
-                            <tr style={{ backgroundColor: '#0A2A5E', color: 'white' }}>
-                              <td className="border px-3 py-2 font-bold uppercase text-right" style={{ borderColor: '#0D3B85' }} colSpan={5}>
+                            <tr className="bg-[#0A2A5E] text-white">
+                              <td className="px-3 py-2 font-bold uppercase text-right" colSpan={5}>
                                 {isMaternelle ? 'Appréciation générale' : 'Moyenne générale'}
                               </td>
-                              <td className="border px-2 py-2 text-center font-bold bg-blue-50" style={{ borderColor: '#0D3B85' }}>
+                              <td className="px-2 py-2 text-center font-bold">
                                 {isMaternelle ? (
-                                  <span className="text-blue-700">{student.appreciationGlobale || '—'}</span>
+                                  <span>{student.appreciationGlobale || '—'}</span>
                                 ) : (
-                                  <span className={cn('text-sm font-bold', nColor(student.generalAverage))}>
-                                    {fmtN(student.generalAverage)}
-                                  </span>
+                                  <span className="text-sm">{fmtN(student.generalAverage)}</span>
                                 )}
                               </td>
                             </tr>
@@ -5187,11 +5169,12 @@ function VueParMatiereAnnuel({
     return isMaternelle ? (val >= 2.5 ? 'TS' : val >= 1.5 ? 'S' : 'PS') : val.toFixed(2);
   };
   const qColor = (val: number | null | undefined): string => {
-    if (val === null || val === undefined) return 'bg-slate-100 text-slate-400';
+    // ⭐ T27 — couleur TEXTE seule (plus de pastille de fond) : sobre, lisible.
+    if (val === null || val === undefined) return 'text-slate-400';
     if (isMaternelle) {
-      return val >= 2.5 ? 'bg-emerald-100 text-emerald-700' : val >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700';
+      return val >= 2.5 ? 'text-emerald-700' : val >= 1.5 ? 'text-slate-900' : 'text-amber-700';
     }
-    return val >= 10 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700';
+    return val >= 10 ? 'text-emerald-700' : 'text-red-600';
   };
 
   return (
@@ -5243,49 +5226,38 @@ function VueParMatiereAnnuel({
                   </button>
                   {isExpanded && (
                     <div className="border-t border-slate-100 p-4">
-                      <div className="overflow-x-auto rounded-lg border border-slate-200">
-                        <table className="w-full border-collapse text-xs">
+                      <div className="overflow-x-auto rounded-lg border-2 border-black">
+                        <table className="w-full border-separate border-spacing-0 text-xs">
                           <thead>
-                            <tr style={{ backgroundColor: '#0A2A5E', color: 'white' }}>
-                              <th className="border px-3 py-2 font-bold uppercase text-left" style={{ borderColor: '#0D3B85', minWidth: '200px' }}>Matière</th>
-                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>EM annuel</th>
-                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>EC annuel</th>
-                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>EP</th>
-                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}>Moyenne annuelle</th>
-                              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Appréciation</th>
+                            <tr className="bg-white">
+                              <th className="border-r border-b border-black px-3 py-2 font-bold uppercase text-left" style={{ minWidth: '200px' }}>Matière</th>
+                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">EM annuel</th>
+                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">EC annuel</th>
+                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">EP</th>
+                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">Moyenne annuelle</th>
+                              <th className="border-b border-black px-2 py-2 font-bold uppercase text-center">Appréciation</th>
                             </tr>
                           </thead>
                           <tbody>
                             {subjects.map((subject, idx) => {
                               const sc = student.subjectScores[subject.id];
+                              const rowB = idx === subjects.length - 1 ? '' : 'border-b';
                               return (
-                                <tr key={subject.id} className={cn(idx % 2 === 1 && 'bg-slate-50/60')}>
-                                  <td className="border border-slate-300 px-3 py-1.5 font-medium text-slate-900">{subject.name}</td>
-                                  <td className="border border-slate-300 px-2 py-1.5 text-center">
-                                    <span className={cn('inline-flex min-w-[40px] px-2 py-0.5 rounded-full text-[10px] font-bold', qColor(sc?.emAnnuel))}>{fmtQ(sc?.emAnnuel)}</span>
+                                <tr key={subject.id}>
+                                  <td className={`border-r ${rowB} border-black px-3 py-1.5 font-medium text-slate-900`}>{subject.name}</td>
+                                  <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center`}>
+                                    <span className={cn('text-[10px] font-black', qColor(sc?.emAnnuel))}>{fmtQ(sc?.emAnnuel)}</span>
                                   </td>
-                                  <td className="border border-slate-300 px-2 py-1.5 text-center">
-                                    <span className={cn('inline-flex min-w-[40px] px-2 py-0.5 rounded-full text-[10px] font-bold', qColor(sc?.ecAnnuel))}>{fmtQ(sc?.ecAnnuel)}</span>
+                                  <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center`}>
+                                    <span className={cn('text-[10px] font-black', qColor(sc?.ecAnnuel))}>{fmtQ(sc?.ecAnnuel)}</span>
                                   </td>
-                                  <td className="border border-slate-300 px-2 py-1.5 text-center">
-                                    <span className={cn('inline-flex min-w-[36px] px-2 py-0.5 rounded-full text-[10px] font-bold', qColor(sc?.ep))}>{fmtQ(sc?.ep)}</span>
+                                  <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center`}>
+                                    <span className={cn('text-[10px] font-black', qColor(sc?.ep))}>{fmtQ(sc?.ep)}</span>
                                   </td>
-                                  <td className="border border-slate-300 px-2 py-1.5 text-center font-bold bg-blue-50/70">
-                                    <span className={cn('inline-flex min-w-[60px] justify-center px-2 py-0.5 rounded-md text-sm font-bold bg-white', qColor(sc?.moyenneAnnuelle))}>{fmtQ(sc?.moyenneAnnuelle)}</span>
+                                  <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                                    <span className={cn('text-sm', qColor(sc?.moyenneAnnuelle))}>{fmtQ(sc?.moyenneAnnuelle)}</span>
                                   </td>
-                                  <td className="border border-slate-300 px-2 py-1.5 text-center">
-                                    <span className={cn('inline-flex min-w-[80px] px-2 py-0.5 rounded-full text-[10px] font-bold',
-                                      sc?.appreciation === 'Très Satisfaisant' && 'bg-emerald-100 text-emerald-700',
-                                      sc?.appreciation === 'Satisfaisant' && 'bg-blue-100 text-blue-700',
-                                      sc?.appreciation === 'Peu Satisfaisant' && 'bg-amber-100 text-amber-700',
-                                      sc?.appreciation === 'Très Bien' && 'bg-emerald-100 text-emerald-700',
-                                      sc?.appreciation === 'Bien' && 'bg-blue-100 text-blue-700',
-                                      sc?.appreciation === 'Assez Bien' && 'bg-cyan-100 text-cyan-700',
-                                      sc?.appreciation === 'Passable' && 'bg-amber-100 text-amber-700',
-                                      sc?.appreciation === 'Insuffisant' && 'bg-red-100 text-red-700',
-                                      (!sc?.appreciation || sc.appreciation === '—') && 'bg-slate-100 text-slate-400',
-                                    )}>{sc?.appreciation || '—'}</span>
-                                  </td>
+                                  <td className={`${rowB} border-black px-2 py-1.5 text-center font-bold text-slate-900 text-[10px]`}>{sc?.appreciation || '—'}</td>
                                 </tr>
                               );
                             })}
@@ -5534,7 +5506,7 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-      <div className="px-5 py-3 bg-gradient-to-r from-blue-50 to-slate-50 border-b border-blue-100">
+      <div className="px-5 py-3 bg-white border-b border-slate-200">
         <h3 className="text-sm font-bold text-slate-900">Bulletin trimestriel — moyennes détaillées</h3>
         <p className="text-xs text-slate-500 mt-0.5">
           {isMaternelle
@@ -5543,14 +5515,14 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
         </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
+        <table className="w-full border-separate border-spacing-0 text-xs">
           <thead>
             {/* Row 1 : Nom (rowspan=2) + period groups (colspan=5 each) */}
-            <tr style={{ backgroundColor: '#0A2A5E', color: 'white' }}>
+            <tr className="bg-white">
               <th
                 rowSpan={2}
-                className="border px-3 py-2 font-bold uppercase text-left sticky left-0 z-10"
-                style={{ borderColor: '#0D3B85', backgroundColor: '#0A2A5E', minWidth: '200px', borderRadius: '8px 0 0 0' }}
+                className="border-r border-b border-black px-3 py-2 font-bold uppercase text-left sticky left-0 z-10 bg-white"
+                style={{ minWidth: '200px' }}
               >
                 Nom et prénom
               </th>
@@ -5558,30 +5530,31 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
                 <th
                   key={p}
                   colSpan={5}
-                  className="border px-3 py-2 font-bold uppercase text-center"
-                  style={{ borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}
+                  className="border-b border-black px-3 py-2 font-bold uppercase text-center"
                 >
                   {p}
                 </th>
               ))}
             </tr>
             {/* Row 2 : EM1 | EM2 | Moy. EM | EC | Moy. gén. (× nb trimestres) */}
-            <tr style={{ backgroundColor: '#0A2A5E', color: 'white' }}>
+            <tr className="bg-white">
               {periodNames.map(p => (
                 <Fragment key={p}>
-                  <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '70px' }}>EM1</th>
-                  <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '70px' }}>EM2</th>
-                  <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '80px' }}>Moy. EM</th>
-                  <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '70px' }}>EC</th>
-                  <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '100px' }}>Moyenne gén.</th>
+                  <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '70px' }}>EM1</th>
+                  <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '70px' }}>EM2</th>
+                  <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '80px' }}>Moy. EM</th>
+                  <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '70px' }}>EC</th>
+                  <th className="border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '100px' }}>Moyenne gén.</th>
                 </Fragment>
               ))}
             </tr>
           </thead>
           <tbody>
-            {students.map((student, idx) => (
-              <tr key={student.studentName + idx} className={cn(idx % 2 === 1 && 'bg-slate-50/60')}>
-                <td className="border border-slate-300 px-3 py-1.5 font-medium text-slate-900 whitespace-nowrap sticky left-0 z-10 bg-white">
+            {students.map((student, idx) => {
+              const rowB = idx === students.length - 1 ? '' : 'border-b';
+              return (
+              <tr key={student.studentName + idx}>
+                <td className={`border-r ${rowB} border-black px-3 py-1.5 font-medium text-slate-900 whitespace-nowrap sticky left-0 z-10 bg-white`}>
                   {student.studentName}
                 </td>
                 {periodNames.map(p => {
@@ -5589,57 +5562,51 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
                   if (!row) {
                     return (
                       <Fragment key={p}>
-                        <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-300">—</td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-300">—</td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-300">—</td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-300">—</td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-center text-slate-300">—</td>
+                        <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center text-slate-300`}>—</td>
+                        <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center text-slate-300`}>—</td>
+                        <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center text-slate-300`}>—</td>
+                        <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center text-slate-300`}>—</td>
+                        <td className={`${rowB} border-black px-2 py-1.5 text-center text-slate-300`}>—</td>
                       </Fragment>
                     );
                   }
                   if (isMaternelle) {
                     return (
                       <Fragment key={p}>
-                        <td className="border border-slate-300 px-2 py-1.5 text-center font-bold">
-                          <span className={cn('inline-flex min-w-[36px] px-2 py-0.5 rounded-full text-[10px] font-bold',
-                            row.em1Avg === null ? 'bg-slate-100 text-slate-400' :
-                              row.em1Avg >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
-                              row.em1Avg >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                        <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                          <span className={cn('text-[10px] font-black',
+                            row.em1Avg === null ? 'text-slate-400' :
+                              row.em1Avg >= 2.5 ? 'text-emerald-700' :
+                              row.em1Avg >= 1.5 ? 'text-slate-900' : 'text-amber-700')}>
                             {fmtAvg(row.em1Avg, true)}
                           </span>
                         </td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-center font-bold">
-                          <span className={cn('inline-flex min-w-[36px] px-2 py-0.5 rounded-full text-[10px] font-bold',
-                            row.em2Avg === null ? 'bg-slate-100 text-slate-400' :
-                              row.em2Avg >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
-                              row.em2Avg >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                        <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                          <span className={cn('text-[10px] font-black',
+                            row.em2Avg === null ? 'text-slate-400' :
+                              row.em2Avg >= 2.5 ? 'text-emerald-700' :
+                              row.em2Avg >= 1.5 ? 'text-slate-900' : 'text-amber-700')}>
                             {fmtAvg(row.em2Avg, true)}
                           </span>
                         </td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold bg-slate-100/70">
-                          <span className={cn('inline-flex min-w-[40px] px-2 py-0.5 rounded-full text-[10px] font-bold',
-                            row.moyEm === null ? 'bg-slate-100 text-slate-400' :
-                              row.moyEm >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
-                              row.moyEm >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                        <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                          <span className={cn('text-[10px] font-black',
+                            row.moyEm === null ? 'text-slate-400' :
+                              row.moyEm >= 2.5 ? 'text-emerald-700' :
+                              row.moyEm >= 1.5 ? 'text-slate-900' : 'text-amber-700')}>
                             {fmtAvg(row.moyEm, true)}
                           </span>
                         </td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-center font-bold">
-                          <span className={cn('inline-flex min-w-[36px] px-2 py-0.5 rounded-full text-[10px] font-bold',
-                            row.ecAvg === null ? 'bg-slate-100 text-slate-400' :
-                              row.ecAvg >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
-                              row.ecAvg >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                        <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                          <span className={cn('text-[10px] font-black',
+                            row.ecAvg === null ? 'text-slate-400' :
+                              row.ecAvg >= 2.5 ? 'text-emerald-700' :
+                              row.ecAvg >= 1.5 ? 'text-slate-900' : 'text-amber-700')}>
                             {fmtAvg(row.ecAvg, true)}
                           </span>
                         </td>
-                        <td className="border border-slate-300 px-2 py-1.5 text-center font-bold bg-blue-50/70">
-                          <span className={cn('inline-flex min-w-[80px] px-2 py-1 rounded-full text-[10px] font-bold',
-                            row.appreciation === 'Très Satisfaisant' && 'bg-emerald-100 text-emerald-700',
-                            row.appreciation === 'Satisfaisant' && 'bg-blue-100 text-blue-700',
-                            row.appreciation === 'Peu Satisfaisant' && 'bg-amber-100 text-amber-700',
-                            !row.appreciation || row.appreciation === '—' && 'bg-slate-100 text-slate-400')}>
-                            {row.appreciation || '—'}
-                          </span>
+                        <td className={`${rowB} border-black px-2 py-1.5 text-center font-bold text-slate-900 text-[10px]`}>
+                          {row.appreciation || '—'}
                         </td>
                       </Fragment>
                     );
@@ -5647,28 +5614,27 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
                   // Primaire — numérique /20
                   return (
                     <Fragment key={p}>
-                      <td className="border border-slate-300 px-2 py-1.5 text-center font-medium">
+                      <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-medium`}>
                         <span className={cn('font-semibold', avgColor(row.em1Avg, false))}>{fmtAvg(row.em1Avg, false)}</span>
                       </td>
-                      <td className="border border-slate-300 px-2 py-1.5 text-center font-medium">
+                      <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-medium`}>
                         <span className={cn('font-semibold', avgColor(row.em2Avg, false))}>{fmtAvg(row.em2Avg, false)}</span>
                       </td>
-                      <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold bg-slate-100/70">
-                        <span className={cn('inline-flex min-w-[44px] justify-center px-2 py-0.5 rounded-md text-xs font-bold bg-white/80',
-                          avgColor(row.moyEm, false))}>{fmtAvg(row.moyEm, false)}</span>
+                      <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-semibold`}>
+                        <span className={cn('text-xs font-bold', avgColor(row.moyEm, false))}>{fmtAvg(row.moyEm, false)}</span>
                       </td>
-                      <td className="border border-slate-300 px-2 py-1.5 text-center font-medium">
+                      <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-medium`}>
                         <span className={cn('font-semibold', avgColor(row.ecAvg, false))}>{fmtAvg(row.ecAvg, false)}</span>
                       </td>
-                      <td className="border border-slate-300 px-2 py-1.5 text-center font-bold bg-blue-50/70">
-                        <span className={cn('inline-flex min-w-[60px] justify-center px-2 py-0.5 rounded-md text-xs font-bold bg-white',
-                          avgColor(row.trimesterAvg, false))}>{fmtAvg(row.trimesterAvg, false)}</span>
+                      <td className={`${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                        <span className={cn('text-sm font-black', avgColor(row.trimesterAvg, false))}>{fmtAvg(row.trimesterAvg, false)}</span>
                       </td>
                     </Fragment>
                   );
                 })}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -5707,7 +5673,7 @@ function MoyennesAnnuelTable({ data, isMaternelle }: { data: any[]; isMaternelle
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-      <div className="px-5 py-3 bg-gradient-to-r from-blue-50 to-slate-50 border-b border-blue-100">
+      <div className="px-5 py-3 bg-white border-b border-slate-200">
         <h3 className="text-sm font-bold text-slate-900">Moyennes annuelles — agrégation sur l'année</h3>
         <p className="text-xs text-slate-500 mt-0.5">
           {isMaternelle
@@ -5716,100 +5682,87 @@ function MoyennesAnnuelTable({ data, isMaternelle }: { data: any[]; isMaternelle
         </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-xs">
+        <table className="w-full border-separate border-spacing-0 text-xs">
           <thead>
-            <tr style={{ backgroundColor: '#0A2A5E', color: 'white' }}>
-              <th className="border px-3 py-2 font-bold uppercase text-left" style={{ borderColor: '#0D3B85', minWidth: '200px', borderRadius: '8px 0 0 0' }}>Nom et prénom</th>
-              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '90px' }}>EM annuel</th>
-              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '90px' }}>EC annuel</th>
-              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '70px' }}>EP</th>
-              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '110px' }}>Moyenne annuelle</th>
-              <th className="border px-2 py-2 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '130px', borderRadius: '0 8px 0 0' }}>Appréciation</th>
+            <tr className="bg-white">
+              <th className="border-r border-b border-black px-3 py-2 font-bold uppercase text-left" style={{ minWidth: '200px' }}>Nom et prénom</th>
+              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '90px' }}>EM annuel</th>
+              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '90px' }}>EC annuel</th>
+              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '70px' }}>EP</th>
+              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '110px' }}>Moyenne annuelle</th>
+              <th className="border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '130px' }}>Appréciation</th>
             </tr>
           </thead>
           <tbody>
-            {data.map((row, idx) => (
-              <tr key={row.studentId + idx} className={cn(idx % 2 === 1 && 'bg-slate-50/60')}>
-                <td className="border border-slate-300 px-3 py-1.5 font-medium text-slate-900 whitespace-nowrap">{row.studentName}</td>
+            {data.map((row, idx) => {
+              const rowB = idx === data.length - 1 ? '' : 'border-b';
+              return (
+              <tr key={row.studentId + idx}>
+                <td className={`border-r ${rowB} border-black px-3 py-1.5 font-medium text-slate-900 whitespace-nowrap`}>{row.studentName}</td>
                 {isMaternelle ? (
                   <>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center font-bold">
-                      <span className={cn('inline-flex min-w-[40px] px-2 py-0.5 rounded-full text-[10px] font-bold',
-                        row.emAnnuel === null ? 'bg-slate-100 text-slate-400' :
-                          row.emAnnuel >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
-                          row.emAnnuel >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                    <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                      <span className={cn('text-[10px] font-black',
+                        row.emAnnuel === null ? 'text-slate-400' :
+                          row.emAnnuel >= 2.5 ? 'text-emerald-700' :
+                          row.emAnnuel >= 1.5 ? 'text-slate-900' : 'text-amber-700')}>
                         {fmtAvg(row.emAnnuel, true)}
                       </span>
                     </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center font-bold">
-                      <span className={cn('inline-flex min-w-[40px] px-2 py-0.5 rounded-full text-[10px] font-bold',
-                        row.ecAnnuel === null ? 'bg-slate-100 text-slate-400' :
-                          row.ecAnnuel >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
-                          row.ecAnnuel >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                    <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                      <span className={cn('text-[10px] font-black',
+                        row.ecAnnuel === null ? 'text-slate-400' :
+                          row.ecAnnuel >= 2.5 ? 'text-emerald-700' :
+                          row.ecAnnuel >= 1.5 ? 'text-slate-900' : 'text-amber-700')}>
                         {fmtAvg(row.ecAnnuel, true)}
                       </span>
                     </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center font-bold">
-                      <span className={cn('inline-flex min-w-[36px] px-2 py-0.5 rounded-full text-[10px] font-bold',
-                        row.epAnnuel === null ? 'bg-slate-100 text-slate-400' :
-                          row.epAnnuel >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
-                          row.epAnnuel >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                    <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                      <span className={cn('text-[10px] font-black',
+                        row.epAnnuel === null ? 'text-slate-400' :
+                          row.epAnnuel >= 2.5 ? 'text-emerald-700' :
+                          row.epAnnuel >= 1.5 ? 'text-slate-900' : 'text-amber-700')}>
                         {fmtAvg(row.epAnnuel, true)}
                       </span>
                     </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center font-bold bg-blue-50/70">
-                      <span className={cn('inline-flex min-w-[60px] px-2 py-0.5 rounded-full text-[10px] font-bold',
-                        row.moyenneAnnuelle === null ? 'bg-slate-100 text-slate-400' :
-                          row.moyenneAnnuelle >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
-                          row.moyenneAnnuelle >= 1.5 ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700')}>
+                    <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                      <span className={cn('text-sm font-black',
+                        row.moyenneAnnuelle === null ? 'text-slate-400' :
+                          row.moyenneAnnuelle >= 2.5 ? 'text-emerald-700' :
+                          row.moyenneAnnuelle >= 1.5 ? 'text-slate-900' : 'text-amber-700')}>
                         {fmtAvg(row.moyenneAnnuelle, true)}
                       </span>
                     </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center">
-                      <span className={cn('inline-flex min-w-[100px] px-2 py-1 rounded-full text-[10px] font-bold',
-                        row.appreciation === 'Très Satisfaisant' && 'bg-emerald-100 text-emerald-700',
-                        row.appreciation === 'Satisfaisant' && 'bg-blue-100 text-blue-700',
-                        row.appreciation === 'Peu Satisfaisant' && 'bg-amber-100 text-amber-700',
-                        (!row.appreciation || row.appreciation === '—') && 'bg-slate-100 text-slate-400')}>
-                        {row.appreciation || '—'}
-                      </span>
+                    <td className={`${rowB} border-black px-2 py-1.5 text-center font-bold text-slate-900 text-[10px]`}>
+                      {row.appreciation || '—'}
                     </td>
                   </>
                 ) : (
                   <>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold bg-slate-100/70">
-                      <span className={cn('inline-flex min-w-[50px] justify-center px-2 py-0.5 rounded-md text-xs font-bold bg-white/80',
-                        avgColor(row.emAnnuel, false))}>{fmtAvg(row.emAnnuel, false)}</span>
+                    <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-semibold`}>
+                      <span className={cn('text-xs font-bold', avgColor(row.emAnnuel, false))}>{fmtAvg(row.emAnnuel, false)}</span>
                     </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold bg-slate-100/70">
-                      <span className={cn('inline-flex min-w-[50px] justify-center px-2 py-0.5 rounded-md text-xs font-bold bg-white/80',
-                        avgColor(row.ecAnnuel, false))}>{fmtAvg(row.ecAnnuel, false)}</span>
+                    <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-semibold`}>
+                      <span className={cn('text-xs font-bold', avgColor(row.ecAnnuel, false))}>{fmtAvg(row.ecAnnuel, false)}</span>
                     </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center font-medium">
+                    <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-medium`}>
                       <span className={cn('font-semibold', avgColor(row.epAnnuel, false))}>{fmtAvg(row.epAnnuel, false)}</span>
                     </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center font-bold bg-blue-50/70">
-                      <span className={cn('inline-flex min-w-[70px] justify-center px-2 py-0.5 rounded-md text-sm font-bold bg-white',
-                        avgColor(row.moyenneAnnuelle, false))}>{fmtAvg(row.moyenneAnnuelle, false)}</span>
+                    <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                      <span className={cn('text-sm font-black', avgColor(row.moyenneAnnuelle, false))}>{fmtAvg(row.moyenneAnnuelle, false)}</span>
                     </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center font-medium">
-                      <span className={cn('inline-flex min-w-[100px] px-2 py-0.5 rounded-full text-[10px] font-bold',
-                        row.moyenneAnnuelle === null ? 'bg-slate-100 text-slate-400' :
-                          row.moyenneAnnuelle >= 16 ? 'bg-emerald-100 text-emerald-700' :
-                          row.moyenneAnnuelle >= 14 ? 'bg-blue-100 text-blue-700' :
-                          row.moyenneAnnuelle >= 12 ? 'bg-cyan-100 text-cyan-700' :
-                          row.moyenneAnnuelle >= 10 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700')}>
-                        {row.moyenneAnnuelle === null ? '—' :
-                          row.moyenneAnnuelle >= 16 ? 'Très Bien' :
-                          row.moyenneAnnuelle >= 14 ? 'Bien' :
-                          row.moyenneAnnuelle >= 12 ? 'Assez Bien' :
-                          row.moyenneAnnuelle >= 10 ? 'Passable' : 'Insuffisant'}
-                      </span>
+                    <td className={`${rowB} border-black px-2 py-1.5 text-center font-bold text-slate-900 text-[10px]`}>
+                      {row.moyenneAnnuelle === null ? '—' :
+                        row.moyenneAnnuelle >= 16 ? 'Très Bien' :
+                        row.moyenneAnnuelle >= 14 ? 'Bien' :
+                        row.moyenneAnnuelle >= 12 ? 'Assez Bien' :
+                        row.moyenneAnnuelle >= 10 ? 'Passable' : 'Insuffisant'}
                     </td>
                   </>
                 )}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

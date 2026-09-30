@@ -443,18 +443,18 @@ export class BulletinPdfService {
         const code = s.qualitativeCode;
         // ⭐ Use "X" instead of ✓ to avoid font rendering issues in PDF
         const tsCheck = code === 'TS' ? '<strong style="color:#059669">X</strong>' : '';
-        const sCheck = code === 'S' ? '<strong style="color:#2563eb">X</strong>' : '';
+        const sCheck = code === 'S' ? '<strong style="color:#0f172a">X</strong>' : '';
         const psCheck = code === 'PS' ? '<strong style="color:#d97706">X</strong>' : '';
         const absent = s.isAbsent ? '<span style="color:red;font-size:8px">ABS</span>' : '';
         const directorVisaCell = s.directorVisa || s.appreciation || '—';
         return `<tr>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;font-size:10px;">${s.name}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:11px;">${tsCheck || absent}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:11px;">${sCheck}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:11px;">${psCheck}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:9px;color:#64748b;">${s.appreciation}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:9px;color:#0A2A5E;font-weight:600;">${directorVisaCell}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:9px;color:#94a3b8;">—</td>
+          <td style="padding:5px 3px;font-size:10px;">${s.name}</td>
+          <td style="padding:5px 3px;text-align:center;font-size:11px;">${tsCheck || absent}</td>
+          <td style="padding:5px 3px;text-align:center;font-size:11px;">${sCheck}</td>
+          <td style="padding:5px 3px;text-align:center;font-size:11px;">${psCheck}</td>
+          <td style="padding:5px 3px;text-align:center;font-size:9px;color:#64748b;">${s.appreciation}</td>
+          <td style="padding:5px 3px;text-align:center;font-size:9px;color:#0A2A5E;font-weight:600;">${directorVisaCell}</td>
+          <td style="padding:5px 3px;text-align:center;font-size:9px;color:#94a3b8;">—</td>
         </tr>`;
       } else {
         // ⭐ Primaire — Carnet de correspondance exact column order:
@@ -479,16 +479,16 @@ export class BulletinPdfService {
         const yes = '<strong style="color:#059669">Oui</strong>';
         const no = '<strong style="color:#dc2626">Non</strong>';
         return `<tr>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;font-size:10px;">${s.name}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;color:#94a3b8;">10</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cm !== null ? cm : '—'}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;">${!reached && s.score != null ? no : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cp !== null ? cp : '—'}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:10px;font-weight:bold;">${scoreVal}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:8px;">${!reached && s.score != null ? no : ''}</td>
-          <td style="border:1px solid #cbd5e1;padding:5px 3px;text-align:center;font-size:9px;color:#64748b;">${s.appreciation}</td>
+          <td style="padding:5px 3px;font-size:10px;">${s.name}</td>
+          <td style="padding:5px 3px;text-align:center;font-size:8px;color:#94a3b8;">10</td>
+          <td style="padding:5px 3px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cm !== null ? cm : '—'}</td>
+          <td style="padding:5px 3px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
+          <td style="padding:5px 3px;text-align:center;font-size:8px;">${!reached && s.score != null ? no : ''}</td>
+          <td style="padding:5px 3px;text-align:center;font-size:9px;color:#475569;font-weight:600;">${cp !== null ? cp : '—'}</td>
+          <td style="padding:5px 3px;text-align:center;font-size:10px;font-weight:bold;">${scoreVal}</td>
+          <td style="padding:5px 3px;text-align:center;font-size:8px;">${reached ? yes : ''}</td>
+          <td style="padding:5px 3px;text-align:center;font-size:8px;">${!reached && s.score != null ? no : ''}</td>
+          <td style="padding:5px 3px;text-align:center;font-size:9px;color:#64748b;">${s.appreciation}</td>
         </tr>`;
       }
     }).join('');
@@ -499,33 +499,33 @@ export class BulletinPdfService {
     // Champs | Note min | CM/18 | Maîtrise min (Oui/Non) | CP/02 | Total/20 | Seuil réussite (Oui/Non) | Appréciation
     // NO Visa Directeur column for Primaire (it's in the signatures section)
     const tableHeader = data.isMaternelle ? `
-      <tr style="background:#0A2A5E;color:white;">
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Domaine</th>
-        <th colspan="3" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Résultats</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Appréciation de l'enseignant(e)</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;background:#0D3B85;">Visa du Directeur (trice)</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Impression et visa des parents</th>
+      <tr style="background:#fff;color:#000;">
+        <th rowspan="2" style="padding:4px;font-size:8px;text-transform:uppercase;">Domaine</th>
+        <th colspan="3" style="padding:4px;font-size:8px;text-transform:uppercase;">Résultats</th>
+        <th rowspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;">Appréciation de l'enseignant(e)</th>
+        <th rowspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;">Visa du Directeur (trice)</th>
+        <th rowspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;">Impression et visa des parents</th>
       </tr>
-      <tr style="background:#0D3B85;color:white;">
-        <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">TS</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">S</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">PS</th>
+      <tr style="background:#fff;color:#000;">
+        <th style="padding:3px;font-size:9px;">TS</th>
+        <th style="padding:3px;font-size:9px;">S</th>
+        <th style="padding:3px;font-size:9px;">PS</th>
       </tr>` : `
-      <tr style="background:#0A2A5E;color:white;">
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;text-align:left;">Champs de formation</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Note min.</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;background:#0D3B85;">CM<br/><span style="font-size:6px;font-weight:normal;">/18</span></th>
-        <th colspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Maîtrise minimale</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;background:#0D3B85;">CP<br/><span style="font-size:6px;font-weight:normal;">/02</span></th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:8px;text-transform:uppercase;">Total<br/><span style="font-size:6px;font-weight:normal;">/20</span></th>
-        <th colspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Seuil de réussite</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px;font-size:7px;text-transform:uppercase;">Appréciation</th>
+      <tr style="background:#fff;color:#000;">
+        <th rowspan="2" style="padding:4px;font-size:8px;text-transform:uppercase;text-align:left;">Champs de formation</th>
+        <th rowspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;">Note min.</th>
+        <th rowspan="2" style="padding:4px;font-size:8px;text-transform:uppercase;">CM<br/><span style="font-size:6px;font-weight:normal;">/18</span></th>
+        <th colspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;">Maîtrise minimale</th>
+        <th rowspan="2" style="padding:4px;font-size:8px;text-transform:uppercase;">CP<br/><span style="font-size:6px;font-weight:normal;">/02</span></th>
+        <th rowspan="2" style="padding:4px;font-size:8px;text-transform:uppercase;">Total<br/><span style="font-size:6px;font-weight:normal;">/20</span></th>
+        <th colspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;">Seuil de réussite</th>
+        <th rowspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;">Appréciation</th>
       </tr>
-      <tr style="background:#0D3B85;color:white;">
-        <th style="border:1px solid #114FC4;padding:3px;font-size:7px;">Oui</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:7px;">Non</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:7px;">Oui</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:7px;">Non</th>
+      <tr style="background:#fff;color:#000;">
+        <th style="padding:3px;font-size:7px;">Oui</th>
+        <th style="padding:3px;font-size:7px;">Non</th>
+        <th style="padding:3px;font-size:7px;">Oui</th>
+        <th style="padding:3px;font-size:7px;">Non</th>
       </tr>`;
 
     // Total General row (Primaire only) — column order matches carnet (NO Visa Directeur column):
@@ -537,14 +537,14 @@ export class BulletinPdfService {
       const totalCp = validScores.reduce((sum, s) => sum + (s.cp != null ? Math.round(Number(s.cp)) : Math.round(Number(s.score) - Math.round(Number(s.score) * 0.9))), 0);
       const totalScore = validScores.reduce((sum, v) => sum + Number(v.score), 0);
       return `
-      <tr style="background:#e2e8f0;font-weight:bold;">
-        <td colspan="2" style="border:1px solid #cbd5e1;padding:4px;font-size:9px;text-transform:uppercase;">TOTAL GENERAL</td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;color:#0A2A5E;">${totalCm}</td>
-        <td colspan="2" style="border:1px solid #cbd5e1;"></td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;color:#0A2A5E;">${totalCp}</td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:11px;color:#0A2A5E;">${totalScore.toFixed(2)}</td>
-        <td colspan="2" style="border:1px solid #cbd5e1;"></td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;color:#64748b;">${data.appreciationGlobale || '—'}</td>
+      <tr style="background:#0A2A5E;color:#fff;font-weight:bold;">
+        <td colspan="2" style="padding:4px;font-size:9px;text-transform:uppercase;">TOTAL GENERAL</td>
+        <td style="padding:4px;text-align:center;font-size:10px;color:#fff;">${totalCm}</td>
+        <td colspan="2" style=""></td>
+        <td style="padding:4px;text-align:center;font-size:10px;color:#fff;">${totalCp}</td>
+        <td style="padding:4px;text-align:center;font-size:11px;color:#fff;">${totalScore.toFixed(2)}</td>
+        <td colspan="2" style=""></td>
+        <td style="padding:4px;text-align:center;font-size:9px;color:#e2e8f0;">${data.appreciationGlobale || '—'}</td>
       </tr>`;
     })() : '';
 
@@ -556,27 +556,27 @@ export class BulletinPdfService {
           <tbody>${subjectRows}${totalRow}</tbody>
         </table>
         ${data.isMaternelle ? `
-        <div style="margin-top:4px;text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:3px;padding:4px;">
+        <div style="margin-top:4px;text-align:center;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:3px;padding:4px;">
           <span style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;">Symbole mérité par l'élève : </span>
           <span style="font-size:14px;">${symboleMerite}</span>
         </div>` : `
         <div style="margin-top:4px;font-size:9px;">
           <table style="width:100%;border-collapse:collapse;"><tr>
-            <td style="background:#f8fafc;padding:1px 3px;font-size:9px;">Moyenne obtenue :</td>
-            <td style="background:#f8fafc;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;color:#0A2A5E;">${this.fmt2(data.generalAverage)}/20</td>
+            <td style="background:#f1f5f9;padding:1px 3px;font-size:9px;">Moyenne obtenue :</td>
+            <td style="background:#f1f5f9;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;color:#0A2A5E;">${this.fmt2(data.generalAverage)}/20</td>
           </tr><tr>
-            <td style="background:#f8fafc;padding:1px 3px;font-size:9px;">Plus forte moyenne :</td>
-            <td style="background:#f8fafc;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;">${this.fmt2(data.highestAverage)}/20</td>
+            <td style="background:#f1f5f9;padding:1px 3px;font-size:9px;">Plus forte moyenne :</td>
+            <td style="background:#f1f5f9;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;">${this.fmt2(data.highestAverage)}/20</td>
           </tr><tr>
-            <td style="background:#f8fafc;padding:1px 3px;font-size:9px;">Plus faible moyenne :</td>
-            <td style="background:#f8fafc;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;">${this.fmt2(data.lowestAverage)}/20</td>
+            <td style="background:#f1f5f9;padding:1px 3px;font-size:9px;">Plus faible moyenne :</td>
+            <td style="background:#f1f5f9;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;">${this.fmt2(data.lowestAverage)}/20</td>
           </tr><tr>
-            <td style="background:#ecfdf5;padding:1px 3px;font-size:9px;font-weight:bold;">Seuil réussite (10/20) atteint :</td>
-            <td style="background:#ecfdf5;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#dc2626'};">${(data.generalAverage || 0) >= 10 ? 'OUI' : 'NON'}</td>
+            <td style="padding:1px 3px;font-size:9px;font-weight:bold;">Seuil réussite (10/20) atteint :</td>
+            <td style="padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#dc2626'};">${(data.generalAverage || 0) >= 10 ? 'OUI' : 'NON'}</td>
           </tr></table>
         </div>
         <!-- ⭐ Symbole mérité en bas de la colonne gauche (après seuil de réussite) -->
-        <div style="margin-top:4px;text-align:center;border:1px solid #0A2A5E;border-radius:3px;padding:6px;">
+        <div style="margin-top:4px;text-align:center;border-radius:3px;padding:6px;">
           <span style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;">Symbole mérité par l'élève</span>
           <div style="font-size:18px;margin-top:2px;">${symboleMerite}</div>
         </div>`}
@@ -586,7 +586,7 @@ export class BulletinPdfService {
     const rightColumn = data.isMaternelle ? `
       <div class="col-right">
         <!-- ANALYSE PÉDAGOGIQUE SOMMAIRE -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:5px;margin-bottom:4px;width:100%;">
+        <div style="border-radius:2px;padding:5px;margin-bottom:4px;width:100%;">
           <div style="font-size:8px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:4px;line-height:1.4;">
             ANALYSE PEDAGOGIQUE SOMMAIRE DES RESULTATS ET RECOMMANDATIONS DE L'ENSEIGNANT(E) AUX PARENTS
           </div>
@@ -594,7 +594,7 @@ export class BulletinPdfService {
         </div>
 
         <!-- 3 SIGNATURES verticales (aéré, pleine largeur) -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:5px;margin-bottom:4px;">
+        <div style="border-radius:2px;padding:5px;margin-bottom:4px;">
           <table style="width:100%;border-collapse:collapse;">
             <tr>
               <td style="width:33%;text-align:center;vertical-align:bottom;padding:5px 2px;">
@@ -624,7 +624,7 @@ export class BulletinPdfService {
       </div>` : `
       <div class="col-right">
         <!-- STATS (pleine largeur) -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
+        <div style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
           <table style="width:100%;border-collapse:collapse;"><tr>
             <td style="font-size:9px;padding:3px 0;">Nombre de matières évaluées :</td>
             <td style="font-size:9px;text-align:right;font-weight:bold;padding:3px 0;">${data.subjects.filter(s => !s.isAbsent && s.score != null).length}</td>
@@ -642,7 +642,7 @@ export class BulletinPdfService {
         </div>
 
         <!-- II - ATTITUDES (pleine largeur, occupe plus de hauteur) -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
+        <div style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
           <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:5px;">II - Attitudes</div>
           <div style="font-size:9px;margin-bottom:5px;">
             <strong>Assiduité :</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:12px;"></span>
@@ -657,13 +657,13 @@ export class BulletinPdfService {
         </div>
 
         <!-- ANALYSE DES RESULTATS (pleine largeur, occupe plus de hauteur) -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
+        <div style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
           <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:5px;">Analyse des résultats et recommandations</div>
           ${[1,2,3,4,5,6,7,8].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:5px 0;height:10px;"></div>').join('')}
         </div>
 
         <!-- 3 SIGNATURES (pleine largeur, aérées) -->
-        <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
+        <div style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
           <table style="width:100%;border-collapse:collapse;">
             <tr>
               <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 2px;">
@@ -716,7 +716,7 @@ export class BulletinPdfService {
       <div class="bulletin-title">Bulletin de ${data.evaluationTypeName} ${data.evaluationTypeCode ? '(' + data.evaluationTypeCode + ')' : ''} — ${data.periodName} ${data.academicYearName}</div>
 
       <!-- INFOS ÉLÈVE (avec photo) -->
-      <table style="width:100%;border-collapse:collapse;background:#f8fafc;border:1px solid #e2e8f0;border-radius:3px;margin-bottom:15px;">
+      <table style="width:100%;border-collapse:collapse;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:3px;margin-bottom:15px;">
       <tr>
         <td style="padding:8px 10px;width:60px;text-align:center;vertical-align:middle;">
           ${data.studentPhotoUrl
@@ -739,26 +739,26 @@ export class BulletinPdfService {
 
       <!-- SYNTHÈSE -->
       ${data.isMaternelle ? `
-      <div style="margin-top:6px;text-align:center;border:1px solid #0A2A5E;border-radius:3px;padding:6px;">
+      <div style="margin-top:6px;text-align:center;border-radius:3px;padding:6px;">
         <span style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;">Symbole mérité par l'élève</span>
         <div style="font-size:20px;margin-top:3px;">${symboleMerite}</div>
       </div>` : `
       <div style="margin-top:6px;font-size:10px;">
         <table style="width:100%;border-collapse:collapse;"><tr>
-          <td style="background:#f8fafc;padding:3px 5px;font-size:10px;">Moyenne obtenue :</td>
-          <td style="background:#f8fafc;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;color:#0A2A5E;">${this.fmt2(data.generalAverage)}/20</td>
+          <td style="background:#f1f5f9;padding:3px 5px;font-size:10px;">Moyenne obtenue :</td>
+          <td style="background:#f1f5f9;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;color:#0A2A5E;">${this.fmt2(data.generalAverage)}/20</td>
         </tr><tr>
-          <td style="background:#f8fafc;padding:3px 5px;font-size:10px;">Plus forte moyenne :</td>
-          <td style="background:#f8fafc;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;">${this.fmt2(data.highestAverage)}/20</td>
+          <td style="background:#f1f5f9;padding:3px 5px;font-size:10px;">Plus forte moyenne :</td>
+          <td style="background:#f1f5f9;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;">${this.fmt2(data.highestAverage)}/20</td>
         </tr><tr>
-          <td style="background:#f8fafc;padding:3px 5px;font-size:10px;">Plus faible moyenne :</td>
-          <td style="background:#f8fafc;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;">${this.fmt2(data.lowestAverage)}/20</td>
+          <td style="background:#f1f5f9;padding:3px 5px;font-size:10px;">Plus faible moyenne :</td>
+          <td style="background:#f1f5f9;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;">${this.fmt2(data.lowestAverage)}/20</td>
         </tr><tr>
-          <td style="background:#ecfdf5;padding:3px 5px;font-size:10px;font-weight:bold;">Seuil réussite (10/20) atteint :</td>
-          <td style="background:#ecfdf5;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#dc2626'};">${(data.generalAverage || 0) >= 10 ? 'OUI' : 'NON'}</td>
+          <td style="padding:3px 5px;font-size:10px;font-weight:bold;">Seuil réussite (10/20) atteint :</td>
+          <td style="padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#dc2626'};">${(data.generalAverage || 0) >= 10 ? 'OUI' : 'NON'}</td>
         </tr></table>
       </div>
-      <div style="margin-top:6px;text-align:center;border:1px solid #0A2A5E;border-radius:3px;padding:6px;">
+      <div style="margin-top:6px;text-align:center;border-radius:3px;padding:6px;">
         <span style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;">Symbole mérité par l'élève</span>
         <div style="font-size:20px;margin-top:3px;">${symboleMerite}</div>
       </div>`}
@@ -780,7 +780,7 @@ export class BulletinPdfService {
       </div>
 
       <!-- ANALYSE PÉDAGOGIQUE SOMMAIRE -->
-      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+      <div style="border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
         <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;line-height:1.4;">
           Analyse pédagogique sommaire des résultats et recommandations de l'enseignant(e) aux parents
         </div>
@@ -791,13 +791,13 @@ export class BulletinPdfService {
       </div>
 
       <!-- SYMBOLE MÉRITÉ -->
-      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;text-align:center;width:100%;">
+      <div style="border-radius:2px;padding:8px;margin-bottom:10px;text-align:center;width:100%;">
         <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Symbole mérité par l'élève</div>
         <div style="font-size:28px;">${symboleMerite}</div>
       </div>
 
       <!-- 3 SIGNATURES -->
-      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+      <div style="border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
         <table style="width:100%;border-collapse:collapse;">
           <tr>
             <td style="width:33%;text-align:center;vertical-align:bottom;padding:10px 3px;">
@@ -832,7 +832,7 @@ export class BulletinPdfService {
       </div>
 
       <!-- STATS -->
-      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+      <div style="border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
         <table style="width:100%;border-collapse:collapse;"><tr>
           <td style="font-size:10px;padding:4px 0;">Nombre de matières évaluées :</td>
           <td style="font-size:10px;text-align:right;font-weight:bold;padding:4px 0;">${data.subjects.filter(s => !s.isAbsent && s.score != null).length}</td>
@@ -848,7 +848,7 @@ export class BulletinPdfService {
       </div>
 
       <!-- II - ATTITUDES -->
-      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
+      <div style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
         <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">II - Attitudes</div>
         <div style="font-size:10px;margin-bottom:4px;">
           <strong>Assiduité :</strong> ${data.assiduite ? `<span style="color:#1a1a1a;">${data.assiduite}</span>` : '<span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:60%;height:12px;"></span>'}
@@ -863,13 +863,13 @@ export class BulletinPdfService {
       </div>
 
       <!-- ANALYSE DES RESULTATS -->
-      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
+      <div style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
         <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Analyse des résultats et recommandations</div>
         ${data.analyseRecommandations ? `<div style="font-size:9px;color:#475569;line-height:1.5;">${data.analyseRecommandations}</div>` : [1,2,3,4].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:4px 0;height:10px;"></div>').join('')}
       </div>
 
       <!-- 3 SIGNATURES -->
-      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
+      <div style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
         <table style="width:100%;border-collapse:collapse;">
           <tr>
             <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 3px;">
@@ -923,13 +923,14 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
 .school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:4px; color:#0A2A5E; }
 .school-info { font-size:7px; color:#555; margin-top:3px; font-style:italic; }
 .bulletin-title { text-align:center; background:#0A2A5E; color:white; padding:8px 12px; border-radius:3px; margin-bottom:15px; font-size:11px; font-weight:bold; text-transform:uppercase; }
-table.notes { width:100%; border-collapse:collapse; }
-table.notes th { color:white; border:1px solid; padding:7px 5px; font-size:7px; text-transform:uppercase; }
-table.notes td { border:1px solid #cbd5e1; padding:7px 5px; }
-table.notes tbody tr:nth-child(even) { background:#f8fafc; }
+table.notes { width:100%; border-collapse:separate; border-spacing:0; border:2px solid #000; border-radius:8px; overflow:hidden; }
+table.notes th { background:#fff; color:#000; border-right:1px solid #000; border-bottom:1px solid #000; padding:7px 5px; font-size:7px; text-transform:uppercase; }
+table.notes td { border-right:1px solid #000; border-bottom:1px solid #000; padding:7px 5px; }
+table.notes th:last-child, table.notes td:last-child { border-right:none; }
+table.notes tbody tr:last-child td { border-bottom:none; }
 .footer { margin-top:auto; padding-top:8px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; position:fixed; bottom:5mm; left:8mm; right:8mm; }
-.student-photo { width:50px; height:55px; object-fit:cover; border:1px solid #cbd5e1; border-radius:2px; }
-.student-photo-placeholder { width:50px; height:55px; border:1px solid #cbd5e1; border-radius:2px; display:flex; align-items:center; justify-content:center; font-size:7px; color:#94a3b8; background:#f8fafc; }
+.student-photo { width:50px; height:55px; object-fit:cover; border:1px solid #000; border-radius:2px; }
+.student-photo-placeholder { width:50px; height:55px; border:1px solid #000; border-radius:2px; display:flex; align-items:center; justify-content:center; font-size:7px; color:#94a3b8; background:#f1f5f9; }
 </style>
 </head>
 <body>
@@ -1112,19 +1113,19 @@ ${page2Content}
         ? `<span style="font-size:8px;color:#0A2A5E;font-weight:600;font-style:italic;">${s.teacherName}</span>`
         : '<span style="font-size:8px;color:#94a3b8;">—</span>';
       return `<tr>
-          <td style="border:1px solid #cbd5e1;padding:3px 2px;font-size:10px;font-weight:600;">${s.name}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secInt1)}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secInt2)}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;color:#1d4ed8;background:#eff6ff;">${cell(s.secMoyInter)}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secDs1)}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secDs2)}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:11px;background:#ecfdf5;">${moyCell(s.secMoyenne)}</td>
+          <td style="padding:3px 2px;font-size:10px;font-weight:600;">${s.name}</td>
+          <td style="padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secInt1)}</td>
+          <td style="padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secInt2)}</td>
+          <td style="padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secMoyInter)}</td>
+          <td style="padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secDs1)}</td>
+          <td style="padding:3px 2px;text-align:center;font-size:10px;">${cell(s.secDs2)}</td>
+          <td style="padding:3px 2px;text-align:center;font-size:11px;">${moyCell(s.secMoyenne)}</td>
           ${!isJunior ? `
-          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;color:#b45309;background:#fffbeb;font-weight:bold;">${typeof s.secCoef === 'number' ? s.secCoef : 1}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:11px;background:#ecfdf5;">${moyCell(s.secNoteCoef)}</td>` : ''}
-          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:10px;font-weight:bold;">${rang}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:9px;color:#475569;">${s.appreciation || '—'}</td>
-          <td style="border:1px solid #cbd5e1;padding:3px 2px;text-align:center;font-size:8px;">${teacherCell}</td>
+          <td style="padding:3px 2px;text-align:center;font-size:10px;font-weight:bold;">${typeof s.secCoef === 'number' ? s.secCoef : 1}</td>
+          <td style="padding:3px 2px;text-align:center;font-size:11px;">${moyCell(s.secNoteCoef)}</td>` : ''}
+          <td style="padding:3px 2px;text-align:center;font-size:10px;font-weight:bold;">${rang}</td>
+          <td style="padding:3px 2px;text-align:center;font-size:9px;color:#475569;">${s.appreciation || '—'}</td>
+          <td style="padding:3px 2px;text-align:center;font-size:8px;">${teacherCell}</td>
         </tr>`;
     };
 
@@ -1145,12 +1146,12 @@ ${page2Content}
       //    avant coefficient/rang/appréciation/professeur/signature.
       //    Junior : 7 colonnes à fusionner ; Senior : 9 (avec coef + noteCoef).
       const colSpan = isJunior ? 7 : 9;
-      return `<tr style="background:#e0f2fe;font-weight:bold;">
-        <td style="border:1px solid #0A2A5E;padding:3px 2px;font-size:10px;text-transform:uppercase;color:#0A2A5E;">${label}</td>
-        <td colspan="${colSpan}" style="border:1px solid #0A2A5E;"></td>
-        <td style="border:1px solid #0A2A5E;padding:3px 2px;text-align:center;font-size:11px;background:#dbeafe;">${bilanCell}</td>
-        <td style="border:1px solid #0A2A5E;"></td>
-        <td style="border:1px solid #0A2A5E;"></td>
+      return `<tr style="background:#f1f5f9;font-weight:bold;">
+        <td style="padding:3px 2px;font-size:10px;text-transform:uppercase;color:#0A2A5E;">${label}</td>
+        <td colspan="${colSpan}" style=""></td>
+        <td style="padding:3px 2px;text-align:center;font-size:11px;">${bilanCell}</td>
+        <td style=""></td>
+        <td style=""></td>
       </tr>`;
     };
 
@@ -1190,24 +1191,24 @@ ${page2Content}
     //    Raccourcir les libellés permet d'ajouter la colonne « Professeur »
     //    sans déborder en largeur sur l'A4 portrait.
     const tableHeader = `
-      <tr style="background:#0A2A5E;color:white;">
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;text-align:left;">Discipline</th>
-        <th colspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;">Inter. écrites</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;background:#0D3B85;">Moy d'inter</th>
-        <th colspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;">Devoirs surveillés</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;background:#0D3B85;">Moy</th>
+      <tr style="background:#fff;color:#000;">
+        <th rowspan="2" style="padding:4px 3px;font-size:9px;text-transform:uppercase;text-align:left;">Discipline</th>
+        <th colspan="2" style="padding:4px 3px;font-size:9px;text-transform:uppercase;">Inter. écrites</th>
+        <th rowspan="2" style="padding:4px 3px;font-size:8px;text-transform:uppercase;">Moy d'inter</th>
+        <th colspan="2" style="padding:4px 3px;font-size:9px;text-transform:uppercase;">Devoirs surveillés</th>
+        <th rowspan="2" style="padding:4px 3px;font-size:9px;text-transform:uppercase;">Moy</th>
         ${!isJunior ? `
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;">Coef</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;background:#0D3B85;">Note coef</th>` : ''}
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:9px;text-transform:uppercase;">Rang</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;">Appréciation</th>
-        <th rowspan="2" style="border:1px solid #0D3B85;padding:4px 3px;font-size:8px;text-transform:uppercase;">Professeur</th>
+        <th rowspan="2" style="padding:4px 3px;font-size:8px;text-transform:uppercase;">Coef</th>
+        <th rowspan="2" style="padding:4px 3px;font-size:8px;text-transform:uppercase;">Note coef</th>` : ''}
+        <th rowspan="2" style="padding:4px 3px;font-size:9px;text-transform:uppercase;">Rang</th>
+        <th rowspan="2" style="padding:4px 3px;font-size:8px;text-transform:uppercase;">Appréciation</th>
+        <th rowspan="2" style="padding:4px 3px;font-size:8px;text-transform:uppercase;">Professeur</th>
       </tr>
-      <tr style="background:#114FC4;color:white;">
-        <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">IE1</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">IE2</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">DS1</th>
-        <th style="border:1px solid #114FC4;padding:3px;font-size:9px;">DS2</th>
+      <tr style="background:#fff;color:#000;">
+        <th style="padding:3px;font-size:9px;">IE1</th>
+        <th style="padding:3px;font-size:9px;">IE2</th>
+        <th style="padding:3px;font-size:9px;">DS1</th>
+        <th style="padding:3px;font-size:9px;">DS2</th>
       </tr>`;
 
     // ── Lignes de totaux + moyenne trimestrielle (colspans : 6e/5e = 11
@@ -1216,42 +1217,42 @@ ${page2Content}
     //    Avant : 12 (junior) / 14 (senior). Maintenant : 11 / 13.
     const totalRows = `
       ${!isJunior ? `
-      <tr style="background:#e2e8f0;font-weight:bold;">
-        <td colspan="7" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Total des coefficients</td>
-        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:10px;color:#b45309;">${totalCoef ?? '—'}</td>
-        <td colspan="5" style="border:1px solid #cbd5e1;"></td>
+      <tr style="background:#f1f5f9;font-weight:bold;">
+        <td colspan="7" style="padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Total des coefficients</td>
+        <td style="padding:3px;text-align:center;font-size:10px;color:#0f172a;">${totalCoef ?? '—'}</td>
+        <td colspan="5" style=""></td>
       </tr>
-      <tr style="background:#e2e8f0;font-weight:bold;">
-        <td colspan="7" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Total des moyennes (Σ moy × coef)</td>
-        <td style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:10px;color:#059669;">${totalNotesCoef !== null ? totalNotesCoef.toFixed(2) : '—'}</td>
-        <td colspan="5" style="border:1px solid #cbd5e1;"></td>
+      <tr style="background:#f1f5f9;font-weight:bold;">
+        <td colspan="7" style="padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Total des moyennes (Σ moy × coef)</td>
+        <td style="padding:3px;text-align:center;font-size:10px;color:#059669;">${totalNotesCoef !== null ? totalNotesCoef.toFixed(2) : '—'}</td>
+        <td colspan="5" style=""></td>
       </tr>` : ''}
-      <tr style="background:#dbeafe;font-weight:bold;">
-        <td colspan="6" style="border:1px solid #cbd5e1;padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Moyenne trimestrielle</td>
-        <td colspan="${isJunior ? 1 : 2}" style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:11px;color:#0A2A5E;">${fmtSec(data.generalAverage)}</td>
-        <td colspan="${isJunior ? 4 : 5}" style="border:1px solid #cbd5e1;padding:3px;text-align:center;font-size:9px;color:#0A2A5E;">Rang : ${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
+      <tr style="background:#0A2A5E;color:#fff;font-weight:bold;">
+        <td colspan="6" style="padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Moyenne trimestrielle</td>
+        <td colspan="${isJunior ? 1 : 2}" style="padding:3px;text-align:center;font-size:11px;color:#fff;">${fmtSec(data.generalAverage)}</td>
+        <td colspan="${isJunior ? 4 : 5}" style="padding:3px;text-align:center;font-size:9px;color:#fff;">Rang : ${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
       </tr>`;
 
     // ── Récap du 3e trimestre (moyennes T1 + T2 + moyenne annuelle + passage) ──
     const recapBlock = data.secRecap ? `
-      <div style="margin-top:6px;border:2px solid #0A2A5E;border-radius:3px;overflow:hidden;">
+      <div style="margin-top:6px;border:2px solid #000;border-radius:8px;overflow:hidden;">
         <div style="background:#0A2A5E;color:white;font-size:9px;font-weight:bold;text-transform:uppercase;text-align:center;padding:3px;">Récapitulatif de l'année (3e trimestre)</div>
         <table style="width:100%;border-collapse:collapse;font-size:10px;">
           <tr>
-            <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne 1er trimestre :</td>
-            <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.secRecap.period1Average)}</td>
-            <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne 2e trimestre :</td>
-            <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.secRecap.period2Average)}</td>
+            <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Moyenne 1er trimestre :</td>
+            <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.secRecap.period1Average)}</td>
+            <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Moyenne 2e trimestre :</td>
+            <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.secRecap.period2Average)}</td>
           </tr>
           <tr>
-            <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne annuelle :</td>
-            <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#0A2A5E;font-size:11px;">${fmtSec(data.secRecap.annualAverage)}</td>
-            <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Rang annuel :</td>
-            <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${data.secRecap.annualRank ? formatRank(data.secRecap.annualRank, feminine) : '—'}</td>
+            <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Moyenne annuelle :</td>
+            <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;color:#0A2A5E;font-size:11px;">${fmtSec(data.secRecap.annualAverage)}</td>
+            <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Rang annuel :</td>
+            <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;">${data.secRecap.annualRank ? formatRank(data.secRecap.annualRank, feminine) : '—'}</td>
           </tr>
           <tr>
-            <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Décision du conseil :</td>
-            <td colspan="3" style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:${(data.secRecap.annualAverage ?? 0) >= 10 ? '#059669' : '#dc2626'};">${data.secRecap.decision || '—'}</td>
+            <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Décision du conseil :</td>
+            <td colspan="3" style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;color:${(data.secRecap.annualAverage ?? 0) >= 10 ? '#059669' : '#dc2626'};">${data.secRecap.decision || '—'}</td>
           </tr>
         </table>
       </div>` : '';
@@ -1283,13 +1284,16 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
 .ministere { font-size:8px; font-weight:bold; text-transform:uppercase; letter-spacing:0.3px; line-height:1.3; }
 .school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
 .school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
-.bulletin-title { text-align:center; border:2px solid #0A2A5E; padding:4px 8px; margin-bottom:6px; font-size:11px; font-weight:bold; text-transform:uppercase; color:#0A2A5E; background:#f8fafc; }
-table.notes { width:100%; border-collapse:collapse; }
-table.notes th { color:white; border:1px solid; padding:4px 3px; font-size:8px; text-transform:uppercase; }
-table.notes td { border:1px solid #cbd5e1; padding:3px 2px; }
-table.notes tbody tr:nth-child(even) { background:#f8fafc; }
-.info-table { width:100%; border-collapse:collapse; margin-bottom:6px; border:1px solid #0A2A5E; }
-.info-table td { border:1px solid #cbd5e1; padding:3px 5px; font-size:9px; background:#f8fafc; }
+.bulletin-title { text-align:center; border:2px solid #0A2A5E; padding:4px 8px; margin-bottom:6px; font-size:11px; font-weight:bold; text-transform:uppercase; color:#0A2A5E; background:#f1f5f9; }
+table.notes { width:100%; border-collapse:separate; border-spacing:0; border:2px solid #000; border-radius:8px; overflow:hidden; }
+table.notes th { background:#fff; color:#000; border-right:1px solid #000; border-bottom:1px solid #000; padding:4px 3px; font-size:8px; text-transform:uppercase; }
+table.notes td { border-right:1px solid #000; border-bottom:1px solid #000; padding:3px 2px; }
+table.notes th:last-child, table.notes td:last-child { border-right:none; }
+table.notes tbody tr:last-child td { border-bottom:none; }
+.info-table { width:100%; border-collapse:separate; border-spacing:0; margin-bottom:6px; border:1px solid #000; border-radius:6px; overflow:hidden; }
+.info-table td { border-right:1px solid #000; border-bottom:1px solid #000; padding:3px 5px; font-size:9px; background:#f1f5f9; }
+.info-table td:last-child { border-right:none; }
+.info-table tr:last-child td { border-bottom:none; }
 /* ⭐ 2026-09-28 — Footer reste au PIED de la page (flex pousse en bas),
    ne flotte plus en haut si la page est vide. */
 .footer { margin-top:auto; padding-top:6px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; }
@@ -1328,10 +1332,10 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   <!-- INFOS ÉLÈVE (avec photo, modèle : Photo | Année | Nom | Classe / Effectif | Matricule | Rang) -->
   <table class="info-table">
     <tr>
-      <td rowspan="2" style="width:55px;text-align:center;vertical-align:middle;border:1px solid #cbd5e1;">
+      <td rowspan="2" style="width:55px;text-align:center;vertical-align:middle;border:1px solid #000;">
         ${data.studentPhotoUrl
-          ? `<img src="${data.studentPhotoUrl}" style="width:45px;height:50px;object-fit:cover;border:1px solid #cbd5e1;border-radius:2px;" alt="Photo" />`
-          : `<div style="width:45px;height:50px;border:1px solid #cbd5e1;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#94a3b8;background:#f8fafc;">Photo</div>`}
+          ? `<img src="${data.studentPhotoUrl}" style="width:45px;height:50px;object-fit:cover;border:1px solid #000;border-radius:2px;" alt="Photo" />`
+          : `<div style="width:45px;height:50px;border:1px solid #000;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#94a3b8;background:#f1f5f9;">Photo</div>`}
       </td>
       <td>Année scolaire : <strong>${data.academicYearName}</strong></td>
       <td>Nom et prénoms : <strong style="text-transform:uppercase;">${data.studentName}</strong></td>
@@ -1355,16 +1359,16 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   ${recapBlock}
 
   <!-- ═══ BLOC : Assiduité (total d'heures depuis module Vie Scolaire) ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
+  <div style="border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Assiduité</div>
     <table style="width:100%;border-collapse:collapse;font-size:10px;">
       <tr>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;text-align:right;">Total d'heures d'absence/punition :</td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.assiduityHours ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
+        <td style="border:1px solid #000;padding:4px 6px;background:#f1f5f9;font-weight:bold;text-align:right;">Total d'heures d'absence/punition :</td>
+        <td style="border:1px solid #000;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.assiduityHours ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
           ${typeof data.assiduityHours === 'number' ? `${data.assiduityHours.toFixed(2)} h` : '0.00 h'}
         </td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;text-align:right;">Nombre de sanctions :</td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.sanctionCount ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
+        <td style="border:1px solid #000;padding:4px 6px;background:#f1f5f9;font-weight:bold;text-align:right;">Nombre de sanctions :</td>
+        <td style="border:1px solid #000;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.sanctionCount ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
           ${typeof data.sanctionCount === 'number' ? data.sanctionCount : 0}
         </td>
       </tr>
@@ -1372,36 +1376,36 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   </div>
 
   <!-- ═══ BLOC : Résultats de classe ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
+  <div style="border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Résultats de classe</div>
     <table style="width:100%;border-collapse:collapse;font-size:10px;">
       <tr>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne trimestrielle :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#0A2A5E;font-size:12px;">${fmtSec(data.generalAverage)}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Rang :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
+        <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Moyenne trimestrielle :</td>
+        <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;color:#0A2A5E;font-size:12px;">${fmtSec(data.generalAverage)}</td>
+        <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Rang :</td>
+        <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;">${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
       </tr>
       <tr>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne de la classe :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.classAverage)}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne la plus forte :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#059669;">${fmtSec(data.highestAverage)}</td>
+        <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Moyenne de la classe :</td>
+        <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.classAverage)}</td>
+        <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Moyenne la plus forte :</td>
+        <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;color:#059669;">${fmtSec(data.highestAverage)}</td>
       </tr>
       <tr>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne la plus faible :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#dc2626;">${fmtSec(data.lowestAverage)}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Effectif :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${data.totalStudents}</td>
+        <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Moyenne la plus faible :</td>
+        <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;color:#dc2626;">${fmtSec(data.lowestAverage)}</td>
+        <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Effectif :</td>
+        <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;">${data.totalStudents}</td>
       </tr>
     </table>
   </div>
 
   <!-- ═══ BLOC UNIFIÉ : Mention du conseil de classe + Appréciation + Signatures (3 colonnes) ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:6px;margin-bottom:8px;width:100%;">
+  <div style="border-radius:3px;padding:6px;margin-bottom:8px;width:100%;">
     <table style="width:100%;border-collapse:collapse;">
       <tr>
         <!-- COLONNE 1 : Mention du conseil de classe (Distinctions + Sanctions en cases à cocher carrées) -->
-        <td style="width:34%;vertical-align:top;border:1px solid #cbd5e1;padding:4px;">
+        <td style="width:34%;vertical-align:top;border:1px solid #000;padding:4px;">
           <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Mention du conseil de classe</div>
           ${(() => {
             const dists = data.allDistinctions || [];
@@ -1409,7 +1413,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
             const sanctions = dists.filter(d => d.type === 'SANCTION');
             const sq = (d: any) => {
               const checked = data.distinctionLabel === d.label;
-              return `<span style="display:inline-block;width:9px;height:9px;border:1px solid #0A2A5E;margin-right:3px;vertical-align:middle;${checked ? 'background:#0A2A5E;' : 'background:white;'}"></span>`;
+              return `<span style="display:inline-block;width:9px;height:9px;margin-right:3px;vertical-align:middle;${checked ? 'background:#0A2A5E;' : 'background:white;'}"></span>`;
             };
             let html = '';
             if (distinctions.length > 0) {
@@ -1429,7 +1433,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
           })()}
         </td>
         <!-- COLONNE 2 : Appréciation du conseil de classe + Nom/Signature professeur principal -->
-        <td style="width:33%;vertical-align:top;border:1px solid #cbd5e1;padding:4px;">
+        <td style="width:33%;vertical-align:top;border:1px solid #000;padding:4px;">
           <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Appréciation du conseil de classe</div>
           <div style="font-size:8px;color:#1a1a1a;line-height:1.4;min-height:60px;">
             ${data.councilAppreciation || data.analyseRecommandations || '\u2014'}
@@ -1443,7 +1447,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
           </div>
         </td>
         <!-- COLONNE 3 : Signature et cachet du chef d'établissement -->
-        <td style="width:33%;vertical-align:top;border:1px solid #cbd5e1;padding:4px;">
+        <td style="width:33%;vertical-align:top;border:1px solid #000;padding:4px;">
           <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;text-align:center;">Signature et cachet du chef d'établissement</div>
           <div style="text-align:center;margin-top:10px;">
             ${this.renderDirectorSealsZone(data, 40)}
@@ -1578,11 +1582,11 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
         ? `<span style="font-size:8px;color:#0A2A5E;font-weight:600;font-style:italic;">${s.teacherName}</span>`
         : '<span style="font-size:8px;color:#94a3b8;">—</span>';
       return `<tr>
-          <td style="border:1px solid #cbd5e1;padding:4px 3px;font-size:10px;font-weight:600;">${s.name}</td>
-          <td style="border:1px solid #cbd5e1;padding:4px 3px;text-align:center;font-size:11px;background:#ecfdf5;">${noteCell}</td>
-          <td style="border:1px solid #cbd5e1;padding:4px 3px;text-align:center;font-size:10px;font-weight:bold;">${rang}</td>
-          <td style="border:1px solid #cbd5e1;padding:4px 3px;text-align:center;font-size:9px;color:#475569;">${s.appreciation || '—'}</td>
-          <td style="border:1px solid #cbd5e1;padding:4px 3px;text-align:center;font-size:8px;">${teacherCell}</td>
+          <td style="padding:4px 3px;font-size:10px;font-weight:600;">${s.name}</td>
+          <td style="padding:4px 3px;text-align:center;font-size:11px;">${noteCell}</td>
+          <td style="padding:4px 3px;text-align:center;font-size:10px;font-weight:bold;">${rang}</td>
+          <td style="padding:4px 3px;text-align:center;font-size:9px;color:#475569;">${s.appreciation || '—'}</td>
+          <td style="padding:4px 3px;text-align:center;font-size:8px;">${teacherCell}</td>
         </tr>`;
     }).join('');
 
@@ -1611,13 +1615,16 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
 .ministere { font-size:8px; font-weight:bold; text-transform:uppercase; letter-spacing:0.3px; line-height:1.3; }
 .school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
 .school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
-.bulletin-title { text-align:center; border:2px solid #0A2A5E; padding:4px 8px; margin-bottom:6px; font-size:11px; font-weight:bold; text-transform:uppercase; color:#0A2A5E; background:#f8fafc; }
-table.notes { width:100%; border-collapse:collapse; }
-table.notes th { color:white; border:1px solid #0D3B85; padding:5px 3px; font-size:8px; text-transform:uppercase; }
-table.notes td { border:1px solid #cbd5e1; padding:4px 3px; }
-table.notes tbody tr:nth-child(even) { background:#f8fafc; }
-.info-table { width:100%; border-collapse:collapse; margin-bottom:6px; border:1px solid #0A2A5E; }
-.info-table td { border:1px solid #cbd5e1; padding:3px 5px; font-size:9px; background:#f8fafc; }
+.bulletin-title { text-align:center; border:2px solid #0A2A5E; padding:4px 8px; margin-bottom:6px; font-size:11px; font-weight:bold; text-transform:uppercase; color:#0A2A5E; background:#f1f5f9; }
+table.notes { width:100%; border-collapse:separate; border-spacing:0; border:2px solid #000; border-radius:8px; overflow:hidden; }
+table.notes th { background:#fff; color:#000; border-right:1px solid #000; border-bottom:1px solid #000; padding:5px 3px; font-size:8px; text-transform:uppercase; }
+table.notes td { border-right:1px solid #000; border-bottom:1px solid #000; padding:4px 3px; }
+table.notes th:last-child, table.notes td:last-child { border-right:none; }
+table.notes tbody tr:last-child td { border-bottom:none; }
+.info-table { width:100%; border-collapse:separate; border-spacing:0; margin-bottom:6px; border:1px solid #000; border-radius:6px; overflow:hidden; }
+.info-table td { border-right:1px solid #000; border-bottom:1px solid #000; padding:3px 5px; font-size:9px; background:#f1f5f9; }
+.info-table td:last-child { border-right:none; }
+.info-table tr:last-child td { border-bottom:none; }
 /* ⭐ 2026-09-28 — Footer reste au PIED de la page (flex pousse en bas). */
 .footer { margin-top:auto; padding-top:6px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; }
 </style>
@@ -1667,38 +1674,38 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   </table>
 
   <!-- TABLEAU DES NOTES (coins arrondis, bordure navy) : Discipline | Note /20 | Rang | Appréciation | Professeur -->
-  <div style="border:2px solid #0A2A5E;border-radius:4px;overflow:hidden;">
+  <div style="">
     <table class="notes">
       <thead>
-        <tr style="background:#0A2A5E;color:white;">
-          <th style="border:1px solid #0D3B85;padding:5px 4px;font-size:9px;text-transform:uppercase;text-align:left;">Discipline</th>
-          <th style="border:1px solid #0D3B85;padding:5px 4px;font-size:9px;text-transform:uppercase;background:#0D3B85;">Note /20</th>
-          <th style="border:1px solid #0D3B85;padding:5px 4px;font-size:9px;text-transform:uppercase;">Rang</th>
-          <th style="border:1px solid #0D3B85;padding:5px 4px;font-size:9px;text-transform:uppercase;">Appréciation</th>
-          <th style="border:1px solid #0D3B85;padding:5px 4px;font-size:8px;text-transform:uppercase;">Professeur</th>
+        <tr style="background:#fff;color:#000;">
+          <th style="padding:5px 4px;font-size:9px;text-transform:uppercase;text-align:left;">Discipline</th>
+          <th style="padding:5px 4px;font-size:9px;text-transform:uppercase;">Note /20</th>
+          <th style="padding:5px 4px;font-size:9px;text-transform:uppercase;">Rang</th>
+          <th style="padding:5px 4px;font-size:9px;text-transform:uppercase;">Appréciation</th>
+          <th style="padding:5px 4px;font-size:8px;text-transform:uppercase;">Professeur</th>
         </tr>
       </thead>
       <tbody>${subjectRows}
-        <tr style="background:#dbeafe;font-weight:bold;">
-          <td colspan="2" style="border:1px solid #cbd5e1;padding:4px;font-size:9px;text-transform:uppercase;text-align:right;">Moyenne de l'évaluation</td>
-          <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:11px;color:#0A2A5E;">${fmtSec(data.generalAverage)}</td>
-          <td colspan="2" style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;color:#0A2A5E;">Rang : ${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
+        <tr style="background:#0A2A5E;color:#fff;font-weight:bold;">
+          <td colspan="2" style="padding:4px;font-size:9px;text-transform:uppercase;text-align:right;">Moyenne de l'évaluation</td>
+          <td style="padding:4px;text-align:center;font-size:11px;color:#fff;">${fmtSec(data.generalAverage)}</td>
+          <td colspan="2" style="padding:4px;text-align:center;font-size:9px;color:#fff;">Rang : ${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
         </tr>
       </tbody>
     </table>
   </div>
 
   <!-- ═══ BLOC : Assiduité (total d'heures depuis module Vie Scolaire) ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
+  <div style="border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Assiduité</div>
     <table style="width:100%;border-collapse:collapse;font-size:10px;">
       <tr>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;text-align:right;">Total d'heures d'absence/punition :</td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.assiduityHours ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
+        <td style="border:1px solid #000;padding:4px 6px;background:#f1f5f9;font-weight:bold;text-align:right;">Total d'heures d'absence/punition :</td>
+        <td style="border:1px solid #000;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.assiduityHours ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
           ${typeof data.assiduityHours === 'number' ? `${data.assiduityHours.toFixed(2)} h` : '0.00 h'}
         </td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;background:#f8fafc;font-weight:bold;text-align:right;">Nombre de sanctions :</td>
-        <td style="border:1px solid #cbd5e1;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.sanctionCount ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
+        <td style="border:1px solid #000;padding:4px 6px;background:#f1f5f9;font-weight:bold;text-align:right;">Nombre de sanctions :</td>
+        <td style="border:1px solid #000;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.sanctionCount ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
           ${typeof data.sanctionCount === 'number' ? data.sanctionCount : 0}
         </td>
       </tr>
@@ -1706,35 +1713,35 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   </div>
 
   <!-- ═══ BLOC : Résultats de classe ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
+  <div style="border-radius:3px;padding:8px;margin-bottom:8px;width:100%;">
     <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;">Résultats de classe</div>
     <table style="width:100%;border-collapse:collapse;font-size:10px;">
       <tr>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne de l'évaluation :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#0A2A5E;font-size:12px;">${fmtSec(data.generalAverage)}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Rang :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
+        <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Moyenne de l'évaluation :</td>
+        <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;color:#0A2A5E;font-size:12px;">${fmtSec(data.generalAverage)}</td>
+        <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Rang :</td>
+        <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;">${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
       </tr>
       <tr>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne de la classe :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.classAverage)}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne la plus forte :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#059669;">${fmtSec(data.highestAverage)}</td>
+        <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Moyenne de la classe :</td>
+        <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.classAverage)}</td>
+        <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Moyenne la plus forte :</td>
+        <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;color:#059669;">${fmtSec(data.highestAverage)}</td>
       </tr>
       <tr>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Moyenne la plus faible :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;color:#dc2626;">${fmtSec(data.lowestAverage)}</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;background:#f8fafc;font-weight:bold;">Effectif :</td>
-        <td style="border:1px solid #cbd5e1;padding:3px 5px;text-align:center;font-weight:bold;">${data.totalStudents}</td>
+        <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Moyenne la plus faible :</td>
+        <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;color:#dc2626;">${fmtSec(data.lowestAverage)}</td>
+        <td style="border:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Effectif :</td>
+        <td style="border:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;">${data.totalStudents}</td>
       </tr>
     </table>
   </div>
 
   <!-- ═══ BLOC UNIFIÉ : Mention du conseil de classe + Appréciation + Signatures (3 colonnes) ═══ -->
-  <div style="border:1px solid #0A2A5E;border-radius:3px;padding:6px;margin-bottom:8px;width:100%;">
+  <div style="border-radius:3px;padding:6px;margin-bottom:8px;width:100%;">
     <table style="width:100%;border-collapse:collapse;">
       <tr>
-        <td style="width:34%;vertical-align:top;border:1px solid #cbd5e1;padding:4px;">
+        <td style="width:34%;vertical-align:top;border:1px solid #000;padding:4px;">
           <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Mention du conseil de classe</div>
           ${(() => {
             const dists = data.allDistinctions || [];
@@ -1742,7 +1749,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
             const sanctions = dists.filter(d => d.type === 'SANCTION');
             const sq = (d: any) => {
               const checked = data.distinctionLabel === d.label;
-              return `<span style="display:inline-block;width:9px;height:9px;border:1px solid #0A2A5E;margin-right:3px;vertical-align:middle;${checked ? 'background:#0A2A5E;' : 'background:white;'}"></span>`;
+              return `<span style="display:inline-block;width:9px;height:9px;margin-right:3px;vertical-align:middle;${checked ? 'background:#0A2A5E;' : 'background:white;'}"></span>`;
             };
             let html = '';
             if (distinctions.length > 0) {
@@ -1761,7 +1768,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
             return html;
           })()}
         </td>
-        <td style="width:33%;vertical-align:top;border:1px solid #cbd5e1;padding:4px;">
+        <td style="width:33%;vertical-align:top;border:1px solid #000;padding:4px;">
           <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Appréciation du conseil de classe</div>
           <div style="font-size:8px;color:#1a1a1a;line-height:1.4;min-height:60px;">
             ${data.councilAppreciation || data.analyseRecommandations || '\u2014'}
@@ -1774,7 +1781,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
               : '<div style="font-size:6px;color:#64748b;margin-top:1px;">Nom / Signature</div>'}
           </div>
         </td>
-        <td style="width:33%;vertical-align:top;border:1px solid #cbd5e1;padding:4px;">
+        <td style="width:33%;vertical-align:top;border:1px solid #000;padding:4px;">
           <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;text-align:center;">Signature et cachet du chef d'établissement</div>
           <div style="text-align:center;margin-top:10px;">
             ${this.renderDirectorSealsZone(data, 40)}
@@ -2501,33 +2508,29 @@ ${page2Content}
     };
     const valColor = (val: number | null | undefined): string => {
       if (val === null || val === undefined) return '#94a3b8';
-      if (isMaternelle) return val >= 2.5 ? '#059669' : val >= 1.5 ? '#2563eb' : '#d97706';
+      if (isMaternelle) return val >= 2.5 ? '#059669' : val >= 1.5 ? '#0f172a' : '#d97706';
       return val >= 10 ? '#059669' : '#dc2626';
     };
-    const valBg = (val: number | null | undefined): string => {
-      if (val === null || val === undefined) return 'transparent';
-      if (isMaternelle) return val >= 2.5 ? '#d1fae5' : val >= 1.5 ? '#dbeafe' : '#fef3c7';
-      return val >= 10 ? '#d1fae5' : '#fee2e2';
-    };
+    
 
     // Lignes du tableau — SANS la cellule vide à droite
     const subjectRows = data.subjects.map((subject) => {
       const vpm = subject.vueParMatiere;
       if (!vpm) {
         return `<tr>
-          <td style="border:1px solid #cbd5e1;padding:6px 4px;font-size:10px;">${subject.name}</td>
-          <td colspan="5" style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;color:#94a3b8;font-size:9px;">Aucune donnée</td>
-          <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;color:#94a3b8;font-size:9px;">—</td>
+          <td style="padding:6px 4px;font-size:10px;">${subject.name}</td>
+          <td colspan="5" style="padding:6px 4px;text-align:center;color:#94a3b8;font-size:9px;">Aucune donnée</td>
+          <td style="padding:6px 4px;text-align:center;color:#94a3b8;font-size:9px;">—</td>
         </tr>`;
       }
       return `<tr>
-        <td style="border:1px solid #cbd5e1;padding:6px 4px;font-size:10px;font-weight:600;">${subject.name}</td>
-        <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:10px;font-weight:bold;background:${valBg(vpm.em1)};color:${valColor(vpm.em1)}">${fmtVal(vpm.em1)}</td>
-        <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:10px;font-weight:bold;background:${valBg(vpm.em2)};color:${valColor(vpm.em2)}">${fmtVal(vpm.em2)}</td>
-        <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:10px;font-weight:bold;background:${valBg(vpm.moyEm)};color:${valColor(vpm.moyEm)}">${fmtVal(vpm.moyEm)}</td>
-        <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:10px;font-weight:bold;background:${valBg(vpm.ec)};color:${valColor(vpm.ec)}">${fmtVal(vpm.ec)}</td>
-        <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:11px;font-weight:bold;background:${valBg(vpm.moyenne)};color:${valColor(vpm.moyenne)}">${fmtVal(vpm.moyenne)}</td>
-        <td style="border:1px solid #cbd5e1;padding:6px 4px;text-align:center;font-size:9px;color:#475569;">${subject.appreciation || '—'}</td>
+        <td style="padding:6px 4px;font-size:10px;font-weight:600;">${subject.name}</td>
+        <td style="padding:6px 4px;text-align:center;font-size:10px;font-weight:bold;color:${valColor(vpm.em1)}">${fmtVal(vpm.em1)}</td>
+        <td style="padding:6px 4px;text-align:center;font-size:10px;font-weight:bold;color:${valColor(vpm.em2)}">${fmtVal(vpm.em2)}</td>
+        <td style="padding:6px 4px;text-align:center;font-size:10px;font-weight:bold;color:${valColor(vpm.moyEm)}">${fmtVal(vpm.moyEm)}</td>
+        <td style="padding:6px 4px;text-align:center;font-size:10px;font-weight:bold;color:${valColor(vpm.ec)}">${fmtVal(vpm.ec)}</td>
+        <td style="padding:6px 4px;text-align:center;font-size:11px;font-weight:bold;color:${valColor(vpm.moyenne)}">${fmtVal(vpm.moyenne)}</td>
+        <td style="padding:6px 4px;text-align:center;font-size:9px;color:#475569;">${subject.appreciation || '—'}</td>
       </tr>`;
     }).join('');
 
@@ -2558,17 +2561,20 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
 .school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
 .school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
 .bulletin-title { text-align:center; background:#0A2A5E; color:white; padding:6px 10px; border-radius:3px; margin-bottom:10px; font-size:10px; font-weight:bold; text-transform:uppercase; }
-.info-table { width:100%; border-collapse:collapse; margin-bottom:10px; border:1px solid #0A2A5E; }
-.info-table td { border:1px solid #cbd5e1; padding:4px 6px; font-size:9px; background:#f8fafc; }
-table.notes { width:100%; border-collapse:collapse; }
-table.notes th { color:white; border:1px solid; padding:6px 4px; font-size:8px; text-transform:uppercase; }
-table.notes td { border:1px solid #cbd5e1; padding:6px 4px; }
-table.notes tbody tr:nth-child(even) { background:#f8fafc; }
+.info-table { width:100%; border-collapse:separate; border-spacing:0; margin-bottom:10px; border:1px solid #000; border-radius:6px; overflow:hidden; }
+.info-table td { border-right:1px solid #000; border-bottom:1px solid #000; padding:4px 6px; font-size:9px; background:#f1f5f9; }
+.info-table td:last-child { border-right:none; }
+.info-table tr:last-child td { border-bottom:none; }
+table.notes { width:100%; border-collapse:separate; border-spacing:0; border:2px solid #000; border-radius:8px; overflow:hidden; }
+table.notes th { background:#fff; color:#000; border-right:1px solid #000; border-bottom:1px solid #000; padding:6px 4px; font-size:8px; text-transform:uppercase; }
+table.notes td { border-right:1px solid #000; border-bottom:1px solid #000; padding:6px 4px; }
+table.notes th:last-child, table.notes td:last-child { border-right:none; }
+table.notes tbody tr:last-child td { border-bottom:none; }
 .footer { margin-top:auto; padding-top:6px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; }
-.student-photo { width:45px; height:50px; object-fit:cover; border:1px solid #cbd5e1; border-radius:2px; }
-.student-photo-placeholder { width:45px; height:50px; border:1px solid #cbd5e1; border-radius:2px; display:flex; align-items:center; justify-content:center; font-size:7px; color:#94a3b8; background:#f8fafc; }
+.student-photo { width:45px; height:50px; object-fit:cover; border:1px solid #000; border-radius:2px; }
+.student-photo-placeholder { width:45px; height:50px; border:1px solid #000; border-radius:2px; display:flex; align-items:center; justify-content:center; font-size:7px; color:#94a3b8; background:#f1f5f9; }
 .synthesis { display:flex; justify-content:space-around; margin-top:8px; gap:6px; }
-.synthesis div { text-align:center; padding:5px 8px; border:1px solid #e2e8f0; border-radius:3px; flex:1; background:#f8fafc; }
+.synthesis div { text-align:center; padding:5px 8px; border:1px solid #e2e8f0; border-radius:3px; flex:1; background:#f1f5f9; }
 .synthesis .label { font-size:8px; color:#64748b; text-transform:uppercase; font-weight:bold; }
 .synthesis .value { font-size:12px; font-weight:bold; margin-top:2px; }
 .signatures { display:flex; justify-content:space-between; margin-top:20px; gap:12px; }
@@ -2618,7 +2624,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   </table>
 
   <!-- TABLEAU DES NOTES (coins arrondis, bordure navy) -->
-  <div style="border:2px solid #0A2A5E;border-radius:4px;overflow:hidden;">
+  <div style="">
     <table class="notes">
       <thead><tr>
         <th style="text-align:left">Matière</th>
@@ -2632,13 +2638,13 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
       <tbody>${subjectRows}</tbody>
       <tfoot>
         <tr style="background:#0A2A5E;color:white;font-weight:bold;">
-          <td colspan="5" style="border:1px solid #0D3B85;padding:5px;text-align:right;text-transform:uppercase;font-size:9px;">
+          <td colspan="5" style="padding:5px;text-align:right;text-transform:uppercase;font-size:9px;">
             ${isMaternelle ? 'Appréciation générale' : 'Moyenne générale'}
           </td>
-          <td style="border:1px solid #0D3B85;padding:5px;text-align:center;font-size:12px;background:#dbeafe;color:#0A2A5E;">
+          <td style="padding:5px;text-align:center;font-size:12px;color:#fff;">
             ${isMaternelle ? (data.appreciationGlobale || '—') : (data.generalAverage !== null ? data.generalAverage.toFixed(2) + '/20' : '—')}
           </td>
-          <td style="border:1px solid #0D3B85;padding:5px;text-align:center;font-size:9px;background:#dbeafe;color:#0A2A5E;">${mentionStr}</td>
+          <td style="padding:5px;text-align:center;font-size:9px;color:#fff;">${mentionStr}</td>
         </tr>
       </tfoot>
     </table>

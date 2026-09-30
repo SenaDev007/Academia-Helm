@@ -21,6 +21,13 @@
  *   GET /federis/school/national-exams/:examType/results
  *   GET /federis/school/national-exams/:examType/releve/:candidateId?examId=
  *   GET /federis/school/national-exams/:examType/releve/:candidateId/pdf?examId=
+ *
+ * ⭐ T27 (2026-10-01) — Actions en bloc sur les relevés distribués :
+ *   GET  /federis/school/national-exams/:examType/releves/zip?examId=&scope=admissibles|ajournes
+ *   POST /federis/school/national-exams/:examType/releves/send-to-parents
+ *        → email (PDF en pièce jointe) + Helm Connect + cloche — comme les bulletins ;
+ *          les parents retrouvent aussi les résultats dans l'espace parents
+ *          (onglet « Examens nationaux » de /app/parent/results).
  */
 
 'use client';
@@ -37,12 +44,17 @@ import {
   CheckCircle2,
   Clock,
   FileText,
+  FileArchive,
+  Send,
+  Info,
+  AlertTriangle,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import apiClient from '@/lib/api/client';
 import { fmtNote, formatRankFr } from '@/lib/federis/grade-computations';
+import { toastError, toastSuccess } from '@/lib/toast/toast-helpers';
 
 export type SchoolExamType = 'CEP' | 'BEPC' | 'BAC' | 'CAP';
 
@@ -170,6 +182,53 @@ export default function SchoolDeliberationView({
 
   // Candidat sélectionné (visualisation du relevé)
   const [selected, setSelected] = useState<{ examId: string; row: SchoolBoardRow } | null>(null);
+
+  // ⭐ T27 (2026-10-01) — Actions en bloc : ZIP admissibles/ajournés + envoi
+  //    aux parents (email + Helm Connect + cloche + espace parents).
+  //    busy[examId] = 'zip-admissibles' | 'zip-ajournes' | 'send' | undefined
+  const [busy, setBusy] = useState<Record<string, string | undefined>>({});
+  const [sendTarget, setSendTarget] = useState<SchoolExamResults | null>(null);
+
+  /** Extrait le message d'erreur d'une réponse blob/JSON d'axios. */
+  const blobErrorMessage = async (err: any): Promise<string> => {
+    let msg = err?.response?.data?.message ?? err?.message ?? 'Opération impossible.';
+    if (err?.response?.data instanceof Blob) {
+      try {
+        const parsed = JSON.parse(await err.response.data.text());
+        msg = Array.isArray(parsed?.message) ? parsed.message.join(' ') : (parsed?.message ?? msg);
+      } catch { /* garde le brut */ }
+    }
+    return Array.isArray(msg) ? msg.join(' ') : String(msg);
+  };
+
+  /** Téléchargement EN BLOC : archive ZIP des relevés distribués (scope). */
+  const downloadBulkZip = async (examResult: SchoolExamResults, scope: 'admissibles' | 'ajournes') => {
+    if (!type) return;
+    const key = examResult.exam.id;
+    setBusy((p) => ({ ...p, [key]: `zip-${scope}` }));
+    try {
+      const res = await apiClient.get(
+        `/federis/school/national-exams/${type}/releves/zip`,
+        { params: { examId: examResult.exam.id, scope }, responseType: 'blob', timeout: 300000 },
+      );
+      const blob = new Blob([res.data], { type: 'application/zip' });
+      const objectUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = `Releves_${examResult.exam.code}_${scope}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(objectUrl);
+      toastSuccess(`Relevés ${scope} téléchargés`, {
+        description: `Archive ZIP générée pour la campagne ${examResult.exam.code}.`,
+      });
+    } catch (err: any) {
+      toastError('Téléchargement impossible', { description: await blobErrorMessage(err) });
+    } finally {
+      setBusy((p) => ({ ...p, [key]: undefined }));
+    }
+  };
 
   useEffect(() => {
     setType((prev) => (prev && types.includes(prev) ? prev : types[0] ?? null));
@@ -325,6 +384,59 @@ export default function SchoolDeliberationView({
                 </div>
               </div>
 
+              {/* ⭐ T27 — Barre d'actions : téléchargement en bloc + envoi aux parents */}
+              {(() => {
+                const dispatchedAdmissibles = (examResult.admissibles ?? []).filter((r) => r.releveDispatched).length;
+                const dispatchedAjournes = (examResult.ajournes ?? []).filter((r) => r.releveDispatched).length;
+                const anyDispatched = dispatchedAdmissibles + dispatchedAjournes > 0;
+                const examBusy = busy[examResult.exam.id];
+                if (!anyDispatched) return null;
+                return (
+                  <div className="border-b border-slate-100 px-5 py-2.5 flex flex-wrap items-center gap-2 bg-white">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 mr-1">
+                      Relevés reçus
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => downloadBulkZip(examResult, 'admissibles')}
+                      disabled={examBusy !== undefined || dispatchedAdmissibles === 0}
+                      className="border-emerald-300 text-emerald-800 hover:bg-emerald-50 font-bold text-xs"
+                    >
+                      {examBusy === 'zip-admissibles' ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      ) : (
+                        <FileArchive className="w-3.5 h-3.5 mr-1.5" />
+                      )}
+                      Admissibles ({dispatchedAdmissibles})
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => downloadBulkZip(examResult, 'ajournes')}
+                      disabled={examBusy !== undefined || dispatchedAjournes === 0}
+                      className="border-red-300 text-red-700 hover:bg-red-50 font-bold text-xs"
+                    >
+                      {examBusy === 'zip-ajournes' ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      ) : (
+                        <FileArchive className="w-3.5 h-3.5 mr-1.5" />
+                      )}
+                      Ajournés ({dispatchedAjournes})
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => setSendTarget(examResult)}
+                      disabled={examBusy !== undefined}
+                      className="bg-blue-900 hover:bg-blue-800 text-white font-bold text-xs ml-auto"
+                    >
+                      <Send className="w-3.5 h-3.5 mr-1.5" />
+                      Envoyer aux parents
+                    </Button>
+                  </div>
+                );
+              })()}
+
               {/* Deux tableaux 50/50 */}
               <div className="grid grid-cols-1 xl:grid-cols-2 divide-y xl:divide-y-0 xl:divide-x divide-slate-100">
                 {/* Admissibles */}
@@ -372,6 +484,15 @@ export default function SchoolDeliberationView({
           examId={selected.examId}
           row={selected.row}
           onClose={() => setSelected(null)}
+        />
+      )}
+
+      {/* ⭐ T27 — Modale d'envoi des relevés aux parents */}
+      {sendTarget && type && (
+        <SendToParentsModal
+          examResult={sendTarget}
+          examType={type}
+          onClose={() => setSendTarget(null)}
         />
       )}
     </div>
@@ -756,6 +877,205 @@ function InfoCell({
       >
         {value}
       </p>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ⭐ T27 — Modale d'envoi des relevés de notes aux parents
+// (email avec PDF joint + Helm Connect + cloche + espace parents)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function SendToParentsModal({
+  examResult,
+  examType,
+  onClose,
+}: {
+  examResult: SchoolExamResults;
+  examType: SchoolExamType;
+  onClose: () => void;
+}) {
+  const dispatchedAdmissibles = (examResult.admissibles ?? []).filter((r) => r.releveDispatched);
+  const dispatchedAjournes = (examResult.ajournes ?? []).filter((r) => r.releveDispatched);
+  const total = dispatchedAdmissibles.length + dispatchedAjournes.length;
+
+  const [scope, setScope] = useState<'all' | 'admissibles' | 'ajournes'>('all');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const scopeCount =
+    scope === 'admissibles' ? dispatchedAdmissibles.length
+      : scope === 'ajournes' ? dispatchedAjournes.length
+        : total;
+
+  const confirm = async () => {
+    setSending(true);
+    setError(null);
+    try {
+      const res = await apiClient.post(
+        `/federis/school/national-exams/${examType}/releves/send-to-parents`,
+        { examId: examResult.exam.id, scope },
+        { timeout: 600000 },
+      );
+      const d = res.data;
+      toastSuccess('Relevés envoyés aux parents', {
+        description:
+          `${d?.delivered ?? 0}/${d?.total ?? scopeCount} délivré(s) — ` +
+          `${d?.emailSent ?? 0} email(s), ${d?.helmConnectSent ?? 0} Helm Connect, ` +
+          `${d?.bellSent ?? 0} notification(s).` +
+          (d?.withoutStudentLink ? ` ${d.withoutStudentLink} candidat(s) sans rattachage élève (transmission antérieure).` : ''),
+      });
+      onClose();
+    } catch (err: any) {
+      const msg = Array.isArray(err?.response?.data?.message)
+        ? err.response.data.message.join(' ')
+        : err?.response?.data?.message ?? err?.message ?? 'Envoi impossible.';
+      setError(Array.isArray(msg) ? msg.join(' ') : String(msg));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] flex flex-col overflow-hidden">
+        {/* Bandeau */}
+        <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-blue-900 to-blue-800">
+          <div className="flex items-center gap-3">
+            <span className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
+              <Send className="w-4.5 h-4.5 text-white" />
+            </span>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-white">Envoyer les relevés aux parents</h3>
+              <p className="text-xs text-blue-100/90 mt-0.5 truncate">
+                {examResult.exam.code} — {examResult.exam.name}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="ml-auto p-2 rounded-lg hover:bg-white/15 text-white"
+              aria-label="Fermer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto px-6 py-5 space-y-4">
+          {/* Données clés */}
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-lg font-black text-slate-800">{total}</p>
+              <p className="text-[9px] font-bold uppercase text-slate-500">Relevés reçus</p>
+            </div>
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <p className="text-lg font-black text-emerald-700">{dispatchedAdmissibles.length}</p>
+              <p className="text-[9px] font-bold uppercase text-emerald-700">Admissibles</p>
+            </div>
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2">
+              <p className="text-lg font-black text-red-600">{dispatchedAjournes.length}</p>
+              <p className="text-[9px] font-bold uppercase text-red-600">Ajournés</p>
+            </div>
+          </div>
+
+          {/* Sélecteur de portée */}
+          <div>
+            <p className="text-xs font-black uppercase tracking-wide text-slate-500 mb-2">
+              Destinataires
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                ['all', 'Tous les relevés'],
+                ['admissibles', 'Admissibles seuls'],
+                ['ajournes', 'Ajournés seuls'],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  onClick={() => setScope(value)}
+                  className={cn(
+                    'px-3 py-2.5 rounded-xl border text-xs font-bold transition-all',
+                    scope === value
+                      ? 'bg-blue-900 text-white border-blue-900 shadow-md shadow-blue-900/20'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-blue-900/40 hover:text-blue-900',
+                  )}
+                >
+                  {label}
+                  <span className={cn('block mt-0.5', scope === value ? 'text-blue-100' : 'text-slate-400')}>
+                    {value === 'admissibles' ? dispatchedAdmissibles.length
+                      : value === 'ajournes' ? dispatchedAjournes.length
+                        : total}{' '}
+                    relevé(s)
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Canaux */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-1.5">
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+              Canaux de distribution
+            </p>
+            {[
+              'Email au parent — relevé officiel en pièce jointe',
+              'Helm Connect — message de la direction avec le PDF joint',
+              'Notification cloche dans l’espace parents (résultats + décisions)',
+            ].map((line) => (
+              <p key={line} className="flex items-start gap-2 text-xs text-slate-700">
+                <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 text-emerald-600 shrink-0" />
+                {line}
+              </p>
+            ))}
+          </div>
+
+          {/* Avertissement */}
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-800">
+              L’envoi est réservé à la direction et au secrétariat. Les candidats transmis
+              avant le rattachage élève (sans lien {`metadata.studentId`}) ne peuvent pas être
+              notifiés — le rapport final les signalera.
+            </p>
+          </div>
+
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-800">
+              {error}
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-3">
+          <p className="text-[10px] text-slate-500 flex items-center gap-1.5">
+            <Info className="w-3.5 h-3.5" />
+            {scopeCount} relevé(s) sélectionné(s)
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={onClose} disabled={sending} className="font-bold">
+              Annuler
+            </Button>
+            <Button
+              onClick={confirm}
+              disabled={sending || scopeCount === 0}
+              className="bg-blue-900 hover:bg-blue-800 text-white font-bold"
+            >
+              {sending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Envoi en cours…
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4 mr-2" />
+                  Confirmer l’envoi
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -59,6 +59,14 @@ import { isSchoolTenantType } from '../common/constants/school-tenant-types';
 import { FederisDeliberationService } from './federis-deliberation.service';
 import { FederisGradesService } from './federis-grades.service';
 import { FederisPdfService } from './federis-pdf.service';
+// ⭐ T27 (2026-10-01) — Téléchargement en bloc (ZIP) + envoi des relevés aux
+//    parents (email + Helm Connect + cloche) : mêmes canaux que les bulletins
+//    et les distinctions (pattern distinctions-notification.service).
+import { createZipArchive, safeReleveFileName } from './zip-writer';
+import { EmailService } from '../communication/services/email.service';
+import { ChatService } from '../communication/services/chat.service';
+import { ParentUserProvisioningService } from '../students/services/parent-user-provisioning.service';
+import { renderEmail, escHtml } from '../hr/recruitment-email-templates';
 // ⭐ FIX CYCLE D'IMPORTS (2026-09-30) : les fonctions de rapprochement
 //    (classMatchesExam, resolveSeriesFromClassNames, federisLevelMatchesType)
 //    et le type NationalExamType vivent désormais dans le module FEUILLE
@@ -203,6 +211,10 @@ export class FederisSchoolExamsService {
     private readonly deliberationService: FederisDeliberationService,
     private readonly gradesService: FederisGradesService,
     private readonly pdfService: FederisPdfService,
+    // ⭐ T27 — canaux d'envoi aux parents (pattern distinctions)
+    private readonly emailService: EmailService,
+    private readonly chatService: ChatService,
+    private readonly parentUserProvisioningService: ParentUserProvisioningService,
   ) {}
 
   // ── Contexte école ────────────────────────────────────────────────────────
@@ -1258,7 +1270,12 @@ export class FederisSchoolExamsService {
         stats: {
           total: admissibles.length + ajournes.length,
           admissibles: admissibles.length,
-          ajournes: ajournes.filter((r) => r.decision === 'AJOURNE').length,
+          // ⭐ T27 (2026-10-01) — FIX carte statistique « 0 ajourné » : la carte
+          //    doit refléter le TABLEAU affiché (liste des ajournés = tout ce
+          //    qui n'est pas ADMIS : AJOURNE + EN_ATTENTE + cas jury), pas le
+          //    seul sous-ensemble decision === 'AJOURNE' (un candidat « cas
+          //    limite » figurait dans le tableau mais pas dans la carte).
+          ajournes: ajournes.length,
           releves: releves.length,
         },
         dispatchedAt: board.dispatch.lastDispatchAt,
@@ -1275,6 +1292,383 @@ export class FederisSchoolExamsService {
       hasSeries: def.hasSeries,
       exams,
     };
+  }
+
+  /**
+   * ⭐ T27 (2026-10-01) — Résolution du board d'une campagne FILTRÉ aux candidats
+   * de CETTE école, avec uniquement les relevés DÉJÀ DISTRIBUÉS (garde-fou
+   * identique au PDF individuel : generateRelevePdfForSchool → getReleveForSchool).
+   * Partagé par le téléchargement en bloc (ZIP) et l'envoi aux parents.
+   */
+  private async resolveSchoolReleveRows(
+    tenantId: string,
+    examId: string,
+    scope: 'admissibles' | 'ajournes' | 'all',
+  ) {
+    const examRow = await this.prisma.nationalExam.findUnique({
+      where: { id: examId },
+      select: { id: true, code: true, name: true, examType: true, tenantId: true, status: true },
+    });
+    if (!examRow) throw new NotFoundException('Examen introuvable.');
+
+    const candidates = await this.prisma.examCandidate.findMany({
+      where: { examId, schoolTenantId: tenantId },
+      select: { id: true, matricule: true, firstName: true, lastName: true, metadata: true },
+    });
+    const schoolCandidateIds = new Set(candidates.map((c) => c.id));
+    if (schoolCandidateIds.size === 0) {
+      throw new BadRequestException(
+        'Aucun candidat de votre établissement pour cette campagne.',
+      );
+    }
+
+    const board = await this.deliberationService.buildDeliberationBoard(
+      examRow.tenantId,
+      examId,
+    );
+    const inSchool = (rows: any[]) => rows.filter((r) => schoolCandidateIds.has(r.candidateId));
+    const admissibles = inSchool(board.admissibles ?? []).filter((r) => r.releveDispatched);
+    const ajournes = inSchool(board.ajournes ?? []).filter((r) => r.releveDispatched);
+
+    const rows =
+      scope === 'admissibles' ? admissibles : scope === 'ajournes' ? ajournes : [...admissibles, ...ajournes];
+    if (rows.length === 0) {
+      throw new BadRequestException(
+        scope === 'admissibles'
+          ? "Aucun relevé d'admissible n'a encore été distribué à votre établissement pour cette campagne."
+          : scope === 'ajournes'
+            ? "Aucun relevé d'ajourné n'a encore été distribué à votre établissement pour cette campagne."
+            : "Aucun relevé n'a encore été distribué à votre établissement pour cette campagne.",
+      );
+    }
+
+    return {
+      exam: examRow,
+      rows,
+      byId: new Map(candidates.map((c) => [c.id, c])),
+    };
+  }
+
+  /**
+   * ⭐ T27 — Téléchargement EN BLOC des relevés de notes : une archive ZIP
+   * contenant un PDF officiel par candidat. Scope « admissibles » ou
+   * « ajournes » (boutons distincts côté école). Lecture : tout membre de
+   * l'établissement (même garde que le PDF individuel).
+   */
+  async getSchoolRelevesBulkZip(
+    tenantId: string,
+    userId: string,
+    role: string | undefined,
+    examType: string,
+    examId: string,
+    scope: 'admissibles' | 'ajournes',
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    await this.resolveSchoolContext(tenantId, userId, role);
+    this.assertExamType(examType);
+    if (scope !== 'admissibles' && scope !== 'ajournes') {
+      throw new BadRequestException("Scope invalide (attendu : admissibles | ajournes).");
+    }
+
+    const { exam, rows } = await this.resolveSchoolReleveRows(tenantId, examId, scope);
+
+    const entries: Array<{ name: string; data: Buffer }> = [];
+    const failures: Array<{ matricule: string; error: string }> = [];
+    for (const row of rows) {
+      try {
+        const { buffer } = await this.pdfService.generateRelevePdfForSchool(
+          tenantId,
+          userId,
+          examId,
+          row.candidateId,
+        );
+        entries.push({
+          name: safeReleveFileName(row.matricule, `${row.fullName}`),
+          data: buffer,
+        });
+      } catch (err: any) {
+        failures.push({ matricule: row.matricule, error: err?.message ?? 'erreur inconnue' });
+      }
+    }
+
+    if (entries.length === 0) {
+      throw new BadRequestException(
+        `Aucun relevé n'a pu être généré (${failures.length} échec(s)). ${failures[0]?.error ?? ''}`.trim(),
+      );
+    }
+
+    const buffer = createZipArchive(entries);
+    const scopeLabel = scope === 'admissibles' ? 'admissibles' : 'ajournes';
+    return {
+      buffer,
+      filename: `Releves_${exam.code}_${scopeLabel}_${entries.length}_candidats.zip`,
+    };
+  }
+
+  /**
+   * ⭐ T27 — Envoi des relevés de notes AUX PARENTS (email + Helm Connect +
+   * cloche de notification) — exactement le pattern des bulletins/distinctions :
+   *   1. Email avec le PDF officiel en pièce jointe ;
+   *   2. Message Helm Connect avec le PDF en pièce jointe (création du compte
+   *      parent si nécessaire via ParentUserProvisioningService) ;
+   *   3. Notification cloche (in-app) pointant vers l'espace parents.
+   * Réservé à la direction / secrétariat (décision officielle de l'école).
+   */
+  async sendRelevesToParents(
+    tenantId: string,
+    userId: string,
+    role: string | undefined,
+    examType: string,
+    examId: string,
+    scope: 'admissibles' | 'ajournes' | 'all',
+  ) {
+    await this.resolveSchoolContext(tenantId, userId, role, true);
+    this.assertExamType(examType);
+
+    const { exam, rows, byId } = await this.resolveSchoolReleveRows(tenantId, examId, scope);
+
+    // Branding école pour l'email (rendu renderEmail — pattern distinctions)
+    const branding = await this.getSchoolBranding(tenantId);
+
+    const details: Array<{
+      matricule: string;
+      fullName: string;
+      studentLinked: boolean;
+      parentName: string | null;
+      parentEmail: string | null;
+      email: 'sent' | 'skipped' | 'failed';
+      helmConnect: 'sent' | 'skipped' | 'failed';
+      bell: 'sent' | 'skipped' | 'failed';
+      note?: string;
+    }> = [];
+    let ok = 0;
+
+    for (const row of rows) {
+      const candidate = byId.get(row.candidateId);
+      const studentId: string | null = (candidate?.metadata as any)?.studentId ?? null;
+      const entry: (typeof details)[number] = {
+        matricule: row.matricule,
+        fullName: row.fullName,
+        studentLinked: !!studentId,
+        parentName: null,
+        parentEmail: null,
+        email: 'skipped',
+        helmConnect: 'skipped',
+        bell: 'skipped',
+        note: studentId ? undefined : 'candidat sans rattachage élève (transmission antérieure à la T23)',
+      };
+
+      let pdfBuffer: Buffer | null = null;
+      try {
+        pdfBuffer = (
+          await this.pdfService.generateRelevePdfForSchool(tenantId, userId, examId, row.candidateId)
+        ).buffer;
+      } catch (err: any) {
+        entry.note = `PDF indisponible : ${err?.message ?? 'erreur'}`;
+        details.push(entry);
+        continue;
+      }
+
+      if (!studentId) {
+        details.push(entry);
+        continue;
+      }
+
+      // ── Contacts du tuteur principal (pattern distinctions) ──
+      const guardians = await this.prisma.studentGuardian
+        .findMany({
+          where: { studentId, tenantId },
+          include: { guardian: true },
+        })
+        .catch(() => [] as any[]);
+      const primary = guardians.find((g: any) => g.isPrimary) ?? guardians[0];
+      if (primary?.guardian) {
+        entry.parentName =
+          `${primary.guardian.firstName || ''} ${primary.guardian.lastName || ''}`.trim() ||
+          'Parent';
+        entry.parentEmail = primary.guardian.email || null;
+      }
+
+      // ── 1. EMAIL avec pièce jointe ──
+      if (entry.parentEmail) {
+        try {
+          const subject = `Relevé de notes ${exam.code} — ${row.fullName}`;
+          const decisionLine =
+            row.decision === 'ADMIS'
+              ? 'Votre enfant est déclaré(e) <b>admis(e)</b> par le jury.'
+              : row.decisionLabel
+                ? `Décision du jury : <b>${escHtml(row.decisionLabel)}</b>.`
+                : '';
+          const bodyContent = `
+            <div style="padding:24px 0;">
+              <h2 style="color:#0A2A5E;font-size:22px;margin-bottom:16px;">Relevé de notes — ${escHtml(exam.name)}</h2>
+              <p>Bonjour ${escHtml(entry.parentName ?? 'Parent')},</p>
+              <p>Nous mettons à votre disposition le relevé de notes officiel de
+              <strong>${escHtml(row.fullName)}</strong> (matricule ${escHtml(row.matricule)})
+              pour l'examen <strong>${escHtml(exam.name)}</strong> (${escHtml(exam.code)}).</p>
+              ${decisionLine ? `<p>${decisionLine}</p>` : ''}
+              <p>Le relevé officiel est joint à cet email. Vous le retrouverez également
+              dans votre espace parents et dans votre conversation Helm Connect.</p>
+              <p style="margin-top:24px;color:#64748b;font-size:14px;">Cordialement,<br/>La Direction — ${escHtml(branding.schoolName)}</p>
+            </div>
+          `;
+          const html = renderEmail(
+            { schoolName: branding.schoolName, logoUrl: branding.logoUrl } as any,
+            bodyContent,
+            'Examens nationaux',
+          );
+          await this.emailService.sendCategorized({
+            tenantId,
+            category: 'PEDAGOGIE',
+            subCategory: 'NATIONAL_EXAM_RELEVE',
+            module: 'exams',
+            to: entry.parentEmail,
+            toName: entry.parentName ?? 'Parent',
+            recipientType: 'PARENT',
+            subject,
+            html,
+            text: `Relevé de notes ${exam.code} — ${row.fullName} : le relevé officiel est joint à cet email.`,
+            fromName: branding.schoolName || 'Academia Helm',
+            triggeredBy: 'STAFF',
+            relatedEntityType: 'NationalExam',
+            relatedEntityId: examId,
+            attachments: [
+              {
+                filename: safeReleveFileName(row.matricule, row.fullName),
+                content: pdfBuffer,
+                contentType: 'application/pdf',
+              },
+            ],
+          } as any);
+          entry.email = 'sent';
+        } catch (err: any) {
+          entry.email = 'failed';
+          entry.note = `email : ${err?.message ?? 'erreur'}`;
+        }
+      }
+
+      // ── 2. HELM CONNECT (chat + PDF en pièce jointe) + 3. CLOCHE ──
+      try {
+        const provisioning = await this.parentUserProvisioningService
+          .ensureUserForPrimaryGuardianOfStudent(tenantId, studentId);
+        if (provisioning?.userId) {
+          const conversation = await this.chatService.createOrGetDirectConversation(
+            tenantId,
+            userId,
+            provisioning.userId,
+          );
+          const caption = [
+            `<b>Relevé de notes — ${escHtml(exam.name)}</b>`,
+            ``,
+            `Bonjour ${escHtml(entry.parentName ?? 'Parent')},`,
+            `Voici le relevé de notes officiel de ${escHtml(row.fullName)}`,
+            `pour l'examen ${escHtml(exam.code)} (${escHtml(exam.name)}).`,
+            row.decisionLabel ? `Décision du jury : ${escHtml(row.decisionLabel)}.` : '',
+            ``,
+            `Cordialement,`,
+            `La Direction — ${escHtml(branding.schoolName)}`,
+          ]
+            .filter((l) => l !== '')
+            .join('\n');
+          const fileName = safeReleveFileName(row.matricule, row.fullName);
+          const fakeFile = {
+            buffer: pdfBuffer,
+            originalname: fileName,
+            mimetype: 'application/pdf',
+            size: pdfBuffer.length,
+            fieldname: 'file',
+            encoding: '7bit',
+            destination: '',
+            filename: fileName,
+            path: '',
+          } as unknown as Express.Multer.File;
+          await this.chatService.sendAttachmentMessage(
+            tenantId,
+            userId,
+            conversation.id,
+            { type: 'DOCUMENT', file: fakeFile, content: caption },
+          );
+          entry.helmConnect = 'sent';
+
+          await this.notificationService
+            .create({
+              tenantId,
+              recipientId: provisioning.userId,
+              type: 'NATIONAL_EXAM_RELEVE',
+              title: `Relevé de notes — ${row.fullName}`,
+              body: `Le relevé de notes officiel de ${row.fullName} pour l'examen ${exam.name} (${exam.code}) est disponible dans votre espace parents.`,
+              priority: 'HIGH',
+              data: {
+                url: '/app/parent/results',
+                examId,
+                candidateId: row.candidateId,
+                studentId,
+              },
+              relatedEntityType: 'NationalExam',
+              relatedEntityId: examId,
+            })
+            .catch(() => undefined);
+          entry.bell = 'sent';
+        }
+      } catch (err: any) {
+        if (entry.helmConnect !== 'sent') entry.helmConnect = 'failed';
+        if (entry.bell !== 'sent') entry.bell = 'failed';
+      }
+
+      if (entry.email === 'sent' || entry.helmConnect === 'sent') ok++;
+      details.push(entry);
+    }
+
+    // Audit côté école
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId,
+          userId,
+          action: 'SCHOOL_NATIONAL_EXAM_RELEVES_SENT_TO_PARENTS',
+          resource: 'ExamCandidate',
+          resourceId: `${tenantId}:${examId}`,
+          tableName: 'exam_candidates',
+          recordId: exam.code,
+          newData: {
+            examCode: exam.code,
+            scope,
+            candidates: rows.length,
+            delivered: ok,
+          },
+        },
+      })
+      .catch(() => undefined);
+
+    return {
+      success: true,
+      scope,
+      exam: { id: exam.id, code: exam.code, name: exam.name },
+      total: rows.length,
+      delivered: ok,
+      emailSent: details.filter((d) => d.email === 'sent').length,
+      helmConnectSent: details.filter((d) => d.helmConnect === 'sent').length,
+      bellSent: details.filter((d) => d.bell === 'sent').length,
+      withoutStudentLink: details.filter((d) => !d.studentLinked).length,
+      withoutParentEmail: details.filter((d) => d.studentLinked && !d.parentEmail).length,
+      details,
+      message: `${ok}/${rows.length} relevé(s) délivré(s) aux parents (email et/ou Helm Connect).`,
+    };
+  }
+
+  /** Branding de l'école pour les emails aux parents (pattern distinctions). */
+  private async getSchoolBranding(tenantId: string) {
+    try {
+      const profile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+        select: { schoolName: true, logoUrl: true },
+      });
+      return {
+        schoolName: profile?.schoolName || 'Établissement',
+        logoUrl: profile?.logoUrl || undefined,
+      };
+    } catch {
+      return { schoolName: 'Établissement' };
+    }
   }
 
   /**

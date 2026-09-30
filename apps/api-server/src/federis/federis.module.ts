@@ -88,9 +88,14 @@ import { FederisLogisticsExportService } from './federis-logistics-export.servic
 //    nom / n° de table / matricule (routes @Public, expiration paramétrable)
 import { FederisPublicResultsService } from './federis-public-results.service';
 import { FederisPublicResultsController } from './federis-public-results.controller';
+// ⭐ T27 (2026-10-01) — Envoi des relevés aux parents par email + Helm Connect :
+//    ParentProvisioningModule fournit ParentUserProvisioningService (création
+//    automatique du compte parent — pattern distinctions/bulletins). Importé
+//    ici SANS StudentsModule (ParentProvisioningModule est autonome).
+import { ParentProvisioningModule } from '../students/parent-provisioning.module';
 
 @Module({
-  imports: [BillingModule, CommunicationModule],
+  imports: [BillingModule, CommunicationModule, ParentProvisioningModule],
   controllers: [
     FederisController,
     FederisConnectController,

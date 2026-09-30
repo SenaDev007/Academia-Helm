@@ -19,7 +19,7 @@ import { useModuleContext } from "@/hooks/useModuleContext";
 import {
   FileText, Loader2, GraduationCap, AlertCircle, BookOpen,
   ChevronDown, ChevronRight, Calendar, Award, TrendingUp,
-  Download,
+  Download, Landmark, CheckCircle2,
 } from "lucide-react";
 import apiClient from "@/lib/api/client";
 import { cn } from "@/lib/utils";
@@ -91,7 +91,9 @@ interface ReportCard {
 export default function ParentResultsPage() {
   const { user } = useAppSession();
   const { academicYear } = useModuleContext();
-  const [activeTab, setActiveTab] = useState<'notes' | 'bulletins'>('notes');
+  // ⭐ T27 (2026-10-01) — 3e onglet « Examens nationaux » : résultats CEP/BEPC/
+  //    BAC/CAP de l'enfant + relevés officiels distribués (comme les bulletins).
+  const [activeTab, setActiveTab] = useState<'notes' | 'bulletins' | 'examens'>('notes');
   const [children, setChildren] = useState<Child[]>([]);
   const [selectedStudent, setSelectedStudent] = useState("");
 
@@ -166,11 +168,25 @@ export default function ParentResultsPage() {
           <FileText className="w-4 h-4" />
           Bulletins
         </button>
+        <button
+          onClick={() => setActiveTab('examens')}
+          className={cn(
+            'flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors',
+            activeTab === 'examens'
+              ? 'border-purple-600 text-purple-700'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          )}
+        >
+          <Landmark className="w-4 h-4" />
+          Examens nationaux
+        </button>
       </div>
 
       {/* Content */}
       {activeTab === 'notes' ? (
         <NotesTab studentId={selectedStudent} academicYearId={academicYear?.id} child={selectedChild} />
+      ) : activeTab === 'examens' ? (
+        <NationalExamsTab studentId={selectedStudent} />
       ) : (
         <BulletinsTab studentId={selectedStudent} academicYearId={academicYear?.id} child={selectedChild} />
       )}
@@ -509,6 +525,206 @@ function BulletinsTab({ studentId, academicYearId, child }: { studentId: string;
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── National Exams Tab (T27 — 2026-10-01) ─────────────────────────────────
+// Résultats des examens nationaux (CEP / BEPC / BAC / CAP) de l'enfant :
+// campagnes présentées par l'école, décision du jury, moyenne, rang et
+// téléchargement du relevé officiel dès que le patronat l'a distribué.
+
+interface NationalExamResult {
+  examId: string;
+  examCode: string;
+  examName: string;
+  examType: string;
+  level: string | null;
+  academicYearLabel: string | null;
+  publishedAt: string | null;
+  candidateId: string;
+  matricule: string;
+  decision: 'ADMIS' | 'AJOURNE' | 'EN_ATTENTE' | 'NON_DELIBERE' | string;
+  decisionLabel: string | null;
+  moyenne: number | null;
+  mention: string | null;
+  rank: number | null;
+  totalCandidates: number | null;
+  releveDispatched: boolean;
+}
+
+function NationalExamsTab({ studentId }: { studentId: string }) {
+  const [data, setData] = useState<{
+    student?: { name: string; matricule?: string };
+    exams?: NationalExamResult[];
+    message?: string;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!studentId) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/parent/national-exams/${studentId}`, { credentials: 'include' });
+        if (!res.ok) throw new Error('Chargement impossible');
+        const json = await res.json();
+        if (!cancelled) setData(json);
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message ?? 'Chargement impossible.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [studentId]);
+
+  const downloadReleve = async (exam: NationalExamResult) => {
+    setDownloadingId(exam.candidateId);
+    try {
+      const res = await fetch(
+        `/api/parent/national-exams/${studentId}/releve/${exam.candidateId}/pdf?examId=${encodeURIComponent(exam.examId)}`,
+        { credentials: 'include' },
+      );
+      if (!res.ok) {
+        let msg = 'Téléchargement impossible.';
+        try {
+          const j = await res.json();
+          msg = Array.isArray(j?.message) ? j.message.join(' ') : (j?.message ?? msg);
+        } catch { /* blob d'erreur non JSON */ }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Releve_${exam.examCode}_${exam.matricule}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert(e?.message ?? 'Téléchargement impossible.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-purple-600" />
+        <span className="ml-3 text-sm text-slate-500">Chargement des résultats…</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-white rounded-xl border border-red-200 p-6 text-center">
+        <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-2" />
+        <p className="text-sm text-red-700">{error}</p>
+      </div>
+    );
+  }
+
+  const exams = data?.exams ?? [];
+  if (exams.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+        <Landmark className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+        <p className="text-sm text-slate-500">Aucun examen national pour cet enfant.</p>
+        <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+          {data?.message ??
+            "Les résultats des examens nationaux (CEP, BEPC, Baccalauréat, CAP) apparaîtront ici dès que l'école présente l'enfant et que le patronat délibère."}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {exams.map((exam) => {
+        const isAdmis = exam.decision === 'ADMIS';
+        return (
+          <div key={exam.candidateId} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap bg-slate-50/60">
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-900 truncate">
+                  {exam.examName} <span className="text-slate-400 font-mono text-xs">({exam.examCode})</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {exam.academicYearLabel ? `Session ${exam.academicYearLabel}` : ''}
+                  {exam.publishedAt
+                    ? ` · publié le ${format(new Date(exam.publishedAt), 'd MMM yyyy', { locale: fr })}`
+                    : ''}
+                  {exam.totalCandidates ? ` · ${exam.totalCandidates} candidats` : ''}
+                </p>
+              </div>
+              <span
+                className={cn(
+                  'shrink-0 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold',
+                  isAdmis
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : exam.decision === 'EN_ATTENTE'
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-red-100 text-red-700',
+                )}
+              >
+                {isAdmis ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Award className="w-3.5 h-3.5" />}
+                {exam.decisionLabel ?? (isAdmis ? 'Admis' : '—')}
+              </span>
+            </div>
+            <div className="px-4 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase text-slate-400">Moyenne</p>
+                <p className={cn('text-sm font-black', isAdmis ? 'text-emerald-700' : 'text-red-600')}>
+                  {exam.moyenne !== null && exam.moyenne !== undefined
+                    ? `${Number(exam.moyenne).toFixed(2)} / 20`
+                    : '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase text-slate-400">Rang</p>
+                <p className="text-sm font-bold text-slate-800">
+                  {exam.rank ? `${exam.rank}${exam.totalCandidates ? ` / ${exam.totalCandidates}` : ''}` : '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase text-slate-400">Mention</p>
+                <p className="text-sm font-bold text-slate-800">{exam.mention ?? '—'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase text-slate-400">Matricule</p>
+                <p className="text-sm font-mono font-bold text-slate-800">{exam.matricule}</p>
+              </div>
+            </div>
+            {exam.releveDispatched ? (
+              <div className="px-4 pb-3">
+                <button
+                  onClick={() => downloadReleve(exam)}
+                  disabled={downloadingId === exam.candidateId}
+                  className={cn(
+                    'inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold',
+                    'bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-60',
+                  )}
+                >
+                  {downloadingId === exam.candidateId ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )}
+                  Télécharger le relevé de notes officiel
+                </button>
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
     </div>
   );
 }

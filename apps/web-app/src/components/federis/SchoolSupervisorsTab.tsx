@@ -64,6 +64,9 @@ interface SchoolAssignment {
   exam: { id: string; code: string; name: string } | null;
   center: { id: string; code: string; name: string; address: string | null } | null;
   room: { id: string; code: string; name: string } | null;
+  /** ⭐ 2026-10-01 — poste : SURVEILLANCE | CORRECTION | SECRETARIAT. */
+  post: string | null;
+  postLabel: string | null;
   requestId: string | null;
   teacherNotifiedAt: string | null;
   assignedDate: string;
@@ -238,9 +241,10 @@ export function SchoolSupervisorsTab() {
             <h2 className="text-xl font-bold text-gray-900">Gestion des surveillants</h2>
           </div>
           <p className="text-gray-500 font-medium max-w-2xl text-sm">
-            Les patronats scolaires (Academia Federis) sollicitent vos enseignants comme
-            surveillants pour les examens nationaux. Sélectionnez vos enseignants, envoyez la
-            liste officielle, puis transmettez les affectations (centre et salle) dans leur
+            Les patronats scolaires (Academia Federis) sollicitent vos enseignants pour
+            l&apos;organisation des examens nationaux : surveillance des épreuves, correction
+            des copies et secrétariat (saisie des notes). Sélectionnez vos enseignants,
+            envoyez la liste officielle, puis transmettez les affectations dans leur
             interface.
           </p>
         </div>
@@ -367,8 +371,9 @@ export function SchoolSupervisorsTab() {
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
                 <p className="text-sm font-bold text-gray-400">Aucune affectation pour le moment</p>
                 <p className="text-xs text-gray-400 mt-1">
-                  Dès que le patronat valide la répartition par centre et par salle, les
-                  affectations de vos enseignants apparaîtront ici.
+                  Dès que le patronat valide la répartition de vos enseignants entre les
+                  postes (surveillance, correction, secrétariat), leurs affectations
+                  apparaîtront ici.
                 </p>
               </div>
             ) : (
@@ -379,23 +384,57 @@ export function SchoolSupervisorsTab() {
                     className="p-5 lg:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
                   >
                     <div className="flex items-start gap-4 min-w-0">
-                      <div className="w-11 h-11 bg-blue-50 rounded-xl flex items-center justify-center font-bold text-blue-900 text-sm flex-shrink-0">
+                      <div
+                        className={cn(
+                          'w-11 h-11 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0',
+                          a.post === 'CORRECTION'
+                            ? 'bg-indigo-50 text-indigo-700'
+                            : a.post === 'SECRETARIAT'
+                              ? 'bg-teal-50 text-teal-700'
+                              : 'bg-blue-50 text-blue-900',
+                        )}
+                      >
                         {a.firstName?.[0]}
                         {a.lastName?.[0]}
                       </div>
                       <div className="min-w-0">
-                        <div className="text-sm font-bold text-gray-900">
-                          {a.firstName} {a.lastName}
+                        <div className="text-sm font-bold text-gray-900 flex items-center gap-2 flex-wrap">
+                          <span>
+                            {a.firstName} {a.lastName}
+                          </span>
+                          {/* ⭐ Poste : surveillance / correction / secrétariat */}
+                          <span
+                            className={cn(
+                              'text-[9px] font-bold uppercase px-2 py-0.5 rounded',
+                              a.post === 'CORRECTION'
+                                ? 'bg-indigo-100 text-indigo-700'
+                                : a.post === 'SECRETARIAT'
+                                  ? 'bg-teal-100 text-teal-700'
+                                  : 'bg-blue-100 text-blue-800',
+                            )}
+                          >
+                            {a.post === 'CORRECTION'
+                              ? 'Correction des épreuves'
+                              : a.post === 'SECRETARIAT'
+                                ? 'Secrétariat — saisie des notes'
+                                : 'Surveillance'}
+                          </span>
                           {a.teacherNotifiedAt && (
-                            <span className="ml-2 text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-green-100 text-green-700">
+                            <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-green-100 text-green-700">
                               Notifié
                             </span>
                           )}
                         </div>
                         <p className="text-[10px] font-bold text-gray-400 uppercase mt-1">
                           {a.exam ? `${a.exam.name} (${a.exam.code})` : 'Examen'}
-                          {a.center ? ` • Centre : ${a.center.name}${a.center.address ? ` — ${a.center.address}` : ''}` : ''}
-                          {a.room ? ` • Salle : ${a.room.name}` : ''}
+                          {a.post === 'CORRECTION' || a.post === 'SECRETARIAT'
+                            ? ' • Affectation confirmée par le patronat'
+                            : a.center
+                              ? ` • Centre : ${a.center.name}${a.center.address ? ` — ${a.center.address}` : ''}`
+                              : ''}
+                          {a.post !== 'CORRECTION' && a.post !== 'SECRETARIAT' && a.room
+                            ? ` • Salle : ${a.room.name}`
+                            : ''}
                           {` • Affecté le ${new Date(a.assignedDate).toLocaleDateString('fr-FR')}`}
                         </p>
                       </div>
@@ -436,12 +475,14 @@ export function SchoolSupervisorsTab() {
           >
             <div className="p-6 border-b border-gray-100">
               <h3 className="text-lg font-semibold text-gray-900">
-                Sélection des enseignants surveillants
+                Sélection des enseignants à présenter
               </h3>
               <p className="text-xs text-gray-500 font-medium mt-1">
                 {selectionTarget.patronatName} — {selectionTarget.title}
                 {selectionTarget.examLabel ? ` (${selectionTarget.examLabel})` : ''}. Les
-                enseignants sélectionnés seront présentés au patronat comme surveillants.
+                enseignants sélectionnés seront présentés au patronat, qui les répartira
+                entre la surveillance des épreuves, la correction des copies et le
+                secrétariat (saisie des notes).
               </p>
             </div>
 

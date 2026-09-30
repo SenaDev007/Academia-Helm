@@ -753,18 +753,20 @@ export default function NationalExamsPage() {
           </div>
 
           {/* ⭐ Modale personnalisée « Envoyer au patronat » (2026-09-29) —
-              remplace le window.confirm générique. Récapitulatif complet :
-              examen, effectif sélectionné, répartition par série (Bac),
-              patronats destinataires, caractère officiel de l'engagement. */}
+              remplace le window.confirm générique. ⭐ 2026-10-01 : format
+              PAYSAGE professionnel (large, 2 colonnes) — plus de scroll
+              interne ni de bouton tronqué : récapitulatif examen, effectif
+              sélectionné, répartition par série (Bac), patronats
+              destinataires, caractère officiel de l'engagement. */}
           <Dialog open={confirmOpen} onOpenChange={(open) => !sending && setConfirmOpen(open)}>
-            <DialogContent className="max-w-lg p-0 overflow-hidden bg-white rounded-2xl">
+            <DialogContent className="max-w-lg sm:max-w-3xl p-0 overflow-hidden bg-white rounded-2xl">
               {/* Bandeau en-tête — palette Helm (Royal Blue) */}
-              <div className="bg-blue-900 px-6 py-5 text-white">
+              <div className="bg-blue-900 px-6 py-4 text-white">
                 <div className="flex items-center gap-3">
-                  <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
                     <Send className="w-5 h-5" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <DialogTitle className="text-base font-bold leading-tight">
                       Envoi officiel au patronat
                     </DialogTitle>
@@ -775,113 +777,136 @@ export default function NationalExamsPage() {
                 </div>
               </div>
 
-              <div className="px-6 py-5 space-y-4">
-                {/* Examen + effectif */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      Examen
-                    </p>
-                    <p className="text-sm font-bold text-slate-800 mt-1">
-                      {candidates?.examType === 'BAC'
-                        ? 'Baccalauréat'
-                        : candidates?.examType === 'CAP'
-                          ? 'CAP (filières techniques)'
-                          : (candidates?.label ?? activeType)}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
-                      Candidats sélectionnés
-                    </p>
-                    <p className="text-sm font-bold text-amber-800 mt-1">
-                      <Users className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
-                      {selected.size} élève(s)
-                    </p>
-                  </div>
-                </div>
-
-                {/* Répartition par série (Baccalauréat uniquement) */}
-                {selectedSeriesBreakdown.length > 0 && (
-                  <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-blue-900 mb-2">
-                      Répartition par série
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedSeriesBreakdown.map((s) => (
-                        <Badge
-                          key={s.series}
-                          variant="outline"
-                          className="bg-white border-blue-200 text-blue-900 text-[11px] font-bold"
-                        >
-                          {s.series === 'NON PRECISEE' ? 'Série non précisée' : `Série ${s.series}`}
-                          {' : '}
-                          {s.count}
-                        </Badge>
-                      ))}
+              {/* Corps — 2 colonnes en paysage (1 colonne sur mobile) */}
+              <div className="px-6 py-5 grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+                {/* Colonne gauche : examen + effectif + répartition par série */}
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        Examen
+                      </p>
+                      <p className="text-sm font-bold text-slate-800 mt-1">
+                        {candidates?.examType === 'BAC'
+                          ? 'Baccalauréat'
+                          : candidates?.examType === 'CAP'
+                            ? 'CAP (filières techniques)'
+                            : (candidates?.label ?? activeType)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                        Candidats sélectionnés
+                      </p>
+                      <p className="text-sm font-bold text-amber-800 mt-1">
+                        <Users className="w-3.5 h-3.5 inline-block mr-1 -mt-0.5" />
+                        {selected.size} élève(s)
+                      </p>
                     </div>
                   </div>
-                )}
 
-                {/* Patronats destinataires */}
-                <div className="rounded-xl border border-slate-200 px-4 py-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
-                    Destinataires
-                  </p>
-                  <div className="space-y-1.5">
-                    {(candidates?.patronatTargets ?? []).length > 0 ? (
-                      (candidates?.patronatTargets ?? []).map((t, i) => (
-                        <div key={i} className="flex items-center gap-2 text-xs">
-                          {t.ready ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                          ) : (
-                            <XCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                          )}
-                          <span className="font-bold text-slate-700">{t.name}</span>
-                          <span className="text-slate-500 truncate">
-                            {t.exam ? `${t.exam.code} — ${t.exam.name}` : (t.reason ?? '')}
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      (joinedPatronats ?? []).map((p) => (
-                        <div key={p.id} className="flex items-center gap-2 text-xs">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                          <span className="font-bold text-slate-700">{p.name}</span>
-                          {p.territoryName && (
-                            <span className="text-slate-500">({p.territoryName})</span>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  {/* Répartition par série (Baccalauréat uniquement) */}
+                  {selectedSeriesBreakdown.length > 0 ? (
+                    <div className="rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-blue-900 mb-2">
+                        Répartition par série
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedSeriesBreakdown.map((s) => (
+                          <Badge
+                            key={s.series}
+                            variant="outline"
+                            className="bg-white border-blue-200 text-blue-900 text-[11px] font-bold whitespace-nowrap"
+                          >
+                            {s.series === 'NON PRECISEE' ? 'Série non précisée' : `Série ${s.series}`}
+                            {' : '}
+                            {s.count}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                        Classes présentées
+                      </p>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        {candidates?.students
+                          ? [
+                              ...new Set(
+                                candidates.students
+                                  .filter((s) => selected.has(s.id))
+                                  .map((s) => s.className)
+                                  .filter(Boolean),
+                              ),
+                            ].join(', ') || '—'
+                          : '—'}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
-                {/* Avertissement — engagement officiel */}
-                <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 flex items-start gap-2.5">
-                  <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-800 leading-relaxed">
-                    Cette transmission vaut <b>engagement officiel</b> de votre établissement à
-                    présenter ces élèves à l&apos;examen. Le patronat enregistrera la liste comme
-                    inscription officielle et en sera notifié immédiatement.
-                  </p>
+                {/* Colonne droite : destinataires + engagement officiel */}
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-slate-200 px-4 py-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                      Destinataires
+                    </p>
+                    <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                      {(candidates?.patronatTargets ?? []).length > 0 ? (
+                        (candidates?.patronatTargets ?? []).map((t, i) => (
+                          <div key={i} className="flex items-start gap-2 text-xs">
+                            {t.ready ? (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                            ) : (
+                              <XCircle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                            )}
+                            <span className="font-bold text-slate-700 shrink-0">{t.name}</span>
+                            <span className="text-slate-500 min-w-0">
+                              {t.exam ? `${t.exam.code} — ${t.exam.name}` : (t.reason ?? '')}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        (joinedPatronats ?? []).map((p) => (
+                          <div key={p.id} className="flex items-center gap-2 text-xs">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            <span className="font-bold text-slate-700">{p.name}</span>
+                            {p.territoryName && (
+                              <span className="text-slate-500">({p.territoryName})</span>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Avertissement — engagement officiel */}
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 flex items-start gap-2.5">
+                    <ShieldCheck className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-800 leading-relaxed">
+                      Cette transmission vaut <b>engagement officiel</b> de votre établissement à
+                      présenter ces élèves à l&apos;examen. Le patronat enregistrera la liste comme
+                      inscription officielle et en sera notifié immédiatement.
+                    </p>
+                  </div>
                 </div>
               </div>
 
-              {/* Actions */}
+              {/* Actions — toujours visibles, boutons sur une seule ligne */}
               <DialogFooter className="px-6 py-4 bg-slate-50 border-t border-slate-200 sm:justify-end gap-2">
                 <Button
                   variant="outline"
                   onClick={() => setConfirmOpen(false)}
                   disabled={sending}
-                  className="font-bold"
+                  className="font-bold whitespace-nowrap"
                 >
                   Annuler
                 </Button>
                 <Button
                   onClick={confirmSend}
                   disabled={sending}
-                  className="bg-amber-500 hover:bg-amber-600 text-white font-bold min-w-40"
+                  className="bg-amber-500 hover:bg-amber-600 text-white font-bold whitespace-nowrap"
                 >
                   {sending ? (
                     <>

@@ -158,7 +158,12 @@ export default function SchoolDeliberationView({
 }: {
   availableTypes: SchoolExamType[];
 }) {
-  const [type, setType] = useState<SchoolExamType | null>(availableTypes[0] ?? null);
+  // ⭐ FIX 2026-10-01 « Cannot read properties of undefined (reading 'length') » :
+  //    la prop et les réponses API sont défendues PARTOUT — une réponse
+  //    inattendue (clé absente, forme différente, cache offline) affiche
+  //    l'état vide au lieu de faire planter le module entier.
+  const types: SchoolExamType[] = Array.isArray(availableTypes) ? availableTypes : [];
+  const [type, setType] = useState<SchoolExamType | null>(types[0] ?? null);
   const [data, setData] = useState<ResultsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -167,8 +172,8 @@ export default function SchoolDeliberationView({
   const [selected, setSelected] = useState<{ examId: string; row: SchoolBoardRow } | null>(null);
 
   useEffect(() => {
-    setType((prev) => (prev && availableTypes.includes(prev) ? prev : availableTypes[0] ?? null));
-  }, [availableTypes]);
+    setType((prev) => (prev && types.includes(prev) ? prev : types[0] ?? null));
+  }, [types]);
 
   const load = useCallback(
     async (t: SchoolExamType | null) => {
@@ -199,7 +204,7 @@ export default function SchoolDeliberationView({
     void load(type);
   }, [type, load]);
 
-  if (availableTypes.length === 0) {
+  if (types.length === 0) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white p-10 text-center space-y-3">
         <Landmark className="w-10 h-10 text-slate-300 mx-auto" />
@@ -216,7 +221,7 @@ export default function SchoolDeliberationView({
     <div className="space-y-5">
       {/* Sous-sous-onglets CEP / BEPC / BAC / CAP */}
       <div className="flex flex-wrap items-center gap-2">
-        {availableTypes.map((t) => {
+        {types.map((t) => {
           const isActive = t === type;
           return (
             <button
@@ -253,7 +258,7 @@ export default function SchoolDeliberationView({
         <div className="flex justify-center py-12">
           <Loader2 className="w-7 h-7 animate-spin text-blue-900" />
         </div>
-      ) : !data || data.exams.length === 0 ? (
+      ) : !data || (data.exams ?? []).length === 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white p-10 text-center space-y-3">
           <Clock className="w-10 h-10 text-slate-300 mx-auto" />
           <p className="font-bold text-slate-700">
@@ -266,7 +271,7 @@ export default function SchoolDeliberationView({
         </div>
       ) : (
         <>
-          {data.exams.map((examResult) => (
+          {(data.exams ?? []).map((examResult) => (
             <div
               key={examResult.exam.id}
               className="rounded-xl border border-slate-200 bg-white overflow-hidden"
@@ -289,7 +294,7 @@ export default function SchoolDeliberationView({
                     )}
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
-                    Organisé par <b>{examResult.patronatName}</b>
+                    Organisé par <b>{examResult.patronatName ?? 'le patronat'}</b>
                     {examResult.deliberation?.juryName ? ` · jury « ${examResult.deliberation.juryName} »` : ''}
                     {examResult.deliberation?.publication?.publishedAt
                       ? ` · publié le ${new Date(examResult.deliberation.publication.publishedAt).toLocaleDateString('fr-FR')}`
@@ -304,17 +309,17 @@ export default function SchoolDeliberationView({
                 </div>
                 <div className="flex gap-2 text-center">
                   <div className="rounded-lg bg-white border border-slate-200 px-3 py-2">
-                    <p className="text-lg font-black text-slate-800">{examResult.stats.total}</p>
+                    <p className="text-lg font-black text-slate-800">{examResult.stats?.total ?? 0}</p>
                     <p className="text-[9px] font-bold uppercase text-slate-500">Candidats</p>
                   </div>
                   <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
                     <p className="text-lg font-black text-emerald-700">
-                      {examResult.stats.admissibles}
+                      {examResult.stats?.admissibles ?? 0}
                     </p>
                     <p className="text-[9px] font-bold uppercase text-emerald-700">Admissibles</p>
                   </div>
                   <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2">
-                    <p className="text-lg font-black text-red-600">{examResult.stats.ajournes}</p>
+                    <p className="text-lg font-black text-red-600">{examResult.stats?.ajournes ?? 0}</p>
                     <p className="text-[9px] font-bold uppercase text-red-600">Ajournés</p>
                   </div>
                 </div>
@@ -327,11 +332,11 @@ export default function SchoolDeliberationView({
                   <div className="bg-emerald-50 border-b border-emerald-100 px-4 py-2.5 flex items-center gap-2">
                     <Award className="w-4 h-4 text-emerald-600" />
                     <p className="text-xs font-bold uppercase text-emerald-800">
-                      Admissibles ({examResult.admissibles.length})
+                      Admissibles ({(examResult.admissibles ?? []).length})
                     </p>
                   </div>
                   <SchoolResultTable
-                    rows={examResult.admissibles}
+                    rows={examResult.admissibles ?? []}
                     tone="emerald"
                     examId={examResult.exam.id}
                     onSelect={setSelected}
@@ -343,11 +348,11 @@ export default function SchoolDeliberationView({
                   <div className="bg-red-50 border-b border-red-100 px-4 py-2.5 flex items-center gap-2">
                     <Users className="w-4 h-4 text-red-500" />
                     <p className="text-xs font-bold uppercase text-red-700">
-                      Ajournés ({examResult.ajournes.length})
+                      Ajournés ({(examResult.ajournes ?? []).length})
                     </p>
                   </div>
                   <SchoolResultTable
-                    rows={examResult.ajournes}
+                    rows={examResult.ajournes ?? []}
                     tone="red"
                     examId={examResult.exam.id}
                     onSelect={setSelected}
@@ -390,7 +395,7 @@ function SchoolResultTable({
   onSelect: (selection: { examId: string; row: SchoolBoardRow }) => void;
   selectedCandidateId: string | null;
 }) {
-  if (rows.length === 0) {
+  if (!rows || rows.length === 0) {
     return (
       <div className="px-5 py-8 text-center">
         <p className="text-xs font-bold text-slate-400">Aucun candidat dans cette liste.</p>
@@ -648,7 +653,7 @@ function SchoolRelevePanel({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {releve.lines.map((line) => (
+                    {(releve.lines ?? []).map((line) => (
                       <tr key={line.code}>
                         <td className="px-4 py-2 text-xs font-semibold text-slate-800">{line.name}</td>
                         {!isPrimary && (

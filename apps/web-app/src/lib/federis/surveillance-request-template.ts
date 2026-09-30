@@ -9,9 +9,18 @@
  * Le patronat n'a plus qu'à corriger quelques éléments (nombres attendus,
  * disponibilités) au lieu de rédiger la note de zéro.
  *
+ * ⭐ 2026-10-01 — TROIS POSTES (demande utilisateur) : la note précise que
+ * les enseignants proposés par les écoles seront répartis par le patronat
+ * entre la SURVEILLANCE des épreuves, la CORRECTION des copies et le
+ * SECRÉTARIAT (saisie des notes). Les modalités de réponse renvoient à
+ * Academia Helm — module « Patronats & Examens », onglet « Gestion des
+ * surveillants » (et non plus au module « Centres, salles & Surveillants »).
+ * La note est signée « Pour le Patronat du département » par le Coordinateur
+ * (nom pré-rempli, modifiable).
+ *
  * Fonction PURE (aucun import) — testable et réutilisable côté front.
- * Contraintes backend : title ≤ 190 caractères, message ≤ 2000 caractères
- * (CreateSupervisorRequestDto).
+ * Contraintes backend : title ≤ 190 caractères, message ≤ 5000 caractères
+ * (CreateSupervisorRequestDto — 2026-10-01, relevé de 2000 à 5000).
  */
 
 export interface SurveillanceExamLike {
@@ -65,17 +74,22 @@ function formatFrShort(iso?: string | null): string | null {
   return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
+/** Limite DTO backend (CreateSupervisorRequestDto.message). */
+export const SURVEILLANCE_MESSAGE_MAX = 5000;
+
 /**
  * Brouillon de la demande aux écoles — note circulaire orientée par type
  * d'examen. L'objet est auto-généré dès que l'examen est connu ; le message
  * est structuré comme une note administrative officielle : objet, appel aux
- * chefs d'établissement, effectif attendu (MODIFIABLE), critères de
- * sélection (disponibilité, expérience des examens, rigueur, intégrité),
- * modalités de réponse via Academia Helm et date limite, signature.
+ * chefs d'établissement, les TROIS postes (surveillance, correction,
+ * secrétariat), effectif attendu (MODIFIABLE), critères de sélection,
+ * modalités de réponse via Academia Helm (module « Patronats & Examens » →
+ * « Gestion des surveillants »), date limite et signature du Coordinateur
+ * du patronat (nom pré-rempli, modifiable).
  */
 export function buildSurveillanceRequestDraft(
   exam: SurveillanceExamLike | null | undefined,
-  opts?: { deadline?: string | null },
+  opts?: { deadline?: string | null; coordinatorName?: string | null },
 ): SurveillanceRequestDraft {
   if (!exam || !exam.name) {
     return { title: '', message: '' };
@@ -115,35 +129,49 @@ export function buildSurveillanceRequestDraft(
     ? `, au plus tard le ${deadlineShort}`
     : ' dans les meilleurs délais';
 
-  // ── Objet (≤ 190 caractères — contrainte DTO) ───────────────────────────
-  const title = `Désignation d\u2019enseignants surveillants — ${exam.name}`.slice(0, 190);
+  // ── Signataire (nom du coordinateur, pré-rempli et modifiable) ──────────
+  //    Les espaces multiples (intérieurs comme extrémités) sont normalisés.
+  const coordinatorName = (opts?.coordinatorName ?? '').trim().replace(/\s+/g, ' ');
 
-  // ── Corps de la note circulaire (≤ 2000 caractères — contrainte DTO) ────
+  // ── Objet (≤ 190 caractères — contrainte DTO) ───────────────────────────
+  const title = `Désignation d\u2019enseignants aux examens — surveillance, correction et secrétariat — ${exam.name}`.slice(
+    0,
+    190,
+  );
+
+  // ── Corps de la note circulaire (≤ 5000 caractères — contrainte DTO) ────
   const message = [
     `NOTE CIRCULAIRE`,
-    `Objet : Désignation d\u2019enseignants surveillants — ${exam.name}`,
+    `Objet : Désignation d\u2019enseignants pour l\u2019organisation de ${exam.name} — surveillance, correction et secrétariat`,
     ``,
     `À Mesdames et Messieurs les Chefs d\u2019établissement,`,
     ``,
-    `Dans le cadre de l\u2019organisation de l\u2019examen « ${exam.name} » (${datesPhrase}), le Patronat sollicite le concours de votre établissement pour la désignation d\u2019enseignants chargés de la surveillance de ${epreuves} dans les différents centres d\u2019examen.`,
+    `Dans le cadre de l\u2019organisation de l\u2019examen « ${exam.name} » (${datesPhrase}), le Patronat sollicite le concours de votre établissement pour la désignation d\u2019enseignants appelés à participer à ${epreuves} dans le cadre des missions suivantes :`,
+    `— la SURVEILLANCE des épreuves dans les différents centres et salles de composition ;`,
+    `— la CORRECTION des épreuves (copies et copies de rattrapage) ;`,
+    `— le SECRÉTARIAT de l\u2019examen, notamment la SAISIE DES NOTES.`,
     ``,
     `EFFECTIF ATTENDU PAR ÉCOLE`,
-    `Chaque école est priée de proposer deux (02) à quatre (04) enseignants disponibles, proportionnellement à l\u2019importance de ses effectifs de candidats présentés. Ce nombre demeure ajustable par le Patronat selon les besoins réels des centres.`,
+    `Chaque école est priée de proposer deux (02) à quatre (04) enseignants disponibles, proportionnellement à l\u2019importance de ses effectifs de candidats présentés. Ces enseignants seront répartis par le Patronat entre les postes de surveillance, de correction et de secrétariat selon les besoins réels de l\u2019organisation — vous pouvez mentionner, pour chaque enseignant proposé, le poste auquel il se destine de préférence.`,
     ``,
     `CRITÈRES DE SÉLECTION DES ENSEIGNANTS`,
-    `1. Disponibilité attestée pour l\u2019ensemble de la période des épreuves (${datesPhrase}), y compris la séance de briefing des surveillants ;`,
-    `2. Expérience avérée de la surveillance ${experience} ou d\u2019examens assimilés — un antécédent de surveillance constitue un atout déterminant ;`,
-    `3. Rigueur professionnelle, ponctualité et respect strict des consignes de surveillance et de la confidentialité des sujets ;`,
-    `4. Absence de lien de parenté avec un candidat de la salle d\u2019affectation, afin de préserver l\u2019objectivité et l\u2019intégrité de l\u2019examen.`,
+    `1. Disponibilité attestée pour l\u2019ensemble de la période des épreuves (${datesPhrase}), y compris la séance de briefing et, le cas échéant, les sessions de correction et de saisie des notes ;`,
+    `2. Expérience avérée de la surveillance ${experience} ou d\u2019examens assimilés — une expérience de la correction des copies ou de la saisie des notes constitue un atout déterminant pour les postes correspondants ;`,
+    `3. Rigueur professionnelle, ponctualité et respect strict des consignes et de la confidentialité des sujets comme des notes ;`,
+    `4. Absence de lien de parenté avec un candidat de la salle ou du poste d\u2019affectation, afin de préserver l\u2019objectivité et l\u2019intégrité de l\u2019examen.`,
     ``,
     `MODALITÉS DE RÉPONSE`,
-    `La liste des enseignants proposés (nom, prénoms, téléphone, e-mail) devra être transmise via le module « Centres, salles & Surveillants » de votre espace Academia Helm${deadlinePhrase}. Les affectations par centre et par salle seront notifiées individuellement aux enseignants après validation des listes par le Patronat.`,
+    `La liste des enseignants proposés (nom, prénoms, téléphone, e-mail, poste souhaité) devra être transmise via votre espace Academia Helm — module « Patronats & Examens », onglet « Gestion des surveillants »${deadlinePhrase}. Le Patronat procédera ensuite à la répartition des enseignants entre les trois postes (surveillance, correction, secrétariat) et, pour la surveillance, par centre et par salle de composition ; les affectations seront notifiées individuellement aux enseignants après validation des listes.`,
     ``,
     `Le Patronat vous remercie de votre collaboration habituelle et compte sur votre prompte réponse pour la bonne organisation de cette session.`,
     ``,
-    `Pour le Patronat,`,
-    `Le Président`,
-  ].join('\n');
+    `Pour le Patronat du département,`,
+    `Le Coordinateur${coordinatorName ? `,` : ''}`,
+    coordinatorName || '',
+  ]
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\n+$/, '\n');
 
-  return { title, message: message.slice(0, 2000) };
+  return { title, message: message.slice(0, SURVEILLANCE_MESSAGE_MAX) };
 }

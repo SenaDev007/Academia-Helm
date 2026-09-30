@@ -10740,6 +10740,13 @@ model ExamSupervisor {
   status         String       @default("ASSIGNED")
   assignedDate   DateTime     @default(now())
   metadata       Json?
+  /// ⭐ 2026-10-01 — Répartition par POSTE : les enseignants envoyés par les
+  ///    écoles sont répartis par le patronat entre la SURVEILLANCE des
+  ///    épreuves, la CORRECTION des copies et le SECRETARIAT (saisie des
+  ///    notes). Le champ `role` conserve la nuance de surveillance
+  ///    (SURVEILLANT / CHEF_DE_SALLE / CHEF_DE_CENTRE) ; `post` porte la
+  ///    mission administrative (SURVEILLANCE | CORRECTION | SECRETARIAT).
+  post           String       @default("SURVEILLANCE")
   /// ⭐ 2026-09-29 — Gestion des surveillants (module Centres, salles &
   ///    Surveillants) : origine de la nomination et traçabilité.
   ///    MANUAL : créé directement par le patronat (champs ci-dessus).

@@ -85,10 +85,13 @@ export class CreateSupervisorRequestDto {
   @MaxLength(190)
   title!: string;
 
-  /** Message adressé aux écoles (consigne, nombre attendu…). */
+  /** Message adressé aux écoles (consigne, nombre attendu…).
+   * ⭐ 2026-10-01 — porté à 5000 caractères (demande utilisateur) : la note
+   *    circulaire auto-générée couvre désormais les TROIS postes
+   *    (surveillance, correction, secrétariat) et dépasse les 2000 car. */
   @IsOptional()
   @IsString()
-  @MaxLength(2000)
+  @MaxLength(5000)
   message?: string;
 
   /** NationalExam concerné — REQUIS (la répartition se fait par centre et
@@ -123,9 +126,17 @@ export class SupervisorAssignmentDto {
   @IsString()
   teacherId!: string;
 
-  /** ExamCenter cible. */
+  /** ⭐ 2026-10-01 — POSTE de l'enseignant : surveillance des épreuves,
+   *  correction des copies ou secrétariat (saisie des notes).
+   *  Défaut SURVEILLANCE (comportement historique). */
+  @IsOptional()
+  @IsIn(SUPERVISOR_POSTS)
+  post?: SupervisorPost;
+
+  /** ExamCenter cible (requis pour la surveillance, optionnel sinon). */
+  @IsOptional()
   @IsString()
-  centerId!: string;
+  centerId?: string;
 
   /** ExamRoom cible (optionnelle — centre seul). */
   @IsOptional()
@@ -164,6 +175,11 @@ export class CreateSupervisorDto {
   @IsString()
   examId!: string;
 
+  /** ⭐ 2026-10-01 — poste (surveillance / correction / secrétariat). */
+  @IsOptional()
+  @IsIn(SUPERVISOR_POSTS)
+  post?: SupervisorPost;
+
   @IsOptional()
   @IsString()
   centerId?: string;
@@ -196,6 +212,32 @@ export class UpdateSupervisorDto {
 }
 
 // ── Constantes ──────────────────────────────────────────────────────────────
+
+/** ⭐ 2026-10-01 — Postes de répartition des enseignants envoyés par les
+ *    écoles : surveillance des épreuves, correction des copies, secrétariat
+ *    (saisie des notes). Le patronat répartit chaque enseignant sur l'un de
+ *    ces trois postes au moment de la validation de la répartition. */
+export type SupervisorPost = 'SURVEILLANCE' | 'CORRECTION' | 'SECRETARIAT';
+
+export const SUPERVISOR_POSTS: SupervisorPost[] = ['SURVEILLANCE', 'CORRECTION', 'SECRETARIAT'];
+
+export function normalizeSupervisorPost(value?: string | null): SupervisorPost {
+  return SUPERVISOR_POSTS.includes(value as SupervisorPost)
+    ? (value as SupervisorPost)
+    : 'SURVEILLANCE';
+}
+
+/** Libellé court d'un poste (notifications, registres). */
+export function supervisorPostLabel(post?: string | null): string {
+  switch (normalizeSupervisorPost(post)) {
+    case 'CORRECTION':
+      return 'Correction des épreuves';
+    case 'SECRETARIAT':
+      return 'Secrétariat — saisie des notes';
+    default:
+      return 'Surveillance des épreuves';
+  }
+}
 
 /** Rôles de direction autorisés (notification + actions côté école). */
 const SCHOOL_DIRECTION_ROLES = [
@@ -263,9 +305,9 @@ export class FederisSupervisorsService {
       const cols: any[] = (await this.prisma.$queryRawUnsafe(
         `SELECT column_name FROM information_schema.columns
          WHERE table_name='exam_supervisors' AND column_name IN
-         ('source','schoolTenantId','teacherId','requestId','submissionId','teacherNotifiedAt')`,
+         ('source','schoolTenantId','teacherId','requestId','submissionId','teacherNotifiedAt','post')`,
       )) as any[];
-      if (!cols || cols.length < 6) throw new Error('colonnes exam_supervisors absentes');
+      if (!cols || cols.length < 7) throw new Error('colonnes exam_supervisors absentes');
       this.schemaReady = true;
       return;
     } catch {
@@ -349,6 +391,11 @@ export class FederisSupervisorsService {
       `ALTER TABLE "exam_supervisors" ADD COLUMN IF NOT EXISTS "requestId" TEXT`,
       `ALTER TABLE "exam_supervisors" ADD COLUMN IF NOT EXISTS "submissionId" TEXT`,
       `ALTER TABLE "exam_supervisors" ADD COLUMN IF NOT EXISTS "teacherNotifiedAt" TIMESTAMP(3)`,
+      // ⭐ 2026-10-01 — poste : SURVEILLANCE | CORRECTION | SECRETARIAT
+      //    (migration 20261001000000_federis_supervisor_posts)
+      `ALTER TABLE "exam_supervisors" ADD COLUMN IF NOT EXISTS "post" TEXT NOT NULL DEFAULT 'SURVEILLANCE'`,
+      `CREATE INDEX IF NOT EXISTS "exam_supervisors_post_idx"
+          ON "exam_supervisors"("post")`,
       `CREATE INDEX IF NOT EXISTS "exam_supervisors_schoolTenantId_idx"
           ON "exam_supervisors"("schoolTenantId")`,
       `CREATE INDEX IF NOT EXISTS "exam_supervisors_requestId_idx"
@@ -617,8 +664,8 @@ export class FederisSupervisorsService {
       const ok = await this.notifySchoolDirection(
         school.tenantId,
         {
-          title: `Demande de surveillants — ${exam.name}`,
-          body: `${patronat.name} sollicite votre établissement : présentez vos enseignants comme surveillants pour l'examen ${exam.name} (${exam.code}). Ouvrez le module « Patronats & Examens → Gestion des surveillants » pour sélectionner vos enseignants.`,
+          title: `Désignation d'enseignants — ${exam.name}`,
+          body: `${patronat.name} sollicite votre établissement : présentez vos enseignants pour l'organisation de l'examen ${exam.name} (${exam.code}) — surveillance des épreuves, correction des copies et secrétariat (saisie des notes). Ouvrez le module « Patronats & Examens → Gestion des surveillants » pour sélectionner vos enseignants.`,
           priority: 'HIGH',
           data: {
             url: '/app/federis?tab=surveillants',
@@ -666,6 +713,110 @@ export class FederisSupervisorsService {
     });
   }
 
+  /**
+   * ⭐ 2026-10-01 — Signataires de la note circulaire : nom de l'utilisateur
+   * courant (avec sa fonction) et nom du COORDONNATEUR du patronat. Sert au
+   * pré-remplissage du champ « Signataire » du formulaire de demande — le
+   * nom du coordonnateur est proposé par défaut (la note est signée « Pour
+   * le Patronat du département » par le Coordinateur), l'utilisateur garde
+   * la liberté de modifier la valeur proposée.
+   */
+  async listSignatories(tenantId: string, userId: string) {
+    const { patronat } = await this.resolvePatronatContext(tenantId, userId);
+
+    const links = await this.prisma.patronatUser.findMany({
+      where: { tenantId: patronat.tenantId, isActive: true },
+      select: {
+        role: true,
+        user: { select: { id: true, firstName: true, lastName: true } },
+      },
+    });
+
+    const fullName = (u: { firstName: string | null; lastName: string | null } | null) =>
+      u ? [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || null : null;
+
+    const myLink = links.find((l) => l.user?.id === userId) ?? null;
+    const coordinatorLink = links.find((l) => l.role === 'COORDONNATEUR') ?? links[0] ?? null;
+
+    return {
+      current: myLink?.user
+        ? { name: fullName(myLink.user), function: myLink.role }
+        : null,
+      coordinator: coordinatorLink?.user
+        ? { name: fullName(coordinatorLink.user) }
+        : null,
+    };
+  }
+
+  /**
+   * ⭐ 2026-10-01 — Renvoi de la même note circulaire aux écoles rattachées
+   * qui n'ont PAS encore répondu (en particulier les écoles rattachées
+   * APRÈS l'envoi initial, qui n'ont jamais reçu la note). Évite de recréer
+   * une demande : la note d'origine (objet + message) est retransmise telle
+   * quelle, avec rappel de la date limite.
+   */
+  async resendRequest(tenantId: string, userId: string, requestId: string) {
+    await this.ensureSchema();
+    const { patronat, fn } = await this.resolvePatronatContext(tenantId, userId);
+    this.assertCanWrite(fn);
+
+    const request = await this.prisma.supervisorRequest.findFirst({
+      where: { id: requestId, tenantId },
+    });
+    if (!request) throw new NotFoundException('Demande introuvable.');
+
+    const schools = await this.joinedSchools(tenantId);
+    const responded = await this.prisma.schoolSupervisorSubmission.findMany({
+      where: { requestId, tenantId: { in: schools.map((s) => s.tenantId) } },
+      select: { tenantId: true },
+    });
+    const respondedSet = new Set(responded.map((r) => r.tenantId));
+    const targets = schools.filter((s) => !respondedSet.has(s.tenantId));
+
+    if (targets.length === 0) {
+      throw new BadRequestException(
+        "Toutes les écoles rattachées ont déjà répondu à cette demande — aucun renvoi nécessaire.",
+      );
+    }
+
+    const examLabel = request.examLabel ?? "l'examen";
+    const noteExcerpt = (request.message ?? request.title ?? '').slice(0, 600);
+    const noteSuffix = (request.message ?? request.title ?? '').length > 600 ? '…' : '';
+    const deadlineTxt = request.deadline
+      ? ` Répondre avant le ${new Date(request.deadline).toLocaleDateString('fr-FR')}.`
+      : '';
+
+    let notifiedSchools = 0;
+    for (const school of targets) {
+      const ok = await this.notifySchoolDirection(
+        school.tenantId,
+        {
+          title: `Note circulaire (rappel) — ${request.title}`,
+          body: `${patronat.name} vous rappelle sa demande de désignation d'enseignants pour ${examLabel} : « ${noteExcerpt}${noteSuffix} ». Ouvrez le module « Patronats & Examens → Gestion des surveillants » de votre espace Academia Helm pour sélectionner vos enseignants (surveillance, correction, secrétariat).${deadlineTxt}`,
+          priority: 'HIGH',
+          data: {
+            url: '/app/federis?tab=surveillants',
+            requestId: request.id,
+          },
+          relatedEntityType: 'SupervisorRequest',
+          relatedEntityId: request.id,
+        },
+        'FEDERIS_SUPERVISOR_REQUEST',
+      );
+      if (ok) notifiedSchools++;
+    }
+
+    this.logger.log(
+      `Note circulaire « ${request.title} » renvoyée — ${targets.length} école(s) destinataire(s), ${notifiedSchools} notifiée(s).`,
+    );
+
+    return {
+      targetsCount: targets.length,
+      notifiedSchools,
+      schools: targets.map((s) => s.name),
+    };
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   // PATRONAT — 2. Listes reçues par école + récapitulatif global
   // ═══════════════════════════════════════════════════════════════════════
@@ -699,6 +850,7 @@ export class FederisSupervisorsService {
         teacherId: true,
         centerId: true,
         roomId: true,
+        post: true,
         center: { select: { id: true, name: true, code: true } },
         room: { select: { id: true, name: true, code: true } },
       },
@@ -736,16 +888,20 @@ export class FederisSupervisorsService {
     );
 
     // Centres + salles de l'examen (pour la répartition)
+    // ⭐ FIX 2026-10-01 — la relation Prisma du modèle ExamCenter s'appelle
+    //    `examRooms` (et non `rooms`) : l'ancien select provoquait une
+    //    PrismaClientValidationError « Unknown field `rooms` » → 400 « Champ
+    //    rooms » après l'envoi de la note circulaire (détail demande).
     let centers: any[] = [];
     if (request.examId) {
-      centers = await this.prisma.examCenter.findMany({
+      const rows = await this.prisma.examCenter.findMany({
         where: { tenantId, examId: request.examId, status: 'ACTIVE' },
         select: {
           id: true,
           code: true,
           name: true,
           address: true,
-          rooms: {
+          examRooms: {
             where: { status: 'AVAILABLE' },
             select: { id: true, code: true, name: true, capacity: true },
             orderBy: { code: 'asc' },
@@ -753,6 +909,14 @@ export class FederisSupervisorsService {
         },
         orderBy: { code: 'asc' },
       });
+      // Forme de réponse conservée pour le front : `rooms` (tableau).
+      centers = rows.map((c) => ({
+        id: c.id,
+        code: c.code,
+        name: c.name,
+        address: c.address,
+        rooms: c.examRooms,
+      }));
     }
 
     return {
@@ -812,9 +976,20 @@ export class FederisSupervisorsService {
     // Regroupement des affectations par école (pour les notifications)
     const bySchoolTenant = new Map<string, { schoolName: string; items: string[] }>();
 
+    // ⭐ 2026-10-01 — rôle d'encadrement associé au poste (le champ `role`
+    //    historique reste alimenté pour compatibilité des registres).
+    const roleByPost: Record<SupervisorPost, string> = {
+      SURVEILLANCE: 'SURVEILLANT',
+      CORRECTION: 'CORRECTEUR',
+      SECRETARIAT: 'SECRETARIAT',
+    };
+
     const created = await this.prisma.$transaction(async (tx) => {
       const results: any[] = [];
       for (const a of dto.assignments) {
+        // ⭐ Poste : surveillance / correction / secrétariat (défaut surveillance)
+        const post = normalizeSupervisorPost(a.post);
+
         const submission = await tx.schoolSupervisorSubmission.findFirst({
           where: { id: a.submissionId, requestId },
         });
@@ -839,7 +1014,14 @@ export class FederisSupervisorsService {
           where: { tenantId, requestId, teacherId: a.teacherId },
         });
 
-        // Validations centre / salle (appartenance au patronat + examen)
+        // Validations centre / salle (appartenance au patronat + examen).
+        // ⭐ Le centre/salle est requis UNIQUEMENT pour le poste de
+        //    surveillance ; correction et secrétariat n'y sont pas assujettis.
+        if (post === 'SURVEILLANCE' && !a.centerId) {
+          throw new BadRequestException(
+            `Le centre d'accueil est requis pour la surveillance (${teacher.firstName} ${teacher.lastName}).`,
+          );
+        }
         const center = a.centerId
           ? await tx.examCenter.findFirst({
               where: { id: a.centerId, tenantId, examId: request.examId! },
@@ -876,7 +1058,8 @@ export class FederisSupervisorsService {
             lastName: teacher.lastName,
             email: teacher.email,
             phone: teacher.phone,
-            role: 'SURVEILLANT',
+            role: roleByPost[post],
+            post,
             status: 'ASSIGNED',
             source: 'SCHOOL_NOMINATION',
             schoolTenantId: submission.tenantId,
@@ -887,7 +1070,7 @@ export class FederisSupervisorsService {
           },
         });
 
-        // Regroupement pour notification école
+        // Regroupement pour notification école — libellé adapté au poste
         const entry = bySchoolTenant.get(submission.tenantId) ?? {
           schoolName: '',
           items: [],
@@ -897,8 +1080,12 @@ export class FederisSupervisorsService {
           select: { name: true },
         });
         entry.schoolName = schoolTenant?.name ?? 'École';
+        const placeTxt =
+          post === 'SURVEILLANCE'
+            ? ` (${center ? `centre ${center.name}` : 'centre non défini'}${room ? `, salle ${room.name}` : ''})`
+            : '';
         entry.items.push(
-          `${teacher.firstName} ${teacher.lastName} → ${center ? `centre ${center.name}` : 'centre non défini'}${room ? `, salle ${room.name}` : ''}`,
+          `${teacher.firstName} ${teacher.lastName} — ${supervisorPostLabel(post)}${placeTxt}`,
         );
         bySchoolTenant.set(submission.tenantId, entry);
 
@@ -985,6 +1172,8 @@ export class FederisSupervisorsService {
         email: s.email,
         phone: s.phone,
         role: s.role,
+        post: s.post,
+        postLabel: supervisorPostLabel(s.post),
         status: s.status,
         source: s.source,
         teacherNotifiedAt: s.teacherNotifiedAt,
@@ -1041,7 +1230,16 @@ export class FederisSupervisorsService {
         lastName: dto.lastName.trim(),
         email: dto.email?.trim() || null,
         phone: dto.phone?.trim() || null,
-        role: dto.role?.trim() || 'SURVEILLANT',
+        // ⭐ 2026-10-01 — poste (surveillance / correction / secrétariat) + rôle
+        //    d'encadrement cohérent si le rôle n'est pas explicitement fourni.
+        post: normalizeSupervisorPost(dto.post),
+        role:
+          dto.role?.trim() ||
+          (normalizeSupervisorPost(dto.post) === 'CORRECTION'
+            ? 'CORRECTEUR'
+            : normalizeSupervisorPost(dto.post) === 'SECRETARIAT'
+              ? 'SECRETARIAT'
+              : 'SURVEILLANT'),
         status: 'ASSIGNED',
         source: 'MANUAL',
         createdBy: userId,
@@ -1211,6 +1409,8 @@ export class FederisSupervisorsService {
         exam: a.exam,
         center: a.center,
         room: a.room,
+        post: a.post,
+        postLabel: supervisorPostLabel(a.post),
         requestId: a.requestId,
         teacherNotifiedAt: a.teacherNotifiedAt,
         assignedDate: a.assignedDate,
@@ -1535,12 +1735,15 @@ export class FederisSupervisorsService {
    * Notification in-app d'un enseignant affecté : résolution
    * Teacher.email → User (même tenant — pattern Helm). Retourne false si
    * l'enseignant n'a pas de compte utilisateur rattaché.
+   * ⭐ 2026-10-01 — libellé adapté au POSTE (surveillance avec centre/salle,
+   * correction des épreuves, secrétariat pour la saisie des notes).
    */
   private async sendTeacherNotification(supervisor: {
     teacherId: string | null;
     schoolTenantId: string | null;
     firstName: string;
     lastName: string;
+    post?: string | null;
     center: { name: string; code: string; address: string | null } | null;
     room: { name: string; code: string } | null;
     exam: { name: string; code: string } | null;
@@ -1569,22 +1772,31 @@ export class FederisSupervisorsService {
       return false;
     }
 
-    const centerTxt = supervisor.center
-      ? `centre ${supervisor.center.name}${supervisor.center.address ? ` (${supervisor.center.address})` : ''}`
-      : 'centre à confirmer';
-    const roomTxt = supervisor.room ? `, salle ${supervisor.room.name}` : '';
+    const post = normalizeSupervisorPost(supervisor.post);
     const examTxt = supervisor.exam ? ` pour l'examen ${supervisor.exam.name}` : '';
+    const missionTxt: Record<SupervisorPost, string> = {
+      SURVEILLANCE: (() => {
+        const centerTxt = supervisor.center
+          ? `centre ${supervisor.center.name}${supervisor.center.address ? ` (${supervisor.center.address})` : ''}`
+          : 'centre à confirmer';
+        const roomTxt = supervisor.room ? `, salle ${supervisor.room.name}` : '';
+        return `vous êtes désigné(e) comme surveillant${examTxt} — ${centerTxt}${roomTxt}. Veuillez vous présenter avant le début des épreuves.`;
+      })(),
+      CORRECTION: `vous êtes désigné(e) au poste de CORRECTION des épreuves${examTxt}. Vous participerez à la correction des copies selon le calendrier et les consignes qui vous seront communiqués par le patronat.`,
+      SECRETARIAT: `vous êtes désigné(e) au poste de SECRÉTARIAT${examTxt} — saisie des notes. Vous serez chargé(e) de la saisie et de la consolidation des notes au sein du secrétariat de l'examen.`,
+    };
 
     await this.notificationService
       .create({
         tenantId: supervisor.schoolTenantId,
         recipientId: user.id,
         type: 'FEDERIS_SUPERVISOR_ASSIGNMENT',
-        title: `Affectation comme surveillant${examTxt}`,
-        body: `Bonjour ${teacher.firstName} ${teacher.lastName}, vous êtes désigné(e) comme surveillant${examTxt} — ${centerTxt}${roomTxt}. Veuillez vous présenter avant le début des épreuves.`,
+        title: `Affectation — ${supervisorPostLabel(post)}`,
+        body: `Bonjour ${teacher.firstName} ${teacher.lastName}, ${missionTxt[post]}`,
         priority: 'HIGH',
         data: {
           examCode: supervisor.exam?.code,
+          post,
           centerName: supervisor.center?.name,
           roomName: supervisor.room?.name,
         },

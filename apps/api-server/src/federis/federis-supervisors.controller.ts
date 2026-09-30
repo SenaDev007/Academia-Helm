@@ -7,6 +7,11 @@
  *   GET    /federis/supervisors/requests                — demandes + compteurs
  *   POST   /federis/supervisors/requests                — demande aux écoles
  *   PATCH  /federis/supervisors/requests/:id            — clôturer / rouvrir
+ *   POST   /federis/supervisors/requests/:id/resend     — renvoyer la note
+ *                                                          aux écoles sans réponse
+ *   GET    /federis/supervisors/signatories             — signataires de la
+ *                                                          note circulaire
+ *                                                          (courant + coordonnateur)
  *   GET    /federis/supervisors/requests/:id/submissions — listes par école
  *                                                          + récap + centres
  *   POST   /federis/supervisors/requests/:id/assignments — répartition centre
@@ -74,6 +79,28 @@ export class FederisSupervisorsController {
   }
 
   // ── Listes reçues par école + récapitulatif + répartition ─────────────────
+
+  /** ⭐ 2026-10-01 — Signataires de la note circulaire : utilisateur courant
+   *  (avec sa fonction) + coordonnateur du patronat (pré-remplissage du
+   *  champ « Signataire », modifiable librement par l'utilisateur). */
+  @UseGuards(JwtAuthGuard)
+  @Get('signatories')
+  async listSignatories(@Req() req: any) {
+    return this.supervisorsService.listSignatories(req.user.tenantId, this.uid(req));
+  }
+
+  /** ⭐ 2026-10-01 — Renvoi de la note circulaire aux écoles rattachées qui
+   *  n'ont pas encore répondu (notamment celles rattachées après l'envoi
+   *  initial) — sans recréer la demande. */
+  @UseGuards(JwtAuthGuard)
+  @Post('requests/:id/resend')
+  async resendRequest(@Req() req: any, @Param('id') requestId: string) {
+    return this.supervisorsService.resendRequest(
+      req.user.tenantId,
+      this.uid(req),
+      requestId,
+    );
+  }
 
   @UseGuards(JwtAuthGuard)
   @Get('requests/:id/submissions')

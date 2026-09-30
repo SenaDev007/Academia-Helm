@@ -146,8 +146,13 @@ export default function PromotionWorkspace() {
   useEffect(() => { loadStudents(); }, [loadStudents]);
 
   // ── Derived: passants + redoublants ──
+  //    ⭐ 2026-09-30 — FIX : passants + redoublants + rachat = total classe.
+  //    Avant, les élèves en RACHAT (9≤avg<10) n'étaient ni dans passants ni
+  //    dans redoublants → le total ne correspondait pas. Désormais, les
+  //    rachatCandidates sont affichés dans le tableau des redoublants
+  //    (avec un bouton "Voir les notes" pour appliquer un rachat).
   const passants = useMemo(() => students.filter(s => s.decision === 'PASSE' || s.rachatApplied), [students]);
-  const redoublants = useMemo(() => students.filter(s => s.decision === 'REDOUBLE' && !s.rachatApplied), [students]);
+  const redoublants = useMemo(() => students.filter(s => (s.decision === 'REDOUBLE' || s.decision === 'RACHAT') && !s.rachatApplied), [students]);
   const rachatCandidates = useMemo(() => students.filter(s => s.decision === 'RACHAT' && !s.rachatApplied), [students]);
 
   // ── Apply rachat ──
@@ -253,6 +258,7 @@ export default function PromotionWorkspace() {
           decision: s.decision,
         })),
         scopeLang: scopeLang || 'FR',
+        scopeLevel: scopeLevel || null,
       };
 
       // ⭐ 2026-09-30 — FIX : utiliser apiClient (axios avec baseURL) au lieu de

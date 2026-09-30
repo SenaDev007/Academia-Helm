@@ -457,6 +457,7 @@ export default function StatsWorkspace() {
         })),
         topN,
         scopeLang: scopeLang || 'FR',
+        scopeLevel: scopeLevel || null,
       };
 
       // ⭐ 2026-09-30 — FIX : utiliser apiClient (axios avec baseURL) au lieu de

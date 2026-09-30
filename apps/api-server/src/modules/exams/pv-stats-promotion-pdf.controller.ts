@@ -38,6 +38,18 @@ export class PvStatsPromotionPdfController {
     private readonly prisma: PrismaService,
   ) {}
 
+  // ─── Helper : résoudre isSecondary depuis scopeLevel ─────────────────────
+  //    ⭐ 2026-09-30 — FIX en-tête PDF : le ministère affiché doit correspondre
+  //    au niveau scolaire (maternel/primaire vs secondaire). Avant, le
+  //    branding n'avait pas isSecondary → tous les PDF affichaient
+  //    « Ministère des Enseignements Maternel et Primaire » même pour le
+  //    secondaire.
+  private resolveIsSecondary(scopeLevel: string | null | undefined): boolean {
+    if (!scopeLevel) return false;
+    const level = String(scopeLevel).toUpperCase().trim();
+    return level === 'SECONDAIRE' || level === 'SECONDARY';
+  }
+
   // ─── Helper : branding école (même pattern que bulletins.controller) ─────
   private async getTenantBranding(tenantId: string) {
     try {
@@ -78,6 +90,7 @@ export class PvStatsPromotionPdfController {
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
     const branding = await this.getTenantBranding(resolvedTenantId);
+    branding.isSecondary = this.resolveIsSecondary(body.scopeLevel);
     const buffer = await this.pdfService.generateProcVerbalPdf({ ...body, branding });
     const safeClass = (body.className || 'classe').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
     const safePeriod = (body.periodName || 'periode').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
@@ -105,6 +118,7 @@ export class PvStatsPromotionPdfController {
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
     const branding = await this.getTenantBranding(resolvedTenantId);
+    branding.isSecondary = this.resolveIsSecondary(body.scopeLevel);
     const buffer = await this.pdfService.generateStatsPdf({ ...body, branding });
     const safeClass = (body.className || 'classe').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
     const safeSubtab = body.subTab || 'stats';
@@ -132,6 +146,7 @@ export class PvStatsPromotionPdfController {
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
     const branding = await this.getTenantBranding(resolvedTenantId);
+    branding.isSecondary = this.resolveIsSecondary(body.scopeLevel);
     const buffer = await this.pdfService.generatePromotionPdf({ ...body, branding });
     const safeClass = (body.className || 'classe').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
     res.set({

@@ -324,11 +324,15 @@ function esc(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
-/** Section libre d'une épreuve (contenu JSON `sections`). */
+/** Section libre d'une épreuve (contenu JSON `sections`). ⭐ 2026-10-01 —
+ *  hiérarchie : `parentSectionId` désigne le bloc PARENT (un bloc
+ *  « Consigne » peut contenir « Problème 1, Problème 2 » ou « Item 1,
+ *  Item 2 »). null (absent) = bloc de premier niveau. */
 interface EpreuveSection {
   id?: string;
   title?: string;
   content?: string;
+  parentSectionId?: string | null;
 }
 
 @Injectable()
@@ -511,7 +515,11 @@ export class FederisEpreuveService {
     this.logger.log('Schéma federis_exam_papers vérifié / créé (auto-guérison).');
   }
 
-  /** Valide la structure des sections libres [{id, title, content}]. */
+  /** Valide la structure des sections libres [{id, title, content,
+   *  parentSectionId}]. ⭐ 2026-10-01 — hiérarchie : `parentSectionId` est
+   *  propagé (référence vers une AUTRE section) ; un parent inconnu (section
+   *  supprimée entre-temps, payload partiel d'autosave) est ramené à la
+   *  racine — aucun bloc n'est jamais perdu. */
   private sanitizeSections(sections: any): EpreuveSection[] | null {
     if (!sections) return null;
     let list: EpreuveSection[] = [];
@@ -535,7 +543,19 @@ export class FederisEpreuveService {
             ? s.title.trim().slice(0, 190)
             : `Section ${i + 1}`,
         content: typeof s.content === 'string' ? s.content.slice(0, RICH_FIELD_MAX) : '',
+        parentSectionId:
+          typeof s.parentSectionId === 'string' && s.parentSectionId
+            ? s.parentSectionId.slice(0, 80)
+            : null,
       }));
+    // ⭐ hiérarchie : purge des références orphelines (parent inconnu ou
+    //    soi-même — jamais de cycle, jamais de bloc perdu)
+    const ids = new Set(cleaned.map((s) => s.id));
+    for (const s of cleaned) {
+      if (s.parentSectionId && (!ids.has(s.parentSectionId) || s.parentSectionId === s.id)) {
+        s.parentSectionId = null;
+      }
+    }
     return cleaned;
   }
 
@@ -1104,16 +1124,37 @@ export class FederisEpreuveService {
         </div>`
         : '';
 
-    const sectionsHtml = sections
-      .map((s) => {
-        const content = this.sanitizeRichHtml(s.content || '');
-        if (!content && !s.title) return '';
-        return `
-        <div class="section">
+    // ⭐ 2026-10-01 — HIÉRARCHIE des blocs : un bloc peut en contenir
+    //    d'autres (parentSectionId). Les enfants sont rendus DANS le bloc de
+    //    leur parent (indentation légère .section-sub), dans l'ordre du
+    //    tableau — ex : « Consigne » → « Problème 1 », « Problème 2 », ou
+    //    « Consigne » → « Item 1 », « Item 2 ».
+    const childrenByParent = new Map<string, EpreuveSection[]>();
+    const rootSectionsPdf: EpreuveSection[] = [];
+    for (const s of sections) {
+      const key = s.parentSectionId ?? null;
+      if (key && sections.some((p) => p.id === key) && key !== s.id) {
+        if (!childrenByParent.has(key)) childrenByParent.set(key, []);
+        childrenByParent.get(key)!.push(s);
+      } else {
+        rootSectionsPdf.push(s);
+      }
+    }
+    const renderSectionHtml = (s: EpreuveSection, depth: number): string => {
+      const content = this.sanitizeRichHtml(s.content || '');
+      const childHtml = (childrenByParent.get(s.id) ?? [])
+        .map((c) => renderSectionHtml(c, depth + 1))
+        .join('\n');
+      if (!content && !s.title && !childHtml) return '';
+      return `
+        <div class="section${depth > 0 ? ' section-sub' : ''}">
           ${s.title ? `<div class="section-label">${esc(s.title)}</div>` : ''}
           <div class="section-body">${content}</div>
+          ${childHtml}
         </div>`;
-      })
+    };
+    const sectionsHtml = rootSectionsPdf
+      .map((s) => renderSectionHtml(s, 0))
       .join('\n');
 
     const pages: string[] = [];
@@ -1230,6 +1271,9 @@ ${SCHOOL_FONTS_CSS}
   .id-field .dots { flex: 1; border-bottom: 1px dotted #444; height: 14px; }
 
   .section { margin-top: 14px; }
+  /* ⭐ 2026-10-01 — SOUS-BLOCS (hiérarchie « Consigne » → « Problème 1 »,
+     « Item 2 »…) : indentés sous leur parent, espacement resserré. */
+  .section .section-sub { margin-left: 6mm; margin-top: 10px; }
   /* ⭐ 2026-09-30 — INTITULÉS PARAMÉTRABLES (panneau « Mise en page du
      sujet ») : gras / souligné / italique / taille appliqués à « Situation
      d'évaluation », « Tâche » et aux titres des sections libres. */

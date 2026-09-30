@@ -351,11 +351,21 @@ ${resRow}
 </span>&nbsp;`;
 }
 
-/** Fraction empilée (rendu écran + PDF). */
+/** Fraction empilée (rendu écran + PDF).
+ *  ⭐ 2026-10-01 — ATOME INLINE INSÉCABLE : contenteditable="false" posé
+ *    sur le span. Dans le champ de saisie enrichi, la fraction vit DANS le
+ *    flux du texte (ex : « A) ¾   B) ⅝   C) ½ » sur UNE seule ligne) :
+ *    - le curseur ne peut pas entrer dedans (structure numérateur /
+ *      dénominateur protégée) ;
+ *    - un clic sélectionne l'atome ENTIER (surlignage bleu natif) ;
+ *    - glisser-déposer NATIF du navigateur : la fraction se déplace sur la
+ *      ligne, le caret d'insertion s'affiche, la ligne n'est jamais
+ *      coupée (plus d'habillage qui déforme) ;
+ *    - Suppr / Retour arrière la retirent d'un seul bloc. */
 export function buildFraction(num: string, den: string): string {
   const n = escHtml(num || "1");
   const d = escHtml(den || "1");
-  return `<span class="ah-frac" style="display:inline-flex;flex-direction:column;align-items:center;vertical-align:middle;line-height:1.1;margin:0 3px;font-family:'Cambria Math','Times New Roman',serif;font-size:0.95em;">
+  return `<span class="ah-frac" contenteditable="false" style="display:inline-flex;flex-direction:column;align-items:center;vertical-align:middle;line-height:1.1;margin:0 3px;font-family:'Cambria Math','Times New Roman',serif;font-size:0.95em;">
 <span style="padding:0 4px;border-bottom:2px solid #0f172a;">${n}</span>
 <span style="padding:0 4px;">${d}</span>
 </span>`;

@@ -139,19 +139,54 @@ const TRACKED_COMMANDS = [
  *    - div.calli-lines : lignes calligraphiques (contenteditable=false)
  *    - span.ah-op      : opérations posées (addition, soustraction,
  *                        multiplication, division euclidienne)
- *    - span.ah-frac    : fractions empilées
- *    - span.ah-math    : symboles mathématiques
- *    - sup.ah-sup / sub.ah-sub : puissances et indices
  *    - img             : photos réalistes / images URL / images de l'école
  *    - svg             : tout SVG inline non enveloppé (anciennes insertions)
  *    Les sélecteurs fonctionnent sur le contenu DÉJÀ ENREGISTRÉ (mêmes
- *    classes depuis la V7) — pas seulement les nouvelles insertions. */
+ *    classes depuis la V7) — pas seulement les nouvelles insertions.
+ *
+ *    ⭐ 2026-10-01 (retour épreuves Fédéris) — les éléments TEXTUELS du
+ *    panneau Maths ne sont PLUS des médias :
+ *    - span.ah-frac (fractions), span.ah-math (symboles), sup.ah-sup /
+ *      sub.ah-sub (puissances/indices) vivent DANS le flux du texte. Les
+ *      traiter comme des objets (barre d'objet + habillage float/block/
+ *      absolute + drag custom) DÉFORMAIT la ligne (« A) ¾  B) ⅝  C) ½ »
+ *      devait rester sur UNE ligne) et le drag custom échouait en silence
+ *      quand le caret atterrissait DANS la fraction (insertNode →
+ *      HierarchyRequestError avalé par le catch → « pas déplaçable »).
+ *      Désormais : clic = sélection native de l'atome, glisser-déposer
+ *      NATIF du navigateur (déplacement sur la même ligne avec caret
+ *      d'insertion visible), Suppr/Retour = suppression en bloc, plus
+ *      AUCUN habillage proposé dessus (plus de déformation possible).
+ *      Les fractions sont posées contenteditable="false" (atome insécable)
+ *      — voir normalizeInlineAtoms + MathPanel.buildFraction. */
 const MEDIA_SELECTOR = [
-  "span.ah-fig", "span.ah-op", "span.ah-frac", "span.ah-math",
-  "sup.ah-sup", "sub.ah-sub",
+  "span.ah-fig", "span.ah-op",
   "table.ah-table", "div.calli-lines",
   "img", "svg",
 ].join(", ");
+
+/** ⭐ 2026-10-01 — Atomes inline du panneau Maths : fractions empilées
+ *    (span.ah-frac). Posées contenteditable="false" → le curseur ne peut
+ *    pas entrer dedans (structure numérateur/dénominateur protégée), le
+ *    clic sélectionne l'atome ENTIER (surlignage bleu natif), le glisser
+ *    natif le déplace dans la ligne, Suppr le retire d'un bloc. Les
+ *    fractions anciennes (en base, sans l'attribut) sont normalisées au
+ *    chargement du contenu (normalizeInlineAtoms). */
+const INLINE_ATOM_SELECTOR = "span.ah-frac";
+
+/** ⭐ 2026-10-01 — Normalise les atomes inline d'un contenu chargé : pose
+ *    contenteditable="false" sur les fractions sans l'attribut (données
+ *    antérieures). Idempotent — ne propage PAS onChange (pur DOM d'affichage,
+ *    l'attribut sera persisté naturellement à la prochaine modification). */
+function normalizeInlineAtoms(root: HTMLElement) {
+  try {
+    root.querySelectorAll(INLINE_ATOM_SELECTOR).forEach((el) => {
+      if (el.getAttribute("contenteditable") !== "false") {
+        el.setAttribute("contenteditable", "false");
+      }
+    });
+  } catch { /* sélection impossible → sans conséquence */ }
+}
 
 /** ⭐ V13 — Insertions REDIMENSIONNABLES (poignées + boutons ±) :
  *    tout sauf les éléments purement textuels insérés par le panneau Maths
@@ -582,10 +617,14 @@ export function RichTextEditor({
   }, []);
 
   // Sync external value → editor (seulement si différent)
+  // ⭐ 2026-10-01 — après injection du contenu externe, les atomes inline
+  //    (fractions anciennes sans l'attribut) sont normalisés en
+  //    contenteditable="false" — atome insécable déplaçable nativement.
   useEffect(() => {
     if (editorRef.current && !isInternalChange.current) {
       if (editorRef.current.innerHTML !== value) {
         editorRef.current.innerHTML = value || "";
+        normalizeInlineAtoms(editorRef.current);
       }
     }
     isInternalChange.current = false;
@@ -1668,9 +1707,19 @@ export function RichTextEditor({
         el.style.left = `${Math.round(left)}px`;
         el.style.top = `${Math.round(top)}px`;
       } else {
-        // dépôt à la position du curseur texte sous la souris
+        // dépôt à la position du curseur texte sous la souris.
+        // ⭐ 2026-10-01 — garde anti-dépôt-sur-soi : si le caret atterrit
+        //    DANS l'élément déplacé (fréquent pour les petites insertions
+        //    inline : le fantôme suit la souris et couvre sa propre
+        //    position), insertNode lèverait HierarchyRequestError → avalé
+        //    par le catch → l'insertion ne bougeait JAMAIS (« pas
+        //    déplaçable »). Déposer sur soi = rester en place (annulation).
         const caret = caretRangeFromPointSafe(ev.clientX, ev.clientY);
-        if (caret && editor.contains(caret.startContainer)) {
+        if (
+          caret &&
+          editor.contains(caret.startContainer) &&
+          !el.contains(caret.startContainer)
+        ) {
           try { caret.insertNode(el); } catch { /* dépôt annulé */ }
         }
       }

@@ -25,7 +25,7 @@
 
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import AppIcon from '@/components/ui/AppIcon';
 import { RichTextEditor } from '@/components/ui/RichTextEditor';
 import { cn } from '@/lib/utils';
@@ -52,6 +52,10 @@ interface EpreuveSection {
   id: string;
   title: string;
   content: string;
+  /** ⭐ 2026-10-01 — Hiérarchie : identifiant du bloc PARENT (un bloc
+   *    « Consigne » peut contenir « Problème 1, Problème 2 » ou « Item 1,
+   *    Item 2 »). null (absent) = bloc de premier niveau. */
+  parentSectionId?: string | null;
 }
 
 interface EpreuveListItem {
@@ -224,6 +228,9 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
   const [downloading, setDownloading] = useState<string | null>(null);
   const [showCorrection, setShowCorrection] = useState(false);
   const [showCustomHeader, setShowCustomHeader] = useState(false);
+  // ⭐ 2026-10-01 — menu « Ajouter » des blocs : 'root' (premier niveau) ou
+  //    l'id d'un bloc (ajout DANS ce bloc) — null = fermé.
+  const [addMenu, setAddMenu] = useState<string | null>(null);
   const dirtyRef = useRef(false);
 
   const fallbackCanManage = canWrite(userRole, 'exam_org');
@@ -558,15 +565,69 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
   };
 
   // ── Sections libres (libre arbitre — aucun modèle standard) ─────────────
-  const addSection = (kind: 'Problème' | 'Exercice' | 'Section') => {
-    const n = form.sections.filter((s) => s.title.startsWith(kind)).length + 1;
+  // ⭐ 2026-10-01 — BOUTON UNIQUE « Ajouter » (retour utilisateur : « au lieu
+  //    de mettre le bouton problème, le bouton exercice, bouton saisie
+  //    libre, il faut juste mettre un simple bouton Ajouter ; lorsqu'il
+  //    clique il pourra mettre si c'est item 1, item 2, si c'est problème 1,
+  //    problème 2, si c'est consigne… ») + HIÉRARCHIE : un bloc peut en
+  //    contenir d'autres (« on met le titre consigne et c'est dedans on va
+  //    voir après problème 1 problème 2, ou bien consigne et item 1 item 2 »).
+
+  /** Types de blocs proposés par le menu « Ajouter ». */
+  const SECTION_KINDS = [
+    'Problème',
+    'Exercice',
+    'Item',
+    'Question',
+    'Consigne',
+    'Partie',
+  ];
+
+  /** Titre attribué automatiquement selon le type et les frères existants :
+   *  Problème 1, Problème 2… / Item 1, Item 2… / Partie A, Partie B…
+   *  (le titre reste librement modifiable après création). */
+  const autoSectionTitle = (kind: string, siblings: EpreuveSection[]): string => {
+    const n = siblings.filter(
+      (s) => s.title === kind || s.title.startsWith(`${kind} `),
+    ).length;
+    if (kind === 'Partie') return `Partie ${String.fromCharCode(65 + Math.min(n, 25))}`;
+    return `${kind} ${n + 1}`;
+  };
+
+  /** Frères d'un bloc (même parent) — pilote la numérotation automatique,
+   *  les flèches Monter/Descendre et les racines de l'arbre. */
+  const siblingsOf = (parentSectionId: string | null | undefined): EpreuveSection[] =>
+    form.sections.filter((s) => (s.parentSectionId ?? null) === (parentSectionId ?? null));
+
+  /** Enfants directs d'un bloc. */
+  const childrenOf = (id: string): EpreuveSection[] =>
+    form.sections.filter((s) => s.parentSectionId === id);
+
+  /** Racines de l'arbre (sans parent valide — un parent inconnu est traité
+   *  en racine pour ne jamais perdre un bloc à l'affichage). */
+  const rootSections = (): EpreuveSection[] =>
+    form.sections.filter(
+      (s) => !s.parentSectionId || !form.sections.some((p) => p.id === s.parentSectionId),
+    );
+
+  /** Ajoute un bloc du type choisi (« __libre__ » = titre libre, vierge) —
+   *  au premier niveau ou DANS le bloc parent donné. */
+  const addSection = (kind: string, parentSectionId: string | null = null) => {
+    const title =
+      kind === '__libre__' ? '' : autoSectionTitle(kind, siblingsOf(parentSectionId));
     setForm({
       ...form,
       sections: [
         ...form.sections,
-        { id: `sec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, title: `${kind} ${n}`, content: '' },
+        {
+          id: `sec-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          title,
+          content: '',
+          parentSectionId,
+        },
       ],
     });
+    setAddMenu(null);
     markDirty();
   };
 
@@ -578,17 +639,39 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
     markDirty();
   };
 
+  /** Supprime un bloc ET ses descendants (supprimer une consigne supprime
+   *  les problèmes/items qu'elle contient — comportement attendu). */
   const removeSection = (id: string) => {
-    setForm({ ...form, sections: form.sections.filter((s) => s.id !== id) });
+    const doomed = new Set<string>([id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const s of form.sections) {
+        if (s.parentSectionId && doomed.has(s.parentSectionId) && !doomed.has(s.id)) {
+          doomed.add(s.id);
+          grew = true;
+        }
+      }
+    }
+    setForm({ ...form, sections: form.sections.filter((s) => !doomed.has(s.id)) });
     markDirty();
   };
 
+  /** Déplace un bloc parmi ses FRÈRES (même niveau) — l'ordre relatif des
+   *  autres branches de l'arbre est préservé. */
   const moveSection = (id: string, dir: -1 | 1) => {
-    const idx = form.sections.findIndex((s) => s.id === id);
-    const target = idx + dir;
-    if (idx < 0 || target < 0 || target >= form.sections.length) return;
+    const current = form.sections.find((s) => s.id === id);
+    if (!current) return;
+    const siblings = siblingsOf(current.parentSectionId);
+    const sIdx = siblings.findIndex((s) => s.id === id);
+    const target = sIdx + dir;
+    if (sIdx < 0 || target < 0 || target >= siblings.length) return;
+    const other = siblings[target];
+    const idxA = form.sections.findIndex((s) => s.id === id);
+    const idxB = form.sections.findIndex((s) => s.id === other.id);
+    if (idxA < 0 || idxB < 0) return;
     const sections = [...form.sections];
-    [sections[idx], sections[target]] = [sections[target], sections[idx]];
+    [sections[idxA], sections[idxB]] = [sections[idxB], sections[idxA]];
     setForm({ ...form, sections });
     markDirty();
   };
@@ -1042,9 +1125,10 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
             <div>
               <h3 className="text-xs font-bold text-blue-900 uppercase">Corps de l&apos;épreuve</h3>
               <p className="text-xs text-slate-400 mt-1">
-                Structurez librement : situation d&apos;évaluation, tâche, puis
-                Problèmes / Exercices / sections selon la matière (libre arbitre —
-                aucun modèle standard imposé).
+                Structurez librement : situation d&apos;évaluation, tâche, puis les
+                blocs de votre choix (Problème, Exercice, Item, Question, Consigne,
+                Partie…) — un bloc peut en contenir d&apos;autres (ex : Consigne →
+                Problème 1, Problème 2 ou Item 1, Item 2).
               </p>
             </div>
 
@@ -1084,99 +1168,207 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
               />
             </div>
 
-            {/* Sections libres */}
+            {/* Sections libres — bouton unique « Ajouter » + hiérarchie */}
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <label className="text-[10px] font-bold text-slate-400 uppercase">
-                  Problèmes / Exercices / Sections libres
+                  Blocs du sujet (Problèmes, Exercices, Items, Consignes…)
                 </label>
                 {!locked && (
-                  <div className="flex items-center gap-2">
+                  <div className="relative">
                     <button
                       type="button"
-                      onClick={() => addSection('Problème')}
+                      onClick={() => setAddMenu(addMenu === 'root' ? null : 'root')}
                       className="px-3 py-1.5 bg-blue-50 text-blue-800 rounded-lg text-[11px] font-semibold hover:bg-blue-100 transition-colors"
                     >
-                      + Problème
+                      <AppIcon name="add" size="submenu" className="w-3 h-3 inline" />
+                      {' '}Ajouter
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => addSection('Exercice')}
-                      className="px-3 py-1.5 bg-blue-50 text-blue-800 rounded-lg text-[11px] font-semibold hover:bg-blue-100 transition-colors"
-                    >
-                      + Exercice
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => addSection('Section')}
-                      className="px-3 py-1.5 bg-blue-50 text-blue-800 rounded-lg text-[11px] font-semibold hover:bg-blue-100 transition-colors"
-                    >
-                      + Section libre
-                    </button>
+                    {addMenu === 'root' && (
+                      <>
+                        <div className="fixed inset-0 z-10" onClick={() => setAddMenu(null)} />
+                        <div className="absolute right-0 z-20 mt-1 w-60 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5">
+                          <p className="px-3 py-1 text-[9px] font-bold text-slate-400 uppercase">
+                            Ajouter un bloc — choisissez le type
+                          </p>
+                          {SECTION_KINDS.map((kind) => (
+                            <button
+                              key={kind}
+                              type="button"
+                              onClick={() => addSection(kind, null)}
+                              className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-800 transition-colors"
+                            >
+                              <span>{kind}</span>
+                              <span className="text-[10px] font-bold text-slate-400">
+                                → {autoSectionTitle(kind, siblingsOf(null))}
+                              </span>
+                            </button>
+                          ))}
+                          <div className="my-1 border-t border-slate-100" />
+                          <button
+                            type="button"
+                            onClick={() => addSection('__libre__', null)}
+                            className="w-full px-3 py-1.5 text-left text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors"
+                          >
+                            Titre libre…
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
 
               {form.sections.length === 0 && (
                 <p className="text-xs text-slate-400 italic">
-                  Aucune section — ajoutez des « Problèmes » (épreuves de mathématiques :
-                  Problème 1, 2, 3…), des « Exercices » ou des sections libres intitulées
-                  à votre guise.
+                  Aucun bloc — cliquez sur « Ajouter » puis choisissez le type
+                  (Problème 1, Exercice 1, Item 1, Question 1, Consigne 1, Partie A…).
+                  Un bloc peut en contenir d'autres : « Ajouter dedans » place un
+                  sous-bloc dans le bloc courant (ex : Consigne → Problème 1,
+                  Problème 2).
                 </p>
               )}
 
-              {form.sections.map((s, i) => (
-                <div key={s.id} className="border border-slate-200 rounded-xl p-4 space-y-3 bg-[#f7f9fc]">
-                  <div className="flex items-center gap-2">
-                    <input
-                      value={s.title}
-                      onChange={(e) => updateSection(s.id, { title: e.target.value })}
-                      disabled={locked}
-                      className="fed-input-light px-3 py-2 text-sm font-bold flex-1"
-                      placeholder="Intitulé (Problème 1, Exercice 2, Partie A…)"
-                    />
-                    {!locked && (
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => moveSection(s.id, -1)}
-                          disabled={i === 0}
-                          className="p-1.5 bg-white border border-slate-200 rounded text-slate-500 hover:text-blue-900 disabled:opacity-30"
-                          title="Monter"
-                        >
-                          <AppIcon name="chevronUp" size="submenu" className="w-3 h-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => moveSection(s.id, 1)}
-                          disabled={i === form.sections.length - 1}
-                          className="p-1.5 bg-white border border-slate-200 rounded text-slate-500 hover:text-blue-900 disabled:opacity-30"
-                          title="Descendre"
-                        >
-                          <AppIcon name="chevronUp" size="submenu" className="w-3 h-3 rotate-180" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeSection(s.id)}
-                          className="p-1.5 bg-red-50 border border-red-200 rounded text-red-600 hover:bg-red-100"
-                          title="Supprimer la section"
-                        >
-                          <AppIcon name="close" size="submenu" className="w-3 h-3" />
-                        </button>
+              {(() => {
+                /** Rendu récursif d'un bloc + ses enfants (indentés). */
+                const renderSectionBlock = (
+                  s: EpreuveSection,
+                  depth: number,
+                ): ReactNode => {
+                  const siblings = siblingsOf(s.parentSectionId);
+                  const i = siblings.findIndex((x) => x.id === s.id);
+                  const children = childrenOf(s.id);
+                  return (
+                    <div key={s.id} className={depth > 0 ? 'ml-3 sm:ml-6' : ''}>
+                      <div
+                        className={cn(
+                          'border rounded-xl p-4 space-y-3',
+                          depth > 0
+                            ? 'border-blue-100 bg-white'
+                            : 'border-slate-200 bg-[#f7f9fc]',
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          {depth > 0 && (
+                            <span
+                              className="text-[10px] font-bold text-blue-300 select-none shrink-0"
+                              title={`Sous-bloc de niveau ${depth + 1}`}
+                            >
+                              ↳
+                            </span>
+                          )}
+                          <input
+                            value={s.title}
+                            onChange={(e) => updateSection(s.id, { title: e.target.value })}
+                            disabled={locked}
+                            className="fed-input-light px-3 py-2 text-sm font-bold flex-1"
+                            placeholder="Intitulé (Problème 1, Item 2, Consigne, Partie A…)"
+                          />
+                          {!locked && (
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => moveSection(s.id, -1)}
+                                disabled={i <= 0}
+                                className="p-1.5 bg-white border border-slate-200 rounded text-slate-500 hover:text-blue-900 disabled:opacity-30"
+                                title="Monter parmi les blocs de même niveau"
+                              >
+                                <AppIcon name="chevronUp" size="submenu" className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveSection(s.id, 1)}
+                                disabled={i >= siblings.length - 1}
+                                className="p-1.5 bg-white border border-slate-200 rounded text-slate-500 hover:text-blue-900 disabled:opacity-30"
+                                title="Descendre parmi les blocs de même niveau"
+                              >
+                                <AppIcon name="chevronUp" size="submenu" className="w-3 h-3 rotate-180" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeSection(s.id)}
+                                className="p-1.5 bg-red-50 border border-red-200 rounded text-red-600 hover:bg-red-100"
+                                title="Supprimer ce bloc (et les blocs qu'il contient)"
+                              >
+                                <AppIcon name="close" size="submenu" className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        <RichTextEditor
+                          value={s.content}
+                          onChange={(html) => updateSection(s.id, { content: html })}
+                          disabled={locked}
+                          enableMedia
+                          placeholder={
+                            depth > 0
+                              ? 'Contenu du sous-bloc (énoncé, questions, figures…)'
+                              : 'Contenu du bloc (énoncé, questions, figures, tableaux…)'
+                          }
+                          minHeight="120px"
+                          maxHeight="none"
+                        />
+                        {/* Ajouter un sous-bloc DANS ce bloc */}
+                        {!locked && (
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setAddMenu(addMenu === s.id ? null : s.id)
+                              }
+                              className="px-2.5 py-1 bg-white border border-blue-100 text-blue-700 rounded-lg text-[10px] font-semibold hover:bg-blue-50 transition-colors"
+                              title="Ajouter un bloc DANS ce bloc (ex : Consigne → Problème 1, Item 1…)"
+                            >
+                              <AppIcon name="add" size="submenu" className="w-3 h-3 inline" />
+                              {' '}Ajouter dedans
+                            </button>
+                            {addMenu === s.id && (
+                              <>
+                                <div
+                                  className="fixed inset-0 z-10"
+                                  onClick={() => setAddMenu(null)}
+                                />
+                                <div className="absolute left-0 z-20 mt-1 w-60 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5">
+                                  <p className="px-3 py-1 text-[9px] font-bold text-slate-400 uppercase">
+                                    Dans « {s.title || 'bloc sans titre'} »
+                                  </p>
+                                  {SECTION_KINDS.map((kind) => (
+                                    <button
+                                      key={kind}
+                                      type="button"
+                                      onClick={() => addSection(kind, s.id)}
+                                      className="w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-800 transition-colors"
+                                    >
+                                      <span>{kind}</span>
+                                      <span className="text-[10px] font-bold text-slate-400">
+                                        → {autoSectionTitle(kind, childrenOf(s.id))}
+                                      </span>
+                                    </button>
+                                  ))}
+                                  <div className="my-1 border-t border-slate-100" />
+                                  <button
+                                    type="button"
+                                    onClick={() => addSection('__libre__', s.id)}
+                                    className="w-full px-3 py-1.5 text-left text-xs font-semibold text-slate-500 hover:bg-slate-50 transition-colors"
+                                  >
+                                    Titre libre…
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    )}
+                      {children.map((c) => renderSectionBlock(c, depth + 1))}
+                    </div>
+                  );
+                };
+                return (
+                  <div className="space-y-4">
+                    {rootSections().map((s) => renderSectionBlock(s, 0))}
                   </div>
-                  <RichTextEditor
-                    value={s.content}
-                    onChange={(html) => updateSection(s.id, { content: html })}
-                    disabled={locked}
-                    enableMedia
-                    placeholder="Contenu de la section (énoncé, questions, figures, tableaux…)"
-                    minHeight="120px"
-                    maxHeight="none"
-                  />
-                </div>
-              ))}
+                );
+              })()}
             </div>
           </div>
 

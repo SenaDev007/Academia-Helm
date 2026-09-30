@@ -45,6 +45,7 @@ import { FederisPatronatService } from './federis-patronat.service';
 //    D'ABORD dans le catalogue du patronat (module Matières) ; le jeu
 //    intégré DEFAULT_SUBJECTS_BY_TYPE n'est qu'un repli (catalogue vide).
 import { FederisSubjectsService } from './federis-subjects.service';
+import { normalizeSubjectName } from './federis-subjects.service';
 import { FederisGradingRulesService } from './federis-grading-rules.service';
 import {
   ALL_PATRONAT_FUNCTIONS,
@@ -257,6 +258,61 @@ export interface GradeSubjectLite {
   coefficient: number;
   maxScore: number;
   order: number;
+  /** ⭐ 2026-10-01 — RÈGLE ÉPREUVE PRÉPARÉE : une matière sans épreuve
+   *  préparée (module Épreuves et documents) ne peut PAS recevoir de notes.
+   *  La préparation = une épreuve FederisExamPaper correspondante (lien
+   *  catalogue ou nom normalisé) OU un marquage manuel « déjà préparée »
+   *  (metadata.epreuvePreparedAt — épreuve préparée hors application). */
+  epreuvePrepared: boolean;
+  /** 'paper' = épreuve dans le module · 'manual' = marquée « déjà préparée » · null. */
+  preparedSource: 'paper' | 'manual' | null;
+}
+
+/** Infos de préparation d'une matière (règle épreuve préparée). */
+export interface EpreuvePreparedInfo {
+  prepared: boolean;
+  source: 'paper' | 'manual' | null;
+}
+
+/** ⭐ 2026-10-01 — RÈGLE ÉPREUVE PRÉPARÉE (partagée grille patronat + saisie
+ *  secrétariat) : calcule, pour chaque matière d'un examen, si son épreuve
+ *  est préparée. Correspondance IDENTIQUE au signal du module Épreuves
+ *  (FederisSubjectsService.getReadiness) : lien catalogue
+ *  metadata.sourceSubjectId → FederisExamPaper.subjectId, ou nom/code
+ *  normalisés. Le marquage manuel (metadata.epreuvePreparedAt) débloque la
+ *  saisie pour les épreuves préparées HORS application. */
+export async function computeEpreuvePreparedMap(
+  prisma: any,
+  tenantId: string,
+  academicYearId: string,
+  examType: string,
+  subjects: Array<{ id: string; code: string; name: string; metadata?: unknown }>,
+): Promise<Map<string, EpreuvePreparedInfo>> {
+  const papers = await prisma.federisExamPaper.findMany({
+    where: { tenantId, academicYearId, examCategory: examType },
+    select: { subjectId: true, subject: true },
+  });
+  const papersBySubjectId = new Set<string>();
+  const papersByNormName = new Set<string>();
+  for (const p of papers) {
+    if (p.subjectId) papersBySubjectId.add(p.subjectId);
+    if (p.subject) papersByNormName.add(normalizeSubjectName(p.subject));
+  }
+  const map = new Map<string, EpreuvePreparedInfo>();
+  for (const s of subjects) {
+    const md = (s.metadata ?? {}) as any;
+    const sourceId: string | null = md.sourceSubjectId ?? null;
+    const hasPaper =
+      Boolean(sourceId && papersBySubjectId.has(sourceId)) ||
+      papersByNormName.has(normalizeSubjectName(s.name)) ||
+      papersByNormName.has(normalizeSubjectName(s.code));
+    const manualAt: string | null = md.epreuvePreparedAt ?? null;
+    map.set(s.id, {
+      prepared: Boolean(hasPaper) || Boolean(manualAt),
+      source: hasPaper ? 'paper' : manualAt ? 'manual' : null,
+    });
+  }
+  return map;
 }
 
 export interface GradeCellLite {
@@ -759,6 +815,94 @@ export class FederisGradesService {
   //    méthodes appelantes)
   // ═══════════════════════════════════════════════════════════════════════
 
+  // ── ⭐ 2026-10-01 — RÈGLE ÉPREUVE PRÉPARÉE : marquage manuel ─────────────
+  // L'épreuve a été préparée HORS application (traitement de texte, ronéo…) :
+  // le patronat la marque « déjà préparée » pour débloquer la saisie des
+  // notes de cette matière (metadata.epreuvePreparedAt sur NationalExamSubject).
+
+  /** Marque une matière comme « déjà préparée » (épreuve hors application). */
+  async markSubjectPrepared(tenantId: string, userId: string, examId: string, subjectId: string) {
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertWriteGrades(fn);
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const subject = await this.prisma.nationalExamSubject.findFirst({
+      where: { id: subjectId, examId: exam.id },
+    });
+    if (!subject) throw new NotFoundException('Matière introuvable pour cet examen.');
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true },
+    });
+    const preparedByName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || null;
+    const preparedAt = new Date();
+    const md = ((subject.metadata ?? {}) as Record<string, unknown>) ?? {};
+    await this.prisma.nationalExamSubject.update({
+      where: { id: subject.id },
+      data: {
+        metadata: {
+          ...md,
+          epreuvePreparedAt: preparedAt.toISOString(),
+          epreuvePreparedBy: userId,
+          epreuvePreparedByName: preparedByName,
+        },
+      },
+    });
+    await this.audit(tenantId, userId, 'FEDERIS_SUBJECT_MARK_PREPARED', exam.id, {
+      subjectId: subject.id,
+      subjectName: subject.name,
+    });
+    return {
+      subjectId: subject.id,
+      name: subject.name,
+      epreuvePrepared: true,
+      preparedSource: 'manual' as const,
+      preparedAt: preparedAt.toISOString(),
+      preparedByName,
+    };
+  }
+
+  /** Retire le marquage manuel (l'épreuve redevient « non préparée » sauf si
+   *  une épreuve correspondante existe dans le module Épreuves et documents). */
+  async unmarkSubjectPrepared(tenantId: string, userId: string, examId: string, subjectId: string) {
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertWriteGrades(fn);
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const subject = await this.prisma.nationalExamSubject.findFirst({
+      where: { id: subjectId, examId: exam.id },
+    });
+    if (!subject) throw new NotFoundException('Matière introuvable pour cet examen.');
+
+    const md = ((subject.metadata ?? {}) as Record<string, unknown>) ?? {};
+    delete md.epreuvePreparedAt;
+    delete md.epreuvePreparedBy;
+    delete md.epreuvePreparedByName;
+    await this.prisma.nationalExamSubject.update({
+      where: { id: subject.id },
+      data: { metadata: md },
+    });
+
+    // État recalculé : le marquage manuel est retiré — la matière reste
+    // préparée si une épreuve du module lui correspond.
+    const preparedMap = await computeEpreuvePreparedMap(
+      this.prisma,
+      patronat.tenantId,
+      exam.academicYearId,
+      exam.examType,
+      [subject as any],
+    );
+    await this.audit(tenantId, userId, 'FEDERIS_SUBJECT_UNMARK_PREPARED', exam.id, {
+      subjectId: subject.id,
+      subjectName: subject.name,
+    });
+    return {
+      subjectId: subject.id,
+      name: subject.name,
+      epreuvePrepared: preparedMap.get(subject.id)?.prepared ?? false,
+      preparedSource: preparedMap.get(subject.id)?.source ?? null,
+    };
+  }
+
   /**
    * Collecte et calcule TOUT l'état « notes et moyennes » d'un examen :
    * matières, candidats, notes (avec isAbsent lu en brut de secours — pattern
@@ -799,6 +943,17 @@ export class FederisGradesService {
       }),
     ]);
 
+    // ⭐ 2026-10-01 — RÈGLE ÉPREUVE PRÉPARÉE : chaque matière sait si son
+    //    épreuve est préparée (module Épreuves et documents ou marquage
+    //    manuel « déjà préparée ») — la grille verrouille la saisie des
+    //    matières non préparées.
+    const preparedMap = await computeEpreuvePreparedMap(
+      this.prisma,
+      patronatTenantId,
+      exam.academicYearId,
+      exam.examType,
+      subjectsRaw as any,
+    );
     const subjects: GradeSubjectLite[] = subjectsRaw.map((s) => ({
       id: s.id,
       code: s.code,
@@ -806,6 +961,8 @@ export class FederisGradesService {
       coefficient: s.coefficient ?? 1,
       maxScore: s.maxScore ?? 20,
       order: s.order ?? 0,
+      epreuvePrepared: preparedMap.get(s.id)?.prepared ?? false,
+      preparedSource: preparedMap.get(s.id)?.source ?? null,
     }));
 
     // ⭐ Notes : lecture brute de secours pour isAbsent (colonne récente —
@@ -1075,11 +1232,37 @@ export class FederisGradesService {
       }),
       this.prisma.nationalExamSubject.findMany({
         where: { examId: exam.id },
-        select: { id: true, coefficient: true, maxScore: true, code: true },
+        select: { id: true, name: true, code: true, coefficient: true, maxScore: true, metadata: true },
       }),
     ]);
     const candidateIds = new Set(candidates.map((c) => c.id));
     const subjectById = new Map(subjects.map((s) => [s.id, s]));
+
+    // ⭐ 2026-10-01 — RÈGLE ÉPREUVE PRÉPARÉE : refus de toute cellule d'une
+    //    matière dont l'épreuve n'est PAS préparée (ni dans le module
+    //    Épreuves et documents, ni marquée manuellement « déjà préparée »).
+    //    Le message guide l'utilisateur : préparer l'épreuve OU la marquer.
+    const preparedMap = await computeEpreuvePreparedMap(
+      this.prisma,
+      patronat.tenantId,
+      exam.academicYearId,
+      exam.examType,
+      subjects as any,
+    );
+    const unprepared = new Set<string>();
+    for (const cell of dto.grades) {
+      const subj = subjectById.get(cell.subjectId);
+      if (subj && !(preparedMap.get(subj.id)?.prepared ?? false)) {
+        unprepared.add(subj.name);
+      }
+    }
+    if (unprepared.size > 0) {
+      throw new BadRequestException(
+        `Saisie refusée — notes bloquées pour ${unprepared.size} matière(s) sans épreuve préparée : ` +
+          `${Array.from(unprepared).join(', ')}. Préparez l'épreuve dans le module « Épreuves et documents » ` +
+          `ou marquez-la comme « déjà préparée » (épreuve produite hors application) pour débloquer la saisie.`,
+      );
+    }
 
     let saved = 0;
     let deleted = 0;

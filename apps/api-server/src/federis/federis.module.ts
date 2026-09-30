@@ -60,6 +60,9 @@ import { FederisSchoolSupervisorsController } from './federis-school-supervisors
 //    (grille primaire CEP / secondaire avec coefficients BEPC-BAC-CAP),
 //    registre des notes et relevés de notes (PDF backend A4 paysage)
 import { FederisGradesService } from './federis-grades.service';
+// ⭐ 2026-10-01 — Saisie des notes par les secrétaires (comptes provisoires)
+import { FederisSaisieService } from './federis-saisie.service';
+import { FederisSaisieController } from './federis-saisie.controller';
 import { FederisGradesController } from './federis-grades.controller';
 // ⭐ Module « Matières » (2026-09-29) — catalogue des matières d'examen par
 //    type (CEP/BEPC/BAC/CAP) et par série (BAC), reproduction du CRUD du
@@ -100,6 +103,7 @@ import { FederisLogisticsExportService } from './federis-logistics-export.servic
     FederisSchoolSupervisorsController,
     FederisGradesController,
     FederisSubjectsController,
+    FederisSaisieController,
   ],
   providers: [
     FederisService,
@@ -130,6 +134,7 @@ import { FederisLogisticsExportService } from './federis-logistics-export.servic
     FederisSubjectsService,
     FederisGradingRulesService,
     FederisSchoolDirectoryService,
+    FederisSaisieService,
   ],
   exports: [
     FederisService,

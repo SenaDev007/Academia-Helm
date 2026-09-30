@@ -73,6 +73,8 @@ export default function FederisGradeSheetTab({
   const [anonymous, setAnonymous] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
+  // ⭐ 2026-10-01 — Règle épreuve préparée : marquage manuel en cours
+  const [markingSubjectId, setMarkingSubjectId] = useState<string | null>(null);
 
   // ── Chargement de la grille ─────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -243,6 +245,33 @@ export default function FederisGradeSheetTab({
     }
   };
 
+  // ── ⭐ RÈGLE ÉPREUVE PRÉPARÉE — marquage manuel ──────────────────────
+  // L'épreuve a été produite hors application (traitement de texte, ronéo) :
+  // le patronat la marque « déjà préparée » pour débloquer la saisie.
+  const markPrepared = async (subjectId: string, unmark = false) => {
+    setMarkingSubjectId(subjectId);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiClient.post(
+        `/federis/exams/${examId}/subjects/${subjectId}/${unmark ? 'unmark-prepared' : 'mark-prepared'}`,
+        {},
+        { timeout: 20000 },
+      );
+      setNotice(
+        unmark
+          ? `Marquage retiré — ${res.data?.name ?? 'matière'}${res.data?.epreuvePrepared ? ' (épreuve toujours présente dans le module)' : ''}.`
+          : `« ${res.data?.name ?? 'Matière'} » marquée comme déjà préparée — la saisie des notes est débloquée.`,
+      );
+      await load();
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      setError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Action impossible.');
+    } finally {
+      setMarkingSubjectId(null);
+    }
+  };
+
   // ── Rendu ───────────────────────────────────────────────────────────────
   if (loading && !data) {
     return <div className="fed-card px-6 py-10 text-center text-sm font-bold text-slate-400">Chargement de la grille…</div>;
@@ -330,6 +359,64 @@ export default function FederisGradeSheetTab({
           )}
         </div>
       )}
+
+      {/* ⭐ RÈGLE ÉPREUVE PRÉPARÉE — matières verrouillées + marquage */}
+      {(() => {
+        const unprepared = subjects.filter((s) => !s.epreuvePrepared);
+        const manual = subjects.filter((s) => s.epreuvePrepared && s.preparedSource === 'manual');
+        if (unprepared.length === 0 && manual.length === 0) return null;
+        return (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-6 py-4 space-y-3">
+            {unprepared.length > 0 && (
+              <div>
+                <p className="text-xs font-bold text-amber-900">
+                  Règle « épreuve préparée » — la saisie est verrouillée pour {unprepared.length} matière(s) :
+                </p>
+                <div className="flex flex-wrap gap-2 mt-2.5">
+                  {unprepared.map((s) => (
+                    <div
+                      key={s.id}
+                      className="flex items-center gap-2 bg-white border border-amber-200 rounded-xl pl-3 pr-1.5 py-1.5"
+                      title="Préparez l'épreuve dans le module Épreuves et documents, ou marquez-la comme déjà préparée (épreuve produite hors application) pour débloquer la saisie."
+                    >
+                      <span className="text-[11px] font-bold text-amber-800">🔒 {s.name}</span>
+                      {canWrite ? (
+                        <button
+                          onClick={() => void markPrepared(s.id)}
+                          disabled={markingSubjectId !== null}
+                          className="px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
+                        >
+                          {markingSubjectId === s.id ? '…' : 'Marquer comme déjà préparée'}
+                        </button>
+                      ) : (
+                        <span className="text-[9px] font-semibold text-amber-600">épreuve non préparée</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {manual.length > 0 && canWrite && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-semibold text-amber-700">
+                  Marquées « déjà préparées » (hors application) :
+                </span>
+                {manual.map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => void markPrepared(s.id, true)}
+                    disabled={markingSubjectId !== null}
+                    className="px-2.5 py-1 rounded-lg text-[9px] font-bold bg-white border border-amber-200 text-amber-700 hover:border-red-300 hover:text-red-600 disabled:opacity-50"
+                    title="Retirer le marquage manuel"
+                  >
+                    {s.name} ✕
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Barre d'actions */}
       <div className="fed-card px-6 py-4 flex flex-col lg:flex-row lg:items-center gap-3 flex-wrap">
@@ -434,9 +521,28 @@ export default function FederisGradeSheetTab({
                 <th className="px-2 py-3 text-left text-[9px] font-bold text-slate-400 uppercase min-w-[130px]">École de provenance</th>
                 <th className="px-2 py-3 text-center text-[9px] font-bold text-slate-400 uppercase min-w-[90px]">Centre · Salle · Table</th>
                 {subjects.map((s) => (
-                  <th key={s.id} className="px-2 py-3 text-center border-l border-slate-200">
-                    <div className="text-[9px] font-bold text-blue-900 uppercase leading-tight max-w-[90px]" title={s.name}>
+                  <th
+                    key={s.id}
+                    className={cn(
+                      'px-2 py-3 text-center border-l border-slate-200',
+                      !s.epreuvePrepared && 'bg-amber-50/70',
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        'text-[9px] font-bold uppercase leading-tight max-w-[90px]',
+                        s.epreuvePrepared ? 'text-blue-900' : 'text-amber-700',
+                      )}
+                      title={
+                        s.epreuvePrepared
+                          ? s.preparedSource === 'manual'
+                            ? `${s.name} — épreuve marquée « déjà préparée » (hors application)`
+                            : `${s.name} — épreuve préparée (module Épreuves et documents)`
+                          : `${s.name} — épreuve NON préparée : saisie verrouillée (voir le bandeau ci-dessus)`
+                      }
+                    >
                       {s.code}
+                      {!s.epreuvePrepared && ' 🔒'}
                     </div>
                     <div className="text-[8px] font-semibold text-slate-400">
                       /{s.maxScore}
@@ -491,8 +597,17 @@ export default function FederisGradeSheetTab({
                       {subjects.map((s) => {
                         const cell = cells[c.id]?.[s.id];
                         const absent = cell?.isAbsent === true;
+                        // ⭐ Règle épreuve préparée : matière verrouillée
+                        const subjectLocked = !s.epreuvePrepared;
                         return (
-                          <td key={s.id} className={cn('px-1.5 py-1.5 border-l border-slate-100', absent && 'bg-red-50/60')}>
+                          <td
+                            key={s.id}
+                            className={cn(
+                              'px-1.5 py-1.5 border-l border-slate-100',
+                              absent && 'bg-red-50/60',
+                              subjectLocked && !absent && 'bg-amber-50/40',
+                            )}
+                          >
                             <div className="flex items-center gap-1 justify-center">
                               <input
                                 type="number"
@@ -500,7 +615,7 @@ export default function FederisGradeSheetTab({
                                 step={step}
                                 min={0}
                                 max={s.maxScore}
-                                disabled={!editable || absent}
+                                disabled={!editable || absent || subjectLocked}
                                 value={absent ? '' : cell?.score ?? ''}
                                 onChange={(e) => handleScore(c.id, s, e.target.value)}
                                 placeholder="—"
@@ -508,14 +623,24 @@ export default function FederisGradeSheetTab({
                                   'w-14 text-center text-xs font-bold rounded-lg border px-1 py-1.5 outline-none transition-colors',
                                   absent
                                     ? 'border-red-200 bg-red-50 text-red-400'
-                                    : cell?.score != null && cell.score >= (s.maxScore ?? 20) / 2
-                                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800 focus:border-emerald-500'
-                                      : 'border-slate-200 bg-white text-slate-800 focus:border-blue-600',
-                                  !editable && !absent && 'opacity-70 cursor-not-allowed',
+                                    : subjectLocked
+                                      ? 'border-amber-100 bg-amber-50/60 text-slate-300 cursor-not-allowed'
+                                      : cell?.score != null && cell.score >= (s.maxScore ?? 20) / 2
+                                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800 focus:border-emerald-500'
+                                        : 'border-slate-200 bg-white text-slate-800 focus:border-blue-600',
+                                  !editable && !absent && !subjectLocked && 'opacity-70 cursor-not-allowed',
                                 )}
-                                title={absent ? 'Absent' : editable ? `${s.name} — note sur ${s.maxScore}` : 'Saisie verrouillée'}
+                                title={
+                                  absent
+                                    ? 'Absent'
+                                    : subjectLocked
+                                      ? `${s.name} — épreuve non préparée : saisie verrouillée`
+                                      : editable
+                                        ? `${s.name} — note sur ${s.maxScore}`
+                                        : 'Saisie verrouillée'
+                                }
                               />
-                              {editable && (
+                              {editable && !subjectLocked && (
                                 <button
                                   onClick={() => toggleAbsent(c.id, s.id, cell)}
                                   className={cn(

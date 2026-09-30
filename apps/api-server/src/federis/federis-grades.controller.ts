@@ -38,10 +38,14 @@ import {
   UpdateSubjectDto,
   BulkSaveGradesDto,
 } from './federis-grades.service';
+import { FederisSaisieService } from './federis-saisie.service';
 
 @Controller('federis')
 export class FederisGradesController {
-  constructor(private readonly gradesService: FederisGradesService) {}
+  constructor(
+    private readonly gradesService: FederisGradesService,
+    private readonly saisieService: FederisSaisieService,
+  ) {}
 
   private uid(req: any): string {
     return req.user.id || req.user.sub;
@@ -104,6 +108,40 @@ export class FederisGradesController {
     );
   }
 
+  // ── ⭐ 2026-10-01 — RÈGLE ÉPREUVE PRÉPARÉE : marquage manuel ────────────
+  // L'épreuve a été produite hors application → le patronat la marque
+  // « déjà préparée » pour débloquer la saisie des notes de la matière.
+
+  @UseGuards(JwtAuthGuard)
+  @Post('exams/:examId/subjects/:subjectId/mark-prepared')
+  async markSubjectPrepared(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Param('subjectId') subjectId: string,
+  ) {
+    return this.gradesService.markSubjectPrepared(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+      subjectId,
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('exams/:examId/subjects/:subjectId/unmark-prepared')
+  async unmarkSubjectPrepared(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Param('subjectId') subjectId: string,
+  ) {
+    return this.gradesService.unmarkSubjectPrepared(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+      subjectId,
+    );
+  }
+
   // ── Grille de saisie ──────────────────────────────────────────────────────
 
   @UseGuards(JwtAuthGuard)
@@ -148,5 +186,16 @@ export class FederisGradesController {
   @Get('exams/:examId/grades/releves')
   async getReleves(@Req() req: any, @Param('examId') examId: string) {
     return this.gradesService.getReleves(req.user.tenantId, this.uid(req), examId);
+  }
+
+  // ── ⭐ 2026-10-01 — Suivi TEMPS RÉEL de la saisie (secrétaires) ──────────
+  // Progression par secrétaire (centre + salle), statut, dernière activité
+  // + activité récente nominative — consommé par l'onglet « Suivi temps réel »
+  // du module Notes et moyennes (rafraîchissement automatique).
+
+  @UseGuards(JwtAuthGuard)
+  @Get('exams/:examId/grades/live')
+  async getLive(@Req() req: any, @Param('examId') examId: string) {
+    return this.saisieService.getLive(req.user.tenantId, this.uid(req), examId);
   }
 }

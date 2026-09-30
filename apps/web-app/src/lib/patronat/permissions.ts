@@ -26,6 +26,9 @@ export type PatronatRole =
   | 'PATRONAT_TRESORIER'
   | 'PATRONAT_ORGANISATEUR'
   | 'PATRONAT_CHARGE_MISSION'
+  // ⭐ 2026-10-01 — enseignant secrétariat (saisie des notes) : compte
+  //    provisoire créé automatiquement à l'affectation — UI dédiée /saisie
+  | 'PATRONAT_SAISIE_NOTES'
   // Legacy
   | 'PATRONAT_ADMIN'
   | 'PATRONAT_OPERATOR'
@@ -41,7 +44,8 @@ export type PatronatFunctionKey =
   | 'ORGANISATEUR'
   | 'CHARGE_MISSION'
   | 'OPERATOR' // legacy PATRONAT_OPERATOR / EXAM_SUPERVISOR
-  | 'VIEWER'; // EXAM_VIEWER / inconnu
+  | 'VIEWER' // EXAM_VIEWER / inconnu
+  | 'SAISIE_NOTES'; // ⭐ secrétaire de saisie (compte provisoire)
 
 /** Libellés métier des fonctions. */
 export const PATRONAT_FUNCTION_LABELS: Record<PatronatFunctionKey, string> = {
@@ -52,6 +56,7 @@ export const PATRONAT_FUNCTION_LABELS: Record<PatronatFunctionKey, string> = {
   CHARGE_MISSION: 'Chargé de mission',
   OPERATOR: 'Superviseur',
   VIEWER: 'Observateur',
+  SAISIE_NOTES: 'Secrétaire de saisie',
 };
 
 /** Descriptions courtes (page Équipe & Comptes). */
@@ -102,6 +107,9 @@ export function normalizePatronatRole(role?: string | null): PatronatFunctionKey
       return 'CHARGE_MISSION';
     case 'EXAM_SUPERVISOR':
       return 'OPERATOR';
+    case 'PATRONAT_SAISIE_NOTES':
+    case 'SAISIE_NOTES':
+      return 'SAISIE_NOTES';
     default:
       return 'VIEWER';
   }
@@ -144,6 +152,11 @@ const ROUTE_PERMISSIONS: RouteRoles = {
   '/checkout': ['COORDONNATEUR', 'TRESORIER'],
   // ⭐ Équipe & Comptes — création des users par le coordonnateur uniquement
   '/team': ['COORDONNATEUR'],
+  // ⭐ 2026-10-01 — UI dédiée des secrétaires de saisie (comptes provisoires
+  //    créés à l'affectation SECRÉTARIAT) : périmètre de saisie des notes
+  //    (centre + salle attribués) — invisible pour les autres fonctions qui
+  //    utilisent le module « Notes et moyennes » complet.
+  '/saisie': ['SAISIE_NOTES'],
 };
 
 /**

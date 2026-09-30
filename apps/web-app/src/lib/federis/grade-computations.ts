@@ -21,6 +21,13 @@ export interface GSubject {
   coefficient: number;
   maxScore: number;
   order: number;
+  /** ⭐ 2026-10-01 — RÈGLE ÉPREUVE PRÉPARÉE : une matière dont l'épreuve
+   *  n'est PAS préparée (module Épreuves et documents, ou marquage manuel
+   *  « déjà préparée » pour une épreuve produite hors application) ne peut
+   *  PAS recevoir de notes — la grille verrouille ses colonnes. */
+  epreuvePrepared?: boolean;
+  /** 'paper' = épreuve du module · 'manual' = marquée « déjà préparée » · null. */
+  preparedSource?: 'paper' | 'manual' | null;
 }
 
 export interface GCell {

@@ -282,9 +282,19 @@ function FederisLoginForm() {
       }
 
       // ── 5. Redirection (pattern Helm : markFreshLogin + full reload) ──
+      //    ⭐ 2026-10-01 — les secrétaires de saisie (comptes provisoires
+      //    PATRONAT_SAISIE_NOTES) arrivent DIRECTEMENT sur leur UI dédiée
+      //    « Saisie des notes » (/saisie) — le tableau de bord patronat ne
+      //    les concerne pas (aucune route autorisée pour cette fonction).
       markFreshLogin();
       const redirect = searchParams.get('redirect');
-      window.location.href = redirect || `${federisBase}/dashboard`;
+      const profileRole =
+        profileRes?.data?.userRole ?? profileRes?.data?.userFunction ?? null;
+      const defaultPath =
+        profileRole === 'PATRONAT_SAISIE_NOTES' || profileRole === 'SAISIE_NOTES'
+          ? '/saisie'
+          : '/dashboard';
+      window.location.href = redirect || `${federisBase}${defaultPath}`;
     } catch (error: any) {
       console.error('[FederisLogin] Erreur :', error);
       const raw = error?.name === 'AbortError' || error?.name === 'TimeoutError'

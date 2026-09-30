@@ -215,6 +215,21 @@ interface RegistrySupervisor {
   center: { id: string; code: string; name: string } | null;
   room: { id: string; code: string; name: string } | null;
   exam: { id: string; code: string; name: string; examType: string } | null;
+  /** ⭐ 2026-10-01 — Compte provisoire de saisie (poste SECRÉTARIAT) :
+   *  identifiant + statut (active / suspended / deleted) + date de création. */
+  saisieAccount?: { login: string; status: string; createdAt: string | null } | null;
+}
+
+/** ⭐ 2026-10-01 — Identifiants d'un compte provisoire créés (affichés UNE
+ *  fois au patronat pour transmission à l'enseignant — copie en un clic). */
+interface ProvisionedAccount {
+  status: 'created' | 'exists' | 'reactivated';
+  supervisorId: string;
+  teacherName: string;
+  login: string;
+  tempPassword: string | null;
+  examName?: string;
+  centerName?: string | null;
 }
 
 interface RegistryResponse {
@@ -255,6 +270,8 @@ const EMPTY_MANUAL_FORM = {
   email: '',
   centerId: '',
   roomId: '',
+  // ⭐ 2026-10-01 — poste (le SECRÉTARIAT provisionne un compte de saisie)
+  post: 'SURVEILLANCE' as SupervisorPostKey,
 };
 
 export default function FederisSupervisorsTab({
@@ -296,6 +313,12 @@ export default function FederisSupervisorsTab({
   const [assignCenterId, setAssignCenterId] = useState('');
   const [assignRoomId, setAssignRoomId] = useState('');
   const [assigning, setAssigning] = useState(false);
+
+  // ⭐ 2026-10-01 — Comptes provisoires de saisie (poste SECRÉTARIAT) :
+  //  identifiants créés à la validation de la répartition (affichés une
+  //  seule fois, copiables) + actions de gestion sur le registre.
+  const [provisionedAccounts, setProvisionedAccounts] = useState<ProvisionedAccount[] | null>(null);
+  const [busyAccountId, setBusyAccountId] = useState<string | null>(null);
 
   // ── Registre ────────────────────────────────────────────────────────────
   const [registry, setRegistry] = useState<RegistryResponse | null>(null);
@@ -633,10 +656,13 @@ export default function FederisSupervisorsTab({
 
   // ── Validation de la répartition ────────────────────────────────────────
   const validateAssignment = async () => {
+    // ⭐ 2026-10-01 — le centre est AUSSI requis pour le SECRÉTARIAT : c'est
+    //    le périmètre de saisie des notes du secrétaire (centre + salle).
+    const needsCenter = assignPost === 'SURVEILLANCE' || assignPost === 'SECRETARIAT';
     if (
       !selectedRequestId ||
       selectedTeacherIds.size === 0 ||
-      (assignPost === 'SURVEILLANCE' && !assignCenterId)
+      (needsCenter && !assignCenterId)
     )
       return;
     setAssigning(true);
@@ -645,31 +671,36 @@ export default function FederisSupervisorsTab({
     try {
       // Construit les affectations depuis le récap (submissionId par enseignant)
       // ⭐ Chaque enseignant reçoit son POSTE (surveillance / correction /
-      //    secrétariat) ; le centre et la salle ne concernent que la surveillance.
+      //    secrétariat) ; le centre et la salle concernent la surveillance ET
+      //    le secrétariat (périmètre de saisie des notes).
       const assignments = (detail?.recap ?? [])
         .filter((t) => selectedTeacherIds.has(t.id))
         .map((t) => ({
           submissionId: t.submissionId,
           teacherId: t.id,
           post: assignPost,
-          centerId:
-            assignPost === 'SURVEILLANCE'
-              ? assignCenterId
-              : assignCenterId || undefined,
-          roomId: assignPost === 'SURVEILLANCE' ? assignRoomId || undefined : undefined,
+          centerId: needsCenter ? assignCenterId : assignCenterId || undefined,
+          roomId: needsCenter ? assignRoomId || undefined : undefined,
         }));
       const res = await apiClient.post(
         `/federis/supervisors/requests/${selectedRequestId}/assignments`,
         { assignments },
-        { timeout: 30000 },
+        { timeout: 60000,
+        },
       );
+      // ⭐ Comptes provisoires créés pour le poste de secrétariat —
+      //    identifiants affichés UNE fois (copie + transmission).
+      const accounts: ProvisionedAccount[] = res.data?.provisionedAccounts ?? [];
+      if (accounts.length > 0) setProvisionedAccounts(accounts);
       setNotice(
         `Répartition validée — ${res.data?.created ?? 0} affectation(s) créée(s), ` +
           `${res.data?.notifiedSchools ?? 0} école(s) notifiée(s), ` +
           `${res.data?.transmitted ?? 0} enseignant(s) notifié(s) directement dans leur interface` +
-          (res.data?.withoutAccount
-            ? ` (${res.data.withoutAccount} sans compte notifiable — à transmettre par l'école).`
-            : '.'),
+          (accounts.length > 0
+            ? ` · ${accounts.length} compte(s) de saisie provisionné(s) — transmettez les identifiants.`
+            : res.data?.withoutAccount
+              ? ` (${res.data.withoutAccount} sans compte notifiable — à transmettre par l'école).`
+              : '.'),
       );
       setSelectedTeacherIds(new Set());
       setAssignCenterId('');
@@ -682,14 +713,100 @@ export default function FederisSupervisorsTab({
     }
   };
 
+  // ── ⭐ 2026-10-01 — Gestion des comptes provisoires de saisie ───────────
+  const copyAccountCredentials = (acc: { login: string; tempPassword?: string | null }) => {
+    const text =
+      `Identifiant : ${acc.login}\n` +
+      (acc.tempPassword ? `Mot de passe : ${acc.tempPassword}\n` : '') +
+      `Connexion : ${window.location.origin}/federis/login`;
+    void navigator.clipboard?.writeText(text).catch(() => undefined);
+    setNotice('Identifiants copiés — transmettez-les au secrétaire.');
+  };
+
+  const manageSaisieAccount = async (
+    supervisorId: string,
+    action: 'freeze' | 'reactivate' | 'reset-password' | 'delete' | 'provision',
+  ) => {
+    if (
+      action === 'delete' &&
+      !window.confirm(
+        'Supprimer ce compte provisoire ? Les notes déjà saisies sont conservées (anonymisées).',
+      )
+    )
+      return;
+    setBusyAccountId(supervisorId);
+    setError(null);
+    setNotice(null);
+    try {
+      if (action === 'provision') {
+        const res = await apiClient.post(
+          `/federis/supervisors/${supervisorId}/provision-account`,
+          {},
+          { timeout: 30000 },
+        );
+        if (res.data?.tempPassword) {
+          setProvisionedAccounts([res.data as ProvisionedAccount]);
+        } else {
+          setNotice(`Compte déjà actif — ${res.data?.login ?? ''}.`);
+        }
+      } else if (action === 'reset-password') {
+        const res = await apiClient.post(
+          `/federis/supervisors/${supervisorId}/account/reset-password`,
+          {},
+          { timeout: 30000 },
+        );
+        setProvisionedAccounts([
+          {
+            status: 'created',
+            supervisorId,
+            teacherName: '',
+            login: res.data?.login ?? '',
+            tempPassword: res.data?.tempPassword ?? '',
+          },
+        ]);
+      } else {
+        await apiClient.post(
+          `/federis/supervisors/${supervisorId}/account/${action}`,
+          {},
+          { timeout: 30000 },
+        );
+        setNotice(
+          action === 'freeze'
+            ? 'Compte gelé — le secrétaire ne peut plus se connecter.'
+            : action === 'reactivate'
+              ? 'Compte réactivé.'
+              : 'Compte provisoire supprimé.',
+        );
+      }
+      await loadRegistry();
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? 'Action impossible.');
+    } finally {
+      setBusyAccountId(null);
+    }
+  };
+
   // ── Création manuelle d'un surveillant ──────────────────────────────────
   const createManualSupervisor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!examId) return;
+    // ⭐ Le centre est requis pour la surveillance ET le secrétariat
+    //    (périmètre de saisie des notes du secrétaire).
+    if (
+      (manualForm.post === 'SURVEILLANCE' || manualForm.post === 'SECRETARIAT') &&
+      !manualForm.centerId
+    ) {
+      setError(
+        manualForm.post === 'SECRETARIAT'
+          ? 'Le centre de saisie est requis pour le poste de secrétariat.'
+          : "Le centre d'accueil est requis pour la surveillance.",
+      );
+      return;
+    }
     setCreatingManual(true);
     setError(null);
     try {
-      await apiClient.post(
+      const res = await apiClient.post(
         '/federis/supervisors',
         {
           firstName: manualForm.firstName,
@@ -697,12 +814,21 @@ export default function FederisSupervisorsTab({
           phone: manualForm.phone || undefined,
           email: manualForm.email || undefined,
           examId,
+          post: manualForm.post,
           centerId: manualForm.centerId || undefined,
           roomId: manualForm.roomId || undefined,
         },
-        { timeout: 20000 },
+        { timeout: 30000 },
       );
-      setNotice(`Surveillant ${manualForm.firstName} ${manualForm.lastName} affecté.`);
+      // ⭐ Compte provisoire provisionné pour le secrétariat → identifiants
+      if (res.data?.provisionedAccount?.tempPassword) {
+        setProvisionedAccounts([res.data.provisionedAccount as ProvisionedAccount]);
+        setNotice(
+          `${manualForm.firstName} ${manualForm.lastName} affecté(e) au poste de secrétariat — compte de saisie créé, transmettez les identifiants.`,
+        );
+      } else {
+        setNotice(`Surveillant ${manualForm.firstName} ${manualForm.lastName} affecté.`);
+      }
       setShowManualForm(false);
       setManualForm(EMPTY_MANUAL_FORM);
       await loadRegistry();
@@ -743,6 +869,64 @@ export default function FederisSupervisorsTab({
       )}
       {notice && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-6 py-4 text-sm font-semibold text-emerald-800">{notice}</div>
+      )}
+
+      {/* ⭐ 2026-10-01 — IDENTIFIANTS DES COMPTES PROVISOIRES DE SAISIE
+          (poste SECRÉTARIAT) : affichés UNE SEULE fois après la création ou
+          la réinitialisation — copie en un clic pour transmission. */}
+      {provisionedAccounts && provisionedAccounts.length > 0 && (
+        <div className="bg-blue-900 rounded-xl px-6 py-5 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-white uppercase">
+                Comptes de saisie provisionnés — transmettez ces identifiants
+              </p>
+              <p className="text-[11px] text-blue-200 mt-1">
+                Les secrétaires se connectent sur la page de connexion Academia Federis
+                (academiafederis.academiahelm.com/federis/login) et accèdent directement à
+                l&apos;interface « Saisie des notes » de leur centre / salle.
+                Les mots de passe ne seront plus affichés — copiez-les maintenant.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setProvisionedAccounts(null)}
+              className="px-3 py-1.5 rounded-lg bg-blue-800 text-white text-[10px] font-bold uppercase flex-shrink-0"
+            >
+              Fermer
+            </button>
+          </div>
+          <div className="space-y-2">
+            {provisionedAccounts.map((acc) => (
+              <div
+                key={acc.supervisorId}
+                className="bg-white rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-blue-900">
+                    {acc.teacherName || 'Secrétaire'}
+                    {acc.centerName ? <span className="text-slate-400 font-semibold"> — {acc.centerName}</span> : null}
+                  </p>
+                  <p className="text-[11px] font-mono text-slate-600 mt-0.5">
+                    {acc.login} · {acc.tempPassword ?? 'mot de passe inchangé'}
+                    {acc.status === 'reactivated' && (
+                      <span className="font-sans text-amber-600 font-bold"> (compte réactivé)</span>
+                    )}
+                  </p>
+                </div>
+                {acc.tempPassword && (
+                  <button
+                    type="button"
+                    onClick={() => copyAccountCredentials(acc)}
+                    className="px-4 py-2 rounded-lg bg-blue-900 text-white text-[10px] font-bold uppercase flex-shrink-0"
+                  >
+                    Copier les identifiants
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* ════════════════════════════════════════════════════════════════════
@@ -1126,8 +1310,9 @@ export default function FederisSupervisorsTab({
 
           {/* Barre de répartition : sélection → poste → centre + salle → validation
               ⭐ 2026-10-01 — le poste (surveillance / correction / secrétariat)
-                 précède le centre et la salle, qui ne concernent que la
-                 surveillance des épreuves. */}
+                 précède le centre et la salle. Le centre + salle concernent la
+                 surveillance ET le secrétariat (périmètre de saisie des notes —
+                 le compte provisoire du secrétaire est créé automatiquement). */}
           {canManage && (
             <div className="border border-blue-200 bg-blue-50/50 rounded-xl p-5 space-y-4">
               {/* Choix du poste */}
@@ -1172,11 +1357,15 @@ export default function FederisSupervisorsTab({
                     {selectedTeacherIds.size} enseignant(s) sélectionné(s)
                   </p>
                 </div>
-                {assignPost === 'SURVEILLANCE' && (
+                {(assignPost === 'SURVEILLANCE' || assignPost === 'SECRETARIAT') && (
                   <>
                     <div className="flex-1">
                       <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">
-                        Centre d&apos;accueil <span className="text-red-500">*</span>
+                        {assignPost === 'SECRETARIAT' ? (
+                          <>Centre de saisie des notes <span className="text-red-500">*</span></>
+                        ) : (
+                          <>Centre d&apos;accueil <span className="text-red-500">*</span></>
+                        )}
                       </label>
                       <select
                         value={assignCenterId}
@@ -1196,7 +1385,7 @@ export default function FederisSupervisorsTab({
                     </div>
                     <div className="flex-1">
                       <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">
-                        Salle de composition
+                        {assignPost === 'SECRETARIAT' ? 'Salle de saisie' : 'Salle de composition'}
                       </label>
                       <select
                         value={assignRoomId}
@@ -1204,7 +1393,11 @@ export default function FederisSupervisorsTab({
                         disabled={!assignCenterId}
                         className="fed-input-light px-4 py-2.5 font-semibold w-full disabled:opacity-50"
                       >
-                        <option value="">— Toute salle / non défini —</option>
+                        <option value="">
+                          {assignPost === 'SECRETARIAT'
+                            ? '— Toutes les salles du centre —'
+                            : '— Toute salle / non défini —'}
+                        </option>
                         {selectedRooms.map((r) => (
                           <option key={r.id} value={r.id}>
                             {r.code} — {r.name} ({r.capacity} places)
@@ -1220,7 +1413,7 @@ export default function FederisSupervisorsTab({
                   disabled={
                     assigning ||
                     selectedTeacherIds.size === 0 ||
-                    (assignPost === 'SURVEILLANCE' && !assignCenterId) ||
+                    ((assignPost === 'SURVEILLANCE' || assignPost === 'SECRETARIAT') && !assignCenterId) ||
                     detail?.request.status !== 'OPEN'
                   }
                   className="fed-btn-gold px-6 py-2.5 text-sm disabled:opacity-40 flex-shrink-0"
@@ -1228,10 +1421,19 @@ export default function FederisSupervisorsTab({
                   {assigning ? 'Validation…' : 'Valider la répartition'}
                 </button>
               </div>
-              {assignPost === 'SURVEILLANCE' && (detail?.centers ?? []).length === 0 && (
-                <p className="text-[11px] text-amber-700 font-semibold">
-                  Aucun centre actif pour cet examen — créez d&apos;abord vos centres et salles
-                  dans l&apos;onglet « Centres et salles ».
+              {(assignPost === 'SURVEILLANCE' || assignPost === 'SECRETARIAT') &&
+                (detail?.centers ?? []).length === 0 && (
+                  <p className="text-[11px] text-amber-700 font-semibold">
+                    Aucun centre actif pour cet examen — créez d&apos;abord vos centres et salles
+                    dans l&apos;onglet « Centres et salles ».
+                  </p>
+                )}
+              {assignPost === 'SECRETARIAT' && (
+                <p className="text-[11px] text-teal-700 font-semibold">
+                  Chaque enseignant affecté au secrétariat reçoit automatiquement un compte
+                  provisoire de saisie — il saisira les notes des candidats du centre (et de la
+                  salle si précisée) choisi ci-dessus. Les identifiants vous seront présentés
+                  après la validation.
                 </p>
               )}
             </div>
@@ -1321,8 +1523,26 @@ export default function FederisSupervisorsTab({
         {/* Formulaire de création manuelle */}
         {showManualForm && canManage && examId && (
           <form onSubmit={createManualSupervisor} className="border border-slate-200 rounded-xl p-6 space-y-5 mb-6 bg-[#f7f9fc]">
-            <h3 className="text-xs font-bold text-blue-900 uppercase">Surveillant — saisie manuelle</h3>
+            <h3 className="text-xs font-bold text-blue-900 uppercase">Affectation manuelle — surveillance / correction / secrétariat</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+              {/* ⭐ 2026-10-01 — poste : le SECRÉTARIAT provisionne un compte
+                  provisoire de saisie des notes (identifiants affichés). */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Poste *</label>
+                <select
+                  value={manualForm.post}
+                  onChange={(e) =>
+                    setManualForm({ ...manualForm, post: e.target.value as SupervisorPostKey, roomId: '' })
+                  }
+                  className="fed-input-light px-4 py-3 font-semibold"
+                >
+                  {POST_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}{o.value === 'SECRETARIAT' ? ' — saisie des notes' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Prénom *</label>
                 <input required value={manualForm.firstName}
@@ -1348,7 +1568,9 @@ export default function FederisSupervisorsTab({
                   placeholder="…" className="fed-input-light px-4 py-3 font-semibold" />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Centre</label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
+                  {manualForm.post === 'SECRETARIAT' ? 'Centre de saisie *' : 'Centre'}
+                </label>
                 <select value={manualForm.centerId}
                   onChange={(e) => setManualForm({ ...manualForm, centerId: e.target.value, roomId: '' })}
                   className="fed-input-light px-4 py-3 font-semibold">
@@ -1359,7 +1581,9 @@ export default function FederisSupervisorsTab({
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Salle</label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
+                  {manualForm.post === 'SECRETARIAT' ? 'Salle de saisie (toutes si vide)' : 'Salle'}
+                </label>
                 <select value={manualForm.roomId}
                   onChange={(e) => setManualForm({ ...manualForm, roomId: e.target.value })}
                   disabled={!manualForm.centerId}
@@ -1373,6 +1597,12 @@ export default function FederisSupervisorsTab({
                 </select>
               </div>
             </div>
+            {manualForm.post === 'SECRETARIAT' && (
+              <p className="text-[11px] text-teal-700 font-semibold">
+                Un compte provisoire de saisie sera créé automatiquement — l&apos;enseignant saisira
+                les notes des candidats du centre (et de la salle si précisée).
+              </p>
+            )}
             <div className="flex justify-end">
               <button type="submit" disabled={creatingManual} className="fed-btn-gold px-6 py-2.5 text-sm disabled:opacity-50">
                 {creatingManual ? 'Création…' : 'Affecter au registre'}
@@ -1398,7 +1628,10 @@ export default function FederisSupervisorsTab({
             <table className="min-w-full divide-y divide-slate-200">
               <thead>
                 <tr className="text-left">
-                  {['Surveillant', 'Poste', 'École d\u2019origine', 'Centre', 'Salle', 'Examen', 'Origine', 'Transmission', ''].map((h) => (
+                  {/* ⭐ 2026-10-01 — en-têtes réordonnés (École AVANT Poste —
+                      correction de l'inversion historique) + colonne « Compte
+                      saisie » pour les affectations SECRÉTARIAT. */}
+                  {['Surveillant', 'École d\u2019origine', 'Poste', 'Centre', 'Salle', 'Examen', 'Origine', 'Transmission', 'Compte saisie', ''].map((h) => (
                     <th key={h} className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase">
                       {h}
                     </th>
@@ -1475,16 +1708,112 @@ export default function FederisSupervisorsTab({
                         <span className="text-[10px] text-slate-400">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3">
+                      {s.post === 'SECRETARIAT' ? (
+                        s.saisieAccount ? (
+                          <div>
+                            <span
+                              className={cn(
+                                'px-2 py-0.5 rounded text-[9px] font-bold uppercase',
+                                s.saisieAccount.status === 'active'
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : s.saisieAccount.status === 'suspended'
+                                    ? 'bg-amber-50 text-amber-700'
+                                    : 'bg-slate-100 text-slate-500',
+                              )}
+                            >
+                              {s.saisieAccount.status === 'active'
+                                ? 'Actif'
+                                : s.saisieAccount.status === 'suspended'
+                                  ? 'Gelé'
+                                  : 'Supprimé'}
+                            </span>
+                            <div
+                              className="text-[9px] text-slate-400 font-mono mt-1 max-w-[150px] truncate"
+                              title={s.saisieAccount.login}
+                            >
+                              {s.saisieAccount.login}
+                            </div>
+                          </div>
+                        ) : (
+                          <span
+                            className="text-[10px] text-slate-400"
+                            title="Aucun compte provisoire — cliquez sur « Provisionner » pour créer l'accès de saisie"
+                          >
+                            Aucun
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-[10px] text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
                       {canManage && (
-                        <button
-                          type="button"
-                          onClick={() => void removeSupervisor(s)}
-                          className="p-2 text-slate-400 hover:text-red-600 transition-colors"
-                          title="Retirer du registre"
-                        >
-                          <AppIcon name="delete" size="submenu" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          {/* ⭐ Gestion du compte provisoire (SECRÉTARIAT) */}
+                          {s.post === 'SECRETARIAT' && !s.saisieAccount && (
+                            <button
+                              type="button"
+                              onClick={() => void manageSaisieAccount(s.id, 'provision')}
+                              disabled={busyAccountId === s.id}
+                              className="px-2.5 py-1.5 rounded-lg text-[9px] font-bold uppercase bg-blue-900 text-white disabled:opacity-50"
+                              title="Créer le compte provisoire de saisie des notes"
+                            >
+                              Provisionner
+                            </button>
+                          )}
+                          {s.post === 'SECRETARIAT' && s.saisieAccount?.status === 'active' && (
+                            <button
+                              type="button"
+                              onClick={() => void manageSaisieAccount(s.id, 'freeze')}
+                              disabled={busyAccountId === s.id}
+                              className="px-2.5 py-1.5 rounded-lg text-[9px] font-bold uppercase bg-white border border-amber-200 text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                              title="Geler le compte (fin de saisie — réactivation possible)"
+                            >
+                              Geler
+                            </button>
+                          )}
+                          {s.post === 'SECRETARIAT' && s.saisieAccount?.status === 'suspended' && (
+                            <button
+                              type="button"
+                              onClick={() => void manageSaisieAccount(s.id, 'reactivate')}
+                              disabled={busyAccountId === s.id}
+                              className="px-2.5 py-1.5 rounded-lg text-[9px] font-bold uppercase bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                            >
+                              Réactiver
+                            </button>
+                          )}
+                          {s.post === 'SECRETARIAT' && s.saisieAccount && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => void manageSaisieAccount(s.id, 'reset-password')}
+                                disabled={busyAccountId === s.id}
+                                className="px-2.5 py-1.5 rounded-lg text-[9px] font-bold uppercase bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                                title="Générer un nouveau mot de passe"
+                              >
+                                MDP
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void manageSaisieAccount(s.id, 'delete')}
+                                disabled={busyAccountId === s.id}
+                                className="px-2.5 py-1.5 rounded-lg text-[9px] font-bold uppercase bg-white border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                title="Supprimer le compte provisoire"
+                              >
+                                <AppIcon name="delete" size="submenu" />
+                              </button>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void removeSupervisor(s)}
+                            className="p-2 text-slate-400 hover:text-red-600 transition-colors"
+                            title="Retirer du registre"
+                          >
+                            <AppIcon name="delete" size="submenu" />
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -1558,10 +1887,12 @@ function TeacherRow({
           {teacher.assigned.post && teacher.assigned.post !== 'SURVEILLANCE'
             ? ` · ${POST_SHORT_LABELS[teacher.assigned.post] ?? teacher.assigned.post}`
             : ''}
-          {teacher.assigned.post !== 'CORRECTION' && teacher.assigned.post !== 'SECRETARIAT' && teacher.assigned.center
+          {/* ⭐ 2026-10-01 — le centre/salle s'affiche pour la surveillance ET
+              le secrétariat (périmètre de saisie des notes) — pas la correction. */}
+          {teacher.assigned.post !== 'CORRECTION' && teacher.assigned.center
             ? ` · ${teacher.assigned.center.code}`
             : ''}
-          {teacher.assigned.post !== 'CORRECTION' && teacher.assigned.post !== 'SECRETARIAT' && teacher.assigned.room
+          {teacher.assigned.post !== 'CORRECTION' && teacher.assigned.room
             ? ` · ${teacher.assigned.room.name}`
             : ''}
         </span>

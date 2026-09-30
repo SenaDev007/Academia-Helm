@@ -25,6 +25,8 @@ import { FedPage, FedCountUp } from '@/components/federis/federis-motion';
 import FederisGradeSheetTab from '@/components/federis/FederisGradeSheetTab';
 import FederisGradeRegistryTab from '@/components/federis/FederisGradeRegistryTab';
 import FederisGradeRelevesTab from '@/components/federis/FederisGradeRelevesTab';
+// ⭐ 2026-10-01 — Suivi TEMPS RÉEL de la saisie par les secrétaires
+import FederisGradeLiveTab from '@/components/federis/FederisGradeLiveTab';
 
 /** Ordre canonique des types d'examen (catégorisation — jamais de mélange). */
 const EXAM_TYPES: Array<{ type: 'CEP' | 'BEPC' | 'BAC' | 'CAP'; label: string }> = [
@@ -41,12 +43,15 @@ const TYPE_MODEL_LABEL: Record<string, string> = {
   CAP: 'Saisie du secondaire — avec coefficients',
 };
 
-type SubTab = 'saisie' | 'registre' | 'releves';
+type SubTab = 'saisie' | 'registre' | 'releves' | 'live';
 
 const SUB_TABS: Array<{ key: SubTab; label: string }> = [
   { key: 'saisie', label: 'Saisie des notes' },
   { key: 'registre', label: 'Registre des notes' },
   { key: 'releves', label: 'Relevés de notes' },
+  // ⭐ 2026-10-01 — suivi en direct de la saisie déléguée aux secrétaires
+  //    (comptes provisoires) : progression par centre / salle / secrétaire
+  { key: 'live', label: 'Suivi temps réel' },
 ];
 
 interface SubjectRow {
@@ -579,6 +584,9 @@ export default function FederisGradesPage({ userRole }: FederisGradesPageProps) 
       )}
       {examId && subTab === 'releves' && (
         <FederisGradeRelevesTab key={`releves-${examId}`} examId={examId} subjectsVersion={subjectsVersion} />
+      )}
+      {examId && subTab === 'live' && (
+        <FederisGradeLiveTab key={`live-${examId}`} examId={examId} userRole={userRole} />
       )}
     </FedPage>
   );

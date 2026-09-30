@@ -56,6 +56,8 @@ import {
   WRITE_EXAM_ORG,
   normalizePatronatFunction,
 } from './federis-roles';
+// ⭐ 2026-10-01 — Comptes provisoires de saisie (poste SECRÉTARIAT).
+import { FederisSaisieService } from './federis-saisie.service';
 // ⭐ FIX « tenant SCHOOL » : les écoles réelles ont type MATERNELLE / PRIMAIRE /
 //    SECONDAIRE / MIXTE (source : common/constants/school-tenant-types).
 import { isSchoolTenantType } from '../common/constants/school-tenant-types';
@@ -288,6 +290,10 @@ export class FederisSupervisorsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationService: NotificationService,
+    // ⭐ 2026-10-01 — Comptes provisoires de saisie (poste SECRÉTARIAT) :
+    //    provisionnés automatiquement à l'affectation (sens unique — le
+    //    service saisie n'importe JAMAIS le service surveillants).
+    private readonly saisieService: FederisSaisieService,
   ) {}
 
   // ── Auto-guérison du schéma (pattern ensure-tables main.ts) ─────────────
@@ -1087,7 +1093,9 @@ export class FederisSupervisorsService {
         const placeTxt =
           post === 'SURVEILLANCE'
             ? ` (${center ? `centre ${center.name}` : 'centre non défini'}${room ? `, salle ${room.name}` : ''})`
-            : '';
+            : post === 'SECRETARIAT'
+              ? ` (saisie des notes — ${center ? `centre ${center.name}` : 'centre non défini'}${room ? `, salle ${room.name}` : ''})`
+              : '';
         entry.items.push(
           `${teacher.firstName} ${teacher.lastName} — ${supervisorPostLabel(post)}${placeTxt}`,
         );
@@ -1156,9 +1164,20 @@ export class FederisSupervisorsService {
       }
     }
 
+    // ⭐ 2026-10-01 — COMPTES PROVISOIRES DE SAISIE : chaque enseignant
+    //    affecté au SECRÉTARIAT reçoit AUTOMATIQUEMENT son compte provisoire
+    //    (rôle PATRONAT_SAISIE_NOTES) pour accéder à l'UI « Saisie des
+    //    notes » de son centre / sa salle. Les identifiants sont retournés
+    //    au patronat (transmission à l'enseignant) — jamais stockés en clair.
+    const secretariatIds = created.filter((s) => s.post === 'SECRETARIAT').map((s) => s.id);
+    const { provisioned, errors: provisionErrors } = secretariatIds.length
+      ? await this.saisieService.provisionAccountsForSupervisors(tenantId, secretariatIds, userId)
+      : { provisioned: [], errors: [] };
+
     this.logger.log(
       `Répartition validée — ${created.length} affectation(s), ${bySchoolTenant.size} école(s), ` +
-        `${notifiedSchools} notifiée(s), ${transmitted} enseignant(s) notifié(s) directement.`,
+        `${notifiedSchools} notifiée(s), ${transmitted} enseignant(s) notifié(s) directement, ` +
+        `${provisioned.length} compte(s) de saisie provisionné(s).`,
     );
 
     return {
@@ -1171,6 +1190,9 @@ export class FederisSupervisorsService {
       notifiedSchools,
       transmitted,
       withoutAccount,
+      // ⭐ Comptes provisoires créés pour le poste de secrétariat
+      provisionedAccounts: provisioned,
+      provisionErrors,
     };
   }
 
@@ -1205,6 +1227,12 @@ export class FederisSupervisorsService {
       : [];
     const schoolNameById = new Map(schoolTenants.map((t) => [t.id, t.name]));
 
+    // ⭐ 2026-10-01 — Comptes provisoires de saisie (poste SECRÉTARIAT) :
+    //    identifiant + statut (actif / gelé / supprimé) pour le registre.
+    const accounts = await this.saisieService.hydrateAccounts(
+      supervisors.map((s) => ({ id: s.id, post: s.post, metadata: s.metadata })),
+    );
+
     return {
       canManage: WRITE_EXAM_ORG.includes(fn),
       supervisors: supervisors.map((s) => ({
@@ -1224,6 +1252,8 @@ export class FederisSupervisorsService {
         center: s.center,
         room: s.room,
         exam: s.exam,
+        // ⭐ Compte provisoire (null pour surveillance / correction)
+        saisieAccount: accounts.get(s.id) ?? null,
       })),
     };
   }
@@ -1261,7 +1291,7 @@ export class FederisSupervisorsService {
       }
     }
 
-    return this.prisma.examSupervisor.create({
+    const supervisor = await this.prisma.examSupervisor.create({
       data: {
         tenantId,
         academicYearId: year.id,
@@ -1287,6 +1317,22 @@ export class FederisSupervisorsService {
         createdBy: userId,
       },
     });
+
+    // ⭐ 2026-10-01 — Affectation SECRÉTARIAT créée manuellement → compte
+    //    provisoire de saisie provisionné immédiatement (identifiants
+    //    retournés au patronat pour transmission à l'enseignant).
+    const provisionedAccount =
+      supervisor.post === 'SECRETARIAT'
+        ? await this.saisieService
+            .provisionAccountForSupervisor(tenantId, supervisor.id, userId)
+            .catch((e: any) => {
+              this.logger.warn(
+                `Compte de saisie non provisionné (${supervisor.id}) : ${e?.message ?? e}`,
+              );
+              return null;
+            })
+        : null;
+    return { ...supervisor, provisionedAccount };
   }
 
   /** Modification d'une affectation (changement de centre / de salle). */

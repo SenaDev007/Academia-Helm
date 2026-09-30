@@ -34,7 +34,13 @@ export type PatronatFunction =
   /** legacy PATRONAT_OPERATOR (organisation des examens) */
   | 'OPERATOR'
   /** lecture seule élargie (EXAM_SUPERVISOR / EXAM_VIEWER / inconnu) */
-  | 'VIEWER';
+  | 'VIEWER'
+  /** ⭐ 2026-10-01 — enseignant affecté au SECRÉTARIAT (saisie des notes) :
+   *  compte PROVISOIRE créé automatiquement à l'affectation (module Centres,
+   *  salles & Surveillants). N'apparaît PAS dans PATRONAT_FUNCTIONS (ce n'est
+   *  pas un membre du bureau) — périmètre limité à l'UI « Saisie des notes »
+   *  (/federis/saisie), gelé puis supprimé après l'examen. */
+  | 'SAISIE_NOTES';
 
 /** Catalogue des fonctions créables par le coordonnateur (UI + validation). */
 export const PATRONAT_FUNCTIONS = {
@@ -105,6 +111,9 @@ export function normalizePatronatFunction(role?: string | null): PatronatFunctio
       return 'CHARGE_MISSION';
     case 'EXAM_SUPERVISOR':
       return 'OPERATOR';
+    case 'PATRONAT_SAISIE_NOTES':
+    case 'SAISIE_NOTES':
+      return 'SAISIE_NOTES';
     default:
       return 'VIEWER';
   }
@@ -114,6 +123,7 @@ export function normalizePatronatFunction(role?: string | null): PatronatFunctio
 export function patronatFunctionLabel(fn: PatronatFunction): string {
   if (fn === 'OPERATOR') return 'Superviseur';
   if (fn === 'VIEWER') return 'Observateur';
+  if (fn === 'SAISIE_NOTES') return 'Secrétaire de saisie';
   return PATRONAT_FUNCTIONS[fn].label;
 }
 

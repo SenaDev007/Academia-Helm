@@ -108,6 +108,10 @@ const federisNavItems = [
       //    registre des notes et relevés de notes — reproduit le module
       //    Examen d'Academia Helm
       { name: 'Notes et moyennes', subPath: '/grades', icon: 'grades' as const },
+      // ⭐ 2026-10-01 — UI dédiée des secrétaires de saisie (comptes
+      //    provisoires créés à l'affectation SECRÉTARIAT) — filtrée par
+      //    canAccessRoute : visible UNIQUEMENT pour la fonction SAISIE_NOTES.
+      { name: 'Saisie des notes', subPath: '/saisie', icon: 'grades' as const },
       { name: 'Délibérations', subPath: '/deliberations', icon: 'document' as const },
     ]
   },

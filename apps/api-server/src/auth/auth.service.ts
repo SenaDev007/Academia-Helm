@@ -774,6 +774,10 @@ export class AuthService {
       // ⭐ Fonctions patronat (création de comptes par le coordonnateur)
       'PATRONAT_COORDONNATEUR', 'PATRONAT_SECRETAIRE', 'PATRONAT_TRESORIER',
       'PATRONAT_ORGANISATEUR', 'PATRONAT_CHARGE_MISSION',
+      // ⭐ 2026-10-01 — enseignant secrétariat (saisie des notes) : compte
+      //    PROVISOIRE créé automatiquement à l'affectation — accède UNIQUEMENT
+      //    à l'UI « Saisie des notes » (/federis/saisie) de son centre/salle.
+      'PATRONAT_SAISIE_NOTES',
     ];
     if (patronatRoles.includes(role)) return [PortalType.PATRONAT];
 

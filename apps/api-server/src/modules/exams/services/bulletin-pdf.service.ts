@@ -411,7 +411,31 @@ export class BulletinPdfService {
           if (idxA !== idxB) return idxA - idxB;
           return matNorm(a.name).localeCompare(matNorm(b.name), 'fr');
         })
-      : data.subjects;
+      : // ⭐ 2026-09-30 — Primaire : tri par catégories (Lettres/Sciences/Arts/Autres)
+        //    Même logique que le secondaire (getSubjectCategory + canon order).
+        !data.isSecondary && !data.isSecondaryEval
+          ? [...data.subjects].sort((a, b) => {
+              // Catégorisation Lettres/Sciences/Arts/Autres (même logique que secondaire)
+              const AUTRES_MARKERS = ['eps', 'education physique', 'sport', 'informatique', 'conduite', 'arts plastiques', 'musique', 'dessin'];
+              const LETTRES_MARKERS = ['francais', 'communication', 'lecture', 'anglais', 'allemand', 'espagnol', 'philosophie', 'histoire', 'geographie', 'education sociale'];
+              const SCIENCES_MARKERS = ['mathematiques', 'maths', 'math', 'physique-chimie', 'physique chimie', 'pct', 'chimie', 'svt', 'science de la vie', 'sciences de la vie', 'est', 'education scientifique', 'eveil scientifique'];
+              const ARTS_MARKERS = ['education artistique', 'expression plastique', 'expression emotionnelle', 'dessin', 'peinture', 'musique', 'chant', 'arts'];
+              const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+              const getCat = (name: string): number => {
+                const n = norm(name);
+                if (!n) return 4;
+                if (ARTS_MARKERS.some(m => n.includes(norm(m)))) return 3;
+                if (AUTRES_MARKERS.some(m => n.includes(norm(m)))) return 4;
+                if (LETTRES_MARKERS.some(m => n.includes(norm(m)))) return 1;
+                if (SCIENCES_MARKERS.some(m => n.includes(norm(m)))) return 2;
+                return 4;
+              };
+              const catA = getCat(a.name);
+              const catB = getCat(b.name);
+              if (catA !== catB) return catA - catB;
+              return norm(a.name).localeCompare(norm(b.name), 'fr');
+            })
+          : data.subjects;
 
     // Build subject rows
     const subjectRows = sortedSubjects.map((s) => {
@@ -778,8 +802,9 @@ export class BulletinPdfService {
           <tr>
             <td style="width:33%;text-align:center;vertical-align:bottom;padding:10px 3px;">
               <div style="height:50px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:50px;max-width:100px;object-fit:contain;" />` : ''}</div>
-              <div style="border-top:1px solid #000;margin-top:5px;padding-top:3px;font-size:10px;font-weight:bold;color:#0A2A5E;">Titulaire de la classe</div>
-              ${data.teacherName ? `<div style="font-size:9px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.teacherName}</div>` : '<div style="font-size:8px;color:#64748b;margin-top:1px;">Signature</div>'}
+              ${data.teacherName ? `<div style="font-size:9px;color:#1a1a1a;font-weight:600;margin-bottom:2px;">${data.teacherName}</div>` : ''}
+              <div style="border-top:1px solid #000;padding-top:3px;font-size:10px;font-weight:bold;color:#0A2A5E;">Titulaire de la classe</div>
+              ${!data.teacherName ? '<div style="font-size:8px;color:#64748b;">Signature</div>' : ''}
             </td>
             <td style="width:34%;text-align:center;vertical-align:bottom;padding:10px 3px;">
               ${this.renderDirectorSealsZone(data, 50)}
@@ -849,8 +874,9 @@ export class BulletinPdfService {
           <tr>
             <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 3px;">
               <div style="height:35px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:35px;max-width:90px;object-fit:contain;" />` : ''}</div>
-              <div style="border-top:1px solid #000;margin-top:4px;padding-top:2px;font-size:10px;font-weight:bold;color:#0A2A5E;">Enseignant(e)</div>
-              ${data.teacherName ? `<div style="font-size:9px;color:#1a1a1a;margin-top:1px;font-weight:600;">${data.teacherName}</div>` : '<div style="font-size:8px;color:#64748b;margin-top:1px;">Signature du titulaire</div>'}
+              ${data.teacherName ? `<div style="font-size:9px;color:#1a1a1a;font-weight:600;margin-bottom:2px;">${data.teacherName}</div>` : ''}
+              <div style="border-top:1px solid #000;padding-top:2px;font-size:10px;font-weight:bold;color:#0A2A5E;">Enseignant(e)</div>
+              ${!data.teacherName ? '<div style="font-size:8px;color:#64748b;">Signature du titulaire</div>' : ''}
             </td>
             <td style="width:34%;text-align:center;vertical-align:bottom;padding:6px 3px;">
               <div style="height:35px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:35px;max-width:90px;object-fit:contain;" />` : ''}</div>

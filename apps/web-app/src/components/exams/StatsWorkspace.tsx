@@ -185,12 +185,17 @@ export default function StatsWorkspace() {
           filtered = filtered.filter((ev: any) => ev.evaluationType?.id === selectedEvalTypeId);
         }
       }
+      // ⭐ 2026-09-30 — FIX fuite anglophone : si scopeLang est null, on exclut
+      //    les évaluations explicitement anglophones (language='EN').
       const langFiltered = scopeLang
         ? filtered.filter((ev: any) => {
             const lang = ev.subject?.language;
             return !lang || lang === scopeLang || lang === 'FR';
           })
-        : filtered;
+        : filtered.filter((ev: any) => {
+            const lang = ev.subject?.language;
+            return !lang || lang === 'FR';
+          });
 
       const subjList: any[] = [];
       const seenIds = new Set<string>();

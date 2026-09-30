@@ -97,6 +97,17 @@ export class DecideCaseDto {
   comments?: string;
 }
 
+// ── ⭐ T26 (2026-10-01) — Lien public provisoire de consultation ─────────────
+// ⚠️ Ces constantes DOIVENT être déclarées AVANT les DTO ci-dessous : les
+// décorateurs @Max(...) sont évalués au chargement du module (build SWC/CJS),
+// une déclaration après les classes provoque « Cannot access 'X' before
+// initialization » (TDZ) et fait crasher le conteneur au démarrage.
+
+/** Durée de vie par défaut du lien public : 30 jours. */
+export const PUBLIC_LINK_DEFAULT_HOURS = 720;
+/** Durée maximale : 1 an (8760 h). */
+export const PUBLIC_LINK_MAX_HOURS = 8760;
+
 /** ⭐ T26 (2026-10-01) — corps de la publication : durée de vie du lien public
  *    de consultation des résultats (heures). Défaut backend 720 h = 30 jours. */
 export class PublishResultsDto {
@@ -130,13 +141,6 @@ function mentionFor(average: number): string {
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
-
-// ── ⭐ T26 (2026-10-01) — Lien public provisoire de consultation ─────────────
-
-/** Durée de vie par défaut du lien public : 30 jours. */
-export const PUBLIC_LINK_DEFAULT_HOURS = 720;
-/** Durée maximale : 1 an (8760 h). */
-export const PUBLIC_LINK_MAX_HOURS = 8760;
 
 /** Vue du lien public renvoyée au patronat (board + actions de gestion). */
 export interface PublicLinkView {

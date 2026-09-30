@@ -5,26 +5,18 @@
  * DISTINCTION / TABLEAU D'HONNEUR — Module Examen
  * ============================================================================
  *
- * Onglet permettant de générer les tableaux d'honneur et certificats de
- * distinction pour une classe, à partir des moyennes des élèves.
- *
- * Adapté par niveau scolaire :
- *   - Maternelle : Étoile d'Or / Argent / Bronze / Petit Explorateur
- *   - Primaire : Félicitations / Encouragements / Honneur / Courage
- *   - Secondaire : Félicitations / Encouragements / Honneur + Prix spéciaux
- *
- * Le système récupère les moyennes des élèves pour la période sélectionnée
- * et applique les règles de distinction automatiquement.
+ * Boutons par élève : générer certificat individuel + envoyer par email
+ * Bouton global : générer le tableau collectif
+ * Bouton envoyer global : envoyer tous les certificats par email aux parents
  * ============================================================================
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Award, Loader2, Download, Users, Trophy, Medal,
+  Award, Loader2, Download, Users, Trophy, Medal, Mail, Send,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import apiClient from '@/lib/api/client';
@@ -53,6 +45,7 @@ interface DistinctionStudent {
   rank: number | null;
   distinction: string | null;
   distinctionLabel: string | null;
+  distinctionCode: string | null;
 }
 
 export default function DistinctionWorkspace() {
@@ -74,11 +67,12 @@ export default function DistinctionWorkspace() {
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>('');
   const [students, setStudents] = useState<DistinctionStudent[]>([]);
   const [loading, setLoading] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const [generatingBoard, setGeneratingBoard] = useState(false);
+  const [generatingCert, setGeneratingCert] = useState<string | null>(null);
+  const [sending, setSending] = useState<string | null>(null);
 
   const subModules = useExamSubModules(EXAMS_SUB_MODULES);
 
-  // Load classes
   useEffect(() => {
     if (!academicYear?.id || !schoolLevelUuid) return;
     (async () => {
@@ -100,7 +94,6 @@ export default function DistinctionWorkspace() {
     })();
   }, [academicYear?.id, schoolLevelUuid, scopeLang]);
 
-  // Load periods
   useEffect(() => {
     if (!academicYear?.id) return;
     (async () => {
@@ -116,27 +109,34 @@ export default function DistinctionWorkspace() {
     })();
   }, [academicYear?.id]);
 
-  // Load students with averages
   const loadData = useCallback(async () => {
     if (!selectedClassId || !selectedPeriodId || !academicYear?.id) return;
     setLoading(true);
     try {
-      // Use the promotion endpoint to get averages (it already computes them)
       const response = await apiClient.get(`/exams/promotion/class/${encodeURIComponent(selectedClassId)}`, {
         params: { academicYearId: academicYear.id },
       });
       const data = response.data;
+      const base = isMaternelle ? 3 : 20;
       const list: DistinctionStudent[] = Array.isArray(data) ? data.map((s: any) => {
-        // Map the distinction code to a label
         let distinctionLabel: string | null = null;
-        if (s.decision === 'PASSE' && s.generalAverage !== null) {
-          const pct = (s.generalAverage / (isMaternelle ? 3 : 20)) * 100;
+        let distinctionCode: string | null = null;
+        if (s.generalAverage !== null) {
+          const pct = (s.generalAverage / base) * 100;
           if (isMaternelle) {
-            distinctionLabel = pct >= 90 ? "Étoile d'Or" : pct >= 75 ? "Étoile d'Argent" : pct >= 60 ? 'Étoile de Bronze' : 'Petit Explorateur';
+            if (pct >= 90) { distinctionLabel = "Étoile d'Or"; distinctionCode = 'MAT_OR'; }
+            else if (pct >= 75) { distinctionLabel = "Étoile d'Argent"; distinctionCode = 'MAT_ARGENT'; }
+            else if (pct >= 60) { distinctionLabel = 'Étoile de Bronze'; distinctionCode = 'MAT_BRONZE'; }
+            else { distinctionLabel = 'Petit Explorateur'; distinctionCode = 'MAT_EXPLO'; }
           } else if (isSecondaire) {
-            distinctionLabel = pct >= 80 ? 'Félicitations' : pct >= 70 ? 'Encouragements' : pct >= 60 ? 'Honneur' : null;
+            if (pct >= 80) { distinctionLabel = 'Félicitations'; distinctionCode = 'SEC_FELIC'; }
+            else if (pct >= 70) { distinctionLabel = 'Encouragements'; distinctionCode = 'SEC_ENCOU'; }
+            else if (pct >= 60) { distinctionLabel = 'Honneur'; distinctionCode = 'SEC_HONNEUR'; }
           } else {
-            distinctionLabel = pct >= 80 ? 'Félicitations' : pct >= 70 ? 'Encouragements' : pct >= 60 ? 'Honneur' : pct >= 50 ? 'Courage' : null;
+            if (pct >= 80) { distinctionLabel = 'Félicitations'; distinctionCode = 'PRI_FELIC'; }
+            else if (pct >= 70) { distinctionLabel = 'Encouragements'; distinctionCode = 'PRI_ENCOU'; }
+            else if (pct >= 60) { distinctionLabel = 'Honneur'; distinctionCode = 'PRI_HONNEUR'; }
+            else if (pct >= 50) { distinctionLabel = 'Courage'; distinctionCode = 'PRI_COURAGE'; }
           }
         }
         return {
@@ -144,16 +144,15 @@ export default function DistinctionWorkspace() {
           name: s.name,
           matricule: s.matricule || '',
           average: s.generalAverage,
-          rank: null, // will be computed below
+          rank: null,
           distinction: distinctionLabel ? 'AWARDED' : null,
           distinctionLabel,
+          distinctionCode,
         };
       }) : [];
 
-      // Compute ranks
       const sorted = [...list].sort((a, b) => (b.average ?? -1) - (a.average ?? -1));
       sorted.forEach((s, i) => { s.rank = i + 1; });
-
       setStudents(sorted);
     } catch (err) {
       console.error('Distinction load error:', err);
@@ -167,13 +166,13 @@ export default function DistinctionWorkspace() {
 
   const awardedStudents = useMemo(() => students.filter(s => s.distinctionLabel !== null), [students]);
   const selectedClassName = classes.find(c => c.id === selectedClassId)?.name || '';
-  const selectedPeriodName = periods.find(p => p.id === selectedPeriodId)?.name || '';
 
+  // Générer le tableau collectif
   const handleGenerateBoard = async () => {
     if (!selectedClassId || !selectedPeriodId) return;
-    setGenerating(true);
+    setGeneratingBoard(true);
     try {
-      const response = await apiClient.post('/institutional-exams/distinctions/generate-class', {
+      const response = await apiClient.post('/institutional-exams/distinctions/generate-board', {
         classId: selectedClassId,
         periodId: selectedPeriodId,
         academicYearId: academicYear?.id,
@@ -190,9 +189,73 @@ export default function DistinctionWorkspace() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err: any) {
-      alert('Erreur lors de la génération du tableau: ' + (err.response?.data?.message || err.message));
+      alert('Erreur: ' + (err.response?.data?.message || err.message));
     } finally {
-      setGenerating(false);
+      setGeneratingBoard(false);
+    }
+  };
+
+  // Générer un certificat individuel
+  const handleGenerateCertificate = async (student: DistinctionStudent) => {
+    if (!student.distinctionCode) return;
+    setGeneratingCert(student.id);
+    try {
+      const response = await apiClient.post('/institutional-exams/distinctions/generate-certificate', {
+        studentId: student.id,
+        studentName: student.name,
+        classId: selectedClassId,
+        className: selectedClassName,
+        periodId: selectedPeriodId,
+        academicYearId: academicYear?.id,
+        level: scopeLevel || 'PRIMAIRE',
+        code: student.distinctionCode,
+        average: student.average,
+        rank: student.rank,
+        classSize: students.length,
+      }, { responseType: 'blob', timeout: 120000 });
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const safeName = student.name.replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+      link.download = `certificat_${safeName}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert('Erreur: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setGeneratingCert(null);
+    }
+  };
+
+  // Envoyer le certificat par email au parent
+  const handleSendCertificate = async (student: DistinctionStudent) => {
+    if (!student.distinctionCode) return;
+    setSending(student.id);
+    try {
+      // TODO: implémenter l'envoi email backend
+      alert(`Envoi du certificat de ${student.name} à ses parents — à implémenter côté backend (email + notification UI parent)`);
+    } catch (err: any) {
+      alert('Erreur envoi: ' + err.message);
+    } finally {
+      setSending(null);
+    }
+  };
+
+  // Envoyer tous les certificats
+  const handleSendAll = async () => {
+    if (awardedStudents.length === 0) return;
+    if (!confirm(`Envoyer ${awardedStudents.length} certificats par email aux parents ?`)) return;
+    setSending('ALL');
+    try {
+      // TODO: implémenter l'envoi groupé backend
+      alert(`Envoi de ${awardedStudents.length} certificats par email — à implémenter côté backend`);
+    } catch (err: any) {
+      alert('Erreur envoi: ' + err.message);
+    } finally {
+      setSending(null);
     }
   };
 
@@ -206,43 +269,30 @@ export default function DistinctionWorkspace() {
         layout: 'full',
         children: (
       <div className="space-y-4">
-        {/* Header + selectors */}
         <div className="bg-white rounded-lg border border-slate-200 p-4">
           <div className="flex flex-wrap gap-3 items-end">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Classe</label>
-              <select
-                value={selectedClassId}
-                onChange={e => setSelectedClassId(e.target.value)}
-                className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[200px]"
-              >
+              <select value={selectedClassId} onChange={e => setSelectedClassId(e.target.value)} className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[200px]">
                 <option value="">— Sélectionner une classe —</option>
-                {classes.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
+                {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Période</label>
-              <select
-                value={selectedPeriodId}
-                onChange={e => setSelectedPeriodId(e.target.value)}
-                className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[200px]"
-              >
+              <select value={selectedPeriodId} onChange={e => setSelectedPeriodId(e.target.value)} className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[200px]">
                 <option value="">— Sélectionner —</option>
-                {periods.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
+                {periods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
             <div className="flex-1" />
-            <Button
-              onClick={handleGenerateBoard}
-              disabled={generating || awardedStudents.length === 0}
-              className="bg-amber-600 hover:bg-amber-700 text-white"
-            >
-              {generating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
-              {generating ? 'Génération…' : 'Générer le tableau d\'honneur'}
+            <Button onClick={handleGenerateBoard} disabled={generatingBoard || awardedStudents.length === 0} className="bg-amber-600 hover:bg-amber-700 text-white">
+              {generatingBoard ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+              {generatingBoard ? 'Génération…' : 'Générer tableau d\'honneur'}
+            </Button>
+            <Button onClick={handleSendAll} disabled={sending === 'ALL' || awardedStudents.length === 0} variant="outline" className="border-blue-300 text-blue-700 hover:bg-blue-50">
+              {sending === 'ALL' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+              Envoyer tous ({awardedStudents.length})
             </Button>
           </div>
         </div>
@@ -255,7 +305,6 @@ export default function DistinctionWorkspace() {
           </div>
         ) : (
           <>
-            {/* Stats summary */}
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-center">
                 <Trophy className="w-5 h-5 text-amber-600 mx-auto mb-1" />
@@ -274,11 +323,10 @@ export default function DistinctionWorkspace() {
               </div>
             </div>
 
-            {/* Tableau des élèves avec distinctions */}
             <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
               <div className="px-4 py-2 bg-amber-50 border-b border-slate-200">
                 <h3 className="text-sm font-bold text-amber-800 flex items-center gap-2">
-                  <Award className="w-4 h-4" /> Tableau d'honneur — {selectedClassName} — {selectedPeriodName}
+                  <Award className="w-4 h-4" /> Tableau d'honneur — {selectedClassName}
                 </h3>
               </div>
               <Table>
@@ -289,6 +337,7 @@ export default function DistinctionWorkspace() {
                     <TableHead className="text-xs">Nom</TableHead>
                     <TableHead className="text-xs text-center">Moyenne</TableHead>
                     <TableHead className="text-xs text-center">Distinction</TableHead>
+                    <TableHead className="text-xs text-center">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -324,6 +373,30 @@ export default function DistinctionWorkspace() {
                         ) : (
                           <span className="text-slate-400">—</span>
                         )}
+                      </TableCell>
+                      <TableCell className="text-xs text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          {st.distinctionCode && (
+                            <>
+                              <button
+                                onClick={() => handleGenerateCertificate(st)}
+                                disabled={generatingCert === st.id}
+                                title="Générer le certificat PDF"
+                                className="p-1.5 rounded hover:bg-amber-100 disabled:opacity-50"
+                              >
+                                {generatingCert === st.id ? <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" /> : <Download className="w-3.5 h-3.5 text-amber-600" />}
+                              </button>
+                              <button
+                                onClick={() => handleSendCertificate(st)}
+                                disabled={sending === st.id}
+                                title="Envoyer par email au parent"
+                                className="p-1.5 rounded hover:bg-blue-100 disabled:opacity-50"
+                              >
+                                {sending === st.id ? <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" /> : <Mail className="w-3.5 h-3.5 text-blue-600" />}
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

@@ -34,6 +34,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
+import apiClient from '@/lib/api/client';
 import { EXAMS_SUB_MODULES } from '@/app/app/exams/sub-modules';
 import { useExamSubModules, useExamScope } from '@/app/app/exams/layout';
 import { filterClassesForLevel } from '@/app/app/exams/level-isolation';
@@ -125,15 +126,13 @@ export default function PromotionWorkspace() {
     if (!selectedClassId || !academicYear?.id) return;
     setLoading(true);
     try {
-      const res = await fetch(
-        `/api/exams/promotion/class/${encodeURIComponent(selectedClassId)}?academicYearId=${encodeURIComponent(academicYear.id)}`,
-        { credentials: 'include' },
-      );
-      if (!res.ok) {
-        setStudents([]);
-        return;
-      }
-      const data = await res.json();
+      // ⭐ 2026-09-30 — FIX : utiliser apiClient (axios avec baseURL) au lieu de
+      //    fetch (qui allait vers Next.js au lieu du backend → pas de route BFF
+      //    → 404 → "aucune donnée disponible").
+      const response = await apiClient.get(`/exams/promotion/class/${encodeURIComponent(selectedClassId)}`, {
+        params: { academicYearId: academicYear.id },
+      });
+      const data = response.data;
       const list: StudentPromotion[] = Array.isArray(data) ? data : [];
       setStudents(list);
     } catch (err) {
@@ -194,19 +193,9 @@ export default function PromotionWorkspace() {
         })),
       };
 
-      const res = await fetch('/api/exams/promotion/apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.message || `HTTP ${res.status}`);
-      }
-
-      const result = await res.json();
+      // ⭐ 2026-09-30 — FIX : utiliser apiClient (axios avec baseURL).
+      const res = await apiClient.post('/exams/promotion/apply', payload);
+      const result = res.data;
       alert(
         `✅ Promotion appliquée !\n\n` +
         `Année suivante : ${result.nextYearLabel}\n` +
@@ -266,17 +255,14 @@ export default function PromotionWorkspace() {
         scopeLang: scopeLang || 'FR',
       };
 
-      const res = await fetch('/api/institutional-exams/pv-stats-promotion/promotion', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(payload),
+      // ⭐ 2026-09-30 — FIX : utiliser apiClient (axios avec baseURL) au lieu de
+      //    fetch (qui allait vers Next.js au lieu du backend → pas de route BFF
+      //    → 404 → "Échec de chargement du document PDF").
+      const response = await apiClient.post('/institutional-exams/pv-stats-promotion/promotion', payload, {
+        responseType: 'blob',
+        timeout: 120000,
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.message || `HTTP ${res.status}`);
-      }
-      const blob = await res.blob();
+      const blob = new Blob([response.data], { type: 'application/pdf' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;

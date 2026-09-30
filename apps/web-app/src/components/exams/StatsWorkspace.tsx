@@ -459,17 +459,14 @@ export default function StatsWorkspace() {
         scopeLang: scopeLang || 'FR',
       };
 
-      const res = await fetch('/api/institutional-exams/pv-stats-promotion/statistiques', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(payload),
+      // ⭐ 2026-09-30 — FIX : utiliser apiClient (axios avec baseURL) au lieu de
+      //    fetch (qui allait vers Next.js au lieu du backend → pas de route BFF
+      //    → 404 → "Échec de chargement du document PDF").
+      const response = await apiClient.post('/institutional-exams/pv-stats-promotion/statistiques', payload, {
+        responseType: 'blob',
+        timeout: 120000,
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.message || `HTTP ${res.status}`);
-      }
-      const blob = await res.blob();
+      const blob = new Blob([response.data], { type: 'application/pdf' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;

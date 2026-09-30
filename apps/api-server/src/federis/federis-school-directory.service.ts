@@ -67,6 +67,32 @@ export class SearchDirectoryDto {
   sector?: string;
   /** Outre-passer le filtre départemental (patronat national uniquement). */
   allDepartments?: boolean;
+  /** Nombre maximal de résultats (1..2000 — défaut 25 ; le MODAL de
+   *  sélection demande la liste intégrale du département). */
+  limit?: number;
+}
+
+/**
+ * ⭐ Normalisation des numéros de téléphone béninois (2026-09-30) : depuis
+ * le nouveau plan de numérotation national, TOUS les numéros sont précédés
+ * de « 01 » (ex. « 95 34 71 54 » → « 01 95 34 71 54 »). Les répertoires
+ * ministériels source (2022-2023) portent l'ancien format à 8 chiffres.
+ *
+ * Robustesse (données source parfois imparfaites — OCR, numéros doubles) :
+ *   - déjà préfixé « 01 » → inchangé ;
+ *   - indicatif international (« +… » / « (+…) ») → inchangé ;
+ *   - moins de 4 chiffres (champ corrompu) → inchangé ;
+ *   - sinon → préfixe « 01 » ajouté au début.
+ */
+export function normalizeBeninPhone(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const trimmed = phone.trim();
+  if (!trimmed) return null;
+  if (/^01/i.test(trimmed)) return trimmed;
+  if (/^\(?\+/i.test(trimmed)) return trimmed; // indicatif étranger (+225…)
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length < 4) return trimmed; // champ corrompu — ne pas dégrader
+  return `01 ${trimmed}`;
 }
 
 /** DTO — création d'une école provisoire depuis une entrée du répertoire. */
@@ -150,6 +176,30 @@ export class FederisSchoolDirectoryService {
       await this.prisma.$executeRawUnsafe(sql);
     }
 
+    // 1bis. ⭐ Migration idempotente du plan de numérotation : préfixe « 01 »
+    //       sur les téléphones déjà en base (ancien format 8 chiffres). Les
+    //       gardes (NOT LIKE '01%', pas d'indicatif « + », ≥ 4 chiffres)
+    //       rendent l'UPDATE inoffensif aux exécutions suivantes.
+    const phoneMigration = [
+      `UPDATE "school_directory_entries"
+         SET "founderPhone" = '01 ' || "founderPhone",
+             "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "founderPhone" IS NOT NULL AND "founderPhone" <> ''
+         AND "founderPhone" NOT LIKE '01%'
+         AND "founderPhone" NOT LIKE '%+%'
+         AND LENGTH(REGEXP_REPLACE("founderPhone", '[^0-9]', '', 'g')) >= 4`,
+      `UPDATE "school_directory_entries"
+         SET "directorPhone" = '01 ' || "directorPhone",
+             "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "directorPhone" IS NOT NULL AND "directorPhone" <> ''
+         AND "directorPhone" NOT LIKE '01%'
+         AND "directorPhone" NOT LIKE '%+%'
+         AND LENGTH(REGEXP_REPLACE("directorPhone", '[^0-9]', '', 'g')) >= 4`,
+    ];
+    for (const sql of phoneMigration) {
+      await this.prisma.$executeRawUnsafe(sql);
+    }
+
     // 2. Seed idempotent — insère uniquement les entrées manquantes
     const known = await this.prisma.schoolDirectoryEntry.count();
     if (known < BENIN_SECONDARY_PRIVATE_SCHOOLS.length) {
@@ -180,7 +230,8 @@ export class FederisSchoolDirectoryService {
     this.schemaReady = true;
   }
 
-  /** Traduit une ligne du dataset vers les colonnes de la table. */
+  /** Traduit une ligne du dataset vers les colonnes de la table
+   *  (téléphones normalisés au nouveau plan « 01 … »). */
   private toEntryData(s: DirectorySchoolRaw) {
     return {
       countryCode: 'BJ',
@@ -194,9 +245,9 @@ export class FederisSchoolDirectoryService {
       arrondissement: s.arrondissement,
       cycle: s.cycle,
       founderName: s.founderName,
-      founderPhone: s.founderPhone,
+      founderPhone: normalizeBeninPhone(s.founderPhone),
       directorName: s.directorName,
-      directorPhone: s.directorPhone,
+      directorPhone: normalizeBeninPhone(s.directorPhone),
       classesSummary: s.classesAuthorized,
       metadata: { source: 'DES-2022-2023', country: 'Bénin' },
     };
@@ -281,11 +332,15 @@ export class FederisSchoolDirectoryService {
         : {}),
     };
 
+    // ⭐ Limite ajustable : 25 par défaut (autocomplétion inline) ; le modal
+    //    de sélection demande la liste intégrale (limit 2000 — plafonné).
+    const take = Math.min(Math.max(Number(dto.limit ?? 25) || 25, 1), 2000);
+
     const [entries, total, communes] = await Promise.all([
       this.prisma.schoolDirectoryEntry.findMany({
         where,
         orderBy: [{ name: 'asc' }],
-        take: 25,
+        take,
         select: this.ENTRY_SELECT,
       }),
       this.prisma.schoolDirectoryEntry.count({
@@ -301,6 +356,8 @@ export class FederisSchoolDirectoryService {
     return {
       entries: entries.map((e) => ({
         ...e,
+        founderPhone: normalizeBeninPhone(e.founderPhone),
+        directorPhone: normalizeBeninPhone(e.directorPhone),
         cycleLabel: cycleLabel(e.cycle),
       })),
       departments,

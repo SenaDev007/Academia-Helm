@@ -30,6 +30,11 @@ import FederisSupervisorsTab from './FederisSupervisorsTab';
 import SchoolDirectoryPicker, {
   type DirectoryEntry,
 } from './SchoolDirectoryPicker';
+// ⭐ 2026-09-30 (retour utilisateur) — le bouton « Ajouter un centre » ouvre
+//    une FENÊTRE listant TOUS les établissements du département (scroll +
+//    recherche intégrée) : clic = fiche du centre pré-remplie ; si le nom
+//    ne figure pas au répertoire, on ferme et on saisit les champs à la main.
+import SchoolDirectoryModal from './SchoolDirectoryModal';
 
 interface Room {
   id: string;
@@ -72,6 +77,9 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
   const [notice, setNotice] = useState<string | null>(null);
 
   const [showCenterForm, setShowCenterForm] = useState(false);
+  // ⭐ Fenêtre du répertoire officiel — point d'entrée de la création d'un
+  //    centre d'accueil (liste intégrale scrollable + recherche intégrée).
+  const [showDirectoryModal, setShowDirectoryModal] = useState(false);
   const [centerForm, setCenterForm] = useState({ code: '', name: '', address: '', contactName: '', contactPhone: '' });
   const [roomFormTarget, setRoomFormTarget] = useState<string | null>(null);
   const [roomForm, setRoomForm] = useState({ code: '', name: '', capacity: '', building: '', floor: '' });
@@ -208,7 +216,16 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
           </div>
           {canOrganize && tab === 'centres' && (
             <button
-              onClick={() => setShowCenterForm((v) => !v)}
+              onClick={() => {
+                // ⭐ Formulaire ouvert → fermeture ; sinon → FENÊTRE du
+                //    répertoire officiel (établissement absent du répertoire
+                //    → « Saisir manuellement » puis champs à la main).
+                if (showCenterForm) {
+                  setShowCenterForm(false);
+                } else {
+                  setShowDirectoryModal(true);
+                }
+              }}
               disabled={!examId}
               className="fed-btn-gold px-4 py-2.5 text-sm disabled:opacity-40"
             >
@@ -326,7 +343,7 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
             <div>
               <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">Téléphone</label>
               <input value={centerForm.contactPhone} onChange={(e) => setCenterForm({ ...centerForm, contactPhone: e.target.value })}
-                placeholder="+229…" className="fed-input-light px-4 py-3 font-semibold" />
+                placeholder="01 …" className="fed-input-light px-4 py-3 font-semibold" />
             </div>
           </div>
           <div className="flex justify-end">
@@ -513,6 +530,24 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
           userRole={userRole}
         />
       )}
+
+      {/* ⭐ FENÊTRE du répertoire officiel — point d'entrée de la création
+          d'un centre d'accueil : tous les établissements du département,
+          scrollables et filtrables ; clic = fiche pré-remplie ; « Saisir
+          manuellement » ouvre le formulaire vierge (nom absent du
+          répertoire). */}
+      <SchoolDirectoryModal
+        open={showDirectoryModal}
+        onClose={() => setShowDirectoryModal(false)}
+        onPick={(entry) => {
+          pickDirectoryCenter(entry);
+          setShowCenterForm(true);
+        }}
+        onManual={() => {
+          setShowCenterForm(true);
+        }}
+        context="center"
+      />
     </FedPage>
   );
 }

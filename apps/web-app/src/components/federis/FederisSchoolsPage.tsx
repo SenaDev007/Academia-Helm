@@ -30,6 +30,11 @@ import FederisSchoolDetail from '@/components/federis/FederisSchoolDetail';
 import SchoolDirectoryPicker, {
   type DirectoryEntry,
 } from '@/components/federis/SchoolDirectoryPicker';
+// ⭐ 2026-09-30 (retour utilisateur) — le bouton « Créer une école hors
+//    Academia Helm » ouvre une FENÊTRE listant TOUS les établissements du
+//    département (scroll + recherche intégrée) : le patronat voit tout, même
+//    sans connaître l'orthographe exacte d'un nom — clic = fiche pré-remplie.
+import SchoolDirectoryModal from '@/components/federis/SchoolDirectoryModal';
 
 interface LinkedSchool {
   id: string;
@@ -303,7 +308,7 @@ function ManualSchoolFormFields({
               value={manualForm.phone}
               onChange={(e) => setManualForm({ ...manualForm, phone: e.target.value })}
               className="fed-input-light px-4 py-2"
-              placeholder="+229 …"
+              placeholder="01 …"
             />
           </div>
           <div>
@@ -365,6 +370,9 @@ export default function FederisSchoolsPage() {
 
   // École manuelle
   const [showManual, setShowManual] = useState(false);
+  // ⭐ Fenêtre du répertoire officiel (liste intégrale + recherche) — point
+  //    d'entrée de la création d'une école hors Academia Helm.
+  const [showDirectoryModal, setShowDirectoryModal] = useState(false);
   const [manualForm, setManualForm] = useState(EMPTY_MANUAL_FORM);
   const [manualErrors, setManualErrors] = useState<Record<string, string>>({});
   const [submittingManual, setSubmittingManual] = useState(false);
@@ -681,7 +689,17 @@ export default function FederisSchoolsPage() {
         </div>
         <button
           type="button"
-          onClick={() => setShowManual((v) => !v)}
+          onClick={() => {
+            // ⭐ Formulaire ouvert → fermeture ; sinon → FENÊTRE du répertoire
+            //    officiel : liste intégrale scrollable du département +
+            //    recherche intégrée. « Saisir manuellement » dans la fenêtre
+            //    ouvre le formulaire vierge (établissement absent).
+            if (showManual) {
+              setShowManual(false);
+            } else {
+              setShowDirectoryModal(true);
+            }
+          }}
           className="fed-btn-gold px-4 py-2.5 text-sm flex-shrink-0"
         >
           <AppIcon name={showManual ? 'close' : 'add'} size="submenu" />
@@ -1106,6 +1124,26 @@ export default function FederisSchoolsPage() {
           )}
         </section>
       )}
+
+      {/* ⭐ FENÊTRE du répertoire officiel — point d'entrée de la création
+          d'une école hors Academia Helm : tous les établissements du
+          département, scrollables et filtrables ; clic = fiche pré-remplie. */}
+      <SchoolDirectoryModal
+        open={showDirectoryModal}
+        onClose={() => setShowDirectoryModal(false)}
+        onPick={(entry) => {
+          handlePickDirectoryEntry(entry);
+          setShowManual(true);
+        }}
+        onManual={() => {
+          // Établissement absent du répertoire → formulaire vierge
+          setDirectoryPick(null);
+          setManualForm(EMPTY_MANUAL_FORM);
+          setManualErrors({});
+          setShowManual(true);
+        }}
+        context="school"
+      />
     </FedPage>
   );
 }

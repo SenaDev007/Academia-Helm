@@ -345,6 +345,8 @@ export class FederisPatronatController {
     @Query('q') q?: string,
     @Query('level') level?: string,
     @Query('sector') sector?: string,
+    /** ⭐ Modal de sélection : liste intégrale du département (limit=2000). */
+    @Query('limit') limit?: string,
   ) {
     const patronat = await this.patronatService.resolvePatronat(
       req.user.tenantId,
@@ -354,6 +356,7 @@ export class FederisPatronatController {
       q,
       level,
       sector,
+      limit: limit ? Number(limit) : undefined,
     });
   }
 

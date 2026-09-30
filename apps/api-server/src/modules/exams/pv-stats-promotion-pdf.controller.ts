@@ -90,8 +90,9 @@ export class PvStatsPromotionPdfController {
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
     const branding = await this.getTenantBranding(resolvedTenantId);
-    branding.isSecondary = this.resolveIsSecondary(body.scopeLevel);
-    const buffer = await this.pdfService.generateProcVerbalPdf({ ...body, branding });
+    const isSecondary = this.resolveIsSecondary(body.scopeLevel);
+    branding.isSecondary = isSecondary;
+    const buffer = await this.pdfService.generateProcVerbalPdf({ ...body, branding, isSecondary });
     const safeClass = (body.className || 'classe').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
     const safePeriod = (body.periodName || 'periode').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
     const modePrefix = body.pvMode === 'annuel' ? 'pv_annuel' : body.pvMode === 'trimestriel' ? 'pv_trimestriel' : 'pv_evaluation';
@@ -118,8 +119,9 @@ export class PvStatsPromotionPdfController {
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
     const branding = await this.getTenantBranding(resolvedTenantId);
-    branding.isSecondary = this.resolveIsSecondary(body.scopeLevel);
-    const buffer = await this.pdfService.generateStatsPdf({ ...body, branding });
+    const isSecondary = this.resolveIsSecondary(body.scopeLevel);
+    branding.isSecondary = isSecondary;
+    const buffer = await this.pdfService.generateStatsPdf({ ...body, branding, isSecondary });
     const safeClass = (body.className || 'classe').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
     const safeSubtab = body.subTab || 'stats';
     const modePrefix = body.statMode === 'annuel' ? 'stats_annuel' : body.statMode === 'trimestriel' ? 'stats_trimestriel' : 'stats_evaluation';
@@ -146,8 +148,9 @@ export class PvStatsPromotionPdfController {
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
     const branding = await this.getTenantBranding(resolvedTenantId);
-    branding.isSecondary = this.resolveIsSecondary(body.scopeLevel);
-    const buffer = await this.pdfService.generatePromotionPdf({ ...body, branding });
+    const isSecondary = this.resolveIsSecondary(body.scopeLevel);
+    branding.isSecondary = isSecondary;
+    const buffer = await this.pdfService.generatePromotionPdf({ ...body, branding, isSecondary });
     const safeClass = (body.className || 'classe').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
     res.set({
       'Content-Type': 'application/pdf',

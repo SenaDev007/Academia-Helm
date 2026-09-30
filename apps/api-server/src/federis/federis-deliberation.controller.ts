@@ -11,9 +11,14 @@
  *   POST /federis/deliberations/:id/cases/:caseId    — trancher un cas
  *   POST /federis/deliberations/:id/close            — clôturer
  *   POST /federis/deliberations/:id/publish          — publier + notifs parents
+ *      ⭐ T26 : body optionnel { publicLinkHours } → durée de vie du lien
+ *      public provisoire de consultation (défaut 720 h = 30 jours).
  *   POST /federis/exams/:examId/releves/dispatch     — envoyer les relevés
  *        de notes aux écoles (distribution intelligente par candidat)
  *   GET  /federis/exams/:examId/results              — résultats détaillés
+ *   POST /federis/exams/:examId/public-link           — ⭐ T26 générer/régénérer
+ *   POST /federis/exams/:examId/public-link/extend    — ⭐ T26 prolonger
+ *   POST /federis/exams/:examId/public-link/revoke    — ⭐ T26 révoquer
  */
 
 import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
@@ -23,6 +28,8 @@ import {
   FederisDeliberationService,
   RunDeliberationDto,
   DecideCaseDto,
+  PublishResultsDto,
+  PublicLinkDto,
 } from './federis-deliberation.service';
 
 @Controller('federis')
@@ -93,11 +100,58 @@ export class FederisDeliberationController {
   async publishResults(
     @Req() req: any,
     @Param('deliberationId') deliberationId: string,
+    @Body() dto: PublishResultsDto,
   ) {
     return this.deliberationService.publishResults(
       req.user.tenantId,
       this.uid(req),
       deliberationId,
+      dto?.publicLinkHours,
+    );
+  }
+
+  // ── ⭐ T26 — Lien public provisoire de consultation (parents) ────────────
+
+  /** Génère/régénère le lien public de consultation des résultats publiés. */
+  @UseGuards(JwtAuthGuard)
+  @Post('exams/:examId/public-link')
+  async createPublicLink(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Body() dto: PublicLinkDto,
+  ) {
+    return this.deliberationService.createPublicLink(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+      dto?.durationHours,
+    );
+  }
+
+  /** Prolonge la durée de vie du lien public (nouvelle expiration). */
+  @UseGuards(JwtAuthGuard)
+  @Post('exams/:examId/public-link/extend')
+  async extendPublicLink(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Body() dto: PublicLinkDto,
+  ) {
+    return this.deliberationService.extendPublicLink(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+      dto?.durationHours,
+    );
+  }
+
+  /** Révoque immédiatement le lien public (page parents inaccessible). */
+  @UseGuards(JwtAuthGuard)
+  @Post('exams/:examId/public-link/revoke')
+  async revokePublicLink(@Req() req: any, @Param('examId') examId: string) {
+    return this.deliberationService.revokePublicLink(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
     );
   }
 

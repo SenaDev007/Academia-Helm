@@ -62,6 +62,12 @@ import {
   Users,
   X,
   AlertTriangle,
+  Link2,
+  Copy,
+  Check,
+  Clock,
+  RefreshCw,
+  Ban,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
@@ -153,8 +159,61 @@ interface BoardData {
   };
   deliberation: DeliberationInfo | null;
   dispatch: { dispatchedCount: number; lastDispatchAt: string | null; schoolsCount: number };
+  /** ⭐ T26 — lien public provisoire de consultation (parents). */
+  publicLink: {
+    active: boolean;
+    token: string | null;
+    path: string | null;
+    createdAt: string | null;
+    expiresAt: string | null;
+    revokedAt: string | null;
+    durationHours: number | null;
+  } | null;
   admissibles: BoardRow[];
   ajournes: BoardRow[];
+}
+
+/** ⭐ T26 — durées proposées pour le lien public de consultation. */
+const LINK_DURATION_OPTIONS: Array<{ hours: number; label: string }> = [
+  { hours: 24, label: '24 heures' },
+  { hours: 72, label: '3 jours' },
+  { hours: 168, label: '1 semaine' },
+  { hours: 360, label: '15 jours' },
+  { hours: 720, label: '30 jours (recommandé)' },
+  { hours: 2160, label: '3 mois' },
+  { hours: 8760, label: '1 an' },
+];
+const DEFAULT_LINK_HOURS = 720;
+
+/** URL absolue du lien public : ${origin}/federis/resultats/${token}.
+ *  Le middleware sert /federis/* tel quel sur le domaine principal ET les
+ *  sous-domaines satellites (academiafederis, patronatXXX) — une seule forme. */
+function publicResultUrl(token: string | null | undefined): string {
+  if (!token) return '';
+  if (typeof window === 'undefined') return `/federis/resultats/${token}`;
+  return `${window.location.origin}/federis/resultats/${token}`;
+}
+
+/** Formate la date d'expiration (fr). */
+function fmtDateFr(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('fr-FR', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+/** Temps restant lisible avant expiration (« 29 jours », « 5 heures »…). */
+function timeLeft(expiresAt: string | null | undefined): string | null {
+  if (!expiresAt) return null;
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (ms <= 0) return 'expiré';
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours < 1) return 'moins d\u2019une heure';
+  if (hours < 24) return `${hours} heure(s)`;
+  const days = Math.floor(hours / 24);
+  return `${days} jour(s)`;
 }
 
 const EXAM_TYPES: Array<{ type: ExamType; label: string }> = [
@@ -211,7 +270,12 @@ function decisionPill(row: BoardRow): { label: string; className: string } {
     case 'EN_ATTENTE':
       return { label: 'Cas du jury', className: 'bg-amber-100 text-amber-800' };
     default:
-      return { label: 'À délibérer', className: 'bg-slate-100 text-slate-500' };
+      // ⭐ T26 — repli défensif : le board ne produit plus de NON_DELIBERE
+      // (sans moyenne → Ajourné), on honore néanmoins le label serveur.
+      return {
+        label: row.decisionLabel || 'Ajourné (non évalué)',
+        className: 'bg-slate-100 text-slate-500',
+      };
   }
 }
 
@@ -265,6 +329,13 @@ export default function FederisDeliberationsPage({
   // ⭐ Confirmations professionnelles (remplacent les window.confirm génériques)
   const [confirmDispatch, setConfirmDispatch] = useState(false);
   const [confirmPublish, setConfirmPublish] = useState(false);
+
+  // ⭐ T26 — Lien public de consultation des résultats (parents)
+  const [publishLinkHours, setPublishLinkHours] = useState(DEFAULT_LINK_HOURS);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [linkModal, setLinkModal] = useState<null | { mode: 'create' | 'extend' }>(null);
+  const [linkModalHours, setLinkModalHours] = useState(DEFAULT_LINK_HOURS);
+  const [confirmRevokeLink, setConfirmRevokeLink] = useState(false);
 
   // Panneau des cas limites
   const [casesOpen, setCasesOpen] = useState(false);
@@ -450,14 +521,18 @@ export default function FederisDeliberationsPage({
     setError(null);
     setNotice(null);
     try {
+      // ⭐ T26 — durée de vie du lien public choisi dans la modale de publication
       const res = await apiClient.post(
         `/federis/deliberations/${board.deliberation.id}/publish`,
-        {},
+        { publicLinkHours: publishLinkHours },
         { timeout: 30000 },
       );
+      const linkUrl = publicResultUrl(res.data?.publicLink?.token);
       setNotice(
         `Résultats publiés — ${res.data?.admitted ?? 0} admis(e)s, ${res.data?.failed ?? 0} ajourné(e)s. ` +
-          (res.data?.message ?? 'Pensez à envoyer les relevés de notes aux écoles.'),
+          (linkUrl
+            ? `Lien de consultation des parents (valide jusqu'au ${fmtDateFr(res.data?.publicLink?.expiresAt)}) : ${linkUrl}`
+            : (res.data?.message ?? '')),
       );
       setConfirmPublish(false);
       await load(true);
@@ -465,6 +540,88 @@ export default function FederisDeliberationsPage({
       const msg = err?.response?.data?.message;
       setError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Publication impossible.');
       setConfirmPublish(false);
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  // ── ⭐ T26 — Actions du lien public de consultation ─────────────────────
+
+  const copyLink = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+    } catch {
+      // Repli : sélection manuelle (presse-papiers indisponible)
+      window.prompt('Copiez le lien de consultation :', url);
+    }
+  };
+
+  const doCreateLink = async () => {
+    if (!examId) return;
+    setWorking('link-create');
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiClient.post(
+        `/federis/exams/${examId}/public-link`,
+        { durationHours: linkModalHours },
+        { timeout: 20000 },
+      );
+      setNotice(
+        `Lien de consultation généré — valide jusqu'au ${fmtDateFr(res.data?.publicLink?.expiresAt)} : ${publicResultUrl(res.data?.publicLink?.token)}`,
+      );
+      setLinkModal(null);
+      await load(true);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      setError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Génération impossible.');
+      setLinkModal(null);
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  const doExtendLink = async () => {
+    if (!examId) return;
+    setWorking('link-extend');
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await apiClient.post(
+        `/federis/exams/${examId}/public-link/extend`,
+        { durationHours: linkModalHours },
+        { timeout: 20000 },
+      );
+      setNotice(
+        `Lien prolongé — nouvelle expiration le ${fmtDateFr(res.data?.publicLink?.expiresAt)}.`,
+      );
+      setLinkModal(null);
+      await load(true);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      setError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Prolongation impossible.');
+      setLinkModal(null);
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  const doRevokeLink = async () => {
+    if (!examId) return;
+    setWorking('link-revoke');
+    setError(null);
+    setNotice(null);
+    try {
+      await apiClient.post(`/federis/exams/${examId}/public-link/revoke`, {}, { timeout: 20000 });
+      setNotice('Lien de consultation révoqué — la page des parents est désormais inaccessible.');
+      setConfirmRevokeLink(false);
+      await load(true);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message;
+      setError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Révocation impossible.');
+      setConfirmRevokeLink(false);
     } finally {
       setWorking(null);
     }
@@ -848,6 +1005,153 @@ export default function FederisDeliberationsPage({
             </div>
           )}
 
+          {/* ⭐ T26 — LIEN PUBLIC DE CONSULTATION (parents) : généré à la
+              publication, durée de vie paramétrable, révocable à tout moment. */}
+          {board.exam.status === 'RESULTS_PUBLISHED' && board.publicLink?.token && (
+            <div
+              className={cn(
+                'rounded-xl border px-4 py-4 space-y-3',
+                board.publicLink.active
+                  ? 'bg-blue-50/70 border-blue-200'
+                  : 'bg-slate-50 border-slate-200',
+              )}
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-wrap">
+                <Link2
+                  className={cn(
+                    'w-5 h-5 shrink-0',
+                    board.publicLink.active ? 'text-blue-900' : 'text-slate-400',
+                  )}
+                />
+                <div className="flex-1 min-w-[240px]">
+                  <p className="text-xs font-bold text-blue-900 uppercase tracking-wide">
+                    Lien de consultation des résultats — parents
+                  </p>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    {board.publicLink.active ? (
+                      <>
+                        Actif — expire le {fmtDateFr(board.publicLink.expiresAt)} (
+                        {timeLeft(board.publicLink.expiresAt)} restant). Les parents
+                        recherchent leur enfant par <b>nom</b>, <b>numéro de table</b> ou{' '}
+                        <b>matricule</b>.
+                      </>
+                    ) : board.publicLink.revokedAt ? (
+                      <>
+                        Révoqué le {fmtDateFr(board.publicLink.revokedAt)} — la page des
+                        parents est inaccessible. Générez un nouveau lien pour la rouvrir
+                        (nouveau token).
+                      </>
+                    ) : (
+                      <>
+                        Expiré le {fmtDateFr(board.publicLink.expiresAt)} — générez un
+                        nouveau lien pour rouvrir la consultation.
+                      </>
+                    )}
+                  </p>
+                </div>
+                <span
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase shrink-0',
+                    board.publicLink.active
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-slate-200 text-slate-600',
+                  )}
+                >
+                  {board.publicLink.active ? 'Actif' : board.publicLink.revokedAt ? 'Révoqué' : 'Expiré'}
+                </span>
+              </div>
+
+              {/* URL copiable */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <code className="flex-1 min-w-[220px] bg-white border border-slate-200 rounded-lg px-3 py-2 text-[11px] font-mono text-blue-900 break-all">
+                  {publicResultUrl(board.publicLink.token)}
+                </code>
+                <button
+                  onClick={() => copyLink(publicResultUrl(board.publicLink!.token ?? ''))}
+                  disabled={!board.publicLink.active}
+                  className="px-4 py-2 rounded-xl text-[10px] font-bold uppercase bg-white border border-blue-900/25 text-blue-900 hover:bg-blue-50 disabled:opacity-40 inline-flex items-center gap-2 shrink-0"
+                >
+                  {copiedLink ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-600" /> Copié
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" /> Copier
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Actions du lien — coordonnateur uniquement */}
+              {canPublish && (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {board.publicLink.active ? (
+                    <>
+                      <button
+                        onClick={() => {
+                          setLinkModalHours(board.publicLink?.durationHours ?? DEFAULT_LINK_HOURS);
+                          setLinkModal({ mode: 'extend' });
+                        }}
+                        disabled={working !== null}
+                        className="px-4 py-2 rounded-xl text-[10px] font-bold uppercase bg-white border border-blue-900/25 text-blue-900 hover:bg-blue-50 disabled:opacity-50 inline-flex items-center gap-2"
+                      >
+                        <Clock className="w-4 h-4" />
+                        Prolonger
+                      </button>
+                      <button
+                        onClick={() => setConfirmRevokeLink(true)}
+                        disabled={working !== null}
+                        className="px-4 py-2 rounded-xl text-[10px] font-bold uppercase bg-white border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50 inline-flex items-center gap-2"
+                      >
+                        <Ban className="w-4 h-4" />
+                        Révoquer maintenant
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setLinkModalHours(DEFAULT_LINK_HOURS);
+                        setLinkModal({ mode: 'create' });
+                      }}
+                      disabled={working !== null}
+                      className="fed-btn-navy px-4 py-2 text-[10px] font-bold uppercase disabled:opacity-50 inline-flex items-center gap-2"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Générer un nouveau lien
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ⭐ T26 — résultats publiés SANS lien (ex. publications antérieures
+              à la T26) : le coordonnateur peut générer le lien à tout moment. */}
+          {board.exam.status === 'RESULTS_PUBLISHED' &&
+            !board.publicLink?.token &&
+            canPublish && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap">
+                <Link2 className="w-4 h-4 text-blue-900 shrink-0" />
+                <p className="text-xs text-blue-900 flex-1 min-w-[240px]">
+                  Aucun lien de consultation parents pour cette publication — générez-en
+                  un pour permettre aux parents de vérifier les résultats par nom, numéro
+                  de table ou matricule.
+                </p>
+                <button
+                  onClick={() => {
+                    setLinkModalHours(DEFAULT_LINK_HOURS);
+                    setLinkModal({ mode: 'create' });
+                  }}
+                  disabled={working !== null}
+                  className="fed-btn-navy px-4 py-2 text-[10px] font-bold uppercase disabled:opacity-50 inline-flex items-center gap-2 shrink-0"
+                >
+                  <Link2 className="w-4 h-4" />
+                  Générer le lien
+                </button>
+              </div>
+            )}
+
           {/* Session de saisie (renvoi vers Notes et Moyennes) */}
           {!hasNotes && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
@@ -1164,6 +1468,7 @@ export default function FederisDeliberationsPage({
                 { label: 'Examen', value: `${board.exam.code} — ${board.exam.name}` },
                 { label: 'Candidats', value: board.stats.totalCandidates },
                 { label: 'Admissibles', value: board.stats.admissibles },
+                { label: 'Ajourné(e)s', value: board.stats.ajournes },
                 { label: 'Écoles destinataires', value: board.dispatch.schoolsCount },
               ]
             : undefined
@@ -1214,12 +1519,164 @@ export default function FederisDeliberationsPage({
             verrouillées et l&apos;examen passe en « Résultats publiés ».
           </>
         }
-        note="Pensez ensuite à envoyer les relevés de notes aux écoles."
+        note={
+          <>
+            Pensez ensuite à envoyer les relevés de notes aux écoles —{' '}
+            <b>admissibles et ajournés</b> (chaque candidat reçoit son relevé dans
+            son école).
+          </>
+        }
         confirmLabel="Publier les résultats"
         cancelLabel="Annuler"
         loading={working === 'publish'}
         onConfirm={publishResults}
         onCancel={() => setConfirmPublish(false)}
+      >
+        {/* ⭐ T26 — durée de vie du lien public de consultation (parents) */}
+        <div className="bg-[#f7f9fc] border border-slate-200 rounded-xl px-4 py-3.5 space-y-2.5">
+          <div className="flex items-center gap-2">
+            <Link2 className="w-4 h-4 text-blue-900 shrink-0" />
+            <p className="text-[11px] font-bold text-blue-900 uppercase tracking-wide">
+              Lien de consultation pour les parents
+            </p>
+          </div>
+          <p className="text-[11px] text-slate-600 leading-relaxed">
+            La publication génère un <b>lien provisoire</b> : les parents y
+            recherchent leur enfant par nom, numéro de table ou matricule et
+            consultent sa décision finale. Choisissez après combien de temps le
+            lien sera automatiquement révoqué (modifiable plus tard).
+          </p>
+          <div>
+            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1.5">
+              Durée de validité du lien
+            </label>
+            <select
+              value={publishLinkHours}
+              onChange={(e) => setPublishLinkHours(Number(e.target.value))}
+              className="fed-input-light px-3 py-2 text-xs font-bold !w-auto"
+            >
+              {LINK_DURATION_OPTIONS.map((opt) => (
+                <option key={opt.hours} value={opt.hours}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </FederisConfirmModal>
+
+      {/* ⭐ T26 — Modale durée du lien (générer / prolonger). */}
+      {linkModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+            onClick={() => setLinkModal(null)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-blue-900">
+                  {linkModal.mode === 'create'
+                    ? 'Générer un lien de consultation'
+                    : 'Prolonger le lien de consultation'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  {linkModal.mode === 'create'
+                    ? 'Un nouveau token est généré — l’ancien lien (le cas échéant) devient invalide.'
+                    : 'Le lien actuel est conservé — seule la date d’expiration change.'}
+                </p>
+              </div>
+              <button
+                onClick={() => setLinkModal(null)}
+                className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
+                aria-label="Fermer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1.5">
+                Nouvelle durée de validité
+              </label>
+              <select
+                value={linkModalHours}
+                onChange={(e) => setLinkModalHours(Number(e.target.value))}
+                className="fed-input-light px-4 py-2.5 text-sm font-bold w-full"
+              >
+                {LINK_DURATION_OPTIONS.map((opt) => (
+                  <option key={opt.hours} value={opt.hours}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+              <p className="text-[11px] text-blue-900 leading-relaxed">
+                Passée cette durée, la page des parents affiche « lien expiré » —
+                vous pourrez alors prolonger ou régénérer le lien à tout moment.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                onClick={() => setLinkModal(null)}
+                className="px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase bg-white border border-slate-200 text-slate-600"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={linkModal.mode === 'create' ? doCreateLink : doExtendLink}
+                disabled={working !== null}
+                className="fed-btn-navy px-5 py-2.5 text-[10px] font-bold uppercase disabled:opacity-50 inline-flex items-center gap-2"
+              >
+                {working === 'link-create' || working === 'link-extend' ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Link2 className="w-4 h-4" />
+                )}
+                {linkModal.mode === 'create' ? 'Générer le lien' : 'Prolonger'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⭐ T26 — Modale de révocation du lien public (destructif). */}
+      <FederisConfirmModal
+        open={confirmRevokeLink}
+        title="Révoquer le lien de consultation ?"
+        message={
+          <>
+            La page de consultation des parents devient <b>immédiatement inaccessible</b>{' '}
+            (lien expiré pour tous les visiteurs). Un nouveau lien pourra être généré
+            ensuite, avec un nouveau token.
+          </>
+        }
+        icon={Ban}
+        tone="red"
+        details={
+          board?.publicLink
+            ? [
+                { label: 'Examen', value: `${board.exam.code} — ${board.exam.name}` },
+                {
+                  label: 'Expire sinon le',
+                  value: fmtDateFr(board.publicLink.expiresAt),
+                },
+              ]
+            : undefined
+        }
+        warning={
+          <>
+            Les parents qui ont encore le lien recevront le message « lien révoqué ».
+          </>
+        }
+        confirmLabel="Révoquer maintenant"
+        cancelLabel="Annuler"
+        loading={working === 'link-revoke'}
+        onConfirm={doRevokeLink}
+        onCancel={() => setConfirmRevokeLink(false)}
       />
     </FedPage>
   );

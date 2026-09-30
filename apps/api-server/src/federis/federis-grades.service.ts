@@ -1828,6 +1828,22 @@ export class FederisGradesService {
     };
   }
 
+  /**
+   * ⭐ T26 (2026-10-01) — Portail PUBLIC de consultation des résultats
+   * (parents) : payload relevés SANS contexte utilisateur — la validité du
+   * LIEN TOKEN fait foi (vérifiée par FederisPublicResultsService AVANT cet
+   * appel : examen publié + lien non révoqué + non expiré).
+   *
+   * Jamais exposé directement : consommé uniquement par le service public
+   * qui n'en diffuse que les champs strictement nécessaires (identité de
+   * l'élève, notes, moyenne, décision — aucun contact ni PII sensible).
+   */
+  async getRelevesForPublicExam(tenantId: string, examId: string) {
+    const ds = await this.buildGradesDataset(tenantId, examId);
+    const header = await this.loadPatronatHeaderInfo(tenantId);
+    return this.buildRelevesPayload(ds, header, undefined);
+  }
+
   /** En-tête patronat du relevé officiel : nom, territoire, coordonnateur
    *  (signataire) — remplace le bloc ministériel du modèle officiel. */
   /** (public — réutilisé par FederisPdfService pour l.en-tête du relevé officiel) */

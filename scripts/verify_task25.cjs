@@ -328,8 +328,11 @@ check('Relevés : bouton « Envoyer aux écoles » ouvre la modale (pas l\'envoi
 
 const delCallsConfirm = (delSrc.match(/window\.confirm\(/g) || []).length;
 check('Délibération : zéro window.confirm', delCallsConfirm === 0);
-check('Délibération : 2 modales (dispatch gold + publish emerald)',
-  (delSrc.match(/<FederisConfirmModal/g) || []).length === 2 &&
+// ⭐ T26 (mise à jour du harnais) : la T26 ajoute une 3ᵉ modale
+//    (révocation du lien public de consultation) — on exige désormais
+//    AU MOINS les 2 modales T25, leurs titres restant inchangés.
+check('Délibération : modales pro (dispatch gold + publish emerald, ≥ 2)',
+  (delSrc.match(/<FederisConfirmModal/g) || []).length >= 2 &&
   /title="Envoyer les relevés de notes aux écoles \?"/.test(delSrc) &&
   /title="Publier officiellement les résultats \?"/.test(delSrc));
 check('Délibération : modale publication — avertissement IRRÉVERSIBLE',

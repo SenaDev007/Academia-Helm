@@ -25,6 +25,13 @@
  *       ledger ExamDocument + notification de direction — les écoles
  *       consultent dans Examen → Examens nationaux → Délibération et relevés)
  *   7. Consultation              GET  /federis/exams/:examId/results
+ *   8. Lien public parents (T26) POST /federis/exams/:examId/public-link
+ *      (générer/régénérer) · /public-link/extend (prolonger) ·
+ *      /public-link/revoke (révoquer) — coordonnateur uniquement ; la
+ *      PUBLICATION génère automatiquement le lien provisoire de consultation
+ *      (recherche parents par nom / n° de table / matricule, durée de vie
+ *      paramétrable) servi par FederisPublicResultsService (routes publiques
+ *      /federis/public/results/:token — token + expiration, zéro auth).
  *
  * Règles transverses :
  *   - NO ACADEMIC YEAR = NO DATA ; jamais de suppression physique
@@ -42,6 +49,7 @@ import {
   NotFoundException,
   Logger,
 } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../database/prisma.service';
 import { NotificationService } from '../notifications/notification.service';
 import { FederisPatronatService } from './federis-patronat.service';
@@ -59,7 +67,16 @@ import {
 
 // ⭐ FIX 2026-09-29 — décorateurs class-validator OBLIGATOIRES (ValidationPipe
 //    global whitelist + forbidNonWhitelisted, pattern federis-patronat.service).
-import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class RunDeliberationDto {
   /** Nom officiel du jury (ex. « Jury national BEPC 2026 — Session principale »). */
@@ -80,6 +97,25 @@ export class DecideCaseDto {
   comments?: string;
 }
 
+/** ⭐ T26 (2026-10-01) — corps de la publication : durée de vie du lien public
+ *    de consultation des résultats (heures). Défaut backend 720 h = 30 jours. */
+export class PublishResultsDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(PUBLIC_LINK_MAX_HOURS) // 1 an maximum
+  publicLinkHours?: number;
+}
+
+/** ⭐ T26 — corps de génération/prolongation du lien public (heures). */
+export class PublicLinkDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(PUBLIC_LINK_MAX_HOURS)
+  durationHours?: number;
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Mention nationale (barème standard). */
@@ -93,6 +129,59 @@ function mentionFor(average: number): string {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+// ── ⭐ T26 (2026-10-01) — Lien public provisoire de consultation ─────────────
+
+/** Durée de vie par défaut du lien public : 30 jours. */
+export const PUBLIC_LINK_DEFAULT_HOURS = 720;
+/** Durée maximale : 1 an (8760 h). */
+export const PUBLIC_LINK_MAX_HOURS = 8760;
+
+/** Vue du lien public renvoyée au patronat (board + actions de gestion). */
+export interface PublicLinkView {
+  active: boolean;
+  token: string | null;
+  path: string | null;
+  createdAt: string | null;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  durationHours: number | null;
+}
+
+/** Borde la durée demandée du lien public (défaut 30 jours, max 1 an). */
+export function clampPublicLinkHours(hours?: number | null): number {
+  const v = Number(hours);
+  if (!Number.isFinite(v) || v <= 0) return PUBLIC_LINK_DEFAULT_HOURS;
+  return Math.min(Math.max(Math.round(v), 1), PUBLIC_LINK_MAX_HOURS);
+}
+
+/**
+ * Construit la vue patronat du lien public depuis NationalExam.metadata.
+ * Actif = résultats publiés + non révoqué + non expiré.
+ */
+export function publicLinkViewOf(exam: {
+  status: string;
+  metadata: unknown;
+}): PublicLinkView | null {
+  const link = (exam.metadata as any)?.publicResultLink;
+  if (!link?.token) return null;
+  const expiresAt: string | null = link.expiresAt ?? null;
+  const revokedAt: string | null = link.revokedAt ?? null;
+  const active =
+    exam.status === 'RESULTS_PUBLISHED' &&
+    !revokedAt &&
+    !!expiresAt &&
+    new Date(expiresAt).getTime() > Date.now();
+  return {
+    active,
+    token: link.token as string,
+    path: `/federis/resultats/${link.token}`,
+    createdAt: link.createdAt ?? null,
+    expiresAt,
+    revokedAt,
+    durationHours: link.durationHours ?? null,
+  };
 }
 
 /** Normalisation insensible à la casse/accents pour le matching élève ↔ candidat. */
@@ -278,7 +367,10 @@ export class FederisDeliberationService {
 
       let decision: DeliberationDecision = 'NON_DELIBERE';
       let source: DecisionSource = 'PROJECTION';
-      let decisionLabel = 'À délibérer';
+      // ⭐ T26 — repli défensif aligné sur la règle du jury : même la valeur
+      // d'initialisation ne peut plus afficher « À délibérer » (toutes les
+      // branches ci-dessous couvrent tous les cas de moyenne).
+      let decisionLabel = 'Ajourné (non évalué)';
 
       const finalDecision = meta?.finalDecision ?? meta?.decision;
       if (finalDecision === 'ADMIS' || finalDecision === 'AJOURNE') {
@@ -300,8 +392,13 @@ export class FederisDeliberationService {
       } else if (latest) {
         source = 'JURY';
         if (moyenne === null) {
-          decision = hasRows ? 'AJOURNE' : 'NON_DELIBERE';
-          decisionLabel = hasRows ? 'Ajourné (sans note)' : 'À délibérer';
+          // ⭐ T26 (2026-10-01) — PLUS JAMAIS « À délibérer » une fois le jury
+          // convoqué : sans moyenne calculable → AJOURNÉ (pattern Helm « absent
+          // à toutes les épreuves = ajourné ») — a composé sans moyenne =
+          // « Ajourné (sans moyenne) » ; aucune ligne de note = « Ajourné
+          // (non évalué) » (terme demandé par le patronat).
+          decision = 'AJOURNE';
+          decisionLabel = hasRows ? 'Ajourné (sans moyenne)' : 'Ajourné (non évalué)';
         } else if (moyenne >= activeThresholds.passMark) {
           decision = 'ADMIS';
           decisionLabel = 'Admis';
@@ -315,8 +412,13 @@ export class FederisDeliberationService {
       } else {
         // Projection au seuil des règles effectives (aucune délibération lancée)
         if (moyenne === null) {
-          decision = 'NON_DELIBERE';
-          decisionLabel = hasRows ? 'Ajourné (sans note)' : 'À délibérer';
+          // ⭐ T26 — projection alignée sur la règle du jury : sans moyenne →
+          // AJOURNÉ projeté (plus jamais « À délibérer » dans la liste des
+          // ajournés — cohérent avec le pattern Helm).
+          decision = 'AJOURNE';
+          decisionLabel = hasRows
+            ? 'Ajourné (sans moyenne, projeté)'
+            : 'Ajourné (non évalué, projeté)';
         } else if (moyenne >= activeThresholds.passMark) {
           decision = 'ADMIS';
           decisionLabel = 'Admis (projeté)';
@@ -368,6 +470,9 @@ export class FederisDeliberationService {
     };
 
     const dispatchDates = dispatchDocs.map((d) => d.publishedAt).filter(Boolean) as Date[];
+
+    // ⭐ T26 — vue du lien public de consultation (gestion patronat).
+    const publicLink = publicLinkViewOf(exam);
 
     return {
       exam: {
@@ -433,6 +538,7 @@ export class FederisDeliberationService {
           dispatchDocs.map((d) => (d.metadata as any)?.schoolTenantId).filter(Boolean),
         ).size,
       },
+      publicLink,
       admissibles,
       ajournes,
     };
@@ -771,7 +877,12 @@ export class FederisDeliberationService {
 
   // ── 5. PUBLICATION + NOTIFICATIONS PARENTS (via Academia Helm) ────────────
 
-  async publishResults(tenantId: string, userId: string, deliberationId: string) {
+  async publishResults(
+    tenantId: string,
+    userId: string,
+    deliberationId: string,
+    publicLinkHours?: number,
+  ) {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertPublish(fn);
 
@@ -807,10 +918,20 @@ export class FederisDeliberationService {
     // pattern Promotion Helm : sans note → AJOURNÉ)
     const decisions = new Map<
       string,
-      { decision: string; mention: string | null; average: number | null }
+      { decision: string; mention: string | null; average: number | null; notEvaluated?: boolean }
     >();
+    let notEvaluatedCount = 0;
     for (const c of ds.candidates) {
-      if (Object.keys(c.scores).length === 0) continue; // jamais délibéré
+      // ⭐ T26 (2026-10-01) — un candidat SANS AUCUNE ligne de note n'est plus
+      // écarté de la publication : il est AJOURNÉ « non évalué » (pattern Helm
+      // « absent à toutes les épreuves = ajourné » — demande patronat). La
+      // mise à jour ExamResult est un no-op pour lui (aucune ligne) mais la
+      // décision est comptée, publiée côté board et notifiée aux parents.
+      if (Object.keys(c.scores).length === 0) {
+        decisions.set(c.id, { decision: 'AJOURNE', mention: null, average: null, notEvaluated: true });
+        notEvaluatedCount++;
+        continue;
+      }
       const average = ds.computed.get(c.id)?.finalAverage ?? null;
       if (approvedCases.has(c.id)) {
         decisions.set(c.id, {
@@ -835,9 +956,19 @@ export class FederisDeliberationService {
 
     const publishedAt = new Date();
 
+    // ⭐ T26 — LIEN PUBLIC PROVISOIRE de consultation des résultats (parents :
+    // recherche par nom / n° de table / matricule). Généré à la publication,
+    // durée de vie paramétrable par le patronat (défaut 30 jours), révocable
+    // à tout moment (module Délibération → carte « Lien de consultation »).
+    const linkDurationHours = clampPublicLinkHours(publicLinkHours);
+    const linkToken = randomBytes(16).toString('hex');
+    const linkExpiresAt = new Date(publishedAt.getTime() + linkDurationHours * 3600_000);
+
     // Transaction : publication des résultats + statuts examen/délibération
     await this.prisma.$transaction(async (tx) => {
       for (const [candidateId, dec] of decisions) {
+        // No-op silencieux pour les candidats non évalués (aucune ligne
+        // ExamResult) — leur décision vit dans le board + les compteurs.
         await tx.examResult.updateMany({
           where: { examId: d.examId, candidateId, tenantId: patronat.tenantId },
           data: {
@@ -868,7 +999,22 @@ export class FederisDeliberationService {
       });
       await tx.nationalExam.update({
         where: { id: d.examId },
-        data: { status: 'RESULTS_PUBLISHED', totalCandidates: d.totalCandidates },
+        data: {
+          status: 'RESULTS_PUBLISHED',
+          totalCandidates: d.totalCandidates,
+          metadata: {
+            ...((d.exam.metadata as any) ?? {}),
+            publicResultLink: {
+              token: linkToken,
+              createdAt: publishedAt.toISOString(),
+              expiresAt: linkExpiresAt.toISOString(),
+              durationHours: linkDurationHours,
+              publishedAt: publishedAt.toISOString(),
+              publishedBy: userId,
+              revokedAt: null,
+            },
+          },
+        },
       });
     });
 
@@ -886,6 +1032,8 @@ export class FederisDeliberationService {
             examCode: d.exam.code,
             publishedAt: publishedAt.toISOString(),
             candidates: decisions.size,
+            notEvaluated: notEvaluatedCount,
+            publicLink: { durationHours: linkDurationHours, expiresAt: linkExpiresAt.toISOString() },
           },
         },
       })
@@ -907,11 +1055,202 @@ export class FederisDeliberationService {
       candidatesPublished: decisions.size,
       admitted: [...decisions.values()].filter((v) => v.decision === 'ADMIS').length,
       failed: [...decisions.values()].filter((v) => v.decision === 'AJOURNE').length,
+      notEvaluated: notEvaluatedCount,
       successRate: d.successRate,
       notifications: notificationReport,
+      // ⭐ T26 — lien public provisoire (copier/partager aux parents).
+      publicLink: {
+        active: true,
+        token: linkToken,
+        path: `/federis/resultats/${linkToken}`,
+        createdAt: publishedAt.toISOString(),
+        expiresAt: linkExpiresAt.toISOString(),
+        revokedAt: null,
+        durationHours: linkDurationHours,
+      } satisfies PublicLinkView,
       message:
-        'Résultats publiés — pensez à envoyer les relevés de notes aux écoles (bouton « Envoyer les relevés »).',
+        'Résultats publiés — un lien provisoire de consultation a été généré pour les parents ' +
+        `(valide ${linkDurationHours} h). Pensez à envoyer les relevés de notes aux écoles (bouton « Envoyer les relevés »).`,
     };
+  }
+
+  // ── ⭐ T26 (2026-10-01) — GESTION DU LIEN PUBLIC DE CONSULTATION ──────────
+
+  /**
+   * Génère (ou régénère) le lien public de consultation des résultats d'un
+   * examen PUBLIÉ. Un NOUVEAU token invalide l'ancien lien (rotation).
+   * Coordonnateur uniquement (assertPublish).
+   */
+  async createPublicLink(
+    tenantId: string,
+    userId: string,
+    examId: string,
+    durationHours?: number,
+  ): Promise<{ publicLink: PublicLinkView }> {
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertPublish(fn);
+
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    if (exam.status !== 'RESULTS_PUBLISHED') {
+      throw new BadRequestException(
+        'Les résultats doivent être publiés avant de générer un lien de consultation.',
+      );
+    }
+
+    const hours = clampPublicLinkHours(durationHours);
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + hours * 3600_000);
+    const token = randomBytes(16).toString('hex');
+
+    const updated = await this.prisma.nationalExam.update({
+      where: { id: examId },
+      data: {
+        metadata: {
+          ...((exam.metadata as any) ?? {}),
+          publicResultLink: {
+            token,
+            createdAt: now.toISOString(),
+            expiresAt: expiresAt.toISOString(),
+            durationHours: hours,
+            publishedAt: now.toISOString(),
+            publishedBy: userId,
+            revokedAt: null,
+          },
+        },
+      },
+    });
+
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_PUBLIC_LINK_CREATED',
+          resource: 'NationalExam',
+          resourceId: examId,
+          tableName: 'national_exams',
+          recordId: examId,
+          newData: { examCode: exam.code, durationHours: hours, expiresAt: expiresAt.toISOString() },
+        },
+      })
+      .catch(() => undefined);
+
+    return { publicLink: publicLinkViewOf(updated) };
+  }
+
+  /**
+   * Prolonge le lien public existant : nouvelle expiration = maintenant +
+   * durée demandée (défaut 30 jours). Le token est conservé.
+   */
+  async extendPublicLink(
+    tenantId: string,
+    userId: string,
+    examId: string,
+    durationHours?: number,
+  ): Promise<{ publicLink: PublicLinkView }> {
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertPublish(fn);
+
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const link = (exam.metadata as any)?.publicResultLink;
+    if (!link?.token) {
+      throw new BadRequestException(
+        'Aucun lien de consultation n’existe pour cet examen — générez-en un d’abord.',
+      );
+    }
+    if (link.revokedAt) {
+      throw new BadRequestException(
+        'Ce lien a été révoqué — générez un nouveau lien (nouveau token).',
+      );
+    }
+
+    const hours = clampPublicLinkHours(durationHours);
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + hours * 3600_000);
+
+    const updated = await this.prisma.nationalExam.update({
+      where: { id: examId },
+      data: {
+        metadata: {
+          ...((exam.metadata as any) ?? {}),
+          publicResultLink: {
+            ...link,
+            expiresAt: expiresAt.toISOString(),
+            durationHours: hours,
+            extendedAt: now.toISOString(),
+            extendedBy: userId,
+          },
+        },
+      },
+    });
+
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_PUBLIC_LINK_EXTENDED',
+          resource: 'NationalExam',
+          resourceId: examId,
+          tableName: 'national_exams',
+          recordId: examId,
+          newData: { examCode: exam.code, durationHours: hours, expiresAt: expiresAt.toISOString() },
+        },
+      })
+      .catch(() => undefined);
+
+    return { publicLink: publicLinkViewOf(updated) };
+  }
+
+  /**
+   * Révoque immédiatement le lien public : la page de consultation des
+   * parents refuse toute requête dès l’instant de révocation.
+   */
+  async revokePublicLink(
+    tenantId: string,
+    userId: string,
+    examId: string,
+  ): Promise<{ publicLink: PublicLinkView }> {
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertPublish(fn);
+
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const link = (exam.metadata as any)?.publicResultLink;
+    if (!link?.token) {
+      throw new BadRequestException('Aucun lien de consultation à révoquer.');
+    }
+    if (link.revokedAt) {
+      throw new BadRequestException('Ce lien est déjà révoqué.');
+    }
+
+    const now = new Date();
+    const updated = await this.prisma.nationalExam.update({
+      where: { id: examId },
+      data: {
+        metadata: {
+          ...((exam.metadata as any) ?? {}),
+          publicResultLink: { ...link, revokedAt: now.toISOString(), revokedBy: userId },
+        },
+      },
+    });
+
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_PUBLIC_LINK_REVOKED',
+          resource: 'NationalExam',
+          resourceId: examId,
+          tableName: 'national_exams',
+          recordId: examId,
+          newData: { examCode: exam.code, revokedAt: now.toISOString() },
+        },
+      })
+      .catch(() => undefined);
+
+    this.logger.log(`Lien public de consultation révoqué pour l’examen ${exam.code}.`);
+    return { publicLink: publicLinkViewOf(updated) };
   }
 
   /**
@@ -1083,7 +1422,9 @@ export class FederisDeliberationService {
     const board = await this.getDeliberationBoard(tenantId, userId, examId);
     const deliberation = board.deliberation;
 
-    // Candidats délibérés (ayant composé / au moins une ligne de note)
+    // ⭐ T26 — Candidats envoiables : admissibles ET AJOURNÉS, y compris les
+    // candidats sans aucune note (« Ajourné (non évalué) » depuis la T26) :
+    // chaque candidat inscrit reçoit son relevé de notes dans son école.
     const dispatchable = [...board.admissibles, ...board.ajournes].filter(
       (r) => r.decision !== 'NON_DELIBERE',
     );

@@ -9,7 +9,8 @@
  *
  * Réutilisée par :
  *   - FederisDeliberationsPage — « Envoyer les relevés » / « Publier les
- *     résultats » (workflow du jury) ;
+ *     résultats » (workflow du jury — T26 : embarque le sélecteur de durée du
+ *     lien public parents via children) ;
  *   - FederisGradeRelevesTab — « Envoyer aux écoles » (sous-onglet Relevé de
  *     notes du module Délibération).
  *
@@ -44,6 +45,9 @@ export interface FederisConfirmModalProps {
   note?: React.ReactNode;
   /** Avertissement (bloc ambre) — ex. caractère définitif. */
   warning?: React.ReactNode;
+  /** ⭐ T26 — Contenu additionnel (ex. sélecteur de durée du lien public)
+   *    rendu entre l'avertissement et les boutons d'action. */
+  children?: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   /** Désactive le bouton de confirmation ( traitement en cours). */
@@ -87,6 +91,7 @@ export default function FederisConfirmModal({
   details,
   note,
   warning,
+  children,
   confirmLabel = 'Confirmer',
   cancelLabel = 'Annuler',
   loading = false,
@@ -200,6 +205,9 @@ export default function FederisConfirmModal({
               <p className="text-[11px] text-amber-800 leading-relaxed">{warning}</p>
             </div>
           )}
+
+          {/* ⭐ T26 — Contenu additionnel (sélecteurs, options…). */}
+          {children}
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-2 pt-1">

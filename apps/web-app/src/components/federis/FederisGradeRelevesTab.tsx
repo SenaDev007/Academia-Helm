@@ -504,9 +504,10 @@ export default function FederisGradeRelevesTab({
         ]}
         note={
           <>
-            L&apos;envoi exige que la <b>délibération du jury</b> ait été lancée (onglet
-            « Délibération » de ce module). Un nouvel envoi actualise les documents déjà
-            distribués (décisions à jour).
+            Sont envoyés les relevés de <b>tous les candidats délibérés — admissibles
+            comme ajournés</b> (y compris « Ajourné (non évalué) »). L&apos;envoi exige
+            que la <b>délibération du jury</b> ait été lancée (onglet « Délibération »
+            de ce module). Un nouvel envoi actualise les documents déjà distribués.
           </>
         }
         confirmLabel="Envoyer aux écoles"

@@ -83,6 +83,11 @@ import { FederisGradingRulesService } from './federis-grading-rules.service';
 import { FederisSchoolDirectoryService } from './federis-school-directory.service';
 // ⭐ 2026-09-30 — exports Excel « Centres, salles & Surveillants »
 import { FederisLogisticsExportService } from './federis-logistics-export.service';
+// ⭐ 2026-10-01 (T26) — Portail public provisoire de consultation des
+//    résultats : lien token partagé par le patronat, recherche parents par
+//    nom / n° de table / matricule (routes @Public, expiration paramétrable)
+import { FederisPublicResultsService } from './federis-public-results.service';
+import { FederisPublicResultsController } from './federis-public-results.controller';
 
 @Module({
   imports: [BillingModule, CommunicationModule],
@@ -104,6 +109,7 @@ import { FederisLogisticsExportService } from './federis-logistics-export.servic
     FederisGradesController,
     FederisSubjectsController,
     FederisSaisieController,
+    FederisPublicResultsController,
   ],
   providers: [
     FederisService,
@@ -135,6 +141,7 @@ import { FederisLogisticsExportService } from './federis-logistics-export.servic
     FederisGradingRulesService,
     FederisSchoolDirectoryService,
     FederisSaisieService,
+    FederisPublicResultsService,
   ],
   exports: [
     FederisService,

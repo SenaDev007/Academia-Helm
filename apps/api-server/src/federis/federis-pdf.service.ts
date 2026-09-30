@@ -88,6 +88,30 @@ function mentionFor(average: number): string {
   return 'Passable';
 }
 
+// ⭐ 2026-09-30 — Comparateur naturel des numéros de table. Les numéros sont
+//    désormais ALIGNÉS sur la salle (« S01-001 », « S02-014 »…) : un tri
+//    alphabétique ou un parseInt() placerait « S01-100 » avant « S01-99 » ou
+//    tomberait sur NaN. On décompose {code salle}-{séquence} puis on trie
+//    par salle puis par numéro ; les anciens formats (« 001 ») restent
+//    triés numériquement (compatibilité des campagnes déjà numérotées).
+function compareTableNumbers(a?: string | null, b?: string | null): number {
+  const parse = (v?: string | null) => {
+    if (!v) return null;
+    const m = /^(.*?)-(\d+)$/.exec(v.trim());
+    if (m) return { room: m[1], num: parseInt(m[2], 10) };
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? { room: '', num: n } : null;
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  if (pa && pb) {
+    if (pa.room !== pb.room) return pa.room.localeCompare(pb.room, 'fr');
+    if (pa.num !== pb.num) return pa.num - pb.num;
+    return 0;
+  }
+  return (a ?? '').localeCompare(b ?? '', 'fr');
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
@@ -286,9 +310,9 @@ export class FederisPdfService {
       const roomCandidates = candidates
         .filter((c) => c.roomId === room.id)
         .sort((a, b) => {
-          const na = parseInt(a.tableNumber ?? '', 10);
-          const nb = parseInt(b.tableNumber ?? '', 10);
-          if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+          // ⭐ Tri naturel des n° de table « S01-001 » (salle puis séquence)
+          const cmp = compareTableNumbers(a.tableNumber, b.tableNumber);
+          if (cmp !== 0) return cmp;
           return `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`, 'fr');
         });
       if (roomCandidates.length === 0) continue;

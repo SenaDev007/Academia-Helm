@@ -1121,8 +1121,44 @@ export class FederisSupervisorsService {
       if (ok) notifiedSchools++;
     }
 
+    // ⭐ 2026-09-30 — TRANSMISSION AUTOMATIQUE aux enseignants : dès la
+    //    validation de la répartition, chaque enseignant est notifié dans
+    //    son interface (notification in-app). L'horodatage teacherNotifiedAt
+    //    n'est posé QUE si la notification a réellement été délivrée — la
+    //    colonne « Transmission » du registre patronat reflète ainsi
+    //    immédiatement l'état réel (plus de « En attente école » permanent
+    //    alors que l'affectation est déjà validée).
+    const createdIds = created.map((s) => s.id);
+    const detailed = createdIds.length
+      ? await this.prisma.examSupervisor.findMany({
+          where: { id: { in: createdIds } },
+          include: {
+            center: { select: { name: true, code: true, address: true } },
+            room: { select: { name: true, code: true } },
+            exam: { select: { name: true, code: true } },
+          },
+        })
+      : [];
+    let transmitted = 0;
+    let withoutAccount = 0;
+    for (const supervisor of detailed) {
+      const ok = await this.sendTeacherNotification(supervisor);
+      if (ok) {
+        transmitted++;
+        await this.prisma.examSupervisor
+          .update({
+            where: { id: supervisor.id },
+            data: { teacherNotifiedAt: new Date() },
+          })
+          .catch(() => undefined);
+      } else {
+        withoutAccount++;
+      }
+    }
+
     this.logger.log(
-      `Répartition validée — ${created.length} affectation(s), ${bySchoolTenant.size} école(s), ${notifiedSchools} notifiée(s).`,
+      `Répartition validée — ${created.length} affectation(s), ${bySchoolTenant.size} école(s), ` +
+        `${notifiedSchools} notifiée(s), ${transmitted} enseignant(s) notifié(s) directement.`,
     );
 
     return {
@@ -1133,6 +1169,8 @@ export class FederisSupervisorsService {
         count: info.items.length,
       })),
       notifiedSchools,
+      transmitted,
+      withoutAccount,
     };
   }
 
@@ -1420,6 +1458,10 @@ export class FederisSupervisorsService {
         id: a.id,
         firstName: a.firstName,
         lastName: a.lastName,
+        // ⭐ 2026-09-30 — identifiant de l'enseignant : rapprochement fiable
+        //    « enseignant envoyé ↔ affectation reçue » côté Helm (le nom
+        //    seul casse si l'école renvoie sa liste avec une autre orthographe).
+        teacherId: a.teacherId,
         phone: a.phone,
         email: a.email,
         exam: a.exam,
@@ -1617,10 +1659,15 @@ export class FederisSupervisorsService {
 
     const notified = await this.sendTeacherNotification(supervisor);
 
-    await this.prisma.examSupervisor.update({
-      where: { id: supervisorId },
-      data: { teacherNotifiedAt: new Date() },
-    });
+    // ⭐ 2026-09-30 — n'horodate QUE si la notification a été délivrée :
+    //    avant, le statut passait « Transmise » même pour un enseignant
+    //    sans compte utilisateur (fausse information pour le patronat).
+    if (notified) {
+      await this.prisma.examSupervisor.update({
+        where: { id: supervisorId },
+        data: { teacherNotifiedAt: new Date() },
+      });
+    }
 
     return {
       supervisorId,
@@ -1653,13 +1700,14 @@ export class FederisSupervisorsService {
       const ok = await this.sendTeacherNotification(supervisor);
       if (ok) {
         notified++;
+        // ⭐ N'horodate QUE les transmissions réellement délivrées
+        await this.prisma.examSupervisor.update({
+          where: { id: supervisor.id },
+          data: { teacherNotifiedAt: new Date() },
+        });
       } else {
         withoutAccount++;
       }
-      await this.prisma.examSupervisor.update({
-        where: { id: supervisor.id },
-        data: { teacherNotifiedAt: new Date() },
-      });
     }
 
     return { total: pending.length, notified, withoutAccount };

@@ -71,6 +71,7 @@ import {
   classMatchesExam,
   federisLevelMatchesType,
   resolveSeriesFromClassNames,
+  candidateIdentityKey,
   type NationalExamType,
 } from './federis-exam-matching';
 
@@ -836,14 +837,35 @@ export class FederisSchoolExamsService {
         : await this.prisma.examCandidate.count({ where: { tenantId: patronatTenantId } });
 
       // Candidats existants de cette école pour cet examen (par metadata.studentId)
+      // ⭐ 2026-09-30 — ANTI-DOUBLONS : on charge TOUS les candidats de
+      //    l'examen (et pas seulement ceux de cette école). En plus du
+      //    rapprochement par studentId, le rapprochement par IDENTITÉ
+      //    (prénom + nom + date de naissance) évite de créer une SECONDE
+      //    ligne pour un élève déjà importé par le patronat (Excel) ou
+      //    ajouté manuellement — un doublon se retrouvait affecté à DEUX
+      //    centres lors de la génération des numéros de table.
       const existing = await this.prisma.examCandidate.findMany({
-        where: { examId: exam.id, schoolTenantId: tenantId },
-        select: { id: true, matricule: true, status: true, metadata: true },
+        where: { examId: exam.id },
+        select: {
+          id: true,
+          matricule: true,
+          status: true,
+          metadata: true,
+          schoolTenantId: true,
+          firstName: true,
+          lastName: true,
+          dateOfBirth: true,
+        },
       });
       const existingByStudent = new Map<string, (typeof existing)[number]>();
       for (const c of existing) {
         const sid = (c.metadata as any)?.studentId;
-        if (sid) existingByStudent.set(sid, c);
+        if (sid && c.schoolTenantId === tenantId) existingByStudent.set(sid, c);
+      }
+      const existingByIdentity = new Map<string, (typeof existing)[number]>();
+      for (const c of existing) {
+        const key = candidateIdentityKey(c.firstName, c.lastName, c.dateOfBirth);
+        if (!existingByIdentity.has(key)) existingByIdentity.set(key, c);
       }
 
       const selectedSet = new Set(studentIds);
@@ -884,6 +906,43 @@ export class FederisSchoolExamsService {
             });
             updated++;
           } else {
+            // ⭐ 2026-09-30 — Rapprochement par IDENTITÉ avant création : un
+            //    candidat identique (prénom + nom + date de naissance) existe
+            //    déjà sur l'examen (import patronat Excel, ajout manuel,
+            //    envoi d'une autre voie) → on MET À JOUR cette ligne et on
+            //    la rattache à l'élève au lieu d'en créer une nouvelle.
+            const sameIdentity = existingByIdentity.get(
+              candidateIdentityKey(s.firstName, s.lastName, s.dateOfBirth),
+            );
+            if (
+              sameIdentity &&
+              (!sameIdentity.schoolTenantId || sameIdentity.schoolTenantId === tenantId)
+            ) {
+              await tx.examCandidate.update({
+                where: { id: sameIdentity.id },
+                data: {
+                  firstName: s.firstName,
+                  lastName: s.lastName,
+                  dateOfBirth: s.dateOfBirth,
+                  gender: s.gender,
+                  schoolTenantId: tenantId,
+                  patronatSchoolId: target.linkId,
+                  status: 'REGISTERED',
+                  metadata: {
+                    ...((sameIdentity.metadata as any) ?? {}),
+                    studentId: sid,
+                    studentMatricule: s.matricule ?? s.studentCode ?? null,
+                    schoolClass: klass,
+                    // ⭐ Série (Bac) — l'envoi est traité PAR SÉRIE côté patronat
+                    ...(series ? { series } : {}),
+                    schoolName: school.name,
+                    submissionUpdatedAt: new Date().toISOString(),
+                  },
+                },
+              });
+              updated++;
+              continue;
+            }
             if (yearCount + created + 1 > plan.maxCandidates) {
               throw new BadRequestException(
                 `Quota de candidats de l'offre ${plan.name} du patronat ${target.patronatName} dépassé (${plan.maxCandidates} max). Le patronat doit passer à l'offre Institution.`,

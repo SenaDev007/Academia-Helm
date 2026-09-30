@@ -81,6 +81,10 @@ interface SchoolAssignment {
   id: string;
   firstName: string;
   lastName: string;
+  /** ⭐ 2026-09-30 — identifiant de l'enseignant : rapprochement fiable
+   *  « enseignant envoyé ↔ affectation reçue » (le nom seul casse si
+   *  l'école renvoie sa liste avec une autre orthographe). */
+  teacherId?: string | null;
   phone: string | null;
   email: string | null;
   exam: { id: string; code: string; name: string } | null;
@@ -100,9 +104,17 @@ interface OverviewResponse {
   assignments: SchoolAssignment[];
 }
 
-/** Clé de rapprochement enseignant ↔ affectation (demande + identité). */
+/** Clé de rapprochement enseignant ↔ affectation (identité normalisée :
+ *  casse, accents et espaces superflus neutralisés). */
 function personKey(firstName?: string | null, lastName?: string | null): string {
-  return `${(firstName ?? '').trim().toLowerCase()}|${(lastName ?? '').trim().toLowerCase()}`;
+  const norm = (v?: string | null) =>
+    (v ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  return `${norm(firstName)}|${norm(lastName)}`;
 }
 
 const frDate = (iso?: string | null) =>
@@ -143,21 +155,49 @@ export function SchoolSupervisorsTab() {
   const [notifyingId, setNotifyingId] = useState<string | null>(null);
   const [notifyingAll, setNotifyingAll] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent;
+    if (!silent) setLoading(true);
     try {
       const res = await apiClient.get('/federis/school/supervisors', { timeout: 20000 });
       setOverview(res.data ?? null);
+      if (!silent) setError(null);
     } catch (err: any) {
-      setError(err?.response?.data?.message ?? 'Impossible de charger les demandes de surveillants.');
+      // Rechargement silencieux : on conserve les données déjà affichées
+      if (!silent) {
+        setError(err?.response?.data?.message ?? 'Impossible de charger les demandes de surveillants.');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  // ⭐ 2026-09-30 — FRAÎCHEUR DES DONNÉES : les affectations du patronat
+  //    arrivent à tout moment. Avant, la vue n'était chargée qu'au montage
+  //    → « En attente d'affectation par le patronat » et « Affectations
+  //    reçues » incomplètes tant que la page n'était pas rechargée. On
+  //    recharge maintenant : au changement de sous-onglet, au retour de
+  //    focus sur l'onglet, et périodiquement (45 s) si l'onglet est visible.
+  useEffect(() => {
+    void load({ silent: true });
+  }, [subTab, load]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void load({ silent: true });
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    const interval = setInterval(refresh, 45000);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+      clearInterval(interval);
+    };
   }, [load]);
 
   // ── Ouverture de la sélection d'enseignants ─────────────────────────────
@@ -280,20 +320,34 @@ export function SchoolSupervisorsTab() {
   // ⭐ Demandes avec liste d'enseignants déjà envoyée (sous-onglet « envoyés »)
   const submittedRequests = (overview?.requests ?? []).filter((r) => r.mySubmission);
 
-  // ⭐ Rapprochement enseignant envoyé ↔ affectation reçue (par demande + nom)
-  const assignmentsByRequestAndName = useMemo(() => {
-    const map = new Map<string, SchoolAssignment>();
+  // ⭐ Rapprochement enseignant envoyé ↔ affectation reçue — par
+  //    teacherId (fiable) PUIS par identité de secours (anciennes données
+  //    sans teacherId ou orthographe modifiée lors d'un renvoi de liste).
+  const assignmentLookup = useMemo(() => {
+    const byTeacher = new Map<string, SchoolAssignment>();
+    const byName = new Map<string, SchoolAssignment>();
     for (const a of overview?.assignments ?? []) {
       if (!a.requestId) continue;
-      map.set(`${a.requestId}::${personKey(a.firstName, a.lastName)}`, a);
+      if (a.teacherId) byTeacher.set(`${a.requestId}::${a.teacherId}`, a);
+      byName.set(`${a.requestId}::${personKey(a.firstName, a.lastName)}`, a);
     }
-    return map;
+    return { byTeacher, byName };
   }, [overview?.assignments]);
+
+  const findAssignment = (
+    requestId: string,
+    teacherId?: string,
+    firstName?: string,
+    lastName?: string,
+  ): SchoolAssignment | undefined =>
+    (teacherId ? assignmentLookup.byTeacher.get(`${requestId}::${teacherId}`) : undefined) ??
+    assignmentLookup.byName.get(`${requestId}::${personKey(firstName, lastName)}`);
 
   const totalSubmittedTeachers = submittedRequests.reduce(
     (s, r) => s + (r.mySubmission?.teachersCount ?? 0),
     0,
   );
+  const assignmentsCount = (overview?.assignments ?? []).length;
 
   return (
     <div className="space-y-8">
@@ -349,7 +403,12 @@ export function SchoolSupervisorsTab() {
           [
             { key: 'demandes', label: 'Demandes reçues' },
             { key: 'envoyes', label: `Enseignants envoyés${totalSubmittedTeachers > 0 ? ` (${totalSubmittedTeachers})` : ''}` },
-            { key: 'affectations', label: 'Affectations reçues' },
+            // ⭐ 2026-09-30 — compteur d'affectations reçues (tous postes :
+            // surveillance, correction et secrétariat)
+            {
+              key: 'affectations',
+              label: `Affectations reçues${assignmentsCount > 0 ? ` (${assignmentsCount})` : ''}`,
+            },
           ] as const
         ).map((t) => (
           <button
@@ -521,8 +580,11 @@ export function SchoolSupervisorsTab() {
                           </p>
                         ) : (
                           sentTeachers.map((t) => {
-                            const assignment = assignmentsByRequestAndName.get(
-                              `${request.id}::${personKey(t.firstName, t.lastName)}`,
+                            const assignment = findAssignment(
+                              request.id,
+                              t.id,
+                              t.firstName,
+                              t.lastName,
                             );
                             return (
                               <div

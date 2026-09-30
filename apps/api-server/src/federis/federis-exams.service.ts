@@ -8,9 +8,14 @@
  *   4. Candidats                — ajout manuel + IMPORT EXCEL par lot
  *      (le fichier est analysé côté client avec SheetJS/xlsx — dépendance
  *      déjà présente dans web-app — puis les lignes sont envoyées en JSON)
- *   5. Numéros de table         — affectation automatique : répartition des
- *      candidats dans les salles selon leur capacité + numérotation
- *      séquentielle par centre (001, 002, …)
+ *   4 bis. Doublons             — une même identité ne figure JAMAIS deux
+ *      fois sur un examen (garde à l'import + envoi école, détection et
+ *      purge côté patronat) — sinon le candidat se retrouve dans 2 centres
+ *   5. Affectation aux centres  — MANUELLE : le patronat sélectionne des
+ *      candidats et les oriente vers UN centre (phase PRÉALABLE)
+ *   6. Numéros de table         — générés uniquement pour les candidats déjà
+ *      affectés à un centre ; numéro ALIGNÉ sur la salle :
+ *      {code salle}-{incrémentation} (ex. S01-001, S01-002… S02-001…)
  *
  * Règles transverses :
  *   - NO ACADEMIC YEAR = NO DATA : toute écriture exige l'année active
@@ -37,7 +42,10 @@ import { FederisSubjectsService } from './federis-subjects.service';
 //    sont regroupées PAR SÉRIE côté patronat (jamais un mélange).
 //    (FIX CYCLE D'IMPORTS 2026-09-30 : importé depuis le module feuille
 //    federis-exam-matching — cf. federis-patronat.service.ts.)
-import { resolveSeriesFromClassNames } from './federis-exam-matching';
+import {
+  resolveSeriesFromClassNames,
+  candidateIdentityKey,
+} from './federis-exam-matching';
 import {
   ALL_PATRONAT_FUNCTIONS,
   WRITE_CANDIDATES,
@@ -71,6 +79,7 @@ function isBacLevel(level: string | null | undefined): boolean {
 //    quand le DTO n'a aucune règle → double rejet 400 sur TOUS les POST/PATCH
 //    du workflow examens (pattern documenté dans federis-patronat.service.ts).
 import {
+  ArrayMinSize,
   IsArray,
   IsIn,
   IsInt,
@@ -370,27 +379,28 @@ export class AddCandidateDto {
 }
 
 export class AssignTablesDto {
-  /** Ordre de répartition : NAME (alphabétique) ou SCHOOL (par école puis nom). */
+  /** Ordre de répartition dans les salles : NAME (alphabétique) ou SCHOOL
+   *  (par école puis nom — mélange les écoles pour limiter la copie). */
   @IsOptional()
   @IsIn(['NAME', 'SCHOOL'])
   orderBy?: 'NAME' | 'SCHOOL';
+}
 
-  /**
-   * Portée de la numérotation :
-   *   CENTER (défaut) — séquentielle par centre ;
-   *   ROOM — redémarre dans CHAQUE salle (2026-09-29) ;
-   *   EXAM — globale à l'examen.
-   */
-  @IsOptional()
-  @IsIn(['CENTER', 'ROOM', 'EXAM'])
-  numberingScope?: 'CENTER' | 'ROOM' | 'EXAM';
+// ⭐ 2026-09-30 — Affectation MANUELLE des candidats aux centres (refonte du
+//    module Candidats) : le patronat sélectionne des candidats et les oriente
+//    vers UN centre donné. C'est la phase PRÉALABLE à la génération des
+//    numéros de table — un candidat sans centre ne peut pas être numéroté.
+export class AssignCandidatesToCenterDto {
+  /** Identifiants des candidats sélectionnés (1 à 2 000 par lot). */
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  candidateIds!: string[];
 
-  /** Premier numéro (défaut 1). */
+  /** Centre cible — absent / null = RETRAIT de l'affectation en cours. */
   @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(9999)
-  startNumber?: number;
+  @IsString()
+  centerId?: string | null;
 }
 
 // ── DTO : format de matricule (module Paramètres — 2026-09-29) ──────────────
@@ -1066,6 +1076,45 @@ export class FederisExamsService {
         (c as any).anonymatCode ?? anonymatById.get(c.id) ?? null,
     }));
 
+    // ⭐ 2026-09-30 — DOUBLONS D'IDENTITÉ sur l'examen (refonte module
+    //    Candidats) : une même personne inscrite plusieurs fois se retrouve
+    //    dans plusieurs centres après génération des numéros de table.
+    //    Balayage complet de l'examen → bandeau d'alerte + purge côté UI.
+    const identityRows = await this.prisma.examCandidate.findMany({
+      where: { examId: exam.id, status: { not: 'CANCELLED' } },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        dateOfBirth: true,
+        matricule: true,
+        tableNumber: true,
+      },
+    });
+    const identityGroups = new Map<string, typeof identityRows>();
+    for (const r of identityRows) {
+      const key = candidateIdentityKey(r.firstName, r.lastName, r.dateOfBirth);
+      const list = identityGroups.get(key) ?? [];
+      list.push(r);
+      identityGroups.set(key, list);
+    }
+    const duplicates = Array.from(identityGroups.entries())
+      .filter(([, list]) => list.length > 1)
+      .slice(0, 25)
+      .map(([key, list]) => ({
+        key,
+        count: list.length,
+        candidates: list.map((r) => ({
+          id: r.id,
+          name: `${r.lastName} ${r.firstName}`,
+          matricule: r.matricule,
+          tableNumber: r.tableNumber,
+        })),
+      }));
+    const duplicatesCount = Array.from(identityGroups.values()).filter(
+      (list) => list.length > 1,
+    ).length;
+
     return {
       exam: {
         id: exam.id,
@@ -1079,6 +1128,8 @@ export class FederisExamsService {
       withoutCenter: candidates.filter((c) => !c.centerId).length,
       withoutTable: candidates.filter((c) => !c.tableNumber).length,
       withoutAnonymat: candidates.filter((c) => !c.anonymatCode).length,
+      duplicates,
+      duplicatesCount,
       candidates: candidates.map((c) => ({
         id: c.id,
         registrationNumber: c.registrationNumber,
@@ -1439,6 +1490,22 @@ export class FederisExamsService {
         : [],
     );
 
+    // ⭐ 2026-09-30 — Dédoublonnage CONTRE LA BASE (refonte module Candidats) :
+    //    le contrôle précédent ne portait que sur le LOT courant — réimporter
+    //    le même fichier (ou importer un élève déjà transmis par son école)
+    //    créait une SECONDE ligne, et la génération des numéros de table
+    //    plaçait alors le même élève dans DEUX centres. On charge toutes les
+    //    identités de l'examen en une seule passe.
+    const existingExamCandidates = await this.prisma.examCandidate.findMany({
+      where: { examId: exam.id },
+      select: { firstName: true, lastName: true, dateOfBirth: true },
+    });
+    const existingIdentities = new Set(
+      existingExamCandidates.map((c) =>
+        candidateIdentityKey(c.firstName, c.lastName, c.dateOfBirth),
+      ),
+    );
+
     const toCreate: any[] = [];
 
     for (let i = 0; i < rows.length; i++) {
@@ -1464,9 +1531,18 @@ export class FederisExamsService {
       }
 
       const dob = row.dateOfBirth ? new Date(row.dateOfBirth) : null;
-      const identityKey = `${firstName.toLowerCase()}|${lastName.toLowerCase()}|${dob?.toISOString().slice(0, 10) ?? ''}`;
+      const identityKey = candidateIdentityKey(firstName, lastName, dob);
       if (seenIdentities.has(identityKey)) {
         report.errors.push(`Ligne ${line} : doublon dans le fichier (${firstName} ${lastName}) — ligne ignorée.`);
+        report.skipped++;
+        continue;
+      }
+      // ⭐ Déjà inscrit sur CET examen (import précédent, ajout manuel ou
+      //    liste officielle transmise par son école) — on ignore la ligne.
+      if (existingIdentities.has(identityKey)) {
+        report.errors.push(
+          `Ligne ${line} : ${firstName} ${lastName} est déjà inscrit(e) sur cet examen — ligne ignorée (doublon).`,
+        );
         report.skipped++;
         continue;
       }
@@ -1685,25 +1761,287 @@ export class FederisExamsService {
     };
   }
 
-  // ── 5. Affectation des numéros de table ──────────────────────────────────
+  // ── 5. Affectation MANUELLE des candidats aux centres (2026-09-30) ───────
+  //
+  // Le patronat ORIENTE les candidats : sélection → centre d'accueil. C'est
+  // la PHASE PRÉALABLE à la génération des numéros de table — un candidat
+  // sans centre ne peut pas recevoir de numéro. Changer de centre (ou retirer
+  // l'affectation) réinitialise la salle et le numéro de table issus de
+  // l'ancien centre ; l'occupation des salles libérées est recalculée.
 
-  /**
-   * Affectation automatique des candidats aux salles + numéros de table.
-   *
-   * Algorithme :
-   *   1. Candidats actifs (statut ≠ CANCELLED) triés — par école puis nom
-   *      (SCHOOL, défaut : mélange les écoles pour limiter la copie entre
-   *      voisins) ou alphabétique pur (NAME)
-   *   2. Parallélisation logistique : on remplit chaque salle du centre
-   *      jusqu'à sa capacité, centre par centre (ordre code)
-   *   3. Numérotation séquentielle :
-   *      • CENTER (défaut) — redémarre à chaque centre ;
-   *      • ROOM (2026-09-29) — redémarre dans CHAQUE SALLE de composition
-   *        (001, 002… par salle — repérage immédiat pour les surveillants) ;
-   *      • EXAM — globale à l'examen
-   *   4. Mise à jour transactionnelle : candidates.centerId/roomId/tableNumber
-   *      + salles currentOccupancy/status + audit
-   */
+  async assignCandidatesToCenter(
+    tenantId: string,
+    userId: string,
+    examId: string,
+    dto: AssignCandidatesToCenterDto,
+  ) {
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertWriteOrg(fn);
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    if (EXAM_BLOCKED_STATUSES.includes(exam.status)) {
+      throw new BadRequestException("Examen terminé ou annulé — affectation impossible.");
+    }
+
+    const candidateIds = Array.from(new Set(dto.candidateIds ?? []));
+    if (candidateIds.length === 0) {
+      throw new BadRequestException('Sélectionnez au moins un candidat.');
+    }
+    if (candidateIds.length > 2000) {
+      throw new BadRequestException('Affectation limitée à 2 000 candidats par lot.');
+    }
+
+    // Centre cible (absent / null = retrait de l'affectation en cours)
+    let center: { id: string; code: string; name: string } | null = null;
+    if (dto.centerId) {
+      center = await this.prisma.examCenter.findFirst({
+        where: {
+          id: dto.centerId,
+          tenantId: patronat.tenantId,
+          examId: exam.id,
+          status: { not: 'ARCHIVED' },
+        },
+        select: { id: true, code: true, name: true },
+      });
+      if (!center) {
+        throw new BadRequestException('Centre introuvable pour cet examen.');
+      }
+    }
+
+    const candidates = await this.prisma.examCandidate.findMany({
+      where: { examId: exam.id, id: { in: candidateIds }, status: { not: 'CANCELLED' } },
+      select: { id: true, centerId: true, roomId: true },
+    });
+    if (candidates.length === 0) {
+      throw new BadRequestException('Aucun candidat valide sélectionné sur cet examen.');
+    }
+
+    // Seuls les candidats dont le centre CHANGE sont réécrits (affecter à
+    // nouveau au même centre ne doit pas effacer une salle / un numéro déjà
+    // générés pour ce centre).
+    const toUpdate = candidates.filter((c) =>
+      center ? c.centerId !== center.id : !!c.centerId,
+    );
+    const unchanged = candidates.length - toUpdate.length;
+    const freedRoomIds = new Set<string>(
+      toUpdate.filter((c) => c.roomId).map((c) => c.roomId as string),
+    );
+
+    if (toUpdate.length > 0) {
+      await this.prisma.$transaction(async (tx) => {
+        for (const c of toUpdate) {
+          await tx.examCandidate.update({
+            where: { id: c.id },
+            data: center
+              ? { centerId: center.id, roomId: null, tableNumber: null }
+              : { centerId: null, roomId: null, tableNumber: null },
+          });
+        }
+        // Réoccupation des salles libérées par le déplacement
+        for (const roomId of freedRoomIds) {
+          const room = await tx.examRoom.findUnique({
+            where: { id: roomId },
+            select: { capacity: true },
+          });
+          if (!room) continue;
+          const occupancy = await tx.examCandidate.count({ where: { roomId } });
+          await tx.examRoom.update({
+            where: { id: roomId },
+            data: {
+              currentOccupancy: occupancy,
+              status: occupancy >= room.capacity ? 'FULL' : 'AVAILABLE',
+            },
+          });
+        }
+        await tx.auditLog.create({
+          data: {
+            tenantId: patronat.tenantId,
+            userId,
+            action: 'FEDERIS_CANDIDATES_CENTER_ASSIGNED',
+            resource: 'ExamCandidate',
+            resourceId: exam.id,
+            tableName: 'exam_candidates',
+            recordId: exam.id,
+            newData: {
+              exam: exam.code,
+              candidates: toUpdate.length,
+              center: center ? { code: center.code, name: center.name } : null,
+            },
+          },
+        });
+      });
+    }
+
+    this.logger.log(
+      `Affectation manuelle ${exam.code} : ${toUpdate.length} candidat(s) → ${center ? center.code : '(retrait)'} (${patronat.name})`,
+    );
+
+    const message = center
+      ? `${toUpdate.length} candidat(s) affecté(s) au centre ${center.code} — ${center.name}.` +
+        (unchanged > 0 ? ` ${unchanged} déjà affecté(s) à ce centre (inchangé(s)).` : '') +
+        ' Les salles et numéros de table seront attribués lors de la génération des numéros de table.'
+      : `${toUpdate.length} candidat(s) retiré(s) de leur centre d'examen (salle et n° de table réinitialisés).`;
+
+    return {
+      success: true,
+      updated: toUpdate.length,
+      unchanged,
+      center: center ? { id: center.id, code: center.code, name: center.name } : null,
+      message,
+    };
+  }
+
+  // ── 5 bis. Purge des doublons d'identité (2026-09-30) ─────────────────────
+  //
+  // Pour chaque groupe de lignes partageant la MÊME identité (prénom + nom +
+  // date de naissance), on conserve UNE seule ligne — la plus pertinente
+  // (inscrit > déjà numéroté > la plus ancienne) — et on supprime les autres.
+  // Les lignes liées à une délibération (contrainte d'intégrité) ne sont pas
+  // supprimées : elles sont signalées dans le rapport.
+
+  async purgeDuplicateCandidates(tenantId: string, userId: string, examId: string) {
+    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    this.assertWriteCandidates(fn);
+    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    if (EXAM_BLOCKED_STATUSES.includes(exam.status)) {
+      throw new BadRequestException("Examen terminé ou annulé — purge impossible.");
+    }
+
+    const rows = await this.prisma.examCandidate.findMany({
+      where: { examId: exam.id },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        dateOfBirth: true,
+        matricule: true,
+        status: true,
+        tableNumber: true,
+        createdAt: true,
+        roomId: true,
+      },
+    });
+
+    const groups = new Map<string, typeof rows>();
+    for (const r of rows) {
+      const key = candidateIdentityKey(r.firstName, r.lastName, r.dateOfBirth);
+      const list = groups.get(key) ?? [];
+      list.push(r);
+      groups.set(key, list);
+    }
+
+    let duplicateGroups = 0;
+    let purged = 0;
+    const notDeletable: string[] = [];
+    const freedRoomIds = new Set<string>();
+
+    for (const [, list] of groups) {
+      if (list.length < 2) continue;
+      duplicateGroups++;
+      // Gardien : inscrit (non retiré) > avec n° de table > le plus ancien
+      const ranked = [...list].sort((a, b) => {
+        const score = (r: (typeof list)[number]) =>
+          (r.status === 'REGISTERED' ? 2 : 0) + (r.tableNumber ? 1 : 0);
+        const diff = score(b) - score(a);
+        if (diff !== 0) return diff;
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      });
+      for (const r of ranked.slice(1)) {
+        if (r.roomId) freedRoomIds.add(r.roomId);
+        try {
+          await this.prisma.examCandidate.delete({ where: { id: r.id } });
+          purged++;
+        } catch {
+          notDeletable.push(`${r.firstName} ${r.lastName} (${r.matricule}) — données de délibération liées`);
+        }
+      }
+    }
+
+    if (duplicateGroups === 0) {
+      return {
+        success: true,
+        purged: 0,
+        groups: 0,
+        notDeletable: [],
+        message: 'Aucun doublon d’identité détecté sur cet examen.',
+      };
+    }
+
+    // Réoccupation des salles éventuellement libérées + effectif à jour
+    for (const roomId of freedRoomIds) {
+      const room = await this.prisma.examRoom.findUnique({
+        where: { id: roomId },
+        select: { capacity: true },
+      });
+      if (!room) continue;
+      const occupancy = await this.prisma.examCandidate.count({ where: { roomId } });
+      await this.prisma.examRoom
+        .update({
+          where: { id: roomId },
+          data: {
+            currentOccupancy: occupancy,
+            status: occupancy >= room.capacity ? 'FULL' : 'AVAILABLE',
+          },
+        })
+        .catch(() => undefined);
+    }
+    const activeCount = await this.prisma.examCandidate.count({
+      where: { examId: exam.id, status: { not: 'WITHDRAWN' } },
+    });
+    await this.prisma.nationalExam
+      .update({ where: { id: exam.id }, data: { totalCandidates: activeCount } })
+      .catch(() => undefined);
+    await this.prisma.auditLog
+      .create({
+        data: {
+          tenantId: patronat.tenantId,
+          userId,
+          action: 'FEDERIS_CANDIDATES_DUPLICATES_PURGED',
+          resource: 'ExamCandidate',
+          resourceId: exam.id,
+          tableName: 'exam_candidates',
+          recordId: exam.id,
+          newData: { exam: exam.code, purged, groups: duplicateGroups },
+        },
+      })
+      .catch(() => undefined);
+
+    this.logger.log(
+      `Purge doublons ${exam.code} : ${purged} ligne(s) supprimée(s) sur ${duplicateGroups} groupe(s) (${patronat.name})`,
+    );
+
+    return {
+      success: true,
+      purged,
+      groups: duplicateGroups,
+      notDeletable,
+      message:
+        `${purged} doublon(s) supprimé(s) sur ${duplicateGroups} groupe(s) d’identité.` +
+        (notDeletable.length
+          ? ` ${notDeletable.length} ligne(s) non supprimable(s) (données de délibération liées).`
+          : ''),
+    };
+  }
+
+  // ── 6. Génération des numéros de table (refonte 2026-09-30) ──────────────
+  //
+  // ⚇ RÈGLE : un numéro de table n'est délivré QU'AUX candidats déjà affectés
+  //   à un centre (phase manuelle préalable). Chaque candidat est placé dans
+  //   une salle de SON centre, et le numéro est ALIGNÉ sur la salle :
+  //     {code de la salle}-{incrémentation}  →  S01-001, S01-002… S02-001…
+  //   La série redémarre dans chaque salle — le code de salle garantit
+  //   l'unicité du numéro à l'échelle de l'examen et le repérage immédiat
+  //   pour les surveillants (« S01 » = salle S01 du centre du candidat).
+  //
+  //   1. Candidats actifs avec centre, triés — par école puis nom (SCHOOL,
+  //      défaut : mélange les écoles pour limiter la copie entre voisins) ou
+  //      alphabétique pur (NAME) ; les candidats SANS centre sont ignorés
+  //      (comptés dans le rapport) — pas de numéro sans affectation.
+  //   2. Chaque centre est rempli salle par salle (ordre du code) jusqu'à sa
+  //      capacité ; à défaut de place, le candidat est signalé non placé.
+  //   3. Mise à jour transactionnelle : roomId/tableNumber + réoccupation
+  //      complète des salles (y compris celles qui se vident) + audit.
+
   async assignTableNumbers(tenantId: string, userId: string, examId: string, dto: AssignTablesDto) {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertWriteOrg(fn);
@@ -1724,19 +2062,26 @@ export class FederisExamsService {
       }),
     ]);
 
-    const rooms = centers.flatMap((c) =>
-      c.examRooms.map((r) => ({ room: r, center: c, capacity: r.capacity })),
-    );
-    const totalCapacity = rooms.reduce((sum, r) => sum + r.capacity, 0);
-    if (rooms.length === 0) {
+    const withCenter = candidates.filter((c) => !!c.centerId);
+    const skippedWithoutCenter = candidates.length - withCenter.length;
+
+    if (withCenter.length === 0) {
+      throw new BadRequestException(
+        "Aucun candidat n'est affecté à un centre. Affectez d'abord les candidats aux centres " +
+          '(sélectionnez les candidats puis « Affecter au centre ») — le numéro de table suit le centre et la salle.',
+      );
+    }
+    if (centers.length === 0 || centers.every((c) => c.examRooms.length === 0)) {
       throw new BadRequestException(
         "Aucune salle disponible. Créez d'abord des centres et des salles pour cet examen.",
       );
     }
 
-    // Tri des candidats
+    const centerById = new Map(centers.map((c) => [c.id, c]));
+
+    // Tri des candidats (ordre de placement dans les salles)
     const orderBy = dto.orderBy ?? 'SCHOOL';
-    const sorted = [...candidates].sort((a, b) => {
+    const sorted = [...withCenter].sort((a, b) => {
       if (orderBy === 'SCHOOL') {
         const schoolA = a.schoolTenant?.name ?? (a.metadata as any)?.schoolName ?? 'zzz';
         const schoolB = b.schoolTenant?.name ?? (b.metadata as any)?.schoolName ?? 'zzz';
@@ -1748,11 +2093,16 @@ export class FederisExamsService {
       return a.firstName.localeCompare(b.firstName, 'fr');
     });
 
-    const scope = dto.numberingScope ?? 'CENTER';
-    const start = Math.max(1, dto.startNumber ?? 1);
-    let globalCounter = start - 1;
+    // Regroupement par centre affecté
+    const byCenter = new Map<string, typeof sorted>();
+    for (const c of sorted) {
+      const key = c.centerId as string;
+      const list = byCenter.get(key) ?? [];
+      list.push(c);
+      byCenter.set(key, list);
+    }
 
-    // Attribution
+    // Attribution : chaque candidat est placé dans une salle de SON centre
     const assignments: Array<{
       candidateId: string;
       centerId: string;
@@ -1760,42 +2110,56 @@ export class FederisExamsService {
       tableNumber: string;
     }> = [];
     const roomOccupancy = new Map<string, number>();
-    let roomIndex = 0;
+    const unplaced: Array<{ name: string; centerCode: string | null; reason: string }> = [];
 
-    for (const candidate of sorted) {
-      // Cherche la prochaine salle avec de la place
-      while (roomIndex < rooms.length && rooms[roomIndex].capacity <= (roomOccupancy.get(rooms[roomIndex].room.id) ?? 0)) {
-        roomIndex++;
+    for (const [centerId, list] of byCenter) {
+      const center = centerById.get(centerId);
+      if (!center) {
+        // Centre archivé / inactif : impossible de numéroter
+        for (const c of list) {
+          unplaced.push({
+            name: `${c.lastName} ${c.firstName}`,
+            centerCode: null,
+            reason: 'centre inactif ou archivé',
+          });
+        }
+        continue;
       }
-      if (roomIndex >= rooms.length) break; // capacité épuisée
-
-      const target = rooms[roomIndex];
-      const occupied = (roomOccupancy.get(target.room.id) ?? 0) + 1;
-      roomOccupancy.set(target.room.id, occupied);
-
-      if (scope === 'EXAM') {
-        globalCounter++;
-      } else if (scope === 'ROOM') {
-        // ⭐ Numérotation PAR SALLE (2026-09-29) : la série redémarre à chaque
-        //    salle de composition — 001, 002… dans CHAQUE salle.
-        globalCounter = start + occupied - 1;
-      } else {
-        // Compteur par centre : nombre déjà affecté dans CE centre + start
-        const perCenter = assignments.filter((a) => a.centerId === target.center.id).length;
-        globalCounter = start + perCenter;
+      let roomIndex = 0;
+      for (const candidate of list) {
+        // Cherche la prochaine salle du centre avec de la place
+        while (
+          roomIndex < center.examRooms.length &&
+          center.examRooms[roomIndex].capacity <=
+            (roomOccupancy.get(center.examRooms[roomIndex].id) ?? 0)
+        ) {
+          roomIndex++;
+        }
+        if (roomIndex >= center.examRooms.length) {
+          unplaced.push({
+            name: `${candidate.lastName} ${candidate.firstName}`,
+            centerCode: center.code,
+            reason: 'capacité de salle insuffisante dans le centre',
+          });
+          continue;
+        }
+        const room = center.examRooms[roomIndex];
+        const occupied = (roomOccupancy.get(room.id) ?? 0) + 1;
+        roomOccupancy.set(room.id, occupied);
+        // ⭐ Format ALIGNÉ sur la salle : S01-001, S01-002… S02-001…
+        assignments.push({
+          candidateId: candidate.id,
+          centerId,
+          roomId: room.id,
+          tableNumber: `${room.code}-${String(occupied).padStart(3, '0')}`,
+        });
       }
-
-      assignments.push({
-        candidateId: candidate.id,
-        centerId: target.center.id,
-        roomId: target.room.id,
-        tableNumber: String(globalCounter).padStart(3, '0'),
-      });
     }
 
-    const unassigned = sorted.length - assignments.length;
+    const assignedIds = new Set(assignments.map((a) => a.candidateId));
 
     await this.prisma.$transaction(async (tx) => {
+      // Candidats numérotés
       for (const a of assignments) {
         await tx.examCandidate.update({
           where: { id: a.candidateId },
@@ -1806,15 +2170,29 @@ export class FederisExamsService {
           },
         });
       }
-      for (const [roomId, occupancy] of roomOccupancy.entries()) {
-        const room = rooms.find((r) => r.room.id === roomId)!;
-        await tx.examRoom.update({
-          where: { id: roomId },
-          data: {
-            currentOccupancy: occupancy,
-            status: occupancy >= room.capacity ? 'FULL' : 'AVAILABLE',
-          },
-        });
+      // Candidats NON numérotés (sans centre ou sans place) : on nettoie la
+      // salle / le numéro éventuellement hérités d'une génération précédente.
+      for (const c of candidates) {
+        if (assignedIds.has(c.id)) continue;
+        if (c.roomId || c.tableNumber) {
+          await tx.examCandidate.update({
+            where: { id: c.id },
+            data: { roomId: null, tableNumber: null },
+          });
+        }
+      }
+      // Réoccupation : recalcul complet des salles actives (y compris vides)
+      for (const center of centers) {
+        for (const room of center.examRooms) {
+          const occupancy = roomOccupancy.get(room.id) ?? 0;
+          await tx.examRoom.update({
+            where: { id: room.id },
+            data: {
+              currentOccupancy: occupancy,
+              status: occupancy >= room.capacity ? 'FULL' : 'AVAILABLE',
+            },
+          });
+        }
       }
       await tx.auditLog.create({
         data: {
@@ -1828,45 +2206,54 @@ export class FederisExamsService {
           newData: {
             exam: exam.code,
             assigned: assignments.length,
-            unassigned,
+            skippedWithoutCenter,
+            unplaced: unplaced.length,
             orderBy,
-            numberingScope: scope,
           },
         },
       });
     });
 
     // Résumé par centre (pour l'UI)
-    const perCenter = centers.map((c) => {
-      const centerAssignments = assignments.filter((a) => a.centerId === c.id);
-      return {
-        centerCode: c.code,
-        centerName: c.name,
-        candidates: centerAssignments.length,
-        rooms: c.examRooms.map((r) => ({
-          code: r.code,
-          capacity: r.capacity,
-          occupancy: roomOccupancy.get(r.id) ?? 0,
-        })),
-      };
-    });
+    const perCenter = centers.map((c) => ({
+      centerCode: c.code,
+      centerName: c.name,
+      candidates: assignments.filter((a) => a.centerId === c.id).length,
+      rooms: c.examRooms.map((r) => ({
+        code: r.code,
+        capacity: r.capacity,
+        occupancy: roomOccupancy.get(r.id) ?? 0,
+      })),
+    }));
 
     this.logger.log(
-      `Numéros affectés ${exam.code} : ${assignments.length} candidats, ${unassigned} non affectés (${patronat.name})`,
+      `Numéros affectés ${exam.code} : ${assignments.length} candidats, ` +
+        `${skippedWithoutCenter} sans centre, ${unplaced.length} sans place (${patronat.name})`,
     );
+
+    const parts = [
+      `${assignments.length} numéro(s) de table généré(s) — format {salle}-{n°} (ex. S01-001).`,
+    ];
+    if (skippedWithoutCenter > 0) {
+      parts.push(
+        `${skippedWithoutCenter} candidat(s) sans centre — ignoré(s) : affectez-les d'abord à un centre.`,
+      );
+    }
+    if (unplaced.length > 0) {
+      parts.push(
+        `${unplaced.length} candidat(s) sans place (capacité insuffisante dans leur centre) — ajoutez des salles.`,
+      );
+    }
 
     return {
       success: true,
       assigned: assignments.length,
-      unassigned,
-      totalCapacity,
+      skippedWithoutCenter,
+      unassigned: unplaced.length,
+      unplaced,
       orderBy,
-      numberingScope: scope,
       perCenter,
-      message:
-        unassigned > 0
-          ? `${assignments.length} candidats affectés. Capacité insuffisante pour ${unassigned} candidat(s) — ajoutez des salles.`
-          : `${assignments.length} candidats affectés avec numéro de table.`,
+      message: parts.join(' '),
     };
   }
 }

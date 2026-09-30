@@ -13,7 +13,10 @@
  *   GET    /federis/exams/:examId/school-lists         — listes officielles par école
  *   POST   /federis/exams/:examId/candidates           — ajout manuel
  *   POST   /federis/exams/:examId/candidates/import    — import par lot (Excel)
- *   POST   /federis/exams/:examId/assign-tables        — numéros de table (CENTER | ROOM | EXAM)
+ *   POST   /federis/exams/:examId/candidates/assign-center — affectation MANUELLE
+ *          sélection → centre (phase préalable aux numéros de table)
+ *   POST   /federis/exams/:examId/candidates/purge-duplicates — purge des doublons
+ *   POST   /federis/exams/:examId/assign-tables        — numéros de table {SALLE}-{n°}
  *   POST   /federis/exams/:examId/anonymats/generate   — anonymats (2026-09-29)
  *   GET    /federis/exams/:examId/excel/candidats      — export Excel (2026-09-29)
  *   GET    /federis/exams/:examId/excel/centres        — export Excel (2026-09-30)
@@ -54,6 +57,7 @@ import {
   ImportCandidatesDto,
   AddCandidateDto,
   AssignTablesDto,
+  AssignCandidatesToCenterDto,
   GenerateAnonymatsDto,
   UpdateMatriculeFormatDto,
 } from './federis-exams.service';
@@ -180,8 +184,48 @@ export class FederisExamsController {
     return this.examsService.importCandidates(req.user.tenantId, this.uid(req), examId, dto);
   }
 
+  // ── Affectation manuelle aux centres (2026-09-30 — refonte) ───────────────
+  //
+  // Le patronat sélectionne des candidats et les oriente vers UN centre.
+  // body : { candidateIds: string[], centerId?: string | null }
+  //   • centerId renseigné → affectation à ce centre (réaffectation = reset
+  //     salle / n° de table de l'ancien centre)
+  //   • centerId absent/null → retrait de l'affectation
+  @UseGuards(JwtAuthGuard)
+  @Post('exams/:examId/candidates/assign-center')
+  async assignCandidatesToCenter(
+    @Req() req: any,
+    @Param('examId') examId: string,
+    @Body() dto: AssignCandidatesToCenterDto,
+  ) {
+    return this.examsService.assignCandidatesToCenter(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+      dto,
+    );
+  }
+
+  /** Purge des doublons d'identité (une ligne conservée par personne). */
+  @UseGuards(JwtAuthGuard)
+  @Post('exams/:examId/candidates/purge-duplicates')
+  async purgeDuplicateCandidates(
+    @Req() req: any,
+    @Param('examId') examId: string,
+  ) {
+    return this.examsService.purgeDuplicateCandidates(
+      req.user.tenantId,
+      this.uid(req),
+      examId,
+    );
+  }
+
   // ── Numéros de table ─────────────────────────────────────────────────────
 
+  /**
+   * Génération des numéros de table — UNIQUEMENT pour les candidats déjà
+   * affectés à un centre ; numéro aligné sur la salle : S01-001, S01-002…
+   */
   @UseGuards(JwtAuthGuard)
   @Post('exams/:examId/assign-tables')
   async assignTables(

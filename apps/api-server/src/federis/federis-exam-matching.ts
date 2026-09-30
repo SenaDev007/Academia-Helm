@@ -167,3 +167,40 @@ export function federisLevelMatchesType(level: string | null | undefined, type: 
   // BAC — exclut les niveaux CAP (filières techniques/professionnelles)
   return (n.startsWith('TERM') || n.startsWith('TLE')) && !n.includes('CAP');
 }
+
+// ── Identité des candidats (anti-doublons — 2026-09-30) ─────────────────────
+//
+// ⚇ RÈGLE MÉTIER : une même personne (prénom + nom + date de naissance) ne
+//   doit JAMAIS figurer deux fois sur un même examen. Un doublon se retrouve
+//   affecté à DEUX centres lors de la génération des numéros de table —
+//   c'est le défaut remonté par le patronat. La clé est partagée par :
+//   • federis-exams.service      — import Excel (dédoublonnage base + lot),
+//                                  détection des doublons + purge manuelle ;
+//   • federis-school-exams.service — envoi officiel des écoles (rapprochement
+//                                  par identité AVANT création d'une ligne).
+
+/**
+ * Clé d'identité normalisée d'un candidat : prénom|nom|date de naissance
+ * (casse, accents et espaces superflus neutralisés ; date au format ISO).
+ */
+export function candidateIdentityKey(
+  firstName: string | null | undefined,
+  lastName: string | null | undefined,
+  dateOfBirth: Date | string | null | undefined,
+): string {
+  const norm = (v: string | null | undefined) =>
+    (v ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  let dob = '';
+  if (dateOfBirth instanceof Date && !isNaN(dateOfBirth.getTime())) {
+    dob = dateOfBirth.toISOString().slice(0, 10);
+  } else if (typeof dateOfBirth === 'string' && dateOfBirth.trim()) {
+    const d = new Date(dateOfBirth);
+    dob = isNaN(d.getTime()) ? dateOfBirth.trim() : d.toISOString().slice(0, 10);
+  }
+  return `${norm(firstName)}|${norm(lastName)}|${dob}`;
+}

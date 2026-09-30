@@ -665,7 +665,11 @@ export default function FederisSupervisorsTab({
       );
       setNotice(
         `Répartition validée — ${res.data?.created ?? 0} affectation(s) créée(s), ` +
-          `${res.data?.notifiedSchools ?? 0} école(s) notifiée(s).`,
+          `${res.data?.notifiedSchools ?? 0} école(s) notifiée(s), ` +
+          `${res.data?.transmitted ?? 0} enseignant(s) notifié(s) directement dans leur interface` +
+          (res.data?.withoutAccount
+            ? ` (${res.data.withoutAccount} sans compte notifiable — à transmettre par l'école).`
+            : '.'),
       );
       setSelectedTeacherIds(new Set());
       setAssignCenterId('');
@@ -1247,8 +1251,10 @@ export default function FederisSupervisorsTab({
             </h2>
             <p className="text-xs text-slate-500 mt-1 max-w-2xl">
               Nominations reçues des écoles (répartition validée) et saisies manuelles.
+              Les affectations sont transmises automatiquement aux enseignants dès la
+              validation de la répartition.
               {pendingNotifyCount > 0
-                ? ` ${pendingNotifyCount} affectation(s) en attente de transmission aux enseignants par leur école.`
+                ? ` ${pendingNotifyCount} affectation(s) pas encore visible(s) dans l'interface de l'enseignant — l'école peut la renvoyer depuis « Affectations reçues » (ou l'enseignant n'a pas de compte notifiable).`
                 : ''}
             </p>
           </div>
@@ -1451,12 +1457,18 @@ export default function FederisSupervisorsTab({
                     <td className="px-4 py-3">
                       {s.schoolName ? (
                         s.teacherNotifiedAt ? (
-                          <span className="text-[10px] font-bold text-green-700 uppercase">
+                          <span
+                            title={`Notification in-app délivrée à l'enseignant le ${new Date(s.teacherNotifiedAt).toLocaleString('fr-FR')}`}
+                            className="text-[10px] font-bold text-green-700 uppercase"
+                          >
                             Transmise
                           </span>
                         ) : (
-                          <span className="text-[10px] font-bold text-amber-600 uppercase">
-                            En attente école
+                          <span
+                            title="Affectation validée mais pas encore visible dans l'interface de l'enseignant — l'école doit la lui transmettre (bouton « Notifier l'enseignant »), ou l'enseignant n'a pas de compte notifiable."
+                            className="text-[10px] font-bold text-amber-600 uppercase"
+                          >
+                            À transmettre à l’enseignant
                           </span>
                         )
                       ) : (

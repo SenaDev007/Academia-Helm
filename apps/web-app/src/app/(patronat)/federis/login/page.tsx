@@ -266,11 +266,16 @@ function FederisLoginForm() {
       // ── 4. Vérification de l'espace patronat (garde-fou Federis) ──
       //    Un compte Helm valide mais sans patronat ne doit PAS accéder à
       //    l'espace → logout propre + message explicite.
+      //    ⭐ profileRole est hissé HORS du try interne : const profileRes est
+      //    block-scoped — référencé après le bloc, il levait
+      //    « ReferenceError: profileRes is not defined » (connexion bloquée).
+      let profileRole: string | null = null;
       try {
         const profileRes = await apiClient.get('/federis/patronat/profile', { timeout: 15000 });
         if (!profileRes.data?.id) {
           throw new Error('NO_PATRONAT');
         }
+        profileRole = profileRes.data?.userRole ?? profileRes.data?.userFunction ?? null;
       } catch (profileErr: any) {
         await logoutCleanup();
         const msg =
@@ -288,8 +293,6 @@ function FederisLoginForm() {
       //    les concerne pas (aucune route autorisée pour cette fonction).
       markFreshLogin();
       const redirect = searchParams.get('redirect');
-      const profileRole =
-        profileRes?.data?.userRole ?? profileRes?.data?.userFunction ?? null;
       const defaultPath =
         profileRole === 'PATRONAT_SAISIE_NOTES' || profileRole === 'SAISIE_NOTES'
           ? '/saisie'

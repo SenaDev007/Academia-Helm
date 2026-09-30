@@ -90,13 +90,12 @@ export class PromotionController {
     }
 
     // 1. Récupérer TOUS les élèves inscrits dans la classe pour cette année
-    //    ⭐ 2026-09-30 — On inclut plusieurs statuts (ACTIVE, ADMITTED, ENROLLED,
-    //    RE_ENROLLED) car le status peut varier selon le moment de l'année.
+    //    ⭐ 2026-09-30 — On inclut TOUS les statuts possibles d'élèves actifs
+    //    car le status peut varier selon le moment de l'année.
     //    Avant : status: 'ACTIVE' seulement → si l'élève avait un autre
-    //    statut (ADMITTED, RE_ENROLLED), il n'apparaissait pas → « aucune
-    //    donnée disponible ».
+    //    statut, il n'apparaissait pas → « aucune donnée disponible ».
     const enrollments = await this.prisma.studentEnrollment.findMany({
-      where: { classId, academicYearId, status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'RE_ENROLLED'] } },
+      where: { classId, academicYearId, status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'RE_ENROLLED', 'PROMOTED', 'PRE_REGISTERED'] } },
       select: { studentId: true },
     }).catch(() => []);
     const studentIds = enrollments.map(e => e.studentId);

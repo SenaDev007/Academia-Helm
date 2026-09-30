@@ -25,6 +25,8 @@ import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
 import { canWrite } from '@/lib/patronat/permissions';
+// ⭐ Générateur de note circulaire (objet + message orientés CEP/BEPC/BAC/CAP)
+import { buildSurveillanceRequestDraft } from '@/lib/federis/surveillance-request-template';
 
 // ── Types (réponses API) ────────────────────────────────────────────────────
 
@@ -129,6 +131,18 @@ interface FederisSupervisorsTabProps {
   examId: string | null;
   /** Libellé d'affichage de l'examen (optionnel). */
   examLabel?: string | null;
+  /** ⭐ Objet examen complet (code, nom, type, dates) — auto-génération de la
+   *  note circulaire (objet + message orientés CEP/BEPC/BAC/CAP). */
+  exam?: {
+    id: string;
+    code: string;
+    name: string;
+    examType: string;
+    level: string;
+    status: string;
+    startDate: string;
+    endDate: string;
+  } | null;
   userRole?: string | null;
 }
 
@@ -150,6 +164,7 @@ const EMPTY_MANUAL_FORM = {
 export default function FederisSupervisorsTab({
   examId,
   examLabel,
+  exam,
   userRole,
 }: FederisSupervisorsTabProps) {
   // ── Demandes ────────────────────────────────────────────────────────────
@@ -159,6 +174,10 @@ export default function FederisSupervisorsTab({
   const [requestForm, setRequestForm] = useState(EMPTY_REQUEST_FORM);
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [busyRequestId, setBusyRequestId] = useState<string | null>(null);
+  // ⭐ Le patronat a-t-il modifié le brouillon auto-généré ? Si oui, on ne
+  //    l'écrase plus (ni au changement d'examen, ni à la date limite) — ses
+  //    corrections (nombres, disponibilités) priment sur la génération.
+  const [requestFormTouched, setRequestFormTouched] = useState(false);
 
   // ── Détail d'une demande (listes reçues + répartition) ──────────────────
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
@@ -203,6 +222,60 @@ export default function FederisSupervisorsTab({
   useEffect(() => {
     void loadRequests();
   }, [loadRequests]);
+
+  // ── ⭐ AUTO-REMPLISSAGE DE LA DEMANDE (note circulaire, 2026-09-30) ────────
+  //
+  // Dès que le système connaît l'examen (nom + type + dates), le formulaire
+  // de demande est pré-rempli avec un objet ET un message administratifs
+  // professionnels, orientés selon le type d'examen (CEP / BEPC / BAC / CAP).
+  // Le patronat n'a plus qu'à corriger les nombres attendus et les
+  // disponibilités — jamais à rédiger la note de zéro.
+  //
+  // Régénération : à l'ouverture du formulaire, et si l'examen change (tant
+  // que le patronat n'a pas touché au brouillon). Un bouton « Régénérer »
+  // permet ensuite de repartir du brouillon proposé par le système.
+  useEffect(() => {
+    if (!showRequestForm || !exam) return;
+    if (requestFormTouched) return;
+    const draft = buildSurveillanceRequestDraft(exam, {
+      deadline: requestForm.deadline || null,
+    });
+    setRequestForm((prev) => ({
+      ...prev,
+      title: draft.title,
+      message: draft.message,
+    }));
+    // ⭐ Dépend aussi de la date limite : tant que le brouillon n'est pas
+    //    personnalisé, poser la date limite réinjecte la phrase « au plus
+    //    tard le … » dans la note.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showRequestForm, exam?.id, requestFormTouched, requestForm.deadline]);
+
+  /** Ouvre / ferme le formulaire de demande — à la ré-ouverture, le brouillon
+   *  système est reconstruit (les corrections précédentes sont abandonnées). */
+  const toggleRequestForm = () => {
+    if (showRequestForm) {
+      setShowRequestForm(false);
+    } else {
+      // Ré-ouverture → le patronat repart du brouillon proposé
+      setRequestFormTouched(false);
+      setShowRequestForm(true);
+    }
+  };
+
+  /** Reconstruit le brouillon système (bouton « Régénérer »). */
+  const regenerateDraft = () => {
+    if (!exam) return;
+    const draft = buildSurveillanceRequestDraft(exam, {
+      deadline: requestForm.deadline || null,
+    });
+    setRequestForm((prev) => ({
+      ...prev,
+      title: draft.title,
+      message: draft.message,
+    }));
+    setRequestFormTouched(false);
+  };
 
   // ── Chargement du registre (par examen sélectionné) ─────────────────────
   const loadRegistry = useCallback(async () => {
@@ -285,6 +358,7 @@ export default function FederisSupervisorsTab({
       );
       setShowRequestForm(false);
       setRequestForm(EMPTY_REQUEST_FORM);
+      setRequestFormTouched(false);
       await loadRequests();
       if (res.data?.request?.id) setSelectedRequestId(res.data.request.id);
     } catch (err: any) {
@@ -447,7 +521,7 @@ export default function FederisSupervisorsTab({
           {canManage && (
             <button
               type="button"
-              onClick={() => setShowRequestForm((v) => !v)}
+              onClick={toggleRequestForm}
               disabled={!examId}
               className="fed-btn-gold px-4 py-2.5 text-sm disabled:opacity-40 flex-shrink-0"
             >
@@ -457,9 +531,33 @@ export default function FederisSupervisorsTab({
           )}
         </div>
 
-        {/* Formulaire de demande */}
+        {/* Formulaire de demande — ⭐ note circulaire AUTO-GÉNÉRÉE dès que
+            l'examen est connu (objet + message orientés CEP/BEPC/BAC/CAP).
+            Le patronat ne corrige que les nombres attendus et les
+            disponibilités — le brouillon est une véritable note administrative. */}
         {showRequestForm && canManage && (
           <form onSubmit={createRequest} className="border border-slate-200 rounded-xl p-6 space-y-5 mb-6 bg-[#f7f9fc]">
+            {/* Bandeau brouillon auto-généré */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-blue-50 border border-blue-100 rounded-lg px-4 py-3">
+              <div className="flex items-start gap-2.5 min-w-0">
+                <AppIcon name="sparkles" size="submenu" className="text-blue-800 mt-0.5 shrink-0" />
+                <p className="text-[11px] leading-relaxed text-blue-900 font-semibold">
+                  Note circulaire auto-générée à partir de l'examen
+                  «&nbsp;{exam?.name ?? examLabel}&nbsp;» — objet, structure administrative,
+                  effectif attendu, critères et modalités. Corrigez simplement les nombres
+                  et disponibilités si nécessaire.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={regenerateDraft}
+                disabled={!exam}
+                title="Reconstruire la note circulaire proposée par le système (vos modifications seront perdues)"
+                className="shrink-0 px-4 py-2 rounded-lg text-[10px] font-bold uppercase bg-white border border-blue-200 text-blue-900 hover:bg-blue-100 transition-colors disabled:opacity-40"
+              >
+                Régénérer
+              </button>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div className="md:col-span-2">
                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
@@ -467,22 +565,40 @@ export default function FederisSupervisorsTab({
                 </label>
                 <input
                   required
+                  maxLength={190}
                   value={requestForm.title}
-                  onChange={(e) => setRequestForm({ ...requestForm, title: e.target.value })}
-                  placeholder="Ex : Enseignants surveillants — BEPC 2027"
+                  onChange={(e) => {
+                    setRequestForm({ ...requestForm, title: e.target.value });
+                    setRequestFormTouched(true);
+                  }}
+                  placeholder="Ex : Désignation d'enseignants surveillants — Examen blanc CEP 2027"
                   className="fed-input-light px-4 py-3 font-semibold"
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">
-                  Message aux écoles
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase">
+                    Message aux écoles (note circulaire)
+                  </label>
+                  <span
+                    className={cn(
+                      'text-[10px] font-bold tabular-nums',
+                      requestForm.message.length > 1900 ? 'text-red-600' : 'text-slate-400',
+                    )}
+                  >
+                    {requestForm.message.length} / 2000
+                  </span>
+                </div>
                 <textarea
                   value={requestForm.message}
-                  onChange={(e) => setRequestForm({ ...requestForm, message: e.target.value })}
-                  rows={3}
-                  placeholder="Nombre attendu par école, critères (disponibilité, expérience des examens…)"
-                  className="fed-input-light px-4 py-3 font-semibold resize-none"
+                  onChange={(e) => {
+                    setRequestForm({ ...requestForm, message: e.target.value });
+                    setRequestFormTouched(true);
+                  }}
+                  rows={16}
+                  maxLength={2000}
+                  placeholder="Effectif attendu par école, critères (disponibilité, expérience des examens…), modalités de réponse…"
+                  className="fed-input-light px-4 py-3 font-medium resize-y leading-relaxed"
                 />
               </div>
               <div>
@@ -508,6 +624,9 @@ export default function FederisSupervisorsTab({
                   onChange={(e) => setRequestForm({ ...requestForm, deadline: e.target.value })}
                   className="fed-input-light px-4 py-3 font-semibold"
                 />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Reprendue dans la note (« au plus tard le … ») tant que le brouillon n'est pas personnalisé.
+                </p>
               </div>
             </div>
             <div className="flex justify-end">

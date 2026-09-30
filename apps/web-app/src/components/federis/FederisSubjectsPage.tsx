@@ -139,6 +139,20 @@ export default function FederisSubjectsPage({ userRole }: FederisSubjectsPagePro
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [suggestionSeries, setSuggestionSeries] = useState<string>('');
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  // ⭐ Paramétrage par matière sélectionnée (pattern Helm « matière programme ») :
+  //    une fois les matières cochées, les champs Coefficient / Barème / Durée
+  //    apparaissent pour CHAQUE matière — entièrement modifiables (aucun
+  //    coefficient imposé, le catalogue n'est qu'un point de départ).
+  const [pickedConfig, setPickedConfig] = useState<
+    Record<string, { coefficient: string; maxScore: string; duration: string }>
+  >({});
+
+  /** Valeurs initiales d'une matière suggérée (coefficient neutre 1, /20). */
+  const initConfigFor = (s: OfficialSubject) => ({
+    coefficient: String(s.coefficient ?? 1).replace('.', ','),
+    maxScore: String(s.maxScore ?? 20).replace('.', ','),
+    duration: s.duration ? String(s.duration) : '',
+  });
 
   // ── Sélection multiple + confirmation (pattern Helm) ────────────────────
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -174,6 +188,9 @@ export default function FederisSubjectsPage({ userRole }: FederisSubjectsPagePro
     setSelected(new Set());
     setSuggestionsOpen(false);
     setSuggestionSeries(activeType === 'BAC' ? 'A1' : '');
+    // ⭐ Réinitialise aussi le paramétrage des suggestions (changement de type)
+    setPicked(new Set());
+    setPickedConfig({});
   }, [activeType]);
 
   // ── Vue filtrée ─────────────────────────────────────────────────────────
@@ -337,7 +354,7 @@ export default function FederisSubjectsPage({ userRole }: FederisSubjectsPagePro
         activeType === 'BAC' ? { examType: activeType, series: suggestionSeries || undefined } : { examType: activeType },
         { timeout: 30000 },
       );
-      setNotice(res.data?.message ?? 'Jeu officiel initialisé.');
+      setNotice(res.data?.message ?? 'Matières suggérées ajoutées.');
       await load();
     } catch (err: any) {
       const msg = err?.response?.data?.message;
@@ -354,24 +371,32 @@ export default function FederisSubjectsPage({ userRole }: FederisSubjectsPagePro
     try {
       const seriesKey = activeType === 'BAC' ? suggestionSeries : '';
       const official = data?.official?.[activeType]?.[seriesKey] ?? [];
-      const rows = official.filter((s) => picked.has(s.code));
+      // ⭐ Envoie le paramétrage SAISI par matière (coefficient / barème / durée)
+      //    — les valeurs du catalogue ne sont que des points de départ modifiables.
+      const rows = official
+        .filter((s) => picked.has(s.code))
+        .map((s) => {
+          const cfg = pickedConfig[s.code] ?? initConfigFor(s);
+          return {
+            series: seriesKey,
+            code: s.code,
+            name: s.name,
+            coefficient: Number(cfg.coefficient.replace(',', '.')) || 1,
+            maxScore: Number(cfg.maxScore.replace(',', '.')) || 20,
+            duration: cfg.duration ? Number(cfg.duration) : undefined,
+          };
+        });
       const res = await apiClient.post(
         '/federis/subjects/bulk',
         {
           examType: activeType,
-          rows: rows.map((s) => ({
-            series: seriesKey,
-            code: s.code,
-            name: s.name,
-            coefficient: s.coefficient,
-            maxScore: s.maxScore,
-            duration: s.duration,
-          })),
+          rows,
         },
         { timeout: 30000 },
       );
       setNotice(res.data?.message ?? 'Matières ajoutées.');
       setPicked(new Set());
+      setPickedConfig({});
       await load();
     } catch (err: any) {
       const msg = err?.response?.data?.message;
@@ -407,6 +432,46 @@ export default function FederisSubjectsPage({ userRole }: FederisSubjectsPagePro
 
   const officialSuggestions =
     data?.official?.[activeType]?.[activeType === 'BAC' ? suggestionSeries : ''] ?? [];
+
+  // ⭐ Suggestions encore disponibles (non déjà présentes au catalogue) —
+  //    base du bouton « Tout sélectionner » (pattern Helm SubjectsWorkspace).
+  const seriesKeyForSuggestions = activeType === 'BAC' ? suggestionSeries : '';
+  const availableSuggestions = officialSuggestions.filter(
+    (s) =>
+      !subjects.some(
+        (x) => x.examType === activeType && x.series === seriesKeyForSuggestions && x.code === s.code,
+      ),
+  );
+
+  /** Coche / décoche une matière + initialise son paramétrage au besoin. */
+  const togglePicked = (s: OfficialSubject) => {
+    const willPick = !picked.has(s.code);
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(s.code)) next.delete(s.code);
+      else next.add(s.code);
+      return next;
+    });
+    if (willPick) {
+      setPickedConfig((cfg) => (cfg[s.code] ? cfg : { ...cfg, [s.code]: initConfigFor(s) }));
+    }
+  };
+
+  /** Tout sélectionner / Tout désélectionner (pattern Helm). */
+  const toggleAllPicked = () => {
+    if (availableSuggestions.length > 0 && picked.size === availableSuggestions.length) {
+      setPicked(new Set());
+    } else {
+      setPicked(new Set(availableSuggestions.map((s) => s.code)));
+      setPickedConfig((cfg) => {
+        const next = { ...cfg };
+        for (const s of availableSuggestions) {
+          next[s.code] = next[s.code] ?? initConfigFor(s);
+        }
+        return next;
+      });
+    }
+  };
 
   // ── Rendu ───────────────────────────────────────────────────────────────
   return (
@@ -616,46 +681,65 @@ export default function FederisSubjectsPage({ userRole }: FederisSubjectsPagePro
               onClick={() => setSuggestionsOpen((v) => !v)}
               className="px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase bg-white border border-blue-900/20 text-blue-900 hover:bg-blue-50 transition-colors"
             >
-              {suggestionsOpen ? 'Fermer les suggestions' : 'Jeu officiel'}
+              {suggestionsOpen ? 'Fermer les suggestions' : 'Matières suggérées'}
             </button>
           </div>
         )}
       </div>
 
-      {/* ⭐ Panneau de suggestions du jeu officiel (pattern Helm) */}
+      {/* ⭐ Panneau de suggestions du jeu officiel (pattern Helm « matière programme ») */}
       {canManage && suggestionsOpen && (
         <div className="fed-card p-6 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold text-blue-900 uppercase">
-                Jeu officiel — {EXAM_TYPES.find((t) => t.type === activeType)?.label}
+                Matières suggérées — {EXAM_TYPES.find((t) => t.type === activeType)?.label}
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                Cochez les matières à ajouter au catalogue — coefficients et barèmes ajustables ensuite.
+                Sélectionnez les matières à examiner, puis paramétrez librement coefficient,
+                barème et durée de chacune — exactement comme dans Academia Helm (module
+                Pédagogie → Matières et programmes).
               </p>
             </div>
-            {activeType === 'BAC' && (
-              <select
-                value={suggestionSeries}
-                onChange={(e) => { setSuggestionSeries(e.target.value); setPicked(new Set()); }}
-                className="fed-input-light px-4 py-2 text-xs font-bold !w-auto"
-              >
-                {(data?.bacSeries ?? ['A1', 'A2', 'C', 'D']).map((s) => (
-                  <option key={s} value={s}>Série {s}</option>
-                ))}
-              </select>
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {activeType === 'BAC' && (
+                <select
+                  value={suggestionSeries}
+                  onChange={(e) => {
+                    setSuggestionSeries(e.target.value);
+                    setPicked(new Set());
+                    setPickedConfig({});
+                  }}
+                  className="fed-input-light px-4 py-2 text-xs font-bold !w-auto"
+                >
+                  {(data?.bacSeries ?? ['A1', 'A2', 'C', 'D']).map((s) => (
+                    <option key={s} value={s}>Série {s}</option>
+                  ))}
+                </select>
+              )}
+              {availableSuggestions.length > 0 && (
+                <button
+                  type="button"
+                  onClick={toggleAllPicked}
+                  className="px-4 py-2 rounded-xl text-[10px] font-bold uppercase bg-white border border-blue-900/20 text-blue-900 hover:bg-blue-50 transition-colors"
+                >
+                  {picked.size === availableSuggestions.length && picked.size > 0
+                    ? 'Tout désélectionner'
+                    : 'Tout sélectionner'}
+                </button>
+              )}
+            </div>
           </div>
           {officialSuggestions.length === 0 ? (
             <p className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-              Aucun jeu officiel pour cette sélection — ajoutez vos matières manuellement.
+              Aucune matière suggérée pour cette sélection — ajoutez vos matières manuellement.
             </p>
           ) : (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
                 {officialSuggestions.map((s) => {
                   const alreadyExists = subjects.some(
-                    (x) => x.examType === activeType && x.series === (activeType === 'BAC' ? suggestionSeries : '') && x.code === s.code,
+                    (x) => x.examType === activeType && x.series === seriesKeyForSuggestions && x.code === s.code,
                   );
                   const isPicked = picked.has(s.code);
                   return (
@@ -671,25 +755,114 @@ export default function FederisSubjectsPage({ userRole }: FederisSubjectsPagePro
                         type="checkbox"
                         checked={isPicked}
                         disabled={alreadyExists}
-                        onChange={() => setPicked((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(s.code)) next.delete(s.code);
-                          else next.add(s.code);
-                          return next;
-                        })}
+                        onChange={() => togglePicked(s)}
                         className="w-4 h-4 rounded border-gray-300 text-blue-800 focus:ring-blue-800"
                       />
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-bold text-blue-900 truncate">{s.name}</p>
                         <p className="text-[9px] font-bold text-slate-400 uppercase">
-                          {s.code} · coef {String(s.coefficient).replace('.', ',')}
-                          {alreadyExists ? ' · déjà présente' : ''}
+                          {s.code}
+                          {alreadyExists ? ' · déjà présente' : ' · à paramétrer'}
                         </p>
                       </div>
                     </label>
                   );
                 })}
               </div>
+
+              {/* ⭐ Paramétrage par matière sélectionnée — les champs apparaissent
+                  dès la sélection (coefficient / barème / durée modifiables). */}
+              {picked.size > 0 && (
+                <div className="border-t border-blue-100 pt-4 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-xs font-bold text-blue-900 uppercase">
+                      Paramétrage des {picked.size} matière(s) sélectionnée(s)
+                    </h4>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">
+                      Coefficient · Barème · Durée
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200">
+                      <thead className="bg-[#f7f9fc]">
+                        <tr>
+                          <th className="px-4 py-2.5 text-left text-[10px] font-bold text-slate-400 uppercase">Matière</th>
+                          <th className="px-4 py-2.5 text-center text-[10px] font-bold text-slate-400 uppercase w-28">Coefficient</th>
+                          <th className="px-4 py-2.5 text-center text-[10px] font-bold text-slate-400 uppercase w-28">Barème</th>
+                          <th className="px-4 py-2.5 text-center text-[10px] font-bold text-slate-400 uppercase w-32">Durée (min)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-slate-100">
+                        {officialSuggestions
+                          .filter((s) => picked.has(s.code))
+                          .map((s) => {
+                            const cfg =
+                              pickedConfig[s.code] ?? initConfigFor(s);
+                            return (
+                              <tr key={s.code}>
+                                <td className="px-4 py-2.5">
+                                  <p className="text-xs font-bold text-blue-900">{s.name}</p>
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase">{s.code}</p>
+                                </td>
+                                <td className="px-4 py-2.5 text-center">
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={cfg.coefficient}
+                                    onChange={(e) =>
+                                      setPickedConfig((prev) => ({
+                                        ...prev,
+                                        [s.code]: { ...cfg, coefficient: e.target.value },
+                                      }))
+                                    }
+                                    className="fed-input-light !px-3 !py-2 text-xs font-bold text-center !w-20"
+                                    placeholder="1"
+                                  />
+                                </td>
+                                <td className="px-4 py-2.5 text-center">
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={cfg.maxScore}
+                                    onChange={(e) =>
+                                      setPickedConfig((prev) => ({
+                                        ...prev,
+                                        [s.code]: { ...cfg, maxScore: e.target.value },
+                                      }))
+                                    }
+                                    className="fed-input-light !px-3 !py-2 text-xs font-bold text-center !w-20"
+                                    placeholder="20"
+                                  />
+                                </td>
+                                <td className="px-4 py-2.5 text-center">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={cfg.duration}
+                                    onChange={(e) =>
+                                      setPickedConfig((prev) => ({
+                                        ...prev,
+                                        [s.code]: { ...cfg, duration: e.target.value },
+                                      }))
+                                    }
+                                    className="fed-input-light !px-3 !py-2 text-xs font-bold text-center !w-24"
+                                    placeholder="—"
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-semibold leading-relaxed">
+                    💡 Les valeurs pré-remplies (coefficient 1, barème /20) ne sont que des points
+                    de départ : ajustez chaque matière selon votre règlement d'examen avant
+                    d'ajouter la sélection au catalogue.
+                  </p>
+                </div>
+              )}
+
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={addSuggestions}
@@ -702,9 +875,9 @@ export default function FederisSubjectsPage({ userRole }: FederisSubjectsPagePro
                   onClick={initOfficial}
                   disabled={working}
                   className="px-5 py-2.5 rounded-xl text-[10px] font-bold uppercase bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-                  title="Ajouter TOUT le jeu officiel en une fois (les codes existants sont ignorés)"
+                  title="Ajouter TOUTES les matières suggérées en une fois (les codes existants sont ignorés)"
                 >
-                  Tout initialiser
+                  Tout ajouter d'un coup
                 </button>
               </div>
             </>
@@ -802,7 +975,7 @@ export default function FederisSubjectsPage({ userRole }: FederisSubjectsPagePro
                     </p>
                     <p className="text-xs text-slate-400 mt-1">
                       {canManage
-                        ? 'Ajoutez vos matières manuellement ou initialisez le jeu officiel.'
+                        ? 'Ajoutez vos matières manuellement ou ouvrez les matières suggérées.'
                         : 'Aucune matière paramétrée pour ce type d\u2019examen.'}
                     </p>
                   </td>

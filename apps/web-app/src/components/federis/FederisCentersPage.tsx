@@ -467,6 +467,12 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
               ? `${exams.find((e) => e.id === examId)!.code} — ${exams.find((e) => e.id === examId)!.name}`
               : null
           }
+          // ⭐ Objet examen COMPLET — permet l'auto-génération de la note
+          //    circulaire (objet + message orientés CEP/BEPC/BAC/CAP) dès
+          //    que l'examen est connu.
+          exam={
+            exams.find((e) => e.id === examId) ?? null
+          }
           userRole={userRole}
         />
       )}

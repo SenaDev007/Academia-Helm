@@ -245,76 +245,94 @@ export interface OfficialSubject {
 export const BAC_SERIES: string[] = ['A1', 'A2', 'C', 'D'];
 
 /**
- * Jeu officiel par type (et par série pour le BAC) — le patronat ajuste
- * librement coefficients et barèmes dans le module ; ce catalogue n'est
- * qu'un point de départ réaliste (pattern seedDefaultSubjects Helm).
+ * Catalogue SECONDAIRE d'Academia Helm (SubjectsWorkspace.SECONDAIRE) —
+ * copie EXACTE, intitulés et codes compris. Fabrique (et non constante
+ * partagée) pour que chaque type / série BAC possède sa PROPRE instance
+ * (aucune référence de tableau partagée entre BEPC, CAP et les séries BAC).
+ * Coefficient 1 et barème /20 : valeurs NEUTRES, ajustables par matière
+ * dans le panneau de suggestions (le patronat paramètre tout).
+ */
+function HELM_SECONDARY_SUBJECTS(): OfficialSubject[] {
+  return [
+    { code: 'CE-01', name: 'Communication Écrite', coefficient: 1, maxScore: 20 },
+    { code: 'LECT-02', name: 'Lecture', coefficient: 1, maxScore: 20 },
+    { code: 'ANG-03', name: 'Anglais', coefficient: 1, maxScore: 20 },
+    { code: 'FR-04', name: 'Français', coefficient: 1, maxScore: 20 },
+    { code: 'ESP-05', name: 'Espagnol', coefficient: 1, maxScore: 20 },
+    { code: 'ALL-06', name: 'Allemand', coefficient: 1, maxScore: 20 },
+    { code: 'MATH-07', name: 'Mathématiques', coefficient: 1, maxScore: 20 },
+    { code: 'PCT-08', name: 'Physique Chimie et Technologie', coefficient: 1, maxScore: 20 },
+    { code: 'SVT-09', name: 'Science de la Vie et de la Terre', coefficient: 1, maxScore: 20 },
+    { code: 'HG-11', name: 'Histoire-Géographie', coefficient: 1, maxScore: 20 },
+    { code: 'PHILO-12', name: 'Philosophie', coefficient: 1, maxScore: 20 },
+    { code: 'EPS-13', name: 'Éducation Physique et Sportive', coefficient: 1, maxScore: 20 },
+    { code: 'INFO-14', name: 'Informatique', coefficient: 1, maxScore: 20 },
+  ];
+}
+
+/**
+ * Jeu de matières suggérées par type (et par série pour le BAC).
+ *
+ * ⭐ ALIGNEMENT EXACT ACADEMIA HELM (2026-09-30, demande utilisateur) :
+ * les matières suggérées du module Matières de Federis sont EXACTEMENT
+ * celles du module Pédagogie → Matières et programmes (SubjectsWorkspace)
+ * d'Academia Helm — le catalogue officiel de référence de la plateforme :
+ *   - CEP            → catalogue PRIMAIRE de Helm (11 matières, CM2) ;
+ *   - BEPC / BAC / CAP → catalogue SECONDAIRE de Helm (13 matières).
+ * Pour le BAC, la MÊME liste secondaire est proposée pour chaque série
+ * (A1, A2, C, D) : le patronat décoche les matières non pertinentes et
+ * AJUSTE librement coefficients, barèmes et durées par matière dans le
+ * panneau de suggestions (aucune valeur n'est imposée — coefficient
+ * neutre 1, barème /20, durée libre).
  */
 export const OFFICIAL_SUBJECTS: Record<string, Record<string, OfficialSubject[]>> = {
-  // CEP — modèle du PRIMAIRE : une note /20 par épreuve, SANS coefficient.
+  // CEP — catalogue PRIMAIRE d'Academia Helm (SubjectsWorkspace.PRIMAIRE).
   CEP: {
     '': [
-      { code: 'RED', name: 'Rédaction', coefficient: 1, duration: 60 },
-      { code: 'DIC', name: 'Dictée', coefficient: 1, duration: 20 },
-      { code: 'ETX', name: 'Étude de texte', coefficient: 1, duration: 45 },
-      { code: 'CAL', name: 'Calcul (Mathématiques)', coefficient: 1, duration: 60 },
-      { code: 'SCI', name: 'Leçons de sciences', coefficient: 1, duration: 45 },
-      { code: 'HGE', name: 'Histoire-Géographie', coefficient: 1, duration: 45 },
+      { code: 'EE-01', name: 'Expression Écrite', coefficient: 1, maxScore: 20 },
+      { code: 'LECT-02', name: 'Lecture', coefficient: 1, maxScore: 20 },
+      { code: 'DICT-03', name: 'Dictée', coefficient: 1, maxScore: 20 },
+      { code: 'MATH-04', name: 'Mathématiques', coefficient: 1, maxScore: 20 },
+      { code: 'EST-05', name: 'Éducation Scientifique et Technologique', coefficient: 1, maxScore: 20 },
+      { code: 'ES-06', name: 'Éducation Sociale', coefficient: 1, maxScore: 20 },
+      { code: 'EAV-07', name: 'Éducation Artistique (EA) Vivant', coefficient: 1, maxScore: 20 },
+      { code: 'EAP-08', name: 'Éducation Artistique (EA) Plastique', coefficient: 1, maxScore: 20 },
+      { code: 'EPS-09', name: 'Éducation Physique et Sportive', coefficient: 1, maxScore: 20 },
+      { code: 'ANG-10', name: 'Anglais', coefficient: 1, maxScore: 20 },
+      { code: 'INFO-11', name: 'Informatique', coefficient: 1, maxScore: 20 },
     ],
   },
-  // BEPC — modèle du SECONDAIRE avec coefficients.
+  // BEPC — catalogue SECONDAIRE d'Academia Helm (SubjectsWorkspace.SECONDAIRE).
   BEPC: {
     '': [
-      { code: 'FR', name: 'Français', coefficient: 4, duration: 120 },
-      { code: 'MATH', name: 'Mathématiques', coefficient: 4, duration: 120 },
-      { code: 'ANG', name: 'Anglais', coefficient: 3, duration: 90 },
-      { code: 'PCT', name: 'Physique-Chimie-Technologie', coefficient: 2, duration: 90 },
-      { code: 'SVT', name: 'Sciences de la Vie et de la Terre', coefficient: 2, duration: 90 },
-      { code: 'ESC', name: 'Éducation Sociale et Civique', coefficient: 2, duration: 90 },
+      { code: 'CE-01', name: 'Communication Écrite', coefficient: 1, maxScore: 20 },
+      { code: 'LECT-02', name: 'Lecture', coefficient: 1, maxScore: 20 },
+      { code: 'ANG-03', name: 'Anglais', coefficient: 1, maxScore: 20 },
+      { code: 'FR-04', name: 'Français', coefficient: 1, maxScore: 20 },
+      { code: 'ESP-05', name: 'Espagnol', coefficient: 1, maxScore: 20 },
+      { code: 'ALL-06', name: 'Allemand', coefficient: 1, maxScore: 20 },
+      { code: 'MATH-07', name: 'Mathématiques', coefficient: 1, maxScore: 20 },
+      { code: 'PCT-08', name: 'Physique Chimie et Technologie', coefficient: 1, maxScore: 20 },
+      { code: 'SVT-09', name: 'Science de la Vie et de la Terre', coefficient: 1, maxScore: 20 },
+      { code: 'HG-11', name: 'Histoire-Géographie', coefficient: 1, maxScore: 20 },
+      { code: 'PHILO-12', name: 'Philosophie', coefficient: 1, maxScore: 20 },
+      { code: 'EPS-13', name: 'Éducation Physique et Sportive', coefficient: 1, maxScore: 20 },
+      { code: 'INFO-14', name: 'Informatique', coefficient: 1, maxScore: 20 },
     ],
   },
-  // BAC — PAR SÉRIE (A1 / A2 / C / D) : les matières varient fortement.
+  // BAC — PAR SÉRIE (A1 / A2 / C / D) : même catalogue SECONDAIRE Helm pour
+  // chaque série ; le patronat sélectionne les matières pertinentes par série
+  // et paramètre individuellement coefficients / barèmes / durées.
   BAC: {
-    A1: [
-      { code: 'PHI', name: 'Philosophie', coefficient: 2, duration: 240 },
-      { code: 'FR', name: 'Français', coefficient: 4, duration: 240 },
-      { code: 'ANG', name: 'Anglais', coefficient: 3, duration: 180 },
-      { code: 'HGE', name: 'Histoire-Géographie', coefficient: 3, duration: 180 },
-      { code: 'MATH', name: 'Mathématiques', coefficient: 2, duration: 180 },
-      { code: 'ESC', name: 'Éducation Sociale et Civique', coefficient: 1, duration: 90 },
-    ],
-    A2: [
-      { code: 'PHI', name: 'Philosophie', coefficient: 2, duration: 240 },
-      { code: 'FR', name: 'Français', coefficient: 4, duration: 240 },
-      { code: 'ANG', name: 'Anglais', coefficient: 3, duration: 180 },
-      { code: 'HGE', name: 'Histoire-Géographie', coefficient: 3, duration: 180 },
-      { code: 'LV2', name: 'Langue vivante II', coefficient: 3, duration: 180 },
-      { code: 'MATH', name: 'Mathématiques', coefficient: 1, duration: 180 },
-    ],
-    C: [
-      { code: 'PHI', name: 'Philosophie', coefficient: 2, duration: 240 },
-      { code: 'FR', name: 'Français', coefficient: 2, duration: 240 },
-      { code: 'MATH', name: 'Mathématiques', coefficient: 6, duration: 240 },
-      { code: 'PC', name: 'Physique-Chimie', coefficient: 6, duration: 240 },
-      { code: 'SN', name: 'Sciences Naturelles', coefficient: 2, duration: 180 },
-      { code: 'ANG', name: 'Anglais', coefficient: 2, duration: 180 },
-    ],
-    D: [
-      { code: 'PHI', name: 'Philosophie', coefficient: 2, duration: 240 },
-      { code: 'FR', name: 'Français', coefficient: 3, duration: 240 },
-      { code: 'MATH', name: 'Mathématiques', coefficient: 4, duration: 240 },
-      { code: 'PC', name: 'Physique-Chimie', coefficient: 2, duration: 240 },
-      { code: 'SN', name: 'Sciences Naturelles', coefficient: 4, duration: 240 },
-      { code: 'ANG', name: 'Anglais', coefficient: 2, duration: 180 },
-    ],
+    A1: HELM_SECONDARY_SUBJECTS(),
+    A2: HELM_SECONDARY_SUBJECTS(),
+    C: HELM_SECONDARY_SUBJECTS(),
+    D: HELM_SECONDARY_SUBJECTS(),
   },
-  // CAP — théorie + pratique (filières techniques).
+  // CAP — catalogue SECONDAIRE de Helm (tronc commun) ; les matières
+  // professionnelles propres à chaque filière restent à ajouter manuellement.
   CAP: {
-    '': [
-      { code: 'CG', name: 'Culture générale', coefficient: 3, duration: 120 },
-      { code: 'MATH', name: 'Mathématiques', coefficient: 2, duration: 90 },
-      { code: 'TEC', name: 'Technologie professionnelle', coefficient: 4, duration: 180 },
-      { code: 'TP', name: 'Travaux pratiques', coefficient: 5, duration: 240 },
-    ],
+    '': HELM_SECONDARY_SUBJECTS(),
   },
 };
 

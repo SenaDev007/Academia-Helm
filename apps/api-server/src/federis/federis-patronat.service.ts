@@ -278,6 +278,45 @@ export class FederisPatronatService {
     private readonly fedapayService: FederisFedapayService,
   ) {}
 
+  // ── ⭐ DERNIÈRE VERSION DU LOGO D'ÉCOLE (2026-09-30) ────────────────────────
+  //
+  // Une école Helm peut uploader son logo à tout moment (Paramètres →
+  // Profil d'identité) : chaque upload crée une NOUVELLE VERSION de
+  // TenantIdentityProfile (version + 1, isActive = true) et désactive la
+  // précédente. Le champ historique School.logo n'est PAS resynchronisé
+  // systématiquement — il reste au mieux sur la PREMIÈRE version importée.
+  // Lire uniquement School.logo affichait donc l'ancien logo (voire aucun).
+  //
+  // Résolution (pattern ReviewsService) :
+  //   1. TenantIdentityProfile ACTIF le plus récent (dernier upload) ;
+  //   2. SchoolSettings.logoUrl (synchronisé par identity-profile) ;
+  //   3. School.logo (fiche historique) ;
+  //   4. null.
+  private static readonly SCHOOL_LOGO_INCLUDE = {
+    schoolSettings: { select: { logoUrl: true } },
+    identityProfiles: {
+      where: { isActive: true },
+      select: { logoUrl: true },
+      orderBy: { version: 'desc' as const },
+      take: 1,
+    },
+  } as const;
+
+  /** Résout la DERNIÈRE version du logo d'une école (cf. commentaire ci-dessus). */
+  private resolveSchoolLogo(t: {
+    identityProfiles?: Array<{ logoUrl: string | null }> | null;
+    schoolSettings?: { logoUrl: string | null } | null;
+    schools?: { logo: string | null } | null;
+  } | null): string | null {
+    if (!t) return null;
+    return (
+      t.identityProfiles?.[0]?.logoUrl ||
+      t.schoolSettings?.logoUrl ||
+      t.schools?.logo ||
+      null
+    );
+  }
+
   /** Résout le patronat depuis le tenant du JWT (fallback : lien PatronatUser). */
   async resolvePatronat(tenantId: string, userId?: string) {
     let patronat = tenantId
@@ -933,6 +972,9 @@ export class FederisPatronatService {
             //    logo sur le tenant → P2022 « Invalid prisma.patronatSchool
             //    .findMany() invocation » et cassait toute la page Écoles
             //    rattachées.
+            // ⭐ FIX DERNIÈRE VERSION DU LOGO (2026-09-30) : on inclut AUSSI le
+            //    profil d'identité actif (dernier upload de l'école) et
+            //    SchoolSettings — School.logo seul renvoie l'ANCIENNE version.
             select: {
               id: true,
               name: true,
@@ -951,6 +993,7 @@ export class FederisPatronatService {
                   primaryEmail: true,
                 },
               },
+              ...FederisPatronatService.SCHOOL_LOGO_INCLUDE,
             },
           },
           academicYear: { select: { name: true } },
@@ -1017,7 +1060,7 @@ export class FederisPatronatService {
         name: s.schoolTenant?.name ?? 'École',
         slug: s.schoolTenant?.slug,
         subdomain: s.schoolTenant?.subdomain,
-        logo: s.schoolTenant?.schools?.logo ?? null,
+        logo: this.resolveSchoolLogo(s.schoolTenant),
         city: s.schoolTenant?.schools?.city ?? null,
         department: s.schoolTenant?.schools?.department ?? null,
         // ⭐ Département résolu (fiche, sinon ville → département) — regroup
@@ -1100,7 +1143,16 @@ export class FederisPatronatService {
     const [schoolTenant, school] = await Promise.all([
       this.prisma.tenant.findUnique({
         where: { id: schoolTenantId },
-        select: { id: true, name: true, slug: true, subdomain: true, status: true },
+        // ⭐ FIX DERNIÈRE VERSION DU LOGO (2026-09-30) : profil d'identité
+        //    actif (dernier upload) > SchoolSettings.logoUrl > School.logo.
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          subdomain: true,
+          status: true,
+          ...FederisPatronatService.SCHOOL_LOGO_INCLUDE,
+        },
       }),
       this.prisma.school.findUnique({
         where: { tenantId: schoolTenantId },
@@ -1343,7 +1395,7 @@ export class FederisPatronatService {
         name: schoolTenant.name,
         slug: schoolTenant.slug,
         subdomain: schoolTenant.subdomain,
-        logo: school?.logo ?? null,
+        logo: this.resolveSchoolLogo(schoolTenant) ?? school?.logo ?? null,
         address: school?.address ?? null,
         city: school?.city ?? null,
         department: school?.department ?? null,
@@ -1376,7 +1428,7 @@ export class FederisPatronatService {
   async searchHelmSchools(query: string) {
     const q = query?.trim();
     if (!q || q.length < 2) return [];
-    return this.prisma.tenant.findMany({
+    const tenants = await this.prisma.tenant.findMany({
       where: {
         // ⭐ FIX : écoles réelles = MATERNELLE/PRIMAIRE/SECONDAIRE/MIXTE/SCHOOL
         type: schoolTenantTypeFilter(),
@@ -1387,17 +1439,27 @@ export class FederisPatronatService {
         ],
       },
       // ⭐ Même correctif que getSchools : logo via la fiche School (1:1),
-      //    jamais sur le Tenant.
+      //    jamais sur le Tenant — PLUS profil d'identité actif et
+      //    SchoolSettings pour la DERNIÈRE version du logo (2026-09-30).
       select: {
         id: true,
         name: true,
         slug: true,
         subdomain: true,
         schools: { select: { logo: true } },
+        ...FederisPatronatService.SCHOOL_LOGO_INCLUDE,
       },
       take: 15,
       orderBy: { name: 'asc' },
     });
+    // Aplatit le logo résolu (le front attend { id, name, slug, subdomain, logo })
+    return tenants.map((t) => ({
+      id: t.id,
+      name: t.name,
+      slug: t.slug,
+      subdomain: t.subdomain,
+      logo: this.resolveSchoolLogo(t),
+    }));
   }
 
   // ── Découverte automatique des écoles du territoire (2026-09-29) ──────────
@@ -1468,6 +1530,9 @@ export class FederisPatronatService {
             primaryEmail: true,
           },
         },
+        // ⭐ FIX DERNIÈRE VERSION DU LOGO (2026-09-30) : profil d'identité
+        //    actif (dernier upload) > SchoolSettings.logoUrl > School.logo.
+        ...FederisPatronatService.SCHOOL_LOGO_INCLUDE,
       },
       take: 500,
       orderBy: { name: 'asc' },
@@ -1545,7 +1610,7 @@ export class FederisPatronatService {
         slug: t.slug,
         subdomain: t.subdomain,
         tenantType: t.type,
-        logo: t.schools?.logo ?? null,
+        logo: this.resolveSchoolLogo(t),
         city: t.schools?.city ?? null,
         department: t.schools?.department ?? null,
         // ⭐ Département résolu : fiche School.department, sinon ville →

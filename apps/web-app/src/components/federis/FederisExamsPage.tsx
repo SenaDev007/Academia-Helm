@@ -389,13 +389,15 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
                     className={cn('hover:bg-[#f7f9fc]', listsExamId === exam.id && 'bg-blue-50/60')}
                   >
                     <td className="px-6 py-4">
-                      <div className="text-sm font-bold text-blue-900">{exam.name}</div>
-                      <div className="text-[10px] font-bold text-slate-400 uppercase">{exam.code}</div>
+                      {/* ⭐ Libellés sur UNE SEULE LIGNE (rendu professionnel) —
+                          le conteneur overflow-x-auto gère le débordement. */}
+                      <div className="text-sm font-bold text-blue-900 whitespace-nowrap">{exam.name}</div>
+                      <div className="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap">{exam.code}</div>
                     </td>
-                    <td className="px-6 py-4 text-sm font-bold text-blue-800">
+                    <td className="px-6 py-4 text-sm font-bold text-blue-800 whitespace-nowrap">
                       {LEVEL_LABELS[levelOf(exam.level)] ?? exam.level}
                     </td>
-                    <td className="px-6 py-4 text-xs font-semibold text-slate-600">
+                    <td className="px-6 py-4 text-xs font-semibold text-slate-600 whitespace-nowrap">
                       {new Date(exam.startDate).toLocaleDateString('fr-FR')} → {new Date(exam.endDate).toLocaleDateString('fr-FR')}
                     </td>
                     <td className="px-6 py-4">
@@ -403,27 +405,27 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
                         <select
                           value={exam.status}
                           onChange={(e) => changeStatus(exam.id, e.target.value)}
-                          className={cn('px-2.5 py-1.5 rounded text-[10px] font-bold uppercase border-none outline-none cursor-pointer', EXAM_STATUS_STYLES[exam.status] ?? EXAM_STATUS_STYLES.DRAFT)}
+                          className={cn('px-2.5 py-1.5 rounded text-[10px] font-bold uppercase border-none outline-none cursor-pointer whitespace-nowrap', EXAM_STATUS_STYLES[exam.status] ?? EXAM_STATUS_STYLES.DRAFT)}
                         >
                           {Object.keys(EXAM_STATUS_LABELS).map((s) => (
                             <option key={s} value={s}>{EXAM_STATUS_LABELS[s]}</option>
                           ))}
                         </select>
                       ) : (
-                        <span className={cn('px-2.5 py-1.5 rounded text-[10px] font-bold uppercase inline-block', EXAM_STATUS_STYLES[exam.status] ?? EXAM_STATUS_STYLES.DRAFT)}>
+                        <span className={cn('px-2.5 py-1.5 rounded text-[10px] font-bold uppercase inline-block whitespace-nowrap', EXAM_STATUS_STYLES[exam.status] ?? EXAM_STATUS_STYLES.DRAFT)}>
                           {EXAM_STATUS_LABELS[exam.status] ?? exam.status}
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-center text-sm font-bold text-blue-900">{exam.centersCount}</td>
-                    <td className="px-6 py-4 text-center text-sm font-bold text-blue-900">{exam.candidatesCount}</td>
+                    <td className="px-6 py-4 text-center text-sm font-bold text-blue-900 whitespace-nowrap">{exam.centersCount}</td>
+                    <td className="px-6 py-4 text-center text-sm font-bold text-blue-900 whitespace-nowrap">{exam.candidatesCount}</td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
                           onClick={() => (listsExamId === exam.id ? closeSchoolLists() : openSchoolLists(exam.id))}
                           className={cn(
-                            'px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors',
+                            'px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-colors whitespace-nowrap',
                             listsExamId === exam.id
                               ? 'bg-blue-900 text-white'
                               : 'bg-gold-500/25 text-blue-900 hover:bg-blue-900 hover:text-white',
@@ -433,11 +435,11 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
                           Listes écoles
                         </button>
                         <Link href={federisPath(`/centers?exam=${exam.id}`)}
-                          className="px-3 py-1.5 bg-blue-50 rounded-lg text-[11px] font-semibold text-blue-800 hover:bg-blue-800 hover:text-white transition-colors">
+                          className="px-3 py-1.5 bg-blue-50 rounded-lg text-[11px] font-semibold text-blue-800 hover:bg-blue-800 hover:text-white transition-colors whitespace-nowrap">
                           Centres
                         </Link>
                         <Link href={federisPath(`/candidates?exam=${exam.id}`)}
-                          className="px-3 py-1.5 bg-blue-50 rounded-lg text-[11px] font-semibold text-blue-800 hover:bg-blue-800 hover:text-white transition-colors">
+                          className="px-3 py-1.5 bg-blue-50 rounded-lg text-[11px] font-semibold text-blue-800 hover:bg-blue-800 hover:text-white transition-colors whitespace-nowrap">
                           Candidats
                         </Link>
                       </div>
@@ -630,7 +632,7 @@ function SchoolListTable({ students }: { students: SchoolListStudent[] }) {
               <td className="px-4 py-2.5 text-[11px] font-bold text-blue-800 whitespace-nowrap">
                 {st.matricule ?? '—'}
               </td>
-              <td className="px-4 py-2.5 text-xs font-semibold text-slate-700">
+              <td className="px-4 py-2.5 text-xs font-semibold text-slate-700 whitespace-nowrap">
                 {st.lastName} {st.firstName}
                 {st.gender && (
                   <span className="ml-1.5 text-[9px] font-bold text-slate-400">
@@ -638,7 +640,7 @@ function SchoolListTable({ students }: { students: SchoolListStudent[] }) {
                   </span>
                 )}
               </td>
-              <td className="px-4 py-2.5 text-xs text-slate-600">
+              <td className="px-4 py-2.5 text-xs text-slate-600 whitespace-nowrap">
                 {st.schoolClass ?? '—'}
                 {st.series && (
                   <span className="ml-1 text-[9px] font-bold text-blue-700 uppercase">
@@ -649,7 +651,7 @@ function SchoolListTable({ students }: { students: SchoolListStudent[] }) {
               <td className="px-4 py-2.5 text-center text-xs text-slate-500 whitespace-nowrap">
                 {st.dateOfBirth ? new Date(st.dateOfBirth).toLocaleDateString('fr-FR') : '—'}
               </td>
-              <td className="px-4 py-2.5 text-center text-xs font-bold text-slate-600">
+              <td className="px-4 py-2.5 text-center text-xs font-bold text-slate-600 whitespace-nowrap">
                 {st.tableNumber ?? '—'}
               </td>
               <td className="px-4 py-2.5 text-center text-xs text-slate-500 whitespace-nowrap">
@@ -658,7 +660,7 @@ function SchoolListTable({ students }: { students: SchoolListStudent[] }) {
               <td className="px-4 py-2.5">
                 <span
                   className={cn(
-                    'px-2 py-0.5 rounded text-[9px] font-bold uppercase inline-block',
+                    'px-2 py-0.5 rounded text-[9px] font-bold uppercase inline-block whitespace-nowrap',
                     st.status === 'WITHDRAWN'
                       ? 'bg-red-50 text-red-700'
                       : st.status === 'PASSED'

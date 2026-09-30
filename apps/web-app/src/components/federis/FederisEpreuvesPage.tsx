@@ -32,6 +32,13 @@ import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
 import { canWrite } from '@/lib/patronat/permissions';
 import { FedPage } from '@/components/federis/federis-motion';
+// ⭐ Durées intelligentes (2026-09-30) : saisie en minutes → conversion en
+//    heures en direct (120 → 2h) — la durée s'affiche en heures sur l'épreuve
+import {
+  minutesToHoursLabel,
+  durationInputHint,
+  normalizeDurationText,
+} from '@/lib/federis/duration';
 
 interface FederisEpreuvesPageProps {
   tenantId?: string;
@@ -95,6 +102,9 @@ interface SubjectOption {
   series: string;
   code: string;
   name: string;
+  /** ⭐ Durée paramétrée dans le module Matières (minutes) — pré-remplit le
+   *    champ Durée de l'épreuve au format heures (120 → « 2h »). */
+  duration: number | null;
 }
 
 interface ReadinessMissing {
@@ -233,6 +243,7 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
               series: s.series ?? '',
               code: s.code,
               name: s.name,
+              duration: typeof s.duration === 'number' ? s.duration : null,
             })),
         );
       }
@@ -811,10 +822,19 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
                           setForm({ ...form, subjectId: null });
                         } else {
                           const opt = options.find((o) => o.id === v);
+                          // ⭐ Pré-remplissage intelligent de la durée : si la
+                          //    matière sélectionnée a une durée paramétrée
+                          //    (module Matières) et que le champ est vide, on
+                          //    l'insère au format heures (120 min → « 2h »).
+                          const prefillDuration =
+                            opt?.duration && !form.durationLabel.trim()
+                              ? minutesToHoursLabel(opt.duration)
+                              : form.durationLabel;
                           setForm({
                             ...form,
                             subjectId: v,
                             subject: opt ? opt.name : form.subject,
+                            durationLabel: prefillDuration,
                           });
                         }
                         markDirty();
@@ -860,10 +880,26 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
                     setForm({ ...form, durationLabel: e.target.value });
                     markDirty();
                   }}
+                  onBlur={(e) => {
+                    // ⭐ Conversion intelligente au blur : « 120 » (minutes)
+                    //    devient « 2h », « 45 » devient « 45 min » ; une
+                    //    valeur déjà horaire (« 1h30 ») est conservée.
+                    const normalized = normalizeDurationText(e.target.value);
+                    if (normalized !== e.target.value) {
+                      setForm({ ...form, durationLabel: normalized });
+                      markDirty();
+                    }
+                  }}
                   disabled={locked}
-                  placeholder="2h"
+                  placeholder="2h · 1h30 · ou 120 (minutes)"
                   className="fed-input-light px-4 py-3 font-semibold"
                 />
+                {/* ⭐ Conversion en direct : 120 → « = 2h » dès la saisie */}
+                {durationInputHint(form.durationLabel) && (
+                  <p className="text-[10px] font-bold text-emerald-700 mt-1.5">
+                    = {durationInputHint(form.durationLabel)} sur l&apos;épreuve
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-2">

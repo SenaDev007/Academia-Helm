@@ -392,8 +392,15 @@ export default function FederisLayout({
             </nav>
           </aside>
 
-          <main className={cn('flex-1 transition-all duration-300', sidebarOpen ? 'lg:ml-64' : 'lg:ml-0')}>
-            <div className="p-4 sm:p-6 lg:p-8">
+          {/* ⭐ min-w-0 OBLIGATOIRE (fix responsive 2026-09-30) : sans lui, un
+              enfant flex garde min-width:auto — un tableau large (libellés sur
+              une seule ligne) poussait TOUTE la page au-delà du viewport :
+              tableau coupé au bord droit, bouton « Créer un examen » exilé
+              hors écran. Avec min-w-0, la largeur de la zone de contenu est
+              contrainte et le défilement horizontal a lieu DANS la carte
+              (overflow-x-auto des tableaux) — mobile compris. */}
+          <main className={cn('flex-1 min-w-0 transition-all duration-300', sidebarOpen ? 'lg:ml-64' : 'lg:ml-0')}>
+            <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px]">
               {/* Bandeau abonnement (cahier des charges §12.3 — blocage si impayé,
                   les archives restent consultables depuis les rapports) */}
               <AnimatePresence>

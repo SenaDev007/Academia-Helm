@@ -84,9 +84,11 @@ const PAGE_LABELS: Record<string, string> = {
   '/bureau': 'Bureau & Membres',
   '/team': 'Équipe & Comptes',
   '/schools': 'Écoles rattachées',
+  '/subjects': 'Matières',
   '/exams': 'Examens nationaux',
   '/centers': 'Centres et salles',
   '/candidates': 'Candidats',
+  '/grades': 'Notes et moyennes',
   '/deliberations': 'Délibérations',
   '/documents': 'Épreuves et documents',
   '/question-bank': 'Banque d\u2019épreuves',
@@ -224,8 +226,8 @@ export default function FederisLoadingShell() {
         </aside>
 
         {/* ── CONTENU — squelette + indicateur du module en cours ──────── */}
-        <main className="flex-1 transition-all duration-300 lg:ml-64">
-          <div className="p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 min-w-0 transition-all duration-300 lg:ml-64">
+          <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px]">
             {/* Indicateur du module en cours de chargement */}
             <div className="flex items-center justify-center gap-3 py-8">
               <div className="relative">

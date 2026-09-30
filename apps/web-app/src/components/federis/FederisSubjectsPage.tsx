@@ -25,6 +25,12 @@ import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
 import { canWrite } from '@/lib/patronat/permissions';
 import { FedPage, FedCountUp } from '@/components/federis/federis-motion';
+// ⭐ Durées intelligentes (2026-09-30) : au-delà de 60 min, conversion en
+//    heures en DIRECT (affichage « 2h » sur l'épreuve, minutes en infobulle)
+import {
+  durationInputHint,
+  catalogDurationCell,
+} from '@/lib/federis/duration';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -848,6 +854,15 @@ export default function FederisSubjectsPage({ userRole }: FederisSubjectsPagePro
                                     className="fed-input-light !px-3 !py-2 text-xs font-bold text-center !w-24"
                                     placeholder="—"
                                   />
+                                  {/* ⭐ Conversion en direct : 120 → « = 2h » */}
+                                  {durationInputHint(cfg.duration) && (
+                                    <div
+                                      className="text-[9px] font-bold text-emerald-700 mt-1 whitespace-nowrap"
+                                      title="Durée convertie automatiquement en heures sur l'épreuve"
+                                    >
+                                      = {durationInputHint(cfg.duration)}
+                                    </div>
+                                  )}
                                 </td>
                               </tr>
                             );
@@ -1020,7 +1035,18 @@ export default function FederisSubjectsPage({ userRole }: FederisSubjectsPagePro
                         /{String(s.maxScore).replace('.', ',')}
                       </td>
                       <td className="px-4 py-3 text-center text-xs font-semibold text-slate-500">
-                        {s.duration ? `${s.duration} min` : '—'}
+                        {/* ⭐ Durée en heures dès 60 min (infobulle = minutes
+                            d'origine) — s'affiche ainsi sur l'épreuve. */}
+                        {s.duration ? (
+                          <span
+                            className="whitespace-nowrap"
+                            title={catalogDurationCell(s.duration).title}
+                          >
+                            {catalogDurationCell(s.duration).label}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
                       </td>
                       <td className="px-4 py-3 text-center">
                         {s.papersCount > 0 ? (
@@ -1163,6 +1189,13 @@ export default function FederisSubjectsPage({ userRole }: FederisSubjectsPagePro
                     placeholder="120"
                     className="fed-input-light px-4 py-3 font-bold text-center"
                   />
+                  {/* ⭐ Conversion en direct : au-delà de 60 min, la durée
+                      s'affichera en heures sur l'épreuve (120 → 2h). */}
+                  {durationInputHint(form.duration) && (
+                    <p className="text-[10px] font-bold text-emerald-700 mt-1.5">
+                      Soit {durationInputHint(form.duration)} sur l'épreuve
+                    </p>
+                  )}
                 </div>
               </div>
               <div>

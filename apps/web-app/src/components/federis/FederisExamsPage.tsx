@@ -253,7 +253,11 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
           <h1 className="text-2xl md:text-3xl font-bold text-blue-900 tracking-tight">Examens nationaux</h1>
           <p className="text-slate-500 font-medium mt-1 text-sm">
             {academicYear
-              ? `Campagnes de l'année scolaire ${academicYear}`
+              ? // ⭐ Fix doublon (2026-09-30) : le label API contient déjà
+                // « Année scolaire 2026-2027 » — on retire le préfixe avant
+                // de composer « Campagnes de l'année scolaire … » (avant :
+                // « Campagnes de l'année scolaire Année scolaire 2026-2027 »).
+                `Campagnes de l'année scolaire ${academicYear.replace(/^\s*année\s+scolaire\s*/i, '').trim()}`
               : 'Gérez vos campagnes d\u2019examens inter-écoles'}
           </p>
         </div>

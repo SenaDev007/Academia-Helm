@@ -72,7 +72,7 @@ import {
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
 import { canWrite, normalizePatronatRole } from '@/lib/patronat/permissions';
-import { useFederisExams, EXAM_STATUS_LABELS } from '@/hooks/useFederisExams';
+import { useFederisExams, getExamStatusLabel } from '@/hooks/useFederisExams';
 import { federisMirror } from '@/lib/federis/federis-mirror.service';
 import { FedPage, FedCountUp, FedSectionTitle } from '@/components/federis/federis-motion';
 // ⭐ 2026-10-01 — sous-onglet « Relevé de notes » (déplacé du module Notes et
@@ -814,7 +814,7 @@ export default function FederisDeliberationsPage({
             >
               {activeTypeExams.map((exam) => (
                 <option key={exam.id} value={exam.id}>
-                  {exam.code} — {exam.name} ({EXAM_STATUS_LABELS[exam.status] ?? exam.status})
+                  {exam.code} — {exam.name} ({getExamStatusLabel(exam.status)})
                 </option>
               ))}
             </select>

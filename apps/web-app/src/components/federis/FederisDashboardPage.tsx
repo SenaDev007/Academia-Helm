@@ -15,6 +15,11 @@ import AppIcon from '@/components/ui/AppIcon';
 import { apiClient } from '@/lib/api/client';
 import { federisLink } from '@/lib/federis/useFederisPath';
 import { cn } from '@/lib/utils';
+// ⭐ T55 — Statuts d'examen : libellés FR partagés (hooks/useFederisExams).
+//    Avant, un dict LOCAL incomplet (sans RESULTS_PUBLISHED ni DELIBERATED)
+//    laissait passer l'IDENTIFIANT brut (« results_published ») dans la
+//    colonne Statut de « Examens de l'année ».
+import { getExamStatusLabel, getExamStatusStyles } from '@/hooks/useFederisExams';
 
 interface DashboardData {
   patronat: {
@@ -78,15 +83,6 @@ interface DashboardData {
     candidatesCount: number;
   }> | null;
 }
-
-const EXAM_STATUS_LABELS: Record<string, { label: string; className: string }> = {
-  DRAFT: { label: 'Brouillon', className: 'bg-gray-100 text-gray-700' },
-  REGISTRATION_OPEN: { label: 'Inscriptions ouvertes', className: 'bg-blue-100 text-blue-800' },
-  REGISTRATION_CLOSED: { label: 'Inscriptions clôturées', className: 'bg-amber-100 text-amber-800' },
-  IN_PROGRESS: { label: 'En cours', className: 'bg-green-100 text-green-800' },
-  COMPLETED: { label: 'Terminé', className: 'bg-purple-100 text-purple-800' },
-  CANCELLED: { label: 'Annulé', className: 'bg-red-100 text-red-700' },
-};
 
 const SUBSCRIPTION_STATUS_LABELS: Record<string, { label: string; className: string }> = {
   ACTIVE: { label: 'Actif', className: 'bg-green-100 text-green-800' },
@@ -281,9 +277,13 @@ export default function FederisDashboardPage() {
                   </thead>
                   <tbody>
                     {exams.map((exam) => {
-                      const badge =
-                        EXAM_STATUS_LABELS[exam.status] ??
-                        ({ label: exam.status, className: 'bg-gray-100 text-gray-700' } as const);
+                      // ⭐ T55 — plus de repli sur l'ID brut : libellé français
+                      //    garanti pour TOUT statut (y compris results_published
+                      //    et deliberated).
+                      const badge = {
+                        label: getExamStatusLabel(exam.status),
+                        className: getExamStatusStyles(exam.status),
+                      };
                       return (
                         <tr key={exam.id} className="border-t border-gray-50 hover:bg-gray-50">
                           <td className="px-6 py-3.5 font-medium text-gray-900">{exam.name}</td>

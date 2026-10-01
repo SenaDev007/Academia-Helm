@@ -24,7 +24,7 @@ import AppIcon from '@/components/ui/AppIcon';
 import { apiClient } from '@/lib/api/client';
 import { cn } from '@/lib/utils';
 import { FedPage } from '@/components/federis/federis-motion';
-import { EXAM_STATUS_LABELS, EXAM_STATUS_STYLES } from '@/hooks/useFederisExams';
+import { getExamStatusLabel, getExamStatusStyles } from '@/hooks/useFederisExams';
 
 interface YearFolder {
   id: string;
@@ -325,10 +325,10 @@ export default function FederisArchivesPage() {
                             <span
                               className={cn(
                                 'px-2.5 py-1 rounded-full text-[9px] font-bold uppercase',
-                                EXAM_STATUS_STYLES[exam.status] ?? 'bg-gray-100 text-gray-700',
+                                getExamStatusStyles(exam.status),
                               )}
                             >
-                              {EXAM_STATUS_LABELS[exam.status] ?? exam.status}
+                              {getExamStatusLabel(exam.status)}
                             </span>
                           </td>
                           <td className="px-4 py-3.5 text-center text-slate-700">{exam.centersCount}</td>

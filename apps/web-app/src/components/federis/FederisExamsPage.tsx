@@ -27,7 +27,8 @@ import { canWrite } from '@/lib/patronat/permissions';
 import {
   useFederisExams,
   EXAM_STATUS_LABELS,
-  EXAM_STATUS_STYLES,
+  getExamStatusLabel,
+  getExamStatusStyles,
 } from '@/hooks/useFederisExams';
 import { FedPage } from '@/components/federis/federis-motion';
 import { useFederisScope } from '@/lib/federis/scope-context';
@@ -413,15 +414,15 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
                         <select
                           value={exam.status}
                           onChange={(e) => changeStatus(exam.id, e.target.value)}
-                          className={cn('px-2.5 py-1.5 rounded text-[10px] font-bold uppercase border-none outline-none cursor-pointer whitespace-nowrap', EXAM_STATUS_STYLES[exam.status] ?? EXAM_STATUS_STYLES.DRAFT)}
+                          className={cn('px-2.5 py-1.5 rounded text-[10px] font-bold uppercase border-none outline-none cursor-pointer whitespace-nowrap', getExamStatusStyles(exam.status))}
                         >
                           {Object.keys(EXAM_STATUS_LABELS).map((s) => (
                             <option key={s} value={s}>{EXAM_STATUS_LABELS[s]}</option>
                           ))}
                         </select>
                       ) : (
-                        <span className={cn('px-2.5 py-1.5 rounded text-[10px] font-bold uppercase inline-block whitespace-nowrap', EXAM_STATUS_STYLES[exam.status] ?? EXAM_STATUS_STYLES.DRAFT)}>
-                          {EXAM_STATUS_LABELS[exam.status] ?? exam.status}
+                        <span className={cn('px-2.5 py-1.5 rounded text-[10px] font-bold uppercase inline-block whitespace-nowrap', getExamStatusStyles(exam.status))}>
+                          {getExamStatusLabel(exam.status)}
                         </span>
                       )}
                     </td>

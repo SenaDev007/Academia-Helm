@@ -119,6 +119,7 @@ export const EXAM_STATUS_STYLES: Record<string, string> = {
   REGISTRATION_CLOSED: 'bg-yellow-100 text-yellow-800',
   IN_PROGRESS: 'bg-green-100 text-green-800',
   COMPLETED: 'bg-purple-100 text-purple-800',
+  DELIBERATED: 'bg-teal-100 text-teal-800',
   RESULTS_PUBLISHED: 'bg-emerald-100 text-emerald-800',
   CANCELLED: 'bg-red-100 text-red-800',
   ARCHIVED: 'bg-gray-100 text-gray-500',
@@ -130,7 +131,58 @@ export const EXAM_STATUS_LABELS: Record<string, string> = {
   REGISTRATION_CLOSED: 'Inscriptions closes',
   IN_PROGRESS: 'En cours',
   COMPLETED: 'Terminé',
+  DELIBERATED: 'Délibéré',
   RESULTS_PUBLISHED: 'Résultats publiés',
   CANCELLED: 'Annulé',
   ARCHIVED: 'Archivé',
+};
+
+/* ⭐ T55 — Libellés/statuts d'examen JAMAIS bruts à l'écran.
+ *
+ * Les composants affichaient `EXAM_STATUS_LABELS[status] ?? status` : dès qu'un
+ * statut manquait du dictionnaire (ex. RESULTS_PUBLISHED sur le tableau de bord,
+ * DELIBERATED partout), le repli affichait l'IDENTIFIANT brut (« results_published »).
+ *
+ * `getExamStatusLabel` / `getExamStatusStyles` rendent ce cas impossible :
+ *  1. recherche directe ;
+ *  2. recherche insensible à la casse (results_published ≡ RESULTS_PUBLISHED) ;
+ *  3. sinon HUMANISATION française (résultats_published → « Résultats publié(s) »).
+ */
+const STATUS_WORD_FR: Record<string, string> = {
+  results: 'résultats',
+  published: 'publié(s)',
+  deliberated: 'délibéré',
+  archived: 'archivé',
+  cancelled: 'annulé',
+  completed: 'terminé',
+  draft: 'brouillon',
+  registration: 'inscriptions',
+  open: 'ouvertes',
+  closed: 'closes',
+  in: 'en',
+  progress: 'cours',
+};
+
+export function getExamStatusLabel(status: string | null | undefined): string {
+  if (!status) return '—';
+  const key = String(status);
+  const direct = EXAM_STATUS_LABELS[key] ?? EXAM_STATUS_LABELS[key.toUpperCase()];
+  if (direct) return direct;
+  const words = key
+    .toLowerCase()
+    .split('_')
+    .filter(Boolean)
+    .map((w) => STATUS_WORD_FR[w] ?? w);
+  const label = words.length ? words.join(' ') : key;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+export function getExamStatusStyles(status: string | null | undefined): string {
+  if (!status) return 'bg-gray-100 text-gray-500';
+  const key = String(status);
+  return (
+    EXAM_STATUS_STYLES[key] ??
+    EXAM_STATUS_STYLES[key.toUpperCase()] ??
+    'bg-gray-100 text-gray-600'
+  );
 };

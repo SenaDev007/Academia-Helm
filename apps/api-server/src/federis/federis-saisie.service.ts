@@ -61,6 +61,7 @@ import {
   splitCepScore,
   CEP_CM_MAX,
   CEP_CP_MAX,
+  chunkInPacks,
 } from './federis-grades.service';
 import {
   ALL_PATRONAT_FUNCTIONS,
@@ -942,10 +943,21 @@ export class FederisSaisieService {
     });
     if (!year) throw new BadRequestException('Aucune année scolaire active.');
 
+    // ⭐ T55 — MULTI-CONNEXION : les upserts étaient SÉQUENTIELS (un aller-retour
+    //    DB PAR note) : une sauvegarde de N notes = N round-trips et, avec des
+    //    dizaines/centaines de secrétaires simultanés, une file qui montait sur
+    //    le pool. Nouveau découpage :
+    //      Pass 1 — validation + payloads EN MÉMOIRE (zéro requête) ;
+    //      Pass 2 — effacements groupés (UN deleteMany par 100 cellules vides) ;
+    //      Pass 3 — upserts PARALLÈLES par lots de 25.
+    //    Une sauvegarde de 50 notes passe de ~50 requêtes à ~4 ; une saisie de
+    //    300 notes (classe complète × matières) de ~300 à ~14.
     let saved = 0;
     let deleted = 0;
     let absent = 0;
     const errors: string[] = [];
+    const deletions: Array<{ candidateId: string; subjectId: string }> = [];
+    const upserts: Array<{ label: string; isAbsent: boolean; payload: any }> = [];
     for (const cell of dto.grades) {
       const subject = subjectById.get(cell.subjectId);
       if (!candidateIds.has(cell.candidateId)) {
@@ -961,12 +973,7 @@ export class FederisSaisieService {
         cell.score === null || cell.score === undefined || Number.isNaN(Number(cell.score));
       const cmEmpty = cell.cm === null || cell.cm === undefined || Number.isNaN(Number(cell.cm));
       if (!isAbsent && scoreEmpty && cmEmpty) {
-        const res = await this.prisma.examResult
-          .deleteMany({
-            where: { examId: s.exam.id, candidateId: cell.candidateId, subjectId: subject.id },
-          })
-          .catch(() => ({ count: 0 }));
-        deleted += res.count ?? 0;
+        deletions.push({ candidateId: cell.candidateId, subjectId: subject.id });
         continue;
       }
       // ⭐ CEP — CM (/18) + CP (/2) = note (/20), CP forcé à 0 sous la note
@@ -1000,8 +1007,10 @@ export class FederisSaisieService {
         score = isAbsent ? 0 : Math.max(0, Math.min(Number(cell.score), subject.maxScore ?? 20));
       }
       const coefficient = subject.coefficient ?? 1;
-      await this.prisma.examResult
-        .upsert({
+      upserts.push({
+        label: `${cell.candidateId} / ${subject.name}`,
+        isAbsent,
+        payload: {
           where: {
             tenantId_academicYearId_examId_candidateId_subjectId: {
               tenantId,
@@ -1036,12 +1045,50 @@ export class FederisSaisieService {
             enteredBy: userId,
             ...(cepDetail ? { metadata: { cm: cepDetail.cm, cp: cepDetail.cp } } : {}),
           },
-        })
-        .catch((e: any) => {
-          errors.push(`Candidat ${cell.candidateId} / ${subject.name} : ${e?.message ?? 'erreur'}`);
-        });
-      if (isAbsent) absent++;
-      else saved++;
+        },
+      });
+    }
+
+    // Pass 2 — effacements groupés : UN deleteMany par 100 cellules (au lieu
+    // d'un par cellule). Les paires (candidat, matière) sont indépendantes →
+    // sûr de les regrouper par OR sur l'examen.
+    if (deletions.length) {
+      const packs = chunkInPacks(deletions, 100);
+      const packsResults = await Promise.all(
+        packs.map((pack) =>
+          this.prisma.examResult
+            .deleteMany({
+              where: {
+                examId: s.exam.id,
+                OR: pack.map((d) => ({ candidateId: d.candidateId, subjectId: d.subjectId })),
+              },
+            })
+            .catch(() => ({ count: 0 })),
+        ),
+      );
+      for (const r of packsResults) deleted += (r as any).count ?? 0;
+    }
+
+    // Pass 3 — upserts parallèles par lots de 25 : ≤ 25 opérations en vol par
+    // requête HTTP. Avec un pool de 40 connexions, des centaines de
+    // sauvegardes simultanées restent fluides (chaque lot dure quelques ms).
+    for (const lot of chunkInPacks(upserts, 25)) {
+      const lotResults = await Promise.all(
+        lot.map((u) =>
+          this.prisma.examResult.upsert(u.payload).then(
+            () => true as const,
+            (e: any) => {
+              errors.push(`Candidat ${u.label} : ${e?.message ?? 'erreur'}`);
+              return false as const;
+            },
+          ),
+        ),
+      );
+      for (let k = 0; k < lot.length; k++) {
+        if (!lotResults[k]) continue; // cellule en erreur — non comptée
+        if (lot[k].isAbsent) absent++;
+        else saved++;
+      }
     }
     await this.audit(tenantId, userId, 'FEDERIS_SAISIE_GRADES_BULK', s.exam.id, {
       supervisorId,

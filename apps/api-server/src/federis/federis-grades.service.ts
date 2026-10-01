@@ -290,6 +290,20 @@ export function splitCepScore(score: number): { cm: number; cp: number } {
   return { cm: round2(cm), cp: round2(Math.max(0, (Number(score) || 0) - cm)) };
 }
 
+/** ⭐ T55 — MULTI-CONNEXION : découpe un tableau en paquets bornés. Utilisé par
+ *  les passes parallèles des sauvegardes de notes (grille patronat + saisie
+ *  secrétaire) : chaque paquet part en UNE vague Promise.all — sans déborder
+ *  le pool Postgres lorsque des centaines de secrétaires sauvegardent en
+ *  même temps (12 départements en période d'examen).
+ *  Défini ICI (couche la plus basse du domaine notes) car le service de
+ *  saisie importe déjà ce module — pas d'import circulaire. */
+export function chunkInPacks<T>(items: readonly T[], packSize: number): T[][] {
+  if (!Number.isFinite(packSize) || packSize < 1) return items.length ? [items.slice()] : [];
+  const packs: T[][] = [];
+  for (let i = 0; i < items.length; i += packSize) packs.push(items.slice(i, i + packSize));
+  return packs;
+}
+
 /** Règle officielle : la note de perfectionnement (CP) n'est attribuée que
  *  si le candidat a obtenu la note minimale exigée (défaut 10) — pattern
  *  GradingSheet Helm : CP forcé à 0 sous le seuil. */
@@ -1557,10 +1571,20 @@ export class FederisGradesService {
       );
     }
 
+    // ⭐ T55 — MULTI-CONNEXION : les upserts étaient SÉQUENTIELS (un aller-retour
+    //    DB PAR note) : N notes = N round-trips ; avec des dizaines/centaines de
+    //    secrétaires simultanés en période d'examen, la file du pool montait et
+    //    les sauvegardes s'allongeaient d'autant. Même découpage que la saisie
+    //    secrétaire (federis-saisie.service) :
+    //      Pass 1 — validation + payloads EN MÉMOIRE (zéro requête) ;
+    //      Pass 2 — effacements groupés (UN deleteMany par 100 cellules vides) ;
+    //      Pass 3 — upserts PARALLÈLES par lots de 25.
     let saved = 0;
     let deleted = 0;
     let absent = 0;
     const errors: string[] = [];
+    const deletions: Array<{ candidateId: string; subjectId: string }> = [];
+    const upserts: Array<{ label: string; isAbsent: boolean; payload: any }> = [];
 
     for (const cell of dto.grades) {
       const subject = subjectById.get(cell.subjectId);
@@ -1582,16 +1606,7 @@ export class FederisGradesService {
         cell.cm === null || cell.cm === undefined || Number.isNaN(Number(cell.cm));
 
       if (!isAbsent && scoreEmpty && cmEmpty) {
-        const res = await this.prisma.examResult
-          .deleteMany({
-            where: {
-              examId: exam.id,
-              candidateId: cell.candidateId,
-              subjectId: subject.id,
-            },
-          })
-          .catch(() => ({ count: 0 }));
-        deleted += res.count ?? 0;
+        deletions.push({ candidateId: cell.candidateId, subjectId: subject.id });
         continue;
       }
 
@@ -1632,8 +1647,12 @@ export class FederisGradesService {
         score = isAbsent ? 0 : Math.max(0, Math.min(Number(cell.score), subject.maxScore ?? 20));
       }
 
-      await this.prisma.examResult
-        .upsert({
+      upserts.push({
+        // Libellé pour les messages d'erreur (une matière par cellule) — même
+        // information que l'ancien message `${subject.code} : ...`.
+        label: String(subject.code ?? ''),
+        isAbsent,
+        payload: {
           where: {
             tenantId_academicYearId_examId_candidateId_subjectId: {
               tenantId: patronat.tenantId,
@@ -1669,12 +1688,50 @@ export class FederisGradesService {
             validatedAt: null,
             ...(cepDetail ? { metadata: { cm: cepDetail.cm, cp: cepDetail.cp } } : {}),
           },
-        })
-        .catch((err: any) => {
-          errors.push(`${subject.code} : ${err?.message ?? 'erreur d\u2019enregistrement'}`);
-        });
-      if (isAbsent) absent += 1;
-      saved += 1;
+        },
+      });
+    }
+
+    // Pass 2 — effacements groupés : UN deleteMany par 100 cellules vides
+    // (au lieu d'un par cellule) — les paires (candidat, matière) sont
+    // indépendantes, le regroupement par OR sur l'examen est sûr.
+    if (deletions.length) {
+      const packs = chunkInPacks(deletions, 100);
+      const packsResults = await Promise.all(
+        packs.map((pack) =>
+          this.prisma.examResult
+            .deleteMany({
+              where: {
+                examId: exam.id,
+                OR: pack.map((d) => ({ candidateId: d.candidateId, subjectId: d.subjectId })),
+              },
+            })
+            .catch(() => ({ count: 0 })),
+        ),
+      );
+      for (const r of packsResults) deleted += (r as any).count ?? 0;
+    }
+
+    // Pass 3 — upserts parallèles par lots de 25 : ≤ 25 opérations en vol par
+    // requête HTTP. Compatible avec des centaines de sauvegardes simultanées
+    // sur le pool de 40 connexions — chaque lot ne dure que quelques ms.
+    for (const lot of chunkInPacks(upserts, 25)) {
+      const lotResults = await Promise.all(
+        lot.map((u) =>
+          this.prisma.examResult.upsert(u.payload).then(
+            () => true as const,
+            (err: any) => {
+              errors.push(`${u.label} : ${err?.message ?? 'erreur d\u2019enregistrement'}`);
+              return false as const;
+            },
+          ),
+        ),
+      );
+      for (let k = 0; k < lot.length; k++) {
+        if (!lotResults[k]) continue; // cellule en erreur — non comptée
+        if (lot[k].isAbsent) absent += 1;
+        else saved += 1;
+      }
     }
 
     await this.audit(patronat.tenantId, userId, 'FEDERIS_GRADES_BULK_SAVE', exam.id, {

@@ -200,6 +200,22 @@ async function bootstrap() {
   await app.listen(port, '0.0.0.0');
   logger.log(`🚀 API listening on port ${port}`);
 
+  // ⭐ T55 — MULTI-CONNEXION : tuning keep-alive du serveur HTTP.
+  //    Node ferme une connexion inactivée après 5 s par défaut
+  //    (keepAliveTimeout=5000) alors que le proxy Railway/Vercel garde ses
+  //    connexions ouvertes bien plus longtemps : sous charge soutenue (des
+  //    centaines d'utilisateurs simultanés en période de saisie des notes),
+  //    chaque réouverture = handshake TCP+TLS complet → pics de latence et
+  //    resets de connexion sporadiques (502 intermittents). On aligne le
+  //    keep-alive applicatif AU-DESSUS de la fenêtre du proxy :
+  //      - keepAliveTimeout 65 s (proxy ≈ 60 s) ;
+  //      - headersTimeout 66 s (TOUJOURS > keepAliveTimeout) ;
+  //    Node ≥ 18 active aussi maxRequestsPerSocket=0 (illimité) par défaut.
+  const httpServer = app.getHttpServer() as import('http').Server;
+  (httpServer as any).keepAliveTimeout = 65_000;
+  (httpServer as any).headersTimeout = 66_000;
+  logger.log('[T55] Tune-up concurrence : keepAliveTimeout=65s, headersTimeout=66s');
+
   // ─── Ensure-tables SQL runs in background (non-blocking) ───────────────
   // Previously this ran BEFORE app.listen(), blocking the healthcheck for 60-120s
   // and causing Railway to kill the container. Now it runs after listen.

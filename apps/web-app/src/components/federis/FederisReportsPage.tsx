@@ -26,6 +26,8 @@ import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
 import { FedPage, FedCountUp } from '@/components/federis/federis-motion';
+// ⭐ T55 — libellés de statut partagés + humanisation (plus d'ID brut).
+import { getExamStatusLabel, getExamStatusStyles } from '@/hooks/useFederisExams';
 // ⭐ T46 — Procès-verbal & Statistiques par examen (reproduction Helm)
 import FederisProcVerbalTab from './reports/FederisProcVerbalTab';
 import FederisStatsTab from './reports/FederisStatsTab';
@@ -67,19 +69,9 @@ const REPORT_TABS: Array<{ kind: ReportKind; label: string; icon: string }> = [
   { kind: 'SESSION', label: 'Bilan de session', icon: 'exams' },
 ];
 
-// ⭐ T51 — statuts ALIGNÉS sur les vraies valeurs des examens Fédéris (avant,
-//    les clés REGISTRATION / PUBLISHED ne matchaient aucun statut réel → le
-//    tableau affichait les identifiants bruts comme RESULTS_PUBLISHED).
-const EXAM_STATUS_LABELS: Record<string, { label: string; className: string }> = {
-  DRAFT: { label: 'Brouillon', className: 'bg-slate-100 text-slate-600' },
-  REGISTRATION_OPEN: { label: 'Inscriptions ouvertes', className: 'bg-blue-100 text-blue-800' },
-  REGISTRATION_CLOSED: { label: 'Inscriptions closes', className: 'bg-amber-100 text-amber-800' },
-  IN_PROGRESS: { label: 'En cours', className: 'bg-indigo-100 text-indigo-800' },
-  COMPLETED: { label: 'Terminé', className: 'bg-green-100 text-green-800' },
-  RESULTS_PUBLISHED: { label: 'Résultats publiés', className: 'bg-emerald-100 text-emerald-800' },
-  CANCELLED: { label: 'Annulé', className: 'bg-red-100 text-red-700' },
-  ARCHIVED: { label: 'Archivé', className: 'bg-gray-100 text-gray-500' },
-};
+// ⭐ T51/T55 — statuts : le dictionnaire LOCAL a été remplacé par les helpers
+//    partagés de useFederisExams (couverture complète + insensible à la casse
+//    + humanisation — plus JAMAIS d'identifiant brut comme RESULTS_PUBLISHED).
 
 export default function FederisReportsPage() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
@@ -223,11 +215,10 @@ export default function FederisReportsPage() {
                   </thead>
                   <tbody>
                     {dashboard.exams.map((exam) => {
-                      const badge =
-                        EXAM_STATUS_LABELS[exam.status] ?? {
-                          label: exam.status,
-                          className: 'bg-gray-100 text-gray-600',
-                        };
+                      const badge = {
+                        label: getExamStatusLabel(exam.status),
+                        className: getExamStatusStyles(exam.status),
+                      };
                       return (
                         <tr key={exam.id} className="border-t border-slate-100 hover:bg-[#f7f9fc]">
                           <td className="px-6 py-3.5">

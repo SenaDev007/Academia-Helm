@@ -20,7 +20,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
-import { useFederisExams, EXAM_STATUS_LABELS } from '@/hooks/useFederisExams';
+import { useFederisExams, getExamStatusLabel } from '@/hooks/useFederisExams';
 import type { GSubject, GCandidateRow } from '@/lib/federis/grade-computations';
 
 // ─── Types d'examen (ordre canonique — même barre que les autres modules) ──
@@ -201,14 +201,14 @@ export function ExamScopeBar({ scope, right }: { scope: ExamScope; right?: React
             >
               {activeTypeExams.map((exam) => (
                 <option key={exam.id} value={exam.id}>
-                  {exam.code} — {exam.name} ({EXAM_STATUS_LABELS[exam.status] ?? exam.status})
+                  {exam.code} — {exam.name} ({getExamStatusLabel(exam.status)})
                 </option>
               ))}
             </select>
           )}
           {selectedExam && (
             <span className="text-[9px] font-black uppercase tracking-wide bg-blue-50 text-blue-900 border border-blue-100 px-3 py-1.5 rounded-lg">
-              {EXAM_STATUS_LABELS[selectedExam.status] ?? selectedExam.status}
+              {getExamStatusLabel(selectedExam.status)}
             </span>
           )}
           {right}

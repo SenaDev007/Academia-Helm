@@ -39,7 +39,7 @@ import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
 import { canWrite } from '@/lib/patronat/permissions';
-import { useFederisExams, EXAM_STATUS_LABELS } from '@/hooks/useFederisExams';
+import { useFederisExams, getExamStatusLabel } from '@/hooks/useFederisExams';
 import { loadXlsx } from '@/lib/exports/xlsx-loader';
 import { FedPage, FedCountUp } from '@/components/federis/federis-motion';
 import { useFederisScope } from '@/lib/federis/scope-context';
@@ -598,7 +598,7 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
             >
               {activeTypeExams.map((exam) => (
                 <option key={exam.id} value={exam.id}>
-                  {exam.code} — {exam.name} ({EXAM_STATUS_LABELS[exam.status] ?? exam.status})
+                  {exam.code} — {exam.name} ({getExamStatusLabel(exam.status)})
                 </option>
               ))}
             </select>

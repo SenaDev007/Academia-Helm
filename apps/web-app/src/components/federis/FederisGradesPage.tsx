@@ -24,7 +24,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
 import { canWrite } from '@/lib/patronat/permissions';
-import { useFederisExams, EXAM_STATUS_LABELS } from '@/hooks/useFederisExams';
+import { useFederisExams, getExamStatusLabel } from '@/hooks/useFederisExams';
 import { FedPage, FedCountUp } from '@/components/federis/federis-motion';
 import FederisGradeSheetTab from '@/components/federis/FederisGradeSheetTab';
 import FederisGradeRegistryTab from '@/components/federis/FederisGradeRegistryTab';
@@ -347,7 +347,7 @@ export default function FederisGradesPage({ userRole }: FederisGradesPageProps) 
             >
               {activeTypeExams.map((exam) => (
                 <option key={exam.id} value={exam.id}>
-                  {exam.code} — {exam.name} ({EXAM_STATUS_LABELS[exam.status] ?? exam.status})
+                  {exam.code} — {exam.name} ({getExamStatusLabel(exam.status)})
                 </option>
               ))}
             </select>

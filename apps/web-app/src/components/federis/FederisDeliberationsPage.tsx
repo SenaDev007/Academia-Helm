@@ -79,6 +79,7 @@ import { FedPage, FedCountUp, FedSectionTitle } from '@/components/federis/feder
 //    Moyennes) + modale de confirmation professionnelle (window.confirm →)
 import FederisGradeRelevesTab from '@/components/federis/FederisGradeRelevesTab';
 import FederisConfirmModal from '@/components/federis/federis-confirm-modal';
+import { useFederisScope } from '@/lib/federis/scope-context';
 
 // ─── Types (réponses API) ────────────────────────────────────────────────────
 
@@ -342,8 +343,10 @@ export default function FederisDeliberationsPage({
   const [caseComments, setCaseComments] = useState<Record<string, string>>({});
 
   const fn = normalizePatronatRole(userRole);
-  const canDeliberate = canWrite(userRole, 'candidates'); // coordonnateur / secrétaire / organisateur
-  const canPublish = fn === 'COORDONNATEUR';
+  // ★ 2026-10-01 — AGRÉGATION NATIONALE : lecture seule sauf délégation
+  const { canWrite: scopeCanWrite } = useFederisScope();
+  const canDeliberate = canWrite(userRole, 'candidates') && scopeCanWrite; // coordonnateur / secrétaire / organisateur
+  const canPublish = fn === 'COORDONNATEUR' && scopeCanWrite;
 
   // ── Chargement du tableau de délibération ────────────────────────────────
   const load = useCallback(

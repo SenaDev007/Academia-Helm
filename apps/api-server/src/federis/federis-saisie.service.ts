@@ -68,6 +68,8 @@ import {
   normalizePatronatFunction,
   type PatronatFunction,
 } from './federis-roles';
+// ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (national = tous les départements)
+import { FederisScopeService } from './federis-scope.service';
 
 /** Rôle technique du compte provisoire (User.role — portail PATRONAT). */
 export const SAISIE_USER_ROLE = 'PATRONAT_SAISIE_NOTES';
@@ -187,6 +189,7 @@ export class FederisSaisieService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly patronatService: FederisPatronatService,
+    private readonly scopeService: FederisScopeService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -216,8 +219,11 @@ export class FederisSaisieService {
   }
 
   private async getOwnedExam(tenantId: string, examId: string) {
+    // ⭐ 2026-10-01 — AGRÉGATION NATIONALE : l'examen peut appartenir au
+    //    patronat connecté OU à l'un de ses départements (patronat national).
+    const scope = await this.scopeService.resolveScope(tenantId);
     const exam = await this.prisma.nationalExam.findFirst({
-      where: { id: examId, tenantId },
+      where: { id: examId, patronatId: { in: scope.scopePatronatIds } },
     });
     if (!exam) throw new NotFoundException('Examen introuvable dans votre périmètre.');
     return exam;

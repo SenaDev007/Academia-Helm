@@ -58,6 +58,8 @@ import {
 } from './federis-roles';
 // ⭐ 2026-10-01 — Comptes provisoires de saisie (poste SECRÉTARIAT).
 import { FederisSaisieService } from './federis-saisie.service';
+// ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (national = tous les départements)
+import { FederisScopeService } from './federis-scope.service';
 // ⭐ FIX « tenant SCHOOL » : les écoles réelles ont type MATERNELLE / PRIMAIRE /
 //    SECONDAIRE / MIXTE (source : common/constants/school-tenant-types).
 import { isSchoolTenantType } from '../common/constants/school-tenant-types';
@@ -294,6 +296,7 @@ export class FederisSupervisorsService {
     //    provisionnés automatiquement à l'affectation (sens unique — le
     //    service saisie n'importe JAMAIS le service surveillants).
     private readonly saisieService: FederisSaisieService,
+    private readonly scopeService: FederisScopeService,
   ) {}
 
   // ── Auto-guérison du schéma (pattern ensure-tables main.ts) ─────────────
@@ -476,8 +479,10 @@ export class FederisSupervisorsService {
 
   /** Examen possédé par le patronat (isolation territoriale). */
   private async getOwnedExam(patronatTenantId: string, examId: string) {
+    // ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre étendu aux départements.
+    const scope = await this.scopeService.resolveScope(patronatTenantId);
     const exam = await this.prisma.nationalExam.findFirst({
-      where: { id: examId, tenantId: patronatTenantId },
+      where: { id: examId, patronatId: { in: scope.scopePatronatIds } },
       select: { id: true, code: true, name: true, examType: true, status: true },
     });
     if (!exam) {

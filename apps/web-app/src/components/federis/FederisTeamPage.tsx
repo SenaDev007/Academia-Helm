@@ -26,6 +26,8 @@ import {
   type PatronatFunctionKey,
 } from '@/lib/patronat/permissions';
 import { FedPage, FedCountUp } from '@/components/federis/federis-motion';
+// ⭐ 2026-10-01 — Délégation au patronat national (agrégation nationale)
+import FederisDelegationCard from '@/components/federis/FederisDelegationCard';
 
 interface Member {
   id: string;
@@ -245,6 +247,11 @@ export default function FederisTeamPage() {
           {notice}
         </div>
       )}
+
+      {/* ⭐ 2026-10-01 — Délégation au patronat national (lecture seule →
+          modification) : le coordonnateur départemental donne la main à un
+          compte national depuis cette carte. */}
+      <FederisDelegationCard />
 
       {/* Formulaire de création */}
       {showCreate && (

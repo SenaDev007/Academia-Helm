@@ -27,6 +27,7 @@ import { apiClient } from '@/lib/api/client';
 import { cn } from '@/lib/utils';
 import { FedPage } from '@/components/federis/federis-motion';
 import { federisLink } from '@/lib/federis/useFederisPath';
+import { useFederisScope } from '@/lib/federis/scope-context';
 
 interface ChildPatronat {
   id: string;
@@ -68,6 +69,8 @@ const EMPTY_FORM = {
 export default function FederisPatronatsPage() {
   const router = useRouter();
   const [children, setChildren] = useState<ChildPatronat[]>([]);
+  // ⭐ 2026-10-01 — AGRÉGATION NATIONALE : statut de délégation par département
+  const { departments } = useFederisScope();
   const [levels, setLevels] = useState<TerritorialLevel[]>([]);
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
@@ -432,6 +435,7 @@ export default function FederisPatronatsPage() {
                   <th className="px-4 py-3 font-semibold text-center">Examens</th>
                   <th className="px-4 py-3 font-semibold">Abonnement</th>
                   <th className="px-4 py-3 font-semibold">Statut</th>
+                  <th className="px-4 py-3 font-semibold">Vos droits</th>
                   <th className="px-4 py-3 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
@@ -479,6 +483,30 @@ export default function FederisPatronatsPage() {
                         >
                           {child.status === 'ACTIVE' ? 'Actif' : child.status}
                         </span>
+                      </td>
+                      {/* ⭐ 2026-10-01 — AGRÉGATION NATIONALE : statut de
+                          délégation du compte connecté pour CE département. */}
+                      <td className="px-4 py-3.5">
+                        {(() => {
+                          const dep = departments.find((d) => d.patronatId === child.id);
+                          return (
+                            <span
+                              className={cn(
+                                'px-2.5 py-1 rounded-full text-[9px] font-bold uppercase',
+                                dep?.canWrite
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-amber-100 text-amber-800',
+                              )}
+                              title={
+                                dep?.canWrite
+                                  ? `Modification déléguée${dep.grantedByName ? ` par ${dep.grantedByName}` : ''} — sélectionnez ce département dans la barre de périmètre pour écrire.`
+                                  : 'Lecture seule — demandez au coordonnateur du département de vous donner la main depuis son module Équipe & Comptes.'
+                              }
+                            >
+                              {dep?.canWrite ? 'Modification déléguée' : 'Lecture seule'}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3.5 text-right">
                         {child.subscriptionStatus === 'PENDING_PAYMENT' && (

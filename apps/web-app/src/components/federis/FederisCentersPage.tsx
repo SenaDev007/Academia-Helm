@@ -35,6 +35,7 @@ import SchoolDirectoryPicker, {
 //    recherche intégrée) : clic = fiche du centre pré-remplie ; si le nom
 //    ne figure pas au répertoire, on ferme et on saisit les champs à la main.
 import SchoolDirectoryModal from './SchoolDirectoryModal';
+import { useFederisScope } from '@/lib/federis/scope-context';
 
 interface Room {
   id: string;
@@ -108,7 +109,9 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
   // ⭐ 2026-09-30 — export de la liste officielle des centres et salles
   const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
 
-  const canOrganize = canWrite(userRole, 'exam_org');
+  // ★ 2026-10-01 — AGRÉGATION NATIONALE : lecture seule sauf délégation
+  const { canWrite: scopeCanWrite } = useFederisScope();
+  const canOrganize = canWrite(userRole, 'exam_org') && scopeCanWrite;
 
   const load = useCallback(async () => {
     if (!examId) {

@@ -30,6 +30,7 @@ import {
   EXAM_STATUS_STYLES,
 } from '@/hooks/useFederisExams';
 import { FedPage } from '@/components/federis/federis-motion';
+import { useFederisScope } from '@/lib/federis/scope-context';
 
 interface FederisExamsPageProps {
   tenantId?: string;
@@ -152,7 +153,10 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
   const [listsLoading, setListsLoading] = useState(false);
   const [listsError, setListsError] = useState<string | null>(null);
 
-  const canOrganize = canWrite(userRole, 'exam_org');
+  // ★ 2026-10-01 — AGRÉGATION NATIONALE : le national est en lecture
+  //    seule sauf délégation du département sélectionné.
+  const { canWrite: scopeCanWrite } = useFederisScope();
+  const canOrganize = canWrite(userRole, 'exam_org') && scopeCanWrite;
 
   // ── Filtrage des campagnes selon le sous-onglet ──────────────────────────
   const levelOf = (level: string | null | undefined) => (level ?? '').trim().toUpperCase();

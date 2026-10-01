@@ -31,6 +31,8 @@ import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
 import { federisLink } from '@/lib/federis/useFederisPath';
 import { FedPage } from '@/components/federis/federis-motion';
+// ★ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (lecture seule sauf délégation)
+import { useFederisScope } from '@/lib/federis/scope-context';
 
 interface BankResource {
   id: string;
@@ -115,6 +117,8 @@ export default function FederisQuestionBankPage() {
   const [resources, setResources] = useState<BankResource[]>([]);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [canManage, setCanManage] = useState(false);
+  // ★ 2026-10-01 — AGRÉGATION NATIONALE : lecture seule sauf délégation
+  const { canWrite: scopeCanWrite } = useFederisScope();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -342,6 +346,9 @@ export default function FederisQuestionBankPage() {
     }
   };
 
+  // ★ Droit effectif : garde API ET périmètre (national = lecture seule sauf délégation)
+  const canManageNow = canManage && scopeCanWrite;
+
   if (loading) {
     return (
       <div className="space-y-6 animate-pulse">
@@ -365,7 +372,7 @@ export default function FederisQuestionBankPage() {
           </p>
         </div>
 
-        {canManage && tab === 'ressources' && (
+        {canManageNow && tab === 'ressources' && (
           <button
             type="button"
             onClick={() => setShowCreate((v) => !v)}
@@ -418,7 +425,7 @@ export default function FederisQuestionBankPage() {
       </div>
 
       {/* Formulaire de recensement (coordonnateur / organisateur) */}
-      {tab === 'ressources' && showCreate && canManage && (
+      {tab === 'ressources' && showCreate && canManageNow && (
         <form onSubmit={handleCreate} className="fed-card p-8 space-y-6">
           <h3 className="text-sm font-bold text-blue-900 uppercase">
             Recenser une épreuve
@@ -634,7 +641,7 @@ export default function FederisQuestionBankPage() {
                 <AppIcon name="library" size="dashboard" className="text-gray-300 mx-auto mb-3" />
                 <p className="text-sm text-slate-500">
                   Aucune épreuve recensée pour ce filtre.{' '}
-                  {canManage
+                  {canManageNow
                     ? 'Recensez vos premiers sujets pour alimenter la banque.'
                     : 'Le coordonnateur ou l\u2019organisateur recensera les sujets.'}
                 </p>
@@ -697,7 +704,7 @@ export default function FederisQuestionBankPage() {
                       >
                         <AppIcon name="view" size="submenu" />
                       </a>
-                      {canManage && (
+                      {canManageNow && (
                         <div className="flex items-center gap-1">
                           {resource.status === 'DRAFT' && (
                             <button

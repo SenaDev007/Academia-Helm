@@ -83,8 +83,14 @@ export class FederisExamsController {
 
   @UseGuards(JwtAuthGuard)
   @Get('exams')
-  async listExams(@Req() req: any) {
-    return this.examsService.listExams(req.user.tenantId, this.uid(req));
+  async listExams(@Req() req: any, @Query('departmentId') departmentId?: string) {
+    // ⭐ 2026-10-01 — Agrégation nationale : departmentId filtre la vue sur
+    //    UN département du réseau (patronat national connecté).
+    return this.examsService.listExams(
+      req.user.tenantId,
+      this.uid(req),
+      departmentId || null,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

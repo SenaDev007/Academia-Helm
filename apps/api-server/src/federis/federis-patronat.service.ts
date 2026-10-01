@@ -28,6 +28,8 @@ import {
   type PatronatFunction,
 } from './federis-roles';
 import { FederisFedapayService } from './federis-fedapay.service';
+// ⭐ 2026-10-01 — AGRÉGATION NATIONALE : années du périmètre (sans cycle DI)
+import { resolveScopeYearsFor } from './federis-scope.service';
 // ⭐ FIX « tenant SCHOOL » (2026-09-29) : l'onboarding Helm crée les tenants
 //    écoles avec le TYPE D'ÉTABLISSEMENT (MATERNELLE / PRIMAIRE / SECONDAIRE /
 //    MIXTE — cf. OnboardingService.activate : `type: draft.schoolType`), PAS
@@ -318,6 +320,20 @@ export class FederisPatronatService {
   }
 
   /** Résout le patronat depuis le tenant du JWT (fallback : lien PatronatUser). */
+  /**
+   * ★ 2026-10-01 — Lien PatronatUser du demandeur dans le patronat de SON
+   * tenant (rôle court : COORDONNATEUR, SECRETAIRE…). Utilisé par la
+   * garde des délégations nationales (seul le coordonnateur départemental
+   * peut donner la main au national).
+   */
+  async resolvePatronatUser(tenantId: string, userId?: string) {
+    if (!userId) return null;
+    return this.prisma.patronatUser.findFirst({
+      where: { tenantId, userId, isActive: true },
+      select: { role: true, patronatId: true },
+    });
+  }
+
   async resolvePatronat(tenantId: string, userId?: string) {
     let patronat = tenantId
       ? await this.prisma.patronat.findFirst({
@@ -429,6 +445,29 @@ export class FederisPatronatService {
     const patronat = await this.resolvePatronat(tenantId, userId);
     const academicYear = await this.getActiveYear(patronat.tenantId);
 
+    // ⭐ 2026-10-01 — AGRÉGATION NATIONALE : le tableau de bord du national
+    //    consolide TOUT le réseau (lui-même + tous les départements) sur
+    //    l'année courante. Un territorial garde la vue de son propre périmètre.
+    const isNational = patronat.orgLevel === 'NATIONAL';
+    const childrenForScope = isNational
+      ? await this.prisma.patronat.findMany({
+          where: { parentPatronatId: patronat.id, status: 'ACTIVE' },
+          select: { id: true, tenantId: true },
+        })
+      : [];
+    const scopePatronatIds = isNational
+      ? [patronat.id, ...childrenForScope.map((c) => c.id)]
+      : [patronat.id];
+    const scopeTenantIds = isNational
+      ? [patronat.tenantId, ...childrenForScope.map((c) => c.tenantId)]
+      : [patronat.tenantId];
+    const { yearIds: scopeYearIds } = await resolveScopeYearsFor(
+      this.prisma,
+      patronat.tenantId,
+      scopeTenantIds,
+    );
+    const scopeYearFilter = scopeYearIds.length ? { in: scopeYearIds } : undefined;
+
     const [
       joinedSchools,
       pendingSchools,
@@ -462,9 +501,12 @@ export class FederisPatronatService {
         },
         orderBy: { name: 'asc' },
       }),
-      academicYear
+      academicYear || scopeYearFilter
         ? this.prisma.nationalExam.findMany({
-            where: { patronatId: patronat.id, academicYearId: academicYear.id },
+            where: {
+              patronatId: { in: scopePatronatIds },
+              ...(scopeYearFilter ? { academicYearId: scopeYearFilter } : {}),
+            },
             select: {
               id: true,
               name: true,
@@ -474,44 +516,92 @@ export class FederisPatronatService {
               endDate: true,
               totalCandidates: true,
               totalCenters: true,
+              patronatId: true,
             },
             orderBy: { startDate: 'desc' },
             take: 20,
           })
         : [],
-      academicYear
+      scopeYearFilter
         ? this.prisma.examCandidate.count({
-            where: { tenantId: patronat.tenantId, academicYearId: academicYear.id },
+            where: { tenantId: { in: scopeTenantIds }, academicYearId: scopeYearFilter },
           })
         : 0,
-      academicYear
+      scopeYearFilter
         ? this.prisma.examCandidate.count({
             where: {
-              tenantId: patronat.tenantId,
-              academicYearId: academicYear.id,
+              tenantId: { in: scopeTenantIds },
+              academicYearId: scopeYearFilter,
               centerId: null,
               status: { not: 'CANCELLED' },
             },
           })
         : 0,
-      academicYear
-        ? this.prisma.$queryRaw<Array<{ count: bigint }>>`
-            SELECT COUNT(*) as count FROM (
-              SELECT LOWER("firstName"), LOWER("lastName"), "dateOfBirth"
-              FROM exam_candidates
-              WHERE "tenantId" = ${patronat.tenantId}
-                AND "academicYearId" = ${academicYear.id}
-                AND status <> 'CANCELLED'
-              GROUP BY LOWER("firstName"), LOWER("lastName"), "dateOfBirth"
-              HAVING COUNT(*) > 1
-            ) d`
+      scopeYearFilter
+        ? this.prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+            `SELECT COUNT(*) as count FROM (
+               SELECT LOWER("firstName"), LOWER("lastName"), "dateOfBirth"
+               FROM exam_candidates
+               WHERE "tenantId" IN (${scopeTenantIds.map((t) => `'${t}'`).join(',')})
+                 AND "academicYearId" IN (${scopeYearIds.map((y) => `'${y}'`).join(',')})
+                 AND status <> 'CANCELLED'
+               GROUP BY LOWER("firstName"), LOWER("lastName"), "dateOfBirth"
+               HAVING COUNT(*) > 1
+             ) d`,
+          )
         : Promise.resolve([{ count: BigInt(0) }]),
       academicYear
         ? this.prisma.examIncident.count({
-            where: { tenantId: patronat.tenantId },
+            where: { tenantId: { in: scopeTenantIds } },
           })
         : 0,
     ]);
+
+    // ⭐ AGRÉGATION NATIONALE — statistiques par département (année courante) :
+    //    examens et candidats groupés, pour la vue « réseau » du national.
+    let departmentsBreakdown: Array<{
+      id: string;
+      name: string;
+      territoryName: string | null;
+      status: string;
+      schoolsCount: number;
+      examsCount: number;
+      candidatesCount: number;
+    }> = [];
+    if (isNational && childPatronats.length > 0 && scopeYearFilter) {
+      const childIds = childPatronats.map((c: any) => c.id);
+      const childTenantByPatronat = new Map(childrenForScope.map((c) => [c.id, c.tenantId]));
+      const [examsByDept, candidatesByDept] = await Promise.all([
+        this.prisma.nationalExam.groupBy({
+          by: ['patronatId'],
+          where: { patronatId: { in: childIds }, academicYearId: scopeYearFilter },
+          _count: { _all: true },
+        }),
+        this.prisma.examCandidate.groupBy({
+          by: ['tenantId'],
+          where: {
+            tenantId: { in: childrenForScope.map((c) => c.tenantId) },
+            academicYearId: scopeYearFilter,
+          },
+          _count: { _all: true },
+        }),
+      ]);
+      const examsMap = new Map(
+        examsByDept.map((g: any) => [g.patronatId, g._count._all]),
+      );
+      const candidatesMap = new Map(
+        candidatesByDept.map((g: any) => [g.tenantId, g._count._all]),
+      );
+      departmentsBreakdown = childPatronats.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        territoryName: c.territoryName,
+        status: c.status,
+        schoolsCount: c._count?.schools ?? 0,
+        examsCount: examsMap.get(c.id) ?? 0,
+        candidatesCount: candidatesMap.get(childTenantByPatronat.get(c.id) ?? '') ?? 0,
+      }));
+    }
 
     const now = new Date();
     const activeExams = exams.filter(
@@ -635,6 +725,9 @@ export class FederisPatronatService {
         subscriptionStatus: c.subscriptionStatus,
         schoolsCount: c._count.schools,
       })),
+      // ⭐ AGRÉGATION NATIONALE — vue réseau : statistiques de l'année
+      //    courante par département (examen de chaque département, candidats).
+      departments: departmentsBreakdown,
       orion: {
         readOnly: true,
         alerts: orionAlerts,

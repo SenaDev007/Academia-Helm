@@ -66,6 +66,17 @@ interface DashboardData {
     subscriptionStatus: string;
     schoolsCount: number;
   }>;
+  /** ⭐ 2026-10-01 — AGRÉGATION NATIONALE : statistiques de l'année courante
+   *  par département (examens, candidats) — vue réseau du national. */
+  departments?: Array<{
+    id: string;
+    name: string;
+    territoryName: string | null;
+    status: string;
+    schoolsCount: number;
+    examsCount: number;
+    candidatesCount: number;
+  }> | null;
 }
 
 const EXAM_STATUS_LABELS: Record<string, { label: string; className: string }> = {
@@ -143,7 +154,7 @@ export default function FederisDashboardPage() {
     );
   }
 
-  const { patronat, academicYear, kpis, subscription, exams, childrenPatronats } = data;
+  const { patronat, academicYear, kpis, subscription, exams, childrenPatronats, departments } = data;
   const isNational = patronat.orgLevel === 'NATIONAL';
   const subBadge =
     SUBSCRIPTION_STATUS_LABELS[subscription.status] ??
@@ -344,6 +355,9 @@ export default function FederisDashboardPage() {
                         <th className="px-6 py-3 font-semibold">Patronat</th>
                         <th className="px-4 py-3 font-semibold">Territoire</th>
                         <th className="px-4 py-3 font-semibold text-center">Écoles</th>
+                        {/* ⭐ AGRÉGATION NATIONALE : activité de l'année courante par département */}
+                        <th className="px-4 py-3 font-semibold text-center">Examens {academicYear ? `(${academicYear.name})` : ''}</th>
+                        <th className="px-4 py-3 font-semibold text-center">Candidats</th>
                         <th className="px-4 py-3 font-semibold">Abonnement</th>
                       </tr>
                     </thead>
@@ -355,6 +369,8 @@ export default function FederisDashboardPage() {
                             label: child.subscriptionStatus,
                             className: 'bg-gray-100 text-gray-700',
                           } as const);
+                        // ⭐ Statistiques de l'année courante pour CE département
+                        const dep = departments?.find((d) => d.id === child.id);
                         return (
                           <tr key={child.id} className="border-t border-gray-50 hover:bg-gray-50">
                             <td className="px-6 py-3.5 font-medium text-gray-900">{child.name}</td>
@@ -362,7 +378,13 @@ export default function FederisDashboardPage() {
                               {child.territoryName ?? '—'}
                             </td>
                             <td className="px-4 py-3.5 text-center text-gray-700">
-                              {child.schoolsCount}
+                              {dep?.schoolsCount ?? child.schoolsCount}
+                            </td>
+                            <td className="px-4 py-3.5 text-center text-gray-700">
+                              {dep ? dep.examsCount : '—'}
+                            </td>
+                            <td className="px-4 py-3.5 text-center text-gray-700">
+                              {dep ? dep.candidatesCount.toLocaleString('fr-FR') : '—'}
                             </td>
                             <td className="px-4 py-3.5">
                               <span

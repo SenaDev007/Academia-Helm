@@ -31,6 +31,7 @@ import {
   durationInputHint,
   catalogDurationCell,
 } from '@/lib/federis/duration';
+import { useFederisScope } from '@/lib/federis/scope-context';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -164,8 +165,10 @@ export default function FederisSubjectsPage({ userRole }: FederisSubjectsPagePro
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState<SubjectRow | 'MANY' | null>(null);
 
-  const fallbackCanManage = canWrite(userRole, 'exam_org');
-  const canManage = data?.canManage ?? fallbackCanManage;
+  // ★ 2026-10-01 — AGRÉGATION NATIONALE : lecture seule sauf délégation
+  const { canWrite: scopeCanWrite } = useFederisScope();
+  const fallbackCanManage = canWrite(userRole, 'exam_org') && scopeCanWrite;
+  const canManage = (data?.canManage && scopeCanWrite) ?? fallbackCanManage;
 
   // ── Chargement ──────────────────────────────────────────────────────────
   const load = useCallback(async () => {

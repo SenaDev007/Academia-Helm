@@ -39,6 +39,7 @@ import {
   durationInputHint,
   normalizeDurationText,
 } from '@/lib/federis/duration';
+import { useFederisScope } from '@/lib/federis/scope-context';
 
 interface FederisEpreuvesPageProps {
   tenantId?: string;
@@ -233,8 +234,10 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
   const [addMenu, setAddMenu] = useState<string | null>(null);
   const dirtyRef = useRef(false);
 
-  const fallbackCanManage = canWrite(userRole, 'exam_org');
-  const canManage = list?.canManage ?? fallbackCanManage;
+  // ★ 2026-10-01 — AGRÉGATION NATIONALE : lecture seule sauf délégation
+  const { canWrite: scopeCanWrite } = useFederisScope();
+  const fallbackCanManage = canWrite(userRole, 'exam_org') && scopeCanWrite;
+  const canManage = (list?.canManage && scopeCanWrite) ?? fallbackCanManage;
 
   // ── Chargement initial ──────────────────────────────────────────────────
   const load = useCallback(async () => {

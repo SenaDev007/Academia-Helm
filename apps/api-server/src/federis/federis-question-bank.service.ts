@@ -144,7 +144,11 @@ const ACCESS_LEVEL_LABELS: Record<string, string> = {
 export class FederisQuestionBankService {
   private readonly logger = new Logger(FederisQuestionBankService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (national = tous les départements)
+    private readonly scopeService: FederisScopeService,
+  ) {}
 
   /** Résout le patronat + la fonction du demandeur (pattern FederisBureauService). */
   private async resolveContext(tenantId: string, userId?: string) {
@@ -192,8 +196,13 @@ export class FederisQuestionBankService {
   async listResources(tenantId: string, userId?: string) {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
 
+    // ⭐ 2026-10-01 — AGRÉGATION NATIONALE : la banque du national consolide
+    //    ses ressources + celles de tous ses départements.
+    const scope = await this.scopeService.resolveScope(tenantId, userId);
+
     const resources = await this.prisma.questionBankResource.findMany({
-      where: { patronatId: patronat.id, status: { not: 'ARCHIVED' } },
+      where: { patronatId: { in: scope.scopePatronatIds }, status: { not: 'ARCHIVED' } },
+      include: { patronat: { select: { name: true, territoryName: true } } },
       orderBy: { uploadedAt: 'desc' },
       take: 200,
     });
@@ -213,6 +222,10 @@ export class FederisQuestionBankService {
         fileSize: r.fileSize,
         accessLevel: r.accessLevel,
         accessLevelLabel: ACCESS_LEVEL_LABELS[r.accessLevel] ?? r.accessLevel,
+        // ⭐ Département propriétaire (vue agrégée nationale)
+        department: (r as any).patronat
+          ? { name: (r as any).patronat.name, territoryName: (r as any).patronat.territoryName ?? null }
+          : null,
         status: r.status,
         downloadCount: r.downloadCount,
         uploadedAt: r.uploadedAt,
@@ -230,6 +243,8 @@ export class FederisQuestionBankService {
   async createResource(tenantId: string, userId: string, dto: CreateQuestionBankResourceDto) {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertCanWrite(fn);
+    // ★ Garde nationale : lecture seule sauf délégation d'un département
+    await this.scopeService.assertWritable(tenantId, userId, patronat.id);
 
     const academicYear = await this.getActiveYear(patronat.tenantId);
     if (!academicYear) {
@@ -302,12 +317,17 @@ export class FederisQuestionBankService {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertCanWrite(fn);
 
+    // ★ 2026-10-01 — PÉRIMÈTRE étendu (national = tous les départements)
+    const scope = await this.scopeService.resolveScope(tenantId, userId);
     const existing = await this.prisma.questionBankResource.findFirst({
-      where: { id: resourceId, patronatId: patronat.id },
+      where: { id: resourceId, patronatId: { in: scope.scopePatronatIds } },
     });
     if (!existing) {
       throw new NotFoundException('Épreuve introuvable dans la banque du patronat.');
     }
+    // ★ Garde nationale : écriture uniquement si le département propriétaire
+    //    a délégué ses droits au compte national connecté.
+    await this.scopeService.assertNationalWritable(scope, userId, existing.patronatId);
 
     const resource = await this.prisma.questionBankResource.update({
       where: { id: resourceId },
@@ -349,12 +369,17 @@ export class FederisQuestionBankService {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertCanWrite(fn);
 
+    // ★ 2026-10-01 — PÉRIMÈTRE étendu (national = tous les départements)
+    const scope = await this.scopeService.resolveScope(tenantId, userId);
     const existing = await this.prisma.questionBankResource.findFirst({
-      where: { id: resourceId, patronatId: patronat.id },
+      where: { id: resourceId, patronatId: { in: scope.scopePatronatIds } },
     });
     if (!existing) {
       throw new NotFoundException('Épreuve introuvable dans la banque du patronat.');
     }
+    // ★ Garde nationale : écriture uniquement si le département propriétaire
+    //    a délégué ses droits au compte national connecté.
+    await this.scopeService.assertNationalWritable(scope, userId, existing.patronatId);
 
     await this.prisma.questionBankResource.delete({ where: { id: resourceId } });
 
@@ -375,3 +400,5 @@ export class FederisQuestionBankService {
     return { success: true };
   }
 }
+// ★ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (national = tous les départements)
+import { FederisScopeService } from './federis-scope.service';

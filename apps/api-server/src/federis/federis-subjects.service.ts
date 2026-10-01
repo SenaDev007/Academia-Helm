@@ -51,6 +51,8 @@ import {
   patronatFunctionLabel,
   type PatronatFunction,
 } from './federis-roles';
+// ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (national = tous les départements)
+import { FederisScopeService } from './federis-scope.service';
 
 // ⭐ FIX 2026-09-29 — décorateurs class-validator OBLIGATOIRES sur TOUS les
 //    DTOs : le ValidationPipe global (whitelist + forbidNonWhitelisted)
@@ -399,6 +401,7 @@ export class FederisSubjectsService {
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => FederisPatronatService))
     private readonly patronatService: FederisPatronatService,
+    private readonly scopeService: FederisScopeService,
   ) {}
 
   // ── Auto-guérison du schéma (pattern FederisEpreuveService) ──────────────
@@ -574,7 +577,15 @@ export class FederisSubjectsService {
       throw new BadRequestException('Type d\u2019examen invalide (CEP, BEPC, BAC ou CAP).');
     }
 
-    const where: any = { tenantId: patronat.tenantId, academicYearId: year.id };
+    // \u2605 2026-10-01 \u2014 AGR\u00c9GATION NATIONALE : le catalogue du national
+    //    consolide ses mati\u00e8res + celles de tous ses d\u00e9partements pour
+    //    l'ann\u00e9e courante (pas de m\u00e9lange d'ann\u00e9es).
+    const scope = await this.scopeService.resolveScope(tenantId, userId);
+    const { yearIds: scopeYearIds } = await this.scopeService.resolveScopeYears(scope);
+    const where: any = {
+      tenantId: { in: scope.scopeTenantIds },
+      academicYearId: { in: scopeYearIds.length ? scopeYearIds : [year?.id ?? 'none'] },
+    };
     if (filters.examType) where.examType = filters.examType;
     if (filters.search?.trim()) {
       const q = filters.search.trim();
@@ -658,6 +669,8 @@ export class FederisSubjectsService {
     await this.ensureSchema();
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertCanWrite(fn);
+    // \u2605 Garde nationale : lecture seule sauf d\u00e9l\u00e9gation d'un d\u00e9partement
+    await this.scopeService.assertWritable(tenantId, userId, patronat.id);
     const year = await this.getActiveYear(patronat.tenantId);
 
     const series = normalizeSeries(dto.series);
@@ -813,10 +826,22 @@ export class FederisSubjectsService {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertCanWrite(fn);
 
+    // \u2605 2026-10-01 \u2014 P\u00c9RIM\u00c8TRE \u00e9tendu (national = tous les d\u00e9partements) :
+    //    la mati\u00e8re peut appartenir au patronat connect\u00e9 ou \u00e0 un d\u00e9partement.
+    const subjectScope = await this.scopeService.resolveScope(tenantId, userId);
     const subject = await this.prisma.federisSubject.findFirst({
-      where: { id, tenantId: patronat.tenantId },
+      where: { id, tenantId: { in: subjectScope.scopeTenantIds } },
     });
     if (!subject) throw new NotFoundException('Matière introuvable dans votre périmètre.');
+    // \u2605 Garde nationale : \u00e9criture uniquement si le d\u00e9partement propri\u00e9taire
+    //    a d\u00e9l\u00e9gu\u00e9 ses droits au compte national connect\u00e9.
+    if (subjectScope.isNational && subject.tenantId !== subjectScope.patronat.tenantId) {
+      const owner = await this.prisma.patronat.findFirst({
+        where: { tenantId: subject.tenantId },
+        select: { id: true },
+      });
+      await this.scopeService.assertNationalWritable(subjectScope, userId, owner?.id ?? null);
+    }
 
     const series = dto.series !== undefined ? normalizeSeries(dto.series) : subject.series;
     // Changement de série : garde l'unicité (type, série, code)
@@ -870,10 +895,22 @@ export class FederisSubjectsService {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertCanWrite(fn);
 
+    // \u2605 2026-10-01 \u2014 P\u00c9RIM\u00c8TRE \u00e9tendu (national = tous les d\u00e9partements) :
+    //    la mati\u00e8re peut appartenir au patronat connect\u00e9 ou \u00e0 un d\u00e9partement.
+    const subjectScope = await this.scopeService.resolveScope(tenantId, userId);
     const subject = await this.prisma.federisSubject.findFirst({
-      where: { id, tenantId: patronat.tenantId },
+      where: { id, tenantId: { in: subjectScope.scopeTenantIds } },
     });
     if (!subject) throw new NotFoundException('Matière introuvable dans votre périmètre.');
+    // \u2605 Garde nationale : \u00e9criture uniquement si le d\u00e9partement propri\u00e9taire
+    //    a d\u00e9l\u00e9gu\u00e9 ses droits au compte national connect\u00e9.
+    if (subjectScope.isNational && subject.tenantId !== subjectScope.patronat.tenantId) {
+      const owner = await this.prisma.patronat.findFirst({
+        where: { tenantId: subject.tenantId },
+        select: { id: true },
+      });
+      await this.scopeService.assertNationalWritable(subjectScope, userId, owner?.id ?? null);
+    }
 
     const linkedPapers = await this.prisma.federisExamPaper.count({
       where: { subjectId: subject.id },
@@ -928,8 +965,10 @@ export class FederisSubjectsService {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertRead(fn); // appelable aussi automatiquement au lancement
 
+    // ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre étendu aux départements.
+    const examScope = await this.scopeService.resolveScope(patronat.tenantId);
     const exam = await this.prisma.nationalExam.findFirst({
-      where: { id: examId, tenantId: patronat.tenantId },
+      where: { id: examId, patronatId: { in: examScope.scopePatronatIds } },
     });
     if (!exam) throw new NotFoundException('Examen introuvable dans votre périmètre.');
 

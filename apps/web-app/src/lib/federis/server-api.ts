@@ -12,6 +12,12 @@ export interface FederisPatronatProfile {
   orgLevel: string;
   territoryName?: string | null;
   country?: { id: string; code: string; name: string } | null;
+  /** Fonction du membre dans le patronat (UI Shells) — même endpoint que le
+   *  fetch client du FederisLayout : le layout partagé peut ainsi amorcer
+   *  l'état sans attendre l'appel client. */
+  userRole?: string | null;
+  userFunction?: string | null;
+  logo?: string | null;
   subscription: {
     plan: string;
     planLabel?: string;

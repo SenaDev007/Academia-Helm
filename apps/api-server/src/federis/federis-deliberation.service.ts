@@ -62,6 +62,8 @@ import {
   normalizePatronatFunction,
   type PatronatFunction,
 } from './federis-roles';
+// ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (national = tous les départements)
+import { FederisScopeService } from './federis-scope.service';
 
 // ── DTO ─────────────────────────────────────────────────────────────────────
 
@@ -244,6 +246,7 @@ export class FederisDeliberationService {
     private readonly notificationService: NotificationService,
     private readonly gradesService: FederisGradesService,
     private readonly gradingRulesService: FederisGradingRulesService,
+    private readonly scopeService: FederisScopeService,
   ) {}
 
   // ── Contexte & permissions ───────────────────────────────────────────────
@@ -285,8 +288,10 @@ export class FederisDeliberationService {
   }
 
   private async getOwnedExam(patronatTenantId: string, examId: string) {
+    // ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre étendu aux départements.
+    const scope = await this.scopeService.resolveScope(patronatTenantId);
     const exam = await this.prisma.nationalExam.findFirst({
-      where: { id: examId, tenantId: patronatTenantId },
+      where: { id: examId, patronatId: { in: scope.scopePatronatIds } },
       include: { subjects: { orderBy: { order: 'asc' } } },
     });
     if (!exam) throw new NotFoundException('Examen introuvable dans votre périmètre.');
@@ -832,6 +837,8 @@ export class FederisDeliberationService {
       include: { cases: true, exam: true },
     });
     if (!d) throw new NotFoundException('Délibération introuvable.');
+    // ★ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertWritable(tenantId, userId, d.exam?.patronatId ?? null);
     if (d.status === 'PUBLISHED') {
       throw new BadRequestException('Délibération déjà publiée.');
     }
@@ -1100,6 +1107,8 @@ export class FederisDeliberationService {
     this.assertPublish(fn);
 
     const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    // ★ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertWritable(tenantId, userId, exam.patronatId);
     if (exam.status !== 'RESULTS_PUBLISHED') {
       throw new BadRequestException(
         'Les résultats doivent être publiés avant de générer un lien de consultation.',

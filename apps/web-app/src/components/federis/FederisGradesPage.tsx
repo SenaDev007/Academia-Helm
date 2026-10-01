@@ -30,6 +30,7 @@ import FederisGradeSheetTab from '@/components/federis/FederisGradeSheetTab';
 import FederisGradeRegistryTab from '@/components/federis/FederisGradeRegistryTab';
 // ⭐ 2026-10-01 — Suivi TEMPS RÉEL de la saisie par les secrétaires
 import FederisGradeLiveTab from '@/components/federis/FederisGradeLiveTab';
+import { useFederisScope } from '@/lib/federis/scope-context';
 // ⭐ 2026-10-01 — « Relevés de notes » déménage dans le module Délibération
 //    (FederisDeliberationsPage — sous-onglet de chaque type d'examen).
 
@@ -104,7 +105,9 @@ export default function FederisGradesPage({ userRole }: FederisGradesPageProps) 
   const [newSubject, setNewSubject] = useState({ code: '', name: '', coefficient: '1', maxScore: '20' });
   const [working, setWorking] = useState(false);
 
-  const canManage = canWrite(userRole, 'candidates');
+  // ★ 2026-10-01 — AGRÉGATION NATIONALE : lecture seule sauf délégation
+  const { canWrite: scopeCanWrite } = useFederisScope();
+  const canManage = canWrite(userRole, 'candidates') && scopeCanWrite;
 
   const loadSubjects = useCallback(async () => {
     if (!examId) return;

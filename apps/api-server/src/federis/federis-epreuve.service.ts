@@ -58,6 +58,8 @@ import {
   normalizePatronatFunction,
   type PatronatFunction,
 } from './federis-roles';
+// ★ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (national = tous les départements)
+import { FederisScopeService } from './federis-scope.service';
 
 // ── Constantes ──────────────────────────────────────────────────────────────
 
@@ -342,6 +344,7 @@ export class FederisEpreuveService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly puppeteerPool: PuppeteerPoolService,
+    private readonly scopeService: FederisScopeService,
   ) {}
 
   // ── Contexte & permissions (pattern FederisQuestionBankService) ──────────
@@ -619,14 +622,19 @@ export class FederisEpreuveService {
     await this.ensureSchema();
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
 
+    // ★ 2026-10-01 — AGRÉGATION NATIONALE : le national voit ses épreuves
+    //    + celles de TOUS ses départements (isolation territoriale préservée
+    //    pour un territorial).
+    const scope = await this.scopeService.resolveScope(tenantId, userId);
+
     const papers = await this.prisma.federisExamPaper.findMany({
-      where: { patronatId: patronat.id },
+      where: { patronatId: { in: scope.scopePatronatIds } },
       orderBy: { updatedAt: 'desc' },
       take: 500,
     });
 
     const years = await this.prisma.academicYear.findMany({
-      where: { tenantId: patronat.tenantId },
+      where: { tenantId: { in: scope.scopeTenantIds } },
       select: { id: true, label: true, name: true, isActive: true },
       orderBy: { startDate: 'desc' },
     });
@@ -663,6 +671,8 @@ export class FederisEpreuveService {
     await this.ensureSchema();
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertCanWrite(fn);
+    // ★ Garde nationale : lecture seule sauf délégation d'un département
+    await this.scopeService.assertWritable(tenantId, userId, patronat.id);
 
     const year = await this.getActiveYear(patronat.tenantId);
     if (!year) {
@@ -738,6 +748,9 @@ export class FederisEpreuveService {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertCanWrite(fn);
     const paper = await this.getOwnedEpreuve(patronat.id, id);
+    // ★ Garde nationale : écriture uniquement si le département propriétaire
+    //    a délégué ses droits au compte national connecté.
+    await this.scopeService.assertWritable(tenantId, userId, paper.patronatId);
 
     if (paper.status === 'LOCKED') {
       throw new ForbiddenException(
@@ -813,6 +826,9 @@ export class FederisEpreuveService {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertCanWrite(fn);
     const paper = await this.getOwnedEpreuve(patronat.id, id);
+    // ★ Garde nationale : écriture uniquement si le département propriétaire
+    //    a délégué ses droits au compte national connecté.
+    await this.scopeService.assertWritable(tenantId, userId, paper.patronatId);
 
     if (paper.status === 'LOCKED') {
       throw new ForbiddenException('Épreuve verrouillée — suppression impossible.');
@@ -1366,15 +1382,30 @@ ${pages.join('\n')}
 
   // ── Helpers internes ─────────────────────────────────────────────────────
 
-  /** Épreuve scopée au patronat connecté (isolation territoriale). */
+  /**
+   * ★ 2026-10-01 — Épreuve scopée au PÉRIMÈTRE du demandeur : le patronat
+   * connecté ou, pour un national, n'importe lequel de ses départements.
+   */
   private async getOwnedEpreuve(patronatId: string, id: string) {
     const paper = await this.prisma.federisExamPaper.findFirst({
       where: { id, patronatId },
     });
-    if (!paper) {
+    if (paper) return paper;
+    // Élargit au périmètre national (self + départements) : le patronat
+    // propriétaire de l'épreuve peut être un département du national.
+    const owner = await this.prisma.patronat.findFirst({
+      where: { id: patronatId },
+      select: { tenantId: true },
+    });
+    if (!owner) throw new NotFoundException('Épreuve introuvable dans votre périmètre.');
+    const scope = await this.scopeService.resolveScope(owner.tenantId);
+    const scoped = await this.prisma.federisExamPaper.findFirst({
+      where: { id, patronatId: { in: scope.scopePatronatIds } },
+    });
+    if (!scoped) {
       throw new NotFoundException('Épreuve introuvable dans votre périmètre.');
     }
-    return paper;
+    return scoped;
   }
 
   /** Map academicYearId → label (du patronat connecté uniquement). */

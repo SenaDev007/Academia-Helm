@@ -45,6 +45,8 @@ import { PrismaService } from '../database/prisma.service';
 import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
 import { FederisPatronatService } from './federis-patronat.service';
 import { examSessionLabel, officialExamTitle } from './federis-grades.service';
+// ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (national = tous les départements)
+import { FederisScopeService } from './federis-scope.service';
 
 // ─── Types (payloads envoyés par le front — miroir du Helm) ─────────────────
 
@@ -306,6 +308,7 @@ export class FederisPvStatsPdfService {
     private readonly prisma: PrismaService,
     private readonly puppeteerPool: PuppeteerPoolService,
     private readonly patronatService: FederisPatronatService,
+    private readonly scopeService: FederisScopeService,
   ) {}
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -386,8 +389,10 @@ export class FederisPvStatsPdfService {
       logo = null;
     }
 
+    // ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre étendu aux départements.
+    const scope = await this.scopeService.resolveScope(patronat.tenantId);
     const exam = await this.prisma.nationalExam.findFirst({
-      where: { id: examId, tenantId: patronat.tenantId },
+      where: { id: examId, patronatId: { in: scope.scopePatronatIds } },
       include: { academicYear: true },
     });
     if (!exam) {

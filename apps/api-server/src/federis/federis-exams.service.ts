@@ -34,6 +34,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { FederisPatronatService, FEDERIS_PLANS, type FederisPlanCode } from './federis-patronat.service';
+// ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre + garde d'écriture
+import { FederisScopeService, type FederisScope } from './federis-scope.service';
 // ⭐ Module Matières — attachement automatique du catalogue au LANCEMENT
 //    d'une campagne (statut REGISTRATION_OPEN / IN_PROGRESS) : les matières
 //    paramétrées deviennent les matières de l'examen (NationalExamSubject).
@@ -515,6 +517,7 @@ export class FederisExamsService {
     private readonly prisma: PrismaService,
     private readonly patronatService: FederisPatronatService,
     private readonly subjectsService: FederisSubjectsService,
+    private readonly scopeService: FederisScopeService,
   ) {}
 
   // ── Auto-guérison du schéma (pattern FederisSupervisorsService) ──────────
@@ -563,7 +566,11 @@ export class FederisExamsService {
 
   // ── Contexte & permissions ───────────────────────────────────────────────
 
-  private async resolveContext(tenantId: string, userId: string) {
+  private async resolveContext(
+    tenantId: string,
+    userId: string,
+    departmentId?: string | null,
+  ) {
     const patronat = await this.patronatService.resolvePatronat(tenantId, userId);
     const link = await this.prisma.patronatUser.findFirst({
       where: { tenantId: patronat.tenantId, userId, isActive: true },
@@ -575,7 +582,9 @@ export class FederisExamsService {
     });
     // PatronatUser.role (fonction courte) prime ; sinon User.role (PATRONAT_*)
     const fn = this.normalize(link?.role ?? user?.role);
-    return { patronat, fn, fnLabel: patronatFunctionLabel(fn) };
+    // ⭐ 2026-10-01 — Périmètre d'agrégation (national = tous les départements)
+    const scope = await this.scopeService.buildScopeFromPatronat(patronat, departmentId);
+    return { patronat, fn, fnLabel: patronatFunctionLabel(fn), scope };
   }
 
   private normalize(role?: string | null): PatronatFunction {
@@ -617,35 +626,65 @@ export class FederisExamsService {
     return year;
   }
 
-  /** Examen appartenant au patronat (scope tenant). */
-  private async getOwnedExam(patronatTenantId: string, examId: string) {
-    const exam = await this.prisma.nationalExam.findFirst({
-      where: { id: examId, tenantId: patronatTenantId },
-    });
-    if (!exam) throw new NotFoundException('Examen introuvable dans votre périmètre.');
-    return exam;
+  /**
+   * Examen appartenant au PÉRIMÈTRE du demandeur (national = ses campagnes
+   * + celles de tous les départements). Remplace l'ancien check par tenant
+   * seul, qui excluait les campagnes des départements pour le national.
+   */
+  private async getOwnedExam(scope: FederisScope, examId: string) {
+    return this.scopeService.getScopedExam(scope, examId);
   }
 
   // ── 1. Examens nationaux ─────────────────────────────────────────────────
 
-  async listExams(tenantId: string, userId: string) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+  async listExams(tenantId: string, userId: string, departmentId?: string | null) {
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId, departmentId);
     this.assertRead(fn);
-    const year = await this.prisma.academicYear.findFirst({
-      where: { tenantId: patronat.tenantId, isActive: true },
-      orderBy: { startDate: 'desc' },
-    });
 
-    const exams = year
+    // ⭐ 2026-10-01 — AGRÉGATION NATIONALE : le patronat national voit ses
+    // campagnes + celles de TOUS ses départements (patronats enfants) pour
+    // l'année courante ; `departmentId` restreint la vue à UN département.
+    // Un territorial garde exactement le comportement d'avant (lui-même).
+    const { yearIds, label: yearLabel } = await this.scopeService.resolveScopeYears(scope);
+
+    const patronatNames = new Map<string, { name: string; territoryName: string | null }>();
+    if (scope.scopePatronatIds.length > 1) {
+      const scopePatronats = await this.prisma.patronat.findMany({
+        where: { id: { in: scope.scopePatronatIds } },
+        select: { id: true, name: true, territoryName: true },
+      });
+      for (const p of scopePatronats) {
+        patronatNames.set(p.id, { name: p.name, territoryName: p.territoryName });
+      }
+    }
+
+    const exams = yearIds.length
       ? await this.prisma.nationalExam.findMany({
-          where: { patronatId: patronat.id, academicYearId: year.id },
+          where: { patronatId: { in: scope.scopePatronatIds }, academicYearId: { in: yearIds } },
           include: { _count: { select: { centers: true, candidates: true } } },
           orderBy: { startDate: 'desc' },
         })
       : [];
 
+    const year = yearIds.length
+      ? await this.prisma.academicYear.findFirst({
+          where: { id: { in: yearIds }, tenantId: patronat.tenantId },
+          select: { id: true, label: true },
+        })
+      : null;
+
     return {
-      academicYear: year ? { id: year.id, label: year.label } : null,
+      academicYear: year ? { id: year.id, label: year.label } : yearLabel ? { id: yearIds[0], label: yearLabel } : null,
+      // ⭐ Périmètre exposé au web : barre départementale (national seulement)
+      scope: {
+        isNational: scope.isNational,
+        departmentId: scope.departmentId,
+        departments: scope.departments.map((d) => ({
+          id: d.id,
+          name: d.name,
+          territoryName: d.territoryName,
+        })),
+      },
       exams: exams.map((e) => ({
         id: e.id,
         code: e.code,
@@ -661,13 +700,18 @@ export class FederisExamsService {
         candidatesCount: e._count.candidates,
         totalCandidates: e.totalCandidates,
         totalCenters: e.totalCenters,
+        // ⭐ Département propriétaire (vue agrégée nationale)
+        department: patronatNames.get(e.patronatId ?? '') ?? null,
       })),
     };
   }
 
   async createExam(tenantId: string, userId: string, dto: CreateExamDto) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertWriteOrg(fn);
+    // ⭐ Garde nationale : l'organisation des campagnes est du ressort des
+    //    patronats départementaux — le national consulte l'agrégation.
+    await this.scopeService.assertNationalWritable(scope, userId, patronat.id);
     const year = await this.getActiveYear(patronat.tenantId);
 
     if (!dto.code?.trim() || !dto.name?.trim()) {
@@ -749,9 +793,10 @@ export class FederisExamsService {
   }
 
   async updateExam(tenantId: string, userId: string, examId: string, dto: UpdateExamDto) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertWriteOrg(fn);
-    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const exam = await this.getOwnedExam(scope, examId); // ★ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertNationalWritable(scope, userId, exam.patronatId);
 
     const data: any = { updatedAt: new Date() };
     if (dto.name?.trim()) data.name = dto.name.trim();
@@ -806,9 +851,9 @@ export class FederisExamsService {
   // ── 2. Centres d'examen ──────────────────────────────────────────────────
 
   async listCenters(tenantId: string, userId: string, examId: string) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertRead(fn);
-    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const exam = await this.getOwnedExam(scope, examId);
 
     const centers = await this.prisma.examCenter.findMany({
       where: { examId: exam.id, status: { not: 'ARCHIVED' } },
@@ -849,9 +894,10 @@ export class FederisExamsService {
   }
 
   async createCenter(tenantId: string, userId: string, examId: string, dto: CreateCenterDto) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertWriteOrg(fn);
-    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const exam = await this.getOwnedExam(scope, examId); // ★ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertNationalWritable(scope, userId, exam.patronatId);
     if (EXAM_BLOCKED_STATUSES.includes(exam.status)) {
       throw new BadRequestException("Examen terminé ou annulé — plus de modification possible.");
     }
@@ -911,12 +957,15 @@ export class FederisExamsService {
   }
 
   async updateCenter(tenantId: string, userId: string, centerId: string, dto: UpdateCenterDto) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertWriteOrg(fn);
     const center = await this.prisma.examCenter.findFirst({
-      where: { id: centerId, tenantId: patronat.tenantId },
+      where: { id: centerId, exam: { patronatId: { in: scope.scopePatronatIds } } },
+      include: { exam: { select: { patronatId: true } } },
     });
     if (!center) throw new NotFoundException('Centre introuvable dans votre périmètre.');
+    // ⭐ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertNationalWritable(scope, userId, center.exam?.patronatId ?? null);
 
     const data: any = { updatedAt: new Date() };
     if (dto.name?.trim()) data.name = dto.name.trim();
@@ -938,12 +987,15 @@ export class FederisExamsService {
   // ── 3. Salles ────────────────────────────────────────────────────────────
 
   async createRoom(tenantId: string, userId: string, centerId: string, dto: CreateRoomDto) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertWriteOrg(fn);
     const center = await this.prisma.examCenter.findFirst({
-      where: { id: centerId, tenantId: patronat.tenantId },
+      where: { id: centerId, exam: { patronatId: { in: scope.scopePatronatIds } } },
+      include: { exam: { select: { patronatId: true } } },
     });
     if (!center) throw new NotFoundException('Centre introuvable dans votre périmètre.');
+    // ⭐ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertNationalWritable(scope, userId, center.exam?.patronatId ?? null);
     if (!dto.code?.trim()) throw new BadRequestException('Le code de la salle est requis.');
     if (!dto.capacity || dto.capacity < 1) {
       throw new BadRequestException('La capacité doit être supérieure à 0.');
@@ -992,12 +1044,17 @@ export class FederisExamsService {
   }
 
   async updateRoom(tenantId: string, userId: string, roomId: string, dto: UpdateRoomDto) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertWriteOrg(fn);
     const room = await this.prisma.examRoom.findFirst({
-      where: { id: roomId, tenantId: patronat.tenantId },
+      where: { id: roomId, center: { exam: { patronatId: { in: scope.scopePatronatIds } } } },
+      include: { center: { include: { exam: { select: { patronatId: true } } } } },
     });
     if (!room) throw new NotFoundException('Salle introuvable dans votre périmètre.');
+    // ⭐ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertNationalWritable(
+      scope, userId, room.center?.exam?.patronatId ?? null,
+    );
 
     const data: any = { updatedAt: new Date() };
     if (dto.name?.trim()) data.name = dto.name.trim();
@@ -1026,9 +1083,9 @@ export class FederisExamsService {
 
   async listCandidates(tenantId: string, userId: string, examId: string, search?: string) {
     await this.ensureSchema();
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertRead(fn);
-    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const exam = await this.getOwnedExam(scope, examId);
 
     const where: any = { examId: exam.id };
     if (search?.trim()) {
@@ -1158,9 +1215,9 @@ export class FederisExamsService {
   // l'école peuvent dorénavant s'afficher » côté patronat.
 
   async listSchoolLists(tenantId: string, userId: string, examId: string) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertRead(fn);
-    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const exam = await this.getOwnedExam(scope, examId);
 
     const candidates = await this.prisma.examCandidate.findMany({
       where: { examId: exam.id },
@@ -1286,7 +1343,7 @@ export class FederisExamsService {
 
   async getMatriculeSettings(tenantId: string, userId: string) {
     await this.ensureSchema();
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertRead(fn);
     const format = (patronat as any).matriculeFormat ?? null;
     const year = new Date().getFullYear();
@@ -1317,7 +1374,7 @@ export class FederisExamsService {
 
   async updateMatriculeSettings(tenantId: string, userId: string, dto: UpdateMatriculeFormatDto) {
     await this.ensureSchema();
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertWriteCandidates(fn);
 
     // null/'' → retour au format par défaut
@@ -1436,13 +1493,19 @@ export class FederisExamsService {
     examId: string,
     dto: ImportCandidatesDto,
   ) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertWriteCandidates(fn);
-    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const exam = await this.getOwnedExam(scope, examId); // ★ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertNationalWritable(scope, userId, exam.patronatId);
     if (EXAM_BLOCKED_STATUSES.includes(exam.status)) {
       throw new BadRequestException("Examen terminé ou annulé — import impossible.");
     }
     const year = await this.getActiveYear(patronat.tenantId);
+    // ⭐ Écriture déléguée (national sur un examen départemental) : les
+    //    candidats sont créés dans le tenant PROPRIÉTAIRE de l'examen (le
+    //    département), pas dans celui du demandeur — cohérence des données.
+    const examTenantId = exam.tenantId ?? patronat.tenantId;
+    const examYearId = exam.academicYearId ?? year.id;
 
     const rows = dto.rows ?? [];
     if (rows.length === 0) throw new BadRequestException('Aucune ligne à importer.');
@@ -1577,8 +1640,8 @@ export class FederisExamsService {
           if (!c.registrationNumber) c.registrationNumber = c.matricule;
           const created = await tx.examCandidate.create({
             data: {
-              tenantId: patronat.tenantId,
-              academicYearId: year.id,
+              tenantId: examTenantId,
+              academicYearId: examYearId,
               examId: exam.id,
               schoolTenantId: c.schoolTenantId,
               firstName: c.firstName,
@@ -1656,9 +1719,10 @@ export class FederisExamsService {
     dto: GenerateAnonymatsDto,
   ) {
     await this.ensureSchema();
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertWriteCandidates(fn);
-    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const exam = await this.getOwnedExam(scope, examId); // ★ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertNationalWritable(scope, userId, exam.patronatId);
     if (EXAM_BLOCKED_STATUSES.includes(exam.status)) {
       throw new BadRequestException("Examen terminé ou annulé — anonymats verrouillés.");
     }
@@ -1775,9 +1839,10 @@ export class FederisExamsService {
     examId: string,
     dto: AssignCandidatesToCenterDto,
   ) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertWriteOrg(fn);
-    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const exam = await this.getOwnedExam(scope, examId); // ★ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertNationalWritable(scope, userId, exam.patronatId);
     if (EXAM_BLOCKED_STATUSES.includes(exam.status)) {
       throw new BadRequestException("Examen terminé ou annulé — affectation impossible.");
     }
@@ -1899,9 +1964,10 @@ export class FederisExamsService {
   // supprimées : elles sont signalées dans le rapport.
 
   async purgeDuplicateCandidates(tenantId: string, userId: string, examId: string) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertWriteCandidates(fn);
-    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const exam = await this.getOwnedExam(scope, examId); // ★ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertNationalWritable(scope, userId, exam.patronatId);
     if (EXAM_BLOCKED_STATUSES.includes(exam.status)) {
       throw new BadRequestException("Examen terminé ou annulé — purge impossible.");
     }
@@ -2043,9 +2109,10 @@ export class FederisExamsService {
   //      complète des salles (y compris celles qui se vident) + audit.
 
   async assignTableNumbers(tenantId: string, userId: string, examId: string, dto: AssignTablesDto) {
-    const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    const { patronat, fn, scope } = await this.resolveContext(tenantId, userId);
     this.assertWriteOrg(fn);
-    const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    const exam = await this.getOwnedExam(scope, examId); // ★ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertNationalWritable(scope, userId, exam.patronatId);
     if (EXAM_BLOCKED_STATUSES.includes(exam.status)) {
       throw new BadRequestException("Examen terminé ou annulé — affectation impossible.");
     }

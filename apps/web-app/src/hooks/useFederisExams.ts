@@ -19,6 +19,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api/client';
+// ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (département sélectionné)
+import { useFederisScope } from '@/lib/federis/scope-context';
+
+export interface FederisExamDepartment {
+  name: string;
+  territoryName: string | null;
+}
 
 export interface FederisExam {
   id: string;
@@ -31,6 +38,8 @@ export interface FederisExam {
   endDate: string;
   centersCount: number;
   candidatesCount: number;
+  /** ⭐ Département propriétaire de la campagne (vue agrégée nationale). */
+  department?: FederisExamDepartment | null;
 }
 
 /** ⭐ T45 — Ordre canonique des types d'examen (celui des barres d'onglets).
@@ -39,6 +48,7 @@ const EXAM_TYPE_ORDER = ['CEP', 'BEPC', 'BAC', 'CAP'] as const;
 
 export function useFederisExams() {
   const searchParams = useSearchParams();
+  const { selectedDepartmentId } = useFederisScope();
   const [exams, setExams] = useState<FederisExam[]>([]);
   const [academicYear, setAcademicYear] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,6 +58,12 @@ export function useFederisExams() {
   // ⭐ T45 — Sélection initiale : ?exam= puis premier examen du PREMIER type
   // canonique disponible (CEP → BEPC → BAC → CAP) — plus exams[0] (tri
   // chronologique descendant = baccalauréat par défaut).
+  // ⭐ 2026-10-01 — Changement de département (national) : la sélection est
+  // réinitialisée — les examens du périmètre précédent ne sont plus valides.
+  useEffect(() => {
+    setExamId(null);
+  }, [selectedDepartmentId]);
+
   useEffect(() => {
     if (examId) return;
     const fromUrl = searchParams?.get('exam');
@@ -65,7 +81,12 @@ export function useFederisExams() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiClient.get('/federis/exams', { timeout: 20000 });
+      // ⭐ AGRÉGATION NATIONALE : departmentId restreint la vue à UN
+      //    département du réseau (sélecteur de la barre de périmètre).
+      const res = await apiClient.get('/federis/exams', {
+        timeout: 20000,
+        params: selectedDepartmentId ? { departmentId: selectedDepartmentId } : undefined,
+      });
       setExams(res.data?.exams ?? []);
       setAcademicYear(res.data?.academicYear?.label ?? null);
     } catch (err: any) {
@@ -73,7 +94,7 @@ export function useFederisExams() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedDepartmentId]);
 
   useEffect(() => {
     void load();

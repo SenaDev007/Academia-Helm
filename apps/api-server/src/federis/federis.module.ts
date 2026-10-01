@@ -99,6 +99,8 @@ import { ParentProvisioningModule } from '../students/parent-provisioning.module
 //    adaptée aux vraies données Federis (patronat organisateur, registre des
 //    notes, session unique par examen — pas de modes évaluation/trimestriel)
 import { FederisPvStatsPdfService } from './federis-pv-stats-pdf.service';
+// ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (national = tous les départements)
+import { FederisScopeService } from './federis-scope.service';
 import { FederisPvStatsController } from './federis-pv-stats.controller';
 
 @Module({
@@ -156,6 +158,10 @@ import { FederisPvStatsController } from './federis-pv-stats.controller';
     FederisSaisieService,
     FederisPublicResultsService,
     FederisPvStatsPdfService,
+    // ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre de visibilité du
+    //    patronat connecté (national = tous les départements, lecture seule
+    //    sauf délégation du coordonnateur départemental).
+    FederisScopeService,
   ],
   exports: [
     FederisService,
@@ -181,6 +187,7 @@ import { FederisPvStatsController } from './federis-pv-stats.controller';
     //    index [2] is available in the ParentPortalModule context) » au boot.
     //    Exporté désormais — même règle que FederisDeliberationService.
     FederisPdfService,
+    FederisScopeService,
   ],
 })
 export class FederisModule {}

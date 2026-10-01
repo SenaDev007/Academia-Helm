@@ -30,6 +30,8 @@
 import {
   Body,
   Controller,
+  Delete,
+  ForbiddenException,
   Get,
   Headers,
   HttpCode,
@@ -61,6 +63,14 @@ import {
   FederisSchoolDirectoryService,
   CreateProvisionalSchoolDto,
 } from './federis-school-directory.service';
+// ⭐ 2026-10-01 — AGRÉGATION NATIONALE : délégations départementales
+import { FederisScopeService } from './federis-scope.service';
+import { IsEmail, IsString, MinLength } from 'class-validator';
+
+class GrantDelegationDto {
+  @IsEmail()
+  email!: string;
+}
 
 @Controller('federis')
 export class FederisPatronatController {
@@ -71,6 +81,7 @@ export class FederisPatronatController {
     private readonly patronatService: FederisPatronatService,
     private readonly fedapayService: FederisFedapayService,
     private readonly schoolDirectoryService: FederisSchoolDirectoryService,
+    private readonly scopeService: FederisScopeService,
   ) {}
 
   // ══════════════════════════ ROUTES PUBLIQUES ══════════════════════════
@@ -195,6 +206,77 @@ export class FederisPatronatController {
   @Get('patronat/dashboard')
   async getDashboard(@Req() req: any) {
     return this.patronatService.getDashboard(req.user.tenantId, req.user.id || req.user.sub);
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // ⭐ 2026-10-01 — DÉLÉGATION NATIONALE (agrégation nationale, lecture seule)
+  //
+  // Le patronat national consulte l'agrégation de tous les départements en
+  // LECTURE SEULE. Pour modifier les données d'un département, le
+  // COORDONNATEUR de ce département lui « donne la main » : une délégation
+  // stockée dans le patronat départemental (patronats.metadata).
+  // ════════════════════════════════════════════════════════════════════
+
+  /**
+   * Délégations — double vue :
+   *   - TERRITORIAL (coordonnateur) : délégations accordées par CE patronat ;
+   *   - NATIONAL : pour chaque département, le statut de délégation du
+   *     compte connecté (barre de périmètre côté web).
+   */
+  @UseGuards(JwtAuthGuard)
+  @Get('patronat/delegations')
+  async getDelegations(@Req() req: any) {
+    const tenantId = req.user.tenantId;
+    const userId = req.user.id || req.user.sub;
+    const scope = await this.scopeService.resolveScope(tenantId, userId);
+    if (scope.isNational) {
+      return {
+        isNational: true,
+        departments: await this.scopeService.delegationsForNationalUser(scope, userId),
+        granted: [],
+      };
+    }
+    return {
+      isNational: false,
+      departments: [],
+      granted: await this.scopeService.listDelegationsForPatronat(scope.patronat.id),
+    };
+  }
+
+  /** Accorde une délégation d'écriture à un compte du patronat national. */
+  @UseGuards(JwtAuthGuard)
+  @Post('patronat/delegations')
+  async grantDelegation(@Req() req: any, @Body() dto: GrantDelegationDto) {
+    const tenantId = req.user.tenantId;
+    const userId = req.user.id || req.user.sub;
+    const scope = await this.scopeService.resolveScope(tenantId, userId);
+    // ⭐ Seul le COORDONNATEUR du patronat départemental donne la main
+    //    (garde stricte côté API — l'UI masque le bouton pour les autres).
+    const link = await this.patronatService.resolvePatronatUser(tenantId, userId);
+    const fn = link?.role;
+    if (fn !== 'COORDONNATEUR' && fn !== 'PATRONAT_COORDONNATEUR' && fn !== 'PATRONAT_ADMIN') {
+      throw new ForbiddenException(
+        'Seul le coordonnateur du patronat départemental peut déléguer un accès national.',
+      );
+    }
+    return this.scopeService.grantDelegation(scope, userId, dto);
+  }
+
+  /** Révoque une délégation. */
+  @UseGuards(JwtAuthGuard)
+  @Delete('patronat/delegations/:userId')
+  async revokeDelegation(@Req() req: any, @Param('userId') targetUserId: string) {
+    const tenantId = req.user.tenantId;
+    const userId = req.user.id || req.user.sub;
+    const scope = await this.scopeService.resolveScope(tenantId, userId);
+    const link = await this.patronatService.resolvePatronatUser(tenantId, userId);
+    const fn = link?.role;
+    if (fn !== 'COORDONNATEUR' && fn !== 'PATRONAT_COORDONNATEUR' && fn !== 'PATRONAT_ADMIN') {
+      throw new ForbiddenException(
+        'Seul le coordonnateur du patronat départemental peut révoquer une délégation.',
+      );
+    }
+    return this.scopeService.revokeDelegation(scope, userId, targetUserId);
   }
 
   @UseGuards(JwtAuthGuard)

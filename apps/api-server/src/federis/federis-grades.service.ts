@@ -54,6 +54,8 @@ import {
   patronatFunctionLabel,
   type PatronatFunction,
 } from './federis-roles';
+// ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (national = tous les départements)
+import { FederisScopeService } from './federis-scope.service';
 
 // ⭐ FIX 2026-09-29 — décorateurs class-validator OBLIGATOIRES sur TOUS les
 //    DTOs : le ValidationPipe global (whitelist + forbidNonWhitelisted) rejette
@@ -700,6 +702,7 @@ export class FederisGradesService {
     private readonly patronatService: FederisPatronatService,
     private readonly subjectsService: FederisSubjectsService,
     private readonly gradingRulesService: FederisGradingRulesService,
+    private readonly scopeService: FederisScopeService,
   ) {}
 
   // ── Auto-guérison du schéma (pattern FederisExamsService) ────────────────
@@ -766,8 +769,10 @@ export class FederisGradesService {
   }
 
   private async getOwnedExam(patronatTenantId: string, examId: string) {
+    // ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre étendu aux départements.
+    const scope = await this.scopeService.resolveScope(patronatTenantId);
     const exam = await this.prisma.nationalExam.findFirst({
-      where: { id: examId, tenantId: patronatTenantId },
+      where: { id: examId, patronatId: { in: scope.scopePatronatIds } },
     });
     if (!exam) throw new NotFoundException('Examen introuvable dans votre périmètre.');
     return exam;
@@ -1467,6 +1472,8 @@ export class FederisGradesService {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertWriteGrades(fn);
     const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    // ⭐ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertWritable(tenantId, userId, exam.patronatId);
     const year = await this.getActiveYear(patronat.tenantId);
 
     if (exam.status === 'RESULTS_PUBLISHED') {
@@ -1687,6 +1694,8 @@ export class FederisGradesService {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertWriteGrades(fn);
     const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    // ⭐ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertWritable(tenantId, userId, exam.patronatId);
     if (exam.status === 'RESULTS_PUBLISHED') {
       throw new BadRequestException('Résultats déjà publiés — session définitivement verrouillée.');
     }
@@ -1713,6 +1722,8 @@ export class FederisGradesService {
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
     this.assertWriteGrades(fn);
     const exam = await this.getOwnedExam(patronat.tenantId, examId);
+    // ⭐ Garde nationale : lecture seule sauf délégation du département propriétaire
+    await this.scopeService.assertWritable(tenantId, userId, exam.patronatId);
     if (exam.status === 'RESULTS_PUBLISHED') {
       throw new BadRequestException(
         'Résultats déjà publiés — la saisie ne peut plus être rouverte.',

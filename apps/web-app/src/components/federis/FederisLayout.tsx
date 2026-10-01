@@ -41,6 +41,9 @@ import { clearClientSessionSync } from '@/lib/auth/client-access-token';
 // ⭐ « Mon profil » — photo de profil + changement de mot de passe (self-service)
 import ProfileDialog from '@/components/profile/ProfileDialog';
 import { useUserProfileStore } from '@/stores/user-profile-store';
+// ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (départements + lecture seule)
+import { FederisScopeProvider } from '@/lib/federis/scope-context';
+import FederisScopeBar from '@/components/federis/FederisScopeBar';
 
 interface FederisLayoutProps {
   children: React.ReactNode;
@@ -50,6 +53,21 @@ interface FederisLayoutProps {
     id: string;
     label: string;
   };
+  /** ⭐ Layout partagé (2026-10-01) : profil patronat chargé CÔTÉ SERVEUR par
+   *  le layout (connected) — amorce orgLevel / fonction / logo / abonnement
+   *  sans attendre le fetch client (qui reste en rafraîchissement arrière-plan,
+   *  une seule fois par montage du layout et non plus à chaque navigation). */
+  initialProfile?: {
+    orgLevel: string | null;
+    userRole: string | null;
+    logo: string | null;
+    name?: string;
+    subscription: {
+      status: string;
+      plan: string;
+      expiresAt?: string | null;
+    } | null;
+  } | null;
 }
 
 // Navigation institutionnelle (cahier des charges §7.1) :
@@ -146,6 +164,7 @@ export default function FederisLayout({
   user,
   federis,
   currentAcademicYear,
+  initialProfile = null,
 }: FederisLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const pathname = usePathname();
@@ -154,14 +173,27 @@ export default function FederisLayout({
   //    + statut d'abonnement (bandeau de blocage si impayé — cahier des charges §12.3)
   //    + fonction du membre (userRole) → UI Shell par rôle
   //    + logo configuré (Paramètres → Identité) → en-tête de l'application
-  const [orgLevel, setOrgLevel] = useState<string | null>(null);
-  const [patronatUserRole, setPatronatUserRole] = useState<string | null>(null);
-  const [patronatLogo, setPatronatLogo] = useState<string | null>(null);
+  //    ⭐ 2026-10-01 : le layout partagé passe le profil chargé côté serveur
+  //    (initialProfile) — les états démarrent déjà remplis (zéro flash), le
+  //    fetch client ne sert plus qu'au rafraîchissement arrière-plan.
+  const [orgLevel, setOrgLevel] = useState<string | null>(initialProfile?.orgLevel ?? null);
+  const [patronatUserRole, setPatronatUserRole] = useState<string | null>(
+    initialProfile?.userRole ?? null,
+  );
+  const [patronatLogo, setPatronatLogo] = useState<string | null>(initialProfile?.logo ?? null);
   const [subscription, setSubscription] = useState<{
     status: string;
     plan: string;
     expiresAt?: string | null;
-  } | null>(null);
+  } | null>(
+    initialProfile?.subscription ?? null,
+  );
+  // ⭐ Nom du patronat : le profil serveur (initialProfile) prime sur le prop
+  //    statique — le libellé de l'en-tête est correct dès le premier rendu,
+  //    même quand la page n'a pas rechargé le profil elle-même.
+  const [patronatName, setPatronatName] = useState<string | null>(
+    initialProfile?.name ?? null,
+  );
   // ⭐ « Mon profil » — dialogue photo de profil + mot de passe
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   // ⭐ Photo PERSO > photo du dossier RH — même priorité que « Mon profil »
@@ -169,11 +201,16 @@ export default function FederisLayout({
   const profileAvatarUrl = useUserProfileStore(
     (s) => s.profile?.avatarUrl ?? s.profile?.hrPhotoUrl ?? null,
   );
+
   const ensureProfileLoaded = useUserProfileStore((s) => s.ensureLoaded);
   useEffect(() => {
     void ensureProfileLoaded();
   }, [ensureProfileLoaded]);
 
+  // ⭐ Rafraîchissement arrière-plan du profil (une fois par MONTAGE du layout
+  //    — le layout persiste entre modules, donc plus un appel par navigation).
+  //    Si le profil serveur (initialProfile) est déjà complet, seul le logo et
+  //    la fonction peuvent évoluer : le fetch reste utile comme rafraîchissement.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -185,6 +222,7 @@ export default function FederisLayout({
           setPatronatUserRole(res.data.userRole ?? res.data.userFunction ?? null);
           // ⭐ Logo personnalisé du patronat (configuré dans Paramètres → Identité)
           setPatronatLogo(res.data.logo ?? null);
+          if (res.data.name) setPatronatName(res.data.name);
           setSubscription({
             status: res.data.subscription?.status ?? 'UNKNOWN',
             plan: res.data.subscription?.plan ?? 'ESSENTIEL',
@@ -213,6 +251,7 @@ export default function FederisLayout({
   };
 
   return (
+    <FederisScopeProvider isNational={isNational}>
     <OfflineGuard>
       <div className="min-h-screen bg-[#f7f9fc] fed-app">
         {/* ── HEADER APPLICATIF — pattern PilotageTopBar Helm ────────────────
@@ -248,7 +287,7 @@ export default function FederisLayout({
               <div className="hidden sm:block">
                 <div className="text-[13px] font-bold text-blue-900 leading-tight">Academia Federis</div>
                 <div className="text-[11px] text-gray-400 font-medium leading-tight max-w-[220px] truncate">
-                  {federis.name}
+                  {patronatName ?? federis.name}
                 </div>
               </div>
             </div>
@@ -438,6 +477,9 @@ export default function FederisLayout({
                   </div>
                 )}
               </AnimatePresence>
+              {/* ⭐ 2026-10-01 — Barre de périmètre (national uniquement) :
+                  agrégation de tous les départements + lecture seule/délégation */}
+              <FederisScopeBar />
               {children}
             </div>
           </main>
@@ -467,5 +509,6 @@ export default function FederisLayout({
         />
       </div>
     </OfflineGuard>
+    </FederisScopeProvider>
   );
 }

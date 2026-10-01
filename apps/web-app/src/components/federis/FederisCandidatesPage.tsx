@@ -42,6 +42,7 @@ import { canWrite } from '@/lib/patronat/permissions';
 import { useFederisExams, EXAM_STATUS_LABELS } from '@/hooks/useFederisExams';
 import { loadXlsx } from '@/lib/exports/xlsx-loader';
 import { FedPage, FedCountUp } from '@/components/federis/federis-motion';
+import { useFederisScope } from '@/lib/federis/scope-context';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -197,8 +198,10 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
   const [generatingAnonymats, setGeneratingAnonymats] = useState(false);
   const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
 
-  const canManageCandidates = canWrite(userRole, 'candidates');
-  const canOrganize = canWrite(userRole, 'exam_org');
+  // ★ 2026-10-01 — AGRÉGATION NATIONALE : lecture seule sauf délégation
+  const { canWrite: scopeCanWrite } = useFederisScope();
+  const canManageCandidates = canWrite(userRole, 'candidates') && scopeCanWrite;
+  const canOrganize = canWrite(userRole, 'exam_org') && scopeCanWrite;
 
   // ── Catégorisation par type d'examen (CEP / BEPC / BAC / CAP) ───────────
   const examsByType = useMemo(() => {

@@ -74,10 +74,10 @@ interface DistinctionStudent {
   id: string;
   name: string;
   matricule: string;
-  average: number;
+  average: number | null;  // ⭐ null = élève sans note (n'a pas composé)
   base: number;
-  rank: number;
-  classSize: number;
+  rank: number | null;  // ⭐ null = élève sans note (pas de rang)
+  classSize: number;  // ⭐ Vrai effectif total de la classe (inclut les élèves sans note)
   distinctionCode: string | null;
   distinctionLabel: string | null;
   specialAwards: string[]; // codes (SEC_PROGRES, SEC_ASSIDUITE, SEC_COMPORTEMENT)
@@ -527,14 +527,14 @@ export default function DistinctionWorkspace() {
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
                 <Users className="w-5 h-5 text-slate-600 mx-auto mb-1" />
                 <p className="text-2xl font-bold text-slate-700">{students.length}</p>
-                <p className="text-xs text-slate-600 font-medium">Élèves</p>
+                <p className="text-xs text-slate-600 font-medium">Effectif total</p>
               </div>
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
                 <Medal className="w-5 h-5 text-blue-600 mx-auto mb-1" />
                 <p className="text-2xl font-bold text-blue-700">
-                  {students.reduce((acc, s) => acc + s.specialAwards.length, 0)}
+                  {students.filter(s => s.average !== null).length}
                 </p>
-                <p className="text-xs text-blue-600 font-medium">Prix spéciaux{isSecondaire ? '' : ' (sec.)'}</p>
+                <p className="text-xs text-blue-600 font-medium">Ont composé</p>
               </div>
               <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-center">
                 <GraduationCap className="w-5 h-5 text-emerald-600 mx-auto mb-1" />
@@ -573,18 +573,23 @@ export default function DistinctionWorkspace() {
                       <TableRow key={st.id} className={cn(
                         idx % 2 === 1 && 'bg-slate-50/60',
                         st.distinctionCode && 'bg-amber-50/50',
+                        st.average === null && 'bg-slate-50/40 opacity-75',
                       )}>
                         <TableCell className="text-xs font-bold">
                           {st.rank === 1 ? <Trophy className="w-4 h-4 text-amber-500" /> :
                            st.rank === 2 ? <Medal className="w-4 h-4 text-slate-400" /> :
                            st.rank === 3 ? <Award className="w-4 h-4 text-amber-700" /> :
-                           st.rank || '—'}
+                           st.rank !== null ? st.rank :
+                           <span className="text-slate-400 italic">—</span>}
                         </TableCell>
                         <TableCell className="text-xs">{st.matricule || '—'}</TableCell>
                         <TableCell className="text-xs font-medium">{st.name}</TableCell>
                         <TableCell className={cn('text-xs text-center font-bold',
+                          st.average === null ? 'text-slate-400 italic font-normal' :
                           st.average >= (isMaternelle ? 2 : 10) ? 'text-emerald-700' : 'text-red-600')}>
-                          {st.average.toFixed(2)} <span className="text-[10px] font-normal text-slate-500">/ {st.base}</span>
+                          {st.average !== null
+                            ? <>{st.average.toFixed(2)} <span className="text-[10px] font-normal text-slate-500">/ {st.base}</span></>
+                            : <span className="text-slate-400 italic">Pas de notes</span>}
                         </TableCell>
                         <TableCell className="text-xs text-center">
                           {st.distinctionCode ? (
@@ -612,8 +617,19 @@ export default function DistinctionWorkspace() {
                         </TableCell>
                         <TableCell className="text-xs text-center">
                           <div className="flex items-center justify-center gap-1 relative">
-                            {/* Bouton direct (distinction principale ou unique) */}
-                            {allCerts.length === 1 && (
+                            {/* ⭐ Bouton diplôme de fin de cycle (tous les élèves peuvent y prétendre) */}
+                            <button
+                              onClick={() => handleGenerateGraduation(st)}
+                              disabled={generatingCert === `${st.id}:${isMaternelle ? 'MAT_GRAD' : isSecondaire ? 'SEC_GRAD' : 'PRI_GRAD'}`}
+                              title="Générer le diplôme de fin de cycle"
+                              className="p-1.5 rounded hover:bg-purple-100 disabled:opacity-50"
+                            >
+                              {generatingCert === `${st.id}:${isMaternelle ? 'MAT_GRAD' : isSecondaire ? 'SEC_GRAD' : 'PRI_GRAD'}` ? <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600" /> : <GraduationCap className="w-3.5 h-3.5 text-purple-600" />}
+                            </button>
+                            {/* ⭐ Pas de boutons de certificat pour les élèves sans note
+                                (pas de distinction possible sans moyenne). Seul le
+                                diplôme de fin de cycle est proposé. */}
+                            {st.average !== null && allCerts.length === 1 && (
                               <>
                                 <button
                                   onClick={() => handleGenerateCertificate(st, allCerts[0].code)}
@@ -634,7 +650,7 @@ export default function DistinctionWorkspace() {
                               </>
                             )}
                             {/* Bouton déroulant si plusieurs certificats (distinction + prix spéciaux) */}
-                            {hasMultipleCerts && (
+                            {st.average !== null && hasMultipleCerts && (
                               <>
                                 <button
                                   onClick={() => setOpenMenuFor(openMenuFor === st.id ? null : st.id)}
@@ -682,15 +698,6 @@ export default function DistinctionWorkspace() {
                                 )}
                               </>
                             )}
-                            {/* Bouton diplôme de fin de cycle (tous les élèves peuvent y prétendre) */}
-                            <button
-                              onClick={() => handleGenerateGraduation(st)}
-                              disabled={generatingCert === `${st.id}:${isMaternelle ? 'MAT_GRAD' : isSecondaire ? 'SEC_GRAD' : 'PRI_GRAD'}`}
-                              title="Générer le diplôme de fin de cycle"
-                              className="p-1.5 rounded hover:bg-purple-100 disabled:opacity-50"
-                            >
-                              {generatingCert === `${st.id}:${isMaternelle ? 'MAT_GRAD' : isSecondaire ? 'SEC_GRAD' : 'PRI_GRAD'}` ? <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-600" /> : <GraduationCap className="w-3.5 h-3.5 text-purple-600" />}
-                            </button>
                           </div>
                         </TableCell>
                       </TableRow>

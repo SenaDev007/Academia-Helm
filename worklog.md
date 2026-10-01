@@ -12593,3 +12593,73 @@ Stage Summary:
 - Le module Rapport et statistiques Federis contient désormais les onglets « Procès-verbal » et « Statistiques » (en tête, PV par défaut) qui donnent le PV et les statistiques POUR CHAQUE EXAMEN (CEP, BEPC, Baccalauréat, CAP — barre d'onglets par type + sélecteur de campagne, défaut CEP).
 - Reproduction de A à Z du module Examen Helm : mêmes tableaux, mêmes sous-onglets, mêmes libellés, mêmes PDF A4 paysage à l'en-tête officiel — seules adaptations : le périmètre examen national (session unique, pas de modes évaluation/trimestriel/annuel), le patronat organisateur en en-tête, les données du registre officiel (moyennes et rangs selon les règles de calcul effectives), la colonne « École » de provenance et le marquage « ABS » des absents.
 - À valider post-déploiement : Rapport et statistiques → onglet Procès-verbal (CEP par défaut) → tableau complet + Trois premiers/derniers + « Générer PDF » ; onglet Statistiques → taux de réussite (G/F/T + graphique), intervalle, meilleures notes/moyennes (Top 3/5/10/20) + PDF ; vérifier l'onglet par défaut CEP dans Délibération / Notes et Moyennes / Candidats ; ouvrir un lien public de consultation → modal à 2 sections (sans notes par matière).
+
+---
+Task ID: 47
+Agent: main
+Task: Distinctions + Promotion — afficher TOUS les élèves inscrits (effectif total de la classe), pas seulement ceux qui ont composé
+
+Work Log:
+- DIAGNOSTIC : dans distinctions.controller.ts getClassAverages(), le code faisait
+  `.filter(st => st.average !== null)` → les élèves sans note (n'ayant pas composé)
+  étaient SUPPRIMÉS de la liste → la stat « Élèves » affichait un faux effectif
+  (ex: 3 au lieu de 30 si seulement 3 avaient composé).
+- DIAGNOSTIC promotion : le frontend envoyait un AcademicClass.id à
+  /exams/promotion/class/:classId mais le backend filtrait StudentEnrollment.classId
+  (FK vers Class physique) → AUCUN match → liste vide ou partielle.
+- FIX distinctions.controller.ts getClassAverages() :
+  • Suppression du `.filter(st => st.average !== null)` → TOUS les élèves
+    inscrits sont retournés (average=null pour ceux sans note)
+  • Requête enrollments en clause OR : `{ classId } OR { academicClassId }` →
+    récupère tous les élèves inscrits quelle que soit la méthode (section physique
+    OU classe officielle)
+  • Tri : ceux avec moyenne en premier (décroissant), ceux sans moyenne en
+    dernier (alphabétique) pour stabilité
+  • classIdsForEvaluations étendu pour inclure tous les Class.id des
+    physicalClasses attachées à l'AcademicClass + l'AcademicClass.id
+- FIX distinctions.controller.ts getClassDistinctions() :
+  • Le rang est calculé uniquement pour les élèves avec une moyenne (rankCounter
+    incrémenté seulement si avg !== null)
+  • Les élèves sans note figurent dans la liste avec rank=null, average=null,
+    distinctionCode=null (pas de distinction possible)
+  • classSize = ranked.length (vrai effectif total de la classe)
+- FIX distinctions.controller.ts generate-board :
+  • Skip les élèves sans moyenne pour le calcul du rang (rang compté seulement
+    pour ceux qui ont composé)
+  • Message d'erreur clarifié : « Aucune distinction à afficher (moyennes sous
+    le premier palier ou aucun élève évalué) »
+- FIX promotion.controller.ts getClassPromotionData() :
+  • Une SEULE requête OR au lieu de deux tentatives : `{ classId } OR
+    { academicClassId }` → récupère TOUS les élèves inscrits
+  • classIdsForEvaluations construit à partir de tous les Class.id des
+    physicalClasses attachées à l'AcademicClass + l'AcademicClass.id
+  • Élimine le bug où la « tentative 1 » pouvait retourner une liste partielle
+    (seulement les élèves enregistrés sur classId) et ne pas tomber sur la
+    « tentative 2 »
+- FIX frontend DistinctionWorkspace.tsx :
+  • Type DistinctionStudent : average → number | null, rank → number | null
+  • Stats : « Élèves » renommé « Effectif total » + nouvelle stat « Ont composé »
+    (students.filter(s => s.average !== null).length) → l'utilisateur voit
+    clairement la différence (ex: 3 ont composé / 30 effectif total)
+  • Tableau : élèves sans note affichés en grisé (bg-slate-50/40 opacity-75),
+    moyenne affiche « Pas de notes » (italic, slate-400), rang affiche « — »
+  • Actions : seuls les élèves avec average !== null ont les boutons PDF + Email
+    de certificat. Tous les élèves gardent le bouton diplôme de fin de cycle.
+- FIX frontend PromotionWorkspace.tsx :
+  • Stats : ajout d'une 4e carte « Effectif total » (students.length) à côté de
+    Passants / Rachat / Redoublants → l'utilisateur voit clairement la décomposition
+    complète de la classe
+
+Stage Summary:
+- Distinctions : la stat « Effectif total » affiche maintenant TOUS les élèves
+  inscrits dans la classe (ex: 30), pas seulement ceux qui ont composé (ex: 3).
+  Seuls les élèves avec une moyenne et une distinction ont un certificat ; les
+  autres sont listés en grisé avec « Pas de notes » et ont uniquement accès au
+  diplôme de fin de cycle.
+- Promotion : la stat « Effectif total » s'affiche en plus des Passants/Rachat/
+  Redoublants. Tous les élèves inscrits figurent dans la liste (passants +
+  redoublants = effectif total), qu'ils aient composé ou non.
+- Backend : une seule requête OR pour récupérer tous les élèves inscrits
+  (classId OR academicClassId) — compatible avec les deux formats de classId
+  passés par le frontend (Class.id section physique OU AcademicClass.id classe
+  officielle).

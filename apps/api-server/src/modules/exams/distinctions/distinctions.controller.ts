@@ -380,9 +380,23 @@ export class DistinctionsController {
    * Récupère les moyennes d'une classe pour une période
    */
   private async getClassAverages(tenantId: string, classId: string, periodId: string, academicYearId: string) {
+    // ⭐ 2026-10-01 — FIX : récupérer TOUS les élèves inscrits dans la classe,
+    //    qu'ils aient composé ou non. Le `classId` passé par le frontend peut
+    //    être un Class.id (section physique) OU un AcademicClass.id (classe
+    //    officielle). On utilise donc une clause OR pour récupérer toutes les
+    //    inscriptions qui matchent l'un OU l'autre. Les élèves sans note
+    //    auront average=null mais figurent dans la liste (exigence promoteur :
+    //    effectif total = ce que voit l'utilisateur).
     const enrollments = await this.prisma.studentEnrollment.findMany({
-      where: { classId, academicYearId, status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'RE_ENROLLED', 'PROMOTED', 'PRE_REGISTERED'] } },
-      select: { studentId: true },
+      where: {
+        academicYearId,
+        status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'RE_ENROLLED', 'PROMOTED', 'PRE_REGISTERED'] },
+        OR: [
+          { classId: classId },
+          { academicClassId: classId },
+        ],
+      },
+      select: { studentId: true, classId: true, academicClassId: true },
     }).catch(() => []);
     const studentIds = enrollments.map(e => e.studentId);
     if (studentIds.length === 0) return [];
@@ -392,8 +406,33 @@ export class DistinctionsController {
       select: { id: true, firstName: true, lastName: true, matricule: true },
     }).catch(() => []);
 
+    // ⭐ Pour récupérer les évaluations, on doit inclure :
+    //   1. Le classId passé (au cas où les évaluations pointent vers l'AcademicClass.id)
+    //   2. Tous les Class.id (sections physiques) des élèves trouvés
+    //   3. Tous les Class.id (sections physiques) attachées à l'AcademicClass (si classId est un AcademicClass.id)
+    const physicalClassIdsFromEnrollments = enrollments
+      .map(e => e.classId)
+      .filter((id): id is string => id !== null && id !== undefined);
+
+    let physicalClassIdsFromAcademicClass: string[] = [];
+    try {
+      const academicClass = await this.prisma.academicClass.findUnique({
+        where: { id: classId },
+        select: { physicalClasses: { select: { id: true } } },
+      }).catch(() => null);
+      if (academicClass?.physicalClasses) {
+        physicalClassIdsFromAcademicClass = academicClass.physicalClasses.map((pc: any) => pc.id);
+      }
+    } catch { /* ignore */ }
+
+    const classIdsForEvaluations = Array.from(new Set([
+      classId,
+      ...physicalClassIdsFromEnrollments,
+      ...physicalClassIdsFromAcademicClass,
+    ]));
+
     const evaluations = await this.prisma.evaluation.findMany({
-      where: { tenantId, academicYearId, classId, status: 'VALIDATED', periodId },
+      where: { tenantId, academicYearId, status: 'VALIDATED', periodId, classId: { in: classIdsForEvaluations } },
       select: { id: true, subjectId: true, coefficient: true },
     }).catch(() => []);
 
@@ -405,11 +444,12 @@ export class DistinctionsController {
       select: { studentId: true, evaluationId: true, score: true, isAbsent: true, qualitativeCode: true },
     }).catch(() => []);
 
-    const studentMap = new Map<string, { id: string; name: string; subjects: Map<string, { sum: number; count: number; coef: number }> }>();
+    const studentMap = new Map<string, { id: string; name: string; matricule: string; subjects: Map<string, { sum: number; count: number; coef: number }> }>();
     for (const s of students) {
       studentMap.set(s.id, {
         id: s.id,
         name: `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Inconnu',
+        matricule: s.matricule || '',
         subjects: new Map<string, { sum: number; count: number; coef: number }>(),
       });
     }
@@ -435,6 +475,13 @@ export class DistinctionsController {
       st.subjects.set(evalInfo.subjectId, subj);
     }
 
+    // ⭐ On NE FILTRE PLUS par average !== null : tous les élèves inscrits
+    //    dans la classe doivent figurer (effectif total = ce que voit le
+    //    promoteur). Seuls ceux avec une moyenne ET un code de distinction
+    //    auront une distinction ; les autres sont listés avec average=null
+    //    et distinctionCode=null.
+    // Tri : ceux avec moyenne en premier (décroissant), ceux sans moyenne
+    // en dernier (triés alphabétiquement pour stabilité).
     const result = Array.from(studentMap.values()).map(st => {
       let total = 0, totalCoef = 0;
       for (const [, subj] of st.subjects) {
@@ -445,8 +492,12 @@ export class DistinctionsController {
       }
       const avg = totalCoef > 0 ? total / totalCoef : null;
       return { ...st, average: avg };
-    }).filter(st => st.average !== null)
-      .sort((a, b) => (b.average as number) - (a.average as number));
+    }).sort((a, b) => {
+      if (a.average === null && b.average === null) return a.name.localeCompare(b.name, 'fr');
+      if (a.average === null) return 1;  // null en dernier
+      if (b.average === null) return -1;
+      return (b.average as number) - (a.average as number);
+    });
 
     return result;
   }
@@ -625,13 +676,38 @@ export class DistinctionsController {
         return res.json([]);
       }
 
-      const classSize = ranked.length;
+      const classSize = ranked.length;  // ⭐ Vrai effectif total de la classe
       const result: any[] = [];
 
+      // ⭐ Le rang est calculé uniquement pour les élèves qui ont une moyenne.
+      //    Les élèves sans note (average=null) figurent dans la liste mais
+      //    avec rank=null et distinctionCode=null (pas de distinction possible).
+      let rankCounter = 0;
       for (let i = 0; i < ranked.length; i++) {
         const st = ranked[i];
-        const rank = i + 1;
-        const avg = st.average as number;
+        const avg = st.average as number | null;
+
+        // ⭐ Skip les élèves sans moyenne pour le calcul du rang
+        //    (ils figurent quand même dans la liste, mais sans rang ni distinction)
+        if (avg === null) {
+          result.push({
+            id: st.id,
+            name: st.name,
+            matricule: st.matricule || '',
+            average: null,
+            base,
+            rank: null,  // pas de rang pour les élèves sans note
+            classSize,
+            distinctionCode: null,
+            distinctionLabel: null,
+            specialAwards: [],
+            specialAwardLabels: [],
+          });
+          continue;
+        }
+
+        rankCounter += 1;
+        const rank = rankCounter;
 
         // Distinction principale (basée sur la moyenne)
         const mainCode = resolveDistinction(level, avg, base);
@@ -738,17 +814,24 @@ export class DistinctionsController {
     try {
       const ranked = await this.getClassAverages(resolvedTenantId, classId, periodId, academicYearId);
       if (ranked.length === 0) {
-        return res.status(404).json({ error: 'Aucun élève avec des notes trouvé' });
+        return res.status(404).json({ error: 'Aucun élève inscrit dans la classe' });
       }
 
       const base = level === 'maternel' ? 3 : 20;
       const classSize = ranked.length;
       const boardRows: BoardRow[] = [];
 
+      // ⭐ Le rang est calculé uniquement pour les élèves qui ont une moyenne.
+      //    Les élèves sans note ne sont PAS inclus dans le tableau collectif
+      //    (pas de distinction possible sans moyenne).
+      let rankCounter = 0;
       for (let i = 0; i < ranked.length; i++) {
         const st = ranked[i];
-        const rank = i + 1;
-        const avg = st.average as number;
+        const avg = st.average as number | null;
+        // Skip les élèves sans moyenne (pas de distinction possible)
+        if (avg === null) continue;
+        rankCounter += 1;
+        const rank = rankCounter;
         const code = resolveDistinction(level, avg, base);
         if (code) {
           boardRows.push({ rank, fullName: st.name, average: avg, code });
@@ -756,7 +839,7 @@ export class DistinctionsController {
       }
 
       if (boardRows.length === 0) {
-        return res.status(404).json({ error: 'Aucune distinction à afficher (moyennes sous le premier palier)' });
+        return res.status(404).json({ error: 'Aucune distinction à afficher (moyennes sous le premier palier ou aucun élève évalué)' });
       }
 
       const className = (await this.prisma.class.findUnique({ where: { id: classId }, select: { name: true, schoolLevelId: true } }).catch(() => null))?.name || 'Classe';

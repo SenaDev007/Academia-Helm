@@ -330,7 +330,12 @@ export default function PromotionWorkspace() {
         ) : (
           <>
             {/* Stats summary */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
+                <Users className="w-5 h-5 text-slate-600 mx-auto mb-1" />
+                <p className="text-2xl font-bold text-slate-700">{students.length}</p>
+                <p className="text-xs text-slate-600 font-medium">Effectif total</p>
+              </div>
               <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-center">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 mx-auto mb-1" />
                 <p className="text-2xl font-bold text-emerald-700">{passants.length}</p>

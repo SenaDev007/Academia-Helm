@@ -12734,3 +12734,30 @@ Stage Summary:
   Excel avec notes par élève × matière × type d'évaluation
 - Nouveau sous-onglet Interopérabilité > Importation Educ Master dans le
   Registre des notes (frontend 3-step workflow : upload → mapping → download)
+
+---
+Task ID: 49
+Agent: Super Z (principal)
+Task: Supprimer le module « Gestion des conflits » et le module « ORION » de l'espace Academia Frederis (web)
+
+Work Log:
+- Synchronisation : rebase au-dessus du commit parallèle 68b6b9fe9 (entrées sidebar déjà retirées + module Educ Master créé par l'utilisateur) — fusion complémentaire SANS conflit : ce commit ne supprimait pas les pages physiques.
+- Supprimé (web-app) :
+  • Routes physiques : (patronat)/federis/conflicts/{page,loading}.tsx et (patronat)/federis/orion/{page,loading}.tsx
+  • Composants : FederisConflictsPage.tsx, FederisOrionPage.tsx
+  • Dashboard Fédéris (FederisDashboardPage.tsx) : colonne « ORION — Analyse institutionnelle » + lien « Analyse complète » + carte KPI « Alertes critiques » + interface OrionAlert + champ orion de DashboardData — grille KPI rééquilibrée en 3 colonnes (Écoles/Candidats/Examens) et squelette de chargement à 3 blocs
+  • permissions.ts : ROUTE_PERMISSIONS /orion et /conflicts retirés ; descriptions des fonctions SECRETAIRE/ORGANISATEUR/CHARGE_MISSION nettoyées (mentions conflits/ORION)
+  • middleware-patronat.ts : 4 préfixes protégés retirés (/federis/orion, /federis/conflicts, /patronat/orion, /patronat/conflicts)
+  • page-names.ts : /federis/orion et /federis/conflicts retirés (l'entrée /orion = plateforme Helm est conservée)
+  • Prompt SARA (api/public/sara/chat/stream/route.ts) : « ORION multi-campus (/patronat/orion) » retiré du contexte promoteur
+- Conservé volontairement (hors périmètre de suppression) :
+  • ORION plateforme Helm : route publique /orion, PlatformOrionWorkspace, sous-système API src/orion/**
+  • Mention « ORION Integrity Guard » (banque d'épreuves) : service de traçabilité backend toujours actif
+  • API /federis/patronat/dashboard : champ orion/orionAlerts inchangé (compatibilité app mobile qui rend encore fed-orion/fed-conflicts)
+- Vérifications : grep zéro référence résiduelle (FederisConflictsPage / FederisOrionPage / federis|patronat × orion|conflicts) ; tsc web-app 631 (baseline 6ac76723f) = 631 (commit T49) = 631 (état fusionné avec Educ Master) — zéro erreur dans les fichiers modifiés ; module Educ Master de l'utilisateur intact après fusion (5 erreurs TS préexistantes dans registre/page.tsx signalées, présentes avant ce commit).
+
+Stage Summary:
+- Les modules « Gestion des conflits » et « ORION » ont totalement disparu de l'espace Frederis web : navigation (sidebar + miroir de chargement), routes, pages, permissions, middleware, dashboard (plus de bloc ni de carte ORION) et prompt SARA.
+- Complémentaire au commit parallèle 68b6b9fe9 (sidebars Helm : PilotageSidebar, ExamsModulePage, PedagogyModulePage) — la suppression est désormais couverte de bout en bout côté web.
+- Commit poussé : 598794c37 (rebasé sur 68b6b9fe9) sur origin/main → Railway + Vercel redéploient.
+- Notes pour plus tard : (1) l'app mobile contient encore des sections fed-conflicts/fed-orion (federis_screen.dart, contenu mock) ; (2) l'API renvoie toujours orionAlerts (utilisée par le mobile) ; (3) 5 erreurs TS préexistantes dans registre/page.tsx (onglet Interopérabilité Educ Master).

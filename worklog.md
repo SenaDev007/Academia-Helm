@@ -12403,6 +12403,7 @@ Stage Summary:
 - Route publique protégée par @Public() pour bypasser tous les guards globaux (JwtAuthGuard, AccessScopeGuard, ContextValidationGuard, SchoolLevelIsolationGuard, AcademicYearEnforcementGuard, TenantSuspensionGuard, SmartThrottlerGuard qui utilise IP bucket pour les routes publiques)
 
 ---
+
 Task ID: 33
 Agent: Super Z (principal)
 Task: Page du lien de consultation des résultats — le header affiché était celui du sous-domaine du patronat au lieu du header de la plateforme Academia Helm (retour promoteur)
@@ -12421,6 +12422,7 @@ Stage Summary:
 - À valider post-déploiement : ouvrir un lien public de consultation généré depuis le sous-domaine du patronat (module Délibération → carte lien public) et vérifier que la navbar du haut affiche bien « Academia Helm » (logo plateforme), le bandeau du patronat restant en dessous
 
 ---
+
 Task ID: 34
 Agent: Super Z (principal)
 Task: Retours promoteur bulletins Helm (évaluation + trimestriels) — (1) en-tête du tableau des notes à mettre en valeur avec un fond (comme la ligne moyenne), (2) titres « Mention/Appréciation du conseil de classe » à centrer, (3) cases à cocher vides invisibles (distinctions/sanctions), (4) MAJEUR : au T3 le bloc récapitulatif de l'année doit venir APRÈS le bloc résultats de classe (ordre : notes → assiduité → résultats de classe → récap → conseil), (5) lignes disparaissant par intermittence dans certains blocs selon les générations
@@ -12441,3 +12443,58 @@ Stage Summary:
 - T3 : ordre correct notes → assiduité → résultats de classe → récapitulatif de l'année → conseil
 - Lignes intermittentes : cause racine (fragmentation) éliminée — blocs et lignes insécables, en-tête répété en page 2, groupe final conseil+QR ; vérifié par rendu réel multi-variantes + pixels + VLM
 - À valider post-déploiement : régénérer les bulletins depuis /app/exams/bulletins (évaluation + trimestres, notamment T3 avec récap) et vérifier en-tête navy, ordre des blocs, cases vides, et génération répétée de classes à gros effectifs de matières (cas 2 pages)
+
+---
+Task ID: 39
+Agent: main
+Task: Tableau d'honneur — En-tête officiel style bulletin ( République + Ministère + école + slogan/adresse/tél/email + logo ) + récupération dynamique directeur + professeur principal
+
+Work Log:
+- types.ts : SchoolInfo étendu avec address, phone, email, slogan, ministry, countryCode
+- distinctions.controller.ts : getTenantBranding() enrichi pour récupérer schoolName + logoUrl + address + city + phonePrimary + email + slogan + country depuis TenantIdentityProfile (même source que bulletins)
+- Nouvelle méthode resolveDirectorName() : résout le nom du directeur depuis staff_admin_assignments (RH, priorité DIRECTEUR_GENERAL > DIRECTEUR > PROVISEUR) avec fallback school_directors (table des signatures). Même logique que bulletins.controller.ts.
+- Nouvelle méthode resolveTeacherName() : résout le nom du professeur principal de la classe depuis TeacherClassAssignment + Teacher. Même logique que bulletins.controller.ts.
+- Nouvelle méthode getMinistryLabel() : "Ministère de l'Enseignement Secondaire..." pour le secondaire, "Ministère des Enseignements Maternel et Primaire" pour maternel/primaire.
+- generate-certificate et send-certificate : récupèrent maintenant schoolLevelId depuis la classe, résolvent directorName + directorSignatureUrl + teacherName dynamiquement et les passent au DistinctionInput → affichés dans le footer des certificats PDF.
+- generate-board : enrichit aussi BoardInput avec les champs de l'en-tête officiel.
+- html-builder.ts : schoolHeader() refondu en en-tête OFFICIEL style bulletin — tableau 3 colonnes (drapeau Bénin | République+Ministère+nom école+slogan+adresse+tél+email | logo). Drapeau du Bénin en SVG data URI (identique à bulletin-pdf.service.ts). CSS dédié .school-header / .sh-* dans css.ts.
+- css.ts : BASE_CSS étendu avec styles .school-header-table, .sh-republique, .sh-divider, .sh-ministere, .sh-school-name, .sh-school-info. Anciennes règles .school par niveau supprimées (maternel/primaire/secondaire) car obsolètes.
+- html-builder.ts : buildBoardHtml() appelle maintenant schoolHeader(board.school) pour afficher l'en-tête officiel en haut du tableau collectif.
+
+Stage Summary:
+- En-tête de TOUS les documents de distinction (certificats individuels + tableau collectif) maintenant identique à l'en-tête des bulletins : République du Bénin + Ministère de tutelle (déduit du niveau) + nom école + slogan + adresse + tél + email + logo + drapeau du Bénin.
+- Directeur et professeur principal récupérés dynamiquement (staff_admin_assignments + school_directors + TeacherClassAssignment). Affichés dans le footer des certificats avec leur signature si disponible.
+- Pour le secondaire : "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle..."
+- Pour maternel/primaire : "Ministère des Enseignements Maternel et Primaire"
+
+---
+Task ID: 41
+Agent: main
+Task: Promotion & Redoublement — Fix liste incomplète des élèves (passants + redoublants = effectif total de la classe)
+
+Work Log:
+- DIAGNOSTIC : le frontend appelle /api/all-classes qui retourne des AcademicClass (classes officielles "CE1", "6ème A"). L'utilisateur sélectionne un AcademicClass.id et l'envoie à /exams/promotion/class/:classId. Mais le backend filtrait StudentEnrollment.classId qui est une FK vers Class (sections physiques "CE1 A", "CE1 B") → AUCUN match → liste vide ou partielle.
+- FIX promotion.controller.ts getClassPromotionData() :
+  • Tentative 1 : classId comme Class.id (section physique) — recherche directe sur StudentEnrollment.classId
+  • Tentative 2 (si tentive 1 vide) : classId comme AcademicClass.id (classe officielle) — recherche sur StudentEnrollment.academicClassId
+  • classIdsForEvaluations étendu pour inclure :
+    - Tous les Class.id des sections physiques des élèves trouvés
+    - Tous les Class.id des physicalClasses attachées à l'AcademicClass (relation AcademicClass.physicalClasses)
+    - L'AcademicClass.id lui-même (au cas où les évaluations pointent dessus)
+  • Evaluations cherchées sur tous les classIds pertinents
+- Logique de décision inchangée (conforme aux exigences promoteur) :
+  • avg >= PASS_THRESHOLD → PASSE (passant)
+  • RACHAT_THRESHOLD <= avg < PASS_THRESHOLD → RACHAT (redoublant + bouton racheter)
+  • avg < RACHAT_THRESHOLD → REDOUBLE (redoublant, pas de bouton racheter)
+  • avg === null (pas de notes / non évalué / n'a pas composé) → REDOUBLE (redoublant, "Pas de notes")
+- Frontend (PromotionWorkspace.tsx) inchangé : la catégorisation est déjà correcte :
+  • passants = PASSE (ou rachatApplied)
+  • redoublants = REDOUBLE + RACHAT (sans rachatApplied) → tous les élèves sous la moyenne sont dans cette liste, qu'ils soient rachetables ou non
+  • rachatCandidates = RACHAT (sous-ensemble des redoublants avec bouton "Voir les notes")
+
+Stage Summary:
+- Tous les élèves de la classe apparaissent maintenant (passants + redoublants + rachat = effectif total)
+- Les élèves sans note (avg=null) figurent obligatoirement dans la liste des redoublants avec le libellé "Pas de notes"
+- Les élèves RACHAT (9≤avg<10 ou 1.5≤avg<2 pour maternelle) figurent dans la liste des redoublants ET ont un bouton "Voir les notes" pour appliquer un rachat
+- Les élèves PASSE (avg≥10 ou avg≥2 pour maternelle) figurent dans la liste des passants
+- Compatible avec les deux formats de classId passés par le frontend (AcademicClass.id OU Class.id)

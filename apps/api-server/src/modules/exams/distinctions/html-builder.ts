@@ -143,11 +143,44 @@ const BUBBLES: [number, number, number][] = [
   [-60, -60, 240], [930, -90, 260], [-80, 600, 260], [940, 590, 250], [560, -40, 90], [480, 720, 110],
 ];
 
+// ─── Drapeau du Bénin en SVG data URI (identique à bulletin-pdf.service.ts) ─
+const BENIN_FLAG_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`;
+const BENIN_FLAG = `data:image/svg+xml;base64,${Buffer.from(BENIN_FLAG_SVG).toString('base64')}`;
+
 // ─── Composants partagés (transposés depuis shared.tsx) ──────────────────
 
-/** Équivalent string de <SchoolHeader school={...} /> */
+/**
+ * Équivalent string de <SchoolHeader school={...} />
+ * ⭐ En-tête OFFICIEL style bulletin : République du Bénin + Ministère (déduit du niveau)
+ *    + nom école + slogan/adresse/tél/email + logo.
+ *    Identique à l'en-tête des bulletins (bulletin-pdf.service.ts) pour garantir
+ *    une cohérence visuelle entre tous les documents générés par l'établissement.
+ */
 function schoolHeader(school: SchoolInfo): string {
-  return `<div class="school">${school.logoUrl ? `<img src="${school.logoUrl}" alt="" />` : ''}<span>${esc(school.name)}</span></div>`;
+  const ministry = school.ministry || 'Ministère des Enseignements Maternel et Primaire';
+  const infoParts: string[] = [];
+  if (school.slogan) infoParts.push(`« ${esc(school.slogan)} »`);
+  if (school.address) infoParts.push(esc(school.address));
+  if (school.phone) infoParts.push(`Tél: ${esc(school.phone)}`);
+  if (school.email) infoParts.push(esc(school.email));
+  const schoolInfo = infoParts.join(' · ');
+
+  return `<div class="school-header">` +
+    `<table class="school-header-table">` +
+      `<tr>` +
+        `<td class="sh-left"><img src="${BENIN_FLAG}" alt="Drapeau du Bénin" style="width:30px;height:20px;" /></td>` +
+        `<td class="sh-center">` +
+          `<div class="sh-republique">République du Bénin</div>` +
+          `<div class="sh-divider"><div class="sh-divider-line"></div></div>` +
+          `<div class="sh-ministere">${esc(ministry)}</div>` +
+          `<div class="sh-divider"><div class="sh-divider-line"></div></div>` +
+          `<div class="sh-school-name">${esc(school.name)}</div>` +
+          (schoolInfo ? `<div class="sh-school-info">${schoolInfo}</div>` : '') +
+        `</td>` +
+        `<td class="sh-right">${school.logoUrl ? `<img src="${school.logoUrl}" alt="" style="max-width:35px;max-height:35px;object-fit:contain;" />` : ''}</td>` +
+      `</tr>` +
+    `</table>` +
+  `</div>`;
 }
 
 /** Équivalent string de <Signature label={...} name={...} img={...} /> */
@@ -385,6 +418,7 @@ export async function buildBoardHtml(b: BoardInput): Promise<string> {
       `<section class="page board ${CLS[board.level]}" style="${vars(base.palette)}">` +
         levelFrame(board.level, base.pattern, base.icon) +
         `<div class="content">` +
+          schoolHeader(board.school) +
           `<div class="head">` +
             `<h1>${esc(BOARD_TITLE[board.level])}</h1>` +
             `<div class="sub2">${esc(board.className)}, ${esc(board.period.label)}, année scolaire ${esc(board.period.schoolYear)}${pages.length > 1 ? `  (page ${pi + 1}/${pages.length})` : ''}</div>` +

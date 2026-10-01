@@ -89,15 +89,63 @@ export class PromotionController {
       return [];
     }
 
-    // 1. Récupérer TOUS les élèves inscrits dans la classe pour cette année
-    //    ⭐ 2026-09-30 — On inclut TOUS les statuts possibles d'élèves actifs
-    //    car le status peut varier selon le moment de l'année.
-    //    Avant : status: 'ACTIVE' seulement → si l'élève avait un autre
-    //    statut, il n'apparaissait pas → « aucune donnée disponible ».
-    const enrollments = await this.prisma.studentEnrollment.findMany({
+    // ⭐ 2026-10-01 — FIX : le `classId` passé par le frontend peut être :
+    //    (a) un `AcademicClass.id` (classe officielle : "CE1", "6ème A") →
+    //        StudentEnrollment.classId (FK vers Class physique) NE MATCHERA PAS ;
+    //        il faut chercher par `academicClassId`.
+    //    (b) un `Class.id` (section physique : "CE1 A", "CE1 B") →
+    //        StudentEnrollment.classId matchera directement.
+    // On essaie donc les deux méthodes : si (b) ne retourne rien, on tente (a).
+    // ⭐ Exigence promoteur : on doit récupérer TOUS les élèves de la classe
+    //    (passants + redoublants = effectif total de la classe). Les élèves
+    //    sans note (avg=null) restent dans la liste → décision REDOUBLE.
+
+    // Tentative 1 : classId est un Class.id (section physique)
+    let enrollments = await this.prisma.studentEnrollment.findMany({
       where: { classId, academicYearId, status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'RE_ENROLLED', 'PROMOTED', 'PRE_REGISTERED'] } },
-      select: { studentId: true },
+      select: { studentId: true, classId: true, academicClassId: true },
     }).catch(() => []);
+
+    let classIdsForEvaluations: string[] = [classId];
+
+    // Tentative 2 : si aucun élève trouvé ET classId ressemble à un AcademicClass.id,
+    // on cherche par academicClassId (les élèves affectés à la classe officielle)
+    if (enrollments.length === 0) {
+      enrollments = await this.prisma.studentEnrollment.findMany({
+        where: { academicClassId: classId, academicYearId, status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'RE_ENROLLED', 'PROMOTED', 'PRE_REGISTERED'] } },
+        select: { studentId: true, classId: true, academicClassId: true },
+      }).catch(() => []);
+
+      // ⭐ Étendre les classIdsForEvaluations pour inclure :
+      //   1. L'AcademicClass.id (au cas où les évaluations pointent dessus)
+      //   2. Tous les Class.id (sections physiques) des élèves trouvés
+      //   3. Tous les Class.id (sections physiques) attachées à cet AcademicClass
+      //      via la relation AcademicClass.physicalClasses
+      const physicalClassIdsFromEnrollments = enrollments
+        .map(e => e.classId)
+        .filter((id): id is string => id !== null && id !== undefined);
+
+      let physicalClassIdsFromAcademicClass: string[] = [];
+      try {
+        const academicClass = await this.prisma.academicClass.findUnique({
+          where: { id: classId },
+          select: { physicalClasses: { select: { id: true } } },
+        }).catch(() => null);
+        if (academicClass?.physicalClasses) {
+          physicalClassIdsFromAcademicClass = academicClass.physicalClasses.map((pc: any) => pc.id);
+        }
+      } catch { /* ignore */ }
+
+      const allPhysicalClassIds = Array.from(new Set([
+        ...physicalClassIdsFromEnrollments,
+        ...physicalClassIdsFromAcademicClass,
+      ]));
+
+      classIdsForEvaluations = allPhysicalClassIds.length > 0
+        ? [...allPhysicalClassIds, classId]  // inclut aussi l'AcademicClass.id
+        : [classId];
+    }
+
     const studentIds = enrollments.map(e => e.studentId);
     if (studentIds.length === 0) return [];
 
@@ -120,13 +168,22 @@ export class PromotionController {
     }
 
     // 2. Récupérer TOUTES les évaluations VALIDATED de la classe pour l'année
+    //    ⭐ On cherche sur TOUS les classIds pertinents (Class physique +
+    //    AcademicClass) car les évaluations peuvent pointer vers Class.id OU
+    //    AcademicClass.id selon le module qui les a créées.
     const evaluations = await this.prisma.evaluation.findMany({
-      where: { tenantId, academicYearId, classId, status: 'VALIDATED' },
+      where: {
+        tenantId, academicYearId,
+        status: 'VALIDATED',
+        classId: { in: classIdsForEvaluations },
+      },
       select: { id: true, subjectId: true, coefficient: true },
     }).catch(() => []);
 
     if (evaluations.length === 0) {
       // Pas d'évaluations validées → tous les élèves sont REDOUBLE
+      // ⭐ Exigence promoteur : les élèves sans note / non évalués / n'ayant
+      //    pas composé restent obligatoirement dans la liste des redoublants.
       const result = Array.from(studentMap.values()).map(st => ({
         id: st.id,
         matricule: st.matricule,

@@ -173,18 +173,32 @@ export class DistinctionsController {
     return 'primaire';
   }
 
+  /**
+   * Récupère le branding complet du tenant pour l'en-tête officiel style bulletin
+   * (logo, nom école, slogan, adresse, téléphone, email).
+   * ⭐ Les informations sont récupérées depuis TenantIdentityProfile (même source
+   *    que les bulletins) pour garantir un en-tête identique.
+   */
   private async getTenantBranding(tenantId: string) {
     try {
       const profile = await this.prisma.tenantIdentityProfile.findFirst({
         where: { tenantId, isActive: true },
-        select: { schoolName: true, logoUrl: true, address: true },
+        select: {
+          schoolName: true, logoUrl: true, address: true, city: true,
+          phonePrimary: true, email: true, slogan: true, country: true,
+        },
       });
       if (profile?.schoolName) {
-        const apiBaseUrl = 'https://api.academiahelm.com';
+        const apiBaseUrl = process.env.API_BASE_URL || 'https://api.academiahelm.com';
         return {
           name: profile.schoolName,
           logoUrl: profile.logoUrl ? `${apiBaseUrl}/api/tenants/${tenantId}/logo` : undefined,
-          city: profile.address || undefined,
+          address: profile.address || undefined,
+          city: profile.city || undefined,
+          phone: profile.phonePrimary || undefined,
+          email: profile.email || undefined,
+          slogan: profile.slogan || undefined,
+          countryCode: profile.country || 'BJ',
         };
       }
       const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } });
@@ -192,6 +206,158 @@ export class DistinctionsController {
     } catch {
       return { name: 'Établissement' };
     }
+  }
+
+  /**
+   * ⭐ Résout dynamiquement le nom du directeur de l'établissement pour un niveau scolaire.
+   *    Même logique que dans bulletins.controller.ts :
+   *    1. staff_admin_assignments (RH) — priorité hiérarchique DIRECTEUR_GENERAL > DIRECTEUR > PROVISEUR
+   *    2. school_directors (signature) — fallback pour le nom + signature
+   *    3. documentSealsService.getDirectorSeals — fallback final
+   */
+  private async resolveDirectorName(
+    tenantId: string, schoolLevelId: string | null, lang: string = 'FR',
+  ): Promise<{ directorName: string | null; directorSignatureUrl: string | null }> {
+    if (!tenantId || !schoolLevelId) return { directorName: null, directorSignatureUrl: null };
+
+    let directorName: string | null = null;
+    let directorSignatureUrl: string | null = null;
+
+    // 1. Code du niveau scolaire (MAT / PRI / SEC)
+    let levelCode = '';
+    try {
+      const levelRow = await this.prisma.schoolLevel.findUnique({
+        where: { id: schoolLevelId },
+        select: { code: true },
+      }).catch(() => null);
+      levelCode = (levelRow?.code || '').toUpperCase().trim();
+    } catch { /* ignore */ }
+
+    const targetLevelCodes =
+      ['MAT', 'MATERNELLE'].includes(levelCode) ? ['MAT', 'MAT_PRI', 'ALL'] :
+      ['PRI', 'PRIMAIRE'].includes(levelCode) ? ['PRI', 'MAT_PRI', 'ALL'] :
+      ['SEC', 'SECONDAIRE'].includes(levelCode) ? ['SEC', 'ALL'] :
+      ['MAT_PRI'].includes(levelCode) ? ['MAT_PRI', 'ALL'] : null;
+
+    if (targetLevelCodes) {
+      try {
+        // 1a. UUID de la piste linguistique
+        const trackRow = await this.prisma.academicTrack.findFirst({
+          where: { tenantId, code: lang },
+          select: { id: true },
+        }).catch(() => null);
+        const trackUuid = trackRow?.id || null;
+
+        // 1b. Affectations actives de direction pour ce niveau + piste + année
+        const assignments = await this.prisma.staffAdminAssignment.findMany({
+          where: {
+            tenantId,
+            isActive: true,
+            schoolLevelCode: { in: targetLevelCodes },
+            adminRole: { in: ['DIRECTEUR_GENERAL', 'DIRECTEUR', 'PROVISEUR', 'DIRECTEUR_DES_ETUDES', 'DIRECTEUR_ADJOINT'] },
+            OR: [
+              { academicTrackId: null },
+              ...(trackUuid ? [{ academicTrackId: trackUuid }] : []),
+            ],
+            AND: [{ OR: [{ academicYearId: null }] }],
+          },
+          include: { staff: { select: { firstName: true, lastName: true, gender: true } } },
+          orderBy: { startDate: 'desc' },
+        }).catch(() => []);
+
+        if (Array.isArray(assignments) && assignments.length > 0) {
+          const ROLE_PRIORITY = ['DIRECTEUR_GENERAL', 'DIRECTEUR', 'PROVISEUR', 'DIRECTEUR_DES_ETUDES', 'DIRECTEUR_ADJOINT'];
+          const sorted = [...assignments].sort((a: any, b: any) => {
+            const pa = ROLE_PRIORITY.indexOf(a.adminRole);
+            const pb = ROLE_PRIORITY.indexOf(b.adminRole);
+            if (pa !== pb) return (pa === -1 ? 99 : pa) - (pb === -1 ? 99 : pb);
+            const ya = a.academicYearId ? 0 : 1;
+            const yb = b.academicYearId ? 0 : 1;
+            if (ya !== yb) return ya - yb;
+            return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
+          });
+          const best: any = sorted[0];
+          if (best?.staff) {
+            const last = (best.staff.lastName || '').trim().toUpperCase();
+            const first = (best.staff.firstName || '').trim();
+            const civility = best.staff.gender === 'F' ? 'Mme' : (best.staff.gender === 'M' ? 'M.' : '');
+            directorName = civility ? `${civility} ${last} ${first}`.trim() : `${last} ${first}`.trim();
+          }
+        }
+      } catch { /* silent */ }
+    }
+
+    // 2. Fallback : table school_directors (nom + signature)
+    try {
+      const directorRows: any = await this.prisma.$queryRawUnsafe(
+        `SELECT * FROM school_directors
+         WHERE "tenantId" = $1 AND "schoolLevelId" = $2 AND "language" = $3 AND "isActive" = true
+         LIMIT 1`,
+        tenantId, schoolLevelId, lang,
+      );
+      if (Array.isArray(directorRows) && directorRows.length > 0) {
+        const director = directorRows[0];
+        directorSignatureUrl = director.signatureDataUrl || director.signatureUploadedUrl || null;
+        if (!directorName) directorName = director.fullName || null;
+      } else {
+        const fallbackLang = lang === 'EN' ? 'FR' : 'EN';
+        const fallbackRows: any = await this.prisma.$queryRawUnsafe(
+          `SELECT * FROM school_directors
+           WHERE "tenantId" = $1 AND "schoolLevelId" = $2 AND "language" = $3 AND "isActive" = true
+           LIMIT 1`,
+          tenantId, schoolLevelId, fallbackLang,
+        );
+        if (Array.isArray(fallbackRows) && fallbackRows.length > 0) {
+          const director = fallbackRows[0];
+          directorSignatureUrl = director.signatureDataUrl || director.signatureUploadedUrl || null;
+          if (!directorName) directorName = director.fullName || null;
+        }
+      }
+    } catch { /* silent */ }
+
+    return { directorName, directorSignatureUrl };
+  }
+
+  /**
+   * ⭐ Résout dynamiquement le nom du professeur principal d'une classe.
+   *    Source : StudentEnrollment → TeacherClassAssignment → Teacher
+   *    Même logique que dans bulletins.controller.ts.
+   */
+  private async resolveTeacherName(
+    tenantId: string, classId: string,
+  ): Promise<string | null> {
+    try {
+      const tca = await this.prisma.teacherClassAssignment.findFirst({
+        where: { classId, tenantId },
+        select: { teacherId: true },
+      }).catch(() => null);
+
+      if (!tca?.teacherId) return null;
+
+      const teacher = await this.prisma.teacher.findFirst({
+        where: { id: tca.teacherId },
+        select: { firstName: true, lastName: true, gender: true },
+      }).catch(() => null);
+
+      if (!teacher) return null;
+
+      const last = (teacher.lastName || '').trim().toUpperCase();
+      const first = (teacher.firstName || '').trim();
+      const civility = teacher.gender === 'F' ? 'Mme' : (teacher.gender === 'M' ? 'M.' : '');
+      return civility ? `${civility} ${last} ${first}`.trim() : `${last} ${first}`.trim();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Renvoie le libellé du ministère de tutelle selon le niveau scolaire
+   * (identique à bulletin-pdf.service.ts).
+   */
+  private getMinistryLabel(level: Level): string {
+    return level === 'secondaire'
+      ? "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes"
+      : 'Ministère des Enseignements Maternel et Primaire';
   }
 
   private async htmlToPdf(html: string): Promise<Buffer> {
@@ -593,13 +759,23 @@ export class DistinctionsController {
         return res.status(404).json({ error: 'Aucune distinction à afficher (moyennes sous le premier palier)' });
       }
 
-      const className = (await this.prisma.class.findUnique({ where: { id: classId }, select: { name: true } }).catch(() => null))?.name || 'Classe';
+      const className = (await this.prisma.class.findUnique({ where: { id: classId }, select: { name: true, schoolLevelId: true } }).catch(() => null))?.name || 'Classe';
       const period = await this.prisma.academicPeriod.findUnique({ where: { id: periodId }, select: { name: true } }).catch(() => null);
       const academicYear = await this.prisma.academicYear.findUnique({ where: { id: academicYearId }, select: { label: true } }).catch(() => null);
 
       const boardInput: BoardInput = {
         level,
-        school: { name: branding.name, logoUrl: branding.logoUrl, city: branding.city },
+        school: {
+          name: branding.name,
+          logoUrl: branding.logoUrl,
+          city: branding.city,
+          address: branding.address,
+          phone: branding.phone,
+          email: branding.email,
+          slogan: branding.slogan,
+          ministry: this.getMinistryLabel(level),
+          countryCode: branding.countryCode || 'BJ',
+        },
         className,
         period: {
           label: period?.name || 'Trimestre',
@@ -697,9 +873,37 @@ export class DistinctionsController {
       });
       const vurl = verificationUrl(verifyBaseUrl, vcode);
 
+      // ⭐ Récupérer le schoolLevelId pour résoudre le directeur + choisir le bon en-tête (maternel/primaire vs secondaire)
+      const classInfo = await this.prisma.class.findUnique({
+        where: { id: classId },
+        select: { schoolLevelId: true },
+      }).catch(() => null);
+      const schoolLevelId = classInfo?.schoolLevelId || null;
+
+      // ⭐ Résoudre le nom du directeur + signature dynamiquement (même logique que bulletins)
+      const { directorName, directorSignatureUrl } = await this.resolveDirectorName(
+        resolvedTenantId, schoolLevelId, 'FR',
+      );
+
+      // ⭐ Résoudre le nom du professeur principal de la classe dynamiquement
+      const teacherName = await this.resolveTeacherName(resolvedTenantId, classId);
+
       const input: DistinctionInput = {
         code,
-        school: { name: branding.name, logoUrl: branding.logoUrl, city: branding.city },
+        school: {
+          name: branding.name,
+          logoUrl: branding.logoUrl,
+          city: branding.city,
+          address: branding.address,
+          phone: branding.phone,
+          email: branding.email,
+          slogan: branding.slogan,
+          ministry: this.getMinistryLabel(level),
+          countryCode: branding.countryCode || 'BJ',
+          directorName: directorName || undefined,
+          directorSignatureUrl: directorSignatureUrl || undefined,
+          teacherName: teacherName || undefined,
+        },
         student: { fullName: studentName || 'Élève', className: className || 'Classe' },
         period: {
           label: period?.name || 'Trimestre',
@@ -723,17 +927,11 @@ export class DistinctionsController {
         : (level === 'secondaire' && ['SEC_PROGRES', 'SEC_ASSIDUITE', 'SEC_COMPORTEMENT'].includes(code)) ? 'special'
         : 'mention';
       try {
-        // Récupérer schoolLevelId pour la relation optionnelle
-        const classInfo = await this.prisma.class.findUnique({
-          where: { id: classId },
-          select: { schoolLevelId: true },
-        }).catch(() => null);
-
         await this.prisma.distinctionRecord.create({
           data: {
             tenantId: resolvedTenantId,
             academicYearId,
-            schoolLevelId: classInfo?.schoolLevelId || null,
+            schoolLevelId: schoolLevelId || null,
             classId,
             studentId,
             periodId,
@@ -850,9 +1048,37 @@ export class DistinctionsController {
       });
       const vurl = verificationUrl(verifyBaseUrl, vcode);
 
+      // ⭐ Récupérer le schoolLevelId pour résoudre le directeur + choisir le bon en-tête
+      const classInfo = await this.prisma.class.findUnique({
+        where: { id: classId },
+        select: { schoolLevelId: true },
+      }).catch(() => null);
+      const schoolLevelId = classInfo?.schoolLevelId || null;
+
+      // ⭐ Résoudre le nom du directeur + signature dynamiquement
+      const { directorName, directorSignatureUrl } = await this.resolveDirectorName(
+        resolvedTenantId, schoolLevelId, 'FR',
+      );
+
+      // ⭐ Résoudre le nom du professeur principal de la classe dynamiquement
+      const teacherName = await this.resolveTeacherName(resolvedTenantId, classId);
+
       const input: DistinctionInput = {
         code,
-        school: { name: branding.name, logoUrl: branding.logoUrl, city: branding.city },
+        school: {
+          name: branding.name,
+          logoUrl: branding.logoUrl,
+          city: branding.city,
+          address: branding.address,
+          phone: branding.phone,
+          email: branding.email,
+          slogan: branding.slogan,
+          ministry: this.getMinistryLabel(level),
+          countryCode: branding.countryCode || 'BJ',
+          directorName: directorName || undefined,
+          directorSignatureUrl: directorSignatureUrl || undefined,
+          teacherName: teacherName || undefined,
+        },
         student: { fullName: studentName || 'Élève', className: className || 'Classe' },
         period: {
           label: period?.name || 'Trimestre',
@@ -890,16 +1116,11 @@ export class DistinctionsController {
         : (level === 'secondaire' && ['SEC_PROGRES', 'SEC_ASSIDUITE', 'SEC_COMPORTEMENT'].includes(code)) ? 'special'
         : 'mention';
       try {
-        const classInfo = await this.prisma.class.findUnique({
-          where: { id: classId },
-          select: { schoolLevelId: true },
-        }).catch(() => null);
-
         await this.prisma.distinctionRecord.create({
           data: {
             tenantId: resolvedTenantId,
             academicYearId,
-            schoolLevelId: classInfo?.schoolLevelId || null,
+            schoolLevelId: schoolLevelId || null,
             classId,
             studentId,
             periodId,

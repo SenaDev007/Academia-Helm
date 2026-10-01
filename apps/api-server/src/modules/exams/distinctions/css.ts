@@ -7,8 +7,6 @@ body{-webkit-print-color-adjust:exact;print-color-adjust:exact;text-rendering:ge
 .page{width:297mm;height:209.6mm;position:relative;overflow:hidden;break-after:page;page-break-after:always}
 .page:last-child{break-after:auto;page-break-after:auto}
 .content{position:absolute;z-index:5;display:flex;flex-direction:column;align-items:center;text-align:center}
-.school{display:flex;align-items:center;justify-content:center;gap:12px;text-transform:uppercase}
-.school img{height:38px;width:auto;object-fit:contain}
 .footer{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:flex-end}
 .sig{width:250px;text-align:center}
 .sig .simg{height:50px;display:flex;align-items:flex-end;justify-content:center}
@@ -22,6 +20,21 @@ body{-webkit-print-color-adjust:exact;print-color-adjust:exact;text-rendering:ge
 .place{font-size:12px;opacity:.75;white-space:nowrap}
 .fr{position:absolute;inset:0}
 .msg{text-wrap:balance}
+
+/* ⭐ En-tête officiel style bulletin (Academia Helm) — République du Bénin + Ministère
+   + nom école + slogan/adresse/tél/email + logo. Identique aux bulletins PDF. */
+.school-header{width:100%;margin-bottom:6px;padding-bottom:6px;border-bottom:2px solid var(--primary,#0A2A5E)}
+.school-header-table{width:100%;border-collapse:collapse}
+.school-header-table td{vertical-align:middle;padding:2px 4px}
+.sh-left{text-align:center;width:12%}
+.sh-center{text-align:center;width:68%}
+.sh-right{text-align:center;width:20%}
+.sh-republique{font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px}
+.sh-divider{margin:2px auto;width:50%}
+.sh-divider-line{height:1px;background:var(--primary,#0A2A5E)}
+.sh-ministere{font-size:8px;font-weight:bold;text-transform:uppercase;letter-spacing:.3px;line-height:1.3}
+.sh-school-name{font-size:11px;font-weight:bold;text-transform:uppercase;margin-top:3px;color:var(--primary,#0A2A5E)}
+.sh-school-info{font-size:7px;color:#555;margin-top:2px;font-style:italic}
 `;
 
 export const MATERNEL_CSS = `
@@ -31,7 +44,6 @@ export const MATERNEL_CSS = `
 .mat .frame{position:absolute;inset:22px;border:10px solid var(--primary);border-radius:46px}
 .mat .frame::after{content:'';position:absolute;inset:10px;border:3px dashed var(--accent);border-radius:34px}
 .mat .content{inset:60px 72px 64px}
-.mat .school{font-size:14px;font-weight:600;letter-spacing:.16em}
 .mat .badge-wrap{position:relative;margin-top:14px}
 .mat .badge{width:128px;height:128px;border-radius:50%;background:var(--primary);display:grid;place-items:center;color:#fff;
   box-shadow:0 0 0 7px var(--tint),0 0 0 13px var(--accent),0 12px 0 13px rgba(0,0,0,.07)}
@@ -67,7 +79,6 @@ export const PRIMAIRE_CSS = `
 .pri .corner.br{bottom:36px;right:36px;border-width:0 4px 4px 0;border-radius:0 0 62px 0}
 .pri .wm{position:absolute;left:50%;top:54%;transform:translate(-50%,-50%);color:var(--primary);opacity:.04}
 .pri .content{inset:56px 128px 52px}
-.pri .school{font-size:13px;font-weight:800;letter-spacing:.2em}
 .pri .medal{position:relative;z-index:2;margin-top:10px;width:104px;height:104px;border-radius:50%;
   background:radial-gradient(circle at 30% 28%,color-mix(in srgb,var(--accent) 55%,#fff),var(--accent) 65%);
   border:5px solid var(--primary);display:grid;place-items:center;color:var(--primary);
@@ -100,7 +111,6 @@ export const SECONDAIRE_CSS = `
 .sec .f3{position:absolute;inset:36px;border:1.5px solid var(--accent)}
 .sec .orn{position:absolute;width:13px;height:13px;background:var(--accent);transform:rotate(45deg);outline:3px solid var(--tint)}
 .sec .content{inset:52px 96px 48px}
-.sec .school{font-size:16px;font-weight:600;letter-spacing:.28em;color:var(--primary)}
 .sec .year{font-size:13px;font-style:italic;margin-top:4px;opacity:.8}
 .sec .div{display:flex;align-items:center;gap:10px;width:360px;margin-top:10px}
 .sec .div i{flex:1;height:1px;background:var(--accent)}

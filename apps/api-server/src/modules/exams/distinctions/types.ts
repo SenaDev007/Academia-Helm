@@ -56,6 +56,19 @@ export interface SchoolInfo {
   teacherName?: string;
   teacherTitle?: string;
   teacherSignatureUrl?: string;
+  /** ⭐ Champs enrichis pour l'en-tête officiel style bulletin */
+  /** Adresse physique de l'établissement (ex: "Cotonou, Bénin") */
+  address?: string;
+  /** Téléphone de l'établissement */
+  phone?: string;
+  /** Email de l'établissement */
+  email?: string;
+  /** Slogan/devise de l'établissement */
+  slogan?: string;
+  /** Ministère de tutelle (déduit du niveau) */
+  ministry?: string;
+  /** Code pays (BJ par défaut) pour le drapeau */
+  countryCode?: string;
 }
 
 export interface StudentInfo {

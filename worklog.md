@@ -12910,3 +12910,25 @@ Stage Summary:
 - Le national est en LECTURE SEULE partout (gardes API sur toutes les écritures + boutons masqués côté web) ; il peut télécharger/consulter tout.
 - Le coordonnateur d'un département lui « donne la main » depuis Équipe & Comptes (carte Délégation au patronat national) — le national sélectionne alors ce département et peut modifier SES données ; révocation immédiate ; tout est tracé (AuditLog).
 - Reste connu : saisie des notes naturellement bloquée pour le national (aucune affectation secrétaire) ; les modules Écoles rattachées étaient déjà agrégés au national (vision pays) — inchangés.
+
+---
+Task ID: 54
+Agent: Super Z (principal)
+Task: Module Archives — dossiers par année scolaire (archivage de fin d'année de tous les modules) + données de l'année courante uniquement dans les modules actifs
+
+Work Log:
+- ANALYSE : toutes les entités Fédéris (NationalExam, ExamCenter, ExamCandidate, FederisSubject, FederisExamPaper, PatronatSchool, ExamResult, ExamDeliberation) portent déjà academicYearId et les modules actifs filtrent déjà sur l'année ACTIVE → « année courante uniquement, pas de mélange » est déjà garanti côté modules actifs ; il manquait la VUE des années passées.
+- NOUVEAU federis-archive.service.ts + federis-archive.controller.ts (enregistrés dans federis.module.ts) :
+  • GET /federis/archives — années du tenant de référence qui portent des données Fédéris (≥1 examen/candidat/épreuve/matière), compteurs agrégés par module (examens, candidats, centres, matières, épreuves, écoles), isCurrent (année active) — résolution multi-tenant PAR LIBELLÉ (chaque patronat du périmètre a ses propres lignes d'années).
+  • GET /federis/archives/:yearId — détail module par module (LECTURE SEULE) : examens avec département propriétaire + centres/candidats/sujets/notes + délibération (statut, admis, refusés, taux de réussite), matières (type, série, coef), écoles rattachées (candidats présentés), épreuves et documents (statut/verrouillage), surveillants, total des notes saisies.
+  • Agrégation nationale : le périmètre du scope service est réutilisé (national = tout le réseau, badge département par examen/école).
+- WEB : FederisArchivesPage.tsx — vue DOSSIERS (cartes par année : libellé, période, badge Année courante/Archivée, 4 compteurs clés) → vue DÉTAIL (retour, 8 tuiles de compteurs, tableau des examens avec badge département + statut + délibération + boutons de téléchargement Excel candidats/centres/surveillants par examen, 3 panneaux Matières / Écoles / Épreuves et documents).
+- Navigation & sécurité : entrée « Archives » (catégorie ANALYSE, après Rapports et statistiques) dans FederisLayout ; route (connected)/archives/{page,loading}.tsx (squelette contenu seul — '/archives' était déjà dans PAGE_LABELS du skeleton et page-names.ts) ; ROUTE_PERMISSIONS '/archives' pour toutes les fonctions patronat ; préfixes middleware /federis/archives + /patronat/archives.
+- Corrections en cours de route : icône back→chevronLeft (bibliothèque d'icônes), doublon '/federis/archives' dans page-names.ts (l'entrée existait déjà — la mienne supprimée).
+- Vérifications : tsc web-app 631 = 631 (baseline stricte) ; api-server +18 erreurs toutes de la classe client Prisma sandbox non régénéré (nouveau fichier — résolues par le postinstall Railway) ; chemins des exports Excel vérifiés (GET /federis/exams/:examId/excel/{candidats,centres,surveillants}, déjà scopés au périmètre depuis T53).
+- Commit poussé : 7ff95d31d sur origin/main → Railway + Vercel redéploient.
+
+Stage Summary:
+- Grand module « Archives » : un dossier par année scolaire, ouvrable module par module (écoles, matières, examens, centres et salles, candidats, épreuves et documents, notes et moyennes, délibération et relevés) — en lecture seule, avec téléchargement des documents officiels par examen.
+- Les modules actifs continuent de ne présenter QUE les données de l'année courante (aucun mélange d'années).
+- Le patronat national consulte l'archive agrégée de tout son réseau (départements identifiés).

@@ -4,34 +4,156 @@
  * ============================================================================
  *
  * Endpoints :
+ *   GET  /api/institutional-exams/distinctions/types
+ *     Retourne le catalogue des distinctions par niveau (mention / prix spécial / graduation)
+ *
+ *   GET  /api/institutional-exams/distinctions/class/:classId
+ *     Query: periodId, academicYearId, level (MATERNELLE | PRIMAIRE | SECONDAIRE)
+ *     Response: Array de {
+ *       id, name, matricule, average, base, rank, classSize,
+ *       distinctionCode (résolu via rules.ts resolveDistinction),
+ *       distinctionLabel,
+ *       specialAwards: DistinctionCode[] (secondaire uniquement — rules.ts resolveSpecialAwards)
+ *       specialAwardLabels: string[]
+ *     }
+ *
  *   POST /api/institutional-exams/distinctions/generate-board
- *     Génère le tableau collectif pour une classe.
  *     Body: { classId, periodId, academicYearId, level }
  *     Response: PDF binaire
  *
  *   POST /api/institutional-exams/distinctions/generate-certificate
- *     Génère un certificat individuel pour un élève.
- *     Body: { studentId, studentName, classId, className, periodId, academicYearId, level, code }
+ *     Body: { studentId, studentName, classId, className, periodId, academicYearId, level,
+ *            code?, average?, rank?, classSize?, previousAverage?, previousLabel? }
+ *     Si code n'est pas fourni, il est résolu via resolveDistinction(average).
+ *     Pour SEC_PROGRES, previousAverage est auto-calculé si non fourni.
  *     Response: PDF binaire
+ *
+ *   POST /api/institutional-exams/distinctions/send-certificate
+ *     Idem + envoi email + Helm Connect + bell icon au parent
+ *     Response: { success, results: { email, helmConnect, bellIcon } }
  * ============================================================================
  */
 
 import {
-  Controller, Post, Body, UseGuards, Res, Headers, Logger,
+  Controller, Post, Get, Body, Param, Query, UseGuards, Res, Headers, Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 import { Permissions } from '../../../auth/decorators/permissions.decorator';
+import { Public } from '../../../auth/decorators/public.decorator';
 import { TenantId } from '../../../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../../database/prisma.service';
 import { PuppeteerPoolService } from '../../../common/services/puppeteer-pool.service';
 import { buildBoardHtml, buildCertificateHtml } from './html-builder';
-import { resolveDistinction, makeVerificationCode, verificationUrl, THEMES } from './html-builder';
-import type { BoardInput, BoardRow, DistinctionInput, Level } from './html-builder';
+import {
+  resolveDistinction, resolveSpecialAwards, makeVerificationCodeWithNonce, verificationUrl, THEMES,
+  DEFAULT_RULES, GRADUATION_CODE,
+} from './html-builder';
+import type { BoardInput, BoardRow, DistinctionCode, DistinctionInput, Level } from './html-builder';
 import { DistinctionsNotificationService } from './distinctions-notification.service';
+
+/**
+ * ⭐ Controller public pour la vérification des QR codes (sans JWT — accessible à tout parent
+ * qui scanne le QR code d'un certificat). Déclaré séparément pour ne PAS appliquer
+ * JwtAuthGuard + PermissionsGuard qui sont appliqués au DistinctionsController principal.
+ *
+ * @Public() désactive le JwtAuthGuard GLOBAL (APP_GUARD) pour cette route afin que
+ * n'importe qui (sans token JWT) puisse vérifier un QR code.
+ */
+@Controller('public/distinctions')
+export class PublicDistinctionsController {
+  private readonly logger = new Logger(PublicDistinctionsController.name);
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * GET /api/public/distinctions/verify/:code
+   *    Vérifie publiquement un code QR de distinction et retourne les infos
+   *    de l'émission (élève, distinction, période, école, statut).
+   *    Pas d'authentification — c'est un endpoint public de vérification.
+   */
+  @Public()
+  @Get('verify/:code')
+  async verifyDistinction(@Param('code') code: string, @Res() res: Response) {
+    if (!code || code.length < 10) {
+      return res.status(400).json({ valid: false, error: 'Code invalide' });
+    }
+
+    try {
+      const record = await this.prisma.distinctionRecord.findUnique({
+        where: { verificationCode: code },
+        include: {
+          student: { select: { firstName: true, lastName: true, matricule: true } },
+          academicYear: { select: { label: true } },
+          class: { select: { name: true } },
+          tenant: { select: { name: true } },
+        },
+      }).catch(() => null);
+
+      if (!record) {
+        return res.json({
+          valid: false,
+          error: 'Code de vérification introuvable',
+          code,
+        });
+      }
+
+      if (record.status === 'REVOKED') {
+        return res.json({
+          valid: false,
+          error: 'Ce certificat a été révoqué',
+          code,
+          revokedAt: record.updatedAt,
+        });
+      }
+
+      const studentName = `${record.student.firstName || ''} ${record.student.lastName || ''}`.trim();
+      const theme = THEMES[record.code as DistinctionCode];
+
+      return res.json({
+        valid: true,
+        code: record.verificationCode,
+        nonce: record.nonce,
+        status: record.status,
+        issuedOn: record.issuedOn,
+        // Infos publiques (le parent qui scanne voit ces informations)
+        student: {
+          name: studentName,
+          matricule: record.student.matricule || null,
+          className: record.class?.name || null,
+        },
+        distinction: {
+          code: record.code,
+          label: record.label,
+          title: theme?.title || record.label,
+          subtitle: theme?.subtitle || null,
+          category: record.category,
+        },
+        period: {
+          academicYear: record.academicYear?.label || null,
+        },
+        results: record.average != null ? {
+          average: record.average,
+          base: record.base,
+          rank: record.rank,
+          classSize: record.classSize,
+        } : null,
+        school: {
+          name: record.tenant?.name || 'Établissement',
+        },
+        documentType: record.documentType,
+        issuedAt: record.createdAt,
+        verifiedAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      this.logger.error('Erreur verifyDistinction:', err);
+      return res.status(500).json({ valid: false, error: 'Erreur serveur' });
+    }
+  }
+}
 
 @Controller('institutional-exams/distinctions')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
@@ -164,6 +286,268 @@ export class DistinctionsController {
   }
 
   /**
+   * Récupère la moyenne d'un élève pour une période précédente (pour SEC_PROGRES).
+   * Cherche d'abord parmi les périodes du même trimestre, sinon la période précédente.
+   */
+  private async getPreviousPeriodAverage(
+    tenantId: string, studentId: string, classId: string,
+    academicYearId: string, currentPeriodId: string,
+  ): Promise<number | null> {
+    try {
+      // 1. Récupérer toutes les périodes de l'année scolaire, triées par startDate
+      const periods = await this.prisma.academicPeriod.findMany({
+        where: { academicYearId },
+        orderBy: { startDate: 'asc' },
+        select: { id: true, name: true, startDate: true },
+      }).catch(() => []);
+
+      // 2. Trouver l'index de la période courante
+      const currentIdx = periods.findIndex(p => p.id === currentPeriodId);
+      if (currentIdx <= 0) return null; // pas de période précédente
+      const previousPeriod = periods[currentIdx - 1];
+
+      // 3. Récupérer les évaluations de la période précédente
+      const evaluations = await this.prisma.evaluation.findMany({
+        where: { tenantId, academicYearId, classId, status: 'VALIDATED', periodId: previousPeriod.id },
+        select: { id: true, subjectId: true, coefficient: true },
+      }).catch(() => []);
+
+      if (evaluations.length === 0) return null;
+
+      const evalInfoMap = new Map(evaluations.map(e => [e.id, { subjectId: e.subjectId, coef: Number(e.coefficient) || 1 }]));
+
+      // 4. Notes de l'élève pour ces évaluations
+      const grades = await this.prisma.grade.findMany({
+        where: { evaluationId: { in: evaluations.map(e => e.id) }, studentId },
+        select: { evaluationId: true, score: true, isAbsent: true, qualitativeCode: true },
+      }).catch(() => []);
+
+      const subjects = new Map<string, { sum: number; count: number; coef: number }>();
+      for (const g of grades) {
+        if (g.isAbsent) continue;
+        let scoreNum: number | null = null;
+        if (g.score !== null) scoreNum = Number(g.score);
+        else if (g.qualitativeCode) {
+          const code = String(g.qualitativeCode).toUpperCase();
+          if (code === 'TS') scoreNum = 3;
+          else if (code === 'S') scoreNum = 2;
+          else if (code === 'PS') scoreNum = 1;
+        }
+        if (scoreNum === null) continue;
+        const evalInfo = evalInfoMap.get(g.evaluationId);
+        if (!evalInfo) continue;
+        const subj = subjects.get(evalInfo.subjectId) || { sum: 0, count: 0, coef: evalInfo.coef };
+        subj.sum += scoreNum;
+        subj.count += 1;
+        subjects.set(evalInfo.subjectId, subj);
+      }
+
+      let total = 0, totalCoef = 0;
+      for (const [, subj] of subjects) {
+        if (subj.count === 0) continue;
+        const moyMatiere = subj.sum / subj.count;
+        total += moyMatiere * subj.coef;
+        totalCoef += subj.coef;
+      }
+      return totalCoef > 0 ? total / totalCoef : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Récupère les absences injustifiées et retards d'un élève pour une période
+   * (depuis AttendanceRecord)
+   */
+  private async getAttendanceStats(
+    studentId: string, classId: string, academicYearId: string, periodId?: string,
+  ): Promise<{ unjustifiedAbsences: number; lateCount: number }> {
+    try {
+      // Déterminer la plage de dates de la période
+      let startDate: Date | undefined;
+      let endDate: Date | undefined;
+      if (periodId) {
+        const period = await this.prisma.academicPeriod.findUnique({
+          where: { id: periodId },
+          select: { startDate: true, endDate: true },
+        }).catch(() => null);
+        if (period) {
+          startDate = period.startDate;
+          endDate = period.endDate;
+        }
+      }
+
+      const where: any = { studentId, classId, academicYearId };
+      if (startDate && endDate) {
+        where.date = { gte: startDate, lte: endDate };
+      }
+      const records = await this.prisma.attendanceRecord.findMany({
+        where,
+        select: { status: true, amStatus: true, pmStatus: true, eveningStatus: true, late: true },
+      }).catch(() => []);
+
+      // Absences injustifiées = statut ABSENT (pas EXCUSED)
+      let unjustifiedAbsences = 0;
+      let lateCount = 0;
+      for (const r of records) {
+        if (r.status === 'ABSENT' || r.status === 'ABSENT_HALF') unjustifiedAbsences++;
+        if (r.late) lateCount++;
+      }
+      return { unjustifiedAbsences, lateCount };
+    } catch {
+      return { unjustifiedAbsences: 0, lateCount: 0 };
+    }
+  }
+
+  /**
+   * Récupère la note de conduite d'un élève pour une période (depuis ConductLedger)
+   * Retourne le pourcentage de conduite par rapport à la base de référence
+   */
+  private async getConductPct(
+    studentId: string, periodId: string,
+  ): Promise<number | null> {
+    try {
+      const ledger = await this.prisma.conductLedger.findFirst({
+        where: { studentId, quarterId: periodId },
+        select: { conductFinal: true, conductReference: true },
+      }).catch(() => null);
+      if (!ledger) return null;
+      const ref = Number(ledger.conductReference) || 20;
+      const final = Number(ledger.conductFinal);
+      if (ref <= 0) return null;
+      return (final / ref) * 100;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * GET /api/institutional-exams/distinctions/class/:classId
+   *    Calcule les distinctions résolues pour chaque élève de la classe,
+   *    basées sur la moyenne (rules.ts) et, pour le secondaire, sur les prix
+   *    spéciaux (resolveSpecialAwards : SEC_PROGRES, SEC_ASSIDUITE, SEC_COMPORTEMENT).
+   *
+   * Query params: periodId, academicYearId, level (MATERNELLE | PRIMAIRE | SECONDAIRE)
+   * Response: Array de {
+   *   id, name, matricule, average, rank, classSize,
+   *   base, distinctionCode, distinctionLabel, specialAwards: DistinctionCode[]
+   * }
+   */
+  @Get('class/:classId')
+  @Permissions('exams.read')
+  async getClassDistinctions(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Headers() headers: any,
+    @Param('classId') classId: string,
+    @Query('periodId') periodId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('level') levelParam: string,
+    @Res() res: Response,
+  ) {
+    const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
+    if (!classId || !periodId || !academicYearId) {
+      return res.status(400).json({ error: 'classId, periodId et academicYearId sont requis' });
+    }
+
+    const level = this.mapLevel(levelParam || 'PRIMAIRE');
+    const base = level === 'maternel' ? 3 : 20;
+
+    try {
+      const ranked = await this.getClassAverages(resolvedTenantId, classId, periodId, academicYearId);
+      if (ranked.length === 0) {
+        return res.json([]);
+      }
+
+      const classSize = ranked.length;
+      const result: any[] = [];
+
+      for (let i = 0; i < ranked.length; i++) {
+        const st = ranked[i];
+        const rank = i + 1;
+        const avg = st.average as number;
+
+        // Distinction principale (basée sur la moyenne)
+        const mainCode = resolveDistinction(level, avg, base);
+        const mainTheme = mainCode ? THEMES[mainCode] : null;
+
+        // Prix spéciaux pour le secondaire
+        let specialAwards: DistinctionCode[] = [];
+        if (level === 'secondaire') {
+          const previousAverage = await this.getPreviousPeriodAverage(
+            resolvedTenantId, st.id, classId, academicYearId, periodId,
+          );
+          const { unjustifiedAbsences, lateCount } = await this.getAttendanceStats(
+            st.id, classId, academicYearId, periodId,
+          );
+          const conductPct = await this.getConductPct(st.id, periodId);
+
+          specialAwards = resolveSpecialAwards({
+            average: avg,
+            previousAverage: previousAverage ?? undefined,
+            base,
+            unjustifiedAbsences,
+            lateCount,
+            conductPct: conductPct ?? undefined,
+          });
+        }
+
+        result.push({
+          id: st.id,
+          name: st.name,
+          matricule: st.matricule || '',
+          average: Number(avg.toFixed(3)),
+          base,
+          rank,
+          classSize,
+          distinctionCode: mainCode,
+          distinctionLabel: mainTheme?.shortLabel || null,
+          specialAwards,
+          specialAwardLabels: specialAwards.map(c => THEMES[c]?.shortLabel || c),
+        });
+      }
+
+      return res.json(result);
+    } catch (err: any) {
+      this.logger.error('Erreur getClassDistinctions:', err);
+      return res.status(500).json({ error: err.message || 'Erreur serveur' });
+    }
+  }
+
+  /**
+   * GET /api/institutional-exams/distinctions/types
+   *    Retourne la liste des distinctions disponibles par niveau.
+   *    Permet au frontend d'afficher le catalogue des 5+1 types par niveau.
+   */
+  @Get('types')
+  @Permissions('exams.read')
+  async getDistinctionTypes(@Res() res: Response) {
+    const byLevel: Record<string, any[]> = {
+      maternel: [],
+      primaire: [],
+      secondaire: [],
+    };
+    for (const code of Object.keys(THEMES) as DistinctionCode[]) {
+      const theme = THEMES[code];
+      const isGraduation = code === GRADUATION_CODE[theme.level];
+      const isSpecial = theme.level === 'secondaire' && ['SEC_PROGRES', 'SEC_ASSIDUITE', 'SEC_COMPORTEMENT'].includes(code);
+      const rule = DEFAULT_RULES[theme.level].find(r => r.code === code);
+      byLevel[theme.level].push({
+        code,
+        label: theme.shortLabel,
+        title: theme.title,
+        subtitle: theme.subtitle,
+        icon: theme.icon,
+        kicker: theme.kicker,
+        category: isGraduation ? 'graduation' : isSpecial ? 'special' : 'mention',
+        minPct: rule?.minPct ?? null,
+        palette: theme.palette,
+      });
+    }
+    return res.json(byLevel);
+  }
+
+  /**
    * POST /api/institutional-exams/distinctions/generate-board
    * Génère le tableau collectif en PDF
    */
@@ -245,6 +629,11 @@ export class DistinctionsController {
   /**
    * POST /api/institutional-exams/distinctions/generate-certificate
    * Génère un certificat individuel pour un élève
+   * Body: { studentId, studentName, classId, className, periodId, academicYearId, level, code?, average?, rank?, classSize?, previousAverage?, previousLabel? }
+   * Note: si code n'est pas fourni, il est résolu depuis average via resolveDistinction.
+   *       Pour SEC_PROGRES, previousAverage est auto-calculé si non fourni.
+   *       Le QR code inclut un nonce unique → chaque émission a un QR code différent,
+   *       même pour le même élève et la même distinction (réémission = nouveau QR).
    */
   @Post('generate-certificate')
   @Permissions('exams.read')
@@ -256,7 +645,7 @@ export class DistinctionsController {
     @Res() res: Response,
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
-    const { studentId, studentName, classId, className, periodId, academicYearId, level: bodyLevel, code: bodyCode, average, rank, classSize } = body;
+    const { studentId, studentName, classId, className, periodId, academicYearId, level: bodyLevel, code: bodyCode, average, rank, classSize, previousAverage: bodyPrevAvg, previousLabel: bodyPrevLabel } = body;
     if (!studentId || !classId || !periodId || !academicYearId) {
       return res.status(400).json({ error: 'studentId, classId, periodId et academicYearId sont requis' });
     }
@@ -279,13 +668,34 @@ export class DistinctionsController {
       const period = await this.prisma.academicPeriod.findUnique({ where: { id: periodId }, select: { name: true } }).catch(() => null);
       const academicYear = await this.prisma.academicYear.findUnique({ where: { id: academicYearId }, select: { label: true } }).catch(() => null);
 
-      const vcode = makeVerificationCode(secret, {
+      // Pour SEC_PROGRES, auto-calculer previousAverage si non fourni
+      let previousAverage = typeof bodyPrevAvg === 'number' ? bodyPrevAvg : null;
+      let previousLabel = bodyPrevLabel || undefined;
+      if (code === 'SEC_PROGRES' && previousAverage === null) {
+        previousAverage = await this.getPreviousPeriodAverage(
+          resolvedTenantId, studentId, classId, academicYearId, periodId,
+        );
+        // Trouver le nom de la période précédente
+        try {
+          const periods = await this.prisma.academicPeriod.findMany({
+            where: { academicYearId },
+            orderBy: { startDate: 'asc' },
+            select: { id: true, name: true },
+          });
+          const idx = periods.findIndex(p => p.id === periodId);
+          if (idx > 0) previousLabel = periods[idx - 1].name;
+        } catch { /* ignore */ }
+      }
+
+      // ⭐ Code de vérification unique avec nonce — chaque émission produit un QR code différent
+      const { code: vcode, nonce } = makeVerificationCodeWithNonce(secret, {
         schoolId: resolvedTenantId || 'school',
         studentId,
         periodId,
         code,
         schoolYear: academicYear?.label || '2025-2026',
       });
+      const vurl = verificationUrl(verifyBaseUrl, vcode);
 
       const input: DistinctionInput = {
         code,
@@ -296,12 +706,66 @@ export class DistinctionsController {
           schoolYear: academicYear?.label || '2025-2026',
           issuedOn: new Date().toISOString().slice(0, 10),
         },
-        results: avg !== null ? { average: avg, base, rank: rank || undefined, classSize: classSize || undefined } : undefined,
-        verification: { code: vcode, url: verificationUrl(verifyBaseUrl, vcode) },
+        results: avg !== null ? {
+          average: avg, base, rank: rank || undefined, classSize: classSize || undefined,
+          previousAverage: previousAverage ?? undefined,
+          previousLabel,
+        } : undefined,
+        verification: { code: vcode, url: vurl },
       };
 
       const html = await buildCertificateHtml(input);
       const pdf = await this.htmlToPdf(html);
+
+      // ⭐ Persister l'émission en base pour vérification publique du QR code
+      const theme = THEMES[code];
+      const category = code === GRADUATION_CODE[level] ? 'graduation'
+        : (level === 'secondaire' && ['SEC_PROGRES', 'SEC_ASSIDUITE', 'SEC_COMPORTEMENT'].includes(code)) ? 'special'
+        : 'mention';
+      try {
+        // Récupérer schoolLevelId pour la relation optionnelle
+        const classInfo = await this.prisma.class.findUnique({
+          where: { id: classId },
+          select: { schoolLevelId: true },
+        }).catch(() => null);
+
+        await this.prisma.distinctionRecord.create({
+          data: {
+            tenantId: resolvedTenantId,
+            academicYearId,
+            schoolLevelId: classInfo?.schoolLevelId || null,
+            classId,
+            studentId,
+            periodId,
+            code,
+            category,
+            label: theme?.shortLabel || code,
+            average: avg ?? null,
+            base,
+            rank: rank ?? null,
+            classSize: classSize ?? null,
+            previousAverage: previousAverage ?? null,
+            verificationCode: vcode,
+            nonce,
+            verificationUrl: vurl,
+            documentType: 'certificate',
+            status: 'EMITTED',
+            issuedOn: new Date().toISOString().slice(0, 10),
+            issuedBy: user?.id || null,
+            metadata: {
+              schoolName: branding.name,
+              periodName: period?.name || null,
+              className: className || null,
+              studentName: studentName || null,
+              previousLabel: previousLabel || null,
+              level,
+            },
+          },
+        }).catch(err => this.logger.warn(`DistinctionRecord insert failed: ${err.message}`));
+      } catch (err: any) {
+        // La persistance ne doit pas bloquer la génération PDF — juste logger
+        this.logger.warn(`Impossible de persister DistinctionRecord: ${err.message}`);
+      }
 
       const safeName = (studentName || 'eleve').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
       res.set({
@@ -319,7 +783,7 @@ export class DistinctionsController {
   /**
    * POST /api/institutional-exams/distinctions/send-certificate
    * Génère le certificat PDF + envoie par email + Helm Connect + bell icon au parent
-   * Body: { studentId, studentName, classId, className, periodId, academicYearId, level, code, average, rank, classSize, distinctionLabel }
+   * Body: { studentId, studentName, classId, className, periodId, academicYearId, level, code?, average?, rank?, classSize?, distinctionLabel, previousAverage?, previousLabel? }
    * Response: { success, results: { email, helmConnect, bellIcon } }
    */
   @Post('send-certificate')
@@ -332,7 +796,7 @@ export class DistinctionsController {
     @Res() res: Response,
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
-    const { studentId, studentName, classId, className, periodId, academicYearId, level: bodyLevel, code: bodyCode, average, rank, classSize, distinctionLabel } = body;
+    const { studentId, studentName, classId, className, periodId, academicYearId, level: bodyLevel, code: bodyCode, average, rank, classSize, distinctionLabel, previousAverage: bodyPrevAvg, previousLabel: bodyPrevLabel } = body;
     if (!studentId || !classId || !periodId || !academicYearId) {
       return res.status(400).json({ error: 'studentId, classId, periodId et academicYearId sont requis' });
     }
@@ -358,13 +822,33 @@ export class DistinctionsController {
       const period = await this.prisma.academicPeriod.findUnique({ where: { id: periodId }, select: { name: true } }).catch(() => null);
       const academicYear = await this.prisma.academicYear.findUnique({ where: { id: academicYearId }, select: { label: true } }).catch(() => null);
 
-      const vcode = makeVerificationCode(secret, {
+      // Pour SEC_PROGRES, auto-calculer previousAverage si non fourni
+      let previousAverage = typeof bodyPrevAvg === 'number' ? bodyPrevAvg : null;
+      let previousLabel = bodyPrevLabel || undefined;
+      if (code === 'SEC_PROGRES' && previousAverage === null) {
+        previousAverage = await this.getPreviousPeriodAverage(
+          resolvedTenantId, studentId, classId, academicYearId, periodId,
+        );
+        try {
+          const periods = await this.prisma.academicPeriod.findMany({
+            where: { academicYearId },
+            orderBy: { startDate: 'asc' },
+            select: { id: true, name: true },
+          });
+          const idx = periods.findIndex(p => p.id === periodId);
+          if (idx > 0) previousLabel = periods[idx - 1].name;
+        } catch { /* ignore */ }
+      }
+
+      // ⭐ Code de vérification unique avec nonce — chaque émission produit un QR code différent
+      const { code: vcode, nonce } = makeVerificationCodeWithNonce(secret, {
         schoolId: resolvedTenantId || 'school',
         studentId,
         periodId,
         code,
         schoolYear: academicYear?.label || '2025-2026',
       });
+      const vurl = verificationUrl(verifyBaseUrl, vcode);
 
       const input: DistinctionInput = {
         code,
@@ -375,8 +859,12 @@ export class DistinctionsController {
           schoolYear: academicYear?.label || '2025-2026',
           issuedOn: new Date().toISOString().slice(0, 10),
         },
-        results: avg !== null ? { average: avg, base, rank: rank || undefined, classSize: classSize || undefined } : undefined,
-        verification: { code: vcode, url: verificationUrl(verifyBaseUrl, vcode) },
+        results: avg !== null ? {
+          average: avg, base, rank: rank || undefined, classSize: classSize || undefined,
+          previousAverage: previousAverage ?? undefined,
+          previousLabel,
+        } : undefined,
+        verification: { code: vcode, url: vurl },
       };
 
       // Générer le PDF
@@ -395,6 +883,57 @@ export class DistinctionsController {
         className || 'Classe',
         user?.id || 'system',
       );
+
+      // ⭐ Persister l'émission en base pour vérification publique du QR code
+      //    + marquer sentToParent=true si l'envoi email a réussi
+      const category = code === GRADUATION_CODE[level] ? 'graduation'
+        : (level === 'secondaire' && ['SEC_PROGRES', 'SEC_ASSIDUITE', 'SEC_COMPORTEMENT'].includes(code)) ? 'special'
+        : 'mention';
+      try {
+        const classInfo = await this.prisma.class.findUnique({
+          where: { id: classId },
+          select: { schoolLevelId: true },
+        }).catch(() => null);
+
+        await this.prisma.distinctionRecord.create({
+          data: {
+            tenantId: resolvedTenantId,
+            academicYearId,
+            schoolLevelId: classInfo?.schoolLevelId || null,
+            classId,
+            studentId,
+            periodId,
+            code,
+            category,
+            label: theme?.shortLabel || code,
+            average: avg ?? null,
+            base,
+            rank: rank ?? null,
+            classSize: classSize ?? null,
+            previousAverage: previousAverage ?? null,
+            verificationCode: vcode,
+            nonce,
+            verificationUrl: vurl,
+            documentType: 'certificate',
+            status: 'EMITTED',
+            issuedOn: new Date().toISOString().slice(0, 10),
+            issuedBy: user?.id || null,
+            sentToParent: results?.email === 'sent',
+            sentAt: results?.email === 'sent' ? new Date() : null,
+            metadata: {
+              schoolName: branding.name,
+              periodName: period?.name || null,
+              className: className || null,
+              studentName: studentName || null,
+              previousLabel: previousLabel || null,
+              level,
+              notificationResults: results,
+            },
+          },
+        }).catch(err => this.logger.warn(`DistinctionRecord insert failed: ${err.message}`));
+      } catch (err: any) {
+        this.logger.warn(`Impossible de persister DistinctionRecord: ${err.message}`);
+      }
 
       res.json({ success: true, results });
     } catch (err: any) {

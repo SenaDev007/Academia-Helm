@@ -28,8 +28,8 @@ import * as QRCode from 'qrcode';
 
 import { ALL_CSS } from './css';
 import { THEMES, BOARD_BASE, BOARD_TITLE, DEFAULT_SIGNERS } from './themes';
-import { DEFAULT_RULES, GRADUATION_CODE, resolveDistinction } from './rules';
-import { makeVerificationCode, verificationUrl } from './security';
+import { DEFAULT_RULES, GRADUATION_CODE, resolveDistinction, resolveSpecialAwards } from './rules';
+import { makeVerificationCode, makeVerificationCodeWithNonce, generateNonce, verificationUrl } from './security';
 import { toDataUri } from './assets';
 import { fill, fitFont, fmtAverage, fmtDate, fmtNumber, fmtPct, fmtRank } from './format';
 import type {
@@ -420,10 +420,13 @@ export async function buildCertificateHtml(input: DistinctionInput): Promise<str
 export {
   // Règles et résolution de distinction
   resolveDistinction,
+  resolveSpecialAwards,
   DEFAULT_RULES,
   GRADUATION_CODE,
   // Sécurité : code de vérification HMAC + URL publique
   makeVerificationCode,
+  makeVerificationCodeWithNonce,
+  generateNonce,
   verificationUrl,
   // Thèmes et libellés
   THEMES,

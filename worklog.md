@@ -12291,6 +12291,7 @@ Stage Summary:
 
 ---
 Task ID: 31
+
 Agent: Super Z (principal)
 Task: Page publique de consultation des résultats (/federis/resultats/[token]) — avoir le header Academia + le header patronat (conservé), redesign professionnel de la section « Consultation des résultats » avec animations de succès, et remplacer l'icône générique lucide par le VRAI logo du patronat
 
@@ -12333,3 +12334,70 @@ Stage Summary:
 - Section informations de l'élève : cadre complet, trait du coin réparé (wrapper .info-wrap)
 - Assiduité détachée du tableau des notes (≈2,7 mm d'aération) sur les deux bulletins
 - À valider post-déploiement : régénérer les PDF depuis /app/exams/bulletins (bulletin d'évaluation + trimestriel 6e/5e et 4e→Terminale) et vérifier filets continus + coin infos élève + espacement assiduité
+
+---
+Task ID: 35
+Agent: main
+Task: Mapping dynamique des distinctions par niveau scolaire selon la moyenne — backend doit résoudre les 5+1 types par niveau (mention principale + prix spéciaux secondaire + graduation) et le frontend doit afficher chaque distinction calculée par élève
+
+Work Log:
+- Analyse du code source `Tableau d'honneur/code source tableau dhonneur - acad helm/rules.ts` : DEFAULT_RULES déclare 4 mentions par niveau (maternel: MAT_OR/ARGENT/BRONZE/EXPLO ; primaire: PRI_FELIC/ENCOU/HONNEUR/COURAGE ; secondaire: SEC_FELIC/ENCOU/HONNEUR) + GRADUATION_CODE par niveau (MAT_GRAD/PRI_GRAD/SEC_GRAD) + resolveSpecialAwards pour les 3 prix spéciaux du secondaire (SEC_PROGRES gain ≥ 10% / SEC_ASSIDUITE 0 absence injustifiée + 0 retard / SEC_COMPORTEMENT conduite ≥ 90%)
+- Backend `distinctions.controller.ts` : ajout de 2 nouveaux endpoints
+  • GET /api/institutional-exams/distinctions/class/:classId?periodId&academicYearId&level
+    → calcule pour chaque élève : moyenne (getClassAverages), rang (tri), distinction principale (resolveDistinction), prix spéciaux secondaire (resolveSpecialAwards) avec auto-récupération previousAverage (getPreviousPeriodAverage — cherche période précédente dans AcademicPeriod), unjustifiedAbsences+lateCount (getAttendanceStats — AttendanceRecord filtré par date de période), conductPct (getConductPct — ConductLedger du quarter)
+    Response: { id, name, matricule, average, base, rank, classSize, distinctionCode, distinctionLabel, specialAwards[], specialAwardLabels[] }
+  • GET /api/institutional-exams/distinctions/types
+    → catalogue des distinctions par niveau avec catégorie (mention/graduation/special), seuil minPct, palette, icône
+- Mise à jour des endpoints existants `generate-certificate` et `send-certificate` :
+  • Acceptent maintenant previousAverage + previousLabel dans le body
+  • Pour SEC_PROGRES, auto-calcul de previousAverage (getPreviousPeriodAverage) + récupération du nom de la période précédente comme previousLabel
+  • previousAverage/previousLabel transmis au DistinctionInput.results pour que secondaireHtml affiche le gain « +X pts sur 20 » correctement
+- html-builder.ts : ajout de `resolveSpecialAwards` dans l'import depuis rules.ts et dans le bloc d'exports (pour que le controller puisse l'importer depuis html-builder.ts plutôt que depuis rules.ts directement — pattern déjà utilisé pour resolveDistinction)
+- Frontend `DistinctionWorkspace.tsx` : refonte complète
+  • loadData() : remplace l'ancien appel à `/exams/promotion/class/:classId` + mapping hardcoded côté client → appel à `/institutional-exams/distinctions/class/:classId` qui retourne les distinctions résolues côté backend (single source of truth = rules.ts)
+  • Nouveau state `distinctionTypes` : chargé une fois au montage via GET /institutional-exams/distinctions/types
+  • Carte récap des types disponibles pour le niveau courant (palette + icône + seuil minPct + catégorie mention/special/graduation)
+  • Tableau des élèves : colonnes Rang / Matricule / Nom / Moyenne (/ base) / Distinction principale (pastille colorée) / Prix spéciaux (pastilles multiples si secondaire) / Actions
+  • Actions par élève :
+    - 1 certificat seulement (distinction principale) : boutons directs PDF + Email
+    - Plusieurs certificats (distinction + prix spéciaux secondaire) : bouton dropdown "N cert." qui ouvre un menu listant chaque distinction avec son bouton PDF + Email séparés
+    - Bouton diplôme de fin de cycle (GraduationCap violet) pour TOUS les élèves (MAT_GRAD/PRI_GRAD/SEC_GRAD)
+  • Distinction par élève basée sur sa moyenne : un élève à 18/20 (90%) → SEC_FELIC, un élève à 13/20 (65%) → SEC_HONNEUR, un élève à 10/20 (50%) → aucune mention (sous 60%). Pour la maternelle, MAT_EXPLO (seuil 0%) garantit qu'aucun enfant n'est exclu.
+  • Légende explicative en bas du tableau : rappelle les seuils pour chaque niveau et les conditions des prix spéciaux
+- Vérification de cohérence : 6 documents par niveau pour maternel/primaire (4 mentions + 1 graduation + 1 board), 8 pour secondaire (3 mentions + 3 prix spéciaux + 1 graduation + 1 board). Le système sait maintenant automatiquement quel certificat attribuer à chaque élève en fonction de sa moyenne ET, pour le secondaire, en fonction de son progrès/assiduité/conduite.
+
+Stage Summary:
+- Backend : 2 nouveaux endpoints (GET class/:classId + GET types) + 2 endpoints mis à jour (generate-certificate + send-certificate avec previousAverage/previousLabel pour SEC_PROGRES)
+- Frontend : DistinctionWorkspace entièrement refondu, mapping 100% backend (rules.ts), affichage de la distinction principale + des prix spéciaux + du diplôme de fin de cycle par élève, boutons individuels par type de certificat
+- Architecture : single source of truth = rules.ts (DEFAULT_RULES + GRADUATION_CODE + resolveDistinction + resolveSpecialAwards) ; le frontend ne hardcode plus les seuils, il appelle le backend qui résout.
+
+---
+Task ID: 36
+Agent: main
+Task: Code QR authentifiable et unique pour chaque élève pour chaque tableau d'honneur + commit et push
+
+Work Log:
+- security.ts : ajout du nonce cryptographique (randomBytes(8).toString('hex')) dans makeVerificationCode → chaque émission produit un code QR UNIQUE, même pour le même élève, même période, même type (réémission = nouveau QR). Nouvelle fonction makeVerificationCodeWithNonce() retourne { code, nonce } pour persister le nonce en base.
+- Prisma schema.prisma : ajout du modèle DistinctionRecord (table distinction_records) avec champs : tenantId, academicYearId, schoolLevelId?, classId?, studentId, periodId?, code, category (mention/special/graduation), label, average?, base, rank?, classSize?, previousAverage?, verificationCode (@unique), nonce, verificationUrl?, documentType (certificate/board), status (EMITTED/REISSUED/REVOKED), issuedOn, issuedBy?, sentToParent, sentAt?, metadata? (Json). Contrainte @@unique([studentId, periodId, code, nonce]) → un seul code par (élève, période, type, nonce).
+- Relations inverses ajoutées à 5 modèles (Tenant, AcademicYear, SchoolLevel, Student, Class) via distinctionRecords DistinctionRecord[] (supprimé d'AcademicTrack et Quarter qui n'ont pas de relation directe).
+- distinctions.controller.ts :
+  • Nouveau PublicDistinctionsController (séparé, sans JwtAuthGuard) avec @Public() sur GET /api/public/distinctions/verify/:code → recherche le DistinctionRecord par verificationCode unique, retourne les infos publiques (élève, distinction, période, école, statut, date d'émission, code) sans exposer de données sensibles. Gère le statut REVOKED.
+  • generate-certificate et send-certificate : maintenant utilisent makeVerificationCodeWithNonce → persistent un DistinctionRecord en base (avec le nonce, le code, l'URL publique, le statut EMITTED, et marquent sentToParent=true si l'email a réussi). La persistance ne bloque jamais la génération PDF (try/catch + warn log).
+  • PublicDistinctionsController enregistré dans exams.module.ts (controllers: [..., PublicDistinctionsController])
+- html-builder.ts : export de makeVerificationCodeWithNonce + generateNonce depuis security.ts pour que le controller puisse l'importer
+- Frontend /verifier/[code]/page.tsx : nouvelle page publique (sans authentification) qui fetch GET /api/public/distinctions/verify/:code et affiche :
+  • Bandeau de validation coloré selon la catégorie (mention/special/graduation)
+  • Avatar de l'élève + nom + matricule + classe + année scolaire + établissement
+  • Section résultats (moyenne / base + rang / classSize)
+  • Carte d'informations d'émission (date, statut, code de vérification, date de vérification)
+  • Pied avec explication de l'authentification HMAC-SHA256 + nonce
+  • États : loading, error (code manquant/invalide/révoqué), valid (affichage complet)
+  • Palette de couleurs dynamique selon le code de distinction (MAT_OR=jaune, SEC_FELIC=bordeaux, etc.) — cohérent avec le PDF
+  • Icônes par catégorie : Award (mention), Trophy (special), GraduationCap (graduation)
+
+Stage Summary:
+- QR code maintenant 100% unique et authentifiable : HMAC-SHA256(schoolId|studentId|periodId|code|schoolYear|nonce) où nonce = 16 hex chars aléatoires → chaque émission produit un QR code différent
+- DistinctionRecord persisté en base à chaque génération de certificat (certificate ET board) → le QR code peut être vérifié publiquement sans réauthentifier l'élève
+- Endpoint public /api/public/distinctions/verify/:code (sans JWT) retourne les infos authentifiées de l'émission
+- Page /verifier/[code] (frontend) affiche les infos de la distinction authentifiée (élève, type, période, école, statut, code)
+- Route publique protégée par @Public() pour bypasser tous les guards globaux (JwtAuthGuard, AccessScopeGuard, ContextValidationGuard, SchoolLevelIsolationGuard, AcademicYearEnforcementGuard, TenantSuspensionGuard, SmartThrottlerGuard qui utilise IP bucket pour les routes publiques)

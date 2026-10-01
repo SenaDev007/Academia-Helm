@@ -35,7 +35,7 @@ import { PromotionController } from './promotion.controller';
 import { PvStatsPromotionPdfService } from './services/pv-stats-promotion-pdf.service';
 import { PvStatsPromotionPdfController } from './pv-stats-promotion-pdf.controller';
 // ⭐ 2026-09-30 — Distinctions / Tableau d'honneur
-import { DistinctionsController } from './distinctions/distinctions.controller';
+import { DistinctionsController, PublicDistinctionsController } from './distinctions/distinctions.controller';
 import { DistinctionsNotificationService } from './distinctions/distinctions-notification.service';
 // ⭐ 2026-09-30 — ParentProvisioningModule pour l'envoi email/Helm Connect aux parents
 import { ParentProvisioningModule } from '../../students/parent-provisioning.module';
@@ -58,6 +58,7 @@ import { ParentProvisioningModule } from '../../students/parent-provisioning.mod
     PromotionController,
     PvStatsPromotionPdfController,
     DistinctionsController,
+    PublicDistinctionsController,
   ],
   providers: [
     ExamsDashboardService,

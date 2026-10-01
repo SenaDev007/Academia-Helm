@@ -180,6 +180,7 @@ model Tenant {
   homeworkEntries                  HomeworkEntry[]
   homeworkSubmissions              HomeworkSubmission[]              @relation("HomeworkSubmissionTenant")
   honorRolls                       HonorRoll[]
+  distinctionRecords               DistinctionRecord[]
   incidents                        Incident[]
   infirmaryAccessLogs              InfirmaryAccessLog[]
   infirmaryAllergies               InfirmaryAllergy[]
@@ -700,6 +701,7 @@ model AcademicYear {
   homeworkEntries                  HomeworkEntry[]
   homeworkSubmissions              HomeworkSubmission[]              @relation("HomeworkSubmissionAcademicYear")
   honorRolls                       HonorRoll[]
+  distinctionRecords               DistinctionRecord[]
   incidents                        Incident[]
   infirmaryCheckups                InfirmaryCheckup[]                @relation("InfirmaryCheckupAcademicYear")
   infirmaryEmergencies             InfirmaryEmergency[]              @relation("InfirmaryEmergencyAcademicYear")
@@ -1682,6 +1684,7 @@ model SchoolLevel {
   homeworkEntries                  HomeworkEntry[]
   homeworkSubmissions              HomeworkSubmission[]              @relation("HomeworkSubmissionSchoolLevel")
   honorRolls                       HonorRoll[]
+  distinctionRecords               DistinctionRecord[]
   incidents                        Incident[]
   inspections                      Inspection[]                      @relation("InspectionSchoolLevel")
   kpiObjectives                    KpiObjective[]
@@ -2335,6 +2338,7 @@ model Student {
   grades                       Grade[]
   homeworkSubmissions          HomeworkSubmission[]          @relation("HomeworkSubmissionStudent")
   honorRolls                   HonorRoll[]
+  distinctionRecords               DistinctionRecord[]
   incidents                    Incident[]
   infirmaryAccessLogs          InfirmaryAccessLog[]          @relation("InfirmaryAccessLogStudent")
   infirmaryAllergies           InfirmaryAllergy[]            @relation("InfirmaryAllergyStudent")
@@ -2531,6 +2535,7 @@ model Class {
   feeStructures              FeeStructure[]              @relation("FeeStructureClass")
   homeworkEntries            HomeworkEntry[]
   honorRolls                 HonorRoll[]
+  distinctionRecords               DistinctionRecord[]
   incidents                  Incident[]
   infirmaryEmergencies       InfirmaryEmergency[]        @relation("InfirmaryEmergencyClass")
   infirmaryVisits            InfirmaryVisit[]            @relation("InfirmaryVisitClass")
@@ -17966,3 +17971,69 @@ model Sanction {
 
 // Cache bust: force prisma generate to re-run after AdmissionSettings models
 // Timestamp: 2026-09-25T13:00:00Z
+
+/// ⭐ Distinction émise — Tableau d'honneur
+/// Persiste chaque certificat généré (mention principale, prix spécial, diplôme de fin de cycle).
+/// Permet la vérification publique du QR code via /api/public/distinctions/verify/:code.
+/// Chaque émission a un nonce unique (cette combinaison studentId+periodId+code+nonce est unique)
+/// de sorte qu'un même élève peut recevoir le même type de distinction à des périodes différentes
+/// ou même plusieurs fois (réémission) avec un QR code différent à chaque fois.
+model DistinctionRecord {
+  id                String   @id @default(uuid())
+  tenantId          String
+  academicYearId    String
+  schoolLevelId     String?
+  classId           String?
+  studentId         String
+  periodId          String?
+  /// Code de distinction (MAT_OR, PRI_FELIC, SEC_HONNEUR, SEC_PROGRES, MAT_GRAD, etc.)
+  code              String
+  /// Catégorie : 'mention' | 'special' | 'graduation'
+  category          String   @default("mention")
+  /// Libellé court affiché (Étoile d'Or, Félicitations, Prix du Progrès, etc.)
+  label             String
+  /// Moyenne de l'élève pour la période (null pour graduation hors période)
+  average           Float?
+  /// Base de notation (3 pour maternel, 20 pour primaire/secondaire)
+  base              Float    @default(20)
+  /// Rang dans la classe (1er, 2e, 3e…)
+  rank              Int?
+  /// Effectif de la classe
+  classSize         Int?
+  /// Moyenne précédente (pour SEC_PROGRES — gain de points)
+  previousAverage   Float?   @map("previous_average")
+  /// Code de vérification HMAC-SHA256 affiché sous le QR code (format AH-YYYY-XXXX-XXXX-XXXX)
+  verificationCode  String   @unique @map("verification_code")
+  /// Nonce cryptographique aléatoire (16 hex chars) — rend chaque émission unique
+  nonce             String   @default("")
+  /// URL publique de vérification (https://.../verifier/AH-2026-XXXX-XXXX-XXXX)
+  verificationUrl   String?  @map("verification_url")
+  /// Type de document généré : 'certificate' (individuel) | 'board' (tableau collectif)
+  documentType      String   @default("certificate") @map("document_type")
+  /// Statut : 'EMITTED' | 'REISSUED' | 'REVOKED'
+  status            String   @default("EMITTED")
+  /// Date d'émission (toISOString slice 0,10)
+  issuedOn          String   @map("issued_on")
+  /// Utilisateur qui a déclenché l'émission (admin, directeur…)
+  issuedBy          String?  @map("issued_by")
+  /// Indique si le PDF a été envoyé par email au parent
+  sentToParent      Boolean  @default(false) @map("sent_to_parent")
+  sentAt            DateTime? @map("sent_at")
+  /// Métadonnées JSON libres (nom école, période, etc. pour la page de vérification)
+  metadata          Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant            Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear      AcademicYear @relation(fields: [academicYearId], references: [id])
+  student           Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class             Class?       @relation(fields: [classId], references: [id])
+  schoolLevel       SchoolLevel? @relation(fields: [schoolLevelId], references: [id])
+
+  @@unique([studentId, periodId, code, nonce])
+  @@index([tenantId, academicYearId])
+  @@index([tenantId, studentId])
+  @@index([verificationCode])
+  @@index([code])
+  @@map("distinction_records")
+}

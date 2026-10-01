@@ -265,7 +265,7 @@ function getApiOrigin() {
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
 // ⭐ v4.10.0 (2026-10-01 — incident « patronat national : tous les modules
 //    lents puis Impossible de charger ») : cf. PURGE_STALE_DEPLOYS ci-dessous.
-const SW_VERSION = 'v4.10.0';
+const SW_VERSION = 'v4.10.1';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -475,15 +475,27 @@ self.addEventListener('install', (event) => {
         //    on ne cache UNE réponse que si elle est 200 ET non-redirigée
         //    (res.redirected === false) — la requête de la page courante
         //    doit vraiment rendre CE qu'on demande.
+        //    ⭐ v4.10.1 — TIMEOUT 10 s PAR FETCH D'INSTALLATION : sur les
+        //    origines PATRONAT (patronatXXX.academiahelm.com), le middleware
+        //    réécrit les PRECACHE_URLS vers des pages lourdes/streamées
+        //    (landing /patronat-portal, /federis/login…) dont certaines
+        //    pendent — sans timeout, le fetch ne settle JAMAIS → le SW reste
+        //    « installing » à l'infini → jamais de contrôleur (constaté en
+        //    production : registration bloquée depuis des heures). Avec le
+        //    timeout, l'install se termine TOUJOURS en ≤ 10 s ; les URLs qui
+        //    échouent/patientent sont simplement ignorées (l'entrée sera
+        //    créée à la 1re visite réelle).
         Promise.allSettled(
           PRECACHE_URLS.map(async (url) => {
             try {
-              const res = await fetch(new Request(url, { cache: 'reload' }));
+              const res = await fetch(new Request(url, { cache: 'reload' }), {
+                signal: AbortSignal.timeout(10_000),
+              });
               if (res.ok && !res.redirected) {
                 await cache.put(new Request(url), res);
               }
             } catch {
-              /* hors ligne à l'install — l'entrée sera créée à la 1re visite */
+              /* hors ligne / timeout à l’install — l’entrée sera créée à la 1re visite */
             }
           }),
         ),

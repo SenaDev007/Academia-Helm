@@ -1142,17 +1142,23 @@ ${page2Content}
         ? `<span style="color:${bilanMoyenne >= 10 ? '#059669' : '#dc2626'};font-weight:bold;font-size:11px;">${bilanMoyenne.toFixed(2)}</span>`
         : '—';
       const label = CATEGORY_LABELS[cat] || 'Bilan';
-      // ⭐ 2026-09-28 — Colspan ajusté : avec la nouvelle colonne « Professeur »
-      //    on a 1 discipline + 2 IE + 1 moyInter + 2 DS + 1 moy = 7 colonnes
-      //    avant coefficient/rang/appréciation/professeur/signature.
-      //    Junior : 7 colonnes à fusionner ; Senior : 9 (avec coef + noteCoef).
-      const colSpan = isJunior ? 7 : 9;
+      // ⭐ T32 — ALIGNEMENT EXACT SUR LA GRILLE : Discipline + zone fusionnée
+      //    (IE1→DS2 = 5 colonnes) + moyenne du bilan SOUS la colonne « Moy »,
+      //    puis cellules vides DISTINCTES (Coef/NoteCoef senior, Rang,
+      //    Appréciation, Professeur) → la ligne totalise exactement 10 colonnes
+      //    (junior) / 12 (senior) et TOUS les filets verticaux restent continus.
+      //    L'ancienne version (colspan 7/9 + 2 cellules) comptait 11/13
+      //    positions → colonne fantôme à droite (bande sans bordures ni fond
+      //    dans les lignes d'en-tête et de matières → bord droit « haché »).
+      const colSpan = 5; // IE1 | IE2 | Moy d'inter | DS1 | DS2
       return `<tr style="background:#f1f5f9;font-weight:bold;">
         <td style="padding:3px 2px;font-size:10px;text-transform:uppercase;color:#0A2A5E;">${label}</td>
-        <td colspan="${colSpan}" style=""></td>
+        <td colspan="${colSpan}"></td>
         <td style="padding:3px 2px;text-align:center;font-size:11px;">${bilanCell}</td>
-        <td style=""></td>
-        <td style=""></td>
+        ${!isJunior ? '<td></td>\n        <td></td>' : ''}
+        <td></td>
+        <td></td>
+        <td></td>
       </tr>`;
     };
 
@@ -1212,33 +1218,34 @@ ${page2Content}
         <th style="padding:3px;font-size:9px;border-right:1px solid #000;">DS2</th>
       </tr>`;
 
-    // ── Lignes de totaux + moyenne trimestrielle (colspans : 6e/5e = 11
-    //    colonnes, 4e → Terminale = 13) ────────────────────────────────
+    // ── Lignes de totaux + moyenne trimestrielle (colspans : 6e/5e = 10
+    //    colonnes, 4e → Terminale = 12) ────────────────────────────────
     //    ⭐ 2026-09-30 — Suppression colonne « Signature » → -1 colspan.
-    //    Avant : 12 (junior) / 14 (senior). Maintenant : 11 / 13.
+    //    ⭐ T32 — colspans recalés sur la grille RÉELLE (10/12) : l'ancien
+    //    11/13 débordait d'une colonne → même colonne fantôme que les bilans.
     const totalRows = `
       ${!isJunior ? `
       <tr style="background:#f1f5f9;font-weight:bold;">
         <td colspan="7" style="padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Total des coefficients</td>
         <td style="padding:3px;text-align:center;font-size:10px;color:#0f172a;">${totalCoef ?? '—'}</td>
-        <td colspan="5" style=""></td>
+        <td colspan="4" style=""></td>
       </tr>
       <tr style="background:#f1f5f9;font-weight:bold;">
         <td colspan="7" style="padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Total des moyennes (Σ moy × coef)</td>
         <td style="padding:3px;text-align:center;font-size:10px;color:#059669;">${totalNotesCoef !== null ? totalNotesCoef.toFixed(2) : '—'}</td>
-        <td colspan="5" style=""></td>
+        <td colspan="4" style=""></td>
       </tr>` : ''}
       <tr style="background:#0A2A5E;color:#fff;font-weight:bold;">
         <td colspan="6" style="padding:3px;font-size:8px;text-transform:uppercase;text-align:right;">Moyenne trimestrielle</td>
         <td colspan="${isJunior ? 1 : 2}" style="padding:3px;text-align:center;font-size:11px;color:#fff;">${fmtSec(data.generalAverage)}</td>
-        <td colspan="${isJunior ? 4 : 5}" style="padding:3px;text-align:center;font-size:9px;color:#fff;">Rang : ${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
+        <td colspan="${isJunior ? 3 : 4}" style="padding:3px;text-align:center;font-size:9px;color:#fff;">Rang : ${formatRank(data.classRank, feminine)} / ${data.totalStudents}</td>
       </tr>`;
 
     // ── Récap du 3e trimestre (moyennes T1 + T2 + moyenne annuelle + passage) ──
     const recapBlock = data.secRecap ? `
       <div style="margin-top:6px;border:2px solid #000;border-radius:8px;overflow:hidden;">
         <div style="background:#0A2A5E;color:white;font-size:9px;font-weight:bold;text-transform:uppercase;text-align:center;padding:3px;">Récapitulatif de l'année (3e trimestre)</div>
-        <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:10px;">
+        <table style="width:100%;border-collapse:collapse;font-size:10px;">
           <tr>
             <td style="border-right:1px solid #000;border-bottom:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Moyenne 1er trimestre :</td>
             <td style="border-right:1px solid #000;border-bottom:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;">${fmtSec(data.secRecap.period1Average)}</td>
@@ -1286,12 +1293,23 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
 .school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
 .school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
 .bulletin-title { text-align:center; border:2px solid #0A2A5E; border-radius:8px; padding:4px 8px; margin-bottom:6px; font-size:11px; font-weight:bold; text-transform:uppercase; color:#0A2A5E; background:#f1f5f9; }
-table.notes { width:100%; border-collapse:separate; border-spacing:0; border:2px solid #000; border-radius:8px; overflow:hidden; }
+/* ⭐ T32 — TRAITS CONTINUS : le cadre externe (bordure 2px + coins arrondis)
+   passe sur un WRAPPER <div> autour du tableau — le rendu d'impression
+   Chromium peint mal border-radius/overflow:hidden posés DIRECTEMENT sur
+   <table> (coin supérieur droit non fermé, bord droit fragmenté). La grille
+   interne passe en border-collapse:collapse : les bordures adjacentes sont
+   fusionnées en une grille unifiée → lignes verticales réellement continues
+   (border-collapse:separate peignait chaque cellule séparément → joints
+   visibles à chaque jonction de ligne = aspect pointillé). */
+table.notes { width:100%; border-collapse:collapse; }
 table.notes th { background:#fff; color:#000; border-right:1px solid #000; border-bottom:1px solid #000; padding:4px 3px; font-size:8px; text-transform:uppercase; }
 table.notes td { border-right:1px solid #000; border-bottom:1px solid #000; padding:3px 2px; }
 table.notes th:last-child, table.notes td:last-child { border-right:none; }
 table.notes tbody tr:last-child td { border-bottom:none; }
-.info-table { width:100%; border-collapse:separate; border-spacing:0; margin-bottom:6px; border:1px solid #000; border-radius:6px; overflow:hidden; }
+/* ⭐ T32 — idem infos élève : cadre sur le wrapper .info-wrap, grille interne
+   en collapse (le trait coupé au coin supérieur droit disparaît). */
+.info-wrap { border:1px solid #000; border-radius:6px; overflow:hidden; margin-bottom:6px; }
+.info-table { width:100%; border-collapse:collapse; }
 .info-table td { border-right:1px solid #000; border-bottom:1px solid #000; padding:3px 5px; font-size:9px; background:#f1f5f9; }
 .info-table td:last-child { border-right:none; }
 .info-table tr:last-child td { border-bottom:none; }
@@ -1331,6 +1349,9 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   <div class="bulletin-title">Bulletin de notes du ${data.periodName} — ${data.academicYearName}</div>
 
   <!-- INFOS ÉLÈVE (avec photo, modèle : Photo | Année | Nom | Classe / Effectif | Matricule | Rang) -->
+  <!-- ⭐ T32 — cadre arrondi porté par le wrapper .info-wrap (plus de
+      border-radius directement sur <table> : trait coupé au coin). -->
+  <div class="info-wrap">
   <table class="info-table">
     <tr>
       <td rowspan="2" style="width:55px;text-align:center;vertical-align:middle;border-bottom:none;">
@@ -1348,11 +1369,13 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
       <td>Rang : <strong>${formatRank(data.classRank, feminine)}</strong></td>
     </tr>
   </table>
+  </div>
 
-  <!-- TABLEAU DES NOTES — ⭐ T30 : le wrapper navy est SUPPRIMÉ : le tableau
-      .notes porte déjà son propre cadre arrondi 2px, le double conteneur
-      créait des traits en doublon et un « vide » entre les deux cadres. -->
-  <div style="">
+  <!-- TABLEAU DES NOTES — ⭐ T30 : plus de wrapper navy en doublon.
+      ⭐ T32 : le cadre arrondi 2px est porté par ce wrapper div (Chromium
+      peint mal border-radius directement sur <table>) et la grille interne
+      est en border-collapse:collapse → filets continus. -->
+  <div style="border:2px solid #000;border-radius:8px;overflow:hidden;">
     <table class="notes">
       <thead>${tableHeader}</thead>
       <tbody>${subjectRows}${totalRows}</tbody>
@@ -1362,9 +1385,9 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   ${recapBlock}
 
   <!-- ═══ BLOC : Assiduité (total d'heures depuis module Vie Scolaire) ═══ -->
-  <div style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:8px;">
+  <div style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-top:10px;margin-bottom:8px;">
     <div style="background:#fff;color:#0A2A5E;font-size:9px;font-weight:bold;text-transform:uppercase;text-align:center;padding:3px;border-bottom:1px solid #000;">Assiduité</div>
-    <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:10px;">
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
       <tr>
         <td style="border-right:1px solid #000;padding:4px 6px;background:#f1f5f9;font-weight:bold;text-align:right;">Total d'heures d'absence/punition :</td>
         <td style="border-right:1px solid #000;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.assiduityHours ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
@@ -1381,7 +1404,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   <!-- ═══ BLOC : Résultats de classe ═══ -->
   <div style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:8px;">
     <div style="background:#fff;color:#0A2A5E;font-size:9px;font-weight:bold;text-transform:uppercase;text-align:center;padding:3px;border-bottom:1px solid #000;">Résultats de classe</div>
-    <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:10px;">
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
       <tr>
         <td style="border-right:1px solid #000;border-bottom:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Moyenne trimestrielle :</td>
         <td style="border-right:1px solid #000;border-bottom:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;color:#0A2A5E;font-size:12px;">${fmtSec(data.generalAverage)}</td>
@@ -1405,7 +1428,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
 
   <!-- ═══ BLOC UNIFIÉ : Mention du conseil de classe + Appréciation + Signatures (3 colonnes) ═══ -->
   <div style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:8px;">
-    <table style="width:100%;border-collapse:separate;border-spacing:0;">
+    <table style="width:100%;border-collapse:collapse;">
       <tr>
         <!-- COLONNE 1 : Mention du conseil de classe (Distinctions + Sanctions en cases à cocher carrées) -->
         <td style="width:34%;vertical-align:top;border-right:1px solid #000;padding:4px;">
@@ -1621,12 +1644,16 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
 .school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
 .school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
 .bulletin-title { text-align:center; border:2px solid #0A2A5E; border-radius:8px; padding:4px 8px; margin-bottom:6px; font-size:11px; font-weight:bold; text-transform:uppercase; color:#0A2A5E; background:#f1f5f9; }
-table.notes { width:100%; border-collapse:separate; border-spacing:0; border:2px solid #000; border-radius:8px; overflow:hidden; }
+/* ⭐ T32 — TRAITS CONTINUS (même correctif que le trimestriel) : cadre
+   externe sur un WRAPPER <div>, grille interne en border-collapse:collapse. */
+table.notes { width:100%; border-collapse:collapse; }
 table.notes th { background:#fff; color:#000; border-right:1px solid #000; border-bottom:1px solid #000; padding:5px 3px; font-size:8px; text-transform:uppercase; }
 table.notes td { border-right:1px solid #000; border-bottom:1px solid #000; padding:4px 3px; }
 table.notes th:last-child, table.notes td:last-child { border-right:none; }
 table.notes tbody tr:last-child td { border-bottom:none; }
-.info-table { width:100%; border-collapse:separate; border-spacing:0; margin-bottom:6px; border:1px solid #000; border-radius:6px; overflow:hidden; }
+/* ⭐ T32 — idem infos élève : cadre sur le wrapper .info-wrap. */
+.info-wrap { border:1px solid #000; border-radius:6px; overflow:hidden; margin-bottom:6px; }
+.info-table { width:100%; border-collapse:collapse; }
 .info-table td { border-right:1px solid #000; border-bottom:1px solid #000; padding:3px 5px; font-size:9px; background:#f1f5f9; }
 .info-table td:last-child { border-right:none; }
 .info-table tr:last-child td { border-bottom:none; }
@@ -1665,6 +1692,8 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   <div class="bulletin-title">Bulletin d'évaluation — ${data.evaluationTypeName || 'Évaluation'}${data.evaluationTypeCode ? ' (' + data.evaluationTypeCode + ')' : ''} — ${data.periodName}</div>
 
   <!-- INFOS ÉLÈVE (Année | Trimestre | Évaluation / Nom | Effectif·Matricule | Rang) -->
+  <!-- ⭐ T32 — cadre arrondi porté par le wrapper .info-wrap. -->
+  <div class="info-wrap">
   <table class="info-table">
     <tr>
       <td>Année scolaire : <strong>${data.academicYearName}</strong></td>
@@ -1677,9 +1706,11 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
       <td>Rang : <strong>${formatRank(data.classRank, feminine)}</strong></td>
     </tr>
   </table>
+  </div>
 
-  <!-- TABLEAU DES NOTES (coins arrondis, bordure navy) : Discipline | Note /20 | Rang | Appréciation | Professeur -->
-  <div style="">
+  <!-- TABLEAU DES NOTES : Discipline | Note /20 | Rang | Appréciation | Professeur
+      ⭐ T32 — cadre arrondi 2px sur le wrapper div + grille interne collapse. -->
+  <div style="border:2px solid #000;border-radius:8px;overflow:hidden;">
     <table class="notes">
       <thead>
         <tr style="background:#fff;color:#000;">
@@ -1701,9 +1732,9 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   </div>
 
   <!-- ═══ BLOC : Assiduité (total d'heures depuis module Vie Scolaire) ═══ -->
-  <div style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:8px;">
+  <div style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-top:10px;margin-bottom:8px;">
     <div style="background:#fff;color:#0A2A5E;font-size:9px;font-weight:bold;text-transform:uppercase;text-align:center;padding:3px;border-bottom:1px solid #000;">Assiduité</div>
-    <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:10px;">
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
       <tr>
         <td style="border-right:1px solid #000;padding:4px 6px;background:#f1f5f9;font-weight:bold;text-align:right;">Total d'heures d'absence/punition :</td>
         <td style="border-right:1px solid #000;padding:4px 6px;text-align:center;font-weight:bold;color:${(data.assiduityHours ?? 0) > 0 ? '#dc2626' : '#059669'};font-size:12px;">
@@ -1720,7 +1751,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   <!-- ═══ BLOC : Résultats de classe ═══ -->
   <div style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:8px;">
     <div style="background:#fff;color:#0A2A5E;font-size:9px;font-weight:bold;text-transform:uppercase;text-align:center;padding:3px;border-bottom:1px solid #000;">Résultats de classe</div>
-    <table style="width:100%;border-collapse:separate;border-spacing:0;font-size:10px;">
+    <table style="width:100%;border-collapse:collapse;font-size:10px;">
       <tr>
         <td style="border-right:1px solid #000;border-bottom:1px solid #000;padding:3px 5px;background:#f1f5f9;font-weight:bold;">Moyenne de l'évaluation :</td>
         <td style="border-right:1px solid #000;border-bottom:1px solid #000;padding:3px 5px;text-align:center;font-weight:bold;color:#0A2A5E;font-size:12px;">${fmtSec(data.generalAverage)}</td>
@@ -1744,7 +1775,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
 
   <!-- ═══ BLOC UNIFIÉ : Mention du conseil de classe + Appréciation + Signatures (3 colonnes) ═══ -->
   <div style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:8px;">
-    <table style="width:100%;border-collapse:separate;border-spacing:0;">
+    <table style="width:100%;border-collapse:collapse;">
       <tr>
         <td style="width:34%;vertical-align:top;border-right:1px solid #000;padding:4px;">
           <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Mention du conseil de classe</div>

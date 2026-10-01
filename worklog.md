@@ -12309,3 +12309,27 @@ Stage Summary:
 - Section « Consultation des résultats » professionnelle : badge succès animé, titre + soulignement doré shimmer, chips, entrées en cascade, stats en compteurs animés
 - La réussite se célèbre : candidat ADMIS → coche dessinée + anneau pulsant + 12 confettis (rejoués à chaque fiche) ; accessibilité prefers-reduced-motion
 - À valider post-déploiement : ouvrir le lien public d'un examen publié → header Academia + bandeau patronat avec logo réel + badge « Résultats officiellement publiés » + compteurs animés ; rechercher un admis → confettis ; si le patronat n'a pas de logo → logo Academia en repli ; configurer le logo dans Paramètres → Identité pour le voir en ligne
+
+---
+Task ID: 32
+Agent: Super Z (principal)
+Task: Retours promoteur sur les bulletins secondaire (capture annotée) — (1) section Assiduité trop collée au tableau des notes sur les DEUX bulletins, (2) traits DISCONTINUS (pointillés) dans le tableau des notes, (3) trait coupé dans la section informations de l'élève
+
+Work Log:
+- DIAGNOSTIC (capture analysée + zooms VLM + lecture code) — les « traits discontinus » avaient TROIS causes cumulées :
+  (a) border-collapse:separate : Chromium print-to-PDF peint chaque bordure de cellule INDÉPENDAMMENT → joint sub-pixel visible à CHAQUE jonction de ligne (les verticales apparaissent pointillées, exactement les flèches rouges de la capture) ;
+  (b) border:2px + border-radius:8px + overflow:hidden posés DIRECTEMENT sur <table class="notes"> : le rendu d'impression de Chromium ferme mal les coins de tableau (coin supérieur droit ouvert, bord droit fragmenté) — même chose sur .info-table (le « trait coupé » de la section informations de l'élève) ;
+  (c) COLONNE FANTÔME : les lignes de bilan comptaient 1 + colspan(7|9) + 1 + 2 = 11|13 positions pour une grille réelle de 10|12 colonnes → la grille s'élargissait d'une colonne supplémentaire, VIDE (ni bordure ni fond) dans les lignes d'en-tête et de matières → bande claire hachée sur le bord droit ; les totaux débordaient pareil (colspan final 5 au lieu de 4, 4 au lieu de 3).
+- FIX FILETS CONTINUS (trimestriel + évaluation) : le cadre externe 2px arrondi passe sur un WRAPPER <div> autour du tableau (les div se peignent proprement en print — même pattern que les blocs Assiduité/Résultats déjà validés), la table interne perd sa bordure et passe en border-collapse:collapse (bordures fusionnées en grille unifiée → verticales réellement continues) ; th/td:last-child sans border-right et dernière ligne sans border-bottom conservés (le cadre du wrapper tranche les bords).
+- FIX COLONNE FANTÔME : lignes de bilan recalées = Discipline + colspan 5 (IE1→DS2) + moyenne du bilan EXACTEMENT sous la colonne Moy + cellules vides distinctes (Coef/NoteCoef senior, Rang, Appréciation, Professeur) → 10 colonnes junior / 12 senior au pixel ; totaux senior 7+1+4, bandeau navy 6+1|2+3|4 ; toutes les verticales traversent désormais les lignes de bilan.
+- FIX INFOS ÉLÈVE : cadre 1px arrondi déplacé sur un wrapper .info-wrap (table interne borderless + collapse) → coin refermé, trait continu.
+- FIX ASSIDUITÉ COLLÉE : margin-top:10px sur le bloc Assiduité des 2 builders (avant : bordure du tableau et bordure de l'assiduité FUSIONNÉES à ≈1px dès que le récap T3 est absent = 1er/2e trimestre).
+- Cohérence : les 7 tables internes des blocs (récap T3, Assiduité ×2, Résultats ×2, conseil ×2) passées en collapse ; builders primaire/anglophone/vue par matière NON touchés (hors périmètre du retour).
+- VÉRIFICATIONS : (a) verify_task32_bulletins.cjs 68/68 — structure (wrapper, collapse, margin-top, régressions T30 : footer +229 0141360803, DS2 filet, titre arrondi) + DÉCOMPTE DE COLONNES ligne par ligne (12 senior, 10 junior, 5 évaluation — l'analyseur simule rowspans/colspans) + ordre des colonnes + bilan = colspan5+moyenne+cellules vides ; (b) test A/B Chromium print-to-PDF 200dpi (AVANT = git HEAD vs APRÈS = correctif, mêmes données 6e junior, pipeline identique à la production) → verdict VLM 4/4 paires FIXED : verticales continues, bord droit complet, coin supérieur droit fermé, aucun nouveau défaut ; le VLM constate en plus que les moyennes des lignes BILAN mal placées avant (colonne Appréciation) sont désormais alignées sous Moy ; (c) MESURE PIXELS objective (analyse de segments sombres 200dpi) : écart bas du tableau → haut Assiduité = bordures fusionnées (≈1px) AVANT vs 21px @200dpi = 10px CSS ≈ 2,7mm APRÈS, sur les 2 bulletins ; (d) contrôle pleine page VLM : filets continus, en-têtes alignés, cadre infos complet, coins arrondis propres partout, aucun texte tronqué ni double bordure — « production-ready ».
+- Commit 9f803041a poussé sur origin/main → Railway (API) + Vercel (web) redéploient.
+
+Stage Summary:
+- Tableau des notes (bulletin d'évaluation + trimestriel) : verticales 100 % continues (collapse), cadre arrondi 2px complet coins fermés (wrapper div), plus de colonne fantôme — les lignes BILAN s'alignent exactement sur la grille
+- Section informations de l'élève : cadre complet, trait du coin réparé (wrapper .info-wrap)
+- Assiduité détachée du tableau des notes (≈2,7 mm d'aération) sur les deux bulletins
+- À valider post-déploiement : régénérer les PDF depuis /app/exams/bulletins (bulletin d'évaluation + trimestriel 6e/5e et 4e→Terminale) et vérifier filets continus + coin infos élève + espacement assiduité

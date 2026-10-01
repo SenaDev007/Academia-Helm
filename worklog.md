@@ -13087,3 +13087,16 @@ Stage Summary:
 - Le login Federis est résilient : une erreur passagère (rollout, micro-coupure) est retentée automatiquement au lieu de casser la connexion ; en cas d'échec final, le statut réel part dans la console.
 - La grille des départements du patronat national ne montre plus que le VRAI réseau (Borgou) — les 3 faux « Atlantique » issus des sessions de dev ont été purgés de la production (transaction vérifiée, promoteur/national/Borgou intacts).
 - Le promoteur peut se reconnecter immédiatement ; si son navigateur garde un état ancien : rechargement simple (le guérisseur SWVersionGuard fait le reste) ou « Déconnexion sécurisée » (purge cache offline).
+
+---
+Task ID: 59 — complément
+Agent: Super Z (principal)
+Task: T59 suite — validation E2E post-déploiement + purge finale
+
+Work Log:
+- Déploiement Vercel confirmé (sw.js const SW_VERSION v4.11.1 servi, last-modified 16:53) ; Railway inchangé (aucune modif API).
+- Navigateur réel (agent-browser) sur patronatnational.academiahelm.com : login complet avec la page PATCHÉE (fetchProfileWithRetry) → /federis/dashboard, zéro erreur console/page.
+- Compte éphémère t59b purgé (user + sessions + lien) ; t59-final-check.mjs : 0 patronat QA, 0 user de test, enfants du national = Borgou SEUL. Promoteur/national/Borgou intacts.
+
+Stage Summary:
+- T59 validé de bout en bout sur la production : le promoteur peut se reconnecter ; le login survit aux erreurs passagères ; la grille des départements ne montre que le vrai réseau.

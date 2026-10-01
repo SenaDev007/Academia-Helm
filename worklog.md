@@ -12231,3 +12231,21 @@ Stage Summary:
 - Constante du lien public (Task 26) intacte fonctionnellement : max 8760 h, défaut 720 h — seul l'ordre de déclaration a changé
 - Audit anti-récidive : aucun autre décorateur du codebase ne référence une constante déclarée après sa classe
 - À valider post-déploiement : conteneur Up sans boucle de redémarrage dans les logs Railway, puis re-tester le flux complet de la Task 26 (publication → lien public → consultation parents)
+
+---
+Task ID: 29
+Agent: Super Z (principal)
+Task: HOTFIX crash conteneur Railway (boucle de redémarrage) — Nest can't resolve dependencies of the ParentPortalNationalExamsController (… FederisPdfService at index [2] … in the ParentPortalModule context), introduit par la Task 27
+
+Work Log:
+- Contexte environnement : le sandbox local avait été restauré à un instantané antérieur (HEAD à fe9ac24cf, node_modules absent — les commits Task 27 + hotfix TDZ n'existaient plus qu'après resynchronisation) → git fetch + reset --hard origin/main (5b9449f48) : tout le code Task 24-28 récupéré, rien n'était perdu côté GitHub
+- Diagnostic : ParentPortalNationalExamsController (T27, espace parents) injecte PrismaService + FederisDeliberationService + FederisPdfService ; ParentPortalModule importe bien FederisModule, FederisDeliberationService y est exporté… mais FederisPdfService était dans providers SANS figurer dans exports → Nest refuse l'instanciation du contrôleur au bootstrap → crash en boucle ; audit des injections cross-module des services federis (grep src) : 3 points au total, seul FederisPdfService manquait
+- Fix : FederisPdfService ajouté aux exports de FederisModule avec commentaire de garde (federis.module.ts)
+- Anti-récidive : scripts/verify_di_graph.cjs NOUVEAU — vérificateur statique du graphe d'injection qui réplique la résolution de Nest au bootstrap sur le dist compilé (stub @prisma/client, aucune base de données) ; fidélité vérifiée empiriquement sur cette app : clé '__module:global__' pour @Global (pas 'modules:global'), DynamicModules ASYNCHRONES attendus (ConfigModule.forRoot 3.3 retourne une Promise<DynamicModule>), propriété global:true des objets dynamic (ScheduleModule), FUSION des métadonnées classe+DynamicModule (@nestjs/jwt 10.2 : la classe JwtModule porte elle-même providers/exports [JwtService] alors que registerAsync ne retourne que le provider d'options), expansion transitive des modules ré-exportés (CommonModule @Global ré-exporte OpenRouterModule), built-ins Nest exclus (Reflector/ModuleRef/internes @nestjs/schedule), @Optional/@Inject hors périmètre, nœuds indexés par identité (classes homonymes distinctes) ; contrôles : (1) deps constructeur de TOUS les contrôleurs, (2) deps de TOUS les providers + inject des factories, (3) exports sans provider sur les modules statiques (le bug historique FederisCandidatesExportService)
+- Résultat : 95 modules (87 statiques + 8 dynamic), 33 providers globaux, 0 violation avec le fix ; TEST INVERSÉ : fix retiré → recompilé → le vérificateur signale exactement l'erreur Railway (« ParentPortalNationalExamsController paramètre #2 FederisPdfService introuvable dans le contexte du module ») ; fix restauré → 0 violation
+- Commit poussé : 093eada10 sur origin/main → Railway redéploie l'API
+
+Stage Summary:
+- Le conteneur Railway démarre : ParentPortalNationalExamsController résout FederisPdfService, plus d'exception au bootstrap
+- Nouvel outil anti-crash permanent : scripts/verify_di_graph.cjs (dans le dépôt) — exécutable après tout build (node scripts/verify_di_graph.cjs depuis apps/api-server avec dist à jour) pour valider le graphe DI AVANT déploiement ; il aurait attrapé ce crash ET est insensible aux faux positifs des mécanismes Nest exotiques de l'app (async dynamic modules, fusion jwt, ré-exports)
+- À valider post-déploiement : conteneur Up stable, puis le parcours complet de la Task 27 côté parent (onglet Examens nationaux de /app/parent/results avec téléchargement du relevé officiel)

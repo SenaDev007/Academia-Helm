@@ -9,10 +9,13 @@
  *   1. Écran d'accueil  : examen, session, patronat, stats, expiration du lien ;
  *   2. Recherche        : UN champ unique — nom de l'élève, matricule OU
  *                         numéro de table (insensible casse/accents) ;
- *   3. Fiche résultat   : état civil utile, notes par matière, moyenne, rang,
- *                         mention, DÉCISION FINALE (Admis / Ajourné) et, pour
- *                         le CEP, les décisions « Admis au CEP » + « Admis en
- *                         6ème » (moyenne des matières étoilées ≥ 10/20).
+ *   3. Fiche résultat   : état civil utile, moyenne, rang, mention, DÉCISION
+ *                         FINALE (Admis / Ajourné) et, pour le CEP, les
+ *                         décisions « Admis au CEP » + « Admis en 6ème »
+ *                         (moyenne des matières étoilées ≥ 10/20).
+ *                         ⭐ T44 — le modal ne contient plus que DEUX sections :
+ *                         Informations du candidat + Décision officielle (le
+ *                         tableau des notes par matière a été retiré).
  *
  * ⭐ T31 — en-têtes + animations de succès :
  *   - le bandeau patronat (header du patronat, sous le header Academia de la
@@ -102,6 +105,7 @@ interface LookupCandidate {
     moyenneEtoiles: number | null;
     matieresEtoiles: number;
   } | null;
+  /** ⭐ T44 — plus affiché dans le modal (contrat API conservé pour d'éventuels usages futurs). */
   lines: ResultLine[];
 }
 
@@ -945,9 +949,14 @@ export default function FederisPublicResultsClient({ token }: { token: string })
 //             en pulsation douce — tout le protocole de célébration.
 // Ajourné(e) → effet contrasté et sobre : emoji triste 😞 qui tombe avec un
 //             rebond puis se balance doucement, tons rouges, AUCUNE fête.
-// Toutes les informations clés y sont structurées : nom et prénoms, école de
-// provenance, centre d'examen, numéro de table, matricule, moyenne, rang,
-// mention, décisions CEP le cas échéant, notes par matière.
+// ⭐ T44 — le corps du modal ne contient plus que DEUX sections :
+//   1. « Informations du candidat »  : nom et prénoms, matricule, numéro de
+//      table, école de provenance, centre d'examen ;
+//   2. « Décision officielle »       : décision du jury (Admis/Ajourné),
+//      moyenne /20, rang, mention et, pour le CEP, les décisions officielles
+//      « Admis au CEP » + « Admis en 6ème » (moyenne des matières *).
+//      Le tableau des notes par matière a été SUPPRIMÉ sur demande du
+//      promoteur — la consultation publique reste volontairement synthétique.
 // Fermeture : Escape, clic sur le fond assombri, bouton croix.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1063,9 +1072,9 @@ function ResultModal({
           </div>
         </div>
 
-        {/* ═══ CORPS : informations clés structurées ═══ */}
+        {/* ═══ CORPS : 2 sections — Informations du candidat · Décision officielle ═══ */}
         <div className="p-5 sm:p-6 space-y-5">
-          {/* Identité du candidat */}
+          {/* Section 1 — Informations du candidat */}
           <section className="space-y-3">
             <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
               Informations du candidat
@@ -1081,139 +1090,100 @@ function ResultModal({
             </div>
           </section>
 
-          {/* Résumé chiffré */}
-          <div className="grid grid-cols-3 gap-2.5">
-            <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
-              <p className="text-xl font-black text-blue-900">
-                {candidate.average != null ? fmtNote(candidate.average) : '—'}
-              </p>
-              <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">
-                Moyenne /20
-              </p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
-              <p className="text-xl font-black text-blue-900">
-                {candidate.rank ?? '—'}
-                <span className="text-xs font-bold text-slate-400">
-                  {candidate.rank ? 'ᵉ' : ''}
-                </span>
-              </p>
-              <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">Rang</p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
-              <p className="text-[13px] font-black text-blue-900 leading-tight mt-1">
-                {candidate.mention ?? '—'}
-              </p>
-              <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">Mention</p>
-            </div>
-          </div>
-
-          {/* ⭐ CEP — décisions officielles (admission CEP + entrée en 6ème) */}
-          {isCep && candidate.cepAdmission && (
-            <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 space-y-2.5">
-              <p className="text-[10px] font-black uppercase tracking-wide text-blue-900">
-                Décisions officielles du CEP
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <DecisionPill
-                  ok={candidate.cepAdmission.admisCep}
-                  labelOk="Admis(e) au CEP"
-                  labelKo="Non admis(e) au CEP"
-                />
-                <DecisionPill
-                  ok={candidate.cepAdmission.admisSixieme}
-                  labelOk="Admis(e) en 6ème"
-                  labelKo="Non admis(e) en 6ème"
-                />
-              </div>
-              {candidate.cepAdmission.moyenneEtoiles != null && (
-                <p className="text-[11px] text-slate-600 leading-relaxed">
-                  Moyenne des matières marquées d’un astérisque (*) :{' '}
-                  <b className="text-blue-900">
-                    {fmtNote(candidate.cepAdmission.moyenneEtoiles)}/20
-                  </b>{' '}
-                  — admission en 6ème si cette moyenne est au moins égale à 10/20.
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Notes par matière */}
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-wide text-slate-400 mb-2">
-              Notes par matière
+          {/* Section 2 — Décision officielle */}
+          <section className="space-y-3">
+            <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
+              Décision officielle
             </p>
-            <div className="overflow-hidden rounded-2xl border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-3.5 py-2.5 text-left text-[9px] font-black text-slate-400 uppercase">
-                      Matière
-                    </th>
-                    <th className="px-3 py-2.5 text-center text-[9px] font-black text-slate-400 uppercase">
-                      {isCep ? 'Note /20' : 'Coef.'}
-                    </th>
-                    <th className="px-3 py-2.5 text-center text-[9px] font-black text-slate-400 uppercase">
-                      {isCep ? 'Détail' : 'Note /20'}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {candidate.lines.map((l) => (
-                    <tr key={l.code} className={l.isAbsent ? 'bg-slate-50/60' : ''}>
-                      <td className="px-3.5 py-2.5">
-                        <span className="text-xs font-bold text-slate-800">
-                          {l.name}
-                          {l.perfectionnement ? ' *' : ''}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-center">
-                        {isCep ? (
-                          <span
-                            className={cn(
-                              'text-xs font-black',
-                              l.isAbsent ? 'text-slate-400' : 'text-slate-800',
-                            )}
-                          >
-                            {l.isAbsent ? 'ABS' : fmtNote(l.score)}
-                          </span>
-                        ) : (
-                          <span className="text-xs font-black text-slate-500">
-                            ×{fmtNote(l.coefficient)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-center">
-                        {isCep ? (
-                          <span className="text-[10px] font-semibold text-slate-500">
-                            {l.isAbsent
-                              ? '—'
-                              : `${fmtNote(l.cm)} + ${fmtNote(l.cp)} (perf.)`}
-                          </span>
-                        ) : (
-                          <span
-                            className={cn(
-                              'text-xs font-black',
-                              l.isAbsent ? 'text-slate-400' : 'text-slate-800',
-                            )}
-                          >
-                            {l.isAbsent ? 'ABS' : fmtNote(l.score)}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+            {/* Décision du jury */}
+            <div
+              className={cn(
+                'flex items-center gap-3 rounded-2xl border p-4',
+                admitted
+                  ? 'border-emerald-200 bg-emerald-50/70'
+                  : 'border-red-200 bg-red-50/70',
+              )}
+            >
+              {admitted ? (
+                <CheckCircle2 className="w-9 h-9 shrink-0 text-emerald-600" />
+              ) : (
+                <XCircle className="w-9 h-9 shrink-0 text-red-600" />
+              )}
+              <div className="min-w-0">
+                <p
+                  className={cn(
+                    'text-lg font-black leading-tight',
+                    admitted ? 'text-emerald-800' : 'text-red-800',
+                  )}
+                >
+                  {admitted ? 'Admis(e)' : 'Ajourné(e)'}
+                </p>
+                {candidate.decisionLabel && (
+                  <p className="text-xs font-semibold text-slate-600 leading-snug mt-0.5">
+                    {candidate.decisionLabel}
+                  </p>
+                )}
+              </div>
             </div>
-            {isCep && (
-              <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
-                Au CEP, la note /20 d’une matière se décompose en note obtenue (CM /18) et
-                note de perfectionnement (CP /2) ; les matières marquées d’un astérisque (*)
-                déterminent l’admission en 6ème.
-              </p>
+
+            {/* Résumé chiffré : moyenne / rang / mention */}
+            <div className="grid grid-cols-3 gap-2.5">
+              <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
+                <p className="text-xl font-black text-blue-900">
+                  {candidate.average != null ? fmtNote(candidate.average) : '—'}
+                </p>
+                <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">
+                  Moyenne /20
+                </p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
+                <p className="text-xl font-black text-blue-900">
+                  {candidate.rank ?? '—'}
+                  <span className="text-xs font-bold text-slate-400">
+                    {candidate.rank ? 'ᵉ' : ''}
+                  </span>
+                </p>
+                <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">Rang</p>
+              </div>
+              <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
+                <p className="text-[13px] font-black text-blue-900 leading-tight mt-1">
+                  {candidate.mention ?? '—'}
+                </p>
+                <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">Mention</p>
+              </div>
+            </div>
+
+            {/* ⭐ CEP — décisions officielles (admission CEP + entrée en 6ème) */}
+            {isCep && candidate.cepAdmission && (
+              <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 space-y-2.5">
+                <p className="text-[10px] font-black uppercase tracking-wide text-blue-900">
+                  Décisions officielles du CEP
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <DecisionPill
+                    ok={candidate.cepAdmission.admisCep}
+                    labelOk="Admis(e) au CEP"
+                    labelKo="Non admis(e) au CEP"
+                  />
+                  <DecisionPill
+                    ok={candidate.cepAdmission.admisSixieme}
+                    labelOk="Admis(e) en 6ème"
+                    labelKo="Non admis(e) en 6ème"
+                  />
+                </div>
+                {candidate.cepAdmission.moyenneEtoiles != null && (
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    Moyenne des matières marquées d’un astérisque (*) :{' '}
+                    <b className="text-blue-900">
+                      {fmtNote(candidate.cepAdmission.moyenneEtoiles)}/20
+                    </b>{' '}
+                    — admission en 6ème si cette moyenne est au moins égale à 10/20.
+                  </p>
+                )}
+              </div>
             )}
-          </div>
+          </section>
 
           {/* Actions */}
           <div className="flex flex-col sm:flex-row gap-2.5 pt-1">

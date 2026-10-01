@@ -8,7 +8,14 @@
  *      - GET /federis/patronat/subscription→ factures (bilan financier)
  *      - GET /federis/patronat/children    → réseau territorial (national)
  *
- * Trois rapports consultables + impression (bilan de session).
+ * ⭐ T46 (2026-10-01) — Onglets « Procès-verbal » et « Statistiques » : la
+ *    reproduction de A à Z du module Examen d'Academia Helm (PV d'évaluation /
+ *    statistiques des notes et moyennes) adaptée aux examens nationaux —
+ *    chaque type d'examen (CEP, BEPC, Baccalauréat, CAP) y trouve son PV et
+ *    ses statistiques, avec génération PDF officielle A4 paysage.
+ *
+ * Cinq onglets : Procès-verbal · Statistiques · Bilan de session · Bilan
+ * financier · Réseau & logistique (les trois derniers = rapports consolidés).
  */
 
 'use client';
@@ -18,6 +25,9 @@ import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
 import { FedPage, FedStagger, FedStaggerItem, FedCountUp } from '@/components/federis/federis-motion';
+// ⭐ T46 — Procès-verbal & Statistiques par examen (reproduction Helm)
+import FederisProcVerbalTab from './reports/FederisProcVerbalTab';
+import FederisStatsTab from './reports/FederisStatsTab';
 
 interface DashboardData {
   patronat: { name: string; orgLevel: string | null; territoryName?: string | null };
@@ -68,9 +78,13 @@ interface SubscriptionData {
   }>;
 }
 
-type ReportKind = 'SESSION' | 'FINANCIAL' | 'NETWORK';
+type ReportKind = 'PV' | 'STATS' | 'SESSION' | 'FINANCIAL' | 'NETWORK';
 
 const REPORT_TABS: Array<{ kind: ReportKind; label: string; icon: string }> = [
+  // ⭐ T46 — PV et statistiques par examen (CEP/BEPC/BAC/CAP), reproduction
+  //    du module Examen d'Academia Helm — en tête du module.
+  { kind: 'PV', label: 'Procès-verbal', icon: 'document' },
+  { kind: 'STATS', label: 'Statistiques', icon: 'analysis' },
   { kind: 'SESSION', label: 'Bilan de session', icon: 'exams' },
   { kind: 'FINANCIAL', label: 'Bilan financier', icon: 'finance' },
   { kind: 'NETWORK', label: 'Réseau & logistique', icon: 'network' },
@@ -90,7 +104,7 @@ export default function FederisReportsPage() {
   const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeReport, setActiveReport] = useState<ReportKind>('SESSION');
+  const [activeReport, setActiveReport] = useState<ReportKind>('PV');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -127,7 +141,12 @@ export default function FederisReportsPage() {
     return { paidCount: paid.length, unpaidCount: unpaid.length, totalPaid, totalUnpaid };
   }, [subscription]);
 
-  if (loading) {
+  // ⭐ T46 — Les onglets PV / Statistiques ont leur PROPRE chargement (registre
+  //    par examen) : ils s'affichent immédiatement, sans attendre le dashboard
+  //    consolidé (qui ne concerne que les bilans).
+  const isConsolidated = activeReport !== 'PV' && activeReport !== 'STATS';
+
+  if (loading && isConsolidated) {
     return (
       <div className="space-y-6 animate-pulse">
         <div className="h-8 w-72 bg-blue-100 rounded-full" />
@@ -149,23 +168,34 @@ export default function FederisReportsPage() {
             Rapports &amp; Bilans
           </h1>
           <p className="text-sm text-gray-500 mt-1 max-w-xl leading-relaxed">
-            Bilans consolidés de votre patronat — session{' '}
-            {dashboard?.academicYear?.name ?? 'en cours'}, calculés en direct depuis vos données
-            réelles : examens, candidats, centres, facturation et réseau.
+            {isConsolidated ? (
+              <>
+                Bilans consolidés de votre patronat — session{' '}
+                {dashboard?.academicYear?.name ?? 'en cours'}, calculés en direct depuis vos
+                données réelles : examens, candidats, centres, facturation et réseau.
+              </>
+            ) : (
+              <>
+                Procès-verbaux et statistiques officielles par examen — CEP, BEPC, Baccalauréat,
+                CAP — calculés en direct depuis le registre des notes de chaque campagne.
+              </>
+            )}
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="fed-btn-gold px-4 py-2.5 text-sm flex-shrink-0"
-        >
-          <AppIcon name="document" size="submenu" />
-          Imprimer le bilan
-        </button>
+        {isConsolidated && (
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="fed-btn-gold px-4 py-2.5 text-sm flex-shrink-0"
+          >
+            <AppIcon name="document" size="submenu" />
+            Imprimer le bilan
+          </button>
+        )}
       </div>
 
-      {error && (
+      {error && isConsolidated && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-6 py-4 text-sm font-semibold text-red-800">
           {error}
         </div>
@@ -189,6 +219,12 @@ export default function FederisReportsPage() {
           </button>
         ))}
       </div>
+
+      {/* ══════════ PROCÈS-VERBAL (T46 — reproduction Helm, par examen) ══════════ */}
+      {activeReport === 'PV' && <FederisProcVerbalTab />}
+
+      {/* ══════════ STATISTIQUES (T46 — reproduction Helm, par examen) ══════════ */}
+      {activeReport === 'STATS' && <FederisStatsTab />}
 
       {/* ══════════ BILAN DE SESSION ══════════ */}
       {activeReport === 'SESSION' && (

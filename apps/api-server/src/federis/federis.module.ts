@@ -93,6 +93,13 @@ import { FederisPublicResultsController } from './federis-public-results.control
 //    automatique du compte parent — pattern distinctions/bulletins). Importé
 //    ici SANS StudentsModule (ParentProvisioningModule est autonome).
 import { ParentProvisioningModule } from '../students/parent-provisioning.module';
+// ⭐ T46 (2026-10-01) — Module « Rapport et statistiques » : procès-verbal et
+//    statistiques par examen (CEP/BEPC/BAC/CAP) — reproduction de A à Z du
+//    module Examen d'Academia Helm (PvStatsPromotionPdfController/Service),
+//    adaptée aux vraies données Federis (patronat organisateur, registre des
+//    notes, session unique par examen — pas de modes évaluation/trimestriel)
+import { FederisPvStatsPdfService } from './federis-pv-stats-pdf.service';
+import { FederisPvStatsController } from './federis-pv-stats.controller';
 
 @Module({
   imports: [BillingModule, CommunicationModule, ParentProvisioningModule],
@@ -115,6 +122,7 @@ import { ParentProvisioningModule } from '../students/parent-provisioning.module
     FederisSubjectsController,
     FederisSaisieController,
     FederisPublicResultsController,
+    FederisPvStatsController,
   ],
   providers: [
     FederisService,
@@ -147,6 +155,7 @@ import { ParentProvisioningModule } from '../students/parent-provisioning.module
     FederisSchoolDirectoryService,
     FederisSaisieService,
     FederisPublicResultsService,
+    FederisPvStatsPdfService,
   ],
   exports: [
     FederisService,

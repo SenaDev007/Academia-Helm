@@ -4,6 +4,14 @@
  * Charge la liste des examens nationaux du patronat (année scolaire active)
  * et gère la sélection courante (paramètre ?exam= pour les liens croisés
  * Examens → Centres → Candidats).
+ *
+ * ⭐ T45 — Sélection initiale canonique : l'API renvoie les examens triés par
+ * date de début décroissante, si bien que le premier de la liste était souvent
+ * le baccalauréat — les modules Délibération, Notes & Moyennes et Candidats
+ * s'ouvraient donc sur l'onglet « Baccalauréat » au lieu du PREMIER onglet.
+ * La sélection par défaut honore désormais l'ordre canonique des types
+ * (CEP → BEPC → BAC → CAP, celui des barres d'onglets) : le premier examen
+ * du premier type disponible (typiquement le CEP) est sélectionné d'office.
  */
 
 'use client';
@@ -25,6 +33,10 @@ export interface FederisExam {
   candidatesCount: number;
 }
 
+/** ⭐ T45 — Ordre canonique des types d'examen (celui des barres d'onglets).
+ *  La sélection par défaut s'ouvre sur le PREMIER type disponible (CEP). */
+const EXAM_TYPE_ORDER = ['CEP', 'BEPC', 'BAC', 'CAP'] as const;
+
 export function useFederisExams() {
   const searchParams = useSearchParams();
   const [exams, setExams] = useState<FederisExam[]>([]);
@@ -33,14 +45,19 @@ export function useFederisExams() {
   const [error, setError] = useState<string | null>(null);
   const [examId, setExamId] = useState<string | null>(null);
 
-  // Sélection initiale : ?exam= puis premier examen de la liste
+  // ⭐ T45 — Sélection initiale : ?exam= puis premier examen du PREMIER type
+  // canonique disponible (CEP → BEPC → BAC → CAP) — plus exams[0] (tri
+  // chronologique descendant = baccalauréat par défaut).
   useEffect(() => {
     if (examId) return;
     const fromUrl = searchParams?.get('exam');
     if (fromUrl) {
       setExamId(fromUrl);
     } else if (exams.length > 0) {
-      setExamId(exams[0].id);
+      const firstCanonical = EXAM_TYPE_ORDER.map((t) =>
+        exams.find((e) => (e.examType ?? 'CEP') === t),
+      ).find(Boolean);
+      setExamId((firstCanonical ?? exams[0]).id);
     }
   }, [searchParams, exams, examId]);
 

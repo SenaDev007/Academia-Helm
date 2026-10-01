@@ -2311,7 +2311,11 @@ function BulletinSecondairePage1({
               <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px] uppercase min-w-[36px]">IE1</th>
               <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px] uppercase min-w-[36px]">IE2</th>
               <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px] uppercase min-w-[36px]">DS1</th>
-              <th className="border-b border-black px-1 py-0.5 font-bold text-center text-[9px] uppercase min-w-[36px]">DS2</th>
+              {/* ⭐ T30 — FIX : border-r sur DS2 (le filet vertical DS2|Moyenne
+                  manquait). Le sous-en-tête vit dans sa propre ligne <tr>, la
+                  règle « dernière colonne sans filet » ne doit s'appliquer
+                  qu'à la colonne Signature, pas à DS2. */}
+              <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px] uppercase min-w-[36px]">DS2</th>
             </tr>
           </thead>
           <tbody>
@@ -2327,7 +2331,14 @@ function BulletinSecondairePage1({
                     <td className="border-r border-b border-black px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.int2, s.int2 === null && s.secHasSlot) : '—'}</td>
                     <td className="border-r border-b border-black px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.moyInter, s.isAbsent) : '—'}</td>
                     <td className="border-r border-b border-black px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.ds1, s.ds1 === null && s.secHasSlot) : '—'}</td>
-                    <td className="border-b border-black px-1 py-0.5 text-center font-bold">{s ? noteCell(s.moyenne, s.isAbsent) : '—'}</td>
+                    {/* ⭐ T30 — FIX CRITIQUE : la cellule DS2 manquait entièrement
+                        dans les lignes de matières → toutes les colonnes suivantes
+                        étaient décalées d'un cran vers la gauche (Moyenne affichait
+                        le rang, Rang affichait l'appréciation, Appréciation était
+                        vide, la colonne Signature n'avait plus de cellule du tout
+                        → filets horizontaux absents). */}
+                    <td className="border-r border-b border-black px-1 py-0.5 text-center font-semibold">{s ? noteCell(s.ds2, s.ds2 === null && s.secHasSlot) : '—'}</td>
+                    <td className="border-r border-b border-black px-1 py-0.5 text-center font-bold">{s ? noteCell(s.moyenne, s.isAbsent) : '—'}</td>
                     {!isJunior && (<><td className="border-r border-b border-black px-1 py-0.5 text-center font-bold">{s?.coefficient ?? subject.coefficient ?? 1}</td><td className="border-r border-b border-black px-1 py-0.5 text-center font-bold">{fmtS(s?.noteCoef)}</td></>)}
                     <td className="border-r border-b border-black px-1 py-0.5 text-center font-bold text-slate-700">{s?.subjectRank ? formatRank(s.subjectRank, student.gender === 'FEMALE' || student.gender === 'F') : '—'}</td>
                     <td className="border-r border-b border-black px-1 py-0.5 text-center text-slate-600 text-[9px]"><span className={appreciationSecondaireClassName(s?.appreciation || '—')}>{s?.appreciation || '—'}</span></td>

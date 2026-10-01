@@ -1198,11 +1198,11 @@ ${page2Content}
     //    Raccourcir les libellés permet d'ajouter la colonne « Professeur »
     //    sans déborder en largeur sur l'A4 portrait.
     const tableHeader = `
-      <tr style="background:#fff;color:#000;">
+      <tr>
         <th rowspan="2" style="padding:4px 3px;font-size:9px;text-transform:uppercase;text-align:left;">Discipline</th>
-        <th colspan="2" style="padding:4px 3px;font-size:9px;text-transform:uppercase;">Inter. écrites</th>
+        <th colspan="2" style="padding:4px 3px;font-size:9px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,0.35);">Inter. écrites</th>
         <th rowspan="2" style="padding:4px 3px;font-size:8px;text-transform:uppercase;">Moy d'inter</th>
-        <th colspan="2" style="padding:4px 3px;font-size:9px;text-transform:uppercase;">Devoirs surveillés</th>
+        <th colspan="2" style="padding:4px 3px;font-size:9px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,0.35);">Devoirs surveillés</th>
         <th rowspan="2" style="padding:4px 3px;font-size:9px;text-transform:uppercase;">Moy</th>
         ${!isJunior ? `
         <th rowspan="2" style="padding:4px 3px;font-size:8px;text-transform:uppercase;">Coef</th>
@@ -1211,11 +1211,11 @@ ${page2Content}
         <th rowspan="2" style="padding:4px 3px;font-size:8px;text-transform:uppercase;">Appréciation</th>
         <th rowspan="2" style="padding:4px 3px;font-size:8px;text-transform:uppercase;">Professeur</th>
       </tr>
-      <tr style="background:#fff;color:#000;">
+      <tr>
         <th style="padding:3px;font-size:9px;">IE1</th>
         <th style="padding:3px;font-size:9px;">IE2</th>
         <th style="padding:3px;font-size:9px;">DS1</th>
-        <th style="padding:3px;font-size:9px;border-right:1px solid #000;">DS2</th>
+        <th style="padding:3px;font-size:9px;border-right:1px solid rgba(255,255,255,0.35);">DS2</th>
       </tr>`;
 
     // ── Lignes de totaux + moyenne trimestrielle (colspans : 6e/5e = 10
@@ -1242,8 +1242,15 @@ ${page2Content}
       </tr>`;
 
     // ── Récap du 3e trimestre (moyennes T1 + T2 + moyenne annuelle + passage) ──
+    //    ⭐ T34 — DÉPLACÉ après le bloc « Résultats de classe » (ordre exigé
+    //    par le promoteur : notes → assiduité → résultats de classe →
+    //    récapitulatif de l'année → conseil). Marges : margin-top:0 (le bloc
+    //    Résultats ci-dessus fournit déjà 8px) + margin-bottom:8px avant le
+    //    bloc conseil. ⭐ T34 anti-lignes-manquantes : break-inside:avoid —
+    //    le bloc ne doit JAMAIS être coupé entre deux pages d'impression
+    //    (fragmentation Chromium = bordures perdues de façon intermittente).
     const recapBlock = data.secRecap ? `
-      <div style="margin-top:6px;border:2px solid #000;border-radius:8px;overflow:hidden;">
+      <div class="blk-avoid" style="margin-top:0;margin-bottom:8px;border:2px solid #000;border-radius:8px;overflow:hidden;">
         <div style="background:#0A2A5E;color:white;font-size:9px;font-weight:bold;text-transform:uppercase;text-align:center;padding:3px;">Récapitulatif de l'année (3e trimestre)</div>
         <table style="width:100%;border-collapse:collapse;font-size:10px;">
           <tr>
@@ -1302,13 +1309,23 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
    (border-collapse:separate peignait chaque cellule séparément → joints
    visibles à chaque jonction de ligne = aspect pointillé). */
 table.notes { width:100%; border-collapse:collapse; }
-table.notes th { background:#fff; color:#000; border-right:1px solid #000; border-bottom:1px solid #000; padding:4px 3px; font-size:8px; text-transform:uppercase; }
+/* ⭐ T34 — EN-TÊTE MIS EN VALEUR : fond navy + texte blanc (comme la ligne
+   « Moyenne trimestrielle ») pour que l'en-tête ne se confonde plus avec
+   les lignes de matières. Séparateurs internes blancs translucides (visibles
+   sur le navy) ; filet inférieur NOIR = séparation nette avec la 1re matière. */
+table.notes thead { display:table-header-group; }
+table.notes th { background:#0A2A5E; color:#fff; border-right:1px solid rgba(255,255,255,0.35); border-bottom:1px solid #000; padding:4px 3px; font-size:8px; text-transform:uppercase; }
 table.notes td { border-right:1px solid #000; border-bottom:1px solid #000; padding:3px 2px; }
 table.notes th:last-child, table.notes td:last-child { border-right:none; }
 table.notes tbody tr:last-child td { border-bottom:none; }
+/* ⭐ T34 — ANTI-LIGNES-MANQUANTES : une ligne de matière ne doit jamais être
+   coupée en deux par un saut de page (bordures collapse perdues au point de
+   fragmentation selon la hauteur des données → « certaines générations
+   seulement ») ; la grande table fragmente ENTRE ses lignes, jamais au milieu. */
+table.notes tr { break-inside:avoid; page-break-inside:avoid; }
 /* ⭐ T32 — idem infos élève : cadre sur le wrapper .info-wrap, grille interne
    en collapse (le trait coupé au coin supérieur droit disparaît). */
-.info-wrap { border:1px solid #000; border-radius:6px; overflow:hidden; margin-bottom:6px; }
+.info-wrap { border:1px solid #000; border-radius:6px; overflow:hidden; margin-bottom:6px; break-inside:avoid; page-break-inside:avoid; }
 .info-table { width:100%; border-collapse:collapse; }
 .info-table td { border-right:1px solid #000; border-bottom:1px solid #000; padding:3px 5px; font-size:9px; background:#f1f5f9; }
 .info-table td:last-child { border-right:none; }
@@ -1316,6 +1333,11 @@ table.notes tbody tr:last-child td { border-bottom:none; }
 /* ⭐ 2026-09-28 — Footer reste au PIED de la page (flex pousse en bas),
    ne flotte plus en haut si la page est vide. */
 .footer { margin-top:auto; padding-top:6px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; }
+/* ⭐ T34 — les blocs de bas de page (assiduité, résultats, récap, conseil,
+   QR) ne doivent jamais être fragmentés entre deux pages : Chromium perd
+   des bordures de façon intermittente quand un bloc chevauche un saut de
+   page (perte dépendante de la hauteur réelle des données). */
+.blk-avoid { break-inside:avoid; page-break-inside:avoid; }
 </style>
 </head>
 <body>
@@ -1374,7 +1396,10 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   <!-- TABLEAU DES NOTES — ⭐ T30 : plus de wrapper navy en doublon.
       ⭐ T32 : le cadre arrondi 2px est porté par ce wrapper div (Chromium
       peint mal border-radius directement sur <table>) et la grille interne
-      est en border-collapse:collapse → filets continus. -->
+      est en border-collapse:collapse → filets continus.
+      ⭐ T34 — l'en-tête est navy/blanc (mis en valeur, comme la ligne
+      moyenne) ; la grande table peut fragmenter ENTRE ses lignes vers la
+      page 2 (lignes insécables + thead répété). -->
   <div style="border:2px solid #000;border-radius:8px;overflow:hidden;">
     <table class="notes">
       <thead>${tableHeader}</thead>
@@ -1382,10 +1407,10 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
-  ${recapBlock}
-
   <!-- ═══ BLOC : Assiduité (total d'heures depuis module Vie Scolaire) ═══ -->
-  <div style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-top:10px;margin-bottom:8px;">
+  <!-- ⭐ T34 — ordre exigé (T3) : notes → ASSIDUITÉ → résultats de classe →
+      récap année → conseil. ⭐ T34 blk-avoid : jamais coupé entre 2 pages. -->
+  <div class="blk-avoid" style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-top:10px;margin-bottom:8px;">
     <div style="background:#fff;color:#0A2A5E;font-size:9px;font-weight:bold;text-transform:uppercase;text-align:center;padding:3px;border-bottom:1px solid #000;">Assiduité</div>
     <table style="width:100%;border-collapse:collapse;font-size:10px;">
       <tr>
@@ -1402,7 +1427,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   </div>
 
   <!-- ═══ BLOC : Résultats de classe ═══ -->
-  <div style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:8px;">
+  <div class="blk-avoid" style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:8px;">
     <div style="background:#fff;color:#0A2A5E;font-size:9px;font-weight:bold;text-transform:uppercase;text-align:center;padding:3px;border-bottom:1px solid #000;">Résultats de classe</div>
     <table style="width:100%;border-collapse:collapse;font-size:10px;">
       <tr>
@@ -1426,20 +1451,31 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
+  <!-- ⭐ T34 — RÉCAP DE L'ANNÉE DÉPLACÉ ICI (3e trimestre uniquement) : le
+      bloc récapitulatif vient désormais APRÈS « Résultats de classe » et
+      AVANT le bloc conseil — ordre exigé par le promoteur : notes → assiduité
+      → résultats de classe → récapitulatif de l'année → mention du conseil. -->
+  ${recapBlock}
+
+  <!-- ⭐ T34 — GROUPE INSCABLE final : bloc conseil + QR/mention forment le
+      DERNIER groupe — s'ils ne tiennent pas en bas de page 1, ils passent
+      ENSEMBLE sur la page 2 (jamais une ligne QR orpheline seule). -->
+  <div class="blk-avoid">
+
   <!-- ═══ BLOC UNIFIÉ : Mention du conseil de classe + Appréciation + Signatures (3 colonnes) ═══ -->
-  <div style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:8px;">
+  <div class="blk-avoid" style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:8px;">
     <table style="width:100%;border-collapse:collapse;">
       <tr>
         <!-- COLONNE 1 : Mention du conseil de classe (Distinctions + Sanctions en cases à cocher carrées) -->
         <td style="width:34%;vertical-align:top;border-right:1px solid #000;padding:4px;">
-          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Mention du conseil de classe</div>
+          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;text-align:center;">Mention du conseil de classe</div>
           ${(() => {
             const dists = data.allDistinctions || [];
             const distinctions = dists.filter(d => d.type === 'DISTINCTION');
             const sanctions = dists.filter(d => d.type === 'SANCTION');
             const sq = (d: any) => {
               const checked = data.distinctionLabel === d.label;
-              return `<span style="display:inline-block;width:9px;height:9px;margin-right:3px;vertical-align:middle;${checked ? 'background:#0A2A5E;' : 'background:white;'}"></span>`;
+              return `<span style="display:inline-block;width:9px;height:9px;margin-right:3px;vertical-align:middle;border:1px solid #0A2A5E;${checked ? 'background:#0A2A5E;' : 'background:#fff;'}"></span>`;
             };
             let html = '';
             if (distinctions.length > 0) {
@@ -1460,7 +1496,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
         </td>
         <!-- COLONNE 2 : Appréciation du conseil de classe + Nom/Signature professeur principal -->
         <td style="width:33%;vertical-align:top;border-right:1px solid #000;padding:4px;">
-          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Appréciation du conseil de classe</div>
+          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;text-align:center;">Appréciation du conseil de classe</div>
           <div style="font-size:8px;color:#1a1a1a;line-height:1.4;min-height:60px;">
             ${data.councilAppreciation || data.analyseRecommandations || '\u2014'}
           </div>
@@ -1487,13 +1523,15 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   </div>
 
   <!-- QR + MENTION OFFICIELLE -->
-  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
+  <div class="blk-avoid" style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
     <div style="font-size:8px;font-style:italic;font-weight:bold;color:#0A2A5E;">Ce bulletin n'est établi qu'une seule fois,<br/>veuillez le conserver précieusement.</div>
     <div style="text-align:center;">
       <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
       <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
     </div>
   </div>
+
+  </div><!-- /groupe insécable conseil + QR (T34) -->
 
   <!-- ⭐ T30 — numéro officiel Academia Helm en dur : le schoolPhone de l'établissement
       surchargeait un numéro obsolète dans ce footer d'attribution. -->
@@ -1647,16 +1685,28 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
 /* ⭐ T32 — TRAITS CONTINUS (même correctif que le trimestriel) : cadre
    externe sur un WRAPPER <div>, grille interne en border-collapse:collapse. */
 table.notes { width:100%; border-collapse:collapse; }
-table.notes th { background:#fff; color:#000; border-right:1px solid #000; border-bottom:1px solid #000; padding:5px 3px; font-size:8px; text-transform:uppercase; }
+/* ⭐ T34 — EN-TÊTE MIS EN VALEUR : fond navy + texte blanc (comme la ligne
+   « Moyenne de l'évaluation ») pour ne pas confondre l'en-tête avec les
+   matières. Séparateurs internes blancs translucides, filet inférieur noir. */
+table.notes thead { display:table-header-group; }
+table.notes th { background:#0A2A5E; color:#fff; border-right:1px solid rgba(255,255,255,0.35); border-bottom:1px solid #000; padding:5px 3px; font-size:8px; text-transform:uppercase; }
 table.notes td { border-right:1px solid #000; border-bottom:1px solid #000; padding:4px 3px; }
 table.notes th:last-child, table.notes td:last-child { border-right:none; }
 table.notes tbody tr:last-child td { border-bottom:none; }
+/* ⭐ T34 — ANTI-LIGNES-MANQUANTES : une ligne ne doit jamais être coupée en
+   deux par un saut de page (bordures collapse perdues au point de
+   fragmentation) ; la table fragmente ENTRE ses lignes, jamais au milieu. */
+table.notes tr { break-inside:avoid; page-break-inside:avoid; }
 /* ⭐ T32 — idem infos élève : cadre sur le wrapper .info-wrap. */
-.info-wrap { border:1px solid #000; border-radius:6px; overflow:hidden; margin-bottom:6px; }
+.info-wrap { border:1px solid #000; border-radius:6px; overflow:hidden; margin-bottom:6px; break-inside:avoid; page-break-inside:avoid; }
 .info-table { width:100%; border-collapse:collapse; }
 .info-table td { border-right:1px solid #000; border-bottom:1px solid #000; padding:3px 5px; font-size:9px; background:#f1f5f9; }
 .info-table td:last-child { border-right:none; }
 .info-table tr:last-child td { border-bottom:none; }
+/* ⭐ T34 — les blocs de bas de page ne doivent jamais être fragmentés entre
+   deux pages (Chromium perd des bordures de façon intermittente quand un
+   bloc chevauche un saut de page). */
+.blk-avoid { break-inside:avoid; page-break-inside:avoid; }
 /* ⭐ 2026-09-28 — Footer reste au PIED de la page (flex pousse en bas). */
 .footer { margin-top:auto; padding-top:6px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; }
 </style>
@@ -1713,7 +1763,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   <div style="border:2px solid #000;border-radius:8px;overflow:hidden;">
     <table class="notes">
       <thead>
-        <tr style="background:#fff;color:#000;">
+        <tr>
           <th style="padding:5px 4px;font-size:9px;text-transform:uppercase;text-align:left;">Discipline</th>
           <th style="padding:5px 4px;font-size:9px;text-transform:uppercase;">Note /20</th>
           <th style="padding:5px 4px;font-size:9px;text-transform:uppercase;">Rang</th>
@@ -1732,7 +1782,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   </div>
 
   <!-- ═══ BLOC : Assiduité (total d'heures depuis module Vie Scolaire) ═══ -->
-  <div style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-top:10px;margin-bottom:8px;">
+  <div class="blk-avoid" style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-top:10px;margin-bottom:8px;">
     <div style="background:#fff;color:#0A2A5E;font-size:9px;font-weight:bold;text-transform:uppercase;text-align:center;padding:3px;border-bottom:1px solid #000;">Assiduité</div>
     <table style="width:100%;border-collapse:collapse;font-size:10px;">
       <tr>
@@ -1749,7 +1799,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   </div>
 
   <!-- ═══ BLOC : Résultats de classe ═══ -->
-  <div style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:8px;">
+  <div class="blk-avoid" style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:8px;">
     <div style="background:#fff;color:#0A2A5E;font-size:9px;font-weight:bold;text-transform:uppercase;text-align:center;padding:3px;border-bottom:1px solid #000;">Résultats de classe</div>
     <table style="width:100%;border-collapse:collapse;font-size:10px;">
       <tr>
@@ -1773,19 +1823,25 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
+  <!-- ⭐ T34 — GROUPE INSCABLE final : bloc conseil + QR/mention forment le
+      DERNIER groupe — s'ils ne tiennent pas en bas de page 1, ils passent
+      ENSEMBLE sur la page 2 (jamais une ligne QR orpheline seule). -->
+  <div class="blk-avoid">
+
   <!-- ═══ BLOC UNIFIÉ : Mention du conseil de classe + Appréciation + Signatures (3 colonnes) ═══ -->
-  <div style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:8px;">
+  <!-- ⭐ T34 — groupe insécable conseil + QR (cf. div englobant). -->
+  <div class="blk-avoid" style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:8px;">
     <table style="width:100%;border-collapse:collapse;">
       <tr>
         <td style="width:34%;vertical-align:top;border-right:1px solid #000;padding:4px;">
-          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Mention du conseil de classe</div>
+          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;text-align:center;">Mention du conseil de classe</div>
           ${(() => {
             const dists = data.allDistinctions || [];
             const distinctions = dists.filter(d => d.type === 'DISTINCTION');
             const sanctions = dists.filter(d => d.type === 'SANCTION');
             const sq = (d: any) => {
               const checked = data.distinctionLabel === d.label;
-              return `<span style="display:inline-block;width:9px;height:9px;margin-right:3px;vertical-align:middle;${checked ? 'background:#0A2A5E;' : 'background:white;'}"></span>`;
+              return `<span style="display:inline-block;width:9px;height:9px;margin-right:3px;vertical-align:middle;border:1px solid #0A2A5E;${checked ? 'background:#0A2A5E;' : 'background:#fff;'}"></span>`;
             };
             let html = '';
             if (distinctions.length > 0) {
@@ -1805,7 +1861,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
           })()}
         </td>
         <td style="width:33%;vertical-align:top;border-right:1px solid #000;padding:4px;">
-          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Appréciation du conseil de classe</div>
+          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;text-align:center;">Appréciation du conseil de classe</div>
           <div style="font-size:8px;color:#1a1a1a;line-height:1.4;min-height:60px;">
             ${data.councilAppreciation || data.analyseRecommandations || '\u2014'}
           </div>
@@ -1831,13 +1887,15 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   </div>
 
   <!-- QR + MENTION OFFICIELLE -->
-  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
+  <div class="blk-avoid" style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
     <div style="font-size:8px;font-style:italic;font-weight:bold;color:#0A2A5E;">Ce bulletin n'est établi qu'une seule fois,<br/>veuillez le conserver précieusement.</div>
     <div style="text-align:center;">
       <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
       <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
     </div>
   </div>
+
+  </div><!-- /groupe insécable conseil + QR (T34) -->
 
   <!-- ⭐ T30 — numéro officiel Academia Helm en dur : le schoolPhone de l'établissement
       surchargeait un numéro obsolète dans ce footer d'attribution. -->
@@ -2711,6 +2769,8 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
       <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
     </div>
   </div>
+
+  </div><!-- /groupe insécable conseil + QR (T34) -->
 
   <!-- ⭐ T30 — numéro officiel Academia Helm en dur : le schoolPhone de l'établissement
       surchargeait un numéro obsolète dans ce footer d'attribution. -->

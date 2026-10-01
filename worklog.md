@@ -12540,3 +12540,56 @@ Stage Summary:
 - Le bug « Examen blanc · [object Object] » est corrigé à la racine (mauvais champ session sérialisé) + garde-fou d'affichage.
 - Le résultat s'affiche dans un MODAL centré : célébration complète à l'admission (salves + confettis + coche animée + « Félicitations ! »), empathie à l'échec (emoji triste animé), toutes les informations clés structurées ; résultat unique = ouverture automatique.
 - À valider post-déploiement : ouvrir un lien public, vérifier l'absence de header, les feux d'artifice, le libellé de session correct sous le titre, et la recherche d'un admis puis d'un ajourné (modal + effets).
+
+---
+Task ID: 44
+Agent: Super Z (principal)
+Task: Modal de la page publique de consultation des résultats (/federis/resultats/[token]) — SUPPRIMER la section « Notes par matière » ; le modal ne doit plus contenir que « Informations du candidat » et « Décision officielle »
+
+Work Log:
+- SUPPRESSION du bloc « Notes par matière » du ResultModal (tableau par matière avec détail CM/CP, note explicative CEP) — la consultation publique reste volontairement synthétique sur demande du promoteur.
+- Restructuration du corps du modal en EXACTEMENT 2 <section> : (1) « Informations du candidat » — nom et prénoms, matricule, n° de table, école de provenance, centre d'examen ; (2) « Décision officielle » — bloc décision du jury (Admis(e)/Ajourné(e) + icône CheckCircle2/XCircle sur fond émeraude/rouge + decisionLabel), résumé chiffré Moyenne/20 · Rang · Mention, et décisions officielles du CEP (pills Admis au CEP / Admis en 6ème + moyenne des matières étoilées).
+- Interface LookupCandidate : `lines: ResultLine[]` conservé avec commentaire T44 (contrat API documenté, plus affiché).
+- Commentaires d'en-tête (fichier + composant) actualisés — traçabilité de la décision produit.
+- Effets T43 INTACTS (Félicitations + feux d'artifice + confettis / emoji triste 😞, Escape, verrou scroll).
+- Vérification : scripts/verify_task44_46.cjs section A — 10 contrôles (section absente, 2 sections exactement, décision dans le corps, résumé chiffré, CEP, T43 non régressé).
+
+Stage Summary:
+- Le modal de consultation publique ne contient plus que DEUX sections : Informations du candidat + Décision officielle (décision du jury, moyenne, rang, mention, décisions CEP) — plus aucun tableau de notes par matière.
+- À valider post-déploiement : ouvrir un lien public, rechercher un candidat → modal à 2 sections, sans notes par matière.
+
+---
+Task ID: 45
+Agent: Super Z (principal)
+Task: Onglet par défaut des modules Federis — Délibération, Notes et Moyennes et Candidats s'ouvraient sur « Baccalauréat » au lieu du PREMIER onglet (CEP)
+
+Work Log:
+- CAUSE RACINE : le hook partagé useFederisExams (6 pages : Délibérations, Grades, Candidats, Centres, Examens, Reports) sélectionnait exams[0] en l'absence de ?exam= — or l'API /federis/exams trie par startDate DESC, donc le premier examen de la liste était souvent le baccalauréat.
+- FIX CENTRAL (un seul point) : EXAM_TYPE_ORDER = ['CEP', 'BEPC', 'BAC', 'CAP'] (l'ordre des barres d'onglets) ; la sélection initiale prend le premier examen du PREMIER type canonique disponible (firstCanonical), repli exams[0] si aucun type connu ; ?exam= reste prioritaire (liens croisés) ; repli défensif examType ?? 'CEP' (même logique que examsByType).
+- Effet : les 3 modules cités (et tous ceux qui utilisent le hook) s'ouvrent sur l'onglet CEP par défaut.
+- Vérification : verify_task44_46.cjs section B — 6 contrôles structurels + RUNTIME du sélecteur sur 5 scénarios (Bac en tête → CEP sélectionné ; CEP absent → BEPC ; types inconnus → repli exams[0] ; examType null → traité CEP).
+
+Stage Summary:
+- Tous les modules workflow Federis (Délibération, Notes et Moyennes, Candidats…) s'ouvrent désormais sur le PREMIER type d'examen (CEP), plus sur le baccalauréat.
+- À valider post-déploiement : ouvrir Délibération / Notes et Moyennes / Candidats sans ?exam= → onglet CEP actif.
+
+---
+Task ID: 46
+Agent: Super Z (principal)
+Task: Module « Rapport et statistiques » (Federis) — reproduire DE A À Z le Procès-verbal et les Statistiques du module Examen d'Academia Helm (procès-verbal + onglet statistiques), pour chaque examen (CEP, BEPC, Baccalauréat, CAP), adaptés aux vraies données Federis
+
+Work Log:
+- RÉFÉRENCE : ProcVerbalWorkspace.tsx (660 l.) + StatsWorkspace.tsx (783 l.) + PvStatsPromotionPdfService (805 l.) du module Examen Helm — lus intégralement et reproduits sans modification de structure.
+- BACKEND — federis-pv-stats-pdf.service.ts (NOUVEAU, ~860 l.) : copie du service Helm (mêmes CSS Times New Roman/navy #0A2A5E, tableaux .data, règles ABBR d'abréviation des matières, drapeau du Bénin SVG base64, A4 PAYSAGE marges 8mm, PuppeteerPoolService). ADAPTATIONS Federis : en-tête = République du Bénin + PATRONAT ORGANISATEUR (legalName, territoire/pays, adresse, tél, email, logo) + intitulé officiel de l'examen (officialExamTitle) ; session officielle examSessionLabel (même source que le relevé) ; examen scopé au tenant (findFirst id+tenantId → 404) ; PV = tableau Matricule | Nom et prénoms | [matières abbr+Coef] | Total | Coef | Moyenne | Rang + Trois premiers/Trois derniers + tri mérite/alphabétique + ABSENTS « ABS » (score-absent, donnée du registre absente du Helm) ; Stats = taux de réussite G/F/T ×4 (présents/admis/% réussite/% échec) + graphique bar-chart des admis + intervalles + Top N (colonne « École » de provenance au lieu de « Classe ») ; footer « Document officiel généré par Academia Frederis — {patronat} » ; AuditLog FEDERIS_PV_PDF/FEDERIS_STATS_PDF ; tout contenu dynamique échappé (esc).
+- BACKEND — federis-pv-stats.controller.ts (NOUVEAU) : POST /federis/exams/:examId/reports/proces-verbal et /statistiques (JwtAuthGuard + StreamableFile + Content-Disposition — pattern exact du contrôleur Helm : le FRONT calcule les tableaux, le BACKEND résout le branding et rend). Enregistré dans federis.module.ts (controllers + providers).
+- FRONTEND — reports/FederisReportsShared.tsx (NOUVEAU) : socle commun — REPORT_EXAM_TYPES (CEP→BEPC→BAC→CAP), useExamTypeScope (catégorisation + sélection, défaut CEP via T45), useExamRegistry (source = GET /federis/exams/:id/grades/registry — le REGISTRE OFFICIEL : matières, notes, moyennes finalAverage et rangs selon les règles effectives), ExamScopeBar (barre d'onglets par type + sélecteur de campagne + badge statut — pattern exact de la page Délibération).
+- FRONTEND — reports/FederisProcVerbalTab.tsx (NOUVEAU) : reproduction du ProcVerbalWorkspace — filtre classement (mérite par défaut/alphabétique), grand tableau avec matières dynamiques (abbr + Coef, notes 2 décimales, <10 rouge, ABS ambre, — pour non saisi), Total/Coef selon le MODÈLE EFFECTIF (CEP simple : Σ notes/nb matières ; pondéré : Σ note×coef/Σ coef), Moyenne = finalAverage et Rang = rang officiel du registre, mini-tableaux Trois premiers/Trois derniers, bouton « Générer PDF » (POST payload + blob download).
+- FRONTEND — reports/FederisStatsTab.tsx (NOUVEAU) : reproduction du StatsWorkspace — onglets Statistiques des notes | des moyennes, sous-onglets Taux de réussite | Intervalle | Meilleures, sélecteur Top 3/5/10/20 ; taux par matière (présents = notes non-absentes, admis = ≥ 10/20, ventilation G/F/T), 8 intervalles du Helm (0-3, 3-7, 7-9, 9-10, 10-12, 12-14, 14-16, 16-20), meilleures notes (toutes matières) et meilleures moyennes (finalAverage) avec école de provenance + appréciation, graphique en barres des admis par matière, bouton PDF.
+- FRONTEND — FederisReportsPage.tsx : 5 onglets — « Procès-verbal » et « Statistiques » EN TÊTE (défaut = PV), les 3 bilans existants conservés (session, financier, réseau) ; les onglets PV/Stats s'affichent SANS attendre le dashboard consolidé (isConsolidated) ; bouton « Imprimer le bilan » et bandeau d'erreur réservés aux bilans.
+- VÉRIFICATIONS : scripts/verify_task44_46.cjs 88/88 (T44 10 + T45 6+5 runtime + T46 backend 25 + front 23 + SWC 9 fichiers + module 3) ; scripts/render_task46_pvstats.cjs 33/33 — RUNTIME du VRAI service transpilé SWC + harnais vm : PV (en-tête République + drapeau + patronat + intitulé CEP + session, MATH/FR/SVT via règles ABBR, Coef 4/2, 16.00/15.50, ABS, couleurs score-pass/score-fail, ordre mérite ET alphabétique, Trois premiers/derniers, footer) et Stats (G/F/T ×4, 66.7%/50.0%, barres proportionnelles 100%/50%, 8 intervalles, Top 3 + École + Très Bien, moyennes) ; HTML de preuve sauvegardés (download/task46-pv.html, task46-stats-*.html). Anti-régression : verify_task42_43.cjs 99/99, verify_task23.cjs 10/10. Type-check : web-app 631 AVANT = 631 APRÈS (git stash — zéro nouvelle erreur) ; api-server : seules les erreurs Prisma sandbox préexistantes sur les nouveaux fichiers (même classe que federis-grades.service.ts — patronat/nationalExam/auditLog inconnus du client Prisma local) + 2 erreurs de typage du contrôleur corrigées (pattern @Body() body: any du contrôleur Helm).
+- Commit poussé : 048fe960c sur origin/main → Railway (API) + Vercel (web-app) redéploient.
+
+Stage Summary:
+- Le module Rapport et statistiques Federis contient désormais les onglets « Procès-verbal » et « Statistiques » (en tête, PV par défaut) qui donnent le PV et les statistiques POUR CHAQUE EXAMEN (CEP, BEPC, Baccalauréat, CAP — barre d'onglets par type + sélecteur de campagne, défaut CEP).
+- Reproduction de A à Z du module Examen Helm : mêmes tableaux, mêmes sous-onglets, mêmes libellés, mêmes PDF A4 paysage à l'en-tête officiel — seules adaptations : le périmètre examen national (session unique, pas de modes évaluation/trimestriel/annuel), le patronat organisateur en en-tête, les données du registre officiel (moyennes et rangs selon les règles de calcul effectives), la colonne « École » de provenance et le marquage « ABS » des absents.
+- À valider post-déploiement : Rapport et statistiques → onglet Procès-verbal (CEP par défaut) → tableau complet + Trois premiers/derniers + « Générer PDF » ; onglet Statistiques → taux de réussite (G/F/T + graphique), intervalle, meilleures notes/moyennes (Top 3/5/10/20) + PDF ; vérifier l'onglet par défaut CEP dans Délibération / Notes et Moyennes / Candidats ; ouvrir un lien public de consultation → modal à 2 sections (sans notes par matière).

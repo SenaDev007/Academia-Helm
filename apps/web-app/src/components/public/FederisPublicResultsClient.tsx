@@ -49,7 +49,6 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
-import { fmtNote } from '@/lib/federis/grade-computations';
 
 // ─── Types (réponses API publiques) ─────────────────────────────────────────
 
@@ -97,7 +96,7 @@ interface LookupCandidate {
   rank: number | null;
   nbEval: number;
   mention: string | null;
-  decision: 'ADMIS' | 'AJOURNE' | null;
+  decision: 'ADMIS' | 'AJOURNE' | 'REFUSE' | null;
   decisionLabel: string | null;
   cepAdmission: {
     admisCep: boolean;
@@ -942,21 +941,17 @@ export default function FederisPublicResultsClient({ token }: { token: string })
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ⭐ T38 — Modal de résultat d'un candidat (centré à l'écran)
+// ⭐ T51 — Modal de résultat d'un candidat (centré à l'écran, FORMAT PAYSAGE)
 // ═══════════════════════════════════════════════════════════════════════════
-// Admis(e)  → effets « waouh » : salves de feux d'artifice (canvas), pluie de
-//             confettis, coche dessinée dans un anneau pulsant, « Félicitations ! »
-//             en pulsation douce — tout le protocole de célébration.
-// Ajourné(e) → effet contrasté et sobre : emoji triste 😞 qui tombe avec un
-//             rebond puis se balance doucement, tons rouges, AUCUNE fête.
-// ⭐ T44 — le corps du modal ne contient plus que DEUX sections :
-//   1. « Informations du candidat »  : nom et prénoms, matricule, numéro de
-//      table, école de provenance, centre d'examen ;
-//   2. « Décision officielle »       : décision du jury (Admis/Ajourné),
-//      moyenne /20, rang, mention et, pour le CEP, les décisions officielles
-//      « Admis au CEP » + « Admis en 6ème » (moyenne des matières *).
-//      Le tableau des notes par matière a été SUPPRIMÉ sur demande du
-//      promoteur — la consultation publique reste volontairement synthétique.
+// Carte LARGE : bandeau décision à gauche + informations à droite (2 colonnes
+// côte à côte sur écran moyen et plus) — plus de long modal « portrait » à
+// faire défiler.
+// Admis(e) → effets « waouh » : feux d'artifice, confettis, coche animée.
+// Ajourné(e) / Refusé(e) → effet sobre : emoji triste, tons rouges.
+// ⭐ T51 — décision officielle VOLONTAIREMENT synthétique :
+//   • Décision du jury : Admis(e) · Ajourné(e) · Refusé(e) — RIEN d'autre
+//     (ni moyenne, ni rang, ni mention, ni notes) ;
+//   • CEP : uniquement « Admis(e) au CEP » et « Admis(e) en 6ème ».
 // Fermeture : Escape, clic sur le fond assombri, bouton croix.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -970,6 +965,8 @@ function ResultModal({
   onClose: () => void;
 }) {
   const admitted = candidate.decision === 'ADMIS';
+  const refused = candidate.decision === 'REFUSE';
+  const decisionText = admitted ? 'Admis(e)' : refused ? 'Refusé(e)' : 'Ajourné(e)';
 
   // Escape ferme le modal ; le scroll de la page est verrouillé tant que le
   // modal est ouvert (restauration de l'état antérieur au démontage).
@@ -1002,10 +999,12 @@ function ResultModal({
         className="fed-backdrop-in absolute inset-0 w-full h-full cursor-default bg-slate-950/70 backdrop-blur-sm"
       />
 
-      {/* Carte centrée (scrollable si l'écran est petit) */}
-      <div className="fed-modal-in relative w-full max-w-lg max-h-[92dvh] overflow-y-auto overscroll-contain bg-white rounded-3xl shadow-2xl ring-1 ring-black/10">
+      {/* ⭐ T51 — Carte PAYSAGE : bandeau décision à gauche + informations à
+          droite (empilées sur mobile). Tout tient à l'écran sans défilement
+          sur un écran de bureau. */}
+      <div className="fed-modal-in relative w-full max-w-3xl max-h-[92dvh] overflow-y-auto overscroll-contain bg-white rounded-3xl shadow-2xl ring-1 ring-black/10 flex flex-col md:flex-row">
 
-        {/* Bouton croix (contraste sur les deux dégradés d'en-tête) */}
+        {/* Bouton croix (contraste sur les deux dégradés du bandeau) */}
         <button
           type="button"
           onClick={onClose}
@@ -1015,10 +1014,10 @@ function ResultModal({
           <X className="w-4 h-4" />
         </button>
 
-        {/* ═══ EN-TÊTE : célébration (admis) / compassion (ajourné) ═══ */}
+        {/* ═══ BANDEAU LATÉRAL — décision du jury ═══ */}
         <div
           className={cn(
-            'relative overflow-hidden px-5 sm:px-7 pt-7 pb-6 text-white',
+            'relative overflow-hidden px-6 py-8 text-white md:w-[42%] shrink-0 flex flex-col items-center justify-center text-center',
             admitted
               ? 'bg-gradient-to-br from-emerald-700 via-emerald-600 to-emerald-500'
               : 'bg-gradient-to-br from-red-700 via-red-600 to-red-500',
@@ -1037,49 +1036,43 @@ function ResultModal({
           />
           <div className="relative flex flex-col items-center text-center gap-1.5 z-10">
             {admitted ? (
-              <>
-                <span className="relative w-16 h-16 text-white shrink-0">
-                  <AnimatedSuccessCheck className="w-16 h-16" />
-                </span>
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/80 mt-1">
-                  Décision du jury
-                </p>
-                <h2 className="fed-celebrate-pulse text-2xl sm:text-3xl font-black leading-tight">
-                  Félicitations !
-                </h2>
-                <p className="text-base sm:text-lg font-black text-white/95 leading-snug">
-                  {candidate.fullName} est admis(e)
-                </p>
-                {candidate.decisionLabel && (
-                  <p className="text-xs text-white/90 font-semibold">{candidate.decisionLabel}</p>
-                )}
-              </>
+              <span className="relative w-16 h-16 text-white shrink-0">
+                <AnimatedSuccessCheck className="w-16 h-16" />
+              </span>
             ) : (
-              <>
-                <span className="fed-sad-drop text-6xl leading-none select-none" aria-hidden>
-                  😞
-                </span>
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/80 mt-1">
-                  Décision du jury
-                </p>
-                <h2 className="text-2xl sm:text-3xl font-black leading-tight">Ajourné(e)</h2>
-                <p className="text-sm font-black text-white/95">{candidate.fullName}</p>
-                {candidate.decisionLabel && (
-                  <p className="text-xs text-white/80 font-semibold">{candidate.decisionLabel}</p>
-                )}
-              </>
+              <span className="fed-sad-drop text-6xl leading-none select-none" aria-hidden>
+                😞
+              </span>
+            )}
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/80 mt-1">
+              Décision du jury
+            </p>
+            <h2
+              className={cn(
+                'font-black leading-tight',
+                admitted ? 'fed-celebrate-pulse text-3xl' : 'text-2xl sm:text-3xl',
+              )}
+            >
+              {admitted ? 'Félicitations !' : decisionText}
+            </h2>
+            <p className="text-sm sm:text-base font-black text-white/95 leading-snug">
+              {candidate.fullName}
+              {admitted && ' est admis(e)'}
+            </p>
+            {candidate.decisionLabel && (
+              <p className="text-xs text-white/85 font-semibold">{candidate.decisionLabel}</p>
             )}
           </div>
         </div>
 
-        {/* ═══ CORPS : 2 sections — Informations du candidat · Décision officielle ═══ */}
-        <div className="p-5 sm:p-6 space-y-5">
+        {/* ═══ COLONNE PRINCIPALE — informations + décisions CEP + actions ═══ */}
+        <div className="flex-1 min-w-0 p-5 sm:p-6 flex flex-col">
           {/* Section 1 — Informations du candidat */}
           <section className="space-y-3">
             <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
               Informations du candidat
             </p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <SheetField label="Nom et prénoms" value={candidate.fullName} wide />
               <SheetField label="Matricule" value={candidate.matricule} mono />
               <SheetField label="N° de table" value={candidate.tableNumber ?? '—'} mono />
@@ -1090,103 +1083,29 @@ function ResultModal({
             </div>
           </section>
 
-          {/* Section 2 — Décision officielle */}
-          <section className="space-y-3">
-            <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
-              Décision officielle
-            </p>
-
-            {/* Décision du jury */}
-            <div
-              className={cn(
-                'flex items-center gap-3 rounded-2xl border p-4',
-                admitted
-                  ? 'border-emerald-200 bg-emerald-50/70'
-                  : 'border-red-200 bg-red-50/70',
-              )}
-            >
-              {admitted ? (
-                <CheckCircle2 className="w-9 h-9 shrink-0 text-emerald-600" />
-              ) : (
-                <XCircle className="w-9 h-9 shrink-0 text-red-600" />
-              )}
-              <div className="min-w-0">
-                <p
-                  className={cn(
-                    'text-lg font-black leading-tight',
-                    admitted ? 'text-emerald-800' : 'text-red-800',
-                  )}
-                >
-                  {admitted ? 'Admis(e)' : 'Ajourné(e)'}
-                </p>
-                {candidate.decisionLabel && (
-                  <p className="text-xs font-semibold text-slate-600 leading-snug mt-0.5">
-                    {candidate.decisionLabel}
-                  </p>
-                )}
+          {/* Section 2 — Décisions officielles du CEP (libellés uniquement) */}
+          {isCep && candidate.cepAdmission && (
+            <section className="mt-5 space-y-3">
+              <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
+                Décisions officielles du CEP
+              </p>
+              <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 flex flex-wrap gap-2">
+                <DecisionPill
+                  ok={candidate.cepAdmission.admisCep}
+                  labelOk="Admis(e) au CEP"
+                  labelKo="Non admis(e) au CEP"
+                />
+                <DecisionPill
+                  ok={candidate.cepAdmission.admisSixieme}
+                  labelOk="Admis(e) en 6ème"
+                  labelKo="Non admis(e) en 6ème"
+                />
               </div>
-            </div>
-
-            {/* Résumé chiffré : moyenne / rang / mention */}
-            <div className="grid grid-cols-3 gap-2.5">
-              <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
-                <p className="text-xl font-black text-blue-900">
-                  {candidate.average != null ? fmtNote(candidate.average) : '—'}
-                </p>
-                <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">
-                  Moyenne /20
-                </p>
-              </div>
-              <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
-                <p className="text-xl font-black text-blue-900">
-                  {candidate.rank ?? '—'}
-                  <span className="text-xs font-bold text-slate-400">
-                    {candidate.rank ? 'ᵉ' : ''}
-                  </span>
-                </p>
-                <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">Rang</p>
-              </div>
-              <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
-                <p className="text-[13px] font-black text-blue-900 leading-tight mt-1">
-                  {candidate.mention ?? '—'}
-                </p>
-                <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">Mention</p>
-              </div>
-            </div>
-
-            {/* ⭐ CEP — décisions officielles (admission CEP + entrée en 6ème) */}
-            {isCep && candidate.cepAdmission && (
-              <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 space-y-2.5">
-                <p className="text-[10px] font-black uppercase tracking-wide text-blue-900">
-                  Décisions officielles du CEP
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <DecisionPill
-                    ok={candidate.cepAdmission.admisCep}
-                    labelOk="Admis(e) au CEP"
-                    labelKo="Non admis(e) au CEP"
-                  />
-                  <DecisionPill
-                    ok={candidate.cepAdmission.admisSixieme}
-                    labelOk="Admis(e) en 6ème"
-                    labelKo="Non admis(e) en 6ème"
-                  />
-                </div>
-                {candidate.cepAdmission.moyenneEtoiles != null && (
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Moyenne des matières marquées d’un astérisque (*) :{' '}
-                    <b className="text-blue-900">
-                      {fmtNote(candidate.cepAdmission.moyenneEtoiles)}/20
-                    </b>{' '}
-                    — admission en 6ème si cette moyenne est au moins égale à 10/20.
-                  </p>
-                )}
-              </div>
-            )}
-          </section>
+            </section>
+          )}
 
           {/* Actions */}
-          <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+          <div className="mt-auto pt-5 flex flex-col sm:flex-row gap-2.5">
             <button
               onClick={onClose}
               className="flex-1 rounded-xl bg-blue-900 px-5 py-3 text-xs font-black uppercase tracking-wide text-white hover:bg-blue-800 inline-flex items-center justify-center gap-2 transition-colors"

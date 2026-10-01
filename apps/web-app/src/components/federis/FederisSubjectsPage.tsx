@@ -488,9 +488,7 @@ export default function FederisSubjectsPage({ userRole }: FederisSubjectsPagePro
           <div className="fed-badge mb-2">Module matières</div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Matières des examens</h1>
           <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-            Créez les matières à examiner pour chaque examen — CEP, BEPC, Baccalauréat (par série) et
-            CAP — avec leurs coefficients et barèmes. Ces matières alimentent le lancement des
-            campagnes, la préparation des épreuves et la saisie des notes.
+            Matières à examiner pour chaque examen, avec coefficients et barèmes.
           </p>
         </div>
         <div className="flex gap-4">

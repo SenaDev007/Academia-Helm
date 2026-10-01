@@ -260,10 +260,7 @@ export default function FederisGradesPage({ userRole }: FederisGradesPageProps) 
           <div className="fed-badge mb-2">Module notes et moyennes</div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Notes et moyennes</h1>
           <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-            Saisie et registre des notes des examens nationaux — reproduit le module Examen
-            d&apos;Academia Helm : saisie du <strong>primaire</strong> pour le CEP (sans coefficients),
-            saisie du <strong>secondaire avec coefficients</strong> pour le BEPC, le BAC et le CAP.
-            Les <strong>relevés de notes</strong> sont générés dans le module <strong>Délibération</strong>.
+            Saisie des notes et registre des moyennes, examen par examen.
           </p>
         </div>
         <div className="flex gap-4">

@@ -222,14 +222,14 @@ export default function FederisCentersPage({ userRole }: FederisCentersPageProps
           `Liste_Centres_Salles_${selectedExam?.code ?? 'examen'}.pdf`,
           'application/pdf',
         );
-        setNotice('Liste des centres et salles PDF générée (backend) — téléchargement lancé.');
+        setNotice('Liste des centres et salles PDF générée — téléchargement lancé.');
       } else {
         await downloadFile(
           `/federis/exams/${examId}/excel/centres`,
           `Liste_Centres_Salles_${selectedExam?.code ?? 'examen'}.xlsx`,
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         );
-        setNotice('Classeur Excel des centres et salles généré (backend) — téléchargement lancé.');
+        setNotice('Classeur Excel des centres et salles généré — téléchargement lancé.');
       }
     } catch (err: any) {
       let msg = err?.response?.data?.message ?? err?.message ?? 'Export impossible.';

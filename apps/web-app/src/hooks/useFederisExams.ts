@@ -98,6 +98,7 @@ export const EXAM_STATUS_STYLES: Record<string, string> = {
   REGISTRATION_CLOSED: 'bg-yellow-100 text-yellow-800',
   IN_PROGRESS: 'bg-green-100 text-green-800',
   COMPLETED: 'bg-purple-100 text-purple-800',
+  RESULTS_PUBLISHED: 'bg-emerald-100 text-emerald-800',
   CANCELLED: 'bg-red-100 text-red-800',
   ARCHIVED: 'bg-gray-100 text-gray-500',
 };
@@ -108,6 +109,7 @@ export const EXAM_STATUS_LABELS: Record<string, string> = {
   REGISTRATION_CLOSED: 'Inscriptions closes',
   IN_PROGRESS: 'En cours',
   COMPLETED: 'Terminé',
+  RESULTS_PUBLISHED: 'Résultats publiés',
   CANCELLED: 'Annulé',
   ARCHIVED: 'Archivé',
 };

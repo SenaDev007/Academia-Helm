@@ -228,7 +228,7 @@ export default function FederisGradeRelevesTab({
         `/federis/exams/${examId}/pdf/releve/${r.candidate.id}`,
         `Releve_${r.examCode}_${r.candidate.matricule}.pdf`,
       );
-      setNotice('Relevé PDF généré (backend) — téléchargement lancé.');
+      setNotice('Relevé PDF généré — téléchargement lancé.');
     } catch (err: any) {
       let msg = err?.response?.data?.message ?? err?.message ?? 'Téléchargement impossible.';
       if (err?.response?.data instanceof Blob) {

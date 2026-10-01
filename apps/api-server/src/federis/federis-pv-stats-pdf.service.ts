@@ -78,6 +78,10 @@ export interface ProcVerbalPayload {
   students: PvStudentPayload[];
   top3?: PvStudentPayload[];
   bottom3?: PvStudentPayload[];
+  /** ⭐ T51 — Titres des mini-tableaux envoyés par le front (ex. « 5 premiers »,
+   *  « 5 derniers ») — repli « Trois premiers » / « Trois derniers ». */
+  top3Title?: string;
+  bottom3Title?: string;
 }
 
 export interface StatsSuccessRow {
@@ -596,15 +600,22 @@ table.data tbody tr:nth-child(even) { background:#f8fafc; }
       })
       .join('');
 
-    // Tableaux 3 premiers + 3 derniers (repli : calcul local comme le Helm)
+    // Tableaux N premiers + N derniers (repli : calcul local comme le Helm).
+    // ⭐ T51 — repli des « derniers » cohérent avec le front : uniquement les
+    //    candidats n'ayant PAS la moyenne (moyenne < 10 ou non évaluée),
+    //    sans reprendre un candidat déjà classé parmi les premiers.
     const top3 =
       Array.isArray(data.top3) && data.top3.length > 0
         ? data.top3
         : [...students].sort((a, b) => (a.rang ?? 0) - (b.rang ?? 0)).slice(0, 3);
+    const topIds = new Set(top3.map((s) => s.id));
     const bottom3 =
       Array.isArray(data.bottom3) && data.bottom3.length > 0
         ? data.bottom3
-        : [...students].sort((a, b) => (b.rang ?? 0) - (a.rang ?? 0)).slice(0, 3);
+        : [...students]
+            .filter((s) => !topIds.has(s.id) && (s.moyenne === null || s.moyenne < 10))
+            .sort((a, b) => (a.moyenne ?? -1) - (b.moyenne ?? -1))
+            .slice(0, 3);
 
     const buildMiniTable = (title: string, list: PvStudentPayload[], color: string) => {
       const rows = list
@@ -667,8 +678,8 @@ table.data tbody tr:nth-child(even) { background:#f8fafc; }
   </table>
 
   <div class="two-cols">
-    ${buildMiniTable('Trois premiers', top3, '#16a34a')}
-    ${buildMiniTable('Trois derniers', bottom3, '#dc2626')}
+    ${buildMiniTable(data.top3Title ?? 'Trois premiers', top3, '#16a34a')}
+    ${buildMiniTable(data.bottom3Title ?? 'Trois derniers', bottom3, '#dc2626')}
   </div>
 
   ${this.buildFooter(ctx)}

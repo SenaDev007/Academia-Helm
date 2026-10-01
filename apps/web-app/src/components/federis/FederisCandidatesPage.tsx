@@ -473,14 +473,14 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
           `Liste_Officielle_Candidats_${selectedExam.code}.pdf`,
           'application/pdf',
         );
-        setNotice('Liste officielle PDF générée (backend) — téléchargement lancé.');
+        setNotice('Liste officielle PDF générée — téléchargement lancé.');
       } else {
         await downloadFile(
           `/federis/exams/${examId}/excel/candidats`,
           `Liste_Candidats_${selectedExam.code}.xlsx`,
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         );
-        setNotice('Classeur Excel généré (backend) — téléchargement lancé.');
+        setNotice('Classeur Excel généré — téléchargement lancé.');
       }
     } catch (err: any) {
       let msg = err?.response?.data?.message ?? err?.message ?? 'Export impossible.';
@@ -509,9 +509,7 @@ export default function FederisCandidatesPage({ userRole }: FederisCandidatesPag
           <div className="fed-badge mb-2">Module candidats</div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Fichier national des candidats</h1>
           <p className="text-sm text-gray-500 mt-1 max-w-xl">
-            Registre catégorisé par examen — CEP, BEPC, Baccalauréat et CAP dans leurs
-            onglets dédiés. Matricules, écoles de provenance, centres, salles, numéros de
-            table et anonymats (saisie des notes).
+            Registre des candidats par examen — matricules, écoles, centres, salles et numéros de table.
           </p>
         </div>
         <div className="flex gap-4">

@@ -357,18 +357,11 @@ export default function FederisQuestionBankPage() {
       {/* Header — style Helm : titre + description + action, sans panneau sombre */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <div className="flex items-center space-x-2 mb-2">
-            <span className="px-2.5 py-0.5 bg-red-50 border border-red-200 rounded-md text-[11px] font-semibold text-red-700">
-              Niveau de sécurité : maximum
-            </span>
-          </div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
             Banque des Épreuves
           </h1>
           <p className="text-sm text-gray-500 mt-1 max-w-xl leading-relaxed">
-            Gestion centralisée et sécurisée des sujets d&apos;examens du patronat — {resources.length}{' '}
-            épreuve(s) recensée(s) — et catalogue des épreuves officielles classées par
-            année scolaire puis par examen (CEP, BEPC, Baccalauréat, CAP).
+            Sujets d&apos;examens et épreuves officielles du patronat.
           </p>
         </div>
 
@@ -608,17 +601,6 @@ export default function FederisQuestionBankPage() {
                 </button>
               ))}
             </div>
-          </div>
-
-          <div className="fed-card p-6">
-            <div className="flex items-center space-x-3 mb-3">
-              <AppIcon name="warning" size="menu" className="text-amber-600" />
-              <h4 className="text-xs font-semibold text-gray-500 uppercase">Alerte Intégrité</h4>
-            </div>
-            <p className="text-[11px] text-gray-600 leading-relaxed">
-              Tout accès aux sujets verrouillés est tracé par ORION Integrity Guard. Le
-              verrouillage avant les épreuves bloque toute consultation non autorisée.
-            </p>
           </div>
         </div>
 

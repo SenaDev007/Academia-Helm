@@ -11,7 +11,11 @@
  *   - Grand tableau principal : Matricule | Nom et prénoms | [Matières
  *     dynamiques : abréviation + coefficient en sous-titre, note du candidat]
  *     | Total | Coef | Moyenne | Rang ;
- *   - 2 mini-tableaux : Trois premiers / Trois derniers ;
+ *   - 2 mini-tableaux dynamiques : « N premiers » / « N derniers » (N
+ *     sélectionnable : 3, 5 ou 10) — ⭐ T51 : les « derniers » sont
+ *     exclusivement les candidats N'AYANT PAS LA MOYENNE (moyenne < 10 ou
+ *     non évaluée), sans jamais reprendre un candidat déjà classé parmi
+ *     les premiers ;
  *   - Génération PDF A4 paysage (POST backend — même charte officielle que
  *     le Helm : en-tête République du Bénin + patronat organisateur).
  *
@@ -88,6 +92,7 @@ export default function FederisProcVerbalTab() {
   const { data, loading, error } = useExamRegistry(examId);
 
   const [sortMode, setSortMode] = useState<SortMode>('merite');
+  const [topN, setTopN] = useState<number>(3);
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const subjects = data?.subjects ?? [];
@@ -142,14 +147,28 @@ export default function FederisProcVerbalTab() {
     });
   }, [students, sortMode]);
 
-  const top3 = useMemo(
-    () => [...students].sort((a, b) => (a.rang ?? 1e9) - (b.rang ?? 1e9)).slice(0, 3),
-    [students],
+  // ⭐ T51 — « N premiers » : les N meilleures moyennes (rang croissant).
+  const topRows = useMemo(
+    () => [...students].sort((a, b) => (a.rang ?? 1e9) - (b.rang ?? 1e9)).slice(0, topN),
+    [students, topN],
   );
-  const bottom3 = useMemo(
-    () => [...students].sort((a, b) => (b.rang ?? -1e9) - (a.rang ?? -1e9)).slice(0, 3),
-    [students],
-  );
+
+  // ⭐ T51 — « N derniers » : exclusivement les candidats N'AYANT PAS LA
+  //    MOYENNE requise (moyenne < 10/20 ou non évaluée), triés de la moyenne
+  //    la plus faible à la plus forte (les non évalués en tête), SANS jamais
+  //    reprendre un candidat déjà classé parmi les premiers. Plus aucun
+  //    candidat admis ne peut donc apparaître dans les deux tableaux.
+  const bottomRows = useMemo(() => {
+    const topIds = new Set(topRows.map((s) => s.id));
+    return students
+      .filter((s) => !topIds.has(s.id) && (s.moyenne === null || s.moyenne < 10))
+      .sort((a, b) => {
+        const ma = a.moyenne ?? -1;
+        const mb = b.moyenne ?? -1;
+        return ma - mb;
+      })
+      .slice(0, topN);
+  }, [students, topRows, topN]);
 
   // ── Génération PDF (backend — même pattern que le Helm : payload front) ──
   const handleGeneratePdf = async () => {
@@ -178,8 +197,10 @@ export default function FederisProcVerbalTab() {
             moyenne: st.moyenne,
             rang: st.rang ?? 0,
           })),
-          top3: top3.map((st) => ({ ...st, rang: st.rang ?? 0 })),
-          bottom3: bottom3.map((st) => ({ ...st, rang: st.rang ?? 0 })),
+          top3: topRows.map((st) => ({ ...st, rang: st.rang ?? 0 })),
+          bottom3: bottomRows.map((st) => ({ ...st, rang: st.rang ?? 0 })),
+          top3Title: `${topN} premiers`,
+          bottom3Title: `${topN} derniers`,
         },
         `PV_${selectedExam?.code ?? 'examen'}.pdf`,
       );
@@ -208,6 +229,19 @@ export default function FederisProcVerbalTab() {
             >
               <option value="merite">Ordre de mérite</option>
               <option value="alphabetique">Ordre alphabétique</option>
+            </select>
+          </div>
+          {/* ⭐ T51 — Nombre de classés affichés dans les mini-tableaux */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Top</span>
+            <select
+              value={topN}
+              onChange={(e) => setTopN(Number(e.target.value))}
+              className="fed-input-light !w-auto font-bold px-4 py-2.5"
+            >
+              <option value={3}>3</option>
+              <option value={5}>5</option>
+              <option value={10}>10</option>
             </select>
           </div>
           <div className="flex-1" />
@@ -359,22 +393,22 @@ export default function FederisProcVerbalTab() {
             </div>
           </div>
 
-          {/* ═══ Mini-tableaux : Trois premiers / Trois derniers (Helm) ═══ */}
+          {/* ═══ Mini-tableaux : N premiers / N derniers (T51) ═══ */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {(
               [
                 {
-                  title: 'Trois premiers',
+                  title: `${topN} premiers`,
                   icon: <Award className="w-4 h-4" />,
                   headClass: 'bg-emerald-50 text-emerald-800',
-                  rows: top3,
+                  rows: topRows,
                   scoreClass: 'text-emerald-700',
                 },
                 {
-                  title: 'Trois derniers',
+                  title: `${topN} derniers`,
                   icon: <TrendingUp className="w-4 h-4 rotate-180" />,
                   headClass: 'bg-red-50 text-red-800',
-                  rows: bottom3,
+                  rows: bottomRows,
                   scoreClass: 'text-red-600',
                 },
               ] as const

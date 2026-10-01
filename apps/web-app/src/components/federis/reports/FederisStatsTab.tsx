@@ -369,10 +369,10 @@ export default function FederisStatsTab() {
             onChange={(e) => setTopN(Number(e.target.value))}
             className="fed-input-light !w-auto font-bold px-4 py-2"
           >
+            {/* ⭐ T51 — Top limité à 10 (3 / 5 / 10) */}
             <option value={3}>3</option>
             <option value={5}>5</option>
             <option value={10}>10</option>
-            <option value={20}>20</option>
           </select>
         </div>
       )}

@@ -265,7 +265,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
         `Règle ${examType} enregistrée — admission ${saved?.passMark ?? passMark}/20, rachat ${
           saved?.rescueMark ?? rescueMark
         }/20, modèle ${saved?.averageModel === 'simple' ? 'moyenne simple' : 'moyenne pondérée'}. ` +
-          'Cette règle est désormais la source de vérité du backend.',
+          'Cette règle s\u2019applique désormais à tous les calculs (moyennes, délibération, relevés).',
       );
     } catch (err: any) {
       const msg = err?.response?.data?.message;
@@ -285,7 +285,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
       });
       setGradingRules(res.data ?? null);
       setGradingDrafts(buildDrafts(res.data));
-      setGradingNotice(`Règle ${examType} réinitialisée — les défauts du backend s\u2019appliquent à nouveau (seuils et modèle de calcul).`);
+      setGradingNotice(`Règle ${examType} réinitialisée — les valeurs par défaut s\u2019appliquent à nouveau.`);
     } catch (err: any) {
       const msg = err?.response?.data?.message;
       setGradingError((Array.isArray(msg) ? msg.join(' ') : msg) ?? 'Réinitialisation impossible.');
@@ -737,10 +737,9 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Matricule &amp; anonymat des candidats</h2>
                 <p className="text-sm text-gray-500 mt-1">
-                  Définissez librement le modèle de génération des matricules candidats.
-                  Si vous ne définissez rien, le backend applique le format par défaut
-                  établi. Les anonymats (codes de saisie des notes) sont générés dans le
-                  module Candidats.
+                  Définissez librement le modèle de génération des matricules candidats. Sans
+                  personnalisation, le format établi par défaut s&apos;applique. Les anonymats
+                  (codes de saisie des notes) sont générés dans le module Candidats.
                 </p>
               </div>
 
@@ -901,11 +900,9 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
                     <CalendarDays className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
                     <p className="text-xs text-amber-800 leading-relaxed">
-                      <b>Anonymats :</b> indépendants du matricule, ils sont générés par examen
-                      dans le module Candidats (bouton « Générer les anonymats ») sous la forme
-                      <span className="font-mono font-bold"> 26B00001</span> — année sur 2 chiffres +
-                      initiale de l&apos;examen + séquence. Ils masquent l&apos;identité des candidats
-                      pour la saisie des notes et toute la correction.
+                      <b>Anonymats :</b> générés par examen dans le module Candidats (bouton
+                      « Générer les anonymats ») — ils masquent l&apos;identité des candidats
+                      pour la saisie des notes.
                     </p>
                   </div>
                 </>
@@ -918,17 +915,6 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
             <div className="space-y-6">
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">Règles de calcul des résultats</h2>
-                <p className="text-sm text-gray-500 mt-1 max-w-3xl">
-                  Définissez, pour chaque niveau (primaire, BEPC, baccalauréat, CAP), la{' '}
-                  <b>moyenne d&apos;admission</b>, le <b>seuil de rachat</b> (cas limites soumis au
-                  jury) et le <b>modèle de calcul des moyennes</b> (simple ou pondérée par
-                  coefficients). Par défaut, les règles du <b>backend</b> s&apos;appliquent
-                  (admission 10/20, rachat 9,5/20 ; moyenne simple pour le CEP, pondérée pour le
-                  BEPC/BAC/CAP) — elles sont affichées ci-dessous. Dès qu&apos;une règle est
-                  définie ici, elle devient la <b>source de vérité</b> du backend : calcul des
-                  moyennes, délibération, décisions des relevés, statistiques du registre et
-                  documents officiels.
-                </p>
               </div>
 
               {gradingLoading ? (
@@ -967,8 +953,8 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                       )}
                     >
                       {gradingRules.customCount > 0
-                        ? `${gradingRules.customCount} règle(s) personnalisée(s) sur 4 — le backend applique VOS seuils et VOTRE modèle de calcul pour ces types (source de vérité). Les autres types suivent les défauts du backend.`
-                        : 'Aucune règle personnalisée — le backend applique ses défauts (admission 10/20, rachat 9,5/20 ; moyenne simple pour le CEP, pondérée pour les autres) pour les quatre types. Modifiez un type ci-dessous pour prendre la main.'}
+                        ? `${gradingRules.customCount} règle(s) personnalisée(s) sur 4 — vos seuils et votre modèle de calcul s'appliquent à ces types. Les autres suivent les valeurs par défaut.`
+                        : 'Aucune règle personnalisée — les valeurs par défaut s\u2019appliquent (admission 10/20, rachat 9,5/20 ; moyenne simple pour le CEP, pondérée pour les autres). Modifiez un type ci-dessous pour personnaliser.'}
                     </p>
                   </div>
 
@@ -1005,7 +991,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                                   : 'bg-slate-100 text-slate-500',
                               )}
                             >
-                              {t.isCustom ? 'Source de vérité' : 'Défaut du backend'}
+                              {t.isCustom ? 'Personnalisée' : 'Valeur par défaut'}
                             </span>
                           </div>
 
@@ -1029,7 +1015,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                                 placeholder={String(t.defaultPassMark)}
                               />
                               <p className="mt-1 text-[10px] text-gray-400">
-                                Défaut backend : {String(t.defaultPassMark).replace('.', ',')}/20
+                                Par défaut : {String(t.defaultPassMark).replace('.', ',')}/20
                               </p>
                             </div>
                             <div>
@@ -1051,7 +1037,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                                 placeholder={String(t.defaultRescueMark)}
                               />
                               <p className="mt-1 text-[10px] text-gray-400">
-                                Défaut backend : {String(t.defaultRescueMark).replace('.', ',')}/20
+                                Par défaut : {String(t.defaultRescueMark).replace('.', ',')}/20
                               </p>
                             </div>
                           </div>
@@ -1064,11 +1050,11 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                               </label>
                               {t.averageModelCustom ? (
                                 <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-emerald-100 text-emerald-700">
-                                  Modèle personnalisé — source de vérité
+                                  Modèle personnalisé
                                 </span>
                               ) : (
                                 <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-100 text-slate-500">
-                                  Défaut du backend
+                                  Valeur par défaut
                                 </span>
                               )}
                             </div>
@@ -1094,7 +1080,7 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                               </option>
                             </select>
                             <p className="mt-1 text-[10px] text-gray-400">
-                              Défaut backend : {t.defaultAverageModelLabel}
+                              Par défaut : {t.defaultAverageModelLabel}
                             </p>
                           </div>
 
@@ -1136,12 +1122,9 @@ export default function FederisSettingsPage({ tenantId, user }: { tenantId: stri
                   {/* Explication de la sémantique */}
                   <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
                     <p className="text-[11px] text-gray-600 leading-relaxed">
-                      <b>Comment ça marche :</b> {gradingRules.semantics} Le seuil de rachat doit
-                      toujours rester inférieur à la moyenne d&apos;admission : les candidats dont
-                      la moyenne se situe entre les deux seuils forment les « cas limites » que le
-                      jury tranche lors de la délibération (module Délibérations). Le modèle de
-                      moyenne (simple pour le CEP, pondérée par coefficients pour le BEPC / BAC /
-                      CAP) est structurel et s&apos;affiche à titre indicatif.
+                      Le seuil de rachat doit rester inférieur à la moyenne d&apos;admission : entre
+                      les deux, ce sont les « cas limites » tranchés par le jury lors de la
+                      délibération.
                     </p>
                   </div>
 

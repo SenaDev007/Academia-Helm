@@ -864,7 +864,11 @@ export class FederisEpreuveService {
     const tree = [...byYear.entries()]
       .map(([yearId, cats]) => ({
         academicYearId: yearId,
-        label: yearById.get(yearId)?.label ?? yearId,
+        // ⭐ 2026-10-01 — label strippé : le libellé en base contient déjà le
+        //    préfixe « Année scolaire » ; le frontend affiche lui-même
+        //    « Année scolaire {label} » → sans strip, l'onglet Catalogue
+        //    montrait « Année scolaire Année scolaire 2026-2027 ».
+        label: this.stripAcademicYearPrefix(yearById.get(yearId)?.label) ?? yearId,
         isActive: yearById.get(yearId)?.isActive ?? false,
         total: [...cats.values()].reduce((a, b) => a + b, 0),
         categories: EPREUVE_CATEGORIES.map((c) => ({

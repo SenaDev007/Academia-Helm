@@ -383,7 +383,7 @@ export default function FederisGradeSheetTab({
             {useSimpleAverage
               ? `Moyenne retenue = SIMPLE : Σ notes / nb matières évaluées · Seuil d'admission : ${String(passMark).replace('.', ',')}/20`
               : `Moyenne retenue = PONDÉRÉE : Σ(Note × Coefficient) / Σ(Coefficients) · Seuil d'admission : ${String(passMark).replace('.', ',')}/20 · Les absents sont exclus`}
-            {data?.rules?.averageModelCustom ? ' · modèle personnalisé (Paramètres → Règles de calcul = source de vérité)' : ''}
+            {data?.rules?.averageModelCustom ? ' · modèle personnalisé (Paramètres → Règles de calcul)' : ''}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

@@ -501,14 +501,14 @@ export default function FederisSupervisorsTab({
           `Liste_${suffix}_${code}.pdf`,
           'application/pdf',
         );
-        setNotice(`Liste « ${suffix} » PDF générée (backend) — téléchargement lancé.`);
+        setNotice(`Liste « ${suffix} » PDF générée — téléchargement lancé.`);
       } else {
         await downloadFile(
           `/federis/exams/${examId}/excel/surveillants${query}`,
           `Liste_${suffix}_${code}.xlsx`,
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         );
-        setNotice(`Classeur Excel « ${suffix} » généré (backend) — téléchargement lancé.`);
+        setNotice(`Classeur Excel « ${suffix} » généré — téléchargement lancé.`);
       }
     } catch (err: any) {
       let msg = err?.response?.data?.message ?? err?.message ?? 'Export impossible.';

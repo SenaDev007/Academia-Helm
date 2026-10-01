@@ -660,7 +660,7 @@ export default function FederisDeliberationsPage({
         `/federis/exams/${examId}/pdf/deliberation`,
         `Liste_Deliberation_${board.exam.code}.pdf`,
       );
-      setNotice('Liste de délibération générée (backend) — téléchargement lancé.');
+      setNotice('Liste de délibération générée — téléchargement lancé.');
     } catch (err: any) {
       let msg = err?.response?.data?.message ?? err?.message ?? 'Téléchargement impossible.';
       if (err?.response?.data instanceof Blob) {
@@ -716,12 +716,8 @@ export default function FederisDeliberationsPage({
           <div className="fed-badge mb-2">Module délibération</div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Délibération</h1>
           <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-            Délibération du jury, publication officielle des résultats et <strong>relevés de
-            notes</strong> — chaque examen (CEP, BEPC, Baccalauréat, CAP) réunit ses deux
-            sous-onglets : délibérez, publiez, puis envoyez les relevés aux écoles depuis le
-            même module. La saisie des notes se fait dans <strong>Notes et Moyennes</strong> ;
-            les seuils d&apos;admission et de rachat sont pilotés dans{' '}
-            <strong>Paramètres → Règles de calcul</strong>.
+            Délibération du jury, publication des résultats et envoi des relevés de notes,
+            examen par examen.
           </p>
         </div>
         <div className="flex gap-4">
@@ -867,11 +863,11 @@ export default function FederisDeliberationsPage({
               <b>rachat ≥ {fmtNote(board.rules.rescueMark)}/20</b> —{' '}
               {board.rules.isCustom ? (
                 <span className="font-bold text-emerald-700">
-                  règle personnalisée (Paramètres → Règles de calcul) = source de vérité
+                  règle personnalisée (Paramètres → Règles de calcul)
                 </span>
               ) : (
                 <span>
-                  défauts du backend (personnalisables dans Paramètres → Règles de calcul)
+                  valeurs par défaut (personnalisables dans Paramètres → Règles de calcul)
                 </span>
               )}
               {board.rules.averageModelCustom ? (
@@ -1382,7 +1378,7 @@ export default function FederisDeliberationsPage({
                 <p className="text-xs text-slate-500 mt-1">
                   Jury « {board?.exam.code} » · seuils : admission{' '}
                   {fmtNote(board?.rules.passMark)}/20, rachat {fmtNote(board?.rules.rescueMark)}/20
-                  {board?.rules.isCustom ? ' (règle personnalisée)' : ' (défauts backend)'}
+                  {board?.rules.isCustom ? ' (règle personnalisée)' : ' (valeurs par défaut)'}
                 </p>
               </div>
               <button

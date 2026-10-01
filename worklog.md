@@ -12963,3 +12963,34 @@ Stage Summary:
 - Keep-alive HTTP aligné sur le proxy (65 s/66 s) : fin des réouvertures TCP+TLS et des resets sporadiques sous charge soutenue.
 - Le reste de la chaîne était déjà rodé (throttler par utilisateur, compression, index, _count/groupBy, cache GET client) — audité et confirmé sans action.
 - Dashboard « Examens de l'année » : colonne Statut en libellés français garantis (Résultats publiés, Délibéré…), quelle que soit la casse ou le statut futur — plus d'ID brut nulle part (10 composants alignés).
+
+---
+Task ID: 56
+Agent: Super Z (principal)
+Task: Academia Frederis — FIX CRITIQUE : crash-loop au démarrage de l'API Railway (« ReferenceError: Cannot access 'FederisPatronatService' before initialization »)
+
+Contexte:
+- Log Railway fourni par le promoteur (2026-10-01 13:55 UTC, deploy T54) : le conteneur démarre puis crash immédiatement, en boucle (redémarrage toutes les ~2 s). L'API est totalement hors service.
+- Le bug était présent depuis T52+53 (commit 13895354b, création de FederisScopeService) ; les déploys T53/T54 le portaient donc aussi. T55 n'a touché ni scope ni patronat → le cycle subsistait.
+
+Work Log:
+- DIAGNOSTIC — dépendance circulaire au niveau des MODULES (pas de la DI) :
+  • federis-patronat.service.ts importait resolveScopeYearsFor depuis federis-scope.service.ts (ligne 32) ;
+  • federis-scope.service.ts importe la classe FederisPatronatService pour l'injection DI (constructeur) ;
+  • avec le builder SWC (nest-cli.json : builder swc + emitDecoratorMetadata), le require de federis-scope.service en pleine initialisation de federis-patronat.service accède au binding de classe non encore initialisé (TDZ) → ReferenceError au require → crash boot → restart-loop Railway.
+  • Les commentaires « sans cycle d'injection » du code avaient évité le cycle DI mais créé un cycle de modules ; tsc ne le voit pas (phénomène d'exécution) et le dist n'avait jamais été booté localement.
+  • Même famille que le crash du 2026-09-30 (patronat ↔ school-exams, corrigé par le module feuille federis-exam-matching) — 2e occurrence du même pattern.
+- CORRECTIF — pattern établi (helper partagé → module FEUILLE) :
+  • NOUVEAU fichier src/federis/federis-scope-years.ts (zéro import) : resolveScopeYearsFor déplacée à l'identique (code strictement inchangé, doc d'origine conservée) ;
+  • federis-scope.service.ts : importe le helper depuis la feuille (usage interne resolveScopeYears) — plus de définition locale (−41 lignes) ;
+  • federis-patronat.service.ts : import depuis la feuille → l'arête patronat → scope disparaît ; le graphe devient unidirectionnel (scope → patronat, DI uniquement). fedapay n'importait patronat qu'en import type (effacé au compile) : aucun autre cycle résiduel — confirmé par le boot complet.
+- VÉRIFICATION (preuve A/B) :
+  • prisma generate impossible en sandbox (OOM cgroup malgré 3,4 Go affichés) → stub permissif du client écrit sous node_modules/.prisma/client/default.js (jamais commité ; Railway exécute prisma generate en postinstall et l'écrase) afin de tester le graphe de require + le bootstrap complet ;
+  • AVANT fix : crash REPRODUIT en local (node dist/main.js) — même stack que Railway, mêmes fichiers, mêmes lignes (federis-patronat.service.js:31:9 / federis-scope.service.js:487:40 / :52:30) ;
+  • APRÈS fix : build SWC 1104 fichiers ; boot COMPLET — FederisModule initialisé, 3200+ routes mappées, seeds/warmups OK, « Nest application successfully started », écoute stable 60 s (interrompue uniquement par le timeout du test) ;
+  • tsc --noEmit : 8015 = 8015 (baseline sandbox — delta strict zéro, aucune nouvelle erreur).
+- Commit poussé : 941c6c150 sur origin/main → Railway redéploie.
+
+Stage Summary:
+- L'API redémarre : le cycle patronat ↔ scope est brisé par extraction du helper en module feuille (3e application du pattern : exam-matching 2026-09-30, chunkInPacks T55, scope-years T56).
+- RÈGLE ACQUISE pour la suite : tout helper partagé entre services vit dans un module FEUILLE zéro-import ; et le dist compilé doit être BOOTÉ localement (node dist/main.js) avant tout push — tsc seul ne détecte pas les cycles runtime.

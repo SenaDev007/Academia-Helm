@@ -14,6 +14,16 @@
  *                         le CEP, les décisions « Admis au CEP » + « Admis en
  *                         6ème » (moyenne des matières étoilées ≥ 10/20).
  *
+ * ⭐ T31 — en-têtes + animations de succès :
+ *   - le bandeau patronat (header du patronat, sous le header Academia de la
+ *     page) affiche le LOGO RÉEL du patronat (API → Patronat.logo, repli logo
+ *     Academia) — plus d'icône générique lucide ;
+ *   - le hero « Consultation des résultats » est refondu : badge succès animé
+ *     « Résultats officiellement publiés », entrées en cascade, soulignement
+ *     doré animé (shimmer), statistiques en compteur animé (count-up) ;
+ *   - la fiche résultat célèbre la réussite : coché dessinée + confettis CSS
+ *     quand le candidat est ADMIS.
+ *
  * Mobile-first (les parents consultent depuis un téléphone) — aux couleurs
  * institutionnelles Federis (navy / or).
  */
@@ -24,14 +34,12 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Search,
   Loader2,
-  ShieldCheck,
   ShieldOff,
   Clock,
   Award,
   Users,
   TrendingUp,
   ArrowLeft,
-  GraduationCap,
   CheckCircle2,
   XCircle,
   Info,
@@ -55,6 +63,8 @@ interface PublicInfo {
   patronat: {
     name: string;
     abbreviation: string | null;
+    /** ⭐ T31 — logo public du patronat (data URL ou https) — null si non configuré. */
+    logo: string | null;
     territoryName: string | null;
     country: string | null;
   };
@@ -116,6 +126,117 @@ function fmtDateFr(iso: string | null | undefined): string {
 function extractApiError(err: any, fallback: string): string {
   const msg = err?.response?.data?.message;
   return (Array.isArray(msg) ? msg.join(' ') : msg) ?? fallback;
+}
+
+// ─── ⭐ T31 — Animations de succès ───────────────────────────────────────────
+
+/** Compteur animé (easeOutCubic) — démarre à 0 et monte vers `target`. */
+function useCountUp(target: number | null | undefined, duration = 1300): number {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    if (target == null || !Number.isFinite(target) || target <= 0) {
+      setValue(0);
+      return;
+    }
+    let raf = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - start) / duration);
+      setValue(target * (1 - Math.pow(1 - p, 3)));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, duration]);
+  return value;
+}
+
+/** Statistique affichée en compteur animé (montée 0 → valeur). */
+function CountUpStat({
+  value,
+  decimals = 0,
+  suffix = '',
+  className,
+}: {
+  value: number | null;
+  decimals?: number;
+  suffix?: string;
+  className?: string;
+}) {
+  const v = useCountUp(value);
+  const display =
+    value == null ? '—' : v.toLocaleString('fr-FR', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  return (
+    <span className={className}>
+      {display}
+      {value != null ? suffix : ''}
+    </span>
+  );
+}
+
+/** Coche de succès DESSINÉE (stroke-dashoffset animé) dans un anneau pulsant. */
+function AnimatedSuccessCheck({ className }: { className?: string }) {
+  return (
+    <span className={cn('relative inline-flex items-center justify-center', className)}>
+      {/* Anneau pulsant (aura de succès) */}
+      <span className="fed-ring-pulse absolute inset-0 rounded-full" aria-hidden />
+      <svg viewBox="0 0 52 52" className="relative w-full h-full" aria-hidden>
+        <circle
+          cx="26" cy="26" r="24" fill="none"
+          stroke="currentColor" strokeWidth="3" opacity="0.25"
+        />
+        <path
+          className="fed-check-draw"
+          d="M15 27 L23 35 L38 18"
+          fill="none" stroke="currentColor" strokeWidth="4.5"
+          strokeLinecap="round" strokeLinejoin="round"
+        />
+      </svg>
+    </span>
+  );
+}
+
+/** Burst de confettis CSS pur (aucune dépendance) — 12 particules radiales. */
+function SuccessConfetti() {
+  // 12 directions radiales + couleurs institutionnelles (or / émeraude / blanc)
+  // ⭐ T31 — particules VOYANTES : 8-13 px, opacité tenue pendant 60 % du vol.
+  const particles = [
+    { cx: '-58px', cy: '-40px', color: '#fbbf24', delay: '0ms', size: '12px', radius: '3px' },
+    { cx: '56px', cy: '-48px', color: '#34d399', delay: '60ms', size: '10px', radius: '9999px' },
+    { cx: '-64px', cy: '24px', color: '#f5b335', delay: '120ms', size: '13px', radius: '2px' },
+    { cx: '62px', cy: '28px', color: '#ffffff', delay: '40ms', size: '9px', radius: '9999px' },
+    { cx: '-28px', cy: '-66px', color: '#34d399', delay: '150ms', size: '10px', radius: '2px' },
+    { cx: '30px', cy: '64px', color: '#fbbf24', delay: '90ms', size: '12px', radius: '9999px' },
+    { cx: '-46px', cy: '56px', color: '#ffffff', delay: '130ms', size: '8px', radius: '2px' },
+    { cx: '48px', cy: '-20px', color: '#f5b335', delay: '20ms', size: '11px', radius: '3px' },
+    { cx: '6px', cy: '-70px', color: '#fde68a', delay: '70ms', size: '9px', radius: '9999px' },
+    { cx: '-12px', cy: '68px', color: '#a7f3d0', delay: '110ms', size: '10px', radius: '2px' },
+    { cx: '68px', cy: '8px', color: '#ffffff', delay: '50ms', size: '8px', radius: '3px' },
+    { cx: '-70px', cy: '-6px', color: '#fbbf24', delay: '140ms', size: '11px', radius: '9999px' },
+  ];
+  return (
+    <span className="pointer-events-none absolute inset-0" aria-hidden>
+      {particles.map((p, i) => (
+        <span
+          key={i}
+          className="fed-confetti absolute left-1/2 top-1/2"
+          style={{
+            '--cx': p.cx,
+            '--cy': p.cy,
+            animationDelay: p.delay,
+            width: p.size,
+            height: p.size,
+            background: p.color,
+            borderRadius: p.radius,
+            boxShadow: `0 0 6px ${p.color}`,
+          } as React.CSSProperties}
+        />
+      ))}
+    </span>
+  );
 }
 
 // ─── Composant ──────────────────────────────────────────────────────────────
@@ -209,74 +330,241 @@ export default function FederisPublicResultsClient({ token }: { token: string })
   }
 
   const isCep = info.exam.examType === 'CEP';
-  const admitted = selected?.decision === 'ADMIS';
+  // ⭐ T31 — logo du patronat (API) avec repli logo Academia (jamais d'icône
+  // générique : l'identité du patronat organisateur reste visible).
+  const patronatLogoUrl = info.patronat.logo || '/images/logo-Academia Hub.webp';
 
   // ── Écran principal ──────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-100 via-white to-white pb-16">
-      {/* ── Bandeau institutionnel ── */}
-      <div className="bg-gradient-to-r from-blue-900 to-blue-800 text-white">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-4">
-          <div className="flex items-center gap-3">
-            <span className="w-11 h-11 rounded-2xl bg-amber-400/95 flex items-center justify-center shrink-0">
-              <GraduationCap className="w-6 h-6 text-blue-900" />
+      {/* ⭐ T31 — styles des animations de succès (portée page, préfixe fed-) */}
+      <style jsx>{`
+        /* Entrées en cascade (logo → badge → titre → chips → stats) */
+        @keyframes fedRise {
+          from { opacity: 0; transform: translateY(16px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .fed-rise {
+          animation: fedRise 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+          animation-delay: var(--d, 0ms);
+        }
+        /* Logo patronat : léger flottement institutionnel */
+        @keyframes fedLogoFloat {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-4px); }
+        }
+        .fed-logo-float { animation: fedLogoFloat 5s ease-in-out infinite; }
+        /* Halo doré du bandeau : respiration douce */
+        @keyframes fedGlowPulse {
+          0%, 100% { opacity: 0.45; transform: scale(1); }
+          50% { opacity: 0.85; transform: scale(1.1); }
+        }
+        .fed-hero-glow { animation: fedGlowPulse 7s ease-in-out infinite; }
+        /* Soulignement doré animé du titre (shimmer) */
+        @keyframes fedShimmer {
+          0% { background-position: -180% 0; }
+          100% { background-position: 280% 0; }
+        }
+        .fed-underline-shimmer {
+          background: linear-gradient(
+            100deg,
+            #f5b335 0%, #fde68a 28%, #ffffff 50%, #fde68a 72%, #f5b335 100%
+          );
+          background-size: 220% 100%;
+          animation: fedShimmer 3.2s linear infinite;
+        }
+        /* Coche de succès dessinée */
+        @keyframes fedCheckDraw {
+          from { stroke-dashoffset: 64; }
+          to { stroke-dashoffset: 0; }
+        }
+        .fed-check-draw {
+          stroke-dasharray: 64;
+          animation: fedCheckDraw 0.55s cubic-bezier(0.65, 0, 0.35, 1) 0.25s both;
+        }
+        /* Anneau pulsant autour de la coche */
+        @keyframes fedRingPulse {
+          0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.55); }
+          70% { box-shadow: 0 0 0 14px rgba(255, 255, 255, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+        }
+        .fed-ring-pulse { animation: fedRingPulse 1.8s ease-out infinite; }
+        /* Confettis (succès — candidat admis) — voyage net : opacité pleine
+           pendant 60 % du vol puis fondu, particules 8-13 px avec halo */
+        @keyframes fedConfetti {
+          0% {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1) rotate(0deg);
+          }
+          60% { opacity: 1; }
+          100% {
+            opacity: 0;
+            transform: translate(calc(-50% + var(--cx)), calc(-50% + var(--cy)))
+              scale(0.45) rotate(220deg);
+          }
+        }
+        .fed-confetti {
+          animation: fedConfetti 1.5s cubic-bezier(0.12, 0.75, 0.35, 1) both;
+        }
+        /* Cartes : entrée douce + élévation au survol */
+        @keyframes fedCardIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .fed-card-in { animation: fedCardIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
+        .fed-stat-lift { transition: transform 0.25s ease, box-shadow 0.25s ease; }
+        .fed-stat-lift:hover { transform: translateY(-3px); box-shadow: 0 12px 28px -12px rgba(11, 47, 115, 0.28); }
+        /* Respect des préférences d'accessibilité */
+        @media (prefers-reduced-motion: reduce) {
+          .fed-rise, .fed-logo-float, .fed-hero-glow, .fed-underline-shimmer,
+          .fed-check-draw, .fed-ring-pulse, .fed-confetti, .fed-card-in {
+            animation: none !important;
+          }
+          .fed-underline-shimmer { background: #f5b335; }
+        }
+      `}</style>
+
+      {/* ── ⭐ T31 — Bandeau institutionnel (HEADER DU PATRONAT, conservé et
+             refondu : logo réel + animations de succès) ── */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-blue-950 via-blue-900 to-blue-800 text-white">
+        {/* Décor : halos dorés + trame institutionnelle */}
+        <div className="pointer-events-none absolute inset-0" aria-hidden>
+          <div className="fed-hero-glow absolute -top-24 -right-16 w-72 h-72 rounded-full bg-amber-400/15 blur-3xl" />
+          <div className="absolute -bottom-28 left-1/4 w-80 h-80 rounded-full bg-blue-400/10 blur-3xl" />
+          <div
+            className="absolute inset-0 opacity-[0.05]"
+            style={{
+              backgroundImage:
+                'linear-gradient(rgba(255,255,255,0.7) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.7) 1px, transparent 1px)',
+              backgroundSize: '44px 44px',
+            }}
+          />
+        </div>
+
+        <div className="relative max-w-3xl mx-auto px-4 sm:px-6 pt-8 sm:pt-10 pb-10 sm:pb-12 space-y-5">
+          {/* Rangée 1 — LOGO DU PATRONAT (remplace l'icône générique) + identité */}
+          <div
+            className="fed-rise flex items-center gap-4"
+            style={{ '--d': '0ms' } as React.CSSProperties}
+          >
+            <span className="fed-logo-float relative w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-2xl bg-white shadow-xl ring-1 ring-amber-300/70 flex items-center justify-center shrink-0 overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={patronatLogoUrl}
+                alt={`Logo ${info.patronat.name}`}
+                className="w-full h-full object-contain p-1.5"
+              />
+              {/* Éclat doré en coin du logo */}
+              <span
+                className="pointer-events-none absolute -top-5 -right-5 w-10 h-10 rounded-full bg-amber-300/40 blur-md"
+                aria-hidden
+              />
             </span>
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-300">
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-amber-300">
                 Academia Federis
               </p>
-              <p className="text-sm font-bold leading-tight">
+              <p className="text-sm sm:text-base font-bold leading-snug truncate">
                 {info.patronat.name}
                 {info.patronat.territoryName ? ` — ${info.patronat.territoryName}` : ''}
               </p>
+              {info.patronat.country && (
+                <p className="text-[11px] text-blue-200/80 font-medium">{info.patronat.country}</p>
+              )}
             </div>
           </div>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-black leading-tight">
+
+          {/* Rangée 2 — Badge succès animé « publiés » */}
+          <div
+            className="fed-rise"
+            style={{ '--d': '120ms' } as React.CSSProperties}
+          >
+            <span className="inline-flex items-center gap-2.5 rounded-full bg-emerald-400/15 border border-emerald-300/30 px-4 py-1.5 backdrop-blur-sm">
+              <span className="relative flex w-2 h-2 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75" />
+                <span className="relative inline-flex rounded-full w-2 h-2 bg-emerald-400" />
+              </span>
+              <span className="text-[11px] font-black uppercase tracking-wide text-emerald-200">
+                Résultats officiellement publiés
+              </span>
+            </span>
+          </div>
+
+          {/* Rangée 3 — Titre + examen + soulignement doré */}
+          <div
+            className="fed-rise space-y-3"
+            style={{ '--d': '240ms' } as React.CSSProperties}
+          >
+            <h1 className="text-[27px] sm:text-4xl font-black leading-[1.12] tracking-tight">
               Consultation des résultats
             </h1>
-            <p className="text-sm text-blue-100 mt-1.5 font-semibold">
+            <div className="fed-underline-shimmer h-[3px] w-44 rounded-full" aria-hidden />
+            <p className="text-sm sm:text-[15px] text-blue-100 font-semibold leading-snug">
               {info.exam.name}
               {info.exam.session ? ` · ${info.exam.session}` : ''}
               {info.exam.academicYearLabel ? ` · ${info.exam.academicYearLabel}` : ''}
             </p>
           </div>
-          <div className="flex items-center gap-2 text-[11px] text-blue-100/90">
-            <Clock className="w-3.5 h-3.5 shrink-0" />
-            <span>
-              Résultats officiellement publiés — lien de consultation valable jusqu’au{' '}
-              <b className="text-white">{fmtDateFr(info.link.expiresAt)}</b>
+
+          {/* Rangée 4 — Validité du lien (chip) */}
+          <div
+            className="fed-rise"
+            style={{ '--d': '360ms' } as React.CSSProperties}
+          >
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/10 border border-white/20 px-4 py-1.5 backdrop-blur-sm">
+              <Clock className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+              <span className="text-[11px] text-blue-100/95 font-semibold">
+                Lien de consultation valable jusqu’au{' '}
+                <b className="text-white">{fmtDateFr(info.link.expiresAt)}</b>
+              </span>
             </span>
           </div>
         </div>
+
+        {/* Liseré doré institutionnel en bas du bandeau */}
+        <div
+          className="h-1 w-full"
+          style={{
+            background:
+              'linear-gradient(to right, transparent, #f5b335 25%, #fde68a 50%, #f5b335 75%, transparent)',
+          }}
+          aria-hidden
+        />
       </div>
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 -mt-5 space-y-6">
-        {/* ── Statistiques de la session ── */}
+        {/* ── ⭐ T31 — Statistiques de la session (compteurs animés) ── */}
         <div className="grid grid-cols-3 gap-2.5 sm:gap-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-3 py-3.5 text-center">
+          <div className="fed-card-in fed-stat-lift bg-white rounded-2xl border border-slate-200 shadow-md px-3 py-3.5 text-center relative overflow-hidden">
             <Users className="w-4 h-4 text-slate-400 mx-auto mb-1.5" />
-            <p className="text-lg sm:text-xl font-black text-slate-900">
-              {info.stats.totalCandidates}
+            <p className="text-lg sm:text-xl font-black text-slate-900 tabular-nums">
+              <CountUpStat value={info.stats.totalCandidates} />
             </p>
             <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase">
               Candidats
             </p>
           </div>
-          <div className="bg-white rounded-2xl border border-emerald-100 shadow-sm px-3 py-3.5 text-center">
+          <div
+            className="fed-card-in fed-stat-lift bg-white rounded-2xl border border-emerald-100 shadow-md px-3 py-3.5 text-center relative overflow-hidden"
+            style={{ animationDelay: '90ms' }}
+          >
+            <span className="absolute top-0 left-0 right-0 h-[3px] fed-underline-shimmer" aria-hidden />
             <Award className="w-4 h-4 text-emerald-500 mx-auto mb-1.5" />
-            <p className="text-lg sm:text-xl font-black text-emerald-700">
-              {info.stats.admitted}
+            <p className="text-lg sm:text-xl font-black text-emerald-700 tabular-nums">
+              <CountUpStat value={info.stats.admitted} />
             </p>
             <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase">
               Admis(e)s
             </p>
           </div>
-          <div className="bg-white rounded-2xl border border-amber-100 shadow-sm px-3 py-3.5 text-center">
+          <div
+            className="fed-card-in fed-stat-lift bg-white rounded-2xl border border-amber-100 shadow-md px-3 py-3.5 text-center relative overflow-hidden"
+            style={{ animationDelay: '180ms' }}
+          >
             <TrendingUp className="w-4 h-4 text-amber-500 mx-auto mb-1.5" />
-            <p className="text-lg sm:text-xl font-black text-blue-900">
-              {info.stats.successRate != null ? `${fmtNote(info.stats.successRate)} %` : '—'}
+            <p className="text-lg sm:text-xl font-black text-blue-900 tabular-nums">
+              <CountUpStat value={info.stats.successRate} decimals={1} suffix=" %" />
             </p>
             <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase">
               Taux de réussite
@@ -284,9 +572,11 @@ export default function FederisPublicResultsClient({ token }: { token: string })
           </div>
         </div>
 
-        {/* ── Fiche résultat d'un candidat ── */}
+        {/* ── Fiche résultat d'un candidat (⭐ T31 — key = matricule pour rejouer
+            les animations de succès à chaque candidat ouvert) ── */}
         {selected ? (
           <CandidateSheet
+            key={selected.matricule}
             candidate={selected}
             isCep={isCep}
             onBack={() => setSelected(null)}
@@ -448,17 +738,23 @@ function CandidateSheet({
 }) {
   const admitted = candidate.decision === 'ADMIS';
   return (
-    <div className="bg-white rounded-3xl border border-slate-200 shadow-lg overflow-hidden">
-      {/* Bandeau décision */}
+    <div className="fed-card-in bg-white rounded-3xl border border-slate-200 shadow-lg overflow-hidden">
+      {/* ⭐ T31 — Bandeau décision : célébration de la réussite (coche dessinée
+             + confettis CSS) quand le candidat est ADMIS, sobre sinon. */}
       <div
         className={cn(
-          'px-5 sm:px-7 py-6 space-y-3',
+          'relative overflow-hidden px-5 sm:px-7 py-6 space-y-3',
           admitted
-            ? 'bg-gradient-to-r from-emerald-600 to-emerald-500'
-            : 'bg-gradient-to-r from-red-600 to-red-500',
+            ? 'bg-gradient-to-br from-emerald-700 via-emerald-600 to-emerald-500'
+            : 'bg-gradient-to-br from-red-700 via-red-600 to-red-500',
         )}
       >
-        <div className="flex items-start justify-between gap-3">
+        {/* Halo décoratif du bandeau */}
+        <div
+          className="pointer-events-none absolute -top-16 -right-10 w-48 h-48 rounded-full bg-white/10 blur-2xl"
+          aria-hidden
+        />
+        <div className="relative flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/80">
               Décision du jury
@@ -473,7 +769,11 @@ function CandidateSheet({
             )}
           </div>
           {admitted ? (
-            <ShieldCheck className="w-10 h-10 text-white/90 shrink-0" />
+            /* Coche de succès dessinée + confettis — la réussite se célèbre */
+            <span className="relative w-14 h-14 shrink-0 text-white">
+              <SuccessConfetti />
+              <AnimatedSuccessCheck className="w-14 h-14" />
+            </span>
           ) : (
             <XCircle className="w-10 h-10 text-white/90 shrink-0" />
           )}

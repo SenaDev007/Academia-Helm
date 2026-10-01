@@ -34,7 +34,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const swc = require('/home/z/node_modules/@swc/core');
+const swc = require('/home/z/my-project/ah/apps/api-server/node_modules/@swc/core');
 
 const ROOT = '/home/z/my-project/ah';
 

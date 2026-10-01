@@ -49,7 +49,7 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = '/home/z/my-project/ah';
-const swc = require('/home/z/node_modules/@swc/core');
+const swc = require('/home/z/my-project/ah/apps/api-server/node_modules/@swc/core');
 
 let pass = 0;
 let fail = 0;

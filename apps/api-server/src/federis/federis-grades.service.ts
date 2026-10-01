@@ -1853,6 +1853,7 @@ export class FederisGradesService {
       select: {
         name: true,
         abbreviation: true,
+        logo: true,
         territoryName: true,
         address: true,
         primaryPhone: true,
@@ -1891,6 +1892,10 @@ export class FederisGradesService {
     return {
       name: patronat?.name ?? 'Patronat',
       abbreviation: patronat?.abbreviation ?? null,
+      // ⭐ T31 — logo public du patronat (data URL ou https, validé à
+      //    l'enregistrement dans Paramètres → Identité) : branding du
+      //    portail public de consultation des résultats.
+      logo: patronat?.logo ?? null,
       territoryName: patronat?.territoryName ?? null,
       address: patronat?.address ?? null,
       phone: patronat?.primaryPhone ?? null,

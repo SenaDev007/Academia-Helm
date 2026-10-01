@@ -12,6 +12,11 @@
  * révoqué à tout moment (module Délibération) — cette page sert le portail
  * client correspondant (FederisPublicResultsClient).
  *
+ * ⭐ T31 — la page porte désormais les DEUX en-têtes institutionnels :
+ *   1. le HEADER ACADEMIA (corporate Academia Helm, header-1, fixed) ;
+ *   2. le HEADER DU PATRONAT (bandeau navy du portail, conservé, avec le
+ *      LOGO RÉEL du patronat récupéré de la base — plus d'icône générique).
+ *
  * ⚠️ noindex : les résultats d'élèves ne doivent JAMAIS être indexés par les
  * moteurs de recherche (données personnelles + lien provisoire à diffusion
  * contrôlée).
@@ -19,6 +24,7 @@
  */
 
 import type { Metadata } from 'next';
+import { Header } from '@/components/ui/header-1';
 import FederisPublicResultsClient from '@/components/public/FederisPublicResultsClient';
 
 export const dynamic = 'force-dynamic';
@@ -36,5 +42,13 @@ export default async function FederisPublicResultsPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  return <FederisPublicResultsClient token={token} />;
+  return (
+    <div className="min-h-screen bg-white">
+      {/* ⭐ T31 — Header ACADEMIA (corporate Helm, fixed top-0, h-14 md:h-16).
+      Le layout (public) réserve déjà l'espacement correspondant — la page a
+      désormais le header Academia AU-DESSUS du bandeau patronat du portail. */}
+      <Header />
+      <FederisPublicResultsClient token={token} />
+    </div>
+  );
 }

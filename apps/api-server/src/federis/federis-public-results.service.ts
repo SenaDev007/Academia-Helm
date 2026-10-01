@@ -146,6 +146,10 @@ export class FederisPublicResultsService {
       patronat: {
         name: header.name,
         abbreviation: header.abbreviation,
+        // ⭐ T31 — logo du patronat (branding public : data URL ou https,
+        //    validé dans Paramètres → Identité). Affiché dans l'en-tête du
+        //    portail à la place de l'icône générique.
+        logo: header.logo ?? null,
         territoryName: header.territoryName,
         country: header.country,
       },

@@ -381,6 +381,8 @@ export class StudentsPrismaService {
       academicYearId?: string;
       schoolLevelId?: string;
       currentAcademicYearId?: string;
+      // ⭐ 2026-10-01 — Numéro Educmaster (requis pour l'export des 6e vers MEMP)
+      educMasterMatricule?: string | null;
     },
     scope?: AccessScope | null,
   ) {

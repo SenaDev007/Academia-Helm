@@ -347,6 +347,38 @@ export class StudentsLifecycleController {
   }
 
   /**
+   * ⭐ 2026-10-01 — GET /students/export/educmaster-excel-secondaire
+   *
+   * Génère un fichier Excel Educmaster pour le SECONDAIRE avec le format
+   * OFFICIEL du MEMP : une seule feuille "Mes élèves" avec une seule colonne
+   * "Matricule EducMaster".
+   *
+   * Query: academicYearId (obligatoire), className (optionnel, défaut "6e").
+   *
+   * ⭐ Exigence : par défaut, on exporte les élèves de 6e (les élèves doivent
+   *    avoir leur matricule Educmaster renseigné lors de l'inscription).
+   */
+  @Get('export/educmaster-excel-secondaire')
+  async exportEducmasterExcelSecondaire(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId: string,
+    @Query('className') className?: string,
+  ) {
+    if (!academicYearId) {
+      throw new BadRequestException('academicYearId est obligatoire');
+    }
+    const result = await this.educmasterExcel.generateSecondaireWorkbook({
+      tenantId,
+      academicYearId,
+      classNameFilter: className,
+    });
+    return new StreamableFile(result.buffer, {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      disposition: `attachment; filename="${encodeURIComponent(result.filename)}"`,
+    });
+  }
+
+  /**
    * GET /students/export/class-excel?academicYearId=...&classId=...
    * Génère un fichier Excel pour UNE classe officielle (AcademicClass).
    * Une feuille par classe, avec les colonnes Educmaster.

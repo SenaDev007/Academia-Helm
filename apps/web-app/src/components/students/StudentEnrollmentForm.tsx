@@ -110,6 +110,10 @@ export default function StudentEnrollmentForm({
     npi: initialData?.npi || '',
     photoUrl: initialData?.photoUrl || '',
     address: initialData?.address || '',
+    // ⭐ 2026-10-01 — Numéro Educmaster (requis pour l'export Educmaster des
+    //    élèves de 6e vers la plateforme gouvernementale MEMP).
+    //    13 chiffres (ex: 1130424010714). Optionnel pour les autres classes.
+    educMasterMatricule: (initialData as any)?.educMasterMatricule || '',
     classId: initialData?.classId || '',
     enrollmentType: (initialData?.enrollmentType as 'NEW' | 'REPEAT') || 'NEW',
   });
@@ -329,6 +333,8 @@ export default function StudentEnrollmentForm({
           npi: formData.npi || undefined,
           photoUrl: formData.photoUrl || undefined,
           address: formData.address || undefined,
+          // ⭐ 2026-10-01 — Numéro Educmaster (requis pour l'export des 6e)
+          educMasterMatricule: formData.educMasterMatricule || undefined,
         },
         guardians,
         // ⭐ classId = classe OFFICIELLE (AcademicClass) — envoyé aussi bien comme
@@ -469,6 +475,27 @@ export default function StudentEnrollmentForm({
             <label className="block text-sm font-medium text-gray-700 mb-1">NPI (optionnel)</label>
             <input type="text" value={formData.npi} onChange={e => handleInputChange('npi', e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          {/* ⭐ 2026-10-01 — Numéro Educmaster (requis pour l'export Educmaster des
+              élèves de 6e vers la plateforme MEMP du gouvernement béninois).
+              Format : 13 chiffres (ex: 1130424010714). */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Numéro Educmaster <span className="text-gray-400 font-normal">(requis pour les 6e, sinon optionnel)</span>
+            </label>
+            <input
+              type="text"
+              value={formData.educMasterMatricule}
+              onChange={e => handleInputChange('educMasterMatricule', e.target.value.replace(/\s/g, ''))}
+              placeholder="ex: 1130424010714 (13 chiffres)"
+              maxLength={13}
+              pattern="[0-9]{13}"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Identifiant attribué par la plateforme Educmaster du MEMP. Indispensable pour l'export
+              des élèves de 6e vers la plateforme gouvernementale.
+            </p>
           </div>
         </div>
       )}

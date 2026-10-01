@@ -253,6 +253,206 @@ export class EducmasterExcelExportService {
   }
 
   /**
+   * ⭐ 2026-10-01 — Génère un fichier Excel Educmaster SECONDAIRE.
+   *
+   * Format OFFICIEL du MEMP pour le secondaire : une seule feuille "Mes élèves"
+   * avec une seule colonne "Matricule EducMaster". Une ligne par élève contenant
+   * son matricule Educmaster (13 chiffres attribués par la plateforme MEMP).
+   *
+   * ⭐ Exigence : par défaut, on exporte uniquement les élèves de 6e (classe
+   *    officielle "6e" / "6ème" / "6A" etc.). L'utilisateur peut cependant
+   *    choisir une autre classe via le paramètre `classNameFilter`.
+   *
+   * ⭐ Les élèves SANS matricule Educmaster sont EXCLUS du fichier (le template
+   *    ne contient que la colonne Matricule EducMaster — pas de colonne Nom).
+   *
+   * ⭐ Le matricule Educmaster est renseigné lors de l'inscription de l'élève
+   *    (champ `educMasterMatricule` du modèle Student).
+   */
+  async generateSecondaireWorkbook(options: {
+    tenantId: string;
+    academicYearId: string;
+    /** Filtre optionnel : nom de la classe officielle à inclure (ex: "6e", "6A").
+     *  Par défaut, on récupère toutes les classes dont le nom commence par "6" (6e). */
+    classNameFilter?: string;
+  }): Promise<EducmasterExcelExportResult> {
+    const { tenantId, academicYearId, classNameFilter } = options;
+
+    // 1. Récupérer le tenant (pour le nom de fichier)
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: { schools: true },
+    });
+
+    // 2. Récupérer les inscriptions des élèves du niveau SECONDAIRE pour cette année.
+    //    On filtre par schoolLevel.code = 'SECONDAIRE'.
+    const schoolLevel = await this.prisma.schoolLevel.findFirst({
+      where: {
+        OR: [
+          { code: { equals: 'SECONDAIRE' } },
+          { code: { equals: 'SEC' } },
+        ],
+      },
+    }).catch(() => null);
+
+    if (!schoolLevel) {
+      throw new NotFoundException(
+        `Niveau scolaire SECONDAIRE non trouvé pour ce tenant. Vérifiez que le niveau secondaire est activé.`,
+      );
+    }
+
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: {
+        tenantId,
+        academicYearId,
+        schoolLevelId: schoolLevel.id,
+        status: { in: ['ACTIVE', 'ADMITTED', 'RE_ENROLLED', 'PENDING'] },
+      },
+      include: {
+        academicClass: { select: { id: true, name: true, code: true } },
+        student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            matricule: true,
+            educMasterMatricule: true,
+          },
+        },
+      },
+    });
+
+    if (enrollments.length === 0) {
+      throw new NotFoundException(
+        `Aucun élève du secondaire trouvé pour cette année scolaire.`,
+      );
+    }
+
+    // 3. Filtrer par nom de classe si demandé (par défaut : "6e" → commence par "6")
+    const filter = (classNameFilter || '6').trim().toLowerCase();
+    const filterDigits = filter.replace(/\D/g, '');
+    const filteredEnrollments = enrollments.filter(e => {
+      const className = (e.academicClass?.name || '').toLowerCase();
+      // Si l'utilisateur a tapé "6e" ou "6", on accepte les classes qui commencent par "6"
+      // (6e A, 6e B, 6ème 1, etc.). Si l'utilisateur a tapé un nom complet, on fait un match exact.
+      if (filterDigits && filter.length <= 3) {
+        // Court filtre (ex: "6", "6e") → matche le préfixe numérique
+        return className.startsWith(filterDigits);
+      }
+      // Filtre long → match exact ou startsWith
+      return className === filter || className.startsWith(filter);
+    });
+
+    if (filteredEnrollments.length === 0) {
+      const availableClasses = Array.from(new Set(enrollments.map(e => e.academicClass?.name).filter(Boolean)));
+      throw new NotFoundException(
+        `Aucun élève trouvé pour le filtre "${classNameFilter}". Classes disponibles : ${availableClasses.join(', ')}.`,
+      );
+    }
+
+    // 4. Garder uniquement les élèves qui ONT un matricule Educmaster.
+    //    L'ordre des inscriptions est conservé pour le tri par nom de classe.
+    const studentsWithMatricule = filteredEnrollments
+      .filter(e => e.student.educMasterMatricule && e.student.educMasterMatricule.trim() !== '')
+      .map(e => ({
+        educMasterMatricule: e.student.educMasterMatricule!.trim(),
+        className: e.academicClass?.name || '',
+        studentName: `${e.student.firstName || ''} ${e.student.lastName || ''}`.trim(),
+      }));
+
+    // ⭐ Tri : par nom de classe puis par matricule (ordre croissant)
+    studentsWithMatricule.sort((a, b) => {
+      if (a.className !== b.className) return a.className.localeCompare(b.className, 'fr');
+      return a.educMasterMatricule.localeCompare(b.educMasterMatricule);
+    });
+
+    if (studentsWithMatricule.length === 0) {
+      const totalWithoutMatricule = filteredEnrollments.length;
+      throw new NotFoundException(
+        `Aucun élève de ${classNameFilter || '6e'} n'a de matricule Educmaster renseigné. ` +
+        `${totalWithoutMatricule} élèves trouvés mais aucun avec matricule. ` +
+        `Veuillez renseigner le numéro Educmaster de chaque élève lors de son inscription ` +
+        `(onglet Inscriptions → Étape 1 : Identité → champ "Numéro Educmaster").`,
+      );
+    }
+
+    // 5. Construire le workbook avec une seule feuille "Mes élèves"
+    //    et une seule colonne "Matricule EducMaster".
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Academia Helm';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Mes élèves', {
+      headerFooter: {
+        firstHeader: 'Export Educmaster — Secondaire',
+        firstFooter: 'Academia Helm - Export Educmaster',
+      },
+      // ⭐ Largeur de la colonne A : 25 caractères pour afficher le matricule complet
+      views: [{ state: 'frozen', ySplit: 1 }],
+    });
+
+    // ⭐ Largeur de la colonne A
+    sheet.columns = [
+      { width: 25 },
+    ];
+
+    // En-tête : "Matricule EducMaster" (cellule A1)
+    const headerCell = sheet.getCell(1, 1);
+    headerCell.value = 'Matricule EducMaster';
+    headerCell.font = { bold: true, size: 11 };
+    headerCell.alignment = { horizontal: 'left', vertical: 'middle' };
+    headerCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF0A2A5E' },  // navy Academia Helm
+    };
+    headerCell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+
+    // Données : un matricule par ligne (à partir de la ligne 2)
+    for (let i = 0; i < studentsWithMatricule.length; i++) {
+      const cell = sheet.getCell(i + 2, 1);
+      // ⭐ Important : stocker comme STRING (et non number) car le matricule
+      //    peut dépasser la limite des nombres Excel (13 chiffres = OK en number
+      //    mais en string c'est plus sûr pour préserver les zéros en tête si
+      //    une école utilise des matricules plus courts).
+      cell.value = studentsWithMatricule[i].educMasterMatricule;
+      cell.alignment = { horizontal: 'left', vertical: 'middle' };
+      // Format texte pour éviter la conversion automatique en notation scientifique
+      cell.numFmt = '@';
+    }
+
+    // Bordure autour du tableau
+    sheet.getCell(1, 1).border = {
+      top: { style: 'thin' }, bottom: { style: 'thin' },
+      left: { style: 'thin' }, right: { style: 'thin' },
+    };
+    for (let i = 2; i <= studentsWithMatricule.length + 1; i++) {
+      sheet.getCell(i, 1).border = {
+        top: { style: 'thin' }, bottom: { style: 'thin' },
+        left: { style: 'thin' }, right: { style: 'thin' },
+      };
+    }
+
+    // 6. Générer le buffer
+    const raw = await workbook.xlsx.writeBuffer();
+    const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as any);
+
+    // 7. Nom du fichier : NomEcole_Secondaire_{classe}.xlsx
+    const niveauScolaire = this.fileNameSegment('Secondaire');
+    const classeSeg = this.fileNameSegment(classNameFilter || '6e');
+    const nomEcole = this.fileNameSegment(
+      (tenant?.schools as { name?: string } | null)?.name ?? tenant?.name ?? 'Ecole',
+    );
+    const filename = `${nomEcole}_${niveauScolaire}_${classeSeg}.xlsx`;
+
+    return {
+      buffer,
+      filename,
+      sheetNames: ['Mes élèves'],
+    };
+  }
+
+  /**
    * ⭐ Génère un fichier Excel GLOBAL avec TOUTES les classes officielles de TOUTES les niveaux.
    * Une feuille par classe officielle, triées par niveau puis par nom de classe.
    * Utilisé par le bouton "Excel global" dans l'onglet Inscriptions.

@@ -240,6 +240,8 @@ export class StudentsLifecycleService {
         regimeType: data.regimeType,
         photoUrl: data.photoUrl,
         npi: data.npi,
+        // ⭐ 2026-10-01 — Numéro Educmaster (requis pour l'export des 6e vers MEMP)
+        educMasterMatricule: (data as any).educMasterMatricule || null,
         status: 'ACTIVE',
         isActive: true,
       },

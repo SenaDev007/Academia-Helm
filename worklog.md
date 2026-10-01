@@ -12800,3 +12800,71 @@ Stage Summary:
 - Rapports : badges en français partout (Résultats publiés…), Top 3/5/10 sélectionnable, « N derniers » = seulement les non-admis sans doublon avec les premiers, plus d'onglets financier/réseau, description courte.
 - Règles de calcul : persistance en base confirmée et impact dynamique sur Notes et moyennes/délibération/relevés déjà opérationnel ; interface épurée partout.
 - Commit poussé : 8df28c8b5 sur origin/main → Railway + Vercel redéploient.
+
+---
+Task ID: 49
+Agent: main
+Task: Educmaster Secondaire — champ numéro Educmaster à l'inscription + export Secondaire au format "Mes élèves"
+
+Work Log:
+- Diagnostic : le commit 68b6b9fe9 précédent était bien sur origin/main mais
+  des commits plus récents (50, 51) avaient été poussés par l'autre agent.
+  Synchronisation : pull --rebase pour récupérer les commits 50 et 51 + sync
+  avec origin/main avant de pousser ce nouveau travail.
+- Prisma schema.prisma : ajout du champ `educMasterMatricule` (String?) au
+  modèle Student, mappé sur la colonne `educ_master_matricule`.
+- Migration SQL :
+  prisma/migrations/20261001120000_add_student_educ_master_matricule/migration.sql
+  - ALTER TABLE students ADD COLUMN educ_master_matricule TEXT
+  - Index partiel sur educ_master_matricule (WHERE IS NOT NULL) pour accélérer
+    l'export Secondaire qui filtre par cette colonne.
+- Backend students-lifecycle.service.ts : la méthode `admitStudent` persiste
+  maintenant `educMasterMatricule` lors de la création de l'élève.
+- Backend students-prisma.service.ts : la méthode `updateStudent` accepte
+  maintenant `educMasterMatricule` (mise à jour du profil élève possible).
+- Frontend StudentEnrollmentForm.tsx :
+  • Ajout du champ `educMasterMatricule` dans le formData (étape 1 Identité)
+  • Input field avec placeholder "ex: 1130424010714 (13 chiffres)", maxLength 13,
+    pattern [0-9]{13}, et texte explicatif : "Identifiant attribué par la
+    plateforme Educmaster du MEMP. Indispensable pour l'export des élèves de 6e."
+  • Le champ est inclus dans le payload `onSubmit` (opération 'ADMIT').
+- Backend educmaster-excel-export.service.ts : nouvelle méthode
+  `generateSecondaireWorkbook` :
+  • Format OFFICIEL MEMP : une seule feuille "Mes élèves" avec une seule
+    colonne "Matricule EducMaster"
+  • Par défaut, exporte les élèves de 6e (filtre configurable via classNameFilter)
+  • Filtrage par schoolLevel.code = 'SECONDAIRE' puis par nom de classe
+    commençant par le filtre numérique (ex: "6" → 6e A, 6e B, 6ème 1...)
+  • Seuls les élèves AYANT un matricule Educmaster renseigné sont inclus.
+  • Tri par nom de classe puis par matricule (ordre croissant).
+  • Header navy (#0A2A5E) avec texte blanc, format texte (@) pour préserver
+    les matricules longs (13 chiffres).
+  • Erreur explicative si aucun élève n'a de matricule : message guide
+    l'utilisateur vers l'onglet Inscriptions → Étape 1 → champ "Numéro Educmaster".
+- Backend students-lifecycle.controller.ts : nouvel endpoint
+  GET /students/export/educmaster-excel-secondaire
+  • Query: academicYearId (obligatoire), className (optionnel, défaut "6e")
+  • Retourne un StreamableFile (Excel binaire).
+- Frontend StudentInteropContent.tsx : nouvelle carte "Educmaster — Secondaire"
+  avec :
+  • Input field pour sélectionner la classe à exporter (défaut "6e")
+  • Boutons raccourcis : 6e, 5e, 4e, 3e, 2nde, 1ère, Tle
+  • Encadré bleu "Important" rappelant que les élèves sans numéro Educmaster
+    seront exclus
+  • Bouton "Exporter Secondaire ({classe})" qui appelle le nouveau endpoint via
+    fetch (credentials: include) et déclenche le téléchargement du fichier
+- Frontend proxy route :
+  app/api/students/export/educmaster-excel-secondaire/route.ts
+  • Proxy vers le backend NestJS, gère la réponse binaire (Excel) avec
+    Buffer.from(arrayBuffer) pour éviter la corruption du fichier.
+
+Stage Summary:
+- Champ "Numéro Educmaster" ajouté à l'inscription des élèves (Étape 1 :
+  Identité) — persisté en base (students.educ_master_matricule).
+- Export Educmaster SECONDAIRE au format officiel MEMP : une seule feuille
+  "Mes élèves" avec une seule colonne "Matricule EducMaster". Par défaut,
+  exporte les élèves de 6e (filtre configurable). Les élèves sans matricule
+  Educmaster sont exclus avec un message explicatif.
+- Frontend : nouvelle carte d'export Secondaire dans l'onglet Educmaster du
+  module Élèves & Scolarité, avec sélection de classe + boutons raccourcis.
+- Migration Prisma incluse : ALTER TABLE students ADD COLUMN educ_master_matricule.

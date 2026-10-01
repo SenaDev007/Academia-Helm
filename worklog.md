@@ -13022,3 +13022,20 @@ Stage Summary:
 - Guérison automatique pour TOUS les appareils (national comme territorial) : bump v4.10.0 + purge des caches pages/RSC + SWVersionGuard qui force la mise à jour même d'un onglet ouvert depuis des jours.
 - RÈGLE ACQUISE : tout déploiement qui change des chunks doit bumper SW_VERSION ; le guérisseur constitue désormais le filet de sécurité permanent.
 - Au prochain chargement du portail par le promoteur : le SW se met à jour, les caches stale sont purgés, la page se recharge une fois — tous les modules du patronat national se chargent normalement.
+
+---
+Task ID: 57 (complément)
+Agent: Super Z (principal)
+Task: T57 suite — 2 correctifs complémentaires découverts pendant la validation E2E post-déploiement
+
+Work Log:
+- v4.10.0 déployée → validation E2E dans un vrai navigateur sur patronatnational : l'installation du SW RESTAIT BLOQUÉE en « installing » à l'infini. Cause : les fetchs d'installation de PRECACHE_URLS (/app, /login, /, /portal…) — réécrits par le middleware vers des pages patronat lourdes/streamées — n'avaient AUCUN timeout et ne settleaient jamais.
+- Correctif 1 (commit c6a67b074) — sw.js v4.10.1 : timeout AbortSignal.timeout(10 s) sur CHAQUE fetch d'installation → l'install se termine TOUJOURS (mesuré : 6 s au lieu de l'infini), skipWaiting → activate → purge → claim. Validé E2E : contrôleur v4.10.1 actif, 4 modules du national OK, zéro erreur console.
+- Correctif 2 (commit f14627dda) — pendant la recherche de l'erreur console « Failed to register a ServiceWorker … 404 » qui apparaissait à CHAQUE chargement (tous portails) : traçage CDP → le bootstrap Partytown chargé depuis jsdelivr enregistrait /~partytown/partytown-sw.js qui n'existait pas sur nos origines (404 console permanent) ET son fallback sandbox n'était jamais monté → GA (type="text/partytown") ne s'exécutait pas. Fix : lib Partytown auto-hébergée dans public/~partytown/ (convention officielle Next.js), bootstrap local, pass-through middleware (PUBLIC_STATIC_PREFIXES + matcher) pour tous les domaines. Validé : partytown-sw.js 200 + SW partytown actif (scope /~partytown/), GA fonctionnel, 0 erreur console sur chargement frais.
+- Test E2E final du filtre département écoles : GET /api/federis/patronat/schools?departmentId=… → 200, liste vide sur un département sans écoles (correct).
+- Nettoyage final : compte QA « final » supprimé (user + lien + session) ; national réel intact (dawesakpovi seul membre) ; 5 patronats (inchangés).
+
+Stage Summary:
+- Chaîne complète validée en production : SW v4.10.1 installe en ~6 s, s'active, purge les caches stale, contrôle la page — et le guérisseur SWVersionGuard veille en permanence.
+- Plus aucune erreur console au chargement des portails (bruit Partytown éliminé + GA rétabli).
+- Commits : 0537fba0a (fix principal T57) + c6a67b074 (sw v4.10.1 timeout install) + f14627dda (partytown auto-hébergé) + worklog.

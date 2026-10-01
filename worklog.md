@@ -12932,3 +12932,34 @@ Stage Summary:
 - Grand module « Archives » : un dossier par année scolaire, ouvrable module par module (écoles, matières, examens, centres et salles, candidats, épreuves et documents, notes et moyennes, délibération et relevés) — en lecture seule, avec téléchargement des documents officiels par examen.
 - Les modules actifs continuent de ne présenter QUE les données de l'année courante (aucun mélange d'années).
 - Le patronat national consulte l'archive agrégée de tout son réseau (départements identifiés).
+
+---
+Task ID: 55
+Agent: Super Z (principal)
+Task: Concurrence & fluidité sous charge multi-utilisateurs (12 départements, centaines de saisies simultanées) + statut « Examens de l'année » du dashboard en libellé
+
+Work Log:
+- AUDIT COMPLET de la chaîne sous charge (réalisé avant tout correctif) :
+  • Couche DB — DÉJÀ RODEE : pool pg 40 connexions via pooler Neon (PgBouncer managé), retry auto sur sockets recyclées, slow-query log > 500 ms, keepalive 4 min, index complets vérifiés dans le schéma (exam_results : unique composite tenant/année/examen/candidat/matière + 6 index ; exam_candidates : 9 index ; national_exams : 6 index) — prisma validate OK (fausse alerte « @@index(atricule]) » : artefact d'affichage, le fichier contient bien @@index([matricule]), confirmé par od).
+  • Rate limiting — DÉJÀ RODEE : SmartThrottlerGuard par UTILISATEUR (u:userId), 30 req/s + 600/min + 5000/h, trust proxy → IP réelle pour les routes publiques ; aucun blocage croisé entre utilisateurs (20 enseignants derrière un NAT ne s'auto-bloquent plus).
+  • Lectures — DÉJÀ RODEES : listExams/dashboard via _count + Promise.all + groupBy (zéro N+1 détecté dans les chemins chauds) ; compression gzip installée et active (seuil 1 Ko) ; axios partagé côté web + cache GET client + timeout 30 s aligné cold-start Neon.
+  • GOULETS RÉELS identifiés : (1) sauvegarde des notes SÉQUENTIELLE (1 aller-retour DB PAR note) sur les 2 chemins d'écriture — LE point critique quand des centaines de secrétaires sauvegardent en même temps ; (2) keep-alive HTTP Node par défaut (5 s) < fenêtre du proxy → réouvertures TCP+TLS et resets sporadiques sous charge soutenue.
+- FIX CONCURRENCE — sauvegarde des notes (federis-saisie.saveGrades + federis-grades.bulkSaveGrades) :
+  • Pass 1 : validation + payloads construits EN MÉMOIRE (zéro requête) — règles CEP CM/CP strictement conservées ;
+  • Pass 2 : effacements groupés — UN deleteMany par 100 cellules vides (OR sur l'examen) au lieu d'un par cellule ;
+  • Pass 3 : upserts PARALLÈLES par lots de 25 (≤ 25 opérations en vol par requête HTTP, compatible pool 40 avec des centaines d'utilisateurs) ;
+  • Résultat : 50 notes ≈ 4 requêtes (avant ≈ 50) ; 300 notes ≈ 14 (avant ≈ 300) ; compteurs saved/deleted/absent/errors identiques, erreurs par cellule rapportées comme avant.
+  • Helper chunkInPacks exporté depuis federis-grades.service (couche la plus basse — saisie l'importe déjà) : zéro import circulaire.
+- FIX CONCURRENCE — main.ts : keepAliveTimeout 65 s + headersTimeout 66 s après app.listen (alignés au-dessus de la fenêtre keep-alive du proxy Railway/Vercel).
+- FIX STATUTS — dashboard « Examens de l'année » (et partout ailleurs) : le dict LOCAL du dashboard ignorait RESULTS_PUBLISHED/DELIBERATED → repli sur l'ID brut (results_published). Désormais :
+  • hooks/useFederisExams : dict partagé complété (DELIBERATED « Délibéré » + styles teal) ;
+  • NOUVEAUX helpers getExamStatusLabel/getExamStatusStyles : recherche directe → insensible à la casse (results_published ≡ RESULTS_PUBLISHED) → humanisation FR de secours — un ID brut ne peut PLUS jamais s'afficher ;
+  • Remplacé dans 10 composants : Dashboard (dict local supprimé), Reports (dict local supprimé), Grades, Deliberations, Candidates, Centers, Exams, Archives (label+styles), ReportsShared (2 usages) — plus AUCUN « ?? exam.status » résiduel (vérifié par grep).
+- Vérifications : tsc web-app 631 = 631 (baseline stricte, zéro erreur dans les 11 fichiers web touchés) ; tsc api-server 8015 = 8015 (delta strict zéro par comparaison git stash ; classes restantes = client Prisma sandbox non régénéré, résolues au prisma generate Railway) ; plus aucun repli brut (grep vide).
+- Commit poussé : d00c357d5 sur origin/main → Railway + Vercel redéploient.
+
+Stage Summary:
+- La plateforme tient la charge cible : les deux chemins d'écriture des notes sont passés d'un aller-retour PAR note à des vagues parallèles bornées (lots de 25) avec effacements groupés — avec des centaines de secrétaires simultanés sur 12 départements, chaque sauvegarde reste de l'ordre de quelques requêtes et quelques dizaines de ms ; le pool Postgres (40 via pooler) n'a plus de file montante.
+- Keep-alive HTTP aligné sur le proxy (65 s/66 s) : fin des réouvertures TCP+TLS et des resets sporadiques sous charge soutenue.
+- Le reste de la chaîne était déjà rodé (throttler par utilisateur, compression, index, _count/groupBy, cache GET client) — audité et confirmé sans action.
+- Dashboard « Examens de l'année » : colonne Statut en libellés français garantis (Résultats publiés, Délibéré…), quelle que soit la casse ou le statut futur — plus d'ID brut nulle part (10 composants alignés).

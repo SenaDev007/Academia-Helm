@@ -1,51 +1,55 @@
 /**
- * Page Banque d'épreuves - Federis
+ * Page Banque d'épreuves — Academia Federis
+ *
+ * ⭐ T50 (2026-10-01) — FIX BRANCHEMENT : cette route affichait encore le
+ *    placeholder « Page en cours de développement » alors que le composant
+ *    réel (FederisQuestionBankPage — onglets Ressources / Catalogue,
+ *    sujet verrouillé ORION Integrity Guard) existait déjà. La route rend
+ *    désormais le composant, avec le profil patronat réel (pattern des
+ *    autres pages : session + loadFederisProfile).
  */
 
 import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import { getServerSession } from '@/lib/auth';
+import { getServerSession, getServerToken } from '@/lib/auth';
+import { loadFederisProfile } from '@/lib/federis/server-api';
+import { getFederisBasePath } from '@/lib/federis/useFederisPath';
 import FederisLayout from '@/components/federis/FederisLayout';
+import FederisQuestionBankPage from '@/components/federis/FederisQuestionBankPage';
 import type { User, Tenant } from '@/types';
 
 export const metadata: Metadata = {
-  title: 'Banque d\'épreuves - Federis',
+  title: 'Banque d\u2019épreuves - Academia Federis',
 };
 
 export default async function QuestionBankPage() {
   const session = await getServerSession();
-  if (!session?.user) redirect('/federis/login');
+  if (!session?.user) {
+    redirect(`${getFederisBasePath()}/login?redirect=/federis/question-bank`);
+  }
 
   const user = session.user as User;
+  const token = await getServerToken();
+
+  // Profil patronat réel (nom, niveau, abonnement) pour l'en-tête institutionnel.
+  const profile = await loadFederisProfile(token);
+
   const federis: Tenant = {
-    id: user.tenantId || '',
-    name: 'Federis des Écoles Privées',
+    id: profile?.tenantId || user.tenantId || '',
+    name: profile?.name ?? 'Espace Patronat',
     slug: 'federis',
     subdomain: '',
     status: 'active',
-    subscriptionStatus: 'ACTIVE_SUBSCRIBED',
+    subscriptionStatus: profile?.subscription?.status ?? 'ACTIVE_SUBSCRIBED',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     trialEndsAt: undefined,
-    nextPaymentDueAt: undefined,
-  } as Tenant as Tenant;
+    nextPaymentDueAt: profile?.subscription?.expiresAt ?? undefined,
+  } as Tenant;
 
   return (
-    <FederisLayout
-      user={user}
-      federis={federis}
-      currentAcademicYear={{ id: 'current', label: '2024-2025' }}
-    >
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Banque d'épreuves</h1>
-          <p className="text-gray-600 mt-1">Ressources partagées</p>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
-          Page en cours de développement
-        </div>
-      </div>
+    <FederisLayout user={user} federis={federis} currentAcademicYear={undefined}>
+      <FederisQuestionBankPage />
     </FederisLayout>
   );
 }
-

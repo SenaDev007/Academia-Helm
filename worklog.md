@@ -12761,3 +12761,23 @@ Stage Summary:
 - Complémentaire au commit parallèle 68b6b9fe9 (sidebars Helm : PilotageSidebar, ExamsModulePage, PedagogyModulePage) — la suppression est désormais couverte de bout en bout côté web.
 - Commit poussé : 598794c37 (rebasé sur 68b6b9fe9) sur origin/main → Railway + Vercel redéploient.
 - Notes pour plus tard : (1) l'app mobile contient encore des sections fed-conflicts/fed-orion (federis_screen.dart, contenu mock) ; (2) l'API renvoie toujours orionAlerts (utilisée par le mobile) ; (3) 5 erreurs TS préexistantes dans registre/page.tsx (onglet Interopérabilité Educ Master).
+
+---
+Task ID: 50
+Agent: Super Z (principal)
+Task: Fix — le module « Rapport et statistiques » de l'espace Academia Frederis affichait « Page en cours de développement » au lieu du travail T46 (Procès-verbal + Statistiques)
+
+Work Log:
+- DIAGNOSTIC : le commit T46 (048fe960c) avait bien créé tous les composants (FederisReportsPage 463 lignes + reports/FederisProcVerbalTab.tsx 462, reports/FederisStatsTab.tsx 704, reports/FederisReportsShared.tsx 219 + backend federis-pv-stats-pdf.service.ts 835 et federis-pv-stats.controller.ts) mais n'avait PAS mis à jour la route (patronat)/federis/reports/page.tsx — celle-ci rendait toujours l'ancien placeholder statique « Page en cours de développement » (avec en plus un tenant codé en dur et une année scolaire 2024-2025 figée).
+- Audit systématique des 15 routes (patronat)/federis/* : seul autre module touché par le même défaut = question-bank (composant FederisQuestionBankPage existant non câblé).
+- CORRECTION (pattern moderne des pages délibérations/candidates : getServerSession + getServerToken + loadFederisProfile + redirect getFederisBasePath) :
+  • reports/page.tsx → rend <FederisReportsPage /> : 5 onglets (Procès-verbal · Statistiques · Bilan de session · Bilan financier · Réseau & logistique), défaut = Procès-verbal, PV/Stats chargés depuis le registre officiel par examen (CEP/BEPC/BAC/CAP) avec PDF officiels A4 paysage (POST /federis/exams/:examId/reports/proces-verbal|statistiques)
+  • question-bank/page.tsx → rend <FederisQuestionBankPage /> (onglets Ressources / Catalogue)
+  • En-tête institutionnel alimenté par le profil patronat réel (nom, niveau, abonnement) au lieu du tenant statique
+- Vérifications : re-audit 15/15 routes branchées, zéro placeholder rendu (la mention ne subsiste qu'en commentaire d'historique) ; tsc web-app 631 = 631 (baseline), zéro erreur dans les fichiers modifiés ; imports résolus (modules/components/reports/* + lib/federis/server-api + useFederisPath).
+
+Stage Summary:
+- Le module Rapport et statistiques affiche désormais le travail T46 : onglets Procès-verbal et Statistiques par examen (défaut CEP via T45) + les 3 bilans consolidés, avec PDF officiels.
+- Bonus : la Banque d'épreuves (même défaut de câblage) affiche désormais son composant réel (Ressources / Catalogue).
+- Commit poussé : 00c774ce3 sur origin/main → Railway + Vercel redéploient.
+- À valider post-déploiement : /federis/reports (PV par défaut + stats par examen + PDF) et /federis/question-bank (Ressources / Catalogue).

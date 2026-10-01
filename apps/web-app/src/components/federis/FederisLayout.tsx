@@ -149,6 +149,9 @@ const federisNavItems = [
     category: 'ANALYSE',
     items: [
       { name: 'Rapports et statistiques', subPath: '/reports', icon: 'grades' as const },
+      // ⭐ 2026-10-01 — Module Archives : dossiers par année scolaire (fin
+      //    d'année) — consultation module par module des années passées.
+      { name: 'Archives', subPath: '/archives', icon: 'library' as const },
     ]
   },
   {

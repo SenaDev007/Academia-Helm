@@ -146,6 +146,8 @@ const ROUTE_PERMISSIONS: RouteRoles = {
   '/documents': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR', 'CHARGE_MISSION', 'OPERATOR'],
   '/question-bank': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR'],
   '/reports': ['COORDONNATEUR', 'SECRETAIRE', 'TRESORIER', 'ORGANISATEUR', 'CHARGE_MISSION', 'OPERATOR', 'VIEWER'],
+  // ★ 2026-10-01 — Module Archives : consultation de tous les modules des années passées (lecture seule, tous les rôles)
+  '/archives': ['COORDONNATEUR', 'SECRETAIRE', 'TRESORIER', 'ORGANISATEUR', 'CHARGE_MISSION', 'OPERATOR', 'VIEWER'],
   '/settings': ['COORDONNATEUR', 'TRESORIER'],
   '/checkout': ['COORDONNATEUR', 'TRESORIER'],
   // ⭐ Équipe & Comptes — création des users par le coordonnateur uniquement

@@ -102,6 +102,9 @@ import { FederisPvStatsPdfService } from './federis-pv-stats-pdf.service';
 // ⭐ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (national = tous les départements)
 import { FederisScopeService } from './federis-scope.service';
 import { FederisPvStatsController } from './federis-pv-stats.controller';
+// ⭐ 2026-10-01 — Module Archives : consultation des années passées
+import { FederisArchiveService } from './federis-archive.service';
+import { FederisArchiveController } from './federis-archive.controller';
 
 @Module({
   imports: [BillingModule, CommunicationModule, ParentProvisioningModule],
@@ -125,6 +128,7 @@ import { FederisPvStatsController } from './federis-pv-stats.controller';
     FederisSaisieController,
     FederisPublicResultsController,
     FederisPvStatsController,
+    FederisArchiveController,
   ],
   providers: [
     FederisService,
@@ -162,6 +166,8 @@ import { FederisPvStatsController } from './federis-pv-stats.controller';
     //    patronat connecté (national = tous les départements, lecture seule
     //    sauf délégation du coordonnateur départemental).
     FederisScopeService,
+    // ⭐ 2026-10-01 — Module Archives : consultation des années passées.
+    FederisArchiveService,
   ],
   exports: [
     FederisService,

@@ -78,6 +78,7 @@ const protectedPrefixRoutes = [
   '/federis/question-bank',
   '/federis/deliberations',
   '/federis/reports',
+  '/federis/archives',
   '/federis/settings',
   '/federis/team',
   // Domaine principal (chemins historiques /patronat/*)
@@ -92,6 +93,7 @@ const protectedPrefixRoutes = [
   '/patronat/question-bank',
   '/patronat/deliberations',
   '/patronat/reports',
+  '/patronat/archives',
   '/patronat/settings',
   '/patronat/team',
 ];

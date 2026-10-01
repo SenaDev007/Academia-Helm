@@ -12868,3 +12868,45 @@ Stage Summary:
 - Frontend : nouvelle carte d'export Secondaire dans l'onglet Educmaster du
   module Élèves & Scolarité, avec sélection de classe + boutons raccourcis.
 - Migration Prisma incluse : ALTER TABLE students ADD COLUMN educ_master_matricule.
+
+---
+Task ID: 52
+Agent: Super Z (principal)
+Task: Performances — vitesse de chargement des modules + « jeu de défillment » de la sidebar au clic
+
+Work Log:
+- DIAGNOSTIC : chaque page /federis/* embarquait son PROPRE FederisLayout (header + sidebar) et son loading.tsx rendait un CLONE complet du chrome → à chaque changement de module la sidebar était détruite/recréée 2-3 fois (perte du scroll = « jeu de défilement avant stabilisation ») et le profil patronat était rechargé 2 fois par navigation (fetch serveur bloquant + fetch client au montage).
+- Groupe de routes (connected) : les 16 modules connectés (bureau, candidates, centers, dashboard, deliberations, documents, exams, grades, patronats, question-bank, reports, saisie, schools, settings, subjects, team) déplacés dans (patronat)/federis/(connected)/ — URLs inchangées (groupe virtuel), login/register/checkout restent publics à la racine.
+- (connected)/layout.tsx : session + token (lectures cookie parallèles) + loadFederisProfile UNE SEULE fois → rend <FederisLayout> persistant. Les navigations entre modules ne remontent QUE la zone de contenu.
+- FederisLayout : nouvelle prop initialProfile (orgLevel, userRole, logo, name, subscription) — les états démarrent remplis (zéro flash « Chargement… »), le fetch client devient un simple rafraîchissement arrière-plan (1× par montage, plus 1× par navigation). patronatName affiché dans le sous-titre de l'en-tête.
+- Nouveau composant FederisContentSkeleton (contenu seul) : les 16 loading.tsx des modules + (connected)/loading.tsx (filet) ne clonent PLUS header+sidebar ; federis/loading.tsx (chrome complet) conservé pour la 1re entrée et les pages publiques.
+- Les 16 pages.tsx allégées : plus d'enveloppe FederisLayout ni de fetch profil ; getServerSession (lecture cookie locale) uniquement quand le composant a besoin de props (userRole, tenantId, user) ; métadonnées conservées ; fonctions page renommées *Route (collision de noms avec les composants importés).
+- server-api.ts : FederisPatronatProfile étendu (userRole, userFunction, logo) — même endpoint API, le layout peut amorcer tous les états depuis le serveur.
+- Vérifications : tsc web-app 631 = 631 (baseline stricte, zéro erreur dans les fichiers touchés) ; 101 fichiers versionnés ; URLs et middleware inchangés (le groupe de routes est virtuel).
+
+Stage Summary:
+- La sidebar ne bouge plus entre les modules (montée une seule fois, scroll préservé) — fin du « jeu de défilement ».
+- Navigation quasi instantanée : pages serveur minces, profil chargé une seule fois par entrée dans l'espace, prefetch Next.js efficace.
+- Squelettes de chargement limités à la zone de contenu, à l'intérieur du chrome persistant.
+
+---
+Task ID: 53
+Agent: Super Z (principal)
+Task: Patronat national — agrégation de tous les départements dans tous les modules, lecture seule par défaut + délégation par le coordonnateur départemental
+
+Work Log:
+- NOUVEAU FederisScopeService (federis-scope.service.ts) : resolveScope (national = self + patronats enfants actifs ; departmentId restreint à UN département), resolveScopeYears/resolveScopeYearsFor (années actives du périmètre, match par libellé de l'année de référence — garantit « données de l'année courante uniquement »), getScopedExam, assertNationalWritable/assertWritable (garde d'écriture), délégations stockées dans patronats.metadata.nationalDelegations (aucune migration) + AuditLog FEDERIS_NATIONAL_DELEGATION_GRANTED/REVOKED.
+- EXAMENS : listExams agrégé (patronatId IN périmètre + academicYearId IN années du périmètre) + ?departmentId + badge département par examen + meta scope (isNational, departments) ; getOwnedExam réécrit sur le périmètre ; gardes d'écriture sur createExam, updateExam, create/updateCenter, create/updateRoom, importCandidates (+addCandidate qui délègue), purgeDuplicateCandidates, assignTableNumbers, assignCandidatesToCenter, generateAnonymats ; les candidats importés en écriture déléguée sont créés dans le TENANT de l'examen (le département), pas celui du national.
+- 10 SERVICES étendus au périmètre (checks par tenant seul remplacés) : saisie, grades (+gardes bulkSaveGrades/submitGrades/reopenGrades), délibération (+gardes publishResults/createPublicLink), matières (liste agrégée + gardes create/update/delete), surveillants, PV/stats PDF, PDF (convocations/relevés), exports candidats/logistique, épreuves (liste agrégée + gardes update/delete).
+- DASHBOARD : KPIs consolidés du réseau (examens, candidats, sans centre, doublons, incidents sur TOUS les tenants du périmètre) + NOUVEAU departments[] (examens/candidats de l'année courante par département, via groupBy).
+- BANQUE D'ÉPREUVES : listResources agrégé (patronatId IN périmètre + département propriétaire par ressource) + gardes create/update/delete.
+- DÉLÉGATIONS (contrôleur patronat) : GET /federis/patronat/delegations (vue double : national → statut par département pour le compte connecté ; territorial → délégations accordées), POST (email du compte national, COORDONNATEUR départemental uniquement via resolvePatronatUser), DELETE /:userId (révocation). grantDelegation vérifie l'appartenance du compte au patronat national parent.
+- WEB : FederisScopeProvider (contexte : isNational, departments + canWrite, selectedDepartmentId persisté sessionStorage, canWrite effectif, refresh) + FederisScopeBar dans le layout (sélecteur « Tous les départements (agrégation nationale) » / chaque territoire + badge Lecture seule / Modification autorisée (déléguée)) sur les 12 modules de données ; useFederisExams passe ?departmentId et réinitialise la sélection d'examen au changement ; gardes UI (flags && scopeCanWrite) sur Examens, Candidats, Centres, Matières, Épreuves et documents, Banque d'épreuves, Notes et moyennes, Délibération ; FederisDelegationCard dans Équipe & Comptes (donner/révoquer la main) ; colonne « Vos droits » dans Patronats territoriaux ; tableau de bord : colonnes Examens/Candidats de l'année par département.
+- Vérifications : tsc web-app 631 = 631 (les 2 erreurs restantes dans Épreuves/Banque sont préexistantes, décalées de lignes) ; api-server +27 erreurs toutes de la classe « client Prisma non régénéré sandbox » (résolues par le postinstall Railway) ; zéro erreur de syntaxe.
+- Commit poussé : 13895354b (T52+T53) sur origin/main → Railway + Vercel redéploient.
+
+Stage Summary:
+- Le patronat national voit désormais l'AGRÉGATION de tous les départements dans TOUS les modules (examens avec badge du département, matières, épreuves, banque, dashboard consolidé) ; le sélecteur de département restreint la vue (ex. Borgou → tout le Borgou).
+- Le national est en LECTURE SEULE partout (gardes API sur toutes les écritures + boutons masqués côté web) ; il peut télécharger/consulter tout.
+- Le coordonnateur d'un département lui « donne la main » depuis Équipe & Comptes (carte Délégation au patronat national) — le national sélectionne alors ce département et peut modifier SES données ; révocation immédiate ; tout est tracé (AuditLog).
+- Reste connu : saisie des notes naturellement bloquée pour le national (aucune affectation secrétaire) ; les modules Écoles rattachées étaient déjà agrégés au national (vision pays) — inchangés.

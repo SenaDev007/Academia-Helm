@@ -9,6 +9,9 @@
  */
 import { Metadata } from 'next';
 import FederisReportsPage from '@/components/federis/FederisReportsPage';
+// ⭐ 2026-10-02 — Vue par département : le national choisit un département
+//    (grille de cartes) avant de consulter les rapports du module.
+import FederisDepartmentGate from '@/components/federis/FederisDepartmentGate';
 import type { User } from '@/types';
 
 export const metadata: Metadata = {
@@ -16,5 +19,9 @@ export const metadata: Metadata = {
 };
 
 export default async function ReportsRoute() {
-  return <FederisReportsPage />;
+  return (
+    <FederisDepartmentGate moduleName="Rapports et statistiques">
+      <FederisReportsPage />
+    </FederisDepartmentGate>
+  );
 }

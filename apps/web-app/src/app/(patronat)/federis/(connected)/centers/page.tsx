@@ -10,6 +10,9 @@
 import { Metadata } from 'next';
 import { getServerSession } from '@/lib/auth';
 import FederisCentersPage from '@/components/federis/FederisCentersPage';
+// ⭐ 2026-10-02 — Vue par département : le national choisit un département
+//    (grille de cartes) avant de consulter les centres du module.
+import FederisDepartmentGate from '@/components/federis/FederisDepartmentGate';
 import type { User } from '@/types';
 
 export const metadata: Metadata = {
@@ -22,6 +25,8 @@ export default async function CentersRoute() {
   const user = session?.user as User | undefined;
 
   return (
-    <FederisCentersPage tenantId={user?.tenantId ?? ''} userRole={user?.role ?? null} />
+    <FederisDepartmentGate moduleName="Centres, salles et surveillants">
+      <FederisCentersPage tenantId={user?.tenantId ?? ''} userRole={user?.role ?? null} />
+    </FederisDepartmentGate>
   );
 }

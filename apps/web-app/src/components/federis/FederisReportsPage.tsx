@@ -26,6 +26,9 @@ import AppIcon from '@/components/ui/AppIcon';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
 import { FedPage, FedCountUp } from '@/components/federis/federis-motion';
+// ⭐ 2026-10-02 — Vue par département : le bilan de session du national porte
+//    sur le département sélectionné (grille d'entrée du module).
+import { useFederisScope } from '@/lib/federis/scope-context';
 // ⭐ T55 — libellés de statut partagés + humanisation (plus d'ID brut).
 import { getExamStatusLabel, getExamStatusStyles } from '@/hooks/useFederisExams';
 // ⭐ T46 — Procès-verbal & Statistiques par examen (reproduction Helm)
@@ -79,11 +82,18 @@ export default function FederisReportsPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeReport, setActiveReport] = useState<ReportKind>('PV');
 
+  // ⭐ 2026-10-02 — Vue par département (patronat national) : le bilan de
+  //    session porte sur le département sélectionné.
+  const { selectedDepartmentId } = useFederisScope();
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const dashRes = await apiClient.get('/federis/patronat/dashboard', { timeout: 25000 });
+      const dashRes = await apiClient.get('/federis/patronat/dashboard', {
+        timeout: 25000,
+        params: selectedDepartmentId ? { departmentId: selectedDepartmentId } : undefined,
+      });
       setDashboard(dashRes.data ?? null);
     } catch (err: any) {
       setError(
@@ -93,7 +103,7 @@ export default function FederisReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedDepartmentId]);
 
   useEffect(() => {
     void load();

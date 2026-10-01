@@ -10,6 +10,9 @@
 import { Metadata } from 'next';
 import { getServerSession } from '@/lib/auth';
 import FederisExamsPage from '@/components/federis/FederisExamsPage';
+// ⭐ 2026-10-02 — Vue par département : le national choisit un département
+//    (grille de cartes) avant de consulter les campagnes du module.
+import FederisDepartmentGate from '@/components/federis/FederisDepartmentGate';
 import type { User } from '@/types';
 
 export const metadata: Metadata = {
@@ -22,6 +25,8 @@ export default async function ExamsRoute() {
   const user = session?.user as User | undefined;
 
   return (
-    <FederisExamsPage tenantId={user?.tenantId ?? ''} userRole={user?.role ?? null} />
+    <FederisDepartmentGate moduleName="Examens nationaux">
+      <FederisExamsPage tenantId={user?.tenantId ?? ''} userRole={user?.role ?? null} />
+    </FederisDepartmentGate>
   );
 }

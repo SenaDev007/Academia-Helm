@@ -204,8 +204,14 @@ export class FederisPatronatController {
 
   @UseGuards(JwtAuthGuard)
   @Get('patronat/dashboard')
-  async getDashboard(@Req() req: any) {
-    return this.patronatService.getDashboard(req.user.tenantId, req.user.id || req.user.sub);
+  async getDashboard(@Req() req: any, @Query('departmentId') departmentId?: string) {
+    // ⭐ 2026-10-02 — Vue par département (patronat national) : le bilan porte
+    //    sur le département sélectionné (module Rapports, Tableau de bord).
+    return this.patronatService.getDashboard(
+      req.user.tenantId,
+      req.user.id || req.user.sub,
+      departmentId || null,
+    );
   }
 
   // ════════════════════════════════════════════════════════════════════

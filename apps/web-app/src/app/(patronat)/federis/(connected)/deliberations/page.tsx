@@ -10,6 +10,9 @@
 import { Metadata } from 'next';
 import { getServerSession } from '@/lib/auth';
 import FederisDeliberationsPage from '@/components/federis/FederisDeliberationsPage';
+// ⭐ 2026-10-02 — Vue par département : le national choisit un département
+//    (grille de cartes) avant de consulter les délibérations du module.
+import FederisDepartmentGate from '@/components/federis/FederisDepartmentGate';
 import type { User } from '@/types';
 
 export const metadata: Metadata = {
@@ -22,6 +25,8 @@ export default async function DeliberationsRoute() {
   const user = session?.user as User | undefined;
 
   return (
-    <FederisDeliberationsPage userRole={user?.role ?? null} />
+    <FederisDepartmentGate moduleName="Délibération et relevés">
+      <FederisDeliberationsPage userRole={user?.role ?? null} />
+    </FederisDepartmentGate>
   );
 }

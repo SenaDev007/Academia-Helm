@@ -10,6 +10,9 @@
 import { Metadata } from 'next';
 import { getServerSession } from '@/lib/auth';
 import FederisGradesPage from '@/components/federis/FederisGradesPage';
+// ⭐ 2026-10-02 — Vue par département : le national choisit un département
+//    (grille de cartes) avant de consulter les notes du module.
+import FederisDepartmentGate from '@/components/federis/FederisDepartmentGate';
 import type { User } from '@/types';
 
 export const metadata: Metadata = {
@@ -22,6 +25,8 @@ export default async function GradesRoute() {
   const user = session?.user as User | undefined;
 
   return (
-    <FederisGradesPage tenantId={user?.tenantId ?? ''} userRole={user?.role ?? null} />
+    <FederisDepartmentGate moduleName="Notes et moyennes">
+      <FederisGradesPage tenantId={user?.tenantId ?? ''} userRole={user?.role ?? null} />
+    </FederisDepartmentGate>
   );
 }

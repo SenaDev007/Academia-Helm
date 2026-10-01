@@ -10,6 +10,9 @@
 import { Metadata } from 'next';
 import { getServerSession } from '@/lib/auth';
 import FederisCandidatesPage from '@/components/federis/FederisCandidatesPage';
+// ⭐ 2026-10-02 — Vue par département : le national choisit un département
+//    (grille de cartes) avant de consulter les candidats du module.
+import FederisDepartmentGate from '@/components/federis/FederisDepartmentGate';
 import type { User } from '@/types';
 
 export const metadata: Metadata = {
@@ -22,6 +25,8 @@ export default async function CandidatesRoute() {
   const user = session?.user as User | undefined;
 
   return (
-    <FederisCandidatesPage tenantId={user?.tenantId ?? ''} userRole={user?.role ?? null} />
+    <FederisDepartmentGate moduleName="Candidats">
+      <FederisCandidatesPage tenantId={user?.tenantId ?? ''} userRole={user?.role ?? null} />
+    </FederisDepartmentGate>
   );
 }

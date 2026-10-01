@@ -45,6 +45,13 @@ interface FederisScopeContextValue {
   departments: FederisScopeDepartment[];
   /** Département sélectionné (null = tous — vue agrégée). */
   selectedDepartmentId: string | null;
+  /**
+   * ⭐ Vue par département (2026-10-02) : true une fois le contexte initialisé
+   * (dernier département restauré du sessionStorage + délégations chargées).
+   * Les grilles de sélection départementale attendent ce flag pour éviter le
+   * flash « grille → contenu » (ou l'inverse) au rechargement de la page.
+   */
+  restored: boolean;
   setSelectedDepartmentId: (id: string | null) => void;
   /**
    * Droit d'écriture EFFECTIF dans le contexte courant :
@@ -64,6 +71,7 @@ const FederisScopeContext = createContext<FederisScopeContextValue>({
   isNational: false,
   departments: [],
   selectedDepartmentId: null,
+  restored: true,
   setSelectedDepartmentId: () => undefined,
   canWrite: true,
   readOnlyLabel: null,
@@ -81,16 +89,7 @@ export function FederisScopeProvider({
 }) {
   const [departments, setDepartments] = useState<FederisScopeDepartment[]>([]);
   const [selectedDepartmentId, setSelectedDepartmentIdState] = useState<string | null>(null);
-
-  // Restaure le dernier département sélectionné (persistance douce par onglet)
-  useEffect(() => {
-    try {
-      const saved = sessionStorage.getItem(DEPARTMENT_STORAGE_KEY);
-      if (saved) setSelectedDepartmentIdState(saved);
-    } catch {
-      /* sessionStorage indisponible */
-    }
-  }, []);
+  const [restored, setRestored] = useState(false);
 
   const load = useCallback(async () => {
     if (!isNational) return;
@@ -104,9 +103,27 @@ export function FederisScopeProvider({
     }
   }, [isNational]);
 
+  // ⭐ 2026-10-02 — Initialisation en UNE passe : restaure le dernier département
+  // sélectionné (sessionStorage) puis charge les délégations du réseau ; le
+  // flag `restored` marque la fin — les grilles départementales (vue par
+  // département des modules EXAMENS) l'attendent pour éviter tout flash.
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const saved = sessionStorage.getItem(DEPARTMENT_STORAGE_KEY);
+        if (saved) setSelectedDepartmentIdState(saved);
+      } catch {
+        /* sessionStorage indisponible */
+      }
+      await load();
+      if (!cancelled) setRestored(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNational]);
 
   const setSelectedDepartmentId = useCallback((id: string | null) => {
     setSelectedDepartmentIdState(id);
@@ -146,12 +163,13 @@ export function FederisScopeProvider({
       isNational,
       departments,
       selectedDepartmentId,
+      restored,
       setSelectedDepartmentId,
       canWrite,
       readOnlyLabel,
       refresh: load,
     }),
-    [isNational, departments, selectedDepartmentId, setSelectedDepartmentId, canWrite, readOnlyLabel, load],
+    [isNational, departments, selectedDepartmentId, restored, setSelectedDepartmentId, canWrite, readOnlyLabel, load],
   );
 
   return <FederisScopeContext.Provider value={value}>{children}</FederisScopeContext.Provider>;

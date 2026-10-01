@@ -448,9 +448,34 @@ export class FederisPatronatService {
   /**
    * Dashboard — cockpit institutionnel (cahier des charges §7.1 / §8.1).
    * Vue macro orientée décision : KPIs + alertes ORION + anomalies.
+   *
+   * ⭐ 2026-10-02 — VUE PAR DÉPARTEMENT : `departmentId` (patronat national)
+   *    restreint le périmètre au patronat départemental choisi — le reste de
+   *    la méthode suit alors exactement le chemin « territorial » (KPIs,
+   *    examens, candidats et alertes du département, et non du réseau).
    */
-  async getDashboard(tenantId: string, userId?: string) {
-    const patronat = await this.resolvePatronat(tenantId, userId);
+  async getDashboard(tenantId: string, userId?: string, departmentId?: string | null) {
+    let patronat = await this.resolvePatronat(tenantId, userId);
+
+    // ⭐ Vue par département : le national consulte UN département précis de
+    //    son réseau (le patronat départemental devient le périmètre effectif).
+    if (departmentId && patronat.orgLevel === 'NATIONAL') {
+      const child = await this.prisma.patronat.findFirst({
+        where: {
+          id: departmentId,
+          parentPatronatId: patronat.id,
+          status: 'ACTIVE',
+        },
+        select: { tenantId: true },
+      });
+      if (!child) {
+        throw new BadRequestException(
+          'Département introuvable dans votre réseau de patronats.',
+        );
+      }
+      patronat = await this.resolvePatronat(child.tenantId, userId);
+    }
+
     const academicYear = await this.getActiveYear(patronat.tenantId);
 
     // ⭐ 2026-10-01 — AGRÉGATION NATIONALE : le tableau de bord du national

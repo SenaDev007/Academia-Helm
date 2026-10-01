@@ -617,15 +617,20 @@ export class FederisEpreuveService {
   /**
    * Liste des épreuves du patronat (toutes années — le frontend groupe par
    * année / catégorie). Lecture : tous les membres.
+   *
+   * ⭐ 2026-10-02 — VUE PAR DÉPARTEMENT : `departmentId` (patronat national)
+   *    restreint la liste aux épreuves du patronat départemental sélectionné
+   *    sur la grille d'entrée du module — chaque département prépare ses
+   *    propres épreuves.
    */
-  async listEpreuves(tenantId: string, userId?: string) {
+  async listEpreuves(tenantId: string, userId?: string, departmentId?: string | null) {
     await this.ensureSchema();
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
 
     // ★ 2026-10-01 — AGRÉGATION NATIONALE : le national voit ses épreuves
     //    + celles de TOUS ses départements (isolation territoriale préservée
     //    pour un territorial).
-    const scope = await this.scopeService.resolveScope(tenantId, userId);
+    const scope = await this.scopeService.resolveScope(tenantId, userId, departmentId);
 
     const papers = await this.prisma.federisExamPaper.findMany({
       where: { patronatId: { in: scope.scopePatronatIds } },
@@ -939,11 +944,24 @@ export class FederisEpreuveService {
 
   // ── En-tête réutilisable du patronat ─────────────────────────────────────
 
-  async getHeader(tenantId: string, userId?: string) {
+  /**
+   * ⭐ 2026-10-02 — VUE PAR DÉPARTEMENT : `departmentId` (patronat national)
+   *    affiche l'en-tête réutilisable du département consulté (lecture seule
+   *    au niveau national — l'édition reste celle du patronat propriétaire).
+   */
+  async getHeader(tenantId: string, userId?: string, departmentId?: string | null) {
     await this.ensureSchema();
     const { patronat, fn } = await this.resolveContext(tenantId, userId);
+    let header = patronat.epreuveHeader ?? '';
+    if (departmentId && patronat.orgLevel === 'NATIONAL') {
+      const child = await this.prisma.patronat.findFirst({
+        where: { id: departmentId, parentPatronatId: patronat.id, status: 'ACTIVE' },
+        select: { epreuveHeader: true },
+      });
+      if (child) header = child.epreuveHeader ?? '';
+    }
     return {
-      header: patronat.epreuveHeader ?? '',
+      header,
       canManage: WRITE_EXAM_ORG.includes(fn),
     };
   }
@@ -975,15 +993,26 @@ export class FederisEpreuveService {
     await this.ensureSchema();
     const { patronat } = await this.resolveContext(tenantId, userId);
     const paper = await this.getOwnedEpreuve(patronat.id, id);
-    const yearLabels = await this.yearLabelMap(patronat.tenantId);
+
+    // ⭐ 2026-10-02 — VUE PAR DÉPARTEMENT : le sujet porte l'identité du
+    //    patronat PROPRIÉTAIRE de l'épreuve — une épreuve du Borgou exportée
+    //    depuis le patronat national garde l'en-tête, le logo et le nom du
+    //    Borgou (chaque patronat départemental organise ses examens en son
+    //    sein).
+    const owner = await this.prisma.patronat.findUnique({
+      where: { id: paper.patronatId },
+      include: { country: { select: { name: true } } },
+    });
+    const identity = owner ?? patronat;
+    const yearLabels = await this.yearLabelMap(identity.tenantId);
 
     const buffer = await this.renderEpreuvePdf(paper, {
-      patronatName: patronat.legalName || patronat.name,
-      patronatShortName: patronat.name,
-      abbreviation: patronat.abbreviation,
-      country: patronat.country?.name ?? null,
-      logo: patronat.logo ?? null,
-      reusableHeader: patronat.epreuveHeader ?? null,
+      patronatName: identity.legalName || identity.name,
+      patronatShortName: identity.name,
+      abbreviation: identity.abbreviation,
+      country: identity.country?.name ?? null,
+      logo: identity.logo ?? null,
+      reusableHeader: identity.epreuveHeader ?? null,
       academicYearLabel: yearLabels.get(paper.academicYearId) ?? null,
     });
 

@@ -235,16 +235,25 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
   const dirtyRef = useRef(false);
 
   // ★ 2026-10-01 — AGRÉGATION NATIONALE : lecture seule sauf délégation
-  const { canWrite: scopeCanWrite } = useFederisScope();
+  // ⭐ 2026-10-02 — VUE PAR DÉPARTEMENT : les épreuves consultées sont celles du
+  //    département sélectionné (paramètre ?departmentId de la liste).
+  const { canWrite: scopeCanWrite, isNational, selectedDepartmentId } = useFederisScope();
   const fallbackCanManage = canWrite(userRole, 'exam_org') && scopeCanWrite;
-  const canManage = (list?.canManage && scopeCanWrite) ?? fallbackCanManage;
+  // ⭐ La préparation des épreuves est du ressort des patronats départementaux :
+  //    le national consulte (et corrige si délégué) mais n'en crée pas.
+  const canManage = !isNational && ((list?.canManage && scopeCanWrite) ?? fallbackCanManage);
 
   // ── Chargement initial ──────────────────────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiClient.get('/federis/patronat/epreuves', { timeout: 30000 });
+      // ⭐ 2026-10-02 — Vue par département : le national consulte les épreuves
+      //    du département sélectionné (grille d'entrée du module).
+      const res = await apiClient.get('/federis/patronat/epreuves', {
+        timeout: 30000,
+        params: selectedDepartmentId ? { departmentId: selectedDepartmentId } : undefined,
+      });
       setList(res.data ?? null);
     } catch (err: any) {
       setError(
@@ -253,16 +262,21 @@ export default function FederisEpreuvesPage({ userRole }: FederisEpreuvesPagePro
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedDepartmentId]);
 
   const loadHeader = useCallback(async () => {
     try {
-      const res = await apiClient.get('/federis/patronat/epreuves/header', { timeout: 15000 });
+      // ⭐ 2026-10-02 — Vue par département : en-tête réutilisable du
+      //    département consulté (lecture seule au niveau national).
+      const res = await apiClient.get('/federis/patronat/epreuves/header', {
+        timeout: 15000,
+        params: selectedDepartmentId ? { departmentId: selectedDepartmentId } : undefined,
+      });
       setHeaderHtml(res.data?.header ?? '');
     } catch {
       /* silencieux — l'en-tête est optionnel */
     }
-  }, []);
+  }, [selectedDepartmentId]);
 
   // ⭐ Module Matières — catalogue (champ Matière) + signal « épreuves à
   //    préparer » (bandeau) ; échec silencieux : le module reste utilisable.

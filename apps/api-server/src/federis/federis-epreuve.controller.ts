@@ -27,6 +27,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -53,8 +54,14 @@ export class FederisEpreuveController {
 
   @UseGuards(JwtAuthGuard)
   @Get('patronat/epreuves')
-  async listEpreuves(@Req() req: any) {
-    return this.epreuveService.listEpreuves(req.user.tenantId, this.uid(req));
+  async listEpreuves(@Req() req: any, @Query('departmentId') departmentId?: string) {
+    // ⭐ 2026-10-02 — Vue par département (patronat national) : liste les
+    //    épreuves du département sélectionné sur la grille d'entrée du module.
+    return this.epreuveService.listEpreuves(
+      req.user.tenantId,
+      this.uid(req),
+      departmentId || null,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
@@ -68,8 +75,17 @@ export class FederisEpreuveController {
 
   @UseGuards(JwtAuthGuard)
   @Get('patronat/epreuves/header')
-  async getHeader(@Req() req: any) {
-    return this.epreuveService.getHeader(req.user.tenantId, this.uid(req));
+  async getHeader(
+    @Req() req: any,
+    @Query('departmentId') departmentId?: string,
+  ) {
+    // ⭐ 2026-10-02 — Vue par département : en-tête réutilisable du département
+    //    consulté (patronat national — lecture seule).
+    return this.epreuveService.getHeader(
+      req.user.tenantId,
+      this.uid(req),
+      departmentId || null,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

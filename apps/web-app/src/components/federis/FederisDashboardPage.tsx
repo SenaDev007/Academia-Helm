@@ -20,6 +20,9 @@ import { cn } from '@/lib/utils';
 //    laissait passer l'IDENTIFIANT brut (« results_published ») dans la
 //    colonne Statut de « Examens de l'année ».
 import { getExamStatusLabel, getExamStatusStyles } from '@/hooks/useFederisExams';
+// ⭐ 2026-10-02 — Cohérence barre de périmètre : le département sélectionné
+//    (patronat national) filtre le tableau de bord.
+import { useFederisScope } from '@/lib/federis/scope-context';
 
 interface DashboardData {
   patronat: {
@@ -97,11 +100,19 @@ export default function FederisDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // ⭐ 2026-10-02 — Cohérence de la barre de périmètre : le sélecteur de
+  //    département (national) FILTRE désormais le tableau de bord (le select
+  //    affichait « Borgou » sans filtrer les KPIs — vue restait agrégée).
+  const { selectedDepartmentId } = useFederisScope();
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await apiClient.get('/federis/patronat/dashboard', { timeout: 30000 });
+        const res = await apiClient.get('/federis/patronat/dashboard', {
+          timeout: 30000,
+          params: selectedDepartmentId ? { departmentId: selectedDepartmentId } : undefined,
+        });
         if (!cancelled) setData(res.data);
       } catch (err: any) {
         console.error('[FederisDashboard] Erreur :', err);
@@ -118,7 +129,7 @@ export default function FederisDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedDepartmentId]);
 
   if (loading) {
     return (

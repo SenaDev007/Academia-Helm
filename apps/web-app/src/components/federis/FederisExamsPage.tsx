@@ -156,8 +156,11 @@ export default function FederisExamsPage({ userRole }: FederisExamsPageProps) {
 
   // ★ 2026-10-01 — AGRÉGATION NATIONALE : le national est en lecture
   //    seule sauf délégation du département sélectionné.
-  const { canWrite: scopeCanWrite } = useFederisScope();
-  const canOrganize = canWrite(userRole, 'exam_org') && scopeCanWrite;
+  // ⭐ 2026-10-02 — VUE PAR DÉPARTEMENT : l'organisation des campagnes est le
+  //    ressort des patronats départementaux — le national consulte (et agit
+  //    via délégation sur les campagnes existantes) mais n'en crée pas.
+  const { canWrite: scopeCanWrite, isNational } = useFederisScope();
+  const canOrganize = canWrite(userRole, 'exam_org') && scopeCanWrite && !isNational;
 
   // ── Filtrage des campagnes selon le sous-onglet ──────────────────────────
   const levelOf = (level: string | null | undefined) => (level ?? '').trim().toUpperCase();

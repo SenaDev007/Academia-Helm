@@ -309,9 +309,18 @@ export default function RootLayout({
             lazyOnload (après le load event) : Partytown se charge entre les
             deux, avant les scripts qu'il doit intercepter. Gain : plus de
             dépendance critique du 1er rendu à un CDN externe.
+            ⭐ T57 (2026-10-01) — AUTO-HÉBERGÉ dans public/~partytown/ :
+            chargé depuis le CDN, le bootstrap enregistrait son Service
+            Worker sur /~partytown/partytown-sw.js qui N'EXISTAIT PAS sur
+            nos origines (404 console à CHAQUE chargement de page — tous
+            portails) et le fallback sandbox n'était jamais monté → les
+            scripts type="text/partytown" (GA) ne s'exécutaient pas. Avec
+            la lib locale : SW 200, sandbox fonctionnel, plus de bruit.
+            La convention public/~partytown/ est celle de l'intégration
+            officielle Next.js de Partytown.
             ──────────────────────────────────────────────────────────────── */}
         <Script
-          src="https://cdn.jsdelivr.net/npm/@builder.io/partytown@0.10/lib/partytown.js"
+          src="/~partytown/partytown.js"
           strategy="afterInteractive"
         />
         {/* ✅ Google Analytics via Partytown (type="text/partytown") —

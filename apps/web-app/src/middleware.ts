@@ -34,6 +34,13 @@ const PUBLIC_STATIC_PREFIXES = [
   '/orion-rules/',
   '/pedagogy-assets/',
   '/pedagogy-images/',
+  // ⭐ T57 (2026-10-01) — lib Partytown auto-hébergée (scripts tiers en Web
+  //    Worker) : le bootstrap + son Service Worker /~partytown/* doivent
+  //    être servis tels quels sur TOUS les domaines (patronatXXX compris),
+  //    sinon le rewrite satellite les transforme en /federis/~partytown/…
+  //    → 404 → erreur console « Failed to register a ServiceWorker » à
+  //    chaque chargement de page + GA (partytown) jamais exécuté.
+  '/~partytown/',
 ];
 
 /** Le pathname vise-t-il un fichier statique public (jamais réécrit) ? */
@@ -877,6 +884,6 @@ export const config = {
     // vidéos, sons…) : servis tels quels sur TOUS les domaines (satellites
     // academiafederis/patronatXXX compris) — sinon le rewrite satellite les
     // transforme en /federis/… → 404 → images de la bibliothèque cassées.
-    '/((?!_next/static|_next/image|favicon.ico|images/|fonts/|uploads/|videos/|sounds/|logos/|icons/|legal/|orion-rules/|pedagogy-assets/|pedagogy-images/|sw.js|sw-site.js|sw-chat.js|manifest.json|manifest-site.webmanifest|manifest-app.webmanifest|pwa-icon|apple-touch-icon.png|robots.txt|sitemap.xml|api/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|images/|fonts/|uploads/|videos/|sounds/|logos/|icons/|legal/|orion-rules/|pedagogy-assets/|pedagogy-images/|~partytown/|sw.js|sw-site.js|sw-chat.js|manifest.json|manifest-site.webmanifest|manifest-app.webmanifest|pwa-icon|apple-touch-icon.png|robots.txt|sitemap.xml|api/).*)',
   ],
 };

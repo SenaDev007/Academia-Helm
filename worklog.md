@@ -12401,3 +12401,21 @@ Stage Summary:
 - Endpoint public /api/public/distinctions/verify/:code (sans JWT) retourne les infos authentifiées de l'émission
 - Page /verifier/[code] (frontend) affiche les infos de la distinction authentifiée (élève, type, période, école, statut, code)
 - Route publique protégée par @Public() pour bypasser tous les guards globaux (JwtAuthGuard, AccessScopeGuard, ContextValidationGuard, SchoolLevelIsolationGuard, AcademicYearEnforcementGuard, TenantSuspensionGuard, SmartThrottlerGuard qui utilise IP bucket pour les routes publiques)
+
+---
+Task ID: 33
+Agent: Super Z (principal)
+Task: Page du lien de consultation des résultats — le header affiché était celui du sous-domaine du patronat au lieu du header de la plateforme Academia Helm (retour promoteur)
+
+Work Log:
+- DIAGNOSTIC : le lien public /federis/resultats/[token] est construit avec window.location.origin à la génération (publicResultUrl dans FederisDeliberationsPage) → il est partagé aux parents avec l'origine du SOUS-DOMAINE DU PATRONAT (ex: patronatcspeb.academiahelm.com/federis/resultats/xxx). Or le composant Header (header-1.tsx) détecte l'hôte au montage : sur un sous-domaine tenant (hostname *.academiahelm.com hors www/api) il fetch /api/public/schools/by-subdomain/{sub} puis REMPLACE le logo (LogoCircle logoUrl) et le wordmark « Academia Helm » (tenantName) par le branding de l'école du patronat → la page publique de consultation portait le header du sous-domaine du patronat, contrairement à la demande (header de la plateforme).
+- FIX (chirurgical, 2 fichiers) : nouvelle prop `forceAcademiaBrand` (défaut false) sur <Header /> — la garde du useEffect de détection devient `typeof window === 'undefined' || forceAcademiaBrand` (deps [forceAcademiaBrand]) → aucun fetch branding, tenantLogo/tenantName restent null → LogoCircle affiche le logo ACADEMIA HELM par défaut et le wordmark « Academia…Helm » de la plateforme, quel que soit le domaine d'ouverture du lien. La page resultats/[token]/page.tsx rend désormais <Header forceAcademiaBrand /> (commentaires T33 ajoutés).
+- L'identité du patronat reste portée par le BANDEAU INSTITUTIONNEL dédié du portail (logo réel + nom du patronat récupérés de la base — T31 inchangée) : seule la navbar corporate redevient Academia Helm.
+- COMPORTEMENT PAR DÉFAUT STRICTEMENT INCHANGÉ : la prop est optionnelle, toutes les autres pages qui rendent <Header /> (≈20 fichiers : blog, pricing, portal, signup, legal, jobs, downloads, onboarding…) gardent le branding dynamique par sous-domaine tel quel.
+- VÉRIFICATIONS : (a) scripts/verify_task33.cjs 19/19 — contrôles structurels (signature prop, garde, deps, replis wordmark/LogoCircle intacts, page rend la prop, aucun autre appelant ne force le branding) + RUNTIME du VRAI composant Header transpilé SWC (JSX classic) dans un harnais vm (mini-React avec hooks au montage, mocks react/next/link/lucide/LogoCircle, window/document/sessionStorage/fetch instrumentés) : D1 force=true sur sous-domaine patronat → 0 fetch branding + wordmark plateforme + LogoCircle SANS logoUrl ; D2 prop absente sur le même sous-domaine → fetch /api/public/schools/by-subdomain/patronatcspeb DÉCLENCHÉ (comportement conservé) ; D3 prop absente sur le domaine principal → 0 fetch ; (b) type-check tsc --noEmit : 627 erreurs AVANT le fix = 627 erreurs APRÈS (comparaison git stash) → zéro nouvelle erreur, aucune sur les fichiers touchés (les 627 sont préexistantes, dues aux versions de dépendances réinstallées dans la sandbox, non au code).
+- Commit 19677ee4b poussé sur origin/main (header-1.tsx + page.tsx + verify_task33.cjs, +341/−5) → Vercel (web) redéploie.
+
+Stage Summary:
+- La page publique de consultation des résultats porte désormais TOUJOURS le header de la PLATEFORME Academia Helm (logo + wordmark), même quand le lien est ouvert depuis le sous-domaine du patronat — l'identité du patronat reste dans le bandeau institutionnel dédié du portail
+- Prop forceAcademiaBrand optionnelle et réutilisable ; branding dynamique sous-domaine conservé partout ailleurs
+- À valider post-déploiement : ouvrir un lien public de consultation généré depuis le sous-domaine du patronat (module Délibération → carte lien public) et vérifier que la navbar du haut affiche bien « Academia Helm » (logo plateforme), le bandeau du patronat restant en dessous

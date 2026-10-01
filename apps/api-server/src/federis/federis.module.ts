@@ -165,6 +165,13 @@ import { ParentProvisioningModule } from '../students/parent-provisioning.module
     FederisGradesService,
     FederisSubjectsService,
     FederisGradingRulesService,
+    // ⭐ T28 (2026-10-01) — FIX crash Railway DI : ParentPortalNationalExamsController
+    //    (espace parents, T27) injecte FederisPdfService mais le service était
+    //    dans providers SANS être exporté → « Nest can't resolve dependencies of
+    //    the ParentPortalNationalExamsController (... FederisPdfService at
+    //    index [2] is available in the ParentPortalModule context) » au boot.
+    //    Exporté désormais — même règle que FederisDeliberationService.
+    FederisPdfService,
   ],
 })
 export class FederisModule {}

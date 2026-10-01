@@ -28,8 +28,16 @@ import {
   type PatronatFunction,
 } from './federis-roles';
 import { FederisFedapayService } from './federis-fedapay.service';
-// ⭐ 2026-10-01 — AGRÉGATION NATIONALE : années du périmètre (sans cycle DI)
-import { resolveScopeYearsFor } from './federis-scope.service';
+// ⭐ 2026-10-01 — AGRÉGATION NATIONALE : années du périmètre.
+// ⭐ FIX CRITIQUE (2026-10-01) : importé depuis le module FEUILLE
+//    federis-scope-years et NON PLUS depuis federis-scope.service —
+//    l'import croisé (scope importe FederisPatronatService pour la DI,
+//    et l'ancienne arête patronat → scope créait un IMPORT CIRCULAIRE qui
+//    plantait le boot en TDZ sous SWC : « Cannot access
+//    'FederisPatronatService' before initialization » — crash-loop Railway
+//    du deploy T54. Même famille que le fix federis-exam-matching
+//    (2026-09-30) décrit ci-dessous.
+import { resolveScopeYearsFor } from './federis-scope-years';
 // ⭐ FIX « tenant SCHOOL » (2026-09-29) : l'onboarding Helm crée les tenants
 //    écoles avec le TYPE D'ÉTABLISSEMENT (MATERNELLE / PRIMAIRE / SECONDAIRE /
 //    MIXTE — cf. OnboardingService.activate : `type: draft.schoolType`), PAS

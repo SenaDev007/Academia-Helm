@@ -32,6 +32,16 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { FederisPatronatService } from './federis-patronat.service';
+// ⭐ FIX CRITIQUE (2026-10-01) : resolveScopeYearsFor vit désormais dans le
+//    module FEUILLE federis-scope-years (zéro import). Elle vivait dans CE
+//    fichier et federis-patronat.service l'importait depuis ici : combiné à
+//    l'injection DI FederisScopeService ← FederisPatronatService (import
+//    ci-dessus), cela créait un IMPORT CIRCULAIRE patronat ↔ scope qui
+//    faisait planter le BOOT sous SWC en TDZ : « ReferenceError: Cannot
+//    access 'FederisPatronatService' before initialization » — crash-loop
+//    Railway du 2026-10-01 (deploy T54). Même famille que le fix
+//    federis-exam-matching (2026-09-30) et que chunkInPacks (T55).
+import { resolveScopeYearsFor } from './federis-scope-years';
 
 export interface FederisScopeDepartment {
   id: string;
@@ -81,45 +91,6 @@ function readDelegations(metadata: unknown): DelegationEntry[] {
     (d): d is DelegationEntry =>
       !!d && typeof d === 'object' && typeof (d as DelegationEntry).userId === 'string',
   );
-}
-
-/**
- * Années scolaires ACTIVES d'un périmètre (fonction autonome — utilisée par
- * FederisScopeService ET FederisPatronatService sans cycle d'injection).
- * Chaque patronat a son propre tenant et ses propres lignes d'année : on
- * retient, par tenant du périmètre, l'année portant le MÊME libellé que
- * l'année active de référence (repli : année active du tenant).
- */
-export async function resolveScopeYearsFor(
-  // PrismaService typé `any` : le client local du sandbox n'est pas régénéré
-  // (les delegates patronat/academicYear manquent) — en production le
-  // postinstall (prisma generate) fournit le client complet.
-  prisma: any,
-  referenceTenantId: string,
-  scopeTenantIds: string[],
-): Promise<{ yearIds: string[]; label: string | null }> {
-  const reference = await prisma.academicYear.findFirst({
-    where: { tenantId: referenceTenantId, isActive: true },
-    orderBy: { startDate: 'desc' },
-  });
-
-  const yearIds: string[] = [];
-  if (reference) yearIds.push(reference.id);
-
-  for (const tenantId of scopeTenantIds) {
-    const match = await prisma.academicYear.findFirst({
-      where: { tenantId, isActive: true, ...(reference ? { label: reference.label } : {}) },
-    });
-    const fallback = match
-      ? match
-      : await prisma.academicYear.findFirst({
-          where: { tenantId, isActive: true },
-          orderBy: { startDate: 'desc' },
-        });
-    if (fallback && !yearIds.includes(fallback.id)) yearIds.push(fallback.id);
-  }
-
-  return { yearIds, label: reference?.label ?? null };
 }
 
 @Injectable()

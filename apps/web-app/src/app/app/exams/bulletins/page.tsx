@@ -1843,11 +1843,23 @@ function BulletinTwoPage({
                 academicYearId={academicYear?.id}
               />
             ) : isMaternelle ? (
-              <BulletinMaternellePage1 student={student} bulletinData={bulletinData} />
+              <BulletinMaternellePage1
+                student={student}
+                bulletinData={bulletinData}
+                academicYearLabel={academicYear?.label}
+                periodName={selectedPeriodName}
+                classLabel={selectedClassName}
+              />
             ) : scopeLang === 'EN' ? (
               <BulletinAnglophonePage1 student={student} bulletinData={bulletinData} selectedClassName={selectedClassName} termEndingDate={termEndingDate} sessionYear={academicYear?.label} />
             ) : (
-              <BulletinPrimairePage1 student={student} bulletinData={bulletinData} />
+              <BulletinPrimairePage1
+                student={student}
+                bulletinData={bulletinData}
+                academicYearLabel={academicYear?.label}
+                periodName={selectedPeriodName}
+                classLabel={selectedClassName}
+              />
             )
           ) : isSecondaryTrack && !isEn ? (
             <BulletinSecondairePage2
@@ -1879,7 +1891,16 @@ function BulletinTwoPage({
 
 // ─── Maternelle Page 1: Notes table (TS/S/PS columns) ──────────────────────
 
-function BulletinMaternellePage1({ student, bulletinData }: { student: StudentResult; bulletinData: BulletinData }) {
+function BulletinMaternellePage1({
+  student, bulletinData, academicYearLabel, periodName, classLabel,
+}: {
+  student: StudentResult;
+  bulletinData: BulletinData;
+  /** ⭐ T37 — contexte de l'en-tête d'infos (même design que le secondaire). */
+  academicYearLabel?: string;
+  periodName?: string;
+  classLabel?: string;
+}) {
   // ⭐ Visa du directeur par matière — éditable, auto-save on blur
   // Auto-rempli depuis l'appréciation enseignant si vide
   const [directorVisas, setDirectorVisas] = useState<Record<string, string>>({});
@@ -1908,22 +1929,61 @@ function BulletinMaternellePage1({ student, bulletinData }: { student: StudentRe
   };
 
   return (
-    <div className="overflow-x-auto">
-      <div className="text-center mb-2">
-        <h4 className="text-xs font-bold text-slate-900 uppercase">Évaluation Sommative Mensuelle</h4>
+    <div className="overflow-x-auto space-y-2">
+      {/* ⭐ T37 — EN-TÊTE D'INFORMATIONS « façon Frederis » (même design que le
+          secondaire) : cadre arrondi noir, libellés sur fond slate, filets noirs. */}
+      <div className="rounded-md overflow-hidden border border-black">
+        <table className="w-full border-separate border-spacing-0 text-[10px]">
+          <tbody>
+          <tr>
+            <td className="border-r border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700 w-1/3">
+              Année scolaire : <span className="text-slate-900">{academicYearLabel || '—'}</span>
+            </td>
+            <td className="border-r border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700 w-1/3">
+              Période : <span className="text-slate-900">{periodName || '—'}</span>
+            </td>
+            <td className="border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700 w-1/3">
+              Classe : <span className="text-slate-900">{classLabel || '—'}</span>
+            </td>
+          </tr>
+          <tr>
+            <td className="border-r border-black px-2 py-1 bg-slate-100 font-bold text-slate-700">
+              Nom et prénoms : <span className="text-slate-900 uppercase">{student.studentName}</span>
+            </td>
+            <td className="border-r border-black px-2 py-1 bg-slate-100 font-bold text-slate-700">
+              Effectif : <span className="text-slate-900">{bulletinData.results.length}</span>
+              {' '}· Matricule : <span className="text-slate-900">{student.matricule || '—'}</span>
+            </td>
+            <td className="px-2 py-1 bg-slate-100 font-bold text-slate-700">
+              Rang : <span className="text-slate-900">
+                {student.classRank ? formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F') : '—'}
+              </span>
+            </td>
+          </tr>
+        </tbody>
+        </table>
+      </div>
+
+      {/* ⭐ T37 — TITRE : barre encadrée navy (même standard que le PDF et le
+          secondaire — plus de simple texte nu, design unifié). */}
+      <div className="text-center border-2 border-[#0A2A5E] bg-slate-50 rounded-lg px-3 py-1.5">
+        <h4 className="text-xs font-bold text-[#0A2A5E] uppercase">Évaluation Sommative Mensuelle</h4>
         <p className="text-[10px] text-slate-500">(à remplir après avoir observé l'enfant)</p>
       </div>
-      {/* ⭐ T27 — Corps refondu « façon Frederis » : cadre arrondi noir, en-tête
-          BLANC sur filets noirs fins (plus de fond navy ni de couleurs de cellules). */}
+      {/* ⭐ T27/T37 — Corps « façon Frederis » : cadre arrondi noir UNIQUE (le
+          wrapper porte le cadre, les cellules portent les filets), en-tête
+          BLANC sur filets noirs fins, libellés complets du carnet (comme le
+          PDF : Domaine | Résultats | Appréciation de l'enseignant(e) | Visa du
+          Directeur (trice) | Impression et visa des parents). */}
       <div className="rounded-lg overflow-hidden border-2 border-black">
       <table className="w-full border-separate border-spacing-0 text-[10px]">
         <thead>
           <tr className="bg-white">
-            <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '120px' }}>Matière</th>
+            <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '120px' }}>Domaine</th>
             <th colSpan={3} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">Résultats</th>
-            <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '80px' }}>Appréciation enseignant</th>
-            <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '80px' }}>Visa Directeur</th>
-            <th rowSpan={2} className="border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px' }}>Visa Parents</th>
+            <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '80px' }}>Appréciation de l'enseignant(e)</th>
+            <th rowSpan={2} className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '80px' }}>Visa du Directeur (trice)</th>
+            <th rowSpan={2} className="border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '60px' }}>Impression et visa des parents</th>
           </tr>
           <tr className="bg-white">
             <th className="border-r border-b border-black px-1 py-0.5 font-bold text-center text-[9px]">TS</th>
@@ -2003,7 +2063,16 @@ function BulletinMaternellePage1({ student, bulletinData }: { student: StudentRe
 
 // ─── Primaire Page 1: Notes table (CM/18, CP/2, Total/20, Seuil, Appréciation) ─
 
-function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResult; bulletinData: BulletinData }) {
+function BulletinPrimairePage1({
+  student, bulletinData, academicYearLabel, periodName, classLabel,
+}: {
+  student: StudentResult;
+  bulletinData: BulletinData;
+  /** ⭐ T37 — contexte de l'en-tête d'infos (même design que le secondaire). */
+  academicYearLabel?: string;
+  periodName?: string;
+  classLabel?: string;
+}) {
   // ⭐ Visa du directeur par matière — éditable, auto-save on blur
   const [directorVisas, setDirectorVisas] = useState<Record<string, string>>({});
 
@@ -2046,11 +2115,47 @@ function BulletinPrimairePage1({ student, bulletinData }: { student: StudentResu
     student.generalAverage >= 10 ? 'Passable' : 'Insuffisant';
 
   return (
-    <div className="overflow-x-auto">
-      <div className="text-center mb-2">
-        <h4 className="text-xs font-bold text-slate-900 uppercase">I — Connaissance et Habiletés</h4>
+    <div className="overflow-x-auto space-y-2">
+      {/* ⭐ T37 — EN-TÊTE D'INFORMATIONS « façon Frederis » (même design que le
+          secondaire et la maternelle) : cadre arrondi noir, libellés slate. */}
+      <div className="rounded-md overflow-hidden border border-black">
+        <table className="w-full border-separate border-spacing-0 text-[10px]">
+          <tbody>
+          <tr>
+            <td className="border-r border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700 w-1/3">
+              Année scolaire : <span className="text-slate-900">{academicYearLabel || '—'}</span>
+            </td>
+            <td className="border-r border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700 w-1/3">
+              Période : <span className="text-slate-900">{periodName || '—'}</span>
+            </td>
+            <td className="border-b border-black px-2 py-1 bg-slate-100 font-bold text-slate-700 w-1/3">
+              Classe : <span className="text-slate-900">{classLabel || '—'}</span>
+            </td>
+          </tr>
+          <tr>
+            <td className="border-r border-black px-2 py-1 bg-slate-100 font-bold text-slate-700">
+              Nom et prénoms : <span className="text-slate-900 uppercase">{student.studentName}</span>
+            </td>
+            <td className="border-r border-black px-2 py-1 bg-slate-100 font-bold text-slate-700">
+              Effectif : <span className="text-slate-900">{bulletinData.results.length}</span>
+              {' '}· Matricule : <span className="text-slate-900">{student.matricule || '—'}</span>
+            </td>
+            <td className="px-2 py-1 bg-slate-100 font-bold text-slate-700">
+              Rang : <span className="text-slate-900">
+                {student.classRank ? formatRank(student.classRank, student.gender === 'FEMALE' || student.gender === 'F') : '—'}
+              </span>
+            </td>
+          </tr>
+        </tbody>
+        </table>
       </div>
-      {/* ⭐ T27 — Corps refondu « façon Frederis » : cadre arrondi noir, en-tête
+
+      {/* ⭐ T37 — TITRE : barre encadrée navy (même standard que le PDF, la
+          maternelle et le secondaire — design unifié). */}
+      <div className="text-center border-2 border-[#0A2A5E] bg-slate-50 rounded-lg px-3 py-1.5">
+        <h4 className="text-xs font-bold text-[#0A2A5E] uppercase">I — Connaissance et Habiletés</h4>
+      </div>
+      {/* ⭐ T27/T37 — Corps « façon Frederis » : cadre arrondi noir UNIQUE, en-tête
           BLANC sur filets noirs fins, total en bandeau navy (seul accent). */}
       <div className="rounded-lg overflow-hidden border-2 border-black">
       <table className="w-full border-separate border-spacing-0 text-[10px]">
@@ -4282,7 +4387,7 @@ function MoyennesTab({
       {/* Content */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 w-8 animate-spin text-blue-600" />
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
           <span className="ml-3 text-sm text-slate-500">Calcul des moyennes…</span>
         </div>
       ) : activeMoyenneTab === 'trimestriel' ? (
@@ -4772,7 +4877,11 @@ function VueParMatiereTrimestriel({
 
                   {isExpanded && (
                     <div className="border-t border-slate-100 p-4">
-                      {/* Tableau par matière */}
+                      {/* Tableau par matière — ⭐ T37 : 7 colonnes, EXACTEMENT la
+                          même grille que le PDF (Matière | EM1 | EM2 | Moy. EM |
+                          EC | Moyenne gén. | Appréciation) — avant : 6 colonnes
+                          et la maternelle affichait l'appréciation sous
+                          l'en-tête « Moyenne générale » (incohérence UI/PDF). */}
                       <div className="overflow-x-auto rounded-lg border-2 border-black">
                         <table className="w-full border-separate border-spacing-0 text-xs">
                           <thead>
@@ -4782,7 +4891,8 @@ function VueParMatiereTrimestriel({
                               <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">EM2</th>
                               <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">Moy. EM</th>
                               <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center">EC</th>
-                              <th className="border-b border-black px-2 py-2 font-bold uppercase text-center">Moyenne générale</th>
+                              <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '90px' }}>Moyenne gén.</th>
+                              <th className="border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '90px' }}>Appréciation</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -4810,7 +4920,10 @@ function VueParMatiereTrimestriel({
                                       <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center`}>
                                         <span className={cn('text-[10px] font-black', qColor(sc?.ec))}>{fmtQ(sc?.ec)}</span>
                                       </td>
-                                      <td className={`${rowB} border-black px-2 py-1.5 text-center font-bold text-slate-900 text-[10px]`}>{sc?.appreciation || '—'}</td>
+                                      <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                                        <span className={cn('text-[11px]', qColor(sc?.moyenne))}>{fmtQ(sc?.moyenne)}</span>
+                                      </td>
+                                      <td className={`${rowB} border-black px-2 py-1.5 text-center text-slate-600 text-[10px]`}>{sc?.appreciation || '—'}</td>
                                     </>
                                   ) : (
                                     <>
@@ -4826,9 +4939,10 @@ function VueParMatiereTrimestriel({
                                       <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-semibold`}>
                                         <span className={cn(nColor(sc?.ec))}>{fmtN(sc?.ec)}</span>
                                       </td>
-                                      <td className={`${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                                      <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-bold`}>
                                         <span className={cn('text-sm', nColor(sc?.moyenne))}>{fmtN(sc?.moyenne)}</span>
                                       </td>
+                                      <td className={`${rowB} border-black px-2 py-1.5 text-center text-slate-600 text-[10px]`}>{sc?.appreciation || '—'}</td>
                                     </>
                                   )}
                                 </tr>
@@ -5537,11 +5651,11 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
               >
                 Nom et prénom
               </th>
-              {periodNames.map(p => (
+              {periodNames.map((p, pi) => (
                 <th
                   key={p}
                   colSpan={5}
-                  className="border-b border-black px-3 py-2 font-bold uppercase text-center"
+                  className={`border-b border-black px-3 py-2 font-bold uppercase text-center ${pi < periodNames.length - 1 ? 'border-r' : ''}`}
                 >
                   {p}
                 </th>
@@ -5549,13 +5663,16 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
             </tr>
             {/* Row 2 : EM1 | EM2 | Moy. EM | EC | Moy. gén. (× nb trimestres) */}
             <tr className="bg-white">
-              {periodNames.map(p => (
+              {periodNames.map((p, pi) => (
                 <Fragment key={p}>
                   <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '70px' }}>EM1</th>
                   <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '70px' }}>EM2</th>
                   <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '80px' }}>Moy. EM</th>
                   <th className="border-r border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '70px' }}>EC</th>
-                  <th className="border-b border-black px-2 py-2 font-bold uppercase text-center" style={{ minWidth: '100px' }}>Moyenne gén.</th>
+                  {/* ⭐ T37 — filet vertical entre les groupes de trimestres :
+                      la dernière sous-colonne d'un groupe NON FINAL porte le
+                      border-r (avant : aucune séparation entre trimestres). */}
+                  <th className={`border-b border-black px-2 py-2 font-bold uppercase text-center ${pi < periodNames.length - 1 ? 'border-r' : ''}`} style={{ minWidth: '100px' }}>Moyenne gén.</th>
                 </Fragment>
               ))}
             </tr>
@@ -5568,7 +5685,8 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
                 <td className={`border-r ${rowB} border-black px-3 py-1.5 font-medium text-slate-900 whitespace-nowrap sticky left-0 z-10 bg-white`}>
                   {student.studentName}
                 </td>
-                {periodNames.map(p => {
+                {periodNames.map((p, pi) => {
+                  const groupR = pi < periodNames.length - 1 ? 'border-r' : '';
                   const row = student.periods[p];
                   if (!row) {
                     return (
@@ -5577,7 +5695,7 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
                         <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center text-slate-300`}>—</td>
                         <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center text-slate-300`}>—</td>
                         <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center text-slate-300`}>—</td>
-                        <td className={`${rowB} border-black px-2 py-1.5 text-center text-slate-300`}>—</td>
+                        <td className={`${groupR} ${rowB} border-black px-2 py-1.5 text-center text-slate-300`}>—</td>
                       </Fragment>
                     );
                   }
@@ -5616,7 +5734,7 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
                             {fmtAvg(row.ecAvg, true)}
                           </span>
                         </td>
-                        <td className={`${rowB} border-black px-2 py-1.5 text-center font-bold text-slate-900 text-[10px]`}>
+                        <td className={`${groupR} ${rowB} border-black px-2 py-1.5 text-center font-bold text-slate-900 text-[10px]`}>
                           {row.appreciation || '—'}
                         </td>
                       </Fragment>
@@ -5637,7 +5755,7 @@ function MoyennesTrimestrielTable({ data, isMaternelle }: { data: any[]; isMater
                       <td className={`border-r ${rowB} border-black px-2 py-1.5 text-center font-medium`}>
                         <span className={cn('font-semibold', avgColor(row.ecAvg, false))}>{fmtAvg(row.ecAvg, false)}</span>
                       </td>
-                      <td className={`${rowB} border-black px-2 py-1.5 text-center font-bold`}>
+                      <td className={`${groupR} ${rowB} border-black px-2 py-1.5 text-center font-bold`}>
                         <span className={cn('text-sm font-black', avgColor(row.trimesterAvg, false))}>{fmtAvg(row.trimesterAvg, false)}</span>
                       </td>
                     </Fragment>

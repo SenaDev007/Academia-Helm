@@ -498,30 +498,35 @@ export class BulletinPdfService {
     // Primaire matches carnet exactly:
     // Champs | Note min | CM/18 | Maîtrise min (Oui/Non) | CP/02 | Total/20 | Seuil réussite (Oui/Non) | Appréciation
     // NO Visa Directeur column for Primaire (it's in the signatures section)
+    // ⭐ T37 — EN-TÊTE MIS EN VALEUR (même correctif que T34 secondaire) :
+    //    fond navy + texte blanc via le CSS table.notes th (plus AUCUN fond
+    //    blanc inline) + séparateurs internes blancs translucides entre le
+    //    libellé de groupe et ses sous-colonnes — l'en-tête ne se confond
+    //    plus avec les lignes de matières.
     const tableHeader = data.isMaternelle ? `
-      <tr style="background:#fff;color:#000;">
+      <tr>
         <th rowspan="2" style="padding:4px;font-size:8px;text-transform:uppercase;">Domaine</th>
-        <th colspan="3" style="padding:4px;font-size:8px;text-transform:uppercase;">Résultats</th>
+        <th colspan="3" style="padding:4px;font-size:8px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,0.35);">Résultats</th>
         <th rowspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;">Appréciation de l'enseignant(e)</th>
         <th rowspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;">Visa du Directeur (trice)</th>
         <th rowspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;">Impression et visa des parents</th>
       </tr>
-      <tr style="background:#fff;color:#000;">
+      <tr>
         <th style="padding:3px;font-size:9px;">TS</th>
         <th style="padding:3px;font-size:9px;">S</th>
         <th style="padding:3px;font-size:9px;">PS</th>
       </tr>` : `
-      <tr style="background:#fff;color:#000;">
+      <tr>
         <th rowspan="2" style="padding:4px;font-size:8px;text-transform:uppercase;text-align:left;">Champs de formation</th>
         <th rowspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;">Note min.</th>
         <th rowspan="2" style="padding:4px;font-size:8px;text-transform:uppercase;">CM<br/><span style="font-size:6px;font-weight:normal;">/18</span></th>
-        <th colspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;">Maîtrise minimale</th>
+        <th colspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,0.35);">Maîtrise minimale</th>
         <th rowspan="2" style="padding:4px;font-size:8px;text-transform:uppercase;">CP<br/><span style="font-size:6px;font-weight:normal;">/02</span></th>
         <th rowspan="2" style="padding:4px;font-size:8px;text-transform:uppercase;">Total<br/><span style="font-size:6px;font-weight:normal;">/20</span></th>
-        <th colspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;">Seuil de réussite</th>
+        <th colspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,0.35);">Seuil de réussite</th>
         <th rowspan="2" style="padding:4px;font-size:7px;text-transform:uppercase;">Appréciation</th>
       </tr>
-      <tr style="background:#fff;color:#000;">
+      <tr>
         <th style="padding:3px;font-size:7px;">Oui</th>
         <th style="padding:3px;font-size:7px;">Non</th>
         <th style="padding:3px;font-size:7px;">Oui</th>
@@ -548,152 +553,12 @@ export class BulletinPdfService {
       </tr>`;
     })() : '';
 
-    // ⭐ Colonne gauche : Tableau + synthèse + Symbole mérité (en bas)
-    const leftColumn = `
-      <div class="col-left">
-        <table class="notes">
-          <thead>${tableHeader}</thead>
-          <tbody>${subjectRows}${totalRow}</tbody>
-        </table>
-        ${data.isMaternelle ? `
-        <div style="margin-top:4px;text-align:center;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:3px;padding:4px;">
-          <span style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;">Symbole mérité par l'élève : </span>
-          <span style="font-size:14px;">${symboleMerite}</span>
-        </div>` : `
-        <div style="margin-top:4px;font-size:9px;">
-          <table style="width:100%;border-collapse:collapse;"><tr>
-            <td style="background:#f1f5f9;padding:1px 3px;font-size:9px;">Moyenne obtenue :</td>
-            <td style="background:#f1f5f9;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;color:#0A2A5E;">${this.fmt2(data.generalAverage)}/20</td>
-          </tr><tr>
-            <td style="background:#f1f5f9;padding:1px 3px;font-size:9px;">Plus forte moyenne :</td>
-            <td style="background:#f1f5f9;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;">${this.fmt2(data.highestAverage)}/20</td>
-          </tr><tr>
-            <td style="background:#f1f5f9;padding:1px 3px;font-size:9px;">Plus faible moyenne :</td>
-            <td style="background:#f1f5f9;padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;">${this.fmt2(data.lowestAverage)}/20</td>
-          </tr><tr>
-            <td style="padding:1px 3px;font-size:9px;font-weight:bold;">Seuil réussite (10/20) atteint :</td>
-            <td style="padding:1px 3px;text-align:right;font-size:9px;font-weight:bold;color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#dc2626'};">${(data.generalAverage || 0) >= 10 ? 'OUI' : 'NON'}</td>
-          </tr></table>
-        </div>
-        <!-- ⭐ Symbole mérité en bas de la colonne gauche (après seuil de réussite) -->
-        <div style="margin-top:4px;text-align:center;border-radius:3px;padding:6px;">
-          <span style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;">Symbole mérité par l'élève</span>
-          <div style="font-size:18px;margin-top:2px;">${symboleMerite}</div>
-        </div>`}
-      </div>`;
-
-    // ⭐ Colonne droite = PAGE 2 du carnet (sans Symbole — il est à gauche maintenant)
-    const rightColumn = data.isMaternelle ? `
-      <div class="col-right">
-        <!-- ANALYSE PÉDAGOGIQUE SOMMAIRE -->
-        <div style="border-radius:2px;padding:5px;margin-bottom:4px;width:100%;">
-          <div style="font-size:8px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:4px;line-height:1.4;">
-            ANALYSE PEDAGOGIQUE SOMMAIRE DES RESULTATS ET RECOMMANDATIONS DE L'ENSEIGNANT(E) AUX PARENTS
-          </div>
-          ${[1,2,3,4,5,6,7,8,9,10].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:3px 0;height:8px;"></div>').join('')}
-        </div>
-
-        <!-- 3 SIGNATURES verticales (aéré, pleine largeur) -->
-        <div style="border-radius:2px;padding:5px;margin-bottom:4px;">
-          <table style="width:100%;border-collapse:collapse;">
-            <tr>
-              <td style="width:33%;text-align:center;vertical-align:bottom;padding:5px 2px;">
-                <div style="height:30px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
-                <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">Titulaire de la classe</div>
-                <div style="font-size:7px;color:#64748b;">Signature</div>
-              </td>
-              <td style="width:34%;text-align:center;vertical-align:bottom;padding:5px 2px;">
-                ${this.renderDirectorSealsZone(data, 30)}
-                <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">Le (la) Directeur(trice)</div>
-                ${this.renderDirectorNameLine(data, '7px', 'Visa')}
-              </td>
-              <td style="width:33%;text-align:center;vertical-align:bottom;padding:5px 2px;">
-                <div style="height:30px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:30px;max-width:80px;object-fit:contain;" />` : ''}</div>
-                <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">Les Parents</div>
-                <div style="font-size:7px;color:#64748b;">Nom, Prénoms et Signature</div>
-              </td>
-            </tr>
-          </table>
-        </div>
-
-        <!-- QR code (séparé, en bas) -->
-        <div style="text-align:center;margin-top:4px;">
-          <img src="${qrCode}" style="width:35px;height:35px;" alt="QR" />
-          <div style="font-size:7px;color:#94a3b8;">Code de vérification</div>
-        </div>
-      </div>` : `
-      <div class="col-right">
-        <!-- STATS (pleine largeur) -->
-        <div style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
-          <table style="width:100%;border-collapse:collapse;"><tr>
-            <td style="font-size:9px;padding:3px 0;">Nombre de matières évaluées :</td>
-            <td style="font-size:9px;text-align:right;font-weight:bold;padding:3px 0;">${data.subjects.filter(s => !s.isAbsent && s.score != null).length}</td>
-          </tr><tr>
-            <td style="font-size:9px;padding:3px 0;">Nombre de compétences max. + min. atteintes :</td>
-            <td style="font-size:9px;text-align:right;font-weight:bold;padding:3px 0;">${data.subjects.filter(s => !s.isAbsent && s.score != null && s.score >= 10).length}</td>
-          </tr><tr>
-            <td style="font-size:9px;font-weight:bold;padding:3px 0;">Seuil de réussite globale atteint :</td>
-            <td style="font-size:9px;text-align:right;font-weight:bold;padding:3px 0;">
-              <span style="color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#94a3b8'};">${(data.generalAverage || 0) >= 10 ? 'X OUI' : '☐ OUI'}</span>
-              &nbsp;
-              <span style="color:${(data.generalAverage || 0) < 10 ? '#dc2626' : '#94a3b8'};">${(data.generalAverage || 0) < 10 ? 'X NON' : '☐ NON'}</span>
-            </td>
-          </tr></table>
-        </div>
-
-        <!-- II - ATTITUDES (pleine largeur, occupe plus de hauteur) -->
-        <div style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
-          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:5px;">II - Attitudes</div>
-          <div style="font-size:9px;margin-bottom:5px;">
-            <strong>Assiduité :</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:12px;"></span>
-          </div>
-          <div style="font-size:9px;margin-bottom:5px;">
-            <strong>Discipline :</strong> <span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:70%;height:12px;"></span>
-          </div>
-          <div style="font-size:9px;margin-bottom:4px;"><strong>Défauts majeurs identifiés :</strong></div>
-          ${[1,2,3,4].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:4px 0;height:10px;"></div>').join('')}
-          <div style="font-size:9px;margin-top:5px;margin-bottom:4px;"><strong>Qualités remarquables :</strong></div>
-          ${[1,2,3,4].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:4px 0;height:10px;"></div>').join('')}
-        </div>
-
-        <!-- ANALYSE DES RESULTATS (pleine largeur, occupe plus de hauteur) -->
-        <div style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
-          <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:5px;">Analyse des résultats et recommandations</div>
-          ${[1,2,3,4,5,6,7,8].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:5px 0;height:10px;"></div>').join('')}
-        </div>
-
-        <!-- 3 SIGNATURES (pleine largeur, aérées) -->
-        <div style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
-          <table style="width:100%;border-collapse:collapse;">
-            <tr>
-              <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 2px;">
-                <div style="height:35px;">${data.teacherSignature ? `<img src="${data.teacherSignature}" style="max-height:35px;max-width:85px;object-fit:contain;" />` : ''}</div>
-                <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">Enseignant(e)</div>
-                <div style="font-size:7px;color:#64748b;">Signature du titulaire</div>
-              </td>
-              <td style="width:34%;text-align:center;vertical-align:bottom;padding:6px 2px;">
-                <div style="height:35px;">${data.parentSignature ? `<img src="${data.parentSignature}" style="max-height:35px;max-width:85px;object-fit:contain;" />` : ''}</div>
-                <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">Parent</div>
-                <div style="font-size:7px;color:#64748b;">Signature et nom</div>
-              </td>
-              <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 2px;">
-                ${this.renderDirectorSealsZone(data, 35)}
-                <div style="border-top:1px solid #000;margin-top:4px;padding-top:3px;font-size:8px;font-weight:bold;color:#0A2A5E;">VISA du Directeur</div>
-                ${this.renderDirectorNameLine(data, '7px', 'Visa')}
-              </td>
-            </tr>
-          </table>
-        </div>
-
-        <!-- QR code (séparé, en bas) -->
-        <div style="text-align:center;margin-top:4px;">
-          <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
-          <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
-        </div>
-      </div>`;
-
     // ⭐ PAGE 1 : Header + Tableau des notes + Synthèse + Symbole mérité
+    // ⭐ T37 — structure .page (colonne flex, footer poussé en bas) identique
+    //    au modèle secondaire ; saut de page porté par le conteneur de page.
     const page1Content = `
+      <div class="page" style="page-break-after:always;">
+
       <!-- EN-TÊTE OFFICIEL -->
       <div class="header">
         <table class="header-table">
@@ -712,38 +577,49 @@ export class BulletinPdfService {
         </table>
       </div>
 
-      <!-- TITRE BULLETIN -->
+      <!-- TITRE BULLETIN (⭐ T37 — barre encadrée navy, même standard que le secondaire) -->
       <div class="bulletin-title">Bulletin de ${data.evaluationTypeName} ${data.evaluationTypeCode ? '(' + data.evaluationTypeCode + ')' : ''} — ${data.periodName} ${data.academicYearName}</div>
 
-      <!-- INFOS ÉLÈVE (avec photo) -->
-      <table style="width:100%;border-collapse:collapse;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:3px;margin-bottom:15px;">
-      <tr>
-        <td style="padding:8px 10px;width:60px;text-align:center;vertical-align:middle;">
-          ${data.studentPhotoUrl
-            ? `<img src="${data.studentPhotoUrl}" class="student-photo" alt="Photo" />`
-            : `<div class="student-photo-placeholder">Photo</div>`}
-        </td>
-        <td style="padding:8px 10px;font-size:9px;">Élève: <strong style="color:#0A2A5E;">${data.studentName}</strong></td>
-        <td style="padding:8px 10px;font-size:9px;text-align:center;">Matricule: <strong style="color:#0A2A5E;">${data.studentMatricule || '—'}</strong></td>
-        <td style="padding:8px 10px;font-size:9px;text-align:right;">Rang: <strong style="color:#0A2A5E;">${formatRank(data.classRank, data.studentGender === 'FEMALE' || data.studentGender === 'F')}</strong></td>
-      </tr>
+      <!-- INFOS ÉLÈVE (⭐ T37 — modèle secondaire : wrapper .info-wrap + grille
+           collapse 2 lignes — Photo | Année | Nom | Classe / Effectif | Matricule | Rang) -->
+      <div class="info-wrap">
+      <table class="info-table">
+        <tr>
+          <td rowspan="2" style="width:55px;text-align:center;vertical-align:middle;border-bottom:none;">
+            ${data.studentPhotoUrl
+              ? `<img src="${data.studentPhotoUrl}" style="width:45px;height:50px;object-fit:cover;border:1px solid #000;border-radius:2px;" alt="Photo" />`
+              : `<div style="width:45px;height:50px;border:1px solid #000;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#94a3b8;background:#f1f5f9;">Photo</div>`}
+          </td>
+          <td>Année scolaire : <strong>${data.academicYearName}</strong></td>
+          <td>Nom et prénoms : <strong style="text-transform:uppercase;">${data.studentName}</strong></td>
+          <td>Classe : <strong>${data.className || '—'}</strong></td>
+        </tr>
+        <tr>
+          <td>Effectif : <strong>${data.totalStudents ?? '—'}</strong></td>
+          <td>Matricule : <strong>${data.studentMatricule || '—'}</strong></td>
+          <td>Rang : <strong>${formatRank(data.classRank, data.studentGender === 'FEMALE' || data.studentGender === 'F')}</strong></td>
+        </tr>
       </table>
+      </div>
 
-      <!-- TABLEAU DES NOTES (coins arrondis, bordure navy) -->
-      <div style="border:2px solid #0A2A5E;border-radius:4px;overflow:hidden;">
+      <!-- TABLEAU DES NOTES — ⭐ T37 : UN SEUL CONTENEUR (le wrapper porte le
+           cadre 2px noir arrondi, la table n'a plus sa propre bordure — avant :
+           wrapper navy + bordure noire de la table = double cadre) et grille
+           interne en collapse → filets continus. L'en-tête est navy (T34). -->
+      <div style="border:2px solid #000;border-radius:8px;overflow:hidden;">
         <table class="notes">
           <thead>${tableHeader}</thead>
           <tbody>${subjectRows}${totalRow}</tbody>
         </table>
       </div>
 
-      <!-- SYNTHÈSE -->
+      <!-- SYNTHÈSE (⭐ T37 — bloc insécable) -->
       ${data.isMaternelle ? `
-      <div style="margin-top:6px;text-align:center;border-radius:3px;padding:6px;">
+      <div class="blk-avoid" style="margin-top:6px;text-align:center;border-radius:3px;padding:6px;">
         <span style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;">Symbole mérité par l'élève</span>
         <div style="font-size:20px;margin-top:3px;">${symboleMerite}</div>
       </div>` : `
-      <div style="margin-top:6px;font-size:10px;">
+      <div class="blk-avoid" style="margin-top:6px;font-size:10px;">
         <table style="width:100%;border-collapse:collapse;"><tr>
           <td style="background:#f1f5f9;padding:3px 5px;font-size:10px;">Moyenne obtenue :</td>
           <td style="background:#f1f5f9;padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;color:#0A2A5E;">${this.fmt2(data.generalAverage)}/20</td>
@@ -758,30 +634,34 @@ export class BulletinPdfService {
           <td style="padding:3px 5px;text-align:right;font-size:10px;font-weight:bold;color:${(data.generalAverage || 0) >= 10 ? '#059669' : '#dc2626'};">${(data.generalAverage || 0) >= 10 ? 'OUI' : 'NON'}</td>
         </tr></table>
       </div>
-      <div style="margin-top:6px;text-align:center;border-radius:3px;padding:6px;">
+      <div class="blk-avoid" style="margin-top:6px;text-align:center;border-radius:3px;padding:6px;">
         <span style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;">Symbole mérité par l'élève</span>
         <div style="font-size:20px;margin-top:3px;">${symboleMerite}</div>
       </div>`}
 
-      <!-- PIED DE PAGE PAGE 1 -->
-      <div style="margin-top:30px;"></div>
+      <!-- PIED DE PAGE PAGE 1 (⭐ T37 — statique, poussé en bas par flex) -->
       <div class="footer">
         Ce bulletin est établi qu'une seule fois, veuillez le conserver précieusement<br/>
         <!-- ⭐ T30 — numéro officiel Academia Helm en dur (schoolPhone obsolète) -->
         Document généré par Academia Helm · Tél: +229 0141360803
       </div>
-      <!-- SAUT DE PAGE -->
-      <div style="page-break-after:always;"></div>`;
+
+      </div><!-- /.page 1 -->`;
 
     // ⭐ PAGE 2 : Header (raccourci) + Appréciations + Signatures
+    // ⭐ T37 — structure .page + blocs insécables (blk-avoid) + footer statique
+    //    (même anti-lignes-manquantes que T34 secondaire : jamais de bloc
+    //    fragmenté entre deux pages).
     const page2Content = data.isMaternelle ? `
+      <div class="page">
+
       <!-- HEADER RACCOURCI PAGE 2 -->
       <div style="text-align:center;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #0A2A5E;">
         <div style="font-size:9px;font-weight:bold;color:#0A2A5E;">${data.schoolName} — ${data.studentName} — ${data.periodName}</div>
       </div>
 
       <!-- ANALYSE PÉDAGOGIQUE SOMMAIRE -->
-      <div style="border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+      <div class="blk-avoid" style="border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
         <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;text-align:center;margin-bottom:6px;line-height:1.4;">
           Analyse pédagogique sommaire des résultats et recommandations de l'enseignant(e) aux parents
         </div>
@@ -792,13 +672,13 @@ export class BulletinPdfService {
       </div>
 
       <!-- SYMBOLE MÉRITÉ -->
-      <div style="border-radius:2px;padding:8px;margin-bottom:10px;text-align:center;width:100%;">
+      <div class="blk-avoid" style="border-radius:2px;padding:8px;margin-bottom:10px;text-align:center;width:100%;">
         <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Symbole mérité par l'élève</div>
         <div style="font-size:28px;">${symboleMerite}</div>
       </div>
 
       <!-- 3 SIGNATURES -->
-      <div style="border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+      <div class="blk-avoid" style="border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
         <table style="width:100%;border-collapse:collapse;">
           <tr>
             <td style="width:33%;text-align:center;vertical-align:bottom;padding:10px 3px;">
@@ -823,17 +703,25 @@ export class BulletinPdfService {
       </div>
 
       <!-- QR code -->
-      <div style="text-align:center;margin-top:8px;">
+      <div class="blk-avoid" style="text-align:center;margin-top:8px;">
         <img src="${qrCode}" style="width:50px;height:50px;" alt="QR" />
         <div style="font-size:8px;color:#94a3b8;">Code de vérification</div>
-      </div>` : `
+      </div>
+
+      <!-- PIED DE PAGE PAGE 2 (⭐ T37 — statique, plus de footer fixed qui
+           chevauchait signatures/QR) -->
+      <div class="footer">Document généré par Academia Helm · Tél: +229 0141360803</div>
+
+      </div><!-- /.page 2 -->` : `
+      <div class="page">
+
       <!-- HEADER RACCOURCI PAGE 2 -->
       <div style="text-align:center;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #0A2A5E;">
         <div style="font-size:9px;font-weight:bold;color:#0A2A5E;">${data.schoolName} — ${data.studentName} — ${data.periodName}</div>
       </div>
 
       <!-- STATS -->
-      <div style="border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
+      <div class="blk-avoid" style="border-radius:2px;padding:8px;margin-bottom:10px;width:100%;">
         <table style="width:100%;border-collapse:collapse;"><tr>
           <td style="font-size:10px;padding:4px 0;">Nombre de matières évaluées :</td>
           <td style="font-size:10px;text-align:right;font-weight:bold;padding:4px 0;">${data.subjects.filter(s => !s.isAbsent && s.score != null).length}</td>
@@ -849,7 +737,7 @@ export class BulletinPdfService {
       </div>
 
       <!-- II - ATTITUDES -->
-      <div style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
+      <div class="blk-avoid" style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
         <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">II - Attitudes</div>
         <div style="font-size:10px;margin-bottom:4px;">
           <strong>Assiduité :</strong> ${data.assiduite ? `<span style="color:#1a1a1a;">${data.assiduite}</span>` : '<span style="border-bottom:1px dotted #94a3b8;display:inline-block;width:60%;height:12px;"></span>'}
@@ -864,13 +752,13 @@ export class BulletinPdfService {
       </div>
 
       <!-- ANALYSE DES RESULTATS -->
-      <div style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
+      <div class="blk-avoid" style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
         <div style="font-size:10px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Analyse des résultats et recommandations</div>
         ${data.analyseRecommandations ? `<div style="font-size:9px;color:#475569;line-height:1.5;">${data.analyseRecommandations}</div>` : [1,2,3,4].map(() => '<div style="border-bottom:1px dotted #94a3b8;margin:4px 0;height:10px;"></div>').join('')}
       </div>
 
       <!-- 3 SIGNATURES -->
-      <div style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
+      <div class="blk-avoid" style="border-radius:2px;padding:6px;margin-bottom:6px;width:100%;">
         <table style="width:100%;border-collapse:collapse;">
           <tr>
             <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 3px;">
@@ -895,10 +783,16 @@ export class BulletinPdfService {
       </div>
 
       <!-- QR code -->
-      <div style="text-align:center;margin-top:4px;">
+      <div class="blk-avoid" style="text-align:center;margin-top:4px;">
         <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
         <div style="font-size:8px;color:#94a3b8;">Code de vérification</div>
-      </div>`;
+      </div>
+
+      <!-- PIED DE PAGE PAGE 2 (⭐ T37 — statique, plus de footer fixed qui
+           chevauchait signatures/QR) -->
+      <div class="footer">Document généré par Academia Helm · Tél: +229 0141360803</div>
+
+      </div><!-- /.page 2 -->`;
 
     return `<!DOCTYPE html>
 <html lang="fr">
@@ -910,26 +804,63 @@ export class BulletinPdfService {
 body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; position:relative; min-height:100vh; display:flex; flex-direction:column; }
 /* ⭐ Filigrane : logo CENTRÉ et HORIZONTAL (aucune rotation) */
 .watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); opacity:0.08; z-index:0; pointer-events:none; }
-.content { position:relative; z-index:1; flex:1; }
-.header { margin-bottom:15px; padding-bottom:8px; border-bottom:2px solid #0A2A5E; }
+.content { position:relative; z-index:1; flex:1; display:flex; flex-direction:column; }
+/* ⭐ T37 — chaque page est sa propre colonne flex (footer poussé en bas),
+   identique au modèle secondaire : plus AUCUN footer en position:fixed
+   (l'ancien footer fixed se répétait sur les 2 pages et chevauchait les
+   signatures/QR de la page 2 selon la hauteur des données). */
+.page { flex:1; display:flex; flex-direction:column; }
+.header { margin-bottom:14px; padding-bottom:6px; border-bottom:2px solid #0A2A5E; }
 .header-table { width:100%; border-collapse:collapse; }
-.header-table td { vertical-align:middle; padding:4px 6px; }
+.header-table td { vertical-align:middle; padding:2px 4px; }
 .header-left { text-align:center; width:12%; }
 .header-center { text-align:center; width:68%; }
 .header-right { text-align:center; width:20%; }
 .republique { font-size:11px; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; }
-.divider { margin:3px auto; width:50%; }
+.divider { margin:2px auto; width:50%; }
 .divider-line { height:1px; background:#0A2A5E; }
 .ministere { font-size:8px; font-weight:bold; text-transform:uppercase; letter-spacing:0.3px; line-height:1.3; }
-.school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:4px; color:#0A2A5E; }
-.school-info { font-size:7px; color:#555; margin-top:3px; font-style:italic; }
-.bulletin-title { text-align:center; background:#0A2A5E; color:white; padding:8px 12px; border-radius:3px; margin-bottom:15px; font-size:11px; font-weight:bold; text-transform:uppercase; }
-table.notes { width:100%; border-collapse:separate; border-spacing:0; border:2px solid #000; border-radius:8px; overflow:hidden; }
-table.notes th { background:#fff; color:#000; border-right:1px solid #000; border-bottom:1px solid #000; padding:7px 5px; font-size:7px; text-transform:uppercase; }
-table.notes td { border-right:1px solid #000; border-bottom:1px solid #000; padding:7px 5px; }
+.school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
+.school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
+/* ⭐ T37 — TITRE : même standard graphique que le secondaire (barre encadrée
+   navy sur fond gris clair) — plus de bandeau navy plein qui alourdissait la
+   mise en page et différait du modèle corrigé. */
+.bulletin-title { text-align:center; border:2px solid #0A2A5E; border-radius:8px; padding:4px 8px; margin-bottom:6px; font-size:11px; font-weight:bold; text-transform:uppercase; color:#0A2A5E; background:#f1f5f9; }
+/* ⭐ T37 — FILETS CONTINUS + UN SEUL CONTENEUR (même correctif que T30/T32
+   secondaire) : le cadre externe (2px + coins arrondis) est porté par le
+   WRAPPER <div> autour du tableau ; la table elle-même n'a PLUS sa propre
+   bordure (avant : wrapper navy 2px + bordure noire 2px sur la table =
+   double cadre, « le tableau dans un autre conteneur »). La grille passe
+   en border-collapse:collapse → lignes verticales réellement continues
+   (border-collapse:separate peignait chaque cellule séparément → joints
+   visibles = aspect haché). */
+table.notes { width:100%; border-collapse:collapse; }
+table.notes thead { display:table-header-group; }
+table.notes th { background:#0A2A5E; color:#fff; border-right:1px solid rgba(255,255,255,0.35); border-bottom:1px solid #000; padding:4px 3px; font-size:8px; text-transform:uppercase; }
+table.notes td { border-right:1px solid #000; border-bottom:1px solid #000; padding:3px 2px; }
 table.notes th:last-child, table.notes td:last-child { border-right:none; }
 table.notes tbody tr:last-child td { border-bottom:none; }
-.footer { margin-top:auto; padding-top:8px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; position:fixed; bottom:5mm; left:8mm; right:8mm; }
+/* ⭐ T37 — ANTI-LIGNES-MANQUANTES (même correctif que T34 secondaire) : une
+   ligne ne doit jamais être coupée en deux par un saut de page (Chromium
+   perd des bordures collapse au point de fragmentation selon la hauteur
+   des données → « certaines générations seulement ») ; la grande table
+   fragmente ENTRE ses lignes, jamais au milieu. */
+table.notes tr { break-inside:avoid; page-break-inside:avoid; }
+/* ⭐ T37 — INFOS ÉLÈVE : cadre sur le wrapper .info-wrap, grille interne en
+   collapse, 2 lignes comme le secondaire (Photo | Année | Nom | Classe /
+   Effectif | Matricule | Rang). */
+.info-wrap { border:1px solid #000; border-radius:6px; overflow:hidden; margin-bottom:6px; break-inside:avoid; page-break-inside:avoid; }
+.info-table { width:100%; border-collapse:collapse; }
+.info-table td { border-right:1px solid #000; border-bottom:1px solid #000; padding:3px 5px; font-size:9px; background:#f1f5f9; }
+.info-table td:last-child { border-right:none; }
+.info-table tr:last-child td { border-bottom:none; }
+/* ⭐ T37 — footer STATIQUE en bas de chaque page (poussé par flex), plus de
+   position:fixed qui chevauchait le contenu de la page 2. */
+.footer { margin-top:auto; padding-top:6px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; }
+/* ⭐ T37 — les blocs de la page 2 (analyse, signatures, QR) ne doivent jamais
+   être fragmentés entre deux pages : Chromium perd des bordures de façon
+   intermittente quand un bloc chevauche un saut de page. */
+.blk-avoid { break-inside:avoid; page-break-inside:avoid; }
 .student-photo { width:50px; height:55px; object-fit:cover; border:1px solid #000; border-radius:2px; }
 .student-photo-placeholder { width:50px; height:55px; border:1px solid #000; border-radius:2px; display:flex; align-items:center; justify-content:center; font-size:7px; color:#94a3b8; background:#f1f5f9; }
 </style>
@@ -2643,7 +2574,8 @@ ${page2Content}
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; position:relative; min-height:100vh; display:flex; flex-direction:column; }
 .watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); opacity:0.08; z-index:0; pointer-events:none; }
-.content { position:relative; z-index:1; flex:1; }
+.content { position:relative; z-index:1; flex:1; display:flex; flex-direction:column; }
+.page { flex:1; display:flex; flex-direction:column; }
 .header { margin-bottom:12px; padding-bottom:6px; border-bottom:2px solid #0A2A5E; }
 .header-table { width:100%; border-collapse:collapse; }
 .header-table td { vertical-align:middle; padding:3px 5px; }
@@ -2656,19 +2588,32 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
 .ministere { font-size:8px; font-weight:bold; text-transform:uppercase; letter-spacing:0.3px; line-height:1.3; }
 .school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
 .school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
-.bulletin-title { text-align:center; background:#0A2A5E; color:white; padding:6px 10px; border-radius:3px; margin-bottom:10px; font-size:10px; font-weight:bold; text-transform:uppercase; }
-.info-table { width:100%; border-collapse:separate; border-spacing:0; margin-bottom:10px; border:1px solid #000; border-radius:6px; overflow:hidden; }
+/* ⭐ T37 — TITRE : barre encadrée navy (même standard que buildHtml/secondaire). */
+.bulletin-title { text-align:center; border:2px solid #0A2A5E; border-radius:8px; padding:4px 8px; margin-bottom:6px; font-size:10px; font-weight:bold; text-transform:uppercase; color:#0A2A5E; background:#f1f5f9; }
+/* ⭐ T37 — INFOS ÉLÈVE : cadre sur le wrapper .info-wrap (plus de
+   border-radius directement sur <table> : coin coupé), grille en collapse. */
+.info-wrap { border:1px solid #000; border-radius:6px; overflow:hidden; margin-bottom:8px; break-inside:avoid; page-break-inside:avoid; }
+.info-table { width:100%; border-collapse:collapse; }
 .info-table td { border-right:1px solid #000; border-bottom:1px solid #000; padding:4px 6px; font-size:9px; background:#f1f5f9; }
 .info-table td:last-child { border-right:none; }
 .info-table tr:last-child td { border-bottom:none; }
-table.notes { width:100%; border-collapse:separate; border-spacing:0; border:2px solid #000; border-radius:8px; overflow:hidden; }
-table.notes th { background:#fff; color:#000; border-right:1px solid #000; border-bottom:1px solid #000; padding:6px 4px; font-size:8px; text-transform:uppercase; }
+/* ⭐ T37 — FILETS CONTINUS + UN SEUL CONTENEUR : le cadre 2px arrondi est
+   porté par le WRAPPER div (avant : border-radius/overflow posés directement
+   sur <table> → coin supérieur droit non fermé, bord droit fragmenté) ;
+   grille interne en border-collapse:collapse → lignes continues ; en-tête
+   navy + texte blanc (T34) ; lignes insécables (anti-lignes-manquantes). */
+table.notes { width:100%; border-collapse:collapse; }
+table.notes thead { display:table-header-group; }
+table.notes th { background:#0A2A5E; color:#fff; border-right:1px solid rgba(255,255,255,0.35); border-bottom:1px solid #000; padding:6px 4px; font-size:8px; text-transform:uppercase; }
 table.notes td { border-right:1px solid #000; border-bottom:1px solid #000; padding:6px 4px; }
 table.notes th:last-child, table.notes td:last-child { border-right:none; }
 table.notes tbody tr:last-child td { border-bottom:none; }
+table.notes tr { break-inside:avoid; page-break-inside:avoid; }
 .footer { margin-top:auto; padding-top:6px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; }
 .student-photo { width:45px; height:50px; object-fit:cover; border:1px solid #000; border-radius:2px; }
 .student-photo-placeholder { width:45px; height:50px; border:1px solid #000; border-radius:2px; display:flex; align-items:center; justify-content:center; font-size:7px; color:#94a3b8; background:#f1f5f9; }
+/* ⭐ T37 — blocs de bas de page insécables (synthèse, signatures, QR). */
+.blk-avoid { break-inside:avoid; page-break-inside:avoid; }
 .synthesis { display:flex; justify-content:space-around; margin-top:8px; gap:6px; }
 .synthesis div { text-align:center; padding:5px 8px; border:1px solid #e2e8f0; border-radius:3px; flex:1; background:#f1f5f9; }
 .synthesis .label { font-size:8px; color:#64748b; text-transform:uppercase; font-weight:bold; }
@@ -2704,7 +2649,9 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
   <!-- TITRE BULLETIN -->
   <div class="bulletin-title">Bulletin trimestriel — ${data.periodName} ${data.academicYearName}</div>
 
-  <!-- INFOS ÉLÈVE (avec photo, même pattern que buildHtml) -->
+  <!-- INFOS ÉLÈVE (avec photo — ⭐ T37 : wrapper .info-wrap + grille collapse,
+       même standard que buildHtml/secondaire) -->
+  <div class="info-wrap">
   <table class="info-table">
     <tr>
       <td style="width:55px;text-align:center;vertical-align:middle;">
@@ -2718,9 +2665,13 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
       <td style="text-align:right;">Rang: <strong style="color:#0A2A5E;">${rankStr}</strong></td>
     </tr>
   </table>
+  </div>
 
-  <!-- TABLEAU DES NOTES (coins arrondis, bordure navy) -->
-  <div style="">
+  <!-- TABLEAU DES NOTES — ⭐ T37 : UN SEUL CONTENEUR (cadre 2px noir arrondi
+       porté par ce wrapper (avant : un div vide inutile + bordure posée
+       directement sur la table) ; grille collapse → filets continus ;
+       en-tête navy (T34). -->
+  <div style="border:2px solid #000;border-radius:8px;overflow:hidden;">
     <table class="notes">
       <thead><tr>
         <th style="text-align:left">Matière</th>
@@ -2746,31 +2697,29 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     </table>
   </div>
 
-  <!-- SYNTHÈSE -->
-  <div class="synthesis">
+  <!-- SYNTHÈSE (⭐ T37 — bloc insécable) -->
+  <div class="blk-avoid synthesis">
     <div><div class="label">Moyenne</div><div class="value" style="color:#0A2A5E">${isMaternelle ? (data.appreciationGlobale || '—') : (data.generalAverage !== null ? data.generalAverage.toFixed(2) : '—')}${isMaternelle ? '' : '/20'}</div></div>
     <div><div class="label">Rang</div><div class="value" style="color:#334155">${rankStr}</div></div>
     <div><div class="label">${isMaternelle ? 'Appréciation' : 'Mention'}</div><div class="value" style="color:#059669;font-size:11px">${mentionStr}</div></div>
     ${!isMaternelle && data.classAverage != null ? `<div><div class="label">Moy. classe</div><div class="value" style="color:#CFA63A">${data.classAverage.toFixed(2)}</div></div>` : ''}
   </div>
 
-  <!-- SIGNATURES -->
-  <div class="signatures">
+  <!-- SIGNATURES (⭐ T37 — bloc insécable) -->
+  <div class="blk-avoid signatures">
     <div class="sig-box"><div class="sig-label">Titulaire de la classe</div><div class="sig-line">Signature</div></div>
     <div class="sig-box"><div class="sig-label">Le Directeur(trice)</div>${this.renderDirectorSealsZone(data, 30)}<div class="sig-line">${this.renderDirectorNameLine(data, '7px', 'Visa')}</div></div>
     <div class="sig-box"><div class="sig-label">Les Parents</div><div class="sig-line">Nom, Prénoms et Signature</div></div>
   </div>
 
-  <!-- MENTION OFFICIELLE + QR -->
-  <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
+  <!-- MENTION OFFICIELLE + QR (⭐ T37 — bloc insécable) -->
+  <div class="blk-avoid" style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;">
     <div class="official-notice">Ce bulletin est établi qu'une seule fois,<br/>veuillez le conserver précieusement.</div>
     <div style="text-align:center;">
       <img src="${qrCode}" style="width:35px;height:35px;" alt="QR" />
       <div style="font-size:6px;color:#94a3b8;">Code de vérification</div>
     </div>
   </div>
-
-  </div><!-- /groupe insécable conseil + QR (T34) -->
 
   <!-- ⭐ T30 — numéro officiel Academia Helm en dur : le schoolPhone de l'établissement
       surchargeait un numéro obsolète dans ce footer d'attribution. -->

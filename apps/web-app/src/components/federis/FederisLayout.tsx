@@ -129,13 +129,11 @@ const federisNavItems = [
     category: 'ANALYSE',
     items: [
       { name: 'Rapports et statistiques', subPath: '/reports', icon: 'grades' as const },
-      { name: 'ORION (lecture seule)', subPath: '/orion', icon: 'orion' as const },
     ]
   },
   {
     category: 'SYSTÈME',
     items: [
-      { name: 'Gestion des conflits', subPath: '/conflicts', icon: 'warning' as const },
       { name: 'Paramètres', subPath: '/settings', icon: 'settings' as const },
     ]
   }

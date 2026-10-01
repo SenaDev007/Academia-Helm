@@ -103,7 +103,6 @@ export default function PedagogyModulePage() {
           { id: 'curriculum', label: 'Avancement & Programme', icon: <Target className="w-4 h-4" /> },
           { id: 'reportcards', label: 'Bulletins & Moyennes', icon: <Award className="w-4 h-4" /> },
           { id: 'schedule', label: 'Emploi du Temps', icon: <Calendar className="w-4 h-4" /> },
-          { id: 'orion', label: 'ORION Pédagogie', icon: <ShieldCheck className="w-4 h-4" /> },
           { id: 'sara', label: 'SARA AI Pédagogique', icon: <BrainCircuit className="w-4 h-4" /> },
         ]
       }}
@@ -113,7 +112,6 @@ export default function PedagogyModulePage() {
         activeSubModuleId === 'curriculum' ? { layout: 'default', children: <CurriculumTracking /> } :
         activeSubModuleId === 'reportcards' ? { layout: 'default', children: <ReportCardsManagement /> } :
         activeSubModuleId === 'schedule' ? { layout: 'default', children: <ScheduleManagement /> } :
-        activeSubModuleId === 'orion' ? { layout: 'default', children: <OrionPedagogyVigilance /> } :
         activeSubModuleId === 'sara' ? { layout: 'default', children: <PedagogySaraAssistant /> } :
         { layout: 'default', children: <PedagogyDashboard /> }
       }

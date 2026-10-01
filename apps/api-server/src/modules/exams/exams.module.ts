@@ -37,6 +37,9 @@ import { PvStatsPromotionPdfController } from './pv-stats-promotion-pdf.controll
 // ⭐ 2026-09-30 — Distinctions / Tableau d'honneur
 import { DistinctionsController, PublicDistinctionsController } from './distinctions/distinctions.controller';
 import { DistinctionsNotificationService } from './distinctions/distinctions-notification.service';
+// ⭐ 2026-10-01 — Educ Master Import / Interopérabilité
+import { EducMasterController } from './educ-master/educ-master.controller';
+import { EducMasterService } from './educ-master/educ-master.service';
 // ⭐ 2026-09-30 — ParentProvisioningModule pour l'envoi email/Helm Connect aux parents
 import { ParentProvisioningModule } from '../../students/parent-provisioning.module';
 
@@ -59,6 +62,7 @@ import { ParentProvisioningModule } from '../../students/parent-provisioning.mod
     PvStatsPromotionPdfController,
     DistinctionsController,
     PublicDistinctionsController,
+    EducMasterController,
   ],
   providers: [
     ExamsDashboardService,
@@ -72,6 +76,7 @@ import { ParentProvisioningModule } from '../../students/parent-provisioning.mod
     BulletinPdfService,
     PvStatsPromotionPdfService,
     DistinctionsNotificationService,
+    EducMasterService,
   ],
   exports: [
     ExamsDashboardService,

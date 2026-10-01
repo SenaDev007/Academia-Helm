@@ -347,7 +347,6 @@ const ACADEMIA_HELM_MODULES = [
   { path: '/platform/rbac', label: 'Rôles & Permissions', icon: Lock },
   { path: '/platform/communication', label: 'Communication & Emails', icon: Mail },
   { path: '/platform/domains', label: 'Domaines & Sous-domaines', icon: Server },
-  { path: '/platform/orion', label: 'ORION Global', icon: Brain },
   { path: '/platform/aggregation', label: 'Agrégation globale', icon: BarChart3 },
   { path: '/platform/support', label: 'Support & Tickets', icon: HelpCircle },
   { path: '/platform/monitoring', label: 'Monitoring', icon: ShieldAlert },

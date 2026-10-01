@@ -65,13 +65,11 @@ const NAV_ITEMS = [
     category: 'ANALYSE',
     items: [
       { name: 'Rapports et statistiques', subPath: '/reports', icon: 'grades' as const },
-      { name: 'ORION (lecture seule)', subPath: '/orion', icon: 'orion' as const },
     ],
   },
   {
     category: 'SYSTÈME',
     items: [
-      { name: 'Gestion des conflits', subPath: '/conflicts', icon: 'warning' as const },
       { name: 'Paramètres', subPath: '/settings', icon: 'settings' as const },
     ],
   },
@@ -93,8 +91,6 @@ const PAGE_LABELS: Record<string, string> = {
   '/documents': 'Épreuves et documents',
   '/question-bank': 'Banque d\u2019épreuves',
   '/reports': 'Rapports et statistiques',
-  '/orion': 'ORION',
-  '/conflicts': 'Gestion des conflits',
   '/settings': 'Paramètres',
   '/checkout': 'Abonnement',
 };

@@ -109,7 +109,6 @@ export default function ExamsModulePage() {
             { id: 'averages',      label: 'Moyennes & Classements', icon: <Calculator className="w-4 h-4" /> },
             { id: 'councils',      label: 'Conseils de Classe',     icon: <Users className="w-4 h-4" /> },
             { id: 'bulletins',     label: 'Bulletins',              icon: <Printer className="w-4 h-4" /> },
-            { id: 'orion',         label: 'ORION & Statistiques',   icon: <BarChart3 className="w-4 h-4" /> },
             { id: 'audit',         label: 'Audit Académique',       icon: <History className="w-4 h-4" /> },
           ]
         }}
@@ -124,7 +123,6 @@ export default function ExamsModulePage() {
             activeSubModuleId === 'averages'    ? <AveragesRankings /> :
             activeSubModuleId === 'councils'    ? <ClassCouncilManagement /> :
             activeSubModuleId === 'bulletins'   ? <ReportCardsManagement /> :
-            activeSubModuleId === 'orion'       ? <OrionExamVigilance /> :
             activeSubModuleId === 'audit'       ? <AcademicAuditLog /> :
             <ExamsDashboard />
         }}

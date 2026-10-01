@@ -12663,3 +12663,74 @@ Stage Summary:
   (classId OR academicClassId) — compatible avec les deux formats de classId
   passés par le frontend (Class.id section physique OU AcademicClass.id classe
   officielle).
+
+---
+Task ID: 48
+Agent: main
+Task: Supprimer Gestion des conflits + Orion + créer Interopérabilité > Importation Educ Master dans Registre des notes
+
+Work Log:
+- Suppression "Gestion des conflits" (page Federis /federis/conflicts + entrée sidebar)
+  • FederisLayout.tsx : entrée supprimée de la catégorie SYSTÈME
+  • FederisLoadingShell.tsx : NAV_ITEMS + PAGE_LABELS nettoyés
+- Suppression "Orion" (entrées sidebar + sous-onglets — backend conservé)
+  • PilotageSidebar.tsx : entrée "ORION Global" supprimée
+  • FederisLayout.tsx : entrée "ORION (lecture seule)" supprimée
+  • FederisLoadingShell.tsx : NAV_ITEMS + PAGE_LABELS nettoyés
+  • ExamsModulePage.tsx : sous-onglet "ORION & Statistiques" supprimé
+  • PedagogyModulePage.tsx : sous-onglet "ORION Pédagogie" supprimé
+- Analyse des templates Excel Educ Master fournis :
+  • Format SECONDAIRE : 9 feuilles (une par matière) avec colonnes
+    Matricule | Nom | Prénoms | Moy. interro | Devoir 1 | Devoir 2 + feuille Conduite
+  • Format PRIMAIRE : 1 feuille "Notes - {Classe}" avec colonnes fusionnées par
+    matière (Dictée, Math, Expression écrite, etc.), chaque matière ayant
+    2 colonnes : Note obtenue | Note perfectionnement
+- Backend — nouveau module Educ Master (apps/api-server/src/modules/exams/educ-master/)
+  • educ-master.service.ts : parseExcel (détecte format secondaire/primaire),
+    matchStudents (matching par matricule → nom exact → similarité Levenshtein),
+    fillExcel (remplit le template avec les notes par élève × matière × type
+    d'évaluation pour la période sélectionnée)
+  • educ-master.controller.ts : 3 endpoints
+    - POST /exams/educ-master/parse — parse le fichier Excel (base64)
+    - POST /exams/educ-master/match — matche les élèves Excel vs notre système
+    - POST /exams/educ-master/fill — remplit le template et retourne l'Excel binaire
+  • Mapping matières Educ Master → notre système :
+    FRANCAIS LECTURE → Lecture, FRANCAIS COM. ECRITE → Expression écrite,
+    MATHS GENE → Mathématiques, ANGLAIS → Anglais, HIST-GEO → Histoire-Géographie,
+    PCT → Physique-Chimie, SVT → SVT, EPS → EPS,
+    EA (Oral) → EA vivant, EA (Dessin/Couture) → EA plastique,
+    EST → EST, ES → ES, Conduite → Conduite, Dictée → Dictée,
+    Compréhension de l'écrit → Compréhension
+  • Mapping évaluations :
+    - Secondaire : Moy. interro = moyenne(IE1, IE2), Devoir 1 = DS1, Devoir 2 = DS2
+    - Primaire : Note obtenue = moyenne(EM1, EM2, EC), Note perfectionnement = EC
+  • Fuzzy matching Levenshtein avec seuils de confiance :
+    - ≥ 0.95 = match exact (matricule ou nom)
+    - 0.85-0.95 = match fort
+    - 0.7-0.85 = match probable (à valider)
+    - 0.6-0.7 = match faible (à valider)
+    - < 0.6 = aucun match
+  • exams.module.ts : EducMasterController + EducMasterService enregistrés
+- Frontend — nouveau sous-onglet Interopérabilité dans Registre des notes
+  • registre/page.tsx : ajout d'un sous-onglet "Notes validées" (contenu existant)
+    + sous-onglet "Interopérabilité" (nouveau composant EducMasterImportWorkspace)
+  • EducMasterImportWorkspace.tsx : workflow en 3 étapes
+    1. Upload du template Excel (drag & drop ou clic)
+    2. Mapping des élèves — tableau avec dropdown pour valider manuellement
+       chaque match (l'utilisateur peut corriger les matchs faibles ou
+       re-mapper manuellement les élèves non matchés)
+    3. Téléchargement du fichier Excel rempli
+  • Non disponible pour la maternelle (message explicatif affiché)
+  • Stats : Matchs exacts / Matchs flous / Aucun match / Dans notre système
+    mais pas dans le fichier
+  • Détection automatique du format (secondaire vs primaire) avec warnings
+
+Stage Summary:
+- Gestion des conflits supprimé de la sidebar Federis + page /federis/conflicts
+- Orion supprimé des sidebars (PilotageSidebar + FederisLayout) et des sous-onglets
+  (ExamsModulePage + PedagogyModulePage) — backend conservé intact
+- Nouveau module Educ Master backend : 3 endpoints (parse + match + fill) avec
+  matching Levenshtein, mapping matières secondaire/primaire, et remplissage
+  Excel avec notes par élève × matière × type d'évaluation
+- Nouveau sous-onglet Interopérabilité > Importation Educ Master dans le
+  Registre des notes (frontend 3-step workflow : upload → mapping → download)

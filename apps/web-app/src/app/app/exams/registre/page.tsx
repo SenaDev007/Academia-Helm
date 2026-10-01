@@ -108,8 +108,11 @@ function fmtNote(n: number | null): string {
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
+import EducMasterImportWorkspace from '@/components/exams/EducMasterImportWorkspace';
+
 export default function RegistrePage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
+  const [activeSubTab, setActiveSubTab] = useState<'notes' | 'interop'>('notes');
 
   return (
     <ModuleContainer
@@ -125,9 +128,40 @@ export default function RegistrePage() {
       content={{
         layout: 'full',
         children: (
-          <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>}>
-            <RegistreContent />
-          </Suspense>
+          <div className="space-y-4">
+            {/* ─── Sous-onglets Interopérabilité ─── */}
+            <div className="flex items-center gap-2 border-b border-slate-200">
+              <button
+                onClick={() => setActiveSubTab('notes')}
+                className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+                  activeSubTab === 'notes'
+                    ? 'border-blue-600 text-blue-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Notes validées
+              </button>
+              <button
+                onClick={() => setActiveSubTab('interop')}
+                className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
+                  activeSubTab === 'interop'
+                    ? 'border-blue-600 text-blue-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Interopérabilité
+              </button>
+            </div>
+
+            {/* ─── Contenu du sous-onglet actif ─── */}
+            {activeSubTab === 'notes' ? (
+              <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>}>
+                <RegistreContent />
+              </Suspense>
+            ) : (
+              <EducMasterImportWorkspace />
+            )}
+          </div>
         ),
       }}
     />

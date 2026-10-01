@@ -185,7 +185,18 @@ function LimelightTextNav({ items }: { items: typeof navItems }) {
   );
 }
 
-export function Header() {
+export function Header({
+  /**
+   * ⭐ T33 — Forcer le branding ACADEMIA HELM (logo + wordmark « Academia Helm »)
+   * même si la page est ouverte sur un sous-domaine tenant (ex : lien public de
+   * consultation des résultats partagé depuis le sous-domaine d’un patronat).
+   * false (défaut) : comportement inchangé — sur un sous-domaine tenant, la
+   * navbar affiche le logo et le nom de l’école du tenant.
+   */
+  forceAcademiaBrand = false,
+}: {
+  forceAcademiaBrand?: boolean;
+} = {}) {
   const [open, setOpen] = useState(false);
   const scrolled = useScroll(10);
   const { cameFromApp, appReturnUrl } = useCameFromApp();
@@ -194,8 +205,11 @@ export function Header() {
 
   // ⭐ Détecter si on est sur un sous-domaine tenant (ex: cspeb-eveildafriqueeducation.academiahelm.com)
   // Si oui, fetcher le logo et le nom de l'école pour les afficher dans la navbar.
+  // ⭐ T33 — forceAcademiaBrand court-circuite la détection : la page publique
+  // de consultation des résultats porte TOUJOURS le header de la plateforme
+  // Academia Helm, quel que soit le sous-domaine d’ouverture du lien.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || forceAcademiaBrand) return;
     const hostname = window.location.hostname;
     // Le sous-domaine est la partie avant .academiahelm.com (ou .localhost)
     const baseDomain = 'academiahelm.com';
@@ -216,7 +230,7 @@ export function Header() {
         if (data?.schoolName) setTenantName(data.schoolName);
       })
       .catch(() => {});
-  }, []);
+  }, [forceAcademiaBrand]);
 
   // Bloquer le scroll quand le menu mobile est ouvert
   useEffect(() => {

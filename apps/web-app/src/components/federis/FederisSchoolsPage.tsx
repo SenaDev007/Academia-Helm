@@ -18,6 +18,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+// ⭐ 2026-10-01 — AGRÉGATION NATIONALE (T53/T57) : le sélecteur de département
+//    de la barre de périmètre filtre aussi les écoles rattachées.
+import { useFederisScope } from '@/lib/federis/scope-context';
 import AppIcon from '@/components/ui/AppIcon';
 import { apiClient } from '@/lib/api/client';
 import { cn } from '@/lib/utils';
@@ -391,11 +394,18 @@ export default function FederisSchoolsPage() {
 
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ⭐ AGRÉGATION NATIONALE : département sélectionné dans la barre de
+  //    périmètre (null = vue agrégée de tout le réseau).
+  const { selectedDepartmentId } = useFederisScope();
+
   const loadSchools = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiClient.get('/federis/patronat/schools', { timeout: 30000 });
+      const res = await apiClient.get('/federis/patronat/schools', {
+        timeout: 30000,
+        params: selectedDepartmentId ? { departmentId: selectedDepartmentId } : undefined,
+      });
       setLinked(res.data?.linked ?? []);
       setManual(res.data?.manual ?? []);
       setTotals(res.data?.totals ?? null);
@@ -407,7 +417,7 @@ export default function FederisSchoolsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedDepartmentId]);
 
   /** ⭐ Découverte automatique — écoles Academia Helm du périmètre. */
   const loadDiscovery = useCallback(async () => {

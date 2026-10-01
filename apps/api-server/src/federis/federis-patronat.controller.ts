@@ -355,8 +355,18 @@ export class FederisPatronatController {
 
   @UseGuards(JwtAuthGuard)
   @Get('patronat/schools')
-  async getSchools(@Req() req: any) {
-    return this.patronatService.getSchools(req.user.tenantId, req.user.id || req.user.sub);
+  async getSchools(
+    @Req() req: any,
+    // ⭐ 2026-10-01 — AGRÉGATION NATIONALE (cohérence T53) : le sélecteur de
+    //    département de la barre de périmètre restreint aussi les écoles
+    //    rattachées à UN département du réseau (pattern /federis/exams).
+    @Query('departmentId') departmentId?: string,
+  ) {
+    return this.patronatService.getSchools(
+      req.user.tenantId,
+      req.user.id || req.user.sub,
+      departmentId || null,
+    );
   }
 
   // ⭐ Fiche détail d'une école rattachée (2026-09-29 #3) — clic sur une

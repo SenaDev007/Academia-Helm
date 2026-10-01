@@ -16,6 +16,12 @@ import '@/styles/federis.css';
 // ⭐ OFFLINE-FIRST RÉACTIVÉ (sept. 2026) — SW universel + cleanup des anciens SW
 import { ServiceWorkerCleanup } from '@/components/pwa/ServiceWorkerCleanup';
 import { UniversalSWRegister } from '@/components/pwa/UniversalSWRegister';
+// ⭐ T57 (2026-10-01) — guérisseur de SW périmé : le portail patronat national
+//    affichait « Impossible de charger » sur tous les modules à cause d'un SW
+//    contrôleur resté sur une ancienne version (déploiements sans bump sw.js).
+//    Ce garde compare contrôleur ↔ /sw.js servi et force la mise à jour
+//    (reload unique) — couvre TOUS les portails (patronat, école, Helm, public).
+import { SWVersionGuard } from '@/components/pwa/SWVersionGuard';
 // ⭐ v3.2.0 — navigation complète hors ligne (fini le spinner au changement de module)
 import { OfflineNavigation } from '@/components/pwa/OfflineNavigation';
 // OrionWidget — désactivé temporairement, sera réimplémenté selon les specs
@@ -234,6 +240,8 @@ export default function RootLayout({
         </I18nWrapper>
         {/* ⭐ OFFLINE-FIRST RÉACTIVÉ — purge des anciens SW orphelins */}
         <ServiceWorkerCleanup />
+        {/* ⭐ T57 — guérison automatique des SW périmés (contrôleur ≠ servi) */}
+        <SWVersionGuard />
         <ToastContainer />
 
         {/* ⭐ PWA — Service Worker unifié (push + cache + installabilité

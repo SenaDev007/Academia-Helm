@@ -263,7 +263,9 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.9.0';
+// ⭐ v4.10.0 (2026-10-01 — incident « patronat national : tous les modules
+//    lents puis Impossible de charger ») : cf. PURGE_STALE_DEPLOYS ci-dessous.
+const SW_VERSION = 'v4.10.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -573,6 +575,32 @@ self.addEventListener('activate', (event) => {
             !name.endsWith(SW_VERSION))
           .map((name) => caches.delete(name)),
       );
+
+      // ⭐ v4.10.0 — PURGE UNIQUE des caches PAGES + RSC persistants.
+      //    Incident T57 (2026-10-01) : le portail PATRONAT NATIONAL
+      //    (patronatnational.academiahelm.com) affichait « Impossible de
+      //    charger » sur TOUS les modules (> 30 s puis échec) alors que
+      //    l'API répondait en 200-600 ms (vérifié avec le compte réel).
+      //    Cause : les déploiements T52→T56 (1er oct.) ont changé les chunks
+      //    des pages /federis SANS modifier sw.js (toujours v4.9.0) → les
+      //    entrées PERSISTANTES ah-pages / ah-rsc de l'origine patronat
+      //    référencent des chunks du ANCIEN build : navigation → payloads
+      //    RSC périmés / ChunkLoadError → modules en échec. Le mécanisme
+      //    d'epoch de la v4.8.0 ne couvre que le shell Helm /app, PAS les
+      //    portails patronat.
+      //    Cette purge s'exécute EXACTEMENT UNE FOIS par appareil (à
+      //    l'activation de la v4.10.0) : les pages/RSC seront re-remplis
+      //    fraîchement à la prochaine visite de chaque route. Les chunks
+      //    immuables (IMMUTABLE_CACHE) et le cache API (NetworkFirst en
+      //    ligne) sont préservés — pas de perte offline en ligne de compte.
+      try {
+        await caches.delete(PAGE_CACHE);
+        await caches.delete(RSC_CACHE);
+        console.warn(
+          `[SW ${SW_VERSION}] Purge unique ah-pages + ah-rsc (déploiements sans bump — cf. T57)`,
+        );
+      } catch { /* non-bloquant */ }
+
       await self.clients.claim();
 
       // ⭐ v3.3.1 — Notifier les pages ouvertes : la version du SW vient de

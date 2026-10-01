@@ -1050,18 +1050,43 @@ export class FederisPatronatService {
    * Un patronat TERRITORIAL ne voit que ses propres liens (isolation des
    * données entre départements).
    */
-  async getSchools(tenantId: string, userId?: string) {
+  async getSchools(tenantId: string, userId?: string, departmentId?: string | null) {
     const patronat = await this.resolvePatronat(tenantId, userId);
     const isNational = patronat.orgLevel === 'NATIONAL';
+
+    // ⭐ 2026-10-01 — AGRÉGATION NATIONALE (cohérence T53) : la vision globale
+    //    du national est désormais bornée à SON RÉSEAU (lui-même + ses
+    //    patronats enfants) au lieu du pays entier — sémantique identique aux
+    //    autres modules (examens, matières, dashboard). Le sélecteur de
+    //    département de la barre de périmètre (?departmentId=) restreint la
+    //    vue à CE patronat enfant ; le filtre doit appartenir au réseau
+    //    (même garde que FederisScopeService.buildScopeFromPatronat).
+    let scopePatronatIds: string[] = [patronat.id];
+    if (isNational) {
+      const children = await this.prisma.patronat.findMany({
+        where: { parentPatronatId: patronat.id, status: 'ACTIVE' },
+        select: { id: true },
+      });
+      const childIds = children.map((c) => c.id);
+      if (departmentId) {
+        if (!childIds.includes(departmentId)) {
+          throw new BadRequestException(
+            'Département introuvable dans votre réseau de patronats.',
+          );
+        }
+        scopePatronatIds = [departmentId];
+      } else {
+        scopePatronatIds = [patronat.id, ...childIds];
+      }
+    }
 
     const [linked, manual] = await Promise.all([
       this.prisma.patronatSchool.findMany({
         where: isNational
           ? {
-              // Vision globale du national : liens de tous les patronats du pays
-              patronat: {
-                ...(patronat.countryId ? { countryId: patronat.countryId } : {}),
-              },
+              // Vision globale du national : liens de tous les patronats du
+              // RÉSEAU (lui-même + départements rattachés) — périmètre T53.
+              patronatId: { in: scopePatronatIds },
             }
           : { patronatId: patronat.id },
         include: {

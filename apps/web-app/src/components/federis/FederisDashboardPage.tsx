@@ -2,8 +2,7 @@
  * FederisDashboardPage — Cockpit institutionnel (cahier des charges §7.1 / §8.1)
  *
  * Vue macro orientée décision — AUCUNE saisie :
- *   - Cartes KPI : écoles rattachées, candidats, examens actifs/à venir, alertes
- *   - Bloc ORION : résumé automatique et alertes prioritaires (lecture seule)
+ *   - Cartes KPI : écoles rattachées, candidats, examens actifs/à venir
  *   - Examens récents + progression des quotas
  *   - Patronats territoriaux (vue consolidée pour le niveau national)
  */
@@ -16,13 +15,6 @@ import AppIcon from '@/components/ui/AppIcon';
 import { apiClient } from '@/lib/api/client';
 import { federisLink } from '@/lib/federis/useFederisPath';
 import { cn } from '@/lib/utils';
-
-interface OrionAlert {
-  severity: 'critical' | 'warning' | 'info';
-  category: string;
-  message: string;
-  count?: number;
-}
 
 interface DashboardData {
   patronat: {
@@ -74,7 +66,6 @@ interface DashboardData {
     subscriptionStatus: string;
     schoolsCount: number;
   }>;
-  orion: { readOnly: boolean; alerts: OrionAlert[]; summary: string };
 }
 
 const EXAM_STATUS_LABELS: Record<string, { label: string; className: string }> = {
@@ -126,8 +117,8 @@ export default function FederisDashboardPage() {
     return (
       <div className="space-y-6 animate-pulse">
         <div className="h-8 w-64 bg-gray-200 rounded" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[...Array(4)].map((_, i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => (
             <div key={i} className="h-28 bg-white border border-gray-100 rounded-xl" />
           ))}
         </div>
@@ -152,7 +143,7 @@ export default function FederisDashboardPage() {
     );
   }
 
-  const { patronat, academicYear, kpis, subscription, exams, childrenPatronats, orion } = data;
+  const { patronat, academicYear, kpis, subscription, exams, childrenPatronats } = data;
   const isNational = patronat.orgLevel === 'NATIONAL';
   const subBadge =
     SUBSCRIPTION_STATUS_LABELS[subscription.status] ??
@@ -209,7 +200,7 @@ export default function FederisDashboardPage() {
       </div>
 
       {/* Cartes KPI */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <KpiCard
           icon="building"
           label="Écoles rattachées"
@@ -235,13 +226,6 @@ export default function FederisDashboardPage() {
           label="Examens actifs"
           value={kpis.activeExams}
           hint={`${kpis.upcomingExams} à venir · ${kpis.inProgressExams} en cours`}
-        />
-        <KpiCard
-          icon="warning"
-          label="Alertes critiques"
-          value={orion.alerts.filter((a) => a.severity === 'critical').length}
-          hint={orion.summary}
-          hintTone={orion.alerts.some((a) => a.severity === 'critical') ? 'red' : 'gray'}
         />
       </div>
 
@@ -401,77 +385,8 @@ export default function FederisDashboardPage() {
           )}
         </div>
 
-        {/* Colonne ORION */}
+        {/* Colonne indicateurs */}
         <div className="space-y-6">
-          <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <AppIcon name="orion" size="menu" className="text-blue-800" />
-                <h2 className="text-base font-bold text-gray-900">ORION — Analyse institutionnelle</h2>
-              </div>
-              <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">
-                Lecture seule
-              </span>
-            </div>
-            <div className="px-6 py-4">
-              <p className="text-sm text-gray-600 mb-4">{orion.summary}</p>
-              {orion.alerts.length === 0 ? (
-                <div className="flex items-center gap-3 bg-gray-50 rounded-lg px-4 py-3">
-                  <AppIcon name="success" size="menu" className="text-green-500" />
-                  <span className="text-sm text-gray-600">
-                    Aucune anomalie détectée sur le périmètre.
-                  </span>
-                </div>
-              ) : (
-                <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {orion.alerts.map((alert, i) => (
-                    <div
-                      key={i}
-                      className={cn(
-                        'rounded-lg px-4 py-3 border',
-                        alert.severity === 'critical'
-                          ? 'bg-red-50 border-red-200'
-                          : alert.severity === 'warning'
-                            ? 'bg-amber-50 border-amber-200'
-                            : 'bg-blue-50 border-blue-200',
-                      )}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                          {alert.category}
-                        </span>
-                        <span
-                          className={cn(
-                            'text-[10px] font-semibold uppercase tracking-wide',
-                            alert.severity === 'critical'
-                              ? 'text-red-600'
-                              : alert.severity === 'warning'
-                                ? 'text-amber-600'
-                                : 'text-blue-700',
-                          )}
-                        >
-                          {alert.severity === 'critical'
-                            ? 'Critique'
-                            : alert.severity === 'warning'
-                              ? 'Vigilance'
-                              : 'Info'}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-700 leading-snug">{alert.message}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <Link
-                href={federisLink('/orion')}
-                className="mt-5 inline-flex items-center gap-2 text-sm text-blue-700 font-semibold hover:underline transition-colors"
-              >
-                Analyse complète
-                <AppIcon name="arrowRight" size="submenu" />
-              </Link>
-            </div>
-          </section>
-
           {/* Indicateurs secondaires */}
           <section className="bg-white border border-gray-200 rounded-xl p-6 space-y-4">
             <h2 className="text-base font-bold text-gray-900">Indicateurs opérationnels</h2>

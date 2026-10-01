@@ -3,10 +3,10 @@
  *
  * UI Shells par fonction (pattern Academia Helm — admin-portal-map) :
  *   - COORDONNATEUR  : le responsable — TOUTE l'application + gestion des comptes
- *   - SECRETAIRE     : secrétariat — registres, candidats, documents, PV, conflits
+ *   - SECRETAIRE     : secrétariat — registres, candidats, documents, PV
  *   - TRESORIER      : finances — abonnement, factures, quotas
- *   - ORGANISATEUR   : organisation — examens, centres, salles, candidats, ORION
- *   - CHARGE_MISSION : suivi & reporting — consultation, rapports, ORION
+ *   - ORGANISATEUR   : organisation — examens, centres, salles, candidats
+ *   - CHARGE_MISSION : suivi & reporting — consultation, rapports
  *
  * Rôles techniques (stockés en base) :
  *   - User.role          : PATRONAT_COORDONNATEUR, PATRONAT_SECRETAIRE, …
@@ -65,7 +65,7 @@ export const PATRONAT_FUNCTION_DESCRIPTIONS: Partial<Record<PatronatFunctionKey,
   SECRETAIRE: 'Secrétariat — registres, candidats, documents et procès-verbaux',
   TRESORIER: 'Finances — abonnement, factures et suivi des quotas',
   ORGANISATEUR: 'Organisation des examens — centres, salles, candidats et numéros de table',
-  CHARGE_MISSION: 'Suivi et reporting — consultation, rapports et alertes ORION',
+  CHARGE_MISSION: 'Suivi et reporting — consultation et rapports',
 };
 
 /** Fonctions créables par le coordonnateur. */
@@ -146,8 +146,6 @@ const ROUTE_PERMISSIONS: RouteRoles = {
   '/documents': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR', 'CHARGE_MISSION', 'OPERATOR'],
   '/question-bank': ['COORDONNATEUR', 'SECRETAIRE', 'ORGANISATEUR'],
   '/reports': ['COORDONNATEUR', 'SECRETAIRE', 'TRESORIER', 'ORGANISATEUR', 'CHARGE_MISSION', 'OPERATOR', 'VIEWER'],
-  '/orion': ['COORDONNATEUR', 'ORGANISATEUR', 'CHARGE_MISSION'],
-  '/conflicts': ['COORDONNATEUR', 'SECRETAIRE'],
   '/settings': ['COORDONNATEUR', 'TRESORIER'],
   '/checkout': ['COORDONNATEUR', 'TRESORIER'],
   // ⭐ Équipe & Comptes — création des users par le coordonnateur uniquement

@@ -10,7 +10,7 @@
  * Routes marketing (publiques) : landing /, /login, /register, /checkout.
  * Routes connectées : dashboard, patronats (national), schools, exams,
  * candidates, centers, documents, question-bank, deliberations, reports,
- * orion, conflicts, settings, bureau, team (coordonnateur).
+ * settings, bureau, team (coordonnateur).
  */
 
 import { NextResponse } from 'next/server';
@@ -78,8 +78,6 @@ const protectedPrefixRoutes = [
   '/federis/question-bank',
   '/federis/deliberations',
   '/federis/reports',
-  '/federis/orion',
-  '/federis/conflicts',
   '/federis/settings',
   '/federis/team',
   // Domaine principal (chemins historiques /patronat/*)
@@ -94,8 +92,6 @@ const protectedPrefixRoutes = [
   '/patronat/question-bank',
   '/patronat/deliberations',
   '/patronat/reports',
-  '/patronat/orion',
-  '/patronat/conflicts',
   '/patronat/settings',
   '/patronat/team',
 ];

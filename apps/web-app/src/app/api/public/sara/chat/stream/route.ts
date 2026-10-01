@@ -141,7 +141,7 @@ function buildInAppUIContext(
     admin: `MODULES ADMIN : Élèves (/app/students), Pédagogie (/app/pedagogy), Examens (/app/exams), Finance (/app/finance), RH (/app/hr), Communication (/app/communication), QHSE (/app/qhse), ORION (/app/orion), ATLAS (/app/atlas), Paramètres (/app/settings)`,
     teacher: `MODULES ENSEIGNANT : Tableau de bord, Notes & Évaluations (/app/teacher/grades), EDT (/app/teacher/timetable), Planification annuelle (/app/teacher/annual-planning), Espace Pédagogique (/app/teacher/pedagogy), Examens & Notes (/app/teacher/exams), EduCast (/app/teacher/educast), Communication parents (/app/teacher/communication), Absences (/app/teacher/attendance), Sara Compose (/app/teacher/sara-compose)`,
     parent: `MODULES PARENT : Tableau de bord, Notes & Bulletins (/app/parent/grades), Absences (/app/parent/attendance), Paiements (/app/parent/payments — Wave, MTN, Moov), Messages (/app/parent/messages), Calendrier (/app/parent/calendar)`,
-    promoter: `MODULES PROMOTEUR : Dashboard multi-campus (/patronat/dashboard), Écoles (/patronat/schools), Billing (/patronat/billing), Analytics (/patronat/analytics), ORION multi-campus (/patronat/orion)`,
+    promoter: `MODULES PROMOTEUR : Dashboard multi-campus (/patronat/dashboard), Écoles (/patronat/schools), Billing (/patronat/billing), Analytics (/patronat/analytics)`,
     platform: `MODULES PLATFORM : Dashboard (/platform), Tenants (/platform/tenants), Users (/platform/users), Monitoring (/platform/monitoring), Features (/platform/features), RBAC (/platform/rbac)`,
   };
 

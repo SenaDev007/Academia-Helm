@@ -57,7 +57,9 @@ interface FederisLayoutProps {
 //   3. Écoles rattachées  4. Examens nationaux  5. Centres, salles & Surveillants
 //   6. Candidats  7. Épreuves et documents (catégorie EXAMENS, après Candidats)
 //   8. Délibérations  9. Banque d'épreuves (+ catalogue)  10. Rapports
-//   11. ORION (lecture seule)  12. Paramètres  13. Équipe & Comptes (coordonnateur)
+//   11. Paramètres  12. Équipe & Comptes (coordonnateur)
+// ⭐ 2026-10-01 — modules « ORION » et « Gestion des conflits » SUPPRIMÉS
+//    de l'espace Federis (demande produit).
 // « Patronats territoriaux » n'est rendu que si le profil patronat (API) indique
 // orgLevel NATIONAL. Chaque entrée est en outre filtrée par la FONCTION du
 // membre connecté (canAccessRoute) : le coordonnateur voit toute l'application,

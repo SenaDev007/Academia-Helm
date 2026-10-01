@@ -487,6 +487,11 @@ export class FederisDeliberationService {
         level: exam.level,
         status: exam.status,
         isPrimary: ds.exam.isPrimary,
+        // ⭐ T38 — libellé de session OFFICIEL (« Session de mai 2027 », construit
+        // par examSessionLabel) : le lien public de consultation en avait besoin
+        // — board.session (champ racine) reste l'OBJET session de SAISIE
+        // (draftCount/submittedCount/…) utilisé par l'UI Délibération.
+        session: ds.exam.session ?? null,
       },
       academicYearLabel: ds.academicYearLabel,
       rules: {

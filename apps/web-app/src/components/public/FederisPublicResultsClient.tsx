@@ -30,7 +30,7 @@
 
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Search,
   Loader2,
@@ -39,10 +39,10 @@ import {
   Award,
   Users,
   TrendingUp,
-  ArrowLeft,
   CheckCircle2,
   XCircle,
   Info,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { apiClient } from '@/lib/api/client';
@@ -199,39 +199,201 @@ function AnimatedSuccessCheck({ className }: { className?: string }) {
   );
 }
 
-/** Burst de confettis CSS pur (aucune dépendance) — 12 particules radiales. */
-function SuccessConfetti() {
-  // 12 directions radiales + couleurs institutionnelles (or / émeraude / blanc)
-  // ⭐ T31 — particules VOYANTES : 8-13 px, opacité tenue pendant 60 % du vol.
-  const particles = [
-    { cx: '-58px', cy: '-40px', color: '#fbbf24', delay: '0ms', size: '12px', radius: '3px' },
-    { cx: '56px', cy: '-48px', color: '#34d399', delay: '60ms', size: '10px', radius: '9999px' },
-    { cx: '-64px', cy: '24px', color: '#f5b335', delay: '120ms', size: '13px', radius: '2px' },
-    { cx: '62px', cy: '28px', color: '#ffffff', delay: '40ms', size: '9px', radius: '9999px' },
-    { cx: '-28px', cy: '-66px', color: '#34d399', delay: '150ms', size: '10px', radius: '2px' },
-    { cx: '30px', cy: '64px', color: '#fbbf24', delay: '90ms', size: '12px', radius: '9999px' },
-    { cx: '-46px', cy: '56px', color: '#ffffff', delay: '130ms', size: '8px', radius: '2px' },
-    { cx: '48px', cy: '-20px', color: '#f5b335', delay: '20ms', size: '11px', radius: '3px' },
-    { cx: '6px', cy: '-70px', color: '#fde68a', delay: '70ms', size: '9px', radius: '9999px' },
-    { cx: '-12px', cy: '68px', color: '#a7f3d0', delay: '110ms', size: '10px', radius: '2px' },
-    { cx: '68px', cy: '8px', color: '#ffffff', delay: '50ms', size: '8px', radius: '3px' },
-    { cx: '-70px', cy: '-6px', color: '#fbbf24', delay: '140ms', size: '11px', radius: '9999px' },
-  ];
+// ─── ⭐ T38 — Feux d'artifice (particules canvas) ────────────────────────────
+
+/** Palette institutionnelle des feux d'artifice (or / émeraude / blanc / bleu clair). */
+const FIREWORK_COLORS = ['#f5b335', '#fde68a', '#ffffff', '#34d399', '#93c5fd'];
+
+interface FwParticle {
+  x: number; y: number;
+  vx: number; vy: number;
+  life: number; maxLife: number;
+  color: string; size: number;
+}
+
+interface FwRocket {
+  x: number; y: number; vy: number; targetY: number;
+  color: string; exploded: boolean;
+}
+
+/**
+ * Système de feux d'artifice en canvas (aucune dépendance) — utilisé :
+ *   • en AMBIANCE continue dans le bandeau hero de la consultation ;
+ *   • en SALVE célébration dans l'en-tête du modal quand le candidat est
+ *     ADMIS (mode `bursts` : explosions rapprochées pendant ~4 s).
+ * Respecte prefers-reduced-motion (canvas inerte) et se met en pause quand
+ * l'onglet est masqué.
+ */
+function FireworksCanvas({
+  mode = 'ambient',
+  className,
+}: {
+  mode?: 'ambient' | 'bursts';
+  className?: string;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      return; // accessibilité : aucune animation
+    }
+
+    let width = 0;
+    let height = 0;
+    let raf = 0;
+    let disposed = false;
+    const dpr = Math.min(2, typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
+    const rockets: FwRocket[] = [];
+    const particles: FwParticle[] = [];
+
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      width = Math.max(1, rect.width);
+      height = Math.max(1, rect.height);
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null;
+    ro?.observe(canvas);
+
+    const spawnExplosion = (x: number, y: number, count: number, power: number) => {
+      const color = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
+      const color2 = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
+      for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.35;
+        const speed = power * (0.55 + Math.random() * 0.65);
+        particles.push({
+          x, y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          life: 0,
+          maxLife: 55 + Math.random() * 40,
+          color: Math.random() < 0.5 ? color : color2,
+          size: 1.4 + Math.random() * 2,
+        });
+      }
+    };
+
+    const spawnRocket = () => {
+      rockets.push({
+        x: width * (0.12 + Math.random() * 0.76),
+        y: height + 6,
+        vy: -(height * 0.012) - Math.random() * 2.2,
+        targetY: height * (0.16 + Math.random() * 0.42),
+        color: FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)],
+        exploded: false,
+      });
+    };
+
+    let nextAmbient = 350;
+    let elapsed = 0;
+    let lastT = performance.now();
+
+    const tick = (now: number) => {
+      if (disposed) return;
+      const dt = Math.min(50, now - lastT);
+      lastT = now;
+      elapsed += dt;
+
+      // Programmateurs : ambiance = 1 fusée toutes les ~1,1 s ; salve (waouh)
+      // = 3 fusées simultanées toutes les ~650 ms pendant 4 s, puis silence.
+      if (mode === 'ambient') {
+        nextAmbient -= dt;
+        if (nextAmbient <= 0) {
+          spawnRocket();
+          nextAmbient = 900 + Math.random() * 700;
+        }
+      } else if (elapsed < 4000) {
+        nextAmbient -= dt;
+        if (nextAmbient <= 0) {
+          spawnRocket();
+          spawnRocket();
+          if (Math.random() < 0.6) spawnRocket();
+          nextAmbient = 520 + Math.random() * 380;
+        }
+      }
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Fusées montant vers leur cible
+      for (let i = rockets.length - 1; i >= 0; i--) {
+        const r = rockets[i];
+        r.y += r.vy * (dt / 16.7);
+        // Traînée de la fusée
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = r.color;
+        ctx.beginPath();
+        ctx.arc(r.x, r.y, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 0.28;
+        ctx.fillRect(r.x - 0.6, r.y, 1.2, 10);
+        if (r.y <= r.targetY) {
+          spawnExplosion(r.x, r.y, 26 + Math.floor(Math.random() * 16), 2.6 + Math.random() * 1.4);
+          rockets.splice(i, 1);
+        }
+      }
+
+      // Particules des explosions (gravité + fondu)
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.life += dt / 16.7;
+        if (p.life >= p.maxLife) { particles.splice(i, 1); continue; }
+        p.x += p.vx * (dt / 16.7);
+        p.y += p.vy * (dt / 16.7);
+        p.vy += 0.045 * (dt / 16.7); // gravité douce
+        p.vx *= 0.985;
+        const fade = 1 - p.life / p.maxLife;
+        ctx.globalAlpha = Math.max(0, fade) * 0.95;
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * (0.6 + 0.4 * fade), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(raf);
+      ro?.disconnect();
+    };
+  }, [mode]);
+
+  return <canvas ref={canvasRef} className={className} aria-hidden />;
+}
+
+/** Pluie de confettis CSS (retombée depuis le haut du modal — effet waouh). */
+function ConfettiRain() {
+  const pieces = Array.from({ length: 26 }, (_, i) => ({
+    left: `${(i * 3.8 + Math.random() * 3) % 100}%`,
+    delay: `${Math.random() * 900}ms`,
+    duration: `${1400 + Math.random() * 1300}ms`,
+    size: `${6 + Math.random() * 6}px`,
+    color: FIREWORK_COLORS[i % FIREWORK_COLORS.length],
+    round: Math.random() < 0.5,
+  }));
   return (
-    <span className="pointer-events-none absolute inset-0" aria-hidden>
-      {particles.map((p, i) => (
+    <span className="pointer-events-none absolute inset-x-0 top-0 h-40 overflow-hidden z-20" aria-hidden>
+      {pieces.map((p, i) => (
         <span
           key={i}
-          className="fed-confetti absolute left-1/2 top-1/2"
+          className="fed-confetti-fall absolute -top-3"
           style={{
-            '--cx': p.cx,
-            '--cy': p.cy,
-            animationDelay: p.delay,
+            left: p.left,
             width: p.size,
             height: p.size,
             background: p.color,
-            borderRadius: p.radius,
-            boxShadow: `0 0 6px ${p.color}`,
+            borderRadius: p.round ? '9999px' : '2px',
+            animationDelay: p.delay,
+            animationDuration: p.duration,
           } as React.CSSProperties}
         />
       ))}
@@ -288,6 +450,12 @@ export default function FederisPublicResultsClient({ token }: { token: string })
         timeout: 30000,
       });
       setLookup(res.data);
+      // ⭐ T38 — résultat unique → le modal s'ouvre DIRECTEMENT (le parent
+      // n'a pas à cliquer une seconde fois sur l'unique candidat trouvé).
+      const found = res.data?.results;
+      if (Array.isArray(found) && found.length === 1) {
+        setSelected(found[0]);
+      }
     } catch (err: any) {
       setLookup(null);
       setSearchError(extractApiError(err, 'Recherche impossible — réessayez.'));
@@ -415,10 +583,47 @@ export default function FederisPublicResultsClient({ token }: { token: string })
         .fed-card-in { animation: fedCardIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both; }
         .fed-stat-lift { transition: transform 0.25s ease, box-shadow 0.25s ease; }
         .fed-stat-lift:hover { transform: translateY(-3px); box-shadow: 0 12px 28px -12px rgba(11, 47, 115, 0.28); }
+        /* ⭐ T38 — MODAL DE RÉSULTAT : entrée de la carte + du fond, pluie de
+           confettis, emoji triste (échec) — chute avec rebond puis léger
+           balancement en boucle, pulsation du titre « Félicitations ». */
+        @keyframes fedModalIn {
+          from { opacity: 0; transform: translateY(20px) scale(0.95); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .fed-modal-in { animation: fedModalIn 0.38s cubic-bezier(0.22, 1, 0.36, 1) both; }
+        @keyframes fedBackdropIn { from { opacity: 0; } to { opacity: 1; } }
+        .fed-backdrop-in { animation: fedBackdropIn 0.25s ease-out both; }
+        @keyframes fedConfettiFall {
+          0% { opacity: 1; transform: translateY(-12px) rotate(0deg); }
+          85% { opacity: 1; }
+          100% { opacity: 0; transform: translateY(180px) rotate(320deg); }
+        }
+        .fed-confetti-fall { animation: fedConfettiFall 1.9s cubic-bezier(0.3, 0.6, 0.6, 1) both; }
+        @keyframes fedSadDrop {
+          0% { opacity: 0; transform: translateY(-30px) scale(0.55); }
+          60% { opacity: 1; transform: translateY(5px) scale(1.12); }
+          80% { transform: translateY(-3px) scale(0.97); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes fedSadWobble {
+          0%, 100% { transform: rotate(-4deg); }
+          50% { transform: rotate(4deg); }
+        }
+        .fed-sad-drop {
+          animation: fedSadDrop 1s cubic-bezier(0.34, 1.4, 0.5, 1) both,
+                     fedSadWobble 3.2s ease-in-out 1s infinite;
+        }
+        @keyframes fedCelebratePulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+        }
+        .fed-celebrate-pulse { animation: fedCelebratePulse 1.6s ease-in-out 0.6s infinite; transform-origin: center; }
         /* Respect des préférences d'accessibilité */
         @media (prefers-reduced-motion: reduce) {
           .fed-rise, .fed-logo-float, .fed-hero-glow, .fed-underline-shimmer,
-          .fed-check-draw, .fed-ring-pulse, .fed-confetti, .fed-card-in {
+          .fed-check-draw, .fed-ring-pulse, .fed-confetti, .fed-card-in,
+          .fed-modal-in, .fed-backdrop-in, .fed-confetti-fall, .fed-sad-drop,
+          .fed-celebrate-pulse {
             animation: none !important;
           }
           .fed-underline-shimmer { background: #f5b335; }
@@ -428,6 +633,10 @@ export default function FederisPublicResultsClient({ token }: { token: string })
       {/* ── ⭐ T31 — Bandeau institutionnel (HEADER DU PATRONAT, conservé et
              refondu : logo réel + animations de succès) ── */}
       <div className="relative overflow-hidden bg-gradient-to-br from-blue-950 via-blue-900 to-blue-800 text-white">
+        {/* ⭐ T38 — FEUX D'ARTIFICE en ambiance continue (particules canvas
+            dorées/émeraude/blanches : fusées + explosions) dans le bandeau
+            « Consultation des résultats ». */}
+        <FireworksCanvas mode="ambient" className="pointer-events-none absolute inset-0 w-full h-full z-[1]" />
         {/* Décor : halos dorés + trame institutionnelle */}
         <div className="pointer-events-none absolute inset-0" aria-hidden>
           <div className="fed-hero-glow absolute -top-24 -right-16 w-72 h-72 rounded-full bg-amber-400/15 blur-3xl" />
@@ -442,7 +651,7 @@ export default function FederisPublicResultsClient({ token }: { token: string })
           />
         </div>
 
-        <div className="relative max-w-3xl mx-auto px-4 sm:px-6 pt-8 sm:pt-10 pb-10 sm:pb-12 space-y-5">
+        <div className="relative max-w-3xl mx-auto px-4 sm:px-6 pt-8 sm:pt-10 pb-10 sm:pb-12 space-y-5 z-10">
           {/* Rangée 1 — LOGO DU PATRONAT (remplace l'icône générique) + identité */}
           <div
             className="fed-rise flex items-center gap-4"
@@ -501,9 +710,13 @@ export default function FederisPublicResultsClient({ token }: { token: string })
             </h1>
             <div className="fed-underline-shimmer h-[3px] w-44 rounded-full" aria-hidden />
             <p className="text-sm sm:text-[15px] text-blue-100 font-semibold leading-snug">
-              {info.exam.name}
-              {info.exam.session ? ` · ${info.exam.session}` : ''}
-              {info.exam.academicYearLabel ? ` · ${info.exam.academicYearLabel}` : ''}
+              {/* ⭐ T38 — rendu DÉFENSIF : n'insérer que de vraies chaînes
+                  (l'API renvoyait autrefois un objet session → « [object
+                  Object] » ; le fix serveur est fait, ce garde-fou empêche
+                  toute régression d'affichage). */}
+              {typeof info.exam.name === 'string' ? info.exam.name : ''}
+              {typeof info.exam.session === 'string' && info.exam.session ? ` · ${info.exam.session}` : ''}
+              {typeof info.exam.academicYearLabel === 'string' && info.exam.academicYearLabel ? ` · ${info.exam.academicYearLabel}` : ''}
             </p>
           </div>
 
@@ -572,18 +785,8 @@ export default function FederisPublicResultsClient({ token }: { token: string })
           </div>
         </div>
 
-        {/* ── Fiche résultat d'un candidat (⭐ T31 — key = matricule pour rejouer
-            les animations de succès à chaque candidat ouvert) ── */}
-        {selected ? (
-          <CandidateSheet
-            key={selected.matricule}
-            candidate={selected}
-            isCep={isCep}
-            onBack={() => setSelected(null)}
-          />
-        ) : (
-          <>
-            {/* ── Formulaire de recherche ── */}
+        {/* ── Formulaire de recherche (⭐ T38 — TOUJOURS visible : le résultat
+            d'un candidat s'affiche désormais dans un MODAL centré, superposé) ── */}
             <div className="bg-white rounded-3xl border border-slate-200 shadow-lg p-5 sm:p-7 space-y-4">
               <div>
                 <h2 className="text-base font-black text-slate-900">
@@ -709,7 +912,18 @@ export default function FederisPublicResultsClient({ token }: { token: string })
                 )}
               </div>
             )}
-          </>
+
+        {/* ── ⭐ T38 — MODAL DE RÉSULTAT : centré à l'écran, par-dessus la page.
+            Admis → effets waouh (feux d'artifice + pluie de confettis + coche
+            animée + « Félicitations ! ») ; Ajourné → emoji triste animé, tons
+            rouges. Toutes les infos clés y sont structurées. ── */}
+        {selected && (
+          <ResultModal
+            key={selected.matricule}
+            candidate={selected}
+            isCep={isCep}
+            onClose={() => setSelected(null)}
+          />
         )}
 
         {/* ── Pied institutionnel ── */}
@@ -724,219 +938,300 @@ export default function FederisPublicResultsClient({ token }: { token: string })
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Fiche résultat complète d'un candidat
+// ⭐ T38 — Modal de résultat d'un candidat (centré à l'écran)
+// ═══════════════════════════════════════════════════════════════════════════
+// Admis(e)  → effets « waouh » : salves de feux d'artifice (canvas), pluie de
+//             confettis, coche dessinée dans un anneau pulsant, « Félicitations ! »
+//             en pulsation douce — tout le protocole de célébration.
+// Ajourné(e) → effet contrasté et sobre : emoji triste 😞 qui tombe avec un
+//             rebond puis se balance doucement, tons rouges, AUCUNE fête.
+// Toutes les informations clés y sont structurées : nom et prénoms, école de
+// provenance, centre d'examen, numéro de table, matricule, moyenne, rang,
+// mention, décisions CEP le cas échéant, notes par matière.
+// Fermeture : Escape, clic sur le fond assombri, bouton croix.
 // ═══════════════════════════════════════════════════════════════════════════
 
-function CandidateSheet({
+function ResultModal({
   candidate,
   isCep,
-  onBack,
+  onClose,
 }: {
   candidate: LookupCandidate;
   isCep: boolean;
-  onBack: () => void;
+  onClose: () => void;
 }) {
   const admitted = candidate.decision === 'ADMIS';
+
+  // Escape ferme le modal ; le scroll de la page est verrouillé tant que le
+  // modal est ouvert (restauration de l'état antérieur au démontage).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
   return (
-    <div className="fed-card-in bg-white rounded-3xl border border-slate-200 shadow-lg overflow-hidden">
-      {/* ⭐ T31 — Bandeau décision : célébration de la réussite (coche dessinée
-             + confettis CSS) quand le candidat est ADMIS, sobre sinon. */}
-      <div
-        className={cn(
-          'relative overflow-hidden px-5 sm:px-7 py-6 space-y-3',
-          admitted
-            ? 'bg-gradient-to-br from-emerald-700 via-emerald-600 to-emerald-500'
-            : 'bg-gradient-to-br from-red-700 via-red-600 to-red-500',
-        )}
-      >
-        {/* Halo décoratif du bandeau */}
-        <div
-          className="pointer-events-none absolute -top-16 -right-10 w-48 h-48 rounded-full bg-white/10 blur-2xl"
-          aria-hidden
-        />
-        <div className="relative flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/80">
-              Décision du jury
-            </p>
-            <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight mt-1">
-              {admitted ? 'Admis(e)' : 'Ajourné(e)'}
-            </h2>
-            {candidate.decisionLabel && (
-              <p className="text-xs text-white/90 font-semibold mt-1">
-                {candidate.decisionLabel}
-              </p>
-            )}
-          </div>
-          {admitted ? (
-            /* Coche de succès dessinée + confettis — la réussite se célèbre */
-            <span className="relative w-14 h-14 shrink-0 text-white">
-              <SuccessConfetti />
-              <AnimatedSuccessCheck className="w-14 h-14" />
-            </span>
-          ) : (
-            <XCircle className="w-10 h-10 text-white/90 shrink-0" />
-          )}
-        </div>
-      </div>
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Résultat de ${candidate.fullName}`}
+    >
+      {/* Fond assombri — le clic ferme le modal */}
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label="Fermer la fenêtre de résultat"
+        onClick={onClose}
+        className="fed-backdrop-in absolute inset-0 w-full h-full cursor-default bg-slate-950/70 backdrop-blur-sm"
+      />
 
-      <div className="p-5 sm:p-7 space-y-6">
-        {/* Identité */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <SheetField label="Nom et prénoms" value={candidate.fullName} wide />
-          <SheetField label="Matricule" value={candidate.matricule} mono />
-          <SheetField
-            label="N° de table"
-            value={candidate.tableNumber ?? '—'}
-            mono
-          />
-          <SheetField label="École de provenance" value={candidate.school} wide />
-          {candidate.centerName && (
-            <SheetField label="Centre d’examen" value={candidate.centerName} wide />
-          )}
-        </div>
+      {/* Carte centrée (scrollable si l'écran est petit) */}
+      <div className="fed-modal-in relative w-full max-w-lg max-h-[92dvh] overflow-y-auto overscroll-contain bg-white rounded-3xl shadow-2xl ring-1 ring-black/10">
 
-        {/* Résumé */}
-        <div className="grid grid-cols-3 gap-2.5">
-          <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
-            <p className="text-xl font-black text-blue-900">
-              {candidate.average != null ? fmtNote(candidate.average) : '—'}
-            </p>
-            <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">
-              Moyenne /20
-            </p>
-          </div>
-          <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
-            <p className="text-xl font-black text-blue-900">
-              {candidate.rank ?? '—'}
-              <span className="text-xs font-bold text-slate-400">
-                {candidate.rank ? 'ᵉ' : ''}
-              </span>
-            </p>
-            <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">Rang</p>
-          </div>
-          <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
-            <p className="text-[13px] font-black text-blue-900 leading-tight mt-1">
-              {candidate.mention ?? '—'}
-            </p>
-            <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">Mention</p>
-          </div>
-        </div>
-
-        {/* ⭐ CEP — décisions officielles (admission CEP + entrée en 6ème) */}
-        {isCep && candidate.cepAdmission && (
-          <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 space-y-2.5">
-            <p className="text-[10px] font-black uppercase tracking-wide text-blue-900">
-              Décisions officielles du CEP
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <DecisionPill
-                ok={candidate.cepAdmission.admisCep}
-                labelOk="Admis(e) au CEP"
-                labelKo="Non admis(e) au CEP"
-              />
-              <DecisionPill
-                ok={candidate.cepAdmission.admisSixieme}
-                labelOk="Admis(e) en 6ème"
-                labelKo="Non admis(e) en 6ème"
-              />
-            </div>
-            {candidate.cepAdmission.moyenneEtoiles != null && (
-              <p className="text-[11px] text-slate-600 leading-relaxed">
-                Moyenne des matières marquées d’un astérisque (*) :{' '}
-                <b className="text-blue-900">
-                  {fmtNote(candidate.cepAdmission.moyenneEtoiles)}/20
-                </b>{' '}
-                — admission en 6ème si cette moyenne est au moins égale à 10/20.
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Notes par matière */}
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-wide text-slate-400 mb-2">
-            Notes par matière
-          </p>
-          <div className="overflow-hidden rounded-2xl border border-slate-200">
-            <table className="min-w-full divide-y divide-slate-200">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-3.5 py-2.5 text-left text-[9px] font-black text-slate-400 uppercase">
-                    Matière
-                  </th>
-                  <th className="px-3 py-2.5 text-center text-[9px] font-black text-slate-400 uppercase">
-                    {isCep ? 'Note /20' : 'Coef.'}
-                  </th>
-                  <th className="px-3 py-2.5 text-center text-[9px] font-black text-slate-400 uppercase">
-                    {isCep ? 'Détail' : 'Note /20'}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {candidate.lines.map((l) => (
-                  <tr key={l.code} className={l.isAbsent ? 'bg-slate-50/60' : ''}>
-                    <td className="px-3.5 py-2.5">
-                      <span className="text-xs font-bold text-slate-800">
-                        {l.name}
-                        {l.perfectionnement ? ' *' : ''}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-center">
-                      {isCep ? (
-                        <span
-                          className={cn(
-                            'text-xs font-black',
-                            l.isAbsent ? 'text-slate-400' : 'text-slate-800',
-                          )}
-                        >
-                          {l.isAbsent ? 'ABS' : fmtNote(l.score)}
-                        </span>
-                      ) : (
-                        <span className="text-xs font-black text-slate-500">
-                          ×{fmtNote(l.coefficient)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-center">
-                      {isCep ? (
-                        <span className="text-[10px] font-semibold text-slate-500">
-                          {l.isAbsent
-                            ? '—'
-                            : `${fmtNote(l.cm)} + ${fmtNote(l.cp)} (perf.)`}
-                        </span>
-                      ) : (
-                        <span
-                          className={cn(
-                            'text-xs font-black',
-                            l.isAbsent ? 'text-slate-400' : 'text-slate-800',
-                          )}
-                        >
-                          {l.isAbsent ? 'ABS' : fmtNote(l.score)}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {isCep && (
-            <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
-              Au CEP, la note /20 d’une matière se décompose en note obtenue (CM /18) et
-              note de perfectionnement (CP /2) ; les matières marquées d’un astérisque (*)
-              déterminent l’admission en 6ème.
-            </p>
-          )}
-        </div>
-
+        {/* Bouton croix (contraste sur les deux dégradés d'en-tête) */}
         <button
-          onClick={onBack}
-          className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 text-xs font-black uppercase tracking-wide text-slate-600 hover:bg-slate-50 inline-flex items-center justify-center gap-2 transition-colors"
+          type="button"
+          onClick={onClose}
+          aria-label="Fermer"
+          className="absolute top-3 right-3 z-30 w-9 h-9 rounded-full bg-white/25 hover:bg-white/45 backdrop-blur-sm text-white flex items-center justify-center transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" />
-          Nouvelle recherche
+          <X className="w-4 h-4" />
         </button>
+
+        {/* ═══ EN-TÊTE : célébration (admis) / compassion (ajourné) ═══ */}
+        <div
+          className={cn(
+            'relative overflow-hidden px-5 sm:px-7 pt-7 pb-6 text-white',
+            admitted
+              ? 'bg-gradient-to-br from-emerald-700 via-emerald-600 to-emerald-500'
+              : 'bg-gradient-to-br from-red-700 via-red-600 to-red-500',
+          )}
+        >
+          {admitted && (
+            <>
+              {/* Salves de feux d'artifice + pluie de confettis — le « waouh » */}
+              <FireworksCanvas mode="bursts" className="pointer-events-none absolute inset-0 w-full h-full" />
+              <ConfettiRain />
+            </>
+          )}
+          <div
+            className="pointer-events-none absolute -top-16 -right-10 w-48 h-48 rounded-full bg-white/10 blur-2xl"
+            aria-hidden
+          />
+          <div className="relative flex flex-col items-center text-center gap-1.5 z-10">
+            {admitted ? (
+              <>
+                <span className="relative w-16 h-16 text-white shrink-0">
+                  <AnimatedSuccessCheck className="w-16 h-16" />
+                </span>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/80 mt-1">
+                  Décision du jury
+                </p>
+                <h2 className="fed-celebrate-pulse text-2xl sm:text-3xl font-black leading-tight">
+                  Félicitations !
+                </h2>
+                <p className="text-base sm:text-lg font-black text-white/95 leading-snug">
+                  {candidate.fullName} est admis(e)
+                </p>
+                {candidate.decisionLabel && (
+                  <p className="text-xs text-white/90 font-semibold">{candidate.decisionLabel}</p>
+                )}
+              </>
+            ) : (
+              <>
+                <span className="fed-sad-drop text-6xl leading-none select-none" aria-hidden>
+                  😞
+                </span>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-white/80 mt-1">
+                  Décision du jury
+                </p>
+                <h2 className="text-2xl sm:text-3xl font-black leading-tight">Ajourné(e)</h2>
+                <p className="text-sm font-black text-white/95">{candidate.fullName}</p>
+                {candidate.decisionLabel && (
+                  <p className="text-xs text-white/80 font-semibold">{candidate.decisionLabel}</p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* ═══ CORPS : informations clés structurées ═══ */}
+        <div className="p-5 sm:p-6 space-y-5">
+          {/* Identité du candidat */}
+          <section className="space-y-3">
+            <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">
+              Informations du candidat
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <SheetField label="Nom et prénoms" value={candidate.fullName} wide />
+              <SheetField label="Matricule" value={candidate.matricule} mono />
+              <SheetField label="N° de table" value={candidate.tableNumber ?? '—'} mono />
+              <SheetField label="École de provenance" value={candidate.school} wide />
+              {candidate.centerName && (
+                <SheetField label="Centre d’examen" value={candidate.centerName} wide />
+              )}
+            </div>
+          </section>
+
+          {/* Résumé chiffré */}
+          <div className="grid grid-cols-3 gap-2.5">
+            <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
+              <p className="text-xl font-black text-blue-900">
+                {candidate.average != null ? fmtNote(candidate.average) : '—'}
+              </p>
+              <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">
+                Moyenne /20
+              </p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
+              <p className="text-xl font-black text-blue-900">
+                {candidate.rank ?? '—'}
+                <span className="text-xs font-bold text-slate-400">
+                  {candidate.rank ? 'ᵉ' : ''}
+                </span>
+              </p>
+              <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">Rang</p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-3 text-center">
+              <p className="text-[13px] font-black text-blue-900 leading-tight mt-1">
+                {candidate.mention ?? '—'}
+              </p>
+              <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">Mention</p>
+            </div>
+          </div>
+
+          {/* ⭐ CEP — décisions officielles (admission CEP + entrée en 6ème) */}
+          {isCep && candidate.cepAdmission && (
+            <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 space-y-2.5">
+              <p className="text-[10px] font-black uppercase tracking-wide text-blue-900">
+                Décisions officielles du CEP
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <DecisionPill
+                  ok={candidate.cepAdmission.admisCep}
+                  labelOk="Admis(e) au CEP"
+                  labelKo="Non admis(e) au CEP"
+                />
+                <DecisionPill
+                  ok={candidate.cepAdmission.admisSixieme}
+                  labelOk="Admis(e) en 6ème"
+                  labelKo="Non admis(e) en 6ème"
+                />
+              </div>
+              {candidate.cepAdmission.moyenneEtoiles != null && (
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Moyenne des matières marquées d’un astérisque (*) :{' '}
+                  <b className="text-blue-900">
+                    {fmtNote(candidate.cepAdmission.moyenneEtoiles)}/20
+                  </b>{' '}
+                  — admission en 6ème si cette moyenne est au moins égale à 10/20.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Notes par matière */}
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-wide text-slate-400 mb-2">
+              Notes par matière
+            </p>
+            <div className="overflow-hidden rounded-2xl border border-slate-200">
+              <table className="min-w-full divide-y divide-slate-200">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-3.5 py-2.5 text-left text-[9px] font-black text-slate-400 uppercase">
+                      Matière
+                    </th>
+                    <th className="px-3 py-2.5 text-center text-[9px] font-black text-slate-400 uppercase">
+                      {isCep ? 'Note /20' : 'Coef.'}
+                    </th>
+                    <th className="px-3 py-2.5 text-center text-[9px] font-black text-slate-400 uppercase">
+                      {isCep ? 'Détail' : 'Note /20'}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {candidate.lines.map((l) => (
+                    <tr key={l.code} className={l.isAbsent ? 'bg-slate-50/60' : ''}>
+                      <td className="px-3.5 py-2.5">
+                        <span className="text-xs font-bold text-slate-800">
+                          {l.name}
+                          {l.perfectionnement ? ' *' : ''}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        {isCep ? (
+                          <span
+                            className={cn(
+                              'text-xs font-black',
+                              l.isAbsent ? 'text-slate-400' : 'text-slate-800',
+                            )}
+                          >
+                            {l.isAbsent ? 'ABS' : fmtNote(l.score)}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-black text-slate-500">
+                            ×{fmtNote(l.coefficient)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        {isCep ? (
+                          <span className="text-[10px] font-semibold text-slate-500">
+                            {l.isAbsent
+                              ? '—'
+                              : `${fmtNote(l.cm)} + ${fmtNote(l.cp)} (perf.)`}
+                          </span>
+                        ) : (
+                          <span
+                            className={cn(
+                              'text-xs font-black',
+                              l.isAbsent ? 'text-slate-400' : 'text-slate-800',
+                            )}
+                          >
+                            {l.isAbsent ? 'ABS' : fmtNote(l.score)}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {isCep && (
+              <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+                Au CEP, la note /20 d’une matière se décompose en note obtenue (CM /18) et
+                note de perfectionnement (CP /2) ; les matières marquées d’un astérisque (*)
+                déterminent l’admission en 6ème.
+              </p>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+            <button
+              onClick={onClose}
+              className="flex-1 rounded-xl bg-blue-900 px-5 py-3 text-xs font-black uppercase tracking-wide text-white hover:bg-blue-800 inline-flex items-center justify-center gap-2 transition-colors"
+            >
+              <Search className="w-4 h-4" />
+              Nouvelle recherche
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-xs font-black uppercase tracking-wide text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              Fermer
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

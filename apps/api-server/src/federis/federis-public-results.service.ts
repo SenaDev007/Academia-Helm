@@ -140,7 +140,13 @@ export class FederisPublicResultsService {
         name: board.exam.name,
         examType: board.exam.examType,
         level: board.exam.level,
-        session: board.session,
+        // ⭐ T38 — FIX « [object Object] » : board.session est l'OBJET session
+        // de SAISIE (draftCount/submittedCount/…), pas le libellé ! Le
+        // sous-titre du portail affichait « Examen blanc · [object Object] ».
+        // Le libellé officiel (« Session de mai 2027 ») vit dans
+        // board.exam.session (construit par examSessionLabel) — même source
+        // que le relevé (getRelevesForPublicExam → ds.exam.session).
+        session: board.exam.session ?? null,
         academicYearLabel: board.academicYearLabel,
       },
       patronat: {

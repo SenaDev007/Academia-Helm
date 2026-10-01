@@ -12,18 +12,12 @@
  * révoqué à tout moment (module Délibération) — cette page sert le portail
  * client correspondant (FederisPublicResultsClient).
  *
- * ⭐ T31 — la page porte désormais les DEUX en-têtes institutionnels :
- *   1. le HEADER ACADEMIA (corporate Academia Helm, header-1, fixed) ;
- *   2. le HEADER DU PATRONAT (bandeau navy du portail, conservé, avec le
- *      LOGO RÉEL du patronat récupéré de la base — plus d'icône générique).
- *
- * ⭐ T33 — le header Academia est FORCÉ (forceAcademiaBrand) : le lien public
- * est partagé aux parents avec l’origine du sous-domaine du patronat
- * (window.location.origin à la génération) ; sans cette prop, le composant
- * Header détecterait le sous-domaine tenant et remplacerait logo + wordmark
- * par le branding de l’école du patronat. Cette page porte TOUJOURS le header
- * de la plateforme Academia Helm — l’identité du patronat reste portée par le
- * bandeau institutionnel dédié du portail (logo réel + nom, cf. T31).
+ * ⭐ T31 — la page portait le header Academia AU-DESSUS du bandeau patronat.
+ * ⭐ T38 — le header Academia est SUPPRIMÉ (retour promoteur) : la page
+ *   commence directement par le BANDEAU INSTITUTIONNEL DU PATRONAT (logo
+ *   réel + nom, récupérés de la base). Le spacer du layout public (h-14
+ *   md:h-16, réservé au header fixe) est compensé par une marge négative
+ *   pour que le bandeau patronat colle au sommet de l'écran.
  *
  * ⚠️ noindex : les résultats d'élèves ne doivent JAMAIS être indexés par les
  * moteurs de recherche (données personnelles + lien provisoire à diffusion
@@ -32,7 +26,6 @@
  */
 
 import type { Metadata } from 'next';
-import { Header } from '@/components/ui/header-1';
 import FederisPublicResultsClient from '@/components/public/FederisPublicResultsClient';
 
 export const dynamic = 'force-dynamic';
@@ -52,14 +45,13 @@ export default async function FederisPublicResultsPage({
   const { token } = await params;
   return (
     <div className="min-h-screen bg-white">
-      {/* ⭐ T31 — Header ACADEMIA (corporate Helm, fixed top-0, h-14 md:h-16).
-      Le layout (public) réserve déjà l'espacement correspondant — la page a
-      désormais le header Academia AU-DESSUS du bandeau patronat du portail.
-      ⭐ T33 — forceAcademiaBrand : le lien est ouvert depuis le sous-domaine
-      du patronat, mais cette page garde le header de la PLATEFORME Academia
-      Helm (logo + wordmark) — pas le branding du sous-domaine tenant. */}
-      <Header forceAcademiaBrand />
-      <FederisPublicResultsClient token={token} />
+      {/* ⭐ T38 — plus de header Academia sur cette page : le bandeau du
+      patronat (dans FederisPublicResultsClient) ouvre directement la page.
+      Le spacer h-14 md:h-16 du layout (public) est annulé par cette marge
+      négative pour un rendu bord à bord. */}
+      <div className="-mt-14 md:-mt-16">
+        <FederisPublicResultsClient token={token} />
+      </div>
     </div>
   );
 }

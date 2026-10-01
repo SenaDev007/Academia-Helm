@@ -13060,3 +13060,30 @@ Stage Summary:
 - Le patronat national entre dans un module d'examen → GRILLE DE CARTES des départements du pays (compteurs + statut de délégation) → clic sur un département → les données de CE département uniquement, dans TOUS les modules de la chaîne (Examens → Centres → Candidats → Épreuves → Notes → Délibération → Rapports). Le bandeau « Département consulté » + « Changer de département » remplace le select agrégé dans ces modules.
 - La sélection persiste entre modules (sessionStorage) : inutile de re-cliquer à chaque module ; Écoles rattachées/Tableau de bord/Matières/Banque gardent leur comportement (le select filtre désormais réellement le tableau de bord).
 - Chaque sujet PDF exporté porte l'identité de son patronat départemental propriétaire ; la création de campagnes/épreuves reste départementale (délégation pour agir), conformément au message métier « chaque patronat organise en son sein ».
+
+---
+Task ID: 59 (Ah repo)
+Agent: Super Z (principal)
+Task: Academia Frederis — FIX : « Impossible de vérifier votre espace patronat. Veuillez réessayer » sur la page de login (patronat national) + purge des patronats QA résiduels
+
+Signalement : le promoteur, sur la page de connexion du portail, obtient « Impossible de vérifier votre espace patronat. Veuillez réessayer » — l'étape 4 du login (GET /federis/patronat/profile) échoue après un POST /api/auth/login pourtant réussi.
+
+Work Log:
+- Diagnostic en 6 axes sur la production (scripts t59-*.mjs, commités) :
+  • API directe : /api sain (404 racine), /federis/patronat/profile → 401 en 0,28 s (route présente, garde OK) ; T58 n'a PAS touché getProfile (diff vérifié : seul getDashboard a pris departmentId) ; sw.js v4.11.0 confirmé servi (last-modified 16:40, Vercel derrière Cloudflare).
+  • Préflight CORS complet comme le navigateur (Origin patronatnational.academiahelm.com) : 204 + allow-origin/headers/methods corrects ; contrôle origine inconnue → 404 (blocage attendu). Aucun patchage XHR dans le web-app → le SW ne peut pas toucher l'appel profile (XHR axios).
+  • Données réelles (Neon pg direct) : national PESP Bénin ACTIVE (plan INSTITUTION), promoteur dawesakpovi active, hash bcrypt valide (restauration T57 intacte), lien PATRONAT_ADMIN actif, 6 sessions.
+  • Compte QA dans le national réel (pattern T57) : login API 681 ms → JWT tenantId correct ; profile 200/598 ms ; BFF patronatnational 200/1202 ms puis profile cross-origin [Bearer+X-Tenant] 200/391 ms, [Bearer seul] 200, dashboard+children 200.
+  • Miroir EXACT du promoteur (lien+user role PATRONAT_ADMIN) : profile 200 — userRole=PATRONAT_ADMIN, userFunction=COORDONATEUR (alias legacy), aucun crash.
+  • Navigateur réel (agent-browser, profil propre, sur patronatnational.academiahelm.com) : login complet → dashboard, zéro erreur console/page.
+- Conclusion : chaîne 100 % saine sur les 6 axes ; l'échec était TRANSITOIRE (fenêtre de déploiement T58, terminée 16:40 UTC — le signalement est arrivé dans la foulée) ou local au navigateur/réseau du promoteur. Aucun défaut reproductible côté serveur.
+- Découverte incidente (Phase A) : 3 patronats QA résiduels enfants du national réel (« QA Design Atlantique » 28/09, « QA Perf » + « QA Browser » 30/09 — jamais nettoyés, sessions de dev précédentes) : ils polluent la GRILLE DES DÉPARTEMENTS du module T58 (3 faux « Atlantique » à côté du vrai Borgou).
+- Correctif 1 — login page (federis/login/page.tsx) : fetchProfileWithRetry — 1 retry automatique (700 ms) sur erreur RÉSEAU/timeout/5xx à l'étape 4 ; une erreur passagère ne détruit plus une connexion valide (l'ancien comportement faisait logout + purge sur le premier échec). 4xx inchangé (404 → « Aucun espace patronat ») ; console.error du statut réel pour diagnostic futur.
+- Correctif 2 — purge des données QA (t59-cleanup.mjs, protocole T57 : dry-run → vérification noms/emails → EXECUTE en transaction) : 3 patronats + 3 tenants + 4 users (3 QA + compte t59) + 3 bureau_members + 7 liens patronat_users + 9 sessions + 3 années scolaires. Vérification post-commit : promoteur intact, national intact, enfants = Borgou SEUL.
+- sw.js bump v4.11.0 → v4.11.1 (règle T57 : tout changement de chunks bump la version).
+- Vérifications : tsc web-app 631 = 631 (baseline inchangée) ; node --check sw.js OK ; t59-cleanup dry-run == EXECUTE (plans identiques).
+
+Stage Summary:
+- Le login Federis est résilient : une erreur passagère (rollout, micro-coupure) est retentée automatiquement au lieu de casser la connexion ; en cas d'échec final, le statut réel part dans la console.
+- La grille des départements du patronat national ne montre plus que le VRAI réseau (Borgou) — les 3 faux « Atlantique » issus des sessions de dev ont été purgés de la production (transaction vérifiée, promoteur/national/Borgou intacts).
+- Le promoteur peut se reconnecter immédiatement ; si son navigateur garde un état ancien : rechargement simple (le guérisseur SWVersionGuard fait le reste) ou « Déconnexion sécurisée » (purge cache offline).

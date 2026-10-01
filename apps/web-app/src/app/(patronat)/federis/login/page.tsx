@@ -269,14 +269,46 @@ function FederisLoginForm() {
       //    ⭐ profileRole est hissé HORS du try interne : const profileRes est
       //    block-scoped — référencé après le bloc, il levait
       //    « ReferenceError: profileRes is not defined » (connexion bloquée).
+      //
+      //    ⭐ 2026-10-02 (T59) — incident « Impossible de vérifier votre espace
+      //    patronat » signalé par le promoteur : diagnostic complet (API directe
+      //    + BFF + CORS/preflight + données réelles du compte promoteur + flow
+      //    complet dans un vrai navigateur sur patronatnational) → chaîne 100 %
+      //    saine ; l'échec était transitoire (fenêtre de déploiement). Durcissement :
+      //    1 retry automatique sur erreur RÉSEAU/timeout/5xx — une erreur passagère
+      //    ne doit plus détruire une connexion par ailleurs valide (logout + purge).
+      //    404 inchangé (aucun espace patronat) ; trace console pour diagnostic.
+      const fetchProfileOnce = () =>
+        apiClient.get('/federis/patronat/profile', { timeout: 15000 });
+      const fetchProfileWithRetry = async (): Promise<any> => {
+        try {
+          return await fetchProfileOnce();
+        } catch (err: any) {
+          const status = err?.response?.status ?? err?.status;
+          // Transitoire = pas de réponse (réseau/timeout) ou 5xx (rollout).
+          // Les 4xx (401/403/404) ne sont PAS rejoués : erreur définitive.
+          if (status && status < 500) throw err;
+          console.warn(
+            '[FederisLogin] Vérification profile transitoire (statut ' +
+              (status ?? 'réseau') + '), nouvel essai dans 700 ms…',
+          );
+          await new Promise((r) => setTimeout(r, 700));
+          return fetchProfileOnce();
+        }
+      };
       let profileRole: string | null = null;
       try {
-        const profileRes = await apiClient.get('/federis/patronat/profile', { timeout: 15000 });
+        const profileRes = await fetchProfileWithRetry();
         if (!profileRes.data?.id) {
           throw new Error('NO_PATRONAT');
         }
         profileRole = profileRes.data?.userRole ?? profileRes.data?.userFunction ?? null;
       } catch (profileErr: any) {
+        console.error(
+          '[FederisLogin] Échec vérification espace patronat — statut:',
+          profileErr?.response?.status ?? profileErr?.status ?? 'réseau/timeout',
+          '— message:', profileErr?.message,
+        );
         await logoutCleanup();
         const msg =
           profileErr?.response?.status === 404

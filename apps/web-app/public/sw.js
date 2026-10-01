@@ -269,7 +269,7 @@ function getApiOrigin() {
 //    chunks (FederisDepartmentGate, barre de périmètre mode département,
 //    routes gated) → bump obligatoire (règle T57) pour que les appareils
 //    reprennent les pages fraîches du patronat national.
-const SW_VERSION = 'v4.11.0';
+const SW_VERSION = 'v4.11.1';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide

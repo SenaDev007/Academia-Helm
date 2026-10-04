@@ -56,6 +56,7 @@ import {
   getLabels, getEvaluationTypes, getMaxScoreForType,
   translatePeriodName, EN_EVALUATION_TYPES,
 } from '@/lib/exam-anglophone-config';
+import { translateClassName } from '@/lib/pedagogy/class-name-en';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -1334,30 +1335,30 @@ export default function EvaluationsPage() {
     const status = group.firstEvaluation.status;
 
     if (status === 'PLANNED' || status === 'DRAFT') {
-      actions.push({ label: 'Ouvrir pour saisie', icon: Play, onClick: () => handleOpen(group), color: 'text-amber-600 hover:bg-amber-50' });
+      actions.push({ label: labels.open, icon: Play, onClick: () => handleOpen(group), color: 'text-amber-600 hover:bg-amber-50' });
     }
     if (status === 'OPEN_FOR_GRADING') {
-      actions.push({ label: 'Soumettre pour validation', icon: Send, onClick: () => handleSubmit(group), color: 'text-purple-600 hover:bg-purple-50' });
+      actions.push({ label: labels.submit, icon: Send, onClick: () => handleSubmit(group), color: 'text-purple-600 hover:bg-purple-50' });
     }
     if (status === 'SUBMITTED') {
-      actions.push({ label: 'Valider', icon: CheckCircle, onClick: () => handleValidate(group), color: 'text-emerald-600 hover:bg-emerald-50' });
+      actions.push({ label: labels.validate, icon: CheckCircle, onClick: () => handleValidate(group), color: 'text-emerald-600 hover:bg-emerald-50' });
     }
 
     // Edit est possible tant que non validée/verrouillée/annulée
     if (!['VALIDATED', 'LOCKED', 'CANCELLED'].includes(status)) {
-      actions.push({ label: 'Modifier', icon: Pencil, onClick: () => handleOpenEdit(group), color: 'text-blue-600 hover:bg-blue-50' });
+      actions.push({ label: labels.edit, icon: Pencil, onClick: () => handleOpenEdit(group), color: 'text-blue-600 hover:bg-blue-50' });
     }
 
     // Annuler — possible tant que non validée/verrouillée
     if (!['VALIDATED', 'LOCKED', 'CANCELLED'].includes(status)) {
-      actions.push({ label: 'Annuler', icon: XCircle, onClick: () => handleCancel(group), color: 'text-orange-600 hover:bg-orange-50' });
+      actions.push({ label: labels.cancel, icon: XCircle, onClick: () => handleCancel(group), color: 'text-orange-600 hover:bg-orange-50' });
     }
 
     // Supprimer — ⭐ (sept. 2026) : possible aussi pour VALIDATED (l'API
     // annule les évaluations validées portant des notes — workflow « annuler
     // d'abord » automatisé) ; seul LOCKED (délibération) reste protégé.
     if (status !== 'LOCKED') {
-      actions.push({ label: 'Supprimer', icon: Trash2, onClick: () => handleDelete(group), color: 'text-red-600 hover:bg-red-50' });
+      actions.push({ label: labels.delete, icon: Trash2, onClick: () => handleDelete(group), color: 'text-red-600 hover:bg-red-50' });
     }
 
     return actions;
@@ -1390,24 +1391,24 @@ export default function EvaluationsPage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Rechercher par titre, classe, matière..."
+                  placeholder={labels.searchPlaceholder}
                   className="bg-transparent border-none focus:outline-none text-sm w-full"
                 />
               </div>
               <div className="flex items-center gap-2">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="w-[180px] h-9">
-                    <SelectValue placeholder="Tous les statuts" />
+                    <SelectValue placeholder={labels.allStatuses} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ALL">Tous les statuts</SelectItem>
-                    <SelectItem value="DRAFT">Brouillon</SelectItem>
-                    <SelectItem value="PLANNED">Planifiée</SelectItem>
-                    <SelectItem value="OPEN_FOR_GRADING">Validée par enseignant</SelectItem>
-                    <SelectItem value="SUBMITTED">Soumise au directeur</SelectItem>
-                    <SelectItem value="VALIDATED">Validée</SelectItem>
-                    <SelectItem value="LOCKED">Verrouillée</SelectItem>
-                    <SelectItem value="CANCELLED">Annulée</SelectItem>
+                    <SelectItem value="ALL">{labels.allStatuses}</SelectItem>
+                    <SelectItem value="DRAFT">{labels.draft}</SelectItem>
+                    <SelectItem value="PLANNED">{labels.planned}</SelectItem>
+                    <SelectItem value="OPEN_FOR_GRADING">{labels.openForGrading}</SelectItem>
+                    <SelectItem value="SUBMITTED">{labels.submitted}</SelectItem>
+                    <SelectItem value="VALIDATED">{labels.validated}</SelectItem>
+                    <SelectItem value="LOCKED">{labels.locked}</SelectItem>
+                    <SelectItem value="CANCELLED">{labels.cancelled}</SelectItem>
                   </SelectContent>
                 </Select>
                 <button
@@ -1415,7 +1416,7 @@ export default function EvaluationsPage() {
                   className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-sm font-semibold whitespace-nowrap"
                 >
                   <Plus className="w-4 h-4" />
-                  <span className="hidden sm:inline">Nouvelle évaluation</span>
+                  <span className="hidden sm:inline">{labels.newEvaluation}</span>
                 </button>
               </div>
             </div>
@@ -1433,14 +1434,14 @@ export default function EvaluationsPage() {
                     onClick={selectAllGroups}
                     className="text-xs font-semibold bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
                   >
-                    Tout sélectionner
+                    {labels.selectAll}
                   </button>
                 ) : (
                   <button
                     onClick={clearSelection}
                     className="text-xs font-semibold bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
                   >
-                    Tout désélectionner
+                    {labels.deselectAll}
                   </button>
                 )}
                 <button
@@ -1459,7 +1460,7 @@ export default function EvaluationsPage() {
                   className="flex items-center gap-1.5 text-xs font-semibold bg-white text-blue-700 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
                 >
                   <Pencil className="w-3.5 h-3.5" />
-                  Modifier en masse
+                  {labels.bulkEdit}
                 </button>
                 <button
                   onClick={handleBulkDelete}
@@ -1467,14 +1468,14 @@ export default function EvaluationsPage() {
                   className="flex items-center gap-1.5 text-xs font-semibold bg-red-500 hover:bg-red-600 disabled:opacity-50 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
                 >
                   {bulkDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                  Supprimer
+                  {labels.delete}
                 </button>
                 <button
                   onClick={clearSelection}
                   className="flex items-center gap-1 text-xs font-semibold bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
                 >
                   <X className="w-3.5 h-3.5" />
-                  Annuler
+                  {labels.cancel}
                 </button>
               </div>
             )}
@@ -1483,16 +1484,16 @@ export default function EvaluationsPage() {
             {loading ? (
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-                <span className="ml-3 text-sm text-gray-500">Chargement des évaluations…</span>
+                <span className="ml-3 text-sm text-gray-500">{labels.loadingEvaluations}</span>
               </div>
             ) : filteredEvaluations.length === 0 ? (
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
                 <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-600 font-medium mb-1">Aucune évaluation programmée</p>
+                <p className="text-gray-600 font-medium mb-1">{labels.noEvaluations}</p>
                 <p className="text-sm text-gray-400">
                   {searchQuery || statusFilter !== 'ALL'
-                    ? 'Aucune évaluation ne correspond aux filtres.'
-                    : 'Cliquez sur "Nouvelle évaluation" pour planifier la première.'}
+                    ? labels.noEvaluationsFiltered
+                    : labels.noEvaluationsHint}
                 </p>
               </div>
             ) : (
@@ -1522,7 +1523,7 @@ export default function EvaluationsPage() {
             onClick={handleCloseModal}
             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
           >
-            Annuler
+            {labels.cancel}
           </button>
           <button
             onClick={handleSave}
@@ -1630,7 +1631,12 @@ export default function EvaluationsPage() {
                       }}
                       className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
-                    <span className="text-sm text-gray-700">{c.name}</span>
+                    {/* ⭐ 2026-10-01 — Pour la piste EN (Nursery/Primary), on traduit
+                        le nom de la classe FR en nom EN (Maternelle 1 → Nursery 1).
+                        Pour la piste FR, on garde le nom original. */}
+                    <span className="text-sm text-gray-700">
+                      {isEN ? translateClassName(c.name) : c.name}
+                    </span>
                   </label>
                 ))
               )}
@@ -1865,7 +1871,7 @@ export default function EvaluationsPage() {
             id="description"
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder="Chapitres abordés, consignes particulières..."
+            placeholder={isEN ? 'Chapters covered, specific instructions...' : 'Chapitres abordés, consignes particulières...'}
             rows={3}
           />
         </div>
@@ -1986,13 +1992,13 @@ export default function EvaluationsPage() {
         {/* ⭐ Niveau scolaire — DÉJÀ SÉLECTIONNÉ dans le module examen.
             Le modal ne demande PAS de le re-sélectionner, on l'affiche juste. */}
         <div>
-          <Label>Niveau scolaire</Label>
+          <Label>{isEN ? 'School Level' : 'Niveau scolaire'}</Label>
           <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
             <Badge className="bg-blue-600 text-white">
               {activeLevel?.label || scopeLevel || '—'}
             </Badge>
             <span className="text-xs text-blue-700">
-              Le type sera créé pour ce niveau scolaire uniquement.
+              {isEN ? 'The type will be created for this school level only.' : 'Le type sera créé pour ce niveau scolaire uniquement.'}
             </span>
           </div>
         </div>

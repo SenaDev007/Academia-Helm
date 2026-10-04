@@ -41,7 +41,8 @@ import { getAcademicYearPeriods } from '@/services/settings.service';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
 import { filterClassesForLevel } from '../level-isolation';
-import { translatePeriodName } from '@/lib/exam-anglophone-config';
+import { translatePeriodName, getLabels } from '@/lib/exam-anglophone-config';
+import { translateClassName } from '@/lib/pedagogy/class-name-en';
 import { cn } from '@/lib/utils';
 import { GradingSheet, type GroupedEvaluation } from '@/components/exams/GradingSheet';
 
@@ -131,6 +132,8 @@ export default function GradesPage() {
   const { availableLevels } = useSchoolLevel();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
   const isEN = scopeLang === 'EN';
+  // ⭐ 2026-10-01 — Labels bilingues pour la piste anglophone (Nursery + Primary)
+  const labels = getLabels(scopeLang);
 
   // Résolution du niveau scolaire (comme evaluations/page.tsx)
   const activeLevel = useMemo(() => {
@@ -182,6 +185,11 @@ export default function GradesPage() {
   }, [schoolLevelUuid, academicYear?.id, scopeLang]);
 
   // ── Chargement des périodes + classes + effectifs ─────────────────────────
+  //    ⭐ 2026-10-01 — OPTIMISATION : on lance les 4 fetchs en parallèle (periods,
+  //    classes, enrollments + evaluations) via Promise.all au lieu d'avoir 2
+  //    useEffect séparés qui se bloquent mutuellement. Avant : 30s+ pour
+  //    afficher les trimestres car loadReferenceData attendait la fin de
+  //    loadEvaluations (qui était séquentielle) avant de démarrer.
   const loadReferenceData = useCallback(async () => {
     if (!schoolLevelUuid || !academicYear?.id) return;
     try {
@@ -212,8 +220,14 @@ export default function GradesPage() {
       // ⭐ TOUTES les classes du niveau + de la piste linguistique (isolation stricte)
       const allClasses = Array.isArray(allClassesData) ? allClassesData : [];
       const levelClasses = filterClassesForLevel(allClasses, schoolLevelUuid, scopeLang);
+      // ⭐ 2026-10-01 — Traduire le nom de la classe pour la piste EN (Nursery/Primary mirror)
       const sortedClasses = [...levelClasses]
-        .map((c: any) => ({ id: c.id, name: c.name || c.code || '—', code: c.code }))
+        .map((c: any) => ({
+          id: c.id,
+          // ⭐ Pour la piste EN, on traduit (Maternelle 1 → Nursery 1) ; pour la piste FR, on garde le nom original
+          name: isEN ? translateClassName(c.name || c.code || '—') : (c.name || c.code || '—'),
+          code: c.code,
+        }))
         .sort((a, b) => {
           const idxA = getClassOrderIndex(a.name);
           const idxB = getClassOrderIndex(b.name);
@@ -238,7 +252,7 @@ export default function GradesPage() {
     } catch (err) {
       console.error('Error loading reference data', err);
     }
-  }, [schoolLevelUuid, academicYear?.id, scopeLang]);
+  }, [schoolLevelUuid, academicYear?.id, scopeLang, isEN]);
 
   useEffect(() => { loadEvaluations(); }, [loadEvaluations]);
   useEffect(() => { loadReferenceData(); }, [loadReferenceData]);
@@ -264,7 +278,8 @@ export default function GradesPage() {
         map.set(key, {
           key,
           classId,
-          className: ev.class?.name || 'Sans classe',
+          // ⭐ 2026-10-01 — Traduire le nom de la classe pour la piste EN (Nursery/Primary mirror)
+          className: isEN ? translateClassName(ev.class?.name || 'Sans classe') : (ev.class?.name || 'Sans classe'),
           evaluationTypeId,
           evaluationTypeName: ev.evaluationType?.name || 'Évaluation',
           evaluationTypeCode: ev.evaluationType?.code,
@@ -294,7 +309,7 @@ export default function GradesPage() {
       const db = b.startDate ? new Date(b.startDate).getTime() : 0;
       return da - db;
     });
-  }, [evaluations]);
+  }, [evaluations, isEN]);
 
   // Sessions par période (pour les compteurs de l'étape 1)
   const groupsByPeriod = useMemo(() => {
@@ -555,7 +570,7 @@ export default function GradesPage() {
   return (
     <ModuleContainer
       header={{
-        title: 'Saisie des Notes',
+        title: isEN ? labels.gradingTitle : 'Saisie des Notes',
         description: isEN
           ? 'Step 1 — Select a term, then a class.'
           : 'Étape 1 — Sélectionnez un trimestre, puis une classe.',
@@ -574,13 +589,13 @@ export default function GradesPage() {
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Rechercher une classe, une matière, un type..."
+                  placeholder={labels.searchPlaceholderGrading}
                   className="bg-transparent border-none focus:outline-none text-sm w-full"
                 />
               </div>
               <Button variant="ghost" size="sm" onClick={loadEvaluations} disabled={loading}>
                 <RefreshCw className={cn('w-4 h-4 mr-1', loading && 'animate-spin')} />
-                Actualiser
+                {labels.refresh}
               </Button>
             </div>
 
@@ -588,14 +603,14 @@ export default function GradesPage() {
             <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-50 border border-blue-100">
               <Settings className="w-4 h-4 text-blue-600 flex-shrink-0" />
               <p className="text-xs text-blue-700">
-                <span className="font-bold">Mode de saisie :</span>{' '}
+                <span className="font-bold">{labels.gradingMode}</span>{' '}
                 {isMaternelle
-                  ? 'Qualitatif (TS / S / PS) — Évaluation maternelle'
+                  ? labels.gradingModeMaternelle
                   : scopeLang === 'EN'
                     ? 'Quantitative — First CA (/20), Second CA (/20), Examination (/60) — term total /100 per subject'
                     : isPrimaire
-                      ? 'Quantitatif (/20) avec CM + CP — Évaluation primaire'
-                      : 'Quantitatif (/20) — Évaluation secondaire'}
+                      ? labels.gradingModePrimaire
+                      : labels.gradingModeSecondaire}
               </p>
             </div>
 
@@ -603,7 +618,7 @@ export default function GradesPage() {
             {loading ? (
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-                <span className="ml-3 text-sm text-gray-500">Chargement des évaluations…</span>
+                <span className="ml-3 text-sm text-gray-500">{labels.loadingEvaluationsGrading}</span>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -670,9 +685,9 @@ export default function GradesPage() {
                 {periods.length === 0 && (
                   <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center col-span-full">
                     <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-600 font-medium mb-1">Aucun trimestre configuré</p>
+                    <p className="text-gray-600 font-medium mb-1">{labels.noPeriodsConfigured}</p>
                     <p className="text-sm text-gray-400">
-                      Créez les trimestres dans Paramètres de l&apos;année académique.
+                      {labels.noPeriodsHint}
                     </p>
                   </div>
                 )}

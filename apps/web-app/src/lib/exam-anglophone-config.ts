@@ -386,6 +386,67 @@ export const EN_LABELS = {
   pass: 'Pass',
   weak: 'Weak',
   veryWeak: 'Very Weak',
+
+  // ⭐ 2026-10-01 — Toolbar & action labels (anglophone Assessment tab)
+  searchPlaceholder: 'Search by title, class, subject...',
+  searchPlaceholderGrading: 'Search a class, a subject, a type...',
+  allStatuses: 'All statuses',
+  newEvaluation: 'New Assessment',
+  loadingEvaluations: 'Loading assessments…',
+  noEvaluations: 'No assessment scheduled',
+  noEvaluationsHint: 'Click on "New Assessment" to schedule the first one.',
+  noEvaluationsFiltered: 'No assessment matches the filters.',
+  cancel: 'Cancel',
+  delete: 'Delete',
+  validate: 'Validate',
+  submit: 'Submit',
+  open: 'Open for grading',
+  bulkEdit: 'Bulk Edit',
+  apply: 'Apply',
+  applying: 'Applying…',
+  refresh: 'Refresh',
+  yearAndLevel: 'Year and Level',
+  allLevels: 'All Levels',
+  class: 'Class',
+  allClasses: 'All classes',
+  bulkEditModalTitle: 'Bulk Edit',
+  bulkEditModalSubtitle: (count: number, groupCount: number) =>
+    `${count} assessment(s) across ${groupCount} class(es) — only checked fields will be applied everywhere`,
+  bulkEditHowTo: 'How it works: check the fields you want to modify, enter the new value, then click Apply. All selected assessments will be updated with these values. Unchecked fields remain unchanged.',
+  // Confirm dialogs
+  confirmValidateTitle: 'Final validation',
+  confirmValidateMessage: (count: number, className: string) =>
+    `Permanently validate ${count} assessment(s) (${className})?\n\nGrades will be locked.`,
+  confirmValidateIrreversible: 'This action is irreversible. Grades will be permanently locked.',
+  confirmValidateToast: (count: number) => `${count} assessment(s) validated`,
+  confirmCancelTitle: 'Cancel assessments',
+  confirmCancelMessage: (subjectCount: number, className: string) =>
+    `Cancel ${subjectCount} subject(s) for ${className}?`,
+  confirmCancelHint: 'Assessments will be marked as cancelled (but not deleted).',
+  confirmCancelToast: (count: number, className: string) =>
+    `${count} assessment(s) cancelled for ${className}`,
+  confirmDeleteTypeTitle: 'Delete assessment type',
+  confirmDeleteTypeMessage: (name: string) => `Delete type "${name}"?`,
+  confirmDeleteTypeHint: 'This action is irreversible. Existing assessments of this type will not be deleted.',
+  systemTypesCannotDelete: 'System types cannot be deleted',
+  // Toasts
+  nameRequired: 'Name is required',
+  typeUpdated: 'Type updated',
+  typeCreated: 'Type created',
+  typeSaveError: 'Error while saving the type',
+  typeDeleted: 'Type deleted',
+  // Grading tab (Step 1: trimester list)
+  gradingTitle: 'Grading',
+  gradingMode: 'Grading mode:',
+  gradingModeMaternelle: 'Qualitative (TS / S / PS) — Nursery assessment',
+  gradingModePrimaire: 'Quantitative (/20) with CM + CP — Primary assessment',
+  gradingModeSecondaire: 'Quantitative (/20) — Secondary assessment',
+  noPeriodsConfigured: 'No term configured',
+  noPeriodsHint: 'Create terms in the Academic Year Settings.',
+  loadingEvaluationsGrading: 'Loading assessments…',
+  // Class selector
+  selectClass: 'Select a class',
+  selectPeriod: 'Select a term',
 } as const;
 
 export const FR_LABELS = {
@@ -458,6 +519,67 @@ export const FR_LABELS = {
   pass: 'Passable',
   weak: 'Insuffisant',
   veryWeak: 'Insuffisant',
+
+  // ⭐ 2026-10-01 — Toolbar & action labels (anglophone Assessment tab — version FR)
+  searchPlaceholder: 'Rechercher par titre, classe, matière...',
+  searchPlaceholderGrading: 'Rechercher une classe, une matière, un type...',
+  allStatuses: 'Tous les statuts',
+  newEvaluation: 'Nouvelle évaluation',
+  loadingEvaluations: 'Chargement des évaluations…',
+  noEvaluations: 'Aucune évaluation programmée',
+  noEvaluationsHint: 'Cliquez sur "Nouvelle évaluation" pour planifier la première.',
+  noEvaluationsFiltered: 'Aucune évaluation ne correspond aux filtres.',
+  cancel: 'Annuler',
+  delete: 'Supprimer',
+  validate: 'Valider',
+  submit: 'Soumettre',
+  open: 'Ouvrir pour saisie',
+  bulkEdit: 'Modifier en masse',
+  apply: 'Appliquer',
+  applying: 'Application…',
+  refresh: 'Actualiser',
+  yearAndLevel: 'Année et niveau',
+  allLevels: 'Tous les niveaux',
+  class: 'Classe',
+  allClasses: 'Toutes les classes',
+  bulkEditModalTitle: 'Modification multiple',
+  bulkEditModalSubtitle: (count: number, groupCount: number) =>
+    `${count} évaluation(s) sur ${groupCount} classe(s) — seuls les champs cochés seront appliqués partout`,
+  bulkEditHowTo: 'Comment ça marche : cochez les champs à modifier, saisissez la nouvelle valeur, puis cliquez sur Appliquer. Toutes les évaluations sélectionnées seront mises à jour avec ces valeurs. Les champs non cochés restent inchangés.',
+  // Confirm dialogs
+  confirmValidateTitle: 'Valider définitivement',
+  confirmValidateMessage: (count: number, className: string) =>
+    `Valider définitivement ${count} évaluation(s) (${className}) ?\n\nLes notes seront verrouillées.`,
+  confirmValidateIrreversible: 'Cette action est irréversible. Les notes seront définitivement verrouillées.',
+  confirmValidateToast: (count: number) => `${count} évaluation(s) validée(s)`,
+  confirmCancelTitle: 'Annuler les évaluations',
+  confirmCancelMessage: (subjectCount: number, className: string) =>
+    `Annuler ${subjectCount} matière(s) pour ${className} ?`,
+  confirmCancelHint: 'Les évaluations seront marquées comme annulées (mais non supprimées).',
+  confirmCancelToast: (count: number, className: string) =>
+    `${count} évaluation(s) annulée(s) pour ${className}`,
+  confirmDeleteTypeTitle: 'Supprimer le type d\'évaluation',
+  confirmDeleteTypeMessage: (name: string) => `Supprimer le type "${name}" ?`,
+  confirmDeleteTypeHint: 'Cette action est irréversible. Les évaluations existantes de ce type ne seront pas supprimées.',
+  systemTypesCannotDelete: 'Les types système ne peuvent pas être supprimés',
+  // Toasts
+  nameRequired: 'Le nom est obligatoire',
+  typeUpdated: 'Type modifié',
+  typeCreated: 'Type créé',
+  typeSaveError: 'Erreur lors de la sauvegarde du type',
+  typeDeleted: 'Type supprimé',
+  // Grading tab (Step 1: trimester list)
+  gradingTitle: 'Saisie des Notes',
+  gradingMode: 'Mode de saisie :',
+  gradingModeMaternelle: 'Qualitatif (TS / S / PS) — Évaluation maternelle',
+  gradingModePrimaire: 'Quantitatif (/20) avec CM + CP — Évaluation primaire',
+  gradingModeSecondaire: 'Quantitatif (/20) — Évaluation secondaire',
+  noPeriodsConfigured: 'Aucun trimestre configuré',
+  noPeriodsHint: 'Créez les trimestres dans Paramètres de l\'année académique.',
+  loadingEvaluationsGrading: 'Chargement des évaluations…',
+  // Class selector
+  selectClass: 'Sélectionner une classe',
+  selectPeriod: 'Sélectionner un trimestre',
 } as const;
 
 export function getLabels(language: 'FR' | 'EN' | undefined) {

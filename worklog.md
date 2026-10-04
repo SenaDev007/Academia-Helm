@@ -12144,6 +12144,7 @@ Stage Summary:
 - À valider post-déploiement : répartition Secrétariat avec centre+salle → panneau identifiants → connexion secrétaire → /federis/saisie (grille + soumission) → onglet Suivi temps réel patronat ; grille avec matière non préparée (🔒 + « Marquer comme déjà préparée »)
 
 ---
+
 Task ID: 22
 Agent: Super Z (principal)
 Task: Module Notes et Moyennes — modèle officiel du CEP (CM/18 + CP/2 = note/20) dans la saisie + relevés de notes officiels CEP et BEPC/BAC/CAP (matrice exacte des PDF joints, infos patronat) + scission des notes existantes du patronat du Borgou (coordinateur Claude Kuessi TICOU)
@@ -13100,3 +13101,88 @@ Work Log:
 
 Stage Summary:
 - T59 validé de bout en bout sur la production : le promoteur peut se reconnecter ; le login survit aux erreurs passagères ; la grille des départements ne montre que le vrai réseau.
+
+---
+Task ID: 50
+Agent: main
+Task: Piste anglophone Nursery + Primary — traductions EN + fix sélecteur classes miroir + optimisation chargement Grading
+
+Work Log:
+- exam-anglophone-config.ts : extension des dictionnaires EN_LABELS et FR_LABELS
+  avec ~40 nouvelles clés bilingues :
+  • Toolbar : searchPlaceholder, allStatuses, newEvaluation, loadingEvaluations,
+    noEvaluations, noEvaluationsHint, noEvaluationsFiltered, refresh, cancel, delete
+  • Actions : open, submit, validate, edit, bulkEdit, apply, applying
+  • Modal : yearAndLevel, allLevels, class, allClasses, bulkEditModalTitle,
+    bulkEditModalSubtitle (fonction), bulkEditHowTo
+  • Confirm dialogs : confirmValidateTitle/Message/Toast, confirmCancelTitle/
+    Message/Hint/Toast, confirmDeleteTypeTitle/Message/Hint
+  • Toasts : nameRequired, typeUpdated/Created/Deleted, typeSaveError
+  • Grading : gradingTitle, gradingMode, gradingModeMaternelle/Primaire/Secondaire,
+    noPeriodsConfigured, noPeriodsHint, loadingEvaluationsGrading
+  • Class selector : selectClass, selectPeriod
+  • searchPlaceholderGrading pour le placeholder de la barre de recherche Grading
+- evaluations/page.tsx (Assessment tab) :
+  • Placeholder de recherche → labels.searchPlaceholder (EN/FR)
+  • Filtre statut → labels.allStatuses + 7 statuts via labels.draft/planned/
+    openForGrading/submitted/validated/locked/cancelled
+  • Bouton "Nouvelle évaluation" → labels.newEvaluation
+  • Bouton "Annuler" (modal + barre actions) → labels.cancel
+  • "Tout sélectionner/désélectionner" → labels.selectAll/deselectAll
+  • "Modifier en masse" → labels.bulkEdit
+  • "Supprimer" → labels.delete
+  • État vide "Aucune évaluation programmée" → labels.noEvaluations
+  • Hint "Cliquez sur Nouvelle évaluation..." → labels.noEvaluationsHint
+  • "Aucune évaluation ne correspond aux filtres" → labels.noEvaluationsFiltered
+  • "Chargement des évaluations…" → labels.loadingEvaluations
+  • Menu d'actions (Open/Submit/Validate/Edit/Cancel/Delete) → labels.open/
+    submit/validate/edit/cancel/delete
+  • Placeholder description → isEN ? 'Chapters covered...' : 'Chapitres abordés...'
+  • Label "Niveau scolaire" dans le modal des types → isEN ? 'School Level' :
+    'Niveau scolaire'
+  • Hint "Le type sera créé pour ce niveau scolaire uniquement" → isEN
+  • Import translateClassName depuis class-name-en
+  • Affichage des noms de classes dans le sélecteur → isEN ? translateClassName(c.name)
+    : c.name (Maternelle 1 → Nursery 1)
+- grades/page.tsx (Grading tab) :
+  • Import getLabels + translateClassName
+  • Ajout const labels = getLabels(scopeLang)
+  • Titre page → isEN ? labels.gradingTitle : 'Saisie des Notes'
+  • Placeholder recherche → labels.searchPlaceholderGrading
+  • Bouton "Actualiser" → labels.refresh
+  • Label "Mode de saisie :" → labels.gradingMode
+  • Texte mode (maternelle/primaire/secondaire) → labels.gradingModeMaternelle/
+    Primaire/Secondaire
+  • Loading "Chargement des évaluations…" → labels.loadingEvaluationsGrading
+  • État vide "Aucun trimestre configuré" → labels.noPeriodsConfigured
+  • Hint "Créez les trimestres..." → labels.noPeriodsHint
+  • Affichage des noms de classes dans la liste déroulante → isEN ?
+    translateClassName(c.name) : c.name
+  • grouped useMemo : className de GroupedEvaluation → isEN ?
+    translateClassName(ev.class?.name) : ev.class?.name (mêmes élèves, nom traduit)
+  • Ajout isEN dans les deps du useMemo grouped (évite le stale render)
+- level-isolation.ts : nouvelle règle mirror pour Nursery + Primary EN
+  • filterClassesForLevel : si piste EN sélectionnée ET aucune classe EN
+    n'existe pour ce niveau, on affiche les classes FR comme miroirs (mêmes
+    élèves). Chaque classe FR est marquée _isMirrorEN=true pour que le frontend
+    sache qu'il doit traduire le nom (Maternelle 1 → Nursery 1).
+  • Le Secondaire n'est PAS un miroir : il existe de vraies sections EN
+    distinctes avec leurs propres élèves.
+  • isMirrorLevel() : retourne true pour EN (Nursery et Primary sont les
+    seuls niveaux anglophones), false sinon.
+
+Stage Summary:
+- Piste anglophone Assessment tab : tous les libellés de la toolbar, du filtre
+  statut, du bouton nouvelle évaluation, du menu d'actions, du modal, et de
+  l'état vide sont maintenant bilingues (EN/FR) via le dictionnaire labels.
+- Piste anglophone Grading tab : titre, placeholder recherche, bouton actualiser,
+  indicateur mode de saisie, état vide "Aucun trimestre configuré", loading
+  text — tous bilingues.
+- Sélecteur de classes : Nursery 1 / Nursery 2 affichés comme miroirs de
+  Maternelle 1 / Maternelle 2. Les classes FR sont utilisées comme source de
+  vérité (mêmes élèves), le nom est traduit côté frontend via
+  translateClassName(). La règle mirror ne s'applique qu'à Nursery + Primary
+  (pas au Secondaire qui a de vraies sections EN).
+- Imports ajoutés : translateClassName dans evaluations/page.tsx et
+  grades/page.tsx.
+ (feat(anglophone): traductions EN pour Assessment + Grading + fix sélecteur classes miroir Nursery/Primary)

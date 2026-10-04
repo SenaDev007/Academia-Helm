@@ -1151,7 +1151,7 @@ export function GradingSheet({
                       <thead>
                         <tr className="bg-slate-800 text-white">
                           <th
-                            colSpan={2 + sortedSubjects.length + 3}
+                            colSpan={2 + sortedSubjects.length + 4}
                             className="border border-slate-700 px-3 py-2 text-center font-black uppercase tracking-wider text-sm"
                           >
                             {'Examination Results — ' + translatePeriodName(group.periodName, language)
@@ -1170,6 +1170,8 @@ export function GradingSheet({
                           <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-16 bg-blue-50">Average</th>
                           <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-16 bg-violet-50">Position</th>
                           <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-16 bg-emerald-50">Total</th>
+                          {/* ⭐ 2026-10-01 — Colonne Attendance (P/A + ⚙) */}
+                          <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-20 bg-amber-50">Attendance</th>
                         </tr>
                         {/* ⭐ MARKS OBTAINABLE — barème par matière — AVANT la liste des élèves (modèle PDF) */}
                         <tr className="bg-slate-100 font-bold">
@@ -1180,6 +1182,8 @@ export function GradingSheet({
                           <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-600 bg-blue-50">{maxScore}</th>
                           <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-400 bg-violet-50">—</th>
                           <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-600 bg-emerald-50">{maxScore * sortedSubjects.length}</th>
+                          {/* ⭐ Attendance column in Marks Obtainable row */}
+                          <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-400 bg-amber-50">—</th>
                         </tr>
                         {/* ⭐ MARKS OBTAINED — meilleure note de la classe par matière — AVANT la liste des élèves (modèle PDF) */}
                         <tr className="bg-slate-50 font-bold">
@@ -1204,6 +1208,8 @@ export function GradingSheet({
                               </>
                             );
                           })()}
+                          {/* ⭐ Attendance column in Marks Obtained row */}
+                          <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-400 bg-amber-50">—</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1261,13 +1267,46 @@ export function GradingSheet({
                               <td className="border border-slate-300 px-2 py-1 text-center font-bold text-emerald-700 bg-emerald-50">
                                 {hasAnyScore ? total.toFixed(2).replace(/\.00$/, '') : '—'}
                               </td>
+                              {/* ⭐ 2026-10-01 — Colonne Attendance (P/A + ⚙) — piste anglophone */}
+                              <td className="border border-slate-300 px-2 py-1 text-center bg-amber-50">
+                                {(() => {
+                                  const absentSubjects = sortedSubjects.filter((subj) => row.scores[subj.id]?.isAbsent);
+                                  const allAbsent = absentSubjects.length === sortedSubjects.length && sortedSubjects.length > 0;
+                                  const allPresent = absentSubjects.length === 0;
+                                  return (
+                                    <div className="flex items-center justify-center gap-1">
+                                      <span
+                                        className={cn(
+                                          'inline-flex items-center justify-center w-6 h-6 rounded-full text-[10px] font-bold cursor-pointer',
+                                          allPresent ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                                            : allAbsent ? 'bg-red-100 text-red-700 border border-red-300'
+                                            : 'bg-amber-100 text-amber-700 border border-amber-300'
+                                        )}
+                                        onClick={() => setPresenceModalStudent(row)}
+                                        title={isEN
+                                          ? (allPresent ? 'Present' : allAbsent ? 'Absent' : `${absentSubjects.length}/${sortedSubjects.length} absent — click for details`)
+                                          : (allPresent ? 'Présent' : allAbsent ? 'Absent' : `${absentSubjects.length}/${sortedSubjects.length} absent — cliquez pour détails')}
+                                      >
+                                        {allPresent ? 'P' : allAbsent ? 'A' : `${sortedSubjects.length - absentSubjects.length}/${sortedSubjects.length}`}
+                                      </span>
+                                      <button
+                                        onClick={() => setPresenceModalStudent(row)}
+                                        className="p-0.5 rounded hover:bg-amber-200"
+                                        title={isEN ? 'Attendance details' : 'Détails de présence'}
+                                      >
+                                        <Settings className="w-3 h-3 text-slate-500" />
+                                      </button>
+                                    </div>
+                                  );
+                                })()}
+                              </td>
                             </tr>
                           );
                         })}
                         {filteredRows.length === 0 && (
                           <tr>
                             <td
-                              colSpan={2 + sortedSubjects.length + 3}
+                              colSpan={2 + sortedSubjects.length + 4}
                               className="border border-slate-300 px-4 py-8 text-center text-slate-400 text-sm"
                             >
                               No pupil found.

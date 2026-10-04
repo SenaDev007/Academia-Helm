@@ -325,22 +325,16 @@ export class EvaluationsService {
       }
     }
     if (filters.evaluationTypeId) where.evaluationTypeId = filters.evaluationTypeId;
-    // ⭐ 2026-10-01 — Le filtre `language` est retiré du backend.
-    //    L'isolation par piste linguistique (FR/EN) est désormais gérée
-    //    côté frontend via filterClassesForLevel() + le filtrage des
-    //    évaluations par classId.
-    //
-    //    Raison : les classes Nursery/Primary EN sont des miroirs des
-    //    classes Maternelle/Primaire FR (mêmes élèves, même classId).
-    //    Le filtre backend par language='EN' exclut les classes legacy
-    //    (sans marqueur) qui sont les miroirs → les évaluations créées
-    //    depuis la vue EN ne s'affichent pas. Et inclure les classes FR
-    //    dans le filtre EN mélange les pistes.
-    //
-    //    Solution : le backend retourne TOUTES les évaluations du niveau
-    //    (schoolLevelId), et le frontend filtre par les classIds qui
-    //    appartiennent à la piste courante (déjà résolus par
-    //    filterClassesForLevel).
+    // ⭐ 2026-10-01 — Filtre par piste linguistique sur l'ÉVALUATION (pas sur
+    //    la classe). Chaque évaluation porte son propre champ `language`
+    //    ('FR' ou 'EN') défini au moment de la création. Cela permet de
+    //    séparer les évaluations FR et EN même quand les classes sont partagées
+    //    (miroirs Nursery/Maternelle). Avant, le filtre portait sur la classe
+    //    (where.class.language=...) ce qui mélangeait les évaluations quand
+    //    les classes étaient FR marquées mais utilisées comme miroirs EN.
+    if (filters.language) {
+      where.language = String(filters.language).toUpperCase();
+    }
 
     // ⭐ FIX PERF (2026-09-21 — « plus d'une minute pour charger les
     //    évaluations », toasts « délai dépassé ») : la liste était renvoyée
@@ -369,6 +363,8 @@ export class EvaluationsService {
         maxScore: true,
         coefficient: true,
         status: true,
+        // ⭐ 2026-10-01 — Inclure le champ language de l'évaluation
+        language: true,
         createdAt: true,
         updatedAt: true,
         class: {
@@ -482,6 +478,8 @@ export class EvaluationsService {
         gradeScaleId: data.gradeScaleId || null,
         status: 'PLANNED',
         createdBy: data.createdBy || null,
+        // ⭐ 2026-10-01 — Marquer la piste linguistique de l'évaluation
+        language: (data as any).language || 'FR',
       },
       include: {
         class: true,
@@ -516,6 +514,9 @@ export class EvaluationsService {
     maxScore?: number;
     coefficient?: number;
     createdBy?: string;
+    /** ⭐ 2026-10-01 — Piste linguistique ('FR' ou 'EN'). Définit la piste
+     *  de l'évaluation pour le filtrage. Par défaut 'FR'. */
+    language?: string;
   }) {
     // ⭐ V10e — Validation du type par id OU par code, résolu PAR NIVEAU
     // (le code "EM1" existe pour Maternelle ET Primaire : sans le scope
@@ -658,6 +659,8 @@ export class EvaluationsService {
           teacherId,
           status: 'PLANNED',
           createdBy: data.createdBy || null,
+          // ⭐ 2026-10-01 — Marquer la piste linguistique de l'évaluation
+          language: data.language || 'FR',
         });
       }
     }

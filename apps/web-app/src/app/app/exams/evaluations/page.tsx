@@ -205,13 +205,9 @@ function getLevelOrderIndex(schoolLevelId?: string, levels?: any[]): number {
 
 // ─── Status Badge ────────────────────────────────────────────────────────────
 
-const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+const STATUS_CONFIG_FR: Record<string, { label: string; className: string }> = {
   DRAFT: { label: 'Brouillon', className: 'bg-gray-100 text-gray-700 border-gray-200' },
   PLANNED: { label: 'Planifiée', className: 'bg-blue-100 text-blue-700 border-blue-200' },
-  // ⭐ OPEN_FOR_GRADING : l'enseignant a validé sa saisie, mais l'évaluation n'a
-  //    pas encore été soumise au directeur depuis l'Espace Pédagogique.
-  //    Badge ambre "Validée par enseignant" pour la distinguer de VALIDATED
-  //    (validation admin, badge vert emerald).
   OPEN_FOR_GRADING: { label: 'Validée par enseignant', className: 'bg-amber-100 text-amber-700 border-amber-200' },
   SUBMITTED: { label: 'Soumise au directeur', className: 'bg-purple-100 text-purple-700 border-purple-200' },
   VALIDATED: { label: 'Validée', className: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
@@ -219,8 +215,19 @@ const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   CANCELLED: { label: 'Annulée', className: 'bg-red-100 text-red-700 border-red-200 line-through' },
 };
 
-function StatusBadge({ status }: { status: string }) {
-  const cfg = STATUS_CONFIG[status] || { label: status, className: 'bg-gray-100 text-gray-700' };
+const STATUS_CONFIG_EN: Record<string, { label: string; className: string }> = {
+  DRAFT: { label: 'Draft', className: 'bg-gray-100 text-gray-700 border-gray-200' },
+  PLANNED: { label: 'Planned', className: 'bg-blue-100 text-blue-700 border-blue-200' },
+  OPEN_FOR_GRADING: { label: 'Validated by teacher', className: 'bg-amber-100 text-amber-700 border-amber-200' },
+  SUBMITTED: { label: 'Submitted to Director', className: 'bg-purple-100 text-purple-700 border-purple-200' },
+  VALIDATED: { label: 'Validated', className: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  LOCKED: { label: 'Locked', className: 'bg-rose-100 text-rose-700 border-rose-200' },
+  CANCELLED: { label: 'Cancelled', className: 'bg-red-100 text-red-700 border-red-200 line-through' },
+};
+
+function StatusBadge({ status, isEN }: { status: string; isEN?: boolean }) {
+  const config = isEN ? STATUS_CONFIG_EN : STATUS_CONFIG_FR;
+  const cfg = config[status] || { label: status, className: 'bg-gray-100 text-gray-700' };
   return <Badge variant="outline" className={cfg.className}>{cfg.label}</Badge>;
 }
 
@@ -639,11 +646,11 @@ export default function EvaluationsPage() {
         schoolLevelId: schoolLevelUuid,
         academicYearId: academicYear.id,
       };
-      // ⭐ 2026-10-01 — Ne pas envoyer `language` au backend : le filtrage par
-      // piste linguistique se fait côté frontend via les classIds filtrés par
-      // filterClassesForLevel(). Le backend retourne TOUTES les évaluations
-      // du niveau, et on garde uniquement celles dont le classId appartient
-      // aux classes de la piste courante.
+      // ⭐ 2026-10-01 — Envoyer `language` au backend pour filtrer les
+      //    évaluations par piste linguistique (champ `language` sur
+      //    l'évaluation, pas sur la classe). Chaque évaluation porte son
+      //    propre marqueur FR/EN → pas de mélange possible.
+      if (scopeLang) params.language = scopeLang;
 
       // ⭐ FIX PERF (2026-09-21 — « plus d'une minute avant que le chargement
       //    ne s'effectue », toasts « délai dépassé ») : les 5 requêtes partent
@@ -734,15 +741,9 @@ export default function EvaluationsPage() {
       });
       setClasses(sortedClasses);
 
-      // ⭐ 2026-10-01 — Filtrer les évaluations côté frontend par les classIds
-      //    de la piste courante. Le backend retourne TOUTES les évaluations
-      //    du niveau (sans filtre language) ; on garde uniquement celles
-      //    dont le classId appartient aux classes filtrées (FR ou EN mirror).
-      const validClassIds = new Set(sortedClasses.map(c => c.id));
-      const filteredEvals = (Array.isArray(evals) ? evals : []).filter(
-        (ev: any) => ev.class?.id && validClassIds.has(ev.class.id),
-      );
-      setEvaluations(filteredEvals);
+      // ⭐ 2026-10-01 — Le filtrage par piste linguistique se fait côté backend
+      //    via le champ `language` sur l'évaluation (where.language=FR/EN).
+      //    Plus besoin de filtrer côté frontend par validClassIds.
 
       setPeriods(Array.isArray(periodsData) ? periodsData : []);
 
@@ -1051,6 +1052,8 @@ export default function EvaluationsPage() {
         evaluationDate: new Date(form.startDate).toISOString(),
         startDate: new Date(form.startDate).toISOString(),
         endDate: new Date(form.endDate).toISOString(),
+        // ⭐ 2026-10-01 — Marquer la piste linguistique de l'évaluation (FR ou EN)
+        language: scopeLang || 'FR',
       };
       // ⭐ Maternelle = qualitatif (TS/S/PS) — pas de barème numérique ni coefficient
       if (!isMaternelle) {

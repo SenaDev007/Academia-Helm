@@ -16031,6 +16031,12 @@ model Evaluation {
   teacherId        String?
   gradeScaleId     String?
   status           EvaluationStatus      @default(PLANNED)
+  /// ⭐ 2026-10-01 — Piste linguistique de l'évaluation ('FR' ou 'EN').
+  /// Permet de séparer les évaluations FR et EN même quand les classes
+  /// sont partagées (miroirs). Défini au moment de la création depuis
+  /// le frontend (scopeLang). Par défaut 'FR' pour les évaluations
+  /// existantes (rétrocompatibilité).
+  language         String?               @default("FR")
   createdBy        String?
   validatedById    String?
   validatedAt      DateTime?

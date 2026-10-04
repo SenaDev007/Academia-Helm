@@ -348,6 +348,8 @@ function EvaluationCardsByClass({
   isMaternelle,
   selectedKeys,
   onToggleSelect,
+  isEN,
+  labels,
 }: {
   groups: GroupedEvaluation[];
   getAvailableActions: (group: GroupedEvaluation) => EvaluationAction[];
@@ -355,6 +357,8 @@ function EvaluationCardsByClass({
   isMaternelle: boolean;
   selectedKeys: Set<string>;
   onToggleSelect: (key: string) => void;
+  isEN: boolean;
+  labels: any;
 }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
@@ -367,6 +371,8 @@ function EvaluationCardsByClass({
           onOpenEdit={() => onOpenEdit(group)}
           selected={selectedKeys.has(group.key)}
           onToggleSelect={() => onToggleSelect(group.key)}
+          isEN={isEN}
+          labels={labels}
         />
       ))}
     </div>
@@ -387,6 +393,8 @@ function EvaluationProgramCard({
   onOpenEdit,
   selected,
   onToggleSelect,
+  isEN,
+  labels,
 }: {
   group: GroupedEvaluation;
   isMaternelle: boolean;
@@ -394,6 +402,8 @@ function EvaluationProgramCard({
   onOpenEdit: () => void;
   selected?: boolean;
   onToggleSelect?: () => void;
+  isEN: boolean;
+  labels: any;
 }) {
   // Formatage des dates : "25 juil. 2026" (pas d'heure)
   const startDate = group.startDate ? new Date(group.startDate) : null;
@@ -406,23 +416,24 @@ function EvaluationProgramCard({
 
   const fmtLong = (d: Date) => format(d, 'd MMM yyyy', { locale: fr });
 
+  // ⭐ 2026-10-01 — Bilingual date range
   const dateRange = startDate
     ? sameDay || !endDate
-      ? `Le ${fmtLong(startDate)}`
-      : `Du ${fmtLong(startDate)} au ${fmtLong(endDate)}`
-    : 'Date non définie';
+      ? isEN ? `On ${fmtLong(startDate)}` : `Le ${fmtLong(startDate)}`
+      : isEN ? `From ${fmtLong(startDate)} to ${fmtLong(endDate)}` : `Du ${fmtLong(startDate)} au ${fmtLong(endDate)}`
+    : isEN ? 'Date not set' : 'Date non définie';
 
-  // Statut agrégé
+  // Statut agrégé — bilingue
   const allValidated = group.statuses.every((s) => s === 'VALIDATED' || s === 'LOCKED');
   const anyCancelled = group.statuses.some((s) => s === 'CANCELLED');
   const allPlanned = group.statuses.every((s) => s === 'PLANNED');
   const headerStatus = allValidated
-    ? 'Complétée'
+    ? (isEN ? 'Completed' : 'Complétée')
     : anyCancelled
-    ? 'Partiellement annulée'
+    ? (isEN ? 'Partially cancelled' : 'Partiellement annulée')
     : allPlanned
-    ? 'En attente'
-    : 'En cours';
+    ? (isEN ? 'Pending' : 'En attente')
+    : (isEN ? 'In progress' : 'En cours');
 
   // Statut principal pour le badge (prendre le statut le plus "avancé")
   const primaryStatus = group.firstEvaluation.status;
@@ -442,7 +453,7 @@ function EvaluationProgramCard({
             <div className="min-w-0">
               <h3 className="text-base font-bold text-navy-900 truncate">{group.className}</h3>
               <p className="text-xs text-gray-500">
-                {subjectCount} matière{subjectCount > 1 ? 's' : ''} à composer
+                {subjectCount} {isEN ? `subject${subjectCount > 1 ? 's' : ''} to assess` : `matière${subjectCount > 1 ? 's' : ''} à composer`}
               </p>
             </div>
           </div>
@@ -458,8 +469,8 @@ function EvaluationProgramCard({
                 }}
                 onClick={(e) => e.stopPropagation()}
                 className="w-[18px] h-[18px] rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer flex-shrink-0"
-                title="Sélectionner pour une action groupée"
-                aria-label={`Sélectionner les évaluations de ${group.className}`}
+                title={isEN ? 'Select for bulk action' : 'Sélectionner pour une action groupée'}
+                aria-label={isEN ? `Select assessments for ${group.className}` : `Sélectionner les évaluations de ${group.className}`}
               />
             )}
             <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap ${
@@ -483,7 +494,7 @@ function EvaluationProgramCard({
             {group.evaluationTypeName}
           </p>
           {group.periodName && (
-            <p className="text-xs text-gray-500 mt-0.5">{group.periodName}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{translatePeriodName(group.periodName, isEN ? 'EN' : 'FR')}</p>
           )}
         </div>
 
@@ -496,7 +507,7 @@ function EvaluationProgramCard({
         {/* Liste des matières à composer */}
         <div className="space-y-1.5 pt-1">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-            Matières à composer
+            {isEN ? 'Subjects to assess' : 'Matières à composer'}
           </p>
           <div className="flex flex-wrap gap-1.5">
             {group.subjects.map((s) => (
@@ -508,7 +519,7 @@ function EvaluationProgramCard({
               </span>
             ))}
             {group.subjects.length === 0 && (
-              <span className="text-xs text-gray-400 italic">Aucune matière</span>
+              <span className="text-xs text-gray-400 italic">{isEN ? 'No subject' : 'Aucune matière'}</span>
             )}
           </div>
         </div>
@@ -520,7 +531,7 @@ function EvaluationProgramCard({
               /{group.firstEvaluation.maxScore}
             </span>
             <span className="px-2 py-0.5 bg-gray-200 text-gray-700 rounded text-xs">
-              coef {group.firstEvaluation.coefficient}
+              {isEN ? 'coef' : 'coef'} {group.firstEvaluation.coefficient}
             </span>
           </div>
         )}
@@ -529,7 +540,7 @@ function EvaluationProgramCard({
       {/* Pied : actions alignées (icônes uniquement, sans libellés) */}
       <div className="px-3 py-2.5 border-t border-gray-100 flex items-center justify-end space-x-1 bg-gray-50/30">
         {actions.length === 0 ? (
-          <span className="text-xs text-gray-400 italic px-2">Aucune action</span>
+          <span className="text-xs text-gray-400 italic px-2">{isEN ? 'No action' : 'Aucune action'}</span>
         ) : (
           actions.map((action, idx) => {
             const Icon = action.icon;
@@ -1513,6 +1524,8 @@ export default function EvaluationsPage() {
                 isMaternelle={isMaternelle}
                 selectedKeys={selectedKeys}
                 onToggleSelect={toggleSelectGroup}
+                isEN={isEN}
+                labels={labels}
               />
             )}
           </div>

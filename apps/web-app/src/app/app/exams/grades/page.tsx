@@ -173,9 +173,27 @@ export default function GradesPage() {
         schoolLevelId: schoolLevelUuid,
         academicYearId: academicYear.id,
       };
-      if (scopeLang) params.language = scopeLang;
+      // ⭐ 2026-10-01 — Ne pas envoyer `language` au backend : le filtrage par
+      // piste linguistique se fait côté frontend via les classIds filtrés par
+      // filterClassesForLevel(). Le backend retourne TOUTES les évaluations
+      // du niveau, et on garde uniquement celles dont le classId appartient
+      // aux classes de la piste courante.
       const res = await institutionalExamsService.getEvaluations(params);
-      setEvaluations(Array.isArray(res) ? res : []);
+      // ⭐ Filtrer côté client par les classIds de la piste courante
+      // (les classes sont chargées par loadReferenceData, on filtre ici
+      //  avec les mêmes classIds via filterClassesForLevel).
+      const allEvals = Array.isArray(res) ? res : [];
+      // ⭐ Pour filtrer, on a besoin des classes — on les récupère via
+      // fetch /api/all-classes (même logique que loadReferenceData).
+      const allClassesRes = await fetch(`/api/all-classes?academicYearId=${encodeURIComponent(academicYear.id)}`, { credentials: 'include' })
+        .then(r => r.ok ? r.json() : []).catch(() => []);
+      const allClasses = Array.isArray(allClassesRes) ? allClassesRes : [];
+      const levelClasses = filterClassesForLevel(allClasses, schoolLevelUuid, scopeLang);
+      const validClassIds = new Set(levelClasses.map((c: any) => c.id));
+      const filteredEvals = allEvals.filter(
+        (ev: any) => ev.class?.id && validClassIds.has(ev.class.id),
+      );
+      setEvaluations(filteredEvals);
     } catch (err) {
       console.error('Error loading evaluations', err);
       setEvaluations([]);

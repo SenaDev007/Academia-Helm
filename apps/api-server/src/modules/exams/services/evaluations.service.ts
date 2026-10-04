@@ -325,45 +325,22 @@ export class EvaluationsService {
       }
     }
     if (filters.evaluationTypeId) where.evaluationTypeId = filters.evaluationTypeId;
-    if (filters.language) {
-      // ⭐ V10b — Isolation linguistique stricte (cohérente avec le frontend
-      // level-isolation.ts) :
-      //   FR : classes FR marquées + classes SANS marqueur (structure FR
-      //        historique — les classes héritées sans language/track sont FR)
-      //   EN : classes EN marquées uniquement (les miroirs EN créés par le
-      //        service bilingue portent TOUJOURS language='EN' + track EN)
-      //
-      // ⚠️ Les sections EN partagent le schoolLevelId de leur miroir FR
-      // (bilingual-structure.service.ts) : sans ce filtre, les évaluations
-      // FR et EN du même niveau se mélangeaient dans chaque vue.
-      // L'ancien filtre excluait aussi les classes FR non marquées → perte
-      // de données en vue FR.
-      const lang = String(filters.language).toUpperCase();
-      const languageConditions: any[] = [
-        { academicTrack: { code: lang } },
-        { language: lang },
-      ];
-      if (lang === 'FR') {
-        // Classes héritées sans marqueur linguistique = FR
-        languageConditions.push({ language: null, academicTrackId: null });
-      }
-      // ⭐ 2026-10-01 — MIROIR Nursery/Primary EN :
-      //    Les classes Nursery 1/2 et Primary 1-6 sont des miroirs de
-      //    Maternelle 1/2 et CI/CP/CE1/CE2/CM1/CM2 (mêmes élèves). Si
-      //    l'école n'a pas créé de sections EN distinctes, les évaluations
-      //    créées depuis la vue EN sont liées à des classes FR SANS marqueur
-      //    (legacy null). On les inclut donc dans la vue EN.
-      //    ⚠️ On n'inclut PAS les classes FR marquées (language='FR') car
-      //    ce sont des classes FR distinctes — pas des miroirs.
-      //    Le Secondaire n'est PAS un miroir (vraies sections EN distinctes).
-      if (lang === 'EN') {
-        languageConditions.push({ language: null, academicTrackId: null });
-      }
-      where.class = {
-        ...where.class,
-        OR: languageConditions,
-      };
-    }
+    // ⭐ 2026-10-01 — Le filtre `language` est retiré du backend.
+    //    L'isolation par piste linguistique (FR/EN) est désormais gérée
+    //    côté frontend via filterClassesForLevel() + le filtrage des
+    //    évaluations par classId.
+    //
+    //    Raison : les classes Nursery/Primary EN sont des miroirs des
+    //    classes Maternelle/Primaire FR (mêmes élèves, même classId).
+    //    Le filtre backend par language='EN' exclut les classes legacy
+    //    (sans marqueur) qui sont les miroirs → les évaluations créées
+    //    depuis la vue EN ne s'affichent pas. Et inclure les classes FR
+    //    dans le filtre EN mélange les pistes.
+    //
+    //    Solution : le backend retourne TOUTES les évaluations du niveau
+    //    (schoolLevelId), et le frontend filtre par les classIds qui
+    //    appartiennent à la piste courante (déjà résolus par
+    //    filterClassesForLevel).
 
     // ⭐ FIX PERF (2026-09-21 — « plus d'une minute pour charger les
     //    évaluations », toasts « délai dépassé ») : la liste était renvoyée

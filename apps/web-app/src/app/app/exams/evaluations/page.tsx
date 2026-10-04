@@ -637,7 +637,11 @@ export default function EvaluationsPage() {
         schoolLevelId: schoolLevelUuid,
         academicYearId: academicYear.id,
       };
-      if (scopeLang) params.language = scopeLang;
+      // ⭐ 2026-10-01 — Ne pas envoyer `language` au backend : le filtrage par
+      // piste linguistique se fait côté frontend via les classIds filtrés par
+      // filterClassesForLevel(). Le backend retourne TOUTES les évaluations
+      // du niveau, et on garde uniquement celles dont le classId appartient
+      // aux classes de la piste courante.
 
       // ⭐ FIX PERF (2026-09-21 — « plus d'une minute avant que le chargement
       //    ne s'effectue », toasts « délai dépassé ») : les 5 requêtes partent
@@ -727,6 +731,16 @@ export default function EvaluationsPage() {
         return (a.name || '').localeCompare(b.name || '');
       });
       setClasses(sortedClasses);
+
+      // ⭐ 2026-10-01 — Filtrer les évaluations côté frontend par les classIds
+      //    de la piste courante. Le backend retourne TOUTES les évaluations
+      //    du niveau (sans filtre language) ; on garde uniquement celles
+      //    dont le classId appartient aux classes filtrées (FR ou EN mirror).
+      const validClassIds = new Set(sortedClasses.map(c => c.id));
+      const filteredEvals = (Array.isArray(evals) ? evals : []).filter(
+        (ev: any) => ev.class?.id && validClassIds.has(ev.class.id),
+      );
+      setEvaluations(filteredEvals);
 
       setPeriods(Array.isArray(periodsData) ? periodsData : []);
 

@@ -38,16 +38,16 @@ export const EN_EVALUATION_TYPES = [
     code: 'FCA',
     name: 'First CA',
     label: 'First CA',
-    maxScore: 40,
-    passingScore: 20,
+    maxScore: 20,
+    passingScore: 10,
     includedInAverage: true,
   },
   {
     code: 'SCA',
     name: 'Second CA',
     label: 'Second CA',
-    maxScore: 40,
-    passingScore: 20,
+    maxScore: 20,
+    passingScore: 10,
     includedInAverage: true,
   },
   {
@@ -114,13 +114,13 @@ export type EnComponentKey = 'CA1' | 'CA2' | 'EXAM';
 export interface EnTermComponent {
   key: EnComponentKey;
   label: string;      // 'First CA', 'Second CA', 'Examination'
-  maxScore: number;   // 40, 40, 60
+  maxScore: number;   // 20, 20, 60 (default — configurable via settings)
 }
 
 export function enComponentForCode(typeCode: string): EnTermComponent | null {
   const c = (typeCode || '').toUpperCase().trim();
-  if (c === 'FIRST_CA' || c === 'FCA') return { key: 'CA1', label: 'First CA', maxScore: 40 };
-  if (c === 'SECOND_CA' || c === 'SCA') return { key: 'CA2', label: 'Second CA', maxScore: 40 };
+  if (c === 'FIRST_CA' || c === 'FCA') return { key: 'CA1', label: 'First CA', maxScore: 20 };
+  if (c === 'SECOND_CA' || c === 'SCA') return { key: 'CA2', label: 'Second CA', maxScore: 20 };
   if (c === 'EXAM' || c === 'EXAMINATION') return { key: 'EXAM', label: 'Examination', maxScore: 60 };
   return null;
 }

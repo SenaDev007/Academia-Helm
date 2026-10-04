@@ -45,6 +45,10 @@ interface AssessmentType {
   required: boolean;
   includedInAverage: boolean;
   visibleOnReportCard: boolean;
+  /** ⭐ 2026-10-01 — Score maximal de ce type d'évaluation (ex: 20 pour First CA, 60 pour Exam).
+   *  Configurable par l'école dans Paramètres > Calculation Rules.
+   *  Hérité par Assessment, Grading et autres composants pour afficher /20, /60 etc. */
+  maxScore?: number;
 }
 
 interface MentionRule {
@@ -66,9 +70,9 @@ const DEFAULT_ASSESSMENT_TYPES: Record<string, Record<string, AssessmentType[]>>
       { code: 'EP', label: 'Évaluation de passage', required: false, includedInAverage: true, visibleOnReportCard: true },
     ],
     EN: [
-      { code: 'FIRST_CA', label: 'First CA', required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'SECOND_CA', label: 'Second CA', required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'EXAM', label: 'Exam', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'FIRST_CA', label: 'First CA', required: true, includedInAverage: true, visibleOnReportCard: true, maxScore: 20 },
+      { code: 'SECOND_CA', label: 'Second CA', required: true, includedInAverage: true, visibleOnReportCard: true, maxScore: 20 },
+      { code: 'EXAM', label: 'Exam', required: true, includedInAverage: true, visibleOnReportCard: true, maxScore: 60 },
     ],
   },
   PRIMAIRE: {
@@ -79,9 +83,9 @@ const DEFAULT_ASSESSMENT_TYPES: Record<string, Record<string, AssessmentType[]>>
       { code: 'EP', label: 'Évaluation de passage', required: false, includedInAverage: true, visibleOnReportCard: true },
     ],
     EN: [
-      { code: 'FIRST_CA', label: 'First CA', required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'SECOND_CA', label: 'Second CA', required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'EXAM', label: 'Exam', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'FIRST_CA', label: 'First CA', required: true, includedInAverage: true, visibleOnReportCard: true, maxScore: 20 },
+      { code: 'SECOND_CA', label: 'Second CA', required: true, includedInAverage: true, visibleOnReportCard: true, maxScore: 20 },
+      { code: 'EXAM', label: 'Exam', required: true, includedInAverage: true, visibleOnReportCard: true, maxScore: 60 },
     ],
   },
   SECONDAIRE: {
@@ -92,9 +96,9 @@ const DEFAULT_ASSESSMENT_TYPES: Record<string, Record<string, AssessmentType[]>>
       { code: 'DS2', label: 'Devoir surveillé 2', required: true, includedInAverage: true, visibleOnReportCard: true },
     ],
     EN: [
-      { code: 'FIRST_CA', label: 'First CA', required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'SECOND_CA', label: 'Second CA', required: true, includedInAverage: true, visibleOnReportCard: true },
-      { code: 'EXAM', label: 'Exam', required: true, includedInAverage: true, visibleOnReportCard: true },
+      { code: 'FIRST_CA', label: 'First CA', required: true, includedInAverage: true, visibleOnReportCard: true, maxScore: 20 },
+      { code: 'SECOND_CA', label: 'Second CA', required: true, includedInAverage: true, visibleOnReportCard: true, maxScore: 20 },
+      { code: 'EXAM', label: 'Exam', required: true, includedInAverage: true, visibleOnReportCard: true, maxScore: 60 },
     ],
   },
 };
@@ -111,7 +115,7 @@ const DEFAULT_FORMULAS: Record<string, Record<string, { subject: string; general
     EN: {
       subject: 'FIRST_CA + SECOND_CA + EXAM',
       general: 'SUM(total_matière) / (COUNT(matières) × 100)',
-      description: 'Kindergarten EN : First CA (/40) + Second CA (/40) + Exam (/60) = Total /100 per subject. Quantitative system (NOT qualitative).',
+      description: 'Nursery EN : First CA (/20) + Second CA (/20) + Exam (/60) = Total /100 per subject. Quantitative system (NOT qualitative).',
     },
   },
   PRIMAIRE: {
@@ -123,7 +127,7 @@ const DEFAULT_FORMULAS: Record<string, Record<string, { subject: string; general
     EN: {
       subject: 'FIRST_CA + SECOND_CA + EXAM',
       general: 'SUM(total_matière) / (COUNT(matières) × 100)',
-      description: 'Primary EN : First CA (/40) + Second CA (/40) + Exam (/60) = Total /100 per subject. General average = Sum of totals / (number of subjects × 100).',
+      description: 'Primary EN : First CA (/20) + Second CA (/20) + Exam (/60) = Total /100 per subject. General average = Sum of totals / (number of subjects × 100).',
     },
   },
   SECONDAIRE: {
@@ -135,7 +139,7 @@ const DEFAULT_FORMULAS: Record<string, Record<string, { subject: string; general
     EN: {
       subject: 'FIRST_CA + SECOND_CA + EXAM',
       general: 'SUM(total_matière) / (COUNT(matières) × 100)',
-      description: 'Secondary EN : First CA (/40) + Second CA (/40) + Exam (/60) = Total /100 per subject. General average = Sum of totals / (number of subjects × 100).',
+      description: 'Secondary EN : First CA (/20) + Second CA (/20) + Exam (/60) = Total /100 per subject. General average = Sum of totals / (number of subjects × 100).',
     },
   },
 };
@@ -546,6 +550,7 @@ function SettingsContent() {
     setAssessmentTypes([...assessmentTypes, {
       code: '', label: '', required: true,
       includedInAverage: true, visibleOnReportCard: true,
+      maxScore: 20,
     }]);
   };
 
@@ -704,6 +709,7 @@ function SettingsContent() {
               <div className="flex items-center gap-2 mb-2 px-2 text-xs font-bold text-gray-500 uppercase">
                 <span className="w-24 flex-shrink-0">{L('Code', 'Code')}</span>
                 <span className="flex-1">{L("Nom de l'évaluation", 'Assessment Name')}</span>
+                <span className="w-20 flex-shrink-0 text-center">{L('Max', 'Max')}</span>
                 <span className="w-10"></span>
               </div>
               <div className="space-y-2">
@@ -715,6 +721,17 @@ function SettingsContent() {
                     <Input placeholder={L("Nom de l'évaluation", 'Assessment name')} value={at.label}
                       onChange={e => updateAssessmentType(i, 'label', e.target.value)}
                       className="flex-1 min-w-0 text-sm" />
+                    {/* ⭐ 2026-10-01 — Champ maxScore configurable par l'école */}
+                    <Input
+                      type="number"
+                      value={at.maxScore ?? ''}
+                      placeholder="20"
+                      min={1}
+                      max={200}
+                      onChange={e => updateAssessmentType(i, 'maxScore', parseInt(e.target.value) || 20)}
+                      className="w-20 text-xs text-center flex-shrink-0"
+                      title={L('Score maximal', 'Maximum score')}
+                    />
                     <Button size="sm" variant="ghost" onClick={() => removeAssessmentType(i)} className="flex-shrink-0">
                       <Trash2 className="w-4 h-4 text-rose-500" />
                     </Button>

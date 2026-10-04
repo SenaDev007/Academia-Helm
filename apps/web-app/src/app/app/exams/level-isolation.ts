@@ -131,30 +131,23 @@ export function filterClassesForLevel(
   const langClasses = levelClasses.filter((c: any) => matchesLevelLanguage(c, language));
 
   // ⭐ 2026-10-01 — Règle mirror pour Nursery (EN) et Primary (EN) :
-  //    Si des classes EN marquées existent (créées par bilingual-structure
-  //    service), on les utilise EXCLUSIVEMENT — pas de legacy.
-  //    Les évaluations créées sur ces classes EN ne se mélangent pas avec
-  //    les évaluations FR (qui sont sur des classes FR/legacy distinctes).
+  //    Si aucune classe EN marquée n'existe, on utilise TOUTES les classes
+  //    du niveau (FR marquées + legacy) comme miroirs. Les élèves sont les
+  //    mêmes — la piste EN est juste une "vue traduite" des classes FR.
   //
-  //    Si AUCUNE classe EN marquée n'existe, on utilise les classes legacy
-  //    (sans marqueur) comme miroirs. Dans ce cas, les évaluations créées
-  //    depuis la vue EN seront liées aux mêmes classId que les évaluations FR
-  //    → il y aura un mélange inévitable. C'est pourquoi le service bilingue
-  //    doit créer des classes EN distinctes (ce qu'il fait normalement).
+  //    ⚠️ Important : dans ce cas, les évaluations créées depuis la vue EN
+  //    seront liées aux mêmes classId que les classes FR. Elles apparaîtront
+  //    donc dans BOTH FR et EN. C'est le comportement attendu quand l'école
+  //    n'a pas créé de classes EN distinctes via le service bilingue.
+  //
+  //    Pour séparer complètement FR et EN, l'école doit exécuter
+  //    "Seed EN Structure" dans Paramètres > Bilingual — cela crée des
+  //    classes EN marquées (language='EN') distinctes, et les évaluations EN
+  //    seront créées sur ces classes EN séparées.
   if (langClasses.length === 0 && language === 'EN' && isMirrorLevel(language, schoolLevelUuid)) {
-    // Aucune classe EN marquée → repli sur les classes legacy (sans marqueur)
-    const legacyClasses = levelClasses.filter((c: any) => {
-      const itemLang = c?.language;
-      const trackCode = c?.academicTrack?.code || c?.academicTrackCode;
-      return !itemLang && !trackCode;
-    });
-    if (legacyClasses.length > 0) {
-      return legacyClasses.map((c: any) => ({ ...c, _isMirrorEN: true }));
-    }
+    // Toutes les classes du niveau (FR marquées + legacy) comme miroirs
+    return levelClasses.map((c: any) => ({ ...c, _isMirrorEN: true }));
   }
 
-  // ⭐ Si des classes EN marquées existent, on les retourne TELLES QUELLES
-  // (sans fusionner avec les legacy). Les évaluations EN doivent être créées
-  // sur ces classes EN, pas sur les classes FR/legacy.
   return langClasses;
 }

@@ -250,9 +250,16 @@ export function GradingSheet({
 }) {
   const isEN = language === 'EN';
   const labels = getLabels(language);
-  // ⭐ Déterminer le barème maximal selon le type d'évaluation (anglophone)
+  // ⭐ Déterminer le barème maximal selon le type d'évaluation
+  //    1. Priorité : maxScore stocké sur l'évaluation (group.firstEvaluation.maxScore)
+  //       — c'est la valeur configurée par l'école dans Settings > Calculation Rules
+  //    2. Fallback : getMaxScoreForType (valeurs par défaut du système anglophone)
+  //    3. Fallback final : 20 (système francophone)
   const evalTypeCode = group.evaluationTypeCode || '';
-  const maxScore = isEN ? getMaxScoreForType(evalTypeCode, language) : 20;
+  const evalMaxScore = group.firstEvaluation?.maxScore || 0;
+  const maxScore = evalMaxScore > 0
+    ? evalMaxScore
+    : (isEN ? getMaxScoreForType(evalTypeCode, language) : 20);
   const [rows, setRows] = useState<GradeRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -399,7 +406,19 @@ export function GradingSheet({
         if (isMaternelle) {
           updated = { ...existing, qualitativeCode: value === '' ? null : value };
         } else {
-          updated = { ...existing, score: value === '' ? null : parseFloat(value) };
+          // ⭐ 2026-10-01 — Bloquer les notes qui excèdent le maxScore de l'évaluation
+          //    (configuré dans Settings > Calculation Rules). Le input HTML a déjà
+          //    max={maxScore} mais on ajoute une validation côté JS pour empêcher
+          //    les saisies manuelles (copier-coller, édition directe du DOM).
+          const numValue = value === '' ? null : parseFloat(value);
+          if (numValue !== null && numValue > maxScore) {
+            // Clamp au maxScore — la note ne peut pas dépasser le maximum
+            updated = { ...existing, score: maxScore, isAbsent: false };
+          } else if (numValue !== null && numValue < 0) {
+            updated = { ...existing, score: 0, isAbsent: false };
+          } else {
+            updated = { ...existing, score: numValue, isAbsent: false };
+          }
         }
         return { ...row, scores: { ...row.scores, [subjectId]: updated } };
       })
@@ -454,6 +473,33 @@ export function GradingSheet({
       //    vide (l'utilisateur n'aurait jamais ouvert la page 2).
       if (isEN && remarksLoaded) {
         await saveSubjectRemarks(true);
+      }
+
+      // ⭐ 2026-10-01 — Valider les notes avant sauvegarde : rejeter les
+      //    notes qui excèdent le maxScore de l'évaluation.
+      if (!isMaternelle) {
+        const violations: string[] = [];
+        for (const row of rows) {
+          for (const [subjectId, score] of Object.entries(row.scores)) {
+            if (score.score !== null && typeof score.score === 'number' && !score.isAbsent) {
+              if (score.score > maxScore) {
+                violations.push(`${row.studentName}: ${score.score} > ${maxScore}`);
+              }
+            }
+          }
+        }
+        if (violations.length > 0) {
+          toastError(
+            isEN ? 'Grades exceed maximum score' : 'Notes supérieures au barème',
+            {
+              description: isEN
+                ? `${violations.length} grade(s) exceed the maximum (${maxScore}). Please correct before saving.`
+                : `${violations.length} note(s) dépassent le barème (${maxScore}). Veuillez corriger avant de sauvegarder.`,
+            }
+          );
+          setSaving(false);
+          return;
+        }
       }
 
       // 1. Sauvegarder les notes

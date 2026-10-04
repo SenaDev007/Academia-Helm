@@ -697,7 +697,8 @@ export default function EvaluationsPage() {
       const enMaxByCode = (code: string): number => {
         const c = (code || '').toUpperCase();
         if (c === 'EXAM' || c === 'EXAMINATION') return 60;
-        if (c === 'FIRST_CA' || c === 'SECOND_CA' || c === 'FCA' || c === 'SCA') return 20;
+        // ⭐ 2026-10-01 — First CA et Second CA : maxScore = 40 (pas 20)
+        if (c === 'FIRST_CA' || c === 'SECOND_CA' || c === 'FCA' || c === 'SCA') return 40;
         return 20;
       };
       let typesFromSettings = assessmentTypes.map((at: any) => ({

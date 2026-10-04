@@ -618,29 +618,47 @@ export function GradingSheet({
       return sum + (s && typeof s.score === 'number' && !s.isAbsent ? s.score : 0);
     }, 0), [sortedSubjects]);
 
+  // ⭐ 2026-10-01 — Moyenne = Total / nombre TOTAL de matières (pas seulement
+  //    les matières avec note). Un élève absent à une matière a 0 pour cette
+  //    matière → sa moyenne est pénalisée. C'est la règle du système anglophone.
   const enAverageOf = useCallback((row: GradeRow): number | null => {
-    const scored = sortedSubjects.filter((subj) => {
+    const totalSubjects = sortedSubjects.length;
+    if (totalSubjects === 0) return null;
+    const hasAnyScore = sortedSubjects.some((subj) => {
       const s = row.scores[subj.id];
-      return s && typeof s.score === 'number' && !s.isAbsent;
+      return s && typeof s.score === 'number';
     });
-    if (!scored.length) return null;
-    return enTotalOf(row) / scored.length;
+    if (!hasAnyScore) return null;
+    return enTotalOf(row) / totalSubjects;
   }, [sortedSubjects, enTotalOf]);
 
+  // ⭐ 2026-10-01 — Rang basé sur la MOYENNE (pas le total). Le classement
+  //    est dynamique : tri par moyenne décroissante → 1er = meilleure moyenne.
+  //    Les ex aequo ont le même rang (rank gap).
   const enRankMap = useMemo(() => {
-    const totals = filteredRows.map((r) => ({ id: r.studentId, total: enTotalOf(r) }));
-    totals.sort((a, b) => b.total - a.total);
+    const students = filteredRows.map((r) => ({ id: r.studentId, avg: enAverageOf(r) }));
+    // Trier par moyenne décroissante (null = pas de note → en dernier)
+    students.sort((a, b) => {
+      if (a.avg === null && b.avg === null) return 0;
+      if (a.avg === null) return 1;
+      if (b.avg === null) return -1;
+      return b.avg - a.avg;
+    });
     const map: Record<string, number> = {};
-    let lastTotal: number | null = null;
+    let lastAvg: number | null = null;
     let lastRank = 0;
-    totals.forEach((t, i) => {
-      const rank = lastTotal !== null && t.total === lastTotal ? lastRank : i + 1;
-      map[t.id] = rank;
-      lastTotal = t.total;
+    students.forEach((s, i) => {
+      if (s.avg === null) {
+        map[s.id] = 0; // pas de rang si pas de note
+        return;
+      }
+      const rank = lastAvg !== null && s.avg === lastAvg ? lastRank : i + 1;
+      map[s.id] = rank;
+      lastAvg = s.avg;
       lastRank = rank;
     });
     return map;
-  }, [filteredRows, enTotalOf]);
+  }, [filteredRows, enAverageOf]);
 
   const enSubjectMaxOf = useCallback((subjectId: string): number | null => {
     let max: number | null = null;
@@ -1299,10 +1317,10 @@ export function GradingSheet({
                                 {average !== null ? average.toFixed(2) : '—'}
                               </td>
                               <td className="border border-slate-300 px-2 py-1 text-center font-bold text-violet-700 bg-violet-50">
-                                {hasAnyScore ? formatOrdinalEn(position) : '—'}
+                                {position > 0 ? formatOrdinalEn(position) : '—'}
                               </td>
                               <td className="border border-slate-300 px-2 py-1 text-center font-bold text-emerald-700 bg-emerald-50">
-                                {hasAnyScore ? total.toFixed(2).replace(/\.00$/, '') : '—'}
+                                {average !== null ? total.toFixed(2).replace(/\.00$/, '') : '—'}
                               </td>
                             </tr>
                           );

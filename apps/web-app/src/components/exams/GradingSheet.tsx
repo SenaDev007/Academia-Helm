@@ -1283,16 +1283,14 @@ export function GradingSheet({
                                             : 'bg-amber-100 text-amber-700 border border-amber-300'
                                         )}
                                         onClick={() => setPresenceModalStudent(row)}
-                                        title={isEN
-                                          ? (allPresent ? 'Present' : allAbsent ? 'Absent' : `${absentSubjects.length}/${sortedSubjects.length} absent — click for details`)
-                                          : (allPresent ? 'Présent' : allAbsent ? 'Absent' : `${absentSubjects.length}/${sortedSubjects.length} absent — cliquez pour détails')}
+                                        title={isEN ? (allPresent ? 'Present' : allAbsent ? 'Absent' : absentSubjects.length + '/' + sortedSubjects.length + ' absent') : (allPresent ? 'Présent' : allAbsent ? 'Absent' : absentSubjects.length + '/' + sortedSubjects.length + ' absent')}
                                       >
-                                        {allPresent ? 'P' : allAbsent ? 'A' : `${sortedSubjects.length - absentSubjects.length}/${sortedSubjects.length}`}
+                                        {allPresent ? 'P' : allAbsent ? 'A' : (sortedSubjects.length - absentSubjects.length) + '/' + sortedSubjects.length}
                                       </span>
                                       <button
                                         onClick={() => setPresenceModalStudent(row)}
                                         className="p-0.5 rounded hover:bg-amber-200"
-                                        title={isEN ? 'Attendance details' : 'Détails de présence'}
+                                        title={isEN ? (allPresent ? 'Present' : allAbsent ? 'Absent' : absentSubjects.length + '/' + sortedSubjects.length + ' absent') : (allPresent ? 'Présent' : allAbsent ? 'Absent' : absentSubjects.length + '/' + sortedSubjects.length + ' absent')}
                                       >
                                         <Settings className="w-3 h-3 text-slate-500" />
                                       </button>

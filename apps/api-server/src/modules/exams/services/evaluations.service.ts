@@ -347,6 +347,21 @@ export class EvaluationsService {
         // Classes héritées sans marqueur linguistique = FR
         languageConditions.push({ language: null, academicTrackId: null });
       }
+      // ⭐ 2026-10-01 — MIROIR Nursery/Primary EN :
+      //    Les classes Nursery 1/2 et Primary 1-6 sont des miroirs de
+      //    Maternelle 1/2 et CI/CP/CE1/CE2/CM1/CM2 (mêmes élèves). Si
+      //    l'école n'a pas créé de sections EN distinctes, les évaluations
+      //    créées depuis la vue EN sont liées à des classes FR (sans
+      //    marqueur language='EN'). On les inclut donc dans la vue EN.
+      //    Le Secondaire n'est PAS un miroir (vraies sections EN distinctes).
+      if (lang === 'EN') {
+        // Inclure les classes FR sans marqueur (legacy) qui partagent le
+        // même schoolLevelId que les classes EN — ce sont les miroirs.
+        languageConditions.push({ language: null, academicTrackId: null });
+        // Inclure aussi les classes FR marquées (language='FR') qui sont
+        // des miroirs pour Nursery/Primary.
+        languageConditions.push({ language: 'FR' });
+      }
       where.class = {
         ...where.class,
         OR: languageConditions,

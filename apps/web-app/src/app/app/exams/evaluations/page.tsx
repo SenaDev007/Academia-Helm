@@ -1011,7 +1011,7 @@ export default function EvaluationsPage() {
   const handleSave = async () => {
     // Validation
     if (form.classIds.length === 0 || form.subjectIds.length === 0 || !form.periodId || !form.evaluationTypeId || !form.startDate || !form.endDate) {
-      toastError('Veuillez remplir tous les champs obligatoires');
+      toastError(isEN ? 'Please fill in all required fields' : 'Veuillez remplir tous les champs obligatoires');
       return;
     }
     setSaving(true);
@@ -1056,9 +1056,12 @@ export default function EvaluationsPage() {
           subjectIds: form.subjectIds,
         };
         const result = await institutionalExamsService.createBulkEvaluations(bulkPayload);
-        toastSuccess(`${result.created} évaluation(s) modifiée(s)`, {
-          description: `${form.classIds.length} classe(s) × ${form.subjectIds.length} matière(s)`,
-        });
+        toastSuccess(
+          isEN ? `${result.created} assessment(s) updated` : `${result.created} évaluation(s) modifiée(s)`,
+          {
+            description: `${form.classIds.length} ${isEN ? 'class(es)' : 'classe(s)'} × ${form.subjectIds.length} ${isEN ? 'subject(s)' : 'matière(s)'}`,
+          },
+        );
       } else {
         // Création : utiliser bulk create pour générer 1 évaluation par combinaison
         const bulkPayload = {
@@ -1069,7 +1072,11 @@ export default function EvaluationsPage() {
         const result = await institutionalExamsService.createBulkEvaluations(bulkPayload);
         // ⭐ Toast détaillé : "X matières programmées pour Y classes(s) — Z enseignant(s) notifié(s)"
         const classNames = form.classIds
-          .map((cid) => classes.find((c) => c.id === cid)?.name)
+          .map((cid) => {
+            const cls = classes.find((c) => c.id === cid);
+            // ⭐ 2026-10-01 — Traduire le nom de la classe pour la piste EN
+            return cls ? (isEN ? translateClassName(cls.name) : cls.name) : null;
+          })
           .filter(Boolean);
         const subjectNames = form.subjectIds
           .map((sid) => subjects.find((s) => s.id === sid)?.name)
@@ -1077,12 +1084,14 @@ export default function EvaluationsPage() {
         const teachersNotified = (result as any)?.teachersAssigned || 0;
 
         toastSuccess(
-          `${result.created} évaluation(s) programmée(s)`,
+          isEN ? `${result.created} assessment(s) scheduled` : `${result.created} évaluation(s) programmée(s)`,
           {
             description:
-              `${classNames.length} classe${classNames.length > 1 ? 's' : ''} (${classNames.join(', ')}) • ` +
-              `${subjectNames.length} matière${subjectNames.length > 1 ? 's' : ''} (${subjectNames.join(', ')})` +
-              (teachersNotified > 0 ? ` • ${teachersNotified} enseignant${teachersNotified > 1 ? 's' : ''} notifié${teachersNotified > 1 ? 's' : ''}` : ''),
+              `${classNames.length} ${isEN ? `class${classNames.length > 1 ? 'es' : ''}` : `classe${classNames.length > 1 ? 's' : ''}`} (${classNames.join(', ')}) • ` +
+              `${subjectNames.length} ${isEN ? `subject${subjectNames.length > 1 ? 's' : ''}` : `matière${subjectNames.length > 1 ? 's' : ''}`} (${subjectNames.join(', ')})` +
+              (teachersNotified > 0
+                ? ` • ${teachersNotified} ${isEN ? `teacher${teachersNotified > 1 ? 's' : ''} notified` : `enseignant${teachersNotified > 1 ? 's' : ''} notifié${teachersNotified > 1 ? 's' : ''}`}`
+                : ''),
             duration: 6000,
           },
         );
@@ -1090,7 +1099,7 @@ export default function EvaluationsPage() {
       handleCloseModal();
       await loadData();
     } catch (err: any) {
-      toastError('Erreur lors de la sauvegarde', { description: err.message });
+      toastError(isEN ? 'Error while saving' : 'Erreur lors de la sauvegarde', { description: err.message });
     } finally {
       setSaving(false);
     }

@@ -1161,6 +1161,8 @@ export function GradingSheet({
                         <tr className="bg-slate-100">
                           <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase w-12">No</th>
                           <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase min-w-[180px]">Names of Scholars</th>
+                          {/* ⭐ 2026-10-01 — Attendance column moved to be right after Names of Scholars */}
+                          <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-20 bg-amber-50">Attendance</th>
                           {sortedSubjects.map((subject) => (
                             <th key={subject.id} className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center min-w-[80px]">
                               {subject.name}
@@ -1170,24 +1172,24 @@ export function GradingSheet({
                           <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-16 bg-blue-50">Average</th>
                           <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-16 bg-violet-50">Position</th>
                           <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-16 bg-emerald-50">Total</th>
-                          {/* ⭐ 2026-10-01 — Colonne Attendance (P/A + ⚙) */}
-                          <th className="border border-slate-300 px-2 py-2 font-bold text-slate-700 uppercase text-center w-20 bg-amber-50">Attendance</th>
                         </tr>
                         {/* ⭐ MARKS OBTAINABLE — barème par matière — AVANT la liste des élèves (modèle PDF) */}
                         <tr className="bg-slate-100 font-bold">
                           <th colSpan={2} className="border border-slate-300 px-2 py-1.5 text-right uppercase text-[11px] text-slate-600">Marks Obtainable</th>
+                          {/* Attendance column in Marks Obtainable */}
+                          <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-400 bg-amber-50">—</th>
                           {sortedSubjects.map((s) => (
-                            <th key={`ob-${s.id}`} className="border border-slate-300 px-2 py-1.5 text-center text-slate-600">{maxScore}</th>
+                            <th key={'ob-' + s.id} className="border border-slate-300 px-2 py-1.5 text-center text-slate-600">{maxScore}</th>
                           ))}
                           <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-600 bg-blue-50">{maxScore}</th>
                           <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-400 bg-violet-50">—</th>
                           <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-600 bg-emerald-50">{maxScore * sortedSubjects.length}</th>
-                          {/* ⭐ Attendance column in Marks Obtainable row */}
-                          <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-400 bg-amber-50">—</th>
                         </tr>
                         {/* ⭐ MARKS OBTAINED — meilleure note de la classe par matière — AVANT la liste des élèves (modèle PDF) */}
                         <tr className="bg-slate-50 font-bold">
                           <th colSpan={2} className="border border-slate-300 px-2 py-1.5 text-right uppercase text-[11px] text-slate-600">Marks Obtained</th>
+                          {/* Attendance column in Marks Obtained */}
+                          <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-400 bg-amber-50">—</th>
                           {sortedSubjects.map((s) => {
                             const max = enSubjectMaxOf(s.id);
                             return (
@@ -1208,8 +1210,6 @@ export function GradingSheet({
                               </>
                             );
                           })()}
-                          {/* ⭐ Attendance column in Marks Obtained row */}
-                          <th className="border border-slate-300 px-2 py-1.5 text-center text-slate-400 bg-amber-50">—</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1233,41 +1233,7 @@ export function GradingSheet({
                             >
                               <td className="border border-slate-300 px-2 py-1 text-center font-semibold text-slate-600">{rowNo}</td>
                               <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{row.studentName}</td>
-                              {sortedSubjects.map((subject) => {
-                                const score = row.scores[subject.id] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
-                                const hasNote = score.score !== null;
-                                return (
-                                  <td key={subject.id} className={cn("border border-slate-300 p-0", canAdd && hasNote && "bg-gray-100")}>
-                                    <input
-                                      type="number"
-                                      step="0.25"
-                                      min="0"
-                                      max={String(maxScore)}
-                                      value={score.isAbsent ? '' : (score.score ?? '')}
-                                      onChange={(e) => handleScoreChange(row.studentId, subject.id, e.target.value)}
-                                      disabled={score.isAbsent || (canAdd && hasNote)}
-                                      placeholder="—"
-                                      className={cn(
-                                        'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
-                                        'focus:outline-none focus:ring-1 focus:ring-blue-400',
-                                        score.isAbsent && 'opacity-30 cursor-not-allowed bg-red-50',
-                                        !score.isAbsent && score.score !== null && typeof score.score === 'number' &&
-                                          (Number(score.score) < maxScore * 0.5 ? 'text-rose-600' : Number(score.score) >= maxScore * 0.7 ? 'text-emerald-600' : 'text-slate-900'),
-                                      )}
-                                    />
-                                  </td>
-                                );
-                              })}
-                              <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
-                                {average !== null ? average.toFixed(2) : '—'}
-                              </td>
-                              <td className="border border-slate-300 px-2 py-1 text-center font-bold text-violet-700 bg-violet-50">
-                                {hasAnyScore ? formatOrdinalEn(position) : '—'}
-                              </td>
-                              <td className="border border-slate-300 px-2 py-1 text-center font-bold text-emerald-700 bg-emerald-50">
-                                {hasAnyScore ? total.toFixed(2).replace(/\.00$/, '') : '—'}
-                              </td>
-                              {/* ⭐ 2026-10-01 — Colonne Attendance (P/A + ⚙) — piste anglophone */}
+                              {/* ⭐ 2026-10-01 — Attendance column (moved after Names of Scholars) */}
                               <td className="border border-slate-300 px-2 py-1 text-center bg-amber-50">
                                 {(() => {
                                   const absentSubjects = sortedSubjects.filter((subj) => row.scores[subj.id]?.isAbsent);
@@ -1290,13 +1256,53 @@ export function GradingSheet({
                                       <button
                                         onClick={() => setPresenceModalStudent(row)}
                                         className="p-0.5 rounded hover:bg-amber-200"
-                                        title={isEN ? (allPresent ? 'Present' : allAbsent ? 'Absent' : absentSubjects.length + '/' + sortedSubjects.length + ' absent') : (allPresent ? 'Présent' : allAbsent ? 'Absent' : absentSubjects.length + '/' + sortedSubjects.length + ' absent')}
+                                        title={isEN ? 'Attendance details' : 'Détails de présence'}
                                       >
                                         <Settings className="w-3 h-3 text-slate-500" />
                                       </button>
                                     </div>
                                   );
                                 })()}
+                              </td>
+                              {sortedSubjects.map((subject) => {
+                                const score = row.scores[subject.id] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
+                                const hasNote = score.score !== null;
+                                // ⭐ 2026-10-01 — Protection des notes : par défaut les inputs sont
+                                //    disabled (readonly). En mode 'add' : seules les cellules SANS
+                                //    note sont éditables (les notes existantes sont grisées). En mode
+                                //    'modify' : toutes les cellules sont éditables.
+                                const isEditable = editMode === 'modify' || (editMode === 'add' && !hasNote);
+                                return (
+                                  <td key={subject.id} className={cn("border border-slate-300 p-0", canAdd && hasNote && "bg-gray-100")}>
+                                    <input
+                                      type="number"
+                                      step="0.25"
+                                      min="0"
+                                      max={String(maxScore)}
+                                      value={score.isAbsent ? '' : (score.score ?? '')}
+                                      onChange={(e) => handleScoreChange(row.studentId, subject.id, e.target.value)}
+                                      disabled={score.isAbsent || !isEditable || (isLocked || editMode === 'readonly')}
+                                      placeholder="—"
+                                      className={cn(
+                                        'w-full px-1 py-1 text-center text-xs font-bold border-0 bg-transparent',
+                                        'focus:outline-none focus:ring-1 focus:ring-blue-400',
+                                        (!isEditable || (isLocked || editMode === 'readonly')) && !score.isAbsent && 'cursor-not-allowed bg-slate-50 text-slate-400',
+                                        score.isAbsent && 'opacity-30 cursor-not-allowed bg-red-50',
+                                        !score.isAbsent && score.score !== null && typeof score.score === 'number' &&
+                                          (Number(score.score) < maxScore * 0.5 ? 'text-rose-600' : Number(score.score) >= maxScore * 0.7 ? 'text-emerald-600' : 'text-slate-900'),
+                                      )}
+                                    />
+                                  </td>
+                                );
+                              })}
+                              <td className="border border-slate-300 px-2 py-1 text-center font-bold text-blue-700 bg-blue-50">
+                                {average !== null ? average.toFixed(2) : '—'}
+                              </td>
+                              <td className="border border-slate-300 px-2 py-1 text-center font-bold text-violet-700 bg-violet-50">
+                                {hasAnyScore ? formatOrdinalEn(position) : '—'}
+                              </td>
+                              <td className="border border-slate-300 px-2 py-1 text-center font-bold text-emerald-700 bg-emerald-50">
+                                {hasAnyScore ? total.toFixed(2).replace(/\.00$/, '') : '—'}
                               </td>
                             </tr>
                           );
@@ -1935,6 +1941,7 @@ export function GradingSheet({
       <PresenceModal
         student={presenceModalStudent}
         subjects={sortedSubjects}
+        language={language}
         onClose={() => setPresenceModalStudent(null)}
         onUpdate={(studentId, subjectId, isAbsent) => {
           setRows((prev) => prev.map((r) => {
@@ -2026,6 +2033,7 @@ export function GradingSheet({
 function PresenceModal({
   student,
   subjects,
+  language,
   onClose,
   onUpdate,
   onAllPresent,
@@ -2033,11 +2041,13 @@ function PresenceModal({
 }: {
   student: GradeRow;
   subjects: Array<{ id: string; name: string }>;
+  language?: 'FR' | 'EN';
   onClose: () => void;
   onUpdate: (studentId: string, subjectId: string, isAbsent: boolean) => void;
   onAllPresent: (studentId: string) => void;
   onAllAbsent: (studentId: string) => void;
 }) {
+  const isEN = language === 'EN';
   const absentCount = subjects.filter((s) => student.scores[s.id]?.isAbsent).length;
   const presentCount = subjects.length - absentCount;
 
@@ -2051,7 +2061,7 @@ function PresenceModal({
           <div>
             <h3 className="text-lg font-bold flex items-center gap-2">
               <Users className="w-5 h-5" />
-              Présence par matière
+              {isEN ? 'Attendance by Subject' : 'Présence par matière'}
             </h3>
             <p className="text-sm text-blue-100 mt-0.5">{student.studentName}</p>
           </div>
@@ -2063,26 +2073,26 @@ function PresenceModal({
           <div className="flex gap-4 text-xs">
             <span className="flex items-center gap-1">
               <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
-              {presentCount} présent{presentCount > 1 ? 's' : ''}
+              {presentCount} {isEN ? 'present' : 'présent' + (presentCount > 1 ? 's' : '')}
             </span>
             <span className="flex items-center gap-1">
               <span className="w-3 h-3 rounded-full bg-red-500"></span>
-              {absentCount} absent{absentCount > 1 ? 's' : ''}
+              {absentCount} {isEN ? 'absent' : 'absent' + (absentCount > 1 ? 's' : '')}
             </span>
-            <span className="text-gray-400">/ {subjects.length} matière{subjects.length > 1 ? 's' : ''}</span>
+            <span className="text-gray-400">/ {subjects.length} {isEN ? 'subjects' : 'matière' + (subjects.length > 1 ? 's' : '')}</span>
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => onAllPresent(student.studentId)}
               className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors"
             >
-              Tout présent
+              {isEN ? 'All Present' : 'Tout présent'}
             </button>
             <button
               onClick={() => onAllAbsent(student.studentId)}
               className="px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
             >
-              Tout absent
+              {isEN ? 'All Absent' : 'Tout absent'}
             </button>
           </div>
         </div>
@@ -2109,6 +2119,7 @@ function PresenceModal({
                       'px-3 py-1.5 rounded-lg text-xs font-bold transition',
                       !isAbsent ? 'bg-emerald-600 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-emerald-100'
                     )}
+                  title={isEN ? 'Present' : 'Présent'}
                   >P</button>
                   <button
                     onClick={() => onUpdate(student.studentId, subject.id, true)}
@@ -2116,6 +2127,7 @@ function PresenceModal({
                       'px-3 py-1.5 rounded-lg text-xs font-bold transition',
                       isAbsent ? 'bg-red-600 text-white shadow-sm' : 'bg-gray-100 text-gray-500 hover:bg-red-100'
                     )}
+                  title={isEN ? 'Absent' : 'Absent'}
                   >A</button>
                 </div>
               </div>
@@ -2127,7 +2139,7 @@ function PresenceModal({
             onClick={onClose}
             className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
           >
-            Fermer
+            {isEN ? 'Close' : 'Fermer'}
           </button>
         </div>
       </div>

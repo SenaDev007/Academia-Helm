@@ -293,7 +293,7 @@ interface GroupedEvaluation {
  * Remonté au niveau de la page pour piloter la SÉLECTION MULTIPLE
  * (les cartes groupées partagent la même clé que le groupe).
  */
-function buildEvaluationGroups(evaluations: Evaluation[]): GroupedEvaluation[] {
+function buildEvaluationGroups(evaluations: Evaluation[], isEN?: boolean): GroupedEvaluation[] {
   const map = new Map<string, GroupedEvaluation>();
   for (const ev of evaluations) {
     const classId = ev.class?.id || '_no_class';
@@ -307,7 +307,9 @@ function buildEvaluationGroups(evaluations: Evaluation[]): GroupedEvaluation[] {
       map.set(key, {
         key,
         classId,
-        className: ev.class?.name || 'Sans classe',
+        // ⭐ 2026-10-01 — Traduire le nom de la classe pour la piste EN
+        // (Nursery 1 au lieu de Maternelle 1, Primary 1 au lieu de CI, etc.)
+        className: isEN ? translateClassName(ev.class?.name || 'Sans classe') : (ev.class?.name || 'Sans classe'),
         evaluationTypeId,
         evaluationTypeName: ev.evaluationType?.name || 'Évaluation',
         evaluationTypeCode: ev.evaluationType?.code,
@@ -792,8 +794,8 @@ export default function EvaluationsPage() {
 
   // ⭐ Regroupement des évaluations filtrées (une carte = 1 session par classe)
   const groupedEvaluations = useMemo(
-    () => buildEvaluationGroups(filteredEvaluations),
-    [filteredEvaluations],
+    () => buildEvaluationGroups(filteredEvaluations, isEN),
+    [filteredEvaluations, isEN],
   );
 
   // ─── SÉLECTION MULTIPLE (suppression / modification groupées) ──────────

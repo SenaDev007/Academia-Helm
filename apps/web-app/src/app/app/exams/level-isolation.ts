@@ -130,26 +130,31 @@ export function filterClassesForLevel(
   // 1. Filtrage strict par langue
   const langClasses = levelClasses.filter((c: any) => matchesLevelLanguage(c, language));
 
-  // ⭐ 2. Règle mirror pour Nursery (EN) et Primary (EN) :
-  //    Si aucune classe EN n'existe pour ce niveau, on utilise les classes FR
-  //    comme miroirs (mêmes élèves). Le frontend traduira le nom affiché.
+  // ⭐ 2026-10-01 — Règle mirror pour Nursery (EN) et Primary (EN) :
+  //    Si des classes EN marquées existent (créées par bilingual-structure
+  //    service), on les utilise EXCLUSIVEMENT — pas de legacy.
+  //    Les évaluations créées sur ces classes EN ne se mélangent pas avec
+  //    les évaluations FR (qui sont sur des classes FR/legacy distinctes).
+  //
+  //    Si AUCUNE classe EN marquée n'existe, on utilise les classes legacy
+  //    (sans marqueur) comme miroirs. Dans ce cas, les évaluations créées
+  //    depuis la vue EN seront liées aux mêmes classId que les évaluations FR
+  //    → il y aura un mélange inévitable. C'est pourquoi le service bilingue
+  //    doit créer des classes EN distinctes (ce qu'il fait normalement).
   if (langClasses.length === 0 && language === 'EN' && isMirrorLevel(language, schoolLevelUuid)) {
-    // Récupérer les classes FR (marquées language='FR' ou non marquées = FR legacy)
-    const frClasses = levelClasses.filter((c: any) => {
+    // Aucune classe EN marquée → repli sur les classes legacy (sans marqueur)
+    const legacyClasses = levelClasses.filter((c: any) => {
       const itemLang = c?.language;
       const trackCode = c?.academicTrack?.code || c?.academicTrackCode;
-      // FR marqué ou non marqué (legacy = FR)
-      if (itemLang) return itemLang === 'FR';
-      if (trackCode) return trackCode === 'FR';
-      return true;  // non marqué = FR legacy
+      return !itemLang && !trackCode;
     });
-    if (frClasses.length > 0) {
-      // ⭐ Marquer chaque classe comme "mirror" pour que le frontend sache
-      //    qu'il doit traduire le nom (Maternelle 1 → Nursery 1) lors de
-      //    l'affichage. On garde l'ID original pour charger les élèves.
-      return frClasses.map((c: any) => ({ ...c, _isMirrorEN: true }));
+    if (legacyClasses.length > 0) {
+      return legacyClasses.map((c: any) => ({ ...c, _isMirrorEN: true }));
     }
   }
 
+  // ⭐ Si des classes EN marquées existent, on les retourne TELLES QUELLES
+  // (sans fusionner avec les legacy). Les évaluations EN doivent être créées
+  // sur ces classes EN, pas sur les classes FR/legacy.
   return langClasses;
 }

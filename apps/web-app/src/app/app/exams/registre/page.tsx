@@ -109,17 +109,18 @@ function fmtNote(n: number | null): string {
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
-import EducMasterImportWorkspace from '@/components/exams/EducMasterImportWorkspace';
-
 export default function RegistrePage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
-  const [activeSubTab, setActiveSubTab] = useState<'notes' | 'interop'>('notes');
+  const { language: scopeLang } = useExamScope();
+  const isEN = scopeLang === 'EN';
 
   return (
     <ModuleContainer
       header={{
-        title: 'Registre des notes',
-        description: 'Récapitulatif de toutes les notes validées par classe et par trimestre.',
+        title: isEN ? 'Grades Register' : 'Registre des notes',
+        description: isEN
+          ? 'Summary of all validated grades by class and by term.'
+          : 'Récapitulatif de toutes les notes validées par classe et par trimestre.',
         icon: 'clipboardList',
       }}
       subModules={{
@@ -129,40 +130,9 @@ export default function RegistrePage() {
       content={{
         layout: 'full',
         children: (
-          <div className="space-y-4">
-            {/* ─── Sous-onglets Interopérabilité ─── */}
-            <div className="flex items-center gap-2 border-b border-slate-200">
-              <button
-                onClick={() => setActiveSubTab('notes')}
-                className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
-                  activeSubTab === 'notes'
-                    ? 'border-blue-600 text-blue-700'
-                    : 'border-transparent text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Notes validées
-              </button>
-              <button
-                onClick={() => setActiveSubTab('interop')}
-                className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
-                  activeSubTab === 'interop'
-                    ? 'border-blue-600 text-blue-700'
-                    : 'border-transparent text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Interopérabilité
-              </button>
-            </div>
-
-            {/* ─── Contenu du sous-onglet actif ─── */}
-            {activeSubTab === 'notes' ? (
-              <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>}>
-                <RegistreContent />
-              </Suspense>
-            ) : (
-              <EducMasterImportWorkspace />
-            )}
-          </div>
+          <Suspense fallback={<div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-blue-500" /></div>}>
+            <RegistreContent />
+          </Suspense>
         ),
       }}
     />
@@ -194,6 +164,7 @@ function RegistreContent() {
   const isMaternelle = scopeLevel === 'MATERNELLE';
   const isPrimaire = scopeLevel === 'PRIMAIRE';
   const isSecondaire = scopeLevel === 'SECONDAIRE';
+  const isEN = scopeLang === 'EN';
 
   // ── Load classes (with pedagogical sort + auto-select first) ──────────────
   // ⭐ FIX PERF (2026-09-21) : academicYearId transmis → la route BFF saute
@@ -332,7 +303,7 @@ function RegistreContent() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2">
           <ClipboardList className="w-5 h-5 text-blue-600" />
-          <h2 className="text-lg font-bold text-gray-900">Registre des notes</h2>
+          <h2 className="text-lg font-bold text-gray-900">{isEN ? 'Grades Register' : 'Registre des notes'}</h2>
           <Badge variant="outline" className="text-xs">
             {scopeLevel || '—'} {language ? `· ${language}` : ''}
           </Badge>
@@ -343,7 +314,7 @@ function RegistreContent() {
             onChange={(e) => setSelectedClassId(e.target.value)}
             className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
           >
-            <option value="">— Sélectionner une classe —</option>
+            <option value="">{isEN ? '— Select a class —' : '— Sélectionner une classe —'}</option>
             {classes.map((c: any) => (
               <option key={c.id} value={c.id}>{(scopeLang === 'EN') ? translateClassName(c.name) : c.name}</option>
             ))}
@@ -355,8 +326,9 @@ function RegistreContent() {
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-800 flex items-start gap-2">
         <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
         <div>
-          Sélectionnez une évaluation ci-dessous pour consulter son registre des notes.
-          Seules les évaluations <strong>VALIDATED</strong> sont affichées (notes verrouillées par l'administration).
+          {isEN
+            ? 'Select an assessment below to view its grades register. Only VALIDATED assessments are shown (grades locked by administration).'
+            : 'Sélectionnez une évaluation ci-dessous pour consulter son registre des notes. Seules les évaluations VALIDATED sont affichées (notes verrouillées par l\'administration).'}
         </div>
       </div>
 
@@ -364,19 +336,19 @@ function RegistreContent() {
       {!selectedClassId ? (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
           <ClipboardList className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-          <p className="font-medium text-gray-500">Sélectionnez une classe pour afficher le registre</p>
+          <p className="font-medium text-gray-500">{isEN ? 'Select a class to display the register' : 'Sélectionnez une classe pour afficher le registre'}</p>
         </div>
       ) : loading ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-          <span className="ml-2 text-gray-600">Chargement du registre...</span>
+          <span className="ml-2 text-gray-600">{isEN ? 'Loading register...' : 'Chargement du registre...'}</span>
         </div>
       ) : grouped.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
           <FileText className="w-10 h-10 mx-auto mb-2 text-gray-300" />
-          <p className="font-medium text-gray-500">Aucune note validée pour cette classe</p>
+          <p className="font-medium text-gray-500">{isEN ? 'No validated grades for this class' : 'Aucune note validée pour cette classe'}</p>
           <p className="text-xs mt-1 text-gray-400">
-            Les notes apparaîtront ici une fois validées dans l'onglet « Validation ».
+            {isEN ? 'Grades will appear here once validated in the "Validation" tab.' : 'Les notes apparaîtront ici une fois validées dans l\'onglet « Validation ».'}
           </p>
         </div>
       ) : (
@@ -387,7 +359,7 @@ function RegistreContent() {
           scopeKey="registre"
           renderStatusBadge={(g) => (
             <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full whitespace-nowrap bg-emerald-100 text-emerald-700">
-              Validé
+              {isEN ? 'Validated' : 'Validé'}
             </span>
           )}
         />
@@ -1521,28 +1493,39 @@ function RegistreDetailSheet({
     }, 0), [sortedSubjects]);
 
   const enAverageOf = useCallback((row: GradeRow): number | null => {
-    const scored = sortedSubjects.filter((subj) => {
+    const totalSubjects = sortedSubjects.length;
+    if (totalSubjects === 0) return null;
+    const hasAnyScore = sortedSubjects.some((subj) => {
       const s = row.scores[subj.id];
-      return s && typeof s.score === 'number' && !s.isAbsent;
+      return s && typeof s.score === 'number';
     });
-    if (!scored.length) return null;
-    return enTotalOf(row) / scored.length;
+    if (!hasAnyScore) return null;
+    return enTotalOf(row) / totalSubjects;
   }, [sortedSubjects, enTotalOf]);
 
   const enRankMap = useMemo(() => {
-    const totals = rows.map((r) => ({ id: r.studentId, total: enTotalOf(r) }));
-    totals.sort((a, b) => b.total - a.total);
+    const students = rows.map((r) => ({ id: r.studentId, avg: enAverageOf(r) }));
+    students.sort((a, b) => {
+      if (a.avg === null && b.avg === null) return 0;
+      if (a.avg === null) return 1;
+      if (b.avg === null) return -1;
+      return b.avg - a.avg;
+    });
     const map: Record<string, number> = {};
-    let lastTotal: number | null = null;
+    let lastAvg: number | null = null;
     let lastRank = 0;
-    totals.forEach((t, i) => {
-      const rank = lastTotal !== null && t.total === lastTotal ? lastRank : i + 1;
-      map[t.id] = rank;
-      lastTotal = t.total;
+    students.forEach((s, i) => {
+      if (s.avg === null) {
+        map[s.id] = 0;
+        return;
+      }
+      const rank = lastAvg !== null && s.avg === lastAvg ? lastRank : i + 1;
+      map[s.id] = rank;
+      lastAvg = s.avg;
       lastRank = rank;
     });
     return map;
-  }, [rows, enTotalOf]);
+  }, [rows, enAverageOf]);
 
   const enSubjectMaxOf = useCallback((subjectId: string): number | null => {
     let max: number | null = null;

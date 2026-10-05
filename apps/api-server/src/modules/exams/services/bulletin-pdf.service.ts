@@ -257,9 +257,11 @@ export class BulletinPdfService {
               : this.buildHtml(data, qrDataUrl, bulletinId))));
 
       // 3. Generate PDF via Puppeteer
-      //    ⭐ V10h — le bulletin anglophone (Report Book, tableau 10 colonnes)
-      //    passe en A4 portrait ; le bulletin FR reste en A5 portrait.
-      //    ⭐ SECONDAIRE FR : A4 portrait (tableau 10 colonnes + récap T3).
+      //    ⭐ 2026-10-05 — UNIFICATION DU FORMAT : tous les bulletins (FR primaire
+      //    + maternelle, FR secondaire, EN anglophone, vue par matière) passent
+      //    en A5 portrait. Le format A4 laissait la page 1 à moitié vide et
+      //    rejetait des blocs courts en page 2. A5 = meilleur taux de remplissage
+      //    et design identique entre pistes FR/EN (exigence promoteur).
       const { page } = await this.puppeteerPool.acquirePage();
       try {
         // ⭐ Use 'domcontentloaded' instead of 'networkidle0' — faster, doesn't wait
@@ -273,7 +275,7 @@ export class BulletinPdfService {
         //    déjà chargées en mémoire avant le rendu.
         await new Promise(resolve => setTimeout(resolve, 150));
         const pdfBuffer = await page.pdf({
-          format: (data.scopeLang === 'EN' || data.isSecondary || data.isSecondaryEval || data.isVueParMatiere) ? 'A4' : 'A5',
+          format: 'A5',
           landscape: false,
           printBackground: true,
           margin: { top: '8mm', bottom: '8mm', left: '8mm', right: '8mm' },
@@ -2053,16 +2055,16 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
       const gradeStr = s.grade || this.enGradeFor(total100);
       const remarkStr = s.remark || (this.enTierFor(total100)?.label ?? '—');
       return `<tr>
-        <td style="border:1px solid #cbd5e1;padding:4px 5px;font-size:9px;text-align:left;">${s.name}</td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${fcaStr}</td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${scaStr}</td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;">${examStr}</td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;font-weight:600;background:#f8fafc;">${totalStr}</td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;color:#475569;">${highestStr}</td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;color:#475569;">${lowestStr}</td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;font-weight:600;">${posStr}</td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:9px;font-weight:bold;color:#0A2A5E;">${gradeStr}</td>
-        <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:8px;color:#475569;">${remarkStr}</td>
+        <td style="padding:4px 5px;font-size:9px;text-align:left;">${s.name}</td>
+        <td style="padding:4px;text-align:center;font-size:9px;">${fcaStr}</td>
+        <td style="padding:4px;text-align:center;font-size:9px;">${scaStr}</td>
+        <td style="padding:4px;text-align:center;font-size:9px;">${examStr}</td>
+        <td style="padding:4px;text-align:center;font-size:10px;font-weight:600;background:#f8fafc;">${totalStr}</td>
+        <td style="padding:4px;text-align:center;font-size:9px;color:#475569;">${highestStr}</td>
+        <td style="padding:4px;text-align:center;font-size:9px;color:#475569;">${lowestStr}</td>
+        <td style="padding:4px;text-align:center;font-size:9px;font-weight:600;">${posStr}</td>
+        <td style="padding:4px;text-align:center;font-size:9px;font-weight:bold;color:#0A2A5E;">${gradeStr}</td>
+        <td style="padding:4px;text-align:center;font-size:8px;color:#475569;">${remarkStr}</td>
       </tr>`;
     }).join('');
 
@@ -2074,29 +2076,34 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     const psychomotorCategories = [
       'Handwriting', 'Games', 'Musical Skills', 'Handling of tool', 'Drawing &amp; Painting',
     ];
+    // ⭐ 2026-10-05 — CHECKBOXES : les cases non cochées sont laissées
+    //    COMPLÈTEMENT VIDES (&nbsp;) au lieu d'afficher le glyphe ☐ (U+2610)
+    //    qui se rend comme un rectangle vertical selon les polices de
+    //    Puppeteer. Seules les cases effectivement cochées (☑ U+2611) sont
+    //    visibles — conforme au modèle Report Book officiel.
     const levelCell = (val: string, lvl: string): string =>
-      val === lvl ? '<strong style="color:#0A2A5E;">&#9745;</strong>' : '&#9744;';
+      val === lvl ? '<strong style="color:#0A2A5E;font-size:11px;line-height:1;">&#9745;</strong>' : '&nbsp;';
     const skillRow = (categories: string[], map: Record<string, string>): string =>
       categories.map(cat => {
         const val = map[cat] || '';
         return `<tr>
-          <td style="border:1px solid #cbd5e1;padding:2px 5px;font-size:8px;text-align:left;">${cat}</td>
-          <td style="border:1px solid #cbd5e1;padding:2px;text-align:center;font-size:8px;">${levelCell(val, 'A')}</td>
-          <td style="border:1px solid #cbd5e1;padding:2px;text-align:center;font-size:8px;">${levelCell(val, 'B')}</td>
-          <td style="border:1px solid #cbd5e1;padding:2px;text-align:center;font-size:8px;">${levelCell(val, 'C')}</td>
-          <td style="border:1px solid #cbd5e1;padding:2px;text-align:center;font-size:8px;">${levelCell(val, 'D')}</td>
-          <td style="border:1px solid #cbd5e1;padding:2px;text-align:center;font-size:8px;">${levelCell(val, 'E')}</td>
+          <td style="padding:2px 5px;font-size:8px;text-align:left;border-right:1px solid #000;border-bottom:1px solid #000;">${cat}</td>
+          <td style="padding:2px;text-align:center;font-size:8px;border-right:1px solid #000;border-bottom:1px solid #000;">${levelCell(val, 'A')}</td>
+          <td style="padding:2px;text-align:center;font-size:8px;border-right:1px solid #000;border-bottom:1px solid #000;">${levelCell(val, 'B')}</td>
+          <td style="padding:2px;text-align:center;font-size:8px;border-right:1px solid #000;border-bottom:1px solid #000;">${levelCell(val, 'C')}</td>
+          <td style="padding:2px;text-align:center;font-size:8px;border-right:1px solid #000;border-bottom:1px solid #000;">${levelCell(val, 'D')}</td>
+          <td style="padding:2px;text-align:center;font-size:8px;border-bottom:1px solid #000;">${levelCell(val, 'E')}</td>
         </tr>`;
       }).join('');
     const affectiveRows = skillRow(affectiveCategories, affectiveMap);
     const psychomotorRows = skillRow(psychomotorCategories, psychomotorMap);
-    const gridHeader = `<tr style="background:#f1f5f9;">
-      <th style="border:1px solid #cbd5e1;padding:3px 5px;font-size:8px;text-align:left;text-transform:uppercase;">Category</th>
-      <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;width:7%;">A</th>
-      <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;width:7%;">B</th>
-      <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;width:7%;">C</th>
-      <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;width:7%;">D</th>
-      <th style="border:1px solid #cbd5e1;padding:3px;font-size:8px;width:7%;">E</th>
+    const gridHeader = `<tr style="background:#0A2A5E;color:#fff;">
+      <th style="padding:3px 5px;font-size:8px;text-align:left;text-transform:uppercase;border-right:1px solid rgba(255,255,255,0.35);border-bottom:1px solid #000;">Category</th>
+      <th style="padding:3px;font-size:8px;width:7%;border-right:1px solid rgba(255,255,255,0.35);border-bottom:1px solid #000;">A</th>
+      <th style="padding:3px;font-size:8px;width:7%;border-right:1px solid rgba(255,255,255,0.35);border-bottom:1px solid #000;">B</th>
+      <th style="padding:3px;font-size:8px;width:7%;border-right:1px solid rgba(255,255,255,0.35);border-bottom:1px solid #000;">C</th>
+      <th style="padding:3px;font-size:8px;width:7%;border-right:1px solid rgba(255,255,255,0.35);border-bottom:1px solid #000;">D</th>
+      <th style="padding:3px;font-size:8px;width:7%;border-bottom:1px solid #000;">E</th>
     </tr>`;
 
     // ─── Teacher's comments — lignes multiples (une par ligne de la grille) ──
@@ -2105,7 +2112,15 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
       .map(l => `<div style="font-size:9px;color:#1a1a1a;line-height:1.6;">&#8226; ${l.trim()}</div>`).join('');
 
     // ─── PAGE 1 ──────────────────────────────────────────────────────────────
+    // ⭐ 2026-10-05 — UNIFICATION DU DESIGN AVEC LA PISTE FRANCOPHONE :
+    //    .page (flex column, footer pushed via margin-top:auto), .info-wrap
+    //    (border:1px solid #000, border-radius:6px, overflow:hidden) pour
+    //    le cadre élève, .bulletin-title encadré navy sur fond gris clair
+    //    (plus de bandeau navy plein), wrapper 2px noir + border-radius:8px
+    //    autour du tableau de notes, .blk-avoid pour les blocs insécables.
     const page1Content = `
+      <div class="page">
+
       <!-- OFFICIAL HEADER -->
       <div class="header">
         <table class="header-table">
@@ -2124,82 +2139,91 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
         </table>
       </div>
 
-      <!-- REPORT CARD TITLE -->
+      <!-- REPORT CARD TITLE (⭐ encadré navy sur fond gris clair, même standard que la piste FR) -->
       <div class="bulletin-title">Report Card &mdash; ${data.periodName} &mdash; ${data.academicYearName}</div>
 
-      <!-- PUPIL INFO FORM (Report Book) -->
-      <table class="pupil-form">
+      <!-- PUPIL INFO FORM (Report Book) — ⭐ wrapper .info-wrap (cadre 1px noir + border-radius:6px + overflow:hidden) -->
+      <div class="info-wrap">
+      <table class="info-table">
         <tr>
-          <td colspan="2"><span class="form-label">Term ending:</span> <strong>${termEnding}</strong></td>
+          <td colspan="4"><span class="form-label">Term ending:</span> <strong>${termEnding}</strong></td>
         </tr>
         <tr>
-          <td colspan="2"><span class="form-label">Name of pupil:</span> <strong>${data.studentName}</strong></td>
+          <td colspan="4"><span class="form-label">Name of pupil:</span> <strong style="text-transform:uppercase;">${data.studentName}</strong></td>
         </tr>
         <tr>
-          <td style="width:50%;"><span class="form-label">Age:</span> <strong>${ageStr}</strong></td>
-          <td style="width:50%;"><span class="form-label">Class:</span> <strong>${data.className || '—'}</strong></td>
-        </tr>
-        <tr>
-          <td><span class="form-label">Position:</span> <strong>${positionStr}</strong></td>
-          <td><span class="form-label">Admission N&deg;:</span> <strong>${admissionNo}</strong></td>
+          <td style="width:25%;"><span class="form-label">Age:</span> <strong>${ageStr}</strong></td>
+          <td style="width:25%;"><span class="form-label">Class:</span> <strong>${data.className || '—'}</strong></td>
+          <td style="width:25%;"><span class="form-label">Position:</span> <strong>${positionStr}</strong></td>
+          <td style="width:25%;"><span class="form-label">Admission N&deg;:</span> <strong>${admissionNo}</strong></td>
         </tr>
         <tr>
           <td colspan="2"><span class="form-label">Session:</span> <strong>${session}</strong></td>
-        </tr>
-        <tr>
           <td colspan="2"><span class="form-label">Pupil&rsquo;s average:</span> <strong style="color:#0A2A5E;font-size:11px;">${pupilAverage.toFixed(2)} / 100</strong></td>
         </tr>
       </table>
+      </div>
 
-      <!-- GRADES TABLE — 10 COLUMNS (Report Book) -->
-      <table class="grades-table">
-        <thead>
-          <tr style="background:#0A2A5E;color:white;">
-            <th style="border:1px solid #0D3B85;padding:4px 2px;font-size:8px;text-align:left;text-transform:uppercase;">Subjects</th>
-            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:8px;text-transform:uppercase;">1st<br/>CA<br/><span style="font-size:6px;font-weight:normal;">/20</span></th>
-            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:8px;text-transform:uppercase;">2nd<br/>CA<br/><span style="font-size:6px;font-weight:normal;">/20</span></th>
-            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:8px;text-transform:uppercase;">Exam<br/><span style="font-size:6px;font-weight:normal;">/60</span></th>
-            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:8px;text-transform:uppercase;background:#0D3B85;">Total<br/><span style="font-size:6px;font-weight:normal;">/100</span></th>
-            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:7px;text-transform:uppercase;line-height:1.2;">Highest in class</th>
-            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:7px;text-transform:uppercase;line-height:1.2;">Lowest in class</th>
-            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:8px;text-transform:uppercase;">Position</th>
-            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:8px;text-transform:uppercase;">Grade</th>
-            <th style="border:1px solid #0D3B85;padding:4px 1px;font-size:8px;text-transform:uppercase;">Remark</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${subjectRows}
-          <tr style="background:#e2e8f0;font-weight:bold;">
-            <td colspan="9" style="border:1px solid #cbd5e1;padding:4px;font-size:8px;text-align:right;text-transform:uppercase;">Pupil&rsquo;s Average</td>
-            <td style="border:1px solid #cbd5e1;padding:4px;text-align:center;font-size:10px;color:#0A2A5E;">${pupilAverage.toFixed(2)}</td>
-          </tr>
-        </tbody>
-      </table>
+      <!-- GRADES TABLE — 10 COLUMNS (Report Book) — ⭐ wrapper 2px noir + border-radius:8px + overflow:hidden -->
+      <div style="border:2px solid #000;border-radius:8px;overflow:hidden;">
+        <table class="notes">
+          <thead>
+            <tr>
+              <th style="text-align:left;">Subjects</th>
+              <th>1st<br/>CA<br/><span style="font-size:6px;font-weight:normal;">/20</span></th>
+              <th>2nd<br/>CA<br/><span style="font-size:6px;font-weight:normal;">/20</span></th>
+              <th>Exam<br/><span style="font-size:6px;font-weight:normal;">/60</span></th>
+              <th style="background:#0D3B85;">Total<br/><span style="font-size:6px;font-weight:normal;">/100</span></th>
+              <th style="font-size:7px;line-height:1.2;">Highest in class</th>
+              <th style="font-size:7px;line-height:1.2;">Lowest in class</th>
+              <th>Position</th>
+              <th>Grade</th>
+              <th>Remark</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${subjectRows}
+            <tr style="background:#e2e8f0;font-weight:bold;">
+              <td colspan="9" style="text-align:right;text-transform:uppercase;font-size:8px;padding:4px;">Pupil&rsquo;s Average</td>
+              <td style="text-align:center;font-size:10px;color:#0A2A5E;padding:4px;">${pupilAverage.toFixed(2)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
-      <!-- FOOTER PAGE 1 -->
+      <!-- FOOTER PAGE 1 (⭐ statique, poussé en bas par flex) -->
       <div class="footer">Generated by Academia Helm &mdash; ${new Date().toLocaleString('en-US')}</div>
-      <div style="page-break-after:always;"></div>`;
+
+      </div><!-- /.page 1 -->`;
 
     // ─── PAGE 2 ──────────────────────────────────────────────────────────────
+    // ⭐ T37/2026-10-05 — structure .page (flex column, footer pushed via
+    //    margin-top:auto) + blocs .blk-avoid (insécables) — même standard
+    //    que la piste FR : jamais de footer en position:fixed, jamais de
+    //    bloc fragmenté entre deux pages, border-radius:8px partout.
     const page2Content = `
+      <div class="page">
+
       <!-- SHORT HEADER PAGE 2 -->
       <div style="text-align:center;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #0A2A5E;">
         <div style="font-size:9px;font-weight:bold;color:#0A2A5E;">${data.schoolName} &mdash; ${data.studentName} &mdash; ${data.periodName}</div>
       </div>
 
-      <!-- MARK OBTAINABLE / OBTAINED / NO IN CLASS -->
-      <table style="width:100%;border-collapse:collapse;border:1px solid #0A2A5E;border-radius:2px;margin-bottom:6px;">
-        <tr style="background:#0A2A5E;color:white;">
-          <th style="padding:5px;font-size:9px;text-transform:uppercase;border:1px solid #0D3B85;">Mark Obtainable</th>
-          <th style="padding:5px;font-size:9px;text-transform:uppercase;border:1px solid #0D3B85;">Mark Obtained</th>
-          <th style="padding:5px;font-size:9px;text-transform:uppercase;border:1px solid #0D3B85;">No in Class</th>
-        </tr>
-        <tr>
-          <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border:1px solid #cbd5e1;">${markObtainable.toFixed(0)}</td>
-          <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border:1px solid #cbd5e1;">${markObtained.toFixed(2)}</td>
-          <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border:1px solid #cbd5e1;">${noInClass}</td>
-        </tr>
-      </table>
+      <!-- MARK OBTAINABLE / OBTAINED / NO IN CLASS — ⭐ wrapper 2px noir + border-radius:8px -->
+      <div class="blk-avoid" style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:6px;">
+        <table style="width:100%;border-collapse:collapse;">
+          <tr style="background:#0A2A5E;color:white;">
+            <th style="padding:5px;font-size:9px;text-transform:uppercase;border-right:1px solid rgba(255,255,255,0.35);border-bottom:1px solid #000;">Mark Obtainable</th>
+            <th style="padding:5px;font-size:9px;text-transform:uppercase;border-right:1px solid rgba(255,255,255,0.35);border-bottom:1px solid #000;">Mark Obtained</th>
+            <th style="padding:5px;font-size:9px;text-transform:uppercase;">No in Class</th>
+          </tr>
+          <tr>
+            <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border-right:1px solid #000;">${markObtainable.toFixed(0)}</td>
+            <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border-right:1px solid #000;">${markObtained.toFixed(2)}</td>
+            <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;">${noInClass}</td>
+          </tr>
+        </table>
+      </div>
 
       ${data.isSecondaryLevel ? `
       <!-- ⭐ 2026-09-29 — CONDUCT SECTION (résolu depuis le module Vie Scolaire) -->
@@ -2208,43 +2232,45 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
            backend, pas de calcul frontend. Affichée même si null (placeholder
            « — / reference »). Uniquement pour le bulletin EN SECONDARY (pas
            pour EN primary qui n'a pas de conduite). -->
-      <table style="width:100%;border-collapse:collapse;border:1px solid #0A2A5E;border-radius:2px;margin-bottom:6px;">
-        <tr style="background:#0A2A5E;color:white;">
-          <th style="padding:5px;font-size:9px;text-transform:uppercase;border:1px solid #0D3B85;">Conduct</th>
-          <th style="padding:5px;font-size:9px;text-transform:uppercase;border:1px solid #0D3B85;">Reference</th>
-          <th style="padding:5px;font-size:9px;text-transform:uppercase;border:1px solid #0D3B85;">Appreciation</th>
-        </tr>
-        <tr>
-          <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;border:1px solid #cbd5e1;${data.conductScore !== null && data.conductScore !== undefined && data.conductScore >= (data.conductReference ?? 17) * 0.6 ? 'color:#065f46;background:#dcfce7;' : 'color:#dc2626;background:#fee2e2;'}">
-            ${data.conductScore !== null && data.conductScore !== undefined ? Number(data.conductScore).toFixed(2) : '—'}
-          </td>
-          <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border:1px solid #cbd5e1;">
-            ${data.conductReference ?? 17}
-          </td>
-          <td style="padding:5px;text-align:center;font-size:9px;color:#1a1a1a;border:1px solid #cbd5e1;font-style:italic;">
-            ${(data.conductScore !== null && data.conductScore !== undefined)
-              ? (data.conductScore >= (data.conductReference ?? 17) * 0.6 ? 'Satisfactory' : 'Needs improvement')
-              : '—'}
-          </td>
-        </tr>
-      </table>
+      <div class="blk-avoid" style="border:2px solid #000;border-radius:8px;overflow:hidden;margin-bottom:6px;">
+        <table style="width:100%;border-collapse:collapse;">
+          <tr style="background:#0A2A5E;color:white;">
+            <th style="padding:5px;font-size:9px;text-transform:uppercase;border-right:1px solid rgba(255,255,255,0.35);border-bottom:1px solid #000;">Conduct</th>
+            <th style="padding:5px;font-size:9px;text-transform:uppercase;border-right:1px solid rgba(255,255,255,0.35);border-bottom:1px solid #000;">Reference</th>
+            <th style="padding:5px;font-size:9px;text-transform:uppercase;">Appreciation</th>
+          </tr>
+          <tr>
+            <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;border-right:1px solid #000;${data.conductScore !== null && data.conductScore !== undefined && data.conductScore >= (data.conductReference ?? 17) * 0.6 ? 'color:#065f46;background:#dcfce7;' : 'color:#dc2626;background:#fee2e2;'}">
+              ${data.conductScore !== null && data.conductScore !== undefined ? Number(data.conductScore).toFixed(2) : '—'}
+            </td>
+            <td style="padding:5px;text-align:center;font-size:11px;font-weight:bold;color:#0A2A5E;border-right:1px solid #000;">
+              ${data.conductReference ?? 17}
+            </td>
+            <td style="padding:5px;text-align:center;font-size:9px;color:#1a1a1a;font-style:italic;">
+              ${(data.conductScore !== null && data.conductScore !== undefined)
+                ? (data.conductScore >= (data.conductReference ?? 17) * 0.6 ? 'Satisfactory' : 'Needs improvement')
+                : '—'}
+            </td>
+          </tr>
+        </table>
+      </div>
       ` : ''}
 
-      <!-- CLASS TEACHER'S COMMENT (Teacher's Appreciation + Comments — grille /100) -->
-      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
+      <!-- CLASS TEACHER'S COMMENT (Teacher's Appreciation + Comments — grille /100) — ⭐ border-radius:8px -->
+      <div class="blk-avoid" style="border:2px solid #000;border-radius:8px;padding:6px;margin-bottom:6px;">
         <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Class Teacher&rsquo;s Comment</div>
         <div style="font-size:9px;color:#1a1a1a;line-height:1.5;margin-bottom:4px;"><em>${teacherAppreciation}</em></div>
         ${teacherCommentLines || '<div style="font-size:9px;color:#64748b;">&mdash;</div>'}
       </div>
 
-      <!-- NEXT TERM BEGINS -->
-      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:5px 6px;margin-bottom:6px;font-size:9px;">
+      <!-- NEXT TERM BEGINS — ⭐ border-radius:8px -->
+      <div class="blk-avoid" style="border:2px solid #000;border-radius:8px;padding:5px 6px;margin-bottom:6px;font-size:9px;">
         <span style="font-weight:bold;color:#0A2A5E;text-transform:uppercase;">Next term begins:</span>
         <strong>${nextTermStart}</strong>
       </div>
 
-      <!-- AFFECTIVE ASSESSMENT: PSYCHOMOTOR SKILLS (2 colonnes A–E — Report Book) -->
-      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
+      <!-- AFFECTIVE ASSESSMENT: PSYCHOMOTOR SKILLS (2 colonnes A–E — Report Book) — ⭐ border-radius:8px -->
+      <div class="blk-avoid" style="border:2px solid #000;border-radius:8px;padding:6px;margin-bottom:6px;">
         <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;text-align:center;">Affective Assessment: Psychomotor Skills</div>
         <table style="width:100%;border-collapse:collapse;">
           <tr>
@@ -2264,14 +2290,14 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
         </table>
       </div>
 
-      <!-- HEADMASTER(MISTRESS)'S COMMENT (grille /100) -->
-      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
+      <!-- HEADMASTER(MISTRESS)'S COMMENT (grille /100) — ⭐ border-radius:8px -->
+      <div class="blk-avoid" style="border:2px solid #000;border-radius:8px;padding:6px;margin-bottom:6px;">
         <div style="font-size:9px;font-weight:bold;color:#0A2A5E;text-transform:uppercase;margin-bottom:4px;">Headmaster(mistress)&rsquo;s Comment</div>
         <div style="font-size:9px;color:#1a1a1a;line-height:1.5;text-align:justify;min-height:40px;">${directorComment}</div>
       </div>
 
-      <!-- SIGNATURES: Class Teacher + Headmaster + Parent (3 signatures) -->
-      <div style="border:1px solid #0A2A5E;border-radius:2px;padding:6px;margin-bottom:6px;">
+      <!-- SIGNATURES: Class Teacher + Headmaster + Parent (3 signatures) — ⭐ border-radius:8px -->
+      <div class="blk-avoid" style="border:2px solid #000;border-radius:8px;padding:6px;margin-bottom:6px;">
         <table style="width:100%;border-collapse:collapse;">
           <tr>
             <td style="width:33%;text-align:center;vertical-align:bottom;padding:6px 3px;">
@@ -2294,10 +2320,15 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
       </div>
 
       <!-- QR CODE -->
-      <div style="text-align:center;margin-top:6px;">
+      <div class="blk-avoid" style="text-align:center;margin-top:6px;">
         <img src="${qrCode}" style="width:40px;height:40px;" alt="QR" />
         <div style="font-size:7px;color:#94a3b8;">Verification code</div>
-      </div>`;
+      </div>
+
+      <!-- FOOTER PAGE 2 (⭐ statique, poussé en bas par flex) -->
+      <div class="footer">Generated by Academia Helm &mdash; ${new Date().toLocaleString('en-US')}</div>
+
+      </div><!-- /.page 2 -->`;
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -2306,11 +2337,16 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
 <title>Report Card - ${data.studentName}</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; position:relative; }
+body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10px; position:relative; min-height:100vh; display:flex; flex-direction:column; }
 /* ⭐ Filigrane : logo CENTRÉ et HORIZONTAL (aucune rotation) */
 .watermark { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); opacity:0.08; z-index:0; pointer-events:none; }
-.content { position:relative; z-index:1; }
-.header { margin-bottom:6px; padding-bottom:4px; border-bottom:2px solid #0A2A5E; }
+.content { position:relative; z-index:1; flex:1; display:flex; flex-direction:column; }
+/* ⭐ 2026-10-05 — UNIFICATION AVEC LA PISTE FR : chaque page est sa propre
+   colonne flex (footer poussé en bas via margin-top:auto). Plus AUCUN
+   footer en position:fixed (l'ancien footer fixed se répétait sur les 2
+   pages et chevauchait les signatures/QR de la page 2). */
+.page { flex:1; display:flex; flex-direction:column; }
+.header { margin-bottom:14px; padding-bottom:6px; border-bottom:2px solid #0A2A5E; }
 .header-table { width:100%; border-collapse:collapse; }
 .header-table td { vertical-align:middle; padding:2px 4px; }
 .header-left { text-align:center; width:12%; }
@@ -2322,14 +2358,35 @@ body { font-family:'Times New Roman',Georgia,serif; color:#1a1a1a; font-size:10p
 .ministere { font-size:8px; font-weight:bold; text-transform:uppercase; letter-spacing:0.3px; line-height:1.3; }
 .school-name { font-size:11px; font-weight:bold; text-transform:uppercase; margin-top:3px; color:#0A2A5E; }
 .school-info { font-size:7px; color:#555; margin-top:2px; font-style:italic; }
-.bulletin-title { text-align:center; background:#0A2A5E; color:white; padding:5px 8px; border-radius:2px; margin-bottom:6px; font-size:11px; font-weight:bold; text-transform:uppercase; }
-.pupil-form { width:100%; border-collapse:collapse; border:2px solid #0A2A5E; margin-bottom:6px; }
-.pupil-form td { padding:4px 8px; font-size:9px; border:1px solid #cbd5e1; }
-.pupil-form .form-label { font-size:8px; color:#475569; text-transform:uppercase; letter-spacing:0.3px; font-weight:bold; }
-.grades-table { width:100%; border-collapse:collapse; }
-.grades-table th { color:white; }
-.grades-table tbody tr:nth-child(even) { background:#f8fafc; }
-.footer { margin-top:4px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; padding-top:3px; }
+/* ⭐ 2026-10-05 — TITRE : encadré navy sur fond gris clair (même standard
+   que la piste FR) — plus de bandeau navy plein qui alourdissait la mise
+   en page et différait du modèle corrigé. */
+.bulletin-title { text-align:center; border:2px solid #0A2A5E; border-radius:8px; padding:4px 8px; margin-bottom:6px; font-size:11px; font-weight:bold; text-transform:uppercase; color:#0A2A5E; background:#f1f5f9; }
+/* ⭐ 2026-10-05 — INFOS ÉLÈVE : cadre sur le wrapper .info-wrap (1px noir +
+   border-radius:6px + overflow:hidden), grille interne en collapse. */
+.info-wrap { border:1px solid #000; border-radius:6px; overflow:hidden; margin-bottom:6px; break-inside:avoid; page-break-inside:avoid; }
+.info-table { width:100%; border-collapse:collapse; }
+.info-table td { border-right:1px solid #000; border-bottom:1px solid #000; padding:4px 6px; font-size:9px; background:#f1f5f9; }
+.info-table td:last-child { border-right:none; }
+.info-table tr:last-child td { border-bottom:none; }
+.info-table .form-label { font-size:8px; color:#475569; text-transform:uppercase; letter-spacing:0.3px; font-weight:bold; }
+/* ⭐ 2026-10-05 — TABLEAU DES NOTES : même standard que la piste FR —
+   wrapper 2px noir + border-radius:8px + overflow:hidden porte le cadre
+   externe, la table n'a plus sa propre bordure (avant : wrapper navy +
+   bordure noire = double cadre). Grille en border-collapse:collapse →
+   filets continus. En-tête navy + texte blanc. */
+table.notes { width:100%; border-collapse:collapse; }
+table.notes thead { display:table-header-group; }
+table.notes th { background:#0A2A5E; color:#fff; border-right:1px solid rgba(255,255,255,0.35); border-bottom:1px solid #000; padding:4px 2px; font-size:8px; text-transform:uppercase; }
+table.notes td { border-right:1px solid #000; border-bottom:1px solid #000; padding:3px 2px; font-size:9px; }
+table.notes th:last-child, table.notes td:last-child { border-right:none; }
+table.notes tbody tr:last-child td { border-bottom:none; }
+table.notes tbody tr:nth-child(even) { background:#f8fafc; }
+table.notes tr { break-inside:avoid; page-break-inside:avoid; }
+/* ⭐ 2026-10-05 — footer STATIQUE en bas de chaque page (poussé par flex). */
+.footer { margin-top:auto; padding-top:6px; text-align:center; font-size:7px; color:#999; border-top:1px solid #eee; }
+/* ⭐ 2026-10-05 — blocs insécables (même correctif que la piste FR). */
+.blk-avoid { break-inside:avoid; page-break-inside:avoid; }
 </style>
 </head>
 <body>

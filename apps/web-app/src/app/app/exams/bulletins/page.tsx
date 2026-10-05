@@ -6207,11 +6207,18 @@ function WorkflowBar({
       </div>
 
       {/* Summary counts */}
-      {summary && summary.total > 0 && (
+      {(summary && summary.total > 0) || (summary && (summary as any).expectedTotal > 0) ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 text-xs">
           <div className="bg-slate-50 rounded-lg p-2 text-center">
-            <div className="font-bold text-slate-900 text-lg">{summary.total}</div>
-            <div className="text-slate-500">{isEN ? 'Total Report Cards' : 'Total bulletins'}</div>
+            {/* ⭐ 2026-10-05 — Total affiché comme "signed / expected" quand
+                expectedTotal est disponible (pour ne plus montrer "1 / 1"
+                quand seul 1 bulletin a été créé sur 30 élèves attendus). */}
+            <div className="font-bold text-slate-900 text-lg">
+              {(summary as any).expectedTotal
+                ? `${summary.total} / ${(summary as any).expectedTotal}`
+                : summary.total}
+            </div>
+            <div className="text-slate-500">{isEN ? 'Report Cards (Signed / Expected)' : 'Bulletins (Signés / Attendus)'}</div>
           </div>
           <div className="bg-blue-50 rounded-lg p-2 text-center">
             <div className="font-bold text-blue-700 text-lg">{summary.DIRECTOR_SIGNED + summary.TEACHER_DISTRIBUTED + summary.TEACHER_SIGNED + summary.TEACHER_RETURNED}</div>
@@ -6226,7 +6233,7 @@ function WorkflowBar({
             <div className="text-slate-500">{isEN ? 'Blocked (Fees)' : 'Bloqués (scolarité)'}</div>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Action buttons — role-based */}
       <div className="flex flex-wrap gap-2">

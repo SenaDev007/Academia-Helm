@@ -852,16 +852,36 @@ export class BulletinsService {
   async getWorkflowStatus(tenantId: string, academicYearId: string, periodId: string, classId: string) {
     // ⭐ Filter by classId — only return bulletins for students in THIS class
     // (not all students in the tenant, to avoid cross-level signature leakage)
+    // ⭐ 2026-10-05 — ANGLOPHONE TRACK : les élèves peuvent être liés à la
+    //    classe via class_students (ClassStudent) SANS StudentEnrollment.classId.
+    //    Le filtre original (studentEnrollments.some + classId) manquait donc
+    //    tous les élèves anglophones → summary.total sous-estimé (1 au lieu
+    //    de N). On élargit le filtre pour inclure l'une OU l'autre relation.
     const bulletins = await this.prisma.reportCard.findMany({
       where: {
         tenantId,
         academicYearId,
         quarterId: periodId,
-        // Filter by students enrolled in this specific class
+        // Filter by students enrolled in this specific class via EITHER
+        // StudentEnrollment.classId (FR track) OR ClassStudent (EN track)
         student: {
-          studentEnrollments: {
-            some: { classId, academicYearId, tenantId },
-          },
+          OR: [
+            {
+              studentEnrollments: {
+                some: { classId, academicYearId, tenantId },
+              },
+            },
+            {
+              classStudents: {
+                some: {
+                  classId,
+                  academicYearId,
+                  tenantId,
+                  status: 'ACTIVE',
+                },
+              },
+            },
+          ],
         },
       },
       select: {
@@ -878,8 +898,34 @@ export class BulletinsService {
       },
     });
 
+    // ⭐ 2026-10-05 — EXPECTED TOTAL : compte le nombre d'élèves attendus dans
+    //    la classe pour la période (élèves actifs via StudentEnrollment OU
+    //    ClassStudent). Cela permet au frontend d'afficher un total correct
+    //    même quand tous les bulletins n'ont pas encore été créés (ex: 30
+    //    élèves dans la classe mais seulement 1 bulletin signé → on affiche
+    //    "1 / 30" au lieu de "1 / 1").
+    const [enrolledCount, classStudentCount] = await Promise.all([
+      this.prisma.studentEnrollment.count({
+        where: {
+          tenantId, academicYearId, classId,
+          status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'CONFIRMED'] },
+        },
+      }),
+      this.prisma.classStudent.count({
+        where: {
+          tenantId, academicYearId, classId,
+          status: 'ACTIVE',
+        },
+      }),
+    ]);
+    // On prend le max des deux : si l'élève est dans les deux tables, il
+    // n'est compté qu'une fois via le max (les deux tables ne sont pas
+    // mutuellement exclusives en pratique).
+    const expectedTotal = Math.max(enrolledCount, classStudentCount);
+
     const summary = {
       total: bulletins.length,
+      expectedTotal,
       DRAFT: 0,
       DIRECTOR_SIGNED: 0,
       TEACHER_DISTRIBUTED: 0,
@@ -889,8 +935,16 @@ export class BulletinsService {
       BLOCKED: 0,
     };
 
+    // ⭐ 2026-10-05 — expectedTotal et total sont des valeurs agrégées, pas des
+    //    compteurs de statut. On itère donc sur une liste explicite de statuts
+    //    valides (DRAFT, DIRECTOR_SIGNED, etc.) pour éviter d'incrémenter
+    //    accidentellement les propriétés `expectedTotal` ou `total` si un
+    //    statut inconnu apparaissait en base.
+    const VALID_STATUSES = ['DRAFT', 'DIRECTOR_SIGNED', 'TEACHER_DISTRIBUTED', 'TEACHER_SIGNED', 'TEACHER_RETURNED', 'PARENT_SENT', 'BLOCKED'] as const;
     for (const b of bulletins) {
-      summary[b.status as keyof typeof summary]++;
+      if ((VALID_STATUSES as readonly string[]).includes(b.status)) {
+        (summary as any)[b.status]++;
+      }
     }
 
     return { summary, bulletins };

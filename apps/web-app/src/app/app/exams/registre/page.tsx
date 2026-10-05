@@ -46,6 +46,7 @@ import {
   computeAppreciationSecondaire, appreciationSecondaireClassName,
 } from '@/components/exams/GradingSheet';
 import { getMaxScoreForType, translatePeriodName } from '@/lib/exam-anglophone-config';
+import { translateClassName } from '@/lib/pedagogy/class-name-en';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -232,6 +233,10 @@ function RegistreContent() {
         academicYearId: academicYear.id,
         classId: selectedClassId,
         status: 'VALIDATED',
+        // ⭐ 2026-10-01 — Filtrer par piste linguistique (FR/EN) via le champ
+        //    language sur l'évaluation (pas sur la classe). Sans ce filtre,
+        //    les évaluations FR apparaissent dans le registre EN et vice-versa.
+        language: scopeLang || undefined,
       });
       setEvaluations(Array.isArray(res) ? res : []);
     } catch (err) {
@@ -240,7 +245,7 @@ function RegistreContent() {
     } finally {
       setLoading(false);
     }
-  }, [academicYear?.id, selectedClassId]);
+  }, [academicYear?.id, selectedClassId, scopeLang]);
 
   useEffect(() => { loadClasses(); }, [loadClasses]);
   useEffect(() => { loadEvaluations(); }, [loadEvaluations]);
@@ -259,7 +264,7 @@ function RegistreContent() {
       if (!map.has(key)) {
         map.set(key, {
           classId,
-          className: ev.class?.name || 'Sans classe',
+          className: (scopeLang === 'EN') ? translateClassName(ev.class?.name || 'Sans classe') : (ev.class?.name || 'Sans classe'),
           evaluationTypeId,
           evaluationTypeName: ev.evaluationType?.name || 'Évaluation',
           evaluationTypeCode: ev.evaluationType?.code,
@@ -340,7 +345,7 @@ function RegistreContent() {
           >
             <option value="">— Sélectionner une classe —</option>
             {classes.map((c: any) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+              <option key={c.id} value={c.id}>{(scopeLang === 'EN') ? translateClassName(c.name) : c.name}</option>
             ))}
           </select>
         </div>
@@ -815,7 +820,7 @@ function RegistreSecondaireView({
           >
             <option value="">— Classe —</option>
             {classes.map((c: any) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+              <option key={c.id} value={c.id}>{(language === 'EN') ? translateClassName(c.name) : c.name}</option>
             ))}
           </select>
           {viewMode === 'matiere' ? (

@@ -418,10 +418,12 @@ async function computeSecondaryPeriodAverages(
 
 export default function BulletinsPage() {
   const scopedSubModules = useExamSubModules(EXAMS_SUB_MODULES);
+  const { language: scopeLang } = useExamScope();
+  const isEN = scopeLang === 'EN';
 
   return (
     <ModuleContainer
-      header={{ title: 'Bulletins', description: 'Bulletins de notes par évaluation, classe et trimestre.', icon: 'fileText' }}
+      header={{ title: isEN ? 'Report Cards' : 'Bulletins', description: isEN ? 'Report cards by assessment, class and term.' : 'Bulletins de notes par évaluation, classe et trimestre.', icon: 'fileText' }}
       subModules={{ modules: scopedSubModules, activeModuleId: 'bulletins' }}
       content={{
         layout: 'full',
@@ -442,6 +444,7 @@ function BulletinsContent() {
   const { availableLevels } = useSchoolLevel();
   const { identity: school } = useSchoolIdentity();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
+  const isEN = scopeLang === 'EN';
   const session = useAppSessionOptional();
   const user = session?.user;
   const effectiveTenantId = session?.tenant?.id;
@@ -1413,11 +1416,11 @@ function BulletinsContent() {
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-2">
         <FileText className="w-5 h-5 text-blue-600" />
-        <h2 className="text-lg font-bold text-gray-900">Bulletins</h2>
+        <h2 className="text-lg font-bold text-gray-900">{isEN ? 'Report Cards' : 'Bulletins'}</h2>
         <Badge variant="outline" className="text-xs">{scopeLevel || '—'} {scopeLang ? `· ${scopeLang}` : ''}</Badge>
       </div>
 
-      {/* Sub-tabs: Bulletin d'évaluation | Moyenne trimestrielle et annuelle */}
+      {/* Sub-tabs: Report Cards | Termly & Annual | Sending Criteria | Received */}
       <div className="flex items-center gap-2 border-b border-slate-200">
         <button
           onClick={() => setActiveSubTab('bulletin')}
@@ -1425,23 +1428,27 @@ function BulletinsContent() {
             activeSubTab === 'bulletin' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}
         >
           <FileText className="w-4 h-4" />
-          Bulletin d'évaluation
+          {isEN ? 'Report Cards' : 'Bulletin d\'évaluation'}
         </button>
-        <button
-          onClick={() => setActiveSubTab('trimestriel')}
-          className={cn('flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors',
-            activeSubTab === 'trimestriel' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}
-        >
-          <Calculator className="w-4 h-4" />
-          Bulletin trimestriel et annuel
-        </button>
+        {/* ⭐ 2026-10-01 — Sous-onglet 'Bulletin trimestriel' masqué pour la
+            piste anglophone (EN track n'utilise que 'Report Cards'). */}
+        {!isEN && (
+          <button
+            onClick={() => setActiveSubTab('trimestriel')}
+            className={cn('flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors',
+              activeSubTab === 'trimestriel' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}
+          >
+            <Calculator className="w-4 h-4" />
+            Bulletin trimestriel et annuel
+          </button>
+        )}
         <button
           onClick={() => setActiveSubTab('criteria')}
           className={cn('flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors',
             activeSubTab === 'criteria' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}
         >
           <Settings className="w-4 h-4" />
-          Critères d'envoi
+          {isEN ? 'Sending Criteria' : 'Critères d\'envoi'}
         </button>
         {isTeacher && (
           <button
@@ -1450,7 +1457,7 @@ function BulletinsContent() {
               activeSubTab === 'received' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700')}
           >
             <Mail className="w-4 h-4" />
-            Bulletins reçus
+            {isEN ? 'Received Report Cards' : 'Bulletins reçus'}
           </button>
         )}
       </div>

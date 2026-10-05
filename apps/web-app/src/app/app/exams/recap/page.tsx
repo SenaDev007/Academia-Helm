@@ -50,6 +50,7 @@ import {
   enComponentForCode, EN_TERM_TOTAL_PER_SUBJECT,
   translatePeriodName,
 } from '@/lib/exam-anglophone-config';
+import { translateClassName } from '@/lib/pedagogy/class-name-en';
 import { cn } from '@/lib/utils';
 
 // Ordre d'affichage pédagogique des classes (miroir de la page registre)
@@ -273,7 +274,7 @@ function TermRecapContent() {
           >
             <option value="">— Select class —</option>
             {classes.map((c: any) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+              <option key={c.id} value={c.id}>{isEN ? translateClassName(c.name) : c.name}</option>
             ))}
           </select>
           <select

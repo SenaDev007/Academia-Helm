@@ -2725,48 +2725,51 @@ function BulletinAnglophonePage1({
   );
 
   return (
-    <div className="overflow-x-auto">
-      {/* ── Formulaire d'information (page 2 du Report Book) ── */}
-      <table className="w-full border-collapse text-[10px] mb-3" style={{ border: '2px solid #0A2A5E' }}>
-        <tbody>
-          <tr><FormCell label="Term ending:" value={termEndingDate || '—'} colSpan={2} /></tr>
-          <tr><FormCell label="Name of pupil:" value={student.studentName} colSpan={2} /></tr>
-          <tr>
-            <FormCell label="Age:" value={ageStr} />
-            <FormCell label="Class:" value={selectedClassName || '—'} />
-          </tr>
-          <tr>
-            <FormCell label="Position:" value={positionStr} />
-            <FormCell label="Admission N°:" value={student.matricule || '—'} />
-          </tr>
-          <tr><FormCell label="Session:" value={session} colSpan={2} /></tr>
-          <tr>
-            <FormCell
-              label="Pupil's average:"
-              value={<span className="text-blue-700 text-sm">{student.generalAverage !== null ? pupilAvg.toFixed(2) : '—'} / 100</span>}
-              colSpan={2}
-            />
-          </tr>
-        </tbody>
-      </table>
-
-      {/* ── Tableau des notes — 10 colonnes ── */}
-      <div className="text-center mb-2">
-        <h4 className="text-xs font-bold text-slate-900 uppercase">Report Card &mdash; 1st CA + 2nd CA + Exam = /100</h4>
+    <div className="overflow-x-auto space-y-3">
+      {/* ⭐ 2026-10-05 — TITRE : encadré navy sur fond gris clair (même standard que la piste FR). */}
+      <div className="text-center border-2 border-[#0A2A5E] bg-slate-50 rounded-lg px-3 py-1.5">
+        <h4 className="text-xs font-bold text-[#0A2A5E] uppercase">Report Card &mdash; 1st CA + 2nd CA + Exam = /100</h4>
       </div>
-      <table className="w-full border-collapse text-[10px]" style={{ border: '2px solid #0A2A5E' }}>
+
+      {/* ── Formulaire d'information (page 2 du Report Book) — ⭐ wrapper arrondi 1px noir (mêmes standard que la piste FR : plus de bordure 2px navy sans border-radius) ── */}
+      <div className="rounded-lg overflow-hidden border border-black">
+        <table className="w-full border-collapse text-[10px] bg-slate-50">
+          <tbody>
+            <tr><FormCell label="Term ending:" value={termEndingDate || '—'} colSpan={4} /></tr>
+            <tr><FormCell label="Name of pupil:" value={student.studentName} colSpan={4} /></tr>
+            <tr>
+              <FormCell label="Age:" value={ageStr} />
+              <FormCell label="Class:" value={selectedClassName || '—'} />
+              <FormCell label="Position:" value={positionStr} />
+              <FormCell label="Admission N°:" value={student.matricule || '—'} />
+            </tr>
+            <tr>
+              <FormCell label="Session:" value={session} colSpan={2} />
+              <FormCell
+                label="Pupil's average:"
+                value={<span className="text-blue-700 text-sm">{student.generalAverage !== null ? pupilAvg.toFixed(2) : '—'} / 100</span>}
+                colSpan={2}
+              />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Tableau des notes — 10 colonnes — ⭐ wrapper 2px noir + rounded-lg + overflow:hidden (même standard que la piste FR : filets continus, en-tête navy, plus de double-cadre) ── */}
+      <div className="rounded-lg overflow-hidden border-2 border-black">
+      <table className="w-full border-separate border-spacing-0 text-[10px]">
         <thead>
           <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
-            <th className="border px-2 py-1 font-bold uppercase text-left" style={{ borderColor: '#0D3B85', minWidth: '110px' }}>Subjects</th>
-            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>1st<br/>CA<br/><span className="font-normal text-[8px]">/20</span></th>
-            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>2nd<br/>CA<br/><span className="font-normal text-[8px]">/20</span></th>
-            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Exam<br/><span className="font-normal text-[8px]">/60</span></th>
-            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', backgroundColor: '#0D3B85' }}>Total<br/><span className="font-normal text-[8px]">/100</span></th>
-            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Highest<br/>in class</th>
-            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Lowest<br/>in class</th>
-            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Posi-<br/>tion</th>
-            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85' }}>Grade</th>
-            <th className="border px-1 py-1 font-bold uppercase text-center" style={{ borderColor: '#0D3B85', minWidth: '70px' }}>Remark</th>
+            <th className="border-r border-b border-black px-2 py-1 font-bold uppercase text-left" style={{ minWidth: '110px' }}>Subjects</th>
+            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">1st<br/>CA<br/><span className="font-normal text-[8px]">/20</span></th>
+            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">2nd<br/>CA<br/><span className="font-normal text-[8px]">/20</span></th>
+            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">Exam<br/><span className="font-normal text-[8px]">/60</span></th>
+            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ backgroundColor: '#0D3B85' }}>Total<br/><span className="font-normal text-[8px]">/100</span></th>
+            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">Highest<br/>in class</th>
+            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">Lowest<br/>in class</th>
+            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">Posi-<br/>tion</th>
+            <th className="border-r border-b border-black px-1 py-1 font-bold uppercase text-center">Grade</th>
+            <th className="border-b border-black px-1 py-1 font-bold uppercase text-center" style={{ minWidth: '70px' }}>Remark</th>
           </tr>
         </thead>
         <tbody>
@@ -2774,35 +2777,36 @@ function BulletinAnglophonePage1({
             const score = student.subjectScores[subject.id];
             const stats = enSubjectClassStats(bulletinData, subject.id, student.id);
             const total = score?.total ?? null;
+            const rowB = idx === sortedSubjects.length - 1 ? '' : 'border-b';
             return (
               <tr key={subject.id} className={cn(idx % 2 === 1 && 'bg-slate-50/50')}>
-                <td className="border border-slate-300 px-2 py-1 font-medium text-slate-900 whitespace-nowrap">{subject.name}</td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center">
+                <td className={`border-r ${rowB} border-black px-2 py-1 font-medium text-slate-900 whitespace-nowrap`}>{subject.name}</td>
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center`}>
                   {score?.isAbsent ? <span className="text-red-500 text-[8px] font-bold">ABS</span> :
                     score?.firstCA !== null && score?.firstCA !== undefined ? score.firstCA : <span className="text-slate-400">—</span>}
                 </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center">
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center`}>
                   {score?.isAbsent ? <span className="text-red-500 text-[8px] font-bold">ABS</span> :
                     score?.secondCA !== null && score?.secondCA !== undefined ? score.secondCA : <span className="text-slate-400">—</span>}
                 </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center">
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center`}>
                   {score?.isAbsent ? <span className="text-red-500 text-[8px] font-bold">ABS</span> :
                     score?.exam !== null && score?.exam !== undefined ? score.exam : <span className="text-slate-400">—</span>}
                 </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center font-bold bg-slate-50">
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center font-bold bg-slate-50`}>
                   {score?.isAbsent ? <span className="text-red-500 text-[8px] font-bold">ABS</span> :
                     total !== null ? <span className="text-blue-700">{total.toFixed(1)}</span> : <span className="text-slate-400">—</span>}
                 </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600">
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center text-slate-600`}>
                   {stats.highest !== null ? stats.highest.toFixed(1) : '—'}
                 </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-slate-600">
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center text-slate-600`}>
                   {stats.lowest !== null ? stats.lowest.toFixed(1) : '—'}
                 </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center font-semibold text-slate-800">
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center font-semibold text-slate-800`}>
                   {enOrdinal(stats.position)}
                 </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center font-bold">
+                <td className={`border-r ${rowB} border-black px-1 py-0.5 text-center font-bold`}>
                   <span className={cn(
                     (total ?? 0) >= 90 && 'text-emerald-700',
                     (total ?? -1) >= 80 && (total ?? 0) < 90 && 'text-blue-700',
@@ -2812,23 +2816,24 @@ function BulletinAnglophonePage1({
                     (total ?? -1) >= 0 && (total ?? 0) < 50 && 'text-red-600',
                   )}>{enGradeFor(total)}</span>
                 </td>
-                <td className="border border-slate-300 px-1 py-0.5 text-center text-[9px] text-slate-600">
+                <td className={`${rowB} border-black px-1 py-0.5 text-center text-[9px] text-slate-600`}>
                   {tier?.label && total !== null ? enTierFor(total)?.label : '—'}
                 </td>
               </tr>
             );
           })}
-          {/* Ligne Pupil's Average */}
+          {/* Ligne Pupil's Average — bandeau navy (seul accent de couleur du tableau) */}
           <tr className="bg-slate-200 font-bold">
-            <td className="border border-slate-300 px-2 py-1 uppercase text-slate-900 text-right" colSpan={9}>Pupil&apos;s Average</td>
-            <td className="border border-slate-300 px-1 py-0.5 text-center text-blue-700 text-sm">{student.generalAverage !== null ? pupilAvg.toFixed(2) : '—'}</td>
+            <td className="border-r border-black px-2 py-1 uppercase text-slate-900 text-right" colSpan={9}>Pupil&apos;s Average</td>
+            <td className="border-black px-1 py-0.5 text-center text-blue-700 text-sm">{student.generalAverage !== null ? pupilAvg.toFixed(2) : '—'}</td>
           </tr>
         </tbody>
       </table>
+      </div>
 
       {/* Appreciation badge (grille /100) */}
       {tier && (
-        <div className="mt-2 flex items-center justify-center gap-2">
+        <div className="flex items-center justify-center gap-2">
           <span className="text-[10px] font-bold text-slate-700 uppercase">Overall Appreciation</span>
           <span className={cn('inline-block px-3 py-1 rounded text-xs font-bold', tier.color)}>
             {tier.label} ({tier.grade})
@@ -2836,7 +2841,7 @@ function BulletinAnglophonePage1({
         </div>
       )}
 
-      <p className="text-[9px] text-slate-400 mt-1 italic">
+      <p className="text-[9px] text-slate-400 italic">
         1st CA (/20) + 2nd CA (/20) + Exam (/60) = Total /100 per subject. Grade: A+ (90–100) · A (80–89) · B (70–79) · C (60–69) · D (50–59) · F (below 50).
       </p>
     </div>
@@ -3037,11 +3042,16 @@ function BulletinAnglophonePage2({
   };
 
   // ─── Rangée de catégorie avec radios A–E ──────────────────────────────────
+  // ⭐ 2026-10-05 — CHECKBOXES : un radio non coché n'affiche RIEN (juste le
+  //    cercle transparent natif du navigateur). Pas de glyphe ☐ qui se rend
+  //    comme un rectangle vertical selon les polices. Le radio est volontairement
+  //    transparent quand non coché, coloré quand coché — conforme au modèle
+  //    Report Book officiel.
   const SkillRow = ({ skill, value, onChange, accentColor }: { skill: string; value: string; onChange: (v: string) => void; accentColor: string }) => (
     <tr>
-      <td className="border border-slate-300 px-2 py-1 text-[10px] font-medium text-slate-900 whitespace-nowrap">{skill}</td>
-      {SKILL_LEVELS.map(lvl => (
-        <td key={lvl} className="border border-slate-300 px-1 py-0.5 text-center">
+      <td className="border-r border-b border-black px-2 py-1 text-[10px] font-medium text-slate-900 whitespace-nowrap">{skill}</td>
+      {SKILL_LEVELS.map((lvl, idx) => (
+        <td key={lvl} className={cn('border-b border-black px-1 py-0.5 text-center', idx < SKILL_LEVELS.length - 1 && 'border-r')}>
           <input
             type="radio"
             name={`en-skill-${skill.replace(/[^a-zA-Z0-9]/g, '-')}`}
@@ -3051,6 +3061,16 @@ function BulletinAnglophonePage2({
             className={cn('w-3 h-3', accentColor)}
           />
         </td>
+      ))}
+    </tr>
+  );
+
+  // ─── En-tête Affective/Psychomotor — fond navy + texte blanc (cohérent avec le tableau des notes) ──
+  const SkillHeader = () => (
+    <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
+      <th className="border-r border-b border-black px-2 py-1 text-[9px] font-bold uppercase text-left">Category</th>
+      {SKILL_LEVELS.map((lvl, idx) => (
+        <th key={lvl} className={cn('border-b border-black px-1 py-1 text-[9px] font-bold uppercase w-8', idx < SKILL_LEVELS.length - 1 && 'border-r')}>{lvl}</th>
       ))}
     </tr>
   );
@@ -3069,20 +3089,24 @@ function BulletinAnglophonePage2({
         </div>
       </div>
 
-      {/* Mark obtainable / obtained / No in class */}
-      <div className="grid grid-cols-3 gap-2 text-[10px]">
-        <div className="bg-slate-50 rounded p-2 border border-slate-200 text-center">
-          <p className="text-slate-500 uppercase font-bold">Mark Obtainable</p>
-          <p className="text-blue-700 font-bold text-base">{markObtainable}</p>
-        </div>
-        <div className="bg-slate-50 rounded p-2 border border-slate-200 text-center">
-          <p className="text-slate-500 uppercase font-bold">Mark Obtained</p>
-          <p className="text-blue-700 font-bold text-base">{markObtained.toFixed(2)}</p>
-        </div>
-        <div className="bg-slate-50 rounded p-2 border border-slate-200 text-center">
-          <p className="text-slate-500 uppercase font-bold">No in Class</p>
-          <p className="text-blue-700 font-bold text-base">{bulletinData.results.length}</p>
-        </div>
+      {/* ⭐ 2026-10-05 — Mark obtainable / obtained / No in class : wrapper 2px noir + rounded-lg + overflow:hidden (même standard que le tableau des notes) */}
+      <div className="rounded-lg overflow-hidden border-2 border-black">
+        <table className="w-full border-separate border-spacing-0 text-[10px]">
+          <thead>
+            <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
+              <th className="border-r border-b border-black px-2 py-1 uppercase">Mark Obtainable</th>
+              <th className="border-r border-b border-black px-2 py-1 uppercase">Mark Obtained</th>
+              <th className="border-b border-black px-2 py-1 uppercase">No in Class</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="border-r border-black px-2 py-1 text-center text-blue-700 font-bold text-base bg-slate-50">{markObtainable}</td>
+              <td className="border-r border-black px-2 py-1 text-center text-blue-700 font-bold text-base bg-slate-50">{markObtained.toFixed(2)}</td>
+              <td className="px-2 py-1 text-center text-blue-700 font-bold text-base bg-slate-50">{bulletinData.results.length}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       {/* ⭐ 2026-09-29 — CONDUCT SECTION (résolu depuis le backend — module
@@ -3091,41 +3115,43 @@ function BulletinAnglophonePage2({
           Affiche : conduct score / reference + sanctions count + hours +
           total points deducted. */}
       {conductData && (
-        <div className="border border-blue-300 rounded-lg p-2 bg-blue-50">
-          <p className="text-[10px] font-bold text-blue-900 uppercase mb-2 text-center">Conduct</p>
-          <div className="grid grid-cols-4 gap-2 text-[10px]">
-            <div className="bg-white rounded p-2 border border-blue-200 text-center">
-              <p className="text-slate-500 uppercase font-bold">Conduct Score</p>
-              <p className={cn(
-                'font-bold text-base',
-                conductData.conductScore !== null && conductData.conductScore >= (conductData.conductReference ?? 17) * 0.6 && 'text-emerald-700',
-                conductData.conductScore !== null && conductData.conductScore < (conductData.conductReference ?? 17) * 0.6 && 'text-red-600',
-                conductData.conductScore === null && 'text-slate-400',
-              )}>
-                {conductData.conductScore !== null ? `${Number(conductData.conductScore).toFixed(2)} / ${conductData.conductReference ?? 17}` : `— / ${conductData.conductReference ?? 17}`}
-              </p>
-            </div>
-            <div className="bg-white rounded p-2 border border-blue-200 text-center">
-              <p className="text-slate-500 uppercase font-bold">Sanctions</p>
-              <p className="font-bold text-base text-amber-700">{conductData.sanctionCount}</p>
-            </div>
-            <div className="bg-white rounded p-2 border border-blue-200 text-center">
-              <p className="text-slate-500 uppercase font-bold">Points Deducted</p>
-              <p className="font-bold text-base text-red-600">{Number(conductData.totalPointsDeducted).toFixed(2)}</p>
-            </div>
-            <div className="bg-white rounded p-2 border border-blue-200 text-center">
-              <p className="text-slate-500 uppercase font-bold">Hours Attributed</p>
-              <p className="font-bold text-base text-orange-600">{Number(conductData.totalHoursAttributed).toFixed(1)} h</p>
-            </div>
-          </div>
-          {conductData.conductScore !== null && (
-            <p className="text-[9px] text-slate-500 italic text-center mt-2">
-              {conductData.conductScore >= (conductData.conductReference ?? 17) * 0.6
-                ? 'Satisfactory'
-                : 'Needs improvement'}
-              {conductData.hasLedger && ' · Calculé depuis le compteur de conduite'}
-            </p>
-          )}
+        <div className="rounded-lg overflow-hidden border-2 border-black">
+          <table className="w-full border-separate border-spacing-0 text-[10px]">
+            <thead>
+              <tr className="text-white" style={{ backgroundColor: '#0A2A5E' }}>
+                <th className="border-r border-b border-black px-2 py-1 uppercase">Conduct</th>
+                <th className="border-r border-b border-black px-2 py-1 uppercase">Reference</th>
+                <th className="border-r border-b border-black px-2 py-1 uppercase">Sanctions</th>
+                <th className="border-r border-b border-black px-2 py-1 uppercase">Points Deducted</th>
+                <th className="border-b border-black px-2 py-1 uppercase">Hours</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="border-r border-b border-black px-2 py-1 text-center font-bold text-base bg-slate-50">
+                  <span className={cn(
+                    conductData.conductScore !== null && conductData.conductScore >= (conductData.conductReference ?? 17) * 0.6 && 'text-emerald-700',
+                    conductData.conductScore !== null && conductData.conductScore < (conductData.conductReference ?? 17) * 0.6 && 'text-red-600',
+                    conductData.conductScore === null && 'text-slate-400',
+                  )}>
+                    {conductData.conductScore !== null ? Number(conductData.conductScore).toFixed(2) : '—'}
+                  </span>
+                </td>
+                <td className="border-r border-b border-black px-2 py-1 text-center font-bold text-base text-blue-700 bg-slate-50">{conductData.conductReference ?? 17}</td>
+                <td className="border-r border-b border-black px-2 py-1 text-center font-bold text-base text-amber-700 bg-slate-50">{conductData.sanctionCount}</td>
+                <td className="border-r border-b border-black px-2 py-1 text-center font-bold text-base text-red-600 bg-slate-50">{Number(conductData.totalPointsDeducted).toFixed(2)}</td>
+                <td className="px-2 py-1 text-center font-bold text-base text-orange-600 bg-slate-50">{Number(conductData.totalHoursAttributed).toFixed(1)} h</td>
+              </tr>
+              {conductData.conductScore !== null && (
+                <tr>
+                  <td colSpan={5} className="px-2 py-1 text-center text-[9px] italic text-slate-500 bg-slate-50">
+                    {conductData.conductScore >= (conductData.conductReference ?? 17) * 0.6 ? 'Satisfactory' : 'Needs improvement'}
+                    {conductData.hasLedger && ' · Calculé depuis le compteur de conduite'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -3167,22 +3193,15 @@ function BulletinAnglophonePage2({
         <strong className="text-slate-900">{nextTermStartDate || '—'}</strong>
       </div>
 
-      {/* AFFECTIVE ASSESSMENT: PSYCHOMOTOR SKILLS — 2 colonnes côte à côte (A–E) */}
-      <div className="border border-slate-300 rounded-lg p-2">
+      {/* ⭐ 2026-10-05 — AFFECTIVE ASSESSMENT: PSYCHOMOTOR SKILLS — wrapper 2px noir + rounded-lg (même standard que le tableau des notes). En-tête navy + texte blanc. */}
+      <div className="rounded-lg overflow-hidden border-2 border-black p-2 bg-white">
         <p className="text-[10px] font-bold text-blue-900 uppercase mb-1 text-center">
           Affective Assessment: Psychomotor Skills
         </p>
         <div className="grid grid-cols-2 gap-2">
           {/* Colonne gauche — Affective */}
-          <table className="w-full border-collapse" style={{ border: '1px solid #94a3b8' }}>
-            <thead>
-              <tr className="bg-slate-100">
-                <th className="border border-slate-300 px-2 py-1 text-[9px] font-bold uppercase text-left">Category</th>
-                {SKILL_LEVELS.map(lvl => (
-                  <th key={lvl} className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-8">{lvl}</th>
-                ))}
-              </tr>
-            </thead>
+          <table className="w-full border-separate border-spacing-0">
+            <thead><SkillHeader /></thead>
             <tbody>
               {AFFECTIVE_CATEGORIES.map(skill => (
                 <SkillRow key={skill} skill={skill} value={affectiveMap[skill] || ''} onChange={(v) => setSkill('affective', skill, v)} accentColor="accent-emerald-600" />
@@ -3190,15 +3209,8 @@ function BulletinAnglophonePage2({
             </tbody>
           </table>
           {/* Colonne droite — Psychomotor */}
-          <table className="w-full border-collapse" style={{ border: '1px solid #94a3b8' }}>
-            <thead>
-              <tr className="bg-slate-100">
-                <th className="border border-slate-300 px-2 py-1 text-[9px] font-bold uppercase text-left">Category</th>
-                {SKILL_LEVELS.map(lvl => (
-                  <th key={lvl} className="border border-slate-300 px-1 py-1 text-[9px] font-bold uppercase w-8">{lvl}</th>
-                ))}
-              </tr>
-            </thead>
+          <table className="w-full border-separate border-spacing-0">
+            <thead><SkillHeader /></thead>
             <tbody>
               {PSYCHOMOTOR_CATEGORIES.map(skill => (
                 <SkillRow key={skill} skill={skill} value={psychomotorMap[skill] || ''} onChange={(v) => setSkill('psychomotor', skill, v)} accentColor="accent-blue-600" />

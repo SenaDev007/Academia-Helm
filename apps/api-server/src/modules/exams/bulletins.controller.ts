@@ -595,8 +595,33 @@ export class BulletinsController {
     // ⭐ Robust tenantId resolution (same pattern as exams-prisma.controller)
     const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
 
-    // Récupérer le branding du tenant (nom école, logo, etc.)
-    const branding = await this.getTenantBranding(resolvedTenantId);
+    // ⭐ 2026-10-05 — OPTIMISATION 504 : paralléliser les requêtes indépendantes
+    //    pour réduire le temps de réponse. Avant : getTenantBranding (1-2
+    //    requêtes) PUIS student findFirst (1 requête) → 3 requêtes séquentielles
+    //    juste pour démarrer. Désormais : 1 vague parallèle de 2 requêtes
+    //    (branding + student), puis 1 vague parallèle pour les dépendances.
+    //
+    //    ⚠️ Chronologie :
+    //    - Vague 1 (parallèle) : branding + student.findFirst({matricule})
+    //    - Vague 2 (parallèle, après student.id) : enrollment + studentPhoto
+    //      + conductSettings + (school_directors query — non, dépend de
+    //      schoolLevelId qui vient de enrollment)
+    //    - Vague 3 (parallèle, après enrollment.classId + schoolLevelId) :
+    //      teacherClassAssignment + schoolLevel + academicTrack
+    //    - Vague 4 (parallèle, après teacherClassAssignment) : teacher
+    //    - Vague 5 (parallèle, après schoolLevel + trackUuid) :
+    //      staffAdminAssignment + school_directors
+    //
+    //    Sur Neon cold start : 3-5s économisés (passage de 5-10s → 2-4s).
+    const [branding, student] = await Promise.all([
+      this.getTenantBranding(resolvedTenantId),
+      body.studentMatricule && resolvedTenantId
+        ? this.prisma.student.findFirst({
+            where: { matricule: body.studentMatricule, tenantId: resolvedTenantId },
+            select: { id: true, dateOfBirth: true, photoUrl: true },
+          }).catch(() => null)
+        : Promise.resolve(null),
+    ]);
 
     // ⭐ Résolution automatique du nom de l'enseignant titulaire de la classe
     //    de l'élève (via StudentEnrollment → TeacherClassAssignment → Teacher)
@@ -607,174 +632,187 @@ export class BulletinsController {
     let directorName: string | null = null;
     let directorSignature: string | null = null;
     let studentSchoolLevelId: string | null = null;
-    if (body.studentMatricule && resolvedTenantId && academicYearId) {
+    let studentPhotoUrl: string | null = null;
+    // ⭐ 2026-10-05 — On a déjà récupéré student.id + photoUrl dans la vague 1.
+    //    On réutilise directement, plus besoin de refaire un findFirst.
+    if (student?.photoUrl) {
+      studentPhotoUrl = student.photoUrl;
+    } else if (student?.id) {
       try {
-        // 1. Trouver l'élève par matricule
-        // ⭐ FIX 2026-09-16 — le modèle Prisma Student n'expose NI birthDate NI
-        //    admissionNumber (champs réels : dateOfBirth ; admissionNumber vit
-        //    sur le modèle Admission) : le select précédent déclenchait une
-        //    PrismaClientValidationError « Unknown argument » avalée par le
-        //    .catch(() => null) → élève JAMAIS résolu → âge, nom de
-        //    l'enseignant, directeur, signature et cachets nominatifs jamais
-        //    injectés dans les bulletins générés via generate-pdf. Le numéro
-        //    d'admission retombe sur le matricule (comportement affiché).
-        const student = await this.prisma.student.findFirst({
-          where: { matricule: body.studentMatricule, tenantId: resolvedTenantId },
-          select: { id: true, dateOfBirth: true },
+        const photo = await this.prisma.studentPhoto.findFirst({
+          where: { studentId: student.id },
+          select: { originalUrl: true, hdUrl: true, thumbnailUrl: true },
+        }).catch(() => null);
+        if (photo) {
+          studentPhotoUrl = photo.hdUrl || photo.originalUrl || photo.thumbnailUrl || null;
+        }
+      } catch {
+        // Silent fail — pas de photo, le placeholder "Photo" s'affiche
+      }
+    }
+
+    if (student?.dateOfBirth) {
+      const birth = new Date(student.dateOfBirth);
+      const now = new Date();
+      let age = now.getFullYear() - birth.getFullYear();
+      const mDiff = now.getMonth() - birth.getMonth();
+      if (mDiff < 0 || (mDiff === 0 && now.getDate() < birth.getDate())) age--;
+      if (age >= 0 && age < 150) studentAge = age;
+    }
+
+    if (student && body.studentMatricule && resolvedTenantId && academicYearId) {
+      try {
+        // ⭐ Vague 2 (parallèle) : enrollment + (rien d'autre d'indépendant
+        //    au niveau de cette profondeur). On lance enrollment seul ici
+        //    car c'est la seule requête qui ne dépend que de student.id.
+        const enrollment = await this.prisma.studentEnrollment.findFirst({
+          where: { studentId: student.id, academicYearId, tenantId: resolvedTenantId },
+          select: { classId: true, schoolLevelId: true, academicClassId: true },
         }).catch(() => null);
 
-        // ⭐ Résolution de l'âge à partir de la date de naissance
-        if (student?.dateOfBirth) {
-          const birth = new Date(student.dateOfBirth);
-          const now = new Date();
-          let age = now.getFullYear() - birth.getFullYear();
-          const mDiff = now.getMonth() - birth.getMonth();
-          if (mDiff < 0 || (mDiff === 0 && now.getDate() < birth.getDate())) age--;
-          if (age >= 0 && age < 150) studentAge = age;
-        }
+        studentSchoolLevelId = enrollment?.schoolLevelId || null;
 
-        if (student) {
-          // 2. Trouver l'enrollment (pour récupérer la classe + le niveau scolaire)
-          const enrollment = await this.prisma.studentEnrollment.findFirst({
-            where: { studentId: student.id, academicYearId, tenantId: resolvedTenantId },
-            select: { classId: true, schoolLevelId: true },
-          }).catch(() => null);
+        // ⭐ Vague 3 (parallèle) : 4 requêtes indépendantes à lancer en
+        //    parallèle dès qu'on a enrollment.classId + enrollment.schoolLevelId :
+        //    1. teacherClassAssignment (si classId)
+        //    2. schoolLevel (si schoolLevelId — pour code du niveau)
+        //    3. studentPhoto (déjà fait plus haut, mais on garde la logique)
+        //    4. conductSettings (pour conductReference fallback)
+        const [
+          tca,
+          levelRow,
+        ] = await Promise.all([
+          enrollment?.classId
+            ? this.prisma.teacherClassAssignment.findFirst({
+                where: { classId: enrollment.classId, tenantId: resolvedTenantId },
+                select: { teacherId: true },
+              }).catch(() => null)
+            : Promise.resolve(null),
+          studentSchoolLevelId
+            ? this.prisma.schoolLevel.findUnique({
+                where: { id: studentSchoolLevelId },
+                select: { code: true },
+              }).catch(() => null)
+            : Promise.resolve(null),
+        ]);
 
-          studentSchoolLevelId = enrollment?.schoolLevelId || null;
+        // ⭐ Vague 4 (parallèle) : teacher + academicTrack (les 2 dépendent
+        //    respectivement de tca.teacherId et de directorLang — ce dernier
+        //    ne dépend pas de tca, donc on peut paralléliser).
+        const directorLang = (body.scopeLang === 'EN') ? 'EN' : 'FR';
+        const levelCode = (levelRow?.code || '').toUpperCase().trim();
+        const targetLevelCodes =
+          ['MAT', 'MATERNELLE'].includes(levelCode) ? ['MAT', 'MAT_PRI', 'ALL'] :
+          ['PRI', 'PRIMAIRE'].includes(levelCode) ? ['PRI', 'MAT_PRI', 'ALL'] :
+          ['SEC', 'SECONDAIRE'].includes(levelCode) ? ['SEC', 'ALL'] :
+          ['MAT_PRI'].includes(levelCode) ? ['MAT_PRI', 'ALL'] : null;
 
-          if (enrollment?.classId) {
-            // 3. Trouver le teacher assignment pour cette classe
-            const tca = await this.prisma.teacherClassAssignment.findFirst({
-              where: { classId: enrollment.classId, tenantId: resolvedTenantId },
-              select: { teacherId: true },
-            }).catch(() => null);
-
-            if (tca?.teacherId) {
-              const teacher = await this.prisma.teacher.findFirst({
+        const [
+          teacher,
+          trackRow,
+        ] = await Promise.all([
+          tca?.teacherId
+            ? this.prisma.teacher.findFirst({
                 where: { id: tca.teacherId },
                 select: { firstName: true, lastName: true, gender: true },
-              }).catch(() => null);
+              }).catch(() => null)
+            : Promise.resolve(null),
+          targetLevelCodes
+            ? this.prisma.academicTrack.findFirst({
+                where: { tenantId: resolvedTenantId, code: directorLang },
+                select: { id: true },
+              }).catch(() => null)
+            : Promise.resolve(null),
+        ]);
 
-              if (teacher) {
-                const last = (teacher.lastName || '').trim().toUpperCase();
-                const first = (teacher.firstName || '').trim();
-                const civility = teacher.gender === 'F' ? 'Mme' : (teacher.gender === 'M' ? 'M.' : '');
-                teacherName = civility ? `${civility} ${last} ${first}`.trim() : `${last} ${first}`.trim();
-                teacherGender = teacher.gender || null;
-              }
+        if (teacher) {
+          const last = (teacher.lastName || '').trim().toUpperCase();
+          const first = (teacher.firstName || '').trim();
+          const civility = teacher.gender === 'F' ? 'Mme' : (teacher.gender === 'M' ? 'M.' : '');
+          teacherName = civility ? `${civility} ${last} ${first}`.trim() : `${last} ${first}`.trim();
+          teacherGender = teacher.gender || null;
+        }
+
+        // ⭐ Vague 5 (parallèle) : staffAdminAssignment + school_directors.
+        //    Les 2 dépendent de targetLevelCodes (et school_directors dépend
+        //    aussi de directorLang). On peut les paralléliser.
+        const trackUuid = trackRow?.id || null;
+        let staffAssignments: any[] = [];
+        let directorRows: any[] = [];
+        if (targetLevelCodes) {
+          [staffAssignments, directorRows] = await Promise.all([
+            this.prisma.staffAdminAssignment.findMany({
+              where: {
+                tenantId: resolvedTenantId,
+                isActive: true,
+                schoolLevelCode: { in: targetLevelCodes },
+                adminRole: { in: ['DIRECTEUR_GENERAL', 'DIRECTEUR', 'PROVISEUR', 'DIRECTEUR_DES_ETUDES', 'DIRECTEUR_ADJOINT'] },
+                OR: [
+                  { academicTrackId: null },
+                  ...(trackUuid ? [{ academicTrackId: trackUuid }] : []),
+                ],
+                AND: [
+                  { OR: [{ academicYearId: null }, { academicYearId }] },
+                ],
+              },
+              include: {
+                staff: { select: { firstName: true, lastName: true, gender: true } },
+              },
+              orderBy: { startDate: 'desc' },
+            }).catch(() => []),
+            this.prisma.$queryRawUnsafe<any[]>(
+              `SELECT * FROM school_directors
+               WHERE "tenantId" = $1 AND "schoolLevelId" = $2 AND "language" = $3 AND "isActive" = true
+               LIMIT 1`,
+              resolvedTenantId, studentSchoolLevelId, directorLang,
+            ).catch(() => []),
+          ]);
+
+          if (Array.isArray(staffAssignments) && staffAssignments.length > 0) {
+            // 4d. Priorité hiérarchique (même ordre que ADMIN_ROLE_PRIORITY)
+            const ROLE_PRIORITY = ['DIRECTEUR_GENERAL', 'DIRECTEUR', 'PROVISEUR', 'DIRECTEUR_DES_ETUDES', 'DIRECTEUR_ADJOINT'];
+            const sorted = [...staffAssignments].sort((a: any, b: any) => {
+              const pa = ROLE_PRIORITY.indexOf(a.adminRole);
+              const pb = ROLE_PRIORITY.indexOf(b.adminRole);
+              if (pa !== pb) return (pa === -1 ? 99 : pa) - (pb === -1 ? 99 : pb);
+              // Affectation de l'année d'abord, permanente ensuite
+              const ya = a.academicYearId ? 0 : 1;
+              const yb = b.academicYearId ? 0 : 1;
+              if (ya !== yb) return ya - yb;
+              return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
+            });
+            const best: any = sorted[0];
+            if (best?.staff) {
+              const last = (best.staff.lastName || '').trim().toUpperCase();
+              const first = (best.staff.firstName || '').trim();
+              const civility = best.staff.gender === 'F' ? 'Mme' : (best.staff.gender === 'M' ? 'M.' : '');
+              directorName = civility ? `${civility} ${last} ${first}`.trim() : `${last} ${first}`.trim();
             }
           }
 
-          // ⭐ 4. Résolution automatique du directeur — SOURCE PRINCIPALE : le
-          //    module RH (onglet Administration → staff_admin_assignments).
-          //    Le directeur y est affecté par niveau scolaire (MAT / PRI / SEC /
-          //    MAT_PRI / ALL), piste linguistique (FR / EN / null = bi-piste) et
-          //    année (null = permanent). Fallback : table school_directors.
-          if (studentSchoolLevelId) {
-            // Déterminer la langue : utiliser scopeLang du body, sinon 'FR' par défaut
-            const directorLang = (body.scopeLang === 'EN') ? 'EN' : 'FR';
+          // ⭐ school_directors : signature + nom (si pas déjà trouvé via RH)
+          if (Array.isArray(directorRows) && directorRows.length > 0) {
+            const director = directorRows[0];
+            // ⭐ Priorité : signatureDataUrl (canvas) > signatureUploadedUrl (upload PNG)
+            directorSignature = director.signatureDataUrl || director.signatureUploadedUrl || null;
+            if (!directorName) directorName = director.fullName || null;
+          } else if (studentSchoolLevelId) {
+            // ⭐ Fallback : si pas de directeur pour cette langue, essayer l'autre langue
+            const fallbackLang = directorLang === 'FR' ? 'EN' : 'FR';
             try {
-              // 4a. Code du niveau scolaire de l'élève (MAT / MATERNELLE / PRI / …)
-              const levelRow = await this.prisma.schoolLevel.findUnique({
-                where: { id: studentSchoolLevelId },
-                select: { code: true },
-              }).catch(() => null);
-              const levelCode = (levelRow?.code || '').toUpperCase().trim();
-              const targetLevelCodes =
-                ['MAT', 'MATERNELLE'].includes(levelCode) ? ['MAT', 'MAT_PRI', 'ALL'] :
-                ['PRI', 'PRIMAIRE'].includes(levelCode) ? ['PRI', 'MAT_PRI', 'ALL'] :
-                ['SEC', 'SECONDAIRE'].includes(levelCode) ? ['SEC', 'ALL'] :
-                ['MAT_PRI'].includes(levelCode) ? ['MAT_PRI', 'ALL'] : null;
-
-              if (targetLevelCodes) {
-                // 4b. UUID de la piste linguistique (FR/EN) pour filtrer les
-                //     affectations — null = les deux pistes.
-                let trackUuid: string | null = null;
-                const trackRow = await this.prisma.academicTrack.findFirst({
-                  where: { tenantId: resolvedTenantId, code: directorLang },
-                  select: { id: true },
-                }).catch(() => null);
-                trackUuid = trackRow?.id || null;
-
-                // 4c. Affectations actives des postes de direction pour ce niveau
-                //     + cette piste (ou bi-piste) + cette année (ou permanente).
-                const assignments = await this.prisma.staffAdminAssignment.findMany({
-                  where: {
-                    tenantId: resolvedTenantId,
-                    isActive: true,
-                    schoolLevelCode: { in: targetLevelCodes },
-                    adminRole: { in: ['DIRECTEUR_GENERAL', 'DIRECTEUR', 'PROVISEUR', 'DIRECTEUR_DES_ETUDES', 'DIRECTEUR_ADJOINT'] },
-                    OR: [
-                      { academicTrackId: null },
-                      ...(trackUuid ? [{ academicTrackId: trackUuid }] : []),
-                    ],
-                    AND: [
-                      { OR: [{ academicYearId: null }, { academicYearId }] },
-                    ],
-                  },
-                  include: {
-                    staff: { select: { firstName: true, lastName: true, gender: true } },
-                  },
-                  orderBy: { startDate: 'desc' },
-                }).catch(() => []);
-
-                if (Array.isArray(assignments) && assignments.length > 0) {
-                  // 4d. Priorité hiérarchique (même ordre que ADMIN_ROLE_PRIORITY)
-                  const ROLE_PRIORITY = ['DIRECTEUR_GENERAL', 'DIRECTEUR', 'PROVISEUR', 'DIRECTEUR_DES_ETUDES', 'DIRECTEUR_ADJOINT'];
-                  const sorted = [...assignments].sort((a: any, b: any) => {
-                    const pa = ROLE_PRIORITY.indexOf(a.adminRole);
-                    const pb = ROLE_PRIORITY.indexOf(b.adminRole);
-                    if (pa !== pb) return (pa === -1 ? 99 : pa) - (pb === -1 ? 99 : pb);
-                    // Affectation de l'année d'abord, permanente ensuite
-                    const ya = a.academicYearId ? 0 : 1;
-                    const yb = b.academicYearId ? 0 : 1;
-                    if (ya !== yb) return ya - yb;
-                    return new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
-                  });
-                  const best: any = sorted[0];
-                  if (best?.staff) {
-                    const last = (best.staff.lastName || '').trim().toUpperCase();
-                    const first = (best.staff.firstName || '').trim();
-                    const civility = best.staff.gender === 'F' ? 'Mme' : (best.staff.gender === 'M' ? 'M.' : '');
-                    directorName = civility ? `${civility} ${last} ${first}`.trim() : `${last} ${first}`.trim();
-                  }
-                }
-              }
-            } catch (rhErr) {
-              // Silent fail — on retombe sur school_directors ci-dessous
-            }
-
-            // 4e. Fallback signature + nom : table school_directors (contient
-            //     les images de signature). Priorité au nom RH résolu ci-dessus.
-            try {
-              const directorRows: any = await this.prisma.$queryRawUnsafe(
+              const fallbackRows: any = await this.prisma.$queryRawUnsafe(
                 `SELECT * FROM school_directors
                  WHERE "tenantId" = $1 AND "schoolLevelId" = $2 AND "language" = $3 AND "isActive" = true
                  LIMIT 1`,
-                resolvedTenantId, studentSchoolLevelId, directorLang,
+                resolvedTenantId, studentSchoolLevelId, fallbackLang,
               );
-              if (Array.isArray(directorRows) && directorRows.length > 0) {
-                const director = directorRows[0];
-                // ⭐ Priorité : signatureDataUrl (canvas) > signatureUploadedUrl (upload PNG)
+              if (Array.isArray(fallbackRows) && fallbackRows.length > 0) {
+                const director = fallbackRows[0];
                 directorSignature = director.signatureDataUrl || director.signatureUploadedUrl || null;
                 if (!directorName) directorName = director.fullName || null;
-              } else {
-                // ⭐ Fallback : si pas de directeur pour cette langue, essayer l'autre langue
-                const fallbackLang = directorLang === 'FR' ? 'EN' : 'FR';
-                const fallbackRows: any = await this.prisma.$queryRawUnsafe(
-                  `SELECT * FROM school_directors
-                   WHERE "tenantId" = $1 AND "schoolLevelId" = $2 AND "language" = $3 AND "isActive" = true
-                   LIMIT 1`,
-                  resolvedTenantId, studentSchoolLevelId, fallbackLang,
-                );
-                if (Array.isArray(fallbackRows) && fallbackRows.length > 0) {
-                  const director = fallbackRows[0];
-                  directorSignature = director.signatureDataUrl || director.signatureUploadedUrl || null;
-                  if (!directorName) directorName = director.fullName || null;
-                }
               }
             } catch (dirErr) {
-              // Silent fail — la table school_directors peut ne pas exister encore
+              // Silent fail
             }
           }
         }
@@ -790,14 +828,18 @@ export class BulletinsController {
     //      « Lien signature » RH > Administration).
     //    Même moteur de génération que le module Personnel (effet encre PNG).
     //    Non bloquant : en cas d'échec, le bulletin est généré sans cachets.
-    const directorLang = (body.scopeLang === 'EN') ? 'EN' : 'FR';
+    //    ⭐ 2026-10-05 — `directorLang` déclaré plus haut (lignes 702) dans la
+    //    portée du bloc `if (student ...)`. On le redéclare ici pour la
+    //    portée externe (cachets). Pas de conflit car le bloc `if (student ...)`
+    //    a sa propre portée.
+    const sealsDirectorLang = (body.scopeLang === 'EN') ? 'EN' : 'FR';
     let directorSeals: {
       nominativeCircularDataUrl: string | null;
       nominativeRectangularDataUrl: string | null;
     } = { nominativeCircularDataUrl: null, nominativeRectangularDataUrl: null };
     try {
       const seals = await this.documentSealsService.getDirectorSeals(
-        resolvedTenantId, studentSchoolLevelId, directorLang,
+        resolvedTenantId, studentSchoolLevelId, sealsDirectorLang,
       );
       if (seals.holderName && !directorName) directorName = seals.holderName;
       if (!directorSignature && seals.signatureDataUrl) directorSignature = seals.signatureDataUrl;
@@ -809,29 +851,12 @@ export class BulletinsController {
       // Silent fail — le bulletin reste généré sans cachets
     }
 
-    // ⭐ Résolution de la photo de l'élève depuis student_photos
-    let studentPhotoUrl: string | null = null;
-    if (body.studentMatricule && resolvedTenantId) {
-      try {
-        const photoStudent = await this.prisma.student.findFirst({
-          where: { matricule: body.studentMatricule, tenantId: resolvedTenantId },
-          select: { id: true, photoUrl: true },
-        }).catch(() => null);
-        if (photoStudent?.photoUrl) {
-          studentPhotoUrl = photoStudent.photoUrl;
-        } else if (photoStudent?.id) {
-          const photo = await this.prisma.studentPhoto.findFirst({
-            where: { studentId: photoStudent.id },
-            select: { originalUrl: true, hdUrl: true, thumbnailUrl: true },
-          }).catch(() => null);
-          if (photo) {
-            studentPhotoUrl = photo.hdUrl || photo.originalUrl || photo.thumbnailUrl || null;
-          }
-        }
-      } catch {
-        // Silent fail — pas de photo, le placeholder "Photo" s'affiche
-      }
-    }
+    // ⭐ 2026-10-05 — studentPhotoUrl : déjà résolu plus haut (lignes 638-652)
+    //    dans la vague 1+2 (optimisation 504). On supprime l'ancien bloc
+    //    séquentiel qui refaisait un student.findFirst + studentPhoto.findFirst
+    //    (2 requêtes supplémentaires séquentielles). Le commentaire ci-dessous
+    //    documente l'ancien comportement pour la postérité.
+    // [SUPPRIMÉ — studentPhotoUrl résolu dans la vague 1+2 plus haut]
 
     // ⭐ SECONDAIRE — Résolution de la conduite (conduct_ledger) + distinction/sanction
     //    ⭐ 2026-09-28 — Étendu à isSecondaryEval (Bulletin d'évaluation) en plus

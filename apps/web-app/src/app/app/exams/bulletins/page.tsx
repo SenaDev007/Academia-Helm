@@ -50,7 +50,8 @@ import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useSchoolIdentity } from '@/hooks/useSchoolIdentity';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import apiClient from '@/lib/api/client';
-import { enComponentForCode } from '@/lib/exam-anglophone-config';
+import { enComponentForCode, translatePeriodName } from '@/lib/exam-anglophone-config';
+import { translateClassName } from '@/lib/pedagogy/class-name-en';
 import { toastSuccess, toastError } from '@/lib/toast/toast-helpers';
 import { EXAMS_SUB_MODULES } from '../sub-modules';
 import { useExamSubModules, useExamScope } from '../layout';
@@ -1509,19 +1510,19 @@ function BulletinsContent() {
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
         <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
           <div className="flex-1">
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Trimestre</label>
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">{isEN ? 'Term' : 'Trimestre'}</label>
             <select value={selectedPeriodId} onChange={(e) => setSelectedPeriodId(e.target.value)}
               className="w-full text-sm font-semibold border border-gray-200 bg-gray-50 rounded-lg py-2 px-3 focus:ring-2 focus:ring-blue-500">
-              <option value="">— Sélectionner —</option>
-              {periods.map(p => <option key={p.id} value={p.id}>{p.name || p.label}</option>)}
+              <option value="">{isEN ? '— Select —' : '— Sélectionner —'}</option>
+              {periods.map(p => <option key={p.id} value={p.id}>{isEN ? translatePeriodName(p.name || p.label || '', 'EN') : (p.name || p.label)}</option>)}
             </select>
           </div>
           <div className="flex-1">
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Classe</label>
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">{isEN ? 'Class' : 'Classe'}</label>
             <select value={selectedClassId} onChange={(e) => setSelectedClassId(e.target.value)}
               className="w-full text-sm font-semibold border border-gray-200 bg-gray-50 rounded-lg py-2 px-3 focus:ring-2 focus:ring-blue-500">
-              <option value="">— Sélectionner —</option>
-              {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <option value="">{isEN ? '— Select —' : '— Sélectionner —'}</option>
+              {classes.map(c => <option key={c.id} value={c.id}>{isEN ? translateClassName(c.name) : c.name}</option>)}
             </select>
           </div>
           {/* ⭐ EN + secondaire « Bulletin trimestriel » : bulletin consolidé —
@@ -1529,10 +1530,10 @@ function BulletinsContent() {
               « Bulletin d'évaluation ») : filtre par type sélectionné. */}
           {scopeLang !== 'EN' && !secondaryConsolidated && (
             <div className="flex-1">
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">Évaluation</label>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">{isEN ? 'Evaluation' : 'Évaluation'}</label>
               <select value={selectedEvalTypeId} onChange={(e) => setSelectedEvalTypeId(e.target.value)}
                 className="w-full text-sm font-semibold border border-gray-200 bg-gray-50 rounded-lg py-2 px-3 focus:ring-2 focus:ring-blue-500">
-                <option value="">— Sélectionner —</option>
+                <option value="">{isEN ? '— Select —' : '— Sélectionner —'}</option>
                 {evaluationTypes.map(t => <option key={t.id} value={t.id}>[{t.code}] {t.name}</option>)}
               </select>
             </div>
@@ -1554,16 +1555,16 @@ function BulletinsContent() {
           {bulletinData && bulletinData.results.length > 0 && !isTeacher && (
             <div className="flex items-end">
               <Button onClick={handleGenerateAllPdf} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2.5 rounded-lg shadow-sm w-full md:w-auto">
-                <Printer className="w-4 h-4 mr-2" />Toute la classe
+                <Printer className="w-4 h-4 mr-2" />{isEN ? 'Whole Class' : 'Toute la classe'}
               </Button>
             </div>
           )}
         </div>
         {(selectedClassName || selectedPeriodName || selectedEvalTypeName) && (
           <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 flex-wrap text-xs text-gray-500">
-            <span className="font-semibold">Sélection :</span>
-            <Badge variant="outline" className="text-xs">{selectedPeriodName || '—'}</Badge><span>·</span>
-            <Badge variant="outline" className="text-xs">{selectedClassName || '—'}</Badge><span>·</span>
+            <span className="font-semibold">{isEN ? 'Selection:' : 'Sélection :'}</span>
+            <Badge variant="outline" className="text-xs">{isEN ? translatePeriodName(selectedPeriodName || '', 'EN') || '—' : (selectedPeriodName || '—')}</Badge><span>·</span>
+            <Badge variant="outline" className="text-xs">{isEN ? translateClassName(selectedClassName || '—') : (selectedClassName || '—')}</Badge><span>·</span>
             <Badge variant="outline" className="text-xs">{selectedEvalTypeCode ? `[${selectedEvalTypeCode}] ` : ''}{selectedEvalTypeName || '—'}</Badge>
           </div>
         )}
@@ -1573,22 +1574,24 @@ function BulletinsContent() {
       {loadingBulletins ? (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <span className="ml-3 text-sm text-slate-500">Chargement des bulletins…</span>
+          <span className="ml-3 text-sm text-slate-500">{isEN ? 'Loading report cards…' : 'Chargement des bulletins…'}</span>
         </div>
       ) : !bulletinData ? (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
           <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-          <p className="text-gray-600 font-medium">Aucun bulletin à afficher</p>
+          <p className="text-gray-600 font-medium">{isEN ? 'No report cards to display' : 'Aucun bulletin à afficher'}</p>
           <p className="text-sm text-gray-400 mt-1">
-            {scopeLang !== 'EN' && !secondaryConsolidated
-              ? 'Sélectionnez un trimestre, une classe et une évaluation.'
-              : 'Sélectionnez un trimestre et une classe.'}
+            {isEN
+              ? 'Please select a term and a class.'
+              : (scopeLang !== 'EN' && !secondaryConsolidated
+                ? 'Sélectionnez un trimestre, une classe et une évaluation.'
+                : 'Sélectionnez un trimestre et une classe.')}
           </p>
         </div>
       ) : bulletinData.results.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
           <Users className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-          <p className="text-gray-600 font-medium">Aucun élève / aucune note validée</p>
+          <p className="text-gray-600 font-medium">{isEN ? 'No pupil / no validated grade' : 'Aucun élève / aucune note validée'}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -1700,7 +1703,7 @@ function BulletinsContent() {
 
       {/* ═══ Sub-tab: Critères d'envoi ═══ */}
       {activeSubTab === 'criteria' && (
-        <SendingCriteriaTab tenantId={effectiveTenantId} />
+        <SendingCriteriaTab tenantId={effectiveTenantId} isEN={isEN} />
       )}
 
       {/* ═══ Sub-tab: Bulletins reçus (enseignants) ═══ */}
@@ -1801,7 +1804,7 @@ function BulletinTwoPage({
           </div>
         </div>
         <div className="text-[10px] text-slate-600">
-          {isEn ? <>Session: <strong>{academicYear?.label || ''}</strong> · {selectedPeriodName} · Class: <strong>{selectedClassName}</strong></>
+          {isEn ? <>Session: <strong>{academicYear?.label || ''}</strong> · {translatePeriodName(selectedPeriodName, 'EN')} · Class: <strong>{translateClassName(selectedClassName)}</strong></>
             : <>Année: <strong>{academicYear?.label || ''}</strong> · {selectedPeriodName} · Classe: <strong>{selectedClassName}</strong></>}
         </div>
         <div className="text-[10px] text-slate-600 mt-0.5">
@@ -6446,7 +6449,8 @@ function useAntiScreenshot(enabled: boolean) {
 
 // ─── Sending Criteria Tab — Configuration des critères d'envoi ──────────────
 
-function SendingCriteriaTab({ tenantId }: { tenantId?: string }) {
+function SendingCriteriaTab({ tenantId, isEN }: { tenantId?: string; isEN?: boolean }) {
+  const en = !!isEN;
   const [criteria, setCriteria] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -6475,9 +6479,9 @@ function SendingCriteriaTab({ tenantId }: { tenantId?: string }) {
         reminderDaysBeforeBlock: criteria.reminderDaysBeforeBlock,
         customMessage: criteria.customMessage,
       });
-      toastSuccess('Critères enregistrés', { description: 'Les règles d\'envoi des bulletins ont été mises à jour.' });
+      toastSuccess(en ? 'Criteria saved' : 'Critères enregistrés', { description: en ? 'Sending rules have been updated.' : 'Les règles d\'envoi des bulletins ont été mises à jour.' });
     } catch (err: any) {
-      toastError('Erreur', { description: err.response?.data?.message || err.message });
+      toastError(en ? 'Error' : 'Erreur', { description: err.response?.data?.message || err.message });
     } finally { setSaving(false); }
   };
 
@@ -6485,13 +6489,13 @@ function SendingCriteriaTab({ tenantId }: { tenantId?: string }) {
     return (
       <div className="flex items-center justify-center py-12">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <span className="ml-3 text-sm text-slate-500">Chargement des critères…</span>
+        <span className="ml-3 text-sm text-slate-500">{en ? 'Loading criteria…' : 'Chargement des critères…'}</span>
       </div>
     );
   }
 
   if (!criteria) {
-    return <div className="text-center py-8 text-slate-500">Impossible de charger les critères.</div>;
+    return <div className="text-center py-8 text-slate-500">{en ? 'Unable to load criteria.' : 'Impossible de charger les critères.'}</div>;
   }
 
   return (
@@ -6499,30 +6503,31 @@ function SendingCriteriaTab({ tenantId }: { tenantId?: string }) {
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <div className="flex items-center gap-2 mb-4">
           <Settings className="w-5 h-5 text-blue-600" />
-          <h3 className="text-lg font-bold text-slate-900">Critères d'envoi des bulletins aux parents</h3>
+          <h3 className="text-lg font-bold text-slate-900">{en ? 'Report Card Sending Criteria to Parents' : 'Critères d\'envoi des bulletins aux parents'}</h3>
         </div>
         <p className="text-sm text-slate-500 mb-6">
-          Configurez les règles qui déterminent quels élèves reçoivent leur bulletin et dans quelles conditions.
-          Ces critères sont appliqués automatiquement lors du clic sur « Envoyer aux parents ».
+          {en
+            ? 'Configure the rules that determine which pupils receive their report card and under what conditions. These criteria are automatically applied when you click "Send to Parents".'
+            : 'Configurez les règles qui déterminent quels élèves reçoivent leur bulletin et dans quelles conditions. Ces critères sont appliqués automatiquement lors du clic sur « Envoyer aux parents ».'}
         </p>
 
-        {/* Section 1: Conditions financières */}
+        {/* Section 1: Financial conditions */}
         <div className="mb-6">
           <h4 className="text-sm font-bold text-slate-700 uppercase mb-3 pb-2 border-b border-slate-100">
-            Conditions financières
+            {en ? 'Financial Conditions' : 'Conditions financières'}
           </h4>
           <div className="space-y-3">
             <ToggleRow
-              label="Bloquer si arriérés de scolarité impayés"
-              description="Les élèves dont le compte présente des arriérés ne recevront pas leur bulletin."
+              label={en ? 'Block if unpaid school fees arrears' : 'Bloquer si arriérés de scolarité impayés'}
+              description={en ? 'Pupils with outstanding arrears will not receive their report card.' : 'Les élèves dont le compte présente des arriérés ne recevront pas leur bulletin.'}
               checked={criteria.blockIfArrears}
               onChange={(v) => setCriteria({ ...criteria, blockIfArrears: v })}
             />
             <div className="flex items-center justify-between p-3 border border-slate-200 rounded-lg">
               <div className="flex-1">
-                <p className="text-sm font-medium text-slate-700">Pourcentage minimum de paiement</p>
+                <p className="text-sm font-medium text-slate-700">{en ? 'Minimum payment percentage' : 'Pourcentage minimum de paiement'}</p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Les élèves doivent avoir payé au moins ce pourcentage de leur scolarité pour recevoir le bulletin.
+                  {en ? 'Pupils must have paid at least this percentage of their school fees to receive the report card.' : 'Les élèves doivent avoir payé au moins ce pourcentage de leur scolarité pour recevoir le bulletin.'}
                 </p>
               </div>
               <div className="flex items-center gap-2 ml-4">
@@ -6539,9 +6544,9 @@ function SendingCriteriaTab({ tenantId }: { tenantId?: string }) {
             </div>
             <div className="flex items-center justify-between p-3 border border-slate-200 rounded-lg">
               <div className="flex-1">
-                <p className="text-sm font-medium text-slate-700">Jours de rappel avant blocage</p>
+                <p className="text-sm font-medium text-slate-700">{en ? 'Reminder days before blocking' : 'Jours de rappel avant blocage'}</p>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Nombre de jours avant l'envoi pour rappeler aux parents en retard de paiement.
+                  {en ? 'Number of days before sending to remind parents with late payments.' : 'Nombre de jours avant l\'envoi pour rappeler aux parents en retard de paiement.'}
                 </p>
               </div>
               <input
@@ -6556,63 +6561,63 @@ function SendingCriteriaTab({ tenantId }: { tenantId?: string }) {
           </div>
         </div>
 
-        {/* Section 2: Signatures requises */}
+        {/* Section 2: Required signatures */}
         <div className="mb-6">
           <h4 className="text-sm font-bold text-slate-700 uppercase mb-3 pb-2 border-b border-slate-100">
-            Signatures requises
+            {en ? 'Required Signatures' : 'Signatures requises'}
           </h4>
           <div className="space-y-3">
             <ToggleRow
-              label="Exiger la signature du Directeur"
-              description="Les bulletins ne peuvent être envoyés aux parents qu'après signature du directeur."
+              label={en ? 'Require Director\'s signature' : 'Exiger la signature du Directeur'}
+              description={en ? 'Report cards can only be sent to parents after the Director has signed.' : 'Les bulletins ne peuvent être envoyés aux parents qu\'après signature du directeur.'}
               checked={criteria.requireDirectorSignature}
               onChange={(v) => setCriteria({ ...criteria, requireDirectorSignature: v })}
             />
             <ToggleRow
-              label="Exiger la signature de l'Enseignant"
-              description="Les bulletins ne peuvent être envoyés aux parents qu'après signature de l'enseignant titulaire."
+              label={en ? 'Require Teacher\'s signature' : 'Exiger la signature de l\'Enseignant'}
+              description={en ? 'Report cards can only be sent to parents after the class teacher has signed.' : 'Les bulletins ne peuvent être envoyés aux parents qu\'après signature de l\'enseignant titulaire.'}
               checked={criteria.requireTeacherSignature}
               onChange={(v) => setCriteria({ ...criteria, requireTeacherSignature: v })}
             />
           </div>
         </div>
 
-        {/* Section 3: Envoi et notification */}
+        {/* Section 3: Sending and notification */}
         <div className="mb-6">
           <h4 className="text-sm font-bold text-slate-700 uppercase mb-3 pb-2 border-b border-slate-100">
-            Envoi et notification
+            {en ? 'Sending and Notification' : 'Envoi et notification'}
           </h4>
           <div className="space-y-3">
             <ToggleRow
-              label="Envoi automatique après signature de l'enseignant"
-              description="Les bulletins sont automatiquement envoyés aux parents dès que l'enseignant signe (sans attendre le clic manuel)."
+              label={en ? 'Automatic sending after teacher signs' : 'Envoi automatique après signature de l\'enseignant'}
+              description={en ? 'Report cards are automatically sent to parents as soon as the teacher signs (without waiting for the manual click).' : 'Les bulletins sont automatiquement envoyés aux parents dès que l\'enseignant signe (sans attendre le clic manuel).'}
               checked={criteria.autoSendAfterTeacherSign}
               onChange={(v) => setCriteria({ ...criteria, autoSendAfterTeacherSign: v })}
             />
             <ToggleRow
-              label="Autoriser le téléchargement par les parents"
-              description="Les parents peuvent télécharger le PDF du bulletin depuis leur interface."
+              label={en ? 'Allow download by parents' : 'Autoriser le téléchargement par les parents'}
+              description={en ? 'Parents can download the PDF of the report card from their interface.' : 'Les parents peuvent télécharger le PDF du bulletin depuis leur interface.'}
               checked={criteria.allowDownloadByParents}
               onChange={(v) => setCriteria({ ...criteria, allowDownloadByParents: v })}
             />
             <ToggleRow
-              label="Notifier les parents à l'envoi"
-              description="Un email/SMS est envoyé aux parents lors de la mise à disposition du bulletin."
+              label={en ? 'Notify parents on send' : 'Notifier les parents à l\'envoi'}
+              description={en ? 'An email/SMS is sent to parents when the report card is made available.' : 'Un email/SMS est envoyé aux parents lors de la mise à disposition du bulletin.'}
               checked={criteria.notifyParentOnSend}
               onChange={(v) => setCriteria({ ...criteria, notifyParentOnSend: v })}
             />
           </div>
         </div>
 
-        {/* Section 4: Message personnalisé */}
+        {/* Section 4: Custom message */}
         <div className="mb-6">
           <h4 className="text-sm font-bold text-slate-700 uppercase mb-3 pb-2 border-b border-slate-100">
-            Message personnalisé (optionnel)
+            {en ? 'Custom Message (optional)' : 'Message personnalisé (optionnel)'}
           </h4>
           <textarea
             value={criteria.customMessage || ''}
             onChange={(e) => setCriteria({ ...criteria, customMessage: e.target.value })}
-            placeholder="Message accompagnant le bulletin lors de l'envoi aux parents (ex: informations sur la réunion parents-professeurs, dates de reprise, etc.)"
+            placeholder={en ? 'Message accompanying the report card when sent to parents (e.g. information about parent-teacher meeting, return dates, etc.)' : 'Message accompagnant le bulletin lors de l\'envoi aux parents (ex: informations sur la réunion parents-professeurs, dates de reprise, etc.)'}
             rows={3}
             className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
           />
@@ -6625,13 +6630,15 @@ function SendingCriteriaTab({ tenantId }: { tenantId?: string }) {
             disabled={saving}
             className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-6 py-2.5"
           >
-            {saving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Enregistrement…</> : <><Save className="w-4 h-4 mr-2" />Enregistrer les critères</>}
+            {saving
+              ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{en ? 'Saving…' : 'Enregistrement…'}</>
+              : <><Save className="w-4 h-4 mr-2" />{en ? 'Save criteria' : 'Enregistrer les critères'}</>}
           </Button>
         </div>
 
         {criteria.isDefault && (
           <div className="mt-3 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2">
-            Les valeurs par défaut sont actuellement utilisées. Modifiez et enregistrez pour personnaliser.
+            {en ? 'Default values are currently used. Edit and save to customize.' : 'Les valeurs par défaut sont actuellement utilisées. Modifiez et enregistrez pour personnaliser.'}
           </div>
         )}
       </div>

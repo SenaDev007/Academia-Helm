@@ -672,21 +672,117 @@ export class BulletinsController {
 
         studentSchoolLevelId = enrollment?.schoolLevelId || null;
 
+        // ⭐ 2026-10-05 — RÉSOLUTION DU TITULAIRE DE CLASSE (multi-tier) :
+        //
+        //    Problème : le frontend envoie scopeLang = 'EN' pour un bulletin
+        //    anglophone, mais l'ancienne logique ne filtrait les
+        //    TeacherClassAssignment QUE par classId (classe physique). Or
+        //    l'école a 2 configurations parallèles :
+        //    - Module RH > Administration : équipes pédagogiques séparées FR
+        //      vs EN (StaffAdminAssignment.academicTrackId).
+        //    - Module Pédagogie > Affectation : enseignants anglophones
+        //      affectés aux classes miroirs (Primary One = CI, etc.).
+        //    Sans filtrer par track, on récupérait souvent le titulaire FR
+        //    même pour un bulletin EN, car les 2 classes (CI FR et Primary
+        //    One EN) partageaient parfois le même classId historique.
+        //
+        //    Stratégie multi-tier (3 sources, par ordre de fiabilité) :
+        //    1. AcademicClass.mainTeacherId — le titulaire configuré
+        //       explicitement pour la classe officielle (CI ou Primary One).
+        //       C'est la source de vérité du module Pédagogie > Affectation.
+        //    2. TeacherClassAssignment filtré par classId + Teacher.assignedLanguages
+        //       contenant scopeLang — garantit qu'on récupère un enseignant
+        //       de la bonne piste (FR ou EN) assigné à cette classe physique.
+        //    3. Fallback : TeacherClassAssignment filtré par classId seul
+        //       (comportement legacy — utile si assignedLanguages n'est pas
+        //       rempli, par ex. écoles monolingues).
+        const scopeLang = (body.scopeLang === 'EN') ? 'EN' : 'FR';
+
+        // Tier 1 — AcademicClass.mainTeacherId (Pédagogie > Affectation)
+        if (enrollment?.academicClassId) {
+          try {
+            const academicClass = await this.prisma.academicClass.findUnique({
+              where: { id: enrollment.academicClassId },
+              select: { mainTeacherId: true, languageTrack: true, name: true },
+            }).catch(() => null);
+
+            if (academicClass?.mainTeacherId) {
+              const mainTeacher = await this.prisma.teacher.findFirst({
+                where: { id: academicClass.mainTeacherId, tenantId: resolvedTenantId },
+                select: { firstName: true, lastName: true, gender: true, assignedLanguages: true },
+              }).catch(() => null);
+
+              if (mainTeacher) {
+                const langs = Array.isArray(mainTeacher.assignedLanguages)
+                  ? (mainTeacher.assignedLanguages as any[])
+                  : (typeof mainTeacher.assignedLanguages === 'string'
+                    ? (() => { try { return JSON.parse(mainTeacher.assignedLanguages as any); } catch { return []; } })()
+                    : []);
+                const matchesTrack = !langs || langs.length === 0
+                  || langs.some((l: any) => String(l).toUpperCase() === scopeLang);
+                if (matchesTrack) {
+                  const last = (mainTeacher.lastName || '').trim().toUpperCase();
+                  const first = (mainTeacher.firstName || '').trim();
+                  const civility = mainTeacher.gender === 'F' ? 'Mme' : (mainTeacher.gender === 'M' ? 'M.' : '');
+                  teacherName = civility ? `${civility} ${last} ${first}`.trim() : `${last} ${first}`.trim();
+                  teacherGender = mainTeacher.gender || null;
+                }
+              }
+            }
+          } catch {
+            // Silent fail — on retombe sur TeacherClassAssignment ci-dessous
+          }
+        }
+
         // ⭐ Vague 3 (parallèle) : 4 requêtes indépendantes à lancer en
         //    parallèle dès qu'on a enrollment.classId + enrollment.schoolLevelId :
-        //    1. teacherClassAssignment (si classId)
+        //    1. TeacherClassAssignment (Tier 2 raw SQL filtré par scopeLang,
+        //       ou Tier 3 fallback par classId seul si Tier 1 déjà trouvé →
+        //       on passe null pour skip)
         //    2. schoolLevel (si schoolLevelId — pour code du niveau)
-        //    3. studentPhoto (déjà fait plus haut, mais on garde la logique)
-        //    4. conductSettings (pour conductReference fallback)
         const [
           tca,
           levelRow,
         ] = await Promise.all([
-          enrollment?.classId
-            ? this.prisma.teacherClassAssignment.findFirst({
-                where: { classId: enrollment.classId, tenantId: resolvedTenantId },
-                select: { teacherId: true },
-              }).catch(() => null)
+          // ⭐ Tier 2/3 — TeacherClassAssignment (uniquement si Tier 1 n'a
+          //    pas trouvé l'enseignant)
+          (!teacherName && enrollment?.classId)
+            ? (async () => {
+                try {
+                  // Tier 2 : filtre par classId + Teacher.assignedLanguages
+                  // contenant scopeLang. On accepte aussi assignedLanguages
+                  // IS NULL (= enseignant non typé, valide pour les 2 pistes).
+                  const tcaRows: any[] = await this.prisma.$queryRawUnsafe(
+                    `SELECT tca."teacherId"
+                     FROM teacher_class_assignments tca
+                     JOIN teachers t ON t.id = tca."teacherId"
+                     WHERE tca."classId" = $1
+                       AND tca."tenantId" = $2
+                       AND (t."assignedLanguages" IS NULL
+                            OR t."assignedLanguages"::jsonb @> CAST($3 AS jsonb)
+                            OR t."assignedLanguages"::jsonb = 'null'
+                            OR t."assignedLanguages"::jsonb = '[]')
+                     LIMIT 1`,
+                    enrollment.classId,
+                    resolvedTenantId,
+                    JSON.stringify([scopeLang]),
+                  );
+                  if (Array.isArray(tcaRows) && tcaRows.length > 0 && tcaRows[0]?.teacherId) {
+                    return { teacherId: tcaRows[0].teacherId };
+                  }
+                  // Tier 3 — Fallback legacy : TeacherClassAssignment par classId seul
+                  return await this.prisma.teacherClassAssignment.findFirst({
+                    where: { classId: enrollment.classId, tenantId: resolvedTenantId },
+                    select: { teacherId: true },
+                  }).catch(() => null);
+                } catch {
+                  // Tier 3 — Fallback legacy
+                  return await this.prisma.teacherClassAssignment.findFirst({
+                    where: { classId: enrollment.classId, tenantId: resolvedTenantId },
+                    select: { teacherId: true },
+                  }).catch(() => null);
+                }
+              })()
             : Promise.resolve(null),
           studentSchoolLevelId
             ? this.prisma.schoolLevel.findUnique({

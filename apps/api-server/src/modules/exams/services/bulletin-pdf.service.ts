@@ -2001,6 +2001,28 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
     const positionStr = data.classRank ? this.enOrdinal(data.classRank) : '—';
     const noInClass = data.totalStudents || '—';
 
+    // ⭐ 2026-10-05 — TRADUCTION DU PERIOD NAME pour la piste anglophone :
+    //    Le frontend envoie `periodName` directement depuis la table
+    //    academic_periods (en français — « Premier trimestre », « Deuxième
+    //    trimestre », « Troisième trimestre »). Pour le bulletin EN, on
+    //    traduit en anglais (First Term / Second Term / Third Term). On
+    //    accepte aussi les variantes « Trimestre 1 » / « Trimestre 2 » /
+    //    « Trimestre 3 » et le français abrégé « T1 » / « T2 » / « T3 ».
+    const translateTermName = (raw: string): string => {
+      if (!raw) return '—';
+      const n = String(raw).toLowerCase().trim();
+      const t1 = /(^|\s)1(er|ière|st)?(\s|$)/.test(n) || n.includes('premier') || n.includes('trimestre 1') || n.includes('t1') || n.includes('first');
+      const t2 = /(^|\s)2(ème|e|nd)?(\s|$)/.test(n) || n.includes('deuxieme') || n.includes('deuxième') || n.includes('trimestre 2') || n.includes('t2') || n.includes('second');
+      const t3 = /(^|\s)3(ème|e|rd)?(\s|$)/.test(n) || n.includes('troisieme') || n.includes('troisième') || n.includes('trimestre 3') || n.includes('t3') || n.includes('third');
+      if (t1) return 'First Term';
+      if (t2) return 'Second Term';
+      if (t3) return 'Third Term';
+      return raw;
+    };
+    const periodNameEn = (data.scopeLang === 'EN')
+      ? translateTermName(data.periodName || '')
+      : (data.periodName || '—');
+
     // ─── Grille /100 (tier courant de l'élève) ───────────────────────────────
     const tier = this.enTierFor(pupilAverage);
 
@@ -2140,7 +2162,8 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
       </div>
 
       <!-- REPORT CARD TITLE (⭐ encadré navy sur fond gris clair, même standard que la piste FR) -->
-      <div class="bulletin-title">Report Card &mdash; ${data.periodName} &mdash; ${data.academicYearName}</div>
+      <!-- REPORT CARD TITLE (⭐ periodNameEn = traduction « Premier trimestre » → « First Term ») -->
+      <div class="bulletin-title">Report Card &mdash; ${periodNameEn} &mdash; ${data.academicYearName}</div>
 
       <!-- PUPIL INFO FORM (Report Book) — ⭐ wrapper .info-wrap (cadre 1px noir + border-radius:6px + overflow:hidden) -->
       <div class="info-wrap">
@@ -2206,7 +2229,7 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
 
       <!-- SHORT HEADER PAGE 2 -->
       <div style="text-align:center;margin-bottom:6px;padding-bottom:3px;border-bottom:1px solid #0A2A5E;">
-        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;">${data.schoolName} &mdash; ${data.studentName} &mdash; ${data.periodName}</div>
+        <div style="font-size:9px;font-weight:bold;color:#0A2A5E;">${data.schoolName} &mdash; ${data.studentName} &mdash; ${periodNameEn}</div>
       </div>
 
       <!-- MARK OBTAINABLE / OBTAINED / NO IN CLASS — ⭐ wrapper 2px noir + border-radius:8px -->

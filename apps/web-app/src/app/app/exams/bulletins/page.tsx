@@ -1480,6 +1480,7 @@ function BulletinsContent() {
           evaluationTypeId={selectedEvalTypeId || undefined}
           evaluationTypeName={selectedEvalTypeName || undefined}
           evaluationTypeCode={selectedEvalTypeCode || undefined}
+          language={scopeLang as 'FR' | 'EN'}
           onRefresh={() => {
             loadBulletins();
             // ⭐ Force re-load of workflow signatures
@@ -6055,6 +6056,7 @@ function generateBulletinHtml(
 function WorkflowBar({
   tenantId, academicYearId, classId, periodId, userRole, onRefresh,
   evaluationTypeId, evaluationTypeName, evaluationTypeCode,
+  language,
 }: {
   tenantId?: string;
   academicYearId?: string;
@@ -6065,7 +6067,9 @@ function WorkflowBar({
   evaluationTypeId?: string;
   evaluationTypeName?: string;
   evaluationTypeCode?: string;
+  language?: 'FR' | 'EN';
 }) {
+  const isEN = language === 'EN';
   const [workflowStatus, setWorkflowStatus] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showSignModal, setShowSignModal] = useState<'director' | 'teacher' | null>(null);
@@ -6102,10 +6106,14 @@ function WorkflowBar({
         body.evaluationTypeCode = evaluationTypeCode;
       }
       await apiClient.post(`/institutional-exams/bulletins/class/${classId}/${endpoint}`, body);
-      toastSuccess('Signature appliquée', {
+      toastSuccess(isEN ? 'Signature applied' : 'Signature appliquée', {
         description: showSignModal === 'director'
-          ? `Tous les bulletins${evaluationTypeName ? ` de ${evaluationTypeName}` : ''} ont été signés par le directeur.`
-          : "Tous les bulletins ont été signés par l'enseignant.",
+          ? isEN
+            ? 'All report cards' + (evaluationTypeName ? ' of ' + evaluationTypeName : '') + ' have been signed by the Director.'
+            : 'Tous les bulletins' + (evaluationTypeName ? ' de ' + evaluationTypeName : '') + ' ont été signés par le directeur.'
+          : isEN
+            ? 'All report cards have been signed by the Teacher.'
+            : "Tous les bulletins ont été signés par l'enseignant.",
       });
       setShowSignModal(null);
       setSignature(null);
@@ -6120,7 +6128,7 @@ function WorkflowBar({
     setActionLoading(true);
     try {
       await apiClient.post(`/institutional-exams/bulletins/class/${classId}/activate`, { periodId });
-      toastSuccess('Bulletins activés', { description: 'Distribués aux enseignants titulaires de classe.' });
+      toastSuccess(isEN ? 'Report Cards activated' : 'Bulletins activés', { description: isEN ? 'Distributed to class teachers.' : 'Distribués aux enseignants titulaires de classe.' });
       loadStatus();
       onRefresh();
     } catch (err: any) {
@@ -6132,7 +6140,7 @@ function WorkflowBar({
     setActionLoading(true);
     try {
       await apiClient.post(`/institutional-exams/bulletins/class/${classId}/teacher-return`, { periodId });
-      toastSuccess('Bulletins renvoyés', { description: 'Les bulletins sont de retour dans l\'interface du directeur.' });
+      toastSuccess(isEN ? 'Report Cards returned' : 'Bulletins renvoyés', { description: isEN ? 'Report Cards are back in the Director\'s interface.' : 'Les bulletins sont de retour dans l\'interface du directeur.' });
       loadStatus();
       onRefresh();
     } catch (err: any) {
@@ -6141,7 +6149,7 @@ function WorkflowBar({
   };
 
   const handleSendToParents = async () => {
-    if (!confirm('Confirmer l\'envoi des bulletins aux parents ? Seuls les élèves dont la scolarité est en règle recevront leur bulletin.')) return;
+    if (!confirm(isEN ? 'Confirm sending report cards to parents? Only pupils with cleared fees will receive their report card.' : 'Confirmer l\'envoi des bulletins aux parents ? Seuls les élèves dont la scolarité est en règle recevront leur bulletin.')) return;
     setActionLoading(true);
     try {
       const res = await apiClient.post(`/institutional-exams/bulletins/class/${classId}/send-to-parents`, {
@@ -6151,8 +6159,10 @@ function WorkflowBar({
         timeout: 60000, // ⭐ 1 minute — peut itérer sur de nombreux élèves
       });
       const data = res.data;
-      toastSuccess('Envoi terminé', {
-        description: `${data.sent} envoyé(s) aux parents, ${data.blocked} bloqué(s) (scolarité impayée).`,
+      toastSuccess(isEN ? 'Sending complete' : 'Envoi terminé', {
+        description: isEN
+          ? data.sent + ' sent to parents, ' + data.blocked + ' blocked (unpaid fees).'
+          : data.sent + ' envoyé(s) aux parents, ' + data.blocked + ' bloqué(s) (scolarité impayée).',
       });
       loadStatus();
       onRefresh();
@@ -6176,24 +6186,24 @@ function WorkflowBar({
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Shield className="w-5 h-5 text-blue-600" />
-          <h3 className="text-sm font-bold text-slate-900">Workflow de validation des bulletins</h3>
+          <h3 className="text-sm font-bold text-slate-900">{isEN ? 'Report Card Validation Workflow' : 'Workflow de validation des bulletins'}</h3>
         </div>
         {loading && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
       </div>
 
       {/* Status indicator */}
       <div className="flex items-center gap-2 mb-4 flex-wrap text-xs">
-        <StatusBadge label="Brouillon" active={currentStatus === 'DRAFT'} done={summary && summary.DIRECTOR_SIGNED > 0} />
+        <StatusBadge label={isEN ? 'Draft' : 'Brouillon'} active={currentStatus === 'DRAFT'} done={summary && summary.DIRECTOR_SIGNED > 0} />
         <Arrow />
-        <StatusBadge label="Signé Directeur" active={currentStatus === 'DIRECTOR_SIGNED'} done={summary && summary.TEACHER_DISTRIBUTED > 0} />
+        <StatusBadge label={isEN ? 'Director Signed' : 'Signé Directeur'} active={currentStatus === 'DIRECTOR_SIGNED'} done={summary && summary.TEACHER_DISTRIBUTED > 0} />
         <Arrow />
-        <StatusBadge label="Distribué Enseignants" active={currentStatus === 'TEACHER_DISTRIBUTED'} done={summary && summary.TEACHER_SIGNED > 0} />
+        <StatusBadge label={isEN ? 'Distributed to Teachers' : 'Distribué Enseignants'} active={currentStatus === 'TEACHER_DISTRIBUTED'} done={summary && summary.TEACHER_SIGNED > 0} />
         <Arrow />
-        <StatusBadge label="Signé Enseignant" active={currentStatus === 'TEACHER_SIGNED'} done={summary && summary.TEACHER_RETURNED > 0} />
+        <StatusBadge label={isEN ? 'Teacher Signed' : 'Signé Enseignant'} active={currentStatus === 'TEACHER_SIGNED'} done={summary && summary.TEACHER_RETURNED > 0} />
         <Arrow />
-        <StatusBadge label="Renvoyé Directeur" active={currentStatus === 'TEACHER_RETURNED'} done={summary && summary.PARENT_SENT > 0} />
+        <StatusBadge label={isEN ? 'Returned to Director' : 'Renvoyé Directeur'} active={currentStatus === 'TEACHER_RETURNED'} done={summary && summary.PARENT_SENT > 0} />
         <Arrow />
-        <StatusBadge label="Envoyé Parents" active={currentStatus === 'PARENT_SENT' || currentStatus === 'BLOCKED'} done={false} />
+        <StatusBadge label={isEN ? 'Sent to Parents' : 'Envoyé Parents'} active={currentStatus === 'PARENT_SENT' || currentStatus === 'BLOCKED'} done={false} />
       </div>
 
       {/* Summary counts */}
@@ -6201,19 +6211,19 @@ function WorkflowBar({
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4 text-xs">
           <div className="bg-slate-50 rounded-lg p-2 text-center">
             <div className="font-bold text-slate-900 text-lg">{summary.total}</div>
-            <div className="text-slate-500">Total bulletins</div>
+            <div className="text-slate-500">{isEN ? 'Total Report Cards' : 'Total bulletins'}</div>
           </div>
           <div className="bg-blue-50 rounded-lg p-2 text-center">
             <div className="font-bold text-blue-700 text-lg">{summary.DIRECTOR_SIGNED + summary.TEACHER_DISTRIBUTED + summary.TEACHER_SIGNED + summary.TEACHER_RETURNED}</div>
-            <div className="text-slate-500">En cours</div>
+            <div className="text-slate-500">{isEN ? 'In Progress' : 'En cours'}</div>
           </div>
           <div className="bg-emerald-50 rounded-lg p-2 text-center">
             <div className="font-bold text-emerald-700 text-lg">{summary.PARENT_SENT}</div>
-            <div className="text-slate-500">Envoyés aux parents</div>
+            <div className="text-slate-500">{isEN ? 'Sent to Parents' : 'Envoyés aux parents'}</div>
           </div>
           <div className="bg-red-50 rounded-lg p-2 text-center">
             <div className="font-bold text-red-700 text-lg">{summary.BLOCKED}</div>
-            <div className="text-slate-500">Bloqués (scolarité)</div>
+            <div className="text-slate-500">{isEN ? 'Blocked (Fees)' : 'Bloqués (scolarité)'}</div>
           </div>
         </div>
       )}
@@ -6225,27 +6235,27 @@ function WorkflowBar({
           <>
             {currentStatus === 'NONE' || currentStatus === 'DRAFT' ? (
               <Button onClick={() => setShowSignModal('director')} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
-                <PenTool className="w-4 h-4 mr-2" /> Signer (Directeur)
+                <PenTool className="w-4 h-4 mr-2" /> {isEN ? 'Sign (Director)' : 'Signer (Directeur)'}
               </Button>
             ) : null}
 
             {currentStatus === 'DIRECTOR_SIGNED' && (
               <Button onClick={handleActivate} disabled={actionLoading} className="bg-amber-600 hover:bg-amber-700 text-white text-sm">
                 {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-                Activer — Distribuer aux enseignants
+                {isEN ? 'Activate — Distribute to Teachers' : 'Activer — Distribuer aux enseignants'}
               </Button>
             )}
 
             {(currentStatus === 'TEACHER_RETURNED' || currentStatus === 'TEACHER_SIGNED') && (
               <Button onClick={handleSendToParents} disabled={actionLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm">
                 {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mail className="w-4 h-4 mr-2" />}
-                Envoyer aux parents
+                {isEN ? 'Send to Parents' : 'Envoyer aux parents'}
               </Button>
             )}
 
             {currentStatus === 'PARENT_SENT' && (
               <div className="text-sm text-emerald-700 font-semibold flex items-center gap-2">
-                <CheckCircle className="w-4 h-4" /> Bulletins envoyés aux parents
+                <CheckCircle className="w-4 h-4" /> {isEN ? 'Report Cards sent to parents' : 'Bulletins envoyés aux parents'}
               </div>
             )}
           </>
@@ -6256,20 +6266,20 @@ function WorkflowBar({
           <>
             {currentStatus === 'TEACHER_DISTRIBUTED' && (
               <Button onClick={() => setShowSignModal('teacher')} className="bg-blue-600 hover:bg-blue-700 text-white text-sm">
-                <PenTool className="w-4 h-4 mr-2" /> Signer (Enseignant)
+                <PenTool className="w-4 h-4 mr-2" /> {isEN ? 'Sign (Teacher)' : 'Signer (Enseignant)'}
               </Button>
             )}
 
             {currentStatus === 'TEACHER_SIGNED' && (
               <Button onClick={handleReturn} disabled={actionLoading} className="bg-amber-600 hover:bg-amber-700 text-white text-sm">
                 {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Undo className="w-4 h-4 mr-2" />}
-                Renvoyer au directeur
+                {isEN ? 'Return to Director' : 'Renvoyer au directeur'}
               </Button>
             )}
 
             {currentStatus === 'TEACHER_RETURNED' && (
               <div className="text-sm text-slate-600 font-semibold flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-emerald-600" /> Bulletins renvoyés au directeur
+                <CheckCircle className="w-4 h-4 text-emerald-600" /> {isEN ? 'Report Cards returned to Director' : 'Bulletins renvoyés au directeur'}
               </div>
             )}
 

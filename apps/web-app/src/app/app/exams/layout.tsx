@@ -131,6 +131,9 @@ export function useExamSubModules(baseModules: any[]) {
   const visibleModules = baseModules.filter((m: any) => {
     if (m.id === 'term-recap') return isEN; // piste anglophone uniquement
     if (m.id === 'national-exams') return nationalExamsVisible;
+    // ⭐ 2026-10-06 — Hide Promotion and Distinction tabs for EN track
+    if (m.id === 'promotion' && isEN) return false;
+    if (m.id === 'distinction' && isEN) return false;
     return true;
   });
 

@@ -74,6 +74,7 @@ export default function ProcVerbalWorkspace() {
   const { availableLevels } = useSchoolLevel();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
   const isMaternelle = scopeLevel === 'MATERNELLE';
+  const isEN = scopeLang === 'EN';
 
   // ⭐ Dériver schoolLevelUuid depuis scopeLevel (même pattern que bulletins)
   const activeLevel = useMemo(() => {

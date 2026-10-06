@@ -633,6 +633,9 @@ export class BulletinsController {
     let directorSignature: string | null = null;
     let studentSchoolLevelId: string | null = null;
     let studentPhotoUrl: string | null = null;
+    // ⭐ 2026-10-06 — Store enrollment in outer scope so the teacher-by-subject
+    //    section can reuse it without redundant queries.
+    let resolvedEnrollment: any = null;
     // ⭐ 2026-10-05 — On a déjà récupéré student.id + photoUrl dans la vague 1.
     //    On réutilise directement, plus besoin de refaire un findFirst.
     if (student?.photoUrl) {
@@ -662,15 +665,42 @@ export class BulletinsController {
 
     if (student && body.studentMatricule && resolvedTenantId && academicYearId) {
       try {
-        // ⭐ Vague 2 (parallèle) : enrollment + (rien d'autre d'indépendant
-        //    au niveau de cette profondeur). On lance enrollment seul ici
-        //    car c'est la seule requête qui ne dépend que de student.id.
-        const enrollment = await this.prisma.studentEnrollment.findFirst({
+        // ⭐ Vague 2 : enrollment. On lance enrollment seul ici car c'est la
+        //    seule requête qui ne dépend que de student.id.
+        //    ⭐ 2026-10-06 — FALLBACK ClassStudent : les élèves anglophones
+        //    peuvent être liés à la classe via class_students (ClassStudent)
+        //    SANS StudentEnrollment.classId. Si enrollment est null, on
+        //    cherche le classId + schoolLevelId via ClassStudent.
+        let enrollment = await this.prisma.studentEnrollment.findFirst({
           where: { studentId: student.id, academicYearId, tenantId: resolvedTenantId },
           select: { classId: true, schoolLevelId: true, academicClassId: true },
         }).catch(() => null);
 
+        // ⭐ Fallback ClassStudent : si pas d'enrollment ou pas de classId,
+        //    on cherche via class_students (piste anglophone).
+        if (!enrollment || !enrollment.classId) {
+          const classStudent = await this.prisma.classStudent.findFirst({
+            where: { studentId: student.id, academicYearId, tenantId: resolvedTenantId, status: 'ACTIVE' },
+            select: { classId: true, schoolLevelId: true },
+          }).catch(() => null);
+          if (classStudent) {
+            if (!enrollment) {
+              enrollment = {
+                classId: classStudent.classId,
+                schoolLevelId: classStudent.schoolLevelId,
+                academicClassId: null,
+              };
+            } else if (!enrollment.classId) {
+              enrollment.classId = classStudent.classId;
+            }
+            if (!enrollment.schoolLevelId && classStudent.schoolLevelId) {
+              enrollment.schoolLevelId = classStudent.schoolLevelId;
+            }
+          }
+        }
+
         studentSchoolLevelId = enrollment?.schoolLevelId || null;
+        resolvedEnrollment = enrollment; // ⭐ Store for reuse in teacher-by-subject section
 
         // ⭐ 2026-10-05 — RÉSOLUTION DU TITULAIRE DE CLASSE (multi-tier) :
         //
@@ -1003,16 +1033,25 @@ export class BulletinsController {
         //    stocke en réalité l'AcademicPeriod.id. On utilise donc directement
         //    body.periodId comme quarterId, sans vérifier la table quarters.
 
-        // Vague 1 (parallèle) : trouver l'élève + le conductSetting
-        const [conductStudent, conductSettings] = await Promise.all([
-          this.prisma.student.findFirst({
-            where: { matricule: body.studentMatricule, tenantId: resolvedTenantId },
-            select: { id: true },
-          }).catch(() => null),
+        // Vague 1 (parallèle) : ⭐ 2026-10-06 — RÉUTILISATION : on a déjà
+        //    student.id depuis la vague 1 (ligne 616). Plus besoin de refaire
+        //    un student.findFirst — économie d'1 round trip sur Neon.
+        //    On lance juste conductSetting en parallèle avec school_academic_settings.
+        const conductStudent = student ? { id: student.id } : null;
+        const [conductSettings, settings] = await Promise.all([
           this.prisma.conductSetting.findFirst({
             where: { tenantId: resolvedTenantId, academicYearId },
             orderBy: { createdAt: 'desc' },
           }).catch(() => null),
+          // ⭐ 2026-10-06 — school_academic_settings parallélisé avec
+          //    conductSetting (au lieu d'être séquentiel après la vague 2).
+          this.prisma.$queryRawUnsafe<any[]>(
+            `SELECT config FROM school_academic_settings
+             WHERE "tenantId" = $1 AND "levelCode" = 'SECONDAIRE'
+               AND ("isActive" = true OR status = 'ACTIVE')
+             ORDER BY "createdAt" DESC LIMIT 1`,
+            resolvedTenantId,
+          ).catch(() => []),
         ]);
 
         // ⭐ FIX 2026-09-30 : utiliser directement body.periodId comme quarterId
@@ -1065,19 +1104,10 @@ export class BulletinsController {
         }
 
         // 4. Récupérer les distinctions depuis school_academic_settings
-        //    ⭐ 2026-09-28 — FIX : on filtre sur (isActive=true OR status='ACTIVE')
-        //    pour gérer les 2 schémas (le défaut isActive=false du schéma +
-        //    status='ACTIVE' après activate()). Les anciens records créés avant
-        //    le fix n'ont pas isActive=true, mais ont status='ACTIVE' après
-        //    activation manuelle. Les nouveaux records auront isActive=true
-        //    grâce au fix de academic-settings.service.ts activate().
-        const settings = await this.prisma.$queryRawUnsafe<any[]>(
-          `SELECT config FROM school_academic_settings
-           WHERE "tenantId" = $1 AND "levelCode" = 'SECONDAIRE'
-             AND ("isActive" = true OR status = 'ACTIVE')
-           ORDER BY "createdAt" DESC LIMIT 1`,
-          resolvedTenantId,
-        ).catch(() => []);
+        //    ⭐ 2026-10-06 — Cette requête est désormais parallélisée avec
+        //    conductSetting dans la vague 1 ci-dessus (variable `settings`).
+        //    L'ancien appel séquentiel a été supprimé pour économiser 1 round
+        //    trip sur Neon.
 
         if (settings.length > 0 && settings[0].config) {
           const cfg = typeof settings[0].config === 'string'
@@ -1142,42 +1172,38 @@ export class BulletinsController {
     let resolvedSubjects = body.subjects;
     if (Array.isArray(body.subjects) && body.subjects.length > 0
         && (body.isSecondary || body.isSecondaryEval)
-        && body.studentMatricule && resolvedTenantId && academicYearId) {
+        && student?.id && resolvedTenantId && academicYearId) {
       try {
-        // 1. Trouver l'élève pour récupérer son enrollment (classe)
-        const subStudent = await this.prisma.student.findFirst({
-          where: { matricule: body.studentMatricule, tenantId: resolvedTenantId },
-          select: { id: true },
-        }).catch(() => null);
+        // ⭐ 2026-10-06 — RÉUTILISATION : on a déjà student.id (vague 1) et
+        //    enrollment (vague 2, stocké dans resolvedEnrollment). Plus
+        //    besoin de refaire 2 requêtes séquentielles (student.findFirst +
+        //    studentEnrollment.findFirst) — économie de ~2-4s sur Neon cold.
+        //    Pour les élèves anglophones, resolvedEnrollment peut venir de
+        //    ClassStudent (fallback) avec academicClassId=null mais classId
+        //    non-null — c'est suffisant pour TeacherClassAssignment.
 
-        if (subStudent) {
-          const subEnrollment = await this.prisma.studentEnrollment.findFirst({
-            where: { studentId: subStudent.id, academicYearId, tenantId: resolvedTenantId },
-            select: { classId: true, academicClassId: true },
-          }).catch(() => null);
+        // 2. Pour chaque matière, résoudre le teacher via TeacherClassAssignment
+        //    ⚠️ TeacherClassAssignment n'a PAS de subjectId direct ; la
+        //    relation est via ClassSubject (FK classSubjectId → ClassSubject
+        //    qui a subjectId). On filtre donc par `classSubject.subjectId`.
+        const subjectIds: string[] = body.subjects
+          .map((s: any) => s.id)
+          .filter((id: any) => typeof id === 'string' && id.length > 0);
 
-          // 2. Pour chaque matière, résoudre le teacher via TeacherClassAssignment
-          //    ⚠️ TeacherClassAssignment n'a PAS de subjectId direct ; la
-          //    relation est via ClassSubject (FK classSubjectId → ClassSubject
-          //    qui a subjectId). On filtre donc par `classSubject.subjectId`.
-          const subjectIds: string[] = body.subjects
-            .map((s: any) => s.id)
-            .filter((id: any) => typeof id === 'string' && id.length > 0);
-
-          if (subjectIds.length > 0 && (subEnrollment?.classId || subEnrollment?.academicClassId)) {
-            // ⭐ Stratégie : on tente d'abord par classe physique (classId
-            //    sur TeacherClassAssignment), puis par classe officielle
-            //    (academicClassId sur ClassSubject via classSubject). Les 2
-            //    chemins coexistent dans le schéma Prisma — l'un des deux
-            //    aura des données selon comment l'école a configuré ses
-            //    affectations.
-            const classFilters: any[] = [];
-            if (subEnrollment?.classId) {
-              classFilters.push({ classId: subEnrollment.classId });
-            }
-            if (subEnrollment?.academicClassId) {
-              classFilters.push({ classSubject: { academicClassId: subEnrollment.academicClassId } });
-            }
+        if (subjectIds.length > 0 && (resolvedEnrollment?.classId || resolvedEnrollment?.academicClassId)) {
+          // ⭐ Stratégie : on tente d'abord par classe physique (classId
+          //    sur TeacherClassAssignment), puis par classe officielle
+          //    (academicClassId sur ClassSubject via classSubject). Les 2
+          //    chemins coexistent dans le schéma Prisma — l'un des deux
+          //    aura des données selon comment l'école a configuré ses
+          //    affectations.
+          const classFilters: any[] = [];
+          if (resolvedEnrollment?.classId) {
+            classFilters.push({ classId: resolvedEnrollment.classId });
+          }
+          if (resolvedEnrollment?.academicClassId) {
+            classFilters.push({ classSubject: { academicClassId: resolvedEnrollment.academicClassId } });
+          }
 
             const assignments = await this.prisma.teacherClassAssignment.findMany({
               where: {
@@ -1218,7 +1244,6 @@ export class BulletinsController {
                 || null,
             }));
           }
-        }
       } catch {
         // Silent fail — on retombe sur body.subjects tel quel
       }

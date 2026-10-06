@@ -17,24 +17,124 @@
  */
 
 import {
-  Controller, Post, Body, UseGuards, Res, Headers, Logger,
+  Controller, Post, Get, Body, Param, Query, UseGuards, Res, Headers, Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 import { Permissions } from '../../../auth/decorators/permissions.decorator';
+import { Public } from '../../../auth/decorators/public.decorator';
 import { TenantId } from '../../../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../../database/prisma.service';
 import { PuppeteerPoolService } from '../../../common/services/puppeteer-pool.service';
 import { buildBoardHtml, buildCertificateHtml } from './html-builder';
 import { resolveDistinction, makeVerificationCode, verificationUrl, THEMES } from './html-builder';
-import type { BoardInput, BoardRow, DistinctionInput, Level } from './html-builder';
+import type { BoardInput, BoardRow, DistinctionCode, DistinctionInput, Level } from './html-builder';
 import { DistinctionsNotificationService } from './distinctions-notification.service';
 
 /** ⭐ 2026-10-05 — Bilingue FR/EN pour le générateur de distinctions. */
 type Lang = 'FR' | 'EN';
+
+/**
+ * ⭐ Controller public pour la vérification des QR codes (sans JWT — accessible à tout parent
+ * qui scanne le QR code d'un certificat). Déclaré séparément pour ne PAS appliquer
+ * JwtAuthGuard + PermissionsGuard qui sont appliqués au DistinctionsController principal.
+ *
+ * @Public() désactive le JwtAuthGuard GLOBAL (APP_GUARD) pour cette route afin que
+ * n'importe qui (sans token JWT) puisse vérifier un QR code.
+ */
+@Controller('public/distinctions')
+export class PublicDistinctionsController {
+  private readonly logger = new Logger(PublicDistinctionsController.name);
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * GET /api/public/distinctions/verify/:code
+   *    Vérifie publiquement un code QR de distinction et retourne les infos
+   *    de l'émission (élève, distinction, période, école, statut).
+   *    Pas d'authentification — c'est un endpoint public de vérification.
+   */
+  @Public()
+  @Get('verify/:code')
+  async verifyDistinction(@Param('code') code: string, @Res() res: Response) {
+    if (!code || code.length < 10) {
+      return res.status(400).json({ valid: false, error: 'Code invalide' });
+    }
+
+    try {
+      const record = await this.prisma.distinctionRecord.findUnique({
+        where: { verificationCode: code },
+        include: {
+          student: { select: { firstName: true, lastName: true, matricule: true } },
+          academicYear: { select: { label: true } },
+          class: { select: { name: true } },
+          tenant: { select: { name: true } },
+        },
+      }).catch(() => null);
+
+      if (!record) {
+        return res.json({
+          valid: false,
+          error: 'Code de vérification introuvable',
+          code,
+        });
+      }
+
+      if (record.status === 'REVOKED') {
+        return res.json({
+          valid: false,
+          error: 'Ce certificat a été révoqué',
+          code,
+          revokedAt: record.updatedAt,
+        });
+      }
+
+      const studentName = `${record.student.firstName || ''} ${record.student.lastName || ''}`.trim();
+      const theme = THEMES[record.code as DistinctionCode];
+
+      return res.json({
+        valid: true,
+        code: record.verificationCode,
+        nonce: record.nonce,
+        status: record.status,
+        issuedOn: record.issuedOn,
+        student: {
+          name: studentName,
+          matricule: record.student.matricule || null,
+          className: record.class?.name || null,
+        },
+        distinction: {
+          code: record.code,
+          label: record.label,
+          title: theme?.title || record.label,
+          subtitle: theme?.subtitle || null,
+          category: record.category,
+        },
+        period: {
+          academicYear: record.academicYear?.label || null,
+        },
+        results: record.average != null ? {
+          average: record.average,
+          base: record.base,
+          rank: record.rank,
+          classSize: record.classSize,
+        } : null,
+        school: {
+          name: record.tenant?.name || 'Établissement',
+        },
+        documentType: record.documentType,
+        issuedAt: record.createdAt,
+        verifiedAt: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      this.logger.error('Erreur verifyDistinction:', err);
+      return res.status(500).json({ valid: false, error: 'Erreur serveur' });
+    }
+  }
+}
 
 @Controller('institutional-exams/distinctions')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)

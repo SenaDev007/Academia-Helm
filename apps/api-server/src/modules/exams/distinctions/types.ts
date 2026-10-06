@@ -1,5 +1,8 @@
 export type Level = 'maternel' | 'primaire' | 'secondaire';
 
+/** ⭐ 2026-10-05 — Langue du PDF généré (FR par défaut, EN pour piste anglophone). */
+export type Lang = 'FR' | 'EN';
+
 export type DistinctionCode =
   | 'MAT_OR' | 'MAT_ARGENT' | 'MAT_BRONZE' | 'MAT_EXPLO' | 'MAT_GRAD'
   | 'PRI_FELIC' | 'PRI_ENCOU' | 'PRI_HONNEUR' | 'PRI_COURAGE' | 'PRI_GRAD'
@@ -98,6 +101,8 @@ export interface ResultsInfo {
 
 export interface DistinctionInput {
   code: DistinctionCode;
+  /** ⭐ 2026-10-05 — Langue du PDF (FR ou EN). Défaut: 'FR'. */
+  lang?: Lang;
   school: SchoolInfo;
   student: StudentInfo;
   period: PeriodInfo;
@@ -118,6 +123,8 @@ export interface BoardRow {
 
 export interface BoardInput {
   level: Level;
+  /** ⭐ 2026-10-05 — Langue du PDF (FR ou EN). Défaut: 'FR'. */
+  lang?: Lang;
   school: SchoolInfo;
   className: string;
   period: PeriodInfo;

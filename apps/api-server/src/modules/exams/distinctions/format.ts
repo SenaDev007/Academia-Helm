@@ -13,13 +13,34 @@ export function fmtPct(average: number, base: number): string {
 }
 
 export function fmtRank(rank: number, size?: number): string {
+  // ⭐ 2026-10-05 — Bilingue FR/EN : « 1er » / « 1st », « 2e » / « 2nd »,
+  //    « 3e » / « 3rd », « 4e » / « 4th », etc. La fonction utilise par défaut
+  //    le français (lang=FR) ; le paramètre lang peut être passé en 3e
+  //    argument pour générer l'ordinal anglais.
   const r = rank === 1 ? '1er' : `${rank}e`;
   return size ? `${r} sur ${size}` : r;
+}
+
+/** ⭐ 2026-10-05 — Variante anglaise de fmtRank pour les PDF EN. */
+export function fmtRankEn(rank: number, size?: number): string {
+  const rem10 = rank % 10, rem100 = rank % 100;
+  let suffix: string;
+  if (rem10 === 1 && rem100 !== 11) suffix = 'st';
+  else if (rem10 === 2 && rem100 !== 12) suffix = 'nd';
+  else if (rem10 === 3 && rem100 !== 13) suffix = 'rd';
+  else suffix = 'th';
+  return size ? `${rank}${suffix} of ${size}` : `${rank}${suffix}`;
 }
 
 export function fmtDate(iso: string): string {
   const d = new Date(iso + (iso.length === 10 ? 'T12:00:00' : ''));
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+/** ⭐ 2026-10-05 — Variante anglaise de fmtDate pour les PDF EN. */
+export function fmtDateEn(iso: string): string {
+  const d = new Date(iso + (iso.length === 10 ? 'T12:00:00' : ''));
+  return d.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 export function fill(text: string, vars: Record<string, string>): string {

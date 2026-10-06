@@ -98,6 +98,11 @@ export class DistinctionsController {
    *    Pour la piste francophone (lang='FR'), la moyenne est sur /20.
    *    On retourne la moyenne BRUTE (pas de normalisation), et le caller décide
    *    de la base à utiliser selon lang.
+   * ⭐ 2026-10-06 — OPTIMISATION 504 : paralléliser les requêtes Prisma
+   *    indépendantes pour réduire le temps de réponse. Avant : 4 requêtes
+   *    séquentielles → ~4-8s sur Neon cold start → 504 sur Railway (gateway
+   *    timeout 30s) quand combiné avec le rendu PDF Puppeteer. Désormais :
+   *    2 vagues parallèles (enrollments+classStudents, puis students+evaluations).
    */
   private async getClassAverages(
     tenantId: string,
@@ -112,28 +117,43 @@ export class DistinctionsController {
     //    bulletins : 1st CA + 2nd CA + Exam = /100 par matière, puis moyenne
     //    arithmétique des matières.
     if (lang === 'EN') {
-      // Récupérer les inscriptions des élèves de la classe
-      const enrollments = await this.prisma.studentEnrollment.findMany({
-        where: { classId, academicYearId, status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'RE_ENROLLED', 'PROMOTED', 'PRE_REGISTERED'] } },
-        select: { studentId: true },
-      }).catch(() => []);
-      const studentIds = enrollments.map(e => e.studentId);
+      // ⭐ Vague 1 (parallèle) : récupérer les élèves de la classe via les 2
+      //    relations possibles (StudentEnrollment pour FR, ClassStudent pour EN).
+      //    On utilise l'UNION des 2 listes de studentIds pour couvrir tous les
+      //    cas (élèves liés via enrollment OU class_students).
+      const [enrollments, classStudents] = await Promise.all([
+        this.prisma.studentEnrollment.findMany({
+          where: { classId, academicYearId, status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'RE_ENROLLED', 'PROMOTED', 'PRE_REGISTERED'] } },
+          select: { studentId: true },
+        }).catch(() => []),
+        this.prisma.classStudent.findMany({
+          where: { classId, academicYearId, tenantId, status: 'ACTIVE' },
+          select: { studentId: true },
+        }).catch(() => []),
+      ]);
+
+      // Union des studentIds (sans doublons)
+      const studentIdSet = new Set<string>();
+      for (const e of enrollments) studentIdSet.add(e.studentId);
+      for (const cs of classStudents) studentIdSet.add(cs.studentId);
+      const studentIds = Array.from(studentIdSet);
       if (studentIds.length === 0) return [];
 
-      const students = await this.prisma.student.findMany({
-        where: { id: { in: studentIds } },
-        select: { id: true, firstName: true, lastName: true, matricule: true },
-      }).catch(() => []);
-
-      // ⭐ Récupérer les évaluations VALIDÉES de la période, avec leur type d'éval
-      //    (FCA / SCA / EXAM) pour pouvoir agréger correctement.
-      const evaluations = await this.prisma.evaluation.findMany({
-        where: { tenantId, academicYearId, classId, status: 'VALIDATED', periodId },
-        select: {
-          id: true, subjectId: true, coefficient: true,
-          evaluationType: { select: { code: true } },
-        },
-      }).catch(() => []);
+      // ⭐ Vague 2 (parallèle) : students + evaluations (les 2 ne dépendent
+      //    que de studentIds / classId, pas l'une de l'autre).
+      const [students, evaluations] = await Promise.all([
+        this.prisma.student.findMany({
+          where: { id: { in: studentIds } },
+          select: { id: true, firstName: true, lastName: true, matricule: true },
+        }).catch(() => []),
+        this.prisma.evaluation.findMany({
+          where: { tenantId, academicYearId, classId, status: 'VALIDATED', periodId },
+          select: {
+            id: true, subjectId: true, coefficient: true,
+            evaluationType: { select: { code: true } },
+          },
+        }).catch(() => []),
+      ]);
 
       // ⭐ Mapper evalId → { subjectId, component: 'FCA'|'SCA'|'EXAM' } via le
       //    code du type d'évaluation (FCA/FIRST_CA, SCA/SECOND_CA, EXAM/EXAMINATION).
@@ -156,7 +176,7 @@ export class DistinctionsController {
       const evalIds = Array.from(evalInfoMap.keys());
       if (evalIds.length === 0) return [];
 
-      // ⭐ Récupérer les grades /20 par élève × évaluation
+      // ⭐ Vague 3 : grades (dépend de evalIds + studentIds).
       const grades = await this.prisma.grade.findMany({
         where: { evaluationId: { in: evalIds }, studentId: { in: studentIds } },
         select: { studentId: true, evaluationId: true, score: true, isAbsent: true },
@@ -221,26 +241,41 @@ export class DistinctionsController {
     }
 
     // ─── Piste francophone (comportement d'origine) ─────────────────────────
-    const enrollments = await this.prisma.studentEnrollment.findMany({
-      where: { classId, academicYearId, status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'RE_ENROLLED', 'PROMOTED', 'PRE_REGISTERED'] } },
-      select: { studentId: true },
-    }).catch(() => []);
-    const studentIds = enrollments.map(e => e.studentId);
+    // ⭐ 2026-10-06 — Vague 1 parallèle : enrollments + classStudents (au cas
+    //    où des élèves FR seraient aussi liés via class_students).
+    const [enrollments, classStudents] = await Promise.all([
+      this.prisma.studentEnrollment.findMany({
+        where: { classId, academicYearId, status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'RE_ENROLLED', 'PROMOTED', 'PRE_REGISTERED'] } },
+        select: { studentId: true },
+      }).catch(() => []),
+      this.prisma.classStudent.findMany({
+        where: { classId, academicYearId, tenantId, status: 'ACTIVE' },
+        select: { studentId: true },
+      }).catch(() => []),
+    ]);
+
+    const studentIdSet = new Set<string>();
+    for (const e of enrollments) studentIdSet.add(e.studentId);
+    for (const cs of classStudents) studentIdSet.add(cs.studentId);
+    const studentIds = Array.from(studentIdSet);
     if (studentIds.length === 0) return [];
 
-    const students = await this.prisma.student.findMany({
-      where: { id: { in: studentIds } },
-      select: { id: true, firstName: true, lastName: true, matricule: true },
-    }).catch(() => []);
-
-    const evaluations = await this.prisma.evaluation.findMany({
-      where: { tenantId, academicYearId, classId, status: 'VALIDATED', periodId },
-      select: { id: true, subjectId: true, coefficient: true },
-    }).catch(() => []);
+    // ⭐ Vague 2 parallèle : students + evaluations
+    const [students, evaluations] = await Promise.all([
+      this.prisma.student.findMany({
+        where: { id: { in: studentIds } },
+        select: { id: true, firstName: true, lastName: true, matricule: true },
+      }).catch(() => []),
+      this.prisma.evaluation.findMany({
+        where: { tenantId, academicYearId, classId, status: 'VALIDATED', periodId },
+        select: { id: true, subjectId: true, coefficient: true },
+      }).catch(() => []),
+    ]);
 
     const evalIds = evaluations.map(e => e.id);
     const evalInfoMap = new Map(evaluations.map(e => [e.id, { subjectId: e.subjectId, coef: Number(e.coefficient) || 1 }]));
 
+    // ⭐ Vague 3 : grades
     const grades = await this.prisma.grade.findMany({
       where: { evaluationId: { in: evalIds }, studentId: { in: studentIds } },
       select: { studentId: true, evaluationId: true, score: true, isAbsent: true, qualitativeCode: true },
@@ -344,9 +379,14 @@ export class DistinctionsController {
         return res.status(404).json({ error: lang === 'EN' ? 'No distinction to display (averages below the first threshold)' : 'Aucune distinction à afficher (moyennes sous le premier palier)' });
       }
 
-      const className = (await this.prisma.class.findUnique({ where: { id: classId }, select: { name: true } }).catch(() => null))?.name || (lang === 'EN' ? 'Class' : 'Classe');
-      const period = await this.prisma.academicPeriod.findUnique({ where: { id: periodId }, select: { name: true } }).catch(() => null);
-      const academicYear = await this.prisma.academicYear.findUnique({ where: { id: academicYearId }, select: { label: true } }).catch(() => null);
+      // ⭐ 2026-10-06 — Paralléliser les 3 requêtes indépendantes (class,
+      //    period, academicYear) pour réduire le temps de réponse.
+      const [classRow, period, academicYear] = await Promise.all([
+        this.prisma.class.findUnique({ where: { id: classId }, select: { name: true } }).catch(() => null),
+        this.prisma.academicPeriod.findUnique({ where: { id: periodId }, select: { name: true } }).catch(() => null),
+        this.prisma.academicYear.findUnique({ where: { id: academicYearId }, select: { label: true } }).catch(() => null),
+      ]);
+      const className = classRow?.name || (lang === 'EN' ? 'Class' : 'Classe');
 
       // ⭐ Traduire le nom de la période pour la piste anglophone.
       const translateTermName = (raw: string): string => {
@@ -434,8 +474,11 @@ export class DistinctionsController {
       const secret = process.env.DISTINCTION_SECRET || 'academia-helm-dev-secret';
       const verifyBaseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://academia-helm.academiahelm.com';
 
-      const period = await this.prisma.academicPeriod.findUnique({ where: { id: periodId }, select: { name: true } }).catch(() => null);
-      const academicYear = await this.prisma.academicYear.findUnique({ where: { id: academicYearId }, select: { label: true } }).catch(() => null);
+      // ⭐ 2026-10-06 — Paralléliser period + academicYear.
+      const [period, academicYear] = await Promise.all([
+        this.prisma.academicPeriod.findUnique({ where: { id: periodId }, select: { name: true } }).catch(() => null),
+        this.prisma.academicYear.findUnique({ where: { id: academicYearId }, select: { label: true } }).catch(() => null),
+      ]);
 
       // ⭐ Traduire le nom de la période pour la piste anglophone.
       const translateTermName = (raw: string): string => {
@@ -530,8 +573,11 @@ export class DistinctionsController {
       const secret = process.env.DISTINCTION_SECRET || 'academia-helm-dev-secret';
       const verifyBaseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://academia-helm.academiahelm.com';
 
-      const period = await this.prisma.academicPeriod.findUnique({ where: { id: periodId }, select: { name: true } }).catch(() => null);
-      const academicYear = await this.prisma.academicYear.findUnique({ where: { id: academicYearId }, select: { label: true } }).catch(() => null);
+      // ⭐ 2026-10-06 — Paralléliser period + academicYear.
+      const [period, academicYear] = await Promise.all([
+        this.prisma.academicPeriod.findUnique({ where: { id: periodId }, select: { name: true } }).catch(() => null),
+        this.prisma.academicYear.findUnique({ where: { id: academicYearId }, select: { label: true } }).catch(() => null),
+      ]);
 
       // ⭐ Traduire le nom de la période pour la piste anglophone.
       const translateTermName = (raw: string): string => {

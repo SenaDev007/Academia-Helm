@@ -12,56 +12,20 @@
  */
 
 import * as QRCode from 'qrcode';
-import { THEMES, BOARD_BASE, BOARD_TITLE, DEFAULT_SIGNERS } from './themes';
+import { THEMES, BOARD_BASE, BOARD_TITLE, DEFAULT_SIGNERS, EN_BOARD_BASE, EN_BOARD_TITLE, EN_DEFAULT_SIGNERS, themeFor } from './themes';
 import { DEFAULT_RULES, resolveDistinction, GRADUATION_CODE } from './rules';
 import { makeVerificationCode, verificationUrl } from './security';
 import { fmtAverage, fmtPct, fmtRank, fmtRankEn, fmtDate, fmtDateEn, fill, slug } from './format';
 import type { BoardInput, BoardRow, DistinctionCode, DistinctionInput, Level, Palette, PreparedDistinction, SchoolInfo, StudentInfo, PeriodInfo, ResultsInfo, Lang } from './types';
 
-// ⭐ 2026-10-05 — Libellés bilingues FR/EN pour le tableau collectif et les
-//    certificats. On définit des maps statiques par code de distinction et
-//    par label de section, et on choisit la langue via input.lang.
-const EN_SHORT_LABELS: Record<DistinctionCode, string> = {
-  MAT_OR: 'Gold Star',
-  MAT_ARGENT: 'Silver Star',
-  MAT_BRONZE: 'Bronze Star',
-  MAT_EXPLO: 'Little Explorer',
-  MAT_GRAD: 'Graduation',
-  PRI_FELIC: 'Congratulations',
-  PRI_ENCOU: 'Encouragements',
-  PRI_HONNEUR: 'Honour',
-  PRI_COURAGE: 'Endeavour',
-  PRI_GRAD: 'End of cycle',
-  SEC_FELIC: 'Congratulations',
-  SEC_ENCOU: 'Encouragements',
-  SEC_HONNEUR: 'Honour',
-  SEC_PROGRES: 'Progress',
-  SEC_ASSIDUITE: 'Attendance',
-  SEC_COMPORTEMENT: 'Behaviour',
-  SEC_GRAD: 'End of cycle',
-};
-
-const EN_BOARD_TITLES: Record<Level, string> = {
-  maternel: 'Stars Board',
-  primaire: 'Honor Roll',
-  secondaire: 'Honor Roll',
-};
-
-const EN_DEFAULT_SIGNERS: Record<Level, { director: string; teacher: string }> = {
-  maternel: { director: 'The Headmistress', teacher: 'The Educator' },
-  primaire: { director: 'The Headmaster', teacher: 'The Class Teacher' },
-  secondaire: { director: 'The Principal', teacher: 'The Form Tutor' },
-};
-
 /** Renvoie le shortLabel d'une distinction dans la langue donnée. */
 function shortLabelFor(code: DistinctionCode, lang: Lang): string {
-  if (lang === 'EN') return EN_SHORT_LABELS[code] ?? THEMES[code].shortLabel;
-  return THEMES[code].shortLabel;
+  return themeFor(code, lang).shortLabel;
 }
 
 /** Renvoie le titre du tableau collectif dans la langue donnée. */
 function boardTitleFor(level: Level, lang: Lang): string {
-  if (lang === 'EN') return EN_BOARD_TITLES[level];
+  if (lang === 'EN') return EN_BOARD_TITLE[level];
   return BOARD_TITLE[level];
 }
 
@@ -69,6 +33,12 @@ function boardTitleFor(level: Level, lang: Lang): string {
 function defaultSignersFor(level: Level, lang: Lang): { director: string; teacher: string } {
   if (lang === 'EN') return EN_DEFAULT_SIGNERS[level];
   return DEFAULT_SIGNERS[level];
+}
+
+/** Renvoie le BOARD_BASE dans la langue donnée. */
+function boardBaseFor(level: Level, lang: Lang): DistinctionCode {
+  if (lang === 'EN') return EN_BOARD_BASE[level];
+  return BOARD_BASE[level];
 }
 
 // ─── CSS (repris de css.ts) ───────────────────────────────────────────────
@@ -138,8 +108,8 @@ const CLS: Record<Level, string> = { maternel: 'mat', primaire: 'pri', secondair
 
 // ─── Board HTML ──────────────────────────────────────────────────────────
 export async function buildBoardHtml(b: BoardInput): Promise<string> {
-  const base = THEMES[BOARD_BASE[b.level]];
   const lang: Lang = b.lang ?? 'FR';
+  const base = themeFor(boardBaseFor(b.level, lang), lang);
   const pages: BoardRow[][] = [];
   const ROWS_PER_PAGE = 9;
   for (let i = 0; i < b.rows.length; i += ROWS_PER_PAGE) {
@@ -204,8 +174,8 @@ export async function buildBoardHtml(b: BoardInput): Promise<string> {
 
 // ─── Certificate HTML ────────────────────────────────────────────────────
 export async function buildCertificateHtml(input: DistinctionInput): Promise<string> {
-  const theme = THEMES[input.code];
   const lang: Lang = input.lang ?? 'FR';
+  const theme = themeFor(input.code, lang);
   const vals = { periode: input.period.label.toLowerCase(), annee: input.period.schoolYear };
   const r = input.results;
   const isGrad = input.code === GRADUATION_CODE[theme.level];
@@ -346,5 +316,5 @@ export async function buildCertificateHtml(input: DistinctionInput): Promise<str
 }
 
 // ─── Utility exports ──────────────────────────────────────────────────────
-export { resolveDistinction, DEFAULT_RULES, GRADUATION_CODE, makeVerificationCode, verificationUrl, THEMES, BOARD_BASE, BOARD_TITLE };
+export { resolveDistinction, DEFAULT_RULES, GRADUATION_CODE, makeVerificationCode, verificationUrl, THEMES, BOARD_BASE, BOARD_TITLE, themeFor };
 export type { Level, DistinctionCode, DistinctionInput, BoardInput, BoardRow, Lang };

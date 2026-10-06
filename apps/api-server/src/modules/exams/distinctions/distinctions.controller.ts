@@ -30,8 +30,8 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../../database/prisma.service';
 import { PuppeteerPoolService } from '../../../common/services/puppeteer-pool.service';
 import { buildBoardHtml, buildCertificateHtml } from './html-builder';
-import { resolveDistinction, makeVerificationCode, verificationUrl, THEMES } from './html-builder';
-import type { BoardInput, BoardRow, DistinctionCode, DistinctionInput, Level } from './html-builder';
+import { resolveDistinction, makeVerificationCode, verificationUrl, THEMES, themeFor } from './html-builder';
+import type { BoardInput, BoardRow, DistinctionCode, DistinctionInput, Level, Lang } from './html-builder';
 import { DistinctionsNotificationService } from './distinctions-notification.service';
 
 /** ⭐ 2026-10-05 — Bilingue FR/EN pour le générateur de distinctions. */
@@ -667,7 +667,7 @@ export class DistinctionsController {
         return res.status(400).json({ error: lang === 'EN' ? 'No distinction for this pupil' : 'Aucune distinction pour cet élève' });
       }
 
-      const theme = THEMES[code];
+      const theme = themeFor(code, lang);
       const label = distinctionLabel || theme?.shortLabel || (lang === 'EN' ? 'Distinction' : 'Distinction');
 
       const secret = process.env.DISTINCTION_SECRET || 'academia-helm-dev-secret';

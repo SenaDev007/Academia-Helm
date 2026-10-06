@@ -441,13 +441,16 @@ table.data tbody tr.amber-row td { background:#fffbeb; }
     const subjectHeaders = data.subjects.map((subj, i) => {
       const abbr = abbrs[i];
       const coef = subj.coefficient ?? 1;
-      return `<th class="subject-abbr">${abbr}<div class="subject-coef">Coef ${coef}</div></th>`;
+      // ⭐ 2026-10-06 — EN track has no coefficient column
+      return isEn
+        ? `<th class="subject-abbr">${abbr}</th>`
+        : `<th class="subject-abbr">${abbr}<div class="subject-coef">Coef ${coef}</div></th>`;
     }).join('');
 
     const subjectCells = (st: PVStudentRow) => data.subjects.map((subj, i) => {
       const score = st.subjectScores[subj.id];
       if (typeof score === 'number' && !isNaN(score)) {
-        const cls = score >= 10 ? 'score-pass' : 'score-fail';
+        const cls = score >= (isEn ? 50 : 10) ? 'score-pass' : 'score-fail';
         return `<td class="${cls}">${score.toFixed(2)}</td>`;
       }
       return `<td class="score-none">—</td>`;
@@ -455,14 +458,15 @@ table.data tbody tr.amber-row td { background:#fffbeb; }
 
     const rowsHtml = sortedStudents.map((st, idx) => {
       const zebra = idx % 2 === 1 ? ' style="background:#f8fafc;"' : '';
-      const moyenneCls = st.moyenne !== null && st.moyenne >= 10 ? 'score-pass' : 'score-fail';
+      const moyennePass = isEn ? 50 : 10;
+      const moyenneCls = st.moyenne !== null && st.moyenne >= moyennePass ? 'score-pass' : 'score-fail';
       const moyenneVal = st.moyenne !== null ? st.moyenne.toFixed(2) : '—';
       return `<tr${zebra}>
         <td>${st.matricule || '—'}</td>
         <td style="font-weight:500;">${st.name}</td>
         ${subjectCells(st)}
         <td style="font-weight:bold;">${st.total.toFixed(2)}</td>
-        <td style="font-weight:bold;color:#92400e;">${st.totalCoef}</td>
+        ${isEn ? '' : `<td style="font-weight:bold;color:#92400e;">${st.totalCoef}</td>`}
         <td class="${moyenneCls}" style="font-weight:bold;">${moyenneVal}</td>
         <td style="font-weight:bold;">${st.rang}</td>
       </tr>`;
@@ -527,7 +531,7 @@ ${this.buildWatermark(data)}
         <th rowspan="2">${isEn ? 'Name' : 'Nom et prénoms'}</th>
         ${subjectHeaders}
         <th rowspan="2" style="text-align:center;">${isEn ? 'Total' : 'Total'}</th>
-        <th rowspan="2" style="text-align:center;">Coef</th>
+        ${isEn ? '' : '<th rowspan="2" style="text-align:center;">Coef</th>'}
         <th rowspan="2" style="text-align:center;">${isEn ? 'Average' : 'Moyenne'}</th>
         <th rowspan="2" style="text-align:center;">${isEn ? 'Rank' : 'Rang'}</th>
       </tr>
@@ -535,7 +539,7 @@ ${this.buildWatermark(data)}
         ${data.subjects.map((_, i) => `<th style="font-size:7px;">${abbrs[i]}</th>`).join('')}
       </tr>
     </thead>
-    <tbody>${rowsHtml || `<tr><td colspan="${data.subjects.length + 6}" class="empty-state">${isEn ? 'No data' : 'Aucune donnée'}</td></tr>`}</tbody>
+    <tbody>${rowsHtml || `<tr><td colspan="${data.subjects.length + (isEn ? 5 : 6)}" class="empty-state">${isEn ? 'No data' : 'Aucune donnée'}</td></tr>`}</tbody>
   </table>
 
   <div class="two-cols">

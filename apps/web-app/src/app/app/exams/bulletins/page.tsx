@@ -1371,8 +1371,29 @@ function BulletinsContent() {
 
   const handleGenerateAllPdf = async () => {
     if (!bulletinData) return;
+    let success = 0;
+    let failed = 0;
     for (const student of bulletinData.results) {
-      await handleGeneratePdf(student, { teacherSig: null, directorSig: null, parentSig: null });
+      try {
+        await handleGeneratePdf(student, { teacherSig: null, directorSig: null, parentSig: null });
+        success++;
+      } catch (err) {
+        console.error('PDF generation failed for student:', student.id, err);
+        failed++;
+      }
+    }
+    if (failed > 0) {
+      toastError(isEN ? 'Generation incomplete' : 'Génération incomplète', {
+        description: isEN
+          ? `${success} generated, ${failed} failed.`
+          : `${success} générés, ${failed} échoués.`,
+      });
+    } else {
+      toastSuccess(isEN ? 'Generation complete' : 'Génération terminée', {
+        description: isEN
+          ? `${success} report cards generated.`
+          : `${success} bulletins générés.`,
+      });
     }
   };
 
@@ -1564,8 +1585,12 @@ function BulletinsContent() {
           <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 flex-wrap text-xs text-gray-500">
             <span className="font-semibold">{isEN ? 'Selection:' : 'Sélection :'}</span>
             <Badge variant="outline" className="text-xs">{isEN ? translatePeriodName(selectedPeriodName || '', 'EN') || '—' : (selectedPeriodName || '—')}</Badge><span>·</span>
-            <Badge variant="outline" className="text-xs">{isEN ? translateClassName(selectedClassName || '—') : (selectedClassName || '—')}</Badge><span>·</span>
-            <Badge variant="outline" className="text-xs">{selectedEvalTypeCode ? `[${selectedEvalTypeCode}] ` : ''}{selectedEvalTypeName || '—'}</Badge>
+            <Badge variant="outline" className="text-xs">{isEN ? translateClassName(selectedClassName || '—') : (selectedClassName || '—')}</Badge>
+            {/* ⭐ EN track has no eval type selector (consolidated 1st CA + 2nd CA + Exam),
+                so the eval badge is hidden. For FR track, show the eval type badge. */}
+            {!isEN && selectedEvalTypeName && (
+              <><span>·</span><Badge variant="outline" className="text-xs">{selectedEvalTypeCode ? `[${selectedEvalTypeCode}] ` : ''}{selectedEvalTypeName || '—'}</Badge></>
+            )}
           </div>
         )}
       </div>

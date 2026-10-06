@@ -37,8 +37,6 @@ import apiClient from '@/lib/api/client';
 import { EXAMS_SUB_MODULES } from '@/app/app/exams/sub-modules';
 import { useExamSubModules, useExamScope } from '@/app/app/exams/layout';
 import { filterClassesForLevel, matchesLevelLanguage } from '@/app/app/exams/level-isolation';
-import { translateClassName } from '@/lib/pedagogy/class-name-en';
-import { translatePeriodName } from '@/lib/exam-anglophone-config';
 import { cn } from '@/lib/utils';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -76,7 +74,6 @@ export default function ProcVerbalWorkspace() {
   const { availableLevels } = useSchoolLevel();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
   const isMaternelle = scopeLevel === 'MATERNELLE';
-  const isEN = scopeLang === 'EN';
 
   // ⭐ Dériver schoolLevelUuid depuis scopeLevel (même pattern que bulletins)
   const activeLevel = useMemo(() => {
@@ -85,7 +82,7 @@ export default function ProcVerbalWorkspace() {
   }, [availableLevels, scopeLevel]);
   const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
 
-  const [pvMode, setPvMode] = useState<PVMode>(isEN ? 'trimestriel' : 'evaluation');
+  const [pvMode, setPvMode] = useState<PVMode>('evaluation');
   const [sortMode, setSortMode] = useState<SortMode>('merite');
   const [classes, setClasses] = useState<any[]>([]);
   const [generatingPdf, setGeneratingPdf] = useState(false);
@@ -223,13 +220,24 @@ export default function ProcVerbalWorkspace() {
         .catch(() => ({}));
 
       // Build student rows
-      //    ⭐ FIX 2026-09-29 — accumulation correcte pour trimestriel/annuel :
-      //    Avant : `(existing + score) / 2` ne marche que pour 2 notes exactement
-      //    → pour annuel (3 trimestres × N evals) la moyenne était fausse.
-      //    Désormais on accumule sum + count et on calcule la moyenne à la fin.
+      //    ⭐ 2026-10-06 — EN track trimestriel: subject score = CA1 + CA2 + Exam
+      //    (total /100), NOT average. We accumulate components separately
+      //    (FCA/SCA/EXAM) and sum them at the end — identical to Report Card.
+      //    FR track: accumulation sum/count, average = sum / count.
       const studentMap = new Map<string, StudentRow>();
-      // Pour trimestriel/annuel : accumulator parallèle (sum, count) par subjectId
+      // FR: accumulator (sum, count) per subjectId
       const accumMap = new Map<string, Record<string, { sum: number; count: number }>>();
+      // ⭐ EN: accumulator per component (fca, sca, exam) per subjectId
+      const enAccumMap = new Map<string, Record<string, { fca: number | null; sca: number | null; exam: number | null }>>();
+
+      // ⭐ EN: map eval type code → component
+      const enComponentForCode = (code: string): 'fca' | 'sca' | 'exam' | null => {
+        const c = (code || '').toUpperCase();
+        if (c === 'FCA' || c === 'FIRST_CA') return 'fca';
+        if (c === 'SCA' || c === 'SECOND_CA') return 'sca';
+        if (c === 'EXAM' || c === 'EXAMINATION') return 'exam';
+        return null;
+      };
 
       for (const ev of langFiltered) {
         const grades = sheetsMap[ev.id] || [];
@@ -250,16 +258,29 @@ export default function ProcVerbalWorkspace() {
               rang: 0,
             });
             accumMap.set(grade.studentId, {});
+            enAccumMap.set(grade.studentId, {});
           }
           const st = studentMap.get(grade.studentId)!;
           const acc = accumMap.get(grade.studentId)!;
+          const enAcc = enAccumMap.get(grade.studentId)!;
           const score = grade.isAbsent ? null : (grade.score !== null ? Number(grade.score) : null);
 
           if (pvMode === 'evaluation') {
             // 1 seule évaluation → on prend la note telle quelle
             st.subjectScores[subjectId] = score;
+          } else if (isEN) {
+            // ⭐ EN: accumulate components (FCA, SCA, EXAM) separately
+            const comp = enComponentForCode(ev.evaluationType?.code || '');
+            if (comp && score !== null) {
+              if (!enAcc[subjectId]) enAcc[subjectId] = { fca: null, sca: null, exam: null };
+              if (enAcc[subjectId][comp] === null) {
+                enAcc[subjectId][comp] = score;
+              }
+            } else if (!enAcc[subjectId]) {
+              enAcc[subjectId] = { fca: null, sca: null, exam: null };
+            }
           } else {
-            // trimestriel / annuel → accumulation sum/count
+            // FR trimestriel / annuel → accumulation sum/count
             if (score !== null) {
               if (!acc[subjectId]) acc[subjectId] = { sum: 0, count: 0 };
               acc[subjectId].sum += score;
@@ -271,19 +292,34 @@ export default function ProcVerbalWorkspace() {
         }
       }
 
-      // Pour trimestriel/annuel : finalize la moyenne par matière (sum / count)
+      // Finalize subject scores
       if (pvMode !== 'evaluation') {
-        for (const [studentId, acc] of accumMap.entries()) {
+        for (const [studentId] of accumMap.entries()) {
           const st = studentMap.get(studentId)!;
-          for (const [subjectId, { sum, count }] of Object.entries(acc)) {
-            st.subjectScores[subjectId] = count > 0 ? sum / count : null;
+          if (isEN) {
+            // ⭐ EN: subject score = FCA + SCA + EXAM (total /100)
+            const enAcc = enAccumMap.get(studentId)!;
+            for (const [subjectId, comps] of Object.entries(enAcc)) {
+              if (comps.fca === null && comps.sca === null && comps.exam === null) {
+                st.subjectScores[subjectId] = null;
+              } else {
+                st.subjectScores[subjectId] = (comps.fca ?? 0) + (comps.sca ?? 0) + (comps.exam ?? 0);
+              }
+            }
+          } else {
+            // FR: moyenne = sum / count
+            const acc = accumMap.get(studentId)!;
+            for (const [subjectId, { sum, count }] of Object.entries(acc)) {
+              st.subjectScores[subjectId] = count > 0 ? sum / count : null;
+            }
           }
         }
       }
 
       // Calculate totals + moyenne
-      //    ⭐ 2026-10-06 — EN track: moyenne = sum of subject scores / nb subjects
-      //    (no coefficient). FR track: moyenne = total / totalCoef (with coefficient).
+      //    ⭐ 2026-10-06 — EN: subject scores are already /100 totals (CA1+CA2+Exam).
+      //    General average = sum of subject totals / number of subjects. No coefficient.
+      //    FR: moyenne = total / totalCoef (with coefficient).
       const rows = Array.from(studentMap.values());
       for (const st of rows) {
         let total = 0;
@@ -346,10 +382,8 @@ export default function ProcVerbalWorkspace() {
   const selectedClassName = classes.find(c => c.id === selectedClassId)?.name || '';
   const selectedPeriodName = periods.find(p => p.id === selectedPeriodId)?.name || '';
   const selectedEvalTypeName = evalTypes.find(t => t.id === selectedEvalTypeId)?.name || '';
-  // ⭐ EN: periodLabel translated, annual label in English
-  const periodLabel = pvMode === 'annuel'
-    ? (isEN ? (academicYear?.label || 'School year') : (academicYear?.label || 'Année scolaire'))
-    : (isEN ? translatePeriodName(selectedPeriodName, 'EN') : selectedPeriodName);
+  // ⭐ En mode annuel : on affiche « Année scolaire » au lieu du trimestre
+  const periodLabel = pvMode === 'annuel' ? (academicYear?.label || 'Année scolaire') : selectedPeriodName;
 
   // ── Generate PDF (calls backend /institutional-exams/pv-stats-promotion/proces-verbal) ──
   //    A4 paysage + en-tête officiel + tableau principal + 3 premiers/derniers + pied de page.
@@ -364,7 +398,7 @@ export default function ProcVerbalWorkspace() {
         academicYearName: academicYear?.label || '',
         periodName: periodLabel,
         evalTypeName: pvMode === 'evaluation' ? selectedEvalTypeName : undefined,
-        className: isEN ? translateClassName(selectedClassName) : selectedClassName,
+        className: selectedClassName,
         pvMode,
         sortMode,
         subjects: subjects.map(s => ({
@@ -429,12 +463,10 @@ export default function ProcVerbalWorkspace() {
         <div className="bg-white rounded-lg border border-slate-200 p-4 space-y-3">
           {/* PV mode tabs */}
           <div className="flex gap-1 border-b border-slate-200">
-            {/* ⭐ 2026-10-06 — EN track: hide 'PV d'évaluation' sub-tab (no eval type selector
-                for anglophone track — consolidated 1st CA + 2nd CA + Exam). */}
             {[
-              ...(isEN ? [] : [{ id: 'evaluation' as PVMode, label: 'PV d\'évaluation' }]),
-              { id: 'trimestriel' as PVMode, label: isEN ? 'Quarterly' : 'PV trimestriel' },
-              { id: 'annuel' as PVMode, label: isEN ? 'Annual' : 'PV annuel' },
+              { id: 'evaluation' as PVMode, label: 'PV d\'évaluation' },
+              { id: 'trimestriel' as PVMode, label: 'PV trimestriel' },
+              { id: 'annuel' as PVMode, label: 'PV annuel' },
             ].map(tab => (
               <button
                 key={tab.id}
@@ -452,15 +484,15 @@ export default function ProcVerbalWorkspace() {
           {/* Selectors */}
           <div className="flex flex-wrap gap-3 items-end">
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">{isEN ? 'Class' : 'Classe'}</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Classe</label>
               <select
                 value={selectedClassId}
                 onChange={e => setSelectedClassId(e.target.value)}
                 className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[150px]"
               >
-                <option value="">{isEN ? '— Select —' : '— Sélectionner —'}</option>
+                <option value="">— Sélectionner —</option>
                 {classes.map(c => (
-                  <option key={c.id} value={c.id}>{isEN ? translateClassName(c.name) : c.name}</option>
+                  <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
             </div>
@@ -468,28 +500,28 @@ export default function ProcVerbalWorkspace() {
                 (regroupe déjà les 3 trimestres, pas de sens à filtrer) */}
             {pvMode !== 'annuel' && (
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">{isEN ? 'Term' : 'Période'}</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Période</label>
                 <select
                   value={selectedPeriodId}
                   onChange={e => setSelectedPeriodId(e.target.value)}
                   className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[150px]"
                 >
-                  <option value="">{isEN ? '— Select —' : '— Sélectionner —'}</option>
+                  <option value="">— Sélectionner —</option>
                   {periods.map(p => (
-                    <option key={p.id} value={p.id}>{isEN ? translatePeriodName(p.name, 'EN') : p.name}</option>
+                    <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
               </div>
             )}
             {pvMode === 'evaluation' && (
               <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">{isEN ? 'Evaluation' : 'Évaluation'}</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Évaluation</label>
                 <select
                   value={selectedEvalTypeId}
                   onChange={e => setSelectedEvalTypeId(e.target.value)}
                   className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[150px]"
                 >
-                  <option value="">{isEN ? '— Select —' : '— Sélectionner —'}</option>
+                  <option value="">— Sélectionner —</option>
                   {evalTypes.map(t => (
                     <option key={t.id} value={t.id}>{t.name}</option>
                   ))}
@@ -497,14 +529,14 @@ export default function ProcVerbalWorkspace() {
               </div>
             )}
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">{isEN ? 'Ranking' : 'Classement'}</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Classement</label>
               <select
                 value={sortMode}
                 onChange={e => setSortMode(e.target.value as SortMode)}
                 className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[150px]"
               >
-                <option value="merite">{isEN ? 'By merit' : 'Ordre de mérite'}</option>
-                <option value="alphabetique">{isEN ? 'Alphabetical' : 'Ordre alphabétique'}</option>
+                <option value="merite">Ordre de mérite</option>
+                <option value="alphabetique">Ordre alphabétique</option>
               </select>
             </div>
           </div>
@@ -516,7 +548,7 @@ export default function ProcVerbalWorkspace() {
           </div>
         ) : students.length === 0 ? (
           <div className="bg-white rounded-lg border p-8 text-center text-slate-500">
-            {isEN ? 'No data available. Please select a class and a period.' : 'Aucune donnée disponible. Sélectionnez une classe et une période.'}
+            Aucune donnée disponible. Sélectionnez une classe et une période.
           </div>
         ) : (
           <>
@@ -529,29 +561,28 @@ export default function ProcVerbalWorkspace() {
                 </h3>
                 <Badge variant="outline" className="text-xs">
                   <Users className="w-3 h-3 mr-1" />
-                  {students.length} {isEN ? 'pupils' : 'élèves'}
+                  {students.length} élèves
                 </Badge>
               </div>
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-100">
-                    <TableHead className="text-xs whitespace-nowrap" rowSpan={2}>{isEN ? 'Matricule' : 'Matricule'}</TableHead>
-                    <TableHead className="text-xs whitespace-nowrap" rowSpan={2}>{isEN ? 'Name' : 'Nom et prénoms'}</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap" rowSpan={2}>Matricule</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap" rowSpan={2}>Nom et prénoms</TableHead>
                     {subjects.map(subj => {
+                      // ⭐ Abréviation (priorité : abbreviation école > code > mapping auto)
                       const abbr = subj.abbreviation || (subj.code ? (subj.code.match(/^([A-Z]{2,6})/)?.[1] || subj.name) : null) || subj.name;
                       return (
                       <TableHead key={subj.id} className="text-xs text-center whitespace-nowrap min-w-[60px]">
                         <div className="font-bold" title={subj.name}>{abbr}</div>
-                        {/* ⭐ 2026-10-06 — EN track: no coefficient subtitle */}
-                        {!isEN && <div className="font-normal text-[9px] text-slate-500">Coef: {subj.coefficient ?? 1}</div>}
+                        <div className="font-normal text-[9px] text-slate-500">Coef: {subj.coefficient ?? 1}</div>
                       </TableHead>
                       );
                     })}
-                    <TableHead className="text-xs text-center whitespace-nowrap" rowSpan={2}>{isEN ? 'Total' : 'Total'}</TableHead>
-                    {/* ⭐ 2026-10-06 — EN track: no Coef column */}
-                    {!isEN && <TableHead className="text-xs text-center whitespace-nowrap" rowSpan={2}>Coef</TableHead>}
-                    <TableHead className="text-xs text-center whitespace-nowrap" rowSpan={2}>{isEN ? 'Average' : 'Moyenne'}</TableHead>
-                    <TableHead className="text-xs text-center whitespace-nowrap" rowSpan={2}>{isEN ? 'Rank' : 'Rang'}</TableHead>
+                    <TableHead className="text-xs text-center whitespace-nowrap" rowSpan={2}>Total</TableHead>
+                    <TableHead className="text-xs text-center whitespace-nowrap" rowSpan={2}>Coef</TableHead>
+                    <TableHead className="text-xs text-center whitespace-nowrap" rowSpan={2}>Moyenne</TableHead>
+                    <TableHead className="text-xs text-center whitespace-nowrap" rowSpan={2}>Rang</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -561,11 +592,10 @@ export default function ProcVerbalWorkspace() {
                       <TableCell className="text-xs font-medium whitespace-nowrap">{st.name}</TableCell>
                       {subjects.map(subj => {
                         const score = st.subjectScores[subj.id];
-                        const passThreshold = isEN ? 50 : 10;
                         return (
                           <TableCell key={subj.id} className="text-xs text-center">
                             {typeof score === 'number' && !isNaN(score) ? (
-                              <span className={score >= passThreshold ? 'text-slate-900 font-semibold' : 'text-red-600 font-semibold'}>
+                              <span className={score >= 10 ? 'text-slate-900 font-semibold' : 'text-red-600 font-semibold'}>
                                 {score.toFixed(2)}
                               </span>
                             ) : (
@@ -575,9 +605,8 @@ export default function ProcVerbalWorkspace() {
                         );
                       })}
                       <TableCell className="text-xs text-center font-bold">{st.total.toFixed(2)}</TableCell>
-                      {/* ⭐ 2026-10-06 — EN track: no Coef cell */}
-                      {!isEN && <TableCell className="text-xs text-center font-bold text-amber-700">{st.totalCoef}</TableCell>}
-                      <TableCell className={cn('text-xs text-center font-bold', st.moyenne !== null && st.moyenne >= (isEN ? 50 : 10) ? 'text-emerald-700' : 'text-red-600')}>
+                      <TableCell className="text-xs text-center font-bold text-amber-700">{st.totalCoef}</TableCell>
+                      <TableCell className={cn('text-xs text-center font-bold', st.moyenne !== null && st.moyenne >= 10 ? 'text-emerald-700' : 'text-red-600')}>
                         {st.moyenne !== null ? st.moyenne.toFixed(2) : '—'}
                       </TableCell>
                       <TableCell className="text-xs text-center font-bold">{st.rang}</TableCell>
@@ -593,16 +622,16 @@ export default function ProcVerbalWorkspace() {
               <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
                 <div className="px-4 py-2 bg-emerald-50 border-b border-slate-200">
                   <h3 className="text-sm font-bold text-emerald-800 flex items-center gap-2">
-                    <Award className="w-4 h-4" /> {isEN ? 'Top 3' : 'Trois premiers'}
+                    <Award className="w-4 h-4" /> Trois premiers
                   </h3>
                 </div>
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-slate-100">
-                      <TableHead className="text-xs">{isEN ? 'Matricule' : 'Matricule'}</TableHead>
-                      <TableHead className="text-xs">{isEN ? 'Name' : 'Nom'}</TableHead>
-                      <TableHead className="text-xs text-center">{isEN ? 'Average' : 'Moyenne'}</TableHead>
-                      <TableHead className="text-xs text-center">{isEN ? 'Rank' : 'Rang'}</TableHead>
+                      <TableHead className="text-xs">Matricule</TableHead>
+                      <TableHead className="text-xs">Nom</TableHead>
+                      <TableHead className="text-xs text-center">Moyenne</TableHead>
+                      <TableHead className="text-xs text-center">Rang</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -615,7 +644,7 @@ export default function ProcVerbalWorkspace() {
                       </TableRow>
                     ))}
                     {top3.length === 0 && (
-                      <TableRow><TableCell colSpan={4} className="text-center text-slate-400 text-xs py-4">{isEN ? 'No data' : 'Aucune donnée'}</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={4} className="text-center text-slate-400 text-xs py-4">Aucune donnée</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
@@ -625,16 +654,16 @@ export default function ProcVerbalWorkspace() {
               <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
                 <div className="px-4 py-2 bg-red-50 border-b border-slate-200">
                   <h3 className="text-sm font-bold text-red-800 flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 rotate-180" /> {isEN ? 'Bottom 3' : 'Trois derniers'}
+                    <TrendingUp className="w-4 h-4 rotate-180" /> Trois derniers
                   </h3>
                 </div>
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-slate-100">
-                      <TableHead className="text-xs">{isEN ? 'Matricule' : 'Matricule'}</TableHead>
-                      <TableHead className="text-xs">{isEN ? 'Name' : 'Nom'}</TableHead>
-                      <TableHead className="text-xs text-center">{isEN ? 'Average' : 'Moyenne'}</TableHead>
-                      <TableHead className="text-xs text-center">{isEN ? 'Rank' : 'Rang'}</TableHead>
+                      <TableHead className="text-xs">Matricule</TableHead>
+                      <TableHead className="text-xs">Nom</TableHead>
+                      <TableHead className="text-xs text-center">Moyenne</TableHead>
+                      <TableHead className="text-xs text-center">Rang</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -647,7 +676,7 @@ export default function ProcVerbalWorkspace() {
                       </TableRow>
                     ))}
                     {bottom3.length === 0 && (
-                      <TableRow><TableCell colSpan={4} className="text-center text-slate-400 text-xs py-4">{isEN ? 'No data' : 'Aucune donnée'}</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={4} className="text-center text-slate-400 text-xs py-4">Aucune donnée</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
@@ -666,7 +695,7 @@ export default function ProcVerbalWorkspace() {
                 ) : (
                   <Download className="w-4 h-4 mr-2" />
                 )}
-                {generatingPdf ? (isEN ? 'Generating…' : 'Génération…') : (isEN ? 'Generate PDF' : 'Générer PDF')}
+                {generatingPdf ? 'Génération…' : 'Générer PDF'}
               </Button>
             </div>
           </>

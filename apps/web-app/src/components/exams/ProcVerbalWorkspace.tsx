@@ -37,6 +37,8 @@ import apiClient from '@/lib/api/client';
 import { EXAMS_SUB_MODULES } from '@/app/app/exams/sub-modules';
 import { useExamSubModules, useExamScope } from '@/app/app/exams/layout';
 import { filterClassesForLevel, matchesLevelLanguage } from '@/app/app/exams/level-isolation';
+import { translateClassName } from '@/lib/pedagogy/class-name-en';
+import { translatePeriodName } from '@/lib/exam-anglophone-config';
 import { cn } from '@/lib/utils';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,

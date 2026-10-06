@@ -39,6 +39,8 @@ import apiClient from '@/lib/api/client';
 import { EXAMS_SUB_MODULES } from '@/app/app/exams/sub-modules';
 import { useExamSubModules, useExamScope } from '@/app/app/exams/layout';
 import { filterClassesForLevel } from '@/app/app/exams/level-isolation';
+import { translateClassName } from '@/lib/pedagogy/class-name-en';
+import { translatePeriodName } from '@/lib/exam-anglophone-config';
 import { cn } from '@/lib/utils';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -75,6 +77,7 @@ export default function StatsWorkspace() {
   const { availableLevels } = useSchoolLevel();
   const { language: scopeLang, levelCode: scopeLevel } = useExamScope();
   const isMaternelle = scopeLevel === 'MATERNELLE';
+  const isEN = scopeLang === 'EN';
 
   // ⭐ Dériver schoolLevelUuid depuis scopeLevel (même pattern que bulletins)
   const activeLevel = useMemo(() => {
@@ -487,7 +490,7 @@ export default function StatsWorkspace() {
 
   return (
     <ModuleContainer
-      header={{ title: 'Statistiques', description: 'Statistiques des notes et des moyennes', icon: 'barChart3' }}
+      header={{ title: isEN ? 'Statistics' : 'Statistiques', description: isEN ? 'Grade and average statistics' : 'Statistiques des notes et des moyennes', icon: 'barChart3' }}
       subModules={{ modules: subModules, activeModuleId: 'analytics' }}
       content={{
         layout: 'full',
@@ -496,8 +499,8 @@ export default function StatsWorkspace() {
         {/* Main tabs */}
         <div className="flex gap-1 border-b border-slate-200">
           {[
-            { id: 'notes' as MainTab, label: 'Statistiques des notes', icon: BarChart3 },
-            { id: 'moyennes' as MainTab, label: 'Statistiques des moyennes', icon: TrendingUp },
+            { id: 'notes' as MainTab, label: isEN ? 'Grades Statistics' : 'Statistiques des notes', icon: BarChart3 },
+            { id: 'moyennes' as MainTab, label: isEN ? 'Averages Statistics' : 'Statistiques des moyennes', icon: TrendingUp },
           ].map(tab => (
             <button
               key={tab.id}
@@ -515,9 +518,9 @@ export default function StatsWorkspace() {
         {/* Sub tabs */}
         <div className="flex gap-1 border-b border-slate-200">
           {[
-            { id: 'taux-reussite' as SubTab, label: 'Taux de réussite', icon: Target },
-            { id: 'intervalle' as SubTab, label: 'Intervalle', icon: BarChart3 },
-            { id: 'meilleurs' as SubTab, label: mainTab === 'notes' ? 'Meilleures notes' : 'Meilleures moyennes', icon: Trophy },
+            { id: 'taux-reussite' as SubTab, label: isEN ? 'Success rate' : 'Taux de réussite', icon: Target },
+            { id: 'intervalle' as SubTab, label: isEN ? 'Grades interval' : 'Intervalle', icon: BarChart3 },
+            { id: 'meilleurs' as SubTab, label: isEN ? (mainTab === 'notes' ? 'Top grades' : 'Top averages') : (mainTab === 'notes' ? 'Meilleures notes' : 'Meilleures moyennes'), icon: Trophy },
           ].map(tab => (
             <button
               key={tab.id}
@@ -535,34 +538,34 @@ export default function StatsWorkspace() {
         {/* Selectors */}
         <div className="flex flex-wrap gap-3 items-end bg-white rounded-lg border border-slate-200 p-3">
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Classe</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">{isEN ? 'Class' : 'Classe'}</label>
             <select value={selectedClassId} onChange={e => setSelectedClassId(e.target.value)} className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[150px]">
               <option value="">—</option>
-              {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {classes.map(c => <option key={c.id} value={c.id}>{isEN ? translateClassName(c.name) : c.name}</option>)}
             </select>
           </div>
           {/* ⭐ FIX 2026-09-29 — sélecteur période masqué en mode annuel
               (regroupe déjà les 3 trimestres, pas de sens à filtrer) */}
           {statMode !== 'annuel' && (
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Période</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">{isEN ? 'Term' : 'Période'}</label>
               <select value={selectedPeriodId} onChange={e => setSelectedPeriodId(e.target.value)} className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[150px]">
                 <option value="">—</option>
-                {periods.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {periods.map(p => <option key={p.id} value={p.id}>{isEN ? translatePeriodName(p.name, 'EN') : p.name}</option>)}
               </select>
             </div>
           )}
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Données</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1">{isEN ? 'Data' : 'Données'}</label>
             <select value={statMode} onChange={e => setStatMode(e.target.value as StatMode)} className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[150px]">
-              <option value="evaluation">Évaluation</option>
-              <option value="trimestriel">Trimestriel</option>
-              <option value="annuel">Annuel</option>
+              <option value="evaluation">{isEN ? 'Evaluation' : 'Évaluation'}</option>
+              <option value="trimestriel">{isEN ? 'Termly' : 'Trimestriel'}</option>
+              <option value="annuel">{isEN ? 'Annual' : 'Annuel'}</option>
             </select>
           </div>
           {statMode === 'evaluation' && (
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Évaluation</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">{isEN ? 'Evaluation' : 'Évaluation'}</label>
               <select value={selectedEvalTypeId} onChange={e => setSelectedEvalTypeId(e.target.value)} className="px-3 py-2 text-sm border border-slate-300 rounded-lg min-w-[150px]">
                 <option value="">—</option>
                 {evalTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -593,17 +596,17 @@ export default function StatsWorkspace() {
                 <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
                   <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
                     <h3 className="text-sm font-bold text-slate-900">
-                      Taux de réussite — {scopeLabel}
+                      {isEN ? 'Success rate' : 'Taux de réussite'} — {scopeLabel}
                     </h3>
                   </div>
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-slate-100">
-                        <TableHead className="text-xs" rowSpan={2}>Matière</TableHead>
-                        <TableHead className="text-xs text-center" colSpan={3}>Effectif présents</TableHead>
-                        <TableHead className="text-xs text-center" colSpan={3}>Total admis</TableHead>
-                        <TableHead className="text-xs text-center" colSpan={3}>% Réussite</TableHead>
-                        <TableHead className="text-xs text-center" colSpan={3}>% Échec</TableHead>
+                        <TableHead className="text-xs" rowSpan={2}>{isEN ? 'Subject' : 'Matière'}</TableHead>
+                        <TableHead className="text-xs text-center" colSpan={3}>{isEN ? 'Present' : 'Effectif présents'}</TableHead>
+                        <TableHead className="text-xs text-center" colSpan={3}>{isEN ? 'Admitted' : 'Total admis'}</TableHead>
+                        <TableHead className="text-xs text-center" colSpan={3}>{isEN ? '% Pass' : '% Réussite'}</TableHead>
+                        <TableHead className="text-xs text-center" colSpan={3}>{isEN ? '% Fail' : '% Échec'}</TableHead>
                       </TableRow>
                       <TableRow className="bg-slate-100">
                         {[0,1,2].map(i => <TableHead key={`p${i}`} className="text-[10px] text-center">{['G','F','T'][i]}</TableHead>)}
@@ -637,7 +640,7 @@ export default function StatsWorkspace() {
                 {/* Graphique : barres nombre d'admis par matière */}
                 <div className="bg-white rounded-lg border border-slate-200 p-4">
                   <h3 className="text-sm font-bold text-slate-900 mb-3">
-                    Graphique — Nombre d'admis par matière
+                    {isEN ? 'Chart — Number of admitted by subject' : 'Graphique — Nombre d\'admis par matière'}
                   </h3>
                   <div className="flex items-end gap-2 h-48 border-b border-slate-200 pb-1">
                     {(mainTab === 'notes' ? successRateData : moyennesSuccessData).map((row, idx) => {
@@ -659,7 +662,7 @@ export default function StatsWorkspace() {
                     })}
                   </div>
                   <div className="text-[10px] text-slate-400 mt-1 text-center">
-                    Ordonnée : nombre d'admis · Abscisse : matières
+                    {isEN ? 'Y-axis: number of admitted · X-axis: subjects' : 'Ordonnée : nombre d\'admis · Abscisse : matières'}
                   </div>
                 </div>
               </div>
@@ -670,15 +673,15 @@ export default function StatsWorkspace() {
               <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
                 <div className="px-4 py-2 bg-slate-50 border-b border-slate-200">
                   <h3 className="text-sm font-bold text-slate-900">
-                    {mainTab === 'notes' ? 'Intervalle des notes' : 'Intervalle des moyennes'} — {scopeLabel}
+                    {mainTab === 'notes' ? (isEN ? 'Grades interval' : 'Intervalle des notes') : (isEN ? 'Averages interval' : 'Intervalle des moyennes')} — {scopeLabel}
                   </h3>
                 </div>
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-slate-100">
-                      <TableHead className="text-xs">Matière</TableHead>
-                      <TableHead className="text-xs text-center">Effectif</TableHead>
-                      <TableHead className="text-xs text-center">Présents</TableHead>
+                      <TableHead className="text-xs">{isEN ? 'Subject' : 'Matière'}</TableHead>
+                      <TableHead className="text-xs text-center">{isEN ? 'Total' : 'Effectif'}</TableHead>
+                      <TableHead className="text-xs text-center">{isEN ? 'Present' : 'Présents'}</TableHead>
                       {INTERVALS.map(intr => (
                         <TableHead key={intr.label} className="text-xs text-center">{intr.label}</TableHead>
                       ))}
@@ -709,7 +712,7 @@ export default function StatsWorkspace() {
               <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
                 <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                   <h3 className="text-sm font-bold text-slate-900">
-                    {mainTab === 'notes' ? 'Meilleures notes' : 'Meilleures moyennes'} — Top {topN}
+                    {mainTab === 'notes' ? (isEN ? 'Top grades' : 'Meilleures notes') : (isEN ? 'Top averages' : 'Meilleures moyennes')} — Top {topN}
                   </h3>
                   <Badge variant="outline" className="text-xs">
                     <Filter className="w-3 h-3 mr-1" />
@@ -722,8 +725,8 @@ export default function StatsWorkspace() {
                       <TableHead className="text-xs">Matricule</TableHead>
                       <TableHead className="text-xs">Nom</TableHead>
                       <TableHead className="text-xs">Classe</TableHead>
-                      <TableHead className="text-xs text-center">{mainTab === 'notes' ? 'Note' : 'Moyenne'}</TableHead>
-                      <TableHead className="text-xs text-center">Appréciation</TableHead>
+                      <TableHead className="text-xs text-center">{mainTab === 'notes' ? (isEN ? 'Grade' : 'Note') : (isEN ? 'Average' : 'Moyenne')}</TableHead>
+                      <TableHead className="text-xs text-center">{isEN ? 'Appreciation' : 'Appréciation'}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -732,7 +735,7 @@ export default function StatsWorkspace() {
                         <TableRow key={idx}>
                           <TableCell className="text-xs">{row.matricule || '—'}</TableCell>
                           <TableCell className="text-xs font-medium">{row.name}</TableCell>
-                          <TableCell className="text-xs">{row.className}</TableCell>
+                          <TableCell className="text-xs">{isEN ? translateClassName(row.className) : row.className}</TableCell>
                           <TableCell className="text-xs text-center font-bold text-emerald-700">{row.score.toFixed(2)}</TableCell>
                           <TableCell className="text-xs text-center">{row.appreciation}</TableCell>
                         </TableRow>
@@ -745,13 +748,16 @@ export default function StatsWorkspace() {
                           <TableCell className="text-xs">{selectedClassName}</TableCell>
                           <TableCell className="text-xs text-center font-bold text-emerald-700">{st.moyenne?.toFixed(2) ?? '—'}</TableCell>
                           <TableCell className="text-xs text-center">
-                            {st.moyenne !== null && st.moyenne >= 16 ? 'Très Bien' : st.moyenne !== null && st.moyenne >= 14 ? 'Bien' : st.moyenne !== null && st.moyenne >= 12 ? 'Assez Bien' : st.moyenne !== null && st.moyenne >= 10 ? 'Passable' : 'Insuffisant'}
+                            {isEN
+                              ? (st.moyenne !== null && st.moyenne >= 90 ? 'Outstanding' : st.moyenne !== null && st.moyenne >= 80 ? 'Very Good' : st.moyenne !== null && st.moyenne >= 70 ? 'Good' : st.moyenne !== null && st.moyenne >= 60 ? 'Fair' : st.moyenne !== null && st.moyenne >= 50 ? 'Pass' : 'Weak')
+                              : (st.moyenne !== null && st.moyenne >= 16 ? 'Très Bien' : st.moyenne !== null && st.moyenne >= 14 ? 'Bien' : st.moyenne !== null && st.moyenne >= 12 ? 'Assez Bien' : st.moyenne !== null && st.moyenne >= 10 ? 'Passable' : 'Insuffisant')
+                            }
                           </TableCell>
                         </TableRow>
                       ))
                     )}
                     {(mainTab === 'notes' ? bestNotesData : studentAverages).length === 0 && (
-                      <TableRow><TableCell colSpan={5} className="text-center text-slate-400 text-xs py-4">Aucune donnée</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={5} className="text-center text-slate-400 text-xs py-4">{isEN ? 'No data' : 'Aucune donnée'}</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
@@ -770,7 +776,7 @@ export default function StatsWorkspace() {
                 ) : (
                   <Download className="w-4 h-4 mr-2" />
                 )}
-                {generatingPdf ? 'Génération…' : 'Générer PDF'}
+                {generatingPdf ? (isEN ? 'Generating…' : 'Génération…') : (isEN ? 'Generate PDF' : 'Générer PDF')}
               </Button>
             </div>
           </>

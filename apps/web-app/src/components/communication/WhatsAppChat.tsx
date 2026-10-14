@@ -83,10 +83,12 @@ import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 //   - SlashCommandsPopover : navigation clavier ↑↓/Enter/Échap au-dessus du composer
 //   - flagFromCountryCode + COUNTRIES : drapeaux de pays sur profils membres
 //   - useP2PCall : fallback WebRTC 1-à-1 quand la chaîne média LiveKit/Agora/Daily échoue
+//   - highlightCode : syntax highlight maison (sans dépendance Prism) pour les blocs de code
 import { SlashCommandsPopover, HELM_COMMANDS } from './SlashCommandsPopover';
 import { flagFromCountryCode } from '@/lib/data/flags';
 import { COUNTRIES } from '@/lib/data/countries';
 import { useP2PCall } from '@/hooks/use-p2p-call';
+import { highlightCode } from '@/lib/chat/syntax-highlighter';
 
 // ─────────────────────────────────────────────────────────────────────
 // Types
@@ -364,10 +366,17 @@ function renderRichContent(html: string): string {
   //    Must be processed BEFORE inline code (backticks) to avoid double-processing.
   //    ⭐ V5 (parité Yeshua) : header avec label du langage + bouton COPIER
   //    (copie via délégation d'événement — voir effet dédié dans le composant).
+  //    ⭐ 2026-10-14 — Syntax highlight maison (sans dépendance Prism) :
+  //    highlightCode() prend le code BRUT (non échappé) et renvoie le HTML
+  //    coloré avec des <span style="color:...">. Échappement HTML fait en
+  //    interne. Langages supportés : JS/TS, Python, SQL, JSON, bash, HTML,
+  //    CSS, Markdown. Sinon fallback plain text coloré uniformément.
   if (hasCodeBlock) {
     html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_match, lang, code) => {
       const raw = String(code).trim();
-      const escapedCode = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      // ⭐ 2026-10-14 — Syntax highlight (highlighter maison sans dépendance Prism)
+      //    highlightCode échappe le HTML en interne et renvoie des spans colorés.
+      const highlighted = highlightCode(raw, lang);
       // Attribut sûr : encodeURIComponent échappe < > & " — aucune fermeture de tag possible
       const attr = encodeURIComponent(raw);
       return `<div class="code-block" style="position:relative;margin:6px 0;border-radius:8px;overflow:hidden;border:1px solid #1e293b;">` +
@@ -375,7 +384,7 @@ function renderRichContent(html: string): string {
         `<span style="font-size:0.7em;color:#94a3b8;font-family:ui-monospace,monospace;">${lang || 'code'}</span>` +
         `<button class="code-copy-btn" type="button" data-code="${attr}" style="font-size:0.7em;color:#94a3b8;background:transparent;border:0;cursor:pointer;font-family:inherit;padding:2px 6px;border-radius:4px;">Copier</button>` +
         `</div>` +
-        `<pre style="background-color:#0f172a;color:#f1f5f9;padding:10px 12px;margin:0;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:0.85em;line-height:1.5;"><code>${escapedCode}</code></pre>` +
+        `<pre style="background-color:#0f172a;color:#f1f5f9;padding:10px 12px;margin:0;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:0.85em;line-height:1.5;"><code>${highlighted}</code></pre>` +
         `</div>`;
     });
   }

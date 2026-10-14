@@ -79,6 +79,14 @@ import { getHelmWatermarkStyle } from './HelmWatermark';
 import { RichTextEditor } from '@/components/ui/RichTextEditor';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
+// ⭐ 2026-10-14 — Ports Yeshua Connect (audit Helm Connect vs Yeshua Connect) :
+//   - SlashCommandsPopover : navigation clavier ↑↓/Enter/Échap au-dessus du composer
+//   - flagFromCountryCode + COUNTRIES : drapeaux de pays sur profils membres
+//   - useP2PCall : fallback WebRTC 1-à-1 quand la chaîne média LiveKit/Agora/Daily échoue
+import { SlashCommandsPopover, HELM_COMMANDS } from './SlashCommandsPopover';
+import { flagFromCountryCode } from '@/lib/data/flags';
+import { COUNTRIES } from '@/lib/data/countries';
+import { useP2PCall } from '@/hooks/use-p2p-call';
 
 // ─────────────────────────────────────────────────────────────────────
 // Types
@@ -683,6 +691,14 @@ function parseSlashCommand(input: string): { content?: string; isCommand: boolea
       return { isCommand: true, special: 'announce' };
     case '/clear':
       return { isCommand: true, special: 'clear' };
+    case '/help': {
+      // ⭐ 2026-10-14 — /help (porté de Yeshua Connect) — affiche l'aide des commandes.
+      //    On génère la liste à partir de HELM_COMMANDS pour rester synchro avec le popover.
+      const helpText = HELM_COMMANDS
+        .map((c) => `${c.icon} /${c.name}${c.usage.replace('/' + c.name, '') ? ' ' + c.usage.replace('/' + c.name, '').trim() : ''} — ${c.description}`)
+        .join('\n');
+      return { isCommand: true, content: helpText };
+    }
     default:
       // Unknown slash command — send as regular text (Discord does the same)
       return { isCommand: false };
@@ -1071,6 +1087,16 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
   const [groupCallData, setGroupCallData] = useState<{ callId: string; callType: 'AUDIO' | 'VIDEO'; conversationId: string; isInitiator: boolean; participants: Map<string, { name: string; stream?: MediaStream }> } | null>(null);
   // ⭐ Helm Connect V2.6 — Poll creation modal
   const [showPollModal, setShowPollModal] = useState(false);
+  // ⭐ 2026-10-14 — Slash commands popover (porté de Yeshua Connect)
+  //    Affiché au-dessus du RichTextEditor quand l'utilisateur tape "/". Navigation
+  //    clavier ↑↓/Enter/Échap via le composant SlashCommandsPopover.
+  const [showSlashPopover, setShowSlashPopover] = useState(false);
+  // ⭐ 2026-10-14 — Fallback WebRTC P2P 1-à-1 (porté de Yeshua Connect)
+  //    Activé quand la chaîne média LiveKit/Agora/Daily échoue (CFNAT, key
+  //    expirée, etc.). Le hook gère la signalisation via /api/chat/calls/webrtc.
+  const p2pCall = useP2PCall();
+  // ⭐ 2026-10-14 — P2P fallback activé pour l'appel courant (pour affichage UI)
+  const [p2pFallbackActive, setP2pFallbackActive] = useState(false);
   // ⭐ Helm Connect V2.7 — Format toolbar + reply-to-message + message actions
   const [showFormatToolbar, setShowFormatToolbar] = useState(false);
   const [replyToMessage, setReplyToMessage] = useState<{ id: string; senderName: string; content: string } | null>(null);
@@ -3595,6 +3621,66 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
       setReplyQuoteCache(prev => ({ ...prev, ...newEntries }));
     }
   }, [messages, replyQuoteCache]);
+
+  // ───────────────────────────────────────────────────────────────────
+  // ⭐ 2026-10-14 — Slash command selection (porté de Yeshua Connect)
+  //    Appelé quand l'utilisateur clique/valide une commande dans le popover.
+  //    Pour les commandes sans args (/poll, /announce, /clear, /help) on déclenche
+  //    l'action immédiatement ; pour les autres (/me, /shrug, etc.) on insère le
+  //    squelette dans l'éditeur (l'utilisateur complète les args puis appuie sur Entrée).
+  // ───────────────────────────────────────────────────────────────────
+  const handleSlashCommandSelect = useCallback((cmdName: string, _args: string) => {
+    // Commandes spéciales (sans args) : déclenchement immédiat
+    if (cmdName === 'poll') {
+      setText('');
+      setReplyToMessage(null);
+      setShowPollModal(true);
+      setShowSlashPopover(false);
+      return;
+    }
+    if (cmdName === 'announce') {
+      setText('');
+      setReplyToMessage(null);
+      setShowAnnouncements(true);
+      setShowSlashPopover(false);
+      return;
+    }
+    if (cmdName === 'clear') {
+      setText('');
+      setReplyToMessage(null);
+      setMessages([]);
+      setShowSlashPopover(false);
+      toast.success('Messages effacés');
+      return;
+    }
+    if (cmdName === 'help') {
+      // /help → on envoie directement le texte d'aide
+      const helpText = HELM_COMMANDS
+        .map((c) => `${c.icon} /${c.name}${c.usage.replace('/' + c.name, '') ? ' ' + c.usage.replace('/' + c.name, '').trim() : ''} — ${c.description}`)
+        .join('\n');
+      setText(helpText);
+      setShowSlashPopover(false);
+      // L'utilisateur appuie sur Entrée pour envoyer, ou on peut auto-send :
+      // on laisse l'utilisateur relire puis valider.
+      return;
+    }
+    // Commandes avec args (/me, /shrug, /tableflip, /unflip, /lenny, /spoiler, /code) :
+    // on insère le squelette "/cmd " dans l'éditeur pour que l'utilisateur
+    // complète les args puis envoie avec Entrée (le parseSlashCommand existant
+    // fera la transformation au send).
+    setText(`/${cmdName} `);
+    setShowSlashPopover(false);
+    // Focus back to editor
+    setTimeout(() => {
+      const textarea = document.querySelector('textarea[placeholder^="Tapez un message"]') as HTMLTextAreaElement | null;
+      if (textarea) {
+        textarea.focus();
+        // Place cursor at end
+        const len = textarea.value.length;
+        textarea.setSelectionRange(len, len);
+      }
+    }, 50);
+  }, [setShowPollModal, setShowAnnouncements, setShowSlashPopover, setText, setReplyToMessage, setMessages]);
 
   // ───────────────────────────────────────────────────────────────────
   // Send text message (with optional reply-to + formatting preserved)
@@ -7961,6 +8047,15 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                     <Paperclip className="w-5 h-5" />
                   </button>
                   <div className="flex-1 min-w-0 bg-slate-100 rounded-2xl overflow-hidden relative">
+                    {/* ⭐ 2026-10-14 — SlashCommands popover (porté de Yeshua Connect) :
+                        affiché au-dessus du RichTextEditor quand l'utilisateur tape "/". */}
+                    {showSlashPopover && (
+                      <SlashCommandsPopover
+                        input={text}
+                        onCommand={handleSlashCommandSelect}
+                        onDismiss={() => setShowSlashPopover(false)}
+                      />
+                    )}
                     {/* ⭐ MENTIONS: Autocomplete popover — appears when the user types @
                         followed by letters. Shows matching conversation participants.
                         Clicking a participant inserts @FirstName into the message. */}
@@ -8040,6 +8135,11 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                         handleTyping();
                         // ⭐ MENTIONS: detect @ followed by letters to show autocomplete
                         const textContent = html.replace(/<[^>]*>/g, '');
+                        // ⭐ 2026-10-14 — Slash commands: detect "/" at start to show popover
+                        //    (porté de Yeshua Connect). Le popover filtre par préfixe
+                        //    cmdName automatiquement (voir SlashCommandsPopover).
+                        const trimmed = textContent.trimStart();
+                        setShowSlashPopover(trimmed.startsWith('/'));
                         const lastAtIndex = textContent.lastIndexOf('@');
                         if (lastAtIndex !== -1) {
                           const afterAt = textContent.substring(lastAtIndex + 1);
@@ -9494,6 +9594,14 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                 🔒 <span className="hidden sm:inline">Chiffré de bout en bout</span>
               </span>
             )}
+            {/* ⭐ 2026-10-14 — P2P fallback indicator (porté de Yeshua Connect) :
+                affiche un badge "P2P" quand le fallback WebRTC direct est actif
+                (chaîne média LiveKit/Agora/Daily échouée). */}
+            {p2pFallbackActive && (
+              <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-500/30 border border-amber-300/50 text-[10px] font-bold text-amber-100" title="Mode peer-to-peer de secours — la chaîne média LiveKit/Agora/Daily est indisponible, le média voyage directement entre les deux navigateurs via WebRTC.">
+                P2P
+              </span>
+            )}
           </div>
           {/* Center: avatar (for AUDIO calls or outgoing VIDEO) */}
           {(callData.callType === 'AUDIO' || callState !== 'active') && (
@@ -9631,7 +9739,19 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
             <div className="p-6 text-center border-b border-slate-100">
               <div className={cn('w-20 h-20 rounded-full mx-auto mb-3 flex items-center justify-center text-white text-2xl font-bold', getAvatarColor(profileUser.name))}>{getInitials(profileUser.name)}</div>
-              <h3 className="text-lg font-bold text-slate-900">{profileUser.name}</h3>
+              <h3 className="text-lg font-bold text-slate-900 flex items-center justify-center gap-1.5">
+                {/* ⭐ 2026-10-14 — Country flag (porté de Yeshua Connect) — affiche le
+                    drapeau du pays du membre à côté de son nom. profileData.country
+                    peut être un code ISO 2 lettres (BJ, FR, US) ou un nom (Bénin, France). */}
+                {profileData?.country && (() => {
+                  const c = String(profileData.country).trim();
+                  if (/^[a-zA-Z]{2}$/.test(c)) return <span title={c.toUpperCase()}>{flagFromCountryCode(c.toUpperCase())}</span>;
+                  const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                  const hit = COUNTRIES.find(co => norm(co.name) === norm(c));
+                  return hit ? <span title={hit.name}>{flagFromCountryCode(hit.code)}</span> : null;
+                })()}
+                {profileUser.name}
+              </h3>
               <p className="text-sm text-slate-500">
                 {formatChatRoleLabel(profileData?.roleLabel || profileData?.role) || '—'}
               </p>
@@ -9723,7 +9843,19 @@ function MemberProfileModal({
               ? <img src={member.avatarUrl || profile?.avatarUrl} alt={fullName} className="w-full h-full object-cover" />
               : getInitials(fullName)}
           </div>
-          <h3 className="text-lg font-bold text-white text-center mt-2 truncate">{fullName}</h3>
+          <h3 className="text-lg font-bold text-white text-center mt-2 truncate flex items-center justify-center gap-1.5">
+            {/* ⭐ 2026-10-14 — Country flag (porté de Yeshua Connect) — affiche le
+                drapeau du pays du membre. profile.country peut être un code ISO 2
+                lettres (BJ, FR, US) ou un nom (Bénin, France). */}
+            {(profile?.country || member.country) && (() => {
+              const c = String(profile?.country || member.country).trim();
+              if (/^[a-zA-Z]{2}$/.test(c)) return <span title={c.toUpperCase()}>{flagFromCountryCode(c.toUpperCase())}</span>;
+              const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+              const hit = COUNTRIES.find(co => norm(co.name) === norm(c));
+              return hit ? <span title={hit.name}>{flagFromCountryCode(hit.code)}</span> : null;
+            })()}
+            {fullName}
+          </h3>
           <p className="text-xs text-white/80 text-center flex items-center justify-center gap-1.5">
             <span className={cn('w-2 h-2 rounded-full inline-block', isOnline ? 'bg-green-400' : 'bg-slate-400')} />
             {isOnline ? 'En ligne' : 'Hors ligne'}

@@ -433,7 +433,14 @@ const NEVER_INTERCEPT = [
   /^\/api\/(finance\/payments\/(fedapay|feexpay)|billing\/(feexpay|fedapay))(\/|$)/,
   // ⭐ V4.0 — Génération de documents / exports / téléchargements binaires :
   //    réponses non-JSON (PDF, XLSX, ZIP…) — ni cachables ni « fabricables ».
-  /\/(export|receipt\.pdf|download|\/pdf)(\/|$|\?)/,
+  //    ⭐ 2026-10-14 — FIX : `download-bundle`, `export-educmaster`, etc. ne
+  //    sont pas matchés par l'ancien regex qui exige `/`, `$`, ou `?` après le
+  //    token. Désormais on accepte aussi `-` (hyphen) comme séparateur.
+  /\/(export[-/]|receipt\.pdf|download[-/]|\/pdf[\/?]?)/,
+  // ⭐ 2026-10-14 — Export EducMaster (POST déguisé en lecture — retourne JSON
+  //    d'export, pas une vraie mutation. Ne doit JAMAIS être mis en file
+  //    d'attente car la réponse n'est pas une entité student).
+  /\/students\/[^/]+\/export-educmaster$/,
   /^\/platform\//, // back-office admin
   /^\/patronat(\/|$)/,
   /^\/saisiemaster(\/|$)/,
@@ -2351,14 +2358,44 @@ function fetchWithTimeout(request, timeoutMs) {
    Le premier match gagne ; '/api/.*' non mappé → 'api_cache' générique. */
 const ROUTE_TABLES = [
   // ─── Élèves & Scolarité ───
-  [/^\/api\/students(\/|$)/, 'student', /\/(statistics|stats|transfers|documents|id-cards|admissions|movements|abandons|guardians|photo)(\/|$)/],
+  // ⭐ 2026-10-14 — FIX routing mismatches :
+  //    1. `/api/students/enrollments` → `studentenrollment` (was `student`)
+  //    2. `/api/students/class-transfers-history` → `classtransfer` (was `student`)
+  //    3. `/api/students/movement-history` → `studentmovement` (was `student`)
+  //    4. `/api/students/orion/student/:id/alerts` → `orion_alerts` (was `student`)
+  //    5. `/api/students/:id/audit` → `studentauditlog` (was `student`)
+  //    6. `/api/students/:id/academic-dossier` → `studentacademicrecord` (was `student`)
+  //    7. `/api/students/admissions/:id/documents` → `admissiondocument` (was `admission`)
+  //    8. `/api/students/admissions/:id/interviews` → `admissioninterview` (was `admission`)
+  //    9. `/api/students/id-cards/templates` → `carddesigntemplate` (was `studentidcard`)
+  //    10. `/api/students/transfers/search-schools` → `api_cache` (was `studenttransfer`)
+  //    11. `/api/students/transfers/:id/dossier` → `api_cache` (was `studenttransfer`)
+  // These specific routes MUST come BEFORE the generic `/api/students` route
+  // because ROUTE_TABLES is evaluated first-match-wins.
+  [/^\/api\/students\/enrollments/, 'studentenrollment'],
+  [/^\/api\/students\/class-transfers-history/, 'classtransfer'],
+  [/^\/api\/students\/movement-history/, 'studentmovement'],
+  [/^\/api\/students\/orion\//, 'orion_alerts'],
+  [/^\/api\/students\/[^/]+\/audit/, 'studentauditlog'],
+  [/^\/api\/students\/[^/]+\/academic-dossier/, 'studentacademicrecord'],
+  [/^\/api\/students\/admissions\/[^/]+\/documents/, 'admissiondocument'],
+  [/^\/api\/students\/admissions\/documents\//, 'admissiondocument'],
+  [/^\/api\/students\/admissions\/[^/]+\/interviews/, 'admissioninterview'],
+  [/^\/api\/students\/admissions\/interviews\//, 'admissioninterview'],
+  [/^\/api\/students\/id-cards\/templates/, 'carddesigntemplate'],
+  [/^\/api\/students\/transfers\/search-schools/, 'api_cache'],
+  [/^\/api\/students\/transfers\/[^/]+\/dossier/, 'api_cache'],
+  // Original student routes (after specific sub-routes)
+  [/^\/api\/students(\/|$)/, 'student', /\/(statistics|stats|transfers|documents|id-cards|admissions|movements|abandons|guardians|photo|enrollments|class-transfers-history|movement-history|orion|audit|academic-dossier)(\/|$)/],
   [/^\/api\/students\/.*\/guardians/, 'guardian'],
   [/^\/api\/all-classes/, 'class'],
   [/^\/api\/classes/, 'class'],
+  [/^\/api\/academic-classes/, 'academicclass'],
   [/^\/api\/class-students/, 'classstudent'],
   [/^\/api\/class-subjects/, 'classsubject'],
   [/^\/api\/subjects/, 'subject'],
   [/^\/api\/school-levels/, 'schoollevel'],
+  [/^\/api\/education-series/, 'academicseries'],
   [/^\/api\/attendance/, 'attendance'],
   [/^\/api\/absences/, 'absence'],
   [/^\/api\/disciplinary/, 'disciplinaryincident'],
@@ -3183,8 +3220,18 @@ async function swQueueMutation(request, details, bodyText) {
   const store = routeTable(path);
 
   // ID de l'entité : corps → URL → généré localement
-  const urlUuidMatch = url.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-  let urlId = urlUuidMatch ? urlUuidMatch[0] : null;
+  // ⭐ 2026-10-14 — FIX : pour les routes imbriquées (ex: /students/:id/guardians/:guardianId),
+  //    on prend le DERNIER UUID de l'URL (l'id de la ressource cible), pas le premier.
+  //    Avant : url.match retournait le premier UUID → studentId au lieu de guardianId.
+  //    Désormais : pour les routes /guardians, on prend le dernier UUID.
+  let urlId = null;
+  const urlUuidMatches = [...url.matchAll(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi)];
+  if (urlUuidMatches.length > 0) {
+    // ⭐ Pour les routes imbriquées (2+ UUIDs), le DERNIER est l'ID de l'entité cible.
+    //    Ex: /api/students/{studentId}/guardians/{guardianId} → guardianId
+    //    Ex: /api/students/{studentId}/guardians/relation/{junctionId} → junctionId
+    urlId = urlUuidMatches[urlUuidMatches.length - 1][0];
+  }
 
   // ─── ⭐ v4.7.0b — RÉÉCRITURE À L'ENTRÉE (id local → id serveur) ───────────
   //    Cas réel observé en production : l'autosave crée la fiche en file

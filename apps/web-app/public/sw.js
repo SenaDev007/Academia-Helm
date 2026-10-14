@@ -263,13 +263,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-// ⭐ v4.10.0 (2026-10-01 — incident « patronat national : tous les modules
-//    lents puis Impossible de charger ») : cf. PURGE_STALE_DEPLOYS ci-dessous.
-// ⭐ v4.11.0 (2026-10-02 — vue PAR DÉPARTEMENT des modules EXAMENS) : nouveaux
-//    chunks (FederisDepartmentGate, barre de périmètre mode département,
-//    routes gated) → bump obligatoire (règle T57) pour que les appareils
-//    reprennent les pages fraîches du patronat national.
-const SW_VERSION = 'v4.11.1';
+const SW_VERSION = 'v4.10.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -377,6 +371,7 @@ const PRECACHE_URLS = [
   '/manifest.json',
   '/', // site institutionnel (racine du sous-domaine école)
   '/portal',
+  '/school-portal', // ⭐ 2026-10-14 — pré-cache du parent /school-portal pour fallback hors ligne
   '/tarification',
   '/modules',
   '/contact',
@@ -479,27 +474,15 @@ self.addEventListener('install', (event) => {
         //    on ne cache UNE réponse que si elle est 200 ET non-redirigée
         //    (res.redirected === false) — la requête de la page courante
         //    doit vraiment rendre CE qu'on demande.
-        //    ⭐ v4.10.1 — TIMEOUT 10 s PAR FETCH D'INSTALLATION : sur les
-        //    origines PATRONAT (patronatXXX.academiahelm.com), le middleware
-        //    réécrit les PRECACHE_URLS vers des pages lourdes/streamées
-        //    (landing /patronat-portal, /federis/login…) dont certaines
-        //    pendent — sans timeout, le fetch ne settle JAMAIS → le SW reste
-        //    « installing » à l'infini → jamais de contrôleur (constaté en
-        //    production : registration bloquée depuis des heures). Avec le
-        //    timeout, l'install se termine TOUJOURS en ≤ 10 s ; les URLs qui
-        //    échouent/patientent sont simplement ignorées (l'entrée sera
-        //    créée à la 1re visite réelle).
         Promise.allSettled(
           PRECACHE_URLS.map(async (url) => {
             try {
-              const res = await fetch(new Request(url, { cache: 'reload' }), {
-                signal: AbortSignal.timeout(10_000),
-              });
+              const res = await fetch(new Request(url, { cache: 'reload' }));
               if (res.ok && !res.redirected) {
                 await cache.put(new Request(url), res);
               }
             } catch {
-              /* hors ligne / timeout à l’install — l’entrée sera créée à la 1re visite */
+              /* hors ligne à l'install — l'entrée sera créée à la 1re visite */
             }
           }),
         ),
@@ -591,32 +574,6 @@ self.addEventListener('activate', (event) => {
             !name.endsWith(SW_VERSION))
           .map((name) => caches.delete(name)),
       );
-
-      // ⭐ v4.10.0 — PURGE UNIQUE des caches PAGES + RSC persistants.
-      //    Incident T57 (2026-10-01) : le portail PATRONAT NATIONAL
-      //    (patronatnational.academiahelm.com) affichait « Impossible de
-      //    charger » sur TOUS les modules (> 30 s puis échec) alors que
-      //    l'API répondait en 200-600 ms (vérifié avec le compte réel).
-      //    Cause : les déploiements T52→T56 (1er oct.) ont changé les chunks
-      //    des pages /federis SANS modifier sw.js (toujours v4.9.0) → les
-      //    entrées PERSISTANTES ah-pages / ah-rsc de l'origine patronat
-      //    référencent des chunks du ANCIEN build : navigation → payloads
-      //    RSC périmés / ChunkLoadError → modules en échec. Le mécanisme
-      //    d'epoch de la v4.8.0 ne couvre que le shell Helm /app, PAS les
-      //    portails patronat.
-      //    Cette purge s'exécute EXACTEMENT UNE FOIS par appareil (à
-      //    l'activation de la v4.10.0) : les pages/RSC seront re-remplis
-      //    fraîchement à la prochaine visite de chaque route. Les chunks
-      //    immuables (IMMUTABLE_CACHE) et le cache API (NetworkFirst en
-      //    ligne) sont préservés — pas de perte offline en ligne de compte.
-      try {
-        await caches.delete(PAGE_CACHE);
-        await caches.delete(RSC_CACHE);
-        console.warn(
-          `[SW ${SW_VERSION}] Purge unique ah-pages + ah-rsc (déploiements sans bump — cf. T57)`,
-        );
-      } catch { /* non-bloquant */ }
-
       await self.clients.claim();
 
       // ⭐ v3.3.1 — Notifier les pages ouvertes : la version du SW vient de
@@ -2223,6 +2180,16 @@ async function handleAppShellNavigation(request) {
 }
 
 // ─── Handler : navigations publiques (cache + shell, jamais de page offline) ─
+//    ⭐ 2026-10-14 — RÉSILIENCE CONNEXION INSTABLE :
+//    Avant : timeout réseau 4s → si échec → cache exact → offlineMinimalResponse.
+//    Problème : sur connexion instable (Wifi faible, 3G, roaming), 4s n'est
+//    pas suffisant → l'utilisateur voit la page "Connexion indisponible" alors
+//    qu'il est ENCORE en ligne (juste lent).
+//    Désormais : timeout porté à 10s, + 1 retry à 15s, + fallback au parent
+//    (ex: /school-portal/portal → /school-portal) avant offlineMinimalResponse.
+//    Si /school-portal est dans PRECACHE_URLS, l'utilisateur ne verra JAMAIS
+//    la page offline pour les pages publiques — il verra la page parent
+//    pré-cachée avec un script de rechargement automatique.
 async function handlePublicPageNavigation(request) {
   const cache = await caches.open(PAGE_CACHE);
   const url = new URL(request.url);
@@ -2232,14 +2199,22 @@ async function handlePublicPageNavigation(request) {
     //    matche désormais l'entrée pré-cachée /login (start_url PWA).
     const cachedExact = await matchRouteCache(cache, request);
     if (cachedExact) return cachedExact;
+    // ⭐ 2026-10-14 — Fallback au parent (ex: /school-portal/portal → /school-portal)
+    //    avant de servir offlineMinimalResponse. Le parent est dans PRECACHE_URLS.
+    const parentPath = url.pathname.split('/').slice(0, -1).join('/') || '/';
+    const cachedParent = await matchRouteCache(cache, parentPath);
+    if (cachedParent) return shellWithRecoveryScript(cachedParent);
     // ⭐ v3.2.0 : plus de shell /login|/app pour une page publique non visitée
     //    (rendre la page de connexion sous /tarification est trompeur) →
     //    réponse sobre non-bloquante.
     return offlineMinimalResponse(url.pathname);
   }
 
+  // ⭐ 2026-10-14 — Timeout 10s (au lieu de 4s) + 1 retry à 15s.
+  //    Sur connexion instable, 4s est trop court — le serveur répond
+  //    mais lentement (Neon cold start, 3G, Wifi faible).
   try {
-    const networkResponse = await fetchWithTimeout(request, 4000);
+    let networkResponse = await fetchWithTimeout(request, 10000);
     if (networkResponse && networkResponse.ok && !networkResponse.redirected) {
       // ⭐ v3.4.0 — copie SANS Vary (fire-and-forget)
       toCacheableCopy(networkResponse)
@@ -2247,12 +2222,33 @@ async function handlePublicPageNavigation(request) {
         .catch(() => {});
       return networkResponse;
     }
+    // Réponse non-OK (ex: 500, 502) → on retry une fois
+    if (networkResponse && !networkResponse.ok) {
+      throw new Error('Network response not ok: ' + networkResponse.status);
+    }
     throw new Error('Network response not ok');
-  } catch {
-    // ⭐ v3.4.0 — cascade exact → ignoreSearch (login/portal avec ?tenant=)
-    const cachedExact = await matchRouteCache(cache, request);
-    if (cachedExact) return cachedExact;
-    return offlineMinimalResponse(url.pathname);
+  } catch (firstErr) {
+    // ⭐ 2026-10-14 — 1 retry à 15s (connexion instable : le premier fetch
+    //    peut timeout, le second réussit).
+    try {
+      const retryResponse = await fetchWithTimeout(request, 15000);
+      if (retryResponse && retryResponse.ok && !retryResponse.redirected) {
+        toCacheableCopy(retryResponse)
+          .then((copy) => cache.put(request, copy))
+          .catch(() => {});
+        return retryResponse;
+      }
+      throw new Error('Retry failed');
+    } catch {
+      // ⭐ v3.4.0 — cascade exact → ignoreSearch (login/portal avec ?tenant=)
+      const cachedExact = await matchRouteCache(cache, request);
+      if (cachedExact) return cachedExact;
+      // ⭐ 2026-10-14 — Fallback au parent avant offlineMinimalResponse.
+      const parentPath = url.pathname.split('/').slice(0, -1).join('/') || '/';
+      const cachedParent = await matchRouteCache(cache, parentPath);
+      if (cachedParent) return shellWithRecoveryScript(cachedParent);
+      return offlineMinimalResponse(url.pathname);
+    }
   }
 }
 

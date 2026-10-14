@@ -183,6 +183,22 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
+// v4.13.0 : (audit Examens 14/10/2026) ROUTE_TABLES — 18 routes Examens
+//    manquantes ajoutées pour couvrir TOUS les controllers du module
+//    Examens. Avant : tombaient dans le fallback 'api_cache' générique
+//    → pas d'écriture optimiste offline (création d'une évaluation, d'un
+//    verrou de notes, d'une décision de promotion, d'un incident de
+//    fraude, d'un bloc de préparation, d'un PV, d'une distinction, d'un
+//    bulletin, etc. n'apparaissaient pas dans la liste jusqu'à la
+//    reconnexion). Désormais : chaque route résout vers le store IDB
+//    métier correct. BATCH_KEYWORDS étendu avec 5 nouveaux mots-clés
+//    Examens (apply, auto-annotations, batch/approve, batch/reject,
+//    set-default, send-to-secretariat) pour empêcher les enregistrements
+//    fantômes sur les endpoints batch.
+//    v19ExamStores : 4 nouveaux stores IDB créés dans local-db.service.ts
+//    (examfraud, exampreparation, examlock, exampromotion) — les autres
+//    stores existaient déjà.
+
 // v4.12.0 : (audit Finance + Pédagogie 14/10/2026) ROUTE_TABLES — 25 routes
 //    Finance + 13 routes Pédagogie manquantes ajoutées pour couvrir TOUS
 //    les controllers des 2 modules. Avant : tombaient dans le fallback
@@ -278,7 +294,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.12.0';
+const SW_VERSION = 'v4.13.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -2606,6 +2622,54 @@ const ROUTE_TABLES = [
   [/^\/api\/pedagogy\/weekly-reports/, 'weeklyreport'],
 
   // ─── Examens, Notes & Bulletins ───
+  // ⭐ 2026-10-14 — AUDIT EXAMENS : 18 routes manquantes ajoutées pour
+  //    couvrir TOUS les controllers du module Examens. Avant : tombaient
+  //    dans le fallback 'api_cache' générique → pas d'écriture optimiste
+  //    offline (création d'une évaluation, d'un verrou de notes, d'une
+  //    décision de promotion, d'un incident de fraude, d'un bloc de
+  //    préparation, d'un PV, d'une distinction, d'un bulletin, etc.
+  //    n'apparaissaient pas dans la liste jusqu'à la reconnexion).
+  //    Maintenant : chaque route résout vers le store IDB métier correct
+  //    (déjà créé dans local-db.service.ts ou v19ExamStores).
+  //    Ordre IMPORTANT : les routes SPÉCIFIQUES (sous-chemins
+  //    /institutional-exams/*) doivent venir AVANT la route GÉNÉRIQUE
+  //    /api/exams/* pour éviter que /institutional-exams/bulletins ne
+  //    soit capté par /exams avec l'exclusion /bulletin/.
+  // /api/institutional-exams/* — sous-modules principaux (V10 mirror)
+  [/^\/api\/institutional-exams\/audit/, 'api_cache'],
+  [/^\/api\/institutional-exams\/bulletins/, 'reportcard'],
+  [/^\/api\/institutional-exams\/config/, 'api_cache'],
+  [/^\/api\/institutional-exams\/councils/, 'classcouncil'],
+  [/^\/api\/institutional-exams\/dashboard/, 'api_cache'],
+  [/^\/api\/institutional-exams\/distinctions/, 'honorroll'],
+  [/^\/api\/institutional-exams\/evaluations/, 'evaluation'],
+  [/^\/api\/institutional-exams\/grades/, 'grade'],
+  [/^\/api\/institutional-exams\/pv-stats-promotion/, 'api_cache'],
+  [/^\/api\/institutional-exams\/unlock-requests/, 'examlock'],
+  [/^\/api\/institutional-exams\/validation/, 'gradevalidationbatch'],
+  // /api/institutional-exams/* (catch-all après les sous-routes)
+  [/^\/api\/institutional-exams(\/|$)/, 'exam'],
+  // /api/honor-rolls — distinctions.controller.ts (different prefix)
+  [/^\/api\/honor-rolls(\/|$)/, 'honorroll'],
+  // /api/public/distinctions — public certificates (read-only)
+  [/^\/api\/public\/distinctions/, 'api_cache'],
+  // /api/council-decisions — councils.controller.ts
+  [/^\/api\/council-decisions/, 'councildecision'],
+  // /api/exam-frauds — exam-fraud.controller.ts
+  [/^\/api\/exam-frauds/, 'examfraud'],
+  // /api/exam-preparation — exam-preparation.controller.ts (blocks + sheets)
+  [/^\/api\/exam-preparation/, 'exampreparation'],
+  // /api/exams/locks — exams-lock.controller.ts (verrous de notes)
+  [/^\/api\/exams\/locks/, 'examlock'],
+  // /api/exams/promotion — promotion.controller.ts (décisions de promotion)
+  [/^\/api\/exams\/promotion/, 'exampromotion'],
+  // /api/exams/settings — exams-config.controller.ts (evaluation-types, grade-scales)
+  [/^\/api\/exams\/settings/, 'api_cache'],
+  // /api/exams/spec-config — exams-spec-config.controller.ts (qualitative-scales,
+  //    level-policies, bulletin-templates, mentions, decision-rules,
+  //    publication-policy, advanced-settings, analytics-snapshots — tous settings)
+  [/^\/api\/exams\/spec-config/, 'api_cache'],
+  // ⭐ /api/exams/* — générique (exclut /bulletin — géré par /institutional-exams/bulletins)
   [/^\/api\/exams(\/|$)/, 'exam', /bulletin/],
   [/^\/api\/grades/, 'grade'],
   [/^\/api\/exam-candidates/, 'examcandidate'],
@@ -3424,6 +3488,12 @@ async function swQueueMutation(request, details, bodyText) {
     'class-subjects/bulk', // pedagogy-prisma class-subjects bulk
     'auto-recovery', // financial-settings run-auto-recovery
     'send-compta-export', // financial-settings send-compta-export
+    // Exams — batch / workflow actions (audit 2026-10-14)
+    'apply', // exams/promotion/apply (bulk promotion decisions)
+    'auto-annotations', // bulletins auto-annotations (bulk generate)
+    'batch/approve', 'batch/reject', // validation batch endpoint
+    'set-default', // bulletin-templates set-default (action sans body.id)
+    'send-to-secretariat', // exam-preparation blocks send-to-secretariat
   ];
   const isBatchEndpoint = method === 'POST' && !urlId
     && !(body && typeof body === 'object' && body.id)

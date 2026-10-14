@@ -814,6 +814,29 @@ class LocalDbService {
         store.createIndex('_is_dirty', '_isDirty', { unique: false });
       }
     });
+
+    // ⭐ V19 — AUDIT EXAMENS (14/10/2026) : stores manquants pour les
+    //    nouvelles routes Examens ajoutées dans ROUTE_TABLES v4.13.0.
+    //    Avant : /api/exam-frauds, /api/exam-preparation, /api/exams/locks,
+    //    /api/exams/promotion tombaient dans le fallback 'api_cache'
+    //    générique → pas d'écriture optimiste offline (création d'un
+    //    incident de fraude, d'un bloc de préparation, d'un verrou de
+    //    notes, d'une décision de promotion n'apparaissaient pas dans
+    //    la liste jusqu'à la reconnexion). Maintenant : chaque route
+    //    résout vers son store métier dédié.
+    const v19ExamStores = [
+      'examfraud',          // /api/exam-frauds (ExamFraud + sanctions)
+      'exampreparation',    // /api/exam-preparation (blocks + sheets)
+      'examlock',           // /api/exams/locks (verrous de notes)
+      'exampromotion',      // /api/exams/promotion (décisions de promotion)
+    ];
+    v19ExamStores.forEach(storeName => {
+      if (!db.objectStoreNames.contains(storeName)) {
+        const store = db.createObjectStore(storeName, { keyPath: 'id' });
+        store.createIndex('tenant_id', 'tenantId', { unique: false });
+        store.createIndex('_is_dirty', '_isDirty', { unique: false });
+      }
+    });
     // ⭐ V17 — RESPONSE CACHE : store clé-par-URL pour la couche d'accès
     //    unifiée (data-service). Cache TOUTES les réponses GET JSON
     //    (tableaux, agrégats, objets SANS champ id — les stores keyPath

@@ -95,6 +95,46 @@ const URL_TO_STORE: Array<{ pattern: RegExp; store: string }> = [
   { pattern: /\/api\/student-period-averages/, store: 'studentperiodaverage' },
   { pattern: /\/api\/student-subject-averages/, store: 'studentsubjectaverage' },
 
+  // ⭐ 2026-10-14 — AUDIT EXAMENS : routes manquantes (miroir sw.js v4.13.0).
+  //    Avant : tombaient dans le fallback 'api_cache' → pas d'écriture
+  //    optimiste offline (création d'une évaluation, d'un verrou de
+  //    notes, d'une décision de promotion, d'un incident de fraude, d'un
+  //    bloc de préparation, d'un PV, d'une distinction, d'un bulletin,
+  //    etc. n'apparaissaient pas avant reconnexion).
+  // /api/institutional-exams/* — sous-modules principaux (V10 mirror)
+  //    Ordre IMPORTANT : sous-chemins AVANT catch-all /institutional-exams/*.
+  { pattern: /\/api\/institutional-exams\/audit/, store: 'api_cache' },
+  { pattern: /\/api\/institutional-exams\/bulletins/, store: 'reportcard' },
+  { pattern: /\/api\/institutional-exams\/config/, store: 'api_cache' },
+  { pattern: /\/api\/institutional-exams\/councils/, store: 'classcouncil' },
+  { pattern: /\/api\/institutional-exams\/dashboard/, store: 'api_cache' },
+  { pattern: /\/api\/institutional-exams\/distinctions/, store: 'honorroll' },
+  { pattern: /\/api\/institutional-exams\/evaluations/, store: 'evaluation' },
+  { pattern: /\/api\/institutional-exams\/grades/, store: 'grade' },
+  { pattern: /\/api\/institutional-exams\/pv-stats-promotion/, store: 'api_cache' },
+  { pattern: /\/api\/institutional-exams\/unlock-requests/, store: 'examlock' },
+  { pattern: /\/api\/institutional-exams\/validation/, store: 'gradevalidationbatch' },
+  // /api/institutional-exams/* (catch-all après les sous-routes)
+  { pattern: /\/api\/institutional-exams/, store: 'exam' },
+  // /api/honor-rolls (different prefix — distinctions)
+  { pattern: /\/api\/honor-rolls/, store: 'honorroll' },
+  // /api/public/distinctions (public certificates — read-only)
+  { pattern: /\/api\/public\/distinctions/, store: 'api_cache' },
+  // /api/council-decisions — councils.controller.ts
+  { pattern: /\/api\/council-decisions/, store: 'councildecision' },
+  // /api/exam-frauds — exam-fraud.controller.ts
+  { pattern: /\/api\/exam-frauds/, store: 'examfraud' },
+  // /api/exam-preparation — exam-preparation.controller.ts (blocks + sheets)
+  { pattern: /\/api\/exam-preparation/, store: 'exampreparation' },
+  // /api/exams/locks — exams-lock.controller.ts
+  { pattern: /\/api\/exams\/locks/, store: 'examlock' },
+  // /api/exams/promotion — promotion.controller.ts
+  { pattern: /\/api\/exams\/promotion/, store: 'exampromotion' },
+  // /api/exams/settings — exams-config.controller.ts (settings — read-only)
+  { pattern: /\/api\/exams\/settings/, store: 'api_cache' },
+  // /api/exams/spec-config — exams-spec-config.controller.ts (settings)
+  { pattern: /\/api\/exams\/spec-config/, store: 'api_cache' },
+
   // ─── Communication ───
   { pattern: /\/api\/messages/, store: 'message' },
   { pattern: /\/api\/announcements/, store: 'announcement' },

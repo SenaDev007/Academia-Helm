@@ -147,6 +147,12 @@ const URL_TO_STORE: Array<{ pattern: RegExp; store: string }> = [
   { pattern: /\/api\/meeting-agenda-items/, store: 'meetingagendaitem' },
 
   // ─── Paramètres / Settings ───
+  // ⭐ 2026-10-14 — AUDIT PARAMÈTRES : 11 routes manquantes ajoutées (miroir
+  //    sw.js ROUTE_TABLES v4.15.0). Avant : tombaient dans le fallback
+  //    'api_cache' → pas d'écriture optimiste offline. Maintenant : chaque
+  //    route résout vers le store IDB métier (tous les stores existaient
+  //    déjà dans local-db.service.ts).
+  //    Ordre IMPORTANT : sous-chemins AVANT catch-all /settings/.
   { pattern: /\/api\/settings\/identity/, store: 'tenantidentityprofile' },
   { pattern: /\/api\/settings\/bilingual/, store: 'settingsbilingual' },
   { pattern: /\/api\/settings\/academic/, store: 'schoolacademicsettings' },
@@ -154,6 +160,19 @@ const URL_TO_STORE: Array<{ pattern: RegExp; store: string }> = [
   { pattern: /\/api\/settings\/security/, store: 'securitysettings' },
   { pattern: /\/api\/settings\/features/, store: 'tenantfeature' },
   { pattern: /\/api\/settings\/history/, store: 'settingshistory' },
+  // ⭐ Nouvelles routes Paramètres (audit 2026-10-14) :
+  { pattern: /\/api\/settings\/general/, store: 'tenantsetting' },
+  { pattern: /\/api\/settings\/orion/, store: 'orionsettings' },
+  { pattern: /\/api\/settings\/atlas/, store: 'atlassettings' },
+  { pattern: /\/api\/settings\/offline-sync/, store: 'offlinesyncsettings' },
+  { pattern: /\/api\/settings\/administrative-seals/, store: 'administrativeseal' },
+  { pattern: /\/api\/settings\/stamps/, store: 'tenantstamp' },
+  { pattern: /\/api\/settings\/signature/, store: 'tenantsignature' },
+  { pattern: /\/api\/settings\/electronic-signatures/, store: 'electronicsignature' },
+  { pattern: /\/api\/settings\/pedagogical-structure/, store: 'schoolacademicsettings' },
+  { pattern: /\/api\/settings\/school-calendar-config/, store: 'schoolcalendarconfig' },
+  // /api/settings (catch-all)
+  { pattern: /\/api\/settings/, store: 'tenantsetting' },
   { pattern: /\/api\/academic-years/, store: 'academicyear' },
 
   // ─── ORION ───

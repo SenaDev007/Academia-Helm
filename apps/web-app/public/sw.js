@@ -183,6 +183,29 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
+// v4.15.0 : (audit Paramètres + vérification des shells 14/10/2026) ROUTE_TABLES —
+//    11 routes Paramètres manquantes ajoutées pour couvrir TOUS les
+//    controllers du module Paramètres (settings.controller.ts avec ~150
+//    endpoints). Avant : tombaient dans le fallback 'api_cache' générique
+//    → pas d'écriture optimiste offline (création d'un cachet adminis-
+//    tratif, tampon, signature, signature électronique, paramètre Orion/
+//    Atlas, paramètre offline-sync, structure pédagogique, calendrier
+//    école, etc. n'apparaissaient pas dans la liste jusqu'à la
+//    reconnexion). Désormais : chaque route résout vers le store IDB
+//    métier correct (tous les stores Paramètres existaient déjà dans
+//    local-db.service.ts). BATCH_KEYWORDS étendu avec 7 nouveaux mots-clés
+//    Paramètres (features/enable-all, features/disable-all, bilingual/
+//    migrate, bilingual/seed-en-structure, academic-years/generate-next,
+//    school-calendar-config/reset, check-expiring, check-migration).
+//    Shells : vérification complète de l'application — le SW universel
+//    /sw.js est enregistré dans le root layout (app/layout.tsx) via
+//    UniversalSWRegister + PWARegister, couvrant TOUS les shells :
+//    (auth), (public), (patronat), app/*, school-portal, mobile,
+//    saisiemaster, promoteur, desktop. AUCUN SW alternatif n'existe
+//    (un seul fichier /sw.js). Le GlobalFetchInterceptor n'est installé
+//    que dans app/layout-client.tsx mais c'est un NO-OP en web (le SW
+//    prend le relais) — uniquement actif en Tauri (desktop).
+
 // v4.14.0 : (audit RH/Personnel + Academia Shop 14/10/2026) ROUTE_TABLES —
 //    11 routes RH + 22 routes Shop manquantes ajoutées pour couvrir TOUS
 //    les controllers des 2 modules. Avant : tombaient dans le fallback
@@ -309,7 +332,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.14.0';
+const SW_VERSION = 'v4.15.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -2765,6 +2788,18 @@ const ROUTE_TABLES = [
   [/^\/api\/communication\/inbox/, 'inboundemail'],
 
   // ─── Paramètres / Settings ───
+  // ⭐ 2026-10-14 — AUDIT PARAMÈTRES : 11 routes manquantes ajoutées pour
+  //    couvrir TOUS les controllers du module Paramètres. Avant : tombaient
+  //    dans le fallback 'api_cache' générique → pas d'écriture optimiste
+  //    offline (création d'un cachet administratif, tampon, signature,
+  //    signature électronique, paramètre Orion/Atlas, paramètre offline-
+  //    sync, structure pédagogique, calendrier école, etc. n'apparaissaient
+  //    pas dans la liste jusqu'à la reconnexion). Maintenant : chaque route
+  //    résout vers le store IDB métier correct (tous les stores Paramètres
+  //    existaient déjà dans local-db.service.ts).
+  //    Ordre IMPORTANT : les routes SPÉCIFIQUES (sous-chemins) doivent venir
+  //    AVANT la route GÉNÉRIQUE /api/settings (catch-all) car ROUTE_TABLES
+  //    est first-match-wins.
   [/^\/api\/settings\/identity/, 'tenantidentityprofile'],
   [/^\/api\/settings\/bilingual/, 'settingsbilingual'],
   [/^\/api\/settings\/academic/, 'schoolacademicsettings'],
@@ -2772,6 +2807,29 @@ const ROUTE_TABLES = [
   [/^\/api\/settings\/security/, 'securitysettings'],
   [/^\/api\/settings\/features/, 'tenantfeature'],
   [/^\/api\/settings\/history/, 'settingshistory'],
+  // ⭐ Nouvelles routes Paramètres (audit 2026-10-14) :
+  // /api/settings/general — settings généraux du tenant
+  [/^\/api\/settings\/general/, 'tenantsetting'],
+  // /api/settings/orion — paramètres ORION (dashboard IA)
+  [/^\/api\/settings\/orion/, 'orionsettings'],
+  // /api/settings/atlas — paramètres Atlas (assistant IA)
+  [/^\/api\/settings\/atlas/, 'atlassettings'],
+  // /api/settings/offline-sync — paramètres offline-sync
+  [/^\/api\/settings\/offline-sync/, 'offlinesyncsettings'],
+  // /api/settings/administrative-seals — cachets administratifs (CRUD + versions + usage)
+  [/^\/api\/settings\/administrative-seals/, 'administrativeseal'],
+  // /api/settings/stamps — tampons (génération, asset, nominative, staff)
+  [/^\/api\/settings\/stamps/, 'tenantstamp'],
+  // /api/settings/signature — signatures (reset, generate, canva-link, upload, token-info)
+  [/^\/api\/settings\/signature/, 'tenantsignature'],
+  // /api/settings/electronic-signatures — signatures électroniques certifiées
+  [/^\/api\/settings\/electronic-signatures/, 'electronicsignature'],
+  // /api/settings/pedagogical-structure — structure pédagogique (niveaux, tracks)
+  [/^\/api\/settings\/pedagogical-structure/, 'schoolacademicsettings'],
+  // /api/settings/school-calendar-config — configuration calendrier école
+  [/^\/api\/settings\/school-calendar-config/, 'schoolcalendarconfig'],
+  // /api/settings (catch-all — autres routes non mappées)
+  [/^\/api\/settings/, 'tenantsetting'],
   [/^\/api\/academic-years/, 'academicyear'],
 
   // ─── ORION / Dashboards (agrégats) ───
@@ -3612,6 +3670,13 @@ async function swQueueMutation(request, details, bodyText) {
     'fix/application-statuses', // recruitment fix batch
     // Academia Shop — batch / workflow actions (audit 2026-10-14)
     'wallet/recharge', // shop/wallet/recharge (e-wallet top-up, no UUID)
+    // Paramètres — batch / workflow actions (audit 2026-10-14)
+    'features/enable-all', 'features/disable-all', // settings/features batch
+    'bilingual/migrate', 'bilingual/seed-en-structure', // settings/bilingual batch
+    'academic-years/generate-next', // settings academic-years batch generation
+    'school-calendar-config/reset', // settings calendar reset
+    'check-expiring', // administrative-seals check-expiring batch
+    'check-migration', // settings/bilingual/check-migration batch
   ];
   const isBatchEndpoint = method === 'POST' && !urlId
     && !(body && typeof body === 'object' && body.id)

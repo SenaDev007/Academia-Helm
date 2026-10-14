@@ -183,6 +183,21 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
+// v4.14.0 : (audit RH/Personnel + Academia Shop 14/10/2026) ROUTE_TABLES —
+//    11 routes RH + 22 routes Shop manquantes ajoutées pour couvrir TOUS
+//    les controllers des 2 modules. Avant : tombaient dans le fallback
+//    'api_cache' générique → pas d'écriture optimiste offline (création
+//    d'un job, candidature, entretien, test, stagiaire, déclaration
+//    CNSS, déclaration fiscale, nœud d'organigramme, planning, produit
+//    shop, supplier, retour, livraison, kit, etc. n'apparaissaient pas
+//    dans la liste jusqu'à la reconnexion). Désormais : chaque route
+//    résout vers le store IDB métier correct. BATCH_KEYWORDS étendu
+//    avec 5 nouveaux mots-clés (upload-apply, cards/generate-all,
+//    cards/distribute, wallet/recharge, cleanup/orphaned-files) pour
+//    empêcher les enregistrements fantômes sur les endpoints batch.
+//    v20HrStores : 1 nouveau store IDB créé dans local-db.service.ts
+//    (hrinternship) — les autres stores RH et Shop existaient déjà.
+
 // v4.13.0 : (audit Examens 14/10/2026) ROUTE_TABLES — 18 routes Examens
 //    manquantes ajoutées pour couvrir TOUS les controllers du module
 //    Examens. Avant : tombaient dans le fallback 'api_cache' générique
@@ -294,7 +309,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.13.0';
+const SW_VERSION = 'v4.14.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -2440,10 +2455,21 @@ const ROUTE_TABLES = [
   [/^\/api\/students\/movements/, 'studentmovement'],
 
   // ─── Personnel, RH & Paie ───
+  // ⭐ 2026-10-14 — AUDIT RH/PERSONNEL : 11 routes manquantes ajoutées pour
+  //    couvrir TOUS les controllers du module RH. Avant : tombaient dans
+  //    le fallback 'api_cache' générique → pas d'écriture optimiste
+  //    offline (création d'un job, candidature, entretien, test, stagiaire,
+  //    déclaration CNSS, déclaration fiscale, nœud d'organigramme, planning,
+  //    etc. n'apparaissaient pas dans la liste jusqu'à la reconnexion).
+  //    Maintenant : chaque route résout vers le store IDB métier correct
+  //    (déjà créé dans local-db.service.ts ou v20HrStores).
+  //    Ordre IMPORTANT : /hr/staff/recruit doit rester exclue du catch-all
+  //    staff pour ne pas capturer les candidats comme staff.
   [/^\/api\/hr\/staff/, 'staff', /recruit/],
   [/^\/api\/hr\/teachers/, 'teacher'],
   [/^\/api\/teachers/, 'teacher'],
   [/^\/api\/hr\/contracts/, 'contract'],
+  [/^\/api\/hr\/contracts-public/, 'contract'],
   [/^\/api\/hr\/leaves/, 'leaverequest'],
   [/^\/api\/hr\/allowances/, 'staffallowance'],
   [/^\/api\/hr\/overtime/, 'overtimerecord'],
@@ -2451,11 +2477,49 @@ const ROUTE_TABLES = [
   [/^\/api\/hr\/evaluations/, 'staffevaluation'],
   [/^\/api\/hr\/documents/, 'staffdocument'],
   [/^\/api\/hr\/school-directors/, 'schooldirectors'],
+  [/^\/api\/hr\/payroll\/documents/, 'api_cache'],
   [/^\/api\/hr\/payroll/, 'salaryslip'],
   [/^\/api\/hr\/salary-payments/, 'salarypayment'],
   [/^\/api\/hr\/positions/, 'position'],
   [/^\/api\/hr\/collaborators/, 'staff'],
   [/^\/api\/hr\/planning/, 'staffplanning'],
+  // ⭐ /api/hr/internships — internships.controller.ts (HrInternship + convention)
+  [/^\/api\/hr\/internships/, 'hrinternship'],
+  // ⭐ /api/hr/recruitment — recruitment.controller.ts (jobs, candidates, applications,
+  //    interviews, tests, talent-pool, recruiter-profile) — plusieurs stores métiers.
+  //    Mapping par sous-chemins pour optimiser l'écriture optimiste :
+  [/^\/api\/hr\/recruitment\/jobs/, 'hrjob'],
+  [/^\/api\/hr\/recruitment\/candidates/, 'hrcandidate'],
+  [/^\/api\/hr\/recruitment\/applications/, 'hrapplication'],
+  [/^\/api\/hr\/recruitment\/interviews/, 'hrinterview'],
+  [/^\/api\/hr\/recruitment\/tests/, 'hrtest'],
+  [/^\/api\/hr\/recruitment\/test-results/, 'hrtestresult'],
+  [/^\/api\/hr\/recruitment\/talent-pool/, 'hrtalentpool'],
+  [/^\/api\/hr\/recruitment\/recruiter-profile/, 'recruiterprofile'],
+  [/^\/api\/hr\/recruitment\/document-upload/, 'api_cache'],
+  // /api/hr/recruitment (catch-all — e.g. upload-apply, debug endpoints)
+  [/^\/api\/hr\/recruitment/, 'api_cache'],
+  // ⭐ /api/hr/organigram — organigram-prisma.controller.ts (nodes, stats)
+  [/^\/api\/hr\/organigram/, 'organigramnode'],
+  // ⭐ /api/hr/cnss — cnss-prisma.controller.ts (declarations, employees, rates, export)
+  [/^\/api\/hr\/cnss/, 'cnssdeclaration'],
+  // ⭐ /api/hr/taxes — taxes.controller.ts (déclarations fiscales AIB/IST/IRPP/VPS,
+  //    staff-fiscal, financial-statements, financial-notes, payroll generate)
+  [/^\/api\/hr\/taxes/, 'taxdeclaration'],
+  // ⭐ /api/hr/schedules — schedules-prisma.controller.ts (planning hebdomadaire staff)
+  [/^\/api\/hr\/schedules/, 'staffschedule'],
+  // ⭐ /api/hr/ia — ia-prisma.controller.ts (LLM RH features — pas d'entité à cacher)
+  [/^\/api\/hr\/ia/, 'api_cache'],
+  // ⭐ /api/hr/overview — hr-overview.controller.ts (dashboard KPIs — read-only)
+  [/^\/api\/hr\/overview/, 'api_cache'],
+  // ⭐ /api/hr/cleanup — cleanup.controller.ts (maintenance scripts — read-only)
+  [/^\/api\/hr\/cleanup/, 'api_cache'],
+  // ⭐ /api/staff-card — staff-card.controller.ts (génération de cartes PDF — read-only)
+  [/^\/api\/staff-card/, 'api_cache'],
+  // ⭐ /api/documents-public — document-upload.controller.ts (public documents — read-only)
+  [/^\/api\/documents-public/, 'api_cache'],
+  // ⭐ /api/tests-public — test-questionnaire.controller.ts (public tests — read-only)
+  [/^\/api\/tests-public/, 'api_cache'],
 
   // ─── Finances & Économat ───
   // ⭐ 2026-10-14 — AUDIT FINANCE : 25 routes manquantes ajoutées pour couvrir
@@ -2739,22 +2803,65 @@ const ROUTE_TABLES = [
   [/^\/api\/qhse\/action-plans/, 'qhseactionplan'],
 
   // ─── EduCast / Boutique / Bibliothèque ───
-  [/^\/api\/educast\/contents/, 'educastcontent'],
-  [/^\/api\/educast\/channels/, 'educastchannel'],
-  [/^\/api\/educast\/playlists/, 'educastplaylist'],
+  // ⭐ 2026-10-14 — AUDIT ACADEMIA SHOP : 11 routes Shop manquantes
+  //    ajoutées pour couvrir TOUS les endpoints du controller Shop.
+  //    Avant : /api/shop/stocks, /suppliers, /purchase-orders, /kits,
+  //    /returns, /discounts, /deliveries, /loyalty-card, /wallet,
+  //    /stock-movements, /settings tombaient dans le fallback 'api_cache'
+  //    générique → pas d'écriture optimiste offline (création d'un
+  //    produit, supplier, retour, livraison, kit, etc. n'apparaissaient
+  //    pas dans la liste jusqu'à la reconnexion). Maintenant : chaque
+  //    route résout vers le store IDB métier (tous les stores Shop
+  //    existaient déjà dans local-db.service.ts).
   [/^\/api\/shop\/products/, 'shopproduct'],
   [/^\/api\/shop\/categories/, 'shopcategory'],
   [/^\/api\/shop\/orders/, 'shoporder'],
   [/^\/api\/shop\/sales/, 'shopsale'],
+  // ⭐ Nouvelles routes Shop (audit 2026-10-14) :
+  [/^\/api\/shop\/stocks/, 'shopstock'],
+  [/^\/api\/shop\/stock-movements/, 'shopstockmovement'],
+  [/^\/api\/shop\/suppliers/, 'shopsupplier'],
+  [/^\/api\/shop\/purchase-orders/, 'shoppurchaseorder'],
+  [/^\/api\/shop\/kits/, 'shopschoolkit'],
+  [/^\/api\/shop\/returns/, 'shopreturn'],
+  [/^\/api\/shop\/discounts/, 'shopdiscount'],
+  [/^\/api\/shop\/deliveries/, 'shopdelivery'],
+  [/^\/api\/shop\/loyalty-card/, 'shoployaltycard'],
+  [/^\/api\/shop\/wallet/, 'shopwallettransaction'],
+  // ⭐ Routes Shop read-only → api_cache (PDFs, stats, settings)
+  [/^\/api\/shop\/stats/, 'api_cache'],
+  [/^\/api\/shop\/catalogue/, 'api_cache'],
+  [/^\/api\/shop\/payments\/history/, 'api_cache'],
+  [/^\/api\/shop\/settings/, 'api_cache'],
   [/^\/api\/library\/books/, 'librarybook'],
   [/^\/api\/library\/loans/, 'libraryloan'],
   [/^\/api\/library\/reservations/, 'libraryreservation'],
 
   // ─── Modules complémentaires (BFF /api/modules-complementaires/<module>/…) ───
+  // ⭐ 2026-10-14 — AUDIT SHOP (BFF mirror) : miroir des routes Shop pour
+  //    /api/modules-complementaires/shop/* (le frontend utilise ce préfixe
+  //    BFF pour les appels shop). Toutes les nouvelles routes Shop sont
+  //    également mappées sous /modules-complementaires/shop/*.
   [/^\/api\/modules-complementaires\/shop\/products/, 'shopproduct'],
   [/^\/api\/modules-complementaires\/shop\/categories/, 'shopcategory'],
   [/^\/api\/modules-complementaires\/shop\/orders/, 'shoporder'],
   [/^\/api\/modules-complementaires\/shop\/sales/, 'shopsale'],
+  // ⭐ Nouvelles routes Shop BFF mirror (audit 2026-10-14) :
+  [/^\/api\/modules-complementaires\/shop\/stocks/, 'shopstock'],
+  [/^\/api\/modules-complementaires\/shop\/stock-movements/, 'shopstockmovement'],
+  [/^\/api\/modules-complementaires\/shop\/suppliers/, 'shopsupplier'],
+  [/^\/api\/modules-complementaires\/shop\/purchase-orders/, 'shoppurchaseorder'],
+  [/^\/api\/modules-complementaires\/shop\/kits/, 'shopschoolkit'],
+  [/^\/api\/modules-complementaires\/shop\/returns/, 'shopreturn'],
+  [/^\/api\/modules-complementaires\/shop\/discounts/, 'shopdiscount'],
+  [/^\/api\/modules-complementaires\/shop\/deliveries/, 'shopdelivery'],
+  [/^\/api\/modules-complementaires\/shop\/loyalty-card/, 'shoployaltycard'],
+  [/^\/api\/modules-complementaires\/shop\/wallet/, 'shopwallettransaction'],
+  // ⭐ Routes Shop read-only BFF mirror → api_cache (PDFs, stats, settings)
+  [/^\/api\/modules-complementaires\/shop\/stats/, 'api_cache'],
+  [/^\/api\/modules-complementaires\/shop\/catalogue/, 'api_cache'],
+  [/^\/api\/modules-complementaires\/shop\/payments\/history/, 'api_cache'],
+  [/^\/api\/modules-complementaires\/shop\/settings/, 'api_cache'],
   [/^\/api\/modules-complementaires\/canteen\/menus/, 'canteenmenu'],
   [/^\/api\/modules-complementaires\/canteen\/subscriptions/, 'canteensubscription'],
   [/^\/api\/modules-complementaires\/canteen\/payments/, 'canteenpayment'],
@@ -3494,6 +3601,17 @@ async function swQueueMutation(request, details, bodyText) {
     'batch/approve', 'batch/reject', // validation batch endpoint
     'set-default', // bulletin-templates set-default (action sans body.id)
     'send-to-secretariat', // exam-preparation blocks send-to-secretariat
+    // HR/Personnel — batch / workflow actions (audit 2026-10-14)
+    //    On évite les verbes trop génériques (validate, generate, seed,
+    //    reorder) qui pourraient capturer des routes légitimes. On ne
+    //    garde QUE les endpoints vraiment batch (POST sans UUID dans
+    //    l'URL). Les routes /:id/action ont un UUID → ne sont pas batch.
+    'upload-apply', // recruitment/upload-apply (candidature bulk upload)
+    'cards/generate-all', 'cards/distribute', // staff-card batch ops
+    'cleanup/orphaned-files', // recruitment cleanup batch
+    'fix/application-statuses', // recruitment fix batch
+    // Academia Shop — batch / workflow actions (audit 2026-10-14)
+    'wallet/recharge', // shop/wallet/recharge (e-wallet top-up, no UUID)
   ];
   const isBatchEndpoint = method === 'POST' && !urlId
     && !(body && typeof body === 'object' && body.id)

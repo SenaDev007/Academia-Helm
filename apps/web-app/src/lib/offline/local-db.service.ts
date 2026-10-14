@@ -837,6 +837,24 @@ class LocalDbService {
         store.createIndex('_is_dirty', '_isDirty', { unique: false });
       }
     });
+
+    // ⭐ V20 — AUDIT RH/PERSONNEL (14/10/2026) : store manquant pour la
+    //    nouvelle route /api/hr/internships ajoutée dans ROUTE_TABLES
+    //    v4.14.0. Avant : /api/hr/internships tombait dans le fallback
+    //    'api_cache' générique → pas d'écriture optimiste offline
+    //    (création d'un stagiaire ou convention n'apparaissait pas dans
+    //    la liste jusqu'à la reconnexion). Maintenant : la route résout
+    //    vers son store métier dédié (HrInternship Prisma).
+    const v20HrStores = [
+      'hrinternship',       // /api/hr/internships (HrInternship + convention)
+    ];
+    v20HrStores.forEach(storeName => {
+      if (!db.objectStoreNames.contains(storeName)) {
+        const store = db.createObjectStore(storeName, { keyPath: 'id' });
+        store.createIndex('tenant_id', 'tenantId', { unique: false });
+        store.createIndex('_is_dirty', '_isDirty', { unique: false });
+      }
+    });
     // ⭐ V17 — RESPONSE CACHE : store clé-par-URL pour la couche d'accès
     //    unifiée (data-service). Cache TOUTES les réponses GET JSON
     //    (tableaux, agrégats, objets SANS champ id — les stores keyPath
@@ -1045,7 +1063,10 @@ class LocalDbService {
 // Instance singleton
 export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
-  version: 19, // ⭐ FIX 2026-09-13 : bump 18 → 19 (+ stores 'modules' & 'academic_terms' requis par offline-bootstrap — NotFoundError sinon) ; v18 = + store 'chat' ; v17 = stores URL_TO_STORE + response_cache
+  version: 20, // ⭐ FIX 2026-09-13 : bump 18 → 19 (+ stores 'modules' & 'academic_terms' requis par offline-bootstrap — NotFoundError sinon) ; v18 = + store 'chat' ; v17 = stores URL_TO_STORE + response_cache
+  // ⭐ 2026-10-14 — v19 : bump 19 → 20 (+ v19ExamStores : examfraud, exampreparation, examlock, exampromotion) ;
+  //    v18 : + v18PedagogyStores (annualplan, monthlyplan, materialreturn, pedagogicaltask, pedagogicalnotification) ;
+  //    v20 : + v20HrStores (hrinternship — audit RH/Personnel)
 });
 
 /**

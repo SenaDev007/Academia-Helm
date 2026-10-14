@@ -355,8 +355,54 @@ const URL_TO_STORE: Array<{ pattern: RegExp; store: string }> = [
   { pattern: /\/api\/hr\/collaborators/, store: 'staff' },
   { pattern: /\/api\/hr\/planning/, store: 'staffplanning' },
   { pattern: /\/api\/hr\/reporting/, store: 'orion_cache' },
-  { pattern: /\/api\/hr\/cnss/, store: 'orion_cache' },
-  { pattern: /\/api\/hr\/taxes/, store: 'orion_cache' },
+  // ⭐ 2026-10-14 — AUDIT RH : /cnss + /taxes désormais mappés vers les
+  //    stores métiers dédiés (au lieu de orion_cache read-only) pour
+  //    permettre l'écriture optimiste offline des déclarations.
+  { pattern: /\/api\/hr\/cnss/, store: 'cnssdeclaration' },
+  { pattern: /\/api\/hr\/taxes/, store: 'taxdeclaration' },
+
+  // ⭐ 2026-10-14 — AUDIT RH/PERSONNEL : routes manquantes (miroir sw.js v4.14.0).
+  //    Avant : tombaient dans le fallback 'api_cache' → pas d'écriture
+  //    optimiste offline (création d'un job, candidature, entretien, test,
+  //    stagiaire, déclaration CNSS, déclaration fiscale, nœud d'organi-
+  //    gramme, planning hebdomadaire, etc. n'apparaissaient pas avant
+  //    reconnexion). Désormais : chaque route résout vers le store métier.
+  // /api/hr/contracts-public — contract-public-sign.controller.ts (e-signature)
+  { pattern: /\/api\/hr\/contracts-public/, store: 'contract' },
+  // /api/hr/internships — internships.controller.ts (HrInternship + convention)
+  { pattern: /\/api\/hr\/internships/, store: 'hrinternship' },
+  // /api/hr/recruitment/* — recruitment.controller.ts (sous-chemins)
+  //    Ordre IMPORTANT : sous-chemins AVANT catch-all /recruitment/.
+  { pattern: /\/api\/hr\/recruitment\/jobs/, store: 'hrjob' },
+  { pattern: /\/api\/hr\/recruitment\/candidates/, store: 'hrcandidate' },
+  { pattern: /\/api\/hr\/recruitment\/applications/, store: 'hrapplication' },
+  { pattern: /\/api\/hr\/recruitment\/interviews/, store: 'hrinterview' },
+  { pattern: /\/api\/hr\/recruitment\/tests/, store: 'hrtest' },
+  { pattern: /\/api\/hr\/recruitment\/test-results/, store: 'hrtestresult' },
+  { pattern: /\/api\/hr\/recruitment\/talent-pool/, store: 'hrtalentpool' },
+  { pattern: /\/api\/hr\/recruitment\/recruiter-profile/, store: 'recruiterprofile' },
+  { pattern: /\/api\/hr\/recruitment\/document-upload/, store: 'api_cache' },
+  // /api/hr/recruitment (catch-all — upload-apply, debug endpoints)
+  { pattern: /\/api\/hr\/recruitment/, store: 'api_cache' },
+  // /api/hr/organigram — organigram-prisma.controller.ts (nodes, stats)
+  { pattern: /\/api\/hr\/organigram/, store: 'organigramnode' },
+  // /api/hr/schedules — schedules-prisma.controller.ts (planning hebdo)
+  { pattern: /\/api\/hr\/schedules/, store: 'staffschedule' },
+  // /api/hr/ia — ia-prisma.controller.ts (LLM RH — read-only)
+  { pattern: /\/api\/hr\/ia/, store: 'api_cache' },
+  // /api/hr/overview — hr-overview.controller.ts (dashboard KPIs — read-only)
+  { pattern: /\/api\/hr\/overview/, store: 'api_cache' },
+  // /api/hr/cleanup — cleanup.controller.ts (maintenance — read-only)
+  { pattern: /\/api\/hr\/cleanup/, store: 'api_cache' },
+  // /api/hr/payroll/documents — payroll-documents.controller.ts (PDFs)
+  //    ⭐ Doit venir AVANT /api/hr/payroll pour ne pas capturer documents.
+  { pattern: /\/api\/hr\/payroll\/documents/, store: 'api_cache' },
+  // /api/staff-card — staff-card.controller.ts (génération cartes PDF)
+  { pattern: /\/api\/staff-card/, store: 'api_cache' },
+  // /api/documents-public — document-upload.controller.ts (public docs)
+  { pattern: /\/api\/documents-public/, store: 'api_cache' },
+  // /api/tests-public — test-questionnaire.controller.ts (public tests)
+  { pattern: /\/api\/tests-public/, store: 'api_cache' },
 
   // ─── Students (routes non couvertes) ───
   { pattern: /\/api\/students\/transfers/, store: 'studenttransfer' },
@@ -369,6 +415,30 @@ const URL_TO_STORE: Array<{ pattern: RegExp; store: string }> = [
   // ─── Billing ───
   { pattern: /\/api\/billing\/subscriptions/, store: 'subscription' },
   { pattern: /\/api\/billing\/invoices/, store: 'billinginvoice' },
+
+  // ⭐ 2026-10-14 — AUDIT ACADEMIA SHOP : routes directes /api/shop/*
+  //    (le frontend utilise surtout /api/modules-complementaires/shop/*
+  //    via BFF, mais le controller expose aussi /api/shop/* directement).
+  //    Miroir des patterns du BFF pour les routes directes backend.
+  { pattern: /\/api\/shop\/products/, store: 'shopproduct' },
+  { pattern: /\/api\/shop\/categories/, store: 'shopcategory' },
+  { pattern: /\/api\/shop\/orders/, store: 'shoporder' },
+  { pattern: /\/api\/shop\/sales/, store: 'shopsale' },
+  { pattern: /\/api\/shop\/stocks/, store: 'shopstock' },
+  { pattern: /\/api\/shop\/stock-movements/, store: 'shopstockmovement' },
+  { pattern: /\/api\/shop\/suppliers/, store: 'shopsupplier' },
+  { pattern: /\/api\/shop\/purchase-orders/, store: 'shoppurchaseorder' },
+  { pattern: /\/api\/shop\/kits/, store: 'shopschoolkit' },
+  { pattern: /\/api\/shop\/returns/, store: 'shopreturn' },
+  { pattern: /\/api\/shop\/discounts/, store: 'shopdiscount' },
+  { pattern: /\/api\/shop\/deliveries/, store: 'shopdelivery' },
+  { pattern: /\/api\/shop\/loyalty-card/, store: 'shoployaltycard' },
+  { pattern: /\/api\/shop\/wallet/, store: 'shopwallettransaction' },
+  // ⭐ Routes Shop read-only → api_cache (PDFs, stats, settings)
+  { pattern: /\/api\/shop\/stats/, store: 'api_cache' },
+  { pattern: /\/api\/shop\/catalogue/, store: 'api_cache' },
+  { pattern: /\/api\/shop\/payments\/history/, store: 'api_cache' },
+  { pattern: /\/api\/shop\/settings/, store: 'api_cache' },
 
   // ─── Meetings (routes non couvertes) ───
   { pattern: /\/api\/meetings\/minutes/, store: 'meetingminutes' },
@@ -394,10 +464,33 @@ const URL_TO_STORE: Array<{ pattern: RegExp; store: string }> = [
 //    pour que les écritures optimistes offline fusionnent dans les lectures.
 const MODULES_COMPLEMENTAIRES_STORES: Array<{ pattern: RegExp; store: string }> = [
   // ─── Academia Shop ───
+  // ⭐ 2026-10-14 — AUDIT SHOP : 11 nouvelles routes Shop BFF miroir
+  //    ajoutées pour couvrir TOUS les endpoints du controller Shop.
+  //    Avant : /stocks, /suppliers, /purchase-orders, /kits, /returns,
+  //    /discounts, /deliveries, /loyalty-card, /wallet, /stock-movements,
+  //    /settings tombaient dans le fallback 'api_cache' générique → pas
+  //    d'écriture optimiste offline. Maintenant : chaque route résout
+  //    vers le store IDB métier (tous les stores Shop existaient déjà).
   { pattern: /\/api\/modules-complementaires\/shop\/products/, store: 'shopproduct' },
   { pattern: /\/api\/modules-complementaires\/shop\/categories/, store: 'shopcategory' },
   { pattern: /\/api\/modules-complementaires\/shop\/orders/, store: 'shoporder' },
   { pattern: /\/api\/modules-complementaires\/shop\/sales/, store: 'shopsale' },
+  // ⭐ Nouvelles routes Shop BFF mirror (audit 2026-10-14) :
+  { pattern: /\/api\/modules-complementaires\/shop\/stocks/, store: 'shopstock' },
+  { pattern: /\/api\/modules-complementaires\/shop\/stock-movements/, store: 'shopstockmovement' },
+  { pattern: /\/api\/modules-complementaires\/shop\/suppliers/, store: 'shopsupplier' },
+  { pattern: /\/api\/modules-complementaires\/shop\/purchase-orders/, store: 'shoppurchaseorder' },
+  { pattern: /\/api\/modules-complementaires\/shop\/kits/, store: 'shopschoolkit' },
+  { pattern: /\/api\/modules-complementaires\/shop\/returns/, store: 'shopreturn' },
+  { pattern: /\/api\/modules-complementaires\/shop\/discounts/, store: 'shopdiscount' },
+  { pattern: /\/api\/modules-complementaires\/shop\/deliveries/, store: 'shopdelivery' },
+  { pattern: /\/api\/modules-complementaires\/shop\/loyalty-card/, store: 'shoployaltycard' },
+  { pattern: /\/api\/modules-complementaires\/shop\/wallet/, store: 'shopwallettransaction' },
+  // ⭐ Routes Shop read-only BFF mirror → api_cache (PDFs, stats, settings)
+  { pattern: /\/api\/modules-complementaires\/shop\/stats/, store: 'api_cache' },
+  { pattern: /\/api\/modules-complementaires\/shop\/catalogue/, store: 'api_cache' },
+  { pattern: /\/api\/modules-complementaires\/shop\/payments\/history/, store: 'api_cache' },
+  { pattern: /\/api\/modules-complementaires\/shop\/settings/, store: 'api_cache' },
   // ─── Cantine ───
   { pattern: /\/api\/modules-complementaires\/canteen\/menus/, store: 'canteenmenu' },
   { pattern: /\/api\/modules-complementaires\/canteen\/subscriptions/, store: 'canteensubscription' },

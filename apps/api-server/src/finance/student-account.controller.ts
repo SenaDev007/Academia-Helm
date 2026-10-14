@@ -65,6 +65,11 @@ export class StudentAccountController {
    * GET /finance/accounts/general-fees?academicYearId=&classId=&schoolLevelId=&search=&page=&limit=&feeType=
    * (feeType optionnel — défaut GENERAL)
    *
+   * ⭐ ONGLET « FRAIS D'EXAMENS » (oct. 2026) — même endpoint avec le paramètre
+   * examType=CEP|BEPC|BAC|CAP : force feeType='EXAMEN' et restreint aux classes
+   * à examen national correspondantes (CM2 / 3ème / Terminale / CAP) — c'est le
+   * moteur des sous-onglets de la page /app/finance/exam-fees.
+   *
    * Retourne { data: rows[], total, page, limit, totalPages, sums: { due, paid, remaining, studentsWithGeneralFees } }
    * Chaque row : { accountId, student, className, generalDue, generalPaid, generalBalance, status, breakdowns[] }
    */
@@ -73,6 +78,7 @@ export class StudentAccountController {
     @TenantId() tenantId: string,
     @Query('academicYearId') academicYearId: string,
     @Query('feeType') feeType?: string,
+    @Query('examType') examType?: string,
     @Query('classId') classId?: string,
     @Query('schoolLevelId') schoolLevelId?: string,
     @Query('search') search?: string,
@@ -85,6 +91,7 @@ export class StudentAccountController {
     return this.service.findGeneralFeeAccounts(tenantId, {
       academicYearId,
       feeType,
+      examType,
       classId,
       schoolLevelId,
       search,

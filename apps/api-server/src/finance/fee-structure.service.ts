@@ -83,6 +83,16 @@ export class FeeStructureService {
     if (!FEE_TYPES.includes(feeType as FeeType)) {
       throw new BadRequestException(`feeType must be one of: ${FEE_TYPES.join(', ')}`);
     }
+    // ⭐ Oct. 2026 (exigence promoteur — UNIFORME TOUS TENANTS) :
+    //    CANTEEN et OTHER retirés du sélecteur « Nouveau frais » (front) →
+    //    on bloque AUSSI côté API pour garantir l'uniformité (la cantine
+    //    dispose de son module dédié ; « Autre » n'a pas de sémantique de
+    //    suivi). Les données legacy restent lisibles (libellés d'affichage).
+    if (feeType === 'CANTEEN' || feeType === 'OTHER') {
+      throw new BadRequestException(
+        `Type de frais non disponible (${feeType}). Types autorisés : Inscription, Réinscription, Scolarité, Frais généraux, Frais d'examen.`,
+      );
+    }
 
     // Résoudre levelId : le frontend peut envoyer un UUID de education_levels
     // au lieu de school_levels. On essaie les deux tables.
@@ -310,6 +320,14 @@ export class FeeStructureService {
   ) {
     const existing = await this.findOne(id, tenantId);
     await this.ensureAcademicYearNotClosed(existing.academicYearId, tenantId);
+
+    // ⭐ Oct. 2026 (uniforme tous tenants) : interdire aussi le passage vers
+    //    CANTEEN/OTHER en modification directe (même règle que create()).
+    if (data.feeType !== undefined && (data.feeType === 'CANTEEN' || data.feeType === 'OTHER')) {
+      throw new BadRequestException(
+        `Type de frais non disponible (${data.feeType}). Types autorisés : Inscription, Réinscription, Scolarité, Frais généraux, Frais d'examen.`,
+      );
+    }
 
     // Résoudre levelId si fourni (même logique que create)
     let resolvedLevelId = data.levelId !== undefined ? data.levelId : existing.levelId;

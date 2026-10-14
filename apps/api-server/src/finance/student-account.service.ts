@@ -9,7 +9,7 @@
  *   `app.allow_block_update = 'true'`.
  * - Ce service configure ces flags via `prisma.$executeRaw` avant chaque update légitime.
  */
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 
 const STATUS_ACTIVE = 'ACTIVE';
@@ -18,6 +18,29 @@ const STATUS_PAID = 'PAID';
 const STATUS_OVERDUE = 'OVERDUE';
 const STATUS_BLOCKED = 'BLOCKED';
 const STATUS_CLOSED = 'CLOSED';
+
+/**
+ * ⭐ FRAIS D'EXAMENS NATIONAUX (oct. 2026 — onglet « Frais des examens ») :
+ * Mapping sous-onglet d'examen ↔ classes à examen (système béninois) :
+ *   CEP → CM2 · BEPC → 3ème · BAC → Terminale · CAP → filières techniques.
+ * Les regex s'appliquent sur un nom de classe NORMALISÉ (majuscules, sans
+ * accents) — cf. normalizeClassNameForExam().
+ */
+export const EXAM_TYPE_CLASS_PATTERNS: Record<string, RegExp> = {
+  CEP: /(^|[^A-Z0-9])CM2([^A-Z0-9]|$)/,
+  BEPC: /(^|[^A-Z0-9])(3E|3EME|3IEME|TROISIEME)([^A-Z0-9]|$)/,
+  BAC: /(^|[^A-Z0-9])(TERMINALE|TLE|BACCALAUREAT)([^A-Z0-9]|$)/,
+  CAP: /(^|[^A-Z0-9])CAP([^A-Z0-9]|$)/,
+};
+
+/** Normalisation d'un nom de classe : majuscules + accents supprimés. */
+export function normalizeClassNameForExam(name: string): string {
+  return (name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .trim();
+}
 
 /**
  * ⭐ FIX (sept. 2026 — bug « mauvais frais appliqués aux comptes élèves ») :
@@ -1333,6 +1356,10 @@ export class StudentAccountService {
     filters: {
       academicYearId: string;
       feeType?: string; // défaut 'GENERAL'
+      /// ⭐ Onglet « Frais des examens » — sous-onglet par examen national
+      /// (CEP/BEPC/BAC/CAP) : force feeType='EXAMEN' + restreint aux classes
+      /// à examen correspondantes (CM2 / 3ème / Terminale / CAP).
+      examType?: string;
       classId?: string;
       schoolLevelId?: string;
       search?: string;
@@ -1340,7 +1367,45 @@ export class StudentAccountService {
       limit?: number;
     },
   ) {
-    const feeType = filters.feeType || 'GENERAL';
+    // ⭐ FRAIS D'EXAMENS — résolution du sous-onglet (CEP | BEPC | BAC | CAP) :
+    //    le paramètre examType force le suivi sur les frais d'examen et
+    //    restreint aux classes physiques à examen national de l'année.
+    let examClassIds: string[] | null = null;
+    if (filters.examType) {
+      if (!['CEP', 'BEPC', 'BAC', 'CAP'].includes(filters.examType)) {
+        throw new BadRequestException(
+          `examType invalide : « ${filters.examType} » (valeurs autorisées : CEP, BEPC, BAC, CAP)`,
+        );
+      }
+      const pattern = EXAM_TYPE_CLASS_PATTERNS[filters.examType];
+      const yearClasses = await this.prisma.class.findMany({
+        where: { tenantId, academicYearId: filters.academicYearId },
+        select: { id: true, name: true },
+      });
+      examClassIds = yearClasses
+        .filter((c) => pattern.test(normalizeClassNameForExam(c.name)))
+        .map((c) => c.id);
+    }
+
+    const feeType = filters.examType ? 'EXAMEN' : (filters.feeType || 'GENERAL');
+
+    // Résultat vide immédiat si aucune classe à examen pour ce type (ex:
+    // sous-onglet BEPC mais aucune classe de 3ème dans l'année).
+    const isPaginated = !!(filters.page && filters.limit);
+    const page = Math.max(1, filters.page ?? 1);
+    const limit = Math.min(500, Math.max(1, filters.limit ?? 50));
+    if (examClassIds && examClassIds.length === 0) {
+      return isPaginated
+        ? {
+            data: [],
+            total: 0,
+            page,
+            limit,
+            totalPages: 1,
+            sums: { due: 0, paid: 0, remaining: 0, studentsWithGeneralFees: 0 },
+          }
+        : [];
+    }
 
     // ── Filtres de base (élèves actifs, année, tenant) ──
     const studentFilter: any = { status: { not: 'WITHDRAWN' } };
@@ -1357,7 +1422,20 @@ export class StudentAccountService {
         },
       ];
     }
-    if (filters.classId) {
+    if (examClassIds) {
+      // ⭐ Sous-onglet d'examen : classes à examen du type demandé (le filtre
+      //    Classe éventuel doit faire partie des classes à examen, sinon vide).
+      const inIds = filters.classId
+        ? (examClassIds.includes(filters.classId) ? [filters.classId] : ['__no_match__'])
+        : examClassIds;
+      studentFilter.studentEnrollments = {
+        some: {
+          academicYearId: filters.academicYearId,
+          classId: { in: inIds },
+          ...(filters.schoolLevelId ? { class: { schoolLevelId: filters.schoolLevelId } } : {}),
+        },
+      };
+    } else if (filters.classId) {
       studentFilter.studentEnrollments = {
         some: {
           academicYearId: filters.academicYearId,
@@ -1382,9 +1460,7 @@ export class StudentAccountService {
     };
 
     // ── Pagination (pattern Task 9-a / identique à findAll) ──
-    const isPaginated = !!(filters.page && filters.limit);
-    const page = Math.max(1, filters.page ?? 1);
-    const limit = Math.min(500, Math.max(1, filters.limit ?? 50));
+    // (page/limit/isPaginated calculés en amont — cf. résolution examType)
 
     // ── Requête principale : comptes + breakdowns filtrés sur le type ──
     const findManyArgs: any = {

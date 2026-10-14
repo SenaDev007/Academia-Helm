@@ -25,12 +25,27 @@ const FEE_TYPES = [
   { value: 'INSCRIPTION', label: 'Inscription' },
   { value: 'REINSCRIPTION', label: 'Réinscription' },
   { value: 'TUITION', label: 'Scolarité' },
-  { value: 'CANTEEN', label: 'Cantine' },
+  // ⭐ Oct. 2026 (exigence promoteur — uniforme tous tenants) :
+  //    CANTEEN (« Cantine ») et OTHER (« Autre ») RETIRÉS du sélecteur
+  //    « Nouveau frais » ET du filtre Type — la cantine dispose de son
+  //    module dédié et « Autre » n'a pas de sémantique de suivi.
+  //    EXAMEN est conservé : suivi dédié dans l'onglet « Frais des examens ».
   { value: 'EXAMEN', label: "Frais d'examen" },
   // ⭐ Frais généraux — suivi dans l'onglet dédié du module Finance
   { value: 'GENERAL', label: 'Frais généraux' },
-  { value: 'OTHER', label: 'Autre' },
 ];
+
+// Libellés d'AFFICHAGE — inclut les types retirés du sélecteur pour que les
+// structures historiques (données legacy CANTEEN/OTHER) restent lisibles.
+const FEE_TYPE_LABELS: Record<string, string> = {
+  INSCRIPTION: 'Inscription',
+  REINSCRIPTION: 'Réinscription',
+  TUITION: 'Scolarité',
+  CANTEEN: 'Cantine',
+  EXAMEN: "Frais d'examen",
+  GENERAL: 'Frais généraux',
+  OTHER: 'Autre',
+};
 
 function classOrder(name: string): number {
   const n = (name || '').trim().toUpperCase();
@@ -554,7 +569,7 @@ export default function FeeStructuresContent({ onAccountsChanged }: { onAccounts
     }
   };
 
-  const feeTypeLabel = (t: string) => FEE_TYPES.find((f) => f.value === t)?.label ?? t;
+  const feeTypeLabel = (t: string) => FEE_TYPE_LABELS[t] ?? FEE_TYPES.find((f) => f.value === t)?.label ?? t;
   const modalClasses = useMemo(() => [...classes].sort((a, b) => classOrder(a.name) - classOrder(b.name)), [classes]);
 
   return (

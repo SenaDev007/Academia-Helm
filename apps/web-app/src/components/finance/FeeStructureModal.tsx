@@ -12,13 +12,17 @@ const FEE_TYPES = [
   { value: 'INSCRIPTION', label: 'Inscription' },
   { value: 'REINSCRIPTION', label: 'Réinscription' },
   { value: 'TUITION', label: 'Scolarité' },
-  { value: 'CANTEEN', label: 'Cantine' },
+  // ⭐ Oct. 2026 (exigence promoteur — uniforme tous tenants) :
+  //    CANTEEN (« Cantine ») et OTHER (« Autre ») RETIRÉS du sélecteur —
+  //    la cantine dispose de son module dédié (abonnements, paiements,
+  //    présences) et « Autre » n'a pas de sémantique de suivi.
+  //    EXAMEN est conservé : suivi dédié dans l'onglet « Frais des examens »
+  //    (sous-onglets CEP / BEPC / Baccalauréat / CAP).
   { value: 'EXAMEN', label: "Frais d'examen" },
   // ⭐ Frais généraux — frais transversal de l'école (tenue, carte ID,
   // activités…) suivi séparément dans l'onglet dédié « Frais généraux »
   // du module Finance (exigence utilisateur sept. 2026).
   { value: 'GENERAL', label: 'Frais généraux' },
-  { value: 'OTHER', label: 'Autre' },
 ];
 
 // Helper : préfixe du nom auto-généré selon le type de frais
@@ -248,7 +252,17 @@ export default function FeeStructureModal({
         <h3 className="text-lg font-semibold mb-4">{isEdit ? 'Modifier le frais' : 'Nouveau frais'}</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div><Label>Type de frais</Label>
-            <Select value={feeType} onValueChange={setFeeType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{FEE_TYPES.map((f) => (<SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>))}</SelectContent></Select>
+            <Select value={feeType} onValueChange={setFeeType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
+              {FEE_TYPES.map((f) => (<SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>))}
+              {/* ⭐ Legacy : en ÉDITION d'un ancien frais Cantine/Autre (créé avant
+                  oct. 2026), on affiche l'option pour rester lisible — mais elle
+                  n'est plus proposée à la création (bloquée aussi côté API). */}
+              {isEdit && (feeType === 'CANTEEN' || feeType === 'OTHER') && !FEE_TYPES.find((f) => f.value === feeType) && (
+                <SelectItem value={feeType} disabled>
+                  {feeType === 'CANTEEN' ? 'Cantine (obsolète)' : 'Autre (obsolète)'}
+                </SelectItem>
+              )}
+            </SelectContent></Select>
           </div>
           {feeType === 'GENERAL' && (
             <p className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded p-2">
@@ -256,6 +270,14 @@ export default function FeeStructureModal({
               activités…). Il sera suivi séparément dans l'onglet « Frais généraux » du module Finance
               (montants dus / payés / soldes par élève, encaissements dédiés). Sans niveau ni classe
               sélectionnés, il s'applique à <strong>tous les élèves de l'école</strong>.
+            </p>
+          )}
+          {feeType === 'EXAMEN' && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+              💡 <strong>Frais d'examen</strong> : réservé aux classes à examen national — CM2 (CEP),
+              3ème (BEPC), Terminale (Baccalauréat), CAP. Choisissez « Appliquer à : Classe spécifique »
+              puis les classes concernées. Il sera suivi dans l'onglet « Frais des examens » du module
+              Finance (montants dus / payés / soldes par élève et par examen, encaissements dédiés).
             </p>
           )}
           {feeType === 'OTHER' && (

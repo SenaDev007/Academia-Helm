@@ -118,6 +118,17 @@ class FinanceService {
     return financeFetch(`/api/finance/student-accounts/general-fees${qs ? `?${qs}` : ''}`);
   }
 
+  /**
+   * ⭐ ONGLET « FRAIS DES EXAMENS » (oct. 2026) — même endpoint que les frais
+   * généraux avec feeType=EXAMEN + examType=CEP|BEPC|BAC|CAP (sous-onglet par
+   * examen national : le backend restreint aux classes à examen correspondantes
+   * — CM2 / 3ème / Terminale / CAP). Pagination serveur + KPIs globaux.
+   */
+  async getExamFeeAccounts(params?: Record<string, string>): Promise<any> {
+    const qs = params ? new URLSearchParams(params).toString() : '';
+    return financeFetch(`/api/finance/student-accounts/general-fees${qs ? `?${qs}` : ''}`);
+  }
+
   // --- Student Accounts ---
   async getStudentAccounts(params?: Record<string, string>): Promise<any> {
     const qs = params ? new URLSearchParams(params).toString() : '';

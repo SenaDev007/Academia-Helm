@@ -23,14 +23,25 @@ const FEE_TYPES = [
   { value: 'INSCRIPTION', label: 'Inscription' },
   { value: 'REINSCRIPTION', label: 'Réinscription' },
   { value: 'TUITION', label: 'Scolarité' },
-  { value: 'CANTEEN', label: 'Cantine' },
+  // ⭐ Oct. 2026 (uniforme avec le modal « Nouveau frais ») : CANTEEN et OTHER
+  //    retirés du filtre — plus créables côté plateforme.
   { value: 'EXAMEN', label: "Frais d'examen" },
   // ⭐ Frais généraux (type transversal — suivis dans l'onglet dédié)
   { value: 'GENERAL', label: 'Frais généraux' },
-  { value: 'OTHER', label: 'Autre' },
 ];
 
-const feeTypeLabel = (t: string) => FEE_TYPES.find((f) => f.value === t)?.label ?? t;
+// Libellés d'AFFICHAGE — inclut les types retirés (données legacy lisibles).
+const FEE_TYPE_LABELS: Record<string, string> = {
+  INSCRIPTION: 'Inscription',
+  REINSCRIPTION: 'Réinscription',
+  TUITION: 'Scolarité',
+  CANTEEN: 'Cantine',
+  EXAMEN: "Frais d'examen",
+  GENERAL: 'Frais généraux',
+  OTHER: 'Autre',
+};
+
+const feeTypeLabel = (t: string) => FEE_TYPE_LABELS[t] ?? FEE_TYPES.find((f) => f.value === t)?.label ?? t;
 
 function classOrder(name: string): number {
   const n = (name || '').trim().toUpperCase();

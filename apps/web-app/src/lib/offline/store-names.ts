@@ -34,6 +34,32 @@ const URL_TO_STORE: Array<{ pattern: RegExp; store: string }> = [
   { pattern: /\/api\/absences/, store: 'absence' },
   { pattern: /\/api\/disciplinary/, store: 'disciplinaryincident' },
   { pattern: /\/api\/incidents/, store: 'incident' },
+  // ⭐ 2026-10-14 — AUDIT SHELLS/RÔLES : routes Discipline/Surveillant/Censeur/Parent manquantes (miroir sw.js v4.16.0).
+  //    Avant : tombaient dans le fallback 'api_cache' → pas d'écriture optimiste offline.
+  // /api/discipline/* (discipline-prisma.controller — CRUD incidents)
+  { pattern: /\/api\/discipline\/conduct\/rules/, store: 'conductrule' },
+  { pattern: /\/api\/discipline\/conduct\/sanctions/, store: 'sanction' },
+  { pattern: /\/api\/discipline\/conduct\/settings/, store: 'conductsetting' },
+  { pattern: /\/api\/discipline\/conduct\/ledger/, store: 'conductledger' },
+  { pattern: /\/api\/discipline\/conduct\/students-batch/, store: 'api_cache' },
+  { pattern: /\/api\/discipline\/conduct\/student/, store: 'conductledger' },
+  { pattern: /\/api\/discipline\/conduct/, store: 'conductledger' },
+  { pattern: /\/api\/discipline/, store: 'disciplinaryincident' },
+  // /api/censeur/* (BFF Next.js — agrégats pour Espace Censeur)
+  { pattern: /\/api\/censeur\/councils/, store: 'classcouncil' },
+  { pattern: /\/api\/censeur\/visits/, store: 'api_cache' },
+  { pattern: /\/api\/censeur\/exams/, store: 'examfraud' },
+  { pattern: /\/api\/censeur/, store: 'api_cache' },
+  // /api/parent/* (parent-portal.controller — agrégats read-only pour dashboard parent)
+  { pattern: /\/api\/parent\//, store: 'api_cache' },
+  // /api/chat/* (communication/chat.controller — Helm Connect messenger)
+  //    Store 'chat' créé dans local-db.service.ts (V17 list).
+  { pattern: /\/api\/chat\//, store: 'chat' },
+  // /api/admission-settings (tenant-website/admission-settings.controller)
+  { pattern: /\/api\/admission-settings/, store: 'api_cache' },
+  // /api/tenant-website/* (public + admin tenant website settings)
+  { pattern: /\/api\/tenant-website\/public/, store: 'api_cache' },
+  { pattern: /\/api\/tenant-website/, store: 'api_cache' },
   { pattern: /\/api\/homeworks/, store: 'homework' },
   { pattern: /\/api\/homework-entries/, store: 'homeworkentry' },
 

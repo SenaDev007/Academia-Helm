@@ -183,6 +183,22 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
+// v4.16.0 : (audit shells/rôles 14/10/2026) ROUTE_TABLES — 12 routes
+//    manquantes ajoutées pour couvrir les UI spécifiques par rôle
+//    (Discipline/Surveillant, Censeur, Parent, Admissions). Avant :
+//    tombaient dans le fallback 'api_cache' générique → pas d'écriture
+//    optimiste offline (création d'une règle de conduite, sanction,
+//    paramètre de conduite, entrée du registre, visite de classe,
+//    examen de fraude, conseil de classe, etc. n'apparaissaient pas dans
+//    la liste jusqu'à la reconnexion). Désormais : chaque route résout
+//    vers le store IDB métier correct.
+//    v21RoleStores : 4 nouveaux stores IDB créés dans local-db.service.ts
+//    (conductrule, sanction, conductsetting, conductledger).
+//    Shells couverts : teacher, parent, secretaire, secretaire-comptable,
+//    comptable, surveillant, censeur, directeur, exam-reception,
+//    discipline, infirmary, qhse, admissions — tous bénéficient du SW
+//    universel via UniversalSWRegister + PWARegister dans le root layout.
+
 // v4.15.0 : (audit Paramètres + vérification des shells 14/10/2026) ROUTE_TABLES —
 //    11 routes Paramètres manquantes ajoutées pour couvrir TOUS les
 //    controllers du module Paramètres (settings.controller.ts avec ~150
@@ -332,7 +348,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.15.0';
+const SW_VERSION = 'v4.16.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -2469,6 +2485,41 @@ const ROUTE_TABLES = [
   [/^\/api\/absences/, 'absence'],
   [/^\/api\/disciplinary/, 'disciplinaryincident'],
   [/^\/api\/incidents/, 'incident'],
+  // ⭐ 2026-10-14 — AUDIT SHELLS/RÔLES : routes Discipline/Surveillant/Censeur/Parent manquantes
+  //    ajoutées pour couvrir les UI spécifiques par rôle. Avant : tombaient
+  //    dans le fallback 'api_cache' générique → pas d'écriture optimiste
+  //    offline (création d'une règle de conduite, sanction, visite de
+  //    classe, examen de fraude, conseil de classe, etc. n'apparaissaient
+  //    pas dans la liste jusqu'à la reconnexion).
+  //    /api/discipline/* (discipline-prisma.controller — CRUD incidents)
+  [/^\/api\/discipline\/conduct\/rules/, 'conductrule'],
+  [/^\/api\/discipline\/conduct\/sanctions/, 'sanction'],
+  [/^\/api\/discipline\/conduct\/settings/, 'conductsetting'],
+  [/^\/api\/discipline\/conduct\/ledger/, 'conductledger'],
+  [/^\/api\/discipline\/conduct\/students-batch/, 'api_cache'],
+  [/^\/api\/discipline\/conduct\/student/, 'conductledger'],
+  [/^\/api\/discipline\/conduct/, 'conductledger'],
+  [/^\/api\/discipline/, 'disciplinaryincident'],
+  //    /api/censeur/* (BFF Next.js → aggregate backend endpoints)
+  [/^\/api\/censeur\/councils/, 'classcouncil'],
+  [/^\/api\/censeur\/visits/, 'api_cache'],
+  [/^\/api\/censeur\/exams/, 'examfraud'],
+  [/^\/api\/censeur/, 'api_cache'],
+  //    /api/parent/* (parent-portal.controller — agrégats read-only pour
+  //    dashboard parent : children, payments, attendance, grades, results,
+  //    today, weeks, cahier-journal, homeworks, national-exams, finance)
+  [/^\/api\/parent\//, 'api_cache'],
+  //    /api/chat/* (communication/chat.controller — Helm Connect messenger :
+  //    conversations, messages, channels, availability, calls, files,
+  //    announcements, invitations, blocks, profile, presence, reactions)
+  //    Store 'chat' créé dans local-db.service.ts (V17 list).
+  [/^\/api\/chat\//, 'chat'],
+  //    /api/admission-settings (tenant-website/admission-settings.controller)
+  //    Configurations admission (steps + documents) — settings read/write
+  [/^\/api\/admission-settings/, 'api_cache'],
+  //    /api/tenant-website/* (public + admin tenant website settings)
+  [/^\/api\/tenant-website\/public/, 'api_cache'],
+  [/^\/api\/tenant-website/, 'api_cache'],
   [/^\/api\/homeworks/, 'homework'],
   [/^\/api\/homework-entries/, 'homeworkentry'],
   [/^\/api\/students\/transfers/, 'studenttransfer'],

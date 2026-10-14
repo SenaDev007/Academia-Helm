@@ -855,6 +855,29 @@ class LocalDbService {
         store.createIndex('_is_dirty', '_isDirty', { unique: false });
       }
     });
+
+    // ⭐ V21 — AUDIT SHELLS/RÔLES (14/10/2026) : stores manquants pour les
+    //    UI spécifiques par rôle (Discipline/Surveillant/Censeur). Avant :
+    //    /api/discipline/conduct/* tombait dans le fallback 'api_cache'
+    //    générique → pas d'écriture optimiste offline (création d'une
+    //    règle de conduite, sanction, paramètre de conduite, entrée du
+    //    registre, etc. n'apparaissaient pas dans la liste jusqu'à la
+    //    reconnexion). Maintenant : chaque route résout vers son store
+    //    métier dédié (DisciplineRule, Sanction, ConductSetting,
+    //    ConductLedger Prisma).
+    const v21RoleStores = [
+      'conductrule',        // /api/discipline/conduct/rules (DisciplineRule)
+      'sanction',            // /api/discipline/conduct/sanctions (Sanction)
+      'conductsetting',     // /api/discipline/conduct/settings (ConductSetting)
+      'conductledger',      // /api/discipline/conduct/ledger (ConductLedger)
+    ];
+    v21RoleStores.forEach(storeName => {
+      if (!db.objectStoreNames.contains(storeName)) {
+        const store = db.createObjectStore(storeName, { keyPath: 'id' });
+        store.createIndex('tenant_id', 'tenantId', { unique: false });
+        store.createIndex('_is_dirty', '_isDirty', { unique: false });
+      }
+    });
     // ⭐ V17 — RESPONSE CACHE : store clé-par-URL pour la couche d'accès
     //    unifiée (data-service). Cache TOUTES les réponses GET JSON
     //    (tableaux, agrégats, objets SANS champ id — les stores keyPath
@@ -1063,10 +1086,11 @@ class LocalDbService {
 // Instance singleton
 export const localDb = new LocalDbService({
   dbName: 'academia-helm-local',
-  version: 20, // ⭐ FIX 2026-09-13 : bump 18 → 19 (+ stores 'modules' & 'academic_terms' requis par offline-bootstrap — NotFoundError sinon) ; v18 = + store 'chat' ; v17 = stores URL_TO_STORE + response_cache
+  version: 21, // ⭐ FIX 2026-09-13 : bump 18 → 19 (+ stores 'modules' & 'academic_terms' requis par offline-bootstrap — NotFoundError sinon) ; v18 = + store 'chat' ; v17 = stores URL_TO_STORE + response_cache
   // ⭐ 2026-10-14 — v19 : bump 19 → 20 (+ v19ExamStores : examfraud, exampreparation, examlock, exampromotion) ;
   //    v18 : + v18PedagogyStores (annualplan, monthlyplan, materialreturn, pedagogicaltask, pedagogicalnotification) ;
-  //    v20 : + v20HrStores (hrinternship — audit RH/Personnel)
+  //    v20 : + v20HrStores (hrinternship — audit RH/Personnel) ;
+  //    v21 : + v21RoleStores (conductrule, sanction, conductsetting, conductledger — audit shells/rôles Discipline)
 });
 
 /**

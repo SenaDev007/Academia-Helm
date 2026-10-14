@@ -793,6 +793,27 @@ class LocalDbService {
         db.createObjectStore(storeName, { keyPath: 'id' });
       }
     });
+
+    // ⭐ V18 — AUDIT PEDAGOGIE (14/10/2026) : stores manquants pour les
+    //    nouvelles routes pédagogie ajoutées dans ROUTE_TABLES v4.12.0.
+    //    Avant : /api/pedagogy/annual-plans, /monthly-plans, /material-returns,
+    //    /teacher-notifications, /assignments tombaient dans le fallback
+    //    'api_cache' générique → pas d'écriture optimiste offline.
+    //    Maintenant : chaque route résout vers son store métier dédié.
+    const v18PedagogyStores = [
+      'annualplan',          // /api/pedagogy/annual-plans
+      'monthlyplan',         // /api/pedagogy/monthly-plans
+      'materialreturn',     // /api/pedagogy/material-returns
+      'pedagogicaltask',     // /api/pedagogy/assignments (tasks)
+      'pedagogicalnotification', // /api/pedagogy/teacher-notifications
+    ];
+    v18PedagogyStores.forEach(storeName => {
+      if (!db.objectStoreNames.contains(storeName)) {
+        const store = db.createObjectStore(storeName, { keyPath: 'id' });
+        store.createIndex('tenant_id', 'tenantId', { unique: false });
+        store.createIndex('_is_dirty', '_isDirty', { unique: false });
+      }
+    });
     // ⭐ V17 — RESPONSE CACHE : store clé-par-URL pour la couche d'accès
     //    unifiée (data-service). Cache TOUTES les réponses GET JSON
     //    (tableaux, agrégats, objets SANS champ id — les stores keyPath

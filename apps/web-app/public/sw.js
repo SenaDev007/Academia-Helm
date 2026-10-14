@@ -183,6 +183,21 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
+// v4.12.0 : (audit Finance + Pédagogie 14/10/2026) ROUTE_TABLES — 25 routes
+//    Finance + 13 routes Pédagogie manquantes ajoutées pour couvrir TOUS
+//    les controllers des 2 modules. Avant : tombaient dans le fallback
+//    'api_cache' générique → pas d'écriture optimiste offline (création
+//    d'un encaissement, dépense, frais, caisse, promesse, plan annuel,
+//    plan mensuel, retour de matériel, notification enseignant, tâche
+//    pédagogique, etc. n'apparaissaient pas dans la liste jusqu'à la
+//    reconnexion). Désormais : chaque route résout vers le store IDB
+//    métier correct. BATCH_KEYWORDS étendu avec 18 nouveaux mots-clés
+//    (12 Finance + 6 Pédagogie) pour empêcher les enregistrements
+//    fantômes sur les endpoints batch.
+//    v18PedagogyStores : 5 nouveaux stores IDB créés dans local-db.service.ts
+//    (annualplan, monthlyplan, materialreturn, pedagogicaltask,
+//    pedagogicalnotification) — les autres stores existaient déjà.
+
 // v4.8.1 : (fix photo élève 23/09/2026) ROUTE_TABLES — /api/students/:id/photo
 //    et /api/students/:id/upload-photo exclus du store 'student' (fallback
 //    api_cache générique). Avant : un DELETE /students/:id/photo hors ligne
@@ -263,7 +278,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.10.0';
+const SW_VERSION = 'v4.12.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -2427,26 +2442,97 @@ const ROUTE_TABLES = [
   [/^\/api\/hr\/planning/, 'staffplanning'],
 
   // ─── Finances & Économat ───
+  // ⭐ 2026-10-14 — AUDIT FINANCE : 25 routes manquantes ajoutées pour couvrir
+  //    TOUS les controllers du module Finance. Avant : tombaient dans le
+  //    fallback 'api_cache' générique → pas d'écriture optimiste offline
+  //    (création d'un encaissement, d'une dépense, d'un frais, d'une caisse,
+  //    d'une promesse de paiement, etc. n'apparaissaient pas dans la liste
+  //    jusqu'à la reconnexion). Maintenant : chaque route résout vers le
+  //    store IDB métier correct (déjà créé dans local-db.service.ts).
+  //    Ordre IMPORTANT : les routes SPÉCIFIQUES (sous-chemins) doivent venir
+  //    AVANT les routes GÉNÉRIQUES (préfixe seul), car ROUTE_TABLES est
+  //    first-match-wins.
   [/^\/api\/finance\/fee-structures\/overrides/, 'feeoverride'],
   [/^\/api\/finance\/fee-structures/, 'feestructure'],
   [/^\/api\/finance\/fee-configurations/, 'feeconfiguration'],
   [/^\/api\/finance\/fee-definitions/, 'feedefinition'],
   [/^\/api\/finance\/fee-regimes/, 'feeregime'],
+  // ⭐ /api/finance/fees/* — fees-prisma.controller.ts (categories, definitions, student-fees)
+  [/^\/api\/finance\/fees\/categories/, 'feecategory'],
+  [/^\/api\/finance\/fees\/definitions/, 'feedefinition'],
+  [/^\/api\/finance\/fees\/student-fees/, 'feedefinition'],
+  [/^\/api\/finance\/fees/, 'feedefinition'],
+  // ⭐ /api/fees/installments — fee-installment.controller.ts (different prefix!)
+  [/^\/api\/fees\/installments/, 'feeinstallment'],
   [/^\/api\/finance\/payments/, 'payment'],
   [/^\/api\/finance\/invoices/, 'invoice'],
   [/^\/api\/finance\/expenses/, 'financeexpense'],
   [/^\/api\/finance\/transactions/, 'financetransaction'],
+  // ⭐ /api/finance/accounts (student-account.controller.ts) ET legacy /api/finance/student-accounts (BFF proxy)
+  [/^\/api\/finance\/accounts/, 'studentaccount'],
   [/^\/api\/finance\/student-accounts/, 'studentaccount'],
   [/^\/api\/finance\/treasury/, 'treasurymovement'],
+  // ⭐ /api/finance/daily-closures (finance-daily-closure.controller.ts — legacy direct path)
+  [/^\/api\/finance\/daily-closures/, 'dailyclosure'],
   [/^\/api\/finance\/tuition-installments/, 'tuitioninstallment'],
   [/^\/api\/finance\/tuition-payments/, 'tuitionpayment'],
   [/^\/api\/finance\/payment-plans/, 'paymentplan'],
   [/^\/api\/finance\/cash-registers/, 'cashregister'],
+  // ⭐ /api/finance/collection/* — collection-prisma.controller.ts (arrears, reminders, promises, actions, cases)
+  [/^\/api\/finance\/collection\/promises/, 'paymentpromise'],
+  [/^\/api\/finance\/collection\/actions/, 'collectionaction'],
+  [/^\/api\/finance\/collection\/arrears/, 'feearrear'],
+  [/^\/api\/finance\/collection\/reminders/, 'collectionreminder'],
+  [/^\/api\/finance\/collection\/cases/, 'collectioncase'],
+  [/^\/api\/finance\/collection/, 'collectioncase'],
+  // ⭐ /api/finance/collection-summary — aggregate (Bilan des encaissements)
+  [/^\/api\/finance\/collection-summary/, 'api_cache'],
   [/^\/api\/finance\/collection-cases/, 'collectioncase'],
   [/^\/api\/finance\/collection-reminders/, 'collectionreminder'],
+  // ⭐ /api/finance/recovery-reminders — recovery-reminder.controller.ts (manual, run-nightly, notify)
+  [/^\/api\/finance\/recovery-reminders/, 'collectionreminder'],
+  // ⭐ /api/finance/student-fee-profiles — student-fee-profile.controller.ts
+  [/^\/api\/finance\/student-fee-profiles/, 'studentfeeprofile'],
+  // ⭐ /api/finance/student-arrears — student-arrear.controller.ts
+  [/^\/api\/finance\/student-arrears/, 'studentarrear'],
+  // ⭐ /api/finance/arrears-import — import endpoints (preview/run/template — pas d'entité à cacher)
+  [/^\/api\/finance\/arrears-import/, 'api_cache'],
+  // ⭐ /api/finance/payment-config — tenant-payment-config.controller.ts
+  [/^\/api\/finance\/payment-config/, 'tenantpaymentconfig'],
+  // ⭐ /api/payments/allocation — payment-allocation.controller.ts (different prefix!)
+  [/^\/api\/payments\/allocation/, 'paymentallocation'],
+  // ⭐ /api/payments/enhanced — payments-enhanced.controller.ts (different prefix!)
+  [/^\/api\/payments\/enhanced/, 'payment'],
+  // ⭐ /api/payments — legacy payments.controller.ts (different prefix!)
+  [/^\/api\/payments(\/|$)/, 'payment'],
+  // ⭐ /api/expenses — legacy expenses.controller.ts (different prefix!)
+  [/^\/api\/expenses(\/|$)/, 'financeexpense'],
+  // ⭐ /api/finance/arrears — already mapped above via collection/arrears, keep general arrears path
   [/^\/api\/finance\/arrears/, 'feearrear'],
+  // ⭐ /api/receipts — receipt-generation.controller.ts (server-side receipt PDF generation)
+  //    Pas d'entité à cacher (le reçu est généré côté serveur après un paiement).
+  [/^\/api\/receipts\/notifications/, 'api_cache'],
+  [/^\/api\/receipts(\/|$)/, 'api_cache'],
+  // ⭐ Routes READ-ONLY ou agrégats → api_cache ou orion_cache (pas d'écriture optimiste)
+  [/^\/api\/finance\/reports/, 'api_cache'],
+  [/^\/api\/finance\/settings/, 'api_cache'],
+  [/^\/api\/finance\/audit/, 'api_cache'],
+  [/^\/api\/finance\/orion/, 'orion_cache'],
+  [/^\/api\/finance\/exports/, 'api_cache'],
+  [/^\/api\/finance\/promoter-eligibility/, 'api_cache'],
+  [/^\/api\/finance\/expenses-v2/, 'api_cache'],
+  [/^\/api\/payment-flows(\/|$)/, 'api_cache'],
+  [/^\/api\/finances(\/|$)/, 'api_cache'],
 
   // ─── Organisation pédagogique ───
+  // ⭐ 2026-10-14 — AUDIT PEDAGOGIE : 13 routes manquantes ajoutées pour
+  //    couvrir TOUS les controllers du module Pédagogie. Avant : tombaient
+  //    dans le fallback 'api_cache' générique → pas d'écriture optimiste
+  //    offline (création d'un plan annuel, plan mensuel, retour de matériel,
+  //    notification enseignant, tâche pédagogique, mouvement de stock,
+  //    etc. n'apparaissaient pas dans la liste jusqu'à la reconnexion).
+  //    Maintenant : chaque route résout vers le store IDB métier correct
+  //    (déjà créé dans local-db.service.ts ou V18PedagogyStores).
   [/^\/api\/pedagogy\/teacher-profiles/, 'teacheracademicprofile'],
   [/^\/api\/pedagogy\/teacher-availabilities/, 'teacheravailability'],
   [/^\/api\/pedagogy\/teacher-class-assignments/, 'teacherclassassignment'],
@@ -2468,11 +2554,49 @@ const ROUTE_TABLES = [
   [/^\/api\/lesson-journals/, 'lessonjournal'],
   [/^\/api\/pedagogical-files/, 'pedagogicalfile'],
   [/^\/api\/timetables/, 'timetable'],
+  // ⭐ /api/pedagogy/materials — keep existing mapping (matériel pédagogique)
   [/^\/api\/pedagogy\/materials/, 'pedagogicalmaterial'],
+  // ⭐ /api/pedagogy/pedagogical-materials — pedagogical-materials-prisma.controller.ts (different path)
+  [/^\/api\/pedagogy\/pedagogical-materials/, 'pedagogicalmaterial'],
+  // ⭐ /api/pedagogy/material-stocks — material-stocks-prisma.controller.ts
+  [/^\/api\/pedagogy\/material-stocks/, 'materialstock'],
+  // ⭐ /api/pedagogy/material-movements — material-movements-prisma.controller.ts
+  [/^\/api\/pedagogy\/material-movements/, 'materialmovement'],
+  // ⭐ /api/pedagogy/material-returns — material-returns.controller.ts
+  [/^\/api\/pedagogy\/material-returns/, 'materialreturn'],
+  // ⭐ /api/pedagogy/teacher-material-assignments — teacher-material-assignments-prisma.controller.ts
+  [/^\/api\/pedagogy\/teacher-material-assignments/, 'teachermaterialassignment'],
+  // ⭐ /api/pedagogy/annual-plans — annual-plan.controller.ts
+  [/^\/api\/pedagogy\/annual-plans/, 'annualplan'],
+  // ⭐ /api/pedagogy/annual-teacher-supplies — annual-teacher-supplies-prisma.controller.ts
+  [/^\/api\/pedagogy\/annual-teacher-supplies/, 'annualteachersupply'],
+  // ⭐ /api/pedagogy/monthly-plans — monthly-plan.controller.ts
+  [/^\/api\/pedagogy\/monthly-plans/, 'monthlyplan'],
+  // ⭐ /api/pedagogy/assignments — pedagogical tasks (assignments.controller)
+  [/^\/api\/pedagogy\/assignments/, 'pedagogicaltask'],
+  // ⭐ /api/pedagogy/teacher-notifications — pedagogy-notification.controller.ts
+  [/^\/api\/pedagogy\/teacher-notifications/, 'pedagogicalnotification'],
+  // ⭐ /api/pedagogy/global-library — global-library-prisma.controller.ts
+  [/^\/api\/pedagogy\/global-library/, 'globalpedagogicalresource'],
+  // ⭐ /api/pedagogy/director — pedagogical-director.controller.ts (validation direction)
+  [/^\/api\/pedagogy\/director/, 'pedagogicalcontrol'],
+  // ⭐ /api/timetable-engine — timetable-engine.controller.ts (different prefix!)
+  [/^\/api\/timetable-engine/, 'timetable'],
+  // ⭐ /api/rooms — rooms-prisma.controller.ts (different prefix!)
+  [/^\/api\/rooms(\/|$)/, 'room'],
+  // ⭐ /api/saisiemaster — saisiemaster.controller.ts (saisie rapide de notes, LLM-assisted)
+  //    Pas d'entité à cacher (génération de contenu IA, agrégat read-only).
+  [/^\/api\/saisiemaster(\/|$)/, 'api_cache'],
+  // ⭐ /api/pedagogy/ia — ia-prisma.controller.ts (LLM features — pas d'entité à cacher)
+  [/^\/api\/pedagogy\/ia(\/|$)/, 'api_cache'],
+  // ⭐ /api/pedagogy/orion-advanced — orion-pedagogy-advanced.controller.ts (agrégats Orion)
+  [/^\/api\/pedagogy\/orion-advanced/, 'orion_cache'],
   [/^\/api\/pedagogy\/daily-logs/, 'dailylog'],
   [/^\/api\/pedagogy\/class-logs/, 'classlog'],
   [/^\/api\/pedagogy\/subjects/, 'subject'],
   [/^\/api\/pedagogy\/teachers/, 'teacher'],
+  // ⭐ /api/pedagogy/teacher — pedagogical-teacher.controller.ts (singular!)
+  [/^\/api\/pedagogy\/teacher(\/|$)/, 'teacher'],
   [/^\/api\/pedagogy\/timetables/, 'timetable'],
   [/^\/api\/pedagogy\/academic-levels/, 'academiclevel'],
   [/^\/api\/pedagogy\/academic-series/, 'academicseries'],
@@ -3263,11 +3387,54 @@ async function swQueueMutation(request, details, bodyText) {
 
   const operation = method === 'POST' ? 'CREATE' : method === 'DELETE' ? 'DELETE' : 'UPDATE';
 
+  // ⭐ 2026-10-14 — BATCH/COMPOUND ENDPOINT DETECTION :
+  //    Les endpoints batch (ex: /api/students/bulk-setup, /batch-promote,
+  //    /admit, /pre-register, /re-enroll, /change-class, /withdraw,
+  //    /reset-physical-assignments, /finance/payments/bulk-apply, etc.)
+  //    n'ont PAS d'UUID dans l'URL ET n'ont pas de body.id → le SW générait
+  //    un UUID aléatoire (phantom) et écrivait une fausse entité dans le store.
+  //
+  //    Détection : POST sans UUID dans l'URL ET sans body.id ET l'URL
+  //    contient un mot-clé d'action batch (pas un UUID cible).
+  //    Ces endpoints sont MIS EN FILE (outbox) pour replay au retour du
+  //    réseau, MAIS aucune entité optimiste n'est écrite dans le store —
+  //    cela évite les faux élèves/paiements/etc. qui polluent les listes.
+  const BATCH_KEYWORDS = [
+    // Students
+    'bulk-setup', 'batch-promote', 'batch-update-status', 'batch/submit',
+    'batch/accept', 'batch/convert', 'batch/accept-and-enroll',
+    'reset-physical-assignments', 'admit', 'pre-register', 're-enroll',
+    'promote', 'repeat', 'withdraw', 'reintegrate', 'exclude', 'exit',
+    'transfer', 'change-class', 'change-series', 'assign-physical-class',
+    'update-enrollment-type', 'delete-student', 'repair-enrollment',
+    'generate-bulk',
+    // Finance — bulk / batch actions (audit 2026-10-14)
+    'bulk-apply', 'bulk-delete', 'bulk-collect', 'bulk-remind',
+    'mass-apply', 'mass-collect',
+    'multi-action', 'update-student', // payments + collection-summary batch
+    'copy-to-year', 'recalculate-accounts', // fee-structures batch actions
+    'run-escalation', 'run-nightly', 'detect-arrears', // collection batch actions
+    'write-off', 'transfer-year', 'auto-generate', // arrears batch actions
+    'import/preview', 'import/run', // imports (arrears, collection-summary, overrides)
+    'bulk-class', // overrides/bulk-class
+    // Pedagogy — batch / workflow actions (audit 2026-10-14)
+    'auto-propose', // monthly-plans auto-propose
+    'director-observations', // monthly-plans director observations
+    'duplicate-to-year', // monthly-plans / annual-plans duplicate
+    'class-subjects/bulk', // pedagogy-prisma class-subjects bulk
+    'auto-recovery', // financial-settings run-auto-recovery
+    'send-compta-export', // financial-settings send-compta-export
+  ];
+  const isBatchEndpoint = method === 'POST' && !urlId
+    && !(body && typeof body === 'object' && body.id)
+    && BATCH_KEYWORDS.some(kw => path.includes('/' + kw) || path.endsWith(kw));
+
   // ─── Écriture optimiste dans le store d'entités (v3.9 portée au SW) ───
   //    L'entité créée/modifiée hors ligne est VISIBLE dans les listes (la
   //    fusion des _isDirty l'injecte dans les lectures servies hors ligne).
+  //    ⭐ 2026-10-14 — SKIP optimiste pour les batch endpoints (phantom).
   let optimisticEntity = null;
-  if (store && store !== 'orion_cache' && store !== 'api_cache') {
+  if (store && store !== 'orion_cache' && store !== 'api_cache' && !isBatchEndpoint) {
     try {
       if (isActionUrl) {
         const patch = { ...(body ?? {}) };

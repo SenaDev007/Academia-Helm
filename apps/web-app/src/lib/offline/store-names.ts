@@ -211,6 +211,105 @@ const URL_TO_STORE: Array<{ pattern: RegExp; store: string }> = [
   { pattern: /\/api\/finance\/arrears/, store: 'feearrear' },
   { pattern: /\/api\/finance\/recovery/, store: 'orion_cache' },
 
+  // ⭐ 2026-10-14 — AUDIT FINANCE : routes supplémentaires manquantes
+  //    (miroir sw.js ROUTE_TABLES v4.12.0). Avant : toutes ces routes
+  //    tombaient dans le fallback 'api_cache' → pas d'écriture optimiste
+  //    offline. Désormais : chaque route résout vers le store IDB métier.
+  //    Ordre IMPORTANT : les routes SPÉCIFIQUES (sous-chemins) doivent
+  //    venir AVANT les routes GÉNÉRIQUES (préfixe seul), car URL_TO_STORE
+  //    est first-match-wins.
+  // /api/finance/fees/* — fees-prisma.controller.ts
+  { pattern: /\/api\/finance\/fees\/categories/, store: 'feecategory' },
+  { pattern: /\/api\/finance\/fees\/definitions/, store: 'feedefinition' },
+  { pattern: /\/api\/finance\/fees\/student-fees/, store: 'feedefinition' },
+  { pattern: /\/api\/finance\/fees/, store: 'feedefinition' },
+  // /api/fees/installments — fee-installment.controller.ts (different prefix!)
+  { pattern: /\/api\/fees\/installments/, store: 'feeinstallment' },
+  // /api/finance/collection/* — collection-prisma.controller.ts
+  { pattern: /\/api\/finance\/collection\/promises/, store: 'paymentpromise' },
+  { pattern: /\/api\/finance\/collection\/actions/, store: 'collectionaction' },
+  { pattern: /\/api\/finance\/collection\/arrears/, store: 'feearrear' },
+  { pattern: /\/api\/finance\/collection\/reminders/, store: 'collectionreminder' },
+  { pattern: /\/api\/finance\/collection\/cases/, store: 'collectioncase' },
+  { pattern: /\/api\/finance\/collection/, store: 'collectioncase' },
+  // /api/finance/recovery-reminders — recovery-reminder.controller.ts
+  { pattern: /\/api\/finance\/recovery-reminders/, store: 'collectionreminder' },
+  // /api/finance/student-fee-profiles — student-fee-profile.controller.ts
+  { pattern: /\/api\/finance\/student-fee-profiles/, store: 'studentfeeprofile' },
+  // /api/finance/student-arrears — student-arrear.controller.ts
+  { pattern: /\/api\/finance\/student-arrears/, store: 'studentarrear' },
+  // /api/finance/arrears-import — import endpoints (preview/run/template)
+  { pattern: /\/api\/finance\/arrears-import/, store: 'api_cache' },
+  // /api/finance/daily-closures — finance-daily-closure.controller.ts
+  { pattern: /\/api\/finance\/daily-closures/, store: 'dailyclosure' },
+  // /api/finance/payment-config — tenant-payment-config.controller.ts
+  { pattern: /\/api\/finance\/payment-config/, store: 'tenantpaymentconfig' },
+  // /api/finance/accounts (student-account.controller.ts — backend direct URL)
+  { pattern: /\/api\/finance\/accounts/, store: 'studentaccount' },
+  // /api/payments/allocation — payment-allocation.controller.ts (different prefix!)
+  { pattern: /\/api\/payments\/allocation/, store: 'paymentallocation' },
+  // /api/payments/enhanced — payments-enhanced.controller.ts (different prefix!)
+  { pattern: /\/api\/payments\/enhanced/, store: 'payment' },
+  // /api/payments — legacy payments.controller.ts
+  { pattern: /\/api\/payments(?!\/(allocation|enhanced))/, store: 'payment' },
+  // /api/expenses — legacy expenses.controller.ts
+  { pattern: /\/api\/expenses/, store: 'financeexpense' },
+  // /api/receipts — receipt-generation (server-side, no offline entity)
+  { pattern: /\/api\/receipts\/notifications/, store: 'api_cache' },
+  { pattern: /\/api\/receipts/, store: 'api_cache' },
+  // Routes READ-ONLY ou agrégats → api_cache ou orion_cache
+  { pattern: /\/api\/finance\/reports/, store: 'api_cache' },
+  { pattern: /\/api\/finance\/settings/, store: 'api_cache' },
+  { pattern: /\/api\/finance\/audit/, store: 'api_cache' },
+  { pattern: /\/api\/finance\/orion/, store: 'orion_cache' },
+  { pattern: /\/api\/finance\/exports/, store: 'api_cache' },
+  { pattern: /\/api\/finance\/promoter-eligibility/, store: 'api_cache' },
+  { pattern: /\/api\/finance\/expenses-v2/, store: 'api_cache' },
+  { pattern: /\/api\/payment-flows/, store: 'api_cache' },
+  { pattern: /\/api\/finances/, store: 'api_cache' },
+
+  // ⭐ 2026-10-14 — AUDIT PEDAGOGIE : routes manquantes (miroir sw.js v4.12.0).
+  //    Avant : tombaient dans le fallback 'api_cache' → pas d'écriture
+  //    optimiste offline (création de plan annuel, plan mensuel, retour
+  //    de matériel, notification enseignant, tâche pédagogique, mouvement
+  //    de stock, etc. n'apparaissaient pas avant reconnexion).
+  // /api/pedagogy/pedagogical-materials — pedagogical-materials-prisma.controller.ts
+  { pattern: /\/api\/pedagogy\/pedagogical-materials/, store: 'pedagogicalmaterial' },
+  // /api/pedagogy/material-stocks
+  { pattern: /\/api\/pedagogy\/material-stocks/, store: 'materialstock' },
+  // /api/pedagogy/material-movements
+  { pattern: /\/api\/pedagogy\/material-movements/, store: 'materialmovement' },
+  // /api/pedagogy/material-returns
+  { pattern: /\/api\/pedagogy\/material-returns/, store: 'materialreturn' },
+  // /api/pedagogy/teacher-material-assignments
+  { pattern: /\/api\/pedagogy\/teacher-material-assignments/, store: 'teachermaterialassignment' },
+  // /api/pedagogy/annual-plans
+  { pattern: /\/api\/pedagogy\/annual-plans/, store: 'annualplan' },
+  // /api/pedagogy/annual-teacher-supplies
+  { pattern: /\/api\/pedagogy\/annual-teacher-supplies/, store: 'annualteachersupply' },
+  // /api/pedagogy/monthly-plans
+  { pattern: /\/api\/pedagogy\/monthly-plans/, store: 'monthlyplan' },
+  // /api/pedagogy/assignments (pedagogical tasks)
+  { pattern: /\/api\/pedagogy\/assignments/, store: 'pedagogicaltask' },
+  // /api/pedagogy/teacher-notifications
+  { pattern: /\/api\/pedagogy\/teacher-notifications/, store: 'pedagogicalnotification' },
+  // /api/pedagogy/global-library
+  { pattern: /\/api\/pedagogy\/global-library/, store: 'globalpedagogicalresource' },
+  // /api/pedagogy/director (validation direction)
+  { pattern: /\/api\/pedagogy\/director/, store: 'pedagogicalcontrol' },
+  // /api/timetable-engine (different prefix!)
+  { pattern: /\/api\/timetable-engine/, store: 'timetable' },
+  // /api/rooms (different prefix!)
+  { pattern: /\/api\/rooms/, store: 'room' },
+  // /api/saisiemaster (LLM saisie rapide — read-only)
+  { pattern: /\/api\/saisiemaster/, store: 'api_cache' },
+  // /api/pedagogy/ia (LLM features — read-only)
+  { pattern: /\/api\/pedagogy\/ia/, store: 'api_cache' },
+  // /api/pedagogy/orion-advanced (agrégats Orion)
+  { pattern: /\/api\/pedagogy\/orion-advanced/, store: 'orion_cache' },
+  // /api/pedagogy/teacher (singular — pedagogical-teacher.controller.ts)
+  { pattern: /\/api\/pedagogy\/teacher(?!s)\b/, store: 'teacher' },
+
   // ─── RH (routes non couvertes) ───
   { pattern: /\/api\/hr\/positions/, store: 'position' },
   { pattern: /\/api\/hr\/collaborators/, store: 'staff' },

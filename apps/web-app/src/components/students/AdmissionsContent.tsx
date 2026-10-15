@@ -2294,6 +2294,352 @@ function AdmissionSettingsPanel({
           </div>
         </div>
       )}
+
+      {/* ⭐ 2026-10-15 — ENRICHISSEMENT : Sections du module Admission standalone
+          (config globale, étapes CRUD, documents CRUD) intégrées ici
+          pour centraliser toute la configuration des admissions dans
+          Élèves > Admissions > Paramétrage. */}
+
+      {/* ─── Section 2 : Configuration du site institutionnel ─── */}
+      <AdmissionSiteConfigSection />
+
+      {/* ─── Section 3 : Étapes d'admission ─── */}
+      <AdmissionStepsSection />
+
+      {/* ─── Section 4 : Documents requis ─── */}
+      <AdmissionDocumentsSection />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  SECTIONS ENRICHIES (portées du module Admission standalone)
+// ═══════════════════════════════════════════════════════════════════════
+
+const ADMISSION_INPUT_CLASS = 'w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition';
+const ADMISSION_LABEL_CLASS = 'block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide';
+
+async function fetchAdmissionAPI<T>(path: string, options?: { method?: string; body?: any }): Promise<T> {
+  const method = options?.method ?? 'GET';
+  const res = await fetch(`/api/${path.replace(/^\//, '')}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    cache: 'no-store',
+    ...(options?.body && { body: JSON.stringify(options.body) }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    let err: { message?: string; error?: string } = {};
+    if (text.trim()) { try { err = JSON.parse(text); } catch { err = {}; } }
+    throw new Error(err.message ?? err.error ?? res.statusText ?? 'Erreur réseau');
+  }
+  if (!text.trim()) return null as T;
+  try { return JSON.parse(text) as T; } catch { throw new Error('Réponse invalide'); }
+}
+
+const ICON_OPTIONS = ['FileText', 'BookOpen', 'Users', 'CheckCircle2', 'Award', 'Star', 'GraduationCap'];
+
+// ─── Section 2 : Configuration du site institutionnel ──────────────
+function AdmissionSiteConfigSection() {
+  const [siteSettings, setSiteSettings] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await fetchAdmissionAPI<any>('admission-settings');
+      setSiteSettings(data);
+    } catch (err: any) {
+      // L'API peut retourner null si pas encore configuré → on crée un objet vide
+      setSiteSettings({ isActive: false, title: '', subtitle: '', ctaText: '', ctaUrl: '', steps: [], documents: [] });
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (data: any) => {
+    setSaving(true);
+    try {
+      const updated = await fetchAdmissionAPI<any>('admission-settings', { method: 'PUT', body: data });
+      setSiteSettings(updated);
+      toast({ title: '✅ Configuration enregistrée', description: 'Le site institutionnel a été mis à jour.' });
+    } catch (err: any) {
+      toast({ title: 'Erreur', description: err?.message, variant: 'destructive' });
+    } finally { setSaving(false); }
+  };
+
+  if (loading) return <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-blue-600" /></div>;
+
+  return <AdmissionSiteConfigCard settings={siteSettings} onSave={save} saving={saving} />;
+}
+
+function AdmissionSiteConfigCard({ settings, onSave, saving }: any) {
+  const [form, setForm] = useState({
+    isActive: settings?.isActive ?? false,
+    title: settings?.title || '',
+    subtitle: settings?.subtitle || '',
+    ctaText: settings?.ctaText || "Soumettre l'admission de mon enfant",
+    ctaUrl: settings?.ctaUrl || '/public/pre-enrollment',
+    ctaBlockTitle: settings?.ctaBlockTitle || 'Prêt à nous rejoindre ?',
+    ctaBlockText: settings?.ctaBlockText || '',
+  });
+
+  useEffect(() => {
+    if (settings) {
+      setForm({
+        isActive: settings.isActive ?? false,
+        title: settings.title || '',
+        subtitle: settings.subtitle || '',
+        ctaText: settings.ctaText || "Soumettre l'admission de mon enfant",
+        ctaUrl: settings.ctaUrl || '/public/pre-enrollment',
+        ctaBlockTitle: settings.ctaBlockTitle || 'Prêt à nous rejoindre ?',
+        ctaBlockText: settings.ctaBlockText || '',
+      });
+    }
+  }, [settings]);
+
+  const update = (field: string, value: any) => setForm({ ...form, [field]: value });
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+      <div className="flex items-center gap-2 mb-4">
+        <Settings className="w-5 h-5 text-slate-500" />
+        <h3 className="text-base font-bold text-slate-800">Configuration du site institutionnel</h3>
+      </div>
+      <p className="text-xs text-slate-500 mb-4">Configurez la section Admissions visible sur votre site institutionnel public.</p>
+
+      {/* Toggle d'activation */}
+      <div className="mb-5 p-4 rounded-lg border-2 border-amber-200 bg-amber-50">
+        <label className="flex items-center gap-3 cursor-pointer">
+          <button type="button" onClick={() => update('isActive', !form.isActive)}
+            className={`relative w-12 h-6 rounded-full transition-colors ${form.isActive ? 'bg-green-500' : 'bg-slate-300'}`}>
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${form.isActive ? 'translate-x-6' : ''}`} />
+          </button>
+          <div>
+            <span className="text-sm font-bold text-slate-900">
+              {form.isActive ? '✓ Admissions ACTIVÉES sur le site institutionnel' : 'Admissions désactivées'}
+            </span>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {form.isActive ? 'La section Admissions est visible sur votre site institutionnel public.' : 'La section Admissions est masquée sur votre site institutionnel public.'}
+            </p>
+          </div>
+        </label>
+      </div>
+
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={ADMISSION_LABEL_CLASS}>Titre de la section</label>
+            <input className={ADMISSION_INPUT_CLASS} placeholder="Admissions 2026-2027" value={form.title} onChange={(e) => update('title', e.target.value)} />
+          </div>
+          <div>
+            <label className={ADMISSION_LABEL_CLASS}>Sous-titre</label>
+            <input className={ADMISSION_INPUT_CLASS} placeholder="Un parcours d'admission clair..." value={form.subtitle} onChange={(e) => update('subtitle', e.target.value)} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={ADMISSION_LABEL_CLASS}>Texte du bouton CTA</label>
+            <input className={ADMISSION_INPUT_CLASS} placeholder="Soumettre l'admission de mon enfant" value={form.ctaText} onChange={(e) => update('ctaText', e.target.value)} />
+          </div>
+          <div>
+            <label className={ADMISSION_LABEL_CLASS}>URL de redirection du CTA</label>
+            <input className={ADMISSION_INPUT_CLASS} placeholder="/public/pre-enrollment" value={form.ctaUrl} onChange={(e) => update('ctaUrl', e.target.value)} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={ADMISSION_LABEL_CLASS}>Titre du bloc CTA final</label>
+            <input className={ADMISSION_INPUT_CLASS} placeholder="Prêt à nous rejoindre ?" value={form.ctaBlockTitle} onChange={(e) => update('ctaBlockTitle', e.target.value)} />
+          </div>
+          <div>
+            <label className={ADMISSION_LABEL_CLASS}>Texte du bloc CTA final</label>
+            <input className={ADMISSION_INPUT_CLASS} placeholder="Démarrez votre candidature..." value={form.ctaBlockText} onChange={(e) => update('ctaBlockText', e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 flex justify-end">
+        <button onClick={() => onSave(form)} disabled={saving}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold transition">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Enregistrer la configuration
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Section 3 : Étapes d'admission ─────────────────────────────────
+function AdmissionStepsSection() {
+  const [steps, setSteps] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await fetchAdmissionAPI<any>('admission-settings');
+      setSteps(data?.steps || []);
+    } catch { setSteps([]); } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addStep = async () => {
+    try {
+      const newStep = await fetchAdmissionAPI<any>('admission-settings/steps', {
+        method: 'POST', body: { title: 'Nouvelle étape', num: (steps?.length || 0) + 1, description: '', iconName: 'CheckCircle2', order: steps?.length || 0 },
+      });
+      setSteps([...steps, newStep]);
+      toast({ title: '✅ Étape ajoutée' });
+    } catch (err: any) { toast({ title: 'Erreur', description: err?.message, variant: 'destructive' }); }
+  };
+
+  const updateStep = async (id: string, data: any) => {
+    try {
+      const updated = await fetchAdmissionAPI<any>(`admission-settings/steps/${id}`, { method: 'PUT', body: data });
+      setSteps(steps.map((s) => s.id === id ? updated : s));
+    } catch (err: any) { toast({ title: 'Erreur', description: err?.message, variant: 'destructive' }); }
+  };
+
+  const deleteStep = async (id: string) => {
+    if (!confirm('Supprimer cette étape ?')) return;
+    try {
+      await fetchAdmissionAPI(`admission-settings/steps/${id}`, { method: 'DELETE' });
+      setSteps(steps.filter((s) => s.id !== id));
+      toast({ title: '✅ Étape supprimée' });
+    } catch (err: any) { toast({ title: 'Erreur', description: err?.message, variant: 'destructive' }); }
+  };
+
+  if (loading) return <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-blue-600" /></div>;
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <FileText className="w-5 h-5 text-slate-500" />
+          <h3 className="text-base font-bold text-slate-800">Étapes d'admission ({steps.length})</h3>
+        </div>
+        <button onClick={addStep} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold">
+          <Plus className="w-3.5 h-3.5" /> Ajouter une étape
+        </button>
+      </div>
+      <p className="text-xs text-slate-500 mb-4">
+        Définissez les étapes du parcours d'admission (candidature, évaluation, entretien, confirmation...).
+      </p>
+      <div className="space-y-3">
+        {steps.map((step, i) => (
+          <div key={step.id} className="p-4 border border-slate-200 rounded-lg space-y-3 bg-slate-50">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700">Étape #{step.num || i + 1}</span>
+              <button onClick={() => deleteStep(step.id)} className="text-red-500 hover:bg-red-50 p-1 rounded">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <input type="number" className="px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="N°" value={step.num || ''}
+                onChange={(e) => updateStep(step.id, { num: parseInt(e.target.value) || i + 1 })} />
+              <input className="col-span-2 px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Titre (ex: Candidature)" value={step.title || ''}
+                onChange={(e) => updateStep(step.id, { title: e.target.value })} />
+            </div>
+            <input className="w-full px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Description courte" value={step.description || ''}
+              onChange={(e) => updateStep(step.id, { description: e.target.value })} />
+            <div className="flex items-center gap-2">
+              <select className="px-2 py-1.5 text-sm border border-slate-200 rounded" value={step.iconName || 'CheckCircle2'}
+                onChange={(e) => updateStep(step.id, { iconName: e.target.value })}>
+                {ICON_OPTIONS.map((ic) => <option key={ic} value={ic}>{ic}</option>)}
+              </select>
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer ml-auto">
+                <input type="checkbox" checked={step.isActive !== false} onChange={(e) => updateStep(step.id, { isActive: e.target.checked })} />
+                Afficher
+              </label>
+            </div>
+          </div>
+        ))}
+        {steps.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Aucune étape. Cliquez sur « Ajouter une étape ».</p>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Section 4 : Documents requis ──────────────────────────────────
+function AdmissionDocumentsSection() {
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await fetchAdmissionAPI<any>('admission-settings');
+      setDocuments(data?.documents || []);
+    } catch { setDocuments([]); } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const addDocument = async () => {
+    try {
+      const newDoc = await fetchAdmissionAPI<any>('admission-settings/documents', {
+        method: 'POST', body: { label: 'Nouveau document', description: '', order: documents?.length || 0 },
+      });
+      setDocuments([...documents, newDoc]);
+      toast({ title: '✅ Document ajouté' });
+    } catch (err: any) { toast({ title: 'Erreur', description: err?.message, variant: 'destructive' }); }
+  };
+
+  const updateDocument = async (id: string, data: any) => {
+    try {
+      const updated = await fetchAdmissionAPI<any>(`admission-settings/documents/${id}`, { method: 'PUT', body: data });
+      setDocuments(documents.map((d) => d.id === id ? updated : d));
+    } catch (err: any) { toast({ title: 'Erreur', description: err?.message, variant: 'destructive' }); }
+  };
+
+  const deleteDocument = async (id: string) => {
+    if (!confirm('Supprimer ce document ?')) return;
+    try {
+      await fetchAdmissionAPI(`admission-settings/documents/${id}`, { method: 'DELETE' });
+      setDocuments(documents.filter((d) => d.id !== id));
+      toast({ title: '✅ Document supprimé' });
+    } catch (err: any) { toast({ title: 'Erreur', description: err?.message, variant: 'destructive' }); }
+  };
+
+  if (loading) return <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-blue-600" /></div>;
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <FileText className="w-5 h-5 text-slate-500" />
+          <h3 className="text-base font-bold text-slate-800">Documents requis ({documents.length})</h3>
+        </div>
+        <button onClick={addDocument} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold">
+          <Plus className="w-3.5 h-3.5" /> Ajouter un document
+        </button>
+      </div>
+      <p className="text-xs text-slate-500 mb-4">Liste des documents à fournir pour constituer un dossier d'inscription.</p>
+      <div className="space-y-3">
+        {documents.map((doc) => (
+          <div key={doc.id} className="flex items-center gap-2 p-3 border border-slate-200 rounded-lg bg-slate-50">
+            <input className="flex-1 px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Ex: Acte de naissance" value={doc.label || ''}
+              onChange={(e) => updateDocument(doc.id, { label: e.target.value })} />
+            <input className="flex-1 px-2 py-1.5 text-sm border border-slate-200 rounded" placeholder="Description (optionnel)" value={doc.description || ''}
+              onChange={(e) => updateDocument(doc.id, { description: e.target.value })} />
+            <label className="flex items-center gap-1 text-xs cursor-pointer">
+              <input type="checkbox" checked={doc.isActive !== false} onChange={(e) => updateDocument(doc.id, { isActive: e.target.checked })} />
+              Afficher
+            </label>
+            <button onClick={() => deleteDocument(doc.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+        {documents.length === 0 && <p className="text-sm text-slate-400 text-center py-4">Aucun document. Cliquez sur « Ajouter un document ».</p>}
+      </div>
     </div>
   );
 }

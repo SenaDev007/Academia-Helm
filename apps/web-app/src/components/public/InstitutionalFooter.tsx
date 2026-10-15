@@ -172,11 +172,13 @@ export default function InstitutionalFooter() {
               <ul className="space-y-2 sm:space-y-3">
                 {[
                   { label: 'Fonctionnalités', href: '/modules' },
-                  { label: 'Blog & ressources', href: '/blog' },
+                  // 🗑️ 2026-10-15 — Blog masqué (non fonctionnel)
+                  // { label: 'Blog & ressources', href: '/blog' },
                   { label: 'Tarification', href: '/#tarification' },
                   { label: 'Recrutement', href: '/jobs' },
                   { label: 'Mode offline', href: '/#offline' },
-                  { label: 'ORION (IA)', href: '/orion' },
+                  // 🗑️ 2026-10-15 — ORION masqué (non fonctionnel)
+                  // { label: 'ORION (IA)', href: '/orion' },
                   { label: 'Communauté', href: '/community' },
                 ].map((item) => (
                   <li key={item.label}>

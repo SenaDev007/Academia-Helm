@@ -118,14 +118,15 @@ const features = [
     statLabel: 'visibilité temps réel',
     accent: 'from-[#0b2f73] to-[#144798]',
   },
-  {
-    title: 'ORION intégré',
-    desc: "L'IA de direction qui transforme vos données en alertes intelligentes, priorités automatiques et recommandations concrètes.",
-    icon: Brain,
-    stat: 'IA',
-    statLabel: 'décisionnelle native',
-    accent: 'from-[#f5b335] to-[#e89a1f]',
-  },
+  // 🗑️ 2026-10-15 — ORION masqué (non fonctionnel pour le moment)
+  // {
+  //   title: 'ORION intégré',
+  //   desc: "L'IA de direction qui transforme vos données en alertes intelligentes, priorités automatiques et recommandations concrètes.",
+  //   icon: Brain,
+  //   stat: 'IA',
+  //   statLabel: 'décisionnelle native',
+  //   accent: 'from-[#f5b335] to-[#e89a1f]',
+  // },
   {
     title: 'Offline-first',
     desc: 'Continuité totale des opérations même sans internet. Saisies locales journalisées, puis synchronisation sécurisée automatique.',
@@ -148,7 +149,7 @@ const features = [
  * Modules de l'application — bento grid moderne.
  *
  * IMPORTANT : Seuls les modules ESSENTIELS sont affichés sur la landing.
- * L'utilisateur clique sur "Explorer tous les modules" pour voir les 13 modules
+ * L'utilisateur clique sur "Explorer tous les modules" pour voir les 9 modules
  * complets sur /modules. Évite la surcharge visuelle de la landing.
  *
  * `span` contrôle la taille dans la grille bento (col-span / row-span).
@@ -214,15 +215,29 @@ const modules: ModuleItem[] = [
     span: 'normal',
   },
   {
-    title: 'Communication',
-    text: 'SMS, e-mail, WhatsApp, annonces, templates, automatisations et messagerie interne.',
+    title: 'Helm Connect',
+    text: 'Messagerie interne, canaux, appels audio & vidéo, annonces, discussions privées et automatiques par classe et niveau.',
     icon: MessageSquare,
     tone: 'sky',
     span: 'normal',
   },
-  // ─── Modules complémentaires (visibles sur /modules) ───
-  // Transport, Cantine, Infirmerie, Bibliothèque, Laboratoire, Boutique, EduCast
-  // → Non affichés sur la landing pour éviter la surcharge visuelle.
+  {
+    title: 'Vie Scolaire',
+    text: 'Discipline, conduite, sanctions, conseils de classe et suivi comportemental des élèves.',
+    icon: Shield,
+    tone: 'amber',
+    span: 'normal',
+  },
+  {
+    title: 'Cantine & Restauration',
+    text: 'Menus, inscriptions, présences, stocks, fournisseurs, caisse, vente journalière et bilan annuel.',
+    icon: UtensilsCrossed,
+    tone: 'emerald',
+    span: 'normal',
+  },
+  // 🗑️ 2026-10-15 — Modules non fonctionnels masqués :
+  // Transport, Infirmerie, Bibliothèque, Laboratoire, QHSE, EduCast
+  // → Non affichés pour ne pas donner de fausses promesses.
 ];
 
 /** Aperçu blog sur la landing (les articles MDX auto-générés apparaissent aussi sur /blog). */
@@ -924,7 +939,7 @@ export default function PremiumLandingPage() {
                 href="/modules"
                 className="inline-flex items-center gap-2 rounded-xl bg-[#f5b335] px-6 py-3 text-[#0b2f73] font-bold text-sm hover:bg-[#f7c359] transition-colors shadow-lg shadow-[#f5b335]/20"
               >
-                Explorer les 13 modules
+                Explorer les 9 modules
                 <ArrowRight className="w-4 h-4" />
               </Link>
             </motion.div>
@@ -1003,6 +1018,8 @@ export default function PremiumLandingPage() {
         </div>
       </section>
 
+      {/* 🗑️ 2026-10-15 — SECTION BLOG + ORION masquées (non fonctionnelles pour le moment) */}
+      <div className="hidden">
       {/* ===================================================================== */}
       {/* SECTION — RESSOURCES (BLOG & EXPERTISE)                                */}
       {/* ===================================================================== */}
@@ -1289,6 +1306,8 @@ export default function PremiumLandingPage() {
           </div>
         </div>
       </section>
+      </div>
+      {/* 🗑️ Fin masquage BLOG + ORION */}
 
       {/* ===================================================================== */}
       {/* SECTION — TARIFICATION (FOND NAVY FONCÉ, CARTES PREMIUM)               */}

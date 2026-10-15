@@ -134,120 +134,51 @@ const mainModules: ModuleData[] = [
     ],
   },
   {
-    name: 'Communication',
+    name: 'Helm Connect',
     icon: Megaphone,
     accent: 'orange',
     description:
-      "Tissez un lien permanent entre l'établissement, les élèves et les familles. Envoyez des SMS et des notifications en masse, orchestrez des campagnes email ciblées et exploitez WhatsApp Business pour des conversations personnalisées. Le tableau de bord analytics vous permet de mesurer les taux de délivrance et de lecture de chaque campagne, ajustant votre stratégie de communication en temps réel.",
+      "Système de communication interne de l'application : messagerie instantanée, canaux par classe et par niveau, appels audio et vidéo intégrés, annonces officielles, discussions privées parent-enseignant et canaux automatiques par classe et par piste linguistique.",
     features: [
-      'SMS et notifications en masse',
-      'Campagnes email ciblées',
-      'WhatsApp Business intégré',
-      'Notifications push',
-      'Analytics de communication',
+      'Messagerie interne et canaux',
+      'Appels audio & vidéo intégrés',
+      'Annonces officielles',
+      'Canaux auto par classe et niveau',
+      'Discussions privées parent-enseignant',
+    ],
+  },
+  {
+    name: 'Vie Scolaire',
+    icon: ShieldCheck,
+    accent: 'navy',
+    description:
+      "Gestion de la discipline et du comportement des élèves : règles de conduite, sanctions, conseil de classe, compteur de conduite et notifications automatiques aux parents.",
+    features: [
+      'Règles de conduite et sanctions',
+      'Compteur de conduite',
+      'Conseil de classe',
+      'Notifications WhatsApp aux parents',
+      'Suivi comportemental',
     ],
   },
 ];
 
 // ─── Data: Modules Complémentaires ───────────────────────────────────────────
 
+// 🗑️ 2026-10-15 — Modules non fonctionnels masqués pour ne pas donner de fausses promesses
 const complementaryModules: ModuleData[] = [
   {
-    name: 'Bibliothèque',
-    icon: Library,
-    accent: 'teal',
-    description:
-      "Transformez votre bibliothèque en un centre de ressources moderne et parfaitement organisé. Le catalogue complet des ouvrages est searchable par titre, auteur, mot-clé ou cote, tandis que le système de prêts et retours gère automatiquement les échéances et les pénalités. Les rappels intégrés réduisent les retards, et les statistiques d'emprunt vous aident à optimiser vos acquisitions.",
-    features: [
-      'Catalogue searchable',
-      'Prêts et retours automatisés',
-      'Rappels de retard',
-      'Fichier des lecteurs',
-      'Statistiques d\'emprunt',
-    ],
-  },
-  {
-    name: 'Laboratoire',
-    icon: FlaskConical,
-    accent: 'sky',
-    description:
-      "Gérez vos laboratoires avec la rigueur qu'exigent les sciences. Planifiez les réservations de salles, suivez l'inventaire des équipements et des réactifs, et programmez les maintenances préventives pour éviter les pannes en plein cours. Le planning d'occupation vous offre une vue claire de la disponibilité de chaque espace, maximisant l'utilisation de vos ressources scientifiques.",
-    features: [
-      'Réservation de laboratoires',
-      'Inventaire des équipements',
-      'Maintenance programmée',
-      'Planning d\'occupation',
-      'Traçabilité des réactifs',
-    ],
-  },
-  {
-    name: 'Transport',
-    icon: Bus,
-    accent: 'lime',
-    description:
-      "Assurez la sécurité et la ponctualité de chaque trajet scolaire. Gérez les véhicules, les itinéraires et les conducteurs dans un tableau de bord unifié, et suivez les trajets en temps réel pour informer les familles. La maintenance préventive est planifiée automatiquement selon le kilométrage, réduisant les pannes imprévues et garantissant la conformité aux normes de sécurité.",
-    features: [
-      'Gestion des véhicules',
-      'Itinéraires optimisés',
-      'Suivi des trajets',
-      'Maintenance préventive',
-      'Planning des transports',
-    ],
-  },
-  {
-    name: 'Cantine',
+    name: 'Cantine & Restauration',
     icon: UtensilsCrossed,
     accent: 'yellow',
     description:
-      "Offrez une expérience de restauration scolaire maîtrisée et transparente. Les menus sont planifiés à l'avance et personnalisables selon les régimes alimentaires, les inscriptions des élèves sont gérées en ligne, et les paiements sont intégrés au module financier. Les rapports de fréquentation vous permettent d'ajuster les quantités et de réduire le gaspillage alimentaire.",
+      "Offrez une expérience de restauration scolaire maîtrisée et transparente. Menus planifiés avec plats béninois, inscriptions des élèves en ligne, présences, régimes et allergies, paiements intégrés, stocks et fournisseurs, caisse avec capital de départ, vente journalière avec dispatching et bilan annuel.",
     features: [
-      'Menus personnalisables',
+      'Menus planifiés (plats béninois)',
       'Inscriptions en ligne',
-      'Paiements intégrés',
-      'Rapports de fréquentation',
-      'Gestion des allergènes',
-    ],
-  },
-  {
-    name: 'Infirmerie',
-    icon: HeartPulse,
-    accent: 'pink',
-    description:
-      "La santé de vos élèves mérite un suivi aussi rigoureux que leur parcours académique. Constituez des dossiers médicaux complets pour chaque élève, enregistrez les visites à l'infirmerie et suivez les traitements administrés. Le système d'alertes vous informe en temps réel des urgences, et les rapports médicaux périodiques garantissent la conformité aux normes sanitaires en vigueur.",
-    features: [
-      'Dossiers médicaux complets',
-      'Visites et traitements',
-      'Alertes d\'urgence',
-      'Suivi des médicaments',
-      'Rapports médicaux',
-    ],
-  },
-  {
-    name: 'QHSE — Qualité, Hygiène, Sécurité',
-    icon: ShieldCheck,
-    accent: 'emerald',
-    description:
-      "Inscrivez votre établissement dans une démarche d'excellence opérationnelle continue. Planifiez et documentez les inspections régulières, enregistrez les incidents et suivez les plans d'action correctifs jusqu'à leur clôture. Les formations sécurité, les audits internes et le suivi de la conformité réglementaire sont centralisés, vous protégeant contre les risques juridiques et humains.",
-    features: [
-      'Inspections planifiées',
-      'Gestion des incidents',
-      'Formations sécurité',
-      'Plans d\'action correctifs',
-      'Conformité réglementaire',
-    ],
-  },
-  {
-    name: 'EduCast — Diffusion de Contenu',
-    icon: Radio,
-    accent: 'fuchsia',
-    description:
-      "Propulsez votre établissement dans l'ère du contenu éducatif numérique. Diffusez des cours en streaming live, publiez des podcasts et des webinaires à la demande, et constituez une médiathèque accessible partout, même en mode hors-ligne. Les analytics d'écoute vous révèlent les contenus les plus engageants, vous permettant d'affiner votre stratégie pédagogique digitale.",
-    features: [
-      'Streaming en direct',
-      'Podcasts et webinaires',
-      'Médiathèque archivée',
-      'Mode hors-ligne',
-      'Analytics d\'écoute',
+      'Caisse & vente journalière',
+      'Stocks et fournisseurs',
+      'Bilan annuel & bénéfice',
     ],
   },
   {
@@ -255,7 +186,7 @@ const complementaryModules: ModuleData[] = [
     icon: ShoppingCart,
     accent: 'indigo',
     description:
-      "Monétisez la vente de fournitures et de tenues scolaires directement depuis votre plateforme. Gérez les stocks en temps réel, acceptez les commandes en ligne des familles, et synchronisez automatiquement la comptabilité avec le module financier. Les rapports de vente détaillés vous donnent une visibilité complète sur les revenus annexes de votre établissement.",
+      "Monétisez la vente de fournitures et de tenues scolaires directement depuis votre plateforme. Gérez les stocks en temps réel, acceptez les commandes en ligne des familles, et synchronisez automatiquement la comptabilité avec le module financier.",
     features: [
       'Vente de fournitures',
       'Gestion des stocks',
@@ -264,6 +195,7 @@ const complementaryModules: ModuleData[] = [
       'Rapports de vente',
     ],
   },
+  // 🗑️ Modules non fonctionnels masqués : Bibliothèque, Laboratoire, Transport, Infirmerie, QHSE, EduCast
 ];
 
 // ─── Accent color map ────────────────────────────────────────────────────────
@@ -288,7 +220,7 @@ const accentMap: Record<string, { bg: string; iconBg: string; iconText: string; 
 // ─── Stats data ──────────────────────────────────────────────────────────────
 
 const stats = [
-  { value: '15', label: 'Modules intégrés', icon: Layers },
+  { value: '9', label: 'Modules intégrés', icon: Layers },
   { value: '100+', label: 'Fonctionnalités', icon: BarChart3 },
   { value: '1', label: 'Seule plateforme', icon: Zap },
 ];
@@ -416,7 +348,7 @@ export default function ModulesPage() {
 
           {/* Headline */}
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white leading-[1.1] mb-4">
-            15 modules. Zéro compromis.
+            9 modules. Zéro compromis.
             <br />
             <span className="text-[#f5b335]">Tout ce dont votre établissement a besoin.</span>
           </h1>

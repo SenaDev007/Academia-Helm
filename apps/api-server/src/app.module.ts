@@ -93,6 +93,7 @@ import { OrionAiModule } from './orion/orion-ai.module';
 import { CommonModule } from './common/common.module';
 import { SecurityModule } from './security/security.module';
 import { ParentPortalModule } from './parent-portal/parent-portal.module';
+import { TeacherPortalModule } from './teacher-portal/teacher-portal.module';
 import { StorageMigrationModule } from './storage-migration/storage-migration.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { TenantValidationGuard } from './common/guards/tenant-validation.guard';
@@ -305,6 +306,9 @@ import { PerformanceLoggingInterceptor } from './common/interceptors/performance
     ScolariteModule,
     FinancesModule,
     ParentPortalModule,
+
+    // ⭐ Helm Enseignant — mini-SaaS enseignant autonome (tenant type TEACHER)
+    TeacherPortalModule,
 
     // Synthesis module (Module général de synthèse - Lecture seule)
     SynthesisModule,

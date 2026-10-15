@@ -20,6 +20,9 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { CacheService } from '../../common/services/cache.service';
+// ⭐ Helm Enseignant : exclut les tenants type TEACHER (espaces enseignants
+//    autonomes) des listes/recherches publiques d'écoles.
+import { schoolTenantTypeFilter } from '../../common/constants/school-tenant-types';
 
 /** Durée de vie du cache (ms) — 60 secondes */
 const CACHE_TTL_MS = 300_000; // 5 minutes — schools rarely change
@@ -77,9 +80,11 @@ export class SchoolSearchService {
       this.configService.get<string>('PLATFORM_OWNER_MODE')?.trim().toLowerCase() === 'true';
     const nodeEnv = this.configService.get<string>('NODE_ENV') || 'development';
     if (platformOwner || nodeEnv !== 'production') {
-      return {};
+      // ⭐ Même en mode plateforme/dev : ne jamais exposer les espaces
+      //    enseignants autonomes dans l'annuaire public des écoles.
+      return { type: schoolTenantTypeFilter() };
     }
-    return { status: 'active' };
+    return { status: 'active', type: schoolTenantTypeFilter() };
   }
 
   /**
@@ -320,6 +325,9 @@ export class SchoolSearchService {
       const tenants = await this.prisma.tenant.findMany({
         where: {
           status: 'active',
+          // ⭐ Helm Enseignant : exclure les espaces enseignants autonomes
+          //    des résultats de recherche publique d'écoles.
+          type: schoolTenantTypeFilter(),
           OR: [
             { name: { contains: searchTerm, mode: 'insensitive' } },
             { slug: { contains: searchTerm, mode: 'insensitive' } },

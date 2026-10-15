@@ -14,6 +14,9 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+// ⭐ Helm Enseignant : helper types école (exclut les tenants TEACHER ; inclut
+//    SCHOOL/MATERNELLE/PRIMAIRE/SECONDAIRE/MIXTE — cf. school-tenant-types.ts)
+import { schoolTenantTypeFilter } from '../../common/constants/school-tenant-types';
 
 /** Les 12 départements officiels du Bénin avec leurs variantes de nom */
 const BENIN_DEPARTMENTS = [
@@ -126,7 +129,7 @@ export class MapStatsService {
       const tenants = await this.prisma.tenant.findMany({
         where: {
           status: 'active',
-          type: 'SCHOOL',
+          type: schoolTenantTypeFilter(),
         },
         include: {
           schools: {

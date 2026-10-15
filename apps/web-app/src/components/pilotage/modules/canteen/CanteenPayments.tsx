@@ -101,26 +101,26 @@ export default function CanteenPayments() {
   };
 
   const totalRevenue = payments
-    .filter((p) => {
+    ?? [].filter((p) => {
       const s = (p.status ?? '').toLowerCase();
       return s.includes('payé') || s.includes('paid');
     })
     .reduce((acc, p) => acc + (p.amount ?? 0), 0);
-  const pendingCount = payments.filter((p) => {
+  const pendingCount = (payments ?? [])?? [].filter((p) => {
     const s = (p.status ?? '').toLowerCase();
     return s.includes('attente') || s.includes('pending');
   }).length;
   const pendingAmount = payments
-    .filter((p) => {
+    ?? [].filter((p) => {
       const s = (p.status ?? '').toLowerCase();
       return s.includes('attente') || s.includes('pending') || s.includes('retard') || s.includes('late');
     })
     .reduce((acc, p) => acc + (p.amount ?? 0), 0);
-  const paidCount = payments.filter((p) => {
+  const paidCount = (payments ?? [])?? [].filter((p) => {
     const s = (p.status ?? '').toLowerCase();
     return s.includes('payé') || s.includes('paid');
   }).length;
-  const recoveryRate = payments.length > 0 ? Math.round((paidCount / payments.length) * 100) : 0;
+  const recoveryRate = (payments ?? []).length > 0 ? Math.round((paidCount / payments.length) * 100) : 0;
 
   if (loading) {
     return (
@@ -201,7 +201,7 @@ export default function CanteenPayments() {
           </div>
         </div>
 
-        {payments.length === 0 ? (
+        {(payments ?? []).length === 0 ? (
           <div className="text-center py-16 text-gray-500">
             Aucun paiement enregistré pour cette année scolaire.
           </div>
@@ -218,7 +218,7 @@ export default function CanteenPayments() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {payments.map((payment) => {
+              {(payments ?? []).map((payment) => {
                 const amount = payment.amount ?? 0;
                 const paid = payment.paid ?? payment.amountPaid;
                 return (

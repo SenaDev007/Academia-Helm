@@ -60,32 +60,24 @@ export default function CanteenDashboard() {
         <StatCard
           title="Élèves Inscrits"
           value={String(stats.enrolledStudents ?? 0)}
-          change="+12"
-          trend="up"
           icon={Users}
           color="blue"
         />
         <StatCard
           title="Repas Prévus (Midi)"
           value={String(stats.mealsToday ?? 0)}
-          change="-5"
-          trend="down"
           icon={UtensilsCrossed}
           color="green"
         />
         <StatCard
           title="Alertes Stock"
           value={String(stats.stockAlerts ?? 0).padStart(2, '0')}
-          change="Critical"
-          trend="neutral"
           icon={Package}
           color="amber"
         />
         <StatCard
           title="Score Hygiène"
           value={stats.hygieneScore ?? '—'}
-          change="Excellent"
-          trend="up"
           icon={CheckCircle2}
           color="blue"
         />
@@ -125,38 +117,6 @@ export default function CanteenDashboard() {
           </div>
         </Card>
 
-        {/* ORION Insights */}
-        <Card className="p-6 bg-slate-900 text-white border-slate-800 shadow-md">
-          <div className="flex items-center space-x-3 mb-6">
-            <div className="p-2 bg-white/10 rounded-xl">
-              <BarChart3 className="w-5 h-5 text-blue-300" />
-            </div>
-            <h3 className="font-semibold text-lg">Pilotage ORION</h3>
-          </div>
-
-          <div className="space-y-4">
-            <InsightItem
-              title="Prévision Demain"
-              value="425 repas"
-              desc="Hausse de 3% prévue vs moyenne"
-            />
-            <InsightItem
-              title="Gaspillage"
-              value="-12.4%"
-              desc="Optimisation des stocks réussie"
-              isPositive={true}
-            />
-            <InsightItem
-              title="Coût Moyen / Repas"
-              value="850 F"
-              desc="Stabilité des prix fournisseurs"
-            />
-          </div>
-
-          <Button variant="secondary" className="w-full mt-6 bg-white text-slate-900 hover:bg-slate-100">
-            Rapport Stratégique
-          </Button>
-        </Card>
       </div>
 
       {/* Recent Activity & Alerts */}
@@ -213,7 +173,7 @@ export default function CanteenDashboard() {
 
 // --- Helpers ---
 
-function StatCard({ title, value, change, trend, icon: Icon, color }: any) {
+function StatCard({ title, value, icon: Icon, color }: any) {
   const bgColors: any = {
     blue: 'bg-blue-50 text-blue-600',
     green: 'bg-emerald-50 text-emerald-600',
@@ -227,15 +187,6 @@ function StatCard({ title, value, change, trend, icon: Icon, color }: any) {
         <div className={`p-3 rounded-xl ${bgColors[color]}`}>
           <Icon className="w-6 h-6" />
         </div>
-        <Badge variant="outline" className={
-          trend === 'up' ? 'text-emerald-600 bg-emerald-50 border-emerald-100' :
-          trend === 'down' ? 'text-red-600 bg-red-50 border-red-100' :
-          'text-amber-600 bg-amber-50 border-amber-100'
-        }>
-          {trend === 'up' && <TrendingUp className="w-3 h-3 mr-1" />}
-          {trend === 'down' && <TrendingDown className="w-3 h-3 mr-1" />}
-          {change}
-        </Badge>
       </div>
       <p className="text-gray-500 text-xs font-medium">{title}</p>
       <p className="text-3xl font-semibold text-navy-900 mt-1">{value}</p>
@@ -255,18 +206,7 @@ function MenuSection({ label, value, icon }: any) {
   );
 }
 
-function InsightItem({ title, value, desc, isPositive }: any) {
-  return (
-    <div className="p-3 bg-white/5 rounded-xl border border-white/5">
-      <div className="flex justify-between items-center mb-1">
-        <p className="text-slate-300 text-xs font-medium">{title}</p>
-        {isPositive && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
-      </div>
-      <p className="text-lg font-semibold text-white">{value}</p>
-      <p className="text-xs text-slate-400">{desc}</p>
-    </div>
-  );
-}
+// 🗑️ 2026-10-15 — InsightItem supprimé (ORION masqué, plus utilisé)
 
 function LiveRow({ student, time, status, color = 'green' }: any) {
   const badgeClass: any = {

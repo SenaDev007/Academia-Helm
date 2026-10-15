@@ -98,15 +98,15 @@ export default function CanteenIncidents() {
     }
   };
 
-  const openCount = incidents.filter((i) => {
+  const openCount = (incidents ?? []).filter((i) => {
     const s = (i.status ?? '').toLowerCase();
     return s.includes('cours') || s.includes('open') || s.includes('ouvert');
   }).length;
-  const resolvedCount = incidents.filter((i) => {
+  const resolvedCount = (incidents ?? []).filter((i) => {
     const s = (i.status ?? '').toLowerCase();
     return s.includes('résolu') || s.includes('resolu') || s.includes('resolved');
   }).length;
-  const monthCount = incidents.length;
+  const monthCount = (incidents ?? []).length;
 
   if (loading) {
     return (
@@ -180,13 +180,13 @@ export default function CanteenIncidents() {
           </div>
         </div>
 
-        {incidents.length === 0 ? (
+        {(incidents ?? []).length === 0 ? (
           <div className="text-center py-16 text-gray-500">
             Aucun incident enregistré pour cette année scolaire.
           </div>
         ) : (
           <div className="divide-y divide-gray-100">
-            {incidents.map((inc) => (
+            {(incidents ?? []).map((inc) => (
               <IncidentRow
                 key={inc.id}
                 type={inc.type ?? inc.category ?? 'Incident'}

@@ -62,7 +62,8 @@ import CanteenPayments from './canteen/CanteenPayments';
 import CanteenStocks from './canteen/CanteenStocks';
 import CanteenSuppliers from './canteen/CanteenSuppliers';
 import CanteenIncidents from './canteen/CanteenIncidents';
-import CanteenReports from './canteen/CanteenReports';
+// 🗑️ 2026-10-15 — CanteenReports supprimé (sous-module Rapports retiré)
+// import CanteenReports from './canteen/CanteenReports';
 import CanteenSettings from './canteen/CanteenSettings';
 
 export default function CanteenModulePage() {
@@ -138,13 +139,7 @@ export default function CanteenModulePage() {
             >
               <Plus className="w-4 h-4" /> Nouveau menu
             </button>
-            <button
-              onClick={() => setActiveSubModuleId('reports')}
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl font-bold hover:bg-slate-50 transition-all"
-              title="Rapports & statistiques cantine"
-            >
-              <Download className="w-4 h-4" /> Rapports
-            </button>
+            {/* 🗑️ 2026-10-15 — Bouton Rapports supprimé */}
           </div>
         ),
       }}
@@ -162,7 +157,8 @@ export default function CanteenModulePage() {
           { id: 'stocks', label: 'Stocks', icon: <Package className="w-4 h-4" /> },
           { id: 'suppliers', label: 'Fournisseurs', icon: <Truck className="w-4 h-4" /> },
           { id: 'incidents', label: 'Incidents & Hygiène', icon: <AlertCircle className="w-4 h-4" /> },
-          { id: 'reports', label: 'Rapports', icon: <BarChart3 className="w-4 h-4" /> },
+          // 🗑️ 2026-10-15 — Rapports supprimé
+          // { id: 'reports', label: 'Rapports', icon: <BarChart3 className="w-4 h-4" /> },
           { id: 'settings', label: 'Paramètres', icon: <Settings className="w-4 h-4" /> },
         ],
       }}
@@ -177,7 +173,8 @@ export default function CanteenModulePage() {
         activeSubModuleId === 'stocks' ? { layout: 'default', children: <CanteenStocks /> } :
         activeSubModuleId === 'suppliers' ? { layout: 'default', children: <CanteenSuppliers /> } :
         activeSubModuleId === 'incidents' ? { layout: 'default', children: <CanteenIncidents /> } :
-        activeSubModuleId === 'reports' ? { layout: 'default', children: <CanteenReports /> } :
+        // 🗑️ 2026-10-15 — Rapports supprimé
+        // activeSubModuleId === 'reports' ? { layout: 'default', children: <CanteenReports /> } :
         activeSubModuleId === 'settings' ? { layout: 'default', children: <CanteenSettings /> } :
         { layout: 'default', children: <CanteenDashboard /> }
       }

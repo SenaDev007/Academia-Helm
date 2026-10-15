@@ -103,12 +103,12 @@ export default function CanteenStocks() {
     }
   };
 
-  const totalValue = stocks.reduce((acc, s) => acc + (s.qty ?? s.quantity ?? 0), 0);
-  const criticalCount = stocks.filter((s) => {
+  const totalValue = (stocks ?? []).reduce((acc, s) => acc + (s.qty ?? s.quantity ?? 0), 0);
+  const criticalCount = (stocks ?? []).filter((s) => {
     const st = (s.status ?? '').toLowerCase();
     return st.includes('critique') || st.includes('critical');
   }).length;
-  const freshCount = stocks.filter((s) => {
+  const freshCount = (stocks ?? []).filter((s) => {
     const cat = (s.category ?? '').toLowerCase();
     return cat.includes('frais') || cat.includes('fresh');
   }).length;
@@ -199,7 +199,7 @@ export default function CanteenStocks() {
           </div>
         </div>
 
-        {stocks.length === 0 ? (
+        {(stocks ?? []).length === 0 ? (
           <div className="text-center py-16 text-gray-500">
             Aucun article en stock pour cette année scolaire.
           </div>
@@ -216,7 +216,7 @@ export default function CanteenStocks() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {stocks.map((stock) => {
+              {(stocks ?? []).map((stock) => {
                 const qty = stock.qty ?? stock.quantity ?? 0;
                 const threshold = stock.threshold ?? stock.alertThreshold ?? stock.minThreshold ?? '—';
                 const name = stock.name ?? stock.productName ?? '—';

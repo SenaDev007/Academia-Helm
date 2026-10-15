@@ -203,9 +203,9 @@ export default function CanteenEnrollments() {
     }
   };
 
-  const pendingCount = enrollments.filter((e) => (e.status ?? '').toLowerCase().includes('attente') || (e.status ?? '').toLowerCase().includes('pending')).length;
-  const acceptedCount = enrollments.filter((e) => (e.status ?? '').toLowerCase().includes('valid') || (e.status ?? '').toLowerCase().includes('accept')).length;
-  const acceptanceRate = enrollments.length > 0 ? Math.round((acceptedCount / enrollments.length) * 100) : 0;
+  const pendingCount = (enrollments ?? []).filter((e) => (e.status ?? '').toLowerCase().includes('attente') || (e.status ?? '').toLowerCase().includes('pending')).length;
+  const acceptedCount = (enrollments ?? []).filter((e) => (e.status ?? '').toLowerCase().includes('valid') || (e.status ?? '').toLowerCase().includes('accept')).length;
+  const acceptanceRate = (enrollments ?? []).length > 0 ? Math.round((acceptedCount / enrollments.length) * 100) : 0;
 
   if (loading) {
     return (
@@ -275,7 +275,7 @@ export default function CanteenEnrollments() {
           </div>
         </div>
 
-        {enrollments.length === 0 ? (
+        {(enrollments ?? []).length === 0 ? (
           <div className="text-center py-16 text-gray-500">
             Aucune inscription pour cette année scolaire.
           </div>
@@ -292,7 +292,7 @@ export default function CanteenEnrollments() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {enrollments.map((enr) => (
+              {(enrollments ?? []).map((enr) => (
                 <EnrollmentRow
                   key={enr.id}
                   enrollmentId={enr.id}

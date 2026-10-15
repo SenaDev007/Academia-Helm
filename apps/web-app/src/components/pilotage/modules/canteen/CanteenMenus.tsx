@@ -64,6 +64,55 @@ interface MenuFormData {
 
 const emptyMenuForm: MenuFormData = { date: '', mealType: 'DEJEUNER', dishes: '' };
 
+// ⭐ 2026-10-15 — Liste de plats africains / béninois catégorisés
+//    pour faciliter la sélection rapide lors de la planification des menus.
+const BENIN_DISHES: Record<string, string[]> = {
+  PETIT_DEJEUNER: [
+    'Bouillie de maïs (Akassa)',
+    'Bouillie de mil',
+    'Pain beurre + chocolat chaud',
+    'Pain + sardine tomate',
+    'Beignets (Ata)',
+    'Akara + pain',
+    'Pâte de maïs + sauce tomate',
+    'Lait + pain + banane',
+    'Pain + omelette',
+    'Bouillie de sorgho',
+  ],
+  DEJEUNER: [
+    'Riz au poisson (Djèwou)',
+    'Riz sauce tomate + poulet',
+    'Riz gras (Wolof)',
+    'Pâte de maïs + sauce arachide',
+    'Pâte de maïs + sauce tomate',
+    'Pâte de manioc + sauce feuilles',
+    'Pâte de manioc + sauce arachide',
+    'Akassa + sauce poisson',
+    'Akassa + sauce tomate + viande',
+    'Igname pilée + sauce épina',
+    'Attieké + poisson braisé',
+    'Spaghetti sauce tomate',
+    'Macaroni + poulet',
+    'Foufou (pâte d'igname) + sauce',
+    'Tô (pâte de maïs) + sauce gombo',
+    'Riz + sauce arachide + viande',
+    'Riz + légumes + poisson fumé',
+    'Pâte blanche + sauce graine',
+    'Yam fufu + sauce épinard',
+    'Riz au gras + oeuf',
+  ],
+  GOUTER: [
+    'Beignets + café',
+    'Pain + chocolat',
+    'Ata (beignets) + jus',
+    'Frites + sauce tomate',
+    'Croissant + lait',
+    'Pain + beurre + confiture',
+    'Biscuits + jus de fruit',
+    'Maïs grillé + fruit',
+  ],
+};
+
 export default function CanteenMenus() {
   const { academicYear } = useModuleContext();
   const { toast } = useToast();
@@ -210,10 +259,11 @@ export default function CanteenMenus() {
         </div>
 
         <div className="flex items-center space-x-2">
+          {/* 🗑️ 2026-10-15 — Sarah AI masqué (non fonctionnel)
           <Button variant="outline" size="sm">
             <Sparkles className="w-4 h-4 mr-2" />
             Sarah AI
-          </Button>
+          </Button> */}
           <Button onClick={openCreate}>
             <Plus className="w-4 h-4 mr-2" />
             Planifier
@@ -331,18 +381,34 @@ export default function CanteenMenus() {
                 <option value="DEJEUNER">Déjeuner</option>
                 <option value="PETIT_DEJEUNER">Petit Déjeuner</option>
                 <option value="GOUTER">Goûter</option>
-                <option value="DINER">Dîner</option>
+                {/* 🗑️ Dîner supprimé — la cantine scolaire ne sert pas de dîner */}
               </select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="menu-dishes">Plat principal</Label>
-              <Input
+              {/* ⭐ 2026-10-15 — Liste de plats béninois par catégorie */}
+              <select
                 id="menu-dishes"
-                type="text"
-                placeholder="ex : Riz au poisson"
                 value={formData.dishes}
                 onChange={(e) => setFormData({ ...formData, dishes: e.target.value })}
-              />
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="">— Sélectionner un plat —</option>
+                {(BENIN_DISHES[formData.mealType] || BENIN_DISHES.DEJEUNER).map((dish) => (
+                  <option key={dish} value={dish}>{dish}</option>
+                ))}
+                <option value="custom">Autre (saisir manuellement)…</option>
+              </select>
+              {formData.dishes === 'custom' && (
+                <Input
+                  type="text"
+                  placeholder="Saisir le nom du plat"
+                  value=""
+                  onChange={(e) => setFormData({ ...formData, dishes: e.target.value })}
+                  className="mt-2"
+                  autoFocus
+                />
+              )}
             </div>
           </div>
           <DialogFooter>
@@ -384,17 +450,29 @@ export default function CanteenMenus() {
                 <option value="DEJEUNER">Déjeuner</option>
                 <option value="PETIT_DEJEUNER">Petit Déjeuner</option>
                 <option value="GOUTER">Goûter</option>
-                <option value="DINER">Dîner</option>
+                {/* 🗑️ Dîner supprimé — la cantine scolaire ne sert pas de dîner */}
               </select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-menu-dishes">Plat principal</Label>
-              <Input
+              <select
                 id="edit-menu-dishes"
+                value={BENIN_DISHES[formData.mealType]?.includes(formData.dishes) ? formData.dishes : 'custom'}
+                onChange={(e) => setFormData({ ...formData, dishes: e.target.value === 'custom' ? formData.dishes : e.target.value })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+              >
+                <option value="">— Sélectionner un plat —</option>
+                {(BENIN_DISHES[formData.mealType] || BENIN_DISHES.DEJEUNER).map((dish) => (
+                  <option key={dish} value={dish}>{dish}</option>
+                ))}
+                <option value="custom">Autre (conserver la valeur actuelle)</option>
+              </select>
+              <Input
                 type="text"
-                placeholder="ex : Riz au poisson"
+                placeholder="Nom du plat"
                 value={formData.dishes}
                 onChange={(e) => setFormData({ ...formData, dishes: e.target.value })}
+                className="mt-2"
               />
             </div>
           </div>

@@ -53,11 +53,11 @@ export default function CanteenDiets() {
     academicYear?.id,
   );
 
-  const criticalCount = diets.filter((d) => {
+  const criticalCount = (diets ?? []).filter((d) => {
     const s = (d.severity ?? '').toUpperCase();
     return s === 'CRITICAL' || s === 'CRITIQUE';
   }).length;
-  const paiCount = diets.filter((d) => {
+  const paiCount = (diets ?? []).filter((d) => {
     const s = (d.severity ?? '').toUpperCase();
     return s.includes('PAI') || s.includes('MEDICAL');
   }).length;
@@ -89,7 +89,7 @@ export default function CanteenDiets() {
         />
         <RiskCard
           title="Régimes Spéciaux"
-          value={String(diets.length).padStart(2, '0')}
+          value={String((diets ?? []).length).padStart(2, '0')}
           icon={Heart}
           color="blue"
         />
@@ -101,7 +101,7 @@ export default function CanteenDiets() {
         />
         <RiskCard
           title="Mises à jour (Mois)"
-          value={String(diets.length).padStart(2, '0')}
+          value={String((diets ?? []).length).padStart(2, '0')}
           icon={CheckCircle2}
           color="green"
         />
@@ -130,13 +130,13 @@ export default function CanteenDiets() {
             </div>
           </div>
 
-          {diets.length === 0 ? (
+          {(diets ?? []).length === 0 ? (
             <div className="text-center py-16 text-gray-500">
               Aucun profil alimentaire spécial enregistré pour cette année scolaire.
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {diets.map((diet) => (
+              {(diets ?? []).map((diet) => (
                 <DietRow
                   key={diet.id}
                   student={diet.student ?? diet.studentName ?? diet.name ?? '—'}

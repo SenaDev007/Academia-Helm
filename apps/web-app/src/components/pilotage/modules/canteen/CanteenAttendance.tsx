@@ -91,12 +91,12 @@ export default function CanteenAttendance() {
     }
   };
 
-  const total = attendance.length;
-  const served = attendance.filter((a) => {
+  const total = (attendance ?? []).length;
+  const served = (attendance ?? []).filter((a) => {
     const s = (a.status ?? '').toLowerCase();
     return s.includes('servi') || s.includes('served');
   }).length;
-  const pending = attendance.filter((a) => {
+  const pending = (attendance ?? []).filter((a) => {
     const s = (a.status ?? '').toLowerCase();
     return s.includes('attente') || s.includes('pending') || s.includes('non');
   }).length;
@@ -152,7 +152,7 @@ export default function CanteenAttendance() {
             </div>
           </div>
 
-          {attendance.length === 0 ? (
+          {(attendance ?? []).length === 0 ? (
             <div className="text-center py-16 text-gray-500">
               Aucun pointage enregistré pour cette année scolaire.
             </div>
@@ -168,7 +168,7 @@ export default function CanteenAttendance() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {attendance.map((row) => (
+                {(attendance ?? []).map((row) => (
                   <AttendanceRow
                     key={row.id}
                     attendanceId={row.id}

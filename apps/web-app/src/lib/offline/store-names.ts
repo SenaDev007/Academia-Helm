@@ -547,6 +547,15 @@ const MODULES_COMPLEMENTAIRES_STORES: Array<{ pattern: RegExp; store: string }> 
   { pattern: /\/api\/modules-complementaires\/canteen\/payments/, store: 'canteenpayment' },
   { pattern: /\/api\/modules-complementaires\/canteen\/attendance/, store: 'canteenattendance' },
   { pattern: /\/api\/modules-complementaires\/canteen\/settings/, store: 'canteensetting' },
+  // ⭐ 2026-10-15 — AUDIT CANTINE : routes manquantes (BFF mirror)
+  { pattern: /\/api\/modules-complementaires\/canteen\/dashboard/, store: 'api_cache' },
+  { pattern: /\/api\/modules-complementaires\/canteen\/enrollments/, store: 'canteensubscription' },
+  { pattern: /\/api\/modules-complementaires\/canteen\/diets/, store: 'api_cache' },
+  { pattern: /\/api\/modules-complementaires\/canteen\/allergies/, store: 'api_cache' },
+  { pattern: /\/api\/modules-complementaires\/canteen\/stocks/, store: 'api_cache' },
+  { pattern: /\/api\/modules-complementaires\/canteen\/suppliers/, store: 'api_cache' },
+  { pattern: /\/api\/modules-complementaires\/canteen\/incidents/, store: 'canteenattendance' },
+  { pattern: /\/api\/modules-complementaires\/canteen\/meal-services/, store: 'api_cache' },
   // ─── Transport ───
   { pattern: /\/api\/modules-complementaires\/transport\/vehicles/, store: 'vehicle' },
   { pattern: /\/api\/modules-complementaires\/transport\/routes/, store: 'route' },

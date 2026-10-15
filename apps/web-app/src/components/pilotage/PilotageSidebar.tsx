@@ -377,13 +377,15 @@ const SAISIEMASTER_MODULES = [
 
 const SUPPLEMENTARY_MODULES = [
   { path: '/app/canteen', label: 'Cantine', icon: UtensilsCrossed, featureCode: 'CANTEEN' },
-  { path: '/app/educast', label: 'EduCast', icon: Radio, featureCode: 'EDUCAST' },
+  // ⭐ 2026-10-15 — EduCast temporairement désactivé (sera réactivé ultérieurement)
+  // { path: '/app/educast', label: 'EduCast', icon: Radio, featureCode: 'EDUCAST' },
   { path: '/app/shop', label: 'Academia Shop', icon: ShoppingBag, iconUrl: '/icons/modules/boutique.png', featureCode: 'SHOP' },
   // ⭐ Modules masqués temporairement — seront réactivés lors des mises à jour futures
   // { path: '/app/library', label: 'Bibliothèque', icon: Library, featureCode: 'LIBRARY' },
   // { path: '/app/transport', label: 'Transport', icon: Bus, featureCode: 'TRANSPORT' },
   // { path: '/app/infirmary', label: 'Infirmerie', icon: HeartPulse, featureCode: 'INFIRMARY' },
-  { path: '/app/qhse', label: 'QHSE', icon: ShieldCheck, featureCode: 'QHSE' },
+  // 🗑️ 2026-10-15 — QHSE module SUPPRIMÉ définitivement — retiré de la sidebar
+  // { path: '/app/qhse', label: 'QHSE', icon: ShieldCheck, featureCode: 'QHSE' },
 ];
 
 export default function PilotageSidebar({

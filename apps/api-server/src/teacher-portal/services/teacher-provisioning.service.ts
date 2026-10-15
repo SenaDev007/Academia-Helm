@@ -30,11 +30,13 @@ import {
   Logger,
   BadRequestException,
   ConflictException,
+  NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../database/prisma.service';
 import { SubdomainService } from '../../common/services/subdomain.service';
 import { EducationStructureService } from '../../settings/services/education-structure.service';
+import { AcademicPeriodSettingsService } from '../../settings/services/academic-period-settings.service';
 import { AcademicStructurePrismaService } from '../../pedagogy/academic-structure-prisma.service';
 import { SubjectsPrismaService } from '../../pedagogy/subjects-prisma.service';
 import { TeacherLevelCode } from '../dto/teacher-portal.dto';
@@ -75,6 +77,7 @@ export class TeacherProvisioningService {
     private readonly prisma: PrismaService,
     private readonly subdomainService: SubdomainService,
     private readonly educationStructureService: EducationStructureService,
+    private readonly academicPeriodSettingsService: AcademicPeriodSettingsService,
     private readonly academicStructureService: AcademicStructurePrismaService,
     private readonly subjectsService: SubjectsPrismaService,
   ) {}
@@ -532,7 +535,50 @@ export class TeacherProvisioningService {
       this.logger.warn(`⚠️ Subjects seed: ${e.message}`);
     }
 
-    // 4. Affectations enseignant (classes × matières des niveaux activés)
+    // 4. Sections physiques (table classes) — indispensables au module
+    //    Examens : Evaluation.classId pointe sur la section physique, et les
+    //    élèves sont rattachés via ClassStudent. Une section par AcademicClass
+    //    active des niveaux activés (CI → CM2, 6ème → Terminale, Mat 1-2).
+    try {
+      await this.academicStructureService.syncClassSectionsFromAcademicClasses(
+        tenantId,
+        academicYearId,
+      );
+    } catch (e: any) {
+      this.logger.warn(`⚠️ Physical class sections sync: ${e.message}`);
+    }
+
+    // 5. Trimestres par défaut (T1/T2/T3) — pattern écoles (config Bénin)
+    try {
+      const existingPeriods = await this.prisma.academicPeriod.count({
+        where: { tenantId, academicYearId },
+      });
+      if (existingPeriods === 0) {
+        const year = await this.prisma.academicYear.findUnique({ where: { id: academicYearId } });
+        if (year) {
+          await this.academicPeriodSettingsService.createDefaultTrimestersForYear(
+            tenantId,
+            academicYearId,
+            year.startDate,
+            year.endDate,
+            null,
+          );
+        }
+      }
+    } catch (e: any) {
+      this.logger.warn(`⚠️ Default trimesters: ${e.message}`);
+    }
+
+    // 6. Types d'évaluation par défaut (Devoir / Interrogation / Composition)
+    //    par niveau activé — le référentiel école vient de SchoolAcademicSettings
+    //    (Paramètres > Examens) ; l'enseignant autonome reçoit un socle simple.
+    try {
+      await this.seedDefaultEvaluationTypes(tenantId);
+    } catch (e: any) {
+      this.logger.warn(`⚠️ Evaluation types seed: ${e.message}`);
+    }
+
+    // 7. Affectations enseignant (classes × matières des niveaux activés)
     try {
       await this.syncTeacherAssignments(tenantId, academicYearId);
     } catch (e: any) {
@@ -543,5 +589,203 @@ export class TeacherProvisioningService {
     this.logger.debug(
       `materializeStructure done for ${tenantId} (levels: ${levels.join(',')})`,
     );
+  }
+
+  /** Types d'évaluation par défaut, par niveau activé du tenant enseignant. */
+  private async seedDefaultEvaluationTypes(tenantId: string): Promise<void> {
+    const activeLevels = await this.prisma.schoolLevel.findMany({
+      where: { tenantId, isActive: true },
+    });
+
+    const DEFAULT_TYPES = [
+      { code: 'DEV', name: 'Devoir', defaultCoefficient: 1 },
+      { code: 'INT', name: 'Interrogation', defaultCoefficient: 1 },
+      { code: 'COMP', name: 'Composition', defaultCoefficient: 2 },
+    ];
+
+    for (const level of activeLevels) {
+      for (const type of DEFAULT_TYPES) {
+        const existing = await this.prisma.evaluationType.findFirst({
+          where: { tenantId, code: type.code, schoolLevelId: level.id },
+        });
+        if (!existing) {
+          await this.prisma.evaluationType.create({
+            data: {
+              tenantId,
+              name: type.name,
+              code: type.code,
+              schoolLevelId: level.id,
+              isSystem: false,
+              defaultMaxScore: 20,
+              defaultCoefficient: type.defaultCoefficient,
+            },
+          });
+        }
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  ÉLÈVES — gestion légère des élèves de l'enseignant autonome
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** Liste les élèves d'une classe (section physique). */
+  async listStudents(tenantId: string, classId: string) {
+    const classRoom = await this.prisma.class.findFirst({
+      where: { id: classId, tenantId },
+    });
+    if (!classRoom) throw new NotFoundException('Classe introuvable');
+
+    const enrollments = await this.prisma.classStudent.findMany({
+      where: { tenantId, classId, status: 'ACTIVE' },
+      include: {
+        student: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            gender: true,
+            matricule: true,
+            status: true,
+            isActive: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return {
+      classId: classRoom.id,
+      className: classRoom.name,
+      students: enrollments
+        .filter((e) => e.student?.isActive !== false)
+        .map((e, index) => ({
+          id: e.student.id,
+          firstName: e.student.firstName,
+          lastName: e.student.lastName,
+          gender: e.student.gender,
+          matricule: e.student.matricule,
+          rank: index + 1,
+        })),
+    };
+  }
+
+  /** Ajoute un élève à une classe (Student + ClassStudent, transaction). */
+  async addStudent(
+    tenantId: string,
+    classId: string,
+    input: { firstName: string; lastName: string; gender?: string },
+  ) {
+    const classRoom = await this.prisma.class.findFirst({
+      where: { id: classId, tenantId },
+      include: { schoolLevel: true },
+    });
+    if (!classRoom) throw new NotFoundException('Classe introuvable');
+
+    const academicYear =
+      (await this.prisma.academicYear.findFirst({
+        where: { tenantId, isActive: true },
+        orderBy: { createdAt: 'desc' },
+      })) ??
+      (await this.prisma.academicYear.findFirst({
+        where: { tenantId },
+        orderBy: { createdAt: 'desc' },
+      }));
+    if (!academicYear) throw new BadRequestException('Aucune année scolaire trouvée');
+
+    const yy = String(new Date().getFullYear()).slice(-2);
+    const seq = (await this.prisma.student.count({ where: { tenantId } })) + 1;
+    const matricule = `ELV-${yy}-${String(seq).padStart(4, '0')}`;
+
+    return this.prisma.$transaction(async (tx) => {
+      const student = await tx.student.create({
+        data: {
+          tenantId,
+          academicYearId: academicYear.id,
+          currentAcademicYearId: academicYear.id,
+          schoolLevelId: classRoom.schoolLevelId,
+          firstName: input.firstName.trim(),
+          lastName: input.lastName.trim(),
+          gender: input.gender || null,
+          matricule,
+          status: 'ACTIVE',
+          isActive: true,
+        },
+      });
+
+      await tx.classStudent.create({
+        data: {
+          tenantId,
+          academicYearId: academicYear.id,
+          schoolLevelId: classRoom.schoolLevelId,
+          classId,
+          studentId: student.id,
+          enrollmentDate: new Date(),
+          status: 'ACTIVE',
+        },
+      });
+
+      return { id: student.id, firstName: student.firstName, lastName: student.lastName, matricule };
+    });
+  }
+
+  /** Retire un élève (désactivation + fin d'inscription classe). */
+  async removeStudent(tenantId: string, studentId: string) {
+    const student = await this.prisma.student.findFirst({ where: { id: studentId, tenantId } });
+    if (!student) throw new NotFoundException('Élève introuvable');
+
+    await this.prisma.$transaction([
+      this.prisma.student.update({
+        where: { id: studentId },
+        data: { isActive: false, status: 'INACTIVE' },
+      }),
+      this.prisma.classStudent.updateMany({
+        where: { tenantId, studentId, status: 'ACTIVE' },
+        data: { status: 'REMOVED', exitDate: new Date() },
+      }),
+    ]);
+
+    return { success: true };
+  }
+
+  /** Types d'évaluation disponibles par niveau (pour le formulaire d'évaluation). */
+  async listEvaluationTypes(tenantId: string) {
+    const types = await this.prisma.evaluationType.findMany({
+      where: { tenantId },
+      include: { schoolLevel: { select: { id: true, code: true, name: true } } },
+      orderBy: [{ schoolLevelId: 'asc' }, { code: 'asc' }],
+    });
+
+    const periods =
+      (await this.prisma.academicPeriod.findMany({
+        where: { tenantId, isActive: true },
+        orderBy: { periodOrder: 'asc' },
+      })) ||
+      [];
+
+    const allPeriods = periods.length
+      ? periods
+      : await this.prisma.academicPeriod.findMany({
+          where: { tenantId },
+          orderBy: { periodOrder: 'asc' },
+        });
+
+    return {
+      evaluationTypes: types.map((t) => ({
+        id: t.id,
+        name: t.name,
+        code: t.code,
+        defaultMaxScore: t.defaultMaxScore,
+        defaultCoefficient: t.defaultCoefficient,
+        schoolLevel: t.schoolLevel,
+      })),
+      periods: allPeriods.map((p) => ({
+        id: p.id,
+        name: p.name,
+        type: p.type,
+        periodOrder: p.periodOrder,
+        isActive: p.isActive,
+      })),
+    };
   }
 }

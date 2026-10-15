@@ -17,10 +17,14 @@ import {
   Controller,
   Post,
   Get,
+  Delete,
   Body,
+  Param,
+  Query,
   Req,
   HttpCode,
   HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { Public } from '@/auth/decorators/public.decorator';
 import { TeacherPortalAuthService } from '../services/teacher-portal-auth.service';
@@ -31,6 +35,29 @@ import {
   SetTeacherLevelsDto,
   InvitePromoterDto,
 } from '../dto/teacher-portal.dto';
+import { IsString, IsNotEmpty, IsOptional, MinLength, MaxLength, IsIn } from 'class-validator';
+
+class AddStudentDto {
+  @IsString()
+  @IsNotEmpty()
+  classId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(2)
+  @MaxLength(60)
+  firstName!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(2)
+  @MaxLength(60)
+  lastName!: string;
+
+  @IsOptional()
+  @IsIn(['M', 'F', 'MASCULIN', 'FEMININ'])
+  gender?: string;
+}
 
 @Controller('teacher-portal')
 export class TeacherPortalController {
@@ -74,7 +101,7 @@ export class TeacherPortalController {
   async setLevels(@Body() dto: SetTeacherLevelsDto, @Req() req: any) {
     const tenantId = req.user?.tenantId;
     if (!tenantId) {
-      throw new Error('Tenant non résolu');
+      throw new BadRequestException('Tenant non résolu');
     }
     return this.provisioningService.setTeacherLevels(tenantId, dto.levels);
   }
@@ -84,5 +111,51 @@ export class TeacherPortalController {
   @HttpCode(HttpStatus.OK)
   async invitePromoter(@Body() dto: InvitePromoterDto, @Req() req: any) {
     return this.authService.invitePromoter(req.user?.sub ?? req.user?.id, dto);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  //  ÉLÈVES — constitution des classes pour les notes et bulletins
+  // ─────────────────────────────────────────────────────────────────────
+
+  /** Liste les élèves d'une classe de l'espace enseignant. */
+  @Get('students')
+  async listStudents(@Query('classId') classId: string, @Req() req: any) {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) throw new BadRequestException('Tenant non résolu');
+    if (!classId) throw new BadRequestException('classId requis');
+    return this.provisioningService.listStudents(tenantId, classId);
+  }
+
+  /** Ajoute un élève à une classe. */
+  @Post('students')
+  @HttpCode(HttpStatus.CREATED)
+  async addStudent(@Body() dto: AddStudentDto, @Req() req: any) {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) throw new BadRequestException('Tenant non résolu');
+    return this.provisioningService.addStudent(tenantId, dto.classId, {
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      gender: dto.gender,
+    });
+  }
+
+  /** Retire un élève de l'espace. */
+  @Delete('students/:id')
+  async removeStudent(@Param('id') id: string, @Req() req: any) {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) throw new BadRequestException('Tenant non résolu');
+    return this.provisioningService.removeStudent(tenantId, id);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  //  EXAMENS — référentiel (types d'évaluation + périodes) de l'espace
+  // ─────────────────────────────────────────────────────────────────────
+
+  /** Types d'évaluation + périodes disponibles (formulaire d'évaluation). */
+  @Get('evaluation-types')
+  async listEvaluationTypes(@Req() req: any) {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) throw new BadRequestException('Tenant non résolu');
+    return this.provisioningService.listEvaluationTypes(tenantId);
   }
 }

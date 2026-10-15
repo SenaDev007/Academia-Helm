@@ -47,6 +47,7 @@ import {
   Settings,
   Plus,
   Download,
+  Wallet,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -65,6 +66,10 @@ import CanteenIncidents from './canteen/CanteenIncidents';
 // 🗑️ 2026-10-15 — CanteenReports supprimé (sous-module Rapports retiré)
 // import CanteenReports from './canteen/CanteenReports';
 import CanteenSettings from './canteen/CanteenSettings';
+// ⭐ 2026-10-15 — Nouveaux sous-modules métier (capital, vente, bilan)
+import CanteenTreasury from './canteen/CanteenTreasury';
+import CanteenDailySales from './canteen/CanteenDailySales';
+import CanteenAnnualReport from './canteen/CanteenAnnualReport';
 
 export default function CanteenModulePage() {
   const { academicYear, isLoading: contextLoading } = useModuleContext();
@@ -156,6 +161,10 @@ export default function CanteenModulePage() {
           { id: 'payments', label: 'Paiements', icon: <CreditCard className="w-4 h-4" /> },
           { id: 'stocks', label: 'Stocks', icon: <Package className="w-4 h-4" /> },
           { id: 'suppliers', label: 'Fournisseurs', icon: <Truck className="w-4 h-4" /> },
+          // ⭐ 2026-10-15 — Nouveaux sous-modules métier
+          { id: 'treasury', label: 'Caisse', icon: <Wallet className="w-4 h-4" /> },
+          { id: 'sales', label: 'Vente journalière', icon: <CreditCard className="w-4 h-4" /> },
+          { id: 'bilan', label: 'Bilan annuel', icon: <BarChart3 className="w-4 h-4" /> },
           { id: 'incidents', label: 'Incidents & Hygiène', icon: <AlertCircle className="w-4 h-4" /> },
           // 🗑️ 2026-10-15 — Rapports supprimé
           // { id: 'reports', label: 'Rapports', icon: <BarChart3 className="w-4 h-4" /> },
@@ -172,6 +181,10 @@ export default function CanteenModulePage() {
         activeSubModuleId === 'payments' ? { layout: 'default', children: <CanteenPayments /> } :
         activeSubModuleId === 'stocks' ? { layout: 'default', children: <CanteenStocks /> } :
         activeSubModuleId === 'suppliers' ? { layout: 'default', children: <CanteenSuppliers /> } :
+        // ⭐ 2026-10-15 — Nouveaux sous-modules métier
+        activeSubModuleId === 'treasury' ? { layout: 'default', children: <CanteenTreasury /> } :
+        activeSubModuleId === 'sales' ? { layout: 'default', children: <CanteenDailySales /> } :
+        activeSubModuleId === 'bilan' ? { layout: 'default', children: <CanteenAnnualReport /> } :
         activeSubModuleId === 'incidents' ? { layout: 'default', children: <CanteenIncidents /> } :
         // 🗑️ 2026-10-15 — Rapports supprimé
         // activeSubModuleId === 'reports' ? { layout: 'default', children: <CanteenReports /> } :

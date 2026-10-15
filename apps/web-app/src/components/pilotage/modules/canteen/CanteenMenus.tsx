@@ -93,7 +93,7 @@ const BENIN_DISHES: Record<string, string[]> = {
     'Attieké + poisson braisé',
     'Spaghetti sauce tomate',
     'Macaroni + poulet',
-    'Foufou (pâte d'igname) + sauce',
+    'Foufou (pâte d\'igname) + sauce',
     'Tô (pâte de maïs) + sauce gombo',
     'Riz + sauce arachide + viande',
     'Riz + légumes + poisson fumé',

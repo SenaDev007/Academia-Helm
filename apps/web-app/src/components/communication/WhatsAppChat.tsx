@@ -1623,8 +1623,35 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
     return () => { cancelled = true; };
   }, [activeHelmSection, communautesSyncing]);
 
-  /** ⭐ V6 — catégorie d'affichage d'une conversation GROUP (spec Communautés). */
+  /** ⭐ V6 — catégorie d'affichage d'une conversation GROUP (spec Communautés).
+   *    ⭐ 2026-10-15 — Extension : lit aussi metadata.category (défini par
+   *    AutoChannelByTrackService) pour les nouveaux canaux par piste FR/EN
+   *    (administration-fr, administration-en, pedagogique-fr, pedagogique-en,
+   *    conseil-general, conseil-classe).
+   */
   const getCommunauteCategory = (conv: any): string => {
+    // ⭐ 2026-10-15 — D'abord lire metadata.category (priorité haute)
+    //    pour les nouveaux canaux par piste créés par AutoChannelByTrackService.
+    //    conv.metadata peut être un objet (si Prisma parse le JSONB) ou une
+    //    string (si raw SQL). On gère les deux cas.
+    try {
+      const rawMeta = (conv as any).metadata;
+      const metaObj = typeof rawMeta === 'string' ? JSON.parse(rawMeta) : rawMeta;
+      if (metaObj?.category) {
+        switch (metaObj.category) {
+          case 'administration':       return 'administration-fr'; // ou -en selon trackCode
+          case 'pedagogique':          return 'pedagogique-fr';    // ou -en
+          case 'conseil-general':      return 'conseil-general';
+          case 'conseil-classe':       return 'conseil-classe';
+          default: break; // fallback vers la logique existante ci-dessous
+        }
+        // Affinage par trackCode dans le metadata
+        if (metaObj.category === 'administration') return metaObj.trackCode === 'EN' ? 'administration-en' : 'administration-fr';
+        if (metaObj.category === 'pedagogique') return metaObj.trackCode === 'EN' ? 'pedagogique-en' : 'pedagogique-fr';
+      }
+    } catch { /* ignore parse error */ }
+
+    // Logique existante (auto-groups classiques via autoGroupMeta)
     const meta = autoGroupMeta[conv.id];
     if (!meta) return 'autres';
     switch (meta.groupType) {
@@ -1639,6 +1666,15 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
         if (meta.roleType === 'PARENTS') return 'parents';
         if (meta.roleType === 'PEDAGOGICAL_COUNCIL') return 'administration';
         return 'administration'; // ADMINISTRATION / ALL_STAFF
+      // ⭐ 2026-10-15 — Nouveaux types par piste (AutoChannelByTrackService)
+      case 'ADMIN_TRACK':
+        return meta.academicTrackId ? 'administration-en' : 'administration-fr';
+      case 'PEDAGOGIC_TRACK':
+        return meta.academicTrackId ? 'pedagogique-en' : 'pedagogique-fr';
+      case 'GENERAL_COUNCIL':
+        return 'conseil-general';
+      case 'COUNCIL_BY_TRACK_LEVEL':
+        return 'conseil-classe';
       default: return 'autres';
     }
   };
@@ -6330,6 +6366,9 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                     .filter(c => !sidebarQ || (c.name || '').toLowerCase().includes(sidebarQ));
                   // ⭐ V6 (spec — Communautés) : sous-catégories Classes |
                   //    Matières | Enseignants | Parents | Administration | Autres
+                  //    ⭐ 2026-10-15 — Extension : ajout des nouvelles catégories
+                  //    par piste FR/EN et conseil des classes (définies par
+                  //    AutoChannelByTrackService via metadata.category).
                   const COMMUNAUTE_CATS = [
                     { id: 'all', label: 'Tout' },
                     { id: 'classes', label: 'Classes' },
@@ -6337,6 +6376,13 @@ export default function WhatsAppChat({ currentUserId, readOnly = false, heightCl
                     { id: 'enseignants', label: 'Enseignants' },
                     { id: 'parents', label: 'Parents' },
                     { id: 'administration', label: 'Administration' },
+                    // ⭐ 2026-10-15 — Nouvelles catégories par piste FR/EN
+                    { id: 'administration-fr', label: 'Administration (FR)' },
+                    { id: 'administration-en', label: 'Administration (EN)' },
+                    { id: 'pedagogique-fr', label: 'Pédagogique (FR)' },
+                    { id: 'pedagogique-en', label: 'Pédagogique (EN)' },
+                    { id: 'conseil-general', label: 'Conseil des classes' },
+                    { id: 'conseil-classe', label: 'Conseils par niveau' },
                     { id: 'autres', label: 'Autres' },
                   ] as const;
                   const catCount = (cat: string) =>

@@ -35,6 +35,8 @@ import { AutoChannelService } from './auto-channel.service';
 import { AutoGroupService } from './auto-group.service';
 // ⭐ 2026-10-15 — Canaux par piste FR/EN (administration, pédagogique, conseil par niveau)
 import { AutoChannelByTrackService } from './auto-channel-by-track.service';
+// ⭐ 2026-10-15 — DMs automatiques (parent↔enseignant, enseignant↔collègue, promoteur↔tous)
+import { AutoDmService } from './auto-dm.service';
 
 /** Délai avant la première sync (laisse l'API démarrer + Neon s'éveiller). */
 const INITIAL_DELAY_MS = 90_000;
@@ -52,6 +54,8 @@ export class HelmConnectBootstrapService implements OnModuleInit {
     private readonly autoGroupService: AutoGroupService,
     // ⭐ 2026-10-15 — Canaux par piste FR/EN (administration, pédagogique, conseil par niveau)
     private readonly autoChannelByTrackService: AutoChannelByTrackService,
+    // ⭐ 2026-10-15 — DMs automatiques (parent↔enseignant, enseignant↔collègue, promoteur↔tous)
+    private readonly autoDmService: AutoDmService,
   ) {}
 
   /** Première sync différée — ne bloque PAS le boot de l'API. */
@@ -92,9 +96,11 @@ export class HelmConnectBootstrapService implements OnModuleInit {
     });
     let groups: any;
     let trackGroups: any;
+    let autoDms: any;
     if (!academicYear) {
       groups = { message: 'Aucune année scolaire active — les communautés seront créées dès l\u2019activation d\u2019une année.' };
       trackGroups = { message: 'Idem — canaux par piste en attente d\u2019une année active.' };
+      autoDms = { message: 'Idem — DMs automatiques en attente d\u2019une année active.' };
     } else {
       groups = await this.autoGroupService.syncAutoGroups(tenantId, academicYear.id);
       // ⭐ 2026-10-15 — Canaux par piste FR/EN (administration, pédagogique, conseil par niveau)
@@ -104,9 +110,16 @@ export class HelmConnectBootstrapService implements OnModuleInit {
         this.logger.warn(`syncTrackAutoGroups échoué pour ${tenantId}: ${e.message}`);
         trackGroups = { message: `Canaux par piste: ${e.message}` };
       }
+      // ⭐ 2026-10-15 — DMs automatiques (parent↔enseignant, enseignant↔collègue, promoteur↔tous)
+      try {
+        autoDms = await this.autoDmService.syncAutoDms(tenantId, academicYear.id);
+      } catch (e: any) {
+        this.logger.warn(`syncAutoDms échoué pour ${tenantId}: ${e.message}`);
+        autoDms = { message: `DMs automatiques: ${e.message}` };
+      }
     }
 
-    return { tenantId, channels, groups, trackGroups };
+    return { tenantId, channels, groups, trackGroups, autoDms };
   }
 
   /**

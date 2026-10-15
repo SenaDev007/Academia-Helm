@@ -55,6 +55,15 @@ const URL_TO_STORE: Array<{ pattern: RegExp; store: string }> = [
   // /api/chat/* (communication/chat.controller — Helm Connect messenger)
   //    Store 'chat' créé dans local-db.service.ts (V17 list).
   { pattern: /\/api\/chat\//, store: 'chat' },
+  // ⭐ 2026-10-15 — AUDIT MODULES RESTANTS : routes manquantes (miroir sw.js)
+  // /api/communication/* (templates, email-logs, whatsapp-logs, inbound-emails)
+  { pattern: /\/api\/communication\//, store: 'api_cache' },
+  // /api/federis/* (patronat portal — read-only → api_cache)
+  { pattern: /\/api\/federis\//, store: 'api_cache' },
+  // /api/public/admission/* (public admission form submission)
+  { pattern: /\/api\/public\/admission\//, store: 'api_cache' },
+  // /api/public/pre-enrollment/* (public pre-enrollment)
+  { pattern: /\/api\/public\/pre-enrollment\//, store: 'api_cache' },
   // /api/admission-settings (tenant-website/admission-settings.controller)
   { pattern: /\/api\/admission-settings/, store: 'api_cache' },
   // /api/tenant-website/* (public + admin tenant website settings)
@@ -227,11 +236,7 @@ const URL_TO_STORE: Array<{ pattern: RegExp; store: string }> = [
   { pattern: /\/api\/infirmary\/medication-stocks/, store: 'infirmarymedicationstock' },
   { pattern: /\/api\/infirmary\/settings/, store: 'infirmarysetting' },
 
-  // ─── QHSE ───
-  { pattern: /\/api\/qhse\/audits/, store: 'qhseaudit' },
-  { pattern: /\/api\/qhse\/incidents/, store: 'qhseincident' },
-  { pattern: /\/api\/qhse\/risks/, store: 'qhserisk' },
-  { pattern: /\/api\/qhse\/action-plans/, store: 'qhseactionplan' },
+  // 🗑️ 2026-10-15 — QHSE module SUPPRIMÉ définitivement — routes retirées.
 
   // ─── EduCast ───
   { pattern: /\/api\/educast\/contents/, store: 'educastcontent' },

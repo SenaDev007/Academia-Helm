@@ -183,6 +183,13 @@ function getApiOrigin() {
   return apiOriginOverride || deriveApiOrigin();
 }
 
+// v4.17.0 : (audit modules restants 15/10/2026) ROUTE_TABLES — 5 routes
+//    manquantes ajoutées (communication, federis, public/admission,
+//    public/pre-enrollment) pour couvrir les 5 modules restants (Vie
+//    Scolaire, Helm Connect, Patronat, Site institutionnel, Admissions).
+//    QHSE module SUPPRIMÉ définitivement (routes + composants frontend) —
+//    4 routes QHSE retirées de ROUTE_TABLES et store-names.ts.
+
 // v4.16.0 : (audit shells/rôles 14/10/2026) ROUTE_TABLES — 12 routes
 //    manquantes ajoutées pour couvrir les UI spécifiques par rôle
 //    (Discipline/Surveillant, Censeur, Parent, Admissions). Avant :
@@ -348,7 +355,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.16.0';
+const SW_VERSION = 'v4.17.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -2514,6 +2521,18 @@ const ROUTE_TABLES = [
   //    announcements, invitations, blocks, profile, presence, reactions)
   //    Store 'chat' créé dans local-db.service.ts (V17 list).
   [/^\/api\/chat\//, 'chat'],
+  // ⭐ 2026-10-15 — AUDIT MODULES RESTANTS : routes manquantes ajoutées
+  //    pour Helm Connect (communication email/WhatsApp), Patronat (federis),
+  //    Site institutionnel (public), Admissions (public pre-enrollment).
+  //    /api/communication/* (templates, email-logs, whatsapp-logs, inbound-emails)
+  [/^\/api\/communication\//, 'api_cache'],
+  //    /api/federis/* (patronat portal — controllers federis/*)
+  //    Read-only pour le frontend (grades, exams, schools, candidats) → api_cache.
+  [/^\/api\/federis\//, 'api_cache'],
+  //    /api/public/admission/submit (public admission form submission)
+  [/^\/api\/public\/admission\//, 'api_cache'],
+  //    /api/public/pre-enrollment/* (public pre-enrollment)
+  [/^\/api\/public\/pre-enrollment\//, 'api_cache'],
   //    /api/admission-settings (tenant-website/admission-settings.controller)
   //    Configurations admission (steps + documents) — settings read/write
   [/^\/api\/admission-settings/, 'api_cache'],
@@ -2906,10 +2925,7 @@ const ROUTE_TABLES = [
   [/^\/api\/infirmary\/medical-records/, 'infirmarymedicalrecord'],
   [/^\/api\/infirmary\/medication-stocks/, 'infirmarymedicationstock'],
   [/^\/api\/infirmary\/settings/, 'infirmarysetting'],
-  [/^\/api\/qhse\/audits/, 'qhseaudit'],
-  [/^\/api\/qhse\/incidents/, 'qhseincident'],
-  [/^\/api\/qhse\/risks/, 'qhserisk'],
-  [/^\/api\/qhse\/action-plans/, 'qhseactionplan'],
+  // 🗑️ 2026-10-15 — QHSE module SUPPRIMÉ définitivement — routes retirées.
 
   // ─── EduCast / Boutique / Bibliothèque ───
   // ⭐ 2026-10-14 — AUDIT ACADEMIA SHOP : 11 routes Shop manquantes

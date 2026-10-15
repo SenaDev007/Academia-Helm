@@ -21,7 +21,7 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Search, Filter,
   CheckCircle2, XCircle, Clock,
@@ -39,6 +39,8 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
+// ⭐ 2026-10-15 — Pattern Finance : sélection classe → liste élèves → sélection élève
+import { useAppSession } from '@/contexts/AppSessionContext';
 
 interface EnrollmentItem {
   id: string;
@@ -71,17 +73,65 @@ const emptyEnrollmentForm: NewEnrollmentFormData = { studentId: '', regime: 'STA
 export default function CanteenEnrollments() {
   const { academicYear } = useModuleContext();
   const { toast } = useToast();
+  const { user } = useAppSession();
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [formData, setFormData] = useState<NewEnrollmentFormData>(emptyEnrollmentForm);
   const [submitting, setSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // ⭐ 2026-10-15 — Pattern Finance : sélection classe → liste élèves
+  const [classes, setClasses] = useState<any[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState<string>('');
+  const [students, setStudents] = useState<any[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [studentSearch, setStudentSearch] = useState('');
+
   const { data: enrollments, loading, error, refetch } = useModulesList<EnrollmentItem>(
     'canteen',
     'enrollments',
     academicYear?.id,
     search ? { search } : undefined,
   );
+
+  // ⭐ Charger les classes (pattern Finance)
+  useEffect(() => {
+    if (!academicYear?.id || !user) return;
+    fetch(`/api/all-classes?academicYearId=${academicYear.id}`, { credentials: 'include' })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        setClasses(Array.isArray(data) ? data : []);
+      })
+      .catch(() => setClasses([]));
+  }, [academicYear?.id, user]);
+
+  // ⭐ Charger les élèves de la classe sélectionnée
+  useEffect(() => {
+    if (!selectedClassId || !academicYear?.id) {
+      setStudents([]);
+      return;
+    }
+    setStudentsLoading(true);
+    fetch(`/api/students?classId=${selectedClassId}&academicYearId=${academicYear.id}&limit=200`, {
+      credentials: 'include',
+    })
+      .then(res => res.ok ? res.json() : [])
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data?.students || data?.data || []);
+        setStudents(list);
+      })
+      .catch(() => setStudents([]))
+      .finally(() => setStudentsLoading(false));
+  }, [selectedClassId, academicYear?.id]);
+
+  // ⭐ Filtrer les élèves par recherche
+  const filteredStudents = students.filter((s: any) => {
+    if (!studentSearch) return true;
+    const name = `${s.firstName || ''} ${s.lastName || ''}`.toLowerCase();
+    const matricule = (s.matricule || '').toLowerCase();
+    const q = studentSearch.toLowerCase();
+    return name.includes(q) || matricule.includes(q);
+  });
 
   const handleCreate = async () => {
     try {
@@ -264,43 +314,121 @@ export default function CanteenEnrollments() {
         )}
       </Card>
 
-      {/* Modal Inscrire un élève */}
+      {/* Modal Inscrire un élève — Pattern Finance (sélection classe → liste élèves) */}
       <Dialog open={modalOpen} onOpenChange={setModalOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Inscrire un élève</DialogTitle>
+            <DialogTitle>Inscrire un élève à la cantine</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
+          <div className="space-y-4 py-2">
+            {/* Étape 1 : Sélection de la classe */}
             <div className="space-y-1.5">
-              <Label htmlFor="enr-student">Élève (ID)</Label>
-              <Input
-                id="enr-student"
-                type="text"
-                placeholder="ex : student-123"
-                value={formData.studentId}
-                onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="enr-regime">Régime alimentaire</Label>
+              <Label htmlFor="enr-class">Classe</Label>
               <select
-                id="enr-regime"
-                value={formData.regime}
-                onChange={(e) => setFormData({ ...formData, regime: e.target.value })}
+                id="enr-class"
+                value={selectedClassId}
+                onChange={(e) => {
+                  setSelectedClassId(e.target.value);
+                  setFormData({ ...formData, studentId: '' });
+                }}
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
               >
-                <option value="STANDARD">Standard</option>
-                <option value="VEGETARIEN">Végétarien</option>
-                <option value="SANS_PORC">Sans porc</option>
-                <option value="SANS_GLUTEN">Sans gluten</option>
+                <option value="">— Sélectionner une classe —</option>
+                {classes.map((cls: any) => (
+                  <option key={cls.id} value={cls.id}>
+                    {cls.name || cls.className || `Classe ${cls.id.substring(0, 8)}`}
+                  </option>
+                ))}
               </select>
             </div>
+
+            {/* Étape 2 : Recherche + liste des élèves */}
+            {selectedClassId && (
+              <div className="space-y-2">
+                <Label>Élève</Label>
+                <div className="relative">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <Input
+                    type="text"
+                    value={studentSearch}
+                    onChange={(e) => setStudentSearch(e.target.value)}
+                    placeholder="Rechercher par nom ou matricule..."
+                    className="pl-10 w-full"
+                  />
+                </div>
+
+                {studentsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                    <span className="ml-2 text-sm text-gray-600">Chargement des élèves...</span>
+                  </div>
+                ) : filteredStudents.length === 0 ? (
+                  <div className="text-center py-6 text-sm text-gray-500">
+                    Aucun élève trouvé dans cette classe.
+                  </div>
+                ) : (
+                  <div className="border border-slate-200 rounded-lg max-h-48 overflow-y-auto">
+                    {filteredStudents.map((s: any) => {
+                      const isSelected = formData.studentId === s.id;
+                      const fullName = `${s.firstName || ''} ${s.lastName || ''}`.trim();
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => setFormData({ ...formData, studentId: s.id })}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition border-b border-slate-100 last:border-b-0 ${
+                            isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                            isSelected ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-600'
+                          }`}>
+                            {fullName.split(' ').map(n => n[0]).join('').substring(0, 2)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`font-semibold truncate ${isSelected ? 'text-blue-700' : 'text-slate-900'}`}>
+                              {fullName}
+                            </p>
+                            <p className="text-xs text-slate-500">{s.matricule || '—'}</p>
+                          </div>
+                          {isSelected && <CheckCircle2 className="w-4 h-4 text-blue-600 flex-shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Étape 3 : Régime alimentaire */}
+            {formData.studentId && (
+              <div className="space-y-1.5">
+                <Label htmlFor="enr-regime">Régime alimentaire</Label>
+                <select
+                  id="enr-regime"
+                  value={formData.regime}
+                  onChange={(e) => setFormData({ ...formData, regime: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <option value="STANDARD">Standard</option>
+                  <option value="VEGETARIEN">Végétarien</option>
+                  <option value="SANS_PORC">Sans porc</option>
+                  <option value="SANS_GLUTEN">Sans gluten</option>
+                </select>
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setModalOpen(false)} disabled={submitting}>
+            <Button variant="outline" onClick={() => {
+              setModalOpen(false);
+              setSelectedClassId('');
+              setFormData(emptyEnrollmentForm);
+            }} disabled={submitting}>
               Annuler
             </Button>
-            <Button onClick={handleCreate} disabled={submitting}>
+            <Button
+              onClick={handleCreate}
+              disabled={submitting || !formData.studentId}
+            >
               {submitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               {submitting ? 'Envoi…' : 'Inscrire'}
             </Button>

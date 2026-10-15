@@ -232,10 +232,13 @@ const SETTINGS_HIDDEN_MODULE_CODES = new Set<string>([
   'CMS',        // Site Institutionnel
   'LIBRARY',    // Bibliothèque — non disponible
   'TRANSPORT',  // Transport — non disponible
-  'QHSE',       // QHSE
+  'QHSE',       // QHSE — supprimé définitivement
   'ORION',      // ORION
   'ATLAS',      // ATLAS
   'OFFLINE_SYNC', // Synchronisation en ligne
+  // ⭐ 2026-10-15 — Infirmerie et EduCast temporairement masqués (pas encore fonctionnels)
+  'INFIRMARY',  // Infirmerie — pas encore activé
+  'EDUCAST',    // EduCast — temporairement désactivé
 ]);
 
 const SCHOOL_IDENTITY_UPDATED_EVENT = 'settings-school-identity-updated';
@@ -4779,9 +4782,11 @@ export default function SettingsPage() {
           // 'CMS',          // Site Institutionnel — masqué
           // 'LIBRARY',      // Bibliothèque — module non disponible pour l'instant
           // 'TRANSPORT',    // Transport — module non disponible pour l'instant
-          'CANTEEN', 'INFIRMARY',
+          'CANTEEN',
+          // 'INFIRMARY',  // Infirmerie — masqué (pas encore fonctionnel)
           // 'QHSE',         // QHSE — masqué
-          'EDUCAST', 'SHOP',
+          // 'EDUCAST', 'SHOP',  // EduCast — masqué (temporairement désactivé)
+          'SHOP',
           // 'ORION',        // ORION — masqué
           // 'ATLAS',        // ATLAS — masqué
           // 'OFFLINE_SYNC', // Synchronisation en ligne — masquée
@@ -4797,9 +4802,9 @@ export default function SettingsPage() {
           // LIBRARY: 'Bibliothèque',         // masqué
           // TRANSPORT: 'Transport',          // masqué
           CANTEEN: 'Cantine',
-          INFIRMARY: 'Infirmerie',
+          // INFIRMARY: 'Infirmerie',  // masqué
           // QHSE: 'QHSE',                    // masqué
-          EDUCAST: 'EduCast',
+          // EDUCAST: 'EduCast',              // masqué
           SHOP: 'Academia Shop',
           // ORION: 'ORION',                  // masqué
           // ATLAS: 'ATLAS',                  // masqué

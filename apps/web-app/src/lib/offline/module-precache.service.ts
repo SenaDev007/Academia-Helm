@@ -207,8 +207,14 @@ const MODULE_ROUTES: string[] = [
 const BATCH_SIZE = 5; // 5 routes en parallèle
 // (le fetch effectif est fait par le SW — timeout 10 s côté sw.js precacheModule)
 
-/** ⭐ v3.4.0 — Attente max des ACK du SW par passe (fetch 10 s + marge). */
-const ACK_TIMEOUT_MS = 30000;
+/** ⭐ v3.4.0 — Attente max des ACK du SW par passe (fetch 10 s + marge).
+ *  ⭐ 2026-10-15 — FIX BLOCAGE 35% : réduit de 30s à 15s par passe.
+ *    Avant : 3 passes × 30s = 90s d'attente pour 4 routes qui échouent →
+ *    l'utilisateur restait bloqué 90s sur l'écran de chargement.
+ *    Maintenant : 3 passes × 15s = 45s max, et on continue même si
+ *    quelques routes échouent (le flag n'est pas posé, retry au prochain
+ *    chargement — c'est non-bloquant pour l'utilisateur). */
+const ACK_TIMEOUT_MS = 15000;
 /** ⭐ v3.4.0 — Passe initiale + 2 retries pour les routes échouées. */
 const MAX_PASSES = 3;
 /** ⭐ v3.4.0 — Taux de réussite minimum pour poser le flag 24 h. */

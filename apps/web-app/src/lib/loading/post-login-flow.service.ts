@@ -212,11 +212,25 @@ export async function executePostLoginFlow(
 
         if (tenant?.id) {
           // Outbox check — rapide, on l'attend
+          // ⭐ 2026-10-15 — FIX BLOCAGE 35% : timeout 3s sur getPendingEvents
+          //    Si IndexedDB est bloqué par le SW precache, on ne reste pas
+          //    bloqué indéfiniment — on retourne 0 pending operations après 3s.
           offlineTasks.push(
             import('@/lib/offline/outbox.service').then(async ({ outboxService }) => {
-              const pendingEvents = await outboxService.getPendingEvents(tenant!.id);
+              const pendingEvents = await Promise.race([
+                outboxService.getPendingEvents(tenant!.id),
+                new Promise<never>((_, reject) =>
+                  setTimeout(() => reject(new Error('outbox timeout')), 3000)
+                ),
+              ]);
               pendingOperations = pendingEvents.length;
-            }).catch((error) => console.error('Failed to check pending operations:', error))
+            }).catch((error) => {
+              if (error?.message === 'outbox timeout') {
+                console.warn('[PostLogin] Outbox check timed out after 3s — continuing with 0 pending');
+              } else {
+                console.error('Failed to check pending operations:', error);
+              }
+            })
           );
         }
 

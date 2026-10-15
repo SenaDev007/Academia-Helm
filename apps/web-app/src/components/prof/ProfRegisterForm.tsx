@@ -18,7 +18,6 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import {
   GraduationCap,
   Loader2,
@@ -81,7 +80,6 @@ interface RegisterErrors {
 const TOTAL_STEPS = 3;
 
 export function ProfRegisterForm() {
-  const searchParams = useSearchParams();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     firstName: '',
@@ -173,10 +171,13 @@ export function ProfRegisterForm() {
       } as any);
 
       markFreshLogin();
-      const redirect = searchParams.get('redirect');
-      window.location.href = redirect && redirect.startsWith('/prof')
-        ? redirect
-        : '/prof/dashboard';
+      // ⭐ ONBOARDING PAYANT : après la création du compte, l'enseignant est
+      //    orienté vers la page de paiement (2 000 FCFA/mois) pour activer son
+      //    compteur — le décompte de 30 jours est enregistré depuis la création
+      //    du compte (pattern patronat : inscription → checkout).
+      //    Un éventuel ?redirect= prof est ignoré : le paiement d'activation
+      //    prime sur la destination initiale.
+      window.location.href = '/prof/checkout';
     } catch (error: any) {
       clearClientSessionSync();
       setErrors({ submit: error?.message || 'Inscription impossible. Vérifiez votre connexion.' });
@@ -399,6 +400,23 @@ export function ProfRegisterForm() {
                 Vos classes et matières sont en cours d’installation. Dès la création de votre
                 espace, tout est prêt : cahier journal, fiches pédagogiques, cahier de textes,
                 évaluations, notes et bulletins.
+              </p>
+            </div>
+
+            {/* ⭐ Récapitulatif tarifaire — l'étape de paiement suit la création */}
+            <div className="rounded-xl border border-teal-200 bg-teal-50 p-5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">
+                Abonnement mensuel
+              </p>
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-2">
+                <span className="text-3xl font-extrabold text-slate-900">2 000</span>
+                <span className="text-sm font-medium text-slate-600">FCFA / mois</span>
+              </div>
+              <p className="mt-2 text-sm leading-relaxed text-teal-900">
+                Après la création de votre compte, vous serez orienté vers le paiement sécurisé
+                pour activer votre compteur : <strong>30 jours d’accès complet</strong>, décompte
+                enregistré dès la création de votre espace. Rappels automatiques par email 7 jours
+                puis 24 heures avant l’expiration, période de grâce de 7 jours.
               </p>
             </div>
 

@@ -202,6 +202,18 @@ const MODULE_ROUTES: string[] = [
   '/app/teacher/pedagogy',
   '/app/teacher/tasks',
   '/app/teacher/timetable',
+  // ─── ⭐ v4.18.0 — HELM ENSEIGNANT (portail autonome /prof/*) ───
+  //    Routes connectées du mini-SaaS enseignant : le SW ne les cache que
+  //    lorsqu'elles répondent 200 non-redirigées (session TEACHER active) —
+  //    les utilisateurs école sont redirigés vers /prof/login → ignorées.
+  //    ⚠️ PAS /prof/checkout (paiement : toujours frais, jamais pré-caché).
+  '/prof/dashboard',
+  '/prof/pedagogie',
+  '/prof/travaux',
+  '/prof/planification',
+  '/prof/examens',
+  '/prof/eleves',
+  '/prof/parametres',
 ];
 
 const BATCH_SIZE = 5; // 5 routes en parallèle
@@ -1158,6 +1170,20 @@ export function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContex
   if (isStaff) {
     urls.push(`/api/discipline/sanctions${qs({ academicYearId: year, schoolLevelId: levelParam, type: 'ACADEMIC' })}`);
     urls.push(`/api/exam-frauds${qs({ tenantId, academicYearId: year })}`);
+  }
+
+  // ═══ 4-bis. ⭐ v4.18.0 — HELM ENSEIGNANT (portail autonome /prof/*) ═══
+  //    Référentiels du mini-SaaS enseignant (axios cross-origin apiClient,
+  //    mêmes URLs exactes que celles émises au montage des pages /prof/*).
+  //    ⚠️ PAS /teacher-portal/checkout/* : passerelle de paiement, exclue du
+  //    SW (NEVER_INTERCEPT — honnêteté sur l'argent, spec §6).
+  if (portalType === 'TEACHER') {
+    if (apiBase) {
+      urls.push(`${apiBase}/teacher-portal/profile`);
+      urls.push(`${apiBase}/teacher-portal/evaluation-types`);
+      // /prof/examens : axios params {academicYearId, teacherId} (ordre sérialisé)
+      urls.push(`${apiBase}/institutional-exams/evaluations${qs({ academicYearId: year, teacherId })}`);
+    }
   }
 
   // ═══ 6. ÉLÈVES & SCOLARITÉ ═══

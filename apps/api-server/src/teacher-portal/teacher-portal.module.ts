@@ -25,8 +25,11 @@ import { PrismaService } from '../database/prisma.service';
 import { SettingsModule } from '../settings/settings.module';
 import { PedagogyModule } from '../pedagogy/pedagogy.module';
 import { PortalModule } from '../portal/portal.module';
+import { BillingModule } from '../billing/billing.module';
+import { CommunicationModule } from '../communication/communication.module';
 import { TeacherProvisioningService } from './services/teacher-provisioning.service';
 import { TeacherPortalAuthService } from './services/teacher-portal-auth.service';
+import { TeacherSubscriptionService } from './services/teacher-subscription.service';
 import { TeacherPortalController } from './controllers/teacher-portal.controller';
 
 @Module({
@@ -42,9 +45,13 @@ import { TeacherPortalController } from './controllers/teacher-portal.controller
     SettingsModule,
     PedagogyModule,
     PortalModule,
+    // ⭐ Abonnement 2 000 FCFA/mois — même widget FedaPay que le patronat :
+    //    FedaPayService (transactions + webhooks) + EmailService (rappels).
+    BillingModule,
+    CommunicationModule,
   ],
-  providers: [PrismaService, TeacherProvisioningService, TeacherPortalAuthService],
+  providers: [PrismaService, TeacherProvisioningService, TeacherPortalAuthService, TeacherSubscriptionService],
   controllers: [TeacherPortalController],
-  exports: [TeacherProvisioningService, TeacherPortalAuthService],
+  exports: [TeacherProvisioningService, TeacherPortalAuthService, TeacherSubscriptionService],
 })
 export class TeacherPortalModule {}

@@ -355,7 +355,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.17.0';
+const SW_VERSION = 'v4.18.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -468,6 +468,13 @@ const PRECACHE_URLS = [
   '/modules',
   '/contact',
   '/actualites',
+  // ⭐ v4.18.0 — HELM ENSEIGNANT : shell + pages marketing du portail
+  //    enseignant (le dashboard n'est caché à l'install QUE si la réponse
+  //    est 200 non-redirigée — session enseignant active, cf. anti-empoisonnement).
+  '/prof',
+  '/prof/login',
+  '/prof/register',
+  '/prof/dashboard',
 ];
 
 // Assets statiques mutables (images, uploads — versionnés, purge à chaque version)
@@ -492,6 +499,9 @@ const IMMUTABLE_ASSET_PATTERNS = [
 // Pages HTML dont le cache hors-ligne est AUTORISÉ (publiques + /promoteur
 // ⭐ v4.2.0 — vue stratégique session-required : les réponses redirigées ne
 // sont jamais cachées → pas d'empoisonnement par la page /login)
+// ⭐ v4.18.0 — HELM ENSEIGNANT : landing / login / register / callback de
+// paiement du portail enseignant (les routes CONNECTÉES /prof/* passent par
+// l'app-shell dédié — cf. isProfConnectedNavigation, AVANT cette liste).
 const CACHEABLE_HTML_PATTERNS = [
   /^\/$/, // site institutionnel (racine du sous-domaine)
   /^\/promoteur(\/|$)/, // ⭐ v4.2.0 — vue stratégique promoteur (session requise : la page redirige les non-stratégiques → la copie n'est PAS cachée)
@@ -502,6 +512,7 @@ const CACHEABLE_HTML_PATTERNS = [
   /^\/actualites(\/|$)/,
   /^\/public\/pre-enrollment(\/|$)/, // pré-inscription
   /^\/federis(\/|$)/,
+  /^\/prof(\/|$)/, // ⭐ v4.18.0 — portail enseignant (marketing + callback paiement)
   /^\/en(\/|$)/,
   /^\/contact(\/|$)/,
   /^\/tarification(\/|$)/,
@@ -517,6 +528,11 @@ const NEVER_INTERCEPT = [
   //    sessions, files d'attente). Les AUTRES /api/* GET passent désormais par
   //    handleApiGet (NetworkFirst + cache identitaire + fallback offline).
   /^\/api\/(auth|admin-auth|school-auth|portal\/auth|sync|webhooks?|billing\/webhook|health|monitoring)(\/|$)/,
+  // ⭐ v4.18.0 — HELM ENSEIGNANT : passerelles de paiement du portail
+  //    enseignant (initiation checkout, vérification post-paiement, webhook
+  //    FedaPay) — JAMAIS interceptées ni mises en file (honnêteté sur
+  //    l'argent, spec §6, mêmes règles que fedapay/feexpay ci-dessous).
+  /^\/api\/teacher-portal\/(checkout|public)(\/|$)/,
   // ⭐ V4.0 — PASSERELLES DE PAIEMENT EXTERNES (Fedapay/FeexPay) : JAMAIS
   //    interceptées, ni en lecture ni en écriture. L'argent passe par des
   //    transactions externes qui ne peuvent être « rejouées » localement —
@@ -607,6 +623,15 @@ self.addEventListener('activate', (event) => {
         if (shellRes && shellRes.url && !shellRes.url.endsWith('/app')) {
           await pages.delete('/app');
           console.warn('[SW] Entrée /app empoisonnée supprimée (final url:', shellRes.url + ')');
+        }
+        // ⭐ v4.18.0 — même self-heal pour le shell enseignant /prof/dashboard.
+        const profShellRes = await pages.match('/prof/dashboard');
+        if (profShellRes && profShellRes.url && !profShellRes.url.endsWith('/prof/dashboard')) {
+          await pages.delete('/prof/dashboard');
+          console.warn(
+            '[SW] Entrée /prof/dashboard empoisonnée supprimée (final url:',
+            profShellRes.url + ')',
+          );
         }
       } catch { /* non-bloquant */ }
 
@@ -844,10 +869,11 @@ self.addEventListener('fetch', (event) => {
     request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html');
 
   if (isHtmlNavigation) {
-    // ⭐ PATTERN APP-SHELL : les navigations /app/* passent par le shell
-    //    pré-caché → l'app React démarre depuis le cache, les données viennent
-    //    d'IndexedDB. AUCUNE page « hors ligne » n'est jamais substituée.
-    if (pathname.startsWith('/app')) {
+    // ⭐ PATTERN APP-SHELL : les navigations /app/* ET /prof/* connectées
+    //    passent par le shell pré-caché → l'app React démarre depuis le
+    //    cache, les données viennent d'IndexedDB. AUCUNE page « hors ligne »
+    //    n'est jamais substituée. (v4.18.0 : idem pour le portail enseignant.)
+    if (pathname.startsWith('/app') || isProfConnectedNavigation(pathname)) {
       trackedRespondWith(event, handleAppShellNavigation(request));
       return;
     }
@@ -2093,6 +2119,37 @@ function isAppNavigation(pathname) {
   return pathname === '/app' || pathname === '/app/' || pathname.startsWith('/app/');
 }
 
+/** ⭐ v4.18.0 — HELM ENSEIGNANT : routes CONNECTÉES du portail /prof/*.
+ *    Même traitement app-shell que /app/* : hors ligne, la route exacte
+ *    cachée est servie, sinon le SHELL /prof/dashboard (l'app React démarre,
+ *    les données viennent d'IndexedDB — AUCUNE page « sans connexion »).
+ *    Les pages marketing (/prof, /prof/login, /prof/register) et le callback
+ *    de paiement (/prof/checkout/success) restent des pages publiques
+ *    (CACHEABLE_HTML_PATTERNS) ; /prof/checkout (paiement) nécessite le
+ *    réseau — il n'est ni shellé ni caché (honnêteté sur l'argent). */
+const PROF_CONNECTED_PREFIXES = [
+  '/prof/dashboard',
+  '/prof/pedagogie',
+  '/prof/travaux',
+  '/prof/examens',
+  '/prof/planification',
+  '/prof/parametres',
+  '/prof/eleves',
+  '/prof/emploi-du-temps',
+];
+const PROF_SHELL_PATH = '/prof/dashboard';
+
+function isProfConnectedNavigation(pathname) {
+  return PROF_CONNECTED_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(prefix + '/'),
+  );
+}
+
+/** Shell de repli selon le portail : /app (écoles) ou /prof/dashboard (enseignant). */
+function shellPathFor(pathname) {
+  return isProfConnectedNavigation(pathname) ? PROF_SHELL_PATH : '/app';
+}
+
 /** Injecte dans le HTML du shell un script de rechargement de la vraie route
  *  au retour du réseau. Garde anti-boucle : max 2 rechargements auto par URL
  *  et par session onglet (sessionStorage).
@@ -2195,6 +2252,11 @@ async function trackBuildEpochFromHtml(html) {
 async function handleAppShellNavigation(request) {
   const cache = await caches.open(PAGE_CACHE);
   const url = new URL(request.url);
+  // ⭐ v4.18.0 — shell selon le portail : /app (écoles) ou /prof/dashboard
+  //    (portail enseignant autonome — même garantie « jamais de page
+  //    connexion indisponible » que /app/*).
+  const shellPath = shellPathFor(url.pathname);
+  const isShellRoute = url.pathname === shellPath || url.pathname === shellPath + '/';
 
   // ⭐ ÉTAPE 1 : hors ligne (navigator.onLine === false) → cache immédiat
   //    (zéro latence — pas de timeout inutile, pas de page blanche)
@@ -2202,14 +2264,12 @@ async function handleAppShellNavigation(request) {
     // ⭐ v3.4.0 — cascade exact → ignoreSearch (liens ?tenant=…)
     const cachedExact = await matchRouteCache(cache, request);
     if (cachedExact) return cachedExact;
-    // ⭐ v3.5.0 — shell /app pour TOUTE route /app/* non cachée : l'app
-    //    démarre depuis le cache, l'utilisateur continue à travailler
-    //    (JAMAIS de page « connexion indisponible » pour l'app).
-    const cachedShell = await matchRouteCache(cache, '/app');
+    // ⭐ v3.5.0 — shell pour TOUTE route /app/* (ou /prof/* connectée) non
+    //    cachée : l'app démarre depuis le cache, l'utilisateur continue à
+    //    travailler (JAMAIS de page « connexion indisponible » pour l'app).
+    const cachedShell = await matchRouteCache(cache, shellPath);
     if (cachedShell) {
-      return url.pathname === '/app' || url.pathname === '/app/'
-        ? cachedShell
-        : shellWithRecoveryScript(cachedShell);
+      return isShellRoute ? cachedShell : shellWithRecoveryScript(cachedShell);
     }
   }
 
@@ -2223,18 +2283,19 @@ async function handleAppShellNavigation(request) {
       //    ⚠️ PAS de cache des réponses REDIRIGÉES (session expirée → le
       //    middleware renvoie la page login : l'embarquer sous la clé du
       //    module empoisonnerait le cache offline).
-      //    ⭐ v4.6.0 — SHELL PROPRE : pour /app exactement, on écrit AUSSI
-      //    la clé SANS query («/app») — c'est celle que le fallback shell
-      //    (matchRouteCache('/app')) consulte hors ligne. Avant, seule la
-      //    clé avec ?tenant=… était écrite → le fallback tombait sur
-      //    l'entrée du pré-cache d'install (potentiellement empoisonnée
-      //    par le HTML de login de l'ancien cache.add).
+      //    ⭐ v4.6.0 — SHELL PROPRE : pour la route shell EXACTE (/app ou
+      //    /prof/dashboard), on écrit AUSSI la clé SANS query — c'est celle
+      //    que le fallback shell (matchRouteCache(shellPath)) consulte hors
+      //    ligne. Avant, seule la clé avec ?tenant=… était écrite → le
+      //    fallback tombait sur l'entrée du pré-cache d'install
+      //    (potentiellement empoisonnée par le HTML de login de l'ancien
+      //    cache.add).
       toCacheableCopy(networkResponse)
         .then((copy) => {
           const writes = [cache.put(request, copy)];
-          if (url.pathname === '/app' || url.pathname === '/app/') {
-            writes.push(cache.put(new Request(url.origin + '/app'), copy.clone()));
-            // ⭐ v4.8.0 — ÉPOCH DE BUILD : le shell /app frais vient d'être
+          if (isShellRoute) {
+            writes.push(cache.put(new Request(url.origin + shellPath), copy.clone()));
+            // ⭐ v4.8.0 — ÉPOCH DE BUILD : le shell frais vient d'être
             //    servi en ligne → on hache son ensemble de chunks ; si le build
             //    a changé depuis le dernier pré-cache (déploiement Vercel sans
             //    bump de sw.js), on diffuse BUILD_EPOCH_CHANGED → le client
@@ -2258,21 +2319,23 @@ async function handleAppShellNavigation(request) {
     // ⭐ v3.4.0 — cascade exact → ignoreSearch (liens ?tenant=…)
     const cachedExact = await matchRouteCache(cache, request);
     if (cachedExact) return cachedExact;
-    // ⭐ v3.5.0 — shell /app pour TOUTE route /app/* (cf. ÉTAPE 1) : l'app
-    //    reste utilisable + rechargement auto de la vraie route quand le
-    //    serveur répond à nouveau.
-    const cachedShell = await matchRouteCache(cache, '/app');
+    // ⭐ v3.5.0 — shell pour TOUTE route /app/* (ou /prof/* connectée — cf.
+    //    ÉTAPE 1) : l'app reste utilisable + rechargement auto de la vraie
+    //    route quand le serveur répond à nouveau.
+    const cachedShell = await matchRouteCache(cache, shellPath);
     if (cachedShell) {
-      return url.pathname === '/app' || url.pathname === '/app/'
-        ? cachedShell
-        : shellWithRecoveryScript(cachedShell);
+      return isShellRoute ? cachedShell : shellWithRecoveryScript(cachedShell);
     }
     // Dernier recours ABSOLU (shell pas encore pré-caché, ex. SW fraîchement
-    // installé offline) : redirection immédiate vers /app — le shell y sera
-    // servi depuis le pré-cache d'installation (PRECACHE_URLS inclut /app).
-    // Si même /app échoue, offlineMinimalResponse prendra le relai.
-    if (isAppNavigation(url.pathname) && url.pathname !== '/app' && url.pathname !== '/app/') {
-      return Response.redirect(new URL('/app', url.origin).toString(), 302);
+    // installé offline) : redirection immédiate vers le shell du portail —
+    // il y sera servi depuis le pré-cache d'installation (PRECACHE_URLS
+    // inclut /app et /prof/dashboard).
+    // Si même le shell échoue, offlineMinimalResponse prendra le relai.
+    if (
+      (isAppNavigation(url.pathname) || isProfConnectedNavigation(url.pathname)) &&
+      !isShellRoute
+    ) {
+      return Response.redirect(new URL(shellPath, url.origin).toString(), 302);
     }
     return offlineMinimalResponse(url.pathname);
   }

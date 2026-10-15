@@ -38,6 +38,12 @@ interface BackendResponse {
   token: string;
   sessionId: string;
   portalType: string;
+  /** ⭐ État d'abonnement (compte inactif → page de paiement). */
+  subscription?: {
+    status: string;
+    currentPeriodEnd: string | null;
+    daysRemaining: number | null;
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -120,6 +126,9 @@ export async function POST(request: NextRequest) {
       accessToken: data.token,
       portalSessionId: data.sessionId,
       expiresAt,
+      // ⭐ État d'abonnement : compte inactif (fin de grâce) → le formulaire
+      //    redirige vers /prof/checkout?reactivate=1 (page de paiement).
+      subscription: data.subscription ?? null,
     });
   } catch (error: any) {
     console.error('Teacher-portal login BFF error:', error);

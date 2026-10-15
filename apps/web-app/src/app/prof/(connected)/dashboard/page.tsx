@@ -48,8 +48,13 @@ interface ProfProfile {
     plan: string;
     status: string;
     billingCycle: string;
+    monthlyAmount?: number;
+    currentPeriodStart?: string | null;
     currentPeriodEnd: string | null;
+    gracePeriodEnd?: string | null;
+    lastPaymentDate?: string | null;
     trialEnd: string | null;
+    daysRemaining?: number | null;
   } | null;
   stats: { classes: number; subjects: number; students: number };
 }
@@ -152,6 +157,11 @@ export default function ProfDashboardPage() {
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           {error}
         </div>
+      )}
+
+      {/* ── Bandeau abonnement (compteur) ── */}
+      {profile && (
+        <SubscriptionBannerCard subscription={profile.subscription} />
       )}
 
       {profile && (
@@ -261,6 +271,100 @@ export default function ProfDashboardPage() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * ⭐ Bandeau abonnement du tableau de bord — compteur activé / décompte /
+ * grâce / inactivation, avec CTA vers la page de paiement (2 000 FCFA/mois).
+ * Compact et 100 % responsive (empilement mobile, pas de texte tronqué).
+ */
+function SubscriptionBannerCard({ subscription }: { subscription: ProfProfile['subscription'] }) {
+  const status = String(subscription?.status ?? '').toUpperCase();
+  const days = Number(subscription?.daysRemaining ?? 0);
+  const periodEnd = subscription?.currentPeriodEnd
+    ? new Date(subscription.currentPeriodEnd).toLocaleDateString('fr-FR', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : null;
+
+  // Pas d'abonnement → carte d'activation (onboarding non finalisé)
+  if (!subscription || status === 'TRIAL') {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-teal-200 bg-white p-5">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-100 text-teal-700">
+            <Calculator className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-slate-900">
+              Activez votre abonnement — 2 000 FCFA / mois
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Compteur de 30 jours dès le paiement · rappels par email avant expiration · 7 jours
+              de grâce.
+            </p>
+          </div>
+        </div>
+        <Link
+          href="/prof/checkout"
+          className="shrink-0 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
+        >
+          Activer maintenant
+        </Link>
+      </div>
+    );
+  }
+
+  const isSuspended = status === 'SUSPENDED' || status === 'BLOCKED';
+  const isGrace = status === 'GRACE_PERIOD';
+  const expiringSoon = days <= 7;
+
+  const styles = isSuspended
+    ? 'border-red-200 bg-red-50'
+    : isGrace || expiringSoon
+      ? 'border-amber-200 bg-amber-50'
+      : 'border-teal-200 bg-white';
+  const icon = isSuspended ? (
+    <AlertCircle className="h-5 w-5 text-red-600" />
+  ) : isGrace || expiringSoon ? (
+    <CalendarDays className="h-5 w-5 text-amber-600" />
+  ) : (
+    <CheckCircle2 className="h-5 w-5 text-teal-600" />
+  );
+  const title = isSuspended
+    ? 'Compte inactif — réactivation requise'
+    : isGrace
+      ? 'Période de grâce — renouvelez avant inactivation'
+      : expiringSoon
+        ? `Votre abonnement expire dans ${days} jour${days > 1 ? 's' : ''}`
+        : 'Compteur activé';
+  const detail = isSuspended
+    ? 'Vos données sont conservées. Un paiement réactive votre espace pour 30 nouveaux jours.'
+    : `Valide jusqu’au ${periodEnd ?? '—'}${days > 0 ? ` · ${days} jour${days > 1 ? 's' : ''} restants` : ''}`;
+
+  return (
+    <div className={`flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-5 ${styles}`}>
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 shrink-0">{icon}</div>
+        <div>
+          <p className="text-sm font-semibold text-slate-900">{title}</p>
+          <p className="mt-0.5 text-xs text-slate-600">{detail}</p>
+        </div>
+      </div>
+      <Link
+        href={`/prof/checkout?${isSuspended ? 'reactivate=1' : 'renew=1'}`}
+        className={`shrink-0 rounded-lg px-4 py-2 text-sm font-semibold text-white ${
+          isSuspended || isGrace || expiringSoon
+            ? 'bg-amber-600 hover:bg-amber-700'
+            : 'bg-teal-600 hover:bg-teal-700'
+        }`}
+      >
+        {isSuspended ? 'Réactiver — 2 000 FCFA' : 'Renouveler — 2 000 FCFA'}
+      </Link>
     </div>
   );
 }

@@ -290,7 +290,7 @@ export default function ProfElevesPage() {
 
       {/* ── Liste des élèves ── */}
       <div className="rounded-2xl border border-slate-200 bg-white">
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-4 sm:px-6">
           <h2 className="text-base font-semibold text-slate-900">
             Élèves de {selectedClass?.className || '…'}
           </h2>
@@ -316,25 +316,25 @@ export default function ProfElevesPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="px-6 py-3 font-semibold">#</th>
-                  <th className="px-6 py-3 font-semibold">Matricule</th>
-                  <th className="px-6 py-3 font-semibold">Prénom</th>
-                  <th className="px-6 py-3 font-semibold">Nom</th>
-                  <th className="px-6 py-3 font-semibold">Genre</th>
-                  <th className="px-6 py-3 font-semibold text-right">Action</th>
+                  <th className="px-3 py-3 font-semibold sm:px-6">#</th>
+                  <th className="px-3 py-3 font-semibold sm:px-6">Matricule</th>
+                  <th className="px-3 py-3 font-semibold sm:px-6">Prénom</th>
+                  <th className="px-3 py-3 font-semibold sm:px-6">Nom</th>
+                  <th className="px-3 py-3 font-semibold sm:px-6">Genre</th>
+                  <th className="px-3 py-3 text-right font-semibold sm:px-6">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {students.map((student, index) => (
                   <tr key={student.id} className="border-b border-slate-100 last:border-0">
-                    <td className="px-6 py-3 text-slate-400">{index + 1}</td>
-                    <td className="px-6 py-3 font-mono text-xs text-slate-500">
+                    <td className="px-3 py-3 text-slate-400 sm:px-6">{index + 1}</td>
+                    <td className="whitespace-nowrap px-3 py-3 font-mono text-xs text-slate-500 sm:px-6">
                       {student.matricule || '—'}
                     </td>
-                    <td className="px-6 py-3 font-medium text-slate-900">{student.firstName}</td>
-                    <td className="px-6 py-3 text-slate-900">{student.lastName}</td>
-                    <td className="px-6 py-3 text-slate-500">{student.gender || '—'}</td>
-                    <td className="px-6 py-3 text-right">
+                    <td className="px-3 py-3 font-medium text-slate-900 sm:px-6">{student.firstName}</td>
+                    <td className="px-3 py-3 text-slate-900 sm:px-6">{student.lastName}</td>
+                    <td className="px-3 py-3 text-slate-500 sm:px-6">{student.gender || '—'}</td>
+                    <td className="px-3 py-3 text-right sm:px-6">
                       <button
                         onClick={() => removeStudent(student.id)}
                         className="rounded-lg p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"

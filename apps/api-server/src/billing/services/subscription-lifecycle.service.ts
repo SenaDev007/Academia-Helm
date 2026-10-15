@@ -18,11 +18,16 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ModuleRef } from '@nestjs/core';
 import { PrismaService } from '../../database/prisma.service';
 import { EmailService } from '../../communication/services/email.service';
 import { WhatsAppService } from '../../communication/services/whatsapp.service';
 import { StudentCountVerifierService } from './student-count-verifier.service';
 import { PricingService } from './pricing.service';
+import {
+  TeacherSubscriptionService,
+  TEACHER_MONTHLY_FEE,
+} from '../../teacher-portal/services/teacher-subscription.service';
 
 @Injectable()
 export class SubscriptionLifecycleService {
@@ -40,6 +45,7 @@ export class SubscriptionLifecycleService {
     private readonly configService: ConfigService,
     private readonly studentCountVerifier: StudentCountVerifierService,
     private readonly pricingService: PricingService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   /**
@@ -63,6 +69,7 @@ export class SubscriptionLifecycleService {
               id: true,
               name: true,
               subdomain: true,
+              type: true,
             },
           },
         },
@@ -93,6 +100,16 @@ export class SubscriptionLifecycleService {
   private async processSubscription(sub: any, now: Date): Promise<{ action: string | null }> {
     const periodEnd = sub.currentPeriodEnd;
     if (!periodEnd) return { action: null };
+
+    // ⭐ BRANCHE ENSEIGNANT (Helm Enseignant — 2 000 FCFA/mois) :
+    //    cycle dédié : rappels J-7 puis J-24h AVEC LIEN DE PAIEMENT, grâce de
+    //    7 jours (compte actif), puis INACTIVATION — la réactivation se fait
+    //    par paiement (page /prof/checkout à la connexion). Pas de blocage
+    //    définitif : les données restent conservées, un paiement redémarre le
+    //    compteur à tout moment.
+    if (String(sub.tenant?.type ?? '') === 'TEACHER') {
+      return this.processTeacherSubscription(sub, now);
+    }
 
     // ─── 1. NOTIFICATIONS AVANT EXPIRATION (J-7, J-3, J-1) ───
     if (sub.status === 'ACTIVE' || sub.status === 'TRIALING') {
@@ -300,6 +317,184 @@ export class SubscriptionLifecycleService {
     this.logger.log(`Subscription ${sub.id} renewed for ${periodDuration} days`);
 
     return { success: true, message: 'Abonnement renouvelé avec succès' };
+  }
+
+  // ─── ENSEIGNANT (Helm Enseignant — 2 000 FCFA/mois) ───────────────────────
+
+  /**
+   * Cycle de vie dédié aux espaces enseignant autonomes (tenant type TEACHER) :
+   *
+   *   J-7   → email « préparez-vous à renouveler » (même système de
+   *           notification que le reste d'Academia Helm) ;
+   *   J-1   → second rappel AVEC LIEN/BOUTON de paiement (24 h) ;
+   *   J0    → expiration silencieuse → GRÂCE DE 7 JOURS (compte actif) ;
+   *   J+7   → SUSPENDED : compte inactif — à la connexion, l'enseignant est
+   *           redirigé vers la page de paiement (/prof/checkout) ; un
+   *           paiement réactive immédiatement (+30 jours) ;
+   *   (∞)   → PAS de blocage définitif : les données sont conservées
+   *           indéfiniment, la réactivation reste possible à tout moment.
+   */
+  private async processTeacherSubscription(sub: any, now: Date): Promise<{ action: string | null }> {
+    const periodEnd = sub.currentPeriodEnd;
+
+    // ─── 1. RAPPELS AVANT EXPIRATION (J-7 puis J-24h — spécification) ───
+    if (sub.status === 'ACTIVE' || sub.status === 'TRIALING') {
+      const daysUntilExpiry = Math.ceil(
+        (periodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+      );
+
+      // J-7
+      if (daysUntilExpiry <= 7 && daysUntilExpiry > 1 && !sub.notified7DaysBefore) {
+        await this.sendTeacherReminder(sub, 7);
+        await this.prisma.helmSubscription.update({
+          where: { id: sub.id },
+          data: { notified7DaysBefore: now },
+        });
+        return { action: 'notified7' };
+      }
+
+      // J-1 (24 h) — avec lien/bouton de paiement
+      if (daysUntilExpiry <= 1 && daysUntilExpiry > 0 && !sub.notified1DayBefore) {
+        await this.sendTeacherReminder(sub, 1);
+        await this.prisma.helmSubscription.update({
+          where: { id: sub.id },
+          data: { notified1DayBefore: now },
+        });
+        return { action: 'notified1' };
+      }
+    }
+
+    // ─── 2. EXPIRATION SILENCIEUSE (J0) → grâce de 7 jours ───
+    if ((sub.status === 'ACTIVE' || sub.status === 'TRIALING') && now > periodEnd) {
+      const gracePeriodEnd = new Date(
+        periodEnd.getTime() + this.GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000,
+      );
+      await this.prisma.helmSubscription.update({
+        where: { id: sub.id },
+        data: {
+          status: 'GRACE_PERIOD',
+          expiredAt: now,
+          gracePeriodEnd,
+        },
+      });
+      await this.prisma.tenant.update({
+        where: { id: sub.tenantId },
+        data: { subscriptionStatus: 'GRACE_PERIOD' },
+      });
+      this.logger.log(
+        `Abonnement enseignant ${sub.id} expiré → grâce jusqu'au ${gracePeriodEnd.toISOString().slice(0, 10)}`,
+      );
+      return { action: 'expired' };
+    }
+
+    // ─── 3. INACTIVATION (J+7 — fin de grâce) ───
+    if (sub.status === 'GRACE_PERIOD' && sub.gracePeriodEnd && now > sub.gracePeriodEnd) {
+      await this.prisma.helmSubscription.update({
+        where: { id: sub.id },
+        data: {
+          status: 'SUSPENDED',
+          suspendedAt: now,
+        },
+      });
+      // ⚆ Le compte devient inactif : la connexion renverra l'enseignant vers
+      //    la page de paiement pour réactiver (middleware + layout /prof).
+      await this.prisma.tenant.update({
+        where: { id: sub.tenantId },
+        data: { subscriptionStatus: 'SUSPENDED' },
+      });
+      await this.sendTeacherSuspendedNotification(sub);
+      this.logger.log(`Abonnement enseignant ${sub.id} → SUSPENDED (compte inactif)`);
+      return { action: 'suspended' };
+    }
+
+    // ⚆ Pas de blocage définitif pour les enseignants : suspension indéfinie
+    //    jusqu'au paiement de réactivation (données conservées).
+
+    return { action: null };
+  }
+
+  /**
+   * Rappel d'expiration enseignant (J-7 / J-24h) — délégué au
+   * TeacherSubscriptionService via ModuleRef (résolution lazy : évite la
+   * dépendance circulaire BillingModule ↔ TeacherPortalModule, même pattern
+   * que EmailService → EmailLogService).
+   */
+  private async sendTeacherReminder(sub: any, daysLeft: number): Promise<void> {
+    try {
+      const teacherSvc = this.moduleRef.get(TeacherSubscriptionService, { strict: false });
+      const teacher = await this.prisma.user.findFirst({
+        where: { tenantId: sub.tenantId },
+        orderBy: { createdAt: 'asc' },
+        select: { email: true, firstName: true, lastName: true },
+      });
+      if (!teacher?.email) {
+        this.logger.warn(`Aucun email enseignant pour le tenant ${sub.tenantId}`);
+        return;
+      }
+      await teacherSvc.sendExpirationReminder({
+        tenantId: sub.tenantId,
+        teacherEmail: teacher.email,
+        teacherName:
+          [teacher.firstName, teacher.lastName].filter(Boolean).join(' ') || 'cher enseignant',
+        daysLeft,
+        currentPeriodEnd: sub.currentPeriodEnd,
+        subscriptionId: sub.id,
+      });
+    } catch (err: any) {
+      this.logger.error(`Rappel enseignant J-${daysLeft} échoué : ${err.message}`);
+    }
+  }
+
+  /** Notification d'inactivation du compte enseignant (fin de grâce J+7). */
+  private async sendTeacherSuspendedNotification(sub: any): Promise<void> {
+    const teacher = await this.prisma.user.findFirst({
+      where: { tenantId: sub.tenantId },
+      orderBy: { createdAt: 'asc' },
+      select: { email: true, firstName: true, lastName: true },
+    });
+    if (!teacher?.email) return;
+
+    const frontendUrl = (
+      this.configService.get<string>('FRONTEND_URL') || 'https://academiahelm.com'
+    )
+      .trim()
+      .replace(/\/$/, '');
+    const checkoutUrl = `${frontendUrl}/prof/checkout`;
+
+    const subject = '🔒 Votre compte Helm Enseignant est inactif — réactivez-le';
+    const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#0f172a;">
+<p>Bonjour ${teacher.firstName || 'cher enseignant'},</p>
+<p>La période de grâce de 7 jours suivant l'expiration de votre abonnement <strong>Helm Enseignant</strong> est arrivée à son terme : votre compte est désormais <strong>inactif</strong>.</p>
+<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:16px;margin:20px 0;">
+<p style="margin:0;color:#991b1b;"><strong>Vos données sont intégralement conservées</strong> : cahier journal, fiches pédagogiques, évaluations, notes et bulletins. Rien n'est perdu.</p>
+</div>
+<p>Pour réactiver votre compte, il suffit de régler votre mensualité de <strong>${TEACHER_MONTHLY_FEE.toLocaleString('fr-FR')} FCFA</strong> — un nouveau compteur de 30 jours démarre immédiatement :</p>
+<div style="text-align:center;margin:28px 0;">
+<a href="${checkoutUrl}" style="display:inline-block;background:#0d9488;color:#ffffff;text-decoration:none;font-weight:bold;padding:14px 32px;border-radius:12px;font-size:16px;">Réactiver mon compte — ${TEACHER_MONTHLY_FEE.toLocaleString('fr-FR')} FCFA / mois</a>
+</div>
+<p style="text-align:center;font-size:13px;color:#64748b;">Ou copiez ce lien : ${checkoutUrl}</p>
+<p>Vous pouvez également réactiver directement à votre prochaine connexion : une page de paiement vous sera proposée automatiquement.</p>
+<p>Cordialement,<br/>L'équipe Academia Helm</p>
+</div>`;
+
+    try {
+      await this.emailService.sendCategorized({
+        tenantId: sub.tenantId,
+        category: 'FINANCE',
+        subCategory: 'suspension_abonnement_enseignant',
+        module: 'teacher-portal',
+        to: teacher.email,
+        subject,
+        html,
+        text: subject,
+        recipientType: 'TEACHER',
+        triggeredBy: 'AUTOMATION',
+        relatedEntityType: 'HelmSubscription',
+        relatedEntityId: sub.id,
+      });
+    } catch (err: any) {
+      this.logger.error(`Email inactivation enseignant échoué : ${err.message}`);
+    }
   }
 
   // ─── NOTIFICATIONS ──────────────────────────────────────────────────────────

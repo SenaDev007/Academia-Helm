@@ -63,7 +63,7 @@ export class TeacherPortalAuthService {
     });
 
     // Connexion immédiate après inscription
-    return this.buildLoginResponse(
+    const loginResponse = await this.buildLoginResponse(
       provisioned.userId,
       provisioned.tenantId,
       provisioned.teacherId,
@@ -71,6 +71,13 @@ export class TeacherPortalAuthService {
       userAgent,
       { justRegistered: true, levels: provisioned.levels },
     );
+
+    // ⭐ Abonnement non encore activé (compte tout juste créé) : le front
+    //    oriente l'enseignant vers le paiement d'activation du compteur.
+    return {
+      ...loginResponse,
+      subscription: { status: 'TRIAL', currentPeriodEnd: null, daysRemaining: null },
+    };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -122,7 +129,45 @@ export class TeacherPortalAuthService {
       );
     }
 
-    return this.buildLoginResponse(user.id, tenant.id, teacher.id, ipAddress, userAgent);
+    // ⭐ État de l'abonnement : compte INACTIF (fin de grâce) → la page de
+    //    paiement est proposée à la connexion (spécification Helm Enseignant).
+    const subscriptionState = await this.resolveSubscriptionState(tenant.id);
+
+    return {
+      ...await this.buildLoginResponse(user.id, tenant.id, teacher.id, ipAddress, userAgent),
+      subscription: subscriptionState,
+    };
+  }
+
+  /**
+   * ⭐ État d'abonnement embarqué dans la réponse login/register :
+   *    - SUSPENDED/BLOCKED → le front redirige vers /prof/checkout
+   *      (page de paiement pour réactiver le compte) ;
+   *    - TRIAL/absent → l'inscription vient d'avoir lieu, le front oriente
+   *      vers le paiement d'activation (onboarding) ;
+   *    - ACTIVE/GRACE_PERIOD → accès normal au tableau de bord.
+   */
+  private async resolveSubscriptionState(tenantId: string) {
+    const subscription = await this.prisma.helmSubscription.findUnique({
+      where: { tenantId },
+    });
+    if (!subscription) {
+      return { status: 'TRIAL', currentPeriodEnd: null as string | null, daysRemaining: null as number | null };
+    }
+    const now = new Date();
+    const daysRemaining = subscription.currentPeriodEnd
+      ? Math.max(
+          0,
+          Math.ceil(
+            (subscription.currentPeriodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+          ),
+        )
+      : null;
+    return {
+      status: String(subscription.status),
+      currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,
+      daysRemaining,
+    };
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -209,11 +254,25 @@ export class TeacherPortalAuthService {
         : null,
       subscription: helmSubscription
         ? {
-            plan: (helmSubscription as any).plan,
+            plan: 'Helm Enseignant',
+            planCode: (helmSubscription as any).plan,
             status: (helmSubscription as any).status,
             billingCycle: (helmSubscription as any).billingCycle,
+            monthlyAmount: (helmSubscription as any).monthlyAmount,
+            currentPeriodStart: (helmSubscription as any).currentPeriodStart,
             currentPeriodEnd: (helmSubscription as any).currentPeriodEnd,
+            gracePeriodEnd: (helmSubscription as any).gracePeriodEnd,
+            lastPaymentDate: (helmSubscription as any).lastPaymentDate,
             trialEnd: (helmSubscription as any).trialEnd,
+            daysRemaining: (helmSubscription as any).currentPeriodEnd
+              ? Math.max(
+                  0,
+                  Math.ceil(
+                    ((helmSubscription as any).currentPeriodEnd.getTime() - Date.now()) /
+                      (1000 * 60 * 60 * 24),
+                  ),
+                )
+              : null,
           }
         : null,
       stats: { classes: classesCount, subjects: subjectsCount, students: studentsCount },

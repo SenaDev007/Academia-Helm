@@ -61,7 +61,14 @@ function getProfUserFromCookie(request: NextRequest): ProfSessionUser | null {
 // ── Routes marketing (publiques) ─────────────────────────────────────
 const marketingExactRoutes = new Set(['/prof']);
 
-const marketingPrefixRoutes = ['/prof/login', '/prof/register'];
+const marketingPrefixRoutes = [
+  '/prof/login',
+  '/prof/register',
+  // ⚠️ Le callback FedaPay (?id=…&status=approved) doit fonctionner même si
+  // la session a expiré pendant le paiement : la vérification serveur
+  // (/teacher-portal/public/checkout/verify) est publique.
+  '/prof/checkout/success',
+];
 
 // ── Routes connectées (session + portalType TEACHER) ─────────────────
 const protectedPrefixRoutes = [
@@ -73,6 +80,9 @@ const protectedPrefixRoutes = [
   '/prof/parametres',
   '/prof/eleves',
   '/prof/emploi-du-temps',
+  // ⭐ Paiement d'abonnement (onboarding / renouvellement / réactivation :
+  // l'enseignant au compte inactif doit pouvoir y accéder avec sa session).
+  '/prof/checkout',
 ];
 
 export async function profMiddleware(request: NextRequest) {

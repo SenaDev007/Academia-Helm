@@ -41,6 +41,12 @@ interface BackendResponse {
   portalType: string;
   justRegistered?: boolean;
   levels?: string[];
+  /** ⭐ Abonnement (TRIAL à l'inscription → paiement d'activation). */
+  subscription?: {
+    status: string;
+    currentPeriodEnd: string | null;
+    daysRemaining: number | null;
+  };
 }
 
 export async function POST(request: NextRequest) {
@@ -125,6 +131,9 @@ export async function POST(request: NextRequest) {
       expiresAt,
       justRegistered: data.justRegistered ?? false,
       levels: data.levels ?? [],
+      // ⭐ À l'inscription : TRIAL → le wizard redirige vers /prof/checkout
+      //    (étape de paiement de l'onboarding — activation du compteur).
+      subscription: data.subscription ?? null,
     });
   } catch (error: any) {
     console.error('Teacher-portal register BFF error:', error);

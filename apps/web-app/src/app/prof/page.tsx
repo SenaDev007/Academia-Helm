@@ -67,7 +67,7 @@ const STEPS = [
     number: '1',
     title: 'Créez votre compte',
     description:
-      'Votre email et un mot de passe. Aucune école nécessaire — votre espace vous appartient.',
+      'Votre email, un mot de passe et votre mensualité de 2 000 FCFA — votre compteur de 30 jours démarre aussitôt, sans aucune école nécessaire.',
   },
   {
     number: '2',
@@ -136,7 +136,7 @@ export default function HelmEnseignantLandingPage() {
               Votre école n’est pas encore sur Academia Helm ? Peu importe. Créez votre espace
               personnel : cahier journal, fiches pédagogiques, cahier de textes, évaluations,
               notes et bulletins — tout l’outillage pédagogique de la plateforme, à vous seul,
-              à partir de <strong>2 000 FCFA / mois</strong>.
+              pour <strong>2 000 FCFA / mois</strong>.
             </p>
             <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
               <Link
@@ -222,11 +222,14 @@ export default function HelmEnseignantLandingPage() {
               journée de photocopie.
             </p>
           </div>
-          <div className="mx-auto mt-12 max-w-xl rounded-2xl border border-teal-500/40 bg-slate-800 p-8">
-            <div className="flex items-baseline justify-center gap-2">
-              <span className="text-5xl font-extrabold text-white">2 000</span>
-              <span className="text-lg text-slate-300">– 5 000 FCFA / mois</span>
+          <div className="mx-auto mt-12 max-w-xl rounded-2xl border border-teal-500/40 bg-slate-800 p-6 sm:p-8">
+            <div className="flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1">
+              <span className="text-4xl font-extrabold text-white sm:text-5xl">2 000</span>
+              <span className="text-lg text-slate-300">FCFA / mois</span>
             </div>
+            <p className="mt-3 text-center text-sm text-slate-400">
+              Soit 30 jours d’accès complet — sans engagement, résiliable à tout moment.
+            </p>
             <ul className="mt-8 space-y-3 text-sm text-slate-200">
               {[
                 'Espace pédagogique complet (cahiers, fiches, textes, planification)',

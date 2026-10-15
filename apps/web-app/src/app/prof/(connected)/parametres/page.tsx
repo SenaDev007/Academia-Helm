@@ -29,6 +29,9 @@ import {
   Save,
   RefreshCw,
   Mail,
+  CalendarClock,
+  Timer,
+  ShieldCheck,
 } from 'lucide-react';
 import apiClient from '@/lib/api/client';
 import { useAppSession } from '@/contexts/AppSessionContext';
@@ -453,47 +456,39 @@ export default function ProfParametresPage() {
 
       {/* ── Onglet : Abonnement ── */}
       {tab === 'abonnement' && (
-        <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6">
+        <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Abonnement Helm Enseignant</h2>
             <p className="mt-1 text-sm text-slate-500">
-              Votre abonnement personnel, financé par vos propres fonds.
+              Votre abonnement personnel — 2 000 FCFA / mois, résiliable à tout moment.
             </p>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
-            {subscription ? (
-              <div className="space-y-2 text-sm">
-                <p className="text-slate-600">
-                  Formule : <span className="font-semibold text-slate-900">{subscription.plan}</span>{' '}
-                  ({subscription.billingCycle === 'ANNUAL' ? 'annuel' : 'mensuel'})
-                </p>
-                <p className="text-slate-600">
-                  Statut :{' '}
-                  <span className="font-semibold text-teal-700">{subscription.status}</span>
-                </p>
-                {subscription.currentPeriodEnd && (
-                  <p className="text-slate-600">
-                    Renouvellement le :{' '}
-                    <span className="font-semibold text-slate-900">
-                      {new Date(subscription.currentPeriodEnd).toLocaleDateString('fr-FR')}
-                    </span>
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-start gap-3 text-sm text-slate-600">
+          {subscription ? (
+            <AbonnementPanel subscription={subscription} />
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
                 <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
                 <div>
-                  <p className="font-medium text-slate-900">Période d’essai active</p>
+                  <p className="font-medium text-slate-900">Compteur non activé</p>
                   <p className="mt-1">
-                    Le paiement (2 000 – 5 000 FCFA / mois) sera activé prochainement via FeexPay.
-                    Votre espace reste pleinement fonctionnel pendant cette période.
+                    Activez votre abonnement mensuel (2 000 FCFA / mois) pour démarrer votre
+                    compteur de 30 jours. Le paiement est sécurisé — vous recevrez un rappel par
+                    email 7 jours puis 24 heures avant l’expiration, et votre espace reste
+                    accessible 7 jours de grâce après l’expiration.
                   </p>
                 </div>
               </div>
-            )}
-          </div>
+              <a
+                href="/prof/checkout"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 px-6 py-3.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 sm:w-auto sm:px-8"
+              >
+                <CreditCard className="h-4 w-4" />
+                Activer mon abonnement — 2 000 FCFA / mois
+              </a>
+            </div>
+          )}
         </div>
       )}
 
@@ -571,6 +566,169 @@ export default function ProfParametresPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * ⭐ Panneau Abonnement — compteur activé + décompte en temps réel.
+ *
+ * États affichés :
+ *   - ACTIVE        : compteur vert, jours restants, date d'expiration, CTA renouvellement ;
+ *   - GRACE_PERIOD  : bandeau ambre (7 jours de grâce) + CTA renouvellement ;
+ *   - SUSPENDED     : bandeau rouge (compte inactif) + CTA réactivation ;
+ *   - TRIALING      : compteur non encore activé + CTA activation.
+ */
+function AbonnementPanel({ subscription }: { subscription: any }) {
+  const status = String(subscription?.status ?? '').toUpperCase();
+  const periodEnd = subscription?.currentPeriodEnd
+    ? new Date(subscription.currentPeriodEnd)
+    : null;
+  const graceEnd = subscription?.gracePeriodEnd
+    ? new Date(subscription.gracePeriodEnd)
+    : null;
+  const lastPayment = subscription?.lastPaymentDate
+    ? new Date(subscription.lastPaymentDate)
+    : null;
+  const periodStart = subscription?.currentPeriodStart
+    ? new Date(subscription.currentPeriodStart)
+    : null;
+
+  const formatDate = (d: Date | null) =>
+    d ? d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+
+  const daysRemaining = Number(subscription?.daysRemaining ?? 0);
+  const isSuspended = status === 'SUSPENDED' || status === 'BLOCKED';
+  const isGrace = status === 'GRACE_PERIOD';
+  const isActive = status === 'ACTIVE' || status === 'TRIALING';
+
+  const statusBadge = isSuspended ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
+      <AlertCircle className="h-3.5 w-3.5" />
+      Compte inactif
+    </span>
+  ) : isGrace ? (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+      <Timer className="h-3.5 w-3.5" />
+      Période de grâce
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-teal-100 px-3 py-1 text-xs font-semibold text-teal-700">
+      <CheckCircle2 className="h-3.5 w-3.5" />
+      Compteur activé
+    </span>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Bandeau d'état */}
+      {isSuspended && (
+        <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <p className="font-semibold">Compte inactif — réactivation requise</p>
+            <p className="mt-1">
+              Votre abonnement a expiré et la période de grâce de 7 jours est terminée. Réglez
+              votre mensualité pour réactiver votre espace : un nouveau compteur de 30 jours
+              démarrera immédiatement et vos données sont intégralement conservées.
+            </p>
+          </div>
+        </div>
+      )}
+      {isGrace && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <Timer className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <p className="font-semibold">Période de grâce en cours</p>
+            <p className="mt-1">
+              Votre abonnement a expiré, mais votre espace reste pleinement accessible jusqu’au{' '}
+              <strong>{formatDate(graceEnd)}</strong>. Renouvelez dès maintenant pour éviter
+              l’inactivation de votre compte.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Carte du compteur */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-slate-900">
+            Formule : Helm Enseignant — Mensuel
+          </p>
+          {statusBadge}
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <div className="rounded-lg bg-white p-4 text-center shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Mensualité</p>
+            <p className="mt-1.5 text-xl font-extrabold text-slate-900">
+              {(Number(subscription?.monthlyAmount) || 2000).toLocaleString('fr-FR')} FCFA
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">par mois (30 jours)</p>
+          </div>
+          <div className="rounded-lg bg-white p-4 text-center shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              Jours restants
+            </p>
+            <p
+              className={`mt-1.5 text-xl font-extrabold ${
+                isSuspended ? 'text-red-600' : daysRemaining <= 7 ? 'text-amber-600' : 'text-teal-600'
+              }`}
+            >
+              {isSuspended ? 0 : daysRemaining}
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {isSuspended ? 'compte inactif' : 'sur 30 jours'}
+            </p>
+          </div>
+          <div className="rounded-lg bg-white p-4 text-center shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              {isSuspended ? 'Dernière validité' : 'Valide jusqu’au'}
+            </p>
+            <p className="mt-1.5 text-sm font-bold text-slate-900">{formatDate(periodEnd)}</p>
+            {lastPayment && (
+              <p className="mt-0.5 text-xs text-slate-500">
+                Dernier paiement : {formatDate(lastPayment)}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {isActive && periodStart && (
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-400">
+            <CalendarClock className="h-3.5 w-3.5" />
+            Décompte enregistré depuis le {formatDate(periodStart)} — renouvellement possible à
+            tout moment, sans jour perdu.
+          </p>
+        )}
+      </div>
+
+      {/* Rappel du cycle de vie */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 text-xs leading-relaxed text-slate-500">
+        <p className="flex items-center gap-1.5 font-semibold text-slate-700">
+          <ShieldCheck className="h-3.5 w-3.5 text-teal-600" />
+          Rappels automatiques avant expiration
+        </p>
+        <p className="mt-1">
+          Un email vous est envoyé 7 jours puis 24 heures avant l’expiration de vos 30 jours.
+          Après expiration, votre espace reste accessible 7 jours supplémentaires (période de
+          grâce). Au-delà, le compte devient inactif — un simple paiement le réactive, vos
+          données étant conservées.
+        </p>
+      </div>
+
+      {/* CTA renouvellement / réactivation */}
+      <a
+        href="/prof/checkout?renew=1"
+        className="flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 px-6 py-3.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 sm:w-auto sm:px-8"
+      >
+        <CreditCard className="h-4 w-4" />
+        {isSuspended
+          ? 'Réactiver mon compte — 2 000 FCFA'
+          : isGrace
+            ? 'Renouveler et sécuriser mon accès — 2 000 FCFA'
+            : 'Renouveler maintenant (+30 jours) — 2 000 FCFA'}
+      </a>
     </div>
   );
 }

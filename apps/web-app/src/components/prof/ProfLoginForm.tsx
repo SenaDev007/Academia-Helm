@@ -80,6 +80,14 @@ export function ProfLoginForm() {
 
       // ── Redirection (pattern Helm : full reload) ──
       markFreshLogin();
+      // ⭐ Compte INACTIF (abonnement suspendu après la grâce de 7 jours) :
+      //    l'enseignant est renvoyé vers la page de paiement afin de
+      //    réactiver son compte (spécification Helm Enseignant).
+      const subscriptionStatus = String(data?.subscription?.status ?? '').toUpperCase();
+      if (subscriptionStatus === 'SUSPENDED' || subscriptionStatus === 'BLOCKED') {
+        window.location.href = '/prof/checkout?reactivate=1';
+        return;
+      }
       const redirect = searchParams.get('redirect');
       window.location.href = redirect && redirect.startsWith('/prof')
         ? redirect

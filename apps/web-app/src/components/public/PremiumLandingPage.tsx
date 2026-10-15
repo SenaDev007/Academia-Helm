@@ -1366,9 +1366,9 @@ export default function PremiumLandingPage() {
                 name: 'Helm Essentiel',
                 badge: '1 – 50 élèves',
                 tagline: 'Pour démarrer',
-                desc: 'Tous les modules inclus : élèves, finances, examens, pédagogie, RH, communication, IA ORION. Idéal pour les petites structures.',
+                desc: 'Tous les modules inclus : élèves, finances, examens, pédagogie, RH, Helm Connect. Idéal pour les petites structures.',
                 featured: false,
-                features: ['21 modules métier + 6 complémentaires', 'Web + Desktop + Mobile', 'Offline-first', 'ORION, SARA, ATLAS (IA)', 'Support Email (48h)'],
+                features: ['21 modules métier + 6 complémentaires', 'Web + Desktop + Mobile', 'Offline-first', 'SARA, ATLAS (IA)', 'Support Email (48h)'],
               },
               {
                 name: 'Helm Croissance',
@@ -1376,7 +1376,7 @@ export default function PremiumLandingPage() {
                 tagline: 'Pour croître',
                 desc: 'Tous les modules + support prioritaire WhatsApp. Pour les établissements en croissance qui veulent aller plus vite.',
                 featured: true,
-                features: ['Tous les modules inclus', 'ORION IA inclus', 'Support Email + WhatsApp (24h)', 'Paiements en ligne (FedaPay)', 'Multi-caisses', 'Multi-niveaux'],
+                features: ['Tous les modules inclus', 'Helm Connect inclus', 'Support Email + WhatsApp (24h)', 'Paiements en ligne (FedaPay)', 'Multi-caisses', 'Multi-niveaux'],
               },
               {
                 name: 'Helm Performance',

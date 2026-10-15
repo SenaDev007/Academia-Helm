@@ -12,6 +12,7 @@ import { motion, useScroll, useSpring, useTransform } from 'framer-motion';
 import { useMemo, useState, useEffect } from 'react';
 import {
   ShieldCheck,
+  Shield,
   Brain,
   WifiOff,
   Wallet,
@@ -28,6 +29,7 @@ import {
   LayoutGrid,
   UserCog,
   MessageSquare,
+  UtensilsCrossed,
   // Features section
   Gauge,
   Lock,

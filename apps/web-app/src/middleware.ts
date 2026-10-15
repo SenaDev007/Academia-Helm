@@ -601,6 +601,12 @@ export async function middleware(request: NextRequest) {
     return patronatMiddleware(request);
   }
 
+  // ⭐ Routes Helm Enseignant (mini-SaaS enseignant autonome) : middleware dédié
+  if (pathname === '/prof' || pathname.startsWith('/prof/')) {
+    const { profMiddleware } = await import('./middleware-prof');
+    return profMiddleware(request);
+  }
+
   // API routes : ajouter les headers anti-cache Cloudflare uniquement
   // (pas de résolution de tenant, pas de redirection — logique propre aux route handlers)
   if (pathname.startsWith('/api/')) {

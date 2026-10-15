@@ -93,7 +93,6 @@ function useCameFromApp(): { cameFromApp: boolean; appReturnUrl: string } {
 const navItems = [
   { label: 'Accueil', href: '/', isInstitutional: false },
   { label: 'Modules', href: '/modules', isInstitutional: false },
-  { label: 'Blog', href: '/blog', isInstitutional: false },
   { label: 'Tarification', href: '/tarification', isInstitutional: false },
   { label: 'Recrutement', href: '/jobs', isInstitutional: false },
   { label: 'Academia Federis', href: 'https://academiafederis.academiahelm.com', isInstitutional: true, external: true },

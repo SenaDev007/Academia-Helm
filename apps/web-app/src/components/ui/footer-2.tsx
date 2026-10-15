@@ -26,10 +26,8 @@ const footerLinks = [
     title: "Produit",
     links: [
       { href: "/modules", label: "Fonctionnalités" },
-      { href: "/orion", label: "ORION (IA)" },
       { href: "/tarification", label: "Tarification" },
       { href: "/modules#offline", label: "Mode offline" },
-      { href: "/blog", label: "Blog & Ressources" },
       { href: "/jobs", label: "Recrutement" },
     ],
   },
@@ -47,7 +45,6 @@ const footerLinks = [
     title: "Support",
     links: [
       { href: "/contact", label: "Centre d'aide" },
-      { href: "/blog", label: "Guide de démarrage" },
       { href: "/contact", label: "Documentation API" },
       { href: "/tarification#faq", label: "FAQ" },
       { href: "/contact", label: "Signaler un problème" },

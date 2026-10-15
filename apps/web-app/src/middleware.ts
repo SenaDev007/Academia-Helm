@@ -436,6 +436,58 @@ export async function middleware(request: NextRequest) {
       return saisieResponse;
     }
 
+    // ── Helm Enseignant satellite app ──
+    // enseignant.academiahelm.com/* → /prof/*
+    // Portail autonome des enseignants (mini-SaaS « Helm Enseignant ») :
+    // landing marketing, inscription/login autonomes, espace connecté
+    // (dashboard, pédagogie, travaux, examens, planification…).
+    // ⭐ Le nom PUBLIC du portail est « enseignant » (décision 2026-10-16) —
+    //    l'ancien libellé « prof.academiahelm.com » est redirigé ci-dessous.
+    // ⚠️ IMPORTANT : ne PAS rewriter les routes /api/* — les BFF routes
+    //    (/api/teacher-portal/login, /register) doivent passer telles quelles
+    //    (le matcher exclut déjà /api/, ce test est un garde-fou).
+    // L'authentification reste double : ce rewrite sert la page /prof/* dont
+    // le layout serveur (connected) vérifie session + portalType TEACHER
+    // (pattern patronat — filet de sécurité indépendant du middleware).
+    if (hostParts[0] === 'enseignant' && !pathname.startsWith('/api/')) {
+      // ⭐ Fichiers statiques publics : jamais réécrits vers /prof/*
+      if (isPublicStaticAsset(pathname)) {
+        return NextResponse.next();
+      }
+      // Rewrite enseignant.academiahelm.com/* → /prof/*
+      //   /           → /prof (landing marketing)
+      //   /login      → /prof/login
+      //   /dashboard  → /prof/dashboard
+      //   /prof/xxx   → /prof/xxx (déjà préfixé — liens internes du portail)
+      let profPath: string;
+      if (pathname === '/') {
+        profPath = '/prof';
+      } else if (pathname.startsWith('/prof')) {
+        // Déjà préfixé — utiliser tel quel (navigation interne du portail)
+        profPath = pathname;
+      } else {
+        profPath = `/prof${pathname}`;
+      }
+      const rewriteUrl = new URL(profPath + request.nextUrl.search, request.nextUrl.origin);
+      const profSatelliteResponse = withAntiCacheHeaders(NextResponse.rewrite(rewriteUrl), profPath);
+      // Header documentant le contexte satellite (pattern federis/saisiemaster)
+      profSatelliteResponse.headers.set('x-enseignant-subdomain', 'true');
+      return profSatelliteResponse;
+    }
+
+    // ── Alias historique : prof.academiahelm.com → enseignant.academiahelm.com ──
+    // Le portail enseignant devait initialement être servi sur
+    // prof.academiahelm.com ; le nom public retenu est « enseignant ».
+    // Redirection permanente (301) en conservant chemin + query — couvre le
+    // cas d'un utilisateur saisissant l'ancien libellé ou d'un ancien lien.
+    if (hostParts[0] === 'prof') {
+      const protocol = request.headers.get('x-forwarded-proto') || 'https';
+      const enseignantHost = `enseignant.${hostParts.slice(1).join('.')}`;
+      const enseignantUrl = new URL(pathname + request.nextUrl.search, `${protocol}://${enseignantHost}`);
+      const aliasResponse = NextResponse.redirect(enseignantUrl, 301);
+      return withAntiCacheHeaders(aliasResponse);
+    }
+
     // ── Admin subdomain: back-office centralisé d'Academia Helm ──
     // admin.academiahelm.com/* est volontairement laissé passer sans redirection.
     //

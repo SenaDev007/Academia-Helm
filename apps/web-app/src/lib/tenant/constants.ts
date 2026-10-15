@@ -10,6 +10,7 @@
  * Categories:
  * - Web routing : www, app, portal
  * - Satellite applications : academiafederis, saisiemaster
+ * - Portails autonomes : enseignant (Helm Enseignant), prof (alias historique)
  * - Infrastructure : api, cdn, mail, smtp, ftp, docs
  * - Environments : dev, test, staging, preview, localhost
  * - Admin : admin
@@ -22,6 +23,12 @@ export const RESERVED_SUBDOMAINS = [
   // Satellite applications
   'academiafederis',
   'saisiemaster',
+  // Portails autonomes
+  // ⭐ « enseignant » : sous-domaine public du mini-SaaS Helm Enseignant
+  //    (enseignant.academiahelm.com → rewrite /prof/*) — « prof » : ancien
+  //    libellé réservé pour l'alias de redirection historique.
+  'enseignant',
+  'prof',
   // Infrastructure
   'api',
   'cdn',

@@ -145,6 +145,17 @@ export function profSatelliteGate(
   profPath: string,
   request: NextRequest,
 ): NextResponse | null {
+  // ⚠️ MÊME ordre de priorité que profMiddleware : les routes marketing sont
+  //    vérifiées AVANT les routes protégées (sinon /prof/checkout/success —
+  //    callback public de paiement FedaPay — serait bloqué par le préfixe
+  //    protégé /prof/checkout).
+  const isMarketing =
+    marketingExactRoutes.has(profPath) ||
+    marketingPrefixRoutes.some(
+      (route) => profPath === route || profPath.startsWith(`${route}/`),
+    );
+  if (isMarketing) return null;
+
   const isProtected = protectedPrefixRoutes.some((route) => profPath.startsWith(route));
   if (!isProtected) return null;
 

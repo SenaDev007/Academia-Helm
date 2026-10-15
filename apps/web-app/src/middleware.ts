@@ -469,6 +469,14 @@ export async function middleware(request: NextRequest) {
         profPath = `/prof${pathname}`;
       }
       const rewriteUrl = new URL(profPath + request.nextUrl.search, request.nextUrl.origin);
+      // ⭐ PORTE SESSION (routes connectées) : le satellite retourne directement
+      //    et court-circuite le dispatch profMiddleware normal — on applique ici
+      //    la MÊME règle (session + portalType TEACHER) sur le chemin réécrit
+      //    (ex. /checkout non authentifié → /prof/login?redirect=/prof/checkout,
+      //    exactement comme sur le domaine principal).
+      const { profSatelliteGate } = await import('./middleware-prof');
+      const gate = profSatelliteGate(profPath, request);
+      if (gate) return gate;
       const profSatelliteResponse = withAntiCacheHeaders(NextResponse.rewrite(rewriteUrl), profPath);
       // Header documentant le contexte satellite (pattern federis/saisiemaster)
       profSatelliteResponse.headers.set('x-enseignant-subdomain', 'true');

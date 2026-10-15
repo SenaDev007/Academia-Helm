@@ -128,3 +128,43 @@ export async function profMiddleware(request: NextRequest) {
 
   return withAntiCacheHeaders(NextResponse.next());
 }
+
+/**
+ * ⭐ Porte session du satellite enseignant.academiahelm.com.
+ *
+ * Le satellite réécrit /* → /prof/* et RETOURNE directement (il court-circuite
+ * le dispatch normal du middleware principal, qui n'applique donc jamais
+ * profMiddleware) — cette porte applique la MÊME règle (session + portalType
+ * TEACHER) sur le chemin RÉÉCRIT, pour la même protection que le domaine
+ * principal (ex. /prof/checkout non authentifié → /prof/login?redirect=…).
+ *
+ * @returns une réponse de redirection si l'accès doit être bloqué, sinon null
+ *          (le satellite poursuit alors son rewrite normalement).
+ */
+export function profSatelliteGate(
+  profPath: string,
+  request: NextRequest,
+): NextResponse | null {
+  const isProtected = protectedPrefixRoutes.some((route) => profPath.startsWith(route));
+  if (!isProtected) return null;
+
+  const user = getProfUserFromCookie(request);
+  if (!user) {
+    const loginUrl = new URL('/prof/login', request.nextUrl.origin);
+    loginUrl.searchParams.set('redirect', profPath);
+    return withAntiCacheHeaders(NextResponse.redirect(loginUrl));
+  }
+
+  const portal = (user.portalType || '').toUpperCase();
+  const role = (user.role || '').toUpperCase();
+  const isTeacherPortal =
+    portal === 'TEACHER' ||
+    ['TEACHER', 'ENSEIGNANT', 'PROFESSEUR', 'INSTITUTEUR'].includes(role);
+  if (!isTeacherPortal) {
+    const loginUrl = new URL('/prof/login', request.nextUrl.origin);
+    loginUrl.searchParams.set('error', 'portal');
+    return withAntiCacheHeaders(NextResponse.redirect(loginUrl));
+  }
+
+  return null;
+}

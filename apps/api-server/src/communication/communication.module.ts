@@ -82,6 +82,8 @@ import { CallProviderChainService } from './services/call-provider-chain.service
 //    via /chat/calls/webrtc pour s'échanger offer/answer/ice entre les 2 navigateurs.
 import { P2PWebrtcController } from './p2p-webrtc.controller';
 import { P2PWebrtcSignalService } from './services/p2p-webrtc-signal.service';
+// ⭐ 2026-10-15 — Canaux par piste FR/EN (administration, pédagogique, conseil par niveau)
+import { AutoChannelByTrackService } from './services/auto-channel-by-track.service';
 // ⭐ V4 — Fichiers transverses (sections Fichiers/Vocaux/Appels)
 import { FilesCenterService } from './services/files-center.service';
 // ⭐ V5 (chantier 1) — Blocage d'utilisateurs (parité Yeshua blocks)
@@ -195,6 +197,8 @@ import { ChatAtlasService } from './services/chat-atlas.service';
     CallSignalService,
     // ⭐ 2026-10-14 — P2P WebRTC fallback 1-à-1 (porté de Yeshua Connect)
     P2PWebrtcSignalService,
+    // ⭐ 2026-10-15 — Canaux par piste FR/EN (administration, pédagogique, conseil par niveau)
+    AutoChannelByTrackService,
     FilesCenterService,
     // ⭐ V5 — Blocage d'utilisateurs + matrice de contact + antivirus + ATLAS chat
     ChatBlockService,

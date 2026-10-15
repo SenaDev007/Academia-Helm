@@ -33,6 +33,8 @@ import { Interval } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma.service';
 import { AutoChannelService } from './auto-channel.service';
 import { AutoGroupService } from './auto-group.service';
+// ⭐ 2026-10-15 — Canaux par piste FR/EN (administration, pédagogique, conseil par niveau)
+import { AutoChannelByTrackService } from './auto-channel-by-track.service';
 
 /** Délai avant la première sync (laisse l'API démarrer + Neon s'éveiller). */
 const INITIAL_DELAY_MS = 90_000;
@@ -48,6 +50,8 @@ export class HelmConnectBootstrapService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly autoChannelService: AutoChannelService,
     private readonly autoGroupService: AutoGroupService,
+    // ⭐ 2026-10-15 — Canaux par piste FR/EN (administration, pédagogique, conseil par niveau)
+    private readonly autoChannelByTrackService: AutoChannelByTrackService,
   ) {}
 
   /** Première sync différée — ne bloque PAS le boot de l'API. */
@@ -87,13 +91,22 @@ export class HelmConnectBootstrapService implements OnModuleInit {
       select: { id: true, name: true },
     });
     let groups: any;
+    let trackGroups: any;
     if (!academicYear) {
       groups = { message: 'Aucune année scolaire active — les communautés seront créées dès l\u2019activation d\u2019une année.' };
+      trackGroups = { message: 'Idem — canaux par piste en attente d\u2019une année active.' };
     } else {
       groups = await this.autoGroupService.syncAutoGroups(tenantId, academicYear.id);
+      // ⭐ 2026-10-15 — Canaux par piste FR/EN (administration, pédagogique, conseil par niveau)
+      try {
+        trackGroups = await this.autoChannelByTrackService.syncTrackAutoGroups(tenantId, academicYear.id);
+      } catch (e: any) {
+        this.logger.warn(`syncTrackAutoGroups échoué pour ${tenantId}: ${e.message}`);
+        trackGroups = { message: `Canaux par piste: ${e.message}` };
+      }
     }
 
-    return { tenantId, channels, groups };
+    return { tenantId, channels, groups, trackGroups };
   }
 
   /**

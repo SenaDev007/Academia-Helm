@@ -3001,6 +3001,8 @@ const ROUTE_TABLES = [
   [/^\/api\/modules-complementaires\/canteen\/suppliers/, 'api_cache'],
   [/^\/api\/modules-complementaires\/canteen\/incidents/, 'canteenattendance'],
   [/^\/api\/modules-complementaires\/canteen\/meal-services/, 'api_cache'],
+  // ⭐ 2026-10-15 — Modèle métier Cantine (capital, ventes, dispatching, achats, bilan)
+  [/^\/api\/modules-complementaires\/canteen\/business\//, 'api_cache'],
   [/^\/api\/modules-complementaires\/transport\/vehicles/, 'vehicle'],
   [/^\/api\/modules-complementaires\/transport\/routes/, 'route'],
   [/^\/api\/modules-complementaires\/library\/books/, 'librarybook'],

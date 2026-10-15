@@ -556,6 +556,8 @@ const MODULES_COMPLEMENTAIRES_STORES: Array<{ pattern: RegExp; store: string }> 
   { pattern: /\/api\/modules-complementaires\/canteen\/suppliers/, store: 'api_cache' },
   { pattern: /\/api\/modules-complementaires\/canteen\/incidents/, store: 'canteenattendance' },
   { pattern: /\/api\/modules-complementaires\/canteen\/meal-services/, store: 'api_cache' },
+  // ⭐ 2026-10-15 — Modèle métier Cantine (capital, ventes, dispatching, achats, bilan)
+  { pattern: /\/api\/modules-complementaires\/canteen\/business\//, store: 'api_cache' },
   // ─── Transport ───
   { pattern: /\/api\/modules-complementaires\/transport\/vehicles/, store: 'vehicle' },
   { pattern: /\/api\/modules-complementaires\/transport\/routes/, store: 'route' },

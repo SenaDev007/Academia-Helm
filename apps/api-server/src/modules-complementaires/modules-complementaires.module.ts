@@ -12,6 +12,8 @@ import { QHSEService } from './services/qhse.service';
 import { MedicalService } from './services/medical.service';
 import { ModulesComplementairesOrionService } from './services/modules-complementaires-orion.service';
 import { ModulesComplementairesController } from './modules-complementaires.controller';
+// ⭐ 2026-10-15 — Modèle métier Cantine (capital, vente journalière, dispatching, bilan)
+import { CanteenBusinessController } from './canteen-business.controller';
 
 /**
  * Module pour le MODULE 9 — Modules Complémentaires
@@ -21,7 +23,7 @@ import { ModulesComplementairesController } from './modules-complementaires.cont
  */
 @Module({
   imports: [],
-  controllers: [ModulesComplementairesController],
+  controllers: [ModulesComplementairesController, CanteenBusinessController],
   providers: [
     CanteenService,
     TransportService,

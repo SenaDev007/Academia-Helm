@@ -74,8 +74,13 @@ ENTRYPOINT []
 # Migrations : déjà appliquées sur Neon DB. Si besoin :
 #   railway run npx prisma migrate deploy --schema=prisma/schema.prisma
 #
-# --max-old-space-size=1536 : 1.5 GB heap pour NestJS + Prisma (536 modèles).
-# Railway alloue dynamiquement la RAM, on laisse ~2.5 GB pour l'OS +
-# Chromium (Puppeteer) + Redis + autres processus.
-# Ancienne valeur : 1024 → crash OOM systématique au démarrage.
-CMD [ "node", "--max-old-space-size=1536", "dist/main.js" ]
+# --max-old-space-size=2048 : 2 GB heap pour NestJS + Prisma (536 modèles).
+# ⭐ 2026-10-16 — FIX CRASH OOM BOOT : 1536 ne suffisait plus (l'app a grandi :
+#    cantine, teacher-portal, p2p webrtc…) → « Reached heap limit » au
+#    mappage des routes, crash-loop Railway (502). Complément indispensable :
+#    déduplication des 7 instances de PrismaService (les modules ne doivent
+#    JAMAIS redéclarer le provider @Global — chaque instance charge un client
+#    Prisma 536 modèles + un Pool pg = ~150 MB de heap).
+# Railway alloue dynamiquement la RAM, on laisse ~1.5 GB pour l'OS + buffers.
+# Historique : 1024 → 1536 → 2048 (à chaque croissance de l'app).
+CMD [ "node", "--max-old-space-size=2048", "dist/main.js" ]

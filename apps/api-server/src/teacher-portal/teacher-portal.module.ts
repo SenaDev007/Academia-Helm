@@ -14,14 +14,13 @@
  *   - PedagogyModule    → AcademicStructurePrismaService (classes)
  *                          SubjectsPrismaService (matières)
  *   - CommonModule (global) → SubdomainService, AccessScopeService
- *   - DatabaseModule (global) → PrismaService
+ *   - DatabaseModule (global) → PrismaService (instance GLOBALE unique)
  *   - PortalModule     → PortalSessionService (sessions de portail)
  */
 
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { PrismaService } from '../database/prisma.service';
 import { SettingsModule } from '../settings/settings.module';
 import { PedagogyModule } from '../pedagogy/pedagogy.module';
 import { PortalModule } from '../portal/portal.module';
@@ -50,7 +49,7 @@ import { TeacherPortalController } from './controllers/teacher-portal.controller
     BillingModule,
     CommunicationModule,
   ],
-  providers: [PrismaService, TeacherProvisioningService, TeacherPortalAuthService, TeacherSubscriptionService],
+  providers: [TeacherProvisioningService, TeacherPortalAuthService, TeacherSubscriptionService],
   controllers: [TeacherPortalController],
   exports: [TeacherProvisioningService, TeacherPortalAuthService, TeacherSubscriptionService],
 })

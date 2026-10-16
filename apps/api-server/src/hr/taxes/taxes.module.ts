@@ -6,7 +6,6 @@
 
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../database/prisma.module';
-import { PrismaService } from '../../database/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
 import { TaxesController } from './taxes.controller';
@@ -22,7 +21,6 @@ import { TaxExcelService } from './services/tax-excel.service';
   imports: [PrismaModule],
   controllers: [TaxesController],
   providers: [
-    PrismaService,
     StorageService,
     PuppeteerPoolService,
     TaxSettingsService,

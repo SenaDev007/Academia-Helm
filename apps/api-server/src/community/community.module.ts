@@ -20,7 +20,6 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DatabaseModule } from '../database/database.module';
-import { PrismaService } from '../database/prisma.service';
 import { CommunityRepository } from './community.repository';
 import { CommunityAuthService } from './community-auth.service';
 import { CommunityProvisionService } from './community-provision.service';
@@ -46,7 +45,6 @@ import { CommunityAdminController } from './community-admin.controller';
   ],
   controllers: [CommunityController, CommunityAdminController],
   providers: [
-    PrismaService,
     CommunityRepository,
     CommunityAuthService,
     CommunityProvisionService,

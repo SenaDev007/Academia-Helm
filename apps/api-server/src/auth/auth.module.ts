@@ -9,7 +9,6 @@ import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AccessRequestsModule } from '../access-requests/access-requests.module';
-import { PrismaService } from '../database/prisma.service';
 import { UsersModule } from '../users/users.module';
 import { CommunicationModule } from '../communication/communication.module';
 import { AuthService } from './auth.service';
@@ -49,7 +48,6 @@ import { RolesGuard } from './guards/roles.guard';
     }),
   ],
   providers: [
-    PrismaService,
     AuthService,
     LocalStrategy,
     JwtStrategy, // Ajout de la stratégie JWT

@@ -6,7 +6,6 @@
 
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../database/prisma.module';
-import { PrismaService } from '../database/prisma.service';
 import { StaffPrismaService } from './staff-prisma.service';
 import { StaffMatriculeService } from './staff-matricule.service';
 import { StorageService } from '../common/services/storage.service';
@@ -70,7 +69,6 @@ import { InternshipsController } from './internships.controller';
 @Module({
   imports: [PrismaModule, OrionModule, CommunicationModule, TaxesModule, BillingModule],
   providers: [
-    PrismaService,
     StaffPrismaService,
     StaffMatriculeService,
     // StorageService fourni par CommonModule (singleton global)

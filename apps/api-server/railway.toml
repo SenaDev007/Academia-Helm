@@ -6,12 +6,11 @@
     grace_period = 300
 
 [env]
-  # 384MB heap max — adapté pour une VM 512MB (Fly.io, Railway, Render free tier).
-  # Répartition mémoire sur 512MB :
-  #   - OS + init : ~60MB
-  #   - Node runtime (non-heap) : ~60MB
-  #   - Prisma Client (534 modèles) : ~150MB
-  #   - Pool PostgreSQL (3 connexions) : ~21MB
-  #   - V8 heap : jusqu'à 384MB (mais GC agressif avant)
-  #   Total max théorique : ~675MB → GC tient le heap sous ~250MB en pratique
-  NODE_OPTIONS = "--max-old-space-size=768"
+  # ⭐ 2026-10-16 — FIX CRASH OOM BOOT : harmonisé avec le CMD du Dockerfile
+  #    (--max-old-space-size=2048). L'ancienne valeur 768 entrait en conflit
+  #    avec le CMD (les flags CLI priment, mais l'incohérence prêtait à
+  #    confusion). Le heap réel consommé au boot est désormais maîtrisé par
+  #    la DÉDUPLICATION des instances PrismaService (une seule instance
+  #    @Global : 7 instances chargeaient chacune le client Prisma 536
+  #    modèles + un Pool pg → « Reached heap limit » à 1533 MB, crash-loop).
+  NODE_OPTIONS = "--max-old-space-size=2048"

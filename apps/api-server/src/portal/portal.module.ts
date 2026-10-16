@@ -7,7 +7,6 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { PrismaService } from '../database/prisma.service';
 import { SchoolSearchService } from './services/school-search.service';
 import { PortalSessionService } from './services/portal-session.service';
 import { OrionInitService } from './services/orion-init.service';
@@ -40,7 +39,6 @@ import { CommunicationModule } from '../communication/communication.module';
     CommunicationModule,
   ],
   providers: [
-    PrismaService,
     PlatformMarketingReviewService,
     SchoolSearchService,
     PortalSessionService,

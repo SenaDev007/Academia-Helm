@@ -38,8 +38,57 @@ const BODY_LIMIT = process.env.JSON_BODY_LIMIT ?? '5mb';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
+
+  // ⭐ 2026-10-16 — FIX RATE LIMIT LOGGING RAILWAY (boot) :
+  //    « Railway rate limit reached for deployment… Messages dropped: 82 ».
+  //    Le mappage des routes (RouterExplorer ~600 routes) + l'init des modules
+  //    (InstanceLoader ~200 lignes) généraient des milliers de lignes en
+  //    quelques secondes au boot → dépassement du rate limit de logging
+  //    Railway (perte des VRAIS logs de diagnostic) + pression mémoire des
+  //    buffers. En production, ces contextes verbeux sont silencieux ; les
+  //    logs applicatifs (Bootstrap, erreurs, warnings) passent normalement.
+  const isProdEnv =
+    process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'production';
+  const BOOT_NOISY_CONTEXTS = [
+    'RouterExplorer',
+    'RoutesResolver',
+    'RouterMethodExplorer',
+    'InstanceLoader',
+    'InstanceWrapper',
+    'DependenciesMap',
+  ];
+  const isBootNoise = (...args: unknown[]): boolean => {
+    if (!isProdEnv) return false;
+    // Le contexte peut arriver en paramètre séparé (« RouterExplorer ») ou
+    // déjà formaté dans le message (« [RouterExplorer] Mapped … ») — on teste
+    // la simple présence du nom de contexte dans la concaténation.
+    const flat = args
+      .map((a) => (typeof a === 'string' ? a : a != null ? String((a as any).message ?? a) : ''))
+      .join(' ');
+    return BOOT_NOISY_CONTEXTS.some((ctx) => flat.includes(ctx));
+  };
+
   const app = await NestFactory.create(AppModule, {
-    logger: ['error', 'warn', 'log'],
+    logger: isProdEnv
+      ? {
+          log: (message: any, ...optionalParams: any[]) => {
+            if (isBootNoise(message, ...optionalParams)) return;
+            console.log(message, ...(optionalParams ?? []));
+          },
+          error: (message: any, ...optionalParams: any[]) => {
+            console.error(message, ...(optionalParams ?? []));
+          },
+          warn: (message: any, ...optionalParams: any[]) => {
+            console.warn(message, ...(optionalParams ?? []));
+          },
+          debug: () => undefined,
+          verbose: () => undefined,
+          fatal: (message: any, ...optionalParams: any[]) => {
+            console.error(message, ...(optionalParams ?? []));
+          },
+          setLogLevels: () => undefined,
+        }
+      : (['error', 'warn', 'log'] as const),
     bodyParser: false,
   });
 

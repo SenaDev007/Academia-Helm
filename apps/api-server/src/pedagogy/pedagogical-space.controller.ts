@@ -698,6 +698,11 @@ export class PedagogicalSpaceController {
   //    formulaire de préparation. L'enseignant vérifie, ajuste et
   //    enregistre : la fiche finale est rédigée sous SON compte.
   //    POST (JSON ~ jusqu'à 4 Mo d'images) — JWT + TenantGuard (classe).
+  //    ⭐ 2026-10-16 v3 — MODE ASYNCHRONE : les modèles vision hébergés
+  //    peuvent mettre 60 à 150 s (queue + génération) alors que la fenêtre
+  //    du proxy Vercel est de 60 s → le POST rend immédiatement un { jobId }
+  //    et l'extraction tourne en arrière-plan ; la modale suit l'avancement
+  //    via GET fiches/extract-ai/:jobId (requêtes courtes, sans fenêtre).
   @Post('fiches/extract-ai')
   async extractFicheFromImages(
     @TenantId() tenantId: string,
@@ -715,6 +720,22 @@ export class PedagogicalSpaceController {
     },
   ) {
     return this.ficheVisionExtraction.extractFicheFromImages(tenantId, body);
+  }
+
+  // ⭐ 2026-10-16 v3 — STATUT D'UN JOB D'EXTRACTION (polling de la modale).
+  //    Déclaré AVANT « fiches/:id » : bien que « fiches/extract-ai/:jobId »
+  //    (3 segments) ne collisionne pas avec « fiches/:id » (2 segments), on
+  //    garde la discipline d'ordre des routes spécifiques-first établie par
+  //    le bug « fiches/previous-years » (audit CRUD V1).
+  @Get('fiches/extract-ai/:jobId')
+  async getFicheExtractionStatus(
+    @TenantId() tenantId: string,
+    @Param('jobId') jobId: string,
+  ) {
+    if (!jobId || !/^[0-9a-f-]{10,64}$/i.test(jobId)) {
+      throw new BadRequestException('Identifiant de job invalide.');
+    }
+    return this.ficheVisionExtraction.getExtractionJobStatus(tenantId, jobId);
   }
 
   @Get('fiches')

@@ -45,8 +45,9 @@
  * ============================================================================
  */
 
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
 import { OpenRouterService } from '../common/services/openrouter.service';
 
 // ─── Limites de sécurité ────────────────────────────────────────────────────
@@ -54,28 +55,34 @@ import { OpenRouterService } from '../common/services/openrouter.service';
 const MAX_IMAGES = 6;
 const MAX_BASE64_LENGTH_PER_IMAGE = 700_000; // ~700 Ko base64 ≈ 520 Ko binaire
 const MAX_TOTAL_BASE64_LENGTH = 4_000_000; // < limite JSON body 5 Mo
-// ⭐ 2026-10-16 (fix production) — BUDGET TEMPOREL ALIGNÉ SUR LA FENÊTRE VERCEL :
-//    le BFF Next.js proxifie /api/pedagogy-space/* avec maxDuration 60 s. Un
-//    appel vision Nemotron en mode RAISONNEMENT dépasse largement 45 s (budget
-//    de réflexion par défaut 16384 tokens) → timeout systématique, puis repli
-//    qui explose la fenêtre → 504 muet pour l'enseignant. Trois correctifs :
-//    (1) le mode raisonnement est DÉSACTIVÉ (chat_template_kwargs
-//        .enable_thinking=false — « instruct mode », latence minimale) car
-//        l'extraction est une transcription déterministe qui n'a pas besoin
-//        de réflexion ; (2) max_tokens ramené de 6000 à 3500 (une fiche JSON
-//        complète ≈ 1500-2500 tokens) ; (3) le repli n'est tenté QUE si le
-//        modèle principal a échoué VITE (erreur 4xx/5xx immédiate) — après un
-//        timeout on rend une erreur claire immédiatement au lieu de consumer
-//        45 s supplémentaires que Vercel coupera de toute façon.
-const EXTRACTION_TIMEOUT_MS = 45_000;
-/** Budget total pour TOUS les modèles : < fenêtre Vercel (60 s) */
-const EXTRACTION_TOTAL_BUDGET_MS = 52_000;
-/** Échec du modèle principal sous ce délai (ex: 404/400 immédiat) → on tente
- *  le repli avec le budget restant ; au-delà (timeout) → erreur claire directe. */
-const EXTRACTION_FAST_FAIL_MS = 8_000;
+// ⭐ 2026-10-16 (fix production) — MODE ASYNCHRONE v3 : le POST rend un jobId
+//    immédiatement (la fenêtre proxy Vercel de 60 s n'est plus une contrainte),
+//    l'extraction tourne en arrière-plan sur le serveur NestJS longue durée,
+//    et la modale interroge GET fiches/extract-ai/:jobId (requêtes courtes).
+//    En parallèle, le mode RAISONNEMENT du Nemotron est désactivé (budget par
+//    défaut 16384 tokens → latence >45 s constatée en production) via
+//    chat_template_kwargs.enable_thinking=false + reasoning_budget=0, et
+//    max_tokens est ramené de 6000 à 3500 (une fiche JSON ≈ 1500-2500 tokens).
+const MODEL_TIMEOUT_PRIMARY_MS = 100_000;
+const MODEL_TIMEOUT_FALLBACK_MS = 60_000;
+/** Durée de vie d'un job d'extraction terminé dans le store en mémoire. */
+const JOB_TTL_MS = 10 * 60_000;
 /** Cap de génération : une fiche JSON complète ≈ 1500-2500 tokens → 3500
  *  suffit avec marge et divise le pire temps de génération. */
 const EXTRACTION_MAX_TOKENS = 3_500;
+
+/** Entrée du store de jobs d'extraction (polling par la modale). */
+interface ExtractionJob {
+  tenantId: string;
+  status: 'running' | 'done' | 'error';
+  startedAt: number;
+  finishedAt?: number;
+  fields?: Record<string, any>;
+  model?: string;
+  usage?: { promptTokens: number; completionTokens: number };
+  warnings?: string[];
+  error?: string;
+}
 
 // ─── Schémas des champs par type de fiche (listes blanches) ─────────────────
 // Chaque entrée : [clé du formulaire, description pour le modèle]
@@ -440,6 +447,11 @@ export class FicheVisionExtractionService {
   private readonly primaryModel: string;
   private readonly fallbackModel: string;
 
+  /** ⭐ v3 — store en mémoire des jobs d'extraction (polling par la modale).
+   *    Taille bornée par la purge paresseuse (jobs terminés > 10 min).
+   *    Hypothèse : instance Railway unique (déploiement standard du projet). */
+  private readonly extractionJobs = new Map<string, ExtractionJob>();
+
   constructor(
     private readonly configService: ConfigService,
     private readonly openRouter: OpenRouterService,
@@ -487,10 +499,8 @@ export class FicheVisionExtractionService {
     },
   ): Promise<{
     ok: true;
-    fields: Record<string, any>;
-    model: string;
-    usage?: { promptTokens: number; completionTokens: number };
-    warnings: string[];
+    jobId: string;
+    status: 'running';
   }> {
     const sheetType = String(body?.sheetType || '').toUpperCase();
     if (!KNOWN_SHEET_TYPES.has(sheetType)) {
@@ -542,10 +552,15 @@ export class FicheVisionExtractionService {
       );
     }
 
+    // ⭐ 2026-10-16 v3 — MODE ASYNCHRONE : les modèles vision hébergés (free
+    //    tier NVIDIA) peuvent mettre 60 à 150 s (queue + génération). La
+    //    requête HTTP ne peut PAS attendre (fenêtre Vercel 60 s → 504 muet).
+    //    On rend donc immédiatement un jobId, on lance l'extraction en
+    //    arrière-plan (le serveur NestJS/Railway est longue durée — la promesse
+    //    continue de tourner après la réponse) et la modale interroge le
+    //    statut via GET fiches/extract-ai/:jobId (requêtes courtes, sans
+    //    fenêtre). Le job vit 10 min en mémoire puis est purgé.
     const isMaternelle = sheetType === 'DOMAINE' || sheetType === 'DOMAINE_2';
-    const schemaFields = isMaternelle
-      ? MATERNELLE_FIELDS
-      : { ...PRIMAIRE_COMMON_FIELDS, ...(IBIS_FIELDS_BY_TYPE[sheetType] || {}) };
 
     // ⭐ 2026-10-16 v2 — CONTEXTE DÉCLARÉ AVANT L'IMPORT (modale dynamique) :
     //    niveau (repli : déduit du type de fiche), sous-matière / activité,
@@ -568,8 +583,104 @@ export class FicheVisionExtractionService {
       className: declaredClassName || undefined,
     };
 
+    const jobId = randomUUID();
+    this.extractionJobs.set(jobId, {
+      tenantId,
+      status: 'running',
+      startedAt: Date.now(),
+    });
+    this.sweepExtractionJobs();
+
+    // Fire-and-forget : la promesse tourne après la réponse HTTP ; toute
+    // erreur est capturée et consignée dans le job (jamais non gérée).
+    void this.runExtractionJob(jobId, tenantId, sheetType, isMaternelle, imageParts, extractionContext)
+      .catch((err) => {
+        const job = this.extractionJobs.get(jobId);
+        if (job && job.status === 'running') {
+          job.status = 'error';
+          job.error = err?.message || 'Erreur inattendue de l\'extraction.';
+          job.finishedAt = Date.now();
+        }
+        this.logger.error(`[tenant ${tenantId}] Job ${jobId} — erreur non capturée : ${err?.message}`);
+      });
+
+    this.logger.log(
+      `[tenant ${tenantId}] Job ${jobId} lancé — extraction fiche ${sheetType}, ${images.length} capture(s), modèle principal ${this.primaryModel}`,
+    );
+
+    return { ok: true, jobId, status: 'running' };
+  }
+
+  /**
+   * Statut d'un job d'extraction (polling de la modale).
+   * ⚠️ Portée tenant : un job n'est lisible que par son propre tenant.
+   */
+  getExtractionJobStatus(
+    tenantId: string,
+    jobId: string,
+  ): {
+    ok: true;
+    status: 'running' | 'done' | 'error';
+    elapsedMs?: number;
+    fields?: Record<string, any>;
+    model?: string;
+    usage?: { promptTokens: number; completionTokens: number };
+    warnings?: string[];
+    error?: string;
+  } {
+    const job = this.extractionJobs.get(jobId);
+    if (!job || job.tenantId !== tenantId) {
+      throw new NotFoundException(
+        'Extraction introuvable ou expirée (durée de vie 10 min) — relancez l\'extraction.',
+      );
+    }
+    const base: any = {
+      ok: true,
+      status: job.status,
+      elapsedMs: Date.now() - job.startedAt,
+    };
+    if (job.status === 'done') {
+      base.fields = job.fields;
+      base.model = job.model;
+      base.usage = job.usage;
+      base.warnings = job.warnings || [];
+    } else if (job.status === 'error') {
+      base.error = job.error;
+    }
+    return base;
+  }
+
+  /** Purge paresseuse des jobs terminés expirés (appelée à chaque création). */
+  private sweepExtractionJobs(): void {
+    const now = Date.now();
+    if (this.extractionJobs.size < 50) return;
+    for (const [id, job] of this.extractionJobs) {
+      if (job.status !== 'running' && job.finishedAt && now - job.finishedAt > JOB_TTL_MS) {
+        this.extractionJobs.delete(id);
+      }
+    }
+  }
+
+  /**
+   * Cœur de l'extraction — exécuté en ARRIÈRE-PLAN (fire-and-forget) : la
+   * fenêtre HTTP n'est plus une contrainte, chaque modèle dispose du temps
+   * qu'il lui faut (100 s principal / 60 s repli), le statut est publié dans
+   * le store pour le polling.
+   */
+  private async runExtractionJob(
+    jobId: string,
+    tenantId: string,
+    sheetType: string,
+    isMaternelle: boolean,
+    imageParts: Array<{ type: 'image_url'; image_url: { url: string; detail: 'high' } }>,
+    extractionContext: { level: string; matiereSpecifique?: string; domainNumber?: number; className?: string },
+  ): Promise<void> {
+    const schemaFields = isMaternelle
+      ? MATERNELLE_FIELDS
+      : { ...PRIMAIRE_COMMON_FIELDS, ...(IBIS_FIELDS_BY_TYPE[sheetType] || {}) };
+
     const systemPrompt = this.buildSystemPrompt(sheetType, isMaternelle, extractionContext);
-    const userPrompt = this.buildUserPrompt(sheetType, schemaFields, images.length, extractionContext);
+    const userPrompt = this.buildUserPrompt(sheetType, schemaFields, imageParts.length, extractionContext);
 
     // ⭐ Message multimodal : [texte d'instruction, image 1, image 2, ...]
     //    Les modèles vision NVIDIA acceptent plusieurs image_url dans le même
@@ -579,48 +690,39 @@ export class FicheVisionExtractionService {
     const warnings: string[] = [];
 
     // ── Appel modèle principal, puis repli ────────────────────────────────
-    const modelsToTry = [this.primaryModel, this.fallbackModel];
+    //    ⭐ v3 asynchrone : plus de contrainte de fenêtre HTTP — chaque modèle
+    //    dispose de son timeout propre (100 s principal / 60 s repli).
+    const modelsToTry: Array<{ model: string; timeoutMs: number }> = [
+      { model: this.primaryModel, timeoutMs: MODEL_TIMEOUT_PRIMARY_MS },
+      { model: this.fallbackModel, timeoutMs: MODEL_TIMEOUT_FALLBACK_MS },
+    ];
     let lastError: any = null;
-    let rawContent = '';
-    let usedModel = '';
-    const startedAt = Date.now();
 
     for (let mIdx = 0; mIdx < modelsToTry.length; mIdx++) {
-      const model = modelsToTry[mIdx];
+      const { model, timeoutMs } = modelsToTry[mIdx];
       const attemptStartedAt = Date.now();
-
-      // ⭐ Budget temporel partagé (fenêtre Vercel 60 s) : le repli ne démarre
-      //    que s'il reste au moins 10 s de budget. Après un TIMEOUT du modèle
-      //    principal (≈45 s consommés), on ne tente PAS le repli — Vercel
-      //    couperait la connexion de toute façon (504 muet) ; on rend une
-      //    erreur claire immédiatement.
-      if (mIdx > 0) {
-        const elapsed = attemptStartedAt - startedAt;
-        const remaining = EXTRACTION_TOTAL_BUDGET_MS - elapsed;
-        if (remaining < 10_000) {
-          this.logger.warn(
-            `[tenant ${tenantId}] Repli ${model} ÉVITÉ — budget restant ${remaining} ms (modèle principal a consommé ${elapsed} ms)`,
-          );
-          break;
-        }
-      }
 
       try {
         this.logger.log(
-          `[tenant ${tenantId}] Extraction fiche ${sheetType} — ${images.length} capture(s), modèle ${model}` +
+          `[tenant ${tenantId}] Extraction fiche ${sheetType} — ${imageParts.length} capture(s), modèle ${model} (timeout ${Math.round(timeoutMs / 1000)} s)` +
             (mIdx === 0 ? ' (thinking OFF — mode instruct)' : ' (repli)'),
         );
 
         // ⭐ NEMOTRON-3 : désactivation du mode raisonnement (« instruct mode »).
         //    L'extraction est une TRANSCRIPTION déterministe — la réflexion
         //    n'apporte rien et son budget par défaut (16384 tokens) fait
-        //    exploser la latence (>45 s) sur l'endpoint hébergé.
-        //    Paramètre vLLM/NIM standard : chat_template_kwargs.enable_thinking.
-        //    Les modèles non-Nemotron (llama vision…) n'ont pas de mode
-        //    raisonnement — aucun paramètre à leur passer.
+        //    exploser la latence sur l'endpoint hébergé.
+        //    Deux canaux complémentaires (au moins un est honoré selon le
+        //    gateway) : chat_template_kwargs.enable_thinking (vLLM) et
+        //    reasoning_budget: 0 (paramètre documenté de l'API hébergée
+        //    build.nvidia.com). Les modèles non-Nemotron (llama vision…)
+        //    n'ont pas de mode raisonnement — rien à leur passer.
         const isNemotron = /nemotron/i.test(model);
         const extraBody = isNemotron
-          ? { chat_template_kwargs: { enable_thinking: false } }
+          ? {
+              chat_template_kwargs: { enable_thinking: false },
+              reasoning_budget: 0,
+            }
           : undefined;
 
         const response = await this.openRouter.chat({
@@ -631,9 +733,9 @@ export class FicheVisionExtractionService {
           ],
           temperature: 0.1, // extraction déterministe (pas de création)
           maxTokens: EXTRACTION_MAX_TOKENS, // cap génération (fiche JSON ≈ 1500-2500 tokens)
-          timeout: EXTRACTION_TIMEOUT_MS,
+          timeout: timeoutMs,
           enableFallback: false, // le fallback global pointe vers des modèles TEXTE — incompatibles images
-          maxRetries: 1, // ⭐ 1 tentative par modèle : le budget temporel est partagé avec le repli
+          maxRetries: 1, // ⭐ 1 tentative par modèle : le repli enchaîne immédiatement
           persona: 'SCE',
           extraBody,
         });
@@ -645,10 +747,9 @@ export class FicheVisionExtractionService {
               : 'Réponse vide du modèle',
           );
         }
-        rawContent = response.content;
-        usedModel = response.model || model;
+        const usedModel = response.model || model;
 
-        const parsed = this.parseJsonResponse(rawContent);
+        const parsed = this.parseJsonResponse(response.content);
         if (!parsed) {
           throw new Error('Impossible de parser la réponse JSON du modèle');
         }
@@ -662,52 +763,55 @@ export class FicheVisionExtractionService {
           throw new Error('Aucun champ exploitable extrait — captures probablement illisibles ou hors sujet');
         }
 
+        const elapsedMs = Date.now() - attemptStartedAt;
         this.logger.log(
-          `[tenant ${tenantId}] Extraction réussie — modèle ${usedModel}, ${filledCount} champ(s) rempli(s)` +
+          `[tenant ${tenantId}] Extraction réussie (job ${jobId}) — modèle ${usedModel}, ${filledCount} champ(s) rempli(s), ${Math.round(elapsedMs / 1000)} s` +
           (response.usage ? `, ${response.usage.totalTokens} tokens` : ''),
         );
 
-        return {
-          ok: true,
-          fields,
-          model: usedModel,
-          usage: response.usage
+        // ⭐ Publication du résultat dans le store → la modale (polling)
+        //    reçoit status:'done' + les champs.
+        const job = this.extractionJobs.get(jobId);
+        if (job) {
+          job.status = 'done';
+          job.finishedAt = Date.now();
+          job.fields = fields;
+          job.model = usedModel;
+          job.usage = response.usage
             ? { promptTokens: response.usage.promptTokens, completionTokens: response.usage.completionTokens }
-            : undefined,
-          warnings,
-        };
+            : undefined;
+          job.warnings = warnings;
+        }
+        return;
       } catch (error: any) {
         lastError = error;
         const attemptElapsed = Date.now() - attemptStartedAt;
         this.logger.warn(
           `[tenant ${tenantId}] Modèle ${model} échoué pour l'extraction (${attemptElapsed} ms) : ${error?.message}`,
         );
-
-        // ⭐ TIMEOUT du modèle principal : inutile de consommer 45 s de plus
-        //    pour le repli — la fenêtre Vercel (60 s) serait dépassée et
-        //    l'enseignant recevrait un 504 muet. On sort avec un message clair.
-        const isTimeoutError =
-          /abort|timeout|timed?\s*out|expiré/i.test(String(error?.message || '')) ||
-          attemptElapsed >= EXTRACTION_TIMEOUT_MS - 1_500;
-        if (mIdx === 0 && isTimeoutError) {
-          this.logger.error(
-            `[tenant ${tenantId}] Extraction fiche ${sheetType} — TIMEOUT du modèle ${model} après ${attemptElapsed} ms, repli écarté (budget Vercel)`,
-          );
-          throw new BadRequestException(
-            "Le modèle de vision IA n'a pas répondu assez vite (service momentanément chargé). " +
-            "Réessayez dans quelques instants — si le problème persiste, préférez une capture unique, nette et bien cadrée.",
-          );
-        }
+        // v3 asynchrone : PLUS de skip du repli — le job tourne hors fenêtre
+        //    HTTP, le modèle suivant est tenté systématiquement.
       }
     }
 
     this.logger.error(
-      `[tenant ${tenantId}] Extraction fiche ${sheetType} IMPOSSIBLE après tous les modèles : ${lastError?.message}`,
+      `[tenant ${tenantId}] Extraction fiche ${sheetType} IMPOSSIBLE après tous les modèles (job ${jobId}) : ${lastError?.message}`,
     );
-    throw new BadRequestException(
-      `L'extraction IA a échoué (${lastError?.message || 'erreur inconnue'}). ` +
-      "Vérifiez la qualité des captures (l'image doit être nette, bien cadrée, lisible) puis réessayez.",
-    );
+
+    // ⭐ Publication de l'erreur dans le store → la modale (polling) reçoit
+    //    status:'error' + le message. On ne THROW PAS : on est en arrière-plan,
+    //    il n'y a plus de requête HTTP à interrompre.
+    const isTimeout =
+      lastError && /abort|timeout|timed?\s*out|expiré/i.test(String(lastError?.message || ''));
+    const job = this.extractionJobs.get(jobId);
+    if (job) {
+      job.status = 'error';
+      job.finishedAt = Date.now();
+      job.error = isTimeout
+        ? "Le modèle de vision IA n'a pas répondu assez vite (service momentanément chargé). Réessayez dans quelques instants — si le problème persiste, préférez une capture unique, nette et bien cadrée."
+        : `L'extraction IA a échoué (${lastError?.message || 'erreur inconnue'}). ` +
+          "Vérifiez la qualité des captures (l'image doit être nette, bien cadrée, lisible) puis réessayez.";
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────

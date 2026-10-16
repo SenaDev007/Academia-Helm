@@ -199,6 +199,21 @@ export function FicheAiExtractionModal({
   const [modelUsed, setModelUsed] = useState<string>("");
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // ⭐ v3 asynchrone — polling du job d'extraction + chrono affiché à l'utilisateur
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  const cancelPolling = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
+  // Arrêt du polling au démontage de la modale
+  useEffect(() => () => {
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+  }, []);
 
   // ── Initialisation du contexte à l'ouverture ────────────────────────────
   useEffect(() => {
@@ -262,6 +277,7 @@ export function FicheAiExtractionModal({
         })();
 
   const reset = useCallback(() => {
+    cancelPolling();
     setStep("context");
     setImages([]);
     setExtractedFields(null);
@@ -270,8 +286,9 @@ export function FicheAiExtractionModal({
     setModelUsed("");
     setCompressing(false);
     setExtracting(false);
+    setElapsedSec(0);
     setDragOver(false);
-  }, []);
+  }, [cancelPolling]);
 
   const handleClose = useCallback(() => {
     if (extracting) return; // pas de fermeture pendant l'appel IA
@@ -347,10 +364,14 @@ export function FicheAiExtractionModal({
     setExtractedFields(null);
     setRawFields(null);
     setWarnings([]);
+    setElapsedSec(0);
     try {
       // ⭐ PROMPT DYNAMIQUE : le contexte déclaré (niveau × type × sous-matière
       //    × domaine × classe) est envoyé au backend, qui construit le prompt
       //    d'extraction à partir de la structure EXACTE de cette fiche cible.
+      // ⭐ v3 ASYNCHRONE : le POST rend immédiatement un jobId (l'IA vision
+      //    peut prendre 1 à 2 min — fenêtre proxy 60 s dépassée sinon), puis
+      //    on suit l'avancement en interrogeant le statut du job.
       const res = await fetch("/api/pedagogy-space/fiches/extract-ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -378,13 +399,53 @@ export function FicheAiExtractionModal({
         const message = data?.message || `Erreur ${res.status}`;
         throw new Error(Array.isArray(message) ? message.join(" ") : message);
       }
-      if (!data?.ok || !data?.fields) {
-        throw new Error("Réponse inattendue du serveur.");
+      if (!data?.jobId) {
+        throw new Error("Réponse inattendue du serveur (jobId manquant).");
       }
+
+      // ── Polling du job (toutes les 2,5 s, pendant au plus ~3,5 min) ──────
+      const job: { fields: Record<string, any>; model?: string; warnings?: string[] } =
+        await new Promise((resolve, reject) => {
+          const startedAt = Date.now();
+          const POLL_INTERVAL_MS = 2500;
+          const POLL_MAX_MS = 210_000;
+          const tick = async () => {
+            try {
+              const r = await fetch(`/api/pedagogy-space/fiches/extract-ai/${data.jobId}`, {
+                credentials: "include",
+              });
+              const j = await r.json().catch(() => ({}));
+              if (!r.ok) {
+                reject(new Error(j?.message || `Erreur ${r.status} pendant l'extraction.`));
+                return;
+              }
+              if (j?.status === "done" && j.fields) {
+                resolve(j);
+                return;
+              }
+              if (j?.status === "error") {
+                reject(new Error(j?.error || "L'extraction IA a échoué."));
+                return;
+              }
+              if (Date.now() - startedAt > POLL_MAX_MS) {
+                reject(new Error(
+                  "L'extraction prend anormalement longtemps (plus de 3 minutes 30). " +
+                  "Réessayez dans quelques instants — le service IA est peut-être momentanément saturé.",
+                ));
+                return;
+              }
+              setElapsedSec(Math.round((Date.now() - startedAt) / 1000));
+              pollTimerRef.current = setTimeout(tick, POLL_INTERVAL_MS);
+            } catch (e: any) {
+              reject(e);
+            }
+          };
+          void tick();
+        });
 
       // Mise en plat pour la prévisualisation
       const flat: ExtractedField[] = [];
-      for (const [key, value] of Object.entries(data.fields)) {
+      for (const [key, value] of Object.entries(job.fields)) {
         if (key === "deroulement" || key === "maternelle.der5") {
           if (Array.isArray(value) && value.length > 0) {
             flat.push({
@@ -405,9 +466,9 @@ export function FicheAiExtractionModal({
       }
 
       setExtractedFields(flat);
-      setRawFields(data.fields);
-      setWarnings(Array.isArray(data.warnings) ? data.warnings : []);
-      setModelUsed(String(data.model || ""));
+      setRawFields(job.fields);
+      setWarnings(Array.isArray(job.warnings) ? job.warnings : []);
+      setModelUsed(String(job.model || ""));
       toast.success(`${flat.length} champ(s) extraits`, {
         description: "Vérifiez le contenu puis appliquez-le au formulaire.",
       });
@@ -416,9 +477,11 @@ export function FicheAiExtractionModal({
         description: e?.message || "Erreur réseau — vérifiez votre connexion puis réessayez.",
       });
     } finally {
+      cancelPolling();
       setExtracting(false);
+      setElapsedSec(0);
     }
-  }, [images, effectiveContext]);
+  }, [images, effectiveContext, cancelPolling]);
 
   const applyToForm = useCallback(() => {
     if (!rawFields) return;
@@ -795,9 +858,13 @@ export function FicheAiExtractionModal({
           {extracting && (
             <div className="text-center py-10">
               <Loader2 className="h-10 w-10 text-violet-600 animate-spin mx-auto mb-3" />
-              <p className="font-semibold text-slate-800">L&apos;IA lit vos captures…</p>
+              <p className="font-semibold text-slate-800">
+                L&apos;IA lit vos captures…
+                {elapsedSec > 2 && <span className="ml-2 text-violet-600 tabular-nums">{elapsedSec} s</span>}
+              </p>
               <p className="text-sm text-slate-500 mt-1">
-                Transcription du contenu de la fiche {effectiveContext.sheetTypeLabel} — cela peut prendre jusqu&apos;à une minute.
+                Transcription du contenu de la fiche {effectiveContext.sheetTypeLabel} — cela peut prendre
+                une à deux minutes selon la charge du service IA. Cette page reste ouverte, aucune action requise.
               </p>
             </div>
           )}

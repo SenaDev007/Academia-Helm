@@ -35,10 +35,15 @@ import {
   FileText, Loader2, Plus, Save, RefreshCw, Send, Trash2,
   ChevronLeft, Clock, CheckCircle2, XCircle, BookOpen, Sigma,
   FlaskConical, Users, Palette, Download, History, Copy, Dumbbell,
-  Blocks, Shapes, Languages, AlertTriangle,
+  Blocks, Shapes, Languages, AlertTriangle, ScanSearch,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RichTextEditor } from "@/components/ui/RichTextEditor";
+// ⭐ 2026-10-16 — Extraction IA d'une fiche à partir de captures (modèles
+//    vision NVIDIA) : l'enseignant photographie/capture une fiche existante
+//    (PDF/Word/photocopie avec filigrane), l'IA transcrit le contenu et les
+//    champs du formulaire se remplissent. Il vérifie, ajuste, enregistre.
+import { FicheAiExtractionModal } from "@/components/pedagogy/production/FicheAiExtractionModal";
 import { useAppSession } from "@/contexts/AppSessionContext";
 // ⭐ 2026-09-15 : SignatureCanvas + useAppSession retirés — plus aucune
 //    signature sur les fiches pédagogiques, et le user connecté n'est plus
@@ -234,6 +239,19 @@ const CONTENT_FIELDS = [
   "app_col1", "app_col2", "app_col3",
   "objectivation", "evalRetour", "projection",
 ];
+// ⭐ 2026-10-16 — Vidage « profond » d'une valeur (extraction IA) : un champ
+//    est considéré VIDE si sa valeur est null/undefined, une chaîne blanche,
+//    ou un objet/tableau dont TOUTES les feuilles sont vides (ex: la structure
+//    maternelle pré-initialisée du formulaire). Sert à ne JAMAIS écraser une
+//    saisie existante de l'enseignant lors de l'application des champs IA.
+function isDeepEmpty(v: any): boolean {
+  if (v == null) return true;
+  if (typeof v === "string") return v.trim() === "";
+  if (Array.isArray(v)) return v.length === 0 || v.every(isDeepEmpty);
+  if (typeof v === "object") return Object.values(v).every(isDeepEmpty);
+  return false; // nombres, booléens → considérés comme renseignés
+}
+
 function stripHtml(v: any): string {
   return String(v || "").replace(/<[^>]*>/g, "").trim();
 }
@@ -437,6 +455,67 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   const [filterType, setFilterType] = useState<string>("");
   const [saving, setSaving] = useState(false);
 
+  // ⭐ 2026-10-16 — EXTRACTION IA DEPUIS DES CAPTURES : état d'ouverture de la
+  //    modale + fusion des champs extraits dans le formulaire (ne remplit que
+  //    les champs ENCORE VIDES — l'enseignant garde la main sur sa saisie).
+  const [showAiExtraction, setShowAiExtraction] = useState(false);
+
+  const handleApplyAiFields = useCallback((fields: Record<string, any>) => {
+    setForm((prev: any) => {
+      const next: any = { ...prev };
+      const matUpdate: any = { ...(prev.maternelle || {}) };
+      let matChanged = false;
+
+      for (const [key, value] of Object.entries(fields)) {
+        // II- Déroulement : appliqué seulement si le tableau est encore vide
+        if (key === "deroulement") {
+          if (Array.isArray(value) && value.length > 0 &&
+              (!Array.isArray(prev.deroulement) || prev.deroulement.length === 0)) {
+            next.deroulement = value;
+          }
+          continue;
+        }
+
+        // Maternelle — clés en pointillé « maternelle.x.y » → objet imbriqué
+        if (key.startsWith("maternelle.")) {
+          const path = key.substring("maternelle.".length).split(".");
+          let target: any = matUpdate;
+          for (let i = 0; i < path.length - 1; i++) {
+            target[path[i]] = { ...(target[path[i]] || {}) };
+            target = target[path[i]];
+          }
+          const leaf = path[path.length - 1];
+          if (isDeepEmpty(target[leaf]) && !isDeepEmpty(value)) {
+            target[leaf] = value;
+            matChanged = true;
+          }
+          continue;
+        }
+
+        // Champ scalaire — rempli seulement s'il est vide (jamais écrasé)
+        // Exception lessonDate : pré-rempli avec la date du jour par défaut
+        // (donc « non vide » artificiellement) → on l'applique si l'IA a lu
+        // une date valide AAAA-MM-JJ sur la fiche d'origine.
+        if (key === "lessonDate") {
+          if (/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) {
+            next.lessonDate = String(value);
+          }
+          continue;
+        }
+
+        if (isDeepEmpty(prev[key]) && !isDeepEmpty(value)) {
+          next[key] = value;
+        }
+      }
+
+      if (matChanged) next.maternelle = matUpdate;
+      return next;
+    });
+  }, []);
+
+  // (currentSheetTypeLabel est déclaré APRÈS `const [form, setForm]` — il
+  //  lit form.sheetType au rendu, il ne doit pas précéder la déclaration.)
+
   // ⭐ État pour la réutilisation cross-année des fiches
   //    Permet à un enseignant de retrouver les fiches validées des années
   //    précédentes (même classe + matière) et de les dupliquer vers l'année courante.
@@ -521,6 +600,10 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     },
   };
   const [form, setForm] = useState<any>(emptyForm);
+
+  // ⭐ Libellé lisible du type de fiche courant (pour la modale d'extraction IA)
+  const currentSheetTypeLabel = [...SHEET_TYPES, ...MATERNELLE_SHEET_TYPES]
+    .find((t: any) => t.type === form.sheetType)?.label || form.sheetType;
 
   // ⭐ MATERNELLE — MATIÈRES DYNAMIQUES : matières configurées pour la classe
   //    sélectionnée (module Pédagogie → « Matières & programmes »), chargées
@@ -1441,6 +1524,34 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
             </div>
           </div>
 
+          {/* ⭐ 2026-10-16 — EXTRACTION IA DEPUIS DES CAPTURES (maternelle) :
+              l'enseignante dépose les captures d'une fiche Domaine existante
+              (photocopie/PDF avec filigrane) — l'IA transcrit et remplit les
+              champs vides. Vérification + ajustement avant enregistrement. */}
+          <div className="bg-gradient-to-r from-violet-50 via-white to-white rounded-xl border border-violet-200 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-violet-900 flex items-center gap-2">
+                <ScanSearch className="h-4 w-4 shrink-0" />
+                Vous avez déjà cette fiche sur papier ou en PDF&nbsp;?
+              </p>
+              <p className="text-xs text-slate-600 mt-0.5">
+                Déposez jusqu'à 6 captures de la fiche <span className="font-semibold">{currentSheetTypeLabel}</span> — l'IA
+                transcrit le contenu et remplit les champs vides ci-dessous. Vous vérifiez, vous ajustez, vous enregistrez&nbsp;:
+                la fiche finale sera la vôtre, sans filigrane d'origine.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAiExtraction(true)}
+              disabled={isReadOnly}
+              className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white rounded-lg text-sm font-bold hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+              title={isReadOnly ? "Fiche en lecture seule (statut: " + form.status + ")" : "Extraire le contenu d'une fiche existante depuis des captures"}
+            >
+              <ScanSearch className="h-4 w-4" />
+              Extraire depuis des captures (IA)
+            </button>
+          </div>
+
           {/* === Document — Modèle officiel maternelle === */}
           {/* ⭐ Ancre du défilement automatique « Voir »/« Préparer » (4e passe) */}
           <div ref={ficheDocumentRef} className="scroll-mt-4 bg-white rounded-xl border-2 border-slate-800 p-6 space-y-6">
@@ -1891,6 +2002,16 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               </section>
             )}
           </div>
+
+          {/* ⭐ 2026-10-16 — MODALE : Extraction IA (maternelle) */}
+          <FicheAiExtractionModal
+            open={showAiExtraction}
+            onClose={() => setShowAiExtraction(false)}
+            sheetType={form.sheetType}
+            sheetTypeLabel={currentSheetTypeLabel}
+            className={selectedClassInfo?.className || form.className}
+            onApply={handleApplyAiFields}
+          />
         </div>
       );
     }
@@ -1941,6 +2062,37 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               );
             })}
           </div>
+        </div>
+
+        {/* ⭐ 2026-10-16 — EXTRACTION IA DEPUIS DES CAPTURES : bannière d'action
+            sous le sélecteur de type. L'enseignant choisit D'ABORD le type de
+            fiche ci-dessus (l'IA en a besoin pour cibler les bons champs),
+            puis dépose ses captures d'une fiche existante (PDF/Word/photocopie
+            avec filigrane) — le contenu est transcrit et les champs vides du
+            formulaire se remplissent. Vérification + ajustement avant
+            enregistrement : la fiche finale est rédigée sous SON compte. */}
+        <div className="bg-gradient-to-r from-violet-50 via-white to-white rounded-xl border border-violet-200 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-violet-900 flex items-center gap-2">
+              <ScanSearch className="h-4 w-4 shrink-0" />
+              Vous avez déjà cette fiche sur papier ou en PDF&nbsp;?
+            </p>
+            <p className="text-xs text-slate-600 mt-0.5">
+              Déposez jusqu'à 6 captures de la fiche <span className="font-semibold">{currentSheetTypeLabel}</span> — l'IA
+              transcrit le contenu et remplit les champs vides ci-dessous. Vous vérifiez, vous ajustez, vous enregistrez&nbsp;:
+              la fiche finale sera la vôtre, sans filigrane d'origine.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowAiExtraction(true)}
+            disabled={isReadOnly}
+            className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white rounded-lg text-sm font-bold hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            title={isReadOnly ? "Fiche en lecture seule (statut: " + form.status + ")" : "Extraire le contenu d'une fiche existante depuis des captures"}
+          >
+            <ScanSearch className="h-4 w-4" />
+            Extraire depuis des captures (IA)
+          </button>
         </div>
 
         {/* === Document — Structure conforme au PDF === */}
@@ -2671,6 +2823,19 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
           })}
         </div>
       )}
+
+      {/* ⭐ 2026-10-16 — MODALE : Extraction IA d'une fiche depuis des captures
+          (modèles vision NVIDIA). Le type de fiche courant + la classe
+          sélectionnée donnent le contexte ; les champs extraits ne remplissent
+          que les champs encore vides du formulaire. */}
+      <FicheAiExtractionModal
+        open={showAiExtraction}
+        onClose={() => setShowAiExtraction(false)}
+        sheetType={form.sheetType}
+        sheetTypeLabel={currentSheetTypeLabel}
+        className={selectedClassInfo?.className || form.className}
+        onApply={handleApplyAiFields}
+      />
 
       {/* ⭐ MODAL : Réutiliser une fiche d'une année précédente (cross-year reuse) */}
       {showPreviousYearsModal && (

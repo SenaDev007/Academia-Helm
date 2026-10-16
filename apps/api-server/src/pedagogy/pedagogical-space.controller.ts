@@ -30,6 +30,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { PedagogicalSpaceService } from './pedagogical-space.service';
+import { FicheVisionExtractionService } from './fiche-vision-extraction.service';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { AcademicYearId } from '../common/decorators/academic-year-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -41,7 +42,10 @@ import { TenantGuard } from '../common/guards/tenant.guard';
 export class PedagogicalSpaceController {
   private readonly logger = new Logger(PedagogicalSpaceController.name);
 
-  constructor(private readonly service: PedagogicalSpaceService) {}
+  constructor(
+    private readonly service: PedagogicalSpaceService,
+    private readonly ficheVisionExtraction: FicheVisionExtractionService,
+  ) {}
 
   // ─── MES CLASSES ──────────────────────────────────────────────────────────
 
@@ -684,6 +688,27 @@ export class PedagogicalSpaceController {
   // ===========================================================================
   // FICHES PÉDAGOGIQUES PRIMAIRE (6 types: MATH/FRANCAIS/EST/ES/EA/EPS)
   // ===========================================================================
+
+  // ⭐ 2026-10-16 — EXTRACTION IA D'UNE FICHE À PARTIR DE CAPTURES :
+  //    l'enseignant soumet 1 à 6 captures (data URLs base64) d'une fiche
+  //    existante (PDF/Word/photocopie avec filigrane) + le type de fiche
+  //    choisi ; les modèles vision NVIDIA (build.nvidia.com — nemotron omni
+  //    puis llama-3.2-90b-vision en repli) extraient le contenu et le
+  //    service retourne les champs structurés pour pré-remplir le
+  //    formulaire de préparation. L'enseignant vérifie, ajuste et
+  //    enregistre : la fiche finale est rédigée sous SON compte.
+  //    POST (JSON ~ jusqu'à 4 Mo d'images) — JWT + TenantGuard (classe).
+  @Post('fiches/extract-ai')
+  async extractFicheFromImages(
+    @TenantId() tenantId: string,
+    @Body() body: {
+      sheetType?: string;
+      images?: string[];
+      className?: string;
+    },
+  ) {
+    return this.ficheVisionExtraction.extractFicheFromImages(tenantId, body);
+  }
 
   @Get('fiches')
   async getPedagogicalFiches(

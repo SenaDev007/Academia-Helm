@@ -80,6 +80,7 @@ import { StorageService } from '../common/services/storage.service';
 // Module 2 - Espace Pédagogique Enseignant + Contrôle Direction
 import { PedagogicalSpaceService } from './pedagogical-space.service';
 import { PedagogicalSpaceController } from './pedagogical-space.controller';
+import { FicheVisionExtractionService } from './fiche-vision-extraction.service';
 
 // Module 2 - Suivi des retours de matériel pédagogique (refonte 2026-08-20)
 import { MaterialReturnsService } from './material-returns.service';
@@ -141,6 +142,9 @@ import { SettingsModule } from '../settings/settings.module';
     // StorageService fourni par CommonModule (singleton global)
     // Module 2 - Espace Pédagogique Enseignant + Contrôle Direction
     PedagogicalSpaceService,
+    // ⭐ 2026-10-16 — Extraction IA des fiches pédagogiques depuis des captures
+    //    (modèles vision NVIDIA — build.nvidia.com)
+    FicheVisionExtractionService,
     SubjectsPrismaService,
     TeachersPrismaService,
     PedagogyPrismaService,

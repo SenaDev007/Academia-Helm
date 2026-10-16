@@ -5,6 +5,10 @@
       "maxDuration": 30,
       "memory": 1024
     },
+    "src/app/api/pedagogy-space/[...path]/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
     "src/app/api/hr/recruitment/apply/route.ts": {
       "maxDuration": 60,
       "memory": 1024

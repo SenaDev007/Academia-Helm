@@ -465,6 +465,38 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   const [showAiExtraction, setShowAiExtraction] = useState(false);
 
   const handleApplyAiFields = useCallback((fields: Record<string, any>, context?: FicheExtractionContext) => {
+    // ⭐ 2026-10-16 (fix reconfiguration) : si le niveau DÉCLARÉ dans la modale
+    //    (Maternelle/Primaire) ne correspond pas à la classe actuellement
+    //    sélectionnée (ex: formulaire ouvert sur une fiche maternelle mais
+    //    extraction déclarée « Primaire / Français / CM1 »), on bascule la
+    //    classe vers une classe du bon niveau — sinon la branche de rendu
+    //    (isMaternelleClass) resterait sur le mauvais format de fiche et les
+    //    champs extraits n'auraient aucun champ visible à remplir.
+    if (context?.sheetType) {
+      const targetIsMaternelle = context.sheetType === "DOMAINE" || context.sheetType === "DOMAINE_2";
+      if (targetIsMaternelle !== isMaternelleClass) {
+        const wanted = String(context.className || "").trim().toUpperCase();
+        const pool = classes.filter((c: any) => {
+          const isMat =
+            String(c.schoolLevelCode || "").toUpperCase() === "MATERNELLE" ||
+            String(c.schoolLevelName || "").toLowerCase() === "maternelle";
+          return isMat === targetIsMaternelle;
+        });
+        const match =
+          pool.find((c: any) => String(c.className || "").toUpperCase() === wanted) ||
+          (wanted ? pool.find((c: any) => String(c.className || "").toUpperCase().startsWith(wanted)) : undefined) ||
+          (wanted ? pool.find((c: any) => String(c.className || "").toUpperCase().includes(wanted)) : undefined) ||
+          pool[0];
+        if (match) {
+          setSelectedClassId(match.classId);
+          // L'effet de synchronisation classe→formulaire reprendra
+          // form.classId/className/cours — on marque le choix utilisateur
+          // pour que l'effet d'initialisation ne l'écrase pas.
+          userPickedClassRef.current = true;
+        }
+      }
+    }
+
     setForm((prev: any) => {
       const next: any = { ...prev };
       const matUpdate: any = { ...(prev.maternelle || {}) };
@@ -537,7 +569,9 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       if (matChanged) next.maternelle = matUpdate;
       return next;
     });
-  }, []);
+    // ⭐ deps : classes + isMaternelleClass pour la bascule de niveau
+    //    (Maternelle ↔ Primaire) lors de l'application du contexte déclaré.
+  }, [classes, isMaternelleClass]);
 
   // (currentSheetTypeLabel est déclaré APRÈS `const [form, setForm]` — il
   //  lit form.sheetType au rendu, il ne doit pas précéder la déclaration.)

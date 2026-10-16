@@ -705,6 +705,13 @@ export class PedagogicalSpaceController {
       sheetType?: string;
       images?: string[];
       className?: string;
+      /** ⭐ 2026-10-16 v2 — contexte déclaré AVANT l'import (prompt dynamique) :
+       *    niveau (MATERNELLE | PRIMAIRE), sous-matière déclarée (ex: Dictée,
+       *    Morale, Chant) et domaine maternelle visé (1..5). Le prompt
+       *    d'extraction est construit sur la structure EXACTE de cette fiche. */
+      level?: string;
+      matiereSpecifique?: string;
+      domainNumber?: number;
     },
   ) {
     return this.ficheVisionExtraction.extractFicheFromImages(tenantId, body);

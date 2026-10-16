@@ -77,13 +77,17 @@ const ConflictResolutionModal = dynamic(
 
 // ⭐ FIX 2026-10-16 : « Mes élèves » juste après « Tableau de bord » (retour
 //    utilisateur : c'est le 2e workflow le plus fréquent après le dashboard).
+// ⭐ 2026-10-16 (demande promoteur) — « Évaluations & bulletins » RETIRÉ de
+//    la navigation du portail Helm Enseignant (module masqué pour le moment :
+//    saisie de notes et bulletins rattachés au fonctionnement d'une école).
+//    La route /prof/examens redirige vers le tableau de bord (page conservée
+//    en arrière-plan pour une réactivation ultérieure).
 const NAV_ITEMS = [
   { href: '/prof/dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
   { href: '/prof/eleves', label: 'Mes élèves', icon: Users },
   { href: '/prof/pedagogie', label: 'Espace pédagogique', icon: BookOpen },
   { href: '/prof/travaux', label: 'Travaux & suivi', icon: ClipboardList },
   { href: '/prof/planification', label: 'Planification annuelle', icon: CalendarDays },
-  { href: '/prof/examens', label: 'Évaluations & bulletins', icon: Calculator },
   { href: '/prof/parametres', label: 'Paramètres', icon: Settings },
 ];
 

@@ -43,7 +43,7 @@ import { RichTextEditor } from "@/components/ui/RichTextEditor";
 //    vision NVIDIA) : l'enseignant photographie/capture une fiche existante
 //    (PDF/Word/photocopie avec filigrane), l'IA transcrit le contenu et les
 //    champs du formulaire se remplissent. Il vérifie, ajuste, enregistre.
-import { FicheAiExtractionModal } from "@/components/pedagogy/production/FicheAiExtractionModal";
+import { FicheAiExtractionModal, type FicheExtractionContext } from "@/components/pedagogy/production/FicheAiExtractionModal";
 import { useAppSession } from "@/contexts/AppSessionContext";
 // ⭐ 2026-09-15 : SignatureCanvas + useAppSession retirés — plus aucune
 //    signature sur les fiches pédagogiques, et le user connecté n'est plus
@@ -458,13 +458,39 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   // ⭐ 2026-10-16 — EXTRACTION IA DEPUIS DES CAPTURES : état d'ouverture de la
   //    modale + fusion des champs extraits dans le formulaire (ne remplit que
   //    les champs ENCORE VIDES — l'enseignant garde la main sur sa saisie).
+  //    ⭐ v2 (prompt dynamique) : la modale demande AVANT l'import le NIVEAU
+  //    (Maternelle/Primaire), la catégorie de fiche (domaine I-V / matière +
+  //    sous-matière) et la classe — le contexte choisi RECONFIGURE le
+  //    formulaire (type de fiche, sections spécifiques, domaine maternelle).
   const [showAiExtraction, setShowAiExtraction] = useState(false);
 
-  const handleApplyAiFields = useCallback((fields: Record<string, any>) => {
+  const handleApplyAiFields = useCallback((fields: Record<string, any>, context?: FicheExtractionContext) => {
     setForm((prev: any) => {
       const next: any = { ...prev };
       const matUpdate: any = { ...(prev.maternelle || {}) };
       let matChanged = false;
+
+      // ⭐ CONTEXTE DÉCLARÉ AVANT L'IMPORT — le formulaire bascule sur la
+      //    fiche ciblée (les sections I.bis / tableaux de phases / structure
+      //    maternelle suivent automatiquement form.sheetType au rendu).
+      if (context?.sheetType && context.sheetType !== prev.sheetType) {
+        next.sheetType = context.sheetType;
+      }
+      if (context?.matiereSpecifique && isDeepEmpty(prev.matiereSpecifique)) {
+        next.matiereSpecifique = context.matiereSpecifique;
+      }
+      if (context?.className) {
+        if (isDeepEmpty(prev.cours)) next.cours = context.className;
+        if (isDeepEmpty(prev.className)) next.className = context.className;
+      }
+      // Maternelle : n° du domaine + intitulé « Domaine de… » (formate romain)
+      if (context?.domainRoman && isDeepEmpty(matUpdate.domainNumber)) {
+        matUpdate.domainNumber = context.domainRoman;
+        if (context.domainIntitule && isDeepEmpty(matUpdate.domaineDu)) {
+          matUpdate.domaineDu = context.domainIntitule;
+        }
+        matChanged = true;
+      }
 
       for (const [key, value] of Object.entries(fields)) {
         // II- Déroulement : appliqué seulement si le tableau est encore vide
@@ -2003,13 +2029,17 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
             )}
           </div>
 
-          {/* ⭐ 2026-10-16 — MODALE : Extraction IA (maternelle) */}
+          {/* ⭐ 2026-10-16 — MODALE : Extraction IA (maternelle) — le contexte
+              (niveau + domaine + activité + classe) est déclaré AVANT l'import,
+              le prompt d'extraction est construit dynamiquement dessus. */}
           <FicheAiExtractionModal
             open={showAiExtraction}
             onClose={() => setShowAiExtraction(false)}
             sheetType={form.sheetType}
             sheetTypeLabel={currentSheetTypeLabel}
             className={selectedClassInfo?.className || form.className}
+            initialDomainRoman={form.maternelle?.domainNumber}
+            initialSousMatiere={form.maternelle?.domaineDu || form.matiereSpecifique}
             onApply={handleApplyAiFields}
           />
         </div>
@@ -2825,15 +2855,19 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       )}
 
       {/* ⭐ 2026-10-16 — MODALE : Extraction IA d'une fiche depuis des captures
-          (modèles vision NVIDIA). Le type de fiche courant + la classe
-          sélectionnée donnent le contexte ; les champs extraits ne remplissent
-          que les champs encore vides du formulaire. */}
+          (modèles vision NVIDIA). ⭐ v2 PROMPT DYNAMIQUE : AVANT l'import,
+          l'enseignant déclare le niveau (Maternelle/Primaire), la catégorie de
+          fiche (domaine I-V / matière + sous-matière) et la classe — le prompt
+          est construit sur la structure EXACTE de cette fiche cible, et le
+          formulaire se reconfigure à l'application. */}
       <FicheAiExtractionModal
         open={showAiExtraction}
         onClose={() => setShowAiExtraction(false)}
         sheetType={form.sheetType}
         sheetTypeLabel={currentSheetTypeLabel}
         className={selectedClassInfo?.className || form.className}
+        initialDomainRoman={form.maternelle?.domainNumber}
+        initialSousMatiere={form.matiereSpecifique}
         onApply={handleApplyAiFields}
       />
 

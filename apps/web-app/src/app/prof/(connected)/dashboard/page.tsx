@@ -66,12 +66,9 @@ const QUICK_LINKS = [
     description: 'Cahier journal, fiches, cahier de textes',
     icon: BookOpen,
   },
-  {
-    href: '/prof/examens',
-    label: 'Évaluations & bulletins',
-    description: 'Notes, moyennes, génération des bulletins',
-    icon: Calculator,
-  },
+  // ⭐ 2026-10-16 (demande promoteur) — « Évaluations & bulletins » masqué du
+  //    portail Helm Enseignant pour le moment (module rattaché au fonctionnement
+  //    d'une école). Accès rapide retiré.
   {
     href: '/prof/travaux',
     label: 'Travaux & suivi',

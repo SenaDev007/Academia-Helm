@@ -38,6 +38,7 @@ export default function ProfPedagogiePage() {
         tenantId={tenant?.id || user?.tenantId || ''}
         academicYearId={academicYear.id}
         teacherId={teacherId}
+        isHelmEnseignant
       />
     </div>
   );

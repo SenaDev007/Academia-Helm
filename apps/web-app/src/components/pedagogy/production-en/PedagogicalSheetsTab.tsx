@@ -44,7 +44,7 @@ import { useAutoSave, fireKeepaliveSave } from "@/hooks/useAutoSave";
 //    vision NVIDIA) : transcription du contenu d'une fiche existante
 //    (PDF/Word/photocopie avec filigrane) → remplissage automatique des
 //    champs vides du formulaire. Miroir de la piste FR (production).
-import { FicheAiExtractionModal } from "@/components/pedagogy/production/FicheAiExtractionModal";
+import { FicheAiExtractionModal, type FicheExtractionContext } from "@/components/pedagogy/production/FicheAiExtractionModal";
 // ⭐ v4.7.0 (retour terrain mobile 22/09/2026) : lecture de la file offline
 //    du Service Worker — les sauvegardes mises en file pendant un glitch
 //    réseau mobile sont AFFICHÉES dans la liste (badge « envoi en attente »)
@@ -307,11 +307,25 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   // ⭐ 2026-10-16 — EXTRACTION IA DEPUIS DES CAPTURES (miroir FR) : état
   //    d'ouverture de la modale + fusion des champs extraits (ne remplit que
   //    les champs ENCORE VIDES — l'enseignant garde la main sur sa saisie).
+  //    ⭐ v2 (prompt dynamique) : le contexte déclaré AVANT l'import (niveau +
+  //    catégorie + sous-matière + classe) reconfigure le formulaire.
   const [showAiExtraction, setShowAiExtraction] = useState(false);
 
-  const handleApplyAiFields = useCallback((fields: Record<string, any>) => {
+  const handleApplyAiFields = useCallback((fields: Record<string, any>, context?: FicheExtractionContext) => {
     setForm((prev: any) => {
       const next: any = { ...prev };
+      // ⭐ CONTEXTE DÉCLARÉ AVANT L'IMPORT — bascule du formulaire sur la
+      //    fiche ciblée (type, sous-matière, classe).
+      if (context?.sheetType && context.sheetType !== prev.sheetType) {
+        next.sheetType = context.sheetType;
+      }
+      if (context?.matiereSpecifique && isDeepEmpty(prev.matiereSpecifique)) {
+        next.matiereSpecifique = context.matiereSpecifique;
+      }
+      if (context?.className) {
+        if (isDeepEmpty(prev.cours)) next.cours = context.className;
+        if (isDeepEmpty(prev.className)) next.className = context.className;
+      }
       for (const [key, value] of Object.entries(fields)) {
         // II- Déroulement : appliqué seulement si le tableau est encore vide
         if (key === "deroulement") {
@@ -1837,6 +1851,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
         sheetType={form.sheetType}
         sheetTypeLabel={currentSheetTypeLabel}
         className={classes.find(c => c.classId === selectedClassId)?.className || form.className}
+        initialDomainRoman={form.maternelle?.domainNumber}
+        initialSousMatiere={form.matiereSpecifique}
         onApply={handleApplyAiFields}
       />
 

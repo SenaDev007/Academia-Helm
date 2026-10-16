@@ -243,6 +243,91 @@ const KNOWN_SHEET_TYPES = new Set([
   'DOMAINE', 'DOMAINE_2',
 ]);
 
+// ─── ⭐ 2026-10-16 v2 — Domaines officiels de la maternelle (miroir de la
+//    librairie frontend lib/pedagogy/maternelle-domaines.ts). Injectés dans
+//    le prompt quand l'enseignante déclare le domaine visé AVANT l'import :
+//    l'IA sait alors exactement quel « Domaine de… » et quelles activités
+//    attendre sur la capture, et range les zones aux bons endroits.
+
+const MATERNELLE_DOMAINES_INFO: Record<number, { roman: string; intitule: string; activites: string[] }> = {
+  1: {
+    roman: 'I',
+    intitule: 'Éducation pour la santé',
+    activites: ['Éducation pour la santé', 'Hygiène', 'Réflexes de santé'],
+  },
+  2: {
+    roman: 'II',
+    intitule: 'Expression corporelle',
+    activites: ['Expression corporelle', 'Motricité', 'Psychomotricité'],
+  },
+  3: {
+    roman: 'III',
+    intitule: 'Pré-lecture / pré-écriture / pré-mathématiques / observations / éducation sensorielle / travaux manuels',
+    activites: ['Pré-lecture', 'Pré-écriture', 'Pré-mathématiques', 'Observations', 'Éducation sensorielle', 'Travaux manuels'],
+  },
+  4: {
+    roman: 'IV',
+    intitule: 'Expression émotionnelle et expression plastique',
+    activites: ['Expression émotionnelle', 'Expression plastique'],
+  },
+  5: {
+    roman: 'V',
+    intitule: 'Communication orale, conte, poésie chant comptine, activités libres',
+    activites: ['Communication orale', 'Conte', 'Poésie chant comptine', 'Activités libres'],
+  },
+};
+
+// ─── ⭐ 2026-10-16 v2 — Indications ciblées par sous-matière de FRANÇAIS : la
+//    structure d'une fiche de français varie selon la matière spécifique
+//    (exercice structural en grammaire vs ressources lexicales en
+//    vocabulaire). Quand l'enseignant déclare la sous-matière AVANT l'import,
+//    l'indication correspondante est injectée dans le prompt.
+
+const FRANCAIS_SOUS_MATIERE_HINTS: Array<{ pattern: RegExp; hint: string }> = [
+  {
+    pattern: /vocabulaire/,
+    hint: 'Fiche de VOCABULAIRE : PAS de zone « Exercice structural » — laisse ibis_1 à ibis_5 vides. Les RESSOURCES LEXICALES (listes « Noms », « Verbes », « Adjectifs qualificatifs », « Autres ») vont dans « contenu », une catégorie par ligne. Si des tableaux de phases (introductive / systématisation / application) sont néanmoins présents, remplis phase_* et app_col* avec leur contenu réel.',
+  },
+  {
+    pattern: /dictee/,
+    hint: 'Fiche de DICTÉE : structure avec exercice structural (Unité N°, Structure, Objectif, Fiche N°, Durée) et tableaux de phases — remplis ibis_1 à ibis_5 et phase_* / app_col*. Le texte support de la dictée va dans « moyensDidactiques » (supports didactiques).',
+  },
+  {
+    pattern: /grammaire|conjugaison|orthographe/,
+    hint: 'Fiche de GRAMMAIRE / CONJUGAISON / ORTHOGRAPHE : structure avec exercice structural (Unité N°, Structure, Objectif, Fiche N°, Durée) et tableaux de phases (introductive 2 colonnes Enseignant, systématisation Enseignant|Apprenant, application 3 colonnes) — remplis ibis_1 à ibis_5 et phase_* / app_col* avec le CONTENU des cellules.',
+  },
+  {
+    pattern: /lecture/,
+    hint: 'Fiche de LECTURE : le texte support et les questions de compréhension vont dans « moyensDidactiques » / « contenu ». Les tableaux de phases, s’ils sont présents, vont dans phase_* / app_col*.',
+  },
+  {
+    pattern: /expression ecrite|production ecrite|premier jet|impregnation/,
+    hint: 'Fiche d’EXPRESSION ÉCRITE : le thème/sujet de la production et les consignes de préparation (imprégnation, premier jet, correction) se répartissent dans « contenu » et le déroulement. Remplis « deroulement » avec les phases réelles de la fiche.',
+  },
+  {
+    pattern: /communication orale/,
+    hint: 'Fiche de COMMUNICATION ORALE : les situations de communication et les supports vont dans « contenu » / « moyensDidactiques », les tours de parole et jeux de rôle dans le déroulement.',
+  },
+  {
+    pattern: /graphisme|ecriture|combinatoire/,
+    hint: 'Fiche de GRAPHISME / ÉCRITURE / COMBINATOIRE : les tracés modèles, syllabes ou lettres étudiés vont dans « contenu », les exercices de copie dans le déroulement.',
+  },
+];
+
+function francaisSousMatiereHint(sousMatiere: string): string | null {
+  const n = String(sousMatiere || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!n) return null;
+  for (const { pattern, hint } of FRANCAIS_SOUS_MATIERE_HINTS) {
+    if (pattern.test(n)) return hint;
+  }
+  return null;
+}
+
 const SHEET_TYPE_LABELS: Record<string, string> = {
   MATH: 'Mathématiques',
   FRANCAIS: 'Français',
@@ -362,8 +447,17 @@ export class FicheVisionExtractionService {
   /**
    * Extraction du contenu d'une fiche pédagogique à partir de captures.
    *
+   * ⭐ 2026-10-16 v2 — PROMPT DYNAMIQUE : l'enseignant déclare AVANT l'import
+   * le contexte de la fiche qu'il veut remplir (niveau Maternelle/Primaire,
+   * catégorie de fiche, sous-matière/domaine, classe). Le prompt est alors
+   * construit sur la structure EXACTE de cette fiche cible — champ par champ,
+   * zone par zone — au lieu d'un prompt figé.
+   *
    * @param tenantId  Tenant courant (journalisation / quota)
-   * @param body      { sheetType, images: string[] (data URLs base64), className? }
+   * @param body      { sheetType, images: string[] (data URLs base64),
+   *                    className?, level?: 'MATERNELLE'|'PRIMAIRE',
+   *                    matiereSpecifique? (sous-matière déclarée),
+   *                    domainNumber? (maternelle : domaine visé 1..5) }
    */
   async extractFicheFromImages(
     tenantId: string,
@@ -371,6 +465,9 @@ export class FicheVisionExtractionService {
       sheetType?: string;
       images?: string[];
       className?: string;
+      level?: string;
+      matiereSpecifique?: string;
+      domainNumber?: number;
     },
   ): Promise<{
     ok: true;
@@ -434,8 +531,29 @@ export class FicheVisionExtractionService {
       ? MATERNELLE_FIELDS
       : { ...PRIMAIRE_COMMON_FIELDS, ...(IBIS_FIELDS_BY_TYPE[sheetType] || {}) };
 
-    const systemPrompt = this.buildSystemPrompt(sheetType, isMaternelle);
-    const userPrompt = this.buildUserPrompt(sheetType, schemaFields, images.length, body?.className);
+    // ⭐ 2026-10-16 v2 — CONTEXTE DÉCLARÉ AVANT L'IMPORT (modale dynamique) :
+    //    niveau (repli : déduit du type de fiche), sous-matière / activité,
+    //    domaine maternelle visé et classe. Injecté dans les prompts ci-dessous.
+    const declaredLevelRaw = String(body?.level || '').toUpperCase();
+    const level: 'MATERNELLE' | 'PRIMAIRE' =
+      declaredLevelRaw === 'MATERNELLE' ? 'MATERNELLE'
+      : declaredLevelRaw === 'PRIMAIRE' ? 'PRIMAIRE'
+      : (isMaternelle ? 'MATERNELLE' : 'PRIMAIRE');
+    const declaredMatiere = this.cleanText(body?.matiereSpecifique).substring(0, 120);
+    const declaredDomainNum = Number(body?.domainNumber);
+    const declaredDomain = Number.isInteger(declaredDomainNum) && declaredDomainNum >= 1 && declaredDomainNum <= 5
+      ? declaredDomainNum
+      : null;
+    const declaredClassName = this.cleanText(body?.className).substring(0, 60);
+    const extractionContext = {
+      level,
+      matiereSpecifique: declaredMatiere || undefined,
+      domainNumber: level === 'MATERNELLE' ? (declaredDomain ?? undefined) : undefined,
+      className: declaredClassName || undefined,
+    };
+
+    const systemPrompt = this.buildSystemPrompt(sheetType, isMaternelle, extractionContext);
+    const userPrompt = this.buildUserPrompt(sheetType, schemaFields, images.length, extractionContext);
 
     // ⭐ Message multimodal : [texte d'instruction, image 1, image 2, ...]
     //    Les modèles vision NVIDIA acceptent plusieurs image_url dans le même
@@ -528,10 +646,36 @@ export class FicheVisionExtractionService {
   // Prompts
   // ─────────────────────────────────────────────────────────────────────────
 
-  private buildSystemPrompt(sheetType: string, isMaternelle: boolean): string {
+  private buildSystemPrompt(
+    sheetType: string,
+    isMaternelle: boolean,
+    context: { level: string; matiereSpecifique?: string; domainNumber?: number; className?: string },
+  ): string {
     const label = SHEET_TYPE_LABELS[sheetType] || sheetType;
+
+    // ⭐ Contexte déclaré par l'enseignant AVANT l'import — ancre le modèle
+    //    sur la structure de la fiche visée (niveau × matière × domaine).
+    const contextParts: string[] = [];
+    contextParts.push(
+      context.level === 'MATERNELLE'
+        ? "niveau MATERNELLE (école maternelle — fiche par domaine)"
+        : "niveau PRIMAIRE (cours CI à CM2)",
+    );
+    if (context.matiereSpecifique) {
+      contextParts.push(`matière spécifique déclarée : « ${context.matiereSpecifique} »`);
+    }
+    if (context.domainNumber && MATERNELLE_DOMAINES_INFO[context.domainNumber]) {
+      const dom = MATERNELLE_DOMAINES_INFO[context.domainNumber];
+      contextParts.push(`domaine visé : DOMAINE ${dom.roman} — ${dom.intitule}`);
+    }
+    if (context.className) {
+      contextParts.push(`classe : ${context.className}`);
+    }
+
     return `Tu es le moteur d'extraction de fiches pédagogiques d'Academia Helm.
 RÔLE : tu lis des captures d'écran (photos ou captures) d'une fiche pédagogique béninoise de type « ${label} »${isMaternelle ? ' (maternelle)' : ' (primaire)'} et tu transcris FIDÈLEMENT son contenu dans un objet JSON.
+
+CONTEXTE DÉCLARÉ PAR L'ENSEIGNANT (la fiche qu'il veut remplir) : ${contextParts.join(' ; ')}. Sers-t'en pour reconnaître la structure attendue et ranger chaque zone lue dans les BONS champs. Si la capture ne correspond pas à ce contexte (ex: matière différente), extrais néanmoins ce qui est lisible et signale-le via les champs pertinents — ne force jamais le contenu.
 
 RÈGLES ABSOLUES :
 1. TRANSCRIPTION, PAS CRÉATION : tu recopies ce qui est écrit sur la fiche. Tu N'INVENTES RIEN, tu ne complètes pas les champs absents, tu ne reformules pas. Si une information est absente ou illisible, le champ reste une chaîne vide "".
@@ -547,14 +691,44 @@ RÈGLES ABSOLUES :
     sheetType: string,
     schemaFields: FieldSpec,
     imageCount: number,
-    className?: string,
+    context: { level: string; matiereSpecifique?: string; domainNumber?: number; className?: string },
   ): string {
     const label = SHEET_TYPE_LABELS[sheetType] || sheetType;
     const lines: string[] = [];
     lines.push(
-      `Voici ${imageCount} capture(s) d'une fiche pédagogique de type « ${label} ».` +
-      (className ? ` Classe concernée : ${className}.` : ''),
+      `Voici ${imageCount} capture(s) d'une fiche pédagogique de ${
+        context.level === 'MATERNELLE'
+          ? "niveau MATERNELLE (école maternelle)"
+          : "niveau PRIMAIRE"
+      } de type « ${label} ».` +
+      (context.className ? ` Classe concernée : ${context.className}.` : ''),
     );
+
+    // ⭐ 2026-10-16 v2 — déclarations de l'enseignant (prompt dynamique) :
+    //    sous-matière déclarée (primaire) et/ou domaine maternelle visé.
+    if (context.matiereSpecifique) {
+      lines.push(
+        `⭐ MATIÈRE SPÉCIFIQUE DÉCLARÉE PAR L'ENSEIGNANT : « ${context.matiereSpecifique} » — la fiche capturée relève de cette matière.` +
+        (sheetType === 'FRANCAIS'
+          ? ' Reporte cette valeur dans « matiereSpecifique » si la fiche ne l’indique pas explicitement.'
+          : ''),
+      );
+    }
+    if (context.level === 'MATERNELLE' && context.domainNumber && MATERNELLE_DOMAINES_INFO[context.domainNumber]) {
+      const dom = MATERNELLE_DOMAINES_INFO[context.domainNumber];
+      lines.push(
+        `⭐ DOMAINE VISÉ (déclaré par l'enseignante) : DOMAINE ${dom.roman} — ${dom.intitule}.` +
+        ` Activités officielles de ce domaine : ${dom.activites.join(', ')}.` +
+        ' Le « N° du domaine » et le « Domaine de… » lus sur la fiche doivent correspondre à CE domaine' +
+        ' (reporte « ' + dom.roman + ' » dans maternelle.domainNumber et l’intitulé correspondant dans maternelle.domaineDu si la fiche les omet).',
+      );
+    }
+    if (sheetType === 'FRANCAIS' && context.matiereSpecifique) {
+      const hint = francaisSousMatiereHint(context.matiereSpecifique);
+      if (hint) {
+        lines.push(`INDICATION POUR CETTE SOUS-MATIÈRE : ${hint}`);
+      }
+    }
     lines.push('');
     lines.push('Transcris son contenu dans un objet JSON avec EXACTEMENT ces clés :');
     lines.push('{');

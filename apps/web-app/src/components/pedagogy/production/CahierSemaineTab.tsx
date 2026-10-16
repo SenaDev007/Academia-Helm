@@ -37,6 +37,13 @@ interface CahierSemaineTabProps {
   tenantId: string;
   academicYearId: string;
   teacherId: string;
+  /** ⭐ 2026-10-16 (demande promoteur) — Portail « Helm Enseignant » :
+   *    masque le sous-onglet « Liste des semainiers » (attribution
+   *    institutionnelle par la direction d'une ÉCOLE — l'espace autonome
+   *    de l'enseignant n'y est pas rattaché). « Cahier du Semainier » reste
+   *    accessible : l'enseignant remplit ses rapports et soumet la version
+   *    PDF. */
+  hideSemainiersList?: boolean;
 }
 
 const cn = (...c: (string | boolean | undefined)[]) => c.filter(Boolean).join(" ");
@@ -58,11 +65,11 @@ function formatDateShort(date: string | Date): string {
   return new Date(date).toLocaleDateString('fr-FR');
 }
 
-export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: CahierSemaineTabProps) {
+export function CahierSemaineTab({ tenantId, academicYearId, teacherId, hideSemainiersList = false }: CahierSemaineTabProps) {
   const { user } = useAppSession();
   // ⭐ FIX : persistance du sous-onglet actif après rechargement de la page
   const [activeSubTab, setActiveSubTab] = usePersistedTab(
-    "vue", ["config", "list", "cahier"], "config",
+    "vue", ["config", "list", "cahier"], hideSemainiersList ? "cahier" : "config",
   ) as ["config" | "list" | "cahier", (t: "config" | "list" | "cahier") => void];
   const [configs, setConfigs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +83,15 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
   const canConfigure = ['PROMOTER', 'SCHOOL_OWNER', 'SCHOOL_ADMIN', 'SUPER_DIRECTOR',
     'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'DIRECTOR_GENERAL', 'SCHOOL_DIRECTOR',
     'admin', 'director'].includes(user?.role || '');
+
+  // ⭐ 2026-10-16 — Helm Enseignant : si le sous-onglet persisté (sessionStorage)
+  //    est « list » mais que la liste des semainiers est masquée pour ce portail,
+  //    on rebascule automatiquement sur « Cahier du Semainier » (jamais d'écran vide).
+  useEffect(() => {
+    if (hideSemainiersList && activeSubTab === "list") {
+      setActiveSubTab("cahier");
+    }
+  }, [hideSemainiersList, activeSubTab, setActiveSubTab]);
 
   // === Chargement des données ===
   const loadData = useCallback(async () => {
@@ -259,11 +275,15 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
             <Settings className="h-4 w-4" /> Paramétrage
           </button>
         )}
-        <button onClick={() => setActiveSubTab("list")}
-          className={cn("flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold",
-            activeSubTab === "list" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100")}>
-          <List className="h-4 w-4" /> Liste des semainiers
-        </button>
+        {/* ⭐ 2026-10-16 — Helm Enseignant : « Liste des semainiers » masqué
+            (attribution institutionnelle réservée à la direction d'une école). */}
+        {!hideSemainiersList && (
+          <button onClick={() => setActiveSubTab("list")}
+            className={cn("flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold",
+              activeSubTab === "list" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100")}>
+            <List className="h-4 w-4" /> Liste des semainiers
+          </button>
+        )}
         <button onClick={() => setActiveSubTab("cahier")}
           className={cn("flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold",
             activeSubTab === "cahier" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-100")}>
@@ -294,7 +314,10 @@ export function CahierSemaineTab({ tenantId, academicYearId, teacherId }: Cahier
       )}
 
       {/* === SOUS-ONGLET 2: LISTE DES SEMAINIERS === */}
-      {activeSubTab === "list" && !loading && (
+      {/* ⭐ 2026-10-16 — Helm Enseignant : contenu masqué dans le portail
+          autonome (garde aussi contre un sous-onglet persisté « list »
+          depuis une session antérieure). */}
+      {activeSubTab === "list" && !hideSemainiersList && !loading && (
         <ListeSemainiersTab
           configs={configs}
           currentUserId={user?.id || ""}

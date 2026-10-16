@@ -9,12 +9,27 @@
  * de fiches déjà préparées (PDF / Word / photocopies) portant des filigranes
  * (nom de l'auteur d'origine), refusées par les écoles. Cette modale permet :
  *
- *   1. de déposer 1 à 6 captures (photos ou captures d'écran) de la fiche ;
- *   2. de lancer l'extraction IA (modèles vision NVIDIA — nemotron omni,
+ *   1. AVANT L'IMPORT : l'enseignant déclare le CONTEXTE de la fiche qu'il
+ *      veut remplir — d'abord le NIVEAU (Maternelle / Primaire), puis la
+ *      CATÉGORIE DE FICHE proposée selon ce niveau :
+ *        • Maternelle → les fiches par domaine (Domaine I à V, chacun avec
+ *          ses activités : Éducation pour la santé, Expression corporelle,
+ *          Pré-lecture, Conte…) ;
+ *        • Primaire → la matière (Français, Mathématiques, EST, ES, EA, EPS,
+ *          Anglais/Informatique), la sous-matière (Dictée, Grammaire, Morale,
+ *          Chant…) et la classe (CI à CM2).
+ *      ⭐ Le PROMPT D'EXTRACTION N'EST PAS FIGÉ : il est construit
+ *      dynamiquement côté backend à partir de CE contexte (niveau × type ×
+ *      sous-matière/domaine × classe) pour exiger de l'IA la structure EXACTE
+ *      de la fiche visée, champ par champ, zone par zone.
+ *   2. de déposer 1 à 6 captures (photos ou captures d'écran) de la fiche ;
+ *   3. de lancer l'extraction IA (modèles vision NVIDIA — nemotron omni,
  *      repli llama-3.2-90b-vision) via POST /api/pedagogy-space/fiches/extract-ai ;
- *   3. de prévisualiser les champs extraits puis de les APPLIQUER au
- *      formulaire de préparation de fiche ;
- *   4. l'enseignant VÉRIFIE, AJUSTE et ENREGISTRE : la fiche finale est
+ *   4. de prévisualiser les champs extraits puis de les APPLIQUER au
+ *      formulaire de préparation de fiche (qui se RECONFIGURE sur le type
+ *      choisi : les sections I.bis, tableaux de phases, structure maternelle
+ *      suivent automatiquement) ;
+ *   5. l'enseignant VÉRIFIE, AJUSTE et ENREGISTRE : la fiche finale est
  *      rédigée sous SON compte — sans filigrane d'origine.
  *
  * Détails techniques :
@@ -27,12 +42,16 @@
  * ============================================================================
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle, CheckCircle2, ImageIcon, Loader2, ScanSearch,
-  Trash2, Upload, Wand2,
+  AlertTriangle, Baby, BookOpen, CheckCircle2, ChevronLeft, Dumbbell,
+  FlaskConical, GraduationCap, ImageIcon, Languages, Loader2, Palette,
+  ScanSearch, Shapes, Sigma, Trash2, Upload, Users, Wand2,
 } from "lucide-react";
 import { toast } from "sonner";
+
+import { MATERNELLE_DOMAINES } from "@/lib/pedagogy/maternelle-domaines";
+import { suggestionsPourSheetType } from "@/lib/pedagogy/cahier-sous-matieres";
 
 // ─── Constantes (miroir des limites backend) ────────────────────────────────
 
@@ -41,6 +60,45 @@ const ACCEPTED_MIME = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
 const MAX_DIMENSION = 1600; // px — grand côté après compression
 const JPEG_QUALITY = 0.85;
 const MAX_SOURCE_FILE_MB = 12; // garde-fou fichier source
+
+// ─── Contexte d'extraction (choisi AVANT l'import des captures) ─────────────
+
+export interface FicheExtractionContext {
+  /** Niveau déclaré par l'enseignant — détermine les catégories proposées */
+  level: "MATERNELLE" | "PRIMAIRE";
+  /** Type de fiche cible (DOMAINE | DOMAINE_2 | FRANCAIS | MATH | EST | ES | EA | EPS | STANDARD) */
+  sheetType: string;
+  /** Libellé lisible du type (affiché + contexte modèle) */
+  sheetTypeLabel: string;
+  /** Sous-matière (primaire : Dictée, Morale, Chant…) ou activité précise (maternelle) */
+  matiereSpecifique?: string;
+  /** Maternelle : numéro du domaine visé (1..5) */
+  domainNumber?: number;
+  /** Maternelle : chiffre romain (I..V) — format du formulaire de fiche */
+  domainRoman?: string;
+  /** Maternelle : intitulé officiel du domaine (ex: « Expression corporelle ») */
+  domainIntitule?: string;
+  /** Classe déclarée (ex: CM1, Maternelle 2) */
+  className?: string;
+}
+
+// ─── Catalogues de catégories (miroir des types du formulaire de fiche) ─────
+
+const PRIMAIRE_MATIERES = [
+  { type: "FRANCAIS", label: "Français", icon: BookOpen, hasSousMatiere: true },
+  { type: "MATH", label: "Mathématiques", icon: Sigma, hasSousMatiere: false },
+  { type: "EST", label: "EST", icon: FlaskConical, hasSousMatiere: false },
+  { type: "ES", label: "Éducation Sociale", icon: Users, hasSousMatiere: true },
+  { type: "EA", label: "Éducation Artistique", icon: Palette, hasSousMatiere: true },
+  { type: "EPS", label: "EPS", icon: Dumbbell, hasSousMatiere: false },
+  { type: "STANDARD", label: "Anglais / Informatique", icon: Languages, hasSousMatiere: false },
+] as const;
+
+const PRIMAIRE_CLASSES = ["CI", "CP", "CE1", "CE2", "CM1", "CM2"];
+const MATERNELLE_CLASSES = ["Maternelle 1", "Maternelle 2", "PS", "MS", "GS"];
+
+/** Romains → nombre (le formulaire maternelle stocke le romain) */
+const ROMAIN_TO_NUM: Record<string, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5 };
 
 interface CapturedImage {
   id: string;
@@ -56,18 +114,23 @@ interface ExtractedField {
 interface FicheAiExtractionModalProps {
   open: boolean;
   onClose: () => void;
-  /** Type de fiche courant du formulaire (MATH/FRANCAIS/EST/ES/EA/EPS/STANDARD/DOMAINE/DOMAINE_2) */
-  sheetType: string;
-  /** Libellé lisible du type (affiché) */
-  sheetTypeLabel: string;
-  /** Nom de la classe (contexte envoyé au modèle) */
+  /** Type de fiche courant du formulaire (pré-sélection du contexte si cohérent) */
+  sheetType?: string;
+  /** Libellé lisible du type courant (affiché en repli) */
+  sheetTypeLabel?: string;
+  /** Nom de la classe courante (pré-remplissage du champ classe) */
   className?: string;
+  /** Maternelle : n° du domaine courant du formulaire (romain I..V) pour pré-sélection */
+  initialDomainRoman?: string;
+  /** Sous-matière / matière spécifique courante du formulaire (pré-remplissage) */
+  initialSousMatiere?: string;
   /**
    * Appelé avec les champs extraits (clés plates ; clés « maternelle.x.y »
-   * en pointillé pour les fiches maternelle ; « deroulement » = tableau).
-   * Le parent fusionne dans son état de formulaire.
+   * en pointillé pour les fiches maternelle ; « deroulement » = tableau)
+   * ET le contexte déclaré avant l'import — le parent fusionne dans son
+   * état de formulaire et RECONFIGURE le type de fiche si nécessaire.
    */
-  onApply: (fields: Record<string, any>) => void;
+  onApply: (fields: Record<string, any>, context: FicheExtractionContext) => void;
 }
 
 /** Compresse une image via canvas : max 1600 px, JPEG, fond blanc. */
@@ -97,9 +160,36 @@ async function compressImage(file: File): Promise<string> {
   }
 }
 
+/** Détecte le niveau depuis le contexte passé à la modale. */
+function detectInitialLevel(sheetType?: string, className?: string): "MATERNELLE" | "PRIMAIRE" {
+  const st = String(sheetType || "").toUpperCase();
+  if (st === "DOMAINE" || st === "DOMAINE_2" || /^DOMAINE_[1-5]$/.test(st)) return "MATERNELLE";
+  const c = String(className || "").toUpperCase();
+  if (/\b(MATERNELLE|MATERNEL)\b/.test(c) || /\b(PS|MS|GS)\b/.test(c)) return "MATERNELLE";
+  return "PRIMAIRE";
+}
+
+/** Type de fiche effectif pour un domaine maternelle (domaine 2 → DOMAINE_2). */
+function sheetTypeForDomaine(domainNumber: number): "DOMAINE" | "DOMAINE_2" {
+  return domainNumber === 2 ? "DOMAINE_2" : "DOMAINE";
+}
+
 export function FicheAiExtractionModal({
-  open, onClose, sheetType, sheetTypeLabel, className, onApply,
+  open, onClose, sheetType, sheetTypeLabel, className,
+  initialDomainRoman, initialSousMatiere, onApply,
 }: FicheAiExtractionModalProps) {
+  // ── Étapes : contexte (AVANT l'import) → dépôt → résultat ────────────────
+  const [step, setStep] = useState<"context" | "upload">("context");
+
+  // ── Contexte déclaré par l'enseignant ───────────────────────────────────
+  const [level, setLevel] = useState<"MATERNELLE" | "PRIMAIRE">("PRIMAIRE");
+  const [primaireMatiere, setPrimaireMatiere] = useState<string>("FRANCAIS");
+  const [sousMatiere, setSousMatiere] = useState<string>("");
+  const [domainNumber, setDomainNumber] = useState<number>(1);
+  const [activiteDomaine, setActiviteDomaine] = useState<string>("");
+  const [classe, setClasse] = useState<string>("");
+
+  // ── Captures + extraction (inchangé) ────────────────────────────────────
   const [images, setImages] = useState<CapturedImage[]>([]);
   const [compressing, setCompressing] = useState(false);
   const [extracting, setExtracting] = useState(false);
@@ -110,7 +200,69 @@ export function FicheAiExtractionModal({
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Initialisation du contexte à l'ouverture ────────────────────────────
+  useEffect(() => {
+    if (!open) return;
+    const detected = detectInitialLevel(sheetType, className);
+    setLevel(detected);
+    setStep("context");
+    setImages([]);
+    setExtractedFields(null);
+    setRawFields(null);
+    setWarnings([]);
+    setModelUsed("");
+    setDragOver(false);
+
+    // Pré-sélections fidèles au formulaire courant
+    const st = String(sheetType || "").toUpperCase();
+    if (detected === "PRIMAIRE" && PRIMAIRE_MATIERES.some(m => m.type === st)) {
+      setPrimaireMatiere(st);
+      setSousMatiere(initialSousMatiere || "");
+    } else {
+      setSousMatiere(initialSousMatiere || "");
+    }
+    if (detected === "MATERNELLE") {
+      const fromForm = ROMAIN_TO_NUM[String(initialDomainRoman || "").toUpperCase()];
+      const fromSheetType = st === "DOMAINE_2" ? 2 : /^\d$/.test(String(initialDomainRoman || "")) ? Number(initialDomainRoman) : NaN;
+      setDomainNumber(Number.isFinite(fromForm) ? fromForm : (Number.isFinite(fromSheetType) ? fromSheetType : 1));
+      setActiviteDomaine(initialSousMatiere || "");
+    }
+    setClasse(className || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // ── Contexte effectif (envoyé au backend + rendu au parent) ─────────────
+  const effectiveContext: FicheExtractionContext =
+    level === "MATERNELLE"
+      ? (() => {
+          const domaine = MATERNELLE_DOMAINES.find(d => d.number === domainNumber) || MATERNELLE_DOMAINES[0];
+          const st = sheetTypeForDomaine(domainNumber);
+          return {
+            level,
+            sheetType: st,
+            sheetTypeLabel: st === "DOMAINE_2"
+              ? `Fiche Domaine ${domaine.roman} — ${domaine.subColumns[0]?.label || ""}`
+              : `Fiche Domaine ${domaine.roman}`,
+            matiereSpecifique: activiteDomaine || undefined,
+            domainNumber,
+            domainRoman: domaine.roman,
+            domainIntitule: domaine.subColumns.map(sc => sc.label).join(", "),
+            className: classe || undefined,
+          };
+        })()
+      : (() => {
+          const matiere = PRIMAIRE_MATIERES.find(m => m.type === primaireMatiere) || PRIMAIRE_MATIERES[0];
+          return {
+            level,
+            sheetType: matiere.type,
+            sheetTypeLabel: matiere.label,
+            matiereSpecifique: sousMatiere || undefined,
+            className: classe || undefined,
+          };
+        })();
+
   const reset = useCallback(() => {
+    setStep("context");
     setImages([]);
     setExtractedFields(null);
     setRawFields(null);
@@ -196,13 +348,19 @@ export function FicheAiExtractionModal({
     setRawFields(null);
     setWarnings([]);
     try {
+      // ⭐ PROMPT DYNAMIQUE : le contexte déclaré (niveau × type × sous-matière
+      //    × domaine × classe) est envoyé au backend, qui construit le prompt
+      //    d'extraction à partir de la structure EXACTE de cette fiche cible.
       const res = await fetch("/api/pedagogy-space/fiches/extract-ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          sheetType,
-          className: className || undefined,
+          sheetType: effectiveContext.sheetType,
+          level: effectiveContext.level,
+          className: effectiveContext.className,
+          matiereSpecifique: effectiveContext.matiereSpecifique,
+          domainNumber: effectiveContext.domainNumber,
           images: images.map(img => img.dataUrl),
         }),
       });
@@ -251,22 +409,33 @@ export function FicheAiExtractionModal({
     } finally {
       setExtracting(false);
     }
-  }, [images, sheetType, className]);
+  }, [images, effectiveContext]);
 
   const applyToForm = useCallback(() => {
     if (!rawFields) return;
-    onApply(rawFields);
+    onApply(rawFields, effectiveContext);
     reset();
     onClose();
     toast.success("Champs reportés dans le formulaire", {
       description: "⚠️ Vérifiez et ajustez chaque champ avant d'enregistrer la fiche.",
       duration: 7000,
     });
-  }, [rawFields, onApply, reset, onClose]);
+  }, [rawFields, effectiveContext, onApply, reset, onClose]);
 
   if (!open) return null;
 
   const totalKb = images.reduce((sum, img) => sum + img.sizeKb, 0);
+  const sousMatiereSuggestions = level === "PRIMAIRE"
+    ? suggestionsPourSheetType(primaireMatiere)
+    : [];
+  const activitesDomaine = level === "MATERNELLE"
+    ? (MATERNELLE_DOMAINES.find(d => d.number === domainNumber) || MATERNELLE_DOMAINES[0]).subColumns
+    : [];
+  const classesSuggestions = level === "MATERNELLE" ? MATERNELLE_CLASSES : PRIMAIRE_CLASSES;
+
+  const contextReady = level === "MATERNELLE"
+    ? !!domainNumber
+    : !!primaireMatiere;
 
   return (
     <div
@@ -285,8 +454,11 @@ export function FicheAiExtractionModal({
               Extraire une fiche depuis des captures
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              L'IA lit vos captures de fiche <span className="font-semibold text-slate-700">{sheetTypeLabel}</span> et remplit
-              automatiquement les champs ci-dessous dans le formulaire. Vous vérifiez, ajustez, puis enregistrez — la fiche finale sera la vôtre.
+              {step === "context" ? (
+                <>Étape 1/2 — Déclarez d&apos;abord <span className="font-semibold text-slate-700">le niveau et la fiche à remplir</span> : le prompt d&apos;extraction sera construit sur cette structure.</>
+              ) : (
+                <>Étape 2/2 — L&apos;IA lit vos captures de la fiche <span className="font-semibold text-slate-700">{effectiveContext.sheetTypeLabel}</span> et remplit le formulaire. Vous vérifiez, ajustez, puis enregistrez.</>
+              )}
             </p>
           </div>
           <button
@@ -301,9 +473,229 @@ export function FicheAiExtractionModal({
 
         {/* ── Corps ──────────────────────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Zone de dépôt */}
-          {!extractedFields && (
+
+          {/* ══════ ÉTAPE 1 — CONTEXTE (AVANT L'IMPORT) ══════ */}
+          {step === "context" && (
             <>
+              {/* Niveau */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
+                  1. Niveau de la fiche
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setLevel("MATERNELLE")}
+                    className={`flex items-center gap-3 p-3 border-2 rounded-xl text-left transition-all ${
+                      level === "MATERNELLE"
+                        ? "border-indigo-500 bg-indigo-50 text-indigo-900"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                    }`}
+                  >
+                    <Baby className="h-6 w-6 shrink-0" />
+                    <div>
+                      <div className="text-sm font-bold">Maternelle</div>
+                      <div className="text-[11px] opacity-75">Fiches par domaine (I à V)</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLevel("PRIMAIRE")}
+                    className={`flex items-center gap-3 p-3 border-2 rounded-xl text-left transition-all ${
+                      level === "PRIMAIRE"
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-900"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                    }`}
+                  >
+                    <GraduationCap className="h-6 w-6 shrink-0" />
+                    <div>
+                      <div className="text-sm font-bold">Primaire</div>
+                      <div className="text-[11px] opacity-75">CI, CP, CE1, CE2, CM1, CM2</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Catégorie selon le niveau */}
+              {level === "MATERNELLE" ? (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
+                    2. Domaine de la fiche maternelle
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {MATERNELLE_DOMAINES.map(d => (
+                      <button
+                        key={d.number}
+                        type="button"
+                        onClick={() => {
+                          setDomainNumber(d.number);
+                          setActiviteDomaine("");
+                        }}
+                        className={`p-3 border-2 rounded-xl text-left transition-all ${
+                          domainNumber === d.number
+                            ? "border-indigo-500 bg-indigo-50"
+                            : "border-slate-200 bg-white hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="text-sm font-bold text-slate-800">
+                          Domaine {d.roman}
+                          {d.number === 2 && (
+                            <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700">
+                              format Domaine 2
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                          {d.subColumns.map(sc => sc.label).join(" · ")}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Activité précise du domaine (facultatif) */}
+                  <div className="mt-3">
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Activité précise <span className="font-normal text-slate-400">(facultatif — affine le ciblage de l&apos;IA)</span>
+                    </label>
+                    <select
+                      value={activiteDomaine}
+                      onChange={e => setActiviteDomaine(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    >
+                      <option value="">— Toutes les activités du domaine —</option>
+                      {activitesDomaine.map(sc => (
+                        <option key={sc.label} value={sc.label}>{sc.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
+                    2. Matière de la fiche primaire
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {PRIMAIRE_MATIERES.map(m => {
+                      const Icon = m.icon;
+                      return (
+                        <button
+                          key={m.type}
+                          type="button"
+                          onClick={() => {
+                            setPrimaireMatiere(m.type);
+                            // Recharger les suggestions de sous-matière
+                            setSousMatiere("");
+                          }}
+                          className={`flex flex-col items-center gap-1.5 p-3 border-2 rounded-xl text-center transition-all ${
+                            primaireMatiere === m.type
+                              ? "border-emerald-500 bg-emerald-50 text-emerald-900"
+                              : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                          }`}
+                        >
+                          <Icon className="h-5 w-5" />
+                          <span className="text-[11px] font-semibold leading-tight">{m.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Sous-matière (Dictée, Grammaire, Morale, Chant…) */}
+                  <div className="mt-3">
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">
+                      Sous-matière <span className="font-normal text-slate-400">({sousMatiereSuggestions.length > 0 ? "suggestions officielles" : "facultatif"})</span>
+                    </label>
+                    <input
+                      type="text"
+                      list="dl-extraction-sous-matiere"
+                      value={sousMatiere}
+                      onChange={e => setSousMatiere(e.target.value)}
+                      placeholder={
+                        sousMatiereSuggestions.length > 0
+                          ? "Ex : Dictée, Grammaire, Lecture, Morale, Chant…"
+                          : "Sous-matière / rubrique de la leçon (facultatif)…"
+                      }
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    />
+                    <datalist id="dl-extraction-sous-matiere">
+                      {sousMatiereSuggestions.map(s => (
+                        <option key={s} value={s} />
+                      ))}
+                    </datalist>
+                  </div>
+                </div>
+              )}
+
+              {/* Classe */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
+                  3. Classe {level === "PRIMAIRE" ? "(ex : CM1)" : "(ex : Maternelle 2)"}
+                </label>
+                <input
+                  type="text"
+                  list="dl-extraction-classe"
+                  value={classe}
+                  onChange={e => setClasse(e.target.value)}
+                  placeholder={level === "PRIMAIRE" ? "CI, CP, CE1, CE2, CM1 ou CM2" : "Maternelle 1, Maternelle 2, PS, MS ou GS"}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+                />
+                <datalist id="dl-extraction-classe">
+                  {classesSuggestions.map(c => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+              </div>
+
+              {/* Explication du fonctionnement */}
+              <div className="bg-violet-50 border border-violet-200 rounded-lg p-3">
+                <p className="text-xs text-violet-900">
+                  <Shapes className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />
+                  Le prompt d&apos;extraction n&apos;est pas figé : il est <b>construit dynamiquement</b> à partir de votre déclaration
+                  {level === "MATERNELLE" ? (
+                    <> — l&apos;IA recevra la structure <b>exacte</b> de la fiche du domaine {MATERNELLE_DOMAINES.find(d => d.number === domainNumber)?.roman}{activiteDomaine ? ` (activité : ${activiteDomaine})` : ""}, zone par zone.</>
+                  ) : (
+                    <> — l&apos;IA recevra la structure <b>exacte</b> de la fiche de {(PRIMAIRE_MATIERES.find(m => m.type === primaireMatiere)?.label || "").toLowerCase()}{sousMatiere ? ` (${sousMatiere})` : ""}{classe ? ` pour la classe de ${classe}` : ""}, champ par champ.</>
+                  )}
+                </p>
+              </div>
+            </>
+          )}
+
+          {/* ══════ ÉTAPE 2 — DÉPÔT DES CAPTURES ══════ */}
+          {step === "upload" && !extractedFields && (
+            <>
+              {/* Récapitulatif du contexte choisi */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="text-[11px] font-bold px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">
+                      {level === "MATERNELLE" ? "Maternelle" : "Primaire"}
+                    </span>
+                    <span className="text-[11px] font-bold px-2 py-1 rounded-full bg-violet-100 text-violet-700">
+                      {effectiveContext.sheetTypeLabel}
+                    </span>
+                    {effectiveContext.matiereSpecifique && (
+                      <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
+                        {effectiveContext.matiereSpecifique}
+                      </span>
+                    )}
+                    {effectiveContext.className && (
+                      <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                        {effectiveContext.className}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setStep("context")}
+                    disabled={extracting}
+                    className="shrink-0 text-xs font-semibold text-slate-500 hover:text-slate-800 underline disabled:opacity-40"
+                  >
+                    Modifier
+                  </button>
+                </div>
+              </div>
+
+              {/* Zone de dépôt */}
               <div
                 className={`border-2 border-dashed rounded-xl p-6 text-center transition ${
                   dragOver ? "border-violet-400 bg-violet-50" : "border-slate-300 bg-slate-50/50"
@@ -323,7 +715,7 @@ export function FicheAiExtractionModal({
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
                   PNG, JPEG ou WebP — 6 captures maximum. Une fiche sur plusieurs pages = une capture par page,{" "}
-                  <span className="font-semibold">dans l'ordre</span>.
+                  <span className="font-semibold">dans l&apos;ordre</span>.
                 </p>
                 <button
                   type="button"
@@ -383,7 +775,7 @@ export function FicheAiExtractionModal({
                 </p>
                 <ul className="text-xs text-amber-700 mt-1.5 space-y-0.5 list-disc list-inside">
                   <li>Image nette et bien cadrée (la fiche entière, à la verticale)</li>
-                  <li>Préférez une <b>capture d'écran</b> du PDF/Word à une photo de l'écran</li>
+                  <li>Préférez une <b>capture d&apos;écran</b> du PDF/Word à une photo de l&apos;écran</li>
                   <li>Texte lisible : évitez reflets, ombres et flou</li>
                 </ul>
               </div>
@@ -394,9 +786,9 @@ export function FicheAiExtractionModal({
           {extracting && (
             <div className="text-center py-10">
               <Loader2 className="h-10 w-10 text-violet-600 animate-spin mx-auto mb-3" />
-              <p className="font-semibold text-slate-800">L'IA lit vos captures…</p>
+              <p className="font-semibold text-slate-800">L&apos;IA lit vos captures…</p>
               <p className="text-sm text-slate-500 mt-1">
-                Transcription du contenu de la fiche {sheetTypeLabel} — cela peut prendre jusqu'à une minute.
+                Transcription du contenu de la fiche {effectiveContext.sheetTypeLabel} — cela peut prendre jusqu&apos;à une minute.
               </p>
             </div>
           )}
@@ -412,7 +804,7 @@ export function FicheAiExtractionModal({
                   </p>
                   <p className="text-xs text-emerald-700 mt-0.5">
                     {modelUsed && <>Modèle : <span className="font-mono">{modelUsed}</span> — </>}
-                    Le contenu sera reporté dans le formulaire. Vous pourrez tout vérifier et ajuster avant d'enregistrer.
+                    Le contenu sera reporté dans le formulaire. Vous pourrez tout vérifier et ajuster avant d&apos;enregistrer.
                   </p>
                 </div>
               </div>
@@ -439,8 +831,8 @@ export function FicheAiExtractionModal({
 
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                 <p className="text-xs text-slate-600">
-                  💡 Les champs existants du formulaire ne sont <b>pas écrasés s'ils sont déjà remplis</b> — seuls les champs
-                  vides (et le déroulement) seront complétés. Vous gardez la main.
+                  💡 Les champs existants du formulaire ne sont <b>pas écrasés s&apos;ils sont déjà remplis</b> — seuls les champs
+                  vides (et le déroulement) seront complétés. Le formulaire passera sur le type <b>{effectiveContext.sheetTypeLabel}</b> si nécessaire.
                 </p>
               </div>
             </div>
@@ -450,19 +842,38 @@ export function FicheAiExtractionModal({
         {/* ── Footer ─────────────────────────────────────────────────────── */}
         <div className="border-t border-slate-200 p-3 flex items-center justify-between gap-3">
           <p className="text-xs text-slate-500 hidden sm:block">
-            {extractedFields
-              ? "Extraction terminée — vérifiez puis appliquez."
-              : "Les captures sont envoyées au modèle vision NVIDIA pour transcription."}
+            {step === "context"
+              ? "Le niveau et la catégorie déterminent la structure envoyée à l'IA."
+              : extractedFields
+                ? "Extraction terminée — vérifiez puis appliquez."
+                : "Les captures sont envoyées au modèle vision NVIDIA pour transcription."}
           </p>
           <div className="flex items-center gap-2 ml-auto">
-            {!extractedFields ? (
+            {step === "context" ? (
               <>
                 <button
                   onClick={handleClose}
-                  disabled={extracting || compressing}
-                  className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg disabled:opacity-40"
+                  className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
                 >
                   Annuler
+                </button>
+                <button
+                  onClick={() => setStep("upload")}
+                  disabled={!contextReady}
+                  className="flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-bold hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Continuer vers les captures
+                  <ChevronLeft className="h-4 w-4 rotate-180" />
+                </button>
+              </>
+            ) : !extractedFields ? (
+              <>
+                <button
+                  onClick={() => setStep("context")}
+                  disabled={extracting || compressing}
+                  className="flex items-center gap-1 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" /> Contexte
                 </button>
                 <button
                   onClick={() => void launchExtraction()}

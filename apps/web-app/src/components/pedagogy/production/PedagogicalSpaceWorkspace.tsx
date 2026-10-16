@@ -99,10 +99,21 @@ export function PedagogicalSpaceWorkspace({
   tenantId: propTenantId,
   academicYearId: propAcademicYearId,
   teacherId: propTeacherId,
+  isHelmEnseignant = false,
 }: {
   tenantId?: string;
   academicYearId?: string;
   teacherId?: string;
+  /** ⭐ 2026-10-16 (demande promoteur) — Portail autonome « Helm Enseignant »
+   *    (enseignant.academiahelm.com, non lié à une école) :
+   *    - onglet « Matériel » MASQUÉ (inventaire des ressources de l'ÉCOLE —
+   *      hors périmètre d'un enseignant autonome) ;
+   *    - sous-onglet « Liste des semainiers » MASQUÉ dans Cahier de Semaine
+   *      (attribution institutionnelle des semainiers par la direction —
+   *      l'enseignant garde « Cahier du Semainier » pour remplir et soumettre
+   *      sa version PDF).
+   *    Le workspace reste inchangé pour l'espace enseignant d'une école. */
+  isHelmEnseignant?: boolean;
 } = {}) {
   const { tenant, academicYear, schoolLevel } = useModuleContext();
   const { user } = useAppSession();
@@ -178,8 +189,12 @@ export function PedagogicalSpaceWorkspace({
   // ⭐ Filtrer les onglets visibles selon le niveau scolaire :
   //    - secondaryOnly=true → visible seulement si isSecondaryLevel (ou accès global)
   //    - maternellePrimaireOnly=true → masqué si isSecondaryLevel (sauf accès global)
+  //    ⭐ 2026-10-16 — portail Helm Enseignant : onglet « Matériel » masqué
+  //      (l'inventaire du matériel relève de l'école, l'enseignant autonome
+  //      n'y a pas accès — son espace n'est pas lié à une école).
   //    Le PROMOTEUR voit tous les onglets quel que soit le niveau sélectionné.
   const TABS = ALL_TABS.filter(t => {
+    if (isHelmEnseignant && t.id === 'materiel') return false;
     // Onglets secondaire-only (Cahier de Texte) : visibles si niveau secondaire OU accès global
     if (t.secondaryOnly && !isSecondaryLevel && !hasGlobalAccess) return false;
     // ⭐ Onglets maternelle/primaire-only (Cahier Journal, Fiches, Registre) :
@@ -345,6 +360,7 @@ export function PedagogicalSpaceWorkspace({
               tenantId={resolvedTenantId}
               academicYearId={resolvedAcademicYearId}
               teacherId={teacherId}
+              hideSemainiersList={isHelmEnseignant}
             />
           )}
           {tab === 'registre' && (

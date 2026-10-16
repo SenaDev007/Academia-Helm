@@ -5,29 +5,30 @@
  *
  * Service qui gère l'ensemble de 3 modèles IA via NVIDIA API :
  *
- *   1. GLM 5.2 (z-ai/glm-5.2)
+ *   ⭐ 2026-10-16 — MODÈLES MIS À JOUR : l'API hébergée NVIDIA a retiré
+ *   z-ai/glm-5.2, minimaxai/minimax-m3 et openai/gpt-oss-120b (404 sur
+ *   GET /v1/models) — remplacés par leurs équivalents actuels.
+ *
+ *   1. GLM 5.3 (z-ai/glm-5.3)
  *      - Modèle principal, bon équilibre coût/performance
  *      - Reasoning natif (paramètre reasoning.enabled)
  *      - Streaming SSE compatible
- *      - Utilisé pour : Sarah (closer), Sarah Guide (navigation), conversation générale
+ *      - Utilisé pour : ORION (analyses), conversation générale
  *
- *   2. MiniMax-M3 (minimaxai/minimax-m3)
- *      - Raisonnement sophistiqué, max_tokens 8192
- *      - Temperature 1, top_p 0.95
- *      - Utilisé pour : ORION (analyses complexes, prédictions, rapports décisionnels)
- *      - Excellente qualité de raisonnement pour tâches analytiques
+ *   2. GLM 5.3 Flash (z-ai/glm-5.3-flash)
+ *      - Conversationnel rapide, latence minimale
+ *      - Utilisé pour : Sarah (closer), Sarah Guide (navigation), tâches courtes
  *
- *   3. GPT-OSS-120B (openai/gpt-oss-120b)
+ *   3. GPT-OSS-20B (openai/gpt-oss-20b)
  *      - Function calling natif, structured output
- *      - Mathématiques, raisonnement étape par étape
  *      - Utilisé pour : ATLAS (exécution avec tools, function calling)
  *      - Expose reasoning_content pour le raisonnement transparent
  *
  * Stratégie de routing :
- *   - SARA (landing + guide) → GLM 5.2 (rapide, conversationnel)
- *   - ORION → MiniMax-M3 (raisonnement analytique approfondi)
- *   - ATLAS → GPT-OSS-120B (function calling, structured output)
- *   - Si un modèle échoue → fallback vers GLM 5.2 (modèle de secours universel)
+ *   - SARA (landing + guide) → GLM 5.3 Flash (rapide, conversationnel)
+ *   - ORION → GLM 5.3 (raisonnement analytique approfondi)
+ *   - ATLAS → GPT-OSS-20B (function calling, structured output)
+ *   - Si un modèle échoue → fallback vers GLM 5.3 (modèle de secours universel)
  *
  * Tous les modèles sont accessibles via NVIDIA API (integrate.api.nvidia.com/v1)
  * avec la même clé API (NVIDIA_API_KEY).
@@ -38,7 +39,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 /** Les 3 modèles disponibles dans l'ensemble */
-export type ModelId = 'glm-5.2' | 'minimax-m3' | 'gpt-oss-120b';
+export type ModelId = 'glm-5.3' | 'glm-5.3-flash' | 'gpt-oss-20b';
 
 /** Configuration spécifique à chaque modèle */
 interface ModelConfig {
@@ -62,46 +63,46 @@ interface ModelConfig {
 
 /** Configuration de chaque modèle de l'ensemble */
 const MODEL_CONFIGS: Record<ModelId, ModelConfig> = {
-  'glm-5.2': {
-    nvidiaModel: 'z-ai/glm-5.2',
+  'glm-5.3': {
+    nvidiaModel: 'z-ai/glm-5.3',
+    temperature: 0.7,
+    topP: 1,
+    maxTokens: 8000,
+    supportsReasoning: true,
+    supportsFunctionCalling: true,
+    exposesReasoningContent: true,
+    description: 'GLM 5.3 — Modèle principal, équilibre coût/performance, reasoning natif',
+  },
+  'glm-5.3-flash': {
+    nvidiaModel: 'z-ai/glm-5.3-flash',
     temperature: 0.7,
     topP: 1,
     maxTokens: 4000,
     supportsReasoning: true,
     supportsFunctionCalling: true,
     exposesReasoningContent: true,
-    description: 'GLM 5.2 — Modèle principal, équilibre coût/performance, reasoning natif',
+    description: 'GLM 5.3 Flash — Conversationnel rapide, latence minimale',
   },
-  'minimax-m3': {
-    nvidiaModel: 'minimaxai/minimax-m3',
-    temperature: 1,
-    topP: 0.95,
-    maxTokens: 8192,
-    supportsReasoning: false, // Utilise reasoning_content dans la réponse, pas le paramètre reasoning
-    supportsFunctionCalling: true,
-    exposesReasoningContent: true,
-    description: 'MiniMax-M3 — Raisonnement sophistiqué, idéal pour analyses complexes',
-  },
-  'gpt-oss-120b': {
-    nvidiaModel: 'openai/gpt-oss-120b',
+  'gpt-oss-20b': {
+    nvidiaModel: 'openai/gpt-oss-20b',
     temperature: 1,
     topP: 1,
     maxTokens: 4096,
     supportsReasoning: false, // Utilise reasoning_content dans la réponse
     supportsFunctionCalling: true,
     exposesReasoningContent: true,
-    description: 'GPT-OSS-120B — Function calling, mathématiques, structured output',
+    description: 'GPT-OSS-20B — Function calling, mathématiques, structured output',
   },
 };
 
 /** Mapping agent → modèle recommandé */
 const AGENT_MODEL_MAPPING: Record<string, ModelId> = {
-  SARA: 'glm-5.2',       // Closer + Guide : rapide, conversationnel
-  ORION: 'minimax-m3',   // Analyste : raisonnement sophistiqué
-  ATLAS: 'gpt-oss-120b', // Exécuteur : function calling, structured output
-  HDIE: 'glm-5.2',
-  SCE: 'glm-5.2',
-  GENERAL: 'glm-5.2',
+  SARA: 'glm-5.3-flash',   // Closer + Guide : rapide, conversationnel
+  ORION: 'glm-5.3',        // Analyste : raisonnement sophistiqué
+  ATLAS: 'gpt-oss-20b',    // Exécuteur : function calling, structured output
+  HDIE: 'glm-5.3-flash',
+  SCE: 'glm-5.3-flash',
+  GENERAL: 'glm-5.3',
 };
 
 @Injectable()
@@ -133,7 +134,7 @@ export class ModelEnsembleService {
    * Retourne le modèle recommandé pour un agent donné
    */
   getModelForAgent(agent: string): ModelId {
-    return AGENT_MODEL_MAPPING[agent] || 'glm-5.2';
+    return AGENT_MODEL_MAPPING[agent] || 'glm-5.3';
   }
 
   /**
@@ -244,7 +245,7 @@ export class ModelEnsembleService {
     // MiniMax-M3 et GPT-OSS-120B exposent le reasoning dans reasoning_content (format string)
     let reasoningContent: string | undefined;
 
-    if (modelId === 'glm-5.2') {
+    if (modelId === 'glm-5.3' || modelId === 'glm-5.3-flash') {
       // GLM 5.2 : reasoning_details est un array d'objets
       if (message.reasoning_details && Array.isArray(message.reasoning_details)) {
         reasoningContent = message.reasoning_details
@@ -291,8 +292,8 @@ export class ModelEnsembleService {
     const chain: ModelId[] = [primaryModel];
 
     // Ajouter GLM 5.2 en premier fallback (sauf si c'est déjà le modèle principal)
-    if (primaryModel !== 'glm-5.2') {
-      chain.push('glm-5.2');
+    if (primaryModel !== 'glm-5.3') {
+      chain.push('glm-5.3');
     }
 
     // Ajouter les autres modèles restants

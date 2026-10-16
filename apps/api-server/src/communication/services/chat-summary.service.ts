@@ -61,7 +61,7 @@ export class ChatSummaryService {
     this.model =
       this.configService.get<string>('NVIDIA_MODEL') ||
       this.configService.get<string>('OPENROUTER_MODEL') ||
-      'z-ai/glm-5.2';
+      'z-ai/glm-5.3-flash';
     this.baseUrl =
       this.configService.get<string>('NVIDIA_BASE_URL') ||
       this.configService.get<string>('OPENROUTER_BASE_URL') ||

@@ -151,11 +151,17 @@ export interface OpenRouterStreamChunk {
  * on essaie le modèle suivant dans la liste.
  *
  * ⭐ MULTI-MODÈLE (v2 — Août 2025) :
- *   1. GLM-5.2 (z-ai/glm-5.2) — Modèle principal, reasoning natif
- *   2. MiniMax-M3 (minimaxai/minimax-m3) — Raisonnement sophistiqué
- *   3. GPT-OSS-120B (openai/gpt-oss-120b) — Function calling, structured output
- *   4. GLM-5.1 (zai-org/GLM-5.1-FP8) — Legacy fallback
- *   5. GLM-4.5-Air (z-ai/glm-4.5-air:free) — Fallback gratuit
+ *   1. GLM-5.3 (z-ai/glm-5.3) — Modèle principal, reasoning natif
+ *   2. GLM-5.3-Flash (z-ai/glm-5.3-flash) — Conversationnel rapide
+ *   3. GPT-OSS-20B (openai/gpt-oss-20b) — Function calling, structured output
+ *   4. Nemotron-3.5-Lightning (nvidia/nemotron-3.5-lightning-30b-a3b) — Tâches spécialisées rapides
+ *   5. DeepSeek-V4.1-Flash (deepseek-ai/deepseek-v4.1-flash) — VLM/texte polyvalent
+ *
+ * ⭐ 2026-10-16 — MISE À JOUR OBLIGATOIRE : l'API hébergée NVIDIA a retiré
+ *   z-ai/glm-5.2, minimaxai/minimax-m3, openai/gpt-oss-120b, zai-org/GLM-5.1-FP8
+ *   et z-ai/glm-4.5-air:free (vérifié via GET /v1/models — 404 systématique →
+ *   toutes les IA de la plateforme répondaient en placeholder). Remplacés par
+ *   les équivalents actuels ci-dessus.
  *
  * Le routing agent → modèle est géré par ModelEnsembleService :
  *   - SARA  → GLM-5.2 (rapide, conversationnel)
@@ -163,21 +169,23 @@ export interface OpenRouterStreamChunk {
  *   - ATLAS → GPT-OSS-120B (function calling, structured output)
  */
 const MODEL_FALLBACK_CHAIN: string[] = [
-  'z-ai/glm-5.2',
-  'minimaxai/minimax-m3',
-  'openai/gpt-oss-120b',
-  'zai-org/GLM-5.1-FP8',
-  'z-ai/glm-4.5-air:free',
+  'z-ai/glm-5.3',
+  'z-ai/glm-5.3-flash',
+  'openai/gpt-oss-20b',
+  'nvidia/nemotron-3.5-lightning-30b-a3b',
+  'deepseek-ai/deepseek-v4.1-flash',
 ];
 
-/** Mapping persona → modèle NVIDIA recommandé (routing multi-modèle) */
+/** Mapping persona → modèle NVIDIA recommandé (routing multi-modèle)
+ * ⭐ 2026-10-16 — modèles mis à jour (les précédents ont été retirés de
+ *   l'API hébergée NVIDIA : glm-5.2, minimax-m3, gpt-oss-120b → 404). */
 const PERSONA_MODEL_MAPPING: Record<string, string> = {
-  SARA: 'z-ai/glm-5.2',        // Closer + Guide : rapide, conversationnel
-  ORION: 'minimaxai/minimax-m3', // Analyste : raisonnement sophistiqué
-  ATLAS: 'openai/gpt-oss-120b',  // Exécuteur : function calling, structured output
-  HDIE: 'z-ai/glm-5.2',
-  SCE: 'z-ai/glm-5.2',
-  GENERAL: 'z-ai/glm-5.2',
+  SARA: 'z-ai/glm-5.3-flash',   // Closer + Guide : rapide, conversationnel
+  ORION: 'z-ai/glm-5.3',        // Analyste : raisonnement sophistiqué
+  ATLAS: 'openai/gpt-oss-20b',  // Exécuteur : function calling, structured output
+  HDIE: 'z-ai/glm-5.3-flash',
+  SCE: 'z-ai/glm-5.3-flash',
+  GENERAL: 'z-ai/glm-5.3',
 };
 
 /** Codes HTTP qui méritent un retry (429 = rate limit, 500-504 = erreur serveur) */
@@ -206,7 +214,7 @@ export class OpenRouterService {
     this.model =
       this.configService.get<string>('NVIDIA_MODEL') ||
       this.configService.get<string>('OPENROUTER_MODEL') ||
-      'z-ai/glm-5.2';
+      'z-ai/glm-5.3';
     this.baseUrl =
       this.configService.get<string>('NVIDIA_BASE_URL') ||
       this.configService.get<string>('OPENROUTER_BASE_URL') ||
@@ -360,13 +368,14 @@ export class OpenRouterService {
     };
 
     // ⭐ Paramètres spécifiques aux modèles multi-modèles
-    // MiniMax-M3 : top_p 0.95, max_tokens 8192
-    // GPT-OSS-120B : top_p 1, max_tokens 4096
-    // GLM-5.2 : top_p 1 (défaut)
-    if (model === 'minimaxai/minimax-m3') {
-      body.top_p = 0.95;
-    } else if (model === 'openai/gpt-oss-120b') {
+    //   (mis à jour 2026-10-16 — les modèles précédents ont été retirés de
+    //   l'API hébergée NVIDIA)
+    if (model === 'z-ai/glm-5.3' || model === 'z-ai/glm-5.3-flash') {
       body.top_p = 1;
+    } else if (model === 'openai/gpt-oss-20b') {
+      body.top_p = 1;
+    } else if (model === 'nvidia/nemotron-3.5-lightning-30b-a3b') {
+      body.top_p = 0.95;
     }
 
     // Ajouter le support du reasoning pour GLM 5.2

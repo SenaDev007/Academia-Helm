@@ -39,8 +39,16 @@ const RATE_LIMITS: Record<string, { perMinute: number; perHour: number; perDay: 
 
 // Coûts estimés par modèle (USD pour 1M tokens)
 const MODEL_COSTS: Record<string, { input: number; output: number }> = {
-  // ⭐ NVIDIA GLM-5.2 (provider principal)
-  'z-ai/glm-5.2': { input: 0.15, output: 0.60 },
+  // ⭐ NVIDIA GLM-5.3 (provider principal — mise à jour 2026-10-16 : glm-5.2
+  //   retiré de l'API hébergée NVIDIA)
+  'z-ai/glm-5.3': { input: 0.15, output: 0.60 },
+  'z-ai/glm-5.3-flash': { input: 0.10, output: 0.40 },
+  'openai/gpt-oss-20b': { input: 0.10, output: 0.50 },
+  'nvidia/nemotron-3.5-lightning-30b-a3b': { input: 0.10, output: 0.40 },
+  'deepseek-ai/deepseek-v4.1-flash': { input: 0.10, output: 0.40 },
+  // Vision (extraction fiches)
+  'nvidia/nemotron-3.5-super-vl-120b-a12b': { input: 0.20, output: 0.60 },
+  'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning': { input: 0.15, output: 0.50 },
   // Legacy Modal / OpenRouter
   'z-ai/glm-5.1': { input: 0.15, output: 0.60 },
   'zai-org/GLM-5.1-FP8': { input: 0.15, output: 0.60 },

@@ -27,11 +27,14 @@
  *
  * Modèles (API OpenAI-compatible https://integrate.api.nvidia.com/v1 — même
  * gateway que le reste de la plateforme, variable NVIDIA_API_KEY) :
- *   - Modèle principal : nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
- *     (omni-modal, OCR de référence, ACCEPTE PLUSIEURS IMAGES par requête —
- *     indispensable pour une fiche répartie sur plusieurs captures).
- *   - Modèle de repli : meta/llama-3.2-90b-vision-instruct (vision de haute
- *     qualité, multi-images également).
+ *   ⭐ 2026-10-16 (v3) — chaîne réordonnée sur les modèles ACTUELLEMENT
+ *   servis par l'API hébergée (vérifiés via GET /v1/models) :
+ *   - Modèle principal : nvidia/nemotron-3.5-super-vl-120b-a12b (VL MoE
+ *     120B-A12B — rapide, thinking désactivable, multi-images)
+ *   - Modèle de repli : deepseek-ai/deepseek-v4.1-flash (VLM MoE « flash »,
+ *     sans mode raisonnement)
+ *   - Modèle de 2ᵉ repli : nvidia/nemotron-3-nano-omni-30b-a3b-reasoning
+ *     (omni OCR multi-images — thinking désactivé via paramètres)
  *   - meta/llama-3.2-11b-vision-instruct écarté : UNE SEULE image par
  *     requête + réduction automatique à 1120px (support-matrix NVIDIA NIM).
  *
@@ -39,9 +42,11 @@
  *   - NVIDIA_API_KEY       : clé API build.nvidia.com (déjà utilisée par le
  *                            gateway IA central — openrouter.service.ts).
  *   - NVIDIA_VISION_MODEL  : modèle vision principal
- *                            (défaut : nvidia/nemotron-3-nano-omni-30b-a3b-reasoning)
+ *                            (défaut : nvidia/nemotron-3.5-super-vl-120b-a12b)
  *   - NVIDIA_VISION_FALLBACK : modèle de repli
- *                            (défaut : meta/llama-3.2-90b-vision-instruct)
+ *                            (défaut : deepseek-ai/deepseek-v4.1-flash)
+ *   - NVIDIA_VISION_TERTIARY : modèle de 2ᵉ repli
+ *                            (défaut : nvidia/nemotron-3-nano-omni-30b-a3b-reasoning)
  * ============================================================================
  */
 
@@ -63,8 +68,9 @@ const MAX_TOTAL_BASE64_LENGTH = 4_000_000; // < limite JSON body 5 Mo
 //    défaut 16384 tokens → latence >45 s constatée en production) via
 //    chat_template_kwargs.enable_thinking=false + reasoning_budget=0, et
 //    max_tokens est ramené de 6000 à 3500 (une fiche JSON ≈ 1500-2500 tokens).
-const MODEL_TIMEOUT_PRIMARY_MS = 100_000;
+const MODEL_TIMEOUT_PRIMARY_MS = 75_000;
 const MODEL_TIMEOUT_FALLBACK_MS = 60_000;
+const MODEL_TIMEOUT_TERTIARY_MS = 60_000;
 /** Durée de vie d'un job d'extraction terminé dans le store en mémoire. */
 const JOB_TTL_MS = 10 * 60_000;
 /** Cap de génération : une fiche JSON complète ≈ 1500-2500 tokens → 3500
@@ -446,6 +452,7 @@ export class FicheVisionExtractionService {
 
   private readonly primaryModel: string;
   private readonly fallbackModel: string;
+  private readonly tertiaryModel: string;
 
   /** ⭐ v3 — store en mémoire des jobs d'extraction (polling par la modale).
    *    Taille bornée par la purge paresseuse (jobs terminés > 10 min).
@@ -458,12 +465,15 @@ export class FicheVisionExtractionService {
   ) {
     this.primaryModel =
       this.configService.get<string>('NVIDIA_VISION_MODEL') ||
-      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning';
+      'nvidia/nemotron-3.5-super-vl-120b-a12b';
     this.fallbackModel =
       this.configService.get<string>('NVIDIA_VISION_FALLBACK') ||
-      'meta/llama-3.2-90b-vision-instruct';
+      'deepseek-ai/deepseek-v4.1-flash';
+    this.tertiaryModel =
+      this.configService.get<string>('NVIDIA_VISION_TERTIARY') ||
+      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning';
     this.logger.log(
-      `Fiche Vision Extraction — modèle principal: ${this.primaryModel}, repli: ${this.fallbackModel}`,
+      `Fiche Vision Extraction — modèle principal: ${this.primaryModel}, repli: ${this.fallbackModel}, 2ᵉ repli: ${this.tertiaryModel}`,
     );
   }
 
@@ -689,12 +699,14 @@ export class FicheVisionExtractionService {
 
     const warnings: string[] = [];
 
-    // ── Appel modèle principal, puis repli ────────────────────────────────
+    // ── Appel modèle principal, puis replis ───────────────────────────────
     //    ⭐ v3 asynchrone : plus de contrainte de fenêtre HTTP — chaque modèle
-    //    dispose de son timeout propre (100 s principal / 60 s repli).
+    //    dispose de son timeout propre (75 s / 60 s / 60 s — total 195 s,
+    //    sous la fenêtre de polling de la modale de 210 s).
     const modelsToTry: Array<{ model: string; timeoutMs: number }> = [
       { model: this.primaryModel, timeoutMs: MODEL_TIMEOUT_PRIMARY_MS },
       { model: this.fallbackModel, timeoutMs: MODEL_TIMEOUT_FALLBACK_MS },
+      { model: this.tertiaryModel, timeoutMs: MODEL_TIMEOUT_TERTIARY_MS },
     ];
     let lastError: any = null;
 

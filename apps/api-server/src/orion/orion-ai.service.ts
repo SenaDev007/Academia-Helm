@@ -41,7 +41,8 @@ export class OrionAiService {
     private readonly configService: ConfigService,
     private readonly moduleScanner: OrionModuleScanner,
   ) {
-    // ⭐ Migration vers NVIDIA GLM-5.2 — priorité NVIDIA_* > OPENROUTER_*
+    // ⭐ Migration vers NVIDIA GLM-5.3 — priorité NVIDIA_* > OPENROUTER_*
+    //   (2026-10-16 : glm-5.2 retiré de l'API hébergée NVIDIA)
     this.apiKey =
       this.configService.get<string>('NVIDIA_API_KEY') ||
       this.configService.get<string>('OPENROUTER_API_KEY') ||
@@ -49,7 +50,7 @@ export class OrionAiService {
     this.model =
       this.configService.get<string>('NVIDIA_MODEL') ||
       this.configService.get<string>('OPENROUTER_MODEL') ||
-      'z-ai/glm-5.2';
+      'z-ai/glm-5.3';
     this.baseUrl =
       this.configService.get<string>('NVIDIA_BASE_URL') ||
       this.configService.get<string>('OPENROUTER_BASE_URL') ||
@@ -668,11 +669,13 @@ RÈGLES STRICTES
       return this.buildFallbackResponse(context);
     }
 
-    // ⭐ Routing multi-modèle : ORION utilise MiniMax-M3 (raisonnement sophistiqué)
-    // Fallback : GLM-5.2 si MiniMax-M3 échoue
+    // ⭐ Routing multi-modèle (2026-10-16 — modèles mis à jour, les précédents
+    //   ont été retirés de l'API hébergée NVIDIA) : ORION raisonne avec
+    //   GLM-5.3, repli GLM-5.3-Flash puis Nemotron-3.5-Lightning.
     const modelsToTry = [
-      { model: 'minimaxai/minimax-m3', temperature: 1, topP: 0.95, maxTokens: 8192 },
-      { model: 'z-ai/glm-5.2', temperature: 0.7, topP: 1, maxTokens: 2000 },
+      { model: 'z-ai/glm-5.3', temperature: 1, topP: 0.95, maxTokens: 8192 },
+      { model: 'z-ai/glm-5.3-flash', temperature: 0.7, topP: 1, maxTokens: 4000 },
+      { model: 'nvidia/nemotron-3.5-lightning-30b-a3b', temperature: 0.7, topP: 0.95, maxTokens: 4000 },
     ];
 
     for (const { model, temperature, topP, maxTokens } of modelsToTry) {

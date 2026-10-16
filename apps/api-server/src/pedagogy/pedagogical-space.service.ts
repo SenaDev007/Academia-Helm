@@ -23,6 +23,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { PuppeteerPoolService } from '../common/services/puppeteer-pool.service';
 import { EmailService } from '../communication/services/email.service';
+import { compareClassesCanonically } from '../common/utils/benin-class-order';
 // ⭐ 2026-09-16 — Cachets + signature du directeur appliqués automatiquement
 //    sur le PDF du cahier journal (même moteur que RH > Administration).
 import { DocumentSealsService } from '../settings/services/document-seals.service';
@@ -401,6 +402,12 @@ export class PedagogicalSpaceService {
 
     // Pour chaque classe, calculer les effectifs depuis les inscriptions
     const classes = Array.from(classMap.values());
+    // ⭐ 2026-10-16 — Ordre canonique béninois : Maternelle 1 → Maternelle 2 →
+    //    CI → CP → CE1 → CE2 → CM1 → CM2 (puis Secondaire 6ème → Terminale).
+    //    Le tri se fait à la SOURCE (backend) pour que TOUS les consommateurs
+    //    de cet endpoint affichent le même ordre : Mes élèves (portail
+    //    enseignant), Espace pédagogique → Mes classes, Évaluations, cahiers…
+    classes.sort(compareClassesCanonically);
     for (const cls of classes) {
       const enrollments = await this.prisma.studentEnrollment.findMany({
         where: {
@@ -639,6 +646,8 @@ export class PedagogicalSpaceService {
       }
     }
 
+    // ⭐ 2026-10-16 — Même ordre canonique béninois que getMyClasses.
+    classes.sort(compareClassesCanonically);
     return classes;
   }
 

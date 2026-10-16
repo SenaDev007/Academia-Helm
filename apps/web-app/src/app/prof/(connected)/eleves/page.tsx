@@ -23,10 +23,12 @@ import {
   Users,
   Plus,
   X,
+  FileSpreadsheet,
 } from 'lucide-react';
 import apiClient from '@/lib/api/client';
 import { useAppSession } from '@/contexts/AppSessionContext';
 import { useModuleContext } from '@/hooks/useModuleContext';
+import ImportElevesProfModal from '@/components/prof/ImportElevesProfModal';
 
 interface MyClass {
   classId: string;
@@ -57,6 +59,8 @@ export default function ProfElevesPage() {
   const [form, setForm] = useState({ firstName: '', lastName: '', gender: '' });
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // ⭐ 2026-10-16 — Import en masse via Excel (template multi-feuilles).
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const teacherId = user?.teacherId || user?.id || '';
 
@@ -182,14 +186,24 @@ export default function ProfElevesPage() {
             Ajoutez les élèves de vos classes pour saisir les notes et générer les bulletins.
           </p>
         </div>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          disabled={!selectedClassId}
-          className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-60"
-        >
-          {showForm ? <X className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
-          {showForm ? 'Fermer' : 'Ajouter un élève'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            disabled={!selectedClassId}
+            className="inline-flex items-center gap-2 rounded-lg border border-teal-600 bg-white px-4 py-2.5 text-sm font-semibold text-teal-700 hover:bg-teal-50 disabled:opacity-60"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Importer (Excel)
+          </button>
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            disabled={!selectedClassId}
+            className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-60"
+          >
+            {showForm ? <X className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+            {showForm ? 'Fermer' : 'Ajouter un élève'}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -350,6 +364,15 @@ export default function ProfElevesPage() {
           </div>
         )}
       </div>
+
+      {/* ── Import en masse via Excel ── */}
+      <ImportElevesProfModal
+        open={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImported={() => {
+          if (selectedClassId) loadStudents(selectedClassId);
+        }}
+      />
     </div>
   );
 }

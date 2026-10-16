@@ -27,6 +27,7 @@ import {
   Param,
   Query,
   Req,
+  Res,
   Headers,
   HttpCode,
   HttpStatus,
@@ -197,6 +198,60 @@ export class TeacherPortalController {
     const tenantId = req.user?.tenantId;
     if (!tenantId) throw new BadRequestException('Tenant non résolu');
     return this.provisioningService.removeStudent(tenantId, id);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  //  ÉLÈVES — IMPORT EXCEL (template multi-feuilles + preview + run)
+  //  Pattern éprouvé du module Élèves des écoles : une feuille par classe,
+  //  4 colonnes (Prénom / Nom / Sexe / Date de naissance).
+  // ─────────────────────────────────────────────────────────────────────
+
+  /**
+   * GET /teacher-portal/students/import/template
+   * Télécharge le template Excel : une feuille par classe de l'espace
+   * enseignant, dans l'ordre officiel (Mat 1 → Mat 2 → CI → … → CM2).
+   */
+  @Get('students/import/template')
+  async downloadStudentsImportTemplate(@Req() req: any, @Res() res: any) {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) throw new BadRequestException('Tenant non résolu');
+    return this.provisioningService.downloadStudentsImportTemplate(tenantId, res);
+  }
+
+  /**
+   * POST /teacher-portal/students/import/preview
+   * Valide le fichier Excel sans créer d'élèves. Body : { fileDataUrl }.
+   */
+  @Post('students/import/preview')
+  @HttpCode(HttpStatus.OK)
+  async previewStudentsImport(
+    @Req() req: any,
+    @Body() body: { fileDataUrl?: string },
+  ) {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) throw new BadRequestException('Tenant non résolu');
+    if (!body?.fileDataUrl) {
+      throw new BadRequestException('fileDataUrl est requis (base64 data URL du fichier Excel)');
+    }
+    return this.provisioningService.previewStudentsImport(tenantId, body.fileDataUrl);
+  }
+
+  /**
+   * POST /teacher-portal/students/import/run
+   * Importe en masse les élèves du fichier Excel.
+   */
+  @Post('students/import/run')
+  @HttpCode(HttpStatus.OK)
+  async runStudentsImport(
+    @Req() req: any,
+    @Body() body: { fileDataUrl?: string },
+  ) {
+    const tenantId = req.user?.tenantId;
+    if (!tenantId) throw new BadRequestException('Tenant non résolu');
+    if (!body?.fileDataUrl) {
+      throw new BadRequestException('fileDataUrl est requis (base64 data URL du fichier Excel)');
+    }
+    return this.provisioningService.runStudentsImport(tenantId, body.fileDataUrl);
   }
 
   // ─────────────────────────────────────────────────────────────────────

@@ -355,7 +355,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.19.0';
+const SW_VERSION = 'v4.20.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -534,6 +534,12 @@ const NEVER_INTERCEPT = [
   //    mises en file (honnêteté sur l'argent, spec §6, mêmes règles que
   //    fedapay/feexpay ci-dessous).
   /^\/api\/teacher-portal\/(checkout|public|signup)(\/|$)/,
+  // ⭐ v4.20.0 — IMPORT EXCEL ÉLÈVES (portail enseignant) : le template est
+  //    un téléchargement BINAIRE (.xlsx) et preview/run dépendent de l'état
+  //    RÉEL du serveur (validation + détection de doublons). Hors ligne, ces
+  //    appels échouent honnêtement (erreur réseau affichée dans la modale) —
+  //    jamais mis en file, jamais de réponse fabriquée.
+  /^\/api\/teacher-portal\/students\/import(\/|$)/,
   // ⭐ V4.0 — PASSERELLES DE PAIEMENT EXTERNES (Fedapay/FeexPay) : JAMAIS
   //    interceptées, ni en lecture ni en écriture. L'argent passe par des
   //    transactions externes qui ne peuvent être « rejouées » localement —

@@ -33,6 +33,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import * as ExcelJS from 'exceljs';
+import { Response } from 'express';
 import { PrismaService } from '../../database/prisma.service';
 import { SubdomainService } from '../../common/services/subdomain.service';
 import { EducationStructureService } from '../../settings/services/education-structure.service';
@@ -40,6 +42,7 @@ import { AcademicPeriodSettingsService } from '../../settings/services/academic-
 import { AcademicStructurePrismaService } from '../../pedagogy/academic-structure-prisma.service';
 import { SubjectsPrismaService } from '../../pedagogy/subjects-prisma.service';
 import { TeacherLevelCode } from '../dto/teacher-portal.dto';
+import { compareClassesCanonically, classOrderKeyFromPrisma } from '../../common/utils/benin-class-order';
 
 /** Libellés canoniques des niveaux (alignés sur getSchoolLevelsForType). */
 const LEVEL_CONFIGS: Array<{ code: TeacherLevelCode; name: string; label: string; order: number }> = [
@@ -815,6 +818,462 @@ export class TeacherProvisioningService {
     ]);
 
     return { success: true };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  IMPORT EXCEL D'ÉLÈVES — template multi-feuilles + preview + run
+  //  (pattern éprouvé du module Élèves des écoles, adapté au tenant
+  //   enseignant autonome : une feuille par classe, 4 colonnes simples)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /** En-têtes du template enseignant (4 colonnes volontairement simples). */
+  private static readonly IMPORT_HEADERS = ['Prénom', 'Nom', 'Sexe', 'Date de naissance'];
+
+  /**
+   * GET /teacher-portal/students/import/template
+   * Génère le template Excel : UNE FEUILLE PAR CLASSE de l'espace enseignant
+   * (ordre canonique béninois : Mat 1 → Mat 2 → CI → CP → CE1 → CE2 → CM1 →
+   * CM2). L'enseignant remplit chaque feuille puis réimporte le fichier.
+   */
+  async downloadStudentsImportTemplate(tenantId: string, res: Response): Promise<void> {
+    const { academicYear, classes } = await this.resolveTeacherClasses(tenantId);
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Academia Helm — Helm Enseignant';
+    workbook.created = new Date();
+
+    if (classes.length === 0) {
+      const ws = workbook.addWorksheet('Élèves');
+      this.applyImportSheetLayout(ws);
+      this.addImportInstructions(ws, academicYear?.name || '');
+    } else {
+      const usedSheetNames = new Set<string>();
+      for (const cls of classes) {
+        let sheetName = this.sanitizeSheetName(cls.name || cls.code || 'Classe');
+        if (usedSheetNames.has(sheetName)) {
+          let suffix = 2;
+          let candidate = sheetName;
+          while (usedSheetNames.has(candidate)) {
+            candidate = `${sheetName.substring(0, 28)}-${suffix}`;
+            suffix++;
+          }
+          sheetName = candidate;
+        }
+        usedSheetNames.add(sheetName);
+        const ws = workbook.addWorksheet(sheetName);
+        this.applyImportSheetLayout(ws);
+        this.addImportInstructions(ws, academicYear?.name || '');
+      }
+    }
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="template-import-eleves-enseignant.xlsx"',
+    );
+    await workbook.xlsx.write(res);
+    res.end();
+  }
+
+  /**
+   * POST /teacher-portal/students/import/preview
+   * Valide le fichier Excel SANS créer d'élèves. Body : { fileDataUrl }.
+   */
+  async previewStudentsImport(tenantId: string, fileDataUrl: string) {
+    const parsed = await this.parseStudentsWorkbook(tenantId, fileDataUrl);
+    const validRows = parsed.rows.filter((r) => r.isValid && !r.isExisting).length;
+    const invalidRows = parsed.rows.filter((r) => !r.isValid).length;
+    const skippedExisting = parsed.rows.filter((r) => r.isValid && r.isExisting).length;
+
+    const byClass: Record<string, number> = {};
+    for (const r of parsed.rows) {
+      if (r.isValid && !r.isExisting) {
+        byClass[r.className] = (byClass[r.className] || 0) + 1;
+      }
+    }
+
+    return {
+      totalRows: parsed.rows.length,
+      validRows,
+      invalidRows,
+      skippedExisting,
+      sheetsProcessed: parsed.sheetsProcessed,
+      unknownSheets: parsed.unknownSheets,
+      summary: { byClass },
+      rows: parsed.rows,
+    };
+  }
+
+  /**
+   * POST /teacher-portal/students/import/run
+   * Importe réellement les élèves valides (Student + ClassStudent, même
+   * logique que addStudent). Les lignes invalides sont ignorées avec leur
+   * erreur ; les doublons déjà présents dans la classe sont sautés.
+   */
+  async runStudentsImport(tenantId: string, fileDataUrl: string) {
+    const parsed = await this.parseStudentsWorkbook(tenantId, fileDataUrl);
+    const { academicYear, classes } = await this.resolveTeacherClasses(tenantId);
+    const classBySheet = this.mapClassesBySheetName(classes);
+
+    // ⭐ Séquence de matricule robuste : max des ELV-<yy>-#### existants + 1
+    //    (le simple count+1 de addStudent collide après des suppressions).
+    const yy = String(new Date().getFullYear()).slice(-2);
+    const prefix = `ELV-${yy}-`;
+    const existingMatricules = await this.prisma.student.findMany({
+      where: { tenantId, matricule: { startsWith: prefix } },
+      select: { matricule: true },
+    });
+    let seq = existingMatricules.reduce((max, s) => {
+      const n = parseInt((s.matricule || '').slice(prefix.length), 10);
+      return Number.isFinite(n) && n > max ? n : max;
+    }, 0);
+
+    const results: Array<{
+      sheetName: string;
+      rowIndex: number;
+      studentName: string;
+      status: 'created' | 'skipped' | 'error';
+      error?: string;
+      studentId?: string;
+      matricule?: string;
+    }> = [];
+
+    for (const row of parsed.rows) {
+      const classRoom = classBySheet.get(row.sheetName.toLowerCase());
+      if (!row.isValid || !classRoom) {
+        results.push({
+          sheetName: row.sheetName,
+          rowIndex: row.rowIndex,
+          studentName: `${row.firstName} ${row.lastName}`.trim() || '(ligne vide)',
+          status: 'error',
+          error: row.errors[0] || 'Classe inconnue',
+        });
+        continue;
+      }
+      if (row.isExisting) {
+        results.push({
+          sheetName: row.sheetName,
+          rowIndex: row.rowIndex,
+          studentName: `${row.firstName} ${row.lastName}`,
+          status: 'skipped',
+          error: 'Déjà présent dans cette classe',
+        });
+        continue;
+      }
+
+      seq += 1;
+      const matricule = `${prefix}${String(seq).padStart(4, '0')}`;
+      try {
+        const student = await this.prisma.$transaction(async (tx) => {
+          const created = await tx.student.create({
+            data: {
+              tenantId,
+              academicYearId: academicYear.id,
+              currentAcademicYearId: academicYear.id,
+              schoolLevelId: classRoom.schoolLevelId,
+              firstName: row.firstName,
+              lastName: row.lastName,
+              gender: row.gender || null,
+              dateOfBirth: row.dateOfBirth,
+              matricule,
+              status: 'ACTIVE',
+              isActive: true,
+            },
+          });
+          await tx.classStudent.create({
+            data: {
+              tenantId,
+              academicYearId: academicYear.id,
+              schoolLevelId: classRoom.schoolLevelId,
+              classId: classRoom.id,
+              studentId: created.id,
+              enrollmentDate: new Date(),
+              status: 'ACTIVE',
+            },
+          });
+          return created;
+        });
+        results.push({
+          sheetName: row.sheetName,
+          rowIndex: row.rowIndex,
+          studentName: `${row.firstName} ${row.lastName}`,
+          status: 'created',
+          studentId: student.id,
+          matricule,
+        });
+      } catch (e: any) {
+        seq -= 1; // la séquence échouée sera réutilisée par la ligne suivante
+        results.push({
+          sheetName: row.sheetName,
+          rowIndex: row.rowIndex,
+          studentName: `${row.firstName} ${row.lastName}`,
+          status: 'error',
+          error: e?.message || 'Erreur inconnue',
+        });
+      }
+    }
+
+    return {
+      totalRows: parsed.rows.length,
+      succeeded: results.filter((r) => r.status === 'created').length,
+      failed: results.filter((r) => r.status === 'error').length,
+      skippedExisting: results.filter((r) => r.status === 'skipped').length,
+      results,
+    };
+  }
+
+  // ── Import : helpers privés ─────────────────────────────────────────────
+
+  /** Année active + classes physiques de l'espace (ordre canonique). */
+  private async resolveTeacherClasses(tenantId: string) {
+    const academicYear =
+      (await this.prisma.academicYear.findFirst({
+        where: { tenantId, isActive: true },
+        orderBy: { createdAt: 'desc' },
+      })) ??
+      (await this.prisma.academicYear.findFirst({
+        where: { tenantId },
+        orderBy: { createdAt: 'desc' },
+      }));
+    if (!academicYear) throw new BadRequestException('Aucune année scolaire trouvée');
+
+    const classes = await this.prisma.class.findMany({
+      where: { tenantId, academicYearId: academicYear.id },
+      include: { schoolLevel: { select: { id: true, code: true, name: true } } },
+    });
+    // ⭐ Ordre officiel béninois des feuilles du template (Mat 1 → … → CM2).
+    classes.sort((a, b) =>
+      compareClassesCanonically(classOrderKeyFromPrisma(a), classOrderKeyFromPrisma(b)),
+    );
+    return { academicYear, classes };
+  }
+
+  /** Map nom de feuille (minuscules) → classe physique. */
+  private mapClassesBySheetName(
+    classes: Array<{ id: string; name: string; code: string; schoolLevelId: string }>,
+  ): Map<string, { id: string; name: string; code: string; schoolLevelId: string }> {
+    const map = new Map<string, any>();
+    for (const cls of classes) {
+      const byName = (cls.name || '').toLowerCase().trim();
+      const byCode = (cls.code || '').toLowerCase().trim();
+      if (byName && !map.has(byName)) map.set(byName, cls);
+      if (byCode && !map.has(byCode)) map.set(byCode, cls);
+    }
+    return map;
+  }
+
+  /** Mise en page d'une feuille du template enseignant. */
+  private applyImportSheetLayout(worksheet: ExcelJS.Worksheet): void {
+    worksheet.columns = TeacherProvisioningService.IMPORT_HEADERS.map((header) => ({
+      header,
+      key: header,
+      width: header === 'Date de naissance' ? 20 : 26,
+    }));
+
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0D1F6E' } };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    headerRow.height = 30;
+
+    // Ligne d'exemple (à supprimer avant import)
+    const example = worksheet.addRow(['Awa', 'DOSSOU', 'F', '15/03/2019']);
+    example.font = { italic: true, color: { argb: 'FF6B7280' }, size: 10 };
+
+    // Bordures des deux premières lignes
+    for (const rowNum of [1, 2]) {
+      const row = worksheet.getRow(rowNum);
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        };
+      });
+    }
+  }
+
+  /** Lignes d'instructions sous l'exemple. */
+  private addImportInstructions(worksheet: ExcelJS.Worksheet, yearName: string): void {
+    const startRow = worksheet.rowCount + 1;
+    worksheet.addRow([]);
+    worksheet.addRow(['⚠️ Supprimez la ligne d’exemple avant l’import. Une ligne = un élève.']);
+    worksheet.addRow(['👤 Sexe : M (Garçon) ou F (Fille) — champ optionnel.']);
+    worksheet.addRow(['📅 Date de naissance au format JJ/MM/AAAA (ex : 15/03/2019) — champ optionnel.']);
+    worksheet.addRow(['📋 Chaque feuille correspond à une classe de votre espace — ne renommez pas les feuilles.']);
+    if (yearName) {
+      worksheet.addRow([`🏫 Année scolaire : ${yearName}.`]);
+    }
+    for (let i = startRow + 1; i <= worksheet.rowCount; i++) {
+      worksheet.getRow(i).font = { italic: true, color: { argb: 'FF92400E' }, size: 10 };
+    }
+  }
+
+  /** Nettoie un nom de feuille Excel (max 31 chars, pas de \\ / ? * [ ] :). */
+  private sanitizeSheetName(name: string): string {
+    let clean = name.replace(/[\\/?*\[\]:]/g, '-').trim();
+    if (clean.length > 31) clean = clean.substring(0, 31);
+    return clean || 'Feuille';
+  }
+
+  /**
+   * Parse + valide le classeur complet : une feuille = une classe.
+   * Détecte aussi les élèves DÉJÀ présents (anti double-import).
+   */
+  private async parseStudentsWorkbook(tenantId: string, fileDataUrl: string) {
+    if (!fileDataUrl || typeof fileDataUrl !== 'string') {
+      throw new BadRequestException('fileDataUrl est requis (base64 data URL du fichier Excel)');
+    }
+
+    // Extraction base64 (data URL ou base64 brut) — pattern StudentsImportService
+    let buffer: Buffer;
+    const match = fileDataUrl.match(/^data:[^;]+;base64,(.+)$/);
+    try {
+      buffer = Buffer.from(match ? match[1] : fileDataUrl, 'base64');
+    } catch {
+      throw new BadRequestException('Fichier illisible : base64 invalide');
+    }
+    let workbook: ExcelJS.Workbook;
+    try {
+      workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+    } catch {
+      throw new BadRequestException(
+        'Fichier Excel invalide (.xlsx attendu — les .xls anciens formats ne sont pas supportés)',
+      );
+    }
+
+    const { academicYear, classes } = await this.resolveTeacherClasses(tenantId);
+    const classBySheet = this.mapClassesBySheetName(classes);
+
+    // Élèves déjà actifs par classe (clé : prénom+nom normalisés)
+    const existingByClass = new Map<string, Set<string>>();
+    for (const cls of classes) {
+      const enrollments = await this.prisma.classStudent.findMany({
+        where: { tenantId, classId: cls.id, status: 'ACTIVE' },
+        select: { student: { select: { firstName: true, lastName: true, isActive: true } } },
+      });
+      existingByClass.set(
+        cls.id,
+        new Set(
+          enrollments
+            .filter((e) => e.student?.isActive !== false)
+            .map((e) =>
+              `${(e.student?.firstName || '').trim().toLowerCase()}|${(e.student?.lastName || '').trim().toLowerCase()}`,
+            ),
+        ),
+      );
+    }
+
+    const rows: Array<{
+      sheetName: string;
+      rowIndex: number;
+      firstName: string;
+      lastName: string;
+      gender: string | null;
+      dateOfBirth: Date | null;
+      className: string;
+      errors: string[];
+      isValid: boolean;
+      isExisting: boolean;
+    }> = [];
+    const sheetsProcessed: string[] = [];
+    const unknownSheets: string[] = [];
+
+    workbook.eachSheet((worksheet) => {
+      const sheetName = worksheet.name;
+      if (sheetName.startsWith('_') || /instruction/i.test(sheetName)) return;
+
+      const classRoom = classBySheet.get(sheetName.toLowerCase().trim());
+      if (!classRoom) {
+        unknownSheets.push(sheetName);
+        return;
+      }
+      sheetsProcessed.push(sheetName);
+      const existingNames = existingByClass.get(classRoom.id) || new Set<string>();
+
+      let isFirstRow = true;
+      worksheet.eachRow((row, rowNumber) => {
+        if (isFirstRow) {
+          isFirstRow = false;
+          return; // ligne 1 = en-têtes
+        }
+        const getCell = (col: number): string => {
+          const val = row.getCell(col).value;
+          if (val === null || val === undefined) return '';
+          if (typeof val === 'string') return val.trim();
+          if (typeof val === 'number') return String(val);
+          if (val instanceof Date) return val.toISOString().slice(0, 10);
+          if (typeof val === 'object' && 'text' in val) return String((val as any).text || '').trim();
+          if (typeof val === 'object' && 'result' in val) return String((val as any).result || '').trim();
+          return String(val).trim();
+        };
+
+        const firstName = getCell(1);
+        const lastName = getCell(2);
+        const genderRaw = getCell(3).toUpperCase();
+        const dobRaw = getCell(4);
+
+        // Skip lignes vides / instructions
+        if (!firstName && !lastName) return;
+        if (/^[⚠️📅👤🏫📋💡]/.test((firstName || '').trim())) return;
+
+        const errors: string[] = [];
+        if (firstName.length < 2) errors.push('Prénom requis (2 caractères minimum)');
+        if (lastName.length < 2) errors.push('Nom requis (2 caractères minimum)');
+        if (genderRaw && !['M', 'F', 'MASCULIN', 'FEMININ', 'GARCON', 'FILLE'].includes(genderRaw)) {
+          errors.push('Sexe invalide (M ou F attendu)');
+        }
+        const gender = genderRaw.startsWith('F') || genderRaw === 'FEMININ' || genderRaw === 'FILLE'
+          ? 'F'
+          : genderRaw.startsWith('M') || genderRaw === 'MASCULIN' || genderRaw === 'GARCON'
+            ? 'M'
+            : null;
+
+        // Date de naissance (JJ/MM/AAAA, AAAA-MM-JJ, ou Date Excel)
+        let dateOfBirth: Date | null = null;
+        const dobCell = row.getCell(4).value;
+        if (dobCell instanceof Date) {
+          dateOfBirth = dobCell;
+        } else if (dobRaw) {
+          const parts = dobRaw.split(/[\/\-.]/);
+          if (parts.length === 3) {
+            let d = Number(parts[0]);
+            let m = Number(parts[1]);
+            let y = Number(parts[2]);
+            if (parts[0].length === 4) [y, m, d] = [d, m, y]; // ISO AAAA-MM-JJ
+            if (y < 100) y += y > 30 ? 1900 : 2000;
+            if (Number.isFinite(d) && Number.isFinite(m) && Number.isFinite(y) && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+              dateOfBirth = new Date(Date.UTC(y, m - 1, d, 12));
+            }
+          }
+          if (!dateOfBirth) errors.push('Date de naissance illisible (format attendu JJ/MM/AAAA)');
+        }
+
+        const isExisting =
+          !errors.length &&
+          existingNames.has(`${firstName.toLowerCase()}|${lastName.toLowerCase()}`);
+
+        rows.push({
+          sheetName,
+          rowIndex: rowNumber,
+          firstName,
+          lastName,
+          gender,
+          dateOfBirth,
+          className: classRoom.name,
+          errors,
+          isValid: errors.length === 0,
+          isExisting,
+        });
+      });
+    });
+
+    return { academicYear, classes, rows, sheetsProcessed, unknownSheets };
   }
 
   /** Types d'évaluation disponibles par niveau (pour le formulaire d'évaluation). */

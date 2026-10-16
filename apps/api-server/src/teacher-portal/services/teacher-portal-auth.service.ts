@@ -17,6 +17,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../database/prisma.service';
 import { PortalSessionService } from '../../portal/services/portal-session.service';
@@ -37,6 +38,7 @@ export class TeacherPortalAuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
     private readonly portalSessionService: PortalSessionService,
     private readonly accessScopeService: AccessScopeService,
     private readonly provisioningService: TeacherProvisioningService,
@@ -359,12 +361,18 @@ export class TeacherPortalAuthService {
       this.logger.warn(`⚠️ Invite notification: ${e.message}`);
     }
 
-    // ⭐ L'envoi email réel est branché sur le service de communication
-    //    existant (EmailService) dans un second temps ; le MVP retourne la
-    //    confirmation + un lien d'invitation partageable.
-    // ⭐ L'invitation référence l'espace enseignant (pas le tenant plateforme
-    //    éventuel de la ligne users partagée).
-    const inviteLink = `${process.env.APP_URL || 'https://academiahelm.com'}/promoteur?ref=${teacherTenant.id.slice(0, 8)}`;
+    // ⭐ 2026-10-16 — LE LIEN DOIT PRÉSENTER ACADEMIA HELM, pas un mur de
+    //    connexion. Avant : /promoteur?ref=… (page protégée → redirection
+    //    login). Maintenant : la landing publique du site principal, qui
+    //    présente la plateforme (modules, fonctionnalités, tarification) et
+    //    propose l'inscription — c'est ce que voit le promoteur quand il
+    //    clique depuis Facebook / WhatsApp / un email.
+    //    `?ref=` conserve le traçage du parrainage (code = 8 premiers chars du
+    //    tenant enseignant) sans exposer l'UUID complet.
+    const frontend = (
+      this.configService.get<string>('FRONTEND_URL') || 'https://academiahelm.com'
+    ).trim().replace(/\/$/, '');
+    const inviteLink = `${frontend}/?ref=${teacherTenant.id.slice(0, 8)}`;
 
     return {
       success: true,

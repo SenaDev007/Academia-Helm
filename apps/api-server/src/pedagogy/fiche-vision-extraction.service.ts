@@ -54,12 +54,28 @@ import { OpenRouterService } from '../common/services/openrouter.service';
 const MAX_IMAGES = 6;
 const MAX_BASE64_LENGTH_PER_IMAGE = 700_000; // ~700 Ko base64 ≈ 520 Ko binaire
 const MAX_TOTAL_BASE64_LENGTH = 4_000_000; // < limite JSON body 5 Mo
-// ⭐ 45 s par tentative de modèle : le BFF Next.js (Vercel) proxifie
-//    /api/pedagogy-space/* avec maxDuration 60 s — une extraction de
-//    10 à 30 s est le cas nominal ; au-delà de 45 s le modèle principal
-//    est abandonné au profit du repli plutôt que de faire mourir la
-//    requête côté Vercel (504 silencieux pour l'enseignant).
+// ⭐ 2026-10-16 (fix production) — BUDGET TEMPOREL ALIGNÉ SUR LA FENÊTRE VERCEL :
+//    le BFF Next.js proxifie /api/pedagogy-space/* avec maxDuration 60 s. Un
+//    appel vision Nemotron en mode RAISONNEMENT dépasse largement 45 s (budget
+//    de réflexion par défaut 16384 tokens) → timeout systématique, puis repli
+//    qui explose la fenêtre → 504 muet pour l'enseignant. Trois correctifs :
+//    (1) le mode raisonnement est DÉSACTIVÉ (chat_template_kwargs
+//        .enable_thinking=false — « instruct mode », latence minimale) car
+//        l'extraction est une transcription déterministe qui n'a pas besoin
+//        de réflexion ; (2) max_tokens ramené de 6000 à 3500 (une fiche JSON
+//        complète ≈ 1500-2500 tokens) ; (3) le repli n'est tenté QUE si le
+//        modèle principal a échoué VITE (erreur 4xx/5xx immédiate) — après un
+//        timeout on rend une erreur claire immédiatement au lieu de consumer
+//        45 s supplémentaires que Vercel coupera de toute façon.
 const EXTRACTION_TIMEOUT_MS = 45_000;
+/** Budget total pour TOUS les modèles : < fenêtre Vercel (60 s) */
+const EXTRACTION_TOTAL_BUDGET_MS = 52_000;
+/** Échec du modèle principal sous ce délai (ex: 404/400 immédiat) → on tente
+ *  le repli avec le budget restant ; au-delà (timeout) → erreur claire directe. */
+const EXTRACTION_FAST_FAIL_MS = 8_000;
+/** Cap de génération : une fiche JSON complète ≈ 1500-2500 tokens → 3500
+ *  suffit avec marge et divise le pire temps de génération. */
+const EXTRACTION_MAX_TOKENS = 3_500;
 
 // ─── Schémas des champs par type de fiche (listes blanches) ─────────────────
 // Chaque entrée : [clé du formulaire, description pour le modèle]
@@ -567,12 +583,46 @@ export class FicheVisionExtractionService {
     let lastError: any = null;
     let rawContent = '';
     let usedModel = '';
+    const startedAt = Date.now();
 
-    for (const model of modelsToTry) {
+    for (let mIdx = 0; mIdx < modelsToTry.length; mIdx++) {
+      const model = modelsToTry[mIdx];
+      const attemptStartedAt = Date.now();
+
+      // ⭐ Budget temporel partagé (fenêtre Vercel 60 s) : le repli ne démarre
+      //    que s'il reste au moins 10 s de budget. Après un TIMEOUT du modèle
+      //    principal (≈45 s consommés), on ne tente PAS le repli — Vercel
+      //    couperait la connexion de toute façon (504 muet) ; on rend une
+      //    erreur claire immédiatement.
+      if (mIdx > 0) {
+        const elapsed = attemptStartedAt - startedAt;
+        const remaining = EXTRACTION_TOTAL_BUDGET_MS - elapsed;
+        if (remaining < 10_000) {
+          this.logger.warn(
+            `[tenant ${tenantId}] Repli ${model} ÉVITÉ — budget restant ${remaining} ms (modèle principal a consommé ${elapsed} ms)`,
+          );
+          break;
+        }
+      }
+
       try {
         this.logger.log(
-          `[tenant ${tenantId}] Extraction fiche ${sheetType} — ${images.length} capture(s), modèle ${model}`,
+          `[tenant ${tenantId}] Extraction fiche ${sheetType} — ${images.length} capture(s), modèle ${model}` +
+            (mIdx === 0 ? ' (thinking OFF — mode instruct)' : ' (repli)'),
         );
+
+        // ⭐ NEMOTRON-3 : désactivation du mode raisonnement (« instruct mode »).
+        //    L'extraction est une TRANSCRIPTION déterministe — la réflexion
+        //    n'apporte rien et son budget par défaut (16384 tokens) fait
+        //    exploser la latence (>45 s) sur l'endpoint hébergé.
+        //    Paramètre vLLM/NIM standard : chat_template_kwargs.enable_thinking.
+        //    Les modèles non-Nemotron (llama vision…) n'ont pas de mode
+        //    raisonnement — aucun paramètre à leur passer.
+        const isNemotron = /nemotron/i.test(model);
+        const extraBody = isNemotron
+          ? { chat_template_kwargs: { enable_thinking: false } }
+          : undefined;
+
         const response = await this.openRouter.chat({
           model,
           messages: [
@@ -580,11 +630,12 @@ export class FicheVisionExtractionService {
             { role: 'user', content: multimodalContent },
           ],
           temperature: 0.1, // extraction déterministe (pas de création)
-          maxTokens: 6000, // une fiche complète peut être longue
+          maxTokens: EXTRACTION_MAX_TOKENS, // cap génération (fiche JSON ≈ 1500-2500 tokens)
           timeout: EXTRACTION_TIMEOUT_MS,
           enableFallback: false, // le fallback global pointe vers des modèles TEXTE — incompatibles images
-          maxRetries: 1, // ⭐ 1 retry réseau max : la fenêtre Vercel (60 s) est partagée avec le modèle de repli
+          maxRetries: 1, // ⭐ 1 tentative par modèle : le budget temporel est partagé avec le repli
           persona: 'SCE',
+          extraBody,
         });
 
         if (response?.isPlaceholder || !response?.content?.trim()) {
@@ -627,9 +678,26 @@ export class FicheVisionExtractionService {
         };
       } catch (error: any) {
         lastError = error;
+        const attemptElapsed = Date.now() - attemptStartedAt;
         this.logger.warn(
-          `[tenant ${tenantId}] Modèle ${model} échoué pour l'extraction : ${error?.message}`,
+          `[tenant ${tenantId}] Modèle ${model} échoué pour l'extraction (${attemptElapsed} ms) : ${error?.message}`,
         );
+
+        // ⭐ TIMEOUT du modèle principal : inutile de consommer 45 s de plus
+        //    pour le repli — la fenêtre Vercel (60 s) serait dépassée et
+        //    l'enseignant recevrait un 504 muet. On sort avec un message clair.
+        const isTimeoutError =
+          /abort|timeout|timed?\s*out|expiré/i.test(String(error?.message || '')) ||
+          attemptElapsed >= EXTRACTION_TIMEOUT_MS - 1_500;
+        if (mIdx === 0 && isTimeoutError) {
+          this.logger.error(
+            `[tenant ${tenantId}] Extraction fiche ${sheetType} — TIMEOUT du modèle ${model} après ${attemptElapsed} ms, repli écarté (budget Vercel)`,
+          );
+          throw new BadRequestException(
+            "Le modèle de vision IA n'a pas répondu assez vite (service momentanément chargé). " +
+            "Réessayez dans quelques instants — si le problème persiste, préférez une capture unique, nette et bien cadrée.",
+          );
+        }
       }
     }
 

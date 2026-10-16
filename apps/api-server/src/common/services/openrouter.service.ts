@@ -95,6 +95,11 @@ export interface OpenRouterChatOptions {
   tools?: OpenAIToolDefinition[];
   /** Contrôle quand le modèle appelle les outils : 'auto', 'none', ou forcer un outil */
   toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
+  /** ⭐ 2026-10-16 — Paramètres NIM/vLLM spécifiques fusionnés dans le body
+   *  de la requête (ex: chat_template_kwargs.enable_thinking=false pour
+   *  désactiver le mode raisonnement des Nemotron-3 → latence divisée par
+   *  3-5 sur les tâches de transcription déterministes). Ignorés si absents. */
+  extraBody?: Record<string, unknown>;
 }
 
 /** Réponse d'un appel IA (non-streaming) */
@@ -378,6 +383,12 @@ export class OpenRouterService {
     if (options.tools && options.tools.length > 0) {
       body.tools = options.tools;
       body.tool_choice = options.toolChoice || 'auto';
+    }
+
+    // ⭐ Paramètres NIM/vLLM spécifiques (chat_template_kwargs, top_k…)
+    //    fusionnés EN DERNIER pour surcharger les valeurs par défaut.
+    if (options.extraBody && typeof options.extraBody === 'object') {
+      Object.assign(body, options.extraBody);
     }
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {

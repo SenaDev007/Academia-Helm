@@ -366,6 +366,15 @@ export function FicheAiExtractionModal({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        // ⭐ 504 = la fonction proxy Vercel (60 s) a expiré avant la réponse
+        //    du modèle vision — message actionnable plutôt qu'un « Erreur 504 »
+        //    cryptique. 502/503 = coupure réseau amont ponctuelle.
+        if (res.status === 504 || res.status === 502 || res.status === 503) {
+          throw new Error(
+            "Le modèle de vision IA n'a pas répondu assez vite. Réessayez dans quelques instants — " +
+            "si le problème persiste, utilisez une capture unique, nette et bien cadrée.",
+          );
+        }
         const message = data?.message || `Erreur ${res.status}`;
         throw new Error(Array.isArray(message) ? message.join(" ") : message);
       }

@@ -422,8 +422,13 @@ export class SubscriptionLifecycleService {
   private async sendTeacherReminder(sub: any, daysLeft: number): Promise<void> {
     try {
       const teacherSvc = this.moduleRef.get(TeacherSubscriptionService, { strict: false });
+      // ⭐ Realm enseignant (isolation des identifiants) : l'utilisateur peut
+      //    être partagé avec les portails Academia Helm (users.tenantId ≠
+      //    tenant enseignant) → résolution via UserTenant OU tenantId.
       const teacher = await this.prisma.user.findFirst({
-        where: { tenantId: sub.tenantId },
+        where: {
+          OR: [{ userTenants: { some: { tenantId: sub.tenantId } } }, { tenantId: sub.tenantId }],
+        },
         orderBy: { createdAt: 'asc' },
         select: { email: true, firstName: true, lastName: true },
       });
@@ -447,8 +452,12 @@ export class SubscriptionLifecycleService {
 
   /** Notification d'inactivation du compte enseignant (fin de grâce J+7). */
   private async sendTeacherSuspendedNotification(sub: any): Promise<void> {
+    // ⭐ Realm enseignant : résolution via UserTenant OU tenantId (email
+    //    partagé entre Academia Helm et le portail enseignant).
     const teacher = await this.prisma.user.findFirst({
-      where: { tenantId: sub.tenantId },
+      where: {
+        OR: [{ userTenants: { some: { tenantId: sub.tenantId } } }, { tenantId: sub.tenantId }],
+      },
       orderBy: { createdAt: 'asc' },
       select: { email: true, firstName: true, lastName: true },
     });

@@ -1845,8 +1845,13 @@ model User {
   twoFactorEnabledAt                        DateTime?
   createdAt                                 DateTime                          @default(now())
   updatedAt                                 DateTime                          @updatedAt
-  // ⭐ Relations multi-tenant : un user peut gérer plusieurs écoles
+  // ⭐ Multi-tenant : un user peut gérer plusieurs écoles
   userTenants                               UserTenant[]
+  // ⭐ Portail Enseignant autonome — identifiants ISOLÉS du realm Academia
+  //    Helm : le même email peut exister des deux côtés avec des mots de
+  //    passe DIFFÉRENTS (users.passwordHash = écoles/patronat,
+  //    TeacherPortalCredential = espace enseignant).
+  teacherPortalCredential                   TeacherPortalCredential?
   // ⭐ Back-relation: a parent's User account (linked from Guardian record)
   guardians                                 Guardian[]
   createdAbsences                           Absence[]                         @relation("AbsenceCreator")
@@ -13678,6 +13683,30 @@ model HelmInvoice {
   @@index([period])
   @@index([customerEmail])
   @@index([type])
+}
+
+/// ⭐ Portail Enseignant — REALM d'identifiants isolé (2026-10-16).
+/// Contrainte historique : users.email est GLOBALEMENT unique (une ligne
+/// users par email). Pour permettre au MÊME email d'exister côté Academia
+/// Helm (écoles/patronat) ET côté espace enseignant SANS mélange de mots de
+/// passe, la ligne users est partagée (identité) mais les identifiants du
+/// portail enseignant vivent ici : hash bcrypt propre, jamais comparé aux
+/// portails plateforme — et réciproquement.
+model TeacherPortalCredential {
+  id           String   @id @default(uuid())
+  /// Ligne users partagée (une par email — clé de jointure du realm)
+  userId       String   @unique
+  /// Email dénormalisé (lookup direct du login enseignant)
+  email        String   @unique
+  /// bcrypt du mot de passe du PORTAIL ENSEIGNANT uniquement
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@map("teacher_portal_credentials")
 }
 
 /// ⭐ HELM ENSEIGNANT — Draft d'inscription « paiement d'abord » (2026-10-16)

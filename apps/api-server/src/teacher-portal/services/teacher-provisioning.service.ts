@@ -99,12 +99,35 @@ export class TeacherProvisioningService {
     const email = input.email.trim().toLowerCase();
     const levels = [...new Set(input.levels)];
 
-    // ── Garde-fous ──
-    const existingUser = await this.prisma.user.findUnique({ where: { email } });
+    // ── Garde-fous — REALM ENSEIGNANT UNIQUEMENT (isolation 2026-10-16) ──
+    // ⭐ Le même email peut être utilisé sur les portails Academia Helm
+    //    (écoles / patronat) ET sur le portail enseignant : on ne bloque
+    //    QUE s'il possède déjà un ESPACE ENSEIGNANT. Sinon, la ligne users
+    //    existante est RÉUTILISÉE (rattachement UserTenant) sans toucher à
+    //    ses identifiants plateforme (passwordHash / role / tenantId).
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+      include: {
+        userTenants: { include: { tenant: true } },
+        teacherPortalCredential: true,
+      },
+    });
     if (existingUser) {
-      throw new ConflictException(
-        'Un compte existe déjà avec cet email. Connectez-vous ou utilisez une autre adresse.',
+      const linkedTeacherTenant = existingUser.userTenants.find(
+        (ut) => (ut.tenant as any)?.type === 'TEACHER',
       );
+      let legacyDirectTenant = false;
+      if (!linkedTeacherTenant && !existingUser.teacherPortalCredential && existingUser.tenantId) {
+        const direct = await this.prisma.tenant.findUnique({
+          where: { id: existingUser.tenantId },
+        });
+        legacyDirectTenant = (direct as any)?.type === 'TEACHER';
+      }
+      if (linkedTeacherTenant || existingUser.teacherPortalCredential || legacyDirectTenant) {
+        throw new ConflictException(
+          'Un compte enseignant existe déjà avec cet email. Connectez-vous depuis le portail enseignant.',
+        );
+      }
     }
 
     // Sous-domaine généré avant la transaction (lectures DB)
@@ -236,17 +259,37 @@ export class TeacherProvisioningService {
         },
       });
 
-      // 9. User ENSEIGNANT
-      const user = await tx.user.create({
-        data: {
-          email,
-          passwordHash,
-          firstName: input.firstName.trim(),
-          lastName: input.lastName.trim(),
-          role: 'ENSEIGNANT',
-          tenantId: tenant.id,
-          status: 'active',
-        },
+      // 9. User — créée OU réutilisée selon le realm (isolation 2026-10-16)
+      //    ⭐ Un email déjà utilisé côté Academia Helm (écoles/patronat)
+      //    réutilise SA ligne users — mot de passe plateforme, rôle et
+      //    tenant courant INCHANGÉS. Les identifiants du portail enseignant
+      //    vivent dans TeacherPortalCredential (mots de passe distincts).
+      let user;
+      if (existingUser) {
+        user = await tx.user.findUnique({ where: { id: existingUser.id } });
+        if (!user) throw new BadRequestException('Utilisateur introuvable');
+      } else {
+        user = await tx.user.create({
+          data: {
+            email,
+            // ⭐ null : les identifiants enseignant sont ISOLÉS dans
+            //    TeacherPortalCredential — users.passwordHash reste le realm
+            //    Academia Helm (écoles/patronat).
+            passwordHash: null,
+            firstName: input.firstName.trim(),
+            lastName: input.lastName.trim(),
+            role: 'ENSEIGNANT',
+            tenantId: tenant.id,
+            status: 'active',
+          },
+        });
+      }
+
+      // 9b. Identifiants du REALM ENSEIGNANT (hash du draft — paiement d'abord)
+      await tx.teacherPortalCredential.upsert({
+        where: { userId: user.id },
+        create: { userId: user.id, email, passwordHash },
+        update: { email, passwordHash },
       });
 
       // 10. Rôle système ENSEIGNANT (résilient aux deux variantes de nom)

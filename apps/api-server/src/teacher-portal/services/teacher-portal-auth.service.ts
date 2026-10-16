@@ -89,39 +89,56 @@ export class TeacherPortalAuthService {
 
     const user = await this.prisma.user.findFirst({
       where: { email, status: 'active' },
-      include: { userRoles: { include: { role: true } } },
+      include: { userTenants: { include: { tenant: true } } },
     });
     if (!user) {
       throw new UnauthorizedException('Identifiants invalides');
     }
 
-    // ⭐ Le portail Helm Enseignant n'accepte QUE les tenants TEACHER.
-    //    Un enseignant d'école cliente doit passer par le portail école
-    //    (matricule + établissement) — s'il veut malgré tout un espace
-    //    séparé, il crée un compte avec une autre adresse email.
-    if (!user.tenantId) {
+    // ⭐ REALM ENSEIGNANT (isolation des identifiants — 2026-10-16) :
+    //    l'espace enseignant se résout via users.tenantId OU via UserTenant.
+    //    Le MÊME email peut exister côté Academia Helm (écoles/patronat)
+    //    avec ses propres identifiants : un compte école/patronat sans
+    //    espace enseignant est refusé AVANT toute comparaison de mot de
+    //    passe — aucun mélange entre les deux plateformes.
+    const teacherTenant =
+      this.pickTeacherTenant(user) ?? (await this.fetchTeacherTenantByDirectId(user));
+    if (!teacherTenant) {
       throw new UnauthorizedException(
-        'Ce compte n’est pas rattaché à un espace enseignant. Inscrivez-vous depuis la page d’inscription.',
-      );
-    }
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: user.tenantId } });
-    if (!tenant || (tenant as any).type !== 'TEACHER') {
-      throw new UnauthorizedException(
-        'Ce compte est rattaché à un établissement. Utilisez le portail de votre école (matricule + établissement).',
+        'Aucun espace enseignant pour cette adresse. Inscrivez-vous depuis la page d’inscription du portail enseignant.',
       );
     }
 
-    if (!user.passwordHash) {
-      throw new UnauthorizedException('Mot de passe non configuré');
+    // ⭐ Mot de passe du REALM ENSEIGNANT UNIQUEMENT (TeacherPortalCredential).
+    //    users.passwordHash (realm écoles/patronat) n'est JAMAIS comparé ici,
+    //    sauf rétro-compatibilité pour les comptes enseignants créés AVANT
+    //    l'isolation (bascule douce vers le credential isolé).
+    const credential = await this.prisma.teacherPortalCredential.findUnique({
+      where: { userId: user.id },
+    });
+    let isPasswordValid = false;
+    if (credential) {
+      isPasswordValid = await bcrypt.compare(dto.password, credential.passwordHash);
+    } else if (user.passwordHash) {
+      isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
+      if (isPasswordValid) {
+        await this.prisma.teacherPortalCredential
+          .create({
+            data: { userId: user.id, email: user.email, passwordHash: user.passwordHash },
+          })
+          .catch(() => undefined);
+      }
     }
-    const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Identifiants invalides');
     }
 
     // Teacher du tenant personnel (liaison par email)
     const teacher = await this.prisma.teacher.findFirst({
-      where: { tenantId: tenant.id, email: { equals: user.email, mode: 'insensitive' } },
+      where: {
+        tenantId: teacherTenant.id,
+        email: { equals: user.email, mode: 'insensitive' },
+      },
     });
     if (!teacher) {
       throw new UnauthorizedException(
@@ -131,10 +148,16 @@ export class TeacherPortalAuthService {
 
     // ⭐ État de l'abonnement : compte INACTIF (fin de grâce) → la page de
     //    paiement est proposée à la connexion (spécification Helm Enseignant).
-    const subscriptionState = await this.resolveSubscriptionState(tenant.id);
+    const subscriptionState = await this.resolveSubscriptionState(teacherTenant.id);
 
     return {
-      ...await this.buildLoginResponse(user.id, tenant.id, teacher.id, ipAddress, userAgent),
+      ...await this.buildLoginResponse(
+        user.id,
+        teacherTenant.id,
+        teacher.id,
+        ipAddress,
+        userAgent,
+      ),
       subscription: subscriptionState,
     };
   }
@@ -175,13 +198,20 @@ export class TeacherPortalAuthService {
   // ─────────────────────────────────────────────────────────────────────────
 
   async getProfile(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.tenantId) throw new UnauthorizedException('Session invalide');
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { userTenants: { include: { tenant: true } } },
+    });
+    if (!user) throw new UnauthorizedException('Session invalide');
 
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: user.tenantId } });
-    if (!tenant || (tenant as any).type !== 'TEACHER') {
+    // ⭐ Realm enseignant : résolution via UserTenant (email partagé entre
+    //    plateformes) avec fallback users.tenantId (comptes 100% enseignant).
+    const teacherTenant =
+      this.pickTeacherTenant(user) ?? (await this.fetchTeacherTenantByDirectId(user));
+    if (!teacherTenant) {
       throw new UnauthorizedException('Ce portail est réservé aux enseignants autonomes');
     }
+    const tenant = teacherTenant;
 
     const teacher = await this.prisma.teacher.findFirst({
       where: { tenantId: tenant.id, email: { equals: user.email, mode: 'insensitive' } },
@@ -284,14 +314,23 @@ export class TeacherPortalAuthService {
   // ─────────────────────────────────────────────────────────────────────────
 
   async invitePromoter(userId: string, dto: InviteInput) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.tenantId) throw new UnauthorizedException('Session invalide');
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { userTenants: { include: { tenant: true } } },
+    });
+    if (!user) throw new UnauthorizedException('Session invalide');
+
+    // ⭐ Realm enseignant : le tenant d'appartenance est l'espace enseignant
+    //    (l'email peut être partagé avec les portails plateforme).
+    const teacherTenant =
+      this.pickTeacherTenant(user) ?? (await this.fetchTeacherTenantByDirectId(user));
+    if (!teacherTenant) throw new UnauthorizedException('Session invalide');
 
     // Trace l'invitation (analytics produit — non bloquant)
     try {
       await this.prisma.inAppNotification.create({
         data: {
-          tenantId: user.tenantId,
+          tenantId: teacherTenant.id,
           recipientId: user.id,
           type: 'PROMOTER_INVITE',
           title: 'Invitation promoteur envoyée',
@@ -307,7 +346,9 @@ export class TeacherPortalAuthService {
     // ⭐ L'envoi email réel est branché sur le service de communication
     //    existant (EmailService) dans un second temps ; le MVP retourne la
     //    confirmation + un lien d'invitation partageable.
-    const inviteLink = `${process.env.APP_URL || 'https://academiahelm.com'}/promoteur?ref=${user.tenantId.slice(0, 8)}`;
+    // ⭐ L'invitation référence l'espace enseignant (pas le tenant plateforme
+    //    éventuel de la ligne users partagée).
+    const inviteLink = `${process.env.APP_URL || 'https://academiahelm.com'}/promoteur?ref=${teacherTenant.id.slice(0, 8)}`;
 
     return {
       success: true,
@@ -322,6 +363,21 @@ export class TeacherPortalAuthService {
   //  PRIVÉ
   // ─────────────────────────────────────────────────────────────────────────
 
+  /** Tenant TEACHER lié via UserTenant (include userTenants + tenant requis). */
+  private pickTeacherTenant(
+    user: { userTenants?: { tenant: { type?: string } | null }[] },
+  ): { id: string; name: string; slug: string; type?: string } | null {
+    const linked = (user.userTenants ?? []).find((ut) => (ut.tenant as any)?.type === 'TEACHER');
+    return linked ? (linked.tenant as any) : null;
+  }
+
+  /** Fallback : users.tenantId direct (comptes 100% enseignant). */
+  private async fetchTeacherTenantByDirectId(user: { tenantId: string | null }) {
+    if (!user.tenantId) return null;
+    const direct = await this.prisma.tenant.findUnique({ where: { id: user.tenantId } });
+    return direct && (direct as any).type === 'TEACHER' ? (direct as any) : null;
+  }
+
   private async buildLoginResponse(
     userId: string,
     tenantId: string,
@@ -333,6 +389,11 @@ export class TeacherPortalAuthService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException('Utilisateur introuvable');
     const teacher = await this.prisma.teacher.findUnique({ where: { id: teacherId } });
+
+    // ⭐ Rôle du REALM enseignant — indépendant du rôle plateforme de la
+    //    ligne users (un PATRONAT_ADMIN côté Academia Helm reste ENSEIGNANT
+    //    dans ce portail) : aucune fuite de contexte entre les plateformes.
+    const realmRole = 'ENSEIGNANT';
 
     const session = await this.portalSessionService.createSession(
       tenantId,
@@ -347,7 +408,7 @@ export class TeacherPortalAuthService {
         sub: user.id,
         email: user.email,
         tenantId,
-        role: user.role,
+        role: realmRole,
         portalType: PORTAL_TEACHER,
       },
       { expiresIn: '24h' },
@@ -365,7 +426,7 @@ export class TeacherPortalAuthService {
         id: user.id,
         email: user.email,
         tenantId,
-        role: user.role,
+        role: realmRole,
         isSuperAdmin: false,
       });
       scopeSummary = {
@@ -389,7 +450,7 @@ export class TeacherPortalAuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         avatarUrl: (user as any).avatarUrl ?? null,
-        role: user.role,
+        role: realmRole,
         tenantId,
       },
       teacher: teacher ? { id: teacher.id, matricule: teacher.matricule } : null,

@@ -736,8 +736,11 @@ ${after}
     periodEnd: Date,
     source: string,
   ): Promise<void> {
+    // ⭐ Realm enseignant : l'utilisateur peut être partagé avec les portails
+    //    plateforme (users.tenantId ≠ tenant enseignant) → résolution via
+    //    UserTenant d'abord, fallback tenantId (comptes 100% enseignant).
     const user = await this.prisma.user.findFirst({
-      where: { tenantId },
+      where: { OR: [{ userTenants: { some: { tenantId } } }, { tenantId }] },
       orderBy: { createdAt: 'asc' },
       select: { email: true, firstName: true, lastName: true },
     });
@@ -806,12 +809,26 @@ ${after}
   }> {
     const email = dto.email.trim().toLowerCase();
 
-    // ── Garde-fous ──
-    const existingUser = await this.prisma.user.findUnique({ where: { email } });
+    // ── Garde-fous — REALM ENSEIGNANT UNIQUEMENT (isolation 2026-10-16) ──
+    // ⭐ Le même email peut être utilisé côté Academia Helm (écoles /
+    //    patronat) ET ici : on ne bloque que s'il possède DÉJÀ un espace
+    //    enseignant (UserTenant TEACHER ou credential du realm enseignant).
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email },
+      include: {
+        userTenants: { include: { tenant: true } },
+        teacherPortalCredential: true,
+      },
+    });
     if (existingUser) {
-      throw new ConflictException(
-        'Un compte existe déjà avec cet email. Connectez-vous ou utilisez une autre adresse.',
-      );
+      const hasTeacherSpace =
+        existingUser.userTenants.some((ut) => (ut.tenant as any)?.type === 'TEACHER') ||
+        !!existingUser.teacherPortalCredential;
+      if (hasTeacherSpace) {
+        throw new ConflictException(
+          'Un compte enseignant existe déjà avec cet email. Connectez-vous depuis le portail enseignant.',
+        );
+      }
     }
 
     // Draft déjà ACTIVÉ (compte créé) ? → conflit, il faut se connecter.
@@ -1351,12 +1368,25 @@ ${provisioned?.teacherMatricule ? `<p style="margin:4px 0 0;">Matricule : ${prov
 
   /** Résout le contexte enseignant (user + tenant TEACHER + abonnement). */
   private async resolveTeacherContext(userId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.tenantId) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { userTenants: { include: { tenant: true } } },
+    });
+    if (!user) {
       throw new ForbiddenException('Session enseignant invalide.');
     }
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: user.tenantId } });
-    if (!tenant || (tenant as any).type !== 'TEACHER') {
+    // ⭐ Isolation des identifiants : l'email peut être partagé avec les
+    // portails Academia Helm — le tenant enseignant se résout via
+    // UserTenant (ou users.tenantId pour les comptes 100% enseignant).
+    let tenant: any =
+      user.userTenants.find((ut) => (ut.tenant as any)?.type === 'TEACHER')?.tenant ?? null;
+    if (!tenant && user.tenantId) {
+      const direct = await this.prisma.tenant.findUnique({ where: { id: user.tenantId } });
+      if (direct && (direct as any).type === 'TEACHER') {
+        tenant = direct;
+      }
+    }
+    if (!tenant) {
       throw new ForbiddenException('Ce portail est réservé aux enseignants autonomes.');
     }
     const subscription = await this.prisma.helmSubscription.findUnique({

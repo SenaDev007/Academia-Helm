@@ -464,115 +464,6 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   //    formulaire (type de fiche, sections spécifiques, domaine maternelle).
   const [showAiExtraction, setShowAiExtraction] = useState(false);
 
-  const handleApplyAiFields = useCallback((fields: Record<string, any>, context?: FicheExtractionContext) => {
-    // ⭐ 2026-10-16 (fix reconfiguration) : si le niveau DÉCLARÉ dans la modale
-    //    (Maternelle/Primaire) ne correspond pas à la classe actuellement
-    //    sélectionnée (ex: formulaire ouvert sur une fiche maternelle mais
-    //    extraction déclarée « Primaire / Français / CM1 »), on bascule la
-    //    classe vers une classe du bon niveau — sinon la branche de rendu
-    //    (isMaternelleClass) resterait sur le mauvais format de fiche et les
-    //    champs extraits n'auraient aucun champ visible à remplir.
-    if (context?.sheetType) {
-      const targetIsMaternelle = context.sheetType === "DOMAINE" || context.sheetType === "DOMAINE_2";
-      if (targetIsMaternelle !== isMaternelleClass) {
-        const wanted = String(context.className || "").trim().toUpperCase();
-        const pool = classes.filter((c: any) => {
-          const isMat =
-            String(c.schoolLevelCode || "").toUpperCase() === "MATERNELLE" ||
-            String(c.schoolLevelName || "").toLowerCase() === "maternelle";
-          return isMat === targetIsMaternelle;
-        });
-        const match =
-          pool.find((c: any) => String(c.className || "").toUpperCase() === wanted) ||
-          (wanted ? pool.find((c: any) => String(c.className || "").toUpperCase().startsWith(wanted)) : undefined) ||
-          (wanted ? pool.find((c: any) => String(c.className || "").toUpperCase().includes(wanted)) : undefined) ||
-          pool[0];
-        if (match) {
-          setSelectedClassId(match.classId);
-          // L'effet de synchronisation classe→formulaire reprendra
-          // form.classId/className/cours — on marque le choix utilisateur
-          // pour que l'effet d'initialisation ne l'écrase pas.
-          userPickedClassRef.current = true;
-        }
-      }
-    }
-
-    setForm((prev: any) => {
-      const next: any = { ...prev };
-      const matUpdate: any = { ...(prev.maternelle || {}) };
-      let matChanged = false;
-
-      // ⭐ CONTEXTE DÉCLARÉ AVANT L'IMPORT — le formulaire bascule sur la
-      //    fiche ciblée (les sections I.bis / tableaux de phases / structure
-      //    maternelle suivent automatiquement form.sheetType au rendu).
-      if (context?.sheetType && context.sheetType !== prev.sheetType) {
-        next.sheetType = context.sheetType;
-      }
-      if (context?.matiereSpecifique && isDeepEmpty(prev.matiereSpecifique)) {
-        next.matiereSpecifique = context.matiereSpecifique;
-      }
-      if (context?.className) {
-        if (isDeepEmpty(prev.cours)) next.cours = context.className;
-        if (isDeepEmpty(prev.className)) next.className = context.className;
-      }
-      // Maternelle : n° du domaine + intitulé « Domaine de… » (formate romain)
-      if (context?.domainRoman && isDeepEmpty(matUpdate.domainNumber)) {
-        matUpdate.domainNumber = context.domainRoman;
-        if (context.domainIntitule && isDeepEmpty(matUpdate.domaineDu)) {
-          matUpdate.domaineDu = context.domainIntitule;
-        }
-        matChanged = true;
-      }
-
-      for (const [key, value] of Object.entries(fields)) {
-        // II- Déroulement : appliqué seulement si le tableau est encore vide
-        if (key === "deroulement") {
-          if (Array.isArray(value) && value.length > 0 &&
-              (!Array.isArray(prev.deroulement) || prev.deroulement.length === 0)) {
-            next.deroulement = value;
-          }
-          continue;
-        }
-
-        // Maternelle — clés en pointillé « maternelle.x.y » → objet imbriqué
-        if (key.startsWith("maternelle.")) {
-          const path = key.substring("maternelle.".length).split(".");
-          let target: any = matUpdate;
-          for (let i = 0; i < path.length - 1; i++) {
-            target[path[i]] = { ...(target[path[i]] || {}) };
-            target = target[path[i]];
-          }
-          const leaf = path[path.length - 1];
-          if (isDeepEmpty(target[leaf]) && !isDeepEmpty(value)) {
-            target[leaf] = value;
-            matChanged = true;
-          }
-          continue;
-        }
-
-        // Champ scalaire — rempli seulement s'il est vide (jamais écrasé)
-        // Exception lessonDate : pré-rempli avec la date du jour par défaut
-        // (donc « non vide » artificiellement) → on l'applique si l'IA a lu
-        // une date valide AAAA-MM-JJ sur la fiche d'origine.
-        if (key === "lessonDate") {
-          if (/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) {
-            next.lessonDate = String(value);
-          }
-          continue;
-        }
-
-        if (isDeepEmpty(prev[key]) && !isDeepEmpty(value)) {
-          next[key] = value;
-        }
-      }
-
-      if (matChanged) next.maternelle = matUpdate;
-      return next;
-    });
-    // ⭐ deps : classes + isMaternelleClass pour la bascule de niveau
-    //    (Maternelle ↔ Primaire) lors de l'application du contexte déclaré.
-  }, [classes, isMaternelleClass]);
-
   // (currentSheetTypeLabel est déclaré APRÈS `const [form, setForm]` — il
   //  lit form.sheetType au rendu, il ne doit pas précéder la déclaration.)
 
@@ -761,6 +652,115 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   // ⭐ Choix MANUEL de l'enseignant dans le sélecteur de la liste : une fois
   //    posé, les mises à jour du cahier journal ne l'écrasent plus.
   const userPickedClassRef = useRef(false);
+
+  const handleApplyAiFields = useCallback((fields: Record<string, any>, context?: FicheExtractionContext) => {
+    // ⭐ 2026-10-16 (fix reconfiguration) : si le niveau DÉCLARÉ dans la modale
+    //    (Maternelle/Primaire) ne correspond pas à la classe actuellement
+    //    sélectionnée (ex: formulaire ouvert sur une fiche maternelle mais
+    //    extraction déclarée « Primaire / Français / CM1 »), on bascule la
+    //    classe vers une classe du bon niveau — sinon la branche de rendu
+    //    (isMaternelleClass) resterait sur le mauvais format de fiche et les
+    //    champs extraits n'auraient aucun champ visible à remplir.
+    if (context?.sheetType) {
+      const targetIsMaternelle = context.sheetType === "DOMAINE" || context.sheetType === "DOMAINE_2";
+      if (targetIsMaternelle !== isMaternelleClass) {
+        const wanted = String(context.className || "").trim().toUpperCase();
+        const pool = classes.filter((c: any) => {
+          const isMat =
+            String(c.schoolLevelCode || "").toUpperCase() === "MATERNELLE" ||
+            String(c.schoolLevelName || "").toLowerCase() === "maternelle";
+          return isMat === targetIsMaternelle;
+        });
+        const match =
+          pool.find((c: any) => String(c.className || "").toUpperCase() === wanted) ||
+          (wanted ? pool.find((c: any) => String(c.className || "").toUpperCase().startsWith(wanted)) : undefined) ||
+          (wanted ? pool.find((c: any) => String(c.className || "").toUpperCase().includes(wanted)) : undefined) ||
+          pool[0];
+        if (match) {
+          setSelectedClassId(match.classId);
+          // L'effet de synchronisation classe→formulaire reprendra
+          // form.classId/className/cours — on marque le choix utilisateur
+          // pour que l'effet d'initialisation ne l'écrase pas.
+          userPickedClassRef.current = true;
+        }
+      }
+    }
+
+    setForm((prev: any) => {
+      const next: any = { ...prev };
+      const matUpdate: any = { ...(prev.maternelle || {}) };
+      let matChanged = false;
+
+      // ⭐ CONTEXTE DÉCLARÉ AVANT L'IMPORT — le formulaire bascule sur la
+      //    fiche ciblée (les sections I.bis / tableaux de phases / structure
+      //    maternelle suivent automatiquement form.sheetType au rendu).
+      if (context?.sheetType && context.sheetType !== prev.sheetType) {
+        next.sheetType = context.sheetType;
+      }
+      if (context?.matiereSpecifique && isDeepEmpty(prev.matiereSpecifique)) {
+        next.matiereSpecifique = context.matiereSpecifique;
+      }
+      if (context?.className) {
+        if (isDeepEmpty(prev.cours)) next.cours = context.className;
+        if (isDeepEmpty(prev.className)) next.className = context.className;
+      }
+      // Maternelle : n° du domaine + intitulé « Domaine de… » (formate romain)
+      if (context?.domainRoman && isDeepEmpty(matUpdate.domainNumber)) {
+        matUpdate.domainNumber = context.domainRoman;
+        if (context.domainIntitule && isDeepEmpty(matUpdate.domaineDu)) {
+          matUpdate.domaineDu = context.domainIntitule;
+        }
+        matChanged = true;
+      }
+
+      for (const [key, value] of Object.entries(fields)) {
+        // II- Déroulement : appliqué seulement si le tableau est encore vide
+        if (key === "deroulement") {
+          if (Array.isArray(value) && value.length > 0 &&
+              (!Array.isArray(prev.deroulement) || prev.deroulement.length === 0)) {
+            next.deroulement = value;
+          }
+          continue;
+        }
+
+        // Maternelle — clés en pointillé « maternelle.x.y » → objet imbriqué
+        if (key.startsWith("maternelle.")) {
+          const path = key.substring("maternelle.".length).split(".");
+          let target: any = matUpdate;
+          for (let i = 0; i < path.length - 1; i++) {
+            target[path[i]] = { ...(target[path[i]] || {}) };
+            target = target[path[i]];
+          }
+          const leaf = path[path.length - 1];
+          if (isDeepEmpty(target[leaf]) && !isDeepEmpty(value)) {
+            target[leaf] = value;
+            matChanged = true;
+          }
+          continue;
+        }
+
+        // Champ scalaire — rempli seulement s'il est vide (jamais écrasé)
+        // Exception lessonDate : pré-rempli avec la date du jour par défaut
+        // (donc « non vide » artificiellement) → on l'applique si l'IA a lu
+        // une date valide AAAA-MM-JJ sur la fiche d'origine.
+        if (key === "lessonDate") {
+          if (/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) {
+            next.lessonDate = String(value);
+          }
+          continue;
+        }
+
+        if (isDeepEmpty(prev[key]) && !isDeepEmpty(value)) {
+          next[key] = value;
+        }
+      }
+
+      if (matChanged) next.maternelle = matUpdate;
+      return next;
+    });
+    // ⭐ deps : classes + isMaternelleClass pour la bascule de niveau
+    //    (Maternelle ↔ Primaire) lors de l'application du contexte déclaré.
+  }, [classes, isMaternelleClass]);
 
   const loadClasses = useCallback(async (attempt = 0) => {
     setClassesLoading(true);

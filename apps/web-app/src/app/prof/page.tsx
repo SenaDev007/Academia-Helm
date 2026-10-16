@@ -10,6 +10,8 @@ import {
   ArrowRight,
   Sparkles,
   Users,
+  LogIn,
+  UserPlus,
 } from 'lucide-react';
 
 /**
@@ -56,24 +58,24 @@ const FEATURES = [
   },
   {
     icon: Sparkles,
-    title: 'Tous les niveaux offerts',
+    title: 'Maternelle & Primaire inclus',
     description:
-      'Activez Maternelle, Primaire ou Secondaire : toutes les classes (CI → CM2, 6ème → Terminale) et toutes les matières du niveau sont livrées automatiquement.',
+      'Activez Maternelle, Primaire ou les deux : toutes les classes (Maternelle 1 → CM2) et toutes les matières des niveaux choisis sont livrées automatiquement.',
   },
 ];
 
 const STEPS = [
   {
     number: '1',
-    title: 'Créez votre compte',
+    title: 'Payez et créez votre compte',
     description:
-      'Votre email, un mot de passe et votre mensualité de 2 000 FCFA — votre compteur de 30 jours démarre aussitôt, sans aucune école nécessaire.',
+      'Votre email, un mot de passe et votre mensualité de 2 000 FCFA — le paiement est confirmé, votre compte est créé et vos identifiants vous sont envoyés par email.',
   },
   {
     number: '2',
     title: 'Activez vos niveaux',
     description:
-      'Maternelle, Primaire, Secondaire : le système installe pour vous toutes les classes et matières des niveaux choisis.',
+      'Maternelle, Primaire ou les deux : le système installe pour vous toutes les classes et matières des niveaux choisis.',
   },
   {
     number: '3',
@@ -104,17 +106,22 @@ export default function HelmEnseignantLandingPage() {
             <a href="#tarification" className="hover:text-teal-700">Tarification</a>
           </nav>
           <div className="flex items-center gap-3">
+            {/* ⭐ 2026-10-16 — Icônes Sign in / Sign up (remplacent les boutons texte) */}
             <Link
               href="/prof/login"
-              className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              aria-label="Se connecter"
+              title="Se connecter"
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-600 transition-colors hover:border-teal-500 hover:bg-teal-50 hover:text-teal-700"
             >
-              Se connecter
+              <LogIn className="h-5 w-5" />
             </Link>
             <Link
               href="/prof/register"
-              className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700"
+              aria-label="Créer mon espace enseignant"
+              title="Créer mon espace enseignant"
+              className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-600 text-white shadow-sm transition-colors hover:bg-teal-700"
             >
-              Créer mon espace
+              <UserPlus className="h-5 w-5" />
             </Link>
           </div>
         </div>
@@ -154,8 +161,7 @@ export default function HelmEnseignantLandingPage() {
               </Link>
             </div>
             <p className="mt-6 text-sm text-slate-500">
-              Tous les niveaux inclus : Maternelle, Primaire, Secondaire — vous activez ce que
-              vous enseignez.
+              Maternelle et Primaire inclus — vous activez ce que vous enseignez.
             </p>
           </div>
         </div>
@@ -233,7 +239,7 @@ export default function HelmEnseignantLandingPage() {
             <ul className="mt-8 space-y-3 text-sm text-slate-200">
               {[
                 'Espace pédagogique complet (cahiers, fiches, textes, planification)',
-                'Tous les niveaux : Maternelle, Primaire, Secondaire',
+                'Tous les niveaux : Maternelle et Primaire',
                 'Évaluations, saisie de notes et génération de bulletins',
                 'Impression PDF professionnelle avec VOS en-têtes et pieds de page',
                 'Vos données restent vôtres — exportables à tout moment',

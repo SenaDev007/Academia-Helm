@@ -38,11 +38,13 @@ import {
   Controller, Get, Post, Put, Delete, Body, Param, Query,
   UseGuards, BadRequestException, NotFoundException,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { TenantGuard } from '../../common/guards/tenant.guard';
-import { TenantId } from '../../common/decorators/tenant-id.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { PrismaService } from '../../database/prisma.service';
+// ⚠️ 2026-10-16 — FIX BUILD : chemins relatifs corrigés (un seul '../' depuis
+//    src/modules-complementaires/ — '../../' pointait hors de src → build KO)
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { TenantGuard } from '../common/guards/tenant.guard';
+import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { PrismaService } from '../database/prisma.service';
 import { randomUUID } from 'crypto';
 
 interface AuthUser {

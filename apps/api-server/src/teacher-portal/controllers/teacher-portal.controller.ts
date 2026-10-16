@@ -3,14 +3,19 @@
  * HELM ENSEIGNANT — CONTRÔLEUR DU PORTAIL ENSEIGNANT AUTONOME
  * ============================================================================
  *
- * Routes publiques  : POST /teacher-portal/register, POST /teacher-portal/login
+ * Routes publiques  : POST /teacher-portal/signup/initiate  (⭐ paiement d'abord)
+ *                     GET  /teacher-portal/public/signup/by-transaction/:id
+ *                     GET  /teacher-portal/public/signup/by-draft/:draftId
+ *                     POST /teacher-portal/public/signup/verify
+ *                     POST /teacher-portal/login
  * Routes protégées  : GET  /teacher-portal/profile
  *                     POST /teacher-portal/levels
  *                     POST /teacher-portal/invite-promoter
  *
- * ⭐ Le sélecteur de niveaux est la porte d'entrée « intelligente » :
- *    l'enseignant active Maternelle / Primaire / Secondaire et reçoit
- *    automatiquement toutes les classes et matières du niveau.
+ * ⭐ INSCRIPTION « PAIEMENT D'ABORD » (2026-10-16) : le compte n'est créé
+ *    qu'après confirmation du paiement FedaPay de 2 000 FCFA (webhook signé
+ *    ou verify) — pattern OnboardingDraft du patronat. L'inscription active
+ *    les niveaux Maternelle / Primaire (SECONDAIRE masqué).
  */
 
 import {
@@ -32,10 +37,10 @@ import { TeacherPortalAuthService } from '../services/teacher-portal-auth.servic
 import { TeacherProvisioningService } from '../services/teacher-provisioning.service';
 import { TeacherSubscriptionService } from '../services/teacher-subscription.service';
 import {
-  RegisterTeacherDto,
   TeacherStandaloneLoginDto,
   SetTeacherLevelsDto,
   InvitePromoterDto,
+  SignupTeacherDraftDto,
 } from '../dto/teacher-portal.dto';
 import { IsString, IsNotEmpty, IsOptional, MinLength, MaxLength, IsIn } from 'class-validator';
 
@@ -69,16 +74,60 @@ export class TeacherPortalController {
     private readonly subscriptionService: TeacherSubscriptionService,
   ) {}
 
-  /** Inscription autonome — provisionne tout l'espace puis connecte. */
+  /**
+   * ⚠️ 2026-10-16 — INSCRIPTION DIRECTE DÉSACTIVÉE : le paiement des
+   * 2 000 FCFA doit être confirmé AVANT la création du compte (même règle
+   * que l'onboarding patronat d'Academia Helm / Academia Federis).
+   * Le nouveau flux est POST /teacher-portal/signup/initiate → paiement
+   * FedaPay → création du compte + email d'identifiants.
+   */
   @Public()
   @Post('register')
-  @HttpCode(HttpStatus.CREATED)
-  async register(@Body() dto: RegisterTeacherDto, @Req() req: any) {
-    return this.authService.register(
-      dto,
-      req?.ip || req?.headers?.['x-forwarded-for'],
-      req?.headers?.['user-agent'],
+  @HttpCode(HttpStatus.BAD_REQUEST)
+  async register() {
+    throw new BadRequestException(
+      'L’inscription directe n’est plus disponible : le paiement de l’abonnement (2 000 FCFA) est désormais requis AVANT la création du compte. Utilisez /teacher-portal/signup/initiate.',
     );
+  }
+
+  /**
+   * ⭐ 2026-10-16 — INSCRIPTION « PAIEMENT D'ABORD » (étape 3 du wizard).
+   * Crée le DRAFT (identité + hash + niveaux) et initialise le paiement
+   * FedaPay de 2 000 FCFA. Le compte n'est créé qu'à la CONFIRMATION du
+   * paiement — même pattern que l'onboarding patronat d'Academia Helm.
+   */
+  @Public()
+  @Post('signup/initiate')
+  @HttpCode(HttpStatus.OK)
+  async initiateSignup(@Body() dto: SignupTeacherDraftDto) {
+    return this.subscriptionService.initSignupCheckout(dto, {
+      returnBaseUrl: dto.returnBaseUrl,
+    });
+  }
+
+  /** Retrouve une inscription depuis l'ID de transaction FedaPay (page success). */
+  @Public()
+  @Get('public/signup/by-transaction/:transactionId')
+  async findSignupByTransactionId(@Param('transactionId') transactionId: string) {
+    return this.subscriptionService.findDraftByTransactionId(transactionId);
+  }
+
+  /** Retrouve une inscription depuis son draftId (page success). */
+  @Public()
+  @Get('public/signup/by-draft/:draftId')
+  async findSignupByDraftId(@Param('draftId') draftId: string) {
+    return this.subscriptionService.findDraftById(draftId);
+  }
+
+  /**
+   * Vérification post-paiement de l'INSCRIPTION (fallback si le webhook est
+   * perdu) : interroge l'API FedaPay RÉELLE puis crée le compte (idempotent).
+   */
+  @Public()
+  @Post('public/signup/verify')
+  @HttpCode(HttpStatus.OK)
+  async verifySignupPayment(@Body() body: { draftId?: string; transactionId?: string }) {
+    return this.subscriptionService.verifySignupPayment(body ?? {});
   }
 
   /** Connexion Helm Enseignant — email + mot de passe (sans établissement). */

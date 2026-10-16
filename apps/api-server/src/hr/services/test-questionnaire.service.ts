@@ -26,7 +26,9 @@
  * ============================================================================
  */
 
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+// ⚠️ 2026-10-16 — FIX CRASH BOOT (TDZ) : Inject/forwardRef étaient importés en FIN de
+//    fichier (l.745) — « Cannot access 'common_2' before initialization ».
+import { Injectable, Logger, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { EmailService } from '../../communication/services/email.service';
@@ -741,5 +743,3 @@ export class TestQuestionnaireService {
   }
 }
 
-// Import forwardRef ici pour éviter les problèmes de circular dependency
-import { Inject, forwardRef } from '@nestjs/common';

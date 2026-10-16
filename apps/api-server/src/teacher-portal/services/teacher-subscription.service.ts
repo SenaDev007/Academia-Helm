@@ -30,11 +30,15 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  ConflictException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../database/prisma.service';
 import { FedaPayService } from '../../billing/services/fedapay.service';
 import { EmailService } from '../../communication/services/email.service';
+import { TeacherProvisioningService } from './teacher-provisioning.service';
+import { SignupTeacherDraftDto } from '../dto/teacher-portal.dto';
 
 /** Montant de l'abonnement mensuel Helm Enseignant (FCFA). */
 export const TEACHER_MONTHLY_FEE = 2000;
@@ -42,10 +46,14 @@ export const TEACHER_MONTHLY_FEE = 2000;
 export const TEACHER_PERIOD_DAYS = 30;
 /** Type de transaction FedaPay dédié (routage webhook). */
 const TEACHER_TX_TYPE = 'TEACHER_SUBSCRIPTION';
+/** Type de transaction FedaPay pour l'INSCRIPTION (paiement avant compte). */
+const TEACHER_SIGNUP_TX_TYPE = 'TEACHER_SIGNUP';
 /** Plafond sandbox FedaPay (XOF) — même garde-fou que le patronat. */
 const FEDAPAY_SANDBOX_MAX = 20000;
 /** Facture FedaPay « session » réutilisable (heures). */
 const CHECKOUT_SESSION_HOURS = 12;
+/** Hash bcrypt (coût 10) — même constante que le provisioning. */
+const SALT_ROUNDS = 10;
 
 @Injectable()
 export class TeacherSubscriptionService {
@@ -56,6 +64,7 @@ export class TeacherSubscriptionService {
     private readonly fedapayService: FedaPayService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
+    private readonly provisioningService: TeacherProvisioningService,
   ) {}
 
   // ══════════════════════════════════════════════════════════════════════
@@ -306,6 +315,12 @@ export class TeacherSubscriptionService {
   private async handlePaymentApproved(transaction: any) {
     const meta = this.normalizeMetadata(transaction);
 
+    // ⭐ INSCRIPTION « paiement d'abord » : transaction TEACHER_SIGNUP →
+    //    activation du draft (création du compte après confirmation).
+    if (meta.type === TEACHER_SIGNUP_TX_TYPE) {
+      return this.handleSignupPaymentApproved(transaction, meta);
+    }
+
     // Transactions d'autres modules éventuellement reçues ici : ignorées.
     if (meta.type && meta.type !== TEACHER_TX_TYPE) {
       return { received: true, processed: false, reason: 'not_teacher_subscription' };
@@ -460,6 +475,7 @@ export class TeacherSubscriptionService {
     },
     transaction: any,
     source: 'webhook' | 'verify',
+    options: { skipEmail?: boolean } = {},
   ): Promise<{
     alreadyActivated: boolean;
     currentPeriodEnd: string;
@@ -621,10 +637,14 @@ export class TeacherSubscriptionService {
       `✅ Abonnement enseignant ACTIVÉ (${invoice.invoiceNumber}) — période ${periodStart.toISOString().slice(0, 10)} → ${periodEnd.toISOString().slice(0, 10)} (${source})`,
     );
 
-    // Email de confirmation (best-effort, non bloquant)
-    this.sendActivationEmail(tenant.id, invoice, periodEnd, source).catch((err) =>
-      this.logger.warn(`Email activation enseignant non envoyé : ${err?.message}`),
-    );
+    // Email de confirmation (best-effort, non bloquant) — sauf si l'appelant
+    // (inscription « paiement d'abord ») envoie son propre email d'accueil
+    // avec les identifiants.
+    if (!options.skipEmail) {
+      this.sendActivationEmail(tenant.id, invoice, periodEnd, source).catch((err) =>
+        this.logger.warn(`Email activation enseignant non envoyé : ${err?.message}`),
+      );
+    }
 
     return {
       alreadyActivated: false,
@@ -755,6 +775,573 @@ ${after}
       triggeredBy: 'AUTOMATION',
       relatedEntityType: 'HelmInvoice',
       relatedEntityId: invoice.invoiceNumber ?? undefined,
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // 7. INSCRIPTION « PAIEMENT D'ABORD » (2026-10-16 — pattern OnboardingDraft patronat)
+  // ══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Étape 3 du wizard : persiste le DRAFT (identité + hash du mot de passe +
+   * niveaux) puis initialise le paiement FedaPay de 2 000 FCFA.
+   *
+   * ⭐ Le compte n'est PAS créé ici — il le sera à la CONFIRMATION du
+   *    paiement (webhook signé ou verify), exactement comme l'onboarding
+   *    du patronat (activateTenantAfterPayment).
+   *
+   * Ré-appelable : même email → le draft est mis à jour et une transaction
+   * fraîche est créée (l'ancienne expire seule côté FedaPay).
+   */
+  async initSignupCheckout(
+    dto: SignupTeacherDraftDto,
+    options: { returnBaseUrl?: string } = {},
+  ): Promise<{
+    success: boolean;
+    draftId: string;
+    amountXOF: number;
+    provider: string;
+    paymentUrl: string | null;
+    message: string;
+  }> {
+    const email = dto.email.trim().toLowerCase();
+
+    // ── Garde-fous ──
+    const existingUser = await this.prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      throw new ConflictException(
+        'Un compte existe déjà avec cet email. Connectez-vous ou utilisez une autre adresse.',
+      );
+    }
+
+    // Draft déjà ACTIVÉ (compte créé) ? → conflit, il faut se connecter.
+    const activatedDraft = await this.prisma.teacherOnboardingDraft.findUnique({
+      where: { email },
+    });
+    if (activatedDraft?.status === 'ACTIVATED') {
+      throw new ConflictException(
+        'Votre espace enseignant a déjà été créé à la suite de votre paiement. Connectez-vous.',
+      );
+    }
+
+    // ── Best-effort : la transaction précédente vient-elle d'être approuvée
+    //    (webhook pas encore traité) ? → on active AVANT de re-payer. ──
+    if (activatedDraft?.transactionId) {
+      try {
+        const check = await this.fedapayService.verifyTransactionStatus(
+          activatedDraft.transactionId,
+        );
+        const checkStatus = String(check?.status || '').toLowerCase();
+        if (['approved', 'completed', 'transfert', 'transferred'].includes(checkStatus)) {
+          await this.activateDraftAfterPayment(activatedDraft, {
+            id: activatedDraft.transactionId,
+            reference: check?.reference ?? null,
+            amount: check?.amount,
+          }, 'verify');
+          return {
+            success: true,
+            draftId: activatedDraft.id,
+            amountXOF: activatedDraft.amountXOF,
+            provider: 'FEDAPAY',
+            paymentUrl: null,
+            message:
+              'Votre paiement a été confirmé — votre espace est déjà créé. Connectez-vous.',
+          };
+        }
+      } catch {
+        /* vérification best-effort : on continue avec une nouvelle transaction */
+      }
+    }
+
+    // ── Upsert du draft : identité + hash du mot de passe + niveaux ──
+    const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
+    const levels = [...new Set(dto.levels)] as string[];
+
+    const draft = await this.prisma.teacherOnboardingDraft.upsert({
+      where: { email },
+      update: {
+        firstName: dto.firstName.trim(),
+        lastName: dto.lastName.trim(),
+        phone: dto.phone?.trim() || null,
+        passwordHash,
+        levels: levels as any,
+        status: 'PENDING_PAYMENT',
+        amountXOF: TEACHER_MONTHLY_FEE,
+      },
+      create: {
+        email,
+        firstName: dto.firstName.trim(),
+        lastName: dto.lastName.trim(),
+        phone: dto.phone?.trim() || null,
+        passwordHash,
+        levels: levels as any,
+        status: 'PENDING_PAYMENT',
+        amountXOF: TEACHER_MONTHLY_FEE,
+      },
+    });
+
+    // ── Transaction FedaPay (montant réel en live, plafonné en sandbox) ──
+    const amountReal = draft.amountXOF;
+    const amountFedapay = this.fedapayService.isLiveModeResolved()
+      ? amountReal
+      : Math.min(amountReal, FEDAPAY_SANDBOX_MAX);
+
+    const appBase = this.resolveReturnBase(options.returnBaseUrl);
+    const metadata = {
+      type: TEACHER_SIGNUP_TX_TYPE,
+      draftId: draft.id,
+      email,
+      amountReal,
+      amountFedapay,
+      webhookUrl: this.buildWebhookUrl(),
+    };
+
+    // FedaPay REMPLACE les query params à la redirection : ?id={txId}&status=approved
+    const callbackUrl = `${appBase}/prof/register/success?draftId=${encodeURIComponent(draft.id)}`;
+    const cancelUrl = `${appBase}/prof/register?canceled=1&email=${encodeURIComponent(email)}`;
+
+    try {
+      const tx = await this.fedapayService.createTransaction({
+        amount: amountFedapay,
+        description: `Helm Enseignant — Inscription + 1er mois (2 000 FCFA)`,
+        callbackUrl,
+        cancelUrl,
+        currency: 'XOF',
+        metadata,
+        customer: {
+          email,
+          firstname: (dto.firstName || 'Enseignant').slice(0, 60),
+          ...(dto.lastName ? { lastname: dto.lastName.slice(0, 60) } : {}),
+          ...(dto.phone ? { phone_number: dto.phone } : {}),
+          countryName: 'Bénin',
+        },
+      });
+
+      await this.prisma.teacherOnboardingDraft.update({
+        where: { id: draft.id },
+        data: {
+          transactionId: tx.transactionId != null ? String(tx.transactionId) : null,
+        },
+      });
+
+      this.logger.log(
+        `✅ Transaction FedaPay INSCRIPTION enseignant créée : ${tx.transactionId} (${amountFedapay} XOF, draft ${draft.id})`,
+      );
+
+      return {
+        success: true,
+        draftId: draft.id,
+        amountXOF: amountReal,
+        provider: 'FEDAPAY',
+        paymentUrl: tx.paymentUrl ?? null,
+        message: 'Paiement Fedapay initialisé. Votre compte sera créé dès la confirmation du paiement.',
+      };
+    } catch (error: any) {
+      // FedaPay injoignable : le draft est enregistré — l'enseignant peut
+      // relancer l'étape de paiement (même email → même draft, transaction fraîche).
+      this.logger.error(`❌ Initiation FedaPay inscription enseignant échouée : ${error?.message}`);
+      return {
+        success: false,
+        draftId: draft.id,
+        amountXOF: amountReal,
+        provider: 'FEDAPAY',
+        paymentUrl: null,
+        message:
+          'La passerelle de paiement est momentanément indisponible. Votre inscription est enregistrée — réessayez dans quelques instants.',
+      };
+    }
+  }
+
+  /** Retrouve un draft d'inscription depuis l'ID de transaction FedaPay (page success). */
+  async findDraftByTransactionId(transactionId: string) {
+    const draft = await this.prisma.teacherOnboardingDraft.findFirst({
+      where: { transactionId },
+      orderBy: { updatedAt: 'desc' },
+      select: {
+        id: true,
+        email: true,
+        status: true,
+        amountXOF: true,
+        completedAt: true,
+        createdAt: true,
+      },
+    });
+    if (!draft) return { found: false };
+    return {
+      found: true,
+      draftId: draft.id,
+      email: draft.email,
+      status: draft.status,
+      activated: draft.status === 'ACTIVATED',
+      amountXOF: draft.amountXOF,
+      completedAt: draft.completedAt,
+    };
+  }
+
+  /** Retrouve un draft par son identifiant (page success). */
+  async findDraftById(draftId: string) {
+    const draft = await this.prisma.teacherOnboardingDraft.findUnique({
+      where: { id: draftId },
+      select: {
+        id: true,
+        email: true,
+        status: true,
+        amountXOF: true,
+        transactionId: true,
+        completedAt: true,
+        createdAt: true,
+      },
+    });
+    if (!draft) return { found: false };
+    return {
+      found: true,
+      draftId: draft.id,
+      email: draft.email,
+      status: draft.status,
+      activated: draft.status === 'ACTIVATED',
+      amountXOF: draft.amountXOF,
+      transactionId: draft.transactionId,
+      completedAt: draft.completedAt,
+    };
+  }
+
+  /**
+   * Vérification post-paiement de l'INSCRIPTION (page /prof/register/success) :
+   * interroge l'API FedaPay RÉELLE puis, si approuvée, crée le compte
+   * (activation idempotente du draft). Jamais d'activation sur erreur réseau.
+   */
+  async verifySignupPayment(params: { draftId?: string; transactionId?: string }) {
+    let draft: any = null;
+
+    if (params.draftId) {
+      draft = await this.prisma.teacherOnboardingDraft.findUnique({
+        where: { id: params.draftId },
+      });
+      if (!draft) throw new NotFoundException(`Inscription introuvable : ${params.draftId}`);
+    } else if (params.transactionId) {
+      draft = await this.prisma.teacherOnboardingDraft.findFirst({
+        where: { transactionId: params.transactionId },
+        orderBy: { updatedAt: 'desc' },
+      });
+      if (!draft) {
+        throw new NotFoundException(
+          `Aucune inscription pour la transaction Fedapay ${params.transactionId}`,
+        );
+      }
+    } else {
+      throw new BadRequestException('draftId ou transactionId requis');
+    }
+
+    if (draft.status === 'ACTIVATED') {
+      return {
+        outcome: 'already_activated',
+        draftId: draft.id,
+        email: draft.email,
+        loginUrl: `${this.teacherAppBaseUrl()}/prof/login`,
+        message: 'Votre espace enseignant est déjà créé — connectez-vous.',
+      };
+    }
+
+    const transactionId = draft.transactionId;
+    if (!transactionId) {
+      return {
+        outcome: 'pending',
+        draftId: draft.id,
+        message: 'Transaction FedaPay introuvable pour cette inscription.',
+      };
+    }
+
+    let verification: { status: string; amount: number; reference?: string | null };
+    try {
+      verification = await this.fedapayService.verifyTransactionStatus(String(transactionId));
+    } catch (err: any) {
+      return {
+        outcome: 'pending',
+        draftId: draft.id,
+        message: `Vérification FedaPay en attente : ${err?.message || 'erreur inconnue'}`,
+      };
+    }
+
+    const status = String(verification.status || '').toLowerCase();
+    if (['approved', 'completed', 'transfert', 'transferred'].includes(status)) {
+      const activation = await this.activateDraftAfterPayment(
+        draft,
+        {
+          id: transactionId,
+          reference: verification.reference ?? null,
+          amount: verification.amount,
+        },
+        'verify',
+      );
+      return {
+        outcome: 'verified',
+        draftId: draft.id,
+        email: draft.email,
+        loginUrl: `${this.teacherAppBaseUrl()}/prof/login`,
+        currentPeriodEnd: activation.currentPeriodEnd,
+        daysRemaining: activation.daysRemaining,
+        message: 'Paiement confirmé — votre espace enseignant a été créé.',
+      };
+    }
+
+    return {
+      outcome: status === 'pending' || status === 'processing' ? 'pending' : status,
+      draftId: draft.id,
+      message: `Statut FedaPay : ${status}`,
+    };
+  }
+
+  /** Routage webhook des transactions d'inscription. */
+  private async handleSignupPaymentApproved(transaction: any, meta: Record<string, any>) {
+    const draftId =
+      typeof meta.draftId === 'string' && meta.draftId ? meta.draftId : null;
+    let draft = draftId
+      ? await this.prisma.teacherOnboardingDraft.findUnique({ where: { id: draftId } })
+      : null;
+
+    if (!draft && transaction?.id != null) {
+      draft = await this.prisma.teacherOnboardingDraft.findFirst({
+        where: { transactionId: String(transaction.id) },
+        orderBy: { updatedAt: 'desc' },
+      });
+    }
+    if (!draft) {
+      this.logger.error(
+        `❌ Draft d'inscription introuvable pour la transaction ${transaction?.id}`,
+      );
+      return { received: true, processed: false, reason: 'draft_not_found' };
+    }
+
+    try {
+      const activation = await this.activateDraftAfterPayment(draft, transaction, 'webhook');
+      return {
+        received: true,
+        processed: !activation.alreadyActivated,
+        email: draft.email,
+        currentPeriodEnd: activation.currentPeriodEnd,
+        alreadyActivated: activation.alreadyActivated,
+      };
+    } catch (activationErr: any) {
+      if (activationErr instanceof BadRequestException) {
+        this.logger.error(
+          `❌ Activation inscription enseignant refusée (draft ${draft.id}) : ${activationErr.message}`,
+        );
+        return { received: true, processed: false, reason: 'activation_rejected' };
+      }
+      throw activationErr;
+    }
+  }
+
+  /**
+   * ⭐ CŒUR du « paiement d'abord » : crée le compte enseignant (provisioning
+   * complet avec le hash du draft), la facture PAYÉE et l'abonnement 30 jours
+   * — le tout de façon idempotente (webhook et verify peuvent converger).
+   */
+  private async activateDraftAfterPayment(
+    draft: any,
+    transaction: any,
+    source: 'webhook' | 'verify',
+  ): Promise<{
+    alreadyActivated: boolean;
+    currentPeriodEnd: string;
+    daysRemaining: number;
+  }> {
+    // Idempotence : relecture fraîche (un appel concurrent peut avoir activé).
+    const fresh = await this.prisma.teacherOnboardingDraft.findUnique({
+      where: { id: draft.id },
+    });
+    if (!fresh) throw new NotFoundException('Draft introuvable');
+    if (fresh.status === 'ACTIVATED') {
+      const sub = await this.prisma.helmSubscription.findUnique({
+        where: { tenantId: fresh.tenantId ?? '' },
+      });
+      const now = new Date();
+      return {
+        alreadyActivated: true,
+        currentPeriodEnd: sub?.currentPeriodEnd?.toISOString() ?? new Date().toISOString(),
+        daysRemaining: sub?.currentPeriodEnd
+          ? Math.max(
+              0,
+              Math.ceil((sub.currentPeriodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)),
+            )
+          : 0,
+      };
+    }
+
+    // ⚠️ Montant vérifié côté serveur (honnêteté sur l'argent).
+    const expectedAmount = Number(fresh.amountXOF) || TEACHER_MONTHLY_FEE;
+    const txAmount = Number(transaction?.amount);
+    if (
+      Number.isFinite(txAmount) &&
+      txAmount > 0 &&
+      Math.round(txAmount) !== Math.round(expectedAmount)
+    ) {
+      this.logger.error(
+        `❌ Montant mismatch inscription : transaction ${txAmount} XOF ≠ attendu ${expectedAmount} XOF (draft ${fresh.id})`,
+      );
+      throw new BadRequestException(
+        `Montant de la transaction FedaPay (${txAmount} XOF) différent du montant attendu (${expectedAmount} XOF).`,
+      );
+    }
+
+    // ── 1. Provisioning complet (tenant TEACHER + niveaux + classes + user) ──
+    //    Le hash du draft PRIME : le mot de passe clair n'existe plus ici.
+    const levels = Array.isArray(fresh.levels)
+      ? (fresh.levels as string[])
+      : (() => {
+          try {
+            const parsed = JSON.parse(String(fresh.levels));
+            return Array.isArray(parsed) ? (parsed as string[]) : [];
+          } catch {
+            return [];
+          }
+        })();
+
+    let provisioned: any;
+    try {
+      provisioned = await this.provisioningService.provisionStandaloneTeacher({
+        email: fresh.email,
+        password: '(paiement-confirme)',
+        passwordHash: fresh.passwordHash,
+        firstName: fresh.firstName,
+        lastName: fresh.lastName,
+        ...(fresh.phone ? { phone: fresh.phone } : {}),
+        levels: levels as any,
+      });
+    } catch (err: any) {
+      if (err instanceof ConflictException) {
+        // Un compte existe déjà pour cet email (activation concurrente ou
+        // email pris entre-temps) — si le draft est activé, tout va bien.
+        const recheck = await this.prisma.teacherOnboardingDraft.findUnique({
+          where: { id: fresh.id },
+        });
+        if (recheck?.status === 'ACTIVATED') {
+          const sub = await this.prisma.helmSubscription.findUnique({
+            where: { tenantId: recheck.tenantId ?? '' },
+          });
+          const now = new Date();
+          return {
+            alreadyActivated: true,
+            currentPeriodEnd: sub?.currentPeriodEnd?.toISOString() ?? new Date().toISOString(),
+            daysRemaining: sub?.currentPeriodEnd
+              ? Math.max(
+                  0,
+                  Math.ceil(
+                    (sub.currentPeriodEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+                  ),
+                )
+              : 0,
+          };
+        }
+        this.logger.error(
+          `❌ Email déjà pris au moment de l'activation (draft ${fresh.id}) : ${err?.message}`,
+        );
+        throw new ConflictException(
+          'Un compte existe déjà avec cet email — impossible de finaliser l’inscription.',
+        );
+      }
+      throw err;
+    }
+
+    // ── 2. Facture PAID + abonnement 30 jours (réutilise le cœur existant :
+    //    période depuis la création du compte = maintenant, audit, tenant) ──
+    const invoice = await this.createTeacherInvoice(
+      provisioned.tenantId,
+      fresh.email,
+      `${fresh.firstName} ${fresh.lastName}`.trim(),
+    );
+    await this.prisma.helmInvoice.update({
+      where: { id: invoice.id },
+      data: {
+        description: 'Inscription Helm Enseignant + 1er mois (paiement avant création du compte)',
+      },
+    });
+    const invoiceEntity = await this.prisma.helmInvoice.findUnique({ where: { id: invoice.id } });
+
+    const activation = await this.activateSubscriptionAfterPayment(
+      invoiceEntity,
+      transaction,
+      source,
+      { skipEmail: true },
+    );
+
+    // ── 3. Draft → ACTIVATED (hash purgé, rattachements conservés) ──
+    await this.prisma.teacherOnboardingDraft.update({
+      where: { id: fresh.id },
+      data: {
+        status: 'ACTIVATED',
+        tenantId: provisioned.tenantId,
+        userId: provisioned.userId,
+        completedAt: new Date(),
+        passwordHash: '(purged-after-activation)',
+      },
+    });
+
+    this.logger.log(
+      `✅ INSCRIPTION enseignant ACTIVÉE (draft ${fresh.id}) — compte ${provisioned.userId}, période jusqu'au ${activation.currentPeriodEnd.slice(0, 10)} (${source})`,
+    );
+
+    // ── 4. Email d'accueil avec les identifiants (best-effort) ──
+    this.sendSignupWelcomeEmail(fresh, provisioned, invoiceEntity, activation.currentPeriodEnd)
+      .catch((err) => this.logger.warn(`Email inscription enseignant non envoyé : ${err?.message}`));
+
+    return {
+      alreadyActivated: false,
+      currentPeriodEnd: activation.currentPeriodEnd,
+      daysRemaining: activation.daysRemaining,
+    };
+  }
+
+  /** Email de bienvenue post-inscription : identifiants + lien de connexion. */
+  private async sendSignupWelcomeEmail(
+    draft: { email: string; firstName: string; lastName: string },
+    provisioned: { tenantId: string; teacherMatricule?: string },
+    invoice: { invoiceNumber: string | null; amount: number } | null,
+    currentPeriodEnd: string,
+  ): Promise<void> {
+    const loginUrl = `${this.teacherAppBaseUrl()}/prof/login`;
+    const name = `${draft.firstName} ${draft.lastName}`.trim() || 'cher enseignant';
+    const expiryDate = new Date(currentPeriodEnd).toLocaleDateString('fr-FR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+
+    const subject = '🎓 Bienvenue sur Helm Enseignant — votre espace est prêt';
+    const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#0f172a;">
+<p>Bonjour ${name},</p>
+<p>Votre paiement a été confirmé et <strong>votre espace enseignant vient d'être créé</strong>. Tout est prêt : cahier journal, fiches pédagogiques, cahier de textes, planification, évaluations, notes et bulletins.</p>
+<div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:12px;padding:16px;margin:20px 0;">
+<p style="margin:0;"><strong>Vos identifiants de connexion :</strong></p>
+<p style="margin:4px 0 0;">Email : <strong>${draft.email}</strong></p>
+<p style="margin:4px 0 0;">Mot de passe : <strong>celui que vous avez choisi lors de l'inscription</strong></p>
+${provisioned?.teacherMatricule ? `<p style="margin:4px 0 0;">Matricule : ${provisioned.teacherMatricule}</p>` : ''}
+</div>
+<div style="text-align:center;margin:28px 0;">
+<a href="${loginUrl}" style="display:inline-block;background:#0d9488;color:#ffffff;text-decoration:none;font-weight:bold;padding:14px 32px;border-radius:12px;font-size:16px;">Se connecter à mon espace</a>
+</div>
+<p style="text-align:center;font-size:13px;color:#64748b;">Ou copiez ce lien : ${loginUrl}</p>
+<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:20px 0;">
+<p style="margin:0;"><strong>Abonnement :</strong> Helm Enseignant — 2 000 FCFA / mois</p>
+<p style="margin:4px 0 0;"><strong>Facture :</strong> ${invoice?.invoiceNumber ?? '—'}</p>
+<p style="margin:4px 0 0;"><strong>Valide jusqu'au :</strong> ${expiryDate} (30 jours)</p>
+</div>
+<p style="color:#64748b;font-size:13px;">Un rappel vous sera envoyé par email 7 jours puis 24 heures avant l'expiration de votre abonnement. Votre compteur est visible à tout moment dans <strong>Paramètres → Abonnement</strong>.</p>
+<p>Bonne préparation de vos classes !<br/>L'équipe Academia Helm</p>
+</div>`;
+
+    await this.emailService.sendCategorized({
+      tenantId: provisioned?.tenantId ?? null,
+      category: 'FINANCE',
+      subCategory: 'inscription_enseignant_confirmee',
+      module: 'teacher-portal',
+      to: draft.email,
+      subject,
+      html,
+      text: subject,
+      recipientType: 'TEACHER',
+      triggeredBy: 'AUTOMATION',
+      relatedEntityType: 'TeacherOnboardingDraft',
     });
   }
 

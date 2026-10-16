@@ -13680,6 +13680,35 @@ model HelmInvoice {
   @@index([type])
 }
 
+/// ⭐ HELM ENSEIGNANT — Draft d'inscription « paiement d'abord » (2026-10-16)
+/// Pattern OnboardingDraft (patronat) : l'identité + le hash du mot de passe
+/// + les niveaux sont persistés AVANT le paiement ; le compte n'est créé
+/// (provisioning complet) qu'à la confirmation du paiement FedaPay.
+model TeacherOnboardingDraft {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  firstName     String
+  lastName      String
+  phone         String?
+  /// bcrypt du mot de passe choisi à l'étape 1 — purgé après activation
+  passwordHash  String
+  /// Niveaux activés : sous-ensemble JSON de ["MATERNELLE","PRIMAIRE"]
+  levels        Json      @default("[]")
+  /// PENDING_PAYMENT → ACTIVATED (compte créé) / CANCELED
+  status        String    @default("PENDING_PAYMENT")
+  /// Transaction FedaPay courante (TEACHER_SIGNUP)
+  transactionId String?
+  amountXOF     Int       @default(2000)
+  tenantId      String?   // renseigné à l'activation
+  userId        String?   // renseigné à l'activation
+  completedAt   DateTime? // date de création du compte
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status])
+  @@index([transactionId])
+}
+
 model BillingEvent {
   id             String           @id @default(uuid())
   tenantId       String           @map("tenant_id")

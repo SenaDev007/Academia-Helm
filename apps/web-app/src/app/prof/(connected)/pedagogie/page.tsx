@@ -10,8 +10,8 @@
  * (tenantId + academicYearId + teacherId du mini-tenant TEACHER).
  *
  * Les onglets affichés suivent le niveau scolaire de l'enseignant
- * (maternelle/primaire → cahier journal, fiches… ; secondaire → cahier de
- * textes…), exactement comme dans l'espace enseignant d'une école.
+ * (maternelle/primaire → cahier journal, fiches…), exactement comme dans
+ * l'espace enseignant d'une école.
  */
 
 import { PedagogicalSpaceWorkspace } from '@/components/pedagogy/production/PedagogicalSpaceWorkspace';

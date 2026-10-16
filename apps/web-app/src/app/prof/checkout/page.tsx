@@ -49,7 +49,7 @@ const FEATURES = [
   'Cahier journal, fiches pédagogiques, cahier de textes — prêts à remplir',
   'Planification mensuelle et annuelle avec export PDF',
   'Évaluations, saisie de notes et génération des bulletins',
-  'Tous les niveaux : Maternelle, Primaire, Secondaire',
+  'Tous les niveaux : Maternelle et Primaire',
   'Impression PDF avec VOS en-têtes et pieds de page',
   'Mode hors ligne : préparez vos classes sans connexion',
 ];

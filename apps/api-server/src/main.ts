@@ -679,6 +679,31 @@ async function bootstrap() {
       `ALTER TABLE "HelmSubscription" ADD COLUMN IF NOT EXISTS "notifiedBlockWarning" TIMESTAMP(3)`,
       `ALTER TABLE "HelmSubscription" ADD COLUMN IF NOT EXISTS "reactivationFee" INTEGER NOT NULL DEFAULT 5000`,
 
+      // ─── Helm Enseignant — draft d'inscription « paiement d'abord » (2026-10-16) ───
+      // Pattern OnboardingDraft (patronat) : identité + hash du mot de passe + niveaux
+      // persistés AVANT paiement ; le compte n'est créé qu'à la confirmation FedaPay.
+      `CREATE TABLE IF NOT EXISTS "TeacherOnboardingDraft" (
+          "id" TEXT NOT NULL,
+          "email" TEXT NOT NULL,
+          "firstName" TEXT NOT NULL,
+          "lastName" TEXT NOT NULL,
+          "phone" TEXT,
+          "passwordHash" TEXT NOT NULL,
+          "levels" JSONB NOT NULL DEFAULT '[]',
+          "status" TEXT NOT NULL DEFAULT 'PENDING_PAYMENT',
+          "transactionId" TEXT,
+          "amountXOF" INTEGER NOT NULL DEFAULT 2000,
+          "tenantId" TEXT,
+          "userId" TEXT,
+          "completedAt" TIMESTAMP(3),
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL,
+          CONSTRAINT "TeacherOnboardingDraft_pkey" PRIMARY KEY ("id")
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "TeacherOnboardingDraft_email_key" ON "TeacherOnboardingDraft"("email")`,
+      `CREATE INDEX IF NOT EXISTS "TeacherOnboardingDraft_status_idx" ON "TeacherOnboardingDraft"("status")`,
+      `CREATE INDEX IF NOT EXISTS "TeacherOnboardingDraft_transactionId_idx" ON "TeacherOnboardingDraft"("transactionId")`,
+
       // ─── Staff columns (migration 20260606120000 + later additions) ───
       // These columns are referenced by Prisma Client when including staff in queries
       // (e.g. contract generation, staff list). If the deployed DB doesn't have them,

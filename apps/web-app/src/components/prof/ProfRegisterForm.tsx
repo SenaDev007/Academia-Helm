@@ -2,21 +2,27 @@
 
 /**
  * ============================================================================
- * HELM ENSEIGNANT — WIZARD D'INSCRIPTION (3 étapes)
+ * HELM ENSEIGNANT — WIZARD D'INSCRIPTION « PAIEMENT D'ABORD » (3 étapes)
  * ============================================================================
  *
- * Étape 1 — Identité : prénom, nom, email, téléphone, mot de passe
- * Étape 2 — Niveaux : l'enseignant active Maternelle / Primaire / Secondaire
- *           (le système lui livre automatiquement toutes les classes et
- *           matières des niveaux activés — modifiable plus tard dans les
- *           paramètres)
- * Étape 3 — Récapitulatif + création → connexion automatique
+ * ⭐ 2026-10-16 — Le compte n'est créé qu'APRÈS le paiement (même règle que
+ *    l'onboarding du sign up Academia Helm / Academia Federis patronat) :
  *
- * Pattern Helm : POST BFF /api/teacher-portal/register → persistClientSession
- * → markFreshLogin → full-reload /prof/dashboard.
+ * Étape 1 — Identité : prénom, nom, email, téléphone, mot de passe
+ * Étape 2 — Niveaux : Maternelle / Primaire (SECONDAIRE masqué)
+ * Étape 3 — PAIEMENT : 2 000 FCFA (widget FedaPay du patronat)
+ *           → POST BFF /api/teacher-portal/signup/initiate
+ *             (crée un DRAFT côté serveur : identité + hash + niveaux)
+ *           → redirection vers la page de paiement FedaPay
+ *           → retour sur /prof/register/success : vérification serveur,
+ *             création du compte + email d'identifiants
+ *
+ * Retour d'annulation FedaPay : /prof/register?canceled=1&email=…
+ * → bannière + email pré-rempli, l'enseignant reprend depuis l'étape 1.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   GraduationCap,
@@ -31,13 +37,15 @@ import {
   CheckCircle2,
   Baby,
   BookOpen,
-  School,
   Sparkles,
+  CreditCard,
+  ShieldCheck,
 } from 'lucide-react';
-import { persistClientSession, markFreshLogin, clearClientSessionSync } from '@/lib/auth/client-access-token';
 
-type LevelCode = 'MATERNELLE' | 'PRIMAIRE' | 'SECONDAIRE';
+type LevelCode = 'MATERNELLE' | 'PRIMAIRE';
 
+// ⭐ SECONDAIRE masqué (2026-10-16) : seuls Maternelle et Primaire sont
+//    proposés aux nouvelles inscriptions Helm Enseignant.
 const LEVEL_CARDS: Array<{
   code: LevelCode;
   label: string;
@@ -59,13 +67,6 @@ const LEVEL_CARDS: Array<{
     classes: 'CI, CP, CE1, CE2, CM1, CM2',
     subjects: '9 matières : lecture, expression écrite, dictée, mathématiques, EST…',
   },
-  {
-    code: 'SECONDAIRE',
-    label: 'Secondaire',
-    icon: School,
-    classes: '6ème à la Terminale (toutes séries)',
-    subjects: '10 matières : français, anglais, mathématiques, PCT, SVT…',
-  },
 ];
 
 interface RegisterErrors {
@@ -80,17 +81,29 @@ interface RegisterErrors {
 const TOTAL_STEPS = 3;
 
 export function ProfRegisterForm() {
+  const searchParams = useSearchParams();
+  const canceled = searchParams.get('canceled') === '1';
+  const canceledEmail = searchParams.get('email') || '';
+
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
-    email: '',
+    email: canceledEmail,
     phone: '',
     password: '',
   });
   const [levels, setLevels] = useState<LevelCode[]>([]);
   const [errors, setErrors] = useState<RegisterErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Email pré-rempli au retour d'annulation → nettoyer l'URL une fois lu.
+  useEffect(() => {
+    if (canceled && canceledEmail) {
+      window.history.replaceState({}, '', '/prof/register');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const setField = (field: keyof typeof formData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -131,15 +144,25 @@ export function ProfRegisterForm() {
     else if (step === 2 && validateStep2()) setStep(3);
   };
 
-  const handleSubmit = async () => {
+  /**
+   * ⭐ Étape 3 = PAIEMENT AVANT CRÉATION DU COMPTE.
+   * Le BFF crée le draft (identité + hash du mot de passe + niveaux) et
+   * initialise la transaction FedaPay — puis on redirige vers la page de
+   * paiement. Le compte sera créé au retour (/prof/register/success) après
+   * vérification serveur du paiement.
+   */
+  const handlePayAndRegister = async () => {
     if (isSubmitting) return;
-    if (!validateStep1() || !validateStep2()) return;
+    if (!validateStep1() || !validateStep2()) {
+      setStep(1);
+      return;
+    }
 
     setIsSubmitting(true);
     setErrors({});
 
     try {
-      const response = await fetch('/api/teacher-portal/register', {
+      const response = await fetch('/api/teacher-portal/signup/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -150,37 +173,26 @@ export function ProfRegisterForm() {
           phone: formData.phone.trim() || undefined,
           password: formData.password,
           levels,
+          returnBaseUrl: window.location.origin,
         }),
       });
 
       const data = await response.json().catch(() => null);
 
-      if (!response.ok || !data?.success) {
-        throw new Error(data?.message || 'L’inscription a échoué. Réessayez.');
+      if (!response.ok || !data?.success || !data?.paymentUrl) {
+        throw new Error(
+          data?.message ||
+            'L’initialisation du paiement a échoué. Votre inscription est enregistrée — réessayez.',
+        );
       }
 
-      // ── Connexion automatique (pattern Helm) ──
-      persistClientSession({
-        accessToken: data.accessToken,
-        serverSessionId: data.portalSessionId,
-        user: data.user,
-        tenant: data.tenant,
-        portalType: 'TEACHER',
-        expiresAt: data.expiresAt,
-        scope: data.scope ?? null,
-      } as any);
-
-      markFreshLogin();
-      // ⭐ ONBOARDING PAYANT : après la création du compte, l'enseignant est
-      //    orienté vers la page de paiement (2 000 FCFA/mois) pour activer son
-      //    compteur — le décompte de 30 jours est enregistré depuis la création
-      //    du compte (pattern patronat : inscription → checkout).
-      //    Un éventuel ?redirect= prof est ignoré : le paiement d'activation
-      //    prime sur la destination initiale.
-      window.location.href = '/prof/checkout';
+      // Redirection vers la page de paiement FedaPay (widget du patronat).
+      // Au retour : /prof/register/success?id={txId}&status=approved
+      window.location.href = data.paymentUrl;
     } catch (error: any) {
-      clearClientSessionSync();
-      setErrors({ submit: error?.message || 'Inscription impossible. Vérifiez votre connexion.' });
+      setErrors({
+        submit: error?.message || 'Paiement impossible. Vérifiez votre connexion et réessayez.',
+      });
       setIsSubmitting(false);
     }
   };
@@ -211,9 +223,22 @@ export function ProfRegisterForm() {
         </div>
         <p className="mt-2 text-xs font-medium text-slate-400">
           Étape {step} sur {TOTAL_STEPS} —{' '}
-          {step === 1 ? 'Votre identité' : step === 2 ? 'Vos niveaux' : 'Récapitulatif'}
+          {step === 1
+            ? 'Votre identité'
+            : step === 2
+              ? 'Vos niveaux'
+              : 'Paiement (2 000 FCFA)'}
         </p>
       </div>
+
+      {/* Retour d'annulation FedaPay */}
+      {canceled && (
+        <div className="mb-5 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          Paiement annulé — votre inscription est enregistrée, vous pouvez la reprendre
+          ci-dessous et relancer le paiement quand vous voulez.
+        </div>
+      )}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         {/* ── Étape 1 : Identité ── */}
@@ -300,7 +325,7 @@ export function ProfRegisterForm() {
           </div>
         )}
 
-        {/* ── Étape 2 : Niveaux ── */}
+        {/* ── Étape 2 : Niveaux (Maternelle / Primaire — SECONDAIRE masqué) ── */}
         {step === 2 && (
           <div>
             <div className="mb-6 flex items-start gap-3 rounded-lg border border-teal-200 bg-teal-50 p-4 text-sm text-teal-800">
@@ -367,7 +392,7 @@ export function ProfRegisterForm() {
           </div>
         )}
 
-        {/* ── Étape 3 : Récapitulatif ── */}
+        {/* ── Étape 3 : PAIEMENT AVANT CRÉATION DU COMPTE ── */}
         {step === 3 && (
           <div className="space-y-5">
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
@@ -397,27 +422,42 @@ export function ProfRegisterForm() {
                 ))}
               </div>
               <p className="mt-3 text-sm leading-relaxed text-slate-600">
-                Vos classes et matières sont en cours d’installation. Dès la création de votre
-                espace, tout est prêt : cahier journal, fiches pédagogiques, cahier de textes,
-                évaluations, notes et bulletins.
+                Dès la confirmation de votre paiement, votre espace est créé et tout est prêt :
+                cahier journal, fiches pédagogiques, cahier de textes, évaluations, notes et
+                bulletins.
               </p>
             </div>
 
-            {/* ⭐ Récapitulatif tarifaire — l'étape de paiement suit la création */}
+            {/* ⭐ Récapitulatif tarifaire — LE PAIEMENT PRÉCÈDE LA CRÉATION */}
             <div className="rounded-xl border border-teal-200 bg-teal-50 p-5">
               <p className="text-xs font-semibold uppercase tracking-wide text-teal-700">
-                Abonnement mensuel
+                Paiement initial — inscription + 1er mois
               </p>
               <div className="mt-2 flex flex-wrap items-baseline gap-x-2">
                 <span className="text-3xl font-extrabold text-slate-900">2 000</span>
-                <span className="text-sm font-medium text-slate-600">FCFA / mois</span>
+                <span className="text-sm font-medium text-slate-600">FCFA</span>
               </div>
-              <p className="mt-2 text-sm leading-relaxed text-teal-900">
-                Après la création de votre compte, vous serez orienté vers le paiement sécurisé
-                pour activer votre compteur : <strong>30 jours d’accès complet</strong>, décompte
-                enregistré dès la création de votre espace. Rappels automatiques par email 7 jours
-                puis 24 heures avant l’expiration, période de grâce de 7 jours.
-              </p>
+              <ul className="mt-3 space-y-2 text-sm leading-relaxed text-teal-900">
+                <li className="flex items-start gap-2">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    <strong>Votre compte est créé dès la confirmation du paiement</strong> —
+                    les identifiants de connexion vous sont envoyés par email.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    <strong>30 jours d’accès complet</strong> — le décompte démarre à la
+                    création de votre espace.
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  Rappels automatiques par email 7 jours puis 24 heures avant l’expiration,
+                    période de grâce de 7 jours.
+                </li>
+              </ul>
             </div>
 
             {errors.submit && (
@@ -462,19 +502,24 @@ export function ProfRegisterForm() {
           ) : (
             <button
               type="button"
-              onClick={handleSubmit}
+              onClick={handlePayAndRegister}
               disabled={isSubmitting}
               className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isSubmitting ? 'Création de votre espace…' : 'Créer mon espace'}
+              {isSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CreditCard className="h-4 w-4" />
+              )}
+              {isSubmitting ? 'Initialisation du paiement…' : 'Payer 2 000 FCFA et créer mon espace'}
             </button>
           )}
         </div>
       </div>
 
       <p className="mt-6 text-center text-xs text-slate-400">
-        En créant votre espace, vous acceptez les conditions d’utilisation d’Helm Enseignant.
+        Paiement sécurisé FedaPay — votre compte enseignant est créé dès la confirmation, avec
+        vos identifiants envoyés par email.
       </p>
     </div>
   );

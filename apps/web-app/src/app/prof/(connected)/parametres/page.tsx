@@ -6,16 +6,16 @@
  * ============================================================================
  *
  * Quatre onglets :
- *   1. Niveaux & classes    : activation/désactivation Maternelle / Primaire /
- *      Secondaire → POST /teacher-portal/levels (re-provisionnement auto des
- *      classes + matières)
+ *   1. Niveaux & classes    : activation/désactivation Maternelle / Primaire
+ *      → POST /teacher-portal/levels (re-provisionnement auto des
+ *      classes + matières) — SECONDAIRE masqué depuis le 2026-10-16
  *   2. Identité des documents : en-têtes / pieds de page de TOUS les documents
  *      générés (cahiers, fiches, bulletins) — GET/POST /api/settings/identity
  *   3. Abonnement            : état de l'abonnement Helm Enseignant
  *   4. Inviter mon promoteur : boucle de croissance B2B
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Loader2,
@@ -45,6 +45,14 @@ interface LevelState {
   isActive: boolean;
 }
 
+/**
+ * ⭐ 2026-10-16 — SECONDAIRE masqué dans l'application enseignant : le niveau
+ * n'est plus proposé (landing, inscription, paramètres). On le filtre de
+ * l'affichage — les tenants existants qui l'auraient activé conservent leurs
+ * données, mais il n'est plus activable depuis l'interface.
+ */
+const HIDDEN_LEVEL_CODES: LevelCode[] = ['SECONDAIRE'];
+
 interface IdentityForm {
   schoolName: string;
   slogan: string;
@@ -71,6 +79,10 @@ const LEVEL_DESCRIPTIONS: Record<LevelCode, string> = {
 export default function ProfParametresPage() {
   const searchParams = useSearchParams();
   const { user, tenant } = useAppSession();
+  // Niveaux masqués mais ACTIFS côté serveur (ex. SECONDAIRE activé avant le
+  // retrait de l'offre) : conservés tels quels lors des sauvegardes pour ne
+  // jamais désactiver silencieusement un niveau en cours d'utilisation.
+  const hiddenActiveLevelsRef = useRef<LevelCode[]>([]);
   const [tab, setTab] = useState<TabId>((searchParams.get('tab') as TabId) || 'niveaux');
   const [levels, setLevels] = useState<LevelState[]>([]);
   const [levelsLoading, setLevelsLoading] = useState(true);
@@ -101,12 +113,20 @@ export default function ProfParametresPage() {
       const response = await apiClient.get('/teacher-portal/profile', { timeout: 15000 });
       const data = response.data;
       setLevels(
-        (data.levels || []).map((l: any) => ({
-          code: l.code as LevelCode,
-          name: l.name,
-          label: l.label,
-          isActive: l.isActive,
-        })),
+        (data.levels || [])
+          .filter((l: any) => {
+            if (HIDDEN_LEVEL_CODES.includes(l.code as LevelCode)) {
+              if (l.isActive) hiddenActiveLevelsRef.current = [...new Set([...hiddenActiveLevelsRef.current, l.code as LevelCode])];
+              return false;
+            }
+            return true;
+          })
+          .map((l: any) => ({
+            code: l.code as LevelCode,
+            name: l.name,
+            label: l.label,
+            isActive: l.isActive,
+          })),
       );
       setSubscription(data.subscription);
       if (data.identity) {
@@ -168,7 +188,11 @@ export default function ProfParametresPage() {
     setLevelsMessage(null);
     setLevelsError(null);
     try {
-      const activeCodes = levels.filter((l) => l.isActive).map((l) => l.code);
+      const activeCodes = [
+        ...levels.filter((l) => l.isActive).map((l) => l.code),
+        // Niveaux masqués déjà actifs : inchangés (pas de désactivation silencieuse)
+        ...hiddenActiveLevelsRef.current,
+      ];
       await apiClient.post('/teacher-portal/levels', { levels: activeCodes }, { timeout: 60000 });
       setLevelsMessage(
         'Niveaux mis à jour — les classes et matières ont été réinstallées pour votre espace.',

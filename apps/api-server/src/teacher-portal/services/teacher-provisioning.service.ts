@@ -53,6 +53,13 @@ const SALT_ROUNDS = 10;
 export interface ProvisionTeacherInput {
   email: string;
   password: string;
+  /**
+   * Hash bcrypt pré-calculé (draft d'onboarding « paiement d'abord »).
+   * Quand il est fourni, il PRIME sur password — le mot de passe en clair
+   * n'est plus disponible au moment de l'activation (il a été hashé à la
+   * création du draft, avant le paiement FedaPay).
+   */
+  passwordHash?: string;
   firstName: string;
   lastName: string;
   phone?: string;
@@ -109,7 +116,9 @@ export class TeacherProvisioningService {
     const yy = String(new Date().getFullYear()).slice(-2);
     const matricule = `PROF-${yy}-${String(Date.now()).slice(-5)}`;
 
-    const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
+    // Hash pré-calculé du draft (paiement d'abord) ou hash du mot de passe fourni.
+    const passwordHash =
+      input.passwordHash ?? (await bcrypt.hash(input.password, SALT_ROUNDS));
 
     // ── Transaction atomique ──
     const result = await this.prisma.$transaction(async (tx) => {

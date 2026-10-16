@@ -37,6 +37,12 @@ import {
   WRITE_EXAM_ORG,
   type PatronatFunction,
 } from './federis-roles';
+// ★ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (national = tous les départements)
+// ⚠️ 2026-10-16 — FIX CRASH BOOT (TDZ) : cet import était en fin de fichier,
+//    APRÈS la classe qui l'utilise en design:paramtypes → « Cannot access
+//    'federis_scope_service_1' before initialization » → l'API ne démarrait
+//    plus du tout (502). Un import doit TOUJOURS précéder la classe injectée.
+import { FederisScopeService } from './federis-scope.service';
 
 /** Types de ressources recensables (cahier des charges §7.7). */
 export const RESOURCE_TYPES = ['EXAM_PAPER', 'CORRECTION', 'SYLLABUS', 'REPORT'] as const;
@@ -400,5 +406,3 @@ export class FederisQuestionBankService {
     return { success: true };
   }
 }
-// ★ 2026-10-01 — AGRÉGATION NATIONALE : périmètre (national = tous les départements)
-import { FederisScopeService } from './federis-scope.service';

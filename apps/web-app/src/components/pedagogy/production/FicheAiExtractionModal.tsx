@@ -403,12 +403,12 @@ export function FicheAiExtractionModal({
         throw new Error("Réponse inattendue du serveur (jobId manquant).");
       }
 
-      // ── Polling du job (toutes les 2,5 s, pendant au plus ~3,5 min) ──────
+      // ── Polling du job (toutes les 2,5 s, pendant au plus ~5 min) ──────
       const job: { fields: Record<string, any>; model?: string; warnings?: string[] } =
         await new Promise((resolve, reject) => {
           const startedAt = Date.now();
           const POLL_INTERVAL_MS = 2500;
-          const POLL_MAX_MS = 210_000;
+          const POLL_MAX_MS = 300_000;
           const tick = async () => {
             try {
               const r = await fetch(`/api/pedagogy-space/fiches/extract-ai/${data.jobId}`, {
@@ -429,8 +429,8 @@ export function FicheAiExtractionModal({
               }
               if (Date.now() - startedAt > POLL_MAX_MS) {
                 reject(new Error(
-                  "L'extraction prend anormalement longtemps (plus de 3 minutes 30). " +
-                  "Réessayez dans quelques instants — le service IA est peut-être momentanément saturé.",
+                  "L'extraction prend anormalement longtemps (plus de 5 minutes). " +
+                  "Réessayez plus tard — le service IA est peut-être momentanément saturé.",
                 ));
                 return;
               }
@@ -863,8 +863,8 @@ export function FicheAiExtractionModal({
                 {elapsedSec > 2 && <span className="ml-2 text-violet-600 tabular-nums">{elapsedSec} s</span>}
               </p>
               <p className="text-sm text-slate-500 mt-1">
-                Transcription du contenu de la fiche {effectiveContext.sheetTypeLabel} — cela peut prendre
-                une à deux minutes selon la charge du service IA. Cette page reste ouverte, aucune action requise.
+                Transcription du contenu de la fiche {effectiveContext.sheetTypeLabel} — selon la charge du service IA,
+                cela peut prendre d'une à plusieurs minutes. Cette page reste ouverte, aucune action requise.
               </p>
             </div>
           )}

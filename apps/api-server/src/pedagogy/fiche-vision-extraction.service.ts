@@ -68,9 +68,9 @@ const MAX_TOTAL_BASE64_LENGTH = 4_000_000; // < limite JSON body 5 Mo
 //    défaut 16384 tokens → latence >45 s constatée en production) via
 //    chat_template_kwargs.enable_thinking=false + reasoning_budget=0, et
 //    max_tokens est ramené de 6000 à 3500 (une fiche JSON ≈ 1500-2500 tokens).
-const MODEL_TIMEOUT_PRIMARY_MS = 75_000;
-const MODEL_TIMEOUT_FALLBACK_MS = 60_000;
-const MODEL_TIMEOUT_TERTIARY_MS = 60_000;
+const MODEL_TIMEOUT_PRIMARY_MS = 120_000;
+const MODEL_TIMEOUT_FALLBACK_MS = 75_000;
+const MODEL_TIMEOUT_TERTIARY_MS = 75_000;
 /** Durée de vie d'un job d'extraction terminé dans le store en mémoire. */
 const JOB_TTL_MS = 10 * 60_000;
 /** Cap de génération : une fiche JSON complète ≈ 1500-2500 tokens → 3500
@@ -701,8 +701,10 @@ export class FicheVisionExtractionService {
 
     // ── Appel modèle principal, puis replis ───────────────────────────────
     //    ⭐ v3 asynchrone : plus de contrainte de fenêtre HTTP — chaque modèle
-    //    dispose de son timeout propre (75 s / 60 s / 60 s — total 195 s,
-    //    sous la fenêtre de polling de la modale de 210 s).
+    //    dispose de son timeout propre (120 s / 75 s / 75 s — total 270 s,
+    //    sous la fenêtre de polling de la modale de 300 s). Les fenêtres sont
+    //    généreuses : l'endpoint gratuit NVIDIA peut être fortement congestionné
+    //    (files d'attente), et le mode asynchrone rend l'attente acceptable.
     const modelsToTry: Array<{ model: string; timeoutMs: number }> = [
       { model: this.primaryModel, timeoutMs: MODEL_TIMEOUT_PRIMARY_MS },
       { model: this.fallbackModel, timeoutMs: MODEL_TIMEOUT_FALLBACK_MS },

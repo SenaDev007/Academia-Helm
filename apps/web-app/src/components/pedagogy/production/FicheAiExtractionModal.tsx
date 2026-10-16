@@ -849,6 +849,7 @@ export function FicheAiExtractionModal({
                   <li>Image nette et bien cadrée (la fiche entière, à la verticale)</li>
                   <li>Préférez une <b>capture d&apos;écran</b> du PDF/Word à une photo de l&apos;écran</li>
                   <li>Texte lisible : évitez reflets, ombres et flou</li>
+                  <li>Menus et boutons du logiciel autour de la fiche ? Pas de souci : l&apos;IA les ignore automatiquement et n&apos;extrait que la fiche</li>
                 </ul>
               </div>
             </>

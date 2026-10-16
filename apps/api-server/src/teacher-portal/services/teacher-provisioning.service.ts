@@ -422,18 +422,29 @@ export class TeacherProvisioningService {
    * activé sont automatiquement affectées à l'enseignant.
    */
   async syncTeacherAssignments(tenantId: string, academicYearId: string): Promise<number> {
+    // ⭐ FIX 2026-10-16 (deux bugs de production sur le tenant ef67062e) :
+    //    1. `(c as any).schoolLevelId` était TOUJOURS undefined (AcademicClass
+    //       n'a pas ce champ) → chaque classe recevait TOUTES les matières de
+    //       TOUS les niveaux actifs. On résout désormais le niveau scolaire de
+    //       chaque classe via son niveau pédagogique (AcademicLevel.name).
+    //    2. La transaction interactive Prisma ($transaction(async …)) avec
+    //       ~400 creates séquentiels dépassait le TIMEOUT PAR DÉFAUT de 5 s
+    //       → rollback silencieux → 0 ClassSubject / 0 TeacherClassAssignment
+    //       (« Mes élèves » vide). On utilise createMany + skipDuplicates
+    //       (quelques requêtes atomiques et idempotentes, pas de timeout).
     const teachers = await this.prisma.teacher.findMany({ where: { tenantId } });
     if (teachers.length === 0) return 0;
     const teacher = teachers[0];
 
-    const activeSchoolLevelIds = await this.prisma.schoolLevel.findMany({
+    const activeSchoolLevels = await this.prisma.schoolLevel.findMany({
       where: { tenantId, isActive: true },
-      select: { id: true },
+      select: { id: true, code: true },
     });
-    const levelIds = activeSchoolLevelIds.map((l) => l.id);
+    const levelIds = activeSchoolLevels.map((l) => l.id);
     if (levelIds.length === 0) return 0;
 
-    // Classes pédagogiques actives des niveaux activés (avec leur niveau école)
+    // Classes pédagogiques actives (avec leur niveau pédagogique pour résoudre
+    // le niveau scolaire — AcademicClass n'a PAS de schoolLevelId direct).
     const classes = await this.prisma.academicClass.findMany({
       where: {
         tenantId,
@@ -442,113 +453,100 @@ export class TeacherProvisioningService {
       },
       include: { level: true },
     });
-    const levelCodes = new Set(
-      (
-        await this.prisma.schoolLevel.findMany({
-          where: { tenantId, isActive: true },
-          select: { code: true },
-        })
-      ).map((l) => l.code.toUpperCase()),
-    );
+
+    // Résolution classe → niveau scolaire via le nom du niveau pédagogique
+    // (« Maternelle » / « Primaire » / « Secondaire »).
+    const codeByLevelName = (name: string): string | null => {
+      const n = (name || '').toUpperCase();
+      if (n.includes('MATERN')) return 'MATERNELLE';
+      if (n.includes('PRIMA')) return 'PRIMAIRE';
+      if (n.includes('SECOND')) return 'SECONDAIRE';
+      return null;
+    };
+    const activeLevelIdByCode = new Map(activeSchoolLevels.map((l) => [l.code, l.id]));
+    const classSchoolLevelId = new Map<string, string>();
     const relevantClasses = classes.filter((c) => {
-      const schoolLevelId = (c as any).schoolLevelId;
-      if (schoolLevelId) return levelIds.includes(schoolLevelId);
-      // Fallback : filtrer par le nom du niveau pédagogique
-      const levelName = (c.level?.name || '').toUpperCase();
-      return (
-        (levelName.includes('MATERN') && levelCodes.has('MATERNELLE')) ||
-        (levelName.includes('PRIMA') && levelCodes.has('PRIMAIRE')) ||
-        (levelName.includes('SECOND') && levelCodes.has('SECONDAIRE'))
+      const code = codeByLevelName(c.level?.name || '');
+      const schoolLevelId = code ? activeLevelIdByCode.get(code) : undefined;
+      if (schoolLevelId) {
+        classSchoolLevelId.set(c.id, schoolLevelId);
+        return true;
+      }
+      this.logger.warn(
+        `syncTeacherAssignments: classe « ${c.name} » sans niveau scolaire résolvable (niveau pédagogique « ${c.level?.name} ») — ignorée`,
       );
+      return false;
     });
+    if (relevantClasses.length === 0) return 0;
 
     // Matières des niveaux activés pour l'année
     const subjects = await this.prisma.subject.findMany({
       where: { tenantId, academicYearId, schoolLevelId: { in: levelIds } },
+      select: { id: true, schoolLevelId: true, weeklyHours: true, coefficient: true },
     });
     if (subjects.length === 0) return 0;
 
     const subjectsByLevel = new Map<string, typeof subjects>();
     for (const subject of subjects) {
+      if (!subject.schoolLevelId) continue;
       const list = subjectsByLevel.get(subject.schoolLevelId) ?? [];
       list.push(subject);
       subjectsByLevel.set(subject.schoolLevelId, list);
     }
 
-    let created = 0;
-    await this.prisma.$transaction(async (tx) => {
-      for (const cls of relevantClasses) {
-        const clsSchoolLevelId = (cls as any).schoolLevelId as string | null;
-        const classSubjects = clsSchoolLevelId
-          ? subjectsByLevel.get(clsSchoolLevelId) ?? []
-          : subjects;
-
-        for (const subject of classSubjects) {
-          // ClassSubject (unique : academicClassId + subjectId + academicYearId)
-          let classSubject = await tx.classSubject.findFirst({
-            where: {
-              tenantId,
-              academicClassId: cls.id,
-              subjectId: subject.id,
-              academicYearId,
-            },
-          });
-          if (!classSubject) {
-            classSubject = await tx.classSubject.create({
-              data: {
-                tenantId,
-                academicClassId: cls.id,
-                subjectId: subject.id,
-                academicYearId,
-                weeklyHours: subject.weeklyHours ?? 0,
-                coefficient: Number(subject.coefficient ?? 1),
-              },
-            });
-            created++;
-          }
-
-          // TeacherClassAssignment (unique : teacher + classSubject + year)
-          const existing = await tx.teacherClassAssignment.findFirst({
-            where: {
-              tenantId,
-              teacherId: teacher.id,
-              classSubjectId: classSubject.id,
-              academicYearId,
-            },
-          });
-          if (!existing) {
-            await tx.teacherClassAssignment.create({
-              data: {
-                tenantId,
-                teacherId: teacher.id,
-                classSubjectId: classSubject.id,
-                academicYearId,
-              },
-            });
-            created++;
-          }
-        }
-      }
-
-      // TeacherAcademicProfile (workspace sélecteur de classes / EDT)
-      const existingProfile = await tx.teacherAcademicProfile.findFirst({
-        where: { tenantId, academicYearId, teacherId: teacher.id },
-      });
-      if (!existingProfile) {
-        await tx.teacherAcademicProfile.create({
-          data: {
-            tenantId,
-            academicYearId,
-            teacherId: teacher.id,
-            maxWeeklyHours: 40,
-            isActive: true,
-          },
-        });
-      }
+    // ── 1. ClassSubject (classe × matière du niveau) — createMany idempotent ──
+    const classSubjectRows = relevantClasses.flatMap((cls) => {
+      const levelId = classSchoolLevelId.get(cls.id)!;
+      const levelSubjects = subjectsByLevel.get(levelId) ?? [];
+      return levelSubjects.map((s) => ({
+        tenantId,
+        academicClassId: cls.id,
+        subjectId: s.id,
+        academicYearId,
+        weeklyHours: s.weeklyHours ?? 0,
+        coefficient: Number(s.coefficient ?? 1),
+      }));
+    });
+    if (classSubjectRows.length === 0) return 0;
+    await this.prisma.classSubject.createMany({
+      data: classSubjectRows,
+      skipDuplicates: true,
     });
 
+    // ── 2. TeacherClassAssignment (enseignant × chaque ClassSubject) ──
+    const classSubjects = await this.prisma.classSubject.findMany({
+      where: { tenantId, academicYearId, academicClassId: { in: relevantClasses.map((c) => c.id) } },
+      select: { id: true },
+    });
+    if (classSubjects.length === 0) return 0;
+    await this.prisma.teacherClassAssignment.createMany({
+      data: classSubjects.map((cs) => ({
+        tenantId,
+        teacherId: teacher.id,
+        classSubjectId: cs.id,
+        academicYearId,
+      })),
+      skipDuplicates: true,
+    });
+
+    // ── 3. TeacherAcademicProfile (workspace sélecteur de classes / EDT) ──
+    await this.prisma.teacherAcademicProfile.upsert({
+      where: {
+        tenantId_academicYearId_teacherId: { tenantId, academicYearId, teacherId: teacher.id },
+      },
+      create: {
+        tenantId,
+        academicYearId,
+        teacherId: teacher.id,
+        maxWeeklyHours: 40,
+        isActive: true,
+      },
+      update: { isActive: true },
+    });
+
+    const created = classSubjectRows.length + classSubjects.length;
     this.logger.log(
-      `✅ Assignments synced for teacher-tenant ${tenantId}: ${created} row(s) created`,
+      `✅ Assignments synced for teacher-tenant ${tenantId}: ${classSubjects.length} class-subject couvert(s)`,
     );
     return created;
   }
@@ -617,6 +615,19 @@ export class TeacherProvisioningService {
           );
         }
       }
+      // ⭐ Les trimestres sont créés INACTIFS (pattern école : un admin les
+      //    active). L'enseignant autonome n'a pas d'admin — on active la
+      //    période qui contient la date du jour pour que les modules
+      //    (évaluations, travaux…) aient une période courante utilisable.
+      await this.prisma.academicPeriod.updateMany({
+        where: {
+          tenantId,
+          academicYearId,
+          startDate: { lte: new Date() },
+          endDate: { gte: new Date() },
+        },
+        data: { isActive: true },
+      });
     } catch (e: any) {
       this.logger.warn(`⚠️ Default trimesters: ${e.message}`);
     }
@@ -634,7 +645,13 @@ export class TeacherProvisioningService {
     try {
       await this.syncTeacherAssignments(tenantId, academicYearId);
     } catch (e: any) {
-      this.logger.warn(`⚠️ Teacher assignments sync: ${e.message}`);
+      // ⭐ logger.error (et plus seulement warn) : cette étape a échoué
+      //    SILENCIEUSEMENT en production (timeout transaction) et « Mes élèves »
+      //    restait vide sans aucune trace exploitable dans les logs Railway.
+      this.logger.error(
+        `⚠️ Teacher assignments sync FAILED for ${tenantId}: ${e?.message}`,
+        e instanceof Error ? e.stack : undefined,
+      );
     }
 
     // Journal de traçabilité léger (pas de blocage si échec)
@@ -802,11 +819,22 @@ export class TeacherProvisioningService {
 
   /** Types d'évaluation disponibles par niveau (pour le formulaire d'évaluation). */
   async listEvaluationTypes(tenantId: string) {
-    const types = await this.prisma.evaluationType.findMany({
-      where: { tenantId },
-      include: { schoolLevel: { select: { id: true, code: true, name: true } } },
-      orderBy: [{ schoolLevelId: 'asc' }, { code: 'asc' }],
-    });
+    // ⭐ FIX 2026-10-16 : `include: { schoolLevel: … }` était INVALIDE — le
+    //    modèle EvaluationType n'a PAS de relation schoolLevel (seul le scalaire
+    //    schoolLevelId existe) → PrismaClientValidationError → 400 « Données
+    //    invalides : Champ "schoolLevel" » au premier chargement du module
+    //    Évaluations & bulletins. Jointure en mémoire sur school_levels.
+    const [types, schoolLevels] = await Promise.all([
+      this.prisma.evaluationType.findMany({
+        where: { tenantId },
+        orderBy: [{ schoolLevelId: 'asc' }, { code: 'asc' }],
+      }),
+      this.prisma.schoolLevel.findMany({
+        where: { tenantId },
+        select: { id: true, code: true, name: true, label: true },
+      }),
+    ]);
+    const levelById = new Map(schoolLevels.map((l) => [l.id, l]));
 
     const periods =
       (await this.prisma.academicPeriod.findMany({
@@ -829,7 +857,14 @@ export class TeacherProvisioningService {
         code: t.code,
         defaultMaxScore: t.defaultMaxScore,
         defaultCoefficient: t.defaultCoefficient,
-        schoolLevel: t.schoolLevel,
+        schoolLevel: t.schoolLevelId
+          ? (() => {
+              const l = levelById.get(t.schoolLevelId);
+              return l
+                ? { id: l.id, code: l.code, name: l.name ?? l.label }
+                : null;
+            })()
+          : null,
       })),
       periods: allPeriods.map((p) => ({
         id: p.id,

@@ -229,8 +229,16 @@ export class TeacherPortalAuthService {
     });
 
     // Identité documentaire (en-têtes / pieds de page des documents)
-    const identityProfile = await this.prisma.tenantIdentityProfile.findUnique({
-      where: { tenantId: tenant.id },
+    // ⭐ FIX 2026-10-16 : `findUnique({ where: { tenantId } })` était INVALIDE —
+    //    TenantIdentityProfile n'a que @@unique([tenantId, version]) (tenantId
+    //    seul n'est PAS unique) → PrismaClientValidationError → 400 « Données
+    //    invalides » → TOUT le profil tombait (Paramètres « Impossible de
+    //    charger vos paramètres », dashboard, onglet Abonnement « Compte non
+    //    activé » alors que l'abonnement est ACTIF en base). Pattern correct
+    //    utilisé partout ailleurs : findFirst version active.
+    const identityProfile = await this.prisma.tenantIdentityProfile.findFirst({
+      where: { tenantId: tenant.id, isActive: true },
+      orderBy: { version: 'desc' },
     });
 
     // Abonnement Helm Enseignant
@@ -240,12 +248,20 @@ export class TeacherPortalAuthService {
     });
 
     // Comptes de contenu
+    // ⭐ Matières : uniquement celles des niveaux ACTIVÉS (les matières du
+    //    référentiel des niveaux inactifs — ex. SECONDAIRE — existent en base
+    //    mais ne sont pas installées pour l'espace de travail de l'enseignant).
+    const activeLevelIds = schoolLevels.filter((l) => l.isActive).map((l) => l.id);
     const [classesCount, subjectsCount, studentsCount] = await Promise.all([
       this.prisma.academicClass.count({
         where: { tenantId: tenant.id, academicYearId: academicYear?.id ?? undefined, isActive: true },
       }),
       this.prisma.subject.count({
-        where: { tenantId: tenant.id, academicYearId: academicYear?.id ?? undefined },
+        where: {
+          tenantId: tenant.id,
+          academicYearId: academicYear?.id ?? undefined,
+          ...(activeLevelIds.length > 0 ? { schoolLevelId: { in: activeLevelIds } } : {}),
+        },
       }),
       this.prisma.student.count({ where: { tenantId: tenant.id } }),
     ]);

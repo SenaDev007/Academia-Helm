@@ -138,6 +138,33 @@ export default function ProfParametresPage() {
           email: data.identity.email || '',
         });
       }
+      // ⭐ FIX 2026-10-16 (cohérence Abonnement) : si le profil n'embarque pas
+      //    l'abonnement (échec partiel / shape évolutive), on retombe sur
+      //    l'état de paiement FAIT (/checkout/status) au lieu d'afficher
+      //    « Compte non activé » à un enseignant qui a DÉJÀ payé — c'est
+      //    l'incohérence remontée par l'utilisateur juste après inscription.
+      if (!data.subscription) {
+        try {
+          const statusRes = await apiClient.get('/teacher-portal/checkout/status', {
+            timeout: 15000,
+          });
+          const s = statusRes.data;
+          if (s && s.activated) {
+            setSubscription({
+              plan: 'Helm Enseignant',
+              status: s.status,
+              monthlyAmount: s.monthlyFee ?? 2000,
+              currentPeriodStart: s.currentPeriodStart,
+              currentPeriodEnd: s.currentPeriodEnd,
+              gracePeriodEnd: s.gracePeriodEnd,
+              lastPaymentDate: s.lastPaymentDate,
+              daysRemaining: s.daysRemaining,
+            });
+          }
+        } catch {
+          /* silencieux — l'état « non activé » reste affiché */
+        }
+      }
     } catch {
       setLevelsError('Impossible de charger vos paramètres.');
     } finally {

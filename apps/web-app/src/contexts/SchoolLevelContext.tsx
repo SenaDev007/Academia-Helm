@@ -161,6 +161,15 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
 
     const activeLevels = rawLevels.filter((l) => l.isActive);
 
+    // ⭐ FIX 2026-10-16 (portail Helm Enseignant) : l'enseignant AUTONOME voit
+    //    ses niveaux activés INDIVIDUELLEMENT sélectionnables (Maternelle,
+    //    Primaire…) — pas d'option virtuelle « Mon périmètre » ni de restriction
+    //    par le scope localStorage (possiblement périmé : le scope n'est rafraîchi
+    //    qu'au login). La restriction SERVEUR (BFF /api/school-levels →
+    //    /context/bootstrap → AccessScopeService) reste l'authorité réelle ;
+    //    ici c'est uniquement de l'UX de sélection.
+    const isStandaloneTeacher = userRole === 'ENSEIGNANT';
+
     // Scope serveur persisté (login / context-bootstrap) — cf. user-scope.ts.
     // Null/absent → rétro-compat : on garde l'option ALL (comportement antérieur).
     const scope: UserScope | null = getUserScope();
@@ -196,7 +205,10 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
         );
 
     let withAll: SchoolLevel[];
-    if (scopeAllowsAll) {
+    if (isStandaloneTeacher) {
+      // Enseignant autonome : uniquement ses niveaux activés, sans option ALL.
+      withAll = activeLevels;
+    } else if (scopeAllowsAll) {
       // Compte transverse (promoteur…) → « Tous les niveaux » comme avant.
       withAll = [allLevelsOption, ...activeLevels];
     } else if (scopedActiveLevels.length > 1) {
@@ -228,6 +240,7 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
     const legacyAutoLevelId = scopedActiveLevels.length > 1 ? scopedActiveLevels[0]?.id : null;
     if (
       !scopeAllowsAll &&
+      !isStandaloneTeacher &&
       legacyAutoLevelId &&
       (currentLevel?.id === legacyAutoLevelId || savedLevelId === legacyAutoLevelId) &&
       typeof window !== 'undefined' &&
@@ -272,7 +285,11 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
     //     — c'était une source de race condition avec AcademicYearProvider. Les
     //     accreditations du user suffisent dans la grande majorité des cas.)
     let autoSelectedLevel: SchoolLevel | null = null;
-    const isTeacher = userRole === 'TEACHER' || userRole === 'TEACHER_RESP' || userRole === 'teacher';
+    const isTeacher =
+      userRole === 'TEACHER' ||
+      userRole === 'TEACHER_RESP' ||
+      userRole === 'ENSEIGNANT' ||
+      userRole === 'teacher';
 
     if (isTeacher && (!savedLevelId || savedLevelId === 'ALL') && activeLevels.length > 0) {
       if (userAccreditations && userAccreditations.length > 0) {
@@ -294,7 +311,12 @@ export function SchoolLevelProvider({ children }: { children: ReactNode }) {
     //    l'option « Mon périmètre » (id 'ALL', first de withAll) pour la
     //    cohérence KPI/listes (cf. commentaire ci-dessus). Mono-niveau → le
     //    seul niveau du périmètre, comme avant.
-    if (!scopeAllowsAll && !autoSelectedLevel && (!savedLevelId || savedLevelId === 'ALL')) {
+    if (
+      !scopeAllowsAll &&
+      !isStandaloneTeacher &&
+      !autoSelectedLevel &&
+      (!savedLevelId || savedLevelId === 'ALL')
+    ) {
       autoSelectedLevel =
         scopedActiveLevels.length > 1
           ? withAll[0] // = option « Mon périmètre (…) »

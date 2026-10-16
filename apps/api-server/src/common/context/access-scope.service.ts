@@ -236,6 +236,28 @@ export class AccessScopeService {
     if (teacher) {
       addLevelById(teacher.schoolLevelId);
       addLanguages(teacher.assignedLanguages);
+
+      // ⭐ FIX 2026-10-16 (portail Helm Enseignant) : pour un enseignant
+      //    AUTONOME (tenant type TEACHER), le périmètre n'est pas le seul
+      //    niveau principal du profil Teacher — c'est l'ensemble des niveaux
+      //    ACTIVÉS de son espace (ex : Maternelle + Primaire). Sans ce fix,
+      //    le scope se réduisait à Teacher.schoolLevelId (= 1er niveau) →
+      //    /api/school-levels ne renvoyait qu'UN niveau → l'en-tête de
+      //    l'espace enseignant affichait « 2026-2027 Maternelle » FIGÉ, sans
+      //    possibilité de basculer vers Primaire.
+      if (!staff) {
+        const tenantRow = await this.prisma.tenant.findUnique({
+          where: { id: tenantId },
+          select: { type: true },
+        });
+        if ((tenantRow as any)?.type === 'TEACHER') {
+          const activeLevels = await this.prisma.schoolLevel.findMany({
+            where: { tenantId, isActive: true },
+            select: { code: true },
+          });
+          for (const l of activeLevels) levelSet.add(l.code);
+        }
+      }
     }
 
     // 4. Profil Staff (niveau + langues)

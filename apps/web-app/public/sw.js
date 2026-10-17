@@ -355,7 +355,7 @@ function getApiOrigin() {
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.21.0';
+const SW_VERSION = 'v4.22.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -603,15 +603,30 @@ self.addEventListener('install', (event) => {
         //    on ne cache UNE réponse que si elle est 200 ET non-redirigée
         //    (res.redirected === false) — la requête de la page courante
         //    doit vraiment rendre CE qu'on demande.
+        // ⭐ v4.22.0 — TIMEOUT PAR FETCH (8 s, AbortController) : en production,
+        //    certains fetch d'install PENDAIENT indéfiniment (constaté : SW
+        //    bloqué « installing » >150 s, zéro progression, seule une
+        //    poignée d'URLs statiques cachées) → le nouveau SW ne s'activait
+        //    JAMAIS, l'ancien continuait de contrôler les pages et les
+        //    utilisateurs ne recevaient plus les mises à jour. Avec le
+        //    timeout, chaque URL échoue honnêtement après 8 s (elle sera
+        //    re-cachée à la première navigation en ligne) et l'install
+        //    TERMINE toujours → skipWaiting → activation garantie.
         Promise.allSettled(
           PRECACHE_URLS.map(async (url) => {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 8000);
             try {
-              const res = await fetch(new Request(url, { cache: 'reload' }));
+              const res = await fetch(new Request(url, { cache: 'reload' }), {
+                signal: ctrl.signal,
+              });
               if (res.ok && !res.redirected) {
                 await cache.put(new Request(url), res);
               }
             } catch {
-              /* hors ligne à l'install — l'entrée sera créée à la 1re visite */
+              /* hors ligne/timeout à l'install — l'entrée sera créée à la 1re visite */
+            } finally {
+              clearTimeout(timer);
             }
           }),
         ),
@@ -700,6 +715,25 @@ self.addEventListener('activate', (event) => {
       } catch {
         // Migration non-bloquante
       }
+
+      // ⭐ v4.22.0 — PURGE DU CACHE RSC (anti-code-périmé inter-déploiements) :
+      //    un payload RSC du build N référence les CHUNKS du build N. Le
+      //    servir après un déploiement (build N+1) fait tourner le routeur
+      //    client sur l'ANCIEN code applicatif contre le NOUVEAU backend —
+      //    constat production 17/10/2026 : extraction IA fiches cassée pour
+      //    l'utilisateur (« le bouton ne répond plus ») parce que sa vieille
+      //    modale (protocole synchrone {fields}) recevait la nouvelle
+      //    réponse asynchrone {jobId}. Le cache RSC est donc VIDÉ à chaque
+      //    activation d'une nouvelle version du SW : il se reconstruit
+      //    immédiatement aux prochaines navigations/pré-caches en ligne.
+      //    (Hors ligne juste après l'update : moins de routes cachées —
+      //    compromis accepté, la fraîcheur du code prime.)
+      try {
+        const rscPurged = await caches.delete(RSC_CACHE);
+        if (rscPurged) {
+          console.warn('[SW] Cache RSC purgé (anti-code-périmé) — v', SW_VERSION);
+        }
+      } catch { /* non-bloquant */ }
 
       const names = await caches.keys();
       await Promise.all(
@@ -2256,6 +2290,13 @@ async function trackBuildEpochFromHtml(html) {
     await cache.put(BUILD_EPOCH_KEY, new Response(epoch));
     if (prev !== null) {
       console.log(`[SW] Build changé (epoch ${prev} → ${epoch}) — re-pré-cache demandé aux clients`);
+      // ⭐ v4.22.0 — PURGE RSC immédiate : les payloads du build précédent
+      //    référencent les chunks du build précédent → les servir ferait
+      //    tourner l'ANCIEN code applicatif (routes périmées, protocoles
+      //    cassés) contre le backend NOUVEAU. Ils se reconstruisent aux
+      //    prochaines navigations/pré-caches. (Même règle que la purge à
+      //    l'activation — celle-ci couvre les déploiements SANS bump de sw.js.)
+      caches.delete(RSC_CACHE).catch(() => {});
       swBroadcast({ type: 'BUILD_EPOCH_CHANGED', epoch, previous: prev });
     }
   } catch {

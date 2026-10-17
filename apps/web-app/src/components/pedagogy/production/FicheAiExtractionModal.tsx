@@ -100,6 +100,29 @@ const MATERNELLE_CLASSES = ["Maternelle 1", "Maternelle 2", "PS", "MS", "GS"];
 /** Romains → nombre (le formulaire maternelle stocke le romain) */
 const ROMAIN_TO_NUM: Record<string, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5 };
 
+/** ⭐ 2026-10-17 — Mise en plat des champs extraits pour la prévisualisation
+ * (partagé entre le chemin asynchrone jobId et le chemin synchrone direct). */
+function flattenFieldsForPreview(fields: Record<string, any>): ExtractedField[] {
+  const flat: ExtractedField[] = [];
+  for (const [key, value] of Object.entries(fields || {})) {
+    if (key === "deroulement" || key === "maternelle.der5") {
+      if (Array.isArray(value) && value.length > 0) {
+        flat.push({
+          key,
+          value: `${value.length} étape(s)/ligne(s) — ex: ${JSON.stringify(value[0]).substring(0, 120)}…`,
+        });
+      }
+    } else if (key === "maternelle.deroulementIntro" && value && typeof value === "object") {
+      const phases = Object.keys(value);
+      if (phases.length > 0) flat.push({ key, value: `${phases.length} phase(s) d'introduction remplies` });
+    } else {
+      const text = String(value ?? "").trim();
+      if (text) flat.push({ key, value: text });
+    }
+  }
+  return flat;
+}
+
 interface CapturedImage {
   id: string;
   dataUrl: string; // data:image/jpeg;base64,... (compressée)
@@ -399,8 +422,31 @@ export function FicheAiExtractionModal({
         const message = data?.message || `Erreur ${res.status}`;
         throw new Error(Array.isArray(message) ? message.join(" ") : message);
       }
-      if (!data?.jobId) {
-        throw new Error("Réponse inattendue du serveur (jobId manquant).");
+      if (data?.jobId) {
+        // Mode ASYNCHRONE v3 : le POST rend un jobId immédiat, on suit le job.
+      } else if (data?.fields && typeof data.fields === "object" && Object.keys(data.fields).length > 0) {
+        // ⭐ 2026-10-17 — FORWARD-COMPAT : certains déploiements/ proxys (ou un
+        //    backend futur en mode synchrone) répondent directement avec les
+        //    champs extraits — on les accepte sans passer par le polling.
+        const flatSync = flattenFieldsForPreview(data.fields);
+        if (flatSync.length === 0) {
+          throw new Error("Aucun champ n'a pu être extrait de ces captures. Essayez des images plus nettes et mieux cadrées.");
+        }
+        setExtractedFields(flatSync);
+        setRawFields(data.fields);
+        setWarnings(Array.isArray(data.warnings) ? data.warnings : []);
+        setModelUsed(String(data.model || ""));
+        toast.success(`${flatSync.length} champ(s) extraits`, {
+          description: "Vérifiez le contenu puis appliquez-le au formulaire.",
+        });
+        return;
+      } else {
+        throw new Error(
+          "Réponse inattendue du serveur (jobId manquant). " +
+          "Si le problème persiste après un rechargement complet de la page (Ctrl+Maj+R), " +
+          "votre navigateur exécute peut-être une ancienne version de l'application — " +
+          "rechargez la page en vidant le cache.",
+        );
       }
 
       // ── Polling du job (toutes les 2,5 s, pendant au plus ~5 min) ──────
@@ -444,23 +490,7 @@ export function FicheAiExtractionModal({
         });
 
       // Mise en plat pour la prévisualisation
-      const flat: ExtractedField[] = [];
-      for (const [key, value] of Object.entries(job.fields)) {
-        if (key === "deroulement" || key === "maternelle.der5") {
-          if (Array.isArray(value) && value.length > 0) {
-            flat.push({
-              key,
-              value: `${value.length} étape(s)/ligne(s) — ex: ${JSON.stringify(value[0]).substring(0, 120)}…`,
-            });
-          }
-        } else if (key === "maternelle.deroulementIntro" && value && typeof value === "object") {
-          const phases = Object.keys(value);
-          if (phases.length > 0) flat.push({ key, value: `${phases.length} phase(s) d'introduction remplies` });
-        } else {
-          const text = String(value ?? "").trim();
-          if (text) flat.push({ key, value: text });
-        }
-      }
+      const flat = flattenFieldsForPreview(job.fields);
       if (flat.length === 0) {
         throw new Error("Aucun champ n'a pu être extrait de ces captures. Essayez des images plus nettes et mieux cadrées.");
       }

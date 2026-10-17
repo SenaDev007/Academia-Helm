@@ -13267,3 +13267,22 @@ Stage Summary:
 - ✅ Garde-fou code : plus aucune fuite cross-tenant possible via physicalClasses (backend redéployé au prochain push Railway)
 - ✅ Bouton extraction : code déployé validé sain E2E complet ; atterrissage automatique des futures mises à jour (controllerchange → reload) ; l'utilisateur doit faire UN dernier rechargement complet (Ctrl+Maj+R / rouvrir l'app) pour chasser le code périmé de son navigateur
 - ⚠️ Reste à faire : (1) push du commit 3dd5345 (token GitHub requis) + redéploiement Railway api-server ; (2) certificat prof.academiahelm.com à traiter dans le dashboard Vercel ; (3) recommander à l'utilisateur l'adresse officielle enseignant.academiahelm.com
+
+---
+Task ID: dup-classes-extract-2 (déploiement final)
+Agent: Super Z (agent principal)
+Task: Pousser et déployer les correctifs en attente avec le nouveau token GitHub fourni par l'utilisateur.
+
+Work Log:
+- Token GitHub reçu → push one-shot via URL (token NON persisté dans .git/config)
+- Push : 92d0aac..0e34644 main → origin/main (fix doublons + worklog)
+- RAILWAY auto-déploiement CONFIRMÉ (uptime /health 2628s → 177s ~14:17 UTC, service stable) → garde-fou physicalClasses LIVE
+- VERCEL nouveau build LIVE (chunk 0j1bp2axmp-tx.js avec handler controllerchange + garde refreshing, last-modified 14:25:59 UTC)
+- VALIDATION API : GET my-classes (tenant test e1890308) → 8 classes, ZÉRO doublon ; tous les onglets pédagogie consomment cette même query → couverture totale
+- Sanity : POST fiches/extract-ai sain post-redémarrage (400 validation attendue sur corps vide)
+
+Stage Summary:
+- ✅ Doublons classes : correction complète en production (data + code déployés, vérifiés par API)
+- ✅ Auto-reload SW déployé : les futures mises à jour atterrissent sans action utilisateur
+- ✅ Extraction IA : endpoint sain ; dernier rechargement complet du navigateur utilisateur requis pour évacuer l'ancien code JS
+- ⚠️ Reste : certificat prof.academiahelm.com (dashboard Vercel) ; révoquer le token GitHub partagé après usage

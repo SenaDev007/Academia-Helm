@@ -1681,6 +1681,21 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               </div>
             </div>
           </section>
+
+          {/* ⭐ 17/10/2026 — FIX (miroir FR) : la modale vivait dans la VUE
+              LISTE au lieu du FORMULAIRE — le bouton « Extraire » posait
+              showAiExtraction=true mais la modale n'était jamais montée
+              pendant la préparation. Dernier élément du formulaire. */}
+          <FicheAiExtractionModal
+            open={showAiExtraction}
+            onClose={() => { try { flushSync(() => setShowAiExtraction(false)); } catch { setShowAiExtraction(false); } }}
+            sheetType={form.sheetType}
+            sheetTypeLabel={currentSheetTypeLabel}
+            className={classes.find(c => c.classId === selectedClassId)?.className || form.className}
+            initialDomainRoman={form.maternelle?.domainNumber}
+            initialSousMatiere={form.matiereSpecifique}
+            onApply={handleApplyAiFields}
+          />
         </div>
       </div>
     );
@@ -1865,20 +1880,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
         </div>
       )}
 
-      {/* ⭐ 2026-10-16 — MODALE : Extraction IA d'une fiche depuis des captures
-          (modèles vision NVIDIA). Le type de fiche courant + la classe
-          sélectionnée donnent le contexte ; les champs extraits ne remplissent
-          que les champs encore vides du formulaire (miroir FR). */}
-      <FicheAiExtractionModal
-        open={showAiExtraction}
-        onClose={() => { try { flushSync(() => setShowAiExtraction(false)); } catch { setShowAiExtraction(false); } }}
-        sheetType={form.sheetType}
-        sheetTypeLabel={currentSheetTypeLabel}
-        className={classes.find(c => c.classId === selectedClassId)?.className || form.className}
-        initialDomainRoman={form.maternelle?.domainNumber}
-        initialSousMatiere={form.matiereSpecifique}
-        onApply={handleApplyAiFields}
-      />
+      {/* ⭐ MODALE : Extraction IA — déplacée dans la vue formulaire (miroir
+          FR). Conservée en commentaire ici pour tracer l'historique. */}
 
       {/* ⭐ MODAL : Réutiliser une fiche d'une année précédente (cross-year reuse) */}
       {showPreviousYearsModal && (

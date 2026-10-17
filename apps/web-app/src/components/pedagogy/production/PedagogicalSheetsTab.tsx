@@ -2710,6 +2710,24 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               ne comportent aucune signature (décision utilisateur). Les observations
               du directeur ci-dessus restent affichées. */}
         </div>
+
+        {/* ⭐ 17/10/2026 — FIX « le bouton Extraire ne fait rien » (formulaire
+            Primaire) : la modale était rendue dans la VUE LISTE au lieu du
+            FORMULAIRE — le bouton ci-dessus posait showAiExtraction=true mais
+            la modale, montée uniquement quand la liste est affichée, n'apparaiss
+            it JAMAIS pendant la préparation de fiche. Elle est désormais le
+            dernier élément du formulaire (même structure que la branche
+            Maternelle). */}
+        <FicheAiExtractionModal
+          open={showAiExtraction}
+          onClose={() => { try { flushSync(() => setShowAiExtraction(false)); } catch { setShowAiExtraction(false); } }}
+          sheetType={form.sheetType}
+          sheetTypeLabel={currentSheetTypeLabel}
+          className={selectedClassInfo?.className || form.className}
+          initialDomainRoman={form.maternelle?.domainNumber}
+          initialSousMatiere={form.matiereSpecifique}
+          onApply={handleApplyAiFields}
+        />
       </div>
     );
   }
@@ -2925,23 +2943,9 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
         </div>
       )}
 
-      {/* ⭐ 2026-10-16 — MODALE : Extraction IA d'une fiche depuis des captures
-          (modèles vision NVIDIA). ⭐ v2 PROMPT DYNAMIQUE : AVANT l'import,
-          l'enseignant déclare le niveau (Maternelle/Primaire), la catégorie de
-          fiche (domaine I-V / matière + sous-matière) et la classe — le prompt
-          est construit sur la structure EXACTE de cette fiche cible, et le
-          formulaire se reconfigure à l'application. */}
-      <FicheAiExtractionModal
-        open={showAiExtraction}
-        onClose={() => { try { flushSync(() => setShowAiExtraction(false)); } catch { setShowAiExtraction(false); } }}
-        sheetType={form.sheetType}
-        sheetTypeLabel={currentSheetTypeLabel}
-        className={selectedClassInfo?.className || form.className}
-        initialDomainRoman={form.maternelle?.domainNumber}
-        initialSousMatiere={form.matiereSpecifique}
-        onApply={handleApplyAiFields}
-      />
-
+      {/* ⭐ 2026-10-16 — MODALE : Extraction IA (vue liste — accessible via le
+          bouton « Extraire » de la vue formulaire ; conservée ici pour le cas
+          liste. La modale principale vit désormais dans le formulaire.) */}
       {/* ⭐ MODAL : Réutiliser une fiche d'une année précédente (cross-year reuse) */}
       {showPreviousYearsModal && (
         <div

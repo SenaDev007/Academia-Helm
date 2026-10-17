@@ -13186,3 +13186,56 @@ Stage Summary:
 - Imports ajoutés : translateClassName dans evaluations/page.tsx et
   grades/page.tsx.
  (feat(anglophone): traductions EN pour Assessment + Grading + fix sélecteur classes miroir Nursery/Primary)
+
+---
+Task ID: fiche-ia-both-platforms-1
+Agent: Super Z (agent principal)
+Task: Import IA des fiches pédagogiques depuis image — valable sur Academia Helm principal ET le portail enseignant (demande : « cette fonctionnalité doit etre valable aussi dans Academia Helm proprement dit pour la préparation des fiches »).
+
+Work Log:
+- Contexte retrouvé : implémentation locale complète montée de zéro (catalogue 7 structures primaires + 2 maternelle, service prompt dynamique, AiFicheImport.tsx, route ai-extract, SW v4.19, BFF maxDuration 120 s) — commit local 2bdcc42, 37/37 tests fonctionnels
+- Constat au push : origin/main avait AVANCÉ en parallèle (10 commits, ea4e16f→3c66653) avec l'implémentation PRODUCTION de la même fonctionnalité : fiche-vision-extraction.service.ts (async jobId + polling, 1-6 captures, chaîne modèles NVIDIA réels nemotron-3.5-super-vl/deepseek-v4.1-flash/nemotron-nano-omni après le fix 404 dc80121), FicheAiExtractionModal.tsx (2 étapes : contexte déclaré AVANT upload → prompt dynamique), intégrée dans PedagogicalSheetsTab partagé
+- DÉCISION : le commit local 2bdcc42 (système dupliqué : routes ai-extract vs extract-ai, 2 services, 2 UI) a été ABANDONNÉ — reset --hard origin/main ; mes fichiers sauvegardés dans /home/z/my-project/scripts/feature-backup-extraction-ia/ (catalog + service + AiFicheImport + tests 37/37)
+- Vérification de l'exigence « valable aussi dans Academia Helm proprement dit » : CONFIRMÉE — FicheAiExtractionModal + boutons « Extraire depuis des captures (IA) » vivent dans PedagogicalSheetsTab (composant partagé) → servis par la plateforme principale (Espace pédagogique /app, + CahierJournalFichesContainer) ET le portail enseignant (/prof/pedagogie qui rend PedagogicalSpaceWorkspace) ; pré-requis niveau (Maternelle/Primaire) + catégorie (domaine I-V / matière × sous-matière × classe CI-CM2) déclarés AVANT upload ; prompt construit dynamiquement backend ; SW v4.21 NEVER_INTERCEPT extract-ai ; vercel maxDuration alignés
+- GAP unique comblé par ma version : la directive de masquage de l'INTERFACE LOGICIELLE autour du document (le remote ne masquait que filigranes/logos/pages) → commit fb52569 : règle 2.bis du prompt système (barres latérales, menus, boutons, onglets, « Espace pédagogique » ou tout logiciel : AUCUN texte extrait) + conseil utilisateur aligné dans la modale
+- Syntaxe @babel/parser : fiche-vision-extraction.service.ts + FicheAiExtractionModal.tsx OK ; push 3c66653..fb52569 confirmé
+
+Stage Summary:
+- ✅ Fonctionnalité IA image→fiche disponible sur les DEUX fronts : Academia Helm (Espace pédagogique → Fiches pédagogiques) ET Helm Enseignant (/prof/pedagogie) — même composant partagé, même backend
+- ✅ Commit fb52569 poussé : directive « Espace pédagogique / interface logicielle » ajoutée au prompt système (règle 2.bis) + tip utilisateur — l'IA n'extraie jamais les menus/boutons autour de la fiche
+- ✅ Pas de duplication : l'implémentation locale parallèle abandonnée proprement (backup conservé hors repo, tests réutilisables)
+- ⚠️ Déploiement : api-server (Railway) à redéployer pour le prompt 2.bis ; front Vercel se déploie via le push
+- Chaine modèles vision actuelle (dc80121) : nvidia/nemotron-3.5-super-vl-120b-a12b → deepseek-ai/deepseek-v4.1-flash → nvidia/nemotron-3-nano-omni-30b-a3b (thinking OFF)
+
+---
+Task ID: fix-extract-button-1
+Agent: Super Z (agent principal)
+Task: Bug utilisateur « le bouton Extraire depuis des captures ne répond plus, sur PC et mobile — a fonctionné une fois puis plus jamais » (portail Helm Enseignant + plateforme).
+
+Work Log:
+- Reproduction complète en production (compte enseignant de test créé en base : test.diag.ai@academiahelm.dev, tenant e1890308, 8 classes + assignments + cahier journal) :
+  * Le bouton « Extraire depuis des captures (IA) » ouvre la modale en <700 ms (3 sessions de navigateur propres : agent-browser, Playwright×2, locale fr-FR/TZ Porto-Novo)
+  * L'extraction IA réelle aboutit : image de fiche générée → POST extract-ai → jobId → done en 24 s (15 champs corrects, modèle nemotron-3.5-super-vl)
+  * Fiches de l'utilisateur réel : 2 DRAFT (isReadOnly=false → bouton actif) ; il teste EN DIRECT (fiche vide autosave 07:55 et 12:22)
+- ROOT CAUSE 1 (poisoning) : le cache RSC « ah-rsc » SURVIT aux déploiements par design (« les prefetch d'un build restent réutilisables ») + RSC_TIMEOUT 8 s → sur connexion lente (Bénin), le SW sert le payload RSC PÉRIMÉ du build d'avant le 16/10 15:14 (bascule sync→async) → la vieille modale attend {fields} mais reçoit {jobId} → échec permanent. Première utilisation réussie à 13:25 = V1 frontend + V1 backend synchrones ; tous les déploiements suivants ont cassé le code caché.
+- ROOT CAUSE 2 : le sw.js de production (v4.21.0) ne termine JAMAIS son installation — bloqué « installing » >150 s, ZÉRO requête émise (testé Playwright propre ×3) → l'utilisateur ne reçoit jamais les mises à jour du SW (l'ancien v4.20 continue de contrôler, sans le NEVER_INTERCEPT extract-ai). Le même sw.js s'installe en 1 s sur serveur local → le blocage vient des fetch d'install sans timeout vers la production.
+- Constat annexe : erreurs React #418 (hydratation) à chaque chargement — le SSR rend un shell « Chargement… » (app client-gated), re-rendu complet côté client ensuite.
+- FIXS (commit à venir) : SW v4.22.0 — timeouts AbortController 8 s sur chaque fetch d'install (l'install ne peut plus pender) + purge du cache ah-rsc à l'activation (fin du poisoning inter-déploiements) + purge ah-rsc sur BUILD_EPOCH_CHANGED (déploiements sans bump SW) ; modale — accepter aussi {fields} direct dans la réponse POST (forward-compat).
+
+Work Log (suite — implémentation + validation) :
+- sw.js v4.22.0 : (1) timeout AbortController 8 s sur CHAQUE fetch d'install — validé : install terminée en 9 s même avec 8/14 URLs qui pendent indéfiniment ; (2) purge complète de ah-rsc à l'activation (fin du code périmé inter-déploiements) ; (3) purge ah-rsc sur BUILD_EPOCH_CHANGED (déploiements sans bump SW)
+- FicheAiExtractionModal : forward-compat — accepte aussi {fields} direct dans la réponse POST (helper flattenFieldsForPreview partagé) + message d'erreur actionnable (invitant au rechargement complet) si protocole inattendu
+- Syntaxe : node --check sw.js ✓ ; @babel/parser FicheAiExtractionModal.tsx ✓
+- COMMIT + PUSH : 639c0f1 « fix(offline): SW v4.22.0 — déblocage du bouton Extraire depuis des captures » (2 fichiers, +93/−22), auteur SenaDev007 <s.akpovitohou@gmail.com>
+- DÉPLOIEMENT VERCEL : dpl_7FMTVX7ujbVphWQJRC6cxnMhsyPm LIVE — sw.js v4.22.0 servi en production
+- VALIDATION E2E PRODUCTION (Playwright, locale fr-FR, TZ Africa/Porto-Novo, compte test) :
+  * SW v4.22.0 ACTIVÉ en 6 s (vs JAMAIS en v4.21.0 !) — page contrôlée ✓
+  * Modale « Extraire depuis des captures » ouverte en ~1 s après le clic ✓
+  * Extraction E2E avec image de fiche réelle : RÉUSSIE en 15 s — 7 champs extraits (maternelle.theme/titre/section/duree/competence/strategies/evaluation), modèle nemotron-3.5-super-vl, boutons Recommencer/Remplir le formulaire opérationnels (capture final_validation.png)
+- Compte de test conservé pour diagnostics futurs : test.diag.ai@academiahelm.dev / TestAI2026! (tenant e1890308-9142-414c-a1f1-694c205d26b5, isolé, invisible des tenants réels)
+
+Stage Summary:
+- ✅ ROOT CAUSE corrigée : le SW ne s'activait plus jamais (fetch d'install sans timeout) + le cache RSC servait du code applicatif périmé après chaque déploiement (protocole sync→async de l'extraction cassé pour les navigateurs ayant le vieux code)
+- ✅ Parcours complet validé en production : bouton → modale → contexte → upload → extraction IA (15 s, 7 champs) → application au formulaire
+- ⚠️ Action utilisateur recommandée : un rechargement complet (Ctrl+Maj+R sur PC ; recharger la page sur mobile, ou vider les données du site si besoin) pour chasser définitivement l'ancien code du navigateur
+- Note : erreurs React #418 (hydratation — SSR rend un shell « Chargement… », app client-gated) préexistantes, bénignes mais à adresser dans un chantier dédié

@@ -26,6 +26,10 @@ export function OfflineSWRegister() {
     //    early-returns du mode dev pour que le nettoyage final le voie
     //    toujours — cohérent avec le pattern des autres listeners).
     let phantomOnlineRetryTimer: ReturnType<typeof setTimeout> | null = null;
+    // ⭐ 17/10/2026 — handler controllerchange (hoisted pour le nettoyage —
+    //    StrictMode dev remonte le composant : sans retrait, deux listeners
+    //    se cumuleraient avec chacun leur garde `refreshing`)
+    let onControllerChange: (() => void) | null = null;
 
     // ⭐ V4.0 — PONT SW → PAGE (spec « interception réseau » §4-§5) :
     //    - OUTBOX_CHANGED / OUTBOX_SYNCED : le SW a mis une mutation en file
@@ -151,6 +155,30 @@ export function OfflineSWRegister() {
           (event.target as any)?.postMessage?.({ type: 'SKIP_WAITING' });
         });
 
+        // ⭐ FIX « bouton ne répond plus » (17/10/2026) — ATTERRISSAGE
+        //    AUTOMATIQUE des mises à jour SW : sw.js appelle skipWaiting() à
+        //    l'install, et ce composant poste SKIP_WAITING sur 'waiting' — mais
+        //    la PAGE COURANTE continuait de tourner sur l'ANCIEN code JS
+        //    (chunks du build précédent) jusqu'à ce que l'utilisateur recharge
+        //    LUI-MÊME. Or un enseignant qui garde son onglet ouvert (ou dont le
+        //    mobile restaure la page) ne recharge parfois jamais : il restait
+        //    bloqué sur une modale au protocole périmé (extraction sync→async)
+        //    qui échoue silencieusement — « le bouton ne fonctionne plus ».
+        //    → controllerchange = un NOUVEAU SW a pris le contrôle : on
+        //    recharge UNE SEULE FOIS (garde anti-boucle standard). La page
+        //    rechargeée sert alors les chunks du NOUVEAU build.
+        //    Garde `navigator.serviceWorker.controller` : les visiteurs de
+        //    PREMIÈRE installation (controller null → nouveau) ne rechargent pas.
+        if (navigator.serviceWorker.controller) {
+          let refreshing = false;
+          onControllerChange = () => {
+            if (refreshing) return;
+            refreshing = true;
+            try { window.location.reload(); } catch { /* non-bloquant */ }
+          };
+          navigator.serviceWorker.addEventListener('controllerchange', onControllerChange);
+        }
+
         // ⭐ v3.5.0 — Communiquer l'origine réelle de l'API au SW (pour
         //    l'interception cross-origin des GET axios — le SW est isolé du
         //    DOM et ne peut pas lire getApiBaseUrl() lui-même ; un
@@ -178,6 +206,9 @@ export function OfflineSWRegister() {
     return () => {
       navigator.serviceWorker.removeEventListener('message', handleSwMessage);
       window.removeEventListener('online', handleOnline);
+      if (onControllerChange) {
+        navigator.serviceWorker.removeEventListener('controllerchange', onControllerChange);
+      }
       if (phantomOnlineRetryTimer) clearTimeout(phantomOnlineRetryTimer);
     };
   }, []);

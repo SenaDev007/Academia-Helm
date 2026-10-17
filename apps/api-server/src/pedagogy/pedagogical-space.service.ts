@@ -275,6 +275,14 @@ export class PedagogicalSpaceService {
                     schoolLevelId: true,
                     schoolLevel: { select: { id: true, name: true, code: true } },
                   },
+                  // ⭐ FIX DOUBLONS CLASSES (17/10/2026) : la relation
+                  //    AcademicClass.physicalClasses (Class.officialClassId →
+                  //    AcademicClass.id) est TENANT-AGNOSTIQUE par nature — les
+                  //    classes physiques d'AUTRES tenants pointant vers la même
+                  //    AcademicClass étaient renvoyées dans « Mes classes »
+                  //    (chaque classe en double : la sienne + celle du tenant
+                  //    étranger). On restreint au tenant + à l'année courante.
+                  where: { tenantId, academicYearId },
                 },
               },
             },
@@ -429,7 +437,10 @@ export class PedagogicalSpaceService {
         const academicClass = await this.prisma.academicClass.findFirst({
           where: { id: cls.classId },
           include: {
-            physicalClasses: { select: { id: true } },
+            // ⭐ FIX DOUBLONS CLASSES (17/10/2026) : même filtrage tenant/année
+            //    que ci-dessus — sans lui, les sections physiques d'un AUTRE
+            //    tenant rattachées à cette AcademicClass polluaient les effectifs.
+            physicalClasses: { select: { id: true }, where: { tenantId, academicYearId } },
             studentEnrollments: {
               where: { status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED'] } },
               include: {

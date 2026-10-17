@@ -13239,3 +13239,31 @@ Stage Summary:
 - ✅ Parcours complet validé en production : bouton → modale → contexte → upload → extraction IA (15 s, 7 champs) → application au formulaire
 - ⚠️ Action utilisateur recommandée : un rechargement complet (Ctrl+Maj+R sur PC ; recharger la page sur mobile, ou vider les données du site si besoin) pour chasser définitivement l'ancien code du navigateur
 - Note : erreurs React #418 (hydratation — SSR rend un shell « Chargement… », app client-gated) préexistantes, bénignes mais à adresser dans un chantier dédié
+
+---
+Task ID: dup-classes-extract-1
+Agent: Super Z (agent principal)
+Task: (1) Classes listées en DOUBLON dans tout l'espace pédagogique (fiches pédagogiques, cahier journal, registre d'appel, onglet appel) ; (2) bouton « Extraire depuis des captures IA » — la modale ne s'affiche toujours pas.
+
+Work Log:
+- Identification du compte réel : dawesakpovi@gmail.com (Sèna AKPOVI, tenant ef67062e « Espace de Sèna AKPOVI », portail enseignant) — ses 2 fiches DRAFT (autosave 07:55 et 12:22) correspondent au signalement
+- ROOT CAUSE DOUBLONS : la relation Prisma AcademicClass.physicalClasses (Class.officialClassId → AcademicClass.id) est TENANT-AGNOSTIQUE. Le tenant de diagnostic e1890308 (créé hier 12:04 par la session précédente) a répliqué les 8 classes du modèle AVEC les mêmes officialClassId → chaque AcademicClass du tenant réel s'est retrouvée liée à 2 classes physiques (la sienne + celle du tenant test) → getMyClasses Cas 2 (assignments sans classId → résolution via academicClass.physicalClasses) renvoyait 16 classes au lieu de 8
+- PREUVE : une fiche de l'utilisateur (5276ab78, autosave 12:22) porte classId=80184138 = la classe CM1 du TENANT TEST (classe fantôme sélectionnée dans le sélecteur dupliqué) ; simulation SQL de getMyClasses : 16 entrées, 8 doublons
+- FIX DATA (appliqué directement en production, backup JSON préalable — download/backup_dup_classes_20261017.json) :
+  * UPDATE classes SET officialClassId=NULL WHERE tenantId=e1890308 → 8 lignes (dé-pollution cross-tenant)
+  * Fiche 5276ab78 : classId remappé 80184138 → b827d80a (vraie CM1 du tenant réel)
+  * Vérification : 0 collision officialClassId cross-tenant restante dans TOUTE la base ; simulation getMyClasses → 8 classes, 0 doublon
+  * EFFET IMMÉDIAT : la duplication disparaît dès le prochain refetch my-classes (BFF déjà no-store) — SANS attendre de déploiement
+- FIX CODE (défense en profondeur, commit 3dd5345) : getMyClasses — where { tenantId, academicYearId } sur l'include physicalClasses + même filtrage sur le fallback effectifs (ligne ~437) ; vérif des autres consommateurs : getAvailableSubjectsForClass déjà filtré par tenant en SQL brut
+- BOUTON EXTRACTION : E2E re-validé sur le déploiement LIVE (compte test test.diag.ai@academiahelm.dev, navigateur propre, enseignant.academiahelm.com) : clic → modale Étape 1/2 (<1 s) → Continuer → upload image → « Lancer l'extraction IA » → extraction RÉUSSIE (CM1 / 45 minutes / compétence / évaluation extraites) → « Remplir le formulaire » → modale fermée, formulaire pré-rempli (capture e2e_final_apres_fix.png) — LE CODE DÉPLOYÉ EST SAIN
+- Cause résiduelle (côté navigateur de l'utilisateur) : après l'activation d'un nouveau SW (skipWaiting), la PAGE COURANTE continue de tourner sur l'ANCIEN code JS — l'utilisateur qui garde son onglet ouvert reste sur la modale au protocole périmé (sync→async) qui échoue silencieusement. ANCIEN code sans mécanisme d'auto-update → UN rechargement manuel reste nécessaire UNE dernière fois
+- FIX (commit 3dd5345) : OfflineSWRegister — controllerchange → window.location.reload() UNE fois (garde anti-boucle + retrait au cleanup StrictMode + garde controller non-null pour ne pas recharger les premières installations) — TOUTE future mise à jour SW atterrit automatiquement, plus jamais d'onglet figé sur un build précédent ; composant monté à la fois par layout-client (/app) et ProfShell (/prof) → couvre les deux fronts
+- Syntaxe @babel/parser : pedagogical-space.service.ts + OfflineSWRegister.tsx OK
+- ⚠️ ANOMALIE ANNEXE DÉTECTÉE : prof.academiahelm.com sert un certificat EXPIRÉ depuis le 8 août 2026 (Let's Encrypt *.academiahelm.com) — le domaine n'est pas ajouté au projet Vercel ; quiconque visite l'ancienne adresse obtient une erreur de sécurité (et un SW en cache peut servir l'app périmée). Action dashboard Vercel requise (ajouter le domaine) ou communiquer l'URL officielle enseignant.academiahelm.com
+- ⚠️ PUSH BLOQUÉ : le token GitHub de la session précédente (ghp_Yc52…) a été perdu lors de l'assainissement de l'URL du remote — commit 3dd5345 EN ATTENTE de push (token utilisateur requis)
+
+Stage Summary:
+- ✅ DOUBLONS CORRIGÉS IMMÉDIATEMENT en production (fix data) : le tenant réel retrouve ses 8 classes (CI→CM2 + Maternelle 1-2) sur TOUS les onglets (tous consomment my-classes) dès le prochain chargement
+- ✅ Garde-fou code : plus aucune fuite cross-tenant possible via physicalClasses (backend redéployé au prochain push Railway)
+- ✅ Bouton extraction : code déployé validé sain E2E complet ; atterrissage automatique des futures mises à jour (controllerchange → reload) ; l'utilisateur doit faire UN dernier rechargement complet (Ctrl+Maj+R / rouvrir l'app) pour chasser le code périmé de son navigateur
+- ⚠️ Reste à faire : (1) push du commit 3dd5345 (token GitHub requis) + redéploiement Railway api-server ; (2) certificat prof.academiahelm.com à traiter dans le dashboard Vercel ; (3) recommander à l'utilisateur l'adresse officielle enseignant.academiahelm.com

@@ -31,6 +31,16 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
+// ⭐ 17/10/2026 — FIX « le bouton Extraire ne répond plus » (deadlock React) :
+//    le premier setState utilisateur dispatché APRÈS le render d'ouverture
+//    du formulaire peut se voir attribuer un lane d'hydratation (le sous-arbre
+//    n'a jamais terminé son hydratation streaming côté React) et rester
+//    orphelin à jamais : fiber.lanes>0 mais root.pendingLanes=0 et aucun
+//    callback planifié → TOUTES les interactions suivantes du formulaire
+//    (bouton Extraire, saisie, sélecteurs) sont silencieusement perdues.
+//    flushSync force le traitement SYNCHRONE de la racine — il purge les
+//    lanes parquées et répare la planification du root.
+import { flushSync } from "react-dom";
 import {
   FileText, Loader2, Plus, Save, RefreshCw, Send, Trash2,
   ChevronLeft, Clock, CheckCircle2, XCircle, BookOpen, Sigma,
@@ -654,6 +664,11 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   const userPickedClassRef = useRef(false);
 
   const handleApplyAiFields = useCallback((fields: Record<string, any>, context?: FicheExtractionContext) => {
+    // ⭐ 17/10/2026 — flushSync : l'application des champs extraits au
+    //    formulaire DOIT re-render immédiatement (voir commentaire flushSync
+    //    en tête de fichier — le sous-arbre peut porter des lanes d'hydratation
+    //    orphelins qui perdraient silencieusement ces mises à jour).
+    const apply = () => {
     // ⭐ 2026-10-16 (fix reconfiguration) : si le niveau DÉCLARÉ dans la modale
     //    (Maternelle/Primaire) ne correspond pas à la classe actuellement
     //    sélectionnée (ex: formulaire ouvert sur une fiche maternelle mais
@@ -758,6 +773,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       if (matChanged) next.maternelle = matUpdate;
       return next;
     });
+    }; // fin de apply()
+    try { flushSync(apply); } catch { apply(); }
     // ⭐ deps : classes + isMaternelleClass pour la bascule de niveau
     //    (Maternelle ↔ Primaire) lors de l'application du contexte déclaré.
   }, [classes, isMaternelleClass]);
@@ -1465,13 +1482,33 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     } catch { /* brouillon corrompu → ignoré */ }
   }, [DRAFT_KEY]);
 
+  // ⚠️ Voir commentaire flushSync en tête de fichier — watchdog de réparation.
+  //    80 ms après l'ouverture du formulaire, on force un render synchrone :
+  //    cela purge d'éventuels lanes d'hydratation orphelins laissés par le
+  //    render d'ouverture AVANT que l'utilisateur n'interagisse. Sans cela,
+  //    sa première interaction (clic « Extraire », frappe clavier, sélecteur)
+  //    serait perdue et tout le sous-arbre semblerait mort.
+  useEffect(() => {
+    if (!showForm) return;
+    const t = setTimeout(() => {
+      try {
+        flushSync(() => {
+          setForm((p: any) => ({ ...p }));
+        });
+      } catch { /* non-bloquant */ }
+    }, 80);
+    return () => clearTimeout(t);
+  }, [showForm]);
+
   // Reprendre la saisie interrompue par un rechargement de page
   const resumeDraft = useCallback(() => {
     if (!recoveredDraft) return;
-    setForm({ ...emptyForm, ...recoveredDraft.form });
-    if (recoveredDraft.editingFicheId) setEditingFiche({ id: recoveredDraft.editingFicheId, status: "DRAFT" });
-    setShowForm(true);
-    setRecoveredDraft(null);
+    flushSync(() => {
+      setForm({ ...emptyForm, ...recoveredDraft.form });
+      if (recoveredDraft.editingFicheId) setEditingFiche({ id: recoveredDraft.editingFicheId, status: "DRAFT" });
+      setShowForm(true);
+      setRecoveredDraft(null);
+    });
     toast.success("Saisie restaurée", {
       description: "Votre fiche a été retrouvée après le rechargement de la page. La sauvegarde automatique reprend immédiatement.",
     });
@@ -1602,7 +1639,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
             </div>
             <button
               type="button"
-              onClick={() => setShowAiExtraction(true)}
+              onClick={() => { try { flushSync(() => setShowAiExtraction(true)); } catch { setShowAiExtraction(true); } }}
               disabled={isReadOnly}
               className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white rounded-lg text-sm font-bold hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
               title={isReadOnly ? "Fiche en lecture seule (statut: " + form.status + ")" : "Extraire le contenu d'une fiche existante depuis des captures"}
@@ -2068,7 +2105,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
               le prompt d'extraction est construit dynamiquement dessus. */}
           <FicheAiExtractionModal
             open={showAiExtraction}
-            onClose={() => setShowAiExtraction(false)}
+            onClose={() => { try { flushSync(() => setShowAiExtraction(false)); } catch { setShowAiExtraction(false); } }}
             sheetType={form.sheetType}
             sheetTypeLabel={currentSheetTypeLabel}
             className={selectedClassInfo?.className || form.className}
@@ -2149,7 +2186,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
           </div>
           <button
             type="button"
-            onClick={() => setShowAiExtraction(true)}
+            onClick={() => { try { flushSync(() => setShowAiExtraction(true)); } catch { setShowAiExtraction(true); } }}
             disabled={isReadOnly}
             className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white rounded-lg text-sm font-bold hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
             title={isReadOnly ? "Fiche en lecture seule (statut: " + form.status + ")" : "Extraire le contenu d'une fiche existante depuis des captures"}
@@ -2896,7 +2933,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
           formulaire se reconfigure à l'application. */}
       <FicheAiExtractionModal
         open={showAiExtraction}
-        onClose={() => setShowAiExtraction(false)}
+        onClose={() => { try { flushSync(() => setShowAiExtraction(false)); } catch { setShowAiExtraction(false); } }}
         sheetType={form.sheetType}
         sheetTypeLabel={currentSheetTypeLabel}
         className={selectedClassInfo?.className || form.className}

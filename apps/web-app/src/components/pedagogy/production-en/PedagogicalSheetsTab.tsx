@@ -30,6 +30,10 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
+// ⭐ 17/10/2026 — FIX deadlock React (miroir FR) : flushSync force le
+//    traitement synchrone des mises à jour — voir commentaire détaillé dans
+//    production/PedagogicalSheetsTab.tsx.
+import { flushSync } from "react-dom";
 import {
   FileText, Loader2, Plus, Save, RefreshCw, Send, Trash2,
   ChevronLeft, Clock, CheckCircle2, XCircle, BookOpen, Sigma,
@@ -312,6 +316,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
   const [showAiExtraction, setShowAiExtraction] = useState(false);
 
   const handleApplyAiFields = useCallback((fields: Record<string, any>, context?: FicheExtractionContext) => {
+    const apply = () => {
     setForm((prev: any) => {
       const next: any = { ...prev };
       // ⭐ CONTEXTE DÉCLARÉ AVANT L'IMPORT — bascule du formulaire sur la
@@ -350,6 +355,8 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
       }
       return next;
     });
+    }; // fin de apply()
+    try { flushSync(apply); } catch { apply(); }
   }, []);
 
   // (currentSheetTypeLabel est déclaré APRÈS `const [form, setForm]` — il
@@ -996,13 +1003,30 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
     } catch { /* brouillon corrompu → ignoré */ }
   }, [DRAFT_KEY]);
 
+  // ⚠️ Voir commentaire flushSync en tête de fichier — watchdog de réparation
+  //    (miroir FR) : 80 ms après l'ouverture du formulaire, un render synchrone
+  //    purge les lanes d'hydratation orphelins AVANT la première interaction.
+  useEffect(() => {
+    if (!showForm) return;
+    const t = setTimeout(() => {
+      try {
+        flushSync(() => {
+          setForm((p: any) => ({ ...p }));
+        });
+      } catch { /* non-bloquant */ }
+    }, 80);
+    return () => clearTimeout(t);
+  }, [showForm]);
+
   // Reprendre la saisie interrompue par un rechargement de page
   const resumeDraft = useCallback(() => {
     if (!recoveredDraft) return;
-    setForm({ ...emptyForm, ...recoveredDraft.form });
-    if (recoveredDraft.editingFicheId) setEditingFiche({ id: recoveredDraft.editingFicheId, status: "DRAFT" });
-    setShowForm(true);
-    setRecoveredDraft(null);
+    flushSync(() => {
+      setForm({ ...emptyForm, ...recoveredDraft.form });
+      if (recoveredDraft.editingFicheId) setEditingFiche({ id: recoveredDraft.editingFicheId, status: "DRAFT" });
+      setShowForm(true);
+      setRecoveredDraft(null);
+    });
     toast.success("Saisie restaurée", {
       description: "Votre fiche a été retrouvée après le rechargement de la page. La sauvegarde automatique reprend immédiatement.",
     });
@@ -1119,7 +1143,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
           </div>
           <button
             type="button"
-            onClick={() => setShowAiExtraction(true)}
+            onClick={() => { try { flushSync(() => setShowAiExtraction(true)); } catch { setShowAiExtraction(true); } }}
             disabled={isReadOnly}
             className="shrink-0 flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white rounded-lg text-sm font-bold hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
             title={isReadOnly ? "Fiche en lecture seule (statut: " + form.status + ")" : "Extraire le contenu d'une fiche existante depuis des captures"}
@@ -1847,7 +1871,7 @@ export function PedagogicalSheetsTab({ tenantId, academicYearId, teacherId, cahi
           que les champs encore vides du formulaire (miroir FR). */}
       <FicheAiExtractionModal
         open={showAiExtraction}
-        onClose={() => setShowAiExtraction(false)}
+        onClose={() => { try { flushSync(() => setShowAiExtraction(false)); } catch { setShowAiExtraction(false); } }}
         sheetType={form.sheetType}
         sheetTypeLabel={currentSheetTypeLabel}
         className={classes.find(c => c.classId === selectedClassId)?.className || form.className}

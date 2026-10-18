@@ -1,12 +1,12 @@
-# 📁 Structure des Applications - Academia Hub
+# 📁 Structure des Applications - Academia Helm
 
 ## 🎯 Clarification de l'Architecture
 
 ### `apps/web-app/` - **FRONTEND WEB (PRODUCTION) - PWA**
 
-**Type** : Next.js App Router + PWA  
-**Usage** : Application Web SaaS installable (Progressive Web App)  
-**Public** : Oui (accessible via navigateur, installable)  
+**Type** : Next.js 16 App Router + PWA
+**Usage** : Application Web SaaS installable (Progressive Web App)
+**Public** : Oui (accessible via navigateur, installable)
 **Base de données** : API REST uniquement (PostgreSQL via backend) + IndexedDB pour offline
 
 **Fichiers** : `apps/web-app/src/`
@@ -17,79 +17,66 @@
 - ✅ Mode standalone
 - ✅ Page offline dédiée
 
-**Déploiement** : OVH (academia-hub.pro) ou tout hébergeur Node
-
-**Documentation** :
-- `apps/web-app/MIGRATION-DESKTOP-TO-PWA.md` : Checklist de migration
-- `STRATEGIE-PWA-WEB-MOBILE.md` : Stratégie PWA
+**Déploiement** : Vercel (academiahelm.com + sous-domaines par école)
 
 ---
 
-### `apps/mobile-app/` - **APPLICATION MOBILE NATIVE**
+### `apps/mobile/` - **APPLICATION MOBILE ANDROID (CAPACITOR)**
 
-**Type** : Flutter (Android & iOS)  
-**Usage** : Application mobile native pour parents et élèves  
-**Public** : Oui (App Store & Play Store)  
-**Base de données** : API REST + Cache local (Hive/SQLite)
+**Type** : Coquille native Capacitor chargeant le web LIVE
+**Usage** : Application Android Play Store — **même code que le web**
+**Public** : Oui (Google Play Store)
 
-**Fichiers** : `apps/mobile-app/lib/`
+**Principe « une seule base de code »** :
+- Le WebView charge `https://academiahelm.com/portal` (app web Vercel)
+- Toute correction web se propage instantanément au mobile, SANS nouvelle APK
+- Seules les modifications natives (plugins, icônes, version) exigent une APK
 
-**Fonctionnalités** :
-- Consultation des notes
-- Suivi des paiements
-- Messages de l'école
-- Notifications push
+**Portée V1** : tous les portails du flux `/portal` (École, Enseignant,
+Parent/Élève, Public) — patronat exclu.
 
-**Déploiement** : App Store & Google Play Store
+**Fichiers** : `apps/mobile/` (`capacitor.config.ts` = config centrale)
 
-**Documentation** :
-- `apps/mobile-app/README.md` : Vue d'ensemble
-- `apps/mobile-app/docs/MOBILE-SPECIFICATION.md` : Spécification complète
-- `apps/mobile-app/docs/USER-JOURNEYS.md` : Parcours utilisateur
+**Documentation** : `apps/mobile/README.md` (test Android Studio, Play Store, FCM)
 
 ---
 
 ### `apps/api-server/` - **BACKEND API**
 
-**Type** : NestJS  
-**Usage** : API REST pour toutes les applications (Web, Mobile)  
-**Base de données** : PostgreSQL
+**Type** : NestJS
+**Usage** : API REST pour toutes les applications (Web, Mobile)
+**Base de données** : PostgreSQL (Neon)
+**Déploiement** : Railway (api.academiahelm.com)
 
-**Déploiement** : OVH (VPS / base managée) ou serveur dédié
+---
+
+### `apps/desktop/` - **APPLICATION DESKTOP (Tauri)**
+
+Builds bureau Windows/Linux/macOS — voir `docs/desktop-builds/`.
+
+---
+
+### `apps/community-mobile/` - **ACADEMIA COMMUNITY (Flutter)**
+
+App communautaire séparée (espace communautaire Academia Helm).
 
 ---
 
 ## 🔄 Workflow de Développement
 
-### Pour le Frontend Web (Production - PWA)
+### Frontend Web (et Mobile par extension)
 
 1. **Modifier** : `apps/web-app/src/`
 2. **Tester** : `cd apps/web-app && npm run dev`
-3. **Build PWA** : `cd apps/web-app && npm run build` (génère Service Worker)
-4. **Déployer** : voir docs/HEBERGEMENT-OVH.md (OVH, VPS, etc.)
+3. **Déployer** : push GitHub → Vercel auto-déploie → web ET mobile à jour
 
-### Pour l'Application Mobile
+### Application Mobile (coquille native uniquement)
 
-1. **Modifier** : `apps/mobile-app/lib/`
-2. **Tester** : `cd apps/mobile-app && flutter run`
-3. **Build** : `flutter build apk` (Android) ou `flutter build ios` (iOS)
-4. **Déployer** : App Store & Play Store
-
----
-
-## 📱 Migration Desktop → PWA
-
-L'application Desktop (Electron) a été remplacée par une Progressive Web App (PWA) installable.
-
-**Avantages** :
-- ✅ Pas d'installation système requise
-- ✅ Mise à jour automatique
-- ✅ Multi-plateforme (Windows, Mac, Linux)
-- ✅ Déploiement simplifié
-
-**Voir** : `apps/web-app/MIGRATION-DESKTOP-TO-PWA.md` pour la checklist complète.
+1. **Modifier** : `apps/mobile/capacitor.config.ts` (rare)
+2. **Synchroniser** : `cd apps/mobile && npm run sync`
+3. **Tester** : Android Studio → ouvrir `apps/mobile/android` → Run ▶
+4. **Publier** : AAB signé → Play Store
 
 ---
 
-**Dernière mise à jour** : 2025-01-XX
-
+**Dernière mise à jour** : 2026-10-18 (migration Flutter → Capacitor)

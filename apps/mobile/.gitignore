@@ -1,0 +1,17 @@
+# Dépendances
+node_modules/
+
+# Gradle / Android (générés localement par Android Studio)
+android/.gradle/
+android/build/
+android/app/build/
+android/app/release/
+android/app/debug/
+android/local.properties
+android/.idea/
+android/captures/
+android/.DS_Store
+
+# Divers
+*.log
+.DS_Store

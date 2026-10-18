@@ -13343,3 +13343,26 @@ Stage Summary:
 - ✅ Double correctif déployé : (1) déplacement de la modale dans le formulaire Primaire [cause racine], (2) gardes flushSync anti-deadlock [durcissement]
 - ✅ Doublons classes : confirmés corrigés (8 classes sans doublon dans le sélecteur pendant toute la session de test)
 - HEAD local = origin/main (final : commit worklog restore)
+
+---
+Task ID: mobile-capacitor-1
+Agent: Super Z (agent principal)
+Task: Topo complet de l'application + migration mobile : suppression des apps Flutter legacy, création de la coquille Capacitor partageant le code web (décisions utilisateur : tout /portal sauf patronat, Firebase academia-helm-35536 réutilisé).
+
+Work Log:
+- TOPO : monorepo sain (main = origin/main, arbre propre) ; web 2 209 fichiers TS/TSX, 10+ shells/portails (app, prof, portal, promoteur, patronat-portal, saisiemaster, platform, school-portal, community, public) routés par middleware multi-tenant 955 lignes ; PWA installable + offline-first SW déjà en production ; Railway (API) et Vercel (web) LIVE
+- Diagnostic legacy : apps/mobile-app (Flutter, 412 fichiers, 11 Mo, code dupliqué = double correction) + apps/mobile/helm_connect (Flutter, 81 fichiers) — à supprimer selon décision utilisateur
+- Page /portal inspectée : 4 portails proposés (École, Enseignant, Parent/Élève, Public) — patronat ABSENT du flux → exclusion mobile automatique, aucune modif web requise
+- PHASE 0 sauvetage : google-services.json (Firebase academia-helm-35536, client io.academiahelm.mobile), icône officielle 1024px, logo 1024px, palette (navy #0B2F73, gold #F5B335) → docs/mobile-legacy/
+- PHASE 1 suppression (commit 722b2cc) : git rm apps/mobile-app + apps/mobile + build-mobile.yml + codemagic.yaml (496 fichiers) ; community-mobile et desktop (Tauri) conservés (hors périmètre)
+- PHASE 2 scaffold Capacitor (commit 4feff70) : apps/mobile — Capacitor 7.4.2 + plugins (push-notifications, splash-screen, status-bar, app) ; appId io.academiahelm.mobile (conforme client Firebase existant → FCM opérationnel sans toucher la console)
+- server.url = https://academiahelm.com/portal (app web LIVE — cookies, CORS, SW offline-first fonctionnels dans le WebView) ; allowNavigation *.academiahelm.com + fedapay/feexpay/stripe ; TypeScript 5.9.3 requis (TS 7 casse le CLI Capacitor)
+- Icônes générées (scripts/gen_mobile_icons.py) : mipmaps 48→192, adaptatives 108→432 (zone sûre 58%), splash portrait/paysage 11 variantes — ratio du logo préservé (0.727)
+- Complétions template : values/colors.xml créé (colorPrimary navy — référencé par styles.xml mais absent du template = bug de build évité), ic_launcher_background → navy, deep links autoVerify academiahelm.com + enseignant.academiahelm.com, versionName 1.0.0, google-services.json restauré (le template applique le plugin gms automatiquement)
+- Validation : 5 XML parsés OK, config générée conforme (appId/server.url/allowNavigation), cap sync OK (4 plugins), Java 21
+
+Stage Summary:
+- ✅ Legacy Flutter supprimé (496 fichiers) — pattern « double correction » éliminé ; assets précieux archivés dans docs/mobile-legacy/
+- ✅ apps/mobile : coquille Capacitor ANDROID prête à ouvrir dans Android Studio (apps/mobile/android) — charge le web LIVE, une correction web = web + mobile à jour instantanément
+- ⏳ PUSH en attente : 2 commits locaux (722b2cc + 4feff70) — token GitHub requis
+- ⏳ Prochaines étapes : (1) test Android Studio par l'utilisateur, (2) pont web push FCM (détection window.Capacitor → enregistrement token via module notifications api-server), (3) assetlinks.json + keystore pour le Play Store

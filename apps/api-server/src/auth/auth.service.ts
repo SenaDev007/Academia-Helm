@@ -649,19 +649,19 @@ export class AuthService {
       }
 
       // 2. Chercher dans Teacher par matricule (enseignants)
+      //    ⭐ FIX (2026-10-19) : le modèle Teacher n'a PAS de champ userId
+      //    (liaison par email). L'ancien `select: { userId: true }` provoquait
+      //    une erreur de validation Prisma → crash du login PARENT par
+      //    téléphone (identifiant sans '@' → résolution par matricule →
+      //    teacher.findFirst invalide). On résout par email, exactement comme
+      //    dans login() (même correctif, appliqué au doublon de validateUser).
       if (!userEmail) {
         const teacher = await this.prisma.teacher.findFirst({
           where: { matricule: { equals: identifier, mode: 'insensitive' } },
-          select: { userId: true },
+          select: { email: true },
         });
-        if (teacher?.userId) {
-          const teacherUser = await this.prisma.user.findUnique({
-            where: { id: teacher.userId },
-            select: { email: true },
-          });
-          if (teacherUser?.email) {
-            userEmail = teacherUser.email.trim().toLowerCase();
-          }
+        if (teacher?.email) {
+          userEmail = teacher.email.trim().toLowerCase();
         }
       }
 

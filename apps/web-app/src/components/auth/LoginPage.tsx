@@ -453,6 +453,22 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     })();
   }, []); // Au montage uniquement
 
+  // ⭐ COLD-START WARM-UP (2026-10-19) — chaque route API Next.js sur Vercel
+  //    est une lambda SÉPARÉE qui s'endort après une période d'inactivité.
+  //    Au premier login de l'app (matin, lambda froide), le POST /api/auth/login
+  //    peut démarrer par 3-10 s de boot lambda + latence réseau mobile → la
+  //    réponse dépasse le timeout client → « La connexion a expiré. Le serveur
+  //    est peut-être en cours de démarrage » ALORS QUE le login a AboutI côté
+  //    serveur (session créée en base — constaté en production sur le login
+  //    Academia Helm depuis l'app Android). Un HEAD sur la MÊME route déboule
+  //    la lambda pendant que l'utilisateur saisit ses identifiants → sa
+  //    soumission touche une lambda chaude. Best-effort, fire-and-forget.
+  useEffect(() => {
+    try {
+      fetch('/api/auth/login', { method: 'HEAD', cache: 'no-store' }).catch(() => {});
+    } catch { /* best effort — jamais bloquant */ }
+  }, []);
+
   // Permet au formulaire public de s'adapter à ce que l'établissement a configuré
   // dans le module Paramètres. Aucun hardcoding : si le tenant n'a que Maternelle
   // et Primaire, seules ces deux cartes s'affichent (+ la carte "Juste info").
@@ -713,6 +729,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           tenant_id: tenantIdFromUrl || tenantIdForApi || undefined,
           portal_type: (portalType?.toUpperCase() || 'SCHOOL') as string,
         }),
+        // ⭐ COLD-START RESILIENCE — timeout explicite (lambda froide possible,
+        //    même cause que le login : sans lui, spinner sans fin).
+        signal: AbortSignal.timeout(30_000),
       });
       const data = await res.json();
       if (res.ok && data.success && data.accessToken) {
@@ -1040,7 +1059,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
     // ── Même pattern que le bouton DEV : /api/auth/login avec portal_type ──
     const attemptLogin = async (portalTypeAttempt: 'PLATFORM' | 'SCHOOL') => {
-      return fetch('/api/auth/login', {
+      // ⭐ COLD-START RESILIENCE — fetch nu → 30 s + relance sur abort (la
+      //    version sans timeout restait pendante indéfiniment sur lambda froide).
+      return loginFetchResilient('/api/auth/login', {
         method: 'POST',
         // ⭐ NATIVE SESSION — marqueur explicite pour l'API : session Android →
         //    refresh token 90 jours (session toujours ouverte sur mobile).
@@ -1070,7 +1091,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
 
     if (isPlatformOwner && hasNoTenant && (tenantIdFromUrl || tenantSlug)) {
       // Le PLATFORM_OWNER a sélectionné une école → sélectionner le tenant
-      const selectResp = await fetchWithTimeout('/api/auth/select-tenant', {
+      const selectResp = await loginFetchResilient('/api/auth/select-tenant', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1150,8 +1171,34 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     window.location.href = redirectUrl;
   };
 
+  /**
+   * ⭐ COLD-START RESILIENCE (2026-10-19) — login avec timeout élargi (30 s)
+   *    et UNE relance automatique sur abort. Cas réel constaté en production
+   *    (login Academia Helm depuis l'app Android) : lambda Vercel froide
+   *    (3-10 s de boot) + latence réseau mobile → réponse au-delà de l'ancien
+   *    timeout de 10 s → le client AbortE et affiche « La connexion a expiré »
+   *    alors que le login a AboutI côté serveur (session créée en base —
+   *    vérifié : sessions TECNO WebView créées à chaque tentative « échouée »).
+   *    Au premier dépassement, la lambda est déjà bootée → la relance revient
+   *    en ~1 s. Les autres erreurs (réseau, 4xx/5xx reçus) ne sont PAS rejouées.
+   */
+  const loginFetchResilient = useCallback(async (url: string, init: RequestInit): Promise<Response> => {
+    const attempt = () => fetchWithTimeout(url, init, 30_000);
+    try {
+      return await attempt();
+    } catch (firstErr: any) {
+      const raw = `${firstErr?.name || ''} ${firstErr?.message || ''}`.toLowerCase();
+      if (!raw.includes('abort')) throw firstErr; // pas un timeout → ne pas rejouer
+      try {
+        return await attempt(); // lambda désormais chaude
+      } catch {
+        throw firstErr;
+      }
+    }
+  }, [fetchWithTimeout]);
+
   const handleStandardLogin = async () => {
-    const response = await fetchWithTimeout('/api/auth/login', {
+    const response = await loginFetchResilient('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1262,7 +1309,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     //    pendant des minutes en échec silencieux (l'utilisateur voit un
     //    spinner sans fin et croit être hors ligne alors qu'il est connecté).
     const attemptLogin = async (portalTypeAttempt: 'SCHOOL' | 'PLATFORM') => {
-      return fetchWithTimeout('/api/auth/login', {
+      return loginFetchResilient('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1295,7 +1342,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
         throw new Error(data.message || 'Connexion impossible');
       }
       // PLATFORM_OWNER : sélectionner le tenant demandé
-      const selectResp = await fetchWithTimeout('/api/auth/select-tenant', {
+      const selectResp = await loginFetchResilient('/api/auth/select-tenant', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

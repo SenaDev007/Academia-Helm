@@ -49,6 +49,13 @@ const config: CapacitorConfig = {
   android: {
     allowMixedContent: false,
     webContentsDebuggingEnabled: false,
+    // ⭐ Android 15+ (targetSdk 35) FORCE l'affichage edge-to-edge : sans
+    //    cet ajustement, le WebView dessine SOUS la barre de statut et le
+    //    header de l'app web se retrouve confondu avec l'en-tête système
+    //    (batterie/réseau/notifications). 'force' ajoute les marges → le
+    //    contenu web commence sous la barre de statut, sur tous les Android
+    //    (défaut Capacitor 7 = 'disable', corrigé en 'auto' en Capacitor 8).
+    adjustMarginsForEdgeToEdge: 'force',
   },
 
   plugins: {

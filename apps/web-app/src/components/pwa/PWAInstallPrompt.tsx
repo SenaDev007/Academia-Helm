@@ -29,6 +29,8 @@
  *
  * Garde-fous :
  *   - Déjà installé (standalone) → jamais affiché
+ *   - ⭐ Coquille native Capacitor (app Android) → jamais affiché (l'app est
+ *     DÉJÀ installée — la bannière serait absurde dans le WebView)
  *   - Firefox desktop (non installable) → jamais affiché
  *   - Une seule apparition par session navigateur (sessionStorage)
  *   - beforeinstallprompt écouté en continu (PWARegister capture tôt et
@@ -50,6 +52,7 @@ import {
   MoreVertical,
 } from 'lucide-react';
 import { useL } from '@/lib/i18n/bilingual';
+import { isNativeApp } from '@/lib/pwa/is-native-app';
 
 const STORAGE_KEY = 'ah_pwa_prompt_v3';
 const SESSION_KEY = 'ah_pwa_prompt_shown_v3';
@@ -180,6 +183,10 @@ export function PWAInstallPrompt({ appName = 'Academia Helm' }: { appName?: stri
   // ─── Détection + logique d'apparition ───────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    // ⭐ COQUILLE NATIVE Capacitor (app Android) : l'application est déjà
+    //    installée — aucune bannière d'installation, jamais, sur aucune page.
+    if (isNativeApp()) return;
 
     const standalone = isStandalone();
     if (standalone) {

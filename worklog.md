@@ -13431,3 +13431,26 @@ Stage Summary:
 - ⚠️ REBUILD APK REQUIS pour CE correctif (fichier natif) : git pull → gradlew assembleDebug → adb install -r — pas de cap sync nécessaire (res/ n'est pas géré par cap sync)
 - ✅ Session permanente (08c27cd) déjà poussée et déployée (Vercel + Railway auto) — active dès le redémarrage de l'app SANS rebuild
 - ⏳ Rappel sécurité : révoquer le token GitHub partagé en chat après les tests
+
+---
+Task ID: mobile-loading-1
+Agent: Super Z (agent principal)
+Task: Page blanche longue au démarrage de l'app Android (après la splash) — remplacer par un écran de chargement avec le logo.
+
+Work Log:
+- Confirmation utilisateur : le fix barre d'état (9f6b119) fonctionne (zone réseau/batterie visible, navy)
+- Diagnostic par lecture du source du plugin @capacitor/splash-screen 7.0.5 :
+  * showOnLaunch → si launchShowDuration > 0 : OnPreDrawListener BLOQUE le dessin jusqu'à écoulement de la durée (plancher artificiel de 4 s) puis la splash disparaît
+  * ensuite le WebView — BLANC par défaut (Android) — reste affiché pendant le chargement réseau réel (Vercel) ; avec la reprise de session il y a 2 chargements consécutifs (portail → interface école)
+  * si launchShowDuration = 0 : le plugin ne fait RIEN au lancement (retour immédiat) → la splash système cède la place au premier frame de l'app
+- Mise en œuvre (100% natif, commit cc74fe0) :
+  * NOUVEAU res/layout/loading_overlay.xml : FrameLayout navy (@color/colorPrimary) + ImageView @drawable/splash centerCrop + ProgressBar indéterminé doré (@color/colorAccent) en bas centré
+  * MainActivity.java (était vide) : (1) WebView.setBackgroundColor(0xFF0B2F73) — plus aucun blanc résiduel ; (2) overlay gonflé dans android.R.id.content au-dessus du contenu dès le premier frame ; (3) Handler 150 ms : cache quand peint (progress >= 100 && contentHeight > 0 && url != null) ou timeout 25 s, RÉ-AFFICHE à chaque nouvelle navigation complète (login BFF, reprise de session, retours de paiement) ; onDestroy public (aligné sur BridgeActivity) + removeCallbacks
+  * capacitor.config.ts : launchShowDuration 4000 → 0 (plus de plancher artificiel) ; cap sync android exécuté ici (config runtime régénérée — gitignorée, générée localement)
+- Validation : XML minidom OK ; cap sync OK (4 plugins intacts, TS compile) ; revue API croisée avec le source Capacitor (getBridge public, Bridge.getWebView l.521, onCreate protected/onDestroy public) ; javac absent dans l'environnement → revue manuelle ligne à ligne
+
+Stage Summary:
+- ✅ Démarrage : splash système (navy+logo) → écran de chargement natif (navy+logo+spinner doré) → contenu peint — PLUS AUCUNE page blanche, ni au démarrage, ni lors des redirections/login/paiements (ré-affichage automatique)
+- ✅ Attente visible = temps de chargement réel (plancher 4 s supprimé) avec feedback visuel continu ; garde-fou 25 s réseau mort ; icônes système toujours visibles (SystemUI au-dessus des fenêtres app)
+- ⚠️ REBUILD APK REQUIS (natif) : git pull → npx cap sync android (dans apps/mobile — config modifiée) → gradlew assembleDebug (apps/mobile/android) → adb install -r
+- ⏳ Rappel sécurité : révoquer le token GitHub partagé en chat après les tests

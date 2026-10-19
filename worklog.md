@@ -13366,3 +13366,20 @@ Stage Summary:
 - ✅ apps/mobile : coquille Capacitor ANDROID prête à ouvrir dans Android Studio (apps/mobile/android) — charge le web LIVE, une correction web = web + mobile à jour instantanément
 - ⏳ PUSH en attente : 2 commits locaux (722b2cc + 4feff70) — token GitHub requis
 - ⏳ Prochaines étapes : (1) test Android Studio par l'utilisateur, (2) pont web push FCM (détection window.Capacitor → enregistrement token via module notifications api-server), (3) assetlinks.json + keystore pour le Play Store
+
+---
+Task ID: mobile-fix-1
+Agent: Super Z (agent principal)
+Task: Deux anomalies signalées après premier test Android Studio : (1) header de l'app web confondu avec la barre de statut Android sur TOUTES les pages (edge-to-edge), (2) bannière PWA « Installer Academia Helm » affichée dans l'app native.
+
+Work Log:
+- Diagnostic 1 : Android 15+ (targetSdk 35) force l'affichage edge-to-edge — le WebView dessine sous la barre de statut ; Capacitor 7 a adjustMarginsForEdgeToEdge='disable' par défaut (vérifié dans node_modules/@capacitor/cli/dist/declarations.d.ts : 'auto'|'force'|'disable', défaut 'disable', deviendra 'auto' en Capacitor 8)
+- Fix 1 (apps/mobile/capacitor.config.ts) : android.adjustMarginsForEdgeToEdge='force' → marges ajoutées, contenu web sous la barre de statut — correctif 100% natif, ZÉRO modification web (principe une seule base de code) ; cap sync exécuté (assets régénérés, non versionnés par convention Capacitor)
+- Diagnostic 2 : PWAInstallPrompt s'affiche après 3,5 s sans condition quand ni standalone ni skip localStorage — exactement l'état d'un WebView → bannière absurde dans l'app déjà installée ; monté à 4 endroits (portal/layout, app/layout-client, page racine, school-portal)
+- Fix 2 (web, propage via Vercel sans APK) : nouveau helper apps/web-app/src/lib/pwa/is-native-app.ts — isNativeApp() = window.Capacitor.isNativePlatform() (pont injecté sur les domaines allowNavigation) + filet UA '; wv)' (WebView Android) ; garde ajoutée en tête du useEffect de PWAInstallPrompt ET InstallPrompt (non monté mais par sécurité) ; PWARegister volontairement intact (SW offline-first utile dans le WebView)
+- Syntaxe validée (esbuild TSX + tsc) ; commit afa9d8f
+
+Stage Summary:
+- ✅ Chevauchement header/barre de statut : corrigé côté natif (rebuild APK requis : cap sync + gradlew assembleDebug)
+- ✅ Bannière PWA dans l'app native : corrigé côté web (propagation auto via Vercel, ~10 min)
+- ⏳ PUSH commit afa9d8f en attente (token réutilisé en one-shot)

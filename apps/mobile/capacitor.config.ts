@@ -60,8 +60,14 @@ const config: CapacitorConfig = {
 
   plugins: {
     SplashScreen: {
-      // Couvre le temps de chargement initial du WebView (réseau).
-      launchShowDuration: 4000,
+      // ⚠️ 0 (et non 4000) : la splash PLUGIN imposait un plancher artificiel
+      // de 4 s avant de céder la place… à un WebView BLANC pendant le reste
+      // du chargement réseau (d'où les « pages blanches » longues). Désormais
+      // la splash système cède immédiatement la place à l'écran de chargement
+      // NATIF (logo + spinner) géré par MainActivity (loading_overlay.xml),
+      // qui couvre TOUT le chargement réel et se retire dès que la page est
+      // peinte. ⚠️ Modifier cette valeur exige `npx cap sync android`.
+      launchShowDuration: 0,
       launchAutoHide: true,
       backgroundColor: '#0B2F73',
       androidScaleType: 'CENTER_CROP',

@@ -5,6 +5,10 @@
  */
 
 import { persistUserScope } from './user-scope';
+// ⭐ NATIVE SESSION RESUME — cookie partagé .academiahelm.com pour que
+//    l'app Android (Capacitor) reprenne la session au démarrage à froid.
+import { writeNativeResumeHint, clearNativeResumeHint } from './native-session-resume';
+import { isNativeApp } from '@/lib/pwa/is-native-app';
 
 export type PersistClientSessionInput = {
   accessToken?: string | null;
@@ -182,6 +186,12 @@ export function persistClientSession(data: PersistClientSessionInput): void {
       }),
     );
   }
+
+  // ⭐ NATIVE SESSION RESUME : mémorise l'hôte tenant courant (cookie partagé
+  //    .academiahelm.com) pour que le démarrage à froid de l'app native
+  //    retourne directement à l'interface au lieu du portail public.
+  //    No-op hors coquille Capacitor — le web navigateur est inchangé.
+  writeNativeResumeHint();
 }
 
 /**
@@ -212,6 +222,9 @@ export function clearClientSessionSync(): void {
   localStorage.removeItem('serverSessionId');
   localStorage.removeItem('portalSessionId');
   localStorage.removeItem('session');
+  // ⭐ NATIVE SESSION RESUME : effacer aussi le hint de reprise pour que la
+  //    déconnexion manuelle ramène vraiment l'app native au portail public.
+  clearNativeResumeHint();
   // ⭐ Clear LAST_ACTIVITY_KEY pour éviter qu'une session ultérieure
   // détecte une "inactivité prolongée" basée sur un timestamp stale.
   localStorage.removeItem('academia_helm_last_activity');
@@ -317,9 +330,15 @@ export async function tryRefreshAccessToken(): Promise<boolean> {
 
   refreshInFlight = (async () => {
     try {
+      // ⭐ NATIVE SESSION — en-tête marqueur pour que le BFF puis l'API Nest
+      //    identifient la coquille Capacitor de façon certaine (le marqueur
+      //    « ; wv) » du user-agent peut manquer sur certains WebView) →
+      //    refresh token 90 jours (session toujours ouverte sur mobile).
+      const nativeHeaders = isNativeApp() ? { 'X-AH-Native-App': '1' } : {};
+
       const res = await fetch('/api/auth/refresh', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...nativeHeaders },
         credentials: 'include',
         body: JSON.stringify({ refreshToken: rt }),
         cache: 'no-store',

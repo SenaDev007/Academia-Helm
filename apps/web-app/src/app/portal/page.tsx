@@ -40,6 +40,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Header } from '@/components/ui/header-1';
 import SchoolSearch from '@/components/portal/SchoolSearch';
 import BeninMap from '@/components/portal/BeninMap';
+// ⭐ NATIVE SESSION RESUME — reprise directe de session au démarrage à froid
+//    de l'app Android (Capacitor charge toujours server.url = /portal).
+import { isNativeApp } from '@/lib/pwa/is-native-app';
+import { readNativeResumeHint, isTenantSessionHost } from '@/lib/auth/native-session-resume';
 import { type DepartmentData } from '@/data/benin-departments';
 import { useTenantRedirect } from '@/lib/hooks/useTenantRedirect';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
@@ -154,6 +158,35 @@ export default function PortalPage() {
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  /* ── ⭐ NATIVE SESSION RESUME (app Android Capacitor) ─────────────── */
+  // Au démarrage à froid, la coquille native charge TOUJOURS /portal (domaine
+  // racine) alors que la session vit sur le sous-domaine du tenant. Si un hint
+  // de reprise existe (cookie partagé .academiahelm.com posé au login), on
+  // retourne directement sur l'hôte tenant :
+  //   - session valide   → AppGate laisse entrer → interface immédiate
+  //   - session expirée  → AppGate renvoie vers /login du tenant (jamais de
+  //                        boucle : /login ne redirige pas vers /portal)
+  // Garde anti-répétition : une seule redirection par session WebView — si
+  // l'utilisateur revient manuellement sur /portal, il reste sur /portal.
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    try {
+      if (sessionStorage.getItem('ah_native_resume_done')) return;
+      sessionStorage.setItem('ah_native_resume_done', '1');
+    } catch { /* ignore */ }
+
+    const currentHost = window.location.hostname;
+    const hint = readNativeResumeHint();
+    // Sur un hôte tenant, la session est locale → reprendre ici même.
+    // Sur le domaine racine, suivre le hint vers l'hôte tenant mémorisé.
+    const targetHost = isTenantSessionHost(currentHost)
+      ? currentHost
+      : hint?.host;
+    if (!targetHost) return; // aucune session connue → flux portail normal
+
+    window.location.replace(`${window.location.protocol}//${targetHost}/app`);
   }, []);
 
   const closeMobilePortalModal = useCallback(() => {

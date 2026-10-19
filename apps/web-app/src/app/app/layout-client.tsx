@@ -68,6 +68,11 @@ import AppGate from '@/components/auth/AppGate';
 import { ConflictResolutionModal } from '@/components/offline/ConflictResolutionModal';
 import { PWAInstallPrompt } from '@/components/pwa/PWAInstallPrompt';
 import { DeferredRoutePrefetch } from '@/components/perf/DeferredRoutePrefetch';
+// ⭐ NATIVE SESSION RESUME : mémorise l'hôte tenant courant (cookie partagé
+//    .academiahelm.com) pour que le démarrage à froid de l'app Android
+//    retourne directement à l'interface au lieu du portail public.
+import { isNativeApp } from '@/lib/pwa/is-native-app';
+import { writeNativeResumeHint } from '@/lib/auth/native-session-resume';
 
 // ⭐ V4.0 (rollback de l'approche dataService) : plus AUCUNE installation
 //    d'intercepteur offline au niveau applicatif — les fetchs des composants
@@ -145,6 +150,15 @@ export default function AppLayoutClient({
       }
     })();
   }, [tenant?.id]);
+
+  // ⭐ NATIVE SESSION RESUME — app Android (Capacitor) : au montage du shell
+  //    authentifié, mémoriser l'hôte tenant courant. Couvre AUSSI les sessions
+  //    établies AVANT le déploiement de ce correctif (l'utilisateur ouvre /app
+  //    une fois → le hint est posé → les prochains démarrages à froid
+  //    reprennent directement la session). No-op hors coquille native.
+  useEffect(() => {
+    if (isNativeApp()) writeNativeResumeHint();
+  }, []);
 
   // ⭐ P4-bis (filtre Rôles × Pistes × Niveaux) : charger le périmètre serveur
   //    au montage de l'app (tous portails). Le login enseignant le livre

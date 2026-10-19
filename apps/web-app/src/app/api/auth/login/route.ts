@@ -69,9 +69,19 @@ export async function POST(request: NextRequest) {
     
     let backendResponse;
     try {
+      // ⭐ NATIVE SESSION — transmettre le user-agent ORIGINAL du client et le
+      //    marqueur explicite X-AH-Native-App à l'API Nest (bffHeaders écrase
+      //    l'UA par défaut). L'app Android (WebView Capacitor) reçoit ainsi un
+      //    refresh token 90 jours (session toujours ouverte) dès le login.
+      const clientUserAgent = request.headers.get('user-agent') || undefined;
+      const nativeMarker = request.headers.get('x-ah-native-app') === '1';
+
       backendResponse = await fetch(loginUrl, {
         method: 'POST',
-        headers: bffHeaders(),
+        headers: bffHeaders({
+          ...(clientUserAgent ? { 'User-Agent': clientUserAgent } : {}),
+          ...(nativeMarker ? { 'X-AH-Native-App': '1' } : {}),
+        }),
         body: JSON.stringify({
           email: body.email,
           password: body.password,

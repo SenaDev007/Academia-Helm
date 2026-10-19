@@ -39,9 +39,18 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto, @Req() req: Request) {
+    // ⭐ NATIVE SESSION — détecter l'app Android (WebView Capacitor) via le
+    //    marqueur « ; wv) » de l'UA ou l'en-tête explicite X-AH-Native-App
+    //    → refresh token 90 jours (session toujours ouverte sur mobile).
+    const ua = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : '';
+    const nativeApp =
+      /;\s*wv\)/.test(ua) ||
+      /capacitor/i.test(ua) ||
+      req.headers['x-ah-native-app'] === '1';
     return this.authService.login(loginDto, {
       ipAddress: req.ip || req.socket?.remoteAddress,
-      userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : undefined,
+      userAgent: ua || undefined,
+      nativeApp,
     });
   }
 
@@ -72,8 +81,18 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  async refresh(@Body('refreshToken') refreshToken: string) {
-    return this.authService.refreshToken(refreshToken);
+  async refresh(@Body('refreshToken') refreshToken: string, @Req() req: Request) {
+    // ⭐ NATIVE SESSION — l'app Android (WebView Capacitor) est détectée soit
+    //    par le marqueur « ; wv) » de son user-agent, soit par l'en-tête
+    //    explicite X-AH-Native-App posé par le client web (fiable à 100 %,
+    //    le marqueur UA peut manquer sur certains WebView) → refresh token
+    //    90 jours (session toujours ouverte). Les navigateurs web : 7 jours.
+    const ua = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : '';
+    const nativeSession =
+      /;\s*wv\)/.test(ua) ||
+      /capacitor/i.test(ua) ||
+      req.headers['x-ah-native-app'] === '1';
+    return this.authService.refreshToken(refreshToken, nativeSession);
   }
 
   // ═══════════════════════════════════════════════════════════

@@ -60,6 +60,10 @@ import LogoCircle from '@/components/ui/LogoCircle';
 import { BRAND } from '@/lib/brand';
 import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-email';
 import { persistClientSession, markFreshLogin, hasLocalSessionHints, isRecentlyLoggedOut, clearRecentlyLoggedOutFlag, clearClientSessionSync } from '@/lib/auth/client-access-token';
+// ⭐ NATIVE SESSION RESUME — mémoriser l'hôte tenant quand une session valide
+//    est détectée sur /login (transition douce pour les sessions pré-existantes).
+import { isNativeApp } from '@/lib/pwa/is-native-app';
+import { writeNativeResumeHint } from '@/lib/auth/native-session-resume';
 // ⭐ v3.4.0 — enveloppe d'auth hors ligne : re-login offline après un logout
 //    (même école + même identifiant + même mot de passe → session restaurée)
 import { saveOfflineAuthEnvelope, tryOfflineLogin } from '@/lib/auth/offline-auth-envelope';
@@ -427,6 +431,10 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
           // de boucle, on laisse le user cliquer sur le bouton "Continuer".
           // Le bouton est affiché par le composant quand validSessionDetected = true.
           console.log('[LoginPage] Valid session detected — show "Continue" button');
+          // ⭐ NATIVE SESSION RESUME : session valide détectée sur l'hôte tenant →
+          //    mémoriser l'hôte pour les prochains démarrages à froid de l'app
+          //    Android (retour direct à l'interface sans repasser par /portal).
+          if (isNativeApp()) writeNativeResumeHint();
           // Note: pas de window.location.href ici !
         } else {
           // Session invalide — nettoyer localStorage pour éviter les faux positifs futurs
@@ -1034,7 +1042,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     const attemptLogin = async (portalTypeAttempt: 'PLATFORM' | 'SCHOOL') => {
       return fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // ⭐ NATIVE SESSION — marqueur explicite pour l'API : session Android →
+        //    refresh token 90 jours (session toujours ouverte sur mobile).
+        headers: {
+          'Content-Type': 'application/json',
+          ...(isNativeApp() ? { 'X-AH-Native-App': '1' } : {}),
+        },
         body: JSON.stringify({
           email: schoolCredentials.email.trim(),
           password: schoolCredentials.password,

@@ -13383,3 +13383,28 @@ Stage Summary:
 - ✅ Chevauchement header/barre de statut : corrigé côté natif (rebuild APK requis : cap sync + gradlew assembleDebug)
 - ✅ Bannière PWA dans l'app native : corrigé côté web (propagation auto via Vercel, ~10 min)
 - ⏳ PUSH commit afa9d8f en attente (token réutilisé en one-shot)
+
+---
+Task ID: mobile-session-persist-1
+Agent: Super Z (agent principal)
+Task: Session toujours ouverte sur l'app mobile Android (Capacitor) — l'utilisateur ne doit jamais être déconnecté automatiquement ni repasser par le portail public au démarrage ; seul lui peut se déconnecter.
+
+Work Log:
+- Diagnostic complet du mécanisme de session : tokens sur le sous-domaine du tenant (localStorage/cookies host-only par origine) ; l'app native démarre toujours sur server.url = /portal (domaine racine) → aucune connaissance de la session au démarrage à froid
+- Identification des déconnexions automatiques : SessionManagerContext verrouille après 15 min d'inactivité puis déconnecte totalement (redirect /) ; refresh token API de 7 jours seulement
+- Vérification push GitHub : dépôt distant déjà à jour à 0201949 (5 commits mobile, dont fixes edge-to-edge + bannière PWA) — le ref local origin/main était périmé
+- Création apps/web-app/src/lib/auth/native-session-resume.ts : cookie partagé domain=.academiahelm.com (ah_native_resume, 365 j, SameSite=Lax) mémorisant l'hôte tenant — write/read/clear + isTenantSessionHost (exclut racine/www/api)
+- persistClientSession() écrit le hint à chaque login réussi (tous portails : école/enseignant/parent via LoginPage, prof, promoteur, patronat) ; clearClientSessionSync() l'efface à la déconnexion manuelle
+- /portal : auto-resume au démarrage à froid — isNativeApp() + hint → window.location.replace vers https://{tenant}.academiahelm.com/app ; AppGate valide (session valide → interface directe ; expirée → /login du tenant, aucune boucle possible) ; garde sessionStorage ah_native_resume_done
+- SessionManagerContext : en natif, checkInactivity et checkLockExpiry deviennent no-op (ni écran de verrou ni déconnexion auto) ; refresh proactif 4 min conservé ; correction au passage du bug préexistant setIsLocked/lastActivityRef inexistants (ReferenceError au déverrouillage offline)
+- AppLayoutClient + LoginPage (/api/auth/me valide) : écriture du hint pour les sessions pré-existantes au déploiement
+- API Nest : refresh token 90 jours pour sessions natives (au lieu de 7 j) — détection triple : marqueur UA « ; wv) », /capacitor/i, en-tête X-AH-Native-App (fiable à 100 %, posé par le client web quand isNativeApp) ; appliqué à login (3 sites), completeLoginAfter2fa, refresh (rotation) ; nettoyage du 2e arg ignoré de generateTokens à la ligne login
+- BFF Next (routes /api/auth/login et /api/auth/refresh) : transfert du user-agent ORIGINAL du client (bffHeaders l'écrasait) + de l'en-tête X-AH-Native-App vers l'API Nest
+- Vérification syntaxique TypeScript de tous les fichiers modifiés (tsc standalone, erreurs de résolution de modules filtrées) : aucune erreur de syntaxe
+
+Stage Summary:
+- Parcours utilisateur mobile après déploiement : 1er login → /portal → sélection école → login → interface ; démarrages suivants → /portal → redirection immédiate vers l'interface (session reprise) ; plus jamais de verrouillage/déconnexion automatique ; déconnexion manuelle → retour au portail
+- Session maintenue ouverte tant que l'app est ouverte au moins une fois tous les 90 jours (rotation du refresh token en natif) ; le web navigateur garde exactement le comportement actuel (7 j, verrouillage 15 min)
+- Aucune reconstruction d'APK nécessaire : 100 % des correctifs sont côté web (Vercel) + API (Railway) — tuer l'app et la rouvrir suffit après déploiement
+- Fichiers : native-session-resume.ts (nouveau), client-access-token.ts, portal/page.tsx, SessionManagerContext.tsx, layout-client.tsx, LoginPage.tsx, BFF login+refresh, api-server auth.service.ts + auth.controller.ts
+- En attente : déploiements Vercel + Railway automatiques après push ; test utilisateur sur l'APK existant

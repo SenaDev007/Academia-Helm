@@ -33,6 +33,9 @@ import {
   persistClientAccessToken,
   persistClientSession,
 } from '@/lib/auth/client-access-token';
+// ⭐ NATIVE (Capacitor) : session toujours ouverte dans l'app Android —
+//    ni verrouillage d'inactivité, ni expiration automatique.
+import { isNativeApp } from '@/lib/pwa/is-native-app';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -247,8 +250,11 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
             const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
             if (hashHex === storedHash) {
               // Mot de passe correct → déverrouiller
-              setIsLocked(false);
-              lastActivityRef.current = Date.now();
+              // ⭐ FIX : setIsLocked/lastActivityRef n'existaient pas dans ce
+              //    composant (restes d'une ancienne version) → ReferenceError
+              //    au déverrouillage offline. On utilise l'API réelle du contexte.
+              setSessionState('active');
+              recordActivity();
               window.dispatchEvent(new CustomEvent('session-resumed'));
               return { success: true };
             }
@@ -272,7 +278,12 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
 
         const response = await fetch('/api/auth/login', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          // ⭐ NATIVE SESSION — marqueur explicite pour l'API : session Android →
+          //    refresh token 90 jours (session toujours ouverte sur mobile).
+          headers: {
+            'Content-Type': 'application/json',
+            ...(isNativeApp() ? { 'X-AH-Native-App': '1' } : {}),
+          },
           body: JSON.stringify({
             email,
             password,
@@ -372,6 +383,11 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
 
   /** Vérifier si le délai d'inactivité est atteint */
   const checkInactivity = useCallback(() => {
+    // ⭐ NATIVE : session toujours ouverte — pas de verrouillage d'inactivité
+    //    dans l'app Android. L'app en arrière-plan ne déclenche aucun évènement
+    //    d'activité ; la rouvrir ne doit JAMAIS présenter l'écran de verrou.
+    //    La session reste protégée par le refresh token (rotation côté serveur).
+    if (isNativeApp()) return;
     if (sessionState !== 'active' || isTransitioningRef.current) return;
     // ⭐ Ne pas verrouiller la session si l'utilisateur est hors ligne
     //    L'utilisateur doit pouvoir continuer à travailler offline
@@ -389,6 +405,10 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
 
   /** Vérifier si le délai de verrouillage est atteint (15 min → déconnexion) */
   const checkLockExpiry = useCallback(() => {
+    // ⭐ NATIVE : jamais de déconnexion automatique dans l'app Android —
+    //    seul l'utilisateur peut se déconnecter (bouton de déconnexion).
+    //    Comportement identique aux autres applications mobiles du téléphone.
+    if (isNativeApp()) return;
     if (sessionState !== 'locked' || !lockedAtRef.current) return;
     // ⭐ Ne pas déconnecter si offline — l'utilisateur doit pouvoir travailler
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;

@@ -15,6 +15,10 @@ import { isSchoolTenantType } from '../common/constants/school-tenant-types';
 export type SessionPersistMeta = {
   ipAddress?: string;
   userAgent?: string;
+  /** ⭐ NATIVE SESSION — true quand la requête vient de l'app Android
+   *    (WebView Capacitor) : refresh token 90 jours au login. Détecté par le
+   *    contrôleur via le marqueur « ; wv) » de l'UA ou l'en-tête X-AH-Native-App. */
+  nativeApp?: boolean;
 };
 
 /** UUID v4 regex (simplifié) pour distinguer id vs slug */
@@ -205,7 +209,9 @@ export class AuthService {
       const targetTenantId = loginDto.tenant_id || user.tenantId;
       
       // Generate tokens
-      const tokens = this.generateTokens(user, targetTenantId);
+      // ⭐ NATIVE : 2e arg historique (targetTenantId) était IGNORÉ par
+      //    generateTokens — remplacé par le flag session native (90 j).
+      const tokens = this.generateTokens(user, this.isNativeSession(meta));
       const sessionRecord = await this.persistWebSession(user.id, tokens.refreshToken, meta);
 
       return {
@@ -404,9 +410,11 @@ export class AuthService {
 
     // Generate tokens (SANS tenantId pour l'instant, sera sélectionné via /auth/select-tenant)
     // Si tenant_id est fourni, on peut l'inclure directement
+    // ⭐ NATIVE : sessions issues de l'app Android → refresh token 90 jours.
+    const nativeSession = this.isNativeSession(meta);
     const tokens = loginDto.tenant_id 
-      ? this.generateEnrichedToken(user, loginDto.tenant_id)
-      : this.generateTokens(user);
+      ? this.generateEnrichedToken(user, loginDto.tenant_id, undefined, nativeSession)
+      : this.generateTokens(user, nativeSession);
 
       const sessionRecord = await this.persistWebSession(user.id, tokens.refreshToken, meta);
 
@@ -473,9 +481,11 @@ export class AuthService {
 
     await this.usersService.updateLastLogin(user.id);
 
+    // ⭐ NATIVE : sessions issues de l'app Android → refresh token 90 jours.
+    const nativeSession = this.isNativeSession(meta);
     const tokens = tenantId
-      ? this.generateEnrichedToken(user as any, tenantId)
-      : this.generateTokens(user as any);
+      ? this.generateEnrichedToken(user as any, tenantId, undefined, nativeSession)
+      : this.generateTokens(user as any, nativeSession);
     const sessionRecord = await this.persistWebSession(user.id, tokens.refreshToken, meta);
 
     const isOwner = this.isPlatformOwner(user as any);
@@ -501,7 +511,7 @@ export class AuthService {
     };
   }
 
-  async refreshToken(refreshToken: string) {
+  async refreshToken(refreshToken: string, nativeSession = false) {
     try {
       const payload = this.jwtService.verify(refreshToken);
       const user = await this.usersService.findOne(payload.sub);
@@ -515,11 +525,14 @@ export class AuthService {
       const tenantId = payload.tenantId || null;
       const academicYearId = payload.academicYearId || null;
 
+      // ⭐ NATIVE : rotation avec refresh token 90 jours pour l'app Android —
+      //    la session reste ouverte tant que l'app est ouverte au moins une
+      //    fois tous les 90 jours (refresh proactif toutes les 4 min côté web).
       if (tenantId) {
-        return this.generateEnrichedToken(user, tenantId, academicYearId);
+        return this.generateEnrichedToken(user, tenantId, academicYearId, nativeSession);
       }
 
-      return this.generateTokens(user);
+      return this.generateTokens(user, nativeSession);
     } catch (error) {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -545,10 +558,29 @@ export class AuthService {
   }
 
   /**
+   * ⭐ NATIVE SESSION — détecte l'app Android Academia Helm (coquille Capacitor).
+   *    Le user-agent du WebView Android contient le marqueur « ; wv) » ;
+   *    certains WebView personnalisés exposent « capacitor ». Un navigateur
+   *    web classique ne contient JAMAIS ces marqueurs → comportement web
+   *    inchangé.
+   */
+  private isNativeWebViewSession(userAgent?: string): boolean {
+    if (!userAgent) return false;
+    return /;\s*wv\)/.test(userAgent) || /capacitor/i.test(userAgent);
+  }
+
+  /** ⭐ NATIVE : session native si l'UA est un WebView Android OU si le
+   *    contrôleur a posé le flag explicite meta.nativeApp (en-tête
+   *    X-AH-Native-App du client web — fiable à 100 %). */
+  private isNativeSession(meta?: SessionPersistMeta): boolean {
+    return this.isNativeWebViewSession(meta?.userAgent) || meta?.nativeApp === true;
+  }
+
+  /**
    * Génère un token JWT initial SANS tenant_id (après login)
    * Le tenant sera sélectionné via /auth/select-tenant
    */
-  private generateTokens(user: any) {
+  private generateTokens(user: any, nativeSession = false) {
     const payload = {
       sub: user.id,
       email: user.email,
@@ -559,14 +591,16 @@ export class AuthService {
 
     return {
       accessToken: this.jwtService.sign(payload, { expiresIn: '15m' }),
-      refreshToken: this.jwtService.sign(payload, { expiresIn: '7d' }),
+      // ⭐ NATIVE : refresh token 90 jours pour l'app Android (session toujours
+      //    ouverte, comme les autres applications mobiles). Web : 7 jours.
+      refreshToken: this.jwtService.sign(payload, { expiresIn: nativeSession ? '90d' : '7d' }),
     };
   }
 
   /**
    * Génère un token JWT enrichi AVEC tenant_id (après sélection tenant)
    */
-  private generateEnrichedToken(user: any, tenantId: string, academicYearId?: string) {
+  private generateEnrichedToken(user: any, tenantId: string, academicYearId?: string, nativeSession = false) {
     const payload = {
       sub: user.id,
       email: user.email,
@@ -578,7 +612,9 @@ export class AuthService {
 
     return {
       accessToken: this.jwtService.sign(payload, { expiresIn: '15m' }),
-      refreshToken: this.jwtService.sign(payload, { expiresIn: '7d' }),
+      // ⭐ NATIVE : refresh token 90 jours pour l'app Android (session toujours
+      //    ouverte, comme les autres applications mobiles). Web : 7 jours.
+      refreshToken: this.jwtService.sign(payload, { expiresIn: nativeSession ? '90d' : '7d' }),
     };
   }
 

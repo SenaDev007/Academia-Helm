@@ -21,9 +21,20 @@ export async function POST(request: NextRequest) {
     const base = normalizeApiUrl(getApiBaseUrlForRoutes().replace(/\/$/, ''));
     const url = `${base}/auth/refresh`;
 
+    // ⭐ NATIVE SESSION — transmettre le user-agent ORIGINAL du client à l'API
+    //    Nest (bffHeaders l'écrase par défaut), ainsi que le marqueur explicite
+    //    X-AH-Native-App posé par le client web quand isNativeApp() (le marqueur
+    //    « ; wv) » du user-agent peut manquer sur certains WebView). L'API émet
+    //    alors un refresh token 90 jours (session toujours ouverte) au lieu de 7.
+    const clientUserAgent = request.headers.get('user-agent') || undefined;
+    const nativeMarker = request.headers.get('x-ah-native-app') === '1';
+
     const res = await fetch(url, {
       method: 'POST',
-      headers: bffHeaders(),
+      headers: bffHeaders({
+        ...(clientUserAgent ? { 'User-Agent': clientUserAgent } : {}),
+        ...(nativeMarker ? { 'X-AH-Native-App': '1' } : {}),
+      }),
       body: JSON.stringify({ refreshToken: refreshToken.trim() }),
       cache: 'no-store',
     });

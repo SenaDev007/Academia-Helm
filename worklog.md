@@ -13454,3 +13454,22 @@ Stage Summary:
 - ✅ Attente visible = temps de chargement réel (plancher 4 s supprimé) avec feedback visuel continu ; garde-fou 25 s réseau mort ; icônes système toujours visibles (SystemUI au-dessus des fenêtres app)
 - ⚠️ REBUILD APK REQUIS (natif) : git pull → npx cap sync android (dans apps/mobile — config modifiée) → gradlew assembleDebug (apps/mobile/android) → adb install -r
 - ⏳ Rappel sécurité : révoquer le token GitHub partagé en chat après les tests
+
+---
+Task ID: auth-timeout-1
+Agent: Super Z (agent principal)
+Task: « La connexion a expiré. Le serveur est peut-être en cours de démarrage » à CHAQUE login sur l'école tenante Academia Helm depuis l'app Android — les autres écoles fonctionnent.
+
+Work Log:
+- Reproduction impossible en curl (toutes les couches répondent en <1,5 s : BFF sous-domaine, BFF racine, API directe, www, admin) ni en navigateur headless (login réussi) — y compris avec slug + UA WebView « ; wv) » + X-AH-Native-App: 1
+- PREUVE DÉCISIVE en base (table sessions) : sessions CRÉÉES à chaque tentative « échouée » de l'utilisateur (UA TECNO KI5k WebView : 09:41:30, 09:44:32, 09:45:46, 10:02:59, 10:03:11, + Windows 10:04:33) → le login AboutISSAIT côté serveur mais la réponse n'atteignait jamais le client ; pattern 10:02:59→10:03:11 = 12 s = retry après timeout
+- Mesure navigateur headless : le POST /api/auth/login a pris 4,9 s (vs 0,84 s en curl juste avant) = signature du cold start lambda ; CLIENT_FETCH_TIMEOUT = 10_000 ms → dépassement systématique sur réseau mobile + lambda froide
+- Cause racine : chaque route API Next.js = lambda Vercel SÉPARÉE qui s'endort ; le warm-up naturel (/api/auth/me au montage de /login) ne réchauffe PAS la lambda /api/auth/login
+- Découvertes annexes : (1) Railway avait ~25 min de retard de déploiement sur le commit session 08c27cd — re-testé : refresh token 90 j CONFIRMÉ déployé ; (2) crash du login PARENT par téléphone : validateUser() = doublon NON corrigé de la résolution matricule (teacher.findFirst select userId — champ inexistant) → erreur Prisma reproduite en prod ; (3) prof.academiahelm.com = certificat TOUJOURS expiré (8/8/2026) — le middleware redirige vers enseignant.academiahelm.com mais la redirection TLS n'est jamais atteinte ; (4) la purge localStorage au montage de /login (suite à /api/auth/me 401) est le comportement CONÇU (nettoyage hints stale)
+- Correctifs (commit 57f5974 poussé) : (1) LoginPage loginFetchResilient — timeout 30 s + relance automatique unique sur abort (lambda déjà bootée au 1er dépassement → relance ~1 s) appliqué aux 5 points (standard, school, platform, select-tenant ×2) ; (2) warm-up HEAD fire-and-forget sur /api/auth/login au montage de la page login (405 avec x-matched-path vérifié = lambda invoquée) ; (3) 2FA verify-login : timeout explicite 30 s ; (4) auth.service.ts validateUser : teacher.findFirst select userId → résolution par email (miroir du fix de login())
+
+Stage Summary:
+- ✅ Plus de « connexion a expiré » : 30 s de budget + relance auto + lambda préchauffée pendant la saisie — le login tolère cold start + réseau mobile lent (correctifs web actifs via Vercel ~5 min après le push, zéro rebuild APK)
+- ✅ Login Parent par téléphone réparé (déployé via Railway, ~25 min de build)
+- ⚠️ Pendings utilisateur : certificat prof.academiahelm.com expiré (domaine à ajouter au projet Vercel) ; révoquer le token GitHub après tests
+- NB : les sessions « orphelines » créées pendant les timeouts restent en base (inoffensives, expiration 7 j)

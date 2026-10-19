@@ -13408,3 +13408,26 @@ Stage Summary:
 - Aucune reconstruction d'APK nécessaire : 100 % des correctifs sont côté web (Vercel) + API (Railway) — tuer l'app et la rouvrir suffit après déploiement
 - Fichiers : native-session-resume.ts (nouveau), client-access-token.ts, portal/page.tsx, SessionManagerContext.tsx, layout-client.tsx, LoginPage.tsx, BFF login+refresh, api-server auth.service.ts + auth.controller.ts
 - En attente : déploiements Vercel + Railway automatiques après push ; test utilisateur sur l'APK existant
+
+---
+Task ID: mobile-statusbar-1
+Agent: Super Z (agent principal)
+Task: Zone de la barre de statut toute blanche dans l'app Android — icônes système (réseau/batterie/heure) invisibles après le fix des marges edge-to-edge.
+
+Work Log:
+- Push de contrôle demandé par l'utilisateur (token fourni) : « Everything up-to-date » — les 6 commits en attente (dont 08c27cd session permanente) étaient DÉJÀ sur GitHub (la référence locale origin/main était restée figée : les push one-shot par URL ne mettent pas à jour les refs de tracking) ; Vercel (web) + Railway (API) ont donc déjà reçu les correctifs de session
+- Diagnostic par lecture du code natif Capacitor 7.4.2 (node_modules/@capacitor/android) :
+  * BridgeActivity.java l.25-26 : setTheme(R.style.AppTheme_NoActionBar) au onCreate → le thème RUNTIME est AppTheme.NoActionBar (le thème launch ne sert qu'au splash)
+  * CapacitorWebView.java : les marges 'force' sont posées SUR le WebView (MarginLayoutParams) → les zones système (statut en haut / navigation en bas) laissent apparaître le windowBackground du thème
+  * styles.xml n'avait AUCUN android:windowBackground → BLANC par défaut (DayNight mode jour) ; icônes système claires (StatusBar style DARK) → blanc sur blanc = INVISIBLES
+  * Android 15 (API 35) ignore statusBarColor en edge-to-edge → le backgroundColor '#0B2F73' du plugin StatusBar était un no-op (bug anticipé dans mobile-fix-1 : « si blanche → ajuster windowBackground du thème »)
+- Fix 100% natif (apps/mobile/android/app/src/main/res/values/styles.xml, commit 9f6b119 poussé) :
+  * android:windowBackground=@color/colorPrimary (#0B2F73) sur AppTheme.NoActionBar (runtime) + AppTheme (secours) → zones statut/navigation navy en jour ET en nuit (neutralise DayNight)
+  * android:windowLightStatusBar=false explicite → icônes système blanches garanties visibles sur fond navy
+  * XML validé (minidom) ; navy #0B2F73 = palette officielle → continuité splash navy → fenêtre navy → header web navy
+
+Stage Summary:
+- ✅ Zone barre de statut NAVY avec icônes réseau/batterie/heure blanches VISIBLES ; zone navigation (bas) navy également ; plus de flash blanc au démarrage
+- ⚠️ REBUILD APK REQUIS pour CE correctif (fichier natif) : git pull → gradlew assembleDebug → adb install -r — pas de cap sync nécessaire (res/ n'est pas géré par cap sync)
+- ✅ Session permanente (08c27cd) déjà poussée et déployée (Vercel + Railway auto) — active dès le redémarrage de l'app SANS rebuild
+- ⏳ Rappel sécurité : révoquer le token GitHub partagé en chat après les tests

@@ -58,4 +58,10 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- ⭐ Android 13+ (Task playstore-1) : affichage des notifications push
+         FCM. Déclarée dès la V1 pour que l'arrivée du pont web (enregistrement
+         du jeton) n'exige PAS de republication Play Store. Runtime demandée
+         par le plugin seulement au premier usage — sans déclaration, les
+         notifications sont silencieusement ignorées sur API 33+. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

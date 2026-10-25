@@ -53,9 +53,14 @@ captures/
 .idea/navEditor.xml
 
 # Keystore files
-# Uncomment the following lines if you do not want to check your keystore files in.
-#*.jks
-#*.keystore
+# ⭐ Play Store (Task playstore-1) : jamais commité — le keystore de
+#    signature est l'identité de l'app. Perte = app définitivement
+#    injoignable sur le Play Store (impossible de mettre à jour).
+*.jks
+*.keystore
+
+# Secrets de signature Gradle (lues par app/build.gradle)
+keystore.properties
 
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild

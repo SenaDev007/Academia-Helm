@@ -34,6 +34,11 @@ const PUBLIC_STATIC_PREFIXES = [
   '/orion-rules/',
   '/pedagogy-assets/',
   '/pedagogy-images/',
+  // ⭐ App Links Android (Play Store, Task playstore-1) : /.well-known/
+  //    assetlinks.json doit être servi TEL QUEL sur tous les domaines
+  //    (racine, enseignant., écoles…) sans rewrite ni redirection — la
+  //    vérification Android exige HTTP 200 + JSON exact.
+  '/.well-known/',
   // ⭐ T57 (2026-10-01) — lib Partytown auto-hébergée (scripts tiers en Web
   //    Worker) : le bootstrap + son Service Worker /~partytown/* doivent
   //    être servis tels quels sur TOUS les domaines (patronatXXX compris),
@@ -950,6 +955,6 @@ export const config = {
     // vidéos, sons…) : servis tels quels sur TOUS les domaines (satellites
     // academiafederis/patronatXXX compris) — sinon le rewrite satellite les
     // transforme en /federis/… → 404 → images de la bibliothèque cassées.
-    '/((?!_next/static|_next/image|favicon.ico|images/|fonts/|uploads/|videos/|sounds/|logos/|icons/|legal/|orion-rules/|pedagogy-assets/|pedagogy-images/|~partytown/|sw.js|sw-site.js|sw-chat.js|manifest.json|manifest-site.webmanifest|manifest-app.webmanifest|pwa-icon|apple-touch-icon.png|robots.txt|sitemap.xml|api/).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.well-known/|images/|fonts/|uploads/|videos/|sounds/|logos/|icons/|legal/|orion-rules/|pedagogy-assets/|pedagogy-images/|~partytown/|sw.js|sw-site.js|sw-chat.js|manifest.json|manifest-site.webmanifest|manifest-app.webmanifest|pwa-icon|apple-touch-icon.png|robots.txt|sitemap.xml|api/).*)',
   ],
 };

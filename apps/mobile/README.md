@@ -59,20 +59,21 @@ npm install            # une seule fois
 | Icône / splash / version | Nouvelle APK |
 | Config `capacitor.config.ts` | `npx cap sync android` + nouvelle APK |
 
-## 📲 Déploiement Play Store (plus tard)
+## 📲 Déploiement Play Store — ✅ PRÊT (guide complet : `PLAY-STORE.md`)
 
-1. **Keystore de release** (à générer une fois, à conserver précieusement) :
-   ```bash
-   keytool -genkey -v -keystore academia-helm-release.keystore \
-     -alias academiahelm -keyalg RSA -keysize 2048 -validity 10000
-   ```
-2. Renseigner la signature dans `android/app/build.gradle`
-   ( bloc `signingConfigs.release` )
-3. **App Links** : publier `/.well-known/assetlinks.json` sur
-   `academiahelm.com` ET `enseignant.academiahelm.com`
-   (contient l'empreinte SHA-256 du keystore — cf. doc Android *Verify App Links*)
-4. Build AAB : `cd android && ./gradlew bundleRelease`
-5. Upload sur la Play Console + fiche store
+> La préparation est **terminée** (signature, keystore généré, App Links,
+> visuels, textes FR, réponses aux questionnaires) — suivre
+> [`PLAY-STORE.md`](./PLAY-STORE.md) pour la publication pas à pas.
+
+1. **Keystore de release** : généré et livré hors-dépôt (bundle
+   `download/play-store/` : keystore + `keystore.properties` + consignes).
+   La signature est câblée dans `android/app/build.gradle` (lecture de
+   `android/keystore.properties`, gitignoré) — §3 du guide.
+2. **App Links** : `apps/web-app/public/.well-known/assetlinks.json`
+   publié (empreinte SHA-256 du keystore) + exclusion middleware — §6.
+3. **Visuels** : icône 512 + bannière 1024×500 dans `store-assets/` — §5.2.
+4. Build AAB : `cd android && ./gradlew bundleRelease` — §4.
+5. Upload Play Console + fiche (textes en Annexe A du guide) — §5.
 
 ## 🔔 Notifications push (FCM)
 
@@ -97,8 +98,11 @@ npx cap sync android   # équivalent manuel
 apps/mobile/
 ├── capacitor.config.ts      ← config centrale (server.url, plugins, couleurs)
 ├── package.json             ← dépendances Capacitor
+├── PLAY-STORE.md            ← guide complet de publication Play Store
+├── store-assets/            ← visuels fiche Play (icône 512, bannière 1024×500)
 ├── www/index.html           ← fallback hors-ligne (généralement invisible)
 └── android/                 ← projet Android Studio (à ouvrir dans l'IDE)
+    ├── keystore.properties  ← SECRETS de signature (gitignoré, à coller)
     └── app/google-services.json   ← Firebase academia-helm-35536
 ```
 

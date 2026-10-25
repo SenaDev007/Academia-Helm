@@ -13473,3 +13473,26 @@ Stage Summary:
 - ✅ Login Parent par téléphone réparé (déployé via Railway, ~25 min de build)
 - ⚠️ Pendings utilisateur : certificat prof.academiahelm.com expiré (domaine à ajouter au projet Vercel) ; révoquer le token GitHub après tests
 - NB : les sessions « orphelines » créées pendant les timeouts restent en base (inoffensives, expiration 7 j)
+
+---
+Task ID: playstore-1
+Agent: Super Z (agent principal)
+Task: Préparation complète du déploiement Play Store de l'app Android io.academiahelm.mobile après validation de l'APK debug sur téléphone.
+
+Work Log:
+- Vérification de l'état : repo propre, Java 21 + keytool disponibles dans la sandbox (pas de SDK Android → build AAB sur machine utilisateur), politique de confidentialité existante (src/app/(public)/legal/privacy/page.tsx — RGPD + droit de suppression + e-mail support), plugin push sans déclaration POST_NOTIFICATIONS (manifeste du plugin vérifié dans node_modules)
+- Signature release : android/app/build.gradle — lecture conditionnelle de android/keystore.properties (pattern Capacitor officiel) ; build release NON-signé si le fichier est absent (aucun crash CI/autre machine)
+- Keystore de release GÉNÉRÉ dans la sandbox (RSA 2048, validité 10 000 j, DN CN=Academia Helm, OU=Mobile, O=Academia Helm, L=Cotonou, C=BJ, alias academiahelm) via scripts/gen_play_keystore.py persisté ; livré HORS repo dans download/play-store/ (keystore + keystore.properties + README-SIGNING.txt avec empreintes et consigne de sauvegarde ×3) ; SHA-1 91:52:30:0A:54:EA:E0:77:54:8E:EA:6A:2F:35:BC:58:04:30:00:77 — SHA-256 21:24:E3:6E:38:33:EA:52:D4:E4:D6:D9:32:E5:1E:F2:35:89:A1:0E:9C:B2:F8:1A:08:AD:22:02:AE:1C:85:52 ; ouverture du magasin re-vérifiée par keytool -list
+- Gitignores durcis : android/.gitignore (*.jks, *.keystore, keystore.properties — le keystore est l'identité définitive de l'app) + .gitignore racine (apps/mobile/android/**)
+- App Links : apps/web-app/public/.well-known/assetlinks.json créé (relation handle_all_urls, package io.academiahelm.mobile, SHA-256 sans deux-points) + middleware.ts : '/.well-known/' ajouté à PUBLIC_STATIC_PREFIXES ET au matcher d'exclusion → servi tel quel sur academiahelm.com, enseignant. et tous les sous-domaines (vérification Android exige 200 + JSON exact sans rewrite)
+- AndroidManifest.xml : permission POST_NOTIFICATIONS ajoutée (Android 13+/targetSdk 35 ; le plugin ne la déclare pas — sans elle les notifications FCM seront muettes ; déclarée dès la V1 pour que le pont web futur n'exige PAS de republication) ; XML re-validé par minidom après correction d'une coquille de guillemet
+- Visuels Play Store générés (scripts/gen_play_store_assets.py persisté) : play-icon-512.png (512×512 RGBA, logo 62 % zone sûre) + feature-graphic-1024x500.png (1024×500 RGB SANS alpha conforme specs Google ; dégradé navy, halo doré flouté, logo, titre ACADEMIA HELM en Montserrat extraite du woff2 du site avec faux-gras par contour, filet or, tagline) — versionnés dans apps/mobile/store-assets/ + copies dans download/play-store/ ; conformité re-contrôlée par échantillonnage de pixels
+- Guide complet apps/mobile/PLAY-STORE.md (11 sections + 2 annexes) : checklist d'état, compte Play Console (organisation + D-U-N-S recommandé vs compte personnel soumis aux 20 testeurs × 14 jours), keystore (sauvegarde critique, installation, changement de mot de passe), build AAB + test release local (assembleRelease + adb), Play Console pas à pas (création app fr-FR gratuite, fiche, accès app avec compte démo, classification contenu 3+, data safety, audience 18+, catégorie Éducation, pays Bénin d'abord), Play App Signing (laisser Google gérer, récupérer SHA-256 de la clé de signature → mettre à jour assetlinks.json + Firebase), vérification App Links par adb, analyse de conformité (paiements frais scolaires = services réels OK ; abonnement enseignant = zone grise → plan B Netflix documenté avec is-native-app.ts), cycle de mise à jour, textes de fiche FR prêts à copier (titre, description courte 73 c., description complète, notes de version), réponses exactes du questionnaire Data Safety
+- README apps/mobile.md : section déploiement Play Store réécrite (statut PRÊT + renvois sections du guide), arborescence mise à jour
+
+Stage Summary:
+- ✅ Préparation Play Store 100 % terminée côté code/livrables : signature câblée, keystore généré + livré (download/play-store/), App Links publiés, permission notifications, visuels, guide pas-à-pas complet
+- ⚠️ Rappel critique : keystore = identité définitive de l'app — sauvegarde ×3 par l'utilisateur AVANT toute autre action
+- ⏳ Reste utilisateur (guide PLAY-STORE.md §0) : compte Play Console (anticiper D-U-N-S), sauvegarde + installation keystore, bundleRelease, captures d'écran (min. 2), compte démo, fiche + questionnaires (réponses pré-rédigées), upload piste interne → production
+- ⏳ Après activation Play App Signing : ajouter le SHA-256 de la clé Google dans assetlinks.json (les empreintes coexistent dans le tableau) + Firebase
+- ⚠️ À vérifier : support@academiahub.com (page privacy — Hub vs Helm) avant de le renseigner comme contact Play Console

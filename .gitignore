@@ -137,6 +137,14 @@ apps/mobile-app/android/app/build/
 apps/mobile-app/android/build/
 apps/mobile-app/.idea/
 
+# Android — app Capacitor actuelle (Play Store, Task playstore-1)
+# ⚠️ Le keystore de release est l'identité définitive de l'app Android :
+#    JAMAIS commité. Voir apps/mobile/PLAY-STORE.md.
+apps/mobile/android/keystore.properties
+apps/mobile/android/**/*.jks
+apps/mobile/android/**/*.keystore
+apps/mobile/android/app/release/
+
 # iOS (mobile) — currently disabled, will be regenerated when needed
 apps/mobile-app/ios/Pods/
 apps/mobile-app/ios/.symlinks/

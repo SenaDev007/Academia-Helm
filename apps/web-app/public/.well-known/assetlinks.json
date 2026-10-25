@@ -3,7 +3,7 @@
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
-      "package_name": "io.academiahelm.mobile",
+      "package_name": "com.yehiortech.academiahelm",
       "sha256_cert_fingerprints": [
         "2124E36E3833EA52D4E4D6D932E51EF23589A10E9CB2F81A08AD2202AE1C8552"
       ]

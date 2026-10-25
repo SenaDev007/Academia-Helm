@@ -25,7 +25,12 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'io.academiahelm.mobile',
+  // ⭐ Package définitif Play Store (renommé le 2026-10-25, avant première
+  //    publication — le nom de package est FIGÉ à vie une fois l'app publiée).
+  //    ⚠️ Après ce renommage : enregistrer CE package dans la console Firebase
+  //    (même projet academia-helm-35536) et remplacer
+  //    android/app/google-services.json — voir PLAY-STORE.md §4.3.
+  appId: 'com.yehiortech.academiahelm',
   appName: 'Academia Helm',
   webDir: 'www',
 

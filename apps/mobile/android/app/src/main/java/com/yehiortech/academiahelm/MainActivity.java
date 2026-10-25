@@ -1,4 +1,4 @@
-package io.academiahelm.mobile;
+package com.yehiortech.academiahelm;
 
 import android.os.Bundle;
 import android.os.Handler;

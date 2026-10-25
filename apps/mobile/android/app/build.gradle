@@ -22,10 +22,13 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace "io.academiahelm.mobile"
+    // Package définitif Play Store (renommé io.academiahelm.mobile →
+    // com.yehiortech.academiahelm le 2026-10-25, avant toute publication —
+    // le nom de package devient définitif au premier upload).
+    namespace "com.yehiortech.academiahelm"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "io.academiahelm.mobile"
+        applicationId "com.yehiortech.academiahelm"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

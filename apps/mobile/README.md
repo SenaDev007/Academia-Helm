@@ -18,7 +18,11 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
-- **`appId`** : `io.academiahelm.mobile` (conforme au client Firebase existant)
+- **`appId`** : `com.yehiortech.academiahelm` — package définitif Play Store
+  (renommé depuis `io.academiahelm.mobile` le 2026-10-25, avant toute
+  publication). ⚠️ Enregistrer CE package dans la console Firebase et
+  remplacer `google-services.json` (voir `PLAY-STORE.md` §4.3) pour que le
+  push FCM fonctionne.
 - **Firebase** : projet `academia-helm-35536` (config `android/app/google-services.json`)
 - **Portée V1** : tous les portails du flux `/portal` — École, Enseignant,
   Parent/Élève, Public. Le patronat n'est pas listé sur `/portal` (absent du
@@ -79,6 +83,12 @@ npm install            # une seule fois
 
 - ✅ Plugin `@capacitor/push-notifications` intégré + `google-services.json`
 - ✅ Projet Firebase `academia-helm-35536` (même projet que le web)
+- ⚠️ **Renommage package (2026-10-25)** : le package est passé à
+  `com.yehiortech.academiahelm` → le fichier `google-services.json` du dépôt a
+  été mis à jour pour que le BUILD passe, mais l'app Android doit être
+  (re)créée AVEC CE package dans la console Firebase pour que FCM délivre
+  réellement les notifications (sinon échec silencieux à l'obtention du
+  jeton). Procédure complète : `PLAY-STORE.md` §4.3.
 - ⏳ **Étape suivante (pont web)** : dans `web-app`, détecter
   `window.Capacitor` → demander le token FCM → l'enregistrer via le module
   `notifications` de l'api-server (cible des envois). À implémenter quand

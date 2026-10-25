@@ -13496,3 +13496,22 @@ Stage Summary:
 - ⏳ Reste utilisateur (guide PLAY-STORE.md §0) : compte Play Console (anticiper D-U-N-S), sauvegarde + installation keystore, bundleRelease, captures d'écran (min. 2), compte démo, fiche + questionnaires (réponses pré-rédigées), upload piste interne → production
 - ⏳ Après activation Play App Signing : ajouter le SHA-256 de la clé Google dans assetlinks.json (les empreintes coexistent dans le tableau) + Firebase
 - ⚠️ À vérifier : support@academiahub.com (page privacy — Hub vs Helm) avant de le renseigner comme contact Play Console
+
+---
+Task ID: playstore-rename-1
+Agent: Super Z (agent principal)
+Task: Renommage du package de l'app Android io.academiahelm.mobile → com.yehiortech.academiahelm (identité Play Store définitive, avant première publication) + configuration de la fiche Play Store.
+
+Work Log:
+- Contexte : le nom de package est FIGÉ à vie au premier upload Play Store — renommé au bon moment (avant publication, APK debug validée sous l'ancien package)
+- Fichiers natifs renommés : capacitor.config.ts (appId) ; android/app/build.gradle (namespace + applicationId) ; MainActivity.java déplacé en java/com/yehiortech/acadiahelm/ (git mv, package Java mis à jour, arborescence byte-exact vérifiée vs package) ; strings.xml (package_name + custom_url_scheme) ; google-services.json (package_name — le build passe, MAIS l'enregistrement Firebase du nouveau package reste à faire par l'utilisateur pour FCM)
+- Web : assetlinks.json (package_name com.yehiortech.academiahelm, même empreinte SHA-256 du keystore — le certificat est indépendant du nom de package) → redéployé Vercel au push
+- Assets régénérés : npx cap sync android (capacitor.config.json généré avec le nouvel appId, gitignoré)
+- Docs : PLAY-STORE.md — checklist étendue (16 items : renommage fait + Firebase à faire), nouveau §3.5 (identité package, fichiers impactés, conséquences : keystore inchangé, ancienne APK debug = app distincte à désinstaller), nouveau §4.3 (procédure Firebase 5 min : ajouter app Android com.yehiortech.academiahelm au projet existant academia-helm-35536 + télécharger google-services.json — même projet = clé serveur api-server inchangée) ; fiche Play Store complétée (§5.1 éditeur Yehiortech, Annexe A.0 tableau des champs d'identité, description complète signée « éditée par Yehiortech », A.5 contact) ; README.md mobile (appId + bloc FCM renommage) ; docs/mobile-legacy/README.md (note d'obsolescence du google-services.json archivé)
+- Validations : XML minidom OK (strings.xml, AndroidManifest.xml) ; JSON OK (google-services.json, assetlinks.json) ; appId généré OK ; zéro résidu io.academiahelm.mobile hors commentaires historiques/docs
+
+Stage Summary:
+- ✅ Package définitif : com.yehiortech.academiahelm partout (natif + web + docs), build prêt, fiche Play Store complète (éditeur Yehiortech)
+- ⚠️ Utilisateur AVANT bundleRelease : ré-enregistrer le package dans Firebase (PLAY-STORE.md §4.3) et remplacer google-services.json — sinon FCM silencieusement muet
+- ⚠️ Après rebuild : l'ancienne APK debug (io.academiahelm.mobile) reste comme app distincte — adb uninstall io.academiahelm.mobile
+- ⏳ Cap sync + rebuild requis : cd apps/mobile && npx cap sync android && cd android && ./gradlew bundleRelease

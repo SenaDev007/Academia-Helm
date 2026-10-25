@@ -1,8 +1,10 @@
 # Déploiement Play Store — Academia Helm (Android)
 
-> Guide complet et pas-à-pas pour publier `io.academiahelm.mobile` sur le
-> Google Play Store. État au 2026-10-25 — l'APK **debug** a été validée sur
-> téléphone ; ce document couvre tout le reste jusqu'à la mise en production.
+> Guide complet et pas-à-pas pour publier `com.yehiortech.academiahelm` sur
+> le Google Play Store. État au 2026-10-25 — l'APK **debug** a été validée sur
+> téléphone (sous l'ancien package `io.academiahelm.mobile`) ; le package a
+> depuis été renommé avant toute publication (définitif à vie au premier
+> upload) ; ce document couvre tout le reste jusqu'à la mise en production.
 >
 > Architecture rappel : coquille Capacitor chargeant l'app web LIVE
 > (`https://academiahelm.com/portal`). Les mises à jour **web** se propagent
@@ -20,14 +22,16 @@
 | 4 | Permission `POST_NOTIFICATIONS` (Android 13+) | ✅ Fait | `AndroidManifest.xml` |
 | 5 | Icône Play 512×512 + bannière 1024×500 | ✅ Fait | `apps/mobile/store-assets/` §5.2 |
 | 6 | Textes de fiche (FR) | ✅ Rédigés | Annexe A |
-| 7 | Compte développeur Play Console | ⬜ À faire (vous) | §2 — frais uniques 25 $ |
-| 8 | Sauvegarde du keystore (×3) | ⬜ À faire (vous) | §3.2 — **critique** |
-| 9 | Installation du keystore sur votre machine | ⬜ À faire (vous) | §3.3 |
-| 10 | Construction AAB + test release | ⬜ À faire (vous) | §4 |
-| 11 | Captures d'écran téléphone (min. 2) | ⬜ À faire (vous) | §5.2 |
-| 12 | Compte démo pour « Accès à l'app » | ⬜ À faire (vous) | §5.3 |
-| 13 | Fiche + questionnaires Play Console | ⬜ À faire (vous) | §5 |
-| 14 | Upload AAB + piste interne → production | ⬜ À faire (vous) | §5.10 |
+| 7 | **Renommage package → `com.yehiortech.academiahelm`** | ✅ Fait (ce dépôt) | §3.5 — définitif au premier upload |
+| 8 | **Ré-enregistrement Firebase (FCM)** pour le NOUVEAU package | ⬜ À faire (vous) | §4.3 — requis pour le push |
+| 9 | Compte développeur Play Console | ⬜ À faire (vous) | §2 — frais uniques 25 $ |
+| 10 | Sauvegarde du keystore (×3) | ⬜ À faire (vous) | §3.2 — **critique** |
+| 11 | Installation du keystore sur votre machine | ⬜ À faire (vous) | §3.3 |
+| 12 | Construction AAB + test release | ⬜ À faire (vous) | §4 |
+| 13 | Captures d'écran téléphone (min. 2) | ⬜ À faire (vous) | §5.2 |
+| 14 | Compte démo pour « Accès à l'app » | ⬜ À faire (vous) | §5.3 |
+| 15 | Fiche + questionnaires Play Console | ⬜ À faire (vous) | §5 |
+| 16 | Upload AAB + piste interne → production | ⬜ À faire (vous) | §5.10 |
 
 ---
 
@@ -77,7 +81,8 @@ personnel reste utilisable au prix du délai de test fermé.
 1. `play.google.com/console` → « Créer un compte » → payer les 25 $ (carte
    bancaire ; à défaut, une carte prépayée virtuelle fonctionne).
 2. Renseigner le **nom développeur** affiché publiquement : par exemple
-   « Academia Helm » (30 caractères max).
+   « **Yehiortech** » (30 caractères max — cohérent avec le package
+   `com.yehiortech.academiahelm`, §3.5).
 3. Compléter la vérification d'identité (pièce d'identité / documents
    organisation selon le type choisi) — les nouvelles règles Google exigent
    cette étape avant toute publication.
@@ -157,6 +162,38 @@ keytool -keypasswd -alias academiahelm \
 Mettre ensuite à jour `keystore.properties` avec le nouveau mot de passe.
 Les empreintes SHA ne changent **pas** (le certificat reste identique).
 
+### 3.5 Identité de l'app — package `com.yehiortech.academiahelm`
+
+Le nom de package (applicationId) est l'identité **définitive** de l'app sur
+le Play Store : une fois la première version publiée, il est **impossible à
+changer** (ni transfert vers un autre package, ni rachat — il faudrait
+publier une app « nouvelle » et perdre les installations).
+
+> ✅ Le renommage `io.academiahelm.mobile` → `com.yehiortech.academiahelm`
+> a été effectué le 2026-10-25, **avant toute publication** — au bon moment.
+
+Fichiers impactés (tous déjà mis à jour dans ce dépôt) :
+
+| Fichier | Rôle |
+|---|---|
+| `apps/mobile/capacitor.config.ts` | `appId` Capacitor (génère l'identité native) |
+| `android/app/build.gradle` | `namespace` + `applicationId` (l'identité Play Store) |
+| `android/app/src/main/java/com/yehiortech/acadiahelm/MainActivity.java` | package Java (arborescence déplacée) |
+| `android/app/src/main/res/values/strings.xml` | `package_name` + schéma d'URL personnalisé |
+| `android/app/google-services.json` | package Firebase (à re-télécharger, voir §4.3) |
+| `apps/web-app/public/.well-known/assetlinks.json` | App Links vérifiés (web, déployé Vercel) |
+
+Conséquences pratiques :
+
+- **Le keystore reste valable** — il signe le nouveau package sans changement
+  (les empreintes SHA sont indépendantes du nom de package).
+- **L'APK debug déjà installée** sur votre téléphone porte l'ANCIEN package :
+  après rebuild, l'app s'installe comme une **application différente** (deux
+  icônes). Désinstallez l'ancienne : `adb uninstall io.academiahelm.mobile`.
+- **FCM exige le ré-enregistrement Firebase** du nouveau package (§4.3).
+- **App Links** : `assetlinks.json` a été mis à jour puis redéployé — la
+  vérification Android fonctionne pour le nouveau package.
+
 ---
 
 ## 4. Construire l'AAB et tester le build release
@@ -165,7 +202,7 @@ Les empreintes SHA ne changent **pas** (le certificat reste identique).
 
 ```bash
 cd apps/mobile
-npx cap sync android          # seulement si capacitor.config.ts a changé
+npx cap sync android          # ⚠️ OBLIGATOIRE ici : capacitor.config.ts a changé (appId)
 cd android
 ./gradlew bundleRelease       # Windows : gradlew.bat bundleRelease
 ```
@@ -184,7 +221,7 @@ debug** si Android refuse la signature différente :
 ```bash
 cd apps/mobile/android
 ./gradlew assembleRelease
-adb uninstall io.academiahelm.mobile        # enlever la version debug
+adb uninstall io.academiahelm.mobile        # enlever l'ANCIENNE app debug (autre package)
 adb install -r app/build/outputs/apk/release/app-release.apk
 ```
 
@@ -192,6 +229,36 @@ Vérifications attendues sur le téléphone : démarrage → écran de chargemen
 logo/spinner → portail ; login école + login parent ; zone de statut navy ;
 retour de paiement FedaPay. Tout ce qui a été validé en debug doit se
 reproduire à l'identique — seule la signature change.
+
+### 4.3 ⚠️ AVANT le build : ré-enregistrer l'app dans Firebase (FCM)
+
+Le renommage du package (§3.5) invalide l'enregistrement Firebase : le
+fichier `google-services.json` du dépôt a été mis à jour pour que le build
+passe, mais la console Firebase ne connaît pas encore
+`com.yehiortech.academiahelm` — sans enregistrement, l'obtention du jeton
+FCM échoue silencieusement (notifications jamais reçues, sans crash).
+
+Procédure (~5 minutes, à faire une seule fois) :
+
+1. Console **Firebase** → projet `academia-helm-35536` (celui du web —
+   même projet, la clé serveur côté api-server ne change donc PAS).
+2. ⚙️ **Paramètres du projet → Général → Vos applications → Ajouter une
+   application** → icône Android.
+3. Nom du package Android : `com.yehiortech.academiahelm` (exactement).
+4. *(Recommandé)* Ajouter les empreintes du keystore (§3.1) : SHA-1
+   `91:52:30:0A:54:EA:E0:77:54:8E:EA:6A:2F:35:BC:58:04:30:00:77` et SHA-256
+   `21:24:E3:6E:38:33:EA:52:D4:E4:D6:D9:32:E5:1E:F2:35:89:A1:0E:9C:B2:F8:1A:08:AD:22:02:AE:1C:85:52`.
+5. **Télécharger `google-services.json`** → remplacer
+   `apps/mobile/android/app/google-services.json` (le nouveau fichier
+   contient le client du nouveau package — c'est lui qui fait foi).
+6. *(Après activation de Play App Signing, §5.9)* revenir ajouter l'empreinte
+   SHA de la clé Google dans ce même enregistrement.
+
+Ne pas créer de NOUVEAU projet Firebase — tout l'existant (clé serveur,
+configuration) resterait derrière. On ajoute simplement une application au
+projet existant ; l'ancien client `io.academiahelm.mobile` peut rester, il ne
+gêne pas (l'app debug obsolète sur votre téléphone continuera même à
+recevoir ses propres notifications tant qu'elle est installée).
 
 ---
 
@@ -207,6 +274,15 @@ Play Console → « Créer une application » :
 | Langue par défaut | `fr-FR` (français) |
 | App ou jeu | **App** |
 | Gratuit ou payant | **Gratuit** (l'app elle-même ne se vend pas) |
+
+> Le nom de package `com.yehiortech.academiahelm` n'est PAS demandé à la
+> création : il est lu automatiquement dans l'AAB au premier upload — et il
+> s'y fixe définitivement (d'où le renommage avant publication, §3.5).
+
+Le **nom développeur** (renseigné à la création du compte, §2.2) est affiché
+sur la fiche sous le titre : utiliser l'identité éditrice, par exemple
+**Yehiortech** (cohérent avec le package `com.yehiortech.…` — 30 caractères
+max). Il est modifiable plus tard sans nouvelle revue.
 
 ### 5.2 Fiche Play (présence sur le Play Store)
 
@@ -362,8 +438,8 @@ https://enseignant.academiahelm.com/.well-known/assetlinks.json → 200 + JSON
 ### 6.2 Vérifier sur un téléphone (après installation via Play)
 
 ```bash
-adb shell pm verify-app-links --re-verify io.academiahelm.mobile
-adb shell pm get-app-links io.academiahelm.mobile
+adb shell pm verify-app-links --re-verify com.yehiortech.academiahelm
+adb shell pm get-app-links com.yehiortech.academiahelm
 # attendu : domain_status=verified pour les deux domaines
 ```
 
@@ -432,7 +508,24 @@ la paire (applicationId, clé d'upload) qui identifie la continuité de l'app.
 
 ---
 
-## Annexe A — Textes de fiche prêts à copier
+## Annexe A — Fiche Play Store prête à copier
+
+> Tous les champs de la fiche principale (Play Console → Présence sur le
+> Play Store → Fiche principale), dans l'ordre du formulaire, avec les
+> limites de caractères. Rédigés pour `com.yehiortech.academiahelm`,
+> éditeur **Yehiortech**, langue `fr-FR`.
+
+### A.0 Champs d'identité (formulaire fiche)
+
+| Champ | Valeur | Limite |
+|---|---|---|
+| Titre de l'app | `Academia Helm` | 30 ✅ (13) |
+| Description courte | voir A.2 | 80 ✅ |
+| Description complète | voir A.3 | 4000 ✅ (~1500) |
+| Éditeur (nom développeur) | `Yehiortech` | 30 ✅ (9) |
+| Adresse e-mail | `support@academiahelm.com` (après vérif. §5.7) | — |
+| Téléphone | facultatif | — |
+| Site web | `https://academiahelm.com` | — |
 
 ### A.1 Titre (max 30)
 
@@ -485,6 +578,8 @@ POURQUOI ACADEMIA HELM
 Pour utiliser l'application, votre établissement doit être inscrit sur la
 plateforme Academia Helm. Contactez-nous depuis notre site pour créer le
 compte de votre école.
+
+Academia Helm est éditée par Yehiortech.
 ```
 
 ### A.4 Notes de version — v1.0.0 (première version)
@@ -501,9 +596,11 @@ Première version publique d'Academia Helm sur Android.
 
 | Champ | Valeur |
 |---|---|
+| Éditeur (nom développeur) | `Yehiortech` |
 | Site web | `https://academiahelm.com` |
 | E-mail | `support@academiahelm.com` (après vérification §5.7) |
 | Téléphone | facultatif |
+| Package (lecture auto par l'AAB) | `com.yehiortech.academiahelm` |
 
 ---
 

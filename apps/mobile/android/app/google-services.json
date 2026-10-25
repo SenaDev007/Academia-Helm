@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:524165352868:android:44a22cf6c587df04184531",
         "android_client_info": {
-          "package_name": "io.academiahelm.mobile"
+          "package_name": "com.yehiortech.academiahelm"
         }
       },
       "oauth_client": [],

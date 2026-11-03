@@ -22,7 +22,7 @@
  */
 
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, UnsupportedMediaTypeException } from '@nestjs/common';
-import { Interval } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
 import { ParentUserProvisioningService } from '../../students/services/parent-user-provisioning.service';
@@ -1522,7 +1522,13 @@ export class ChatService {
   }
 
   /**
-   * Cron: dispatch due scheduled messages. Called every minute via @Interval.
+   * Cron: dispatch due scheduled messages. Cadence 15 min alignée horloge.
+   *
+   * ⭐ AUDIT COÛT NEON (2026-11-03) — cadence 60 s → 15 min : le tick toutes
+   *    les minutes interrogeait la base 1 440 fois/jour sans laisser les 5 min
+   *    d'inactivité nécessaires au scale-to-zero de Neon. À 15 min, aligné avec
+   *    les dispatchers emails/communauté, les ticks forment un seul réveil
+   *    par quart d'heure. Latence d'envoi des messages programmés : ≤ 15 min.
    *
    * ⭐ FIX V6 (bug « message programmé ne fonctionne pas ») :
    *    La table chat_scheduled_messages n'a PAS de colonne "tenantId"
@@ -1532,7 +1538,8 @@ export class ChatService {
    *    statut FAILED : le message programmé n'était JAMAIS envoyé.
    *    On récupère maintenant le tenantId via un JOIN sur chat_conversations.
    */
-  @Interval(60000) // every 60 seconds
+  // Toutes les 15 min, aligné avec emails + communauté
+  @Cron('*/15 * * * *')
   async dispatchScheduledMessages(): Promise<number> {
     const due: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT sm.*, c."tenantId" AS "tenantId"

@@ -5,8 +5,16 @@
  *
  * Le moteur du « conseil quotidien » : chaque post programmé (table
  * community_scheduled_posts) est publié à l'heure prévue dans son canal,
- * signé de son auteur. Intervalle 30 s (Interval de @nestjs/schedule,
- * ScheduleModule déjà enregistré à la racine).
+ * signé de son auteur. Cadence 15 min alignée sur l'horloge (Cron de
+ * @nestjs/schedule, ScheduleModule déjà enregistré à la racine).
+ *
+ * ⭐ AUDIT COÛT NEON (2026-11-03) — cadence 30 s → 15 min : un tick toutes les
+ *   30 s interrogeait la base 2 880 fois/jour et empêchait totalement le
+ *   scale-to-zero de Neon (compute facturé 24/7). À 15 min, alignée avec les
+ *   autres dispatchers (emails, chat), les ticks forment UN seul réveil par
+ *   quart d'heure → Neon dort ~10 min entre chaque lot. Latence de
+ *   publication des posts programmés : ≤ 15 min (acceptable pour un
+ *   « conseil quotidien »).
  *
  * Garanties :
  *   - Idempotent : statut PENDING uniquement, passage SENT atomique
@@ -17,7 +25,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { Interval } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { CommunityRepository } from './community.repository';
 
 @Injectable()
@@ -27,7 +35,9 @@ export class CommunityScheduledDispatcher {
 
   constructor(private readonly repo: CommunityRepository) {}
 
-  @Interval(30000)
+  // Toutes les 15 min alignées sur l'horloge — même minute que les
+  // dispatchers emails/chat (un seul réveil Neon par quart d'heure).
+  @Cron('*/15 * * * *')
   async tick() {
     if (this.running) return; // ⭐ pas de réentrance (cycle > 30 s possible)
     this.running = true;

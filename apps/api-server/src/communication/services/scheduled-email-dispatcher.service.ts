@@ -22,7 +22,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { ScheduledEmailService } from './scheduled-email.service';
 import { EmailService } from './email.service';
 
@@ -37,16 +37,22 @@ export class ScheduledEmailDispatcherService {
   ) {}
 
   /**
-   * Cron toutes les minutes pour dispatcher les emails programmés dus.
+   * Cron des emails programmés — cadence 15 min alignée sur l'horloge.
    *
-   * ⚠️ IMPORTANT : utilise CronExpression.EVERY_MINUTE (qui vaut '* * * * *',
-   * 5 champs sans secondes). Ne PAS utiliser '0 * * * * *' (6 champs avec
-   * secondes) car @nestjs/schedule n'accepte que les expressions 5 champs
-   * par défaut — une expression 6 champs fait crasher l'app au démarrage
-   * (le ScheduleModule lève une erreur pendant l'init, avant que l'app
-   * ne bind le port 3000 → "instance refused connection" sur Fly.io).
+   * ⭐ AUDIT COÛT NEON (2026-11-03) — cadence 1 min → 15 min : le tick chaque
+   *    minute réveillait Neon en continu (aucune fenêtre de veille de 5 min,
+   *    compute facturé 24/7). À 15 min, aligné avec les dispatchers chat et
+   *    communauté, les ticks forment un seul réveil par quart d'heure.
+   *    Latence d'envoi des emails programmés : ≤ 15 min.
+   *
+   * ⚠️ IMPORTANT : expression cron à 5 champs SANS secondes. Ne PAS utiliser
+   *    6 champs avec secondes car @nestjs/schedule n'accepte que les
+   *    expressions 5 champs par défaut —
+   *    une expression 6 champs fait crasher l'app au démarrage (le
+   *    ScheduleModule lève une erreur pendant l'init, avant que l'app ne
+   *    bind le port 3000 → "instance refused connection" sur Fly.io).
    */
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron('*/15 * * * *')
   async dispatchPendingEmails(): Promise<void> {
     // Évite les runs concurrents si le précédent n'a pas fini
     if (this.isRunning) {

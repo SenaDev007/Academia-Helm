@@ -2012,21 +2012,15 @@ async function bootstrap() {
     }
   }, 3000);
 
-  // ─── Neon DB Keep-Alive — ping every 4 minutes to prevent auto-suspend ───
-  // Neon is a serverless PostgreSQL that suspends after ~5 min of inactivity.
-  // When suspended, the next request triggers a cold start (2-10s) which
-  // causes "Connexion indisponible" errors for users.
-  // This interval sends a lightweight SELECT 1 every 4 minutes to keep
-  // the database warm.
-  setInterval(async () => {
-    try {
-      const prisma = app.get(PrismaService);
-      await prisma.$queryRaw`SELECT 1`;
-      // Silent — don't log every 4 minutes
-    } catch (err: any) {
-      logger.warn(`Neon keep-alive ping failed: ${err.message}`);
-    }
-  }, 4 * 60 * 1000); // 4 minutes
+  // ─── Neon DB Keep-Alive — SUPPRIMÉ (audit coût Neon, 2026-11-03) ───
+  // Ce SELECT 1 toutes les 4 min neutralisait TOTALEMENT le scale-to-zero :
+  // le compute Neon restait éveillé 24/7 (~$65/mois de CU sans traffic réel).
+  // La résilience cold-start est déjà assurée par ailleurs :
+  //   - PrismaService : connectionTimeoutMillis 30 s + retry auto ($extends)
+  //   - /health : liveness SANS ping DB (le healthcheck Railway toutes les
+  //     30 s ne réveillait plus Neon — cf. health.controller.ts)
+  //   - LoginPage : warm-up de la lambda pendant la saisie utilisateur
+  // Neon se rendort désormais 5 min après la dernière vraie requête.
 
   // ─── PERF 2026-09-07 : index + ANALYZE pour la pagination transactions ───
   // Index composite (tenantId, academicYearId, createdAt DESC) : la requête

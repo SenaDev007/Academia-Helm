@@ -12,7 +12,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
  * - Pool size adapté au mode (auto-detect pooler vs direct)
  * - Logging des requêtes lentes (> 500ms) via Prisma Client Extension
  * - Fire-and-forget warmup pour éviter de bloquer le bootstrap
- * - Keepalive à 4 min (sous le seuil Neon de 5 min)
+ * - ⚠️ Keepalive 4 min SUPPRIMÉ (2026-11-03) : il neutralisait le scale-to-zero Neon
  *
  * ⭐ RETRY automatique sur erreurs de connexion (ECONNRESET, 57P01, P1001, etc.)
  *    Quand Neon suspend le compute ou recycle une connexion du pooler, la socket
@@ -29,7 +29,6 @@ import { PrismaPg } from '@prisma/adapter-pg';
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PrismaService.name);
   private readonly skipDbCheck = process.env.SKIP_DB_CHECK === 'true';
-  private keepaliveInterval: NodeJS.Timeout | null = null;
 
   constructor(private configService?: ConfigService) {
     const rawUrl = configService?.get<string>('DATABASE_URL') || process.env.DATABASE_URL;
@@ -109,7 +108,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       //    après 20s. Chaque reconnexion = handshake TLS + auth (~50-150ms
       //    inter-région) payé par la requête utilisateur suivante — c'était
       //    une source de pics de latence aléatoires. Le recyclage est assuré
-      //    par maxLifetimeMilliseconds + le keepalive 4 min ci-dessous.
+      //    par maxLifetimeMilliseconds (30 min) ci-dessous.
       idleTimeoutMillis: 0,
       // ✅ 30s pour laisser Neon le temps de se réveiller (cold start = 5-10s)
       connectionTimeoutMillis: 30000,
@@ -286,25 +285,14 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     // Fire-and-forget: warm up in background (non-bloquant pour le bootstrap)
     warmupWithRetry().catch(() => {});
 
-    // Keepalive : ping la BDD toutes les 4 minutes pour garder la connexion chaude.
-    // ⭐ 4 min (pas 5) — le free-tier Neon suspend après 5 min d'inactivité.
-    this.keepaliveInterval = setInterval(async () => {
-      try {
-        await this.$queryRawUnsafe('SELECT 1');
-      } catch {
-        // Connexion perdue — le retry automatique dans $extends s'en occupera
-        // au prochain appel utilisateur. Le keepalive garantit juste que
-        // le pool reste actif.
-        this.logger.warn('⚠️ Prisma keepalive: connection lost — will retry on next query');
-      }
-    }, 4 * 60 * 1000); // 4 minutes
+    // ⭐ AUDIT COÛT NEON (2026-11-03) — keepalive 4 min SUPPRIMÉ :
+    //    un SELECT 1 toutes les 4 min empêchait le scale-to-zero → compute
+    //    Neon facturé 24/7 (~$65/mois de CU) sans aucune requête utilisateur.
+    //    Le cold start éventuel reste couvert par : connectionTimeoutMillis
+    //    30 s, retry $extends sur erreurs de connexion, warmup au boot.
   }
 
   async onModuleDestroy() {
-    if (this.keepaliveInterval) {
-      clearInterval(this.keepaliveInterval);
-      this.keepaliveInterval = null;
-    }
     try {
       const pool = (this as any).__pool as Pool | undefined;
       if (pool) {

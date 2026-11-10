@@ -3,20 +3,18 @@
  * COMMUNITY SCHEDULED DISPATCHER — Publication automatique des posts
  * ============================================================================
  *
- * Le moteur du « conseil quotidien » : chaque post programmé (table
- * community_scheduled_posts) est publié à l'heure prévue dans son canal,
- * signé de son auteur. Cadence 15 min alignée sur l'horloge (Cron de
- * @nestjs/schedule, ScheduleModule déjà enregistré à la racine).
+ * ⭐ AUDIT COÛT NEON (2026-11) — v3 événementielle.
+ *    Historique : @Interval(30 s) → 2 880 requêtes/jour (pg_stat_statements :
+ *    20 660 appels cumulés — les plus fréquentes de toute la base) ;
+ *    interim 15 min (4b2d12d) → encore 96 réveils/jour. Désormais :
+ *      - chaque post PENDING est armé en mémoire (setTimeout) à sa date
+ *        exacte → publication à l'heure, zéro requête périodique ;
+ *      - CommunityAdminService appelle notifyScheduledChanged() à chaque
+ *        création/modification (action utilisateur → réarmement) ;
+ *      - onModuleInit rattrape au démarrage (1 requête/déploiement) ;
+ *      - @Cron 6 h = balayage de rattrapage anti-crash (4 requêtes/jour).
  *
- * ⭐ AUDIT COÛT NEON (2026-11-03) — cadence 30 s → 15 min : un tick toutes les
- *   30 s interrogeait la base 2 880 fois/jour et empêchait totalement le
- *   scale-to-zero de Neon (compute facturé 24/7). À 15 min, alignée avec les
- *   autres dispatchers (emails, chat), les ticks forment UN seul réveil par
- *   quart d'heure → Neon dort ~10 min entre chaque lot. Latence de
- *   publication des posts programmés : ≤ 15 min (acceptable pour un
- *   « conseil quotidien »).
- *
- * Garanties :
+ * Garanties conservées :
  *   - Idempotent : statut PENDING uniquement, passage SENT atomique
  *     (UPDATE ... WHERE status='PENDING' RETURNING → un seul worker gagne)
  *   - Résilient : échec → FAILED + reason, jamais de republication
@@ -24,22 +22,71 @@
  * ============================================================================
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { CommunityRepository } from './community.repository';
 
 @Injectable()
-export class CommunityScheduledDispatcher {
+export class CommunityScheduledDispatcher implements OnModuleInit {
   private readonly logger = new Logger(CommunityScheduledDispatcher.name);
   private running = false;
+  private timers = new Map<string, NodeJS.Timeout>();
 
   constructor(private readonly repo: CommunityRepository) {}
 
-  // Toutes les 15 min alignées sur l'horloge — même minute que les
-  // dispatchers emails/chat (un seul réveil Neon par quart d'heure).
-  @Cron('*/15 * * * *')
-  async tick() {
-    if (this.running) return; // ⭐ pas de réentrance (cycle > 30 s possible)
+  /** Rattrapage au démarrage : arme tous les posts PENDING (1 requête/déploiement). */
+  async onModuleInit(): Promise<void> {
+    setTimeout(() => {
+      this.notifyScheduledChanged().catch(() => {});
+    }, 30_000);
+  }
+
+  /**
+   * Réarmement complet (appelé par CommunityAdminService après création/modif/
+   * annulation d'un post, et au démarrage). Action utilisateur → requête
+   * légitime. Remplace l'ancien polling 30 s.
+   */
+  async notifyScheduledChanged(): Promise<void> {
+    try {
+      await this.repo.recoverStaleSendingPosts();
+      const pending = (await this.repo.listScheduledPosts('PENDING')) as any[];
+      this.clearTimers();
+      let hasDue = false;
+      for (const post of pending) {
+        const when = new Date(post.scheduled_at).getTime();
+        if (!Number.isFinite(when)) continue;
+        if (when <= Date.now()) hasDue = true;
+        this.armPost(post.id, when);
+      }
+      if (hasDue) await this.sweep();
+    } catch (e: any) {
+      this.logger.warn(`Rattrapage posts programmés : ${e?.message}`);
+    }
+  }
+
+  /** Arme la publication d'un post à sa date exacte (in-process, zéro polling DB). */
+  private armPost(id: string, when: number): void {
+    const delay = when - Date.now();
+    // Déjà dû → sweep immédiat ; horizon > 24 j → balayage 6 h s'en charge
+    if (delay > 24 * 24 * 60 * 60 * 1000) return;
+    const fire = () => {
+      this.timers.delete(id);
+      this.sweep().catch(() => {});
+    };
+    const t: NodeJS.Timeout = delay <= 0 ? setTimeout(fire, 0) : setTimeout(fire, delay);
+    (t as any).unref?.(); // ne retient pas l'arrêt du process
+    this.timers.set(id, t);
+  }
+
+  private clearTimers(): void {
+    for (const t of this.timers.values()) clearTimeout(t);
+    this.timers.clear();
+  }
+
+  /** Balayage de rattrapage 4×/jour (00/06/12/18 h) — ex-polling 30 s. */
+  @Cron('0 */6 * * *')
+  async sweep(): Promise<void> {
+    if (this.running) return; // ⭐ pas de réentrance (cycle > durée possible)
     this.running = true;
     try {
       // ⭐ Récupération : un claim 'SENDING' abandonné (crash) > 5 min → re-PENDING

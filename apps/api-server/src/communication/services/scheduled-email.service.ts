@@ -275,6 +275,21 @@ export class ScheduledEmailService implements OnModuleInit {
   }
 
   /**
+   * ⭐ AUDIT COÛT NEON : tous les emails PENDING (dus OU futurs) — utilisé
+   *    par le dispatcher pour l'armement en mémoire (remplace le polling
+   *    chaque minute qui maintenait Neon éveillé 24h/24).
+   */
+  async findPendingAll(limit = 200): Promise<ScheduledEmail[]> {
+    return this.prisma.$queryRawUnsafe<ScheduledEmail[]>(
+      `SELECT * FROM scheduled_emails
+       WHERE status = 'PENDING'
+       ORDER BY scheduled_at ASC
+       LIMIT $1`,
+      limit,
+    );
+  }
+
+  /**
    * Marque un email comme envoyé.
    */
   async markAsSent(id: string, emailLogId?: string): Promise<void> {

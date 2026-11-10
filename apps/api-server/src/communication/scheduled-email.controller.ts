@@ -26,11 +26,18 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { GetTenant } from '../common/decorators/tenant.decorator';
 import { ScheduledEmailService, CreateScheduledEmailDto } from './services/scheduled-email.service';
+import { ScheduledEmailDispatcherService } from './services/scheduled-email-dispatcher.service';
 
 @Controller('communication/scheduled-emails')
 @UseGuards(JwtAuthGuard, TenantGuard)
 export class ScheduledEmailController {
-  constructor(private readonly scheduledEmailService: ScheduledEmailService) {}
+  constructor(
+    private readonly scheduledEmailService: ScheduledEmailService,
+    // ⭐ AUDIT COÛT NEON : notifie le dispatcher (armement en mémoire)
+    //    après chaque création/annulation/suppression — remplace le polling
+    //    chaque minute qui maintenait Neon éveillé 24h/24.
+    private readonly scheduledEmailDispatcher: ScheduledEmailDispatcherService,
+  ) {}
 
   /**
    * POST /api/communication/scheduled-emails
@@ -46,7 +53,10 @@ export class ScheduledEmailController {
     if (!tid) {
       throw new BadRequestException('Tenant ID requis pour cette opération');
     }
-    return this.scheduledEmailService.create(tid, body);
+    const created = await this.scheduledEmailService.create(tid, body);
+    // ⭐ Armement événementiel de l'envoi à l'heure exacte (zéro polling DB)
+    this.scheduledEmailDispatcher.notifyScheduledChanged().catch(() => {});
+    return created;
   }
 
   /**
@@ -103,7 +113,10 @@ export class ScheduledEmailController {
     if (!tid) {
       throw new BadRequestException('Tenant ID requis pour cette opération');
     }
-    return this.scheduledEmailService.cancel(id, tid);
+    const cancelled = await this.scheduledEmailService.cancel(id, tid);
+    // ⭐ Réaligne les timers (l'email annulé ne doit plus être armé)
+    this.scheduledEmailDispatcher.notifyScheduledChanged().catch(() => {});
+    return cancelled;
   }
 
   /**
@@ -121,6 +134,7 @@ export class ScheduledEmailController {
       throw new BadRequestException('Tenant ID requis pour cette opération');
     }
     await this.scheduledEmailService.delete(id, tid);
+    this.scheduledEmailDispatcher.notifyScheduledChanged().catch(() => {});
     return { success: true };
   }
 }

@@ -19,6 +19,7 @@ import { Injectable, NotFoundException, BadRequestException, ForbiddenException 
 import { CommunityRepository } from './community.repository';
 import { CommunityAuthService } from './community-auth.service';
 import { CommunityBootstrap } from './community.bootstrap';
+import { CommunityScheduledDispatcher } from './community-scheduled-dispatcher';
 import { randomUUID } from 'crypto';
 
 const TEAM_ROLES = ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'];
@@ -33,6 +34,10 @@ export class CommunityAdminService {
     private readonly repo: CommunityRepository,
     private readonly authService: CommunityAuthService,
     private readonly bootstrap: CommunityBootstrap,
+    // ⭐ AUDIT COÛT NEON : notifie le dispatcher (armement en mémoire)
+    //    après chaque création/modification de post programmé — remplace
+    //    l'ancien polling 30 s qui mainteniait Neon éveillé 24h/24.
+    private readonly scheduledDispatcher: CommunityScheduledDispatcher,
   ) {}
 
   // ─────────────────────────── Membres ───────────────────────────
@@ -143,13 +148,16 @@ export class CommunityAdminService {
     if (input.type && !['ANNOUNCEMENT', 'TEXT'].includes(input.type)) {
       throw new BadRequestException('Type de post invalide');
     }
-    return this.repo.insertScheduledPost({
+    const post = await this.repo.insertScheduledPost({
       channelId: input.channelId,
       authorId: actor.id,
       type: input.type ?? (channel.type === 'ANNOUNCEMENT' ? 'ANNOUNCEMENT' : 'TEXT'),
       content: input.content.trim(),
       scheduledAt: when,
     });
+    // ⭐ Réarmement événementiel (zéro polling DB périodique)
+    this.scheduledDispatcher.notifyScheduledChanged().catch(() => {});
+    return post;
   }
 
   async updateScheduled(actor: { role: string }, postId: string, patch: { content?: string; scheduledAt?: string; status?: string }) {
@@ -169,6 +177,8 @@ export class CommunityAdminService {
     }
     if (!Object.keys(clean).length) throw new BadRequestException('Rien à mettre à jour');
     await this.repo.updateScheduledPost(postId, clean);
+    // ⭐ Réarmement événementiel : date/statut modifiés → timers réalignés
+    this.scheduledDispatcher.notifyScheduledChanged().catch(() => {});
     return this.repo.listScheduledPosts().then((rows: any[]) => rows.find((r) => r.id === postId) ?? null);
   }
 

@@ -40,11 +40,16 @@ export class AutoRecoveryService {
   ) {}
 
   /**
-   * Cron job : vérifie toutes les heures si des relances auto doivent être envoyées.
+   * Cron job : vérifie si des relances auto doivent être envoyées.
    * Pour chaque tenant avec autoRecoveryEnabled = true, vérifie si l'heure
    * d'exécution correspond et lance la relance.
+   *
+   * ⭐ AUDIT COÛT NEON — ex '0 * * * *' (24 requêtes/jour qui réveillaient le
+   *    compute Neon 24×/jour même sans aucun utilisateur). Désormais 3×/jour
+   *    aux heures d'école : même couverture fonctionnelle (les échéances
+   *    journalières tombent dans la fenêtre), ~3 réveils au lieu de 24.
    */
-  @Cron('0 * * * *') // Toutes les heures à minute 0
+  @Cron('0 7,12,17 * * *') // 3×/jour (07:00, 12:00, 17:00)
   async handleScheduledRecovery() {
     this.logger.log('Vérification des relances automatiques...');
 

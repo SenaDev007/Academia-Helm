@@ -11,8 +11,12 @@ import { PrismaPg } from '@prisma/adapter-pg';
  * - Connection pooling : utilise DATABASE_URL tel quel (si pooler configuré, ça passe par le pooler)
  * - Pool size adapté au mode (auto-detect pooler vs direct)
  * - Logging des requêtes lentes (> 500ms) via Prisma Client Extension
- * - Fire-and-forget warmup pour éviter de bloquer le bootstrap
- * - ⚠️ Keepalive 4 min SUPPRIMÉ (2026-11-03) : il neutralisait le scale-to-zero Neon
+ * - Fire-and-forget warmup (boot uniquement) pour éviter de bloquer le bootstrap
+ * - ⭐ AUDIT COÛT NEON : keepalive 4 min SUPPRIMÉ (2026-11-03) — un ping sous
+ *   le seuil d'autosuspend (5 min) maintenait le compute éveillé 24h/24
+ *   (~$19/mois). Neon se rendort ≤ 5 min après la dernière requête ; le pool
+ *   reste ouvert côté client (le pooler Neon multiplexe, sans bloquer la
+ *   suspension), et la reconnexion est gérée par le retry ci-dessous.
  *
  * ⭐ RETRY automatique sur erreurs de connexion (ECONNRESET, 57P01, P1001, etc.)
  *    Quand Neon suspend le compute ou recycle une connexion du pooler, la socket
@@ -108,7 +112,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       //    après 20s. Chaque reconnexion = handshake TLS + auth (~50-150ms
       //    inter-région) payé par la requête utilisateur suivante — c'était
       //    une source de pics de latence aléatoires. Le recyclage est assuré
-      //    par maxLifetimeMilliseconds (30 min) ci-dessous.
+      //    par maxLifetimeMilliseconds (30 min) ci-dessous. NB : ces connexions
+      //    client restent multiplexées par le pooler Neon et NEMPÊCHENT PAS la
+      //    suspension du compute (seules les requêtes reset le timer d'autosuspend).
       idleTimeoutMillis: 0,
       // ✅ 30s pour laisser Neon le temps de se réveiller (cold start = 5-10s)
       connectionTimeoutMillis: 30000,
@@ -282,14 +288,20 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       }
     };
 
-    // Fire-and-forget: warm up in background (non-bloquant pour le bootstrap)
+    // Fire-and-forget: warm up in background (non-bloquant pour le bootstrap).
+    // ⭐ AUDIT COÛT NEON — keepalive 4 min SUPPRIMÉ : ce ping maintenait le
+    //    compute Neon éveillé 24h/24 (facturation continue ~0.25 CU/h).
+    //    Le warmup BOOT UNIQUE reste légitime : 1 requête par déploiement,
+    //    déclenchée par une action humaine (déploiement), pas par un timer.
+    //    Neon se réveille de lui-même (~500 ms) sur la 1re requête utilisateur
+    //    ; le retry automatique ci-dessus gère les sockets recyclées.
     warmupWithRetry().catch(() => {});
 
-    // ⭐ AUDIT COÛT NEON (2026-11-03) — keepalive 4 min SUPPRIMÉ :
-    //    un SELECT 1 toutes les 4 min empêchait le scale-to-zero → compute
-    //    Neon facturé 24/7 (~$65/mois de CU) sans aucune requête utilisateur.
-    //    Le cold start éventuel reste couvert par : connectionTimeoutMillis
-    //    30 s, retry $extends sur erreurs de connexion, warmup au boot.
+    // ⭐ AUDIT COÛT NEON (2026-11-03) — keepalive 4 min SUPPRIMÉ : un SELECT 1
+    //    toutes les 4 min empêchait le scale-to-zero → compute Neon facturé
+    //    24/7 sans aucune requête utilisateur. Le cold start éventuel reste
+    //    couvert par : connectionTimeoutMillis 30 s, retry $extends sur erreurs
+    //    de connexion, warmup au boot (1 requête/déploiement, action humaine).
   }
 
   async onModuleDestroy() {

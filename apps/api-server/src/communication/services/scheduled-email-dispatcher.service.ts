@@ -1,18 +1,25 @@
 /**
  * ============================================================================
- * SCHEDULED EMAIL DISPATCHER — Cron qui envoie les emails programmés
+ * SCHEDULED EMAIL DISPATCHER — Envoi des emails programmés
  * ============================================================================
  *
- * Tourne toutes les minutes pour vérifier les emails PENDING dont
- * scheduledAt <= now() et les envoie via EmailService.sendCategorized().
+ * ⭐ AUDIT COÛT NEON — v3 événementielle (2026-11-10).
+ *    Historique : @Cron(EVERY_MINUTE) → 1 440 requêtes/jour ; interim 15 min
+ *    (4b2d12d) → encore 96 réveils/jour. Un compute Neon suspendu se réveille
+ *    à chaque requête et reste ensuite actif ~5 min → même à 15 min, la base
+ *    passait ~1/3 du temps éveillée SANS utilisateur.
  *
- * Logique :
+ *    Désormais (v3) : chaque email PENDING est armé en mémoire (setTimeout)
+ *    à sa date exacte → zéro requête périodique. Le controller notifie ce
+ *    dispatcher à chaque création/annulation/suppression, onModuleInit
+ *    rattrape au démarrage (1 requête/déploiement), et @Cron 6 h = balayage
+ *    de rattrapage anti-crash (4 requêtes/jour).
+ *
+ * Logique (conservée) :
  *   1. Récupère les emails PENDING dus (scheduledAt <= now())
- *   2. Pour chaque email :
- *      a. Si l'option replyToOverride est fournie → on la passe à
- *         sendCategorized (le candidat répondra directement au recruteur)
- *      b. Envoie l'email via EmailService
- *      c. Marque comme SENT (avec emailLogId) ou FAILED
+ *   2. Pour chaque email : sendCategorized si category (replyToOverride),
+ *      sinon sendEmail legacy
+ *   3. Marque comme SENT (avec emailLogId) ou FAILED
  *
  * Sécurité :
  *   - Limité à 50 emails par run (évite OOM)
@@ -21,15 +28,65 @@
  * ============================================================================
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ScheduledEmailService } from './scheduled-email.service';
 import { EmailService } from './email.service';
 
 @Injectable()
-export class ScheduledEmailDispatcherService {
+export class ScheduledEmailDispatcherService implements OnModuleInit {
   private readonly logger = new Logger(ScheduledEmailDispatcherService.name);
   private isRunning = false;
+
+  // ⭐ Timers in-process : envoi à l'heure exacte sans AUCUN polling DB.
+  private timers = new Map<string, NodeJS.Timeout>();
+
+  /** Rattrapage au démarrage : arme les emails PENDING (1 requête/déploiement). */
+  async onModuleInit(): Promise<void> {
+    setTimeout(() => {
+      this.notifyScheduledChanged().catch(() => {});
+    }, 30_000);
+  }
+
+  /**
+   * Réarmement complet — au démarrage et après création/annulation/suppression
+   * (action utilisateur → requête légitime). Remplace le polling périodique.
+   */
+  async notifyScheduledChanged(): Promise<void> {
+    try {
+      const pending = await this.scheduledEmailService.findPendingAll();
+      this.clearTimers();
+      let hasDue = false;
+      for (const email of pending as any[]) {
+        const when = new Date(email.scheduled_at).getTime();
+        if (!Number.isFinite(when)) continue;
+        if (when <= Date.now()) hasDue = true;
+        this.armEmail(email.id, when);
+      }
+      if (hasDue) await this.dispatchPendingEmails();
+    } catch (e: any) {
+      this.logger.warn(`Rattrapage emails programmés : ${e?.message}`);
+    }
+  }
+
+  /** Arme l'envoi d'un email à sa date exacte (in-process, zéro polling DB). */
+  private armEmail(id: string, when: number): void {
+    const delay = when - Date.now();
+    // Déjà dû → dispatch immédiat ; horizon > 24 j → balayage 6 h s'en charge
+    if (delay > 24 * 24 * 60 * 60 * 1000) return;
+    const fire = () => {
+      this.timers.delete(id);
+      this.dispatchPendingEmails().catch(() => {});
+    };
+    const t: NodeJS.Timeout = delay <= 0 ? setTimeout(fire, 0) : setTimeout(fire, delay);
+    (t as any).unref?.(); // ne retient pas l'arrêt du process
+    this.timers.set(id, t);
+  }
+
+  private clearTimers(): void {
+    for (const t of this.timers.values()) clearTimeout(t);
+    this.timers.clear();
+  }
 
   constructor(
     private readonly scheduledEmailService: ScheduledEmailService,
@@ -37,22 +94,12 @@ export class ScheduledEmailDispatcherService {
   ) {}
 
   /**
-   * Cron des emails programmés — cadence 15 min alignée sur l'horloge.
-   *
-   * ⭐ AUDIT COÛT NEON (2026-11-03) — cadence 1 min → 15 min : le tick chaque
-   *    minute réveillait Neon en continu (aucune fenêtre de veille de 5 min,
-   *    compute facturé 24/7). À 15 min, aligné avec les dispatchers chat et
-   *    communauté, les ticks forment un seul réveil par quart d'heure.
-   *    Latence d'envoi des emails programmés : ≤ 15 min.
-   *
-   * ⚠️ IMPORTANT : expression cron à 5 champs SANS secondes. Ne PAS utiliser
-   *    6 champs avec secondes car @nestjs/schedule n'accepte que les
-   *    expressions 5 champs par défaut —
-   *    une expression 6 champs fait crasher l'app au démarrage (le
-   *    ScheduleModule lève une erreur pendant l'init, avant que l'app ne
-   *    bind le port 3000 → "instance refused connection" sur Fly.io).
+   * Balayage de rattrapage 4×/jour (00/06/12/18 h) — rattrape crash/restart
+   * et les emails au-delà de l'horizon de 24 j des timers.
+   * ⚠️ Format 5 champs uniquement (pas de secondes) — @nestjs/schedule rejette
+   *    les expressions 6 champs (crash au démarrage, cf. note Fly.io).
    */
-  @Cron('*/15 * * * *')
+  @Cron('0 */6 * * *')
   async dispatchPendingEmails(): Promise<void> {
     // Évite les runs concurrents si le précédent n'a pas fini
     if (this.isRunning) {

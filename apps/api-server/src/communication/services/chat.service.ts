@@ -21,7 +21,7 @@
  * ============================================================================
  */
 
-import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, UnsupportedMediaTypeException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, UnsupportedMediaTypeException, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../database/prisma.service';
 import { StorageService } from '../../common/services/storage.service';
@@ -124,8 +124,52 @@ export interface PermissionsShape {
 }
 
 @Injectable()
-export class ChatService {
+export class ChatService implements OnModuleInit {
   private readonly logger = new Logger(ChatService.name);
+
+  // ⭐ AUDIT COÛT NEON — messages programmés v2 (ex @Interval 60 s) :
+  //    le polling 60 s interrogeait la base 1 440×/jour et maintenait le
+  //    compute Neon éveillé 24h/24. Désormais chaque message programmé est
+  //    armé en mémoire (setTimeout) à sa création/rattrapage boot, et un
+  //    balayage 4×/jour couvre crash/restart. Zéro requête périodique.
+  private scheduledMsgTimers = new Map<string, NodeJS.Timeout>();
+
+  /** Arme l'envoi différé d'un message programmé (in-process, zéro polling DB). */
+  private armScheduledMessage(id: string, when: Date): void {
+    if (this.scheduledMsgTimers.has(id)) return;
+    const delay = when.getTime() - Date.now();
+    // Déjà dû → dispatch immédiat ; horizon > 24 j → balayage
+    if (delay > 24 * 24 * 60 * 60 * 1000) return;
+    const fire = () => {
+      this.scheduledMsgTimers.delete(id);
+      this.dispatchScheduledMessages().catch(() => {});
+    };
+    const t: NodeJS.Timeout = delay <= 0
+      ? setTimeout(fire, 0)
+      : setTimeout(fire, delay);
+    (t as any).unref?.(); // ne retient pas l'arrêt du process
+    this.scheduledMsgTimers.set(id, t);
+  }
+
+  /** Rattrapage au démarrage : arme les messages PENDING (1 requête/déploiement). */
+  async onModuleInit(): Promise<void> {
+    setTimeout(async () => {
+      try {
+        const pending: any[] = await this.prisma.$queryRawUnsafe(
+          `SELECT "id", "scheduledFor" FROM chat_scheduled_messages WHERE "status" = 'PENDING' LIMIT 500`,
+        );
+        let hasDue = false;
+        for (const p of pending) {
+          const when = new Date(p.scheduledFor);
+          if (when.getTime() <= Date.now()) hasDue = true;
+          this.armScheduledMessage(p.id, when);
+        }
+        if (hasDue) this.dispatchScheduledMessages().catch(() => {});
+      } catch (e: any) {
+        this.logger?.warn?.(`Boot catch-up messages programmés : ${e?.message}`);
+      }
+    }, 30_000);
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -1502,6 +1546,8 @@ export class ChatService {
       INSERT INTO chat_scheduled_messages ("id", "conversationId", "senderId", "type", "content", "scheduledFor", "status", "createdAt")
       VALUES ($1, $2, $3, 'TEXT', $4, $5, 'PENDING', NOW())
     `, id, conversationId, senderId, content, scheduledFor);
+    // ⭐ Armement en mémoire de l'envoi à l'heure exacte (zéro polling DB)
+    this.armScheduledMessage(id, scheduledFor);
     return { id, scheduledFor: scheduledFor.toISOString() };
   }
 
@@ -1538,8 +1584,7 @@ export class ChatService {
    *    statut FAILED : le message programmé n'était JAMAIS envoyé.
    *    On récupère maintenant le tenantId via un JOIN sur chat_conversations.
    */
-  // Toutes les 15 min, aligné avec emails + communauté
-  @Cron('*/15 * * * *')
+  @Cron('0 */6 * * *') // balayage de rattrapage 4×/jour — supprime l'ex-polling 60 s (audit coût Neon)
   async dispatchScheduledMessages(): Promise<number> {
     const due: any[] = await this.prisma.$queryRawUnsafe<any[]>(`
       SELECT sm.*, c."tenantId" AS "tenantId"

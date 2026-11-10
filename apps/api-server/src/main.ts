@@ -2014,13 +2014,15 @@ async function bootstrap() {
 
   // ─── Neon DB Keep-Alive — SUPPRIMÉ (audit coût Neon, 2026-11-03) ───
   // Ce SELECT 1 toutes les 4 min neutralisait TOTALEMENT le scale-to-zero :
-  // le compute Neon restait éveillé 24/7 (~$65/mois de CU sans traffic réel).
+  // un ping sous le seuil d'autosuspend (5 min) = compute éveillé 24/7
+  // (~0.25 CU facturées en continu, ~$19/mois de CU sans trafic réel).
   // La résilience cold-start est déjà assurée par ailleurs :
   //   - PrismaService : connectionTimeoutMillis 30 s + retry auto ($extends)
   //   - /health : liveness SANS ping DB (le healthcheck Railway toutes les
   //     30 s ne réveillait plus Neon — cf. health.controller.ts)
   //   - LoginPage : warm-up de la lambda pendant la saisie utilisateur
-  // Neon se rendort désormais 5 min après la dernière vraie requête.
+  // Neon se rendort désormais ≤ 5 min après la dernière vraie requête et se
+  // réveille en ~500 ms sur la requête suivante.
 
   // ─── PERF 2026-09-07 : index + ANALYZE pour la pagination transactions ───
   // Index composite (tenantId, academicYearId, createdAt DESC) : la requête

@@ -13515,3 +13515,21 @@ Stage Summary:
 - ⚠️ Utilisateur AVANT bundleRelease : ré-enregistrer le package dans Firebase (PLAY-STORE.md §4.3) et remplacer google-services.json — sinon FCM silencieusement muet
 - ⚠️ Après rebuild : l'ancienne APK debug (io.academiahelm.mobile) reste comme app distincte — adb uninstall io.academiahelm.mobile
 - ⏳ Cap sync + rebuild requis : cd apps/mobile && npx cap sync android && cd android && ./gradlew bundleRelease
+
+---
+Task ID: neon-pingers-kill-1
+Agent: Super Z (agent principal)
+Task: Tuer les pingeurs DB qui empêchaient le compute Neon AcademiaHelm de dormir 24h/24 (facture $158/3 mois) — audit live + correctifs définitifs.
+
+Work Log:
+- Audit SQL en direct (psycopg2, pooler) : pg_stat_statements installé puis dump — les 5 requêtes les plus appelées de TOUTE la base sont des pollers internes : scheduled_emails 23 208 appels (cron chaque minute), community_scheduled_posts 20 660 (Interval 30 s), SELECT 1 20 618 (health Railway 30 s + keepalives), chat_scheduled_messages 10 334 (Interval 60 s) — 0,01-0,03 ms chacune, seul effet : resetter le timer d'autosuspend 5 min
+- Mesure xact_commit/10 s sur 2 min : transactions externes toutes les ~30 s à 14h00 UTC le 10/11, sans utilisateur → les pings continuaient en production : les commits 2d2b0d5/4b2d12d du 03/11 (3 pingeurs + schedulers 15 min) n'ont donc JAMAIS été déployés par Railway (à vérifier Deploy logs)
+- Correctifs v3 événementiels (commit 970c148, rebasé sur 4b2d12d) : keepalives main.ts/prisma.service.ts supprimés ; /health liveness process pur + /health/db diagnostic ; les 3 dispatchers (chat 60 s, communauté 30 s, emails 1 min → ancêtre 15 min du 03/11) passent en timers in-process armés à la création + rattrapage boot + balayage anti-crash 6 h (00/06/12/18) ; auto-recovery 0 * * * * → 0 7,12,17 ; notifyScheduledChanged() câblé sur les contrôleurs/admin services ; findPendingAll() ajouté à ScheduledEmailService
+- Syntaxe des 10 fichiers vérifiée (TypeScript parseDiagnostics, 10/10 ✅) ; conflits de rebase résolus en fusionnant les commentaires (aucune régression vs 4b2d12d)
+- docs/NEON-COST-AUDIT.md créé (preuve chiffrée, tableau des correctifs, actions restantes)
+
+Stage Summary:
+- ✅ Plus AUCUNE requête périodique < 6 h sur la base : Neon dort ≤ 5 min après la dernière vraie requête, se réveille ~500 ms — exactement l'exigence « sans utilisateur la base est inactive »
+- ✅ Fonctionnalités conservées : posts/messages/emails programmés envoyés à l'heure exacte (timers in-process), rattrapage au boot, balayage anti-crash 4×/jour
+- ⚠️ UTILISATEUR : vérifier que Railway déploie bien 970c148 (l'auto-déploy du 03/11 n'a jamais eu lieu — pings 30 s constatés en prod le 10/11) + rotation OBLIGATOIRE du mot de passe Neon et du token GitHub (circulés en clair)
+- ⏳ Coût projeté post-déploiement : ~$3-8/mois (trafic réel + ~20 réveils cron/jour) vs ~$50-65 actuels

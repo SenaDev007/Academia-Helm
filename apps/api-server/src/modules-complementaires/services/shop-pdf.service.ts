@@ -24,6 +24,12 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { PrismaService } from '../../database/prisma.service';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
+// ⭐ 2026-11-13 — Identité secondaire (écoles combinées) : helper partagé
+//    d'override du branding pour les documents du niveau SECONDAIRE.
+import {
+  applyLevelIdentityOverlay,
+  resolveLevelIdentityOverlay,
+} from '../../common/context/resolve-level-identity';
 
 @Injectable()
 export class ShopPdfService {
@@ -62,6 +68,42 @@ export class ShopPdfService {
       const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
       return { schoolName: tenant?.name || 'Établissement', schoolLogo: null, schoolAddress: null, schoolPhone: null, schoolEmail: null, schoolSlogan: null };
     }
+  }
+
+  /**
+   * ⭐ 2026-11-13 — Identité secondaire : overlay du branding UNIQUEMENT pour
+   * un document purement secondaire (isSecondary && !hasBothLevels —
+   * établissement sans niveau maternelle/primaire). Les documents mixtes
+   * (hasBothLevels) ou maternelle/primaire restent sur l'identité par défaut
+   * (exigence produit). Overlay null (non configuré) → branding inchangé.
+   * Les champs de l'overlay sont projetés sur les clés consommées par
+   * buildHeader (schoolLogo/schoolAddress/schoolPhone/schoolEmail/
+   * schoolSlogan) — le HTML des en-têtes n'est pas modifié.
+   */
+  private async brandWithSecondaryIdentityIfPure(
+    tenantId: string,
+    branding: any,
+    levelInfo: { isSecondary: boolean; hasBothLevels: boolean },
+  ) {
+    if (!(levelInfo.isSecondary && !levelInfo.hasBothLevels)) return branding;
+    const overlay = await resolveLevelIdentityOverlay(this.prisma, tenantId, {
+      isSecondary: true,
+    }).catch(() => null);
+    if (!overlay) return branding;
+    const merged: any = { ...applyLevelIdentityOverlay(branding, overlay) };
+    if (overlay.logoUrl) {
+      // Même normalisation que getTenantBranding : chemin relatif → URL publique.
+      const publicUrl =
+        this.configService.get<string>('APP_PUBLIC_URL') || 'https://api.academiahelm.com';
+      merged.schoolLogo = /^(https?:|data:)/.test(overlay.logoUrl)
+        ? overlay.logoUrl
+        : `${publicUrl}/${overlay.logoUrl.replace(/^\/+/, '')}`;
+    }
+    if (overlay.address) merged.schoolAddress = overlay.address;
+    if (overlay.phonePrimary) merged.schoolPhone = overlay.phonePrimary;
+    if (overlay.email) merged.schoolEmail = overlay.email;
+    if (overlay.slogan) merged.schoolSlogan = overlay.slogan;
+    return merged;
   }
 
   /**
@@ -227,6 +269,10 @@ export class ShopPdfService {
       this.getSchoolLevelInfo(tenantId),
     ]);
 
+    // ⭐ 2026-11-13 — Identité secondaire : catalogue d'un établissement
+    //    purement secondaire → overlay ; mixte → identité par défaut.
+    const effectiveBranding = await this.brandWithSecondaryIdentityIfPure(tenantId, branding, levelInfo);
+
     const rows = products.map((p: any, i: number) => `
       <tr>
         <td style="text-align:center;">${i + 1}</td>
@@ -239,7 +285,7 @@ export class ShopPdfService {
     `).join('');
 
     const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Catalogue Boutique</title><style>${this.SHARED_CSS}</style></head><body>
-      ${this.buildHeader(branding, levelInfo.isSecondary, levelInfo.hasBothLevels)}
+      ${this.buildHeader(effectiveBranding, levelInfo.isSecondary, levelInfo.hasBothLevels)}
       <div class="document-title">Catalogue Boutique</div>
       <div class="info-bar">
         <span><strong>Année scolaire</strong> : ${yearName}</span>
@@ -286,6 +332,10 @@ export class ShopPdfService {
       this.getSchoolLevelInfo(tenantId),
     ]);
 
+    // ⭐ 2026-11-13 — Identité secondaire : historique d'un établissement
+    //    purement secondaire → overlay ; mixte → identité par défaut.
+    const effectiveBranding = await this.brandWithSecondaryIdentityIfPure(tenantId, branding, levelInfo);
+
     const where: any = { tenantId, academicYearId };
     if (startDate || endDate) {
       where.saleDate = {};
@@ -326,7 +376,7 @@ export class ShopPdfService {
       : 'Toutes les ventes';
 
     const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Historique des Paiements</title><style>${this.SHARED_CSS}</style></head><body>
-      ${this.buildHeader(branding, levelInfo.isSecondary, levelInfo.hasBothLevels)}
+      ${this.buildHeader(effectiveBranding, levelInfo.isSecondary, levelInfo.hasBothLevels)}
       <div class="document-title">Historique des Paiements — Boutique</div>
       <div class="info-bar">
         <span><strong>Année scolaire</strong> : ${yearName}</span>
@@ -378,6 +428,10 @@ export class ShopPdfService {
       this.getSchoolLevelInfo(tenantId),
     ]);
 
+    // ⭐ 2026-11-13 — Identité secondaire : stocks d'un établissement
+    //    purement secondaire → overlay ; mixte → identité par défaut.
+    const effectiveBranding = await this.brandWithSecondaryIdentityIfPure(tenantId, branding, levelInfo);
+
     const rows = products.map((p: any, i: number) => {
       const qty = p.stock?.quantity ?? 0;
       const unitPrice = Number(p.unitPrice) || 0;
@@ -406,7 +460,7 @@ export class ShopPdfService {
     }).length;
 
     const html = `<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><title>Liste du Stock</title><style>${this.SHARED_CSS}</style></head><body>
-      ${this.buildHeader(branding, levelInfo.isSecondary, levelInfo.hasBothLevels)}
+      ${this.buildHeader(effectiveBranding, levelInfo.isSecondary, levelInfo.hasBothLevels)}
       <div class="document-title">Liste du Stock — Boutique</div>
       <div class="info-bar">
         <span><strong>Année scolaire</strong> : ${yearName}</span>

@@ -41,6 +41,9 @@ import { RolesPermissionsService } from './services/roles-permissions.service';
 import { RolesPermissionsBootstrapService } from './services/roles-permissions-bootstrap.service';
 import { BillingSettingsService } from './services/billing-settings.service';
 import { IdentityProfileService } from './services/identity-profile.service';
+// ⭐ 2026-11-13 — Identité du niveau secondaire (écoles combinées)
+import { LevelIdentityService } from './services/level-identity.service';
+import { UpdateSecondaryIdentityDto } from './dto/secondary-identity.dto';
 import { StampsSignaturesService } from './services/stamps-signatures.service';
 import { SignatureTokenService } from './services/signature-token.service';
 import { GeolocationService } from '../hr/geolocation.service';
@@ -81,6 +84,7 @@ export class SettingsController {
     private readonly rolesPermissionsBootstrapService: RolesPermissionsBootstrapService,
     private readonly billingSettingsService: BillingSettingsService,
     private readonly identityProfileService: IdentityProfileService,
+    private readonly levelIdentityService: LevelIdentityService,
     private readonly stampsSignaturesService: StampsSignaturesService,
     private readonly signatureTokenService: SignatureTokenService,
     private readonly emailService: EmailService,
@@ -442,6 +446,46 @@ export class SettingsController {
       configured: true,
       ...result,
     };
+  }
+
+  // ============================================================================
+  // IDENTITÉ DU NIVEAU SECONDAIRE — écoles combinées (2026-11-13)
+  // ============================================================================
+  // Écoles maternelle+primaire+secondaire dont le secondaire porte un nom,
+  // des contacts et un logo DIFFÉRENTS du maternelle/primaire.
+  // Override de tenant_identity_profiles pour les documents du secondaire
+  // (bulletins, reçus, listes, PV, cartes scolaires, économat…). Le site public
+  // institutionnel reste sur l'identité globale (défaut maternelle/primaire).
+
+  @Get('identity/secondary')
+  async getSecondaryIdentity(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+  ) {
+    return this.levelIdentityService.getSecondaryProfile(this.resolveTid(tenantId, user, req));
+  }
+
+  @Put('identity/secondary')
+  async upsertSecondaryIdentity(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() dto: UpdateSecondaryIdentityDto,
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    return this.levelIdentityService.upsertSecondaryProfile(tid, user?.id ?? null, dto);
+  }
+
+  @Delete('identity/secondary')
+  async deleteSecondaryIdentity(
+    @TenantId() tenantId: string | undefined,
+    @CurrentUser() user: any,
+    @Request() req: any,
+    @Body() body: { reason?: string },
+  ) {
+    const tid = this.resolveTid(tenantId, user, req);
+    return this.levelIdentityService.deleteSecondaryProfile(tid, user?.id ?? null, body?.reason);
   }
 
   // ============================================================================

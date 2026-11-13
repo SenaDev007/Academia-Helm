@@ -27,6 +27,12 @@ import { MatriculeGeneratorService } from '../common/services/matricule-generato
 // ⭐ 2026-09-16 — Nom du trésorier (comptable / secrétaire-comptable paramétré
 //    dans RH > Administration) + cachet comptable + signature — automatiques
 import { DocumentSealsService } from '../settings/services/document-seals.service';
+// ⭐ 2026-11-13 — Identité secondaire (écoles combinées) : helper partagé
+//    d'override du branding pour les documents du niveau SECONDAIRE.
+import {
+  applyLevelIdentityOverlay,
+  resolveLevelIdentityOverlay,
+} from '../common/context/resolve-level-identity';
 
 /**
  * ⭐ PERF 2026-09-16 — version de maquette du PDF de reçu (suffixe -vN dans le
@@ -182,7 +188,31 @@ export class ReceiptFinanceService {
     }
 
     // 2. Récupérer le branding de l'école + logo pour filigrane
-    const branding = await this.getTenantBranding(tenantId);
+    // ⭐ 2026-11-13 — Identité secondaire : si l'élève du reçu est du niveau
+    //    SECONDAIRE et qu'une identité secondaire est configurée (école
+    //    combinée), on override le branding (nom/contacts/logo). Overlay
+    //    null (élève maternelle/primaire ou identité non configurée) →
+    //    branding inchangé — zéro changement de comportement.
+    let branding = await this.getTenantBranding(tenantId);
+    if (studentSchoolLevelId) {
+      const overlay = await resolveLevelIdentityOverlay(this.prisma, tenantId, {
+        schoolLevelId: studentSchoolLevelId,
+      }).catch(() => null);
+      if (overlay) {
+        branding = applyLevelIdentityOverlay(branding, overlay);
+        // Projection sur les clés lues par buildReceiptHTML (schoolAddress /
+        // schoolPhone / schoolEmail) + logo inline — le HTML n'est pas modifié.
+        const merged: any = { ...branding };
+        if (overlay.address) merged.schoolAddress = overlay.address;
+        if (overlay.phonePrimary) merged.schoolPhone = overlay.phonePrimary;
+        if (overlay.email) merged.schoolEmail = overlay.email;
+        if (overlay.logoUrl) {
+          // Même résolution inline que getTenantBranding (data-URL Puppeteer).
+          merged.logoUrl = await this.resolveInlineLogo(overlay.logoUrl);
+        }
+        branding = merged;
+      }
+    }
 
     // 3. Calculer le solde restant à payer (totalDue - totalPaid APRES ce paiement)
     // tx.studentAccount.totalPaid et balance sont déjà mis à jour par le trigger SQL

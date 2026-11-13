@@ -23,6 +23,12 @@ import * as path from 'path';
 import * as QRCode from 'qrcode';
 import { PrismaService } from '../../database/prisma.service';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
+// ⭐ 2026-11-13 — Identité secondaire (écoles combinées) : helper partagé
+//    d'override du branding pour les reçus des élèves du niveau SECONDAIRE.
+import {
+  applyLevelIdentityOverlay,
+  resolveLevelIdentityOverlay,
+} from '../../common/context/resolve-level-identity';
 
 @Injectable()
 export class ShopReceiptService {
@@ -77,20 +83,58 @@ export class ShopReceiptService {
 
     // Récupérer la classe de l'élève pour cette année
     let className = '—';
+    // ⭐ 2026-11-13 — Identité secondaire : schoolLevelId de l'inscription de
+    //    l'élève (résolution de l'identité du niveau pour le branding du reçu).
+    let studentSchoolLevelId: string | null = null;
     if (sale.studentId && sale.academicYearId) {
       try {
         const enrollment = await this.prisma.studentEnrollment.findFirst({
           where: { studentId: sale.studentId, academicYearId: sale.academicYearId },
-          include: { class: { select: { name: true, code: true } } },
+          // ⭐ 2026-11-13 — select (au lieu d'include) pour exposer schoolLevelId.
+          select: {
+            schoolLevelId: true,
+            class: { select: { name: true, code: true } },
+          },
         });
         className = enrollment?.class?.name || '—';
+        studentSchoolLevelId = enrollment?.schoolLevelId || null;
       } catch {
         // Non bloquant
       }
     }
 
     // 2. Récupérer le branding de l'école + logo
-    const branding = await this.getTenantBranding(tenantId);
+    // ⭐ 2026-11-13 — Identité secondaire : si l'élève de la vente est du
+    //    niveau SECONDAIRE et qu'une identité secondaire est configurée
+    //    (école combinée), on override le branding (nom/contacts/logo).
+    //    Overlay null (élève non secondaire / vente sans élève / identité
+    //    non configurée) → branding inchangé — zéro changement.
+    let branding = await this.getTenantBranding(tenantId);
+    if (studentSchoolLevelId) {
+      const overlay = await resolveLevelIdentityOverlay(this.prisma, tenantId, {
+        schoolLevelId: studentSchoolLevelId,
+      }).catch(() => null);
+      if (overlay) {
+        branding = applyLevelIdentityOverlay(branding, overlay);
+        // Projection sur les clés lues par buildReceiptHTML (schoolAddress /
+        // schoolPhone / schoolEmail / schoolSlogan) + logo normalisé — le
+        // HTML n'est pas modifié.
+        const merged: any = { ...branding };
+        if (overlay.logoUrl) {
+          // Même normalisation que getTenantBranding : chemin relatif → URL publique.
+          const publicUrl =
+            this.configService.get<string>('APP_PUBLIC_URL') || 'https://api.academiahelm.com';
+          merged.logoUrl = /^(https?:|data:)/.test(overlay.logoUrl)
+            ? overlay.logoUrl
+            : `${publicUrl}/${overlay.logoUrl.replace(/^\/+/, '')}`;
+        }
+        if (overlay.address) merged.schoolAddress = overlay.address;
+        if (overlay.phonePrimary) merged.schoolPhone = overlay.phonePrimary;
+        if (overlay.email) merged.schoolEmail = overlay.email;
+        if (overlay.slogan) merged.schoolSlogan = overlay.slogan;
+        branding = merged;
+      }
+    }
 
     // 3. Générer le token de vérification (pour QR code)
     const verificationToken = this.generateVerificationToken(sale.id, sale.saleNumber);

@@ -422,6 +422,7 @@ model Tenant {
   tenantDomains                    TenantDomain[]
   tenantFeatures                   TenantFeature[]
   identityProfiles                 TenantIdentityProfile[]
+  levelIdentityProfiles            TenantLevelIdentityProfile[]
   tenantSettings                   TenantSetting[]
   tenantSignatures                 TenantSignature[]
   tenantStamps                     TenantStamp[]
@@ -925,6 +926,7 @@ model EducationLevel {
   tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tenantSignatures TenantSignature[]
   tenantStamps     TenantStamp[]
+  levelIdentityProfiles TenantLevelIdentityProfile[]
 
   @@unique([tenantId, name])
   @@map("education_levels")
@@ -3665,6 +3667,45 @@ model TenantSignature {
   @@index([tenantId])
   @@index([educationLevelId])
   @@map("tenant_signatures")
+}
+
+/// ⭐ 2026-11-13 — Identité spécifique par niveau scolaire (écoles combinées).
+/// Écoles maternelle+primaire+secondaire dont le secondaire porte un NOM, des
+/// contacts et un LOGO différents : cette table OVERRIDE le profil d'identité
+/// global (tenant_identity_profiles) pour les documents du niveau concerné
+/// (bulletins, reçus, listes, PV, cartes…). Le site public institutionnel
+/// reste sur le profil global (maternelle/primaire par défaut). Existence
+/// d'une ligne = override actif ; pas de ligne = identité unique partagée.
+/// Pattern identique à TenantStamp/TenantSignature (dimension par niveau).
+model TenantLevelIdentityProfile {
+  id               String         @id @default(uuid())
+  tenantId         String
+  educationLevelId String
+  schoolName       String
+  schoolAcronym    String?
+  slogan           String?
+  phonePrimary     String?
+  phoneSecondary   String?
+  whatsapp         String?
+  email            String?
+  website          String?
+  address          String?
+  city             String?
+  department       String?
+  country          String         @default("BJ")
+  postalCode       String?
+  logoUrl          String?
+  createdBy        String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  educationLevel EducationLevel  @relation(fields: [educationLevelId], references: [id], onDelete: Cascade)
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, educationLevelId])
+  @@index([tenantId])
+  @@index([educationLevelId])
+  @@map("tenant_level_identity_profiles")
 }
 
 model AdministrativeSeal {

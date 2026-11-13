@@ -13,6 +13,12 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { PrismaService } from '../../database/prisma.service';
 import { StudentIdentifierService } from './student-identifier.service';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
+// ⭐ 2026-11-13 — Identité secondaire (écoles combinées) : helper partagé
+//    d'override du profil d'identité pour les cartes du niveau SECONDAIRE.
+import {
+  applyLevelIdentityOverlay,
+  resolveLevelIdentityOverlay,
+} from '../../common/context/resolve-level-identity';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -990,6 +996,23 @@ export class StudentIdCardService {
       : isSecondaire
       ? "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes"
       : 'Ministère des Enseignements Maternel et Primaire';
+
+    // ── ⭐ 2026-11-13 — Identité secondaire ────────────────────────────────
+    // Élève du niveau SECONDAIRE d'une école combinée dont le secondaire
+    // porte un nom/contacts/logo propres : on override le profil d'identité
+    // (schoolName/logoUrl/address/phonePrimary/email/website/slogan/
+    // schoolAcronym) → toutes les lectures identityProfile.* ci-dessous
+    // suivent automatiquement l'identité secondaire. Overlay null (élève non
+    // secondaire ou identité non configurée) → profil inchangé.
+    const cardTenantId = student.tenantId || student.tenant?.id;
+    if (isSecondaire && cardTenantId) {
+      const overlay = await resolveLevelIdentityOverlay(this.prisma, cardTenantId, {
+        isSecondary: true,
+      }).catch(() => null);
+      if (overlay) {
+        identityProfile = applyLevelIdentityOverlay(identityProfile || {}, overlay);
+      }
+    }
 
     // ── Heures de sortie maternelle (affichées dans le back-header du verso) ──
     const isMaternelle = levelUpper === 'MATERNELLE' || levelUpper === 'MAT';

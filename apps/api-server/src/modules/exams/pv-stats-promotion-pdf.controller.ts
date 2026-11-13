@@ -29,6 +29,8 @@ import { Permissions } from '../../auth/decorators/permissions.decorator';
 import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { AcademicYearId } from '../../common/decorators/academic-year-id.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+// ⭐ 2026-11-13 — Identité secondaire : helper partagé (écoles combinées).
+import { resolveLevelIdentityOverlay, applyLevelIdentityOverlay } from '../../common/context/resolve-level-identity';
 
 @Controller('institutional-exams/pv-stats-promotion')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
@@ -75,6 +77,28 @@ export class PvStatsPromotionPdfController {
     }
   }
 
+  // ─── Helper : identité du niveau SECONDAIRE (écoles combinées) ───────────
+  //    ⭐ 2026-11-13 — Identité secondaire : le secondaire d'une école
+  //    combinée peut porter un nom/logo/contacts DIFFÉRENTS
+  //    (tenant_level_identity_profiles). Overlay via le helper commun
+  //    (cache 60 s) mappé vers les noms school* lus par le template ;
+  //    PV maternelle/primaire ou sans identité secondaire configurée ⇒
+  //    branding global inchangé (champ par champ si override partiel).
+  private async applySecondaryIdentity(tenantId: string, branding: any, isSecondary: boolean) {
+    if (!isSecondary) return branding;
+    const overlay = await resolveLevelIdentityOverlay(this.prisma, tenantId, { isSecondary: true });
+    if (!overlay) return branding;
+    const merged: any = applyLevelIdentityOverlay(branding, overlay);
+    return {
+      ...merged,
+      schoolLogo: overlay.logoUrl || merged.schoolLogo || null,
+      schoolAddress: overlay.address || merged.schoolAddress || null,
+      schoolPhone: overlay.phonePrimary || merged.schoolPhone || null,
+      schoolEmail: overlay.email || merged.schoolEmail || null,
+      schoolSlogan: overlay.slogan || merged.schoolSlogan || null,
+    };
+  }
+
   /**
    * POST /api/institutional-exams/pv-stats-promotion/proces-verbal
    * Body: ProcVerbalPdfData (sans branding — résolu côté backend)
@@ -89,8 +113,11 @@ export class PvStatsPromotionPdfController {
     @Res() res: Response,
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
-    const branding = await this.getTenantBranding(resolvedTenantId);
+    let branding: any = await this.getTenantBranding(resolvedTenantId);
     const isSecondary = this.resolveIsSecondary(body.scopeLevel);
+    // ⭐ 2026-11-13 — Identité secondaire : overlay du secondaire (écoles
+    //    combinées) appliqué au branding — isSecondary posé comme avant.
+    branding = await this.applySecondaryIdentity(resolvedTenantId, branding, isSecondary);
     branding.isSecondary = isSecondary;
     const buffer = await this.pdfService.generateProcVerbalPdf({ ...body, branding, isSecondary });
     const safeClass = (body.className || 'classe').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
@@ -118,8 +145,11 @@ export class PvStatsPromotionPdfController {
     @Res() res: Response,
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
-    const branding = await this.getTenantBranding(resolvedTenantId);
+    let branding: any = await this.getTenantBranding(resolvedTenantId);
     const isSecondary = this.resolveIsSecondary(body.scopeLevel);
+    // ⭐ 2026-11-13 — Identité secondaire : overlay du secondaire (écoles
+    //    combinées) appliqué au branding — isSecondary posé comme avant.
+    branding = await this.applySecondaryIdentity(resolvedTenantId, branding, isSecondary);
     branding.isSecondary = isSecondary;
     const buffer = await this.pdfService.generateStatsPdf({ ...body, branding, isSecondary });
     const safeClass = (body.className || 'classe').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
@@ -147,8 +177,11 @@ export class PvStatsPromotionPdfController {
     @Res() res: Response,
   ) {
     const resolvedTenantId = tenantId || user?.tenantId || user?.tenant_id || headers?.['x-tenant-id'] || headers?.['X-Tenant-Id'];
-    const branding = await this.getTenantBranding(resolvedTenantId);
+    let branding: any = await this.getTenantBranding(resolvedTenantId);
     const isSecondary = this.resolveIsSecondary(body.scopeLevel);
+    // ⭐ 2026-11-13 — Identité secondaire : overlay du secondaire (écoles
+    //    combinées) appliqué au branding — isSecondary posé comme avant.
+    branding = await this.applySecondaryIdentity(resolvedTenantId, branding, isSecondary);
     branding.isSecondary = isSecondary;
     const buffer = await this.pdfService.generatePromotionPdf({ ...body, branding, isSecondary });
     const safeClass = (body.className || 'classe').replace(/\s+/g, '_').replace(/[^\w\-]/g, '');

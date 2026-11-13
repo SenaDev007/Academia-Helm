@@ -1998,6 +1998,54 @@ async function bootstrap() {
   }
   }, 1000); // ⭐ Run ensure-tables 1s after listen (non-blocking)
 
+  // ─── IDENTITÉ PAR NIVEAU (secondaire ≠ maternelle/primaire) — 2026-11-13 ───
+  // Écoles combinées dont le secondaire porte un nom/contacts/logo distincts.
+  // Miroir idempotent de la migration 20261113100000_tenant_level_identity_profiles :
+  // garantit la table au boot même si `prisma migrate deploy` n'a pas été joué
+  // (SKIP_MIGRATIONS=true par défaut en prod).
+  setTimeout(async () => {
+    try {
+      const prisma = app.get(PrismaService);
+      await prisma.$executeRawUnsafe(
+        `CREATE TABLE IF NOT EXISTS "tenant_level_identity_profiles" (
+          "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+          "tenantId" TEXT NOT NULL,
+          "educationLevelId" TEXT NOT NULL,
+          "schoolName" TEXT NOT NULL,
+          "schoolAcronym" TEXT,
+          "slogan" TEXT,
+          "phonePrimary" TEXT,
+          "phoneSecondary" TEXT,
+          "whatsapp" TEXT,
+          "email" TEXT,
+          "website" TEXT,
+          "address" TEXT,
+          "city" TEXT,
+          "department" TEXT,
+          "country" TEXT DEFAULT 'BJ',
+          "postalCode" TEXT,
+          "logoUrl" TEXT,
+          "createdBy" TEXT,
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL,
+          CONSTRAINT "tenant_level_identity_profiles_pkey" PRIMARY KEY ("id")
+        )`,
+      ).catch(() => {});
+      await prisma.$executeRawUnsafe(
+        `CREATE UNIQUE INDEX IF NOT EXISTS "tenant_level_identity_profiles_tenantId_educationLevelId_key" ON "tenant_level_identity_profiles"("tenantId", "educationLevelId")`,
+      ).catch(() => {});
+      await prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS "tenant_level_identity_profiles_tenantId_idx" ON "tenant_level_identity_profiles"("tenantId")`,
+      ).catch(() => {});
+      await prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS "tenant_level_identity_profiles_educationLevelId_idx" ON "tenant_level_identity_profiles"("educationLevelId")`,
+      ).catch(() => {});
+      logger.log('✅ Table tenant_level_identity_profiles ensured (identité du niveau secondaire)');
+    } catch (e: any) {
+      logger.warn(`Level identity tables ensure warning: ${e?.message}`);
+    }
+  }, 1200);
+
   // ─── ACADEMIA COMMUNITY — bootstrap idempotent (tables + canaux + admin) ───
   // Espace clients/prospects du produit : tables community_*, 7 canaux par
   // défaut (annonces, conseils quotidiens, discussion, formation, support,

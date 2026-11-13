@@ -24,6 +24,13 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
 import { ConfigService } from '@nestjs/config';
+// ⭐ 2026-11-13 — Identité secondaire (écoles combinées) : helper partagé
+//    d'override du branding pour les documents du niveau SECONDAIRE.
+import {
+  applyLevelIdentityOverlay,
+  resolveLevelIdentityOverlay,
+  LevelIdentityOverlay,
+} from '../../common/context/resolve-level-identity';
 
 export type ClassListPdfMode = 'physical' | 'official';
 
@@ -57,11 +64,23 @@ export class ClassListPdfService {
     const ctx = await this.resolveClassContext(classId, tenantId, academicYearId, mode, statusFilter);
 
     // 2. Récupérer le branding du tenant
-    const branding = await this.getTenantBranding(tenantId);
+    let branding = await this.getTenantBranding(tenantId);
 
     // 3. Déterminer le niveau (Maternelle/Primaire vs Secondaire)
     const levelName = (ctx.schoolLevelName || '').toUpperCase();
     const isSecondary = levelName.includes('SECONDAIRE');
+
+    // 3.bis ⭐ 2026-11-13 — Identité secondaire : classe du niveau SECONDAIRE →
+    //    overlay de l'identité (nom/contacts/logo) si configurée. Overlay
+    //    null (non configuré) → branding inchangé — zéro changement.
+    if (isSecondary) {
+      branding = this.applySecondaryOverlay(
+        branding,
+        await resolveLevelIdentityOverlay(this.prisma, tenantId, {
+          isSecondary: true,
+        }).catch(() => null),
+      );
+    }
 
     // 4. Construire le HTML
     const html = this.buildHtml({
@@ -159,8 +178,20 @@ export class ClassListPdfService {
     }
 
     // 3. Récupérer le branding
-    const branding = await this.getTenantBranding(tenantId);
+    let branding = await this.getTenantBranding(tenantId);
     const isSecondary = schoolLevelCode.includes('SECONDAIRE');
+
+    // ⭐ 2026-11-13 — Identité secondaire : document du niveau SECONDAIRE →
+    //    overlay de l'identité (nom/contacts/logo) si configurée. Overlay
+    //    null (non configuré) → branding inchangé — zéro changement.
+    if (isSecondary) {
+      branding = this.applySecondaryOverlay(
+        branding,
+        await resolveLevelIdentityOverlay(this.prisma, tenantId, {
+          isSecondary: true,
+        }).catch(() => null),
+      );
+    }
 
     // 4. Récupérer l'année scolaire
     const academicYear = await this.prisma.academicYear.findFirst({
@@ -285,6 +316,9 @@ ${allHtml.map((body) => `<div class="class-section">${body}</div>`).join('\n')}
     }
 
     // 2. Récupérer le branding
+    // ⭐ 2026-11-13 — Identité secondaire : document GLOBAL (tous niveaux
+    //    confondus) → identité par défaut (maternelle/primaire), PAS
+    //    d'overlay — exigence produit.
     const branding = await this.getTenantBranding(tenantId);
     const academicYear = await this.prisma.academicYear.findFirst({
       where: { id: academicYearId, tenantId },
@@ -398,6 +432,9 @@ ${allHtml.map((body) => `<div class="class-section">${body}</div>`).join('\n')}
     }
 
     // 2. Récupérer le branding
+    // ⭐ 2026-11-13 — Identité secondaire : document GLOBAL (toutes sections,
+    //    tous niveaux) → identité par défaut (maternelle/primaire), PAS
+    //    d'overlay — exigence produit.
     const branding = await this.getTenantBranding(tenantId);
     const academicYear = await this.prisma.academicYear.findFirst({
       where: { id: academicYearId, tenantId },
@@ -977,6 +1014,44 @@ ${data.pageBreakAfter ? '<div style="page-break-after: always;"></div>' : ''}
       map.set(key, list);
     }
     return map;
+  }
+
+  /**
+   * ⭐ 2026-11-13 — Identité secondaire : applique l'overlay du niveau
+   * SECONDAIRE (helper partagé common/context/resolve-level-identity) sur
+   * le branding, puis projette les champs sur les clés consommées par
+   * buildHtml / buildBodyContent (schoolLogo / schoolAddress / schoolPhone /
+   * schoolEmail / schoolSlogan) — le HTML des en-têtes n'est pas modifié.
+   * Overlay null (identité secondaire non configurée) → branding inchangé.
+   */
+  private applySecondaryOverlay(
+    branding: {
+      schoolName: string;
+      schoolLogo?: string | null;
+      schoolAddress?: string | null;
+      schoolPhone?: string | null;
+      schoolEmail?: string | null;
+      schoolSlogan?: string | null;
+    },
+    overlay: LevelIdentityOverlay | null,
+  ) {
+    const merged = applyLevelIdentityOverlay(branding, overlay);
+    if (!overlay) return merged;
+    const out: any = { ...merged };
+    if (overlay.logoUrl) {
+      // Même normalisation que shop-pdf getTenantBranding : chemin relatif →
+      // URL publique (les templates chargent le logo via HTTP/networkidle0).
+      const publicUrl =
+        this.configService.get<string>('APP_PUBLIC_URL') || 'https://api.academiahelm.com';
+      out.schoolLogo = /^(https?:|data:)/.test(overlay.logoUrl)
+        ? overlay.logoUrl
+        : `${publicUrl}/${overlay.logoUrl.replace(/^\/+/, '')}`;
+    }
+    if (overlay.address) out.schoolAddress = overlay.address;
+    if (overlay.phonePrimary) out.schoolPhone = overlay.phonePrimary;
+    if (overlay.email) out.schoolEmail = overlay.email;
+    if (overlay.slogan) out.schoolSlogan = overlay.slogan;
+    return out as typeof branding;
   }
 
   /**

@@ -203,6 +203,82 @@ export async function getIdentityPreview(tenantId?: string | null) {
 }
 
 // ============================================================================
+// IDENTITÉ DU NIVEAU SECONDAIRE (écoles combinées maternelle+primaire+secondaire)
+// Override de l'identité globale UNIQUEMENT pour les documents du secondaire
+// (bulletins, reçus, listes, PV, cartes scolaires, économat). Le site public
+// institutionnel conserve l'identité globale. Backend strict
+// (forbidNonWhitelisted) : n'envoyer QUE les clés du DTO.
+// ============================================================================
+
+/** Réponse GET /api/settings/identity/secondary */
+export type SecondaryIdentityPayload = {
+  configured: boolean;
+  profile: {
+    schoolName: string | null;
+    schoolAcronym: string | null;
+    slogan: string | null;
+    phonePrimary: string | null;
+    phoneSecondary: string | null;
+    whatsapp: string | null;
+    email: string | null;
+    website: string | null;
+    address: string | null;
+    city: string | null;
+    department: string | null;
+    postalCode: string | null;
+    country: string | null;
+    logoUrl: string | null;
+  } | null;
+  message?: string;
+};
+
+/** Body PUT /api/settings/identity/secondary — clés exactes du DTO backend (champ vide = retour au global). */
+export type SecondaryIdentityInput = {
+  schoolName: string;
+  schoolAcronym?: string;
+  slogan?: string;
+  phonePrimary?: string;
+  phoneSecondary?: string;
+  whatsapp?: string;
+  email?: string;
+  website?: string;
+  address?: string;
+  city?: string;
+  department?: string;
+  postalCode?: string;
+  country?: string;
+  logoUrl?: string;
+  changeReason?: string;
+};
+
+export async function getSecondaryIdentity(tenantId?: string | null): Promise<SecondaryIdentityPayload> {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/identity/secondary${qs}`);
+}
+
+export async function saveSecondaryIdentity(
+  data: SecondaryIdentityInput,
+  tenantId?: string | null
+): Promise<SecondaryIdentityPayload> {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/identity/secondary${qs}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteSecondaryIdentity(
+  reason: string,
+  tenantId?: string | null
+): Promise<SecondaryIdentityPayload> {
+  const qs = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+  return fetchWithAuth(`${BASE_URL}/identity/secondary${qs}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+// ============================================================================
 // CACHETS & SIGNATURES GÉNÉRÉS (tenant_stamps / tenant_signatures)
 // Liés au niveau scolaire et aux rôles (départements administratifs).
 // ============================================================================

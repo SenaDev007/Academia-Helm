@@ -17,6 +17,8 @@ import { TenantId } from '../../common/decorators/tenant-id.decorator';
 import { AcademicYearId } from '../../common/decorators/academic-year-id.decorator';
 import { UserId } from '../../auth/decorators/user-id.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+// ⭐ 2026-11-13 — Identité secondaire : helper partagé (écoles combinées).
+import { resolveLevelIdentityOverlay, applyLevelIdentityOverlay } from '../../common/context/resolve-level-identity';
 
 @Controller('institutional-exams/bulletins')
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
@@ -613,7 +615,7 @@ export class BulletinsController {
     //      staffAdminAssignment + school_directors
     //
     //    Sur Neon cold start : 3-5s économisés (passage de 5-10s → 2-4s).
-    const [branding, student] = await Promise.all([
+    let [branding, student] = await Promise.all([
       this.getTenantBranding(resolvedTenantId),
       body.studentMatricule && resolvedTenantId
         ? this.prisma.student.findFirst({
@@ -1339,6 +1341,34 @@ export class BulletinsController {
           total: conductScore,
         };
         subjectsWithConduite = [...resolvedSubjects, conductSubject];
+      }
+    }
+
+    // ⭐ 2026-11-13 — Identité secondaire : écoles combinées — le secondaire peut
+    //    porter un nom/logo/contacts DIFFÉRENTS (tenant_level_identity_profiles).
+    //    Overlay appliqué AVANT la fusion pdfData → le paramètre front
+    //    (body.schoolName…) garde toujours la priorité. L'élève précis
+    //    (studentSchoolLevelId) prime sur le flag du front ; overlay null ⇒
+    //    branding global inchangé (maternelle/primaire = identité par défaut).
+    if (isAnySecondary) {
+      const secOverlay = await resolveLevelIdentityOverlay(
+        this.prisma,
+        resolvedTenantId,
+        studentSchoolLevelId ? { schoolLevelId: studentSchoolLevelId } : { isSecondary: true },
+      );
+      if (secOverlay) {
+        // Helper partagé : remplace les champs canoniques non vides (schoolName).
+        const mergedBranding: any = applyLevelIdentityOverlay(branding, secOverlay);
+        // Mapping local : champs canoniques de l'overlay → noms school* lus par
+        // la fusion pdfData ci-dessous (le template consomme schoolLogo/…).
+        branding = {
+          ...mergedBranding,
+          schoolLogo: secOverlay.logoUrl || mergedBranding.schoolLogo || null,
+          schoolAddress: secOverlay.address || mergedBranding.schoolAddress || null,
+          schoolPhone: secOverlay.phonePrimary || mergedBranding.schoolPhone || null,
+          schoolEmail: secOverlay.email || mergedBranding.schoolEmail || null,
+          schoolSlogan: secOverlay.slogan || mergedBranding.schoolSlogan || null,
+        };
       }
     }
 

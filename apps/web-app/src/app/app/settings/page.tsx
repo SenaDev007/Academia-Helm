@@ -369,6 +369,34 @@ export default function SettingsPage() {
   const [changeReason, setChangeReason] = useState('');
   const [showVersionHistory, setShowVersionHistory] = useState(false);
 
+  // ⭐ Identité du niveau Secondaire (écoles combinées maternelle+primaire+secondaire).
+  //    Override séparé de l'identité versionnée : SES propres boutons de
+  //    sauvegarde (PUT/DELETE /identity/secondary), PAS de dispatch
+  //    SCHOOL_IDENTITY_UPDATED_EVENT (l'en-tête de l'app reste l'identité globale).
+  const [secondaryNameModalOpen, setSecondaryNameModalOpen] = useState(false);
+  const [secondaryIdentityForm, setSecondaryIdentityForm] = useState<any>({
+    schoolName: '',
+    schoolAcronym: '',
+    slogan: '',
+    phonePrimary: '',
+    phoneSecondary: '',
+    whatsapp: '',
+    email: '',
+    website: '',
+    address: '',
+    city: '',
+    department: '',
+    postalCode: '',
+    country: '',
+  });
+  const [secondaryLogoUrl, setSecondaryLogoUrl] = useState('');
+  const [secondaryConfigured, setSecondaryConfigured] = useState(false);
+  const [secondarySaving, setSecondarySaving] = useState(false);
+  // Mise en évidence de la section après réponse « Oui, il est différent » au modal
+  const [focusSecondaryIdentity, setFocusSecondaryIdentity] = useState(false);
+  const [secondaryHighlight, setSecondaryHighlight] = useState(false);
+  const secondarySectionRef = useRef<HTMLDivElement | null>(null);
+
   // Formulaires modifiés
   const [identityForm, setIdentityForm] = useState<any>({});
   const [communicationForm, setCommunicationForm] = useState<any>({});
@@ -1029,6 +1057,134 @@ export default function SettingsPage() {
     }
   };
 
+  // ============================================================================
+  // ⭐ IDENTITÉ DU NIVEAU SECONDAIRE (écoles combinées — secondaire ≠ maternelle/primaire)
+  //    Override séparé : ces données ne remplacent celles de l'établissement
+  //    QUE sur les documents du secondaire. Sauvegarde indépendante de
+  //    l'identité versionnée (createIdentityVersion) — pas de version, pas de
+  //    dispatch SCHOOL_IDENTITY_UPDATED_EVENT.
+  // ============================================================================
+
+  const SECONDARY_IDENTITY_EMPTY_FORM = {
+    schoolName: '',
+    schoolAcronym: '',
+    slogan: '',
+    phonePrimary: '',
+    phoneSecondary: '',
+    whatsapp: '',
+    email: '',
+    website: '',
+    address: '',
+    city: '',
+    department: '',
+    postalCode: '',
+    country: '',
+  };
+
+  const loadSecondaryIdentity = useCallback(async () => {
+    try {
+      const data = await settingsService.getSecondaryIdentity(effectiveTenantId ?? undefined);
+      const profile = data?.configured ? data?.profile : null;
+      setSecondaryConfigured(!!data?.configured);
+      setSecondaryIdentityForm({
+        schoolName: profile?.schoolName || '',
+        schoolAcronym: profile?.schoolAcronym || '',
+        slogan: profile?.slogan || '',
+        phonePrimary: profile?.phonePrimary || '',
+        phoneSecondary: profile?.phoneSecondary || '',
+        whatsapp: profile?.whatsapp || '',
+        email: profile?.email || '',
+        website: profile?.website || '',
+        address: profile?.address || '',
+        city: profile?.city || '',
+        department: profile?.department || '',
+        postalCode: profile?.postalCode || '',
+        country: profile?.country || '',
+      });
+      setSecondaryLogoUrl(profile?.logoUrl || '');
+    } catch (err) {
+      console.error('Failed to load secondary identity:', err);
+      setSecondaryConfigured(false);
+    }
+  }, [effectiveTenantId]);
+
+  // Lazy-load quand l'onglet Identité est ouvert (données toujours à jour,
+  // même après activation du secondaire ou changement de tenant).
+  useEffect(() => {
+    if (activeTab !== 'identity') return;
+    loadSecondaryIdentity();
+  }, [activeTab, loadSecondaryIdentity]);
+
+  // Mise en évidence à l'arrivée : scroll + ring bleu 2 s, puis retour à la normale.
+  useEffect(() => {
+    if (!focusSecondaryIdentity || activeTab !== 'identity') return;
+    secondarySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setSecondaryHighlight(true);
+    setFocusSecondaryIdentity(false);
+    window.setTimeout(() => setSecondaryHighlight(false), 2000);
+  }, [focusSecondaryIdentity, activeTab]);
+
+  const handleSaveSecondaryIdentity = async () => {
+    const schoolName = (secondaryIdentityForm.schoolName || '').trim();
+    if (!schoolName) {
+      showToast('error', "Le nom de l'établissement du secondaire est requis.");
+      return;
+    }
+    try {
+      setSecondarySaving(true);
+      const trimField = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+      await settingsService.saveSecondaryIdentity(
+        {
+          schoolName,
+          schoolAcronym: trimField(secondaryIdentityForm.schoolAcronym),
+          slogan: trimField(secondaryIdentityForm.slogan),
+          phonePrimary: trimField(secondaryIdentityForm.phonePrimary),
+          phoneSecondary: trimField(secondaryIdentityForm.phoneSecondary),
+          whatsapp: trimField(secondaryIdentityForm.whatsapp),
+          email: trimField(secondaryIdentityForm.email),
+          website: trimField(secondaryIdentityForm.website),
+          address: trimField(secondaryIdentityForm.address),
+          city: trimField(secondaryIdentityForm.city),
+          department: trimField(secondaryIdentityForm.department),
+          postalCode: trimField(secondaryIdentityForm.postalCode),
+          country: trimField(secondaryIdentityForm.country),
+          logoUrl: secondaryLogoUrl || '',
+          changeReason: "Configuration de l'identité du niveau secondaire",
+        },
+        effectiveTenantId ?? undefined
+      );
+      showToast('success', 'Identité du niveau secondaire enregistrée.');
+      await loadSecondaryIdentity();
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de l\'enregistrement');
+    } finally {
+      setSecondarySaving(false);
+    }
+  };
+
+  const handleDeleteSecondaryIdentity = async () => {
+    const ok = await confirmDialog.danger(
+      "L'identité propre au niveau secondaire sera supprimée : le secondaire reprendra le nom, les contacts et le logo de l'établissement (maternelle/primaire) sur tous ses documents.",
+      "Réutiliser l'identité maternelle/primaire"
+    );
+    if (!ok) return;
+    try {
+      setSecondarySaving(true);
+      await settingsService.deleteSecondaryIdentity(
+        "Retour à l'identité unique",
+        effectiveTenantId ?? undefined
+      );
+      showToast('success', 'Identité secondaire supprimée — le secondaire partage désormais l\'identité de l\'établissement.');
+      setSecondaryIdentityForm({ ...SECONDARY_IDENTITY_EMPTY_FORM });
+      setSecondaryLogoUrl('');
+      await loadSecondaryIdentity();
+    } catch (error: any) {
+      showToast('error', error.message || 'Erreur lors de la suppression');
+    } finally {
+      setSecondarySaving(false);
+    }
+  };
+
   const reloadAcademicYears = async () => {
     if (!effectiveTenantId) {
       setAcademicYears([]);
@@ -1351,7 +1507,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleSetEducationLevelEnabled = async (levelId: string, isEnabled: boolean) => {
+  const handleSetEducationLevelEnabled = async (levelId: string, isEnabled: boolean, levelName?: string) => {
     try {
       setStructureBusy(true);
       await settingsService.setEducationLevelEnabled(levelId, isEnabled, effectiveTenantId ?? undefined);
@@ -1359,6 +1515,17 @@ export default function SettingsPage() {
       if (res?.levels) setEducationStructure(res);
       showToast('success', isEnabled ? 'Niveau activé' : 'Niveau désactivé');
       notifySchoolLevelsUpdated();
+      // ⭐ Écoles combinées : après l'activation du SECONDAIRE, si aucune
+      //    identité secondaire n'est configurée, demander si le secondaire
+      //    porte un nom différent du maternelle/primaire (modal → onglet Identité).
+      if (isEnabled && (levelName === 'SECONDAIRE' || levelName === 'SECONDARY')) {
+        try {
+          const secondary = await settingsService.getSecondaryIdentity(effectiveTenantId ?? undefined);
+          if (!secondary?.configured) setSecondaryNameModalOpen(true);
+        } catch {
+          // non bloquant : la section reste configurable depuis l'onglet Identité
+        }
+      }
     } catch (error: any) {
       showToast('error', error.message || 'Erreur');
     } finally {
@@ -2841,6 +3008,252 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            {/* ⭐ Section 6 : Identité du niveau Secondaire (écoles combinées)
+                Sauvegarde INDÉPENDANTE de l'identité versionnée ci-dessous :
+                PUT/DELETE /identity/secondary, pas de version, pas de dispatch
+                SCHOOL_IDENTITY_UPDATED_EVENT (l'en-tête de l'app reste global). */}
+            <div
+              ref={secondarySectionRef}
+              id="identite-secondaire"
+              className={`bg-white rounded-lg shadow-sm border p-4 transition-shadow ${
+                secondaryHighlight ? 'ring-2 ring-blue-500 border-blue-300' : 'border-gray-200'
+              }`}
+            >
+              <h4 className="font-semibold text-gray-800 mb-2 flex items-center gap-2 flex-wrap">
+                <Building2 className="w-4 h-4 text-violet-600" />
+                6. Identité du niveau Secondaire
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-violet-100 text-violet-800 border border-violet-200">
+                  Secondaire
+                </span>
+                {secondaryConfigured ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 border border-green-200">
+                    <CheckCircle className="w-3 h-3" />
+                    Identité propre configurée
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                    Identité partagée (maternelle/primaire)
+                  </span>
+                )}
+              </h4>
+              <p className="text-sm text-gray-500 mb-3">
+                Pour les écoles dont le secondaire porte un nom différent. Ces informations remplacent celles de l&apos;établissement UNIQUEMENT sur les documents du secondaire (bulletins, reçus, listes, PV, cartes scolaires, économat). Le site institutionnel public conserve l&apos;identité maternelle/primaire.
+              </p>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom du secondaire *</label>
+                  <input
+                    type="text"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    value={secondaryIdentityForm.schoolName || ''}
+                    onChange={(e) => setSecondaryIdentityForm({ ...secondaryIdentityForm, schoolName: e.target.value })}
+                    placeholder="Collège d'Enseignement Général de Porto-Novo"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Sigle</label>
+                  <input
+                    type="text"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    value={secondaryIdentityForm.schoolAcronym || ''}
+                    onChange={(e) => setSecondaryIdentityForm({ ...secondaryIdentityForm, schoolAcronym: e.target.value })}
+                    placeholder="CEG PN"
+                    maxLength={32}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Devise / slogan</label>
+                  <input
+                    type="text"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    value={secondaryIdentityForm.slogan || ''}
+                    onChange={(e) => setSecondaryIdentityForm({ ...secondaryIdentityForm, slogan: e.target.value })}
+                    placeholder="Discipline - Fraternité - Travail"
+                    maxLength={300}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone principal</label>
+                  <input
+                    type="tel"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    value={secondaryIdentityForm.phonePrimary || ''}
+                    onChange={(e) => setSecondaryIdentityForm({ ...secondaryIdentityForm, phonePrimary: e.target.value })}
+                    placeholder="01 XX XX XX XX"
+                    maxLength={40}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone secondaire</label>
+                  <input
+                    type="tel"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    value={secondaryIdentityForm.phoneSecondary || ''}
+                    onChange={(e) => setSecondaryIdentityForm({ ...secondaryIdentityForm, phoneSecondary: e.target.value })}
+                    placeholder="01 XX XX XX XX"
+                    maxLength={40}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp</label>
+                  <input
+                    type="tel"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    value={secondaryIdentityForm.whatsapp || ''}
+                    onChange={(e) => setSecondaryIdentityForm({ ...secondaryIdentityForm, whatsapp: e.target.value })}
+                    placeholder="+229 97 12 34 56"
+                    maxLength={40}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input
+                    type="email"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    value={secondaryIdentityForm.email || ''}
+                    onChange={(e) => setSecondaryIdentityForm({ ...secondaryIdentityForm, email: e.target.value })}
+                    placeholder="contact@secondaire.bj"
+                    maxLength={160}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Site web</label>
+                  <input
+                    type="url"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    value={secondaryIdentityForm.website || ''}
+                    onChange={(e) => setSecondaryIdentityForm({ ...secondaryIdentityForm, website: e.target.value })}
+                    placeholder="https://www.secondaire.bj"
+                    maxLength={200}
+                  />
+                </div>
+                <div className="col-span-2 md:col-span-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Adresse</label>
+                  <input
+                    type="text"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    value={secondaryIdentityForm.address || ''}
+                    onChange={(e) => setSecondaryIdentityForm({ ...secondaryIdentityForm, address: e.target.value })}
+                    placeholder="Quartier Djègandji, Rue 123, Lot 456"
+                    maxLength={300}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Ville</label>
+                  <input
+                    type="text"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    value={secondaryIdentityForm.city || ''}
+                    onChange={(e) => setSecondaryIdentityForm({ ...secondaryIdentityForm, city: e.target.value })}
+                    placeholder="Porto-Novo"
+                    maxLength={100}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Département</label>
+                  <input
+                    type="text"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    value={secondaryIdentityForm.department || ''}
+                    onChange={(e) => setSecondaryIdentityForm({ ...secondaryIdentityForm, department: e.target.value })}
+                    placeholder="Ouémé"
+                    maxLength={100}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Code postal</label>
+                  <input
+                    type="text"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    value={secondaryIdentityForm.postalCode || ''}
+                    onChange={(e) => setSecondaryIdentityForm({ ...secondaryIdentityForm, postalCode: e.target.value })}
+                    placeholder="01 BP 123"
+                    maxLength={20}
+                  />
+                </div>
+              </div>
+
+              {/* Logo du secondaire — même pattern que le branding global (compressImageFileToDataUrl) */}
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="border border-dashed border-gray-300 rounded-lg p-3 text-center">
+                  {secondaryLogoUrl ? (
+                    <PlatformImage
+                      src={secondaryLogoUrl}
+                      alt="Logo du secondaire"
+                      width={64}
+                      height={64}
+                      className="mx-auto object-contain mb-2 h-16"
+                    />
+                  ) : (
+                    <Image className="w-12 h-12 mx-auto text-gray-300 mb-2" />
+                  )}
+                  <p className="text-xs font-medium text-gray-700 mb-2">Logo du secondaire</p>
+                  <div className="flex items-center justify-center gap-2">
+                    <label className="cursor-pointer inline-flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 rounded hover:bg-gray-200">
+                      <Upload className="w-3 h-3" /> Changer le logo
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = '';
+                          if (!f) return;
+                          try {
+                            const dataUrl = await compressImageFileToDataUrl(f, {
+                              maxEdge: 1024,
+                              quality: 0.82,
+                              mimeType: 'image/jpeg',
+                            });
+                            setSecondaryLogoUrl(dataUrl);
+                          } catch {
+                            showToast('error', 'Impossible de traiter cette image. Essayez un autre fichier (JPG, PNG).');
+                          }
+                        }}
+                      />
+                    </label>
+                    {secondaryLogoUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setSecondaryLogoUrl('')}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+                      >
+                        <X className="w-3 h-3" /> Retirer
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Champ laissé vide = l&apos;identité globale de l&apos;établissement est utilisée pour ce champ.
+              </p>
+
+              {/* Sauvegarde propre au secondaire — ne touche PAS au flux versionné global */}
+              <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t pt-4">
+                <button
+                  type="button"
+                  onClick={handleSaveSecondaryIdentity}
+                  disabled={secondarySaving || !(secondaryIdentityForm.schoolName || '').trim()}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {secondarySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Enregistrer l&apos;identité secondaire
+                </button>
+                {secondaryConfigured && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteSecondaryIdentity}
+                    disabled={secondarySaving}
+                    className="flex items-center gap-2 px-4 py-2 border border-red-300 text-red-700 rounded-md hover:bg-red-50 disabled:opacity-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Réutiliser l&apos;identité maternelle/primaire
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Sauvegarde avec raison obligatoire */}
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
               <div className="flex items-start gap-3">
@@ -3666,7 +4079,7 @@ export default function SettingsPage() {
                         <span className="font-semibold text-gray-900">{level.name}</span>
                         <button
                           type="button"
-                          onClick={() => handleSetEducationLevelEnabled(level.id, !level.isEnabled)}
+                          onClick={() => handleSetEducationLevelEnabled(level.id, !level.isEnabled, level.name)}
                           disabled={structureBusy}
                           className="p-1"
                         >
@@ -6336,6 +6749,49 @@ export default function SettingsPage() {
         }`}>
           {toast.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
           {toast.message}
+        </div>
+      )}
+
+      {/* ⭐ Modal — activation du niveau SECONDAIRE : nom différent du
+          maternelle/primaire ? (écoles combinées). « Oui » bascule vers
+          l'onglet Identité et met en évidence la section secondaire. */}
+      {secondaryNameModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => setSecondaryNameModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Nom du niveau secondaire</h3>
+            <p className="text-sm text-gray-600 mb-3">
+              Le nom de votre établissement du niveau secondaire est-il différent de celui du niveau maternelle/primaire ?
+            </p>
+            <p className="text-xs text-gray-500 mb-4">
+              Les informations du secondaire (nom, contacts, logo) remplacent celles de l&apos;établissement uniquement sur les documents du secondaire. Le site institutionnel public conserve l&apos;identité maternelle/primaire.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('identity');
+                  setFocusSecondaryIdentity(true);
+                  setSecondaryNameModalOpen(false);
+                }}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700"
+              >
+                Oui, il est différent
+              </button>
+              <button
+                type="button"
+                onClick={() => setSecondaryNameModalOpen(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-50"
+              >
+                Non, c&apos;est le même nom
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

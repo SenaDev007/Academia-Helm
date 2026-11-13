@@ -29,6 +29,8 @@ import { TenantId } from '../../../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { PrismaService } from '../../../database/prisma.service';
 import { PuppeteerPoolService } from '../../../common/services/puppeteer-pool.service';
+// ⭐ 2026-11-13 — Identité secondaire : helper partagé (écoles combinées).
+import { resolveLevelIdentityOverlay, applyLevelIdentityOverlay } from '../../../common/context/resolve-level-identity';
 import { buildBoardHtml, buildCertificateHtml } from './html-builder';
 import { resolveDistinction, makeVerificationCode, verificationUrl, THEMES, themeFor } from './html-builder';
 import type { BoardInput, BoardRow, DistinctionCode, DistinctionInput, Level, Lang } from './html-builder';
@@ -173,6 +175,26 @@ export class DistinctionsController {
     } catch {
       return { name: 'Établissement' };
     }
+  }
+
+  // ─── Helper : identité du niveau SECONDAIRE (écoles combinées) ────────────
+  //    ⭐ 2026-11-13 — Identité secondaire : le secondaire d'une école combinée
+  //    peut porter un nom/logo/contacts DIFFÉRENTS
+  //    (tenant_level_identity_profiles). Overlay via le helper commun
+  //    (cache 60 s) mappé vers les champs lus par le html-builder
+  //    (name/logoUrl/city) ; maternelle/primaire ou sans identité
+  //    secondaire configurée ⇒ branding global inchangé.
+  private async applySecondaryIdentity(tenantId: string, branding: any, isSecondary: boolean) {
+    if (!isSecondary) return branding;
+    const overlay = await resolveLevelIdentityOverlay(this.prisma, tenantId, { isSecondary: true });
+    if (!overlay) return branding;
+    const merged: any = applyLevelIdentityOverlay(branding, overlay);
+    return {
+      ...merged,
+      name: overlay.schoolName || branding.name,
+      logoUrl: overlay.logoUrl || branding.logoUrl,
+      city: overlay.address || overlay.city || branding.city,
+    };
   }
 
   private async htmlToPdf(html: string): Promise<Buffer> {
@@ -453,7 +475,13 @@ export class DistinctionsController {
     const lang: Lang = language === 'EN' ? 'EN' : 'FR';
 
     const level = this.mapLevel(bodyLevel || 'PRIMAIRE');
-    const branding = await this.getTenantBranding(resolvedTenantId);
+    // ⭐ 2026-11-13 — Identité secondaire : overlay du secondaire (écoles
+    //    combinées) appliqué au branding avant le html-builder.
+    const branding = await this.applySecondaryIdentity(
+      resolvedTenantId,
+      await this.getTenantBranding(resolvedTenantId),
+      level === 'secondaire',
+    );
 
     try {
       const ranked = await this.getClassAverages(resolvedTenantId, classId, periodId, academicYearId, lang);
@@ -556,7 +584,13 @@ export class DistinctionsController {
     const lang: Lang = language === 'EN' ? 'EN' : 'FR';
 
     const level = this.mapLevel(bodyLevel || 'PRIMAIRE');
-    const branding = await this.getTenantBranding(resolvedTenantId);
+    // ⭐ 2026-11-13 — Identité secondaire : overlay du secondaire (écoles
+    //    combinées) appliqué au branding avant le html-builder.
+    const branding = await this.applySecondaryIdentity(
+      resolvedTenantId,
+      await this.getTenantBranding(resolvedTenantId),
+      level === 'secondaire',
+    );
 
     try {
       // ⭐ Base de notation : priorité à celle envoyée par le frontend
@@ -654,7 +688,13 @@ export class DistinctionsController {
     const lang: Lang = language === 'EN' ? 'EN' : 'FR';
 
     const level = this.mapLevel(bodyLevel || 'PRIMAIRE');
-    const branding = await this.getTenantBranding(resolvedTenantId);
+    // ⭐ 2026-11-13 — Identité secondaire : overlay du secondaire (écoles
+    //    combinées) appliqué au branding avant le html-builder.
+    const branding = await this.applySecondaryIdentity(
+      resolvedTenantId,
+      await this.getTenantBranding(resolvedTenantId),
+      level === 'secondaire',
+    );
 
     try {
       const base = typeof bodyBase === 'number' && bodyBase > 0

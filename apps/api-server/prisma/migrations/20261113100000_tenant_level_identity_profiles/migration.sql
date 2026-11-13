@@ -25,9 +25,11 @@ CREATE TABLE IF NOT EXISTS "tenant_level_identity_profiles" (
     "logoUrl" TEXT,
     "createdBy" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "tenant_level_identity_profiles_pkey" PRIMARY KEY ("id")
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
+-- NB : pas de CONSTRAINT table-level : le PK inline crée déjà
+-- tenant_level_identity_profiles_pkey ; la doubler lève
+-- « multiple primary keys for table ... are not allowed ».
 
 -- Une seule identité par (tenant, niveau) — pattern TenantStamp/TenantSignature
 CREATE UNIQUE INDEX IF NOT EXISTS "tenant_level_identity_profiles_tenantId_educationLevelId_key"

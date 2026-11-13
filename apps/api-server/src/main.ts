@@ -2027,8 +2027,7 @@ async function bootstrap() {
           "logoUrl" TEXT,
           "createdBy" TEXT,
           "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          "updatedAt" TIMESTAMP(3) NOT NULL,
-          CONSTRAINT "tenant_level_identity_profiles_pkey" PRIMARY KEY ("id")
+          "updatedAt" TIMESTAMP(3) NOT NULL
         )`,
       ).catch(() => {});
       await prisma.$executeRawUnsafe(

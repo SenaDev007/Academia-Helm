@@ -32,7 +32,7 @@ export class HealthController {
       status: 'ok',
       timestamp: new Date().toISOString(),
       service: 'Academia Helm API',
-      version: '1.0.0',
+      version: '1.0.1',
       // db: intentionnellement absent — voir commentaire d'entête.
       process: {
         uptime_s: Math.round(process.uptime()),
@@ -57,7 +57,7 @@ export class HealthController {
         status: 'ok',
         timestamp: new Date().toISOString(),
         service: 'Academia Helm API',
-        version: '1.0.0',
+        version: '1.0.1',
         db: 'connected',
       };
     } catch (error) {
@@ -65,7 +65,7 @@ export class HealthController {
         status: 'error',
         timestamp: new Date().toISOString(),
         service: 'Academia Helm API',
-        version: '1.0.0',
+        version: '1.0.1',
         db: 'disconnected',
         error: error instanceof Error ? error.message : 'Unknown DB error',
       };

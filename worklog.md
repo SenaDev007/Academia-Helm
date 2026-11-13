@@ -13553,3 +13553,24 @@ Stage Summary:
 - ⚠️ Vérification post-déploiement : NEON_PWD=… python3 scripts/neon-verify-sleep.py 10 → doit afficher OK (aucun poller) puis le compute doit passer « Suspended » dans la console
 - 🔐 Rotation TOUJOURS requise : mot de passe Neon + token GitHub (circulés en clair)
 - 💰 Coût attendu après déploiement : ~$5-10/mois (vs ~$50-65)
+
+---
+Task ID: neon-pingers-kill-3
+Agent: Super Z (agent principal)
+Task: Vérification post-redéploiement Railway (main@c2d2715) — le Process B est-il mort ? Le Process A survit-il ?
+
+Work Log:
+- Empreintes du nouveau build confirmées : /health uptime ≈ 28 min au 10:38 UTC (restart ≈ 10:10, = le redéploiement utilisateur), /api/health/db → 401 (endpoint v3 du 10/11 présent ; l'ancien build répondait 404)
+- Surveillance 12 min (scripts/neon-verify-sleep.py, échantillon 2 s) : ZÉRO community (30 s), ZÉRO chat (60 s) → Process B (pollers pré-03/11 de l'API Railway) ÉLIMINÉ par le redéploiement ; MAIS emails_due +12 = 1/min pile, aligné horloge (:00-:02), sans interruption à 10:10 → Process A vit ailleurs que le service API Railway
+- Empreinte 4 min (delta pg_stat_statements, scripts/neon-hunt-process-a.py phase 1) : Process A n'exécute QUE findPendingDue (SELECT * FROM scheduled_emails WHERE status='PENDING' … LIMIT 50) — aucun keepalive SELECT 1, aucune autre requête applicative → runner emails-only, PAS une instance complète d'api-server (community/chat pollers existaient déjà dans le code ≥ 01/10)
+- Piège à verrou (phase 2 : LOCK ACCESS EXCLUSIVE sur scheduled_emails 160 s + ROLLBACK garanti) : session de Process A bloquée à 10:57:00 (wait_event Lock/relation) — usename=neondb_owner, via pgbouncer (client_addr ::1 → IP réelle masquée), requête = findPendingDue exact → identification de l'hôte impossible côté SQL
+- Ré-échantillon post-piège 2 min : +2 ticks (:02/:03) → Process A intact (ROLLBACK sans dommage, par design)
+- Artéfacts de déploiement inspectés : docker-compose.prod.yml (vise un postgres LOCAL, pas Neon), railway.toml (healthcheck seul), aucun worker emails défini dans le repo → l'hôte est hors repo
+- docs/NEON-COST-AUDIT.md §6 ajouté (preuves + identité + runbook d'éradication) ; scripts neon-verify-sleep.py / neon-verify-suspend.py / neon-hunt-process-a.py persistés
+
+Stage Summary:
+- ✅ Le redéploiement Railway du 13/11 a tué le Process B : plus un seul poller 30 s/60 s en 12 min de surveillance
+- ❌ Process A (emails-only, 1/min pile, via pgbouncer, neondb_owner, hors Railway) survit → la base ne dort toujours pas (~$50-65/mois en trajectoire tant qu'il vit)
+- ⚠️ UTILISATEUR (décision) : (a) chasser l'hôte — Railway TOUS services/Cron Jobs, VPS docker ps, machines locales pm2/Task Scheduler ; ou (b) RECOMMANDÉ : rotation du mot de passe neondb_owner (obligatoire de toute façon — il a circulé en clair) → kill instantané de Process A où qu'il vive + DATABASE_URL mis à jour dans Railway/Vercel + redéploiement
+- ⏳ Après kill : neon-verify-sleep.py 10 (attendu 0 tick) + neon-verify-suspend.py 8 (attendu SUSPENDED) → critère « la base dort ≤ 5 min sans utilisateur » prouvé ; coût attendu ~$5-10/mois
+- 🔐 Rotation du token GitHub également requise après fin des travaux (circulé en clair)

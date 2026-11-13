@@ -171,3 +171,62 @@ Trafic de fond restant : balayages 6 h (00/06/12/18) + crons quotidiens
 (~10/j) + auto-recovery 3×/j + helm-connect 6 h + cron Vercel 1×/j
 ≈ 20 réveils courts/jour → **~$5-10/mois** attendu (vs ~$50-65 mesurés,
 et la trajectoire $158/3 mois).
+
+---
+
+## 6. Vérification post-redéploiement du 13/11 (10:38–11:04 UTC) — Process B MORT, Process A TOUJOURS VIVANT
+
+> Contexte : l'utilisateur a déployé main@c2d2715 sur Railway à ~10:10 UTC.
+
+### 6.1 Process B (l'API Railway) : ÉLIMINÉ ✅
+- Empreintes du nouveau build : `/health` uptime ≈ 28 min au 10:38 UTC
+  (restart ≈ 10:10), et `/api/health/db` → **401** (l'endpoint v3 du 10/11
+  existe ; l'ancien build répondait 404).
+- Surveillance 12 min (`scripts/neon-verify-sleep.py`, échantillon 2 s) :
+  **zéro** saut community (30 s) et **zéro** saut chat (60 s) — les pollers
+  pré-03/11 ont disparu avec l'ancien build. Le redéploiement a fait son
+  office.
+
+### 6.2 Process A : TOUJOURS ACTIF — preuves à l'appel près ❌
+- 12 min : `SELECT * FROM scheduled_emails WHERE status='PENDING' …
+  LIMIT 50` (findPendingDue) **+12 appels = 1/min pile**, aligné horloge
+  (:00-:02), **sans interruption pendant le redéploiement de 10:10** →
+  il n'est PAS hébergé par le service API Railway.
+- Ré-échantillon 2 min après le piège : +2 appels (:02, :03) → inchangé.
+- Empreinte complète (delta `pg_stat_statements` sur 4 min) : Process A
+  n'exécute **QUE findPendingDue** — aucun keepalive `SELECT 1`, aucune
+  autre requête applicative → ce n'est PAS une instance complète de
+  l'api-server (elle montrerait aussi community 30 s / chat 60 s, présents
+  dans le code depuis ≥ 01/10). C'est un **runner emails-only** (build
+  très ancien ou script dédié) qui vit ailleurs.
+
+### 6.3 Piège à verrou — identité de la session (scripts/neon-hunt-process-a.py)
+Méthode : `LOCK TABLE scheduled_emails IN ACCESS EXCLUSIVE MODE` tenu
+160 s puis ROLLBACK (aucune école connectée → zéro dommage ; sweeps 6 h
+aux heures 00/06/12/18 → hors fenêtre).
+- Au tick 10:57:00, la session de Process A **bloque** (wait_event
+  `Lock/relation`) : `usename=neondb_owner`, via **pgbouncer**
+  (client_addr = ::1 → l'IP réelle du client est masquée par le pooler),
+  requête bloquée = findPendingDue exact.
+- Conclusion : l'hôte ne peut pas être identifié depuis le SQL. La chasse
+  doit se faire côté infra, ou l'éradication par rotation du mot de passe.
+
+### 6.4 Éradication définitive (ordre strict)
+1. **Option chasse (5-10 min, côté utilisateur)** : Railway → projet →
+   TOUS les services (y compris Cron Jobs et services arrêtés) : chercher
+   un worker emails / une vieille API ; sinon VPS (`docker ps`) ; sinon
+   machines locales (`pm2 list`, Task Scheduler, vieux terminal
+   `npm run start:dev` oublié).
+2. **Option rotation — RECOMMANDÉE (et de toute façon OBLIGATOIRE : le mot
+   de passe a circulé en clair)** : console Neon → rôle `neondb_owner` →
+   Reset password (le nouveau mot de passe ne doit JAMAIS transiter en
+   chat) ; coller le nouveau `DATABASE_URL` dans les variables Railway
+   (service API) et Vercel ; redéployer. **Process A meurt à son tick
+   suivant** (auth 28P01), où qu'il vive. Plateforme sans utilisateur →
+   downtime de quelques minutes seulement.
+3. **Après le kill — preuve d'acceptation** : relancer
+   `NEON_PWD=… python3 scripts/neon-verify-sleep.py 10` (attendu : AUCUN
+   tick) puis `NEON_PWD=… python3 scripts/neon-verify-suspend.py 8`
+   (attendu : `SUSPENDED` — le postmaster redémarre pendant les 8 min de
+   silence, preuve du scale-to-zero) → critère atteint : *sans utilisateur,
+   la base dort ≤ 5 min*. Coût attendu ensuite : **~$5-10/mois**.

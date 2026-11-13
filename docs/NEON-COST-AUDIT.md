@@ -68,3 +68,106 @@ périodique < 6 h ne touche plus la base.**
    token GitHub + mettre à jour les variables Railway/Vercel.
 4. Si des monitors externes (UptimeRobot, cron-job.org…) pointent une route
    DB : les retirer ou les réserver à `/health` (statique depuis le fix 3).
+
+---
+
+## 5. Audit live du 13/11/2026 — le pingeur IDENTIFIÉ, preuve à la seconde près
+
+> Contexte utilisateur : « aucun utilisateur connecté, aucune école, pourtant
+> la dernière activité du compute est il y a 6 minutes. »
+
+### 5.1 Preuves live (surveillance pg_stat_statements à 2 s pendant 10 min)
+
+Sans AUCUN utilisateur ni connexion externe visible (pg_stat_activity ne montre
+que les moniteurs internes Neon : pgbouncer, vm-monitor, compute_ctl) :
+
+| Poller | Cadence mesurée | Alignement horloge | Version du code |
+|---|---|---|---|
+| `scheduled_emails … scheduled_at <= NOW()` | **2 appels/min** | à :02-:03 de chaque minute | `@Cron(EVERY_MINUTE)` × **2 process** |
+| `community_scheduled_posts` (SELECT + UPDATE) | 1 appel / 30 s | à :18/:48 | `@Interval(30000)` |
+| `chat_scheduled_messages` (SELECT) | 1 appel / 60 s | à :47 | `@Interval(60000)` |
+
+### 5.2 Décomposition mathématique — DEUX process distincts
+
+Compteurs cumulés du 10/11 14h18 → 13/11 09h33 (67,25 h) :
+
+- `scheduled_emails` : **+4 138 appels = 61,5/h = exactement 1 appel/59 s en
+  continu** — même pendant que community (+204) et chat (+102) étaient quasi
+  silencieux.
+- +204 community = 2 appels/min × **1,7 h** ; +102 chat = 1 appel/min × 1,7 h.
+  1,7 h = **exactement l'uptime du process Railway** (`/health` → uptime
+  6 178 s au 13/11 09:33, soit un restart à 07:53 UTC).
+
+Décomposition qui colle au compt près :
+- **Process A** (identité à confirmer) : cron emails 1/min, **en continu depuis
+  ≥ 10/11**, connecté DIRECTEMENT à Neon (pas via l'API Railway, qui était
+  injoignable/arrêtée pendant cette période) → ~4 035 appels.
+- **Process B** = l'API Railway (restart 07:53) : emails 1/min + community
+  30 s + chat 60 s → ~103 + 204 + 102 appels.
+- Total ≈ 4 138 appels observés ✓ (le vieux dispatcher appelle la requête
+  1×/tick — vérifié dans le code — donc le « +2/min » ne peut être qu'un
+  doublon de process).
+
+### 5.3 Localisation de l'hébergeur + datation du code déployé
+
+- `api.academiahelm.com` → Cloudflare → **Railway** (en-têtes `x-railway-edge:
+  hkg1`, `x-railway-request-id`, rate-limits Railway). Domaine custom —
+  l'ancienne URL `academia-helm-api-production.up.railway.app` renvoie 404.
+- Empreintes de version sur la prod :
+  - `/` → `{status, message, timestamp}` et `/health` → `{status, uptime,
+    timestamp}` (AppController — présent dans toutes les versions) ;
+  - `/api/ready` → 200 `SELECT 1` (AppController) ;
+  - **`/api/health/db` → 404** : endpoint ajouté par 970c148 (10/11) absent
+    → **le code déployé est antérieur au 10/11** ;
+  - cadences 30 s / 60 s / 1 min alignées horloge = valeurs d'avant le 03/11
+    → **le build déployé est antérieur au 03/11**.
+- Conclusion : **les correctifs 2d2b0d5, 4b2d12d (03/11) et 970c148 (10/11)
+  n'ont JAMAIS été déployés sur Railway.** L'auto-déploy est éteint, cassé ou
+  pointe sur une autre branche/source.
+- Web-app vérifié en ligne (`academiahelm.com` GET 200, `www` 200,
+  `admin` 307, `saisiemaster` 200) — mais un HEAD sur le domaine racine a
+  renvoyé `402 x-vercel-error: DEPLOYMENT_DISABLED` (anomalie transitoire à
+  surveiller).
+- Les 3 autres repos (YEHI-OR-Tech, Medihelm, Mouvement-Christ-Libere) ont
+  été vérifiés : ils utilisent leurs propres bases Neon (ep-cold-sun /
+  ep-rapid-leaf) — **aucun ne touche AcademiaHelm**.
+
+### 5.4 Qui est le Process A ? (à confirmer côté utilisateur)
+
+Le process A exécute le vieux cron emails (1 requête `findPendingDue`/min) en
+direct sur la base, SANS passer par l'API Railway. Candidats à vérifier dans
+l'ordre :
+
+1. **Un 2ᵉ service Railway oublié** dans le même projet (ancien service
+   « academia-helm-api », worker, cron job, service arrêté-redémarré) ;
+2. **Un conteneur docker-compose.prod** sur un VPS avec un vieux checkout ;
+3. **Une machine locale** (serveur/laptop) qui fait tourner l'api-server en
+   continu avec un checkout antérieur au 03/11 (npm run start:dev oublié) ;
+4. Un job planifié externe (cron système, GitHub Action impossible < 5 min,
+   script maison `check-*.js` en boucle).
+
+Test discriminant après redéploiement de l'API : si `scheduled_emails` continue
+ de grimper 1×/min → Process A est toujours vivant → le chasser ci-dessus.
+
+### 5.5 Actions immédiates (ordre strict)
+
+1. **Railway > projet Academia Helm > service API > Deployments** : constater
+   la date du dernier déploiement réussi (attendu : avant le 03/11). Puis
+   **Deploy depuis main@6824fc8** et activer l'auto-déploy GitHub
+   (Settings > Source > branche main) — sinon tout futur fix restera ignoré.
+2. Vérifier la **liste de TOUS les services** du projet Railway (y compris
+   arrêtés) pour trouver le process A ; sinon VPS (docker ps) / machine locale.
+3. Console Neon > compute AcademiaHelm > **Suspend after inactivity = 5 min**
+   (pas « always on »).
+4. Après déploiement : lancer `python3 scripts/neon-verify-sleep.py` (10 min
+   de surveillance) — verdict automatique ; la console Neon doit ensuite
+   montrer le compute **suspended** entre les rafales 6 h.
+5. **Rotation des credentials** (toujours pas faite) : mot de passe
+   `neondb_owner` + token GitHub + variables Railway/Vercel.
+
+### 5.6 Projection de coût après correctif déployé
+
+Trafic de fond restant : balayages 6 h (00/06/12/18) + crons quotidiens
+(~10/j) + auto-recovery 3×/j + helm-connect 6 h + cron Vercel 1×/j
+≈ 20 réveils courts/jour → **~$5-10/mois** attendu (vs ~$50-65 mesurés,
+et la trajectoire $158/3 mois).

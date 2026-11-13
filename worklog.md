@@ -13533,3 +13533,23 @@ Stage Summary:
 - ✅ Fonctionnalités conservées : posts/messages/emails programmés envoyés à l'heure exacte (timers in-process), rattrapage au boot, balayage anti-crash 4×/jour
 - ⚠️ UTILISATEUR : vérifier que Railway déploie bien 970c148 (l'auto-déploy du 03/11 n'a jamais eu lieu — pings 30 s constatés en prod le 10/11) + rotation OBLIGATOIRE du mot de passe Neon et du token GitHub (circulés en clair)
 - ⏳ Coût projeté post-déploiement : ~$3-8/mois (trafic réel + ~20 réveils cron/jour) vs ~$50-65 actuels
+
+---
+Task ID: neon-pingers-kill-2
+Agent: Super Z (agent principal)
+Task: Audit live du 13/11 — identifier pourquoi le compute AcademiaHelm reste éveillé sans utilisateur (critère : base dormant ≤ 5 min après inactivité).
+
+Work Log:
+- Surveillance live pg_stat_statements (échantillon 2 s × 10 min, psycopg2 via pooler) : emails +2 appels/min pile à :02-:03, community SELECT+UPDATE 1/30 s à :18/:48, chat 1/60 s à :47 — cadences EXACTES du code d'avant le 03/11 ; zéro connexion externe visible dans pg_stat_activity (tout passe par pgbouncer)
+- Compteurs cumulés 10/11→13/11 (67,25 h) : scheduled_emails +4 138 = 61,5/h = 1 appel/59 s EN CONTINU alors que community (+204) et chat (+102) n'ont tourné que 1,7 h = exactement l'uptime du process Railway (/health → uptime 6 178 s, restart 07:53 UTC) → décomposition à l'appel près : Process A (emails-only, continu, direct DB, identité inconnue) + Process B (API Railway, les 3 pollers) ; le vieux dispatcher appelle la requête 1×/tick (vérifié au code) donc +2/min = 2 process distincts
+- Localisation : api.academiahelm.com → Cloudflare → Railway (x-railway-edge hkg1, x-railway-request-id) ; ancienne URL railway.app → 404 (domaine custom) ; empreintes version prod : /api/health/db → 404 (endpoint v3 du 10/11 ABSENT) + cadences 30 s/60 s/1 min → build antérieur au 03/11 → les correctifs 2d2b0d5, 4b2d12d ET 970c148 n'ont jamais été déployés (auto-déploy Railway éteint/cassé/autre source)
+- Front vérifié : academiahelm.com GET 200 (www/admin/saisiemaster OK) — anomalie transitoire : HEAD → 402 DEPLOYMENT_DISABLED (Vercel) à surveiller
+- Autres repos vérifiés : YEHI-OR-Tech (ep-cold-sun), Medihelm (ep-rapid-leaf), Mouvement-Christ-Libere — AUCUN ne touche la base AcademiaHelm ; pas de worker standalone emails dans le repo ; dossiers academia-helm-mobile-fix/modified vides (sous-modules non initialisés)
+- docs/NEON-COST-AUDIT.md enrichi (§5 : preuves live, décomposition mathématique, localisation, actions) ; scripts/neon-verify-sleep.py ajouté (verdict automatique OK/FAIL, testé : détecte bien les pollers actifs)
+
+Stage Summary:
+- ✅ ROOT CAUSE PROUVÉE : la prod Railway tourne sur un build d'avant le 03/11 (3 pollers 30 s/60 s/1 min) + un 2e process inconnu (cron emails 1/min direct DB) → le timer d'autosuspend 5 min est reset en permanence → compute jamais suspendu
+- ⚠️ UTILISATEUR (5 min dans Railway) : Deployments → déployer main@6824fc8 + activer l'auto-déploy GitHub ; chercher le 2e process (2e service Railway/VPS docker/machine locale) ; Neon console : Suspend = 5 min
+- ⚠️ Vérification post-déploiement : NEON_PWD=… python3 scripts/neon-verify-sleep.py 10 → doit afficher OK (aucun poller) puis le compute doit passer « Suspended » dans la console
+- 🔐 Rotation TOUJOURS requise : mot de passe Neon + token GitHub (circulés en clair)
+- 💰 Coût attendu après déploiement : ~$5-10/mois (vs ~$50-65)

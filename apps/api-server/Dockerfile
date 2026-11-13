@@ -31,10 +31,12 @@ RUN npx prisma generate
 
 COPY . .
 
-# ⭐ Forcer la recompilation — le COPY . . devrait détecter les changements
-#    de fichiers, mais au cas où le cache Docker est trop agressif,
-#    on touch un fichier pour invalider le layer suivant.
-RUN touch /app/.build-timestamp-$(date +%s)
+# 2026-11-13 — Coût Railway : l'ancien "RUN touch /app/.build-timestamp-$(date +%s)"
+# invalidait VOLONTAIREMENT le cache Docker à chaque deploy → rebuild npm run build
+# complet à chaque fois (minutes de CPU builder facturées inutilement).
+# Docker détecte déjà les changements de fichiers via COPY . . : si un contenu
+# change, le layer est rebuildé ; s'il ne change pas, le cache est réutilisé.
+# Ne pas réintroduire d'invalidation forcée du cache.
 
 RUN npm run build
 

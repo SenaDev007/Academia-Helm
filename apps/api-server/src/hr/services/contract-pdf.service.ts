@@ -23,6 +23,7 @@ import * as crypto from 'crypto';
 import {
   CONTRAT_TRAVAIL_TEMPLATE,
   CONTRAT_TRAVAIL_TEMPLATE_V1,
+  CONTRAT_TRAVAIL_TEMPLATE_V2,
   CONTRAT_PRESTATION_TEMPLATE,
   CONTRAT_TRAVAIL_VARIABLES,
   CONTRAT_PRESTATION_VARIABLES,
@@ -1490,6 +1491,28 @@ export class ContractPdfService {
       } catch (err: any) {
         this.logger.warn(`Migration template V1 → V2 échouée : ${err?.message}`);
       }
+    } else if (
+      templateType === TEMPLATE_TYPE_CONTRAT_TRAVAIL &&
+      typeof tmpl.template === 'string' &&
+      tmpl.template.trim() === CONTRAT_TRAVAIL_TEMPLATE_V2.trim()
+    ) {
+      // ⭐ 13/11/2026 — mise à niveau V2 → V3 (Article 5 : bloc indemnités du
+      //    personnel — onglet « Indemnités » / workflow d'embauche), UNIQUEMENT
+      //    si le gabarit en base est STRICTEMENT identique au V2 (jamais
+      //    personnalisé). Un template personnalisé par l'école reste intact.
+      try {
+        await this.prisma.contractTemplate.update({
+          where: { id: tmpl.id },
+          data: {
+            template: CONTRAT_TRAVAIL_TEMPLATE,
+            variables: CONTRAT_TRAVAIL_VARIABLES as any,
+          },
+        });
+        tmpl = { ...tmpl, template: CONTRAT_TRAVAIL_TEMPLATE, variables: CONTRAT_TRAVAIL_VARIABLES };
+        this.logger.log(`Template CONTRAT_TRAVAIL migré V2 → V3 (bloc indemnités art. 5) pour le tenant ${tenantId}`);
+      } catch (err: any) {
+        this.logger.warn(`Migration template V2 → V3 échouée : ${err?.message}`);
+      }
     }
     return {
       templateId: tmpl?.id ?? null,
@@ -1668,6 +1691,27 @@ export class ContractPdfService {
     const signatureDate = contract.signedAt || terms.employerSignedAt || new Date();
     const lieuSignature = schoolCity || schoolCountry || BLANK;
 
+    // ── ⭐ 13/11/2026 — Indemnités actives du personnel (onglet « Indemnités »
+    //    / workflow d'embauche) : reprises ligne par ligne dans l'Article 5 du
+    //    contrat (bloc {{#if_indemnites}}), avec leur montant et le total ──
+    let staffAllowanceRows: any[] = [];
+    try {
+      staffAllowanceRows = await this.prisma.staffAllowance.findMany({
+        where: { staffId: contract.staffId, tenantId, status: 'ACTIVE' },
+        include: { allowanceType: true },
+        orderBy: { effectiveDate: 'asc' },
+      });
+    } catch (e: any) {
+      this.logger.warn(`Indemnités du personnel indisponibles : ${e?.message}`);
+    }
+    const indemniteLines = staffAllowanceRows.map((a: any) => {
+      const label = a.allowanceType?.name || 'Indemnité';
+      return `- ${label} : ${fmtMoney(a.amount)} FCFA`;
+    });
+    const totalIndemnites = staffAllowanceRows.reduce(
+      (sum: number, a: any) => sum + Number(a.amount || 0), 0,
+    );
+
     // ── Variables selon le gabarit ──
     let templateVars: Record<string, any>;
     if (isPrestation) {
@@ -1786,6 +1830,11 @@ export class ContractPdfService {
         mode_paiement: paymentModeLabel[contract.paymentMode] || contract.paymentMode || 'virement bancaire',
         if_primes: !!terms.primes,
         liste_primes: terms.primes || '',
+        // ⭐ Indemnités actives (onglet « Indemnités » / workflow d'embauche) —
+        //    reprises dans l'Article 5 du contrat et sur la fiche de paie
+        if_indemnites: indemniteLines.length > 0,
+        liste_indemnites: indemniteLines.join('\n'),
+        total_indemnites: fmtMoney(totalIndemnites),
         // Protection sociale — if_cnss_declare DÉRIVÉ strictement du statut, jamais saisi
         if_cnss_declare: statut === 'SALARIE_DECLARE',
         cnss_numero: cnssNumber,

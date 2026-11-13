@@ -22,14 +22,72 @@
  * ============================================================================
  */
 
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
+import { ALLOWANCE_TYPE_CATALOG } from './allowance-catalog';
 
 @Injectable()
 export class AllowancesPrismaService {
+  private readonly logger = new Logger(AllowancesPrismaService.name);
+
   constructor(private readonly prisma: PrismaService) {}
+
+  // ============================================================================
+  // CATALOGUE — auto-provisionnement par tenant
+  // ============================================================================
+
+  /**
+   * Garantit que le tenant possède le catalogue complet des types d'indemnité
+   * (22 types — voir allowance-catalog.ts). Idempotent : ne crée que les types
+   * manquants (code absent ET nom absent — un renommage local d'un type du
+   * catalogue ne crée pas de doublon).
+   *
+   * ⭐ La liste complète est ainsi disponible dans le sélecteur « Type
+   *    d'indemnité » du modal Assigner une indemnité et à l'étape Contrat du
+   *    processus d'embauche — plus besoin de gérer les types à la main.
+   */
+  async ensureCatalogForTenant(tenantId: string): Promise<void> {
+    if (!tenantId) return;
+    try {
+      const existing = await this.prisma.allowanceType.findMany({
+        where: { tenantId },
+        select: { code: true, name: true },
+      });
+      const codes = new Set(existing.map((t) => t.code));
+      const names = new Set(existing.map((t) => (t.name || '').trim().toLowerCase()));
+      const missing = ALLOWANCE_TYPE_CATALOG.filter(
+        (cat) => !codes.has(cat.code) && !names.has(cat.name.trim().toLowerCase()),
+      );
+      for (const cat of missing) {
+        try {
+          await this.prisma.allowanceType.create({
+            data: {
+              ...prismaCreateDefaults(),
+              tenantId,
+              name: cat.name,
+              code: cat.code,
+              description: cat.description,
+              isTaxable: true,
+              isCnss: false,
+              // Aucun montant par défaut — l'établissement fixe le prix à l'assignation
+              amount: null,
+              isFixed: false,
+              isActive: true,
+            },
+          });
+        } catch (e: any) {
+          // P2002 (unicité tenantId+code) → créé en parallèle par une autre
+          // requête : on ignore silencieusement, le type existera au prochain appel.
+          if (e?.code === 'P2002') continue;
+          this.logger.warn(`Provision catalogue '${cat.code}' échoué : ${e?.message}`);
+        }
+      }
+    } catch (e: any) {
+      this.logger.warn(`ensureCatalogForTenant indisponible : ${e?.message}`);
+    }
+  }
 
   // ============================================================================
   // ALLOWANCE TYPES (Templates)
@@ -54,13 +112,14 @@ export class AllowancesPrismaService {
     isFixed?: boolean;
     isActive?: boolean;
   }) {
-    // Verify code uniqueness across tenants (code is @unique globally in schema)
+    // Unicité du code PAR TENANT (@@unique([tenantId, code]) depuis le
+    // 13/11/2026) — deux écoles peuvent utiliser le même code « LOGEMENT ».
     const existing = await this.prisma.allowanceType.findFirst({
-      where: { code: data.code },
+      where: { code: data.code, tenantId: data.tenantId },
     });
     if (existing) {
       throw new BadRequestException(
-        `Allowance type with code '${data.code}' already exists`,
+        `Allowance type with code '${data.code}' already exists for this tenant`,
       );
     }
 
@@ -88,6 +147,10 @@ export class AllowancesPrismaService {
    * @returns Array of AllowanceType records with assignment counts
    */
   async findAllAllowanceTypes(tenantId: string, includeInactive = false) {
+    // ⭐ Catalogue complet auto-provisionné : le sélecteur « Type d'indemnité »
+    //    liste toujours la liste complète, sans gestion manuelle des types.
+    await this.ensureCatalogForTenant(tenantId);
+
     const where: Record<string, unknown> = { tenantId };
     if (!includeInactive) where.isActive = true;
 

@@ -65,10 +65,18 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
   const [fiscalHints, setFiscalHints] = useState<any | null>(null);
   const [hrSettings, setHrSettings] = useState<any | null>(null);
   const [cddChain, setCddChain] = useState<any | null>(null);
+  // ⭐ Catalogue complet des types d'indemnité (auto-provisionné par le serveur) —
+  //    sert à l'étape 4 (Contrat) pour lier les indemnités au recrutement
+  const [allowanceTypes, setAllowanceTypes] = useState<any[]>([]);
 
   useEffect(() => {
     if (isOpen) {
       loadFiscalHints().then(setFiscalHints);
+      // ⭐ Onglet Indemnités ↔ workflow d'embauche : le catalogue complet des
+      //    types est chargé dès l'ouverture (il alimente l'étape 4).
+      hrFetch<any[]>(hrUrl('allowances/types', { tenantId }))
+        .then((types) => setAllowanceTypes(Array.isArray(types) ? types : []))
+        .catch(() => setAllowanceTypes([]));
       loadHrContractSettings(tenantId).then((data) => {
         setHrSettings(data);
         // ⭐ CDC §5 — alimente l'état du test d'aide à la qualification (config école)
@@ -411,6 +419,41 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
       });
       setState((prev) => ({ ...prev, contractId: contractResponse.id }));
     }
+
+    // ⭐ Onglet Indemnités ↔ workflow d'embauche — création des assignations
+    //    d'indemnité saisies à l'étape 4 (types du catalogue + montants).
+    //    Garde-fou allowancesSaved : anti-doublon si l'utilisateur revient
+    //    sur l'étape. Non bloquant : un échec ponctuel n'empêche pas le
+    //    recrutement (l'onglet Indemnités permet d'ajouter/corriger ensuite).
+    if (!state.allowancesSaved && state.staffId) {
+      const pending = state.allowances.filter(
+        (a) => a.allowanceTypeId && (parseFloat(a.amount) || 0) > 0,
+      );
+      if (pending.length > 0) {
+        const effectiveDate = state.contract.startDate
+          ? new Date(state.contract.startDate).toISOString()
+          : new Date().toISOString();
+        await Promise.all(
+          pending.map((a) =>
+            hrFetch(hrUrl('allowances/assignments', { tenantId }), {
+              method: 'POST',
+              body: {
+                staffId: state.staffId,
+                allowanceTypeId: a.allowanceTypeId,
+                amount: parseFloat(a.amount),
+                effectiveDate,
+                startDate: effectiveDate,
+                notes: "Assignée lors du processus d'embauche",
+              },
+            }).catch((err) => {
+              console.warn('[OnboardingWizard] Échec assignation indemnité :', err);
+              return null;
+            }),
+          ),
+        );
+      }
+      setState((prev) => ({ ...prev, allowancesSaved: true }));
+    }
   };
 
   // ─── Navigation ──────────────────────────────────────────────────
@@ -577,6 +620,11 @@ export function OnboardingWizard({ isOpen, onClose, onSuccess, tenantId }: Onboa
                   fiscalHints={fiscalHints}
                   hrSettings={hrSettings}
                   cddChain={cddChain}
+                  allowanceTypes={allowanceTypes}
+                  allowances={state.allowances}
+                  onAllowancesChange={(next) =>
+                    setState((prev) => ({ ...prev, allowances: next }))
+                  }
                   onUpdate={(field, value) =>
                     setState((prev) => ({ ...prev, contract: { ...prev.contract, [field]: value } }))
                   }

@@ -84,7 +84,6 @@ export function SettingsWorkspace() {
   // ── Paramétrage « Embauche & Contrats » (CDC §9) ──────────────────
   const [contratSettings, setContratSettings] = useState<any>({
     cddMotifs: [],
-    stageTypes: [],
     cddDureeMaxMois: 24,
     cddRenouvellementsMax: 1,
     indemniteFinContratPct: 6,
@@ -92,7 +91,6 @@ export function SettingsWorkspace() {
   });
   const [contratSaving, setContratSaving] = useState(false);
   const [newMotif, setNewMotif] = useState('');
-  const [newStageType, setNewStageType] = useState('');
 
   useEffect(() => {
     if (!tenant?.id) return;
@@ -101,7 +99,6 @@ export function SettingsWorkspace() {
         if (data) {
           setContratSettings({
             cddMotifs: Array.isArray(data.cddMotifs) ? data.cddMotifs : [],
-            stageTypes: Array.isArray(data.stageTypes) ? data.stageTypes : [],
             cddDureeMaxMois: data.cddDureeMaxMois ?? 24,
             cddRenouvellementsMax: data.cddRenouvellementsMax ?? 1,
             indemniteFinContratPct: data.indemniteFinContratPct ?? 6,
@@ -124,7 +121,6 @@ export function SettingsWorkspace() {
         setContratSettings((prev: any) => ({
           ...prev,
           cddMotifs: Array.isArray(updated.cddMotifs) ? updated.cddMotifs : prev.cddMotifs,
-          stageTypes: Array.isArray(updated.stageTypes) ? updated.stageTypes : prev.stageTypes,
           cddDureeMaxMois: updated.cddDureeMaxMois ?? prev.cddDureeMaxMois,
           cddRenouvellementsMax: updated.cddRenouvellementsMax ?? prev.cddRenouvellementsMax,
           indemniteFinContratPct: updated.indemniteFinContratPct ?? prev.indemniteFinContratPct,
@@ -261,7 +257,7 @@ export function SettingsWorkspace() {
               <div>
                 <h3 className="font-bold text-slate-900 text-base">Embauche &amp; Contrats — paramétrage de votre école</h3>
                 <p className="text-xs text-slate-500">
-                  Motifs de CDD, types de stage, seuils d&apos;alerte et test d&apos;aide à la qualification :
+                  Motifs de CDD, seuils d&apos;alerte et test d&apos;aide à la qualification :
                   modifiables ici, sans intervention sur le code.
                 </p>
               </div>
@@ -306,52 +302,6 @@ export function SettingsWorkspace() {
                     onClick={() => {
                       saveContratSettings({ cddMotifs: [...contratSettings.cddMotifs, newMotif.trim()] });
                       setNewMotif('');
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white shrink-0 disabled:opacity-50"
-                    style={{ backgroundColor: PRIMARY }}
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Ajouter
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Types de stage (§6/§9) */}
-            <div className="space-y-3 border-t border-slate-100 pt-4">
-              <div>
-                <label className={labelClass}>Types de stage proposés (flux Stagiaires)</label>
-                <p className="text-[11px] text-slate-400 mb-2">
-                  Suggestions du champ « Type de stage » dans le module Stagiaires — texte libre toujours accepté
-                  (les pratiques varient selon les établissements).
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {contratSettings.stageTypes.map((t: string, i: number) => (
-                    <span key={i} className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-700">
-                      {t}
-                      <button
-                        type="button"
-                        onClick={() => saveContratSettings({ stageTypes: contratSettings.stageTypes.filter((_: string, j: number) => j !== i) })}
-                        className="p-0.5 rounded hover:bg-slate-200 text-slate-400 hover:text-rose-500 transition"
-                        title="Retirer ce type"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                <div className="flex gap-2 mt-2">
-                  <input
-                    className={inputClass}
-                    placeholder="Ex : Stage d'immersion professionnelle"
-                    value={newStageType}
-                    onChange={(e) => setNewStageType(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    disabled={!newStageType.trim() || contratSaving}
-                    onClick={() => {
-                      saveContratSettings({ stageTypes: [...contratSettings.stageTypes, newStageType.trim()] });
-                      setNewStageType('');
                     }}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white shrink-0 disabled:opacity-50"
                     style={{ backgroundColor: PRIMARY }}

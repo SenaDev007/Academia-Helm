@@ -19,6 +19,7 @@ import {
   ArrowRight,
   BarChart3,
   Target,
+  Award,
   RefreshCw,
 } from 'lucide-react';
 import {
@@ -269,7 +270,7 @@ export function HROverview() {
             { label: 'Générer la paie', icon: DollarSign, href: '/app/hr/payroll' },
             { label: 'Déclaration CNSS', icon: ShieldCheck, href: '/app/hr/cnss' },
             { label: 'Nouveau Recrutement', icon: Briefcase, href: '/app/hr/recruitment' },
-            { label: 'Analyse IA Document', icon: Target, href: '/app/hr/ia' },
+            { label: 'Gérer les indemnités', icon: Award, href: '/app/hr/allowances' },
           ].map((action, idx) => {
             const Icon = action.icon;
             return (

@@ -6605,7 +6605,7 @@ model AllowanceType {
   id          String           @id @default(uuid())
   tenantId    String
   name        String
-  code        String           @unique
+  code        String
   description String?
   isTaxable   Boolean          @default(true)
   isCnss      Boolean          @default(false)
@@ -6617,6 +6617,7 @@ model AllowanceType {
   tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   assignments StaffAllowance[]
 
+  @@unique([tenantId, code])
   @@index([tenantId])
   @@index([code])
   @@index([isActive])

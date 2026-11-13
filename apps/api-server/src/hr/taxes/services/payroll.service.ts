@@ -9,6 +9,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { TaxSettingsService } from './tax-settings.service';
+import { PAYSLIP_DEDICATED_CODES } from '../../allowance-catalog';
 
 @Injectable()
 export class PayrollService {
@@ -44,11 +45,49 @@ export class PayrollService {
       select: { id: true, firstName: true, lastName: true, salary: true, cnssNumber: true, position: true },
     });
 
+    // ⭐ 13/11/2026 — Indemnités actives du personnel (onglet Indemnités /
+    //    workflow d'embauche) : elles alimentent les rubriques de la fiche de
+    //    paie — MOINS_PERCU_ARRIERS / GRATIFICATIONS_ETRENNES /
+    //    PRIMES_SALISSURE vers leurs colonnes dédiées, tout le reste vers la
+    //    rubrique générique « indemnites ». Seules les indemnités en cours
+    //    sur la période sont retenues (dates d'effet/fin respectées).
+    const periodStart = period && /^\d{4}-\d{2}$/.test(period) ? new Date(`${period}-01T00:00:00Z`) : new Date();
+    const periodEnd = new Date(periodStart);
+    periodEnd.setUTCMonth(periodEnd.getUTCMonth() + 1);
+    periodEnd.setUTCDate(0);
+    const allowancesByStaff = new Map<string, Map<string, number>>();
+    try {
+      const allowanceRows = await this.prisma.staffAllowance.findMany({
+        where: {
+          tenantId,
+          status: 'ACTIVE',
+          staffId: { in: staffList.map((s) => s.id) },
+          effectiveDate: { lte: periodEnd },
+          OR: [{ endDate: null }, { endDate: { gte: periodStart } }],
+        },
+        include: { allowanceType: { select: { code: true } } },
+      });
+      for (const row of allowanceRows) {
+        const code = row.allowanceType?.code || 'INDEMNITES';
+        const rubrique = PAYSLIP_DEDICATED_CODES[code] || 'indemnites';
+        const bucket = allowancesByStaff.get(row.staffId) || new Map<string, number>();
+        bucket.set(rubrique, (bucket.get(rubrique) || 0) + Number(row.amount || 0));
+        allowancesByStaff.set(row.staffId, bucket);
+      }
+    } catch (e: any) {
+      this.logger.warn(`Rubriques indemnites indisponibles : ${e?.message}`);
+    }
+
     let totalGross = 0, totalDeductions = 0, totalNet = 0;
 
     for (const staff of staffList) {
       const salaireBase = Number(staff.salary || 0);
-      const salaireBrut = salaireBase; // + autres rubriques (à compléter via UI)
+      const rub = allowancesByStaff.get(staff.id) || new Map<string, number>();
+      const moinsPercesArriere = rub.get('moinsPercesArriere') || 0;
+      const gratificationsEtrennes = rub.get('gratificationsEtrennes') || 0;
+      const indemnites = rub.get('indemnites') || 0;
+      const primeSalissures = rub.get('primeSalissures') || 0;
+      const salaireBrut = salaireBase + moinsPercesArriere + gratificationsEtrennes + indemnites + primeSalissures;
 
       const cnssOuvriere = salaireBrut * (settings.cnssOuvriereRate / 100);
       const itsNet = salaireBrut * (settings.istVpsRate / 100);
@@ -69,13 +108,13 @@ export class PayrollService {
       if (existing) {
         await this.prisma.taxPayslip.update({
           where: { id: existing.id },
-          data: { salaireBase, salaireBrut, cnssOuvriere, itsNet, cnssPatronale, vps, totalRetenues, netAPayer },
+          data: { salaireBase, moinsPercesArriere, gratificationsEtrennes, indemnites, primeSalissures, salaireBrut, cnssOuvriere, itsNet, cnssPatronale, vps, totalRetenues, netAPayer },
         });
       } else {
         await this.prisma.taxPayslip.create({
           data: {
             tenantId, academicYearId, staffId: staff.id, payrollPeriodId: payrollPeriod.id, period,
-            salaireBase, salaireBrut, cnssOuvriere, itsNet, cnssPatronale, vps, totalRetenues, netAPayer,
+            salaireBase, moinsPercesArriere, gratificationsEtrennes, indemnites, primeSalissures, salaireBrut, cnssOuvriere, itsNet, cnssPatronale, vps, totalRetenues, netAPayer,
           },
         });
       }

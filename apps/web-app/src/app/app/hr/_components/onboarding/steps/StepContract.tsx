@@ -1,6 +1,6 @@
 'use client';
 
-import { FileText, DollarSign, Building2, Landmark, Smartphone, Handshake, CalendarClock, Info, AlertTriangle, History } from 'lucide-react';
+import { FileText, DollarSign, Building2, Landmark, Smartphone, Handshake, CalendarClock, Info, AlertTriangle, History, Plus, Trash2, Award } from 'lucide-react';
 
 const inputClass =
   'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 ' +
@@ -67,10 +67,16 @@ interface StepContractProps {
   hrSettings?: HrContractSettings | null;
   /** Chaîne CDD existante du personnel (compteur + durée cumulée — §4.3) */
   cddChain?: CddChainInfo | null;
+  /** ⭐ Catalogue complet des types d'indemnité (onglet Indemnités ↔ embauche) */
+  allowanceTypes?: Array<{ id: string; name: string; code?: string }>;
+  /** ⭐ Indemnités saisies pour ce recrutement (type + montant) */
+  allowances?: Array<{ allowanceTypeId: string; amount: string }>;
+  /** ⭐ Modification des indemnités saisies (ajout/ligne/suppression) */
+  onAllowancesChange?: (next: Array<{ allowanceTypeId: string; amount: string }>) => void;
   onUpdate: (field: string, value: any) => void;
 }
 
-export function StepContract({ contract, statutContractuel, roleType, fiscalHints, hrSettings, cddChain, onUpdate }: StepContractProps) {
+export function StepContract({ contract, statutContractuel, roleType, fiscalHints, hrSettings, cddChain, allowanceTypes, allowances, onAllowancesChange, onUpdate }: StepContractProps) {
   const showBankFields = contract.paymentMode === 'BANK';
   const showMobileMoneyFields = contract.paymentMode === 'MOBILE_MONEY';
   const isPrestation = statutContractuel === 'PRESTATAIRE_SERVICE';
@@ -270,8 +276,7 @@ export function StepContract({ contract, statutContractuel, roleType, fiscalHint
                 <option value="CDI">Contrat &agrave; Dur&eacute;e Ind&eacute;termin&eacute;e (CDI)</option>
               </select>
               <p className="text-[10px] text-slate-400 mt-1">
-                Seuls le CDI et le CDD existent en droit du travail. « Vacataire » n&apos;est pas un statut légal,
-                et le stage relève du flux dédié « Stagiaires » (convention, Décret n°2018-196).
+                Seuls le CDI et le CDD existent en droit du travail. « Vacataire » n&apos;est pas un statut légal.
               </p>
             </div>
             <div>
@@ -391,6 +396,94 @@ export function StepContract({ contract, statutContractuel, roleType, fiscalHint
                   </p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* ⭐ Indemnités du collaborateur — onglet Indemnités ↔ workflow d'embauche :
+              les types proviennent du catalogue complet ; les montants saisis ici
+              sont créés dès la validation de l'étape, repris dans le contrat
+              généré (Article 5) et sur la fiche de paie. Modifiables à tout
+              moment depuis l'onglet Indemnités. */}
+          {isSalarie && (
+            <div className="space-y-3 p-4 bg-blue-50/30 rounded-xl border border-blue-100">
+              <div className="flex items-center gap-2">
+                <Award className="h-4 w-4 text-[#1d4fa5]" />
+                <span className="text-xs font-bold uppercase tracking-wider text-[#1d4fa5]">Indemnités du collaborateur</span>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed -mt-1">
+                Sélectionnez les indemnités liées à cette personne dès le recrutement — le système
+                les garde en mémoire pour le contrat généré et l&apos;onglet Paie. Chaque montant reste
+                modifiable à tout moment après l&apos;embauche.
+              </p>
+
+              {(allowances || []).map((row, idx) => (
+                <div key={idx} className="grid grid-cols-1 md:grid-cols-[1fr_160px_40px] gap-2 items-center">
+                  <select
+                    className={inputClass}
+                    value={row.allowanceTypeId}
+                    onChange={(e) => {
+                      const next = [...(allowances || [])];
+                      next[idx] = { ...next[idx], allowanceTypeId: e.target.value };
+                      onAllowancesChange?.(next);
+                    }}
+                  >
+                    <option value="">— Type d&apos;indemnité —</option>
+                    {(allowanceTypes || []).map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                  <div className="relative">
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <input
+                      type="number"
+                      min="0"
+                      className={inputClass + ' pl-9'}
+                      placeholder="Montant (FCFA)"
+                      value={row.amount}
+                      onChange={(e) => {
+                        const next = [...(allowances || [])];
+                        next[idx] = { ...next[idx], amount: e.target.value };
+                        onAllowancesChange?.(next);
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onAllowancesChange?.((allowances || []).filter((_, j) => j !== idx))}
+                    className="p-2.5 rounded-xl border border-slate-200 text-slate-400 hover:text-rose-500 hover:border-rose-200 transition justify-self-start"
+                    title="Retirer cette indemnité"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => onAllowancesChange?.([...(allowances || []), { allowanceTypeId: '', amount: '' }])}
+                  disabled={(allowanceTypes || []).length === 0}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-[#1d4fa5] border border-[#1d4fa5]/30 bg-white hover:bg-[#1d4fa5]/5 transition disabled:opacity-40"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Ajouter une indemnité
+                </button>
+                {(allowances || []).length > 0 && (
+                  <span className="text-[11px] font-semibold text-slate-600">
+                    Total indemnités :{' '}
+                    <span className="text-[#1d4fa5] font-bold">
+                      {(allowances || [])
+                        .reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+                        .toLocaleString('fr-FR')} FCFA
+                    </span>{' '}
+                    / mois
+                  </span>
+                )}
+              </div>
+              {(allowanceTypes || []).length === 0 && (
+                <p className="text-[10px] text-slate-400">
+                  Chargement du catalogue des types d&apos;indemnité… (provisionné automatiquement par le serveur)
+                </p>
+              )}
             </div>
           )}
         </>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useConfirmDialog } from '@/components/ui/confirm-dialog';
-import { Plus, Search, DollarSign, Edit, Trash2, Award, User, Layers, Check, X, AlertCircle } from 'lucide-react';
+import { Plus, DollarSign, Edit, Trash2, Award, X, AlertCircle, Wallet } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
 import { motion } from 'framer-motion';
@@ -10,29 +10,6 @@ import { cn, formatCurrency } from '@/lib/utils';
 import { toast } from '@/components/ui/toast';
 
 const PRIMARY = '#1A2BA6';
-
-// Liste complète des types d'indemnité courants dans le domaine éducatif
-// Aucun montant par défaut — c'est l'établissement qui fixe les prix
-const PREDEFINED_ALLOWANCE_TYPES: Array<{ name: string; code: string; description: string }> = [
-  { name: 'Indemnité de Logement', code: 'LOGEMENT', description: 'Indemnité versée pour le logement du personnel' },
-  { name: 'Indemnité de Transport', code: 'TRANSPORT', description: 'Indemnité de transport aller-retour domicile-travail' },
-  { name: 'Prime de Responsabilité', code: 'RESPONSABILITE', description: 'Prime liée aux fonctions de responsabilité' },
-  { name: 'Indemnité d\'Enseignement', code: 'ENSEIGNEMENT', description: 'Indemnité pour heures d\'enseignement supplémentaires' },
-  { name: 'Prime de Sujet d\'Examen', code: 'SUJET_EXAMEN', description: 'Rémunération pour la composition de sujets d\'examens' },
-  { name: 'Indemnité de Surveillance', code: 'SURVEILLANCE', description: 'Indemnité pour la surveillance des examens' },
-  { name: 'Indemnité de Correction', code: 'CORRECTION', description: 'Rémunération pour la correction de copies d\'examens' },
-  { name: 'Prime de Direction', code: 'DIRECTION', description: 'Prime allouée aux directeurs/coordonnateurs' },
-  { name: 'Indemnité de Coordination', code: 'COORDINATION', description: 'Indemnité pour coordination pédagogique' },
-  { name: 'Prime de Motivation', code: 'MOTIVATION', description: 'Prime de motivation et d\'encouragement' },
-  { name: 'Indemnité de Fonction', code: 'FONCTION', description: 'Indemnité liée à la fonction occupée' },
-  { name: 'Prime d\'Ancienneté', code: 'ANCIENNETE', description: 'Prime basée sur l\'ancienneté dans l\'établissement' },
-  { name: 'Indemnité de Repas', code: 'REPAS', description: 'Indemnité pour les repas du personnel' },
-  { name: 'Indemnité de Communication', code: 'COMMUNICATION', description: 'Indemnité téléphone/internet professionnel' },
-  { name: 'Prime de Performance', code: 'PERFORMANCE', description: 'Prime basée sur l\'évaluation des performances' },
-  { name: 'Indemnité de Risque / Travail Pénible', code: 'RISQUE', description: 'Indemnité pour conditions de travail difficiles' },
-  { name: 'Prime de Fin d\'Année', code: 'FIN_ANNEE', description: 'Prime de fin d\'année (13ème mois)' },
-  { name: 'Indemnité de Congé Annuel', code: 'CONGE_ANNUEL', description: 'Indemnité compensatrice de congé annuel' },
-];
 
 export function AllowancesWorkspace() {
   const confirmDialog = useConfirmDialog();
@@ -42,17 +19,16 @@ export function AllowancesWorkspace() {
   const [selectedStaff, setSelectedStaff] = useState<any>(null);
   const [staffAllowances, setStaffAllowances] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // Modal states
-  const [isTypeModalOpen, setIsTypeModalOpen] = useState(false);
+
+  // Modal state - Assignment
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-  
-  // Form states - Type
-  const [typeName, setTypeName] = useState('');
-  const [typeCode, setTypeCode] = useState('');
-  const [typeDescription, setTypeDescription] = useState('');
-  const [typePreset, setTypePreset] = useState('');
-  const [savingType, setSavingType] = useState(false);
+
+  // Modal state - Edition du montant (modifiable à tout moment)
+  const [editingAllowance, setEditingAllowance] = useState<any>(null);
+  const [editAmount, setEditAmount] = useState('');
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editEndDate, setEditEndDate] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // Form states - Assignment
   const [assignType, setAssignType] = useState('');
@@ -66,9 +42,11 @@ export function AllowancesWorkspace() {
       if (!tenant?.id) return;
       try {
         setLoading(true);
-        // Load allowance types
+        // ⭐ Types d'indemnité : liste COMPLÈTE auto-provisionnée par le serveur
+        //    (catalogue de 22 types — voir allowance-catalog.ts). Plus besoin de
+        //    créer les types à la main : le sélecteur liste toujours tout.
         const types = await hrFetch<any[]>(hrUrl('allowances/types', { tenantId: tenant.id }));
-        setAllowanceTypes(types);
+        setAllowanceTypes(Array.isArray(types) ? types : []);
 
         // Load staff list
         const staff = await hrFetch<any[]>(hrUrl('staff', { tenantId: tenant.id }));
@@ -100,38 +78,6 @@ export function AllowancesWorkspace() {
     loadStaffAllowances();
   }, [tenant?.id, selectedStaff?.id]);
 
-  async function handleCreateType(e: React.FormEvent) {
-    e.preventDefault();
-    if (!tenant?.id) return;
-    try {
-      setSavingType(true);
-      await hrFetch(hrUrl('allowances/types', { tenantId: tenant.id }), {
-        method: 'POST',
-        body: {
-          name: typeName,
-          code: typeCode,
-          description: typeDescription,
-          // No default amount — the school sets the amount at assignment time
-        },
-      });
-      // Refresh types
-      const types = await hrFetch<any[]>(hrUrl('allowances/types', { tenantId: tenant.id }));
-      setAllowanceTypes(types);
-      setIsTypeModalOpen(false);
-      // Reset form
-      setTypeName('');
-      setTypeCode('');
-      setTypeDescription('');
-      setTypePreset('');
-      toast({ variant: 'success', title: 'Type d\'indemnité créé avec succès' });
-    } catch (err) {
-      console.error('Error creating allowance type:', err);
-      toast({ variant: 'error', title: 'Erreur: création du type d\'indemnité' });
-    } finally {
-      setSavingType(false);
-    }
-  }
-
   async function handleAssignAllowance(e: React.FormEvent) {
     e.preventDefault();
     if (!tenant?.id || !selectedStaff?.id) return;
@@ -161,6 +107,33 @@ export function AllowancesWorkspace() {
     }
   }
 
+  // ⭐ Modification du montant d'une indemnité — possible À TOUT MOMENT.
+  //    Le montant est répercuté sur la fiche de paie dès la prochaine génération.
+  async function handleUpdateAllowance(e: React.FormEvent) {
+    e.preventDefault();
+    if (!tenant?.id || !editingAllowance?.id) return;
+    try {
+      setSavingEdit(true);
+      await hrFetch(hrUrl(`allowances/assignments/${editingAllowance.id}`, { tenantId: tenant.id }), {
+        method: 'PUT',
+        body: {
+          amount: parseFloat(editAmount),
+          effectiveDate: editStartDate ? new Date(editStartDate).toISOString() : undefined,
+          endDate: editEndDate ? new Date(editEndDate).toISOString() : undefined,
+        },
+      });
+      const list = await hrFetch<any[]>(hrUrl(`allowances/staff/${selectedStaff.id}`, { tenantId: tenant.id }));
+      setStaffAllowances(list);
+      setEditingAllowance(null);
+      toast({ variant: 'success', title: 'Montant de l\'indemnité mis à jour' });
+    } catch (err) {
+      console.error('Error updating allowance:', err);
+      toast({ variant: 'error', title: 'Erreur: mise à jour de l\'indemnité' });
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
   async function handleRemoveAssignment(id: string) {
     const ok = await confirmDialog.danger('Cette indemnité sera définitivement supprimée du collaborateur.', 'Supprimer l\'indemnité');
     if (!ok) return;
@@ -176,6 +149,8 @@ export function AllowancesWorkspace() {
     }
   }
 
+  const totalMonthly = staffAllowances.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+
   return (
     <>
     {confirmDialog.dialog}
@@ -183,16 +158,7 @@ export function AllowancesWorkspace() {
       {/* Sidebar - Staff List */}
       <div className="lg:col-span-4 space-y-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
-          <div className="flex justify-between items-center">
-            <h4 className="font-bold text-slate-900 text-sm">Collaborateurs</h4>
-            <button
-              onClick={() => setIsTypeModalOpen(true)}
-              className="text-xs font-bold text-[#1A2BA6] hover:underline flex items-center gap-1"
-            >
-              <Plus className="h-3.5 w-3.5" /> Gérer les types
-            </button>
-          </div>
-
+          <h4 className="font-bold text-slate-900 text-sm">Collaborateurs</h4>
           <div className="divide-y divide-slate-100 max-h-[450px] overflow-y-auto space-y-1">
             {loading ? (
               [1, 2, 3].map((i) => <div key={i} className="h-14 bg-slate-50 animate-pulse rounded-lg mt-1" />)
@@ -241,11 +207,7 @@ export function AllowancesWorkspace() {
               </div>
               <button
                 onClick={() => {
-                  if (allowanceTypes.length === 0) {
-                    toast({ variant: 'warning', title: 'Aucun type d\'indemnité', description: 'Veuillez d\'abord créer un type d\'indemnité via "Gérer les types".' });
-                    return;
-                  }
-                  setAssignType(allowanceTypes[0].id);
+                  setAssignType(allowanceTypes[0]?.id || '');
                   // No default amount — school enters it manually
                   setAssignAmount('');
                   setAssignStartDate(new Date().toISOString().split('T')[0]);
@@ -261,7 +223,15 @@ export function AllowancesWorkspace() {
 
             {/* List of assigned allowances */}
             <div className="space-y-4">
-              <h4 className="font-bold text-slate-900 text-sm">Indemnités Actives</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-slate-900 text-sm">Indemnités Actives</h4>
+                {staffAllowances.length > 0 && (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-1.5">
+                    <Wallet className="h-3.5 w-3.5" />
+                    Total mensuel : {formatCurrency(totalMonthly)}
+                  </span>
+                )}
+              </div>
               <div className="divide-y divide-slate-100 border border-slate-150 rounded-xl overflow-hidden">
                 {staffAllowances.length === 0 ? (
                   <div className="p-8 text-center text-slate-400">
@@ -277,11 +247,23 @@ export function AllowancesWorkspace() {
                         </div>
                         <div>
                           <p className="font-bold text-slate-900 text-sm">{item.allowanceType?.name}</p>
-                          <p className="text-xs text-slate-500">Code: {item.allowanceType?.code} · Depuis le {new Date(item.startDate).toLocaleDateString('fr-FR')}</p>
+                          <p className="text-xs text-slate-500">Code: {item.allowanceType?.code} · Depuis le {new Date(item.startDate || item.effectiveDate).toLocaleDateString('fr-FR')}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
                         <p className="text-base font-bold text-slate-900">{formatCurrency(item.amount)}</p>
+                        <button
+                          onClick={() => {
+                            setEditingAllowance(item);
+                            setEditAmount(String(item.amount ?? ''));
+                            setEditStartDate((item.startDate || item.effectiveDate || new Date()).toISOString().split('T')[0]);
+                            setEditEndDate(item.endDate ? new Date(item.endDate).toISOString().split('T')[0] : '');
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-blue-50 text-[#1A2BA6] transition-colors"
+                          title="Modifier le montant"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
                         <button
                           onClick={() => handleRemoveAssignment(item.id)}
                           className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-500 transition-colors"
@@ -304,77 +286,6 @@ export function AllowancesWorkspace() {
         )}
       </div>
 
-      {/* Modal - Create Type */}
-      {isTypeModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-slate-900 text-base">Nouveau type d'indemnité</h3>
-              <button onClick={() => setIsTypeModalOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><X className="h-5 w-5" /></button>
-            </div>
-            <form onSubmit={handleCreateType} className="space-y-4">
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Type d'indemnité</label>
-                <select
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-[#1A2BA6]"
-                  value={typePreset}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setTypePreset(val);
-                    if (val !== 'CUSTOM') {
-                      const preset = PREDEFINED_ALLOWANCE_TYPES.find(p => p.code === val);
-                      if (preset) {
-                        setTypeName(preset.name);
-                        setTypeCode(preset.code);
-                        setTypeDescription(preset.description);
-                      }
-                    } else {
-                      setTypeName('');
-                      setTypeCode('');
-                      setTypeDescription('');
-                    }
-                  }}
-                >
-                  <option value="">— Sélectionner un type —</option>
-                  {PREDEFINED_ALLOWANCE_TYPES.map((p) => (
-                    <option key={p.code} value={p.code}>{p.name}</option>
-                  ))}
-                  <option value="CUSTOM">Autre (saisie manuelle)</option>
-                </select>
-              </div>
-              {typePreset === 'CUSTOM' && (
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Nom de l'indemnité</label>
-                  <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={typeName} onChange={(e) => setTypeName(e.target.value)} placeholder="Ex: Prime spéciale" required />
-                </div>
-              )}
-              {typePreset === 'CUSTOM' && (
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Code</label>
-                  <input type="text" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={typeCode} onChange={(e) => setTypeCode(e.target.value)} placeholder="Ex: PRIME_SPECIALE" required />
-                </div>
-              )}
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Description</label>
-                <textarea className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm h-20" value={typeDescription} onChange={(e) => setTypeDescription(e.target.value)} />
-              </div>
-              <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-                <p className="text-xs text-blue-700">
-                  <strong>Note :</strong> Aucun montant par défaut n'est fixé ici.
-                  Le montant sera défini au moment de l'assignation à chaque collaborateur.
-                </p>
-              </div>
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button type="button" onClick={() => setIsTypeModalOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm">Annuler</button>
-                <button type="submit" disabled={savingType} className="px-4 py-2 text-white rounded-lg text-sm font-semibold" style={{ backgroundColor: PRIMARY }}>
-                  {savingType ? 'Création...' : 'Créer'}
-                </button>
-              </div>
-            </form>
-          </motion.div>
-        </div>
-      )}
-
       {/* Modal - Assign */}
       {isAssignModalOpen && (
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -388,14 +299,15 @@ export function AllowancesWorkspace() {
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Type d'indemnité</label>
                 {allowanceTypes.length === 0 ? (
                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-                    <strong>Aucun type d'indemnité créé.</strong><br />
-                    Veuillez d'abord créer un type via le bouton « Gérer les types ».
+                    <strong>Chargement de la liste complète des types…</strong><br />
+                    Réessayez dans un instant — le catalogue est provisionné automatiquement par le serveur.
                   </div>
                 ) : (
                   <select
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:border-[#1A2BA6]"
                     value={assignType}
                     onChange={(e) => setAssignType(e.target.value)}
+                    required
                   >
                     {allowanceTypes.map(t => (
                       <option key={t.id} value={t.id}>{t.name}</option>
@@ -419,8 +331,58 @@ export function AllowancesWorkspace() {
               </div>
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button type="button" onClick={() => setIsAssignModalOpen(false)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm">Annuler</button>
-                <button type="submit" disabled={savingAssign} className="px-4 py-2 text-white rounded-lg text-sm font-semibold" style={{ backgroundColor: PRIMARY }}>
+                <button type="submit" disabled={savingAssign || !assignType} className="px-4 py-2 text-white rounded-lg text-sm font-semibold disabled:opacity-50" style={{ backgroundColor: PRIMARY }}>
                   {savingAssign ? 'Assignation...' : 'Assigner'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Modal - Edition du montant (à tout moment) */}
+      {editingAllowance && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-slate-900 text-base">Modifier l'indemnité</h3>
+              <button onClick={() => setEditingAllowance(null)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="mb-4 p-3 bg-slate-50 border border-slate-100 rounded-xl">
+              <p className="text-sm font-bold text-slate-800">{editingAllowance.allowanceType?.name}</p>
+              <p className="text-[11px] text-slate-500">
+                {selectedStaff?.firstName} {selectedStaff?.lastName} · Montant actuel : {formatCurrency(editingAllowance.amount)}
+              </p>
+            </div>
+            <form onSubmit={handleUpdateAllowance} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Nouveau montant (F CFA)</label>
+                <input
+                  type="number"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  value={editAmount}
+                  onChange={(e) => setEditAmount(e.target.value)}
+                  placeholder="Saisir le nouveau montant"
+                  required
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Modifiable à tout moment — le nouveau montant s'applique dès la prochaine génération de la paie.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Date d'effet</label>
+                  <input type="date" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={editStartDate} onChange={(e) => setEditStartDate(e.target.value)} required />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Date de fin (Optionnel)</label>
+                  <input type="date" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} />
+                </div>
+              </div>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button type="button" onClick={() => setEditingAllowance(null)} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm">Annuler</button>
+                <button type="submit" disabled={savingEdit} className="px-4 py-2 text-white rounded-lg text-sm font-semibold disabled:opacity-50" style={{ backgroundColor: PRIMARY }}>
+                  {savingEdit ? 'Enregistrement...' : 'Enregistrer'}
                 </button>
               </div>
             </form>

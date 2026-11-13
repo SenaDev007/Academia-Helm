@@ -1,6 +1,7 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
+import { ALLOWANCE_TYPE_CATALOG } from './allowance-catalog';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -26,30 +27,27 @@ async function main() {
 
   console.log(`Seeding HR for Tenant: ${tenant.name} (${tenant.id})`);
 
-  // 2. Create Allowance Types
-  const allowanceTypes = [
-    { name: 'Indemnité de Logement', code: 'LOG', isTaxable: true, isCnss: false, amount: 25000, isFixed: true },
-    { name: 'Indemnité de Transport', code: 'TRN', isTaxable: false, isCnss: false, amount: 15000, isFixed: true },
-    { name: 'Prime de Responsabilité', code: 'REP', isTaxable: true, isCnss: false, amount: 50000, isFixed: true },
-  ];
-
-  for (const at of allowanceTypes) {
+  // 2. Types d'indemnité — catalogue complet (22 types, aucun montant par défaut :
+  //    l'école fixe le montant au moment de l'assignation)
+  for (const at of ALLOWANCE_TYPE_CATALOG) {
     await prisma.allowanceType.upsert({
-      where: { code: at.code },
+      // ⭐ Unicité PAR TENANT (@@unique([tenantId, code]) — migration du 13/11/2026)
+      where: { tenantId_code: { tenantId: tenant.id, code: at.code } },
       update: {},
       create: {
         tenantId: tenant.id,
         name: at.name,
         code: at.code,
-        isTaxable: at.isTaxable,
-        isCnss: at.isCnss,
-        amount: at.amount,
-        isFixed: at.isFixed,
+        description: at.description,
+        isTaxable: true,
+        isCnss: false,
+        amount: null,
+        isFixed: false,
         isActive: true,
       }
     });
   }
-  const housingAllowance = await prisma.allowanceType.findFirst({ where: { tenantId: tenant.id, code: 'LOG' } });
+  const housingAllowance = await prisma.allowanceType.findFirst({ where: { tenantId: tenant.id, code: 'LOGEMENT' } });
 
   // 3. Define Staff Data
   const staffData = [

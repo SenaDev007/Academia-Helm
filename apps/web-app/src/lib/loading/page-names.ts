@@ -107,7 +107,6 @@ export const PAGE_NAMES: Record<string, string> = {
 
   // ─── App — RH & Paie ───
   '/app/hr': 'RH & Paie',
-  '/app/hr/planning': 'Plannings & Horaires',
   '/app/hr/payroll': 'Paie',
   '/app/hr/payroll/[id]': 'Détail Paie',
   '/app/hr/collaborators': 'Collaborateurs',
@@ -121,7 +120,6 @@ export const PAGE_NAMES: Record<string, string> = {
   '/app/hr/reporting': 'Rapports & Analyses',
   '/app/hr/staff': 'Personnel',
   '/app/hr/staff/[id]': 'Fiche Personnel',
-  '/app/hr/ia': 'IA RH',
   '/app/hr/settings': 'Paramètres RH',
 
   // ─── App — Communication ───

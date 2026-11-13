@@ -464,7 +464,7 @@ export function ContractsWorkspace() {
                   <p className="text-[10px] text-slate-400 mt-1">
                     {modalForm.statutContractuel === 'PRESTATAIRE_SERVICE'
                       ? 'Type unique imposé — nature juridique distincte.'
-                      : 'Un salarié ne reçoit que CDI ou CDD (stage : flux « Stagiaires »).'}
+                      : 'Un salarié ne reçoit que CDI ou CDD.'}
                   </p>
                 </div>
               </div>

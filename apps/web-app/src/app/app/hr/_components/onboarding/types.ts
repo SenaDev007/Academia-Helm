@@ -84,6 +84,15 @@ export interface OnboardingState {
     justificationStatut: string;
   };
 
+  // ⭐ Indemnités liées au recrutement — communication onglet Indemnités ↔
+  //    workflow d'embauche : les types viennent du catalogue complet (API) et
+  //    les montants saisis ici sont créés (StaffAllowance) dès la validation
+  //    de l'étape Contrat. Le contrat généré les relate (Article 5) et la paie
+  //    les reprend chaque mois. Montants modifiables à tout moment ensuite.
+  allowances: Array<{ allowanceTypeId: string; amount: string }>;
+  /** Garde-fou anti-doublon : assignations d'indemnités déjà créées en base */
+  allowancesSaved: boolean;
+
   // ⭐ Test d'aide à la qualification (CDC §5 — non bloquant, configurable)
   qualificationTest: {
     enabled: boolean;
@@ -185,6 +194,9 @@ export const INITIAL_STATE: OnboardingState = {
     periodeEssaiMois: '',
     justificationStatut: '',
   },
+
+  allowances: [],
+  allowancesSaved: false,
 
   qualificationTest: {
     enabled: true,

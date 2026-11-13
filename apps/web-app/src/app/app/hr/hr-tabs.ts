@@ -16,6 +16,9 @@
  *   - 'cnss' renommé en 'CNSS & Cotisations' (label honnête sur le
  *     périmètre réel — il n'y a que la CNSS, pas d'impôts ni d'état
  *     financier pour l'instant).
+ *   - 'internships' (Stagiaires), 'ia' (IA RH) et 'planning' (Planning) :
+ *     supprimés DÉFINITIVEMENT avec tout leur contenu (demande produit
+ *     13/11/2026) — routes, workspaces et précache retirés du module RH.
  * ============================================================================
  */
 
@@ -24,16 +27,13 @@ import {
   Briefcase,
   Users,
   UserCog,
-  Brain,
   Clock,
   CalendarDays,
-  Calendar,
   DollarSign,
   CreditCard,
   BarChart3,
   Settings,
   Landmark,
-  GraduationCap,
 } from 'lucide-react';
 
 export const HR_SUBMODULE_TABS = [
@@ -74,20 +74,6 @@ export const HR_SUBMODULE_TABS = [
     icon: Users,
   },
   {
-    id: 'internships',
-    label: 'Stagiaires',
-    labelEn: 'Interns',
-    path: '/app/hr/internships',
-    icon: GraduationCap,
-  },
-  {
-    id: 'ia',
-    label: 'IA RH',
-    labelEn: 'HR AI',
-    path: '/app/hr/ia',
-    icon: Brain,
-  },
-  {
     id: 'leaves',
     label: 'Congés & Absences',
     labelEn: 'Leaves & Absences',
@@ -100,13 +86,6 @@ export const HR_SUBMODULE_TABS = [
     labelEn: 'Attendance',
     path: '/app/hr/attendance',
     icon: CalendarDays,
-  },
-  {
-    id: 'planning',
-    label: 'Planning',
-    labelEn: 'Planning',
-    path: '/app/hr/planning',
-    icon: Calendar,
   },
   {
     id: 'allowances',

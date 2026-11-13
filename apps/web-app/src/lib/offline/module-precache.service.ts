@@ -144,11 +144,8 @@ const MODULE_ROUTES: string[] = [
   '/app/hr/collaborators',
   '/app/hr/contracts',
   '/app/hr/embauche',
-  '/app/hr/ia',
-  '/app/hr/internships',
   '/app/hr/leaves',
   '/app/hr/payroll',
-  '/app/hr/planning',
   '/app/hr/recruitment',
   '/app/hr/recruitment/settings',
   '/app/hr/reporting',
@@ -1390,11 +1387,6 @@ export function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContex
     urls.push(`/api/hr/recruitment/recruiter-profile${qs({ tenantId })}`);
     urls.push(`/api/hr/recruitment/questionnaires${qs({ tenantId })}`);
     urls.push(`/api/departments${qs({ tenantId })}`);
-    // Stagiaires + IA RH
-    urls.push(`/api/hr/internships${qs({ tenantId })}`);
-    urls.push(`/api/hr/ia/status${qs({ tenantId })}`);
-    urls.push(`/api/hr/ia/match-candidates${qs({ tenantId })}`);
-    urls.push(`/api/hr/ia/detect-fraud${qs({ tenantId })}`);
   }
 
   // ═══ 12. HELM CONNECT (communication : messages, inbox, historique,

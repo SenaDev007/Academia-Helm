@@ -13574,3 +13574,22 @@ Stage Summary:
 - ⚠️ UTILISATEUR (décision) : (a) chasser l'hôte — Railway TOUS services/Cron Jobs, VPS docker ps, machines locales pm2/Task Scheduler ; ou (b) RECOMMANDÉ : rotation du mot de passe neondb_owner (obligatoire de toute façon — il a circulé en clair) → kill instantané de Process A où qu'il vive + DATABASE_URL mis à jour dans Railway/Vercel + redéploiement
 - ⏳ Après kill : neon-verify-sleep.py 10 (attendu 0 tick) + neon-verify-suspend.py 8 (attendu SUSPENDED) → critère « la base dort ≤ 5 min sans utilisateur » prouvé ; coût attendu ~$5-10/mois
 - 🔐 Rotation du token GitHub également requise après fin des travaux (circulé en clair)
+
+---
+Task ID: railway-logs-1411-fixes
+Agent: Super Z (agent principal)
+Task: Analyser les deploy logs Railway du 14/11 (déploiement ec1410b4, paste utilisateur 128 Ko) et éradiquer les erreurs de boot
+
+Work Log:
+- Inventaire des [err] du paste : getSubjectTeacherParticipants « Cannot read properties of undefined (reading 'findMany') » ×187 ; 42P18 « could not determine data type of parameter $2 » ×10 ; 23505 « duplicate key idx_chat_auto_groups_unique » ×3 ; 42P01 « relation "contract" does not exist » ×2 ; FK warning 42P07 (bruit)
+- DIAGNOSTIC CORRIGÉ : le build déployé EST bien main@605a9d5 — /api/health/db → 401 (endpoint du 10/11 présent) et les bugs isActive/guardianId (corrigés par 605a9d5) n'apparaissent plus dans les logs du 14/11. Les conclusions « build stale / auto-déploy cassé » de la veille étaient un ARTÉFACT de mesure : AppController @Get('health') éclipse HealthController sur /health (réponse sans version), et /health/db n'existe qu'avec le préfixe /api (404 ≠ old build). L'auto-déploy FONCTIONNE (push 605a9d5 à 13:36 UTC → déploiement ec1410b4 créé 13:36 UTC)
+- Mesure pg_stat_statements (delta 90 s, scripts/pg_delta.py, nouvelle base Neon) : ZÉRO requête applicative — aucun SELECT 1, aucun poller scheduled_emails/community/chat → les correctifs anti-réveil du 03-10/11 sont EN PLACE ; la base est calme entre les cycles (catchup au boot + re-sync 6 h, conformes au design)
+- Correctifs code poussés : (1) prisma.teacherSubject → TeacherSubject + SubjectAssignment (2 sites, ×187 et findFirst) ; (2) SQL getPedagogicParticipantsByTrack renumérotée $1/$2, params $2/$3 jamais référencés retirés (42P18) ; (3) miroir DDL « contract » → « staff » vraies colonnes termination* (42P01) ; (4) filtre already-exists dans le catch des FK statements (bruit 42P07) ; (5) marqueur version 1.0.2 sur /health (AppController) + /api/health/db rendu @Public (était 401 → inutilisable)
+- Migration 20261115100000_fix_chat_auto_groups_unique : DROP + CREATE de l'index élargi (+COALESCE levelId, +COALESCE academicTrackId) — appliquée DIRECTEMENT sur la base Neon et enregistrée dans _prisma_migrations (216 entrées, checksum sha256 conforme)
+- Conteneur : un seul stop (15:27) → start (15:52) UTC dans la fenêtre de logs, aucune trace de crash (sortie possiblement manuelle) ; uptime surveillé en continu après coup (aucun reset constaté)
+
+Stage Summary:
+- ✅ 5 familles d'erreurs de boot éradiquées en code + 1 migration SQL appliquée ; les canaux Helm Connect par piste (ADMIN_TRACK/PEDAGOGIC_TRACK FR+EN, conseils piste × niveau) seront enfin créés pour les écoles bilingues
+- ✅ La base Neon est dormante entre les cycles (delta 90 s = 0 requête applicative) ; coût attendu ~$5-10/mois confirmé par la mesure
+- ⚠️ Vérification post-déploiement : /health → version « 1.0.2 » + uptime remis à zéro ; /api/health/db → 200 {status: ok, db: connected}
+- 🔐 Rotation credentials toujours requise (mot de passe Neon + token GitHub circulés en clair) — Process A (emails-only) cible l'ANCIENNE base, il mourra avec sa suppression ; si un Process A touchait la nouvelle base, la rotation le tuerait aussi

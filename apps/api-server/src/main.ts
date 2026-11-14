@@ -384,7 +384,14 @@ async function bootstrap() {
       try {
         await prisma.$executeRawUnsafe(fkStmt);
       } catch (fkErr: any) {
-        logger.warn(`FK statement warning: ${fkErr.message}`);
+        // ⭐ 2026-11-15 : ignorer aussi les « already exists » (42P07/42710) —
+        //    p.ex. l'index UNIQUE créé par le DO-block peut déjà exister sous le
+        //    même nom (message « relation … already exists ») à chaque boot.
+        if (!fkErr.message?.includes('already exists')
+          && !fkErr.message?.includes('42P07')
+          && !fkErr.message?.includes('42710')) {
+          logger.warn(`FK statement warning: ${fkErr.message}`);
+        }
       }
     }
 
@@ -949,10 +956,17 @@ async function bootstrap() {
       }
     }
 
-    // ── Ensure contract termination fields (migration 20260608) ──
+    // ── Ensure staff termination fields (migration 20260608120000) ──
+    // ⭐ 2026-11-15 fix 42P01 « relation "contract" does not exist » : la table
+    //    réelle est "staff" (migration 20260608120000_add_staff_termination_fields)
+    //    et les vraies colonnes sont terminationType / terminationDetails /
+    //    terminatedAt / noticePeriodDays / lastWorkingDate (pas « terminationReason »).
     const contractTerminationStatements = [
-      `ALTER TABLE "contract" ADD COLUMN IF NOT EXISTS "terminatedAt" TIMESTAMPTZ`,
-      `ALTER TABLE "contract" ADD COLUMN IF NOT EXISTS "terminationReason" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminationType" TEXT`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminationDetails" JSONB`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "terminatedAt" TIMESTAMPTZ`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "noticePeriodDays" INTEGER`,
+      `ALTER TABLE "staff" ADD COLUMN IF NOT EXISTS "lastWorkingDate" TIMESTAMPTZ`,
     ];
     for (const stmt of contractTerminationStatements) {
       try {

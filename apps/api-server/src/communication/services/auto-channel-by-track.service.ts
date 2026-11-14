@@ -120,7 +120,7 @@ export class AutoChannelByTrackService {
 
     // 5. Canaux pédagogiques par piste
     for (const track of tracks) {
-      const pedagogicParticipants = await this.getPedagogicParticipantsByTrack(tenantId, academicYearId, track.id, track.code);
+      const pedagogicParticipants = await this.getPedagogicParticipantsByTrack(tenantId, track.code);
       if (pedagogicParticipants.length === 0) {
         this.logger.log(`  Skip PEDAGOGIC_TRACK ${track.code}: aucun participant`);
         skipped++;
@@ -280,19 +280,21 @@ export class AutoChannelByTrackService {
 
   private async getPedagogicParticipantsByTrack(
     tenantId: string,
-    academicYearId: string,
-    trackId: string,
     trackCode: string,
   ): Promise<string[]> {
     // Enseignants par piste via Teacher.assignedLanguages
+    // ⭐ 2026-11-15 fix 42P18 « could not determine data type of parameter $2 » :
+    //    la requête ne référençait que $1 et $4 alors que 4 paramètres étaient
+    //    passés — PostgreSQL ne peut pas inférer le type de $2/$3 jamais
+    //    utilisés. Renommé $4 → $2, params inutiles retirés.
     const rows = await this.prisma.$queryRawUnsafe<Array<{ userId: string }>>(
       `SELECT DISTINCT u."id" AS "userId"
        FROM "teachers" t
        JOIN "users" u ON u."email" = t."email" AND u."tenantId" = $1
        WHERE u."status" = 'active'
          AND (
-           ($4 = 'FR' AND (t."assignedLanguages" IS NULL OR t."assignedLanguages"::text LIKE '%"FR"%'))
-           OR ($4 = 'EN' AND t."assignedLanguages"::text LIKE '%"EN"%')
+           ($2 = 'FR' AND (t."assignedLanguages" IS NULL OR t."assignedLanguages"::text LIKE '%"FR"%'))
+           OR ($2 = 'EN' AND t."assignedLanguages"::text LIKE '%"EN"%')
          )
        UNION
        -- Direction (aussi incluse dans le conseil pédagogique)
@@ -304,8 +306,6 @@ export class AutoChannelByTrackService {
          AND (r."name" ILIKE '%DIRECTOR%' OR r."name" ILIKE '%DIRECTEUR%'
               OR r."name" ILIKE '%CENSEUR%' OR r."name" ILIKE '%PEDAGOGIC%')`,
       tenantId,
-      academicYearId,
-      trackId,
       trackCode,
     );
     return rows.map(r => r.userId);

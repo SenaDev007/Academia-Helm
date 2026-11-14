@@ -428,7 +428,10 @@ export class AutoGroupService {
     const participantIds: string[] = [];
     try {
       // Find the teacher assigned to this subject × class
-      const assignment = await this.prisma.teacherSubjectAssignment.findFirst({
+      // ⭐ 2026-11-15 fix — même bug que getSubjectTeacherParticipants : le modèle
+      //    est SubjectAssignment (@@map "subject_assignments", champs classId/
+      //    subjectId/teacherId/tenantId) — pas « teacherSubjectAssignment ».
+      const assignment = await this.prisma.subjectAssignment.findFirst({
         where: { classId, subjectId, tenantId },
         select: { teacherId: true },
       }).catch(() => null);
@@ -599,7 +602,12 @@ export class AutoGroupService {
   private async getSubjectTeacherParticipants(tenantId: string, subjectId: string): Promise<string[]> {
     const participantIds: string[] = [];
     try {
-      const assignments = await this.prisma.teacherSubjectAssignment.findMany({
+      // ⭐ 2026-11-15 fix — le modèle Prisma est TeacherSubject (@@map "teacher_subjects").
+      //    `teacherSubjectAssignment` n'existe pas dans le client Prisma →
+      //    undefined.findMany = « Cannot read properties of undefined (reading
+      //    'findMany') » ×187/boot qui floodait les logs Railway et laissait les
+      //    groupes « Enseignants de {matière} » vides.
+      const assignments = await this.prisma.teacherSubject.findMany({
         where: { subjectId, tenantId },
         select: { teacherId: true, teacher: { select: { email: true } } },
       }).catch(() => [] as any[]);

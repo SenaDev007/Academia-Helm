@@ -1,5 +1,9 @@
 import { Controller, Get } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+// ⭐ 2026-11-15 — @Public : sinon le guard JWT global répond 401 et l'endpoint
+//    de diagnostic /api/health/db est inutilisable (aucun moyen de vérifier la
+//    connexion DB depuis l'extérieur). Usage ponctuel de diagnostic uniquement.
+import { Public } from '../auth/decorators/public.decorator';
 
 /**
  * Healthcheck endpoints — liveness SANS base de données.
@@ -23,6 +27,7 @@ import { PrismaService } from '../database/prisma.service';
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 
+  @Public()
   @Get()
   async check() {
     // ⭐ Liveness pur — ne touche PAS Prisma : sinon le healthcheck Railway
@@ -32,7 +37,7 @@ export class HealthController {
       status: 'ok',
       timestamp: new Date().toISOString(),
       service: 'Academia Helm API',
-      version: '1.0.1',
+      version: '1.0.2',
       // db: intentionnellement absent — voir commentaire d'entête.
       process: {
         uptime_s: Math.round(process.uptime()),
@@ -42,6 +47,7 @@ export class HealthController {
     };
   }
 
+  @Public()
   @Get('db')
   async checkDb() {
     try {
@@ -57,7 +63,7 @@ export class HealthController {
         status: 'ok',
         timestamp: new Date().toISOString(),
         service: 'Academia Helm API',
-        version: '1.0.1',
+        version: '1.0.2',
         db: 'connected',
       };
     } catch (error) {
@@ -65,7 +71,7 @@ export class HealthController {
         status: 'error',
         timestamp: new Date().toISOString(),
         service: 'Academia Helm API',
-        version: '1.0.1',
+        version: '1.0.2',
         db: 'disconnected',
         error: error instanceof Error ? error.message : 'Unknown DB error',
       };

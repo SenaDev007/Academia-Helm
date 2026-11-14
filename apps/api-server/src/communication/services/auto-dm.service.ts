@@ -20,7 +20,7 @@
  *      Pour chaque User avec rôle PROMOTER/SCHOOL_OWNER, on crée des DMs
  *      avec tous les autres users actifs du tenant (administration,
  *      enseignants, secrétaires, etc.). ⚠️ VOLUME — on limite aux
- *      users ayant un compte actif (isActive=true) ET un rôle connu.
+ *      users ayant un compte actif (status='active') ET un rôle connu.
  *
  * Idempotent : createOrGetDirectConversation cherche d'abord une conv
  * existante (type=DIRECT, 2 participants) — si trouvée, retourne sans recréer.
@@ -140,7 +140,7 @@ export class AutoDmService {
          AND se."status" IN ('ENROLLED', 'ACTIVE')
          AND se."classId" IS NOT NULL
          AND g."userId" IS NOT NULL
-         AND tu."isActive" = true
+         AND tu."status" = 'active'
          AND tca."academicYearId" = $2`,
       tenantId,
       academicYearId,
@@ -185,7 +185,7 @@ export class AutoDmService {
        JOIN "teachers" t ON t."id" = tca."teacherId"
        JOIN "users" tu ON tu."email" = t."email" AND tu."tenantId" = $1
        WHERE tca."academicYearId" = $2
-         AND tu."isActive" = true
+         AND tu."status" = 'active'
        ORDER BY tca."classId", tu."id"`,
       tenantId,
       academicYearId,
@@ -234,7 +234,7 @@ export class AutoDmService {
        JOIN "user_roles" ur ON ur."userId" = u."id"
        JOIN "roles" r ON r."id" = ur."roleId"
        WHERE u."tenantId" = $1
-         AND u."isActive" = true
+         AND u."status" = 'active'
          AND (r."name" ILIKE '%PROMOTER%' OR r."name" ILIKE '%SCHOOL_OWNER%')`,
       tenantId,
     );
@@ -246,7 +246,7 @@ export class AutoDmService {
       `SELECT DISTINCT u."id"
        FROM "users" u
        WHERE u."tenantId" = $1
-         AND u."isActive" = true
+         AND u."status" = 'active'
          AND u."id" NOT IN (
            SELECT ur."userId" FROM "user_roles" ur
            JOIN "roles" r ON r."id" = ur."roleId"

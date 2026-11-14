@@ -264,7 +264,7 @@ export class AutoChannelByTrackService {
        JOIN "user_roles" ur ON ur."userId" = u."id"
        JOIN "roles" r ON r."id" = ur."roleId"
        WHERE u."tenantId" = $1
-         AND u."isActive" = true
+         AND u."status" = 'active'
          AND (
            r."name" ILIKE '%PROMOTER%' OR r."name" ILIKE '%DIRECTOR%' OR r."name" ILIKE '%DIRECTEUR%'
            OR r."name" ILIKE '%CENSEUR%' OR r."name" ILIKE '%COMPTABLE%' OR r."name" ILIKE '%ECONOME%'
@@ -289,7 +289,7 @@ export class AutoChannelByTrackService {
       `SELECT DISTINCT u."id" AS "userId"
        FROM "teachers" t
        JOIN "users" u ON u."email" = t."email" AND u."tenantId" = $1
-       WHERE u."isActive" = true
+       WHERE u."status" = 'active'
          AND (
            ($4 = 'FR' AND (t."assignedLanguages" IS NULL OR t."assignedLanguages"::text LIKE '%"FR"%'))
            OR ($4 = 'EN' AND t."assignedLanguages"::text LIKE '%"EN"%')
@@ -300,7 +300,7 @@ export class AutoChannelByTrackService {
        FROM "users" u
        JOIN "user_roles" ur ON ur."userId" = u."id"
        JOIN "roles" r ON r."id" = ur."roleId"
-       WHERE u."tenantId" = $1 AND u."isActive" = true
+       WHERE u."tenantId" = $1 AND u."status" = 'active'
          AND (r."name" ILIKE '%DIRECTOR%' OR r."name" ILIKE '%DIRECTEUR%'
               OR r."name" ILIKE '%CENSEUR%' OR r."name" ILIKE '%PEDAGOGIC%')`,
       tenantId,
@@ -317,7 +317,7 @@ export class AutoChannelByTrackService {
       `SELECT DISTINCT u."id" AS "userId"
        FROM "teachers" t
        JOIN "users" u ON u."email" = t."email" AND u."tenantId" = $1
-       WHERE u."isActive" = true
+       WHERE u."status" = 'active'
        UNION
        SELECT DISTINCT u."id"
        FROM "staff_admin_assignments" saa
@@ -330,7 +330,7 @@ export class AutoChannelByTrackService {
        FROM "users" u
        JOIN "user_roles" ur ON ur."userId" = u."id"
        JOIN "roles" r ON r."id" = ur."roleId"
-       WHERE u."tenantId" = $1 AND u."isActive" = true
+       WHERE u."tenantId" = $1 AND u."status" = 'active'
          AND (r."name" ILIKE '%DIRECTOR%' OR r."name" ILIKE '%DIRECTEUR%'
               OR r."name" ILIKE '%CENSEUR%' OR r."name" ILIKE '%PEDAGOGIC%'
               OR r."name" ILIKE '%PROMOTER%' OR r."name" ILIKE '%SCHOOL_OWNER%')`,
@@ -359,7 +359,7 @@ export class AutoChannelByTrackService {
        WHERE c."tenantId" = $1
          AND c."academicYearId" = $2
          AND c."schoolLevelId" = $5
-         AND u."isActive" = true
+         AND u."status" = 'active'
          AND (
            ($4 = 'FR' AND (c."language" IS NULL OR c."language" != 'EN'))
            OR ($4 = 'EN' AND c."language" = 'EN')
@@ -372,7 +372,7 @@ export class AutoChannelByTrackService {
        JOIN "users" u ON u."email" = t."email" AND u."tenantId" = $1
        JOIN "classes" c ON c."officialClassId" = pac."id"
        WHERE c."tenantId" = $1 AND c."academicYearId" = $2 AND c."schoolLevelId" = $5
-         AND u."isActive" = true
+         AND u."status" = 'active'
        UNION
        -- Administration du niveau (StaffAdminAssignment avec schoolLevelCode correspondant)
        SELECT DISTINCT u."id"

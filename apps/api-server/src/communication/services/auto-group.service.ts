@@ -399,17 +399,20 @@ export class AutoGroupService {
 
       // 2. Parents des élèves inscrits (guardians avec comptes users) —
       //    apparaîtront à l'onboarding des parents.
+      //    ⚠️ FIX 2026-11-14 : Student n'a PAS de guardianId (relation many-to-many
+      //    via student_guardians) — l'ancien select levait « Unknown field
+      //    guardianId » → 0 parent dans les groupes de classe.
       const enrollments = await this.prisma.studentEnrollment.findMany({
         where: { classId, status: 'ENROLLED' },
-        select: { student: { select: { guardianId: true } } },
+        select: { studentId: true },
       });
-      for (const enr of enrollments) {
-        if (enr.student?.guardianId) {
-          const guardian = await this.prisma.guardian.findUnique({
-            where: { id: enr.student.guardianId },
-            select: { userId: true },
-          });
-          if (guardian?.userId) participantIds.push(guardian.userId);
+      if (enrollments.length > 0) {
+        const guardians = await this.prisma.studentGuardian.findMany({
+          where: { studentId: { in: enrollments.map(e => e.studentId) } },
+          select: { guardian: { select: { userId: true } } },
+        });
+        for (const g of guardians) {
+          if (g.guardian?.userId) participantIds.push(g.guardian.userId);
         }
       }
     } catch (e: any) {
@@ -443,17 +446,19 @@ export class AutoGroupService {
         }
       }
       // Also add all students of the class (so they can see subject materials)
+      // ⚠️ FIX 2026-11-14 : cf. getClassParticipants — Student.guardianId n'existe pas,
+      //    parents via student_guardians (many-to-many).
       const enrollments = await this.prisma.studentEnrollment.findMany({
         where: { classId, status: 'ENROLLED' },
-        select: { student: { select: { guardianId: true } } },
+        select: { studentId: true },
       });
-      for (const enr of enrollments) {
-        if (enr.student?.guardianId) {
-          const guardian = await this.prisma.guardian.findUnique({
-            where: { id: enr.student.guardianId },
-            select: { userId: true },
-          });
-          if (guardian?.userId) participantIds.push(guardian.userId);
+      if (enrollments.length > 0) {
+        const guardians = await this.prisma.studentGuardian.findMany({
+          where: { studentId: { in: enrollments.map(e => e.studentId) } },
+          select: { guardian: { select: { userId: true } } },
+        });
+        for (const g of guardians) {
+          if (g.guardian?.userId) participantIds.push(g.guardian.userId);
         }
       }
     } catch (e: any) {
@@ -565,20 +570,20 @@ export class AutoGroupService {
   private async getLevelParentParticipants(classIds: string[]): Promise<string[]> {
     const participantIds: string[] = [];
     try {
+      // ⚠️ FIX 2026-11-14 : cf. getClassParticipants — Student.guardianId n'existe pas,
+      //    parents via student_guardians (many-to-many).
       const enrollments = await this.prisma.studentEnrollment.findMany({
         where: { classId: { in: classIds }, status: 'ENROLLED' },
-        select: { student: { select: { guardianId: true } } },
+        select: { studentId: true },
       });
-      const guardianIds = Array.from(new Set(
-        enrollments.map(e => e.student?.guardianId).filter((g): g is string => !!g),
-      ));
-      if (guardianIds.length > 0) {
-        const guardians = await this.prisma.guardian.findMany({
-          where: { id: { in: guardianIds }, userId: { not: null } },
-          select: { userId: true },
+      const studentIds = Array.from(new Set(enrollments.map(e => e.studentId)));
+      if (studentIds.length > 0) {
+        const guardians = await this.prisma.studentGuardian.findMany({
+          where: { studentId: { in: studentIds } },
+          select: { guardian: { select: { userId: true } } },
         });
         for (const g of guardians) {
-          if (g.userId) participantIds.push(g.userId);
+          if (g.guardian?.userId) participantIds.push(g.guardian.userId);
         }
       }
     } catch (e: any) {

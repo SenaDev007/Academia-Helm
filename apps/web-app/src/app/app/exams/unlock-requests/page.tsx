@@ -82,7 +82,10 @@ export default function UnlockRequestsPage() {
       const activeLevel = (availableLevels || []).find(
         (l: any) => (l.code || '').toUpperCase() === scopeLevel && l.id !== 'ALL'
       );
-      const schoolLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
+      // ⭐ FIX 2026-11-15 : jamais la sentinelle 'ALL' (option virtuelle du
+      //    sélecteur global) — 403 AccessScopeGuard pour les profils restreints.
+      const rawLevelUuid = activeLevel?.schoolLevelId || activeLevel?.id;
+      const schoolLevelUuid = rawLevelUuid && rawLevelUuid !== 'ALL' ? rawLevelUuid : '';
 
       // ⭐ V1 audit — « Toutes » ne doit PAS envoyer status=ALL au backend :
       //    le controller filtre alors ur.status='ALL' (valeur inexistante)

@@ -36,7 +36,8 @@ export default function StudentComplianceContent() {
     try {
       const result = await studentsService.generateBulkIdCards({
         academicYearId: academicYear.id,
-        schoolLevelId: schoolLevel?.id || '',
+        // ⭐ FIX 2026-11-15 : jamais la sentinelle 'ALL' (403 pour les profils restreints)
+        schoolLevelId: (schoolLevel?.id && schoolLevel.id !== 'ALL') ? schoolLevel.id : '',
       });
       // Update local stats after successful generation
       setStats((prev: any) => ({ 

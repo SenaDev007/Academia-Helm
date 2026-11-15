@@ -147,9 +147,17 @@ export default function StudentFamiliesContent() {
       // ⭐ Bug fix : passer page/limit/search au backend pour la vraie pagination.
       // L'ancien code ne passait pas page/limit (récupérait 50 par défaut) et
       // la pagination côté UI ne faisait que slice() sans re-fetch.
+      // ⭐ FIX 2026-11-15 « Famille vide pour les profils restreints » : ne
+      //    JAMAIS envoyer la sentinelle 'ALL' (option virtuelle « Mon
+      //    périmètre / Tous les niveaux ») en query schoolLevelId —
+      //    AccessScopeGuard la rejette en 403 pour les comptes restreints
+      //    (directrice Mat+Pri…) → liste + KPIs Familles vides. Sans niveau
+      //    explicite, le périmètre serveur s'applique.
+      const familyLevelId =
+        schoolLevel?.id && schoolLevel.id !== 'ALL' ? schoolLevel.id : '';
       const data = await studentsService.getAll({
         academicYearId: academicYear.id,
-        schoolLevelId: schoolLevel?.id || '',
+        schoolLevelId: familyLevelId,
         includeGuardians: 'true',
         page: String(currentPage),
         limit: String(PAGE_SIZE),
@@ -175,9 +183,13 @@ export default function StudentFamiliesContent() {
   const loadKpiStats = async () => {
     if (!academicYear) return;
     try {
+      // ⭐ FIX 2026-11-15 : idem loadData — jamais la sentinelle 'ALL' en query
+      //    (403 AccessScopeGuard pour les profils restreints → KPIs à zéro).
+      const familyLevelId =
+        schoolLevel?.id && schoolLevel.id !== 'ALL' ? schoolLevel.id : '';
       const data = await studentsService.getAll({
         academicYearId: academicYear.id,
-        schoolLevelId: schoolLevel?.id || '',
+        schoolLevelId: familyLevelId,
         includeGuardians: 'true',
         limit: '200',
         ...(searchTerm.trim() ? { search: searchTerm.trim() } : {}),

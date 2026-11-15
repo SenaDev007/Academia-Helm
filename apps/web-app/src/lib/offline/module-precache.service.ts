@@ -1185,8 +1185,11 @@ export function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContex
 
   // ═══ 6. ÉLÈVES & SCOLARITÉ ═══
   if (isStaff) {
-    // /api/classes EXIGE schoolLevelId ('ALL' = tous) — StudentsModulePage
-    urls.push(`/api/classes${qs({ academicYearId: year, schoolLevelId: level || 'ALL' })}`);
+    // ⭐ FIX 2026-11-15 : /api/classes REQUIERT schoolLevelId mais la sentinelle
+    //    'ALL' est rejetée 403 par AccessScopeGuard pour les profils restreints
+    //    → pré-cache silencieusement vide. On utilise /api/all-classes (aucun
+    //    param requis, périmètre serveur appliqué) — même données, zéro 403.
+    urls.push(`/api/all-classes${qs({ academicYearId: year })}`);
     // Liste élèves : variante sans niveau (défaut) + avec niveau
     urls.push(`/api/students${qs({ academicYearId: year })}`);
     if (levelParam) urls.push(`/api/students${qs({ academicYearId: year, schoolLevelId: levelParam })}`);
@@ -1713,8 +1716,10 @@ export function buildDynamicPrecacheUrls(
     //      filtrable par le SW) → pré-cache par classe, cap 40 (2G/3G).
     if (isStaff) {
       try {
+        // ⭐ FIX 2026-11-15 : /api/all-classes au lieu de /api/classes?schoolLevelId=ALL
+        //    (sentinelle 403 pour les profils restreints — pré-cache vide)
         const classes = extractArray(await fetchListJson(
-          `/api/classes${qs({ academicYearId: year, schoolLevelId: 'ALL' })}`, headers));
+          `/api/all-classes${qs({ academicYearId: year })}`, headers));
         for (const c of classes.slice(0, 40)) {
           if (c?.id) urls.push(`/api/pedagogy/class-subjects/${c.id}${qs({ academicYearId: year })}`);
         }

@@ -28,7 +28,10 @@ export default function AdmissionForm({ initialData, onSubmit }: AdmissionFormPr
     birthPlace: initialData?.birthPlace || '',
     nationality: initialData?.nationality || 'Béninoise',
     address: initialData?.address || '',
-    requestedLevelId: initialData?.requestedLevelId || schoolLevel?.id || '',
+    // ⭐ FIX 2026-11-15 : jamais la sentinelle 'ALL' du sélecteur global en
+    //    body (403 AccessScopeGuard pour les profils restreints).
+    requestedLevelId: initialData?.requestedLevelId
+      || (schoolLevel?.id && schoolLevel.id !== 'ALL' ? schoolLevel.id : ''),
     requestedClassId: initialData?.requestedClassId || '',
     requestedSeriesId: initialData?.requestedSeriesId || '',
     wantsBilingual: false, // Supprimé du formulaire — l'école est déjà bilingue ou non

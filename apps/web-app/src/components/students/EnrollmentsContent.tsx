@@ -599,7 +599,9 @@ export default function EnrollmentsContent() {
       await studentsService.reEnroll({
         studentId: reEnrollStudent.student.id,
         academicYearId: academicYear.id,
-        schoolLevelId: reEnrollStudent.class?.schoolLevelId || schoolLevel?.id || '',
+        // ⭐ FIX 2026-11-15 : jamais la sentinelle 'ALL' en body (403 profils restreints)
+        schoolLevelId: reEnrollStudent.class?.schoolLevelId
+          || (schoolLevel?.id && schoolLevel.id !== 'ALL' ? schoolLevel.id : ''),
         classId,
       });
       toast({ title: '✅ Élève réinscrit', variant: 'success' });
@@ -706,7 +708,10 @@ export default function EnrollmentsContent() {
         studentIds,
         fromAcademicYearId: academicYear.id,
         toAcademicYearId: bulkTargetYear,
-        schoolLevelId: schoolLevel?.id || '',
+        // ⭐ FIX 2026-11-15 : jamais la sentinelle 'ALL' en body (403 pour les
+        // profils restreints — périmètre « Tous les niveaux » réservé aux
+        // profils transverses) : niveau réel du sélecteur uniquement.
+        schoolLevelId: (schoolLevel?.id && schoolLevel.id !== 'ALL') ? schoolLevel.id : '',
       });
       toast({ title: `✅ ${studentIds.length} élèves réinscrits`, variant: 'success' });
       setBulkReEnrollOpen(false);

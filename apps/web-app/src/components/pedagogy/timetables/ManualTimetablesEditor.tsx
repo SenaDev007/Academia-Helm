@@ -372,7 +372,7 @@ export default function ManualTimetablesEditor() {
             scheduledEntries.push({
               timetableId: activeTimetableId,
               academicYearId: academicYear.id,
-              schoolLevelId: schoolLevel?.id || '',
+              schoolLevelId: (schoolLevel?.id && schoolLevel.id !== 'ALL') ? schoolLevel.id : '',
               dayOfWeek: slot.day,
               startTime: slot.start,
               endTime: slot.end,
@@ -448,7 +448,7 @@ export default function ManualTimetablesEditor() {
             scheduledEntries.push({
               timetableId: activeTimetableId,
               academicYearId: academicYear.id,
-              schoolLevelId: schoolLevel?.id || '',
+              schoolLevelId: (schoolLevel?.id && schoolLevel.id !== 'ALL') ? schoolLevel.id : '',
               dayOfWeek: slot.day,
               startTime: slot.start,
               endTime: slot.end,
@@ -535,7 +535,7 @@ export default function ManualTimetablesEditor() {
           method: 'POST',
           body: {
             academicYearId: academicYear.id,
-            schoolLevelId: schoolLevel?.id || '',
+            schoolLevelId: (schoolLevel?.id && schoolLevel.id !== 'ALL') ? schoolLevel.id : '',
             name: `Emploi du Temps Principal ${academicYear.label}`,
             startDate: new Date(),
           }
@@ -594,7 +594,9 @@ export default function ManualTimetablesEditor() {
     if (!activeTimetableId || !academicYear?.id) return;
     try {
       // Resolve a valid schoolLevelId (not 'ALL')
-      const resolvedSchoolLevelId = schoolLevel?.id || classes.find(c => c.id === data.classId)?.levelId || '';
+      // ⭐ FIX 2026-11-15 : la sentinelle 'ALL' déclenche un 403 AccessScopeGuard
+      //    pour les profils restreints — on la filtre, repli sur le niveau de la classe.
+      const resolvedSchoolLevelId = (schoolLevel?.id && schoolLevel.id !== 'ALL' ? schoolLevel.id : '') || classes.find(c => c.id === data.classId)?.levelId || '';
       if (!resolvedSchoolLevelId) {
         toast({ title: "Erreur", description: "Impossible de déterminer le niveau scolaire.", variant: "destructive" });
         return;

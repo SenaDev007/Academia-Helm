@@ -175,7 +175,10 @@ export function useStudentStatistics(academicYearId?: string, schoolLevelId?: st
     queryFn: async () => {
       if (!academicYearId) return null;
       const p = new URLSearchParams({ academicYearId });
-      if (schoolLevelId) p.set('schoolLevelId', schoolLevelId);
+      // ⭐ FIX 2026-11-15 : la sentinelle 'ALL' (option virtuelle du sélecteur
+      //    global) ne doit JAMAIS partir en query — 403 AccessScopeGuard pour
+      //    les profils restreints → stats dashboard figées/null.
+      if (schoolLevelId && schoolLevelId !== 'ALL') p.set('schoolLevelId', schoolLevelId);
       const res = await fetch(`/api/students/statistics?${p}`, { credentials: 'include', cache: 'no-store' });
       if (!res.ok) return null;
       return res.json();

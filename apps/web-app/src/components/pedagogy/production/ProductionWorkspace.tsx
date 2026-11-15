@@ -155,7 +155,7 @@ export default function ProductionWorkspace() {
         pedagogyService.getLessonPlans(selectedSubjectId),
         pedagogyService.getLessonJournals(),
         pedagogyService.getTests(selectedSubjectId),
-        pedagogyService.getCurrentSemainier(academicYear.id, schoolLevel?.id || '')
+        pedagogyService.getCurrentSemainier(academicYear.id, (schoolLevel?.id && schoolLevel.id !== 'ALL') ? schoolLevel.id : '')
       ]);
       setDiaries(diariesData || []);
       setLessons(lessonsData || []);
@@ -187,7 +187,7 @@ export default function ProductionWorkspace() {
         ...data,
         classSubjectId: selectedSubjectId,
         academicYearId: academicYear.id,
-        schoolLevelId: schoolLevel?.id || undefined
+        schoolLevelId: (schoolLevel?.id && schoolLevel.id !== 'ALL') ? schoolLevel.id : undefined
       });
       toast({
         title: "Succès",
@@ -265,7 +265,7 @@ export default function ProductionWorkspace() {
         classId: activeSub?.class.id,
         subjectId: activeSub?.subject.id,
         academicYearId: academicYear.id,
-        schoolLevelId: schoolLevel?.id || undefined,
+        schoolLevelId: (schoolLevel?.id && schoolLevel.id !== 'ALL') ? schoolLevel.id : undefined,
         examDate: new Date(data.examDate || new Date()).toISOString(),
         coefficient: parseFloat(data.coefficient || "1.0"),
         maxScore: parseFloat(data.maxScore || "20.0"),
@@ -291,7 +291,7 @@ export default function ProductionWorkspace() {
     try {
       await pedagogyService.createSemainier({
         academicYearId: academicYear.id,
-        schoolLevelId: schoolLevel?.id || undefined,
+        schoolLevelId: (schoolLevel?.id && schoolLevel.id !== 'ALL') ? schoolLevel.id : undefined,
         assignmentId: weeklyAssignment.id,
         content: '',
       });

@@ -228,16 +228,21 @@ export default function StudentsModulePage() {
       return;
     }
     const params = new URLSearchParams({ academicYearId: academicYear.id });
-    // ⭐ FIX 2026-09-07 : UUID school_levels (pas education_levels) + fused MAT_PRI
     // ⭐ FIX 2026-09-09 « sélecteur de classes vide » : le backend /classes EXIGE
-    //    schoolLevelId (SchoolLevelId decorator → 400 « School Level ID is
-    //    required » si absent). Quand aucun niveau n'est filtré (promoteur
-    //    « Tous les niveaux », ou niveau pas encore résolu au montage), on
-    //    envoyait la requête SANS le paramètre → 400 → liste de classes VIDE
-    //    dans le filtre du module Élèves. On envoie désormais 'ALL'
-    //    explicitement (le service interprète 'ALL' = tous les niveaux).
-    params.set('schoolLevelId', effectiveLevelFilter || 'ALL');
-    fetch(`/api/classes?${params}`)
+    //    schoolLevelId (400 si absent).
+    // ⭐ FIX 2026-11-15 « 403 sentinelle ALL » : /api/classes?schoolLevelId=ALL
+    //    est rejeté par AccessScopeGuard pour les profils restreints (403
+    //    constaté en E2E avec un directeur Mat+Pri) → filtre de classes VIDE.
+    //    → niveau réel sélectionné : /api/classes?schoolLevelId=<UUID> (dans
+    //    le périmètre → guard OK) ; aucun niveau (promoteur / « Mon
+    //    périmètre ») : /api/all-classes (BFF qui interroge CHAQUE niveau du
+    //    périmètre — restreints = leur périmètre, transverses = tout).
+    const levelParam =
+      effectiveLevelFilter && effectiveLevelFilter !== 'ALL' ? effectiveLevelFilter : '';
+    const classesUrl = levelParam
+      ? `/api/classes?${params.toString()}&schoolLevelId=${encodeURIComponent(levelParam)}`
+      : `/api/all-classes?${params.toString()}`;
+    fetch(classesUrl)
       .then((r) => (r.ok ? r.json() : []))
       .then((data: any) => {
         const list = Array.isArray(data) ? data : data?.data ?? data?.classes ?? [];

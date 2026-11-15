@@ -28,12 +28,19 @@ export default function CenseurPage() {
     );
   }
 
+  // ⭐ FIX 2026-11-15 : jamais la sentinelle 'ALL' du sélecteur global —
+  //    403 AccessScopeGuard pour les profils restreints (censeur de niveau).
+  const censorLevelId =
+    (schoolLevel?.schoolLevelId && schoolLevel.schoolLevelId !== 'ALL')
+      ? schoolLevel.schoolLevelId
+      : ((schoolLevel?.id && schoolLevel.id !== 'ALL') ? schoolLevel.id : undefined);
+
   return (
     <div className="p-4 sm:p-6">
       <CensorWorkspace
         tenant={tenant}
         academicYear={academicYear}
-        schoolLevelId={schoolLevel?.schoolLevelId || schoolLevel?.id}
+        schoolLevelId={censorLevelId}
       />
     </div>
   );

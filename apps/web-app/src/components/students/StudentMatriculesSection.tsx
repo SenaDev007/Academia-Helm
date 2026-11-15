@@ -86,7 +86,8 @@ export default function StudentMatriculesSection() {
       // Récupérer l'année scolaire et le niveau depuis le contexte React
       // (au lieu de lire localStorage avec de mauvaises clés)
       const academicYearId = academicYear?.id || '';
-      const schoolLevelId = schoolLevel?.id || '';
+      // ⭐ FIX 2026-11-15 : jamais la sentinelle 'ALL' (403 pour les profils restreints)
+      const schoolLevelId = (schoolLevel?.id && schoolLevel.id !== 'ALL') ? schoolLevel.id : '';
 
       if (!academicYearId) {
         toast({ title: 'Erreur', description: 'Aucune année scolaire sélectionnée. Veuillez sélectionner une année dans le header.', variant: 'error' });

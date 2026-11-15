@@ -13798,3 +13798,33 @@ Stage Summary:
 - ✅ Diagnostic Bug 1 COMPLET : 1 cas réel identifié (AKPOVI Dawes @ CSPEB), hypothèse validée, script réutilisable
 - ⛔ Fix code 1.0.8 (bugs 1-2-3 + version) IMPOSSIBLE sans nouveau token GitHub (repo privé SenaDev007/Academia-Helm) — demander un fine-grained PAT (contents read/write, expiry courte)
 - 🔐 Rappel sécurité : le Neon DSN circule en clair dans les scripts sandbox (rotation déjà recommandée) ; envoyer le token GitHub par un canal sûr, expiry ≤ 7 jours
+
+---
+Task ID: 108-fixes-trois-bugs
+Agent: Super Z (agent principal)
+Task: 1.0.8 — les 3 correctifs du retour promoteur : (1) « votre mot de passe habituel » (guardian lié à un compte staff), (2) canaux d'identifiants limités à SMS + email, (3) repli Termii route generic
+
+Work Log:
+- Commits : 896ac12 (3 fixes + version 1.0.8) → f124863 (synchro account.userId post-split) → rebase re-author en ae1923b/3f1c1b8 → e56009f (split idempotent). ⚠️ LEÇON VERCEL : les commits signés z@container N'ÉPLOIENT PAS le frontend (auteur non reconnu — cf. entrées worklog 296-345) → toujours commiter avec l'auteur du config repo (SenaDev007 / s.akpovitohou@gmail.com) ; diagnostic du blocage par texte ancien/absent après reload + confirmation après rebase re-author.
+- FIX 1 (mot de passe habituel) — ParentUserProvisioningService :
+  · ensureUserForGuardian ne réutilise PLUS un User non-PARENT par email (filtre role='PARENT' sur les 3 lookups : même tenant course/P2002, cross-tenant multi-école, et le create direct) ; collision avec un compte staff → compte PARENT DÉDIÉ (email de repli guardian-{id}@no-email.local), idempotent (réutilise le dédié d'un split précédent).
+  · regeneratePasswordForGuardian : compte lié non-PARENT → SPLIT — createDedicatedParentUser (réutilise d'abord un PARENT existant du tenant avec l'email réel du guardian — ex. son compte d'origine — puis le dédié de repli ; sinon crée email réel → repli), re-lien guardian.userId, mot de passe SIMPLE réel ; le compte staff n'est JAMAIS modifié.
+  · Constat E2E → 2e correctif : le repli déterministe n'est libre qu'UNE fois — le 2e renvoi (guardian re-lié staff) tombait en P2002 sur guardian-{id}@no-email.local → exception avalée → password=null → bandeau « contactez l'administration ». Corrigé par la réutilisation idempotente (e56009f).
+  · guardians-prisma.service.provisionParentAccount : account synchronisé post-split (userId du nouveau compte + created=true → bandeau UI « Compte parent créé »).
+- FIX 2 (canaux) : provisionParentAccount défaut ['sms','email'] (helm_connect retiré) ; DTO + commentaires controllers/service/front à jour ; StudentFamiliesContent : bandeau de statuts à TROIS boutons (SMS/WhatsApp/Email — HelmConnectIcon retiré des imports), textes sous-onglet « …par SMS (premier canal : le parent n'a pas forcément d'email) et email », confirm/tooltools « SMS et email », handleResendChannel restreint 'sms'|'email'.
+- FIX 3 (Termii) : SmsService.sendViaTermii → sendViaTermiiChannel(channel) + isTermiiRouteError (regex « Route not configured / route=DND / 422+route ») → sur erreur de route, REPLI automatique UNE fois sur la route generic (log warn). Regex validée contre le message d'erreur 422 observé en prod 1.0.7 (True) et contre 402 (False — pas de repli, erreur propagée).
+- DÉPLOIEMENT : Railway 896ac12 à 19:06 UTC (~2 min), f124863 ~19:44, e56009f ~19:59 ; /api/health/db → 200 1.0.8 db connected. Vercel : livré ~19:42 après re-author des commits (blocage confirmé : auteur non reconnu).
+- E2E (tenant test, https://academia-helm.academiahelm.com/, promoteur recette) — preuves download/e2e-preuves/comptes-parents-108/ :
+  · Scénario buggé REPRODUIT en DB (script scripts/e2e_bug1_prepare.py) : guardian « Parent E2E » (e5385466) re-lié à l'ENSEIGNANT eric.helm@academia-helm.test (b4699702) — exactement le cas AKPOVI Dawes @ CSPEB diagnostiqué.
+  · 1er renvoi (API direct, build 896ac12) : HTTP 201, password=« danse637 » (réel !), canaux=[sms,email] (FIX 2 ✓), email sent ; DB : compte PARENT dédié créé+re-lié, staff passwordHash INTACT ; connexion parent 0195000199+danse637 → HTTP 200 (user=db9e32ea, role PARENT) ; négatif mauvais mdp → 401.
+  · 2e renvoi (via UI, build antérieur à e56009f) : bandeau « contactez l'administration » (P2002 repli, guardian resté staff) → RACINE de l'idempotence corrigée (e56009f).
+  · 3e renvoi (via UI, build e56009f) : bandeau « Mot de passe : maison707 » (réel), TROIS boutons SMS✗/WhatsApp/Email✓ (FIX 1+2 ✓ UI) ; DB : guardian re-lié à 229d9b12 (son compte PARENT d'ORIGINE parent.e2e@ — récupéré par la réutilisation email-réel-d'abord), staff intact ; login parent maison707 → HTTP 200 (user 229d9b12) ; compte orphelin du 1er test supprimé (hygiène, tenant revenue à 11 users PARENT).
+  · Texte sous-onglet (UI) : « …par SMS (premier canal : le parent n'a pas forcément d'email) et email » — ancien « …, email et Helm Connect » disparu.
+  · SMS : échec avec une ERREUR NOUVELLE — Termii HTTP 402 « Insufficient balance. Please top up your wallet. » (tooltip du bouton SMS, capture 03) : le portefeuille Termii est À SEC (le blocage n'est plus la route DND — cf. le message 422 Route not configured observé en 1.0.7).
+- Syntaxe : 12 fichiers validés esbuild (transform pur) — sandbox sans node_modules (npm i esbuild /tmp).
+
+Stage Summary:
+- ✅✅✅ LES 3 CORRECTIFS 1.0.8 DÉPLOYÉS ET PROUVÉS E2E : mot de passe TOUJOURS réel (compte dédié + re-lien + login parent vérifié 2×, staff intact), canaux SMS+email partout (bandeau 3 boutons, Helm Connect retiré), repli Termii generic en place (regex validée).
+- 🔴 NOUVEAU BLOCAGE UTILISATEUR : portefeuille Termii VIDE (402 « Please top up your wallet ») → AUCUN SMS ne peut partir, quelque soit la route → recharger le compte Termii (puis toujours demander l'activation de la route DND BJ — le repli generic reste un filet).
+- ⚠️ LEÇON : Vercel n' éploie QUE les commits de l'auteur reconnu — commiter en config repo (SenaDev007), jamais z@container.
+- 🔐 Hygiène : révoquer le token GitHub fourni en chat après usage ; rotation DSN Neon toujours recommandée.

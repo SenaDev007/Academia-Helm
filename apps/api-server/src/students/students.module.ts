@@ -12,7 +12,7 @@ import { BillingModule } from '../billing/billing.module'; // ✅ Pour StudentCo
 import { StudentsPrismaService } from './students-prisma.service';
 import { StudentsPrismaController } from './students-prisma.controller';
 import { GuardiansPrismaService } from './guardians-prisma.service';
-import { GuardiansPrismaController } from './guardians-prisma.controller';
+import { GuardiansPrismaController, ParentAccountsBulkController } from './guardians-prisma.controller';
 import { AttendancePrismaService } from './attendance-prisma.service';
 import { AttendancePrismaController } from './attendance-prisma.controller';
 import { DisciplinePrismaService } from './discipline-prisma.service';
@@ -82,6 +82,10 @@ import { CommunicationModule } from '../communication/communication.module';
     // StudentsPrismaController has @Get(':id') which would intercept
     // /students/admissions, /students/orion, etc. otherwise.
     StudentsController,
+    // ⭐ nov. 2026 — génération multiple des comptes parents (4 segments :
+    // students/guardians/account/bulk — aucune collision avec les routes
+    // paramétrées ; enregistré TÔT, avant les catch-all :id).
+    ParentAccountsBulkController,
     StudentsLifecycleController,
     AdmissionController,
     PublicAdmissionController,

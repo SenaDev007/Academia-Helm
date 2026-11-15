@@ -638,6 +638,31 @@ class StudentsService {
   }
 
   /**
+   * ⭐ 15/11/2026 (retour promoteur — « une vingtaine de parents sans compte,
+   * tout faire un à un est ingérable ») — GÉNÉRATION MULTIPLE des comptes
+   * parents (sous-onglet « Création de compte ») :
+   *   - action='create' : créer TOUS les comptes manquants + envoyer les
+   *     identifiants (SMS + email + Helm Connect — mot de passe simple régénéré)
+   *   - action='resend' : renvoyer les identifiants aux comptes existants
+   * Backend : POST /students/guardians/account/bulk (ParentAccountsBulkController).
+   * Timeout 5 min : 20 parents × envois multi-canaux (pool de concurrence 3).
+   *
+   * @returns { results: [{ guardianId, guardianName, studentName, status,
+   *            message, created?, credentials?, channels? }],
+   *            summary: { total, created, sent, failed, skipped } }
+   */
+  async bulkProvisionParentAccounts(
+    guardianIds: string[],
+    action: 'create' | 'resend',
+  ): Promise<any> {
+    return apiFetch(`${BASE_URL}/guardians/account/bulk`, {
+      method: "POST",
+      body: { guardianIds, action },
+      timeout: 300000,
+    });
+  }
+
+  /**
    * Finaliser l'inscription (enroll)
    */
   async enrollStudent(studentId: string, data: any): Promise<any> {

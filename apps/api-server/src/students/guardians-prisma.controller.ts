@@ -22,7 +22,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { SkipAcademicYear } from '../common/decorators/skip-academic-year.decorator';
-import { CreateGuardianDto, UpdateGuardianDto, UpdateGuardianRelationDto, ProvisionParentAccountDto } from './dto';
+import { CreateGuardianDto, UpdateGuardianDto, UpdateGuardianRelationDto, ProvisionParentAccountDto, BulkProvisionParentAccountDto } from './dto';
 
 /**
  * ⭐ P2.3 — RBAC renforcé sur GuardiansPrismaController.
@@ -142,5 +142,47 @@ export class GuardiansPrismaController {
     @TenantId() tenantId: string,
   ) {
     return this.guardiansService.removeStudentGuardian(studentGuardianId, tenantId);
+  }
+}
+
+/**
+ * ⭐ nov. 2026 (demande promoteur — « une vingtaine de parents sans compte,
+ * faire tout ça un à un est ingérable ») — GÉNÉRATION MULTIPLE des comptes
+ * parents : POST /students/guardians/account/bulk.
+ *
+ * Contrôleur SÉPARÉ de GuardiansPrismaController (base « students/:studentId/
+ * guardians ») car la génération multiple couvre PLUSIEURS élèves d'un coup —
+ * pas de :studentId dans le chemin. 4 segments (students/guardians/account/
+ * bulk) : aucune collision avec les routes existantes (5 segments pour
+ * students/:id/guardians/:guardianId/account).
+ */
+@Controller('students/guardians/account')
+@UseGuards(JwtAuthGuard, TenantGuard, RolesGuard)
+@SkipAcademicYear() // cf. GuardiansPrismaController — évite l'injection academicYearId
+export class ParentAccountsBulkController {
+  constructor(private readonly guardiansService: GuardiansPrismaService) {}
+
+  /**
+   * Génération multiple des comptes parents + envoi multiple des
+   * identifiants (mot de passe simple régénéré à chaque envoi).
+   *   - action='create' (défaut) : responsables SANS compte → création + envoi
+   *   - action='resend'           : responsables AVEC compte → renvoi
+   * Réponse : { results: [...par responsable], summary: { total, created,
+   * sent, failed, skipped } } — timeout frontend porté à 5 min (20 parents
+   * × SMS+email+Helm Connect, pool de concurrence 3 côté service).
+   */
+  @Post('bulk')
+  @Roles(...MANAGEMENT_ROLES)
+  async bulkProvision(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() dto: BulkProvisionParentAccountDto,
+  ) {
+    return this.guardiansService.bulkProvisionParentAccounts({
+      tenantId,
+      guardianIds: dto.guardianIds,
+      action: dto.action || 'create',
+      senderUserId: user?.id, // expéditeur des messages Helm Connect (repli : directeur)
+    });
   }
 }

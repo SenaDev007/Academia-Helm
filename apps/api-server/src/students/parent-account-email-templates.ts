@@ -8,8 +8,9 @@
  * (sous-onglet « Création de compte »).
  *
  * Contenu : URL du portail parent + identifiant de connexion (numéro de
- * téléphone ou email — le portail parent se connecte SANS mot de passe par
- * défaut, cf. portal-auth.service.ts).
+ * téléphone ou email) + MOT DE PASSE SIMPLE — ⭐ nov. 2026 (demande
+ * promoteur) : le portail parent se connecte désormais par (téléphone ou
+ * email) + mot de passe (petit mot + 2-3 chiffres), cf. portal-auth.service.ts.
  *
  * Pattern aligné sur receipt-email-templates.ts (mêmes primitives visuelles
  * du module RH : renderEmail, renderHeader, renderFooter, renderBadge).
@@ -38,6 +39,9 @@ export interface ParentAccountEmailData {
   identifier: string;
   /** Type d'identifiant — détermine le libellé affiché */
   identifierType: 'PHONE' | 'EMAIL';
+  /** ⭐ nov. 2026 — mot de passe simple (ex : soleil42). null = compte staff
+   * partagé → « votre mot de passe habituel ». */
+  password?: string | null;
 }
 
 /**
@@ -53,9 +57,16 @@ export function renderParentAccountEmail(data: ParentAccountEmailData): {
   const identifierLabel = isPhone
     ? 'Votre numéro de téléphone'
     : 'Votre adresse email';
+  // ⭐ nov. 2026 — mot de passe OBLIGATOIRE au portail parent
   const identifierHint = isPhone
-    ? 'Sélectionnez l\u2019onglet « Parent » puis saisissez votre numéro de téléphone — aucun mot de passe n\u2019est nécessaire.'
-    : 'Sélectionnez l\u2019onglet « Parent » puis saisissez votre adresse email — aucun mot de passe n\u2019est nécessaire.';
+    ? 'Sélectionnez l\u2019onglet « Parent », saisissez votre numéro de téléphone et votre mot de passe.'
+    : 'Sélectionnez l\u2019onglet « Parent », saisissez votre adresse email et votre mot de passe.';
+  const passwordDisplay = data.password
+    ? `<strong style="font-family:monospace;font-size:16px;letter-spacing:1px;">${escHtml(data.password)}</strong>`
+    : 'Votre mot de passe habituel';
+  const passwordHint = data.password
+    ? 'Conservez ce mot de passe précieusement — il vous sera demandé à chaque connexion.'
+    : 'Utilisez le mot de passe de votre compte habituel.';
 
   const studentLine = data.studentName
     ? `<p style="margin:0 0 16px;font-size:15px;color:#0f172a;line-height:1.6;">Ce compte est lié à <strong>${escHtml(data.studentName)}</strong>, inscrit(e) dans notre établissement.</p>`
@@ -93,10 +104,10 @@ export function renderParentAccountEmail(data: ParentAccountEmailData): {
             </tr>
             <tr>
               <td style="padding:4px 0;color:#64748b;">Mot de passe :</td>
-              <td style="padding:4px 0;">Aucun requis — votre ${isPhone ? 'numéro' : 'email'} suffit</td>
+              <td style="padding:4px 0;">${passwordDisplay}</td>
             </tr>
           </table>
-          <p style="margin:14px 0 0;font-size:12px;color:#1e40af;line-height:1.5;">${escHtml(identifierHint)}</p>
+          <p style="margin:14px 0 0;font-size:12px;color:#1e40af;line-height:1.5;">${escHtml(identifierHint)} ${escHtml(passwordHint)}</p>
         </td>
       </tr>
     </table>
@@ -112,6 +123,6 @@ export function renderParentAccountEmail(data: ParentAccountEmailData): {
   return {
     subject,
     html: renderEmail(data.branding, bodyContent, 'Espace Parent'),
-    text: `Votre compte parent est activé. Portail : ${data.portalUrl} — Identifiant : ${data.identifier} (${identifierLabel}, sans mot de passe).`,
+    text: `Votre compte parent est activé. Portail : ${data.portalUrl} — Identifiant : ${data.identifier} (${identifierLabel})${data.password ? ` — Mot de passe : ${data.password}` : ' — Mot de passe : votre mot de passe habituel'}.`,
   };
 }

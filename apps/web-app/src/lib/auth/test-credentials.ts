@@ -204,7 +204,7 @@ export const TEST_ACCOUNTS: TestAccount[] = [
     identifier: '+229 97 00 00 01',
     identifierLabel: 'Téléphone',
     password: TEST_PASSWORD,
-    note: 'Connexion directe par téléphone (sans code). Par email : guardian-c2364fcd-2fa6-4d57-a1b8-329f9a6c4d55@academia-helm.test',
+    note: 'Connexion : téléphone + mot de passe (identifiants envoyés via Élèves → Familles → Création de compte). Par email : guardian-c2364fcd-2fa6-4d57-a1b8-329f9a6c4d55@academia-helm.test',
   },
   {
     portal: 'parent',
@@ -213,7 +213,7 @@ export const TEST_ACCOUNTS: TestAccount[] = [
     identifier: '+229 97 00 00 02',
     identifierLabel: 'Téléphone',
     password: TEST_PASSWORD,
-    note: 'Connexion directe par téléphone (sans code). Par email : guardian-ddb43cd4-95d0-490e-b463-76c2d9d26997@academia-helm.test',
+    note: 'Connexion : téléphone + mot de passe (identifiants envoyés via Élèves → Familles → Création de compte). Par email : guardian-ddb43cd4-95d0-490e-b463-76c2d9d26997@academia-helm.test',
   },
 ];
 

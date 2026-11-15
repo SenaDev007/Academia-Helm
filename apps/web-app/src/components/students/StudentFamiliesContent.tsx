@@ -14,7 +14,7 @@ import { useState, useEffect } from 'react';
 import {
   Users, Plus, Search, Mail, Phone, Star, Heart, Loader2, User,
   Edit2, Trash2, X, Check, Shield, ChevronLeft, ChevronRight,
-  KeyRound, UserCheck, Send, ExternalLink,
+  KeyRound, UserCheck, Send, ExternalLink, UsersRound,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { studentsService } from '@/services/students.service';
@@ -24,8 +24,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 // ⭐ nov. 2026 — mêmes icônes officielles que le modal d'encaissement
 //    (module Finance) pour l'envoi multi-canal des identifiants parent.
-//    15/11/2026 : SMS (Termii) remplace le bouton WhatsApp grisé.
-import { GmailIcon, HelmConnectIcon, SmsIcon } from '@/components/finance/OfficialIcons';
+//    15/11/2026 : SMS (Termii) en premier canal.
+//    ⭐ 15/11/2026 (retour promoteur) : WhatsApp RÉACTIVÉ aux côtés du SMS —
+//    bouton ACTIF (lien wa.me pré-rempli — envoi manuel fiable, même pattern
+//    que le module Finance), on garde TOUS les canaux : SMS, WhatsApp,
+//    Email, Helm Connect.
+import { GmailIcon, HelmConnectIcon, SmsIcon, WhatsAppIcon } from '@/components/finance/OfficialIcons';
 
 interface Guardian {
   id: string;
@@ -72,7 +76,7 @@ interface AccountActionResult {
   guardianId: string;
   studentId: string;
   account: { userId?: string; created?: boolean } | null;
-  credentials: { portalUrl: string; identifier: string; identifierType: 'PHONE' | 'EMAIL' };
+  credentials?: { portalUrl: string; identifier: string; identifierType: 'PHONE' | 'EMAIL'; password?: string | null };
   notification: Record<string, { status?: string; to?: string; error?: string }>;
 }
 
@@ -96,6 +100,19 @@ export default function StudentFamiliesContent() {
   const [activeSubTab, setActiveSubTab] = useState<'guardians' | 'accounts'>('guardians');
   const [provisioningKey, setProvisioningKey] = useState<string | null>(null); // `${studentId}:${guardianId}`
   const [accountResults, setAccountResults] = useState<Record<string, AccountActionResult>>({});
+  // ⭐ 15/11/2026 (retour promoteur) — GÉNÉRATION MULTIPLE : les élèves SANS
+  //    responsable sont exclus de la liste (visibles uniquement en statistique
+  //    — retournables dans le sous-onglet « Responsables »). Dès qu'un
+  //    responsable est associé, l'élève apparaît ici pour la création du compte.
+  const [kpiStudents, setKpiStudents] = useState<StudentWithGuardians[]>([]);
+  // ⭐ 15/11/2026 (retour promoteur) — deux boutons de génération multiple :
+  //    création multiple des comptes + envoi multiple des identifiants.
+  const [bulkAction, setBulkAction] = useState<'create' | 'resend' | null>(null);
+  const [bulkResult, setBulkResult] = useState<{
+    action: 'create' | 'resend';
+    summary: { total: number; created: number; sent: number; failed: number; skipped: number };
+    results: any[];
+  } | null>(null);
   // ⭐ Bug fix : vraie pagination serveur. On stocke le total retourné par le
   // backend (data.total) au lieu de l'inférer depuis students.length (qui ne
   // contenait que la 1ère page de 50 élèves — défaut backend).
@@ -195,6 +212,11 @@ export default function StudentFamiliesContent() {
         ...(searchTerm.trim() ? { search: searchTerm.trim() } : {}),
       });
       const allStudents: StudentWithGuardians[] = Array.isArray(data) ? data : (data?.data || []);
+      // ⭐ 15/11/2026 — liste complète (limit=200) également stockée pour le
+      //    sous-onglet « Création de compte » : la liste cible n'est PLUS
+      //    paginée par 24 — on veut TOUS les responsables sans compte d'un
+      //    coup (génération multiple).
+      setKpiStudents(allStudents);
       setKpiStats({
         totalGuardians: allStudents.reduce((sum, s) => sum + (s.studentGuardians?.length || 0), 0),
         studentsWithPrimary: allStudents.filter(s => s.studentGuardians?.some(sg => sg.isPrimary)).length,
@@ -235,6 +257,99 @@ export default function StudentFamiliesContent() {
   const studentsWithoutGuardian = kpiStats.studentsWithoutGuardian;
   // ⭐ nov. 2026 — KPI du sous-onglet « Création de compte »
   const guardiansWithoutAccountKpi = kpiStats.guardiansWithoutAccount;
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ⭐ 15/11/2026 (retour promoteur) — FILTRE du sous-onglet « Création de
+  //    compte » : UNIQUEMENT les élèves qui ONT des responsables dont le
+  //    compte n'est pas encore créé. Les élèves SANS responsable sont
+  //    EXCLUS de la liste (statistique « Sans parent » uniquement — ils sont
+  //    retournables dans le sous-onglet « Responsables ») ; dès qu'on leur
+  //    associe un responsable, ils apparaissent ici pour créer le compte.
+  // ═══════════════════════════════════════════════════════════════
+  const accountsTargetStudents = kpiStudents.filter(
+    s =>
+      (s.studentGuardians?.length || 0) > 0 &&
+      s.studentGuardians.some(sg => !sg.guardian.userId),
+  );
+  const filteredAccountsStudents = !searchTerm.trim()
+    ? accountsTargetStudents
+    : accountsTargetStudents.filter(s => {
+        const q = searchTerm.toLowerCase();
+        const studentMatch =
+          `${s.firstName} ${s.lastName}`.toLowerCase().includes(q) ||
+          (s.matricule || '').toLowerCase().includes(q) ||
+          ((s as any).studentCode || '').toLowerCase().includes(q);
+        const guardianMatch = s.studentGuardians?.some(sg =>
+          `${sg.guardian.firstName} ${sg.guardian.lastName}`.toLowerCase().includes(q) ||
+          (sg.guardian.phone || '').includes(searchTerm)
+        );
+        return studentMatch || guardianMatch;
+      });
+  // Compteurs des deux boutons de génération multiple (sur la liste filtrée)
+  const bulkCreateCount = filteredAccountsStudents.reduce(
+    (sum, s) => sum + (s.studentGuardians?.filter(sg => !sg.guardian.userId).length || 0), 0,
+  );
+  const bulkResendCount = filteredAccountsStudents.reduce(
+    (sum, s) => sum + (s.studentGuardians?.filter(sg => sg.guardian.userId).length || 0), 0,
+  );
+
+  /**
+   * ⭐ 15/11/2026 (retour promoteur — « une vingtaine de parents sans compte,
+   * tout faire un à un est ingérable ») — GÉNÉRATION MULTIPLE des comptes
+   * parents (deux boutons) :
+   *   - action='create' : crée TOUS les comptes manquants de la vue + envoie
+   *     les identifiants (SMS + email + Helm Connect)
+   *   - action='resend' : renvoie les identifiants (mot de passe régénéré)
+   *     aux responsables déjà dotés d'un compte dans la vue
+   * Backend : POST /students/guardians/account/bulk (timeout 5 min).
+   */
+  const handleBulkProvision = async (action: 'create' | 'resend') => {
+    const ids = filteredAccountsStudents.flatMap(s =>
+      s.studentGuardians
+        .filter(sg => (action === 'create' ? !sg.guardian.userId : !!sg.guardian.userId))
+        .map(sg => sg.guardian.id),
+    );
+    if (ids.length === 0) {
+      toast({
+        title: action === 'create' ? 'Aucun compte à créer' : 'Aucun identifiant à renvoyer',
+        description: action === 'create'
+          ? 'Tous les responsables de la vue ont déjà un compte.'
+          : 'Aucun responsable de la vue n\u2019a encore de compte.',
+        variant: 'info',
+      });
+      return;
+    }
+    if (action === 'create' && !confirm(
+      `Créer ${ids.length} compte(s) parent et envoyer les identifiants (SMS, email, Helm Connect) ?`,
+    )) return;
+    if (action === 'resend' && !confirm(
+      `Renvoyer les identifiants (mot de passe régénéré) à ${ids.length} parent(s) ?`,
+    )) return;
+
+    setBulkAction(action);
+    setBulkResult(null);
+    try {
+      const result = await studentsService.bulkProvisionParentAccounts(ids, action);
+      const summary = result?.summary ?? { total: ids.length, created: 0, sent: 0, failed: 0, skipped: 0 };
+      setBulkResult({ action, summary, results: result?.results ?? [] });
+      toast({
+        title: action === 'create' ? 'Création multiple terminée' : 'Envoi multiple terminé',
+        description: [
+          action === 'create' && summary.created ? `${summary.created} compte(s) créé(s)` : '',
+          summary.sent ? `${summary.sent} envoi(s) réussi(s)` : '',
+          summary.failed ? `${summary.failed} échec(s)` : '',
+          summary.skipped ? `${summary.skipped} ignoré(s)` : '',
+        ].filter(Boolean).join(' — ') || 'Aucun traitement.',
+        variant: summary.failed > 0 ? 'warning' : 'success',
+      });
+      loadData();
+      loadKpiStats(); // rafraîchir userId + compteurs (badge « N sans compte »)
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message || 'Échec de la génération multiple', variant: 'error' });
+    } finally {
+      setBulkAction(null);
+    }
+  };
 
   const openAddGuardian = (student: StudentWithGuardians) => {
     setEditingStudent(student);
@@ -484,6 +599,79 @@ export default function StudentFamiliesContent() {
     }
   };
 
+  /**
+   * ⭐ 15/11/2026 (retour promoteur — « WhatsApp est fonctionnel, on garde
+   * WhatsApp ») : envoi WhatsApp par LIEN wa.me pré-rempli (même pattern que
+   * le module Finance — TransactionsContent « Envoi rapide (lien) ») :
+   * ouvre WhatsApp Web/app avec le numéro du parent (format international
+   * Bénin 229…) et le message d'identifiants pré-rempli — l'utilisateur
+   * n'a plus qu'à cliquer « Envoyer » dans WhatsApp.
+   */
+  const handleWhatsAppSend = (student: StudentWithGuardians, sg: StudentGuardian) => {
+    const key = guardianKey(student.id, sg.guardian.id);
+    const result = accountResults[key];
+    const rawPhone = (sg.guardian.phone || '').replace(/[^\d]/g, '');
+    if (!rawPhone) {
+      toast({
+        title: 'Numéro manquant',
+        description: 'Ce parent n\u2019a pas de téléphone — complétez sa fiche (sous-onglet Responsables).',
+        variant: 'error',
+      });
+      return;
+    }
+    // Format international Bénin : 229 + numéro (le « + » est retiré pour wa.me)
+    const intlPhone = rawPhone.startsWith('229')
+      ? rawPhone
+      : rawPhone.length === 10 && rawPhone.startsWith('01')
+        ? `229${rawPhone}`
+        : rawPhone;
+    const credentials = result?.credentials;
+    const message = credentials
+      ? [
+          `Bonjour ${sg.guardian.firstName || ''} ${sg.guardian.lastName || ''}`.trim() + ',',
+          ``,
+          `Votre compte parent est actif. Voici vos identifiants :`,
+          ``,
+          `Portail : ${credentials.portalUrl}`,
+          `Identifiant : ${credentials.identifier}`,
+          `Mot de passe : ${credentials.password || 'votre mot de passe habituel'}`,
+          ``,
+          `Onglet « Parent », puis connexion avec votre identifiant et votre mot de passe.`,
+          ``,
+          `Cordialement, l'administration.`,
+        ].join('\n')
+      : `Bonjour, votre compte parent est actif sur notre portail. Contactez l'administration pour recevoir vos identifiants.`;
+
+    window.open(
+      `https://wa.me/${intlPhone}?text=${encodeURIComponent(message)}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+    // Marquer le canal WhatsApp comme traité (envoi manuel — l'utilisateur
+    // clique « Envoyer » dans WhatsApp) + toast explicite.
+    setAccountResults(prev => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] ?? {
+          guardianId: sg.guardian.id,
+          studentId: student.id,
+          account: null,
+          credentials: undefined,
+          notification: {},
+        }),
+        notification: {
+          ...(prev[key]?.notification ?? {}),
+          whatsapp: { status: 'sent', to: intlPhone },
+        },
+      },
+    }));
+    toast({
+      title: 'WhatsApp ouvert',
+      description: 'Le message est pré-rempli — cliquez sur « Envoyer » dans WhatsApp.',
+      variant: 'success',
+    });
+  };
+
   return (
     <div className="flex flex-col h-full space-y-4 animate-in fade-in duration-500">
       {/* ⭐ nov. 2026 — Sous-onglets de l'onglet Famille : « Responsables »
@@ -576,9 +764,20 @@ export default function StudentFamiliesContent() {
       {/* Cards — sous-onglet « Responsables » (CRUD existant) */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 text-blue-500 animate-spin" /></div>
-      ) : filteredStudents.length === 0 ? (
+      ) : (activeSubTab === 'accounts' ? filteredAccountsStudents.length === 0 : filteredStudents.length === 0) ? (
         <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-          <Users className="w-12 h-12 mb-3 opacity-20" /><p className="text-sm">Aucune famille trouvée</p>
+          <Users className="w-12 h-12 mb-3 opacity-20" />
+          <p className="text-sm">
+            {activeSubTab === 'accounts'
+              ? 'Aucun responsable sans compte — tous les parents de la vue ont déjà un compte'
+              : 'Aucune famille trouvée'}
+          </p>
+          {activeSubTab === 'accounts' && (
+            <p className="text-xs mt-1 max-w-md text-center">
+              Les élèves sans responsable sont retournables dans le sous-onglet « Responsables »
+              (statistique « Sans parent ») — associez-leur un responsable et ils apparaîtront ici.
+            </p>
+          )}
         </div>
       ) : activeSubTab === 'guardians' ? (
         <>
@@ -668,24 +867,102 @@ export default function StudentFamiliesContent() {
       ) : (
         /* ═══════════════════════════════════════════════════════════════
            ⭐ nov. 2026 — Sous-onglet « Création de compte »
-           Parents sans compte (étape skippée au wizard d'inscription) :
-           créer le compte parent + envoyer les identifiants de connexion
-           (SMS + email + Helm Connect — même UX que le modal d'encaissement).
+           ⭐ 15/11/2026 (retour promoteur) : UNIQUEMENT les élèves dont les
+           responsables existent mais n'ont pas encore de compte (les élèves
+           sans responsable sont exclus — statistique « Sans parent » seule,
+           retournables dans le sous-onglet « Responsables »). Deux boutons de
+           GÉNÉRATION MULTIPLE (création + envoi) au lieu d'un par un.
            ═══════════════════════════════════════════════════════════════ */
         <>
-        <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 text-sm text-blue-800 leading-relaxed">
-          <p className="font-semibold mb-1">Création de comptes parents — portail parent</p>
-          <p>
-            Les responsables sans compte (étape ignorée lors de l'inscription) ne peuvent pas
-            se connecter au portail parent. Créez leur compte : les <strong>informations de
-            connexion</strong> (adresse du portail + numéro de téléphone ou email, sans mot de
-            passe) seront envoyées au parent par <strong>SMS</strong> (Termii — premier canal :
-            le parent n'a pas forcément d'email), <strong>email</strong> et{' '}<strong>Helm Connect</strong> —
-            exactement comme le reçu dans le modal d'encaissement du module Finance.
+        <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3">
+          <p className="font-semibold text-[11px] text-blue-900 mb-0.5">Création de comptes parents — portail parent</p>
+          <p className="text-[11px] text-blue-800 leading-relaxed">
+            Les <strong>informations de connexion</strong> (adresse du portail + numéro de
+            téléphone ou email, avec un mot de passe simple) seront envoyées au parent par{' '}
+            <strong>SMS</strong> (premier canal : le parent n'a pas forcément d'email),{' '}
+            <strong>email</strong> et <strong>Helm Connect</strong>.
           </p>
         </div>
+
+        {/* ⭐ 15/11/2026 (retour promoteur) — DEUX BOUTONS de génération
+            multiple : « une vingtaine de parents sans compte, il faut pouvoir
+            tout faire d'un coup au lieu de le faire un à un ». */}
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => handleBulkProvision('create')}
+            disabled={bulkAction !== null || bulkCreateCount === 0}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
+            title={bulkCreateCount === 0
+              ? 'Aucun responsable sans compte dans la vue'
+              : 'Créer TOUS les comptes manquants de la vue et envoyer les identifiants (SMS, email, Helm Connect)'}
+          >
+            {bulkAction === 'create' ? <Loader2 className="w-4 h-4 animate-spin" /> : <UsersRound className="w-4 h-4" />}
+            {bulkAction === 'create' ? 'Création multiple en cours…' : `Création multiple — ${bulkCreateCount} compte(s)`}
+          </button>
+          <button
+            onClick={() => handleBulkProvision('resend')}
+            disabled={bulkAction !== null || bulkResendCount === 0}
+            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-blue-700 bg-white hover:bg-blue-50 border border-blue-200 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
+            title={bulkResendCount === 0
+              ? 'Aucun responsable avec compte dans la vue'
+              : 'Renvoyer les identifiants (mot de passe régénéré) à tous les parents déjà dotés d\'un compte dans la vue'}
+          >
+            {bulkAction === 'resend' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {bulkAction === 'resend' ? 'Envoi multiple en cours…' : `Envoi multiple des identifiants — ${bulkResendCount} compte(s)`}
+          </button>
+          <span className="text-[10px] text-slate-400">
+            {accountsTargetStudents.length} élève(s) concerné(s){searchTerm.trim() ? ' (vue filtrée)' : ''}
+          </span>
+        </div>
+
+        {/* Bandeau de résultat de la génération multiple — détail par parent */}
+        {bulkResult && (
+          <div className={`p-3 rounded-xl border space-y-2 ${
+            bulkResult.summary.failed > 0
+              ? 'border-amber-200 bg-amber-50/70'
+              : 'border-emerald-200 bg-emerald-50/70'
+          }`}>
+            <div className="flex items-start justify-between gap-2">
+              <p className={`text-xs font-bold ${bulkResult.summary.failed > 0 ? 'text-amber-900' : 'text-emerald-900'}`}>
+                {bulkResult.action === 'create' ? 'Création multiple terminée' : 'Envoi multiple terminé'} —{' '}
+                {bulkResult.summary.created > 0 && `${bulkResult.summary.created} créé(s), `}
+                {bulkResult.summary.sent} envoi(s) réussi(s)
+                {bulkResult.summary.failed > 0 && `, ${bulkResult.summary.failed} échec(s)`}
+                {bulkResult.summary.skipped > 0 && `, ${bulkResult.summary.skipped} ignoré(s)`}
+              </p>
+              <button
+                onClick={() => setBulkResult(null)}
+                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 shrink-0"
+                title="Fermer le rapport"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {bulkResult.results.map((r: any, i: number) => (
+                <div key={`${r.guardianId}-${i}`} className="flex items-center justify-between gap-2 text-[11px] px-2 py-1 rounded bg-white/70">
+                  <span className="font-semibold text-slate-700 truncate">
+                    {r.guardianName || r.guardianId}
+                    {r.studentName ? <span className="font-normal text-slate-400"> — {r.studentName}</span> : null}
+                  </span>
+                  <span className={`shrink-0 font-medium ${
+                    r.status === 'sent' ? 'text-emerald-700'
+                      : r.status === 'failed' ? 'text-rose-700'
+                        : 'text-slate-400'
+                  }`}>
+                    {r.status === 'sent' && '✓ '}
+                    {r.status === 'failed' && '✗ '}
+                    {r.status === 'skipped' && '— '}
+                    {r.message}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {filteredStudents.map(student => (
+          {filteredAccountsStudents.map(student => (
             <div key={student.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
               <div className="p-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
@@ -785,29 +1062,50 @@ export default function StudentFamiliesContent() {
                               <span className="font-mono font-bold">{result.credentials?.identifier}</span>
                               <span className="text-emerald-700"> ({result.credentials?.identifierType === 'PHONE' ? 'téléphone' : 'email'})</span>
                             </p>
-                            <p className="text-emerald-700">Mot de passe : aucun requis</p>
+                            <p>
+                              <span className="text-emerald-700 font-medium">Mot de passe :</span>{' '}
+                              {result.credentials?.password ? (
+                                <span className="font-mono font-bold">{result.credentials.password}</span>
+                              ) : (
+                                <span className="text-emerald-700">votre mot de passe habituel</span>
+                              )}
+                            </p>
                           </div>
                           {/* Statuts par canal + renvoi unitaire (pattern modal d'encaissement)
-                              ⭐ 15/11/2026 — SMS (Termii) en premier canal : le parent sans
-                              email ne peut rien recevoir par email, et le message Helm Connect
-                              suppose déjà un compte connecté — le SMS est le seul canal qui
-                              fonctionne AVANT toute connexion. */}
+                              ⭐ 15/11/2026 — QUATRE canaux (retour promoteur) :
+                              SMS (Termii, premier canal — le parent sans email ne peut rien
+                              recevoir par email et le message Helm Connect suppose déjà un
+                              compte connecté), WhatsApp (lien wa.me pré-rempli — envoi
+                              manuel fiable), Email, Helm Connect. */}
                           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-emerald-200">
-                            {(['sms', 'email', 'helm_connect'] as const).map(channel => {
+                            {(['sms', 'whatsapp', 'email', 'helm_connect'] as const).map(channel => {
                               const st = result.notification?.[channel];
-                              const label = channel === 'sms' ? 'SMS' : channel === 'email' ? 'Email' : 'Helm Connect';
+                              const label = channel === 'sms'
+                                ? 'SMS'
+                                : channel === 'whatsapp'
+                                  ? 'WhatsApp'
+                                  : channel === 'email'
+                                    ? 'Email'
+                                    : 'Helm Connect';
+                              const isManualWhatsApp = channel === 'whatsapp';
                               return (
                                 <button
                                   key={channel}
-                                  onClick={() => handleResendChannel(student, sg, channel)}
-                                  disabled={provisioningKey === key}
+                                  onClick={() =>
+                                    isManualWhatsApp
+                                      ? handleWhatsAppSend(student, sg)
+                                      : handleResendChannel(student, sg, channel as 'sms' | 'email' | 'helm_connect')
+                                  }
+                                  disabled={!isManualWhatsApp && provisioningKey === key}
                                   className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold rounded-lg border transition disabled:opacity-40 ${
                                     st?.status === 'sent'
                                       ? 'border-emerald-300 bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
                                       : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                                   }`}
                                   title={
-                                    st?.status === 'skipped'
+                                    isManualWhatsApp
+                                      ? 'WhatsApp — ouvre WhatsApp avec le message d\u2019identifiants pré-rempli (cliquez Envoyer dans WhatsApp)'
+                                      : st?.status === 'skipped'
                                       ? (st.error || 'Canal non disponible')
                                       : st?.status === 'failed'
                                         ? (st.error || 'Échec d\u2019envoi')
@@ -816,7 +1114,13 @@ export default function StudentFamiliesContent() {
                                           : 'Envoyer par ce canal'
                                   }
                                 >
-                                  {channel === 'sms' ? <SmsIcon className="w-3.5 h-3.5" /> : channel === 'email' ? <GmailIcon className="w-3.5 h-3.5" /> : <HelmConnectIcon className="w-3.5 h-3.5" />}
+                                  {channel === 'sms'
+                                    ? <SmsIcon className="w-3.5 h-3.5" />
+                                    : channel === 'whatsapp'
+                                      ? <WhatsAppIcon className="w-3.5 h-3.5" />
+                                      : channel === 'email'
+                                        ? <GmailIcon className="w-3.5 h-3.5" />
+                                        : <HelmConnectIcon className="w-3.5 h-3.5" />}
                                   {label}
                                   {st?.status === 'sent' && <span className="text-emerald-600">✓</span>}
                                   {st?.status === 'failed' && <span className="text-rose-600">✗</span>}
@@ -830,39 +1134,14 @@ export default function StudentFamiliesContent() {
                     </div>
                   );
                 })}
-                {student.studentGuardians.length === 0 && (
-                  <p className="text-xs text-slate-400 italic text-center py-2">
-                    Aucun responsable — ajoutez-en dans le sous-onglet « Responsables »
-                  </p>
-                )}
+                {/* ⭐ 15/11/2026 : les élèves SANS responsable n'apparaissent
+                    plus ici (filtre accountsTargetStudents) — ils sont
+                    retournables dans le sous-onglet « Responsables »
+                    (statistique « Sans parent »). */}
               </div>
             </div>
           ))}
         </div>
-
-        {/* Pagination (partagée avec le sous-onglet Responsables) */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-3 mt-6">
-            <button
-              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-              disabled={currentPage <= 1 || isLoading}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-blue-700 bg-white hover:bg-blue-50 rounded-lg border border-blue-200 transition disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <ChevronLeft className="w-4 h-4" /> Précédent
-            </button>
-            <span className="text-sm font-mono text-slate-500">
-              Page {currentPage} / {totalPages}
-              <span className="text-slate-400 ml-2">({totalFamilies} familles)</span>
-            </span>
-            <button
-              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-              disabled={currentPage >= totalPages || isLoading}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-blue-700 bg-white hover:bg-blue-50 rounded-lg border border-blue-200 transition disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              Suivant <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        )}
         </>
       )}
 

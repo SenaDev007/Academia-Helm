@@ -15,8 +15,16 @@
  *     "Compte parent non configuré" if no User exists with matching email)
  *
  * This service fixes that by auto-creating a User account (role=PARENT,
- * passwordHash=null — login via phone OTP) for any guardian that doesn't
- * have one yet, and back-filling guardian.userId.
+ * passwordHash = mot de passe SIMPLE généré — cf. generateSimplePassword) for
+ * any guardian that doesn't have one yet, and back-filling guardian.userId.
+ *
+ * ⭐ nov. 2026 (demande promoteur) — MOT DE PASSE OBLIGATOIRE au portail
+ *    parent : la connexion se fait désormais par (téléphone OU email) + mot
+ *    de passe. Les mots de passe générés sont simples à garder pour les
+ *    parents : un petit mot courant + 2 ou 3 chiffres (ex : « soleil42 »,
+ *    « fleur205 »). Ils sont communiqués au parent par SMS/email lors de
+ *    l'envoi des identifiants (ParentAccountNotificationService) — régénérés
+ *    à chaque envoi (jamais stockés en clair : bcrypt uniquement).
  *
  * ⭐ When it's called:
  *   - Lazily: when a teacher wants to start a chat with a guardian
@@ -42,7 +50,22 @@
 
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../database/prisma.service';
+
+/**
+ * ⭐ nov. 2026 (demande promoteur) — mots de passe parents SIMPLES :
+ * « un petit mot avec quelques chiffres, deux ou trois chiffres au plus ».
+ * Mots courants sans accent (compatibles GSM-7 pour l'envoi par SMS).
+ */
+const SIMPLE_PASSWORD_WORDS = [
+  'soleil', 'fleur', 'etoile', 'maison', 'citron', 'mangue', 'banane',
+  'orange', 'cerise', 'raisin', 'melon', 'girafe', 'dauphin', 'tortue',
+  'hibou', 'pigeon', 'colibri', 'cascade', 'riviere', 'montagne', 'plage',
+  'sable', 'vague', 'nuage', 'pluie', 'clair', 'doux', 'paix', 'joie',
+  'famille', 'ecole', 'livre', 'crayon', 'couleur', 'musique', 'chanson',
+  'danse', 'fete', 'cadeau', 'bonbon', 'gateau', 'miel', 'lait', 'riz',
+];
 
 @Injectable()
 export class ParentUserProvisioningService {
@@ -51,16 +74,35 @@ export class ParentUserProvisioningService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
+   * ⭐ nov. 2026 — Génère un mot de passe parent simple : petit mot courant
+   * (5-8 lettres, sans accent) + 2 ou 3 chiffres. Exemples : soleil42,
+   * fleur205, maison718.
+   */
+  static generateSimplePassword(): string {
+    const word = SIMPLE_PASSWORD_WORDS[Math.floor(Math.random() * SIMPLE_PASSWORD_WORDS.length)];
+    const digitCount = Math.floor(Math.random() * 2) + 2; // 2 ou 3 chiffres — pas plus
+    const min = digitCount === 2 ? 10 : 100;
+    const max = digitCount === 2 ? 100 : 1000;
+    const digits = Math.floor(Math.random() * (max - min)) + min;
+    return `${word}${digits}`;
+  }
+
+  /**
    * Ensures a User account exists for the given guardian. If the guardian
    * already has a linked userId, returns it. Otherwise:
    *   1. Looks up an existing User by email (in case a User was created
    *      out-of-band with the same email)
-   *   2. If none, creates a new User with role=PARENT, passwordHash=null
+   *   2. If none, creates a new User with role=PARENT and a SIMPLE generated
+   *      password (bcrypt-hashed) — ⭐ nov. 2026 : le portail parent exige
+   *      désormais un mot de passe (téléphone/email + mot de passe).
    *   3. Back-fills guardian.userId
    *
-   * @returns { userId, created } where created=true if a new User was created.
+   * @returns { userId, created, password? } where created=true if a new User
+   * was created (password = mot de passe en clair SEULEMENT à la création —
+   * pour les autres chemins d'appel qui n'envoient pas d'identifiants, il
+   * sera communiqué plus tard via regeneratePasswordForGuardian).
    */
-  async ensureUserForGuardian(guardianId: string): Promise<{ userId: string; created: boolean }> {
+  async ensureUserForGuardian(guardianId: string): Promise<{ userId: string; created: boolean; password?: string }> {
     if (!guardianId) {
       throw new NotFoundException('guardianId is required');
     }
@@ -93,10 +135,13 @@ export class ParentUserProvisioningService {
       });
     }
 
-    // 4. If no User found, create one
+    // 4. If no User found, create one — ⭐ nov. 2026 : AVEC un mot de passe
+    //    simple généré (le portail parent exige désormais un mot de passe).
     let created = false;
+    let createdPassword: string | undefined;
     if (!user) {
       const email = normalizedEmail || `guardian-${guardian.id}@no-email.local`;
+      createdPassword = ParentUserProvisioningService.generateSimplePassword();
       try {
         user = await this.prisma.user.create({
           data: {
@@ -107,11 +152,11 @@ export class ParentUserProvisioningService {
             lastName: guardian.lastName,
             role: 'PARENT',
             status: 'active',
-            passwordHash: null, // Login via phone OTP — no password
+            passwordHash: await bcrypt.hash(createdPassword, 10), // ⭐ mot de passe simple obligatoire
           },
         });
         created = true;
-        this.logger.log(`Created PARENT User ${user.id} for guardian ${guardian.id} (tenant ${guardian.tenantId})`);
+        this.logger.log(`Created PARENT User ${user.id} for guardian ${guardian.id} (tenant ${guardian.tenantId}) — with simple password`);
       } catch (err: any) {
         // Handle race condition: another request created the User in parallel
         if (err.code === 'P2002' && normalizedEmail) {
@@ -156,7 +201,59 @@ export class ParentUserProvisioningService {
       data: { userId: user.id },
     });
 
-    return { userId: user.id, created };
+    return { userId: user.id, created, ...(created && createdPassword ? { password: createdPassword } : {}) };
+  }
+
+  /**
+   * ⭐ nov. 2026 (demande promoteur — mots de passe OBLIGATOIRES au portail
+   * parent) : (re)génère le mot de passe SIMPLE du compte parent d'un
+   * responsable, à destination de l'envoi des identifiants.
+   *
+   * Règles :
+   *   - Compte inexistant  → créé AVEC un mot de passe simple (retourné).
+   *   - Compte PARENT      → mot de passe RÉGÉNÉRÉ (les identifiants envoyés
+   *                          sont toujours auto-porteurs : mot de passe valide).
+   *   - Compte staff partagé (role ≠ PARENT — ex. enseignant également parent
+   *     d'un élève) → mot de passe JAMAIS écrasé (il connaît déjà le sien) :
+   *                          password=null → « utilisez votre mot de passe
+   *                          habituel » dans les messages.
+   *
+   * @returns { userId, password } — password en clair UNIQUEMENT pour l'envoi
+   * immédiat au parent (jamais stocké en clair en base : bcrypt uniquement).
+   */
+  async regeneratePasswordForGuardian(guardianId: string): Promise<{ userId: string; password: string | null }> {
+    if (!guardianId) {
+      throw new NotFoundException('guardianId is required');
+    }
+
+    // 1. Garantir que le compte existe (créé avec mot de passe si besoin)
+    const ensured = await this.ensureUserForGuardian(guardianId);
+    if (ensured.password) {
+      return { userId: ensured.userId, password: ensured.password };
+    }
+
+    // 2. Compte déjà existant : ne JAMAIS écraser le mot de passe d'un compte
+    //    staff partagé (enseignant/directeur également parent d'un élève).
+    const user = await this.prisma.user.findUnique({
+      where: { id: ensured.userId },
+      select: { id: true, role: true },
+    });
+    if (user && user.role !== 'PARENT') {
+      this.logger.warn(
+        `User ${user.id} (role=${user.role}) lié au guardian ${guardianId} — mot de passe NON régénéré (compte staff partagé, il utilise son mot de passe habituel)`,
+      );
+      return { userId: user.id, password: null };
+    }
+
+    // 3. Compte PARENT → régénérer un mot de passe simple (les identifiants
+    //    renvoyés sont toujours auto-porteurs : ce mot de passe est VALIDE).
+    const password = ParentUserProvisioningService.generateSimplePassword();
+    await this.prisma.user.update({
+      where: { id: ensured.userId },
+      data: { passwordHash: await bcrypt.hash(password, 10) },
+    });
+    this.logger.log(`Mot de passe parent régénéré pour le guardian ${guardianId} (user ${ensured.userId})`);
+    return { userId: ensured.userId, password };
   }
 
   /**

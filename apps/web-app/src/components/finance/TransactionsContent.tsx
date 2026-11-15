@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Plus, Download, Eye, Smartphone, Calendar, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight, MoreHorizontal, Layers, Coins } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useL } from '@/lib/i18n/bilingual';
-import { WhatsAppIcon, GmailIcon, HelmConnectIcon } from './OfficialIcons';
+import { WhatsAppIcon, GmailIcon, HelmConnectIcon, SmsIcon } from './OfficialIcons';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -515,6 +515,26 @@ export default function TransactionsContent() {
                           title="Envoyer par email"
                         >
                           <GmailIcon className="w-3.5 h-3.5" />
+                        </Button>
+                        {/* ⭐ 15/11/2026 (retour promoteur — tous les canaux) :
+                            SMS via Termii (reçu court) aux côtés d'Email,
+                            WhatsApp et Helm Connect. */}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
+                          onClick={async () => {
+                            try {
+                              const r = await financeService.resendReceipt(t.id, ['sms']);
+                              const s = r?.channels?.sms;
+                              if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.reason || s.error || 'Aucun téléphone parent', variant: 'destructive' });
+                              else if (s?.status === 'failed') toast({ title: 'Échec d\'envoi SMS', description: s.error || 'Échec de l\'envoi SMS (vérifiez la configuration Termii : SMS_PROVIDER=termii + TERMII_API_KEY)', variant: 'destructive' });
+                              else toast({ title: 'Reçu envoyé', description: `SMS envoyé${s?.to ? ` à ${s.to}` : ''}` });
+                            } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
+                          }}
+                          title="Envoyer par SMS (Termii)"
+                        >
+                          <SmsIcon className="w-3.5 h-3.5" />
                         </Button>
                         {/* ⭐ 2026-09-16 — WhatsApp RÉACTIVÉ (demande promoteur) : dropdown
                             avec 2 options (lien wa.me + envoi API auto), même pattern que

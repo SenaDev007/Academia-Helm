@@ -640,8 +640,10 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     } else if (account.portal === 'teacher') {
       setTeacherCredentials((prev) => ({ ...prev, teacherIdentifier: account.identifier, password: account.password }));
     } else if (account.portal === 'parent') {
-      // Portail parent : connexion directe par téléphone (le mot de passe est
-      // optionnel et ignoré en mode téléphone) — on remplit le numéro.
+      // ⭐ nov. 2026 — Portail parent : téléphone/email + MOT DE PASSE
+      //    (obligatoire). Le mot de passe réel est généré à l'envoi des
+      //    identifiants (Familles → Création de compte → Renvoyer) — on ne
+      //    préremplit que l'identifiant, le parent saisit son mot de passe.
       setParentCredentials((prev) => ({ ...prev, phone: account.identifier, otp: '' }));
     }
   }, []);
@@ -1570,22 +1572,25 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     }
 
     // ── Étape 1 : connexion directe (sans OTP par défaut) ──
-    // On envoie l'identifiant (+ mot de passe optionnel si mode email).
-    // Le backend répond soit avec un token (connexion réussie), soit avec
-    // requiresOtp=true (si PARENT_OTP_ENABLED=true côté backend).
+    // ⭐ nov. 2026 — MOT DE PASSE OBLIGATOIRE (téléphone OU email + mot de
+    //    passe) : le mot de passe simple (petit mot + 2-3 chiffres) est envoyé
+    //    au parent par SMS/email lors de la création de son compte.
+    //    Le backend répond soit avec un token (connexion réussie), soit avec
+    //    requiresOtp=true (si PARENT_OTP_ENABLED=true côté backend).
+    if (!parentCredentials.password?.trim()) {
+      throw new Error(
+        'Mot de passe requis — utilisez celui reçu par SMS ou email lors de la création de votre compte.',
+      );
+    }
     const loginPayload: Record<string, unknown> = {
       tenantId: tenantIdForApi,
       identifierType,
       portal_type: 'PARENT',
       turnstileToken: turnstileToken || undefined,
+      password: parentCredentials.password,
     };
     if (isEmailMode) {
       loginPayload.email = rawIdentifier;
-      // Le mot de passe est optionnel — il n'est envoyé que si l'utilisateur
-      // l'a rempli (couche de sécurité supplémentaire pour les parents lettrés).
-      if (parentCredentials.password) {
-        loginPayload.password = parentCredentials.password;
-      }
     } else {
       loginPayload.phone = rawIdentifier;
     }
@@ -2672,19 +2677,20 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                       <p className="mt-1 text-xs text-slate-500">
                         {isEmailIdentifier
                           ? 'Email utilisé lors de l\'inscription de votre enfant.'
-                          : 'Numéro ou email utilisé lors de l\'inscription de votre enfant.'}
+                          : 'Numéro ou email utilisé lors de l\'inscription de votre enfant — avec votre mot de passe.'}
                       </p>
                     </div>
 
-                    {/* ── Mode EMAIL + mot de passe (optionnel) ──
-                        Affiché uniquement en mode email. Le mot de passe est
-                        optionnel : si le parent en a configuré un, il peut
-                        l'utiliser comme couche de sécurité supplémentaire.
-                        Sinon, la connexion se fait juste sur l'email. */}
+                    {/* ── Mot de passe — ⭐ nov. 2026 OBLIGATOIRE (téléphone
+                        OU email + mot de passe). Affiché dans les DEUX modes,
+                        AVANT le champ OTP éventuel. Le mot de passe simple
+                        (petit mot + 2-3 chiffres, ex : soleil42) est envoyé au
+                        parent par SMS/email lors de la création de son compte
+                        (Élèves → Familles → Création de compte). */}
                     <AnimatePresence>
-                      {isEmailIdentifier && !parentOtpSent && (
+                      {!parentOtpSent && (
                         <motion.div
-                          key="parent-password-optional"
+                          key="parent-password-required"
                           initial={shouldReduceMotion ? false : { opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: 'auto' }}
                           exit={shouldReduceMotion ? undefined : { opacity: 0, height: 0 }}
@@ -2695,7 +2701,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                             htmlFor="parentPassword"
                             className="mb-1.5 block text-sm font-semibold text-slate-900"
                           >
-                            Mot de passe <span className="font-normal text-slate-400">(optionnel)</span>
+                            Mot de passe <span className="text-rose-500">*</span>
                           </label>
                           <div className="relative">
                             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
@@ -2704,6 +2710,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                             <input
                               type={showPassword ? 'text' : 'password'}
                               id="parentPassword"
+                              required
                               value={parentCredentials.password || ''}
                               onChange={(e) =>
                                 setParentCredentials({
@@ -2713,7 +2720,7 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                               }
                               className="w-full rounded-xl border-2 border-slate-200 py-2.5 pl-10 pr-10 min-h-[44px] transition-all placeholder:text-slate-400 focus:ring-2"
                               style={{ '--tw-ring-color': `${NAVY}30` } as React.CSSProperties}
-                              placeholder="•••••••• (laisser vide pour OTP)"
+                              placeholder="Mot de passe reçu par SMS/email (ex : soleil42)"
                             />
                             <button
                               type="button"
@@ -2725,8 +2732,9 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
                             </button>
                           </div>
                           <p className="mt-1 text-xs text-slate-500">
-                            Optionnel : si vous avez configuré un mot de passe, saisir
-                            ici pour sécuriser votre connexion. Sinon, laissez vide.
+                            Mot de passe simple (petit mot + quelques chiffres) reçu par SMS ou
+                            email lors de la création de votre compte. En cas d'oubli,
+                            contactez l'administration de l'école.
                           </p>
                         </motion.div>
                       )}

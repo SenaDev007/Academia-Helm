@@ -7,7 +7,7 @@ import {
   AlertCircle, CheckCircle, Shield, Lock, Smartphone, CreditCard, ShoppingCart,
   SlidersHorizontal, Zap, User, GraduationCap, Layers,
 } from 'lucide-react';
-import { WhatsAppIcon, GmailIcon, HelmConnectIcon } from './OfficialIcons';
+import { WhatsAppIcon, GmailIcon, HelmConnectIcon, SmsIcon } from './OfficialIcons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -858,6 +858,26 @@ export default function NewPaymentModal({
     window.open(financeService.getReceiptPdfUrl(receipt.id), '_blank');
   };
 
+  // ⭐ 15/11/2026 (retour promoteur — « WhatsApp est fonctionnel, on garde
+  //    WhatsApp ; il y a SMS, Helm Connect, tous les canaux ») : envoi
+  //    WhatsApp par LIEN wa.me pré-rempli (même pattern que TransactionsContent
+  //    « Envoi rapide (lien) ») — ouvre WhatsApp avec le numéro du parent et
+  //    le message du reçu pré-rempli.
+  const handleWhatsAppLink = async () => {
+    if (!receipt) return;
+    try {
+      const data = await financeService.getWhatsAppLink(receipt.id);
+      if (data?.url) {
+        window.open(data.url, '_blank', 'noopener,noreferrer');
+        toast({ title: 'WhatsApp ouvert', description: 'Cliquez sur Envoyer dans WhatsApp.' });
+      } else {
+        toast({ title: 'Pas de téléphone', description: 'Aucun numéro de parent trouvé.', variant: 'destructive' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Erreur', description: e?.message || 'Impossible de générer le lien WhatsApp.', variant: 'destructive' });
+    }
+  };
+
   const handleResendReceipt = async (channel: 'email' | 'whatsapp' | 'sms' | 'helm_connect') => {
     if (!receipt) return;
     setSendingChannel(channel);
@@ -970,18 +990,27 @@ export default function NewPaymentModal({
                 <GmailIcon className="w-3.5 h-3.5 mr-1.5" />
                 {sendingChannel === 'email' ? 'Envoi...' : 'Email'}
               </Button>
-              {/* ⭐ WhatsApp — GRAYED OUT (replaced by Helm Connect) */}
+              {/* ⭐ 15/11/2026 (retour promoteur) — TOUS LES CANAUX actifs :
+                  SMS (Termii), WhatsApp (lien wa.me), Email, Helm Connect. */}
               <Button
                 size="sm"
                 variant="outline"
-                disabled
-                className="opacity-40 cursor-not-allowed"
-                title="WhatsApp désactivé — utilisez Helm Connect"
+                onClick={() => handleResendReceipt('sms')}
+                disabled={sendingChannel === 'sms'}
+                title="SMS via Termii — reçu court avec n° et montant"
               >
-                <WhatsAppIcon className="w-3.5 h-3.5 mr-1.5 grayscale" />
+                <SmsIcon className="w-3.5 h-3.5 mr-1.5" />
+                {sendingChannel === 'sms' ? 'Envoi...' : 'SMS'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleWhatsAppLink}
+                title="WhatsApp — ouvre WhatsApp avec le message du reçu pré-rempli"
+              >
+                <WhatsAppIcon className="w-3.5 h-3.5 mr-1.5" />
                 WhatsApp
               </Button>
-              {/* ⭐ Helm Connect — REPLACES SMS */}
               <Button
                 size="sm"
                 variant="outline"

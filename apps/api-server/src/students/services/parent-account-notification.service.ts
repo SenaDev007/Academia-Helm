@@ -22,11 +22,15 @@
  *   - 'email'        — email HTML avec branding + URL du portail + identifiant
  *   - 'helm_connect' — message chat au compte parent (visible une fois
  *                      connecté — garde-fou anti « œuf et poule » du SMS)
- *   - 'whatsapp'     — conservé pour compat (non appelé par défaut)
+ *   - 'whatsapp'     — conservé pour compat (envoi API ; le bouton UI
+ *                      « WhatsApp » utilise le lien wa.me — envoi manuel)
  *
- * Le portail parent se connecte SANS mot de passe par défaut (téléphone ou
- * email, cf. portal-auth.service.ts) — les « identifiants » envoyés sont donc
- * l'URL du portail + l'identifiant du parent.
+ * ⭐ nov. 2026 (demande promoteur) — MOT DE PASSE OBLIGATOIRE : le portail
+ *    parent se connecte désormais par (téléphone OU email) + MOT DE PASSE.
+ *    Les identifiants envoyés incluent donc un mot de passe SIMPLE (petit
+ *    mot + 2-3 chiffres, ex : soleil42) — régénéré à chaque envoi par
+ *    ParentUserProvisioningService.regeneratePasswordForGuardian (sauf
+ *    compte staff partagé : password=null → « votre mot de passe habituel »).
  *
  * Règles : fire-and-forget, ne lève JAMAIS d'erreur — retourne un rapport
  * par canal (status sent/failed/skipped), pattern identique aux reçus.
@@ -44,6 +48,18 @@ import { ParentUserProvisioningService } from './parent-user-provisioning.servic
 import { renderParentAccountEmail } from '../parent-account-email-templates';
 
 export type ParentAccountChannel = 'email' | 'whatsapp' | 'sms' | 'helm_connect';
+
+/**
+ * Informations de connexion envoyées au parent — ⭐ nov. 2026 :
+ * `password` = mot de passe SIMPLE régénéré à l'envoi (null = compte staff
+ * partagé → « votre mot de passe habituel »).
+ */
+export interface ParentAccountCredentials {
+  portalUrl: string;
+  identifier: string;
+  identifierType: 'PHONE' | 'EMAIL';
+  password?: string | null;
+}
 
 export interface ParentAccountNotificationReport
   extends Record<string, { status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string } | undefined> {}
@@ -121,6 +137,10 @@ export class ParentAccountNotificationService {
     studentId?: string;
     channels: ParentAccountChannel[];
     senderUserId?: string;
+    /** ⭐ nov. 2026 — mot de passe simple (régénéré par l'appelant) inclus
+     * dans TOUS les messages. null = compte staff partagé (mot de passe
+     * habituel, non communiqué). */
+    password?: string | null;
   }): Promise<ParentAccountNotificationReport> {
     const results: ParentAccountNotificationReport = {};
 
@@ -146,8 +166,11 @@ export class ParentAccountNotificationService {
         : undefined;
       const parentName = `${guardian.firstName || ''} ${guardian.lastName || ''}`.trim() || undefined;
 
-      // 2. Informations de connexion (URL portail + identifiant)
-      const credentials = await this.buildCredentials(params.tenantId, guardian);
+      // 2. Informations de connexion (URL portail + identifiant + mot de passe)
+      const credentials: ParentAccountCredentials = {
+        ...(await this.buildCredentials(params.tenantId, guardian)),
+        password: params.password ?? null,
+      };
       if (!credentials.identifier) {
         this.logger.warn(
           `Guardian ${params.guardianId} sans téléphone NI email — identifiants non envoyables (tenant ${params.tenantId})`,
@@ -224,7 +247,7 @@ export class ParentAccountNotificationService {
     to?: string;
     parentName?: string;
     studentName?: string;
-    credentials: { portalUrl: string; identifier: string; identifierType: 'PHONE' | 'EMAIL' };
+    credentials: ParentAccountCredentials;
     branding: any;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
@@ -238,6 +261,7 @@ export class ParentAccountNotificationService {
       portalUrl: params.credentials.portalUrl,
       identifier: params.credentials.identifier,
       identifierType: params.credentials.identifierType,
+      password: params.credentials.password ?? null,
     });
 
     const result = await this.emailService.sendCategorized({
@@ -275,7 +299,7 @@ export class ParentAccountNotificationService {
     to?: string;
     parentName?: string;
     studentName?: string;
-    credentials: { portalUrl: string; identifier: string; identifierType: 'PHONE' | 'EMAIL' };
+    credentials: ParentAccountCredentials;
     branding: any;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
@@ -314,7 +338,7 @@ export class ParentAccountNotificationService {
     to?: string;
     parentName?: string;
     studentName?: string;
-    credentials: { portalUrl: string; identifier: string; identifierType: 'PHONE' | 'EMAIL' };
+    credentials: ParentAccountCredentials;
     branding: any;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     if (!params.to) {
@@ -332,7 +356,10 @@ export class ParentAccountNotificationService {
     // les caractères accentués réduisent la page à 70 — encodage GSM-7)
     const schoolName = (params.branding.schoolName || 'Etablissement').substring(0, 25);
     const identifierWord = params.credentials.identifierType === 'PHONE' ? 'votre numero' : 'votre email';
-    const message = `${schoolName}: Votre compte parent est actif. Portail: ${params.credentials.portalUrl} - Connectez-vous avec ${identifierWord} (${params.credentials.identifier}). Aucun mot de passe requis.`;
+    const passwordPart = params.credentials.password
+      ? ` - Mot de passe: ${params.credentials.password}`
+      : ' - Mot de passe: votre mot de passe habituel';
+    const message = `${schoolName}: Votre compte parent est actif. Portail: ${params.credentials.portalUrl} - Connectez-vous (onglet Parent) avec ${identifierWord} (${params.credentials.identifier})${passwordPart}.`;
 
     try {
       const result = await this.smsService.sendSMS(params.to, message);
@@ -358,7 +385,7 @@ export class ParentAccountNotificationService {
     senderUserId?: string;
     parentName?: string;
     studentName?: string;
-    credentials: { portalUrl: string; identifier: string; identifierType: 'PHONE' | 'EMAIL' };
+    credentials: ParentAccountCredentials;
     branding: any;
   }): Promise<{ status: 'sent' | 'failed' | 'skipped'; to?: string; error?: string }> {
     try {
@@ -403,9 +430,11 @@ export class ParentAccountNotificationService {
         ``,
         `<b>Adresse du portail :</b> ${escapeHtml(params.credentials.portalUrl)}`,
         `<b>${identifierLabel} :</b> ${escapeHtml(params.credentials.identifier)}`,
-        `<b>Mot de passe :</b> aucun requis — votre ${isPhone ? 'numero' : 'email'} suffit`,
+        params.credentials.password
+          ? `<b>Mot de passe :</b> <b>${escapeHtml(params.credentials.password)}</b>`
+          : `<b>Mot de passe :</b> votre mot de passe habituel`,
         ``,
-        `Ouvrez l'adresse ci-dessus, onglet « Parent », puis connectez-vous avec votre ${isPhone ? 'numero de telephone' : 'adresse email'}.`,
+        `Ouvrez l'adresse ci-dessus, onglet « Parent », puis connectez-vous avec votre ${isPhone ? 'numero de telephone' : 'adresse email'} ET votre mot de passe.`,
         ``,
         `Cordialement,`,
         `L'administration — ${escapeHtml(params.branding.schoolName || "l'établissement")}`,
@@ -458,7 +487,7 @@ export class ParentAccountNotificationService {
   private buildPlainText(
     parentName?: string,
     studentName: string | undefined,
-    credentials: { portalUrl: string; identifier: string; identifierType: 'PHONE' | 'EMAIL' },
+    credentials: ParentAccountCredentials,
     branding: any,
   ): string {
     const schoolName = branding.schoolName || "l'établissement";
@@ -472,9 +501,11 @@ export class ParentAccountNotificationService {
       ``,
       `Portail : ${credentials.portalUrl}`,
       `Identifiant : ${credentials.identifier} (${isPhone ? 'numero de telephone' : 'email'})`,
-      `Mot de passe : aucun requis.`,
+      credentials.password
+        ? `Mot de passe : ${credentials.password}`
+        : `Mot de passe : votre mot de passe habituel`,
       ``,
-      `Onglet « Parent » puis connexion avec votre ${isPhone ? 'numero' : 'email'}.`,
+      `Onglet « Parent » puis connexion avec votre ${isPhone ? 'numero' : 'email'} et votre mot de passe.`,
       ``,
       `Cordialement, l'administration — ${schoolName}`,
     ].join('\n');

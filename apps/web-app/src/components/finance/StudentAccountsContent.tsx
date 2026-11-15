@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Eye, Unlock, UserCog, Search, Download, Receipt, Clock, FileSpreadsheet, FileText, Loader2, ChevronLeft, ChevronRight, MoreHorizontal, Users, Wallet, TrendingUp, AlertCircle, Pencil, Trash2, Plus } from 'lucide-react';
-import { WhatsAppIcon, GmailIcon, SmsIcon } from './OfficialIcons';
+import { WhatsAppIcon, GmailIcon, SmsIcon, HelmConnectIcon } from './OfficialIcons';
 import DocumentPreviewModal from '@/components/students/DocumentPreviewModal';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -1331,6 +1331,26 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
                               title="Envoyer par SMS"
                             >
                               <SmsIcon className="w-3.5 h-3.5" />
+                            </Button>
+                            {/* ⭐ 15/11/2026 (retour promoteur — tous les canaux) :
+                                Helm Connect — reçu PDF + libellé WhatsApp au chat
+                                du compte parent (même mécanisme que
+                                TransactionsContent). */}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 hover:bg-blue-100 hover:shadow-sm transition-all duration-150"
+                              onClick={async () => {
+                                try {
+                                  const r = await financeService.resendReceipt(t.id, ['helm_connect']);
+                                  const s = r?.channels?.helm_connect;
+                                  if (s?.status === 'skipped') toast({ title: 'Contact manquant', description: s.error || 'Aucun parent lié à cet élève', variant: 'destructive' }); else if (s?.status === 'failed') toast({ title: 'Échec d envoi', description: s.error || 'Échec de l envoi', variant: 'destructive' });
+                                  else toast({ title: 'Reçu envoyé', description: `Helm Connect envoyé au parent${s?.to ? ` (conv ${s.to.substring(0, 8)}...)` : ''}` });
+                                } catch (e: any) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
+                              }}
+                              title="Envoyer par Helm Connect"
+                            >
+                              <HelmConnectIcon className="w-3.5 h-3.5" />
                             </Button>
                             {/* ⭐ PROMOTEUR uniquement : éditer / supprimer l'encaissement
                                 (alignement sur les documents papier de l'école).

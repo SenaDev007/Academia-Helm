@@ -24,7 +24,7 @@ import { motion } from 'framer-motion';
 import {
   Loader2, Download, CheckCircle2, Search, Layers, Sparkles, Wallet,
 } from 'lucide-react';
-import { WhatsAppIcon, GmailIcon, HelmConnectIcon } from './OfficialIcons';
+import { WhatsAppIcon, GmailIcon, HelmConnectIcon, SmsIcon } from './OfficialIcons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -327,6 +327,25 @@ export default function GeneralFeePaymentModal({
     window.open(financeService.getReceiptPdfUrl(receipt.id), '_blank');
   };
 
+  // ⭐ 15/11/2026 (retour promoteur — « WhatsApp est fonctionnel, on garde
+  //    WhatsApp ; il y a SMS, Helm Connect, tous les canaux ») : envoi
+  //    WhatsApp par LIEN wa.me pré-rempli (même pattern que TransactionsContent
+  //    « Envoi rapide (lien) » et NewPaymentModal).
+  const handleWhatsAppLink = async () => {
+    if (!receipt) return;
+    try {
+      const data = await financeService.getWhatsAppLink(receipt.id);
+      if (data?.url) {
+        window.open(data.url, '_blank', 'noopener,noreferrer');
+        toast({ title: L('WhatsApp ouvert', 'WhatsApp opened'), description: L('Cliquez sur Envoyer dans WhatsApp.', 'Click Send in WhatsApp.') });
+      } else {
+        toast({ title: L('Pas de téléphone', 'No phone number'), description: L('Aucun numéro de parent trouvé.', 'No parent phone number found.'), variant: 'destructive' });
+      }
+    } catch (e: any) {
+      toast({ title: L('Erreur', 'Error'), description: e?.message || L('Impossible de générer le lien WhatsApp.', 'Could not generate WhatsApp link.'), variant: 'destructive' });
+    }
+  };
+
   const handleResendReceipt = async (channel: 'email' | 'whatsapp' | 'sms' | 'helm_connect') => {
     if (!receipt) return;
     setSendingChannel(channel);
@@ -409,8 +428,25 @@ export default function GeneralFeePaymentModal({
                 <GmailIcon className="w-3.5 h-3.5 mr-1.5" />
                 {sendingChannel === 'email' ? L('Envoi...', 'Sending...') : 'Email'}
               </Button>
-              <Button size="sm" variant="outline" disabled className="opacity-40 cursor-not-allowed" title={L('WhatsApp désactivé — utilisez Helm Connect', 'WhatsApp disabled — use Helm Connect')}>
-                <WhatsAppIcon className="w-3.5 h-3.5 mr-1.5 grayscale" />
+              {/* ⭐ 15/11/2026 (retour promoteur) — TOUS LES CANAUX actifs :
+                  SMS (Termii), WhatsApp (lien wa.me), Email, Helm Connect. */}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleResendReceipt('sms')}
+                disabled={sendingChannel === 'sms'}
+                title={L('SMS via Termii — reçu court avec n° et montant', 'SMS via Termii — short receipt with number and amount')}
+              >
+                <SmsIcon className="w-3.5 h-3.5 mr-1.5" />
+                {sendingChannel === 'sms' ? L('Envoi...', 'Sending...') : 'SMS'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleWhatsAppLink}
+                title={L('WhatsApp — ouvre WhatsApp avec le message du reçu pré-rempli', 'WhatsApp — opens WhatsApp with the pre-filled receipt message')}
+              >
+                <WhatsAppIcon className="w-3.5 h-3.5 mr-1.5" />
                 WhatsApp
               </Button>
               <Button size="sm" variant="outline" onClick={() => handleResendReceipt('helm_connect')} disabled={sendingChannel === 'helm_connect'}>

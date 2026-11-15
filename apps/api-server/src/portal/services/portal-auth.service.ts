@@ -567,14 +567,14 @@ export class PortalAuthService {
   }
 
   /**
-   * Connexion parent par téléphone — sans OTP si PARENT_OTP_ENABLED=false (défaut).
+   * Connexion parent par téléphone — ⭐ nov. 2026 (demande promoteur) :
+   * MOT DE PASSE OBLIGATOIRE (numéro + mot de passe) quand l'OTP est
+   * désactivé (PARENT_OTP_ENABLED=false, défaut). Le mot de passe SIMPLE
+   * (petit mot + 2-3 chiffres) est communiqué au parent par SMS/email lors
+   * de l'envoi de ses identifiants (ParentAccountNotificationService).
    *
-   * Si OTP désactivé (par défaut, réalité béninoise) :
-   *   - Si le guardian est trouvé par téléphone ET a un User actif → connexion immédiate
-   *   - Sinon → erreur "Numéro non trouvé" ou "Compte non configuré"
-   *
-   * Si OTP activé (PARENT_OTP_ENABLED=true) :
-   *   - Comportement historique : génération + envoi SMS + vérification
+   * Si OTP activé (PARENT_OTP_ENABLED=true) : comportement historique avec
+   * envoi + vérification OTP (le mot de passe n'est pas exigé).
    */
   private async loginParentByPhone(
     dto: ParentPortalLoginDto,
@@ -602,16 +602,28 @@ export class PortalAuthService {
     // guardian.userId d'abord (compte créé à l'inscription), puis email.
     const user = await this.resolveParentUser(guardian, tenantId);
 
-    // ── Mode OTP désactivé (défaut, première version) ──
-    // On connecte directement le parent si son téléphone est dans la DB
-    // et qu'un User actif lui est associé.
+    // ── Mode OTP désactivé (défaut) — ⭐ nov. 2026 : MOT DE PASSE REQUIS ──
     if (!this.isParentOtpEnabled()) {
       if (!user) {
         throw new UnauthorizedException(
           'Compte parent non configuré. Contactez l\'administration de l\'école pour activer votre compte.',
         );
       }
-      this.logger.log(`Connexion parent (sans OTP) — guardian ${guardian.id}, user ${user.id}, phone ${dto.phone}`);
+      if (!dto.password || !dto.password.trim()) {
+        throw new UnauthorizedException(
+          'Mot de passe requis. Utilisez le mot de passe reçu par SMS ou email lors de la création de votre compte.',
+        );
+      }
+      if (!user.passwordHash) {
+        throw new UnauthorizedException(
+          'Aucun mot de passe n\'a encore été envoyé pour ce compte. Contactez l\'administration de l\'école pour recevoir vos identifiants.',
+        );
+      }
+      const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
+      if (!isPasswordValid) {
+        throw new UnauthorizedException('Identifiants invalides — vérifiez votre numéro et votre mot de passe');
+      }
+      this.logger.log(`Connexion parent (téléphone + mot de passe) — guardian ${guardian.id}, user ${user.id}, phone ${dto.phone}`);
       return this.finalizeParentLogin(user, guardian, tenantId, PortalType.PARENT, ipAddress, userAgent);
     }
 
@@ -654,12 +666,10 @@ export class PortalAuthService {
   }
 
   /**
-   * Connexion parent par email — sans OTP si PARENT_OTP_ENABLED=false (défaut).
-   *
-   * Si OTP désactivé :
-   *   - Si le guardian est trouvé par email ET a un User actif → connexion immédiate
-   *   - Si un mot de passe est fourni, on le vérifie (couche supplémentaire
-   *     pour les parents lettrés qui ont configuré un mot de passe)
+   * Connexion parent par email — ⭐ nov. 2026 (demande promoteur) : MOT DE
+   * PASSE OBLIGATOIRE (email + mot de passe) quand l'OTP est désactivé
+   * (défaut). Le mot de passe SIMPLE est communiqué au parent par SMS/email
+   * lors de l'envoi de ses identifiants.
    *
    * Si OTP activé :
    *   - Mode 1 : EMAIL + password (1 étape)
@@ -697,22 +707,23 @@ export class PortalAuthService {
       throw new UnauthorizedException('Compte parent non configuré pour cet email');
     }
 
-    // ── Mode OTP désactivé (défaut) ──
-    // Connexion directe, éventuellement sécurisée par mot de passe si fourni.
+    // ── Mode OTP désactivé (défaut) — ⭐ nov. 2026 : MOT DE PASSE REQUIS ──
     if (!this.isParentOtpEnabled()) {
-      // Si un mot de passe est fourni, on le vérifie (couche supplémentaire
-      // de sécurité optionnelle pour les parents qui en ont configuré un).
-      if (dto.password) {
-        if (!user.passwordHash) {
-          throw new UnauthorizedException('Mot de passe non configuré. Laissez le champ vide pour vous connecter sans mot de passe.');
-        }
-        const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
-        if (!isPasswordValid) {
-          throw new UnauthorizedException('Identifiants invalides');
-        }
+      if (!dto.password || !dto.password.trim()) {
+        throw new UnauthorizedException(
+          'Mot de passe requis. Utilisez le mot de passe reçu par SMS ou email lors de la création de votre compte.',
+        );
       }
-      // Si pas de mot de passe fourni → connexion directe (comme pour le téléphone)
-      this.logger.log(`Connexion parent (sans OTP) — guardian ${guardian.id}, user ${user.id}, email ${normalizedEmail}`);
+      if (!user.passwordHash) {
+        throw new UnauthorizedException(
+          'Aucun mot de passe n\'a encore été envoyé pour ce compte. Contactez l\'administration de l\'école pour recevoir vos identifiants.',
+        );
+      }
+      const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
+      if (!isPasswordValid) {
+        throw new UnauthorizedException('Identifiants invalides — vérifiez votre email et votre mot de passe');
+      }
+      this.logger.log(`Connexion parent (email + mot de passe) — guardian ${guardian.id}, user ${user.id}, email ${normalizedEmail}`);
       return this.finalizeParentLogin(user, guardian, tenantId, PortalType.PARENT, ipAddress, userAgent);
     }
 

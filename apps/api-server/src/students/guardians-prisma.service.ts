@@ -114,22 +114,32 @@ export class GuardiansPrismaService {
         );
       }
 
-      // ⭐ nov. 2026 (demande promoteur « envoyer les identifiants exactement
-      //    comme le modal d'encaissement du module Finance ») : envoi des
-      //    informations de connexion par SMS + email + Helm Connect.
-      //    ⭐ 15/11/2026 — SMS EN PREMIER (Termii) : le parent sans email ne
-      //    peut pas recevoir l'email, et Helm Connect suppose déjà un compte
-      //    connecté — le SMS est le seul canal AVANT toute connexion. Si le
-      //    service SMS n'est pas configuré, le canal est « skipped » avec un
-      //    message explicite (jamais de faux succès).
+      // ⭐ nov. 2026 (demande promoteur « envoyer les identifiants ») : envoi
+      //    des informations de connexion (portail + identifiant + MOT DE PASSE
+      //    SIMPLE — obligatoire depuis nov. 2026).
+      //    Canaux « SMS + email » (le SMS via Termii est le premier canal : le
+      //    parent sans email ne peut rien recevoir par email ; Helm Connect
+      //    suppose déjà un compte connecté — inutile AVANT la 1re connexion).
+      //    Si le service SMS n'est pas configuré, le canal est « skipped » avec
+      //    un message explicite (jamais de faux succès).
       if (data.sendCredentials === true && parentAccount) {
         try {
+          // ⭐ Mot de passe simple (régénéré à chaque envoi — auto-porteur)
+          const passwordResult = await this.parentProvisioningService
+            .regeneratePasswordForGuardian(guardian.id)
+            .catch((pwErr: any) => {
+              this.logger.warn(
+                `Mot de passe parent non régénéré pour le guardian ${guardian.id} (non bloquant): ${pwErr?.message || pwErr}`,
+              );
+              return null;
+            });
           const notification = await this.parentAccountNotificationService.sendAccountCredentials({
             tenantId: data.tenantId,
             guardianId: guardian.id,
             studentId: data.studentId,
-            channels: ['sms', 'email', 'helm_connect'],
+            channels: ['sms', 'email'],
             senderUserId: data.senderUserId,
+            password: passwordResult?.password ?? null,
           });
           // ⭐ Rapport par canal renvoyé au wizard (toast « envoyés par … »
           //    exact) — conservé sur parentAccount.notification
@@ -170,7 +180,11 @@ export class GuardiansPrismaService {
    * « Création de compte » : crée (ou garantit) le compte parent pour un
    * responsable qui n'en avait pas (wizard avec étape skippée), et envoie
    * les informations de connexion au parent par les canaux demandés
-   * (défaut email + Helm Connect — pattern modal d'encaissement).
+   * (défaut SMS + email + Helm Connect — pattern modal d'encaissement).
+   *
+   * ⭐ nov. 2026 — MOT DE PASSE : les identifiants incluent un mot de passe
+   * SIMPLE régénéré à chaque envoi (le portail parent exige désormais un mot
+   * de passe : téléphone/email + mot de passe).
    *
    * Idempotent : si le guardian a déjà un User, aucun nouveau compte n'est
    * créé (created=false) mais les identifiants peuvent être renvoyés.
@@ -212,22 +226,36 @@ export class GuardiansPrismaService {
     }
 
     // 3. Informations de connexion (URL portail + identifiant)
-    const credentials = await this.parentAccountNotificationService.buildCredentials(
+    const credentials: any = await this.parentAccountNotificationService.buildCredentials(
       params.tenantId,
       link.guardian,
     );
 
     // 4. Envoyer les identifiants (défaut true — « on lui envoie les
-    //    informations de connexion » ; renvoyables à volonté)
-    //    ⭐ 15/11/2026 — SMS (Termii) en premier canal, cf. createGuardianForStudent.
+    //    informations de connexion » ; renvoyables à volonté).
+    //    ⭐ nov. 2026 — le MOT DE PASSE est OBLIGATOIRE : régénéré à CHAQUE
+    //    envoi (les identifiants transmis sont toujours auto-porteurs).
     let notification: Record<string, any> = {};
     if (params.sendCredentials !== false) {
+      let password: string | null = null;
+      try {
+        const passwordResult = await this.parentProvisioningService
+          .regeneratePasswordForGuardian(params.guardianId);
+        password = passwordResult?.password ?? null;
+        account = account ?? { userId: passwordResult.userId, created: false };
+      } catch (pwErr: any) {
+        this.logger.warn(
+          `Mot de passe non régénéré pour le guardian ${params.guardianId} (envoi sans mot de passe): ${pwErr?.message || pwErr}`,
+        );
+      }
+      credentials.password = password;
       notification = await this.parentAccountNotificationService.sendAccountCredentials({
         tenantId: params.tenantId,
         guardianId: params.guardianId,
         studentId: params.studentId,
         channels: params.channels?.length ? params.channels : ['sms', 'email', 'helm_connect'],
         senderUserId: params.senderUserId,
+        password,
       });
     }
 
@@ -238,6 +266,140 @@ export class GuardiansPrismaService {
       credentials,
       notification,
     };
+  }
+
+  /**
+   * ⭐ nov. 2026 (demande promoteur — « une vingtaine de parents sans compte,
+   * il faut pouvoir tout faire d'un coup au lieu d'un par un ») — GÉNÉRATION
+   * MULTIPLE des comptes parents :
+   *   - action='create'  : crée les comptes des responsables SANS compte et
+   *                        leur envoie les identifiants (SMS + email +
+   *                        Helm Connect) — les responsables déjà dotés d'un
+   *                        compte sont ignorés (skipped).
+   *   - action='resend'  : renvoie les identifiants (mot de passe régénéré)
+   *                        aux responsables AVEC compte — les sans-compte
+   *                        sont ignorés (skipped).
+   *
+   * Traitement en petit pool de concurrence (3) pour ne pas sérialiser 20
+   * envois multi-canaux ; rapport détaillé par responsable + synthèse.
+   */
+  async bulkProvisionParentAccounts(params: {
+    tenantId: string;
+    guardianIds: string[];
+    action: 'create' | 'resend';
+    senderUserId?: string;
+  }) {
+    const uniqueIds = [...new Set((params.guardianIds || []).filter(Boolean))].slice(0, 100); // garde-fou
+    if (uniqueIds.length === 0) {
+      return { results: [], summary: { total: 0, created: 0, sent: 0, failed: 0, skipped: 0 } };
+    }
+
+    const results: any[] = [];
+    const queue = [...uniqueIds];
+
+    const processOne = async (guardianId: string) => {
+      // Contexte du responsable (nom + un élève lié pour l'appel unitaire)
+      const guardian = await this.prisma.guardian.findFirst({
+        where: { id: guardianId, tenantId: params.tenantId },
+        include: {
+          studentGuardians: {
+            take: 1,
+            orderBy: [{ isPrimary: 'desc' }],
+            include: { student: { select: { id: true, firstName: true, lastName: true } } },
+          },
+        },
+      });
+      const guardianName = guardian
+        ? `${guardian.firstName || ''} ${guardian.lastName || ''}`.trim()
+        : guardianId;
+      const studentName = guardian?.studentGuardians?.[0]?.student
+        ? `${guardian.studentGuardians[0].student.firstName} ${guardian.studentGuardians[0].student.lastName}`
+        : undefined;
+
+      if (!guardian) {
+        return { guardianId, guardianName, studentName, status: 'skipped', message: 'Responsable introuvable' };
+      }
+      if (params.action === 'create' && guardian.userId) {
+        return { guardianId, guardianName, studentName, status: 'skipped', message: 'Compte déjà existant' };
+      }
+      if (params.action === 'resend' && !guardian.userId) {
+        return { guardianId, guardianName, studentName, status: 'skipped', message: 'Aucun compte — à créer d\u2019abord' };
+      }
+      const studentId = guardian.studentGuardians?.[0]?.studentId;
+      if (!studentId) {
+        return { guardianId, guardianName, studentName: undefined, status: 'skipped', message: 'Aucun élève lié à ce responsable' };
+      }
+
+      const r = await this.provisionParentAccount({
+        tenantId: params.tenantId,
+        studentId,
+        guardianId,
+        createAccount: params.action === 'create',
+        sendCredentials: true,
+        senderUserId: params.senderUserId,
+      });
+
+      const notif: Record<string, any> = r?.notification ?? {};
+      const sentChannels = Object.entries(notif)
+        .filter(([ch, rr]) => ch !== 'error' && (rr as any)?.status === 'sent')
+        .map(([ch]) => ch);
+      const failedChannels = Object.entries(notif)
+        .filter(([ch, rr]) => ch !== 'error' && (rr as any)?.status === 'failed')
+        .map(([ch]) => ch);
+      const status = sentChannels.length > 0
+        ? 'sent'
+        : failedChannels.length > 0
+          ? 'failed'
+          : 'skipped';
+      const message = sentChannels.length > 0
+        ? `Identifiants envoyés (${sentChannels.join(', ')})`
+        : failedChannels.length > 0
+          ? `Échec d\u2019envoi (${failedChannels.join(', ')})`
+          : 'Aucun canal disponible (contacts manquants)';
+
+      return {
+        guardianId,
+        guardianName,
+        studentName,
+        status,
+        message,
+        created: r?.account?.created === true,
+        credentials: r?.credentials,
+        channels: notif,
+      };
+    };
+
+    // Petit pool de concurrence (3) — 20 parents ≈ quelques dizaines de secondes
+    const worker = async () => {
+      while (queue.length > 0) {
+        const guardianId = queue.shift()!;
+        try {
+          results.push(await processOne(guardianId));
+        } catch (err: any) {
+          results.push({
+            guardianId,
+            guardianName: guardianId,
+            status: 'failed',
+            message: err?.message || String(err),
+          });
+        }
+      }
+    };
+    const concurrency = Math.min(3, uniqueIds.length);
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+
+    const summary = {
+      total: uniqueIds.length,
+      created: results.filter(r => r.created === true).length,
+      sent: results.filter(r => r.status === 'sent').length,
+      failed: results.filter(r => r.status === 'failed').length,
+      skipped: results.filter(r => r.status === 'skipped').length,
+    };
+    this.logger.log(
+      `Bulk comptes parents (${params.action}) — ${summary.total} demandé(s) : ${summary.created} créé(s), ${summary.sent} envoyé(s), ${summary.failed} échec(s), ${summary.skipped} ignoré(s)`,
+    );
+
+    return { results, summary };
   }
 
   /**

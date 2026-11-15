@@ -151,6 +151,34 @@ export class ProvisionParentAccountDto {
   @IsOptional() @IsString() tenantId?: string;
 }
 
+/**
+ * ⭐ (demande promoteur, nov. 2026 — « une vingtaine de parents sans compte,
+ * il faut pouvoir tout faire d'un coup ») GÉNÉRATION MULTIPLE des comptes
+ * parents (sous-onglet « Création de compte ») :
+ *   - action='create' → crée les comptes des responsables SANS compte +
+ *     envoi des identifiants (SMS + email + Helm Connect)
+ *   - action='resend' → renvoie les identifiants (mot de passe régénéré)
+ *     aux responsables AVEC compte
+ * Endpoint : POST /students/guardians/account/bulk
+ */
+export class BulkProvisionParentAccountDto {
+  /** Identifiants des responsables (guardians) à traiter. */
+  @IsArray()
+  @IsString({ each: true })
+  guardianIds: string[];
+
+  /**
+   * 'create' (défaut) = création multiple des comptes manquants ;
+   * 'resend' = envoi multiple des identifiants des comptes existants.
+   */
+  @IsOptional()
+  @IsIn(['create', 'resend'])
+  action?: 'create' | 'resend';
+
+  /** Frontend may send tenantId — ignored */
+  @IsOptional() @IsString() tenantId?: string;
+}
+
 export class RecordAttendanceDto {
   @IsUUID() studentId: string;
   @IsUUID() academicYearId: string;

@@ -13636,3 +13636,28 @@ Stage Summary:
 - ✅ 2 ReferenceError latentes éradiquées (language, handleVisaBlur) — vérifiées par typecheck avant/après
 - ⏳ Déploiement : commit 20a60d3 prêt — token GitHub requis pour push (ou push manuel utilisateur) → vérifier ensuite /health → « 1.0.3 » puis tester registre secondaire + en-tête bulletins
 - 🔐 Rappel hygiène : rotation mot de passe Neon + token GitHub toujours en attente côté utilisateur
+
+---
+Task ID: exams-fixes-deploy-e2e-1511b
+Agent: Super Z (agent principal)
+Task: Déployer les correctifs Examens (commit 6875855) avec le token GitHub fourni, puis vérification E2E sur le tenant de tests (academia-helm.academiahelm.com, login promoteur)
+
+Work Log:
+- Token GitHub reçu et branché sur origin (sans ré-echo) ; push bcf1656..6875855 → main (fast-forward propre).
+- Validation locale avant push : type-check web-app complet (597 erreurs PRÉEXistantES de bruit toast/SignatureCanvas ; ZÉRO erreur sur les lignes/fichiers modifiés — registre/page.tsx modifié = 0 erreur, les 5 erreurs du fichier sont aux l.743/748/1055/1141/1234, hors zone de correctif) ; côté API : isSecondaryEval/isSecondaryLevel déjà sur BulletinPdfData (l.56/61) → aucun risque TS2339 ; build local impossible (prisma generate OOM-killed en sandbox sur schema 735 modèles) — risque accepté, échec Railway étant lossless.
+- DÉPLOIEMENT : API 1.0.3 en ligne à 10:08:41 UTC (uptime remis à 0, puis strictement monotone ; /api/health/db → 200 db:connected) ; web Vercel prouvé par comportement (registre ne crash plus).
+- E2E SUR TENANT DE TESTS (login promoteur via panneau « Comptes de test » du portail École) :
+  · BUG 1 ✅ : /app/exams/registre?level=SECONDAIRE&lang=FR — plus d'error boundary ; sélecteur 6e/5e/4e/3e + matière, tableau complet « REGISTRE DES NOTES — Anglais » (N°/NOM/INTERROGATION/DEVOIR/MOYENNE/RANG/APPRÉCIATION) ; zéro ReferenceError console (seul bruit partytown préexistant).
+  · BUG 2 ✅ (écran) : bulletin d'évaluation Ophélie (6e, T1, INT1) — en-tête écran « Secondary Academia Helm » + « Bèyarou, Parakou · Tél: 0195000001 » = identité école secondaire (le tenant a un profil configuré : Secondary Academia Helm / SAH / logo data-URL).
+  · BUG 2 ✅ (PDF évaluation, payload capturé puis rejoué) : « RÉPUBLIQUE DU BÉNIN / MINISTÈRE DES ENSEIGNEMENTS SECONDAIRE, DE LA FORMATION TECHNIQUE ET PROFESSIONNELLE, DE LA RECONVERSION ET DE L'INSERTION DES JEUNES / SECONDARY ACADEMIA HELM » — zéro « Maternel et Primaire ».
+  · BUG 2 ✅ (régression priorité back-end, PDF B) : payload avec identité GLOBALE dans body (ancien comportement front) → le PDF affiche QUAND MÊME l'identité secondaire → l'overlay tenant_level_identity_profiles gagne désormais (inversion overlay > body > branding prouvée).
+  · BUG 2 ✅ (PDF trimestriel consolidé, isSecondary=true) : même en-tête conforme (« BULLETIN DE NOTES DU TRIMESTRE 1 ») ; l'annuel partage le même moteur. (UI trimestriel du tenant : « Aucun bulletin » — liste vide de bulletins enregistrés, sans lien avec le correctif.)
+- Bonus vérifié : identité secondaire servie par GET /api/settings/identity/secondary (configured: true, profil complet).
+- MARQUEURS : /health disait 1.0.3 mais /api/health/db restait figé à 1.0.2 (3 occurrences dans health.controller.ts jamais alignées) → passage de TOUTES les routes à 1.0.4 (health.controller.ts l.40/66/74 + app.controller.ts) pour un marqueur unique et cohérent.
+- Preuves sauvegardées : download/e2e-preuves/ (screenshots registre + écran bulletin, PDFs évaluation Ophélie, PDF régression overlay, PDF trimestriel).
+
+Stage Summary:
+- ✅✅ Correctifs Examens DÉPLOYÉS et VÉRIFIÉS end-to-end sur le tenant de tests (registre secondaire sans crash ; en-têtes écran + PDF évaluation/trimestriel portant l'identité « école secondaire » + le ministère de l'Enseignement Secondaire).
+- ✅ Régression back-end prouvée par test adverse (identité globale dans le payload → l'overlay secondaire gagne).
+- ⏳ Commit 1.0.4 (alignement marqueurs) à pousser + vérifier /health ET /api/health/db → 1.0.4.
+- 🔐 Hygiène restante côté utilisateur : rotation mot de passe Neon + token GitHub (circulés en clair) ; suppression ancien compte Neon ; Play Store.

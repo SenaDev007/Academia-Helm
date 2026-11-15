@@ -49,9 +49,11 @@ export class StudentDossierController {
   /**
    * GET /api/students/:studentId/dossier
    * Récupère le dossier scolaire complet d'un élève
+   * ⭐ 1.0.12 — rôles élargis (DOSSIER_ROLES) : le PROMOTEUR et la SECRETAIRE
+   *    avaient un 403 sur cette route (elle alimente le dossier numérique).
    */
   @Get(':studentId/dossier')
-  @Roles('DIRECTEUR', 'DIRECTOR', 'ADMIN', 'TEACHER', 'PARENT', 'STUDENT')
+  @Roles(...DOSSIER_ROLES, 'PARENT', 'STUDENT')
   async getDossier(
     @Param('studentId') studentId: string,
     @Query('academicYearId') academicYearId?: string,

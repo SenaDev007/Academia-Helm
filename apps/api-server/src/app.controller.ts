@@ -26,7 +26,7 @@ export class AppController {
       // ⭐ 2026-11-15 — marqueur de build (audit Neon : l'ancien /health sans
       //    version rendait impossible de savoir quel build tourne en prod ;
       //    cette route ÉCLIPSE HealthController — cf. /api/health/db aussi).
-      version: '1.0.11',
+      version: '1.0.12',
       service: 'Academia Helm API',
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),

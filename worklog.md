@@ -13828,3 +13828,47 @@ Stage Summary:
 - 🔴 NOUVEAU BLOCAGE UTILISATEUR : portefeuille Termii VIDE (402 « Please top up your wallet ») → AUCUN SMS ne peut partir, quelque soit la route → recharger le compte Termii (puis toujours demander l'activation de la route DND BJ — le repli generic reste un filet).
 - ⚠️ LEÇON : Vercel n' éploie QUE les commits de l'auteur reconnu — commiter en config repo (SenaDev007), jamais z@container.
 - 🔐 Hygiène : révoquer le token GitHub fourni en chat après usage ; rotation DSN Neon toujours recommandée.
+
+Task: 109 — Bug 4 (retour promoteur 16/11) : « module Élèves & Scolarité → Inscriptions — à l'étape 3 les parents renseignés ne sont pas pris en compte, récap zéro parent, compte élève créé sans parent associé » (1.0.9)
+
+Work Log:
+- DIAGNOSTIC (E2E + DB — scripts check_wizard_e2e.py, recent_students_no_guardians.py, path_of_guardianless_students.py) :
+  · Reproduction E2E du flux standard (Élèves & Scolarité → Inscriptions → Nouvelle inscription) : récap « 1 parent(s) » + guardian créé + compte PARENT avec mot de passe → le wizard est sain dans ce chemin.
+  · DB (10 derniers jours) : 9 élèves SANS guardian sur le tenant réel CSPEB (15/11 12:44→20:00), TOUS créés par le MÊME wizard (StudentEnrollment ADMITTED, type NEW), en alternance avec des créations correctes (18:58/19:03/19:44 AVEC guardian) → bug réel intermittent, présent en 1.0.7 comme en 1.0.8.
+  · RACINE : divergence de définition d'un « parent saisi » — le récap (étape Validation) compte les guardians SUR LE PRÉNOM SEUL alors que la création filtre prénom && nom EN SILENCE ; validateStep3 ne validait RIEN ; l'échec du POST addGuardians était AVALÉ (catch console.warn, aucun toast). Saisir uniquement Nom+Téléphone (usage courant — « le nom du parent ») → récap « 0 parent(s) » + élève créé SANS parent, sans le moindre message ; saisir Prénom sans Nom → récap 1 mais création silencieuse 0.
+- FIX (commit 08f300a, 1.0.9) :
+  · StudentEnrollmentForm : validateStep3 BLOQUE un parent partiel (message explicite « Complétez le prénom ET le nom… »), même protection au submit, Prénom*/Nom* + hint bleu à l'étape Parents, récap comptant les parents COMPLETS + DÉTAIL des parents enregistrés (nom, lien de parenté, contact) + bandeau orange « Aucun parent ne sera enregistré » si 0.
+  · EnrollmentsContent : ajout du parent avec RETRY automatique (1×) puis toast d'erreur EXPLICITE (nom du parent + raison + rattrapage « Familles → Responsables »), comptage corrigé (les échecs ne comptent plus comme des créations), toast garde-fou « parent incomplet ignoré ».
+- DÉPLOIEMENT : Railway 08f300a ~20:21 UTC → /health 1.0.9 db connected ; Vercel livré avant l'E2E (hint + placeholders vérifiés dans le DOM).
+- E2E (tenant test — preuves download/e2e-preuves/bug4-inscription-parents/) :
+  · 01-etape3-parent-incomplet-hint.png : hint + Prénom */Nom * ; saisie partielle (Nom+Téléphone SANS prénom) → « Suivant » BLOQUÉ + message explicite.
+  · 02-recap-detail-parent.png : après complétion → récap « 1 parent(s) enregistré(s) • Mani TOKPO (Père) +22997000002 » ; soumission → DB : élève Recette2 WIZARDE2E créé (ACADEM-E-26-177), guardian Mani TOKPO lié (Père, principal), compte PARENT avec mot de passe.
+- NB : les 9 élèves CSPEB historiques restent sans guardian en DB — rattrapage manuel (Familles → Responsables).
+
+Stage Summary:
+- ✅ Bug 4 corrigé et prouvé E2E (1.0.9) : plus aucune inscription ne peut perdre un parent silencieusement (validation + récap cohérent + retry + toasts).
+- ⚠️ Rattrapage conseillé côté école : compléter les responsables des 9 élèves créés le 15/11.
+
+Task: 110 — Refonte « Élèves → Dossiers » : DOSSIER NUMÉRIQUE DE L'ÉLÈVE unifié (7 sections) + PDF complet généré backend (1.0.10 → 1.0.12)
+
+Work Log:
+- Demande promoteur (16/11) : l'onglet Dossiers dispersait tout en 10 petits onglets (identité / infos admin / responsables / scolarité / documents / carte / frais / médical / bulletins / ORION — dont bulletins+médical+ORION placeholders vides) → refonte en dossier scolaire professionnel « standard européen/us » : toutes les informations + parcours centralisés, trajectoire année par année (y compris école d'origine), notes + bulletins traçables, PDF imprimable complet généré backend.
+- EXPLORATION : StudentIdentityContent.tsx (1 136 lignes) ; student-dossier.service/controller (agrégation existante + PDF basique) ; ReportCard/ReportCardItem (overallAverage, rank, statut, filePath, items average/coefficient/rank + subject) ; StudentEnrollment (parcours réel année par année : classe officielle + physique, type NEW/REPEAT) ; Admission.previousSchool/previousLevel/changeReason (école d'origine — via convertedStudentId) ; absence/disciplinaryAction/studentDisciplinarySummary ; StudentFeeProfile.
+- FRONT (commit 2fea5af, 1.0.10) : NOUVEAU StudentDossierContent.tsx (~850 lignes) branché dans StudentIdentityContent (l'ancien StudentDashboard à 10 onglets est marqué remplacé, n'est plus rendu) :
+  · En-tête dossier navy : photo + identité + pagination ‹ › + bouton « Télécharger le dossier complet (PDF) » + bandeau clé (statut, classe actuelle, année, NPI, régime, nb responsables).
+  · SOMMAIRE par ancres + 7 sections empilées : I. Identité & administration (fusion état civil + administration) ; II. Responsables légaux (cartes + avertissement si aucun) ; III. Parcours scolaire (école d'origine si admission + table année par année + chronologie des mouvements) ; IV. Résultats & bulletins (groupés par année, carte par période : moyenne/rang/statut/PDF téléchargeable + notes par matière) ; V. Frais & paiements (4 stats + régime + 5 dernières transactions) ; VI. Assiduité & discipline (synthèses annuelles + dernières absences/incidents) ; VII. Documents & carte scolaire (pièces + IdCardVisual flip + PDF carte).
+- BACK (2fea5af) : getStudentDossier enrichi (studentEnrollments TOUTES années avec academicYear/class/academicClass/schoolLevel ; originatingAdmission → école d'origine ; guardian.address ; identity.address/photoUrl) ; generateAcademicDossierPdf RÉÉCRIT en dossier complet 7 sections (en-tête établissement, tables bordées, page-break-inside avoid, échappement HTML) avec notes par matière par bulletin ; rôles PDF élargis (DOSSIER_ROLES inclut PROMOTER/SECRETARY/TEACHER — avant : DIRECTEUR/ADMIN seulement).
+- 🔴 FIX CRITIQUE découvert en E2E (f12bbbf, 1.0.11) : la relation `quarter` N'EXISTE PLUS sur ReportCard (quarterId = ID générique sans FK) — l'ancien include `quarter: true` faisait échouer GET /students/:id/dossier ET le PDF avec un 400 PrismaClientValidationError depuis l'origine de la route (jamais consommée avant la refonte). Corrigé : include items+subject, noms de période résolus applicativement (AcademicPeriod + Quarter → periodName/periodOrder).
+- 🔴 FIX (cd6b678, 1.0.12) : rôles de GET /students/:id/dossier élargis au promoteur/secrétariat (le PROMOTEUR avait un 403 — la route alimente le dossier numérique).
+- DÉPLOIEMENTS : Railway 2fea5af ~20:30 UTC (1.0.10), f12bbbf ~20:40 (1.0.11), cd6b678 ~20:46 (1.0.12) — /api/health/db → 200 1.0.12 db connected ; Vercel livré à chaque push (auteur repo respecté).
+- E2E (tenant test — preuves download/e2e-preuves/dossier-eleve-110/) :
+  · Deep-link ?tab=dossiers&studentId=… : page unifiée rendue — sommaire I→VII, 7 sections (sec-identite → sec-documents), bouton PDF présent (01-dossier-numerique-complet.png, pleine page).
+  · Contenu vérifié dans le DOM : Papa WIZARDE2E + téléphone (II), 2026-2027 + Maternelle 1 + « Nouvel élève » (III), « Aucun bulletin enregistré » + explication (IV), régime Normal (V) — captures 02-section3-parcours.png / 03-section4-bulletins.png.
+  · GET /students/:id/dossier : 200 (enr=1, guard=1 avec adresse, admission non — élève wizard sans candidature).
+  · PDF DOSSIER COMPLET avec le compte PROMOTEUR : HTTP 200, application/pdf, 1 024 963 octets (Puppeteer, 7 sections).
+- Syntaxe : 6 fichiers validés esbuild (transform pur).
+
+Stage Summary:
+- ✅✅ Refonte Dossiers livrée et prouvée E2E (1.0.10→1.0.12) : page dossier numérique unifiée 7 sections + PDF complet backend (200 / ~1 Mo).
+- ✅ 2 bugs DORMANTS réparés au passage (route dossier 400 Prisma « quarter » + 403 rôles promoteur) — la route n'avait jamais été appelée avant la refonte.
+- 💡 La section IV (Résultats & bulletins) s'auto-remplira dès que des bulletins existent (module Examens, Notes & Bulletins) : moyenne, rang, notes par matière et PDF téléchargeable par période — sans autre développement.

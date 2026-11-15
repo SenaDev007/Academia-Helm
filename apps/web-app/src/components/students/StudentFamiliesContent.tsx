@@ -108,6 +108,12 @@ export default function StudentFamiliesContent() {
   // ⭐ 15/11/2026 (retour promoteur) — deux boutons de génération multiple :
   //    création multiple des comptes + envoi multiple des identifiants.
   const [bulkAction, setBulkAction] = useState<'create' | 'resend' | null>(null);
+  // ⭐ 15/11/2026 — toggle « comptes déjà créés » : la vue stricte (défaut,
+  //    retour promoteur) ne montre QUE les élèves dont un responsable n'a
+  //    pas encore de compte ; le toggle élargit aux élèves dont les
+  //    responsables sont tous dotés d'un compte — cibles de l'« Envoi
+  //    multiple des identifiants » une fois les comptes créés.
+  const [showCreatedAccounts, setShowCreatedAccounts] = useState(false);
   const [bulkResult, setBulkResult] = useState<{
     action: 'create' | 'resend';
     summary: { total: number; created: number; sent: number; failed: number; skipped: number };
@@ -266,11 +272,18 @@ export default function StudentFamiliesContent() {
   //    retournables dans le sous-onglet « Responsables ») ; dès qu'on leur
   //    associe un responsable, ils apparaissent ici pour créer le compte.
   // ═══════════════════════════════════════════════════════════════
-  const accountsTargetStudents = kpiStudents.filter(
-    s =>
-      (s.studentGuardians?.length || 0) > 0 &&
-      s.studentGuardians.some(sg => !sg.guardian.userId),
-  );
+  const accountsTargetStudents = kpiStudents.filter(s => {
+    const guardians = s.studentGuardians || [];
+    if (guardians.length === 0) return false; // sans responsable → statistique seule
+    if (!showCreatedAccounts) {
+      // Vue stricte (défaut, retour promoteur) : au moins un responsable
+      // sans compte → à créer.
+      return guardians.some(sg => !sg.guardian.userId);
+    }
+    // Vue élargie : tous les élèves ayant des responsables (envoi multiple
+    // des identifiants aux comptes déjà créés).
+    return true;
+  });
   const filteredAccountsStudents = !searchTerm.trim()
     ? accountsTargetStudents
     : accountsTargetStudents.filter(s => {
@@ -764,20 +777,9 @@ export default function StudentFamiliesContent() {
       {/* Cards — sous-onglet « Responsables » (CRUD existant) */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 text-blue-500 animate-spin" /></div>
-      ) : (activeSubTab === 'accounts' ? filteredAccountsStudents.length === 0 : filteredStudents.length === 0) ? (
+      ) : activeSubTab === 'guardians' && filteredStudents.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-          <Users className="w-12 h-12 mb-3 opacity-20" />
-          <p className="text-sm">
-            {activeSubTab === 'accounts'
-              ? 'Aucun responsable sans compte — tous les parents de la vue ont déjà un compte'
-              : 'Aucune famille trouvée'}
-          </p>
-          {activeSubTab === 'accounts' && (
-            <p className="text-xs mt-1 max-w-md text-center">
-              Les élèves sans responsable sont retournables dans le sous-onglet « Responsables »
-              (statistique « Sans parent ») — associez-leur un responsable et ils apparaîtront ici.
-            </p>
-          )}
+          <Users className="w-12 h-12 mb-3 opacity-20" /><p className="text-sm">Aucune famille trouvée</p>
         </div>
       ) : activeSubTab === 'guardians' ? (
         <>
@@ -913,6 +915,21 @@ export default function StudentFamiliesContent() {
           <span className="text-[10px] text-slate-400">
             {accountsTargetStudents.length} élève(s) concerné(s){searchTerm.trim() ? ' (vue filtrée)' : ''}
           </span>
+          {/* ⭐ Toggle « comptes déjà créés » — une fois les comptes créés, la
+              vue stricte se vide : ce toggle ramène les élèves dont les
+              responsables ont TOUS un compte (cibles de l'envoi multiple). */}
+          <label
+            className="ml-auto flex items-center gap-1.5 text-[10px] font-semibold text-slate-500 cursor-pointer select-none"
+            title="Afficher aussi les élèves dont tous les responsables ont déjà un compte — cibles de l'« Envoi multiple des identifiants »"
+          >
+            <input
+              type="checkbox"
+              checked={showCreatedAccounts}
+              onChange={(e) => setShowCreatedAccounts(e.target.checked)}
+              className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            Comptes déjà créés
+          </label>
         </div>
 
         {/* Bandeau de résultat de la génération multiple — détail par parent */}
@@ -961,6 +978,19 @@ export default function StudentFamiliesContent() {
           </div>
         )}
 
+        {filteredAccountsStudents.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-10 text-slate-400">
+            <UserCheck className="w-10 h-10 mb-2 opacity-30" />
+            <p className="text-sm font-medium text-slate-500">
+              Aucun responsable sans compte — tous les parents de la vue ont déjà un compte
+            </p>
+            <p className="text-xs mt-1 max-w-md text-center">
+              Les élèves sans responsable sont retournables dans le sous-onglet « Responsables »
+              (statistique « Sans parent ») — associez-leur un responsable et ils apparaîtront ici.
+              Pour renvoyer des identifiants, cochez « Comptes déjà créés ».
+            </p>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {filteredAccountsStudents.map(student => (
             <div key={student.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
@@ -1142,6 +1172,7 @@ export default function StudentFamiliesContent() {
             </div>
           ))}
         </div>
+        )}
         </>
       )}
 

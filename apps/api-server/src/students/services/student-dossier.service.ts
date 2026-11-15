@@ -103,6 +103,12 @@ export class StudentDossierService {
     });
 
     // Récupérer les bulletins
+    // ⭐ 1.0.10 FIX CRITIQUE : la relation `quarter` n'existe PLUS sur ReportCard
+    //    (quarterId = ID générique academic_period/quarter, SANS FK) — l'ancien
+    //    include `quarter: true` faisait échouer TOUTE la route
+    //    GET /students/:id/dossier (et le PDF) avec un 400
+    //    PrismaClientValidationError. Désormais : notes par matière incluses
+    //    (items + subject) et nom de période résolu applicativement.
     const reportCards = await this.prisma.reportCard.findMany({
       where: {
         studentId,
@@ -110,7 +116,10 @@ export class StudentDossierService {
       },
       include: {
         academicYear: true,
-        quarter: true,
+        items: {
+          include: { subject: true },
+          orderBy: { subject: { name: 'asc' } },
+        },
       },
       orderBy: {
         academicYear: {
@@ -118,6 +127,29 @@ export class StudentDossierService {
         },
       },
     });
+
+    // ⭐ 1.0.10 — résolution du NOM de période (AcademicPeriod ou Quarter)
+    //    pour chaque bulletin (quarterId est un ID générique sans relation).
+    const [academicPeriods, quarterNames] = await Promise.all([
+      this.prisma.academicPeriod.findMany({
+        where: { tenantId },
+        select: { id: true, name: true, periodOrder: true },
+      }),
+      this.prisma.quarter.findMany({
+        where: { tenantId },
+        select: { id: true, name: true, number: true },
+      }),
+    ]);
+    const periodByld = new Map<string, { name: string; order: number }>();
+    for (const p of academicPeriods as any[])
+      periodByld.set(p.id, { name: p.name, order: p.periodOrder ?? 0 });
+    for (const q of quarterNames as any[])
+      periodByld.set(q.id, { name: q.name, order: q.number ?? 0 });
+    for (const rc of reportCards as any[]) {
+      const p = rc.quarterId ? periodByld.get(rc.quarterId) : undefined;
+      rc.periodName = p?.name || null;
+      rc.periodOrder = p?.order ?? 0;
+    }
 
     // Récupérer les absences
     // Absence n'a pas de relation academicYear directe ni academicYearId
@@ -353,7 +385,7 @@ export class StudentDossierService {
           (rc: any) => `
         <tr>
           <td>${esc(rc.academicYear?.name || rc.academicYear?.label)}</td>
-          <td>${esc(rc.quarter?.name || rc.type)}</td>
+          <td>${esc(rc.periodName || rc.type)}</td>
           <td class="num">${rc.overallAverage != null ? Number(rc.overallAverage).toFixed(2) : '—'}</td>
           <td class="num">${rc.rank != null ? esc(rc.rank) : '—'}</td>
           <td>${esc(rcStatusLabel[rc.status] || rc.status)}</td>
@@ -361,6 +393,34 @@ export class StudentDossierService {
         )
         .join('') ||
       `<tr><td colspan="5" class="empty">Aucun bulletin enregistré</td></tr>`;
+
+    // ⭐ 1.0.10 — détail des notes par matière pour chaque bulletin (items)
+    const reportCardsSubjectsBlocks = (d.reportCards || [])
+      .filter((rc: any) => (rc.items || []).length > 0)
+      .map(
+        (rc: any) => `
+    <div class="subsection">
+      <h3>Notes par matière — ${esc(rc.academicYear?.name || rc.academicYear?.label)} · ${esc(rc.periodName || rc.type)}</h3>
+      <table>
+        <thead><tr><th>Matière</th><th class="num">Moyenne</th><th class="num">Coef.</th><th class="num">Rang</th><th>Appréciation</th></tr></thead>
+        <tbody>
+          ${(rc.items || [])
+            .map(
+              (it: any) => `
+            <tr>
+              <td>${esc(it.subject?.name || it.subject?.code || '—')}</td>
+              <td class="num"><b>${it.average != null ? Number(it.average).toFixed(2) : '—'}</b></td>
+              <td class="num">${esc(it.coefficient ?? '—')}</td>
+              <td class="num">${it.rank != null ? esc(it.rank) : '—'}</td>
+              <td>${esc(it.comments) || '—'}</td>
+            </tr>`,
+            )
+            .join('')}
+        </tbody>
+      </table>
+    </div>`,
+      )
+      .join('');
 
     const academicRecordsRows =
       (d.academicRecords || [])
@@ -592,6 +652,7 @@ export class StudentDossierService {
           <tbody>${reportCardsRows}</tbody>
         </table>
       </div>
+      ${reportCardsSubjectsBlocks}
       ${academicRecordsBlock}
     </div>
 

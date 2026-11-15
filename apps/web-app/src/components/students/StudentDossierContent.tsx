@@ -332,7 +332,7 @@ export default function StudentDossierContent({ student, academicYear, onBack, c
     .slice()
     .sort((a: any, b: any) =>
       (b.academicYear?.startDate || '').localeCompare(a.academicYear?.startDate || '') ||
-      (b.quarter?.number || 0) - (a.quarter?.number || 0),
+      (b.periodOrder || 0) - (a.periodOrder || 0),
     )
     .reduce((acc: any[], rc: any) => {
       const y = rc.academicYear?.name || rc.academicYear?.label || 'Année inconnue';
@@ -564,15 +564,32 @@ export default function StudentDossierContent({ student, academicYear, onBack, c
                         const s = RC_STATUS[rc.status] || { label: rc.status || '—', color: 'bg-slate-100 text-slate-600' };
                         return (
                           <div key={rc.id || i} className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex flex-col gap-1.5">
-                            <div className="flex items-center justify-between">
-                              <p className="text-xs font-bold text-slate-700">{rc.quarter?.name || rc.type || 'Période'}</p>
-                              <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full', s.color)}>{s.label}</span>
-                            </div>
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-bold text-slate-700">{rc.periodName || rc.type || 'Période'}</p>
+                            <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full', s.color)}>{s.label}</span>
+                          </div>
                             <div className="flex items-center gap-3 text-xs">
                               <span className="text-slate-400">Moyenne</span>
                               <span className="font-bold text-[#0d1f6e]">{rc.overallAverage != null ? Number(rc.overallAverage).toFixed(2) : '—'}/20</span>
                               {rc.rank != null && <><span className="text-slate-400">Rang</span><span className="font-bold text-slate-700">{rc.rank}</span></>}
                             </div>
+                            {/* ⭐ 1.0.10 — notes par matière (issues du bulletin) */}
+                            {rc.items?.length > 0 && (
+                              <div className="mt-1 pt-1.5 border-t border-slate-200/70">
+                                <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Notes par matière</p>
+                                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                                  {rc.items.slice(0, 10).map((it: any, k: number) => (
+                                    <div key={it.id || k} className="flex items-baseline justify-between gap-1 text-[10px]">
+                                      <span className="text-slate-500 truncate">{it.subject?.name || '—'}</span>
+                                      <span className="font-semibold text-slate-700 shrink-0">{it.average != null ? Number(it.average).toFixed(2) : '—'}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                {rc.items.length > 10 && (
+                                  <p className="text-[9px] text-slate-400 mt-1">+{rc.items.length - 10} autres matières — détail complet dans le dossier PDF</p>
+                                )}
+                              </div>
+                            )}
                             {rc.filePath ? (
                               <a href={rc.filePath} target="_blank" rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 hover:text-blue-900 mt-0.5">

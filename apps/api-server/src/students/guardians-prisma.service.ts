@@ -243,7 +243,16 @@ export class GuardiansPrismaService {
         const passwordResult = await this.parentProvisioningService
           .regeneratePasswordForGuardian(params.guardianId);
         password = passwordResult?.password ?? null;
-        account = account ?? { userId: passwordResult.userId, created: false };
+        // ⭐ 16/11/2026 (fix 1.0.8) — SPLIT : si le guardian était lié à un
+        //    compte staff, regeneratePasswordForGuardian a créé un compte
+        //    PARENT dédié et RE-LIÉ guardian.userId → on synchronise `account`
+        //    (l'objet `link.guardian` chargé avant l'appel est obsolète) et on
+        //    signale created=true (le bandeau UI dit « Compte parent créé »).
+        if (passwordResult?.userId && (!account || account.userId !== passwordResult.userId)) {
+          account = { userId: passwordResult.userId, created: true };
+        } else {
+          account = account ?? { userId: passwordResult.userId, created: false };
+        }
       } catch (pwErr: any) {
         this.logger.warn(
           `Mot de passe non régénéré pour le guardian ${params.guardianId} (envoi sans mot de passe): ${pwErr?.message || pwErr}`,

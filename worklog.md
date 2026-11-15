@@ -13685,3 +13685,13 @@ Work Log:
 
 Stage Summary:
 - ⏳ Déploiement Railway (~8 min) puis E2E tenant de tests (academia-helm.academiahelm.com, promoteur) : wizard inscription avec case cochée/décochée, envoi identifiants (email + Helm Connect), sous-onglet Création de compte, vérifier /health → 1.0.5.
+- DÉPLOIEMENT : API 1.0.5 en ligne ~11:15 UTC (uptime monotone 20s→900s+, /api/health/db → 1.0.5 db:connected) ; web Vercel prouvé par hash chunks (2b8437ed… → 57bcf8d2…).
+- E2E SUR TENANT DE TESTS (login promoteur via modal « Comptes de test ») :
+  · WIZARD ✅ : Onglet Inscriptions → « Nouvelle » → étape Parents → carte à case « Créer en même temps les comptes parents (portail parent) » cochée par défaut ; décochée → avertissement « Étape ignorée… Familles → Création de compte » ; récap étape 5 → « Comptes parents : Créés — identifiants envoyés (email + Helm Connect) » / « Ignorés ».
+  · CAS 1 (case cochée, élève CompteParent E2E, parent Parent E2E 0195000199 + email) : inscription OK → toast « Comptes parents créés — Identifiants de connexion envoyés aux 1 parent(s) par email et Helm Connect » ; DB : guardian.userId → User role=PARENT status=active ; email_logs subCategory=PARENT_ACCOUNT status=SENT provider=resend (×2 : envoi initial 11:21:52 + renvoi 11:23:59) ; banner sous-onglet : Email ✓ + Helm Connect ✓.
+  · CAS 2 (case DÉCOCHÉE, élève SkipCompte E2E, parent ParentSkip E2E 0195000299 sans email) : inscription OK SANS toast comptes ; sous-onglet → badge « SANS COMPTE » + bouton « Créer le compte + envoyer les identifiants » → clic → badge « COMPTE ACTIF », banner « Compte parent créé — informations de connexion » (Portail https://academia-helm.academiahelm.com/login?portal=parent · Identifiant 0195000299 (téléphone) · Mot de passe : aucun requis · Email — (contact manquant, toast honnête) + Helm Connect ✓ + WhatsApp grisé) ; DB : guardian.userId → User role=PARENT status=active.
+  · BOUCLE FERMÉE ✅ : connexion au PORTAIL PARENT avec le téléphone 0195000299 (sans mot de passe) → /app/parent → enfant SkipCompte E2E visible → Messages → conversation « Recette PROMOTEUR » contenant le message Helm Connect complet (adresse portail + numéro + aucun mot de passe requis + signature).
+- Preuves : download/e2e-preuves/comptes-parents/ (3 PNG : banner sous-onglet, rattrapage compte créé, message portail parent).
+
+Stage Summary:
+- ✅✅✅ Fonctionnalité « comptes parents » DÉPLOYÉE et VÉRIFIÉE end-to-end sur le tenant de tests : wizard Inscriptions (question posée + envoi identifiants pattern encaissement), skip réel, sous-onglet Familles → « Création de compte » (rattrapage + renvois multi-canaux), connexion parent au portail avec les identifiants envoyés.

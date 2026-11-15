@@ -28,6 +28,16 @@ import { Roles } from '@/auth/decorators/roles.decorator';
 import { StudentDossierService } from '../services/student-dossier.service';
 import { PublicVerificationService } from '../services/public-verification.service';
 
+// ⭐ 1.0.10 (refonte dossier numérique) — rôles autorisés à consulter/générer
+//    le dossier complet : inclut le PROMOTEUR et la SECRETAIRE (avant, la route
+//    PDF était limitée à DIRECTEUR/ADMIN — le promoteur avait un 403).
+const DOSSIER_ROLES = [
+  'ADMIN', 'DIRECTOR', 'SCHOOL_ADMIN', 'DIRECTEUR',
+  'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SUPER_DIRECTOR',
+  'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'SECRETARY', 'SECRETAIRE',
+  'TEACHER',
+];
+
 @Controller('students')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class StudentDossierController {
@@ -60,10 +70,12 @@ export class StudentDossierController {
 
   /**
    * GET /api/students/:studentId/academic-dossier
-   * Génère le dossier académique consolidé en PDF.
+   * ⭐ 1.0.10 — génère le DOSSIER SCOLAIRE COMPLET en PDF (7 sections :
+   *    identité, responsables, parcours année par année + école d'origine,
+   *    bulletins, assiduité/discipline, documents, carte scolaire).
    */
   @Get(':studentId/academic-dossier')
-  @Roles('DIRECTEUR', 'DIRECTOR', 'ADMIN')
+  @Roles(...DOSSIER_ROLES)
   async getAcademicDossierPdf(
     @Param('studentId') studentId: string,
     @Query('academicYearId') academicYearId: string | undefined,

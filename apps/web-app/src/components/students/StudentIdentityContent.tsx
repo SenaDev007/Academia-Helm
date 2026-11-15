@@ -16,6 +16,10 @@ import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import IdCardVisual, { type TenantInfo } from './IdCardVisual';
+// ⭐ 1.0.10 — refonte « dossier numérique de l'élève » : le détail d'un élève
+//    est désormais rendu par le dossier unifié 7 sections (au lieu des
+//    10 onglets dispersés de l'ancien StudentDashboard).
+import StudentDossierContent from './StudentDossierContent';
 import { useStudents, useAllClasses } from '@/lib/query/student-queries';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -301,7 +305,7 @@ export default function StudentIdentityContent() {
   if (selectedStudent) {
     const currentIndex = filteredStudents.findIndex(s => s.id === selectedStudent.id);
     return (
-      <StudentDashboard
+      <StudentDossierContent
         student={selectedStudent}
         academicYear={academicYear}
         onBack={() => setSelectedStudent(null)}
@@ -406,7 +410,10 @@ export default function StudentIdentityContent() {
   );
 }
 
-// ─── Dashboard élève plein écran ───
+// ─── (⭐ 1.0.10) ANCIEN « Dashboard élève plein écran » — REMPLACÉ par
+//     StudentDossierContent.tsx (dossier numérique unifié à 7 sections).
+//     Le composant historique est conservé ci-dessous uniquement comme
+//     référence pendant la transition ; il n'est plus rendu nulle part.
 
 function StudentDashboard({ student, academicYear, onBack, currentIndex, totalStudents, onNavigate }: {
   student: StudentIdentity; academicYear: any; onBack: () => void;

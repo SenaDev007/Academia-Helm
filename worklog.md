@@ -13661,3 +13661,27 @@ Stage Summary:
 - ✅ Régression back-end prouvée par test adverse (identité globale dans le payload → l'overlay secondaire gagne).
 - ⏳ Commit 1.0.4 (alignement marqueurs) à pousser + vérifier /health ET /api/health/db → 1.0.4.
 - 🔐 Hygiène restante côté utilisateur : rotation mot de passe Neon + token GitHub (circulés en clair) ; suppression ancien compte Neon ; Play Store.
+
+---
+Task ID: parent-accounts-1511a
+Agent: Super Z (agent principal)
+Task: Comptes parents créés à l'inscription (wizard, avec envoi des identifiants) + sous-onglet « Création de compte » dans l'onglet Familles (demande promoteur, nov. 2026)
+
+Work Log:
+- Constat d'architecture : le provisioning parent (ParentUserProvisioningService, guardian.userId → User role=PARENT) existait déjà en eager (2026-09-19) MAIS (1) la question n'était jamais posée à l'utilisateur, (2) aucun envoi d'identifiants, (3) aucun rattrapage UI pour les parents sans compte. Le portail parent se connecte par téléphone/email SANS mot de passe (PARENT_OTP_ENABLED=false) → les « identifiants » = URL du portail + identifiant.
+- BACKEND (commit 6f255c3) :
+  · NOUVEAU ParentAccountNotificationService (students/services/) — envoi multi-canal des identifiants : email HTML (sendCategorized, cat. ADMINISTRATIF/PARENT_ACCOUNT, template parent-account-email-templates.ts avec branding renderEmail/renderBadge RH) + Helm Connect (chatService.createOrGetDirectConversation + sendTextMessage, expéditeur = utilisateur courant, repli promoteur/directeur) + WhatsApp/SMS conservés en compat (non appelés par défaut — même décision que le module Finance). buildCredentials() : https://{subdomain}.{FRONTEND_URL|APP_PUBLIC_URL|academiahelm.com}/login?portal=parent + identifiant (téléphone d'abord, sinon email). Fire-and-forget, rapport par canal.
+  · POST /students/:studentId/guardians/:guardianId/account (GuardiansPrismaController.provisionAccount, RBAC MANAGEMENT_ROLES, @SkipAcademicYear hérité) → provision idempotent + envoi identifiants ; renvoie { guardian, student, account, credentials, notification }.
+  · CreateGuardianDto + createAccount (défaut true) / sendCredentials (défaut false) ; GuardiansPrismaService.createGuardianForStudent file les deux flags (createAccount=false → SKIP réel du provisioning) ; réponse enrichie parentAccount.
+  · Module : ParentAccountNotificationService déclaré dans StudentsModule (déps toutes disponibles : CommunicationModule déjà importé, ParentProvisioningModule, DatabaseModule, ConfigService global — zéro cycle).
+- FRONTEND :
+  · StudentEnrollmentForm étape Parents : carte à case à cocher « Créer en même temps les comptes parents (portail parent) » (défaut cochée) + avertissement si décochée + ligne récap à l'étape Validation ; prop showParentAccountStep=false pour le modal « Éditer l'inscription ».
+  · EnrollmentsContent : addGuardians reçoit createAccount/sendCredentials (= case cochée) + toast « Comptes parents créés — identifiants envoyés (email + Helm Connect) ».
+  · StudentFamiliesContent : SOUS-ONGLET « Création de compte » (badge « N sans compte ») — stats adaptées (Comptes actifs / Sans compte), cartes élèves avec statut par responsable (COMPTE ACTIF / SANS COMPTE), bouton « Créer le compte + envoyer les identifiants » (ou « Renvoyer » si actif), bandeau de succès type modal d'encaissement (portail cliquable + identifiant + « aucun mot de passe requis » + boutons Email/Helm Connect avec statut ✓/✗/— + WhatsApp grisé). Guardian.userId déjà servi par getAll (guardian: true).
+  · students.service : addGuardians(file les flags dans chaque POST plat) + provisionParentAccount().
+- VÉRIFICATIONS : tsc web-app complet → ZÉRO nouvelle erreur (StudentFamiliesContent + students.service propres ; 4 erreurs restantes prouvées préexistantes par git stash + typecheck baseline : EnrollmentsContent l.511/512 + StudentEnrollmentForm addGuardian/educMasterMatricule). API : transpile syntaxique OK sur les 6 fichiers + signatures croisées (sendCategorized email/whatsapp, sendSMS, createOrGetDirectConversation, sendTextMessage, catégories ADMINISTRATIF valides) ; build local impossible (prisma OOM sandbox — perte Railway lossless).
+- Marqueur version 1.0.5 (app.controller.ts + health.controller.ts ×3). Push f99c9b8..6f255c3 → main.
+- Baselines pré-déploiement : API /health = 1.0.4 (uptime ~1883 s) ; web tenant tests chunks md5 2b8437ed3410de57a6f7413fdc3eeea6.
+
+Stage Summary:
+- ⏳ Déploiement Railway (~8 min) puis E2E tenant de tests (academia-helm.academiahelm.com, promoteur) : wizard inscription avec case cochée/décochée, envoi identifiants (email + Helm Connect), sous-onglet Création de compte, vérifier /health → 1.0.5.

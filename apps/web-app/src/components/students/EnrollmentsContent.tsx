@@ -1795,8 +1795,8 @@ export default function EnrollmentsContent() {
               //    l'étape Parents s'il faut créer en même temps le compte
               //    du parent avec ses identifiants. Si oui (défaut) : le
               //    backend crée le User parent ET envoie les informations de
-              //    connexion au parent par email + Helm Connect (pattern
-              //    « modal d'encaissement » du module Finance).
+              //    connexion au parent par SMS (Termii) + email + Helm Connect
+              //    (pattern « modal d'encaissement » du module Finance).
               //    Si non : étape skippée — rattrapable dans l'onglet
               //    Familles → sous-onglet « Création de compte ».
               if (data.guardians?.length) {
@@ -1819,13 +1819,31 @@ export default function EnrollmentsContent() {
                 const guardianResults = await Promise.all(guardianPromises);
 
                 // ⭐ Retour explicite « identifiants envoyés » (le backend
-                //    renvoie parentAccount sur chaque guardian créé).
+                //    renvoie parentAccount + rapport par canal sur chaque
+                //    guardian créé — 15/11/2026 : canaux RÉELS envoyés, y
+                //    compris SMS Termii).
                 if (data.createParentAccounts !== false) {
                   const createdCount = [guardianResults].flat().filter(Boolean).length;
                   if (createdCount > 0) {
+                    // Agréger les canaux réellement envoyés (sent) sur tous les parents
+                    const channelLabel = (ch: string) =>
+                      ch === 'helm_connect' ? 'Helm Connect' : ch === 'sms' ? 'SMS' : ch;
+                    const sentSet = new Set<string>();
+                    const skippedSms = [guardianResults].flat().some(
+                      (r: any) => r?.parentAccount?.notification?.sms?.status === 'skipped',
+                    );
+                    for (const r of [guardianResults].flat()) {
+                      const notif = (r as any)?.parentAccount?.notification ?? {};
+                      for (const [ch, rep] of Object.entries(notif)) {
+                        if (ch !== 'error' && (rep as any)?.status === 'sent') sentSet.add(ch);
+                      }
+                    }
+                    const sentList = [...sentSet].map(channelLabel);
                     toast({
                       title: 'Comptes parents créés',
-                      description: `Identifiants de connexion envoyés aux ${createdCount} parent(s) par email et Helm Connect.`,
+                      description: sentList.length > 0
+                        ? `Identifiants de connexion envoyés aux ${createdCount} parent(s) par ${sentList.join(', ')}${skippedSms ? ' (SMS non configuré — activez Termii : SMS_PROVIDER=termii + TERMII_API_KEY)' : ''}.`
+                        : `Comptes créés — identifiants envoyables depuis Familles → Création de compte.`,
                       variant: 'success',
                     });
                   }

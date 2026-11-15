@@ -116,16 +116,24 @@ export class GuardiansPrismaService {
 
       // ⭐ nov. 2026 (demande promoteur « envoyer les identifiants exactement
       //    comme le modal d'encaissement du module Finance ») : envoi des
-      //    informations de connexion par email + Helm Connect.
+      //    informations de connexion par SMS + email + Helm Connect.
+      //    ⭐ 15/11/2026 — SMS EN PREMIER (Termii) : le parent sans email ne
+      //    peut pas recevoir l'email, et Helm Connect suppose déjà un compte
+      //    connecté — le SMS est le seul canal AVANT toute connexion. Si le
+      //    service SMS n'est pas configuré, le canal est « skipped » avec un
+      //    message explicite (jamais de faux succès).
       if (data.sendCredentials === true && parentAccount) {
         try {
-          await this.parentAccountNotificationService.sendAccountCredentials({
+          const notification = await this.parentAccountNotificationService.sendAccountCredentials({
             tenantId: data.tenantId,
             guardianId: guardian.id,
             studentId: data.studentId,
-            channels: ['email', 'helm_connect'],
+            channels: ['sms', 'email', 'helm_connect'],
             senderUserId: data.senderUserId,
           });
+          // ⭐ Rapport par canal renvoyé au wizard (toast « envoyés par … »
+          //    exact) — conservé sur parentAccount.notification
+          parentAccount = { ...parentAccount, notification } as any;
         } catch (notifErr: any) {
           this.logger.warn(
             `Identifiants du compte parent non envoyés pour le guardian ${guardian.id} (non bloquant): ${notifErr?.message || notifErr}`,
@@ -211,13 +219,14 @@ export class GuardiansPrismaService {
 
     // 4. Envoyer les identifiants (défaut true — « on lui envoie les
     //    informations de connexion » ; renvoyables à volonté)
+    //    ⭐ 15/11/2026 — SMS (Termii) en premier canal, cf. createGuardianForStudent.
     let notification: Record<string, any> = {};
     if (params.sendCredentials !== false) {
       notification = await this.parentAccountNotificationService.sendAccountCredentials({
         tenantId: params.tenantId,
         guardianId: params.guardianId,
         studentId: params.studentId,
-        channels: params.channels?.length ? params.channels : ['email', 'helm_connect'],
+        channels: params.channels?.length ? params.channels : ['sms', 'email', 'helm_connect'],
         senderUserId: params.senderUserId,
       });
     }

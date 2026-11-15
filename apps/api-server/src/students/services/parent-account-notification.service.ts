@@ -11,12 +11,18 @@
  * d'encaissement (pattern receipt-notification-finance.service.ts).
  *
  * ⭐ Canaux (même architecture que le modal d'encaissement) :
+ *   - 'sms'          — ⭐ nov. 2026 (demande promoteur) : VRAI SMS via Termii
+ *                      (https://developers.termii.com — provider du
+ *                      SmsService, activé par SMS_PROVIDER=termii +
+ *                      TERMII_API_KEY). Canal de PREMIER contact pour les
+ *                      identifiants : le parent sans email ne peut pas
+ *                      recevoir l'email, et le message Helm Connect suppose
+ *                      déjà un compte connecté — le SMS sur son numéro est
+ *                      le seul canal qui fonctionne AVANT toute connexion.
  *   - 'email'        — email HTML avec branding + URL du portail + identifiant
- *   - 'helm_connect' — message chat au compte parent (remplace WhatsApp+SMS,
- *                      cf. helm-connect-finance-notification.service.ts)
- *   - 'whatsapp'     — conservé pour compat (message texte libre, non appelé
- *                      par défaut — remplacé par Helm Connect)
- *   - 'sms'          — conservé pour compat (SMS court, non appelé par défaut)
+ *   - 'helm_connect' — message chat au compte parent (visible une fois
+ *                      connecté — garde-fou anti « œuf et poule » du SMS)
+ *   - 'whatsapp'     — conservé pour compat (non appelé par défaut)
  *
  * Le portail parent se connecte SANS mot de passe par défaut (téléphone ou
  * email, cf. portal-auth.service.ts) — les « identifiants » envoyés sont donc
@@ -298,7 +304,11 @@ export class ParentAccountNotificationService {
   }
 
   /**
-   * SMS court — conservé pour compatibilité, non appelé par défaut.
+   * ⭐ SMS — canal de PREMIER contact (demande promoteur nov. 2026) :
+   * envoi réel via Termii (SmsService, SMS_PROVIDER=termii + TERMII_API_KEY).
+   * Si aucun vrai provider SMS n'est configuré (mock/gateway ou clés
+   * absentes), le canal est « skipped » avec un message explicite — JAMAIS un
+   * faux ✓ (le mock renvoie success:true sans rien envoyer).
    */
   private async sendBySMS(params: {
     to?: string;
@@ -310,16 +320,29 @@ export class ParentAccountNotificationService {
     if (!params.to) {
       return { status: 'skipped', error: 'Aucun téléphone parent disponible' };
     }
+    if (!this.smsService.isRealProviderConfigured()) {
+      return {
+        status: 'skipped',
+        to: params.to,
+        error: 'Service SMS non configuré — définissez SMS_PROVIDER=termii et TERMII_API_KEY (variables d\u2019environnement Railway)',
+      };
+    }
 
+    // Message court, sans caractères spéciaux (1 page SMS = 160 caractères ;
+    // les caractères accentués réduisent la page à 70 — encodage GSM-7)
     const schoolName = (params.branding.schoolName || 'Etablissement').substring(0, 25);
     const identifierWord = params.credentials.identifierType === 'PHONE' ? 'votre numero' : 'votre email';
     const message = `${schoolName}: Votre compte parent est actif. Portail: ${params.credentials.portalUrl} - Connectez-vous avec ${identifierWord} (${params.credentials.identifier}). Aucun mot de passe requis.`;
 
-    const result = await this.smsService.sendSMS(params.to, message);
-    if (result.success) {
-      return { status: 'sent', to: params.to };
+    try {
+      const result = await this.smsService.sendSMS(params.to, message);
+      if (result.success) {
+        return { status: 'sent', to: params.to };
+      }
+      return { status: 'failed', to: params.to, error: 'Échec envoi SMS' };
+    } catch (smsErr: any) {
+      return { status: 'failed', to: params.to, error: smsErr?.message || String(smsErr) };
     }
-    return { status: 'failed', to: params.to, error: 'Échec envoi SMS' };
   }
 
   /**

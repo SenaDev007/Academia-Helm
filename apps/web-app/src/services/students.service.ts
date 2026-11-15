@@ -944,11 +944,16 @@ class StudentsService {
   /**
    * Réintégration d'un élève ayant abandonné.
    * Backend : POST /students/reintegrate
+   *
+   * ⭐ FIX 2026-11-15 « 403 périmètre tous les niveaux » : schoolLevelId
+   *    optionnel — la sentinelle 'ALL' ne doit jamais partir dans le body
+   *    (AccessScopeGuard 403 pour les profils restreints). Le backend utilise
+   *    le niveau de l'inscription existante lorsque le champ est absent.
    */
   async reintegrateStudent(data: {
     studentId: string;
     academicYearId: string;
-    schoolLevelId: string;
+    schoolLevelId?: string;
     classId?: string;
   }): Promise<any> {
     return apiFetch(`${BASE_URL}/reintegrate`, {
@@ -1418,12 +1423,24 @@ class StudentsService {
 
   /**
    * Statistiques Générales
+   *
+   * ⭐ FIX 2026-11-15 « stats à zéro (Sortis et abandons) » : schoolLevelId
+   *    est désormais OPTIONNEL — et la sentinelle 'ALL' (option virtuelle
+   *    « Tous les niveaux » / « Mon périmètre » du sélecteur global) n'est
+   *    JAMAIS envoyée : passée en query, AccessScopeGuard la rejette en 403
+   *    pour les profils restreints (directrice Mat+Pri…) → l'appel échouait
+   *    silencieusement → les 4 stats restaient à zéro. Sans le paramètre, le
+   *    périmètre serveur s'applique (comptes restreints = leur périmètre,
+   *    transverses = tous les niveaux).
    */
   async getStatistics(
     academicYearId: string,
-    schoolLevelId: string,
+    schoolLevelId?: string,
   ): Promise<any> {
-    const params = new URLSearchParams({ academicYearId, schoolLevelId });
+    const params = new URLSearchParams({ academicYearId });
+    if (schoolLevelId && schoolLevelId !== 'ALL' && schoolLevelId !== 'undefined') {
+      params.set('schoolLevelId', schoolLevelId);
+    }
     return apiFetch(`${BASE_URL}/statistics?${params}`);
   }
 

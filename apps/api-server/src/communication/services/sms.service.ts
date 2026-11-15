@@ -4,8 +4,20 @@
  * ============================================================================
  * 
  * Service pour l'envoi de messages SMS via différents providers
- * Supporte : Twilio, API Gateway, Mock (développement)
+ * Supporte : Termii, Twilio, Infobip, API Gateway, Mock (développement)
  * 
+ * ⭐ nov. 2026 (demande promoteur) — provider TERMII :
+ *   https://developers.termii.com — POST {TERMII_BASE_URL}/api/sms/send
+ *   Variables d'environnement :
+ *     - SMS_PROVIDER=termii
+ *     - TERMII_API_KEY   (requis — clé API du dashboard Termii)
+ *     - TERMII_BASE_URL  (défaut https://v4.api.termii.com)
+ *     - TERMII_SENDER_ID (défaut Academia Helm — sender ID alphanumérique
+ *       3-11 caractères enregistré sur le compte Termii)
+ *     - TERMII_CHANNEL   (défaut dnd — route transactionnelle recommandée
+ *       pour les identifiants ; « generic » = route promotionnelle qui
+ *       n'aboutit pas sur les numéros en DND ; activer la route DND sur le
+ *       compte Termii auprès de leur support)
  * ============================================================================
  */
 
@@ -19,7 +31,7 @@ export interface SmsRequest {
   message: string;
 }
 
-export type SmsProvider = 'twilio' | 'gateway' | 'infobip' | 'mock';
+export type SmsProvider = 'termii' | 'twilio' | 'gateway' | 'infobip' | 'mock';
 
 @Injectable()
 export class SmsService {
@@ -39,14 +51,16 @@ export class SmsService {
    *   - +22995722234 ✅ (8 chiffres après +229)
    *   - +2290195722234 ❌ (10 chiffres — Twilio retourne l'erreur 21211 "Invalid To")
    *
-   * Le défaut de normalizePhoneE164() est de GARDER le "01" (utile pour Gupshup
-   * WhatsApp, mais incorrect pour Twilio SMS). On passe donc explicitement
-   * stripBenin01=true ici.
+   * ⭐ Termii (nov. 2026) : suit le plan ARCEP Bénin ACTUEL (réforme du
+   *   30/11/2024) — format international +229 suivi du préfixe 01 et du
+   *   numéro (ex : 0195000299 → +2290195000299 → « 2290195000299 » pour
+   *   l'API Termii, sans le « + »). On conserve donc le « 01 ».
    */
   async sendSMS(to: string, message: string): Promise<{ success: boolean; messageId?: string }> {
-    // Normalisation du numéro (ex: 0195722234 → +22995722234)
-    const normalizedTo = normalizePhoneE164(to, { stripBenin01: true });
-    this.logger.log(`SMS normalisation: raw="${to}" → normalized="${normalizedTo}"`);
+    // Normalisation du numéro — strip « 01 » uniquement pour Twilio (legacy)
+    const stripBenin01 = this.provider === 'twilio';
+    const normalizedTo = normalizePhoneE164(to, { stripBenin01 });
+    this.logger.log(`SMS normalisation: raw="${to}" → normalized="${normalizedTo}" (provider: ${this.provider})`);
     if (!isValidPhoneE164(normalizedTo)) {
       throw new Error(`Numéro SMS invalide: "${to}" → normalisé: "${normalizedTo}". Format attendu: +229XXXXXXXX (E.164)`);
     }
@@ -55,6 +69,8 @@ export class SmsService {
     
     try {
       switch (this.provider) {
+        case 'termii':
+          return await this.sendViaTermii(request);
         case 'twilio':
           return await this.sendViaTwilio(request);
         case 'gateway':
@@ -69,6 +85,94 @@ export class SmsService {
       this.logger.error(`Failed to send SMS via ${this.provider}:`, error);
       throw error;
     }
+  }
+
+  /**
+   * ⭐ nov. 2026 — true si un VRAI provider SMS est pleinement configuré
+   * (termii / twilio / infobip avec leurs clés). Exclut mock/gateway :
+   * l'UI peut ainsi afficher « SMS — non configuré » au lieu d'un faux ✓.
+   */
+  isRealProviderConfigured(): boolean {
+    switch (this.provider) {
+      case 'termii':
+        return !!this.configService.get<string>('TERMII_API_KEY');
+      case 'twilio':
+        return !!(
+          this.configService.get<string>('TWILIO_ACCOUNT_SID') &&
+          this.configService.get<string>('TWILIO_AUTH_TOKEN') &&
+          this.configService.get<string>('TWILIO_PHONE_NUMBER')
+        );
+      case 'infobip':
+        return !!(
+          this.configService.get<string>('INFOBIP_API_URL') &&
+          this.configService.get<string>('INFOBIP_API_KEY')
+        );
+      default:
+        return false; // mock / gateway : pas une vraie configuration
+    }
+  }
+
+  /**
+   * ⭐ nov. 2026 (demande promoteur) — Envoie via l'API Termii
+   * (https://developers.termii.com/messaging-api).
+   *
+   * POST {TERMII_BASE_URL}/api/sms/send
+   * Body : { api_key, to, from, sms, type: 'plain', channel }
+   * Réponse 200 : { code: 'ok', balance, message_id, message: 'Successfully Sent' }
+   *
+   * Le numéro « to » est au format international SANS le « + »
+   * (ex : +2290195000299 → 2290195000299).
+   */
+  private async sendViaTermii(request: SmsRequest): Promise<{ success: boolean; messageId?: string }> {
+    const apiKey = this.configService.get<string>('TERMII_API_KEY');
+    if (!apiKey) {
+      throw new Error(
+        'Configuration Termii incomplète. Définissez TERMII_API_KEY (clé API du dashboard Termii) — et éventuellement TERMII_BASE_URL, TERMII_SENDER_ID, TERMII_CHANNEL. Route transactionnelle recommandée : TERMII_CHANNEL=dnd.',
+      );
+    }
+
+    const baseUrl = (
+      this.configService.get<string>('TERMII_BASE_URL') || 'https://v4.api.termii.com'
+    ).replace(/\/+$/, '');
+    const senderId = this.configService.get<string>('TERMII_SENDER_ID') || 'Academia Helm';
+    const channel = this.configService.get<string>('TERMII_CHANNEL') || 'dnd';
+
+    // Format Termii : international sans le « + »
+    const to = request.to.replace(/^\+/, '');
+
+    const response = await fetch(`${baseUrl}/api/sms/send`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        api_key: apiKey,
+        to,
+        from: senderId,
+        sms: request.message,
+        type: 'plain',
+        channel,
+      }),
+    });
+
+    const result: any = await response.json().catch(() => ({}));
+    if (!response.ok || (result?.code && result.code !== 'ok')) {
+      this.logger.error('Termii API error:', result);
+      throw new Error(
+        `Termii error HTTP ${response.status}: ${JSON.stringify(result).substring(0, 300)}`,
+      );
+    }
+
+    const messageId = result?.message_id || result?.message_id_str || `termii-${Date.now()}`;
+    this.logger.log(
+      `✅ SMS sent via Termii to ${to}: ${messageId} (message: ${result?.message}, solde: ${result?.balance})`,
+    );
+
+    return {
+      success: true,
+      messageId,
+    };
   }
 
   /**

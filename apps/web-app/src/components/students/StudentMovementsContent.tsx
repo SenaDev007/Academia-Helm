@@ -323,10 +323,17 @@ export default function StudentMovementsContent() {
   const loadGlobalStats = async () => {
     if (!effectiveYearId) return;
     try {
-      const stats = await studentsService.getStatistics(
-        effectiveYearId,
-        filterLevelId || schoolLevel?.id || 'ALL',
-      );
+      // ⭐ FIX 2026-11-15 « les 4 stats affichent zéro » : le niveau transmis
+      //    pouvait être la sentinelle 'ALL' (option virtuelle « Tous les
+      //    niveaux » / « Mon périmètre » du sélecteur global, auto-sélectionnée
+      //    pour les profils restreints multi-niveaux) — envoyée en query
+      //    schoolLevelId=ALL, AccessScopeGuard la rejetait en 403 → le catch
+      //    avalait l'erreur → stats figées à zéro. On n'envoie maintenant le
+      //    niveau QUE s'il s'agit d'un vrai UUID ; sinon le périmètre serveur
+      //    s'applique (listes et stats enfin cohérentes entre elles).
+      const rawLevelId = filterLevelId || schoolLevel?.id || '';
+      const levelParam = rawLevelId && rawLevelId !== 'ALL' ? rawLevelId : undefined;
+      const stats = await studentsService.getStatistics(effectiveYearId, levelParam);
       // Calculer transferred depuis byStatus (le backend ne le retourne pas directement)
       const byStatus: Array<{ status: string; _count: number }> = Array.isArray(stats?.byStatus) ? stats.byStatus : [];
       const transferred = byStatus.find(s => s.status === 'TRANSFERRED')?._count ?? 0;
@@ -406,10 +413,20 @@ export default function StudentMovementsContent() {
         });
         toast({ title: '✅ Élève retiré', description: `${actionStudent.firstName} ${actionStudent.lastName} a été marqué comme abandon.`, variant: 'success' });
       } else if (actionType === 'reactivate') {
+        // ⭐ FIX 2026-11-15 « Accès refusé : le périmètre “tous les niveaux” est
+        //    réservé aux profils transverses » : schoolLevel?.id peut être la
+        //    sentinelle 'ALL' du sélecteur global — envoyée dans le body, elle
+        //    déclenchait le 403 d'AccessScopeGuard pour les profils restreints
+        //    (directrice Mat+Pri…). On préfère désormais le niveau RÉEL de
+        //    l'élève, et la valeur du sélecteur n'est utilisée que si ce
+        //    n'est PAS la sentinelle. Absent → le backend conserve le niveau
+        //    de l'inscription existante.
+        const selectorLevelId =
+          schoolLevel?.id && schoolLevel.id !== 'ALL' ? schoolLevel.id : undefined;
         await studentsService.reintegrateStudent({
           studentId: actionStudent.id,
           academicYearId: effectiveYearId,
-          schoolLevelId: schoolLevel?.id || actionStudent.schoolLevelId || '',
+          schoolLevelId: actionStudent.schoolLevelId || selectorLevelId,
         });
         toast({ title: '✅ Élève réintégré', description: `${actionStudent.firstName} ${actionStudent.lastName} est de nouveau actif.`, variant: 'success' });
       }

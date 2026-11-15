@@ -53,9 +53,10 @@ export interface EnrollmentSubmitData {
    * ⭐ nov. 2026 (demande promoteur) — « on devra demander à l'utilisateur
    * s'il faut créer en même temps le compte du parent avec ses identifiants » :
    * true (défaut) = compte parent créé à l'inscription ET identifiants de
-   * connexion envoyés au parent par email + Helm Connect (pattern « modal
-   * d'encaissement » du module Finance). false = étape skippée — le compte
-   * restera créable depuis l'onglet Famille → sous-onglet « Création de compte ».
+   * connexion envoyés au parent par SMS (Termii) + email + Helm Connect
+   * (pattern « modal d'encaissement » du module Finance). false = étape
+   * skippée — le compte restera créable depuis l'onglet Famille → sous-onglet
+   * « Création de compte ».
    */
   createParentAccounts?: boolean;
 }
@@ -655,10 +656,10 @@ export default function StudentEnrollmentForm({
               s'il faut créer en même temps le compte du parent avec ses
               identifiants » : la question est posée ICI, en même temps que la
               saisie des parents. Si cochée : compte créé + identifiants envoyés
-              au parent par email et Helm Connect (exactement comme le modal
-              d'encaissement du module Finance). Si décochée : skip — le compte
-              restera créable dans l'onglet Famille → sous-onglet « Création de
-              compte » (voir StudentFamiliesContent). */}
+              au parent par SMS (Termii), email et Helm Connect (exactement
+              comme le modal d'encaissement du module Finance). Si décochée :
+              skip — le compte restera créable dans l'onglet Famille →
+              sous-onglet « Création de compte » (voir StudentFamiliesContent). */}
           {showParentAccountStep && (
           <div className={`rounded-xl border p-4 transition-all ${
             createParentAccounts
@@ -679,7 +680,8 @@ export default function StudentEnrollmentForm({
                 <span className="block mt-1 text-xs text-slate-600 leading-relaxed">
                   Les informations de connexion (adresse du portail + numéro de
                   téléphone ou email, sans mot de passe) seront envoyées
-                  automatiquement au parent par <strong>email</strong> et{' '}<strong>Helm Connect</strong> —
+                  automatiquement au parent par <strong>SMS</strong> (Termii),{' '}
+                  <strong>email</strong> et{' '}<strong>Helm Connect</strong> —
                   exactement comme l'envoi du reçu dans le module Finance.
                 </span>
                 {!createParentAccounts && (
@@ -833,7 +835,7 @@ export default function StudentEnrollmentForm({
               <span className="text-gray-500">Comptes parents:</span>
               <span className={`font-medium ${createParentAccounts ? 'text-emerald-700' : 'text-amber-700'}`}>
                 {createParentAccounts
-                  ? 'Créés — identifiants envoyés (email + Helm Connect)'
+                  ? 'Créés — identifiants envoyés (SMS + email + Helm Connect)'
                   : 'Ignorés (créables dans Familles → Création de compte)'}
               </span>
             </div>

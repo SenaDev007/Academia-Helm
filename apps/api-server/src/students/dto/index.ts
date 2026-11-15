@@ -138,8 +138,10 @@ export class ProvisionParentAccountDto {
   /** Envoyer les identifiants de connexion au parent — défaut true. */
   @IsOptional() @IsBoolean() sendCredentials?: boolean;
   /**
-   * Canaux d'envoi — défaut ['email', 'helm_connect'] comme le module
-   * Finance (WhatsApp/SMS remplacés par Helm Connect, conservés pour compat).
+   * Canaux d'envoi — défaut ['sms', 'email', 'helm_connect'] (15/11/2026 :
+   * SMS via Termii en premier — le parent sans email ne peut pas recevoir
+   * l'email et Helm Connect suppose déjà un compte connecté ; WhatsApp
+   * conservé pour compat).
    */
   @IsOptional()
   @IsArray()

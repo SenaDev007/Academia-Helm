@@ -1632,7 +1632,8 @@ export class StudentsLifecycleService {
     data: {
       studentId: string;
       academicYearId: string;
-      schoolLevelId: string;
+      /** Optionnel depuis le fix 403 du 15/11/2026 (la sentinelle 'ALL' n'est plus envoyée) */
+      schoolLevelId?: string;
       classId?: string;
     },
     userId?: string,
@@ -1645,24 +1646,29 @@ export class StudentsLifecycleService {
       throw new BadRequestException('L\'élève n\'est pas en statut WITHDRAWN — réintégration impossible');
     }
 
-    // Remettre l'élève en statut ACTIVE
-    await this.prisma.student.update({
-      where: { id: data.studentId },
-      data: {
-        status: 'ACTIVE',
-        isActive: true,
-        currentAcademicYearId: data.academicYearId,
-      },
-    });
+    // ⭐ FIX 2026-11-15 « demi-réintégration » (élève CM2 CSPEB) : l'update
+    //    Student réussissait tandis que l'update de l'inscription était avalé
+    //    par un try-catch → élève ACTIVE avec inscription restée WITHDRAWN
+    //    (incohérence visible : « Actif » dans Sortis et abandons, mais
+    //    « Abandon » dans Inscriptions / Liste des élèves / PDF abandons).
+    //    → élève + inscription désormais mis à jour DANS UNE SEULE transaction
+    //    Prisma : ou tout réussit, ou tout est annulé (en cas d'échec, l'état
+    //    retiré reste cohérent et l'erreur remonte à l'appelant).
+    await this.prisma.$transaction(async (tx) => {
+      // Remettre l'élève en statut ACTIVE
+      await tx.student.update({
+        where: { id: data.studentId },
+        data: {
+          status: 'ACTIVE',
+          isActive: true,
+          currentAcademicYearId: data.academicYearId,
+        },
+      });
 
-    // ⭐ Au lieu de créer une nouvelle inscription (qui violerait la contrainte unique
-    // @@unique([tenantId, academicYearId, studentId]) car l'inscription WITHDRAWN
-    // existe déjà), on met à jour l'inscription existante.
-    // ⭐ Wrap dans un try-catch : si l'inscription update échoue pour quelque raison
-    // que ce soit, on ne doit pas faire échouer la réintégration entière — l'élève
-    // est déjà ACTIVE. On log l'erreur et on continue.
-    try {
-      const existingEnrollment = await this.prisma.studentEnrollment.findFirst({
+      // ⭐ Au lieu de créer une nouvelle inscription (qui violerait la contrainte unique
+      // @@unique([tenantId, academicYearId, studentId]) car l'inscription WITHDRAWN
+      // existe déjà), on met à jour l'inscription existante.
+      const existingEnrollment = await tx.studentEnrollment.findFirst({
         where: {
           studentId: data.studentId,
           tenantId,
@@ -1673,7 +1679,7 @@ export class StudentsLifecycleService {
 
       if (existingEnrollment) {
         // Mettre à jour l'inscription existante (WITHDRAWN → ACTIVE)
-        await this.prisma.studentEnrollment.update({
+        await tx.studentEnrollment.update({
           where: { id: existingEnrollment.id },
           data: {
             status: ENROLLMENT_STATUS.ACTIVE,
@@ -1685,12 +1691,15 @@ export class StudentsLifecycleService {
         });
       } else {
         // Si aucune inscription n'existe pour cette année (cas edge), en créer une
-        await this.prisma.studentEnrollment.create({
+        // ⭐ schoolLevelId requis : repli sur le niveau de l'élève si absent
+        //    de la requête (le champ est désormais optionnel côté frontend —
+        //    la sentinelle 'ALL' n'est plus envoyée, cf. fix 403 du même jour).
+        await tx.studentEnrollment.create({
           data: {
             tenantId,
             studentId: data.studentId,
             academicYearId: data.academicYearId,
-            schoolLevelId: data.schoolLevelId,
+            schoolLevelId: data.schoolLevelId || student.schoolLevelId,
             classId: data.classId ?? null,
             enrollmentType: 'NEW',
             enrollmentDate: new Date(),
@@ -1698,13 +1707,7 @@ export class StudentsLifecycleService {
           },
         });
       }
-    } catch (enrollmentErr: any) {
-      // ⭐ L'élève est déjà ACTIVE — ne pas faire échouer la réintégration
-      // si la mise à jour de l'inscription échoue (ex: contrainte unique, etc.)
-      this.logger.warn(
-        `Réintégration : élève ${data.studentId} mis à ACTIVE mais erreur sur l'inscription : ${enrollmentErr.message}`,
-      );
-    }
+    });
 
     await this.logHistory(
       tenantId,

@@ -13695,3 +13695,20 @@ Stage Summary:
 
 Stage Summary:
 - ✅✅✅ Fonctionnalité « comptes parents » DÉPLOYÉE et VÉRIFIÉE end-to-end sur le tenant de tests : wizard Inscriptions (question posée + envoi identifiants pattern encaissement), skip réel, sous-onglet Familles → « Création de compte » (rattrapage + renvois multi-canaux), connexion parent au portail avec les identifiants envoyés.
+
+---
+Task ID: parent-accounts-proof-recapture-1511c
+Agent: Super Z (agent principal)
+Task: Re-capture des preuves E2E « comptes parents » (les 3 PNG originales perdues avec le recyclage du sandbox — l'état DB du tenant de tests et le worklog sont restés intacts).
+
+Work Log:
+- Vérifications d'état : remote GitHub main = cbc3255 (feature 6f255c3 + worklogs dd313ce/cbc3255 bien poussés) ; API /health ET /api/health/db → version 1.0.5, db connected (uptime frais, déploiement stable).
+- Re-capture agent-browser sur le tenant de tests (login promoteur via modal « Comptes de test ») :
+  · 01-sous-onglet-creation-de-compte.png — Familles → « Création de compte » (badge « 6 sans compte ») : stats COMPTES ACTIFS/SANS COMPTE, cartes CompteParent E2E → COMPTE ACTIF et SkipCompte E2E → COMPTE ACTIF (comptes créés lors de l'E2E initiale, persistés en DB).
+  · 02-banner-identifiants-envoyes.png — clic « Renvoyer les identifiants » (ParentSkip E2E) → bandeau « Informations de connexion » : Portail https://academia-helm.academiahelm.com/login?portal=parent · Identifiant 0195000299 (téléphone) · Mot de passe aucun requis · Email — · Helm Connect ✓ · WhatsApp grisé — pattern modal d'encaissement. Le renvoi en production a été re-exécuté avec succès à cette occasion.
+  · 03-portail-parent-enfant.png — connexion portail parent par le seul téléphone 0195000299 → /app/parent → enfant SkipCompte E2E (Maternelle 2 · ACADEM-E-26-175) visible.
+  · 04-message-helm-connect.png — conversation Helm Connect « Recette PROMOTEUR » : message « 🔑 Compte parent activé » avec adresse du portail + numéro + « Mot de passe : aucun requis — votre numero suffit » + signature administration.
+- 4 PNG (1600×1000) vérifiées non-vides (ratio non-blanc 0,12–0,23) ; textes DOM confirmés par snapshots avant chaque capture.
+
+Stage Summary:
+- ✅ Preuves E2E restaurées et enrichies (4 PNG au lieu de 3) : download/e2e-preuves/comptes-parents/ — la fonctionnalité reste DÉPLOYÉE et vérifiable à tout moment sur le tenant de tests.

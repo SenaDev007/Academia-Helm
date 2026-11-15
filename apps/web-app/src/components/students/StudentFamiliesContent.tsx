@@ -27,9 +27,10 @@ import { cn } from '@/lib/utils';
 //    15/11/2026 : SMS (Termii) en premier canal.
 //    ⭐ 15/11/2026 (retour promoteur) : WhatsApp RÉACTIVÉ aux côtés du SMS —
 //    bouton ACTIF (lien wa.me pré-rempli — envoi manuel fiable, même pattern
-//    que le module Finance), on garde TOUS les canaux : SMS, WhatsApp,
-//    Email, Helm Connect.
-import { GmailIcon, HelmConnectIcon, SmsIcon, WhatsAppIcon } from '@/components/finance/OfficialIcons';
+//    que le module Finance). ⭐ 16/11/2026 (fix 1.0.8) : Helm Connect retiré
+//    des canaux d'identifiants → bandeau à TROIS boutons : SMS, WhatsApp,
+//    Email.
+import { GmailIcon, SmsIcon, WhatsAppIcon } from '@/components/finance/OfficialIcons';
 
 interface Guardian {
   id: string;
@@ -311,7 +312,7 @@ export default function StudentFamiliesContent() {
    * tout faire un à un est ingérable ») — GÉNÉRATION MULTIPLE des comptes
    * parents (deux boutons) :
    *   - action='create' : crée TOUS les comptes manquants de la vue + envoie
-   *     les identifiants (SMS + email + Helm Connect)
+   *     les identifiants (SMS + email)
    *   - action='resend' : renvoie les identifiants (mot de passe régénéré)
    *     aux responsables déjà dotés d'un compte dans la vue
    * Backend : POST /students/guardians/account/bulk (timeout 5 min).
@@ -333,7 +334,7 @@ export default function StudentFamiliesContent() {
       return;
     }
     if (action === 'create' && !confirm(
-      `Créer ${ids.length} compte(s) parent et envoyer les identifiants (SMS, email, Helm Connect) ?`,
+      `Créer ${ids.length} compte(s) parent et envoyer les identifiants (SMS et email) ?`,
     )) return;
     if (action === 'resend' && !confirm(
       `Renvoyer les identifiants (mot de passe régénéré) à ${ids.length} parent(s) ?`,
@@ -484,7 +485,8 @@ export default function StudentFamiliesContent() {
 
   /**
    * Crée (ou garantit) le compte parent ET envoie les identifiants par les
-   * canaux demandés (défaut email + helm_connect). Idempotent : peut aussi
+   * canaux demandés (⭐ 16/11/2026 fix 1.0.8 : défaut SMS + email côté
+   * backend — Helm Connect retiré des identifiants). Idempotent : peut aussi
    * servir à RENVOYER les identifiants d'un compte existant.
    */
   const handleProvisionAccount = async (
@@ -558,12 +560,13 @@ export default function StudentFamiliesContent() {
   /**
    * Renvoi des identifiants sur UN canal précis (boutons du bandeau de
    * succès — même UX que le modal d'encaissement : SMS actif (Termii),
-   * Email actif, Helm Connect actif).
+   * Email actif). ⭐ 16/11/2026 fix 1.0.8 : Helm Connect retiré des canaux
+   * d'identifiants (le message chat suppose déjà un compte connecté).
    */
   const handleResendChannel = async (
     student: StudentWithGuardians,
     sg: StudentGuardian,
-    channel: 'sms' | 'email' | 'helm_connect',
+    channel: 'sms' | 'email',
   ) => {
     const key = guardianKey(student.id, sg.guardian.id);
     setProvisioningKey(key);
@@ -601,7 +604,7 @@ export default function StudentFamiliesContent() {
       } else {
         toast({
           title: 'Identifiants envoyés',
-          description: `Envoyés par ${channel === 'helm_connect' ? 'Helm Connect' : channel === 'sms' ? 'SMS' : 'email'}${status?.to ? ` à ${status.to}` : ''}.`,
+          description: `Envoyés par ${channel === 'sms' ? 'SMS' : 'email'}${status?.to ? ` à ${status.to}` : ''}.`,
           variant: 'success',
         });
       }
@@ -647,7 +650,7 @@ export default function StudentFamiliesContent() {
           ``,
           `Portail : ${credentials.portalUrl}`,
           `Identifiant : ${credentials.identifier}`,
-          `Mot de passe : ${credentials.password || 'votre mot de passe habituel'}`,
+          `Mot de passe : ${credentials.password || "contactez l'administration"}`,
           ``,
           `Onglet « Parent », puis connexion avec votre identifiant et votre mot de passe.`,
           ``,
@@ -881,8 +884,8 @@ export default function StudentFamiliesContent() {
           <p className="text-[11px] text-blue-800 leading-relaxed">
             Les <strong>informations de connexion</strong> (adresse du portail + numéro de
             téléphone ou email, avec un mot de passe simple) seront envoyées au parent par{' '}
-            <strong>SMS</strong> (premier canal : le parent n'a pas forcément d'email),{' '}
-            <strong>email</strong> et <strong>Helm Connect</strong>.
+            <strong>SMS</strong> (premier canal : le parent n'a pas forcément d'email) et{' '}
+            <strong>email</strong>.
           </p>
         </div>
 
@@ -896,7 +899,7 @@ export default function StudentFamiliesContent() {
             className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
             title={bulkCreateCount === 0
               ? 'Aucun responsable sans compte dans la vue'
-              : 'Créer TOUS les comptes manquants de la vue et envoyer les identifiants (SMS, email, Helm Connect)'}
+              : 'Créer TOUS les comptes manquants de la vue et envoyer les identifiants (SMS et email)'}
           >
             {bulkAction === 'create' ? <Loader2 className="w-4 h-4 animate-spin" /> : <UsersRound className="w-4 h-4" />}
             {bulkAction === 'create' ? 'Création multiple en cours…' : `Création multiple — ${bulkCreateCount} compte(s)`}
@@ -1045,7 +1048,7 @@ export default function StudentFamiliesContent() {
                             onClick={() => handleProvisionAccount(student, sg)}
                             disabled={isWorking || !identifier}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
-                            title={identifier ? 'Renvoyer les informations de connexion par SMS, email et Helm Connect' : 'Ce parent n\u2019a ni téléphone ni email'}
+                            title={identifier ? 'Renvoyer les informations de connexion par SMS et email' : 'Ce parent n\u2019a ni téléphone ni email'}
                           >
                             {isWorking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                             Renvoyer les identifiants
@@ -1055,7 +1058,7 @@ export default function StudentFamiliesContent() {
                             onClick={() => handleProvisionAccount(student, sg)}
                             disabled={isWorking || !identifier}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
-                            title={identifier ? 'Créer le compte parent et envoyer les informations de connexion (SMS, email, Helm Connect)' : 'Ce parent n\u2019a ni téléphone ni email — complétez sa fiche'}
+                            title={identifier ? 'Créer le compte parent et envoyer les informations de connexion (SMS et email)' : 'Ce parent n\u2019a ni téléphone ni email — complétez sa fiche'}
                           >
                             {isWorking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
                             Créer le compte + envoyer les identifiants
@@ -1097,26 +1100,24 @@ export default function StudentFamiliesContent() {
                               {result.credentials?.password ? (
                                 <span className="font-mono font-bold">{result.credentials.password}</span>
                               ) : (
-                                <span className="text-emerald-700">votre mot de passe habituel</span>
+                                <span className="text-emerald-700">contactez l&apos;administration</span>
                               )}
                             </p>
                           </div>
                           {/* Statuts par canal + renvoi unitaire (pattern modal d'encaissement)
-                              ⭐ 15/11/2026 — QUATRE canaux (retour promoteur) :
-                              SMS (Termii, premier canal — le parent sans email ne peut rien
-                              recevoir par email et le message Helm Connect suppose déjà un
-                              compte connecté), WhatsApp (lien wa.me pré-rempli — envoi
-                              manuel fiable), Email, Helm Connect. */}
+                              ⭐ 16/11/2026 (fix 1.0.8) — TROIS canaux : SMS
+                              (Termii, premier canal — le parent sans email ne peut rien
+                              recevoir par email), WhatsApp (lien wa.me pré-rempli — envoi
+                              manuel fiable), Email. Helm Connect retiré (le message chat
+                              suppose déjà un compte connecté). */}
                           <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-emerald-200">
-                            {(['sms', 'whatsapp', 'email', 'helm_connect'] as const).map(channel => {
+                            {(['sms', 'whatsapp', 'email'] as const).map(channel => {
                               const st = result.notification?.[channel];
                               const label = channel === 'sms'
                                 ? 'SMS'
                                 : channel === 'whatsapp'
                                   ? 'WhatsApp'
-                                  : channel === 'email'
-                                    ? 'Email'
-                                    : 'Helm Connect';
+                                  : 'Email';
                               const isManualWhatsApp = channel === 'whatsapp';
                               return (
                                 <button
@@ -1124,7 +1125,7 @@ export default function StudentFamiliesContent() {
                                   onClick={() =>
                                     isManualWhatsApp
                                       ? handleWhatsAppSend(student, sg)
-                                      : handleResendChannel(student, sg, channel as 'sms' | 'email' | 'helm_connect')
+                                      : handleResendChannel(student, sg, channel as 'sms' | 'email')
                                   }
                                   disabled={!isManualWhatsApp && provisioningKey === key}
                                   className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold rounded-lg border transition disabled:opacity-40 ${
@@ -1148,9 +1149,7 @@ export default function StudentFamiliesContent() {
                                     ? <SmsIcon className="w-3.5 h-3.5" />
                                     : channel === 'whatsapp'
                                       ? <WhatsAppIcon className="w-3.5 h-3.5" />
-                                      : channel === 'email'
-                                        ? <GmailIcon className="w-3.5 h-3.5" />
-                                        : <HelmConnectIcon className="w-3.5 h-3.5" />}
+                                      : <GmailIcon className="w-3.5 h-3.5" />}
                                   {label}
                                   {st?.status === 'sent' && <span className="text-emerald-600">✓</span>}
                                   {st?.status === 'failed' && <span className="text-rose-600">✗</span>}

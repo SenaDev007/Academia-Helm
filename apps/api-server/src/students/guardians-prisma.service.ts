@@ -180,7 +180,8 @@ export class GuardiansPrismaService {
    * « Création de compte » : crée (ou garantit) le compte parent pour un
    * responsable qui n'en avait pas (wizard avec étape skippée), et envoie
    * les informations de connexion au parent par les canaux demandés
-   * (défaut SMS + email + Helm Connect — pattern modal d'encaissement).
+   * (défaut SMS + email — ⭐ 16/11/2026 fix 1.0.8 : Helm Connect retiré des
+   * canaux d'identifiants, le message chat suppose déjà un compte connecté).
    *
    * ⭐ nov. 2026 — MOT DE PASSE : les identifiants incluent un mot de passe
    * SIMPLE régénéré à chaque envoi (le portail parent exige désormais un mot
@@ -253,7 +254,7 @@ export class GuardiansPrismaService {
         tenantId: params.tenantId,
         guardianId: params.guardianId,
         studentId: params.studentId,
-        channels: params.channels?.length ? params.channels : ['sms', 'email', 'helm_connect'],
+        channels: params.channels?.length ? params.channels : ['sms', 'email'],
         senderUserId: params.senderUserId,
         password,
       });
@@ -273,9 +274,9 @@ export class GuardiansPrismaService {
    * il faut pouvoir tout faire d'un coup au lieu d'un par un ») — GÉNÉRATION
    * MULTIPLE des comptes parents :
    *   - action='create'  : crée les comptes des responsables SANS compte et
-   *                        leur envoie les identifiants (SMS + email +
-   *                        Helm Connect) — les responsables déjà dotés d'un
-   *                        compte sont ignorés (skipped).
+   *                        leur envoie les identifiants (SMS + email) — les
+   *                        responsables déjà dotés d'un compte sont ignorés
+   *                        (skipped).
    *   - action='resend'  : renvoie les identifiants (mot de passe régénéré)
    *                        aux responsables AVEC compte — les sans-compte
    *                        sont ignorés (skipped).

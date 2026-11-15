@@ -79,9 +79,10 @@ export class GuardiansPrismaController {
    * ⭐ nov. 2026 (demande promoteur) — Onglet Famille → sous-onglet
    * « Création de compte » : crée le compte parent d'un responsable qui
    * n'en avait pas (wizard avec étape skippée) et lui envoie ses
-   * informations de connexion par email + Helm Connect (pattern « modal
-   * d'encaissement » du module Finance). Idempotent : renvoyer les
-   * identifiants d'un compte existant est possible à volonté.
+   * informations de connexion par SMS + email (⭐ 16/11/2026 fix 1.0.8 :
+   * Helm Connect retiré des identifiants — le message chat suppose déjà un
+   * compte connecté). Idempotent : renvoyer les identifiants d'un compte
+   * existant est possible à volonté.
    */
   @Post(':guardianId/account')
   @Roles(...MANAGEMENT_ROLES)
@@ -169,7 +170,7 @@ export class ParentAccountsBulkController {
    *   - action='resend'           : responsables AVEC compte → renvoi
    * Réponse : { results: [...par responsable], summary: { total, created,
    * sent, failed, skipped } } — timeout frontend porté à 5 min (20 parents
-   * × SMS+email+Helm Connect, pool de concurrence 3 côté service).
+   * × SMS+email (pool de concurrence 3 côté service).
    */
   @Post('bulk')
   @Roles(...MANAGEMENT_ROLES)

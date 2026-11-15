@@ -18,6 +18,11 @@
  *       pour les identifiants ; « generic » = route promotionnelle qui
  *       n'aboutit pas sur les numéros en DND ; activer la route DND sur le
  *       compte Termii auprès de leur support)
+ *       ⭐ 16/11/2026 (fix 1.0.8) : si la route configurée est refusée par
+ *       Termii (HTTP 422 « Route not configured … route=DND » — workspace
+ *       sans route DND active pour le pays, ex. BJ), l'envoi est RÉESSAYÉ UNE
+ *       FOIS automatiquement sur la route « generic » pour que le SMS parte
+ *       quand même (repli, en attendant l'activation de la route DND).
  * ============================================================================
  */
 
@@ -122,6 +127,11 @@ export class SmsService {
    *
    * Le numéro « to » est au format international SANS le « + »
    * (ex : +2290195000299 → 2290195000299).
+   *
+   * ⭐ 16/11/2026 (fix 1.0.8) — REPLI AUTOMATIQUE : si Termii refuse la route
+   * configurée (422 « Route not configured … route=DND » — constaté en prod
+   * tant que la route DND du workspace n'est pas activée pour le BJ), on
+   * réessaie UNE fois sur la route « generic » au lieu d'un échec sec.
    */
   private async sendViaTermii(request: SmsRequest): Promise<{ success: boolean; messageId?: string }> {
     const apiKey = this.configService.get<string>('TERMII_API_KEY');
@@ -137,6 +147,42 @@ export class SmsService {
     const senderId = this.configService.get<string>('TERMII_SENDER_ID') || 'Academia Helm';
     const channel = this.configService.get<string>('TERMII_CHANNEL') || 'dnd';
 
+    try {
+      return await this.sendViaTermiiChannel(request, apiKey, baseUrl, senderId, channel);
+    } catch (err: any) {
+      // ⭐ 16/11/2026 (fix 1.0.8) — route non configurée côté Termii → repli
+      //    automatique UNE fois sur la route generic (promotionnelle).
+      if (channel !== 'generic' && this.isTermiiRouteError(err)) {
+        this.logger.warn(
+          `Route Termii « ${channel} » refusée (${String(err?.message || '').substring(0, 200)}) — REPLI automatique sur la route generic`,
+        );
+        return await this.sendViaTermiiChannel(request, apiKey, baseUrl, senderId, 'generic');
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * ⭐ 16/11/2026 (fix 1.0.8) — Détecte une erreur Termii de type « route non
+   * configurée » (ex. 422 « Route not configured for workspace=… country=BJ
+   * channel=SMS route=DND. Contact platform support. »).
+   */
+  private isTermiiRouteError(err: any): boolean {
+    const msg = String(err?.message || '');
+    return /route not configured|not configured for workspace|route=dnd|route dnd|dnd route|no active route/i.test(msg)
+      || (/http 422/i.test(msg) && /route/i.test(msg));
+  }
+
+  /**
+   * Envoi effectif vers l'API Termii sur une route (channel) donnée.
+   */
+  private async sendViaTermiiChannel(
+    request: SmsRequest,
+    apiKey: string,
+    baseUrl: string,
+    senderId: string,
+    channel: string,
+  ): Promise<{ success: boolean; messageId?: string }> {
     // Format Termii : international sans le « + »
     const to = request.to.replace(/^\+/, '');
 
@@ -158,7 +204,7 @@ export class SmsService {
 
     const result: any = await response.json().catch(() => ({}));
     if (!response.ok || (result?.code && result.code !== 'ok')) {
-      this.logger.error('Termii API error:', result);
+      this.logger.error(`Termii API error (channel=${channel}):`, result);
       throw new Error(
         `Termii error HTTP ${response.status}: ${JSON.stringify(result).substring(0, 300)}`,
       );
@@ -166,7 +212,7 @@ export class SmsService {
 
     const messageId = result?.message_id || result?.message_id_str || `termii-${Date.now()}`;
     this.logger.log(
-      `✅ SMS sent via Termii to ${to}: ${messageId} (message: ${result?.message}, solde: ${result?.balance})`,
+      `✅ SMS sent via Termii to ${to}: ${messageId} (channel=${channel}, message: ${result?.message}, solde: ${result?.balance})`,
     );
 
     return {

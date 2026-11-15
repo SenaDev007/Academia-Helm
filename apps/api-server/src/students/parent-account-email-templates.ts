@@ -39,8 +39,9 @@ export interface ParentAccountEmailData {
   identifier: string;
   /** Type d'identifiant — détermine le libellé affiché */
   identifierType: 'PHONE' | 'EMAIL';
-  /** ⭐ nov. 2026 — mot de passe simple (ex : soleil42). null = compte staff
-   * partagé → « votre mot de passe habituel ». */
+  /** ⭐ nov. 2026 — mot de passe simple (ex : soleil42). ⭐ 16/11/2026 fix
+   * 1.0.8 : compte PARENT dédié créé si besoin → toujours réel ; null est
+   * un filet de sécurité rarissime → « contactez l'administration ». */
   password?: string | null;
 }
 
@@ -63,10 +64,10 @@ export function renderParentAccountEmail(data: ParentAccountEmailData): {
     : 'Sélectionnez l\u2019onglet « Parent », saisissez votre adresse email et votre mot de passe.';
   const passwordDisplay = data.password
     ? `<strong style="font-family:monospace;font-size:16px;letter-spacing:1px;">${escHtml(data.password)}</strong>`
-    : 'Votre mot de passe habituel';
+    : 'Contactez l\'administration';
   const passwordHint = data.password
     ? 'Conservez ce mot de passe précieusement — il vous sera demandé à chaque connexion.'
-    : 'Utilisez le mot de passe de votre compte habituel.';
+    : 'Contactez l\'administration de l\'établissement pour recevoir votre mot de passe.';
 
   const studentLine = data.studentName
     ? `<p style="margin:0 0 16px;font-size:15px;color:#0f172a;line-height:1.6;">Ce compte est lié à <strong>${escHtml(data.studentName)}</strong>, inscrit(e) dans notre établissement.</p>`
@@ -123,6 +124,6 @@ export function renderParentAccountEmail(data: ParentAccountEmailData): {
   return {
     subject,
     html: renderEmail(data.branding, bodyContent, 'Espace Parent'),
-    text: `Votre compte parent est activé. Portail : ${data.portalUrl} — Identifiant : ${data.identifier} (${identifierLabel})${data.password ? ` — Mot de passe : ${data.password}` : ' — Mot de passe : votre mot de passe habituel'}.`,
+    text: `Votre compte parent est activé. Portail : ${data.portalUrl} — Identifiant : ${data.identifier} (${identifierLabel})${data.password ? ` — Mot de passe : ${data.password}` : ' — Mot de passe : contactez l\'administration'}.`,
   };
 }

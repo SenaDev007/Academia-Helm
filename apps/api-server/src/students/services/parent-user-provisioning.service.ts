@@ -26,6 +26,14 @@
  *    l'envoi des identifiants (ParentAccountNotificationService) — régénérés
  *    à chaque envoi (jamais stockés en clair : bcrypt uniquement).
  *
+ * ⭐ 16/11/2026 (fix 1.0.8, retour promoteur) — COMPTE PARENT DÉDIÉ : un
+ *    guardian n'est PLUS lié à un User non-PARENT (collision d'email avec un
+ *    compte staff — ex. l'enseignant d'une autre école du groupe qui est
+ *    aussi parent). La réutilisation d'un User existant par email ne se fait
+ *    QUE pour un User role=PARENT (architecture multi-écoles) ; sinon un
+ *    compte PARENT dédié est créé (email de repli guardian-{id}@no-email.local
+ *    si l'email réel est déjà pris) — le compte staff n'est jamais modifié.
+ *
  * ⭐ When it's called:
  *   - Lazily: when a teacher wants to start a chat with a guardian
  *     (POST /api/chat/conversations/guardian-direct)
@@ -124,13 +132,18 @@ export class ParentUserProvisioningService {
     //    comptes historiques créés avec des majuscules).
     const normalizedEmail = guardian.email?.trim().toLowerCase() || null;
 
-    // 3. Look up existing User by email (in case it was created out-of-band)
+    // 3. Look up existing User by email (in case it was created out-of-band).
+    //    ⭐ 16/11/2026 (fix 1.0.8) : réutilisation UNIQUEMENT d'un compte
+    //    PARENT — un compte staff partageant l'email ne doit JAMAIS être lié
+    //    à un guardian (sinon le parent ne peut pas recevoir de mot de passe :
+    //    bug « votre mot de passe habituel »).
     let user: any = null;
     if (normalizedEmail) {
       user = await this.prisma.user.findFirst({
         where: {
           email: { equals: normalizedEmail, mode: 'insensitive' },
           tenantId: guardian.tenantId,
+          role: 'PARENT',
         },
       });
     }
@@ -161,23 +174,28 @@ export class ParentUserProvisioningService {
         // Handle race condition: another request created the User in parallel
         if (err.code === 'P2002' && normalizedEmail) {
           // Unique constraint violation on email — another User with this email
-          // exists. D'ABORD dans le même tenant (course classique)…
+          // exists. D'ABORD un PARENT dans le même tenant (course classique)…
           user = await this.prisma.user.findFirst({
             where: {
               email: { equals: normalizedEmail, mode: 'insensitive' },
               tenantId: guardian.tenantId,
+              role: 'PARENT',
             },
           });
           if (user) {
             this.logger.warn(`Race condition: User with email ${normalizedEmail} was created concurrently. Reusing it.`);
           } else {
-            // …SINON dans un AUTRE tenant (⭐ 2026-09-19 : même parent inscrit dans
-            // deux écoles du groupe — users.email est GLOBALEMENT unique). Le User
-            // existant est réutilisé et lié via guardian.userId : c'est l'architecture
-            // multi-écoles prévue (un user peut gérer plusieurs écoles).
+            // …SINON un PARENT dans un AUTRE tenant (⭐ 2026-09-19 : même parent
+            // inscrit dans deux écoles du groupe — users.email est GLOBALEMENT
+            // unique). Le User existant est réutilisé et lié via guardian.userId :
+            // c'est l'architecture multi-écoles prévue (un user peut gérer
+            // plusieurs écoles).
+            // ⭐ 16/11/2026 (fix 1.0.8) : PARENT uniquement — un compte STAFF
+            // (enseignant/directeur…) partageant cet email n'est PAS réutilisé.
             user = await this.prisma.user.findFirst({
               where: {
                 email: { equals: normalizedEmail, mode: 'insensitive' },
+                role: 'PARENT',
               },
             });
             if (user) {
@@ -187,7 +205,27 @@ export class ParentUserProvisioningService {
             }
           }
           if (!user) {
-            throw err; // unexpected — rethrow
+            // ⭐ 16/11/2026 (fix 1.0.8) : l'email est pris par un compte STAFF
+            // (même tenant ou autre) — on crée un compte PARENT DÉDIÉ avec
+            // l'email de repli déterministe. Le compte staff reste intact.
+            const fallbackEmail = `guardian-${guardian.id}@no-email.local`;
+            this.logger.warn(
+              `Email ${normalizedEmail} déjà pris par un compte non-PARENT — création d'un compte PARENT dédié avec l'email de repli ${fallbackEmail}`,
+            );
+            createdPassword = ParentUserProvisioningService.generateSimplePassword();
+            user = await this.prisma.user.create({
+              data: {
+                id: randomUUID(),
+                tenantId: guardian.tenantId,
+                email: fallbackEmail,
+                firstName: guardian.firstName,
+                lastName: guardian.lastName,
+                role: 'PARENT',
+                status: 'active',
+                passwordHash: await bcrypt.hash(createdPassword, 10),
+              },
+            });
+            created = true;
           }
         } else {
           throw err;
@@ -213,10 +251,12 @@ export class ParentUserProvisioningService {
    *   - Compte inexistant  → créé AVEC un mot de passe simple (retourné).
    *   - Compte PARENT      → mot de passe RÉGÉNÉRÉ (les identifiants envoyés
    *                          sont toujours auto-porteurs : mot de passe valide).
-   *   - Compte staff partagé (role ≠ PARENT — ex. enseignant également parent
-   *     d'un élève) → mot de passe JAMAIS écrasé (il connaît déjà le sien) :
-   *                          password=null → « utilisez votre mot de passe
-   *                          habituel » dans les messages.
+   *   - ⭐ 16/11/2026 (fix 1.0.8) — compte staff lié par erreur (role ≠ PARENT,
+   *     collision d'email historique — ex. enseignant d'une autre école du
+   *     groupe également parent) : un compte PARENT DÉDIÉ est créé (email de
+   *     repli guardian-{id}@no-email.local si l'email réel est pris), le
+   *     guardian est RE-LIÉ vers ce nouveau compte et un mot de passe SIMPLE
+   *     est généré. Le compte staff n'est JAMAIS modifié.
    *
    * @returns { userId, password } — password en clair UNIQUEMENT pour l'envoi
    * immédiat au parent (jamais stocké en clair en base : bcrypt uniquement).
@@ -232,17 +272,31 @@ export class ParentUserProvisioningService {
       return { userId: ensured.userId, password: ensured.password };
     }
 
-    // 2. Compte déjà existant : ne JAMAIS écraser le mot de passe d'un compte
-    //    staff partagé (enseignant/directeur également parent d'un élève).
+    // 2. Compte lié non-PARENT (lien historique erroné — bug « votre mot de
+    //    passe habituel ») → SPLIT : compte PARENT dédié + re-lien + mot de
+    //    passe réel. Le compte staff reste strictement intact.
     const user = await this.prisma.user.findUnique({
       where: { id: ensured.userId },
-      select: { id: true, role: true },
+      select: { id: true, role: true, email: true },
     });
     if (user && user.role !== 'PARENT') {
       this.logger.warn(
-        `User ${user.id} (role=${user.role}) lié au guardian ${guardianId} — mot de passe NON régénéré (compte staff partagé, il utilise son mot de passe habituel)`,
+        `User ${user.id} (role=${user.role}) lié au guardian ${guardianId} — création d'un compte PARENT dédié et re-lien (le compte staff n'est pas modifié)`,
       );
-      return { userId: user.id, password: null };
+      const guardian = await this.prisma.guardian.findUnique({ where: { id: guardianId } });
+      if (!guardian) {
+        throw new NotFoundException(`Guardian not found: ${guardianId}`);
+      }
+      const { user: dedicatedUser, password } = await this.createDedicatedParentUser(guardian);
+      await this.prisma.guardian.update({
+        where: { id: guardianId },
+        data: { userId: dedicatedUser.id },
+      });
+      this.logger.log(
+        `Compte PARENT dédié ${dedicatedUser.id} créé et re-lié au guardian ${guardianId}` +
+        ` (ancien user ${user.id} role=${user.role} intact)`,
+      );
+      return { userId: dedicatedUser.id, password };
     }
 
     // 3. Compte PARENT → régénérer un mot de passe simple (les identifiants
@@ -254,6 +308,54 @@ export class ParentUserProvisioningService {
     });
     this.logger.log(`Mot de passe parent régénéré pour le guardian ${guardianId} (user ${ensured.userId})`);
     return { userId: ensured.userId, password };
+  }
+
+  /**
+   * ⭐ 16/11/2026 (fix 1.0.8) — Crée un compte PARENT DÉDIÉ pour un guardian
+   * dont le lien actuel pointe vers un compte staff (ou dont l'email est déjà
+   * pris par un compte non-PARENT). Essaie d'abord l'email réel du guardian ;
+   * s'il est globalement pris (users.email @unique), retombe sur l'email
+   * déterministe guardian-{guardianId}@no-email.local (connexion par
+   * téléphone). Le mot de passe simple est généré et retourné en clair pour
+   * l'envoi immédiat — jamais stocké en clair (bcrypt).
+   */
+  private async createDedicatedParentUser(guardian: any): Promise<{ user: any; password: string }> {
+    const normalizedEmail = guardian.email?.trim().toLowerCase() || null;
+    const fallbackEmail = `guardian-${guardian.id}@no-email.local`;
+    const password = ParentUserProvisioningService.generateSimplePassword();
+    const passwordHash = await bcrypt.hash(password, 10);
+    const baseData: any = {
+      id: randomUUID(),
+      tenantId: guardian.tenantId,
+      firstName: guardian.firstName,
+      lastName: guardian.lastName,
+      role: 'PARENT',
+      status: 'active',
+      passwordHash,
+    };
+
+    // 1. Essai avec l'email réel du guardian (permet la connexion par email)
+    if (normalizedEmail && normalizedEmail !== fallbackEmail) {
+      try {
+        const user = await this.prisma.user.create({
+          data: { ...baseData, email: normalizedEmail },
+        });
+        return { user, password };
+      } catch (err: any) {
+        if (err?.code !== 'P2002') {
+          throw err; // erreur inattendue — pas un conflit d'email
+        }
+        this.logger.warn(
+          `Email ${normalizedEmail} déjà pris par un compte non-PARENT — compte PARENT dédié créé avec l'email de repli ${fallbackEmail}`,
+        );
+      }
+    }
+
+    // 2. Repli : email déterministe local (connexion par téléphone)
+    const user = await this.prisma.user.create({
+      data: { ...baseData, email: fallbackEmail },
+    });
+    return { user, password };
   }
 
   /**

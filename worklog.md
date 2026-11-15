@@ -13780,3 +13780,21 @@ Work Log:
 Stage Summary:
 - ✅✅✅ Les 5 demandes du retour promoteur DÉPLOYÉES et VÉRIFIÉES E2E : textes (wizard + sous-onglet réduit), filtre strict du sous-onglet, deux boutons de génération multiple avec rapport, mots de passe obligatoires et simples (connexion parent vérifiée), WhatsApp dégrisé + tous les canaux dans Élèves et Finance.
 - ⏳ UTILISATEUR : (1) activer la route DND sur le workspace Termii (country BJ) auprès du support Termii — OU passer TERMII_CHANNEL=generic, (2) les comptes parents existants reçoivent un mot de passe au premier « Renvoyer les identifiants » (génération multiple disponible), (3) hygiène restante : rotation mot de passe Neon + token GitHub.
+
+Task ID: 108-diagnostic-guardians-bug1
+Agent: Super Z (agent principal)
+Task: Diagnostic DB préalable au fix 1.0.8 — identifier les guardians touchés par le bug « votre mot de passe habituel » (guardian lié à un User non-PARENT)
+
+Work Log:
+- ⚠️ CONTEXTE SANDBOX : snapshot restauré à l'état du 15/11 18:32 (repo local = bcf1656 / build 1.0.2). Le code 1.0.3→1.0.7 (remote b28dd3b) n'existe QUE sur GitHub ; le token GitHub embarqué dans remote.origin.url a disparu de ce snapshot (probablement révoqué suite au conseil de rotation — c'est le comportement attendu). fetch impossible → fixes code 1.0.8 BLOQUÉS jusqu'à fourniture d'un nouveau token.
+- Vérif prod : GET https://api.academiahelm.com/health → {status:ok, version:1.0.7} ; /api/health/db → 200 {db:connected} — le build 1.0.7 est sain en ligne (uptime ~876 s au 15/11 18:37 UTC, restart récent sans erreur)
+- Script persisté : /home/z/my-project/scripts/diagnose_guardian_user_links.py (psycopg2, DSN repris de pg_delta.py — base winter-firefly, jamais affiché en clair)
+- RÉSULTAT A (cœur du bug, tenant test 178d5b6b) : 0 guardian lié à un non-PARENT — le tenant de test est PROPRE
+- RÉSULtat D (tous tenants) : 1 seul cas en prod — guardian « AKPOVI Dawes » (id 2269d7e7-5395-4547-a3e9-d81cd79c8804, email dawesakpovi@gmail.com, phone 0195722234, tenant CSPEB 59b8c348) lié à l'User ENSEIGNANT « AKPOVI Sèna » du tenant personnel ef67062e (Espace de Sèna AKPOVI) — collision email multi-tenant EXACTEMENT comme hypothétisé (ensureUserForGuardian a réutilisé le user d'un autre tenant via le fallback P2002)
+- Vue d'ensemble : tenant test = 14 guardians, 3 sans userId (Parent Test ×2, ParentDiane TestDirect), 11 users PARENT tous AVEC passwordHash (conforme 1.0.7) ; CSPEB = 8 guardians sans userId (AÏDEHOU Minica ×2, Parent Test ×3, AGLOSSI sans email ni phone, DEVO Léontine, ADJIBOGOUN Jean) — viviers de futures collisions email à surveiller après le fix
+- Conséquence pour le fix 1.0.8 (bug 1) : le cas Dawes confirme le besoin de la branche « créer un User PARENT dédié (email fallback guardian-{id}@no-email.local) + re-lier guardian.userId + générer un vrai mot de passe ». NB : Dawes n'a qu'un phone → sans le fix Termii (bug 3) + activation route BJ, il ne recevra rien par SMS de toute façon.
+
+Stage Summary:
+- ✅ Diagnostic Bug 1 COMPLET : 1 cas réel identifié (AKPOVI Dawes @ CSPEB), hypothèse validée, script réutilisable
+- ⛔ Fix code 1.0.8 (bugs 1-2-3 + version) IMPOSSIBLE sans nouveau token GitHub (repo privé SenaDev007/Academia-Helm) — demander un fine-grained PAT (contents read/write, expiry courte)
+- 🔐 Rappel sécurité : le Neon DSN circule en clair dans les scripts sandbox (rotation déjà recommandée) ; envoyer le token GitHub par un canal sûr, expiry ≤ 7 jours

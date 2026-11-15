@@ -29,8 +29,11 @@
  *    parent se connecte désormais par (téléphone OU email) + MOT DE PASSE.
  *    Les identifiants envoyés incluent donc un mot de passe SIMPLE (petit
  *    mot + 2-3 chiffres, ex : soleil42) — régénéré à chaque envoi par
- *    ParentUserProvisioningService.regeneratePasswordForGuardian (sauf
- *    compte staff partagé : password=null → « votre mot de passe habituel »).
+ *    ParentUserProvisioningService.regeneratePasswordForGuardian (⭐ 16/11/2026
+ *    fix 1.0.8 : un compte PARENT DÉDIÉ est créé si le guardian était lié à
+ *    un compte staff → le mot de passe est TOUJOURS réel ; le cas
+ *    password=null est un filet de sécurité rarissime → « contactez
+ *    l'administration »).
  *
  * Règles : fire-and-forget, ne lève JAMAIS d'erreur — retourne un rapport
  * par canal (status sent/failed/skipped), pattern identique aux reçus.
@@ -51,8 +54,9 @@ export type ParentAccountChannel = 'email' | 'whatsapp' | 'sms' | 'helm_connect'
 
 /**
  * Informations de connexion envoyées au parent — ⭐ nov. 2026 :
- * `password` = mot de passe SIMPLE régénéré à l'envoi (null = compte staff
- * partagé → « votre mot de passe habituel »).
+ * `password` = mot de passe SIMPLE régénéré à l'envoi (⭐ 16/11/2026 fix
+ * 1.0.8 : compte PARENT dédié créé si besoin → toujours réel ; null est un
+ * filet de sécurité rarissime → « contactez l'administration »).
  */
 export interface ParentAccountCredentials {
   portalUrl: string;
@@ -358,7 +362,7 @@ export class ParentAccountNotificationService {
     const identifierWord = params.credentials.identifierType === 'PHONE' ? 'votre numero' : 'votre email';
     const passwordPart = params.credentials.password
       ? ` - Mot de passe: ${params.credentials.password}`
-      : ' - Mot de passe: votre mot de passe habituel';
+      : ' - Mot de passe: contactez l\'administration';
     const message = `${schoolName}: Votre compte parent est actif. Portail: ${params.credentials.portalUrl} - Connectez-vous (onglet Parent) avec ${identifierWord} (${params.credentials.identifier})${passwordPart}.`;
 
     try {
@@ -432,7 +436,7 @@ export class ParentAccountNotificationService {
         `<b>${identifierLabel} :</b> ${escapeHtml(params.credentials.identifier)}`,
         params.credentials.password
           ? `<b>Mot de passe :</b> <b>${escapeHtml(params.credentials.password)}</b>`
-          : `<b>Mot de passe :</b> votre mot de passe habituel`,
+          : `<b>Mot de passe :</b> contactez l\'administration`,
         ``,
         `Ouvrez l'adresse ci-dessus, onglet « Parent », puis connectez-vous avec votre ${isPhone ? 'numero de telephone' : 'adresse email'} ET votre mot de passe.`,
         ``,
@@ -503,7 +507,7 @@ export class ParentAccountNotificationService {
       `Identifiant : ${credentials.identifier} (${isPhone ? 'numero de telephone' : 'email'})`,
       credentials.password
         ? `Mot de passe : ${credentials.password}`
-        : `Mot de passe : votre mot de passe habituel`,
+        : `Mot de passe : contactez l'administration`,
       ``,
       `Onglet « Parent » puis connexion avec votre ${isPhone ? 'numero' : 'email'} et votre mot de passe.`,
       ``,

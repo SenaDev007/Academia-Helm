@@ -1805,9 +1805,24 @@ export default function EnrollmentsContent() {
               //    Si non : étape skippée — rattrapable dans l'onglet
               //    Familles → sous-onglet « Création de compte ».
               if (data.guardians?.length) {
-                const guardianPromises = data.guardians
-                  .filter(g => g.firstName?.trim() && g.lastName?.trim())
-                  .map(g => studentsService.addGuardians(student.id, {
+                // ⭐ FIX 16/11/2026 (bug 4 — « élève créé sans son parent associé ») :
+                //    l'échec d'ajout d'un parent était AVALÉ (catch console.warn)
+                //    → l'élève était créé sans parent, sans le moindre message.
+                //    Maintenant : 1 retry automatique, puis toast d'erreur
+                //    EXPLICITE (nom du parent + raison + rattrapage).
+                const submittedGuardians = data.guardians.filter(
+                  (g: any) => g.firstName?.trim() && g.lastName?.trim(),
+                );
+                const ignoredCount = data.guardians.length - submittedGuardians.length;
+                if (ignoredCount > 0) {
+                  toast({
+                    title: 'Parent incomplet ignoré',
+                    description: `${ignoredCount} parent(s) saisi(s) sans prénom ET nom complets n'ont PAS été enregistrés. Complétez-les dans Élèves → Familles → Responsables.`,
+                    variant: 'destructive',
+                  });
+                }
+                const addOneWithRetry = async (g: any) => {
+                  const payload = {
                     guardians: [{
                       firstName: g.firstName, lastName: g.lastName,
                       relationship: g.relationship || 'GUARDIAN',
@@ -1820,15 +1835,43 @@ export default function EnrollmentsContent() {
                     // sendCredentials=true si créés (identifiants envoyés).
                     createAccount: data.createParentAccounts !== false,
                     sendCredentials: data.createParentAccounts !== false,
-                  }).catch((e: any) => console.warn('Guardian:', e?.message)));
-                const guardianResults = await Promise.all(guardianPromises);
+                  };
+                  try {
+                    return await studentsService.addGuardians(student.id, payload);
+                  } catch (e1: any) {
+                    // 1 retry après un court délai (réseau/API ponctuel)
+                    await new Promise((r) => setTimeout(r, 1500));
+                    try {
+                      return await studentsService.addGuardians(student.id, payload);
+                    } catch (e2: any) {
+                      return {
+                        __failed: true,
+                        name: `${g.firstName} ${g.lastName}`.trim(),
+                        message: e2?.message || e1?.message || 'erreur inconnue',
+                      };
+                    }
+                  }
+                };
+                const guardianResults = await Promise.all(
+                  submittedGuardians.map((g: any) => addOneWithRetry(g)),
+                );
 
                 // ⭐ Retour explicite « identifiants envoyés » (le backend
                 //    renvoie parentAccount + rapport par canal sur chaque
                 //    guardian créé — 15/11/2026 : canaux RÉELS envoyés, y
                 //    compris SMS Termii).
                 if (data.createParentAccounts !== false) {
-                  const createdCount = [guardianResults].flat().filter(Boolean).length;
+                  // ⭐ FIX 16/11/2026 (bug 4) : ne pas compter les échecs comme
+                  // des créations ; alerter explicitement sur les échecs restants.
+                  const failures: any[] = [guardianResults].flat().filter((r: any) => r?.__failed);
+                  if (failures.length > 0) {
+                    toast({
+                      title: `Élève créé, mais ${failures.length} parent(s) NON enregistré(s)`,
+                      description: failures.map((f: any) => `${f.name} : ${f.message}`).join(' · ') + ' — Ajoutez-le manuellement dans Élèves & Scolarité → Familles → Responsables.',
+                      variant: 'destructive',
+                    });
+                  }
+                  const createdCount = [guardianResults].flat().filter((r: any) => r && !r?.__failed).length;
                   if (createdCount > 0) {
                     // Agréger les canaux réellement envoyés (sent) sur tous les parents
                     const channelLabel = (ch: string) =>

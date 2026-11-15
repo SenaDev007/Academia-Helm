@@ -319,9 +319,21 @@ export default function StudentEnrollmentForm({
   };
 
   const validateStep3 = () => {
-    // ⭐ FIX: Les parents sont optionnels — l'utilisateur peut créer un élève avec juste
-    // son nom et ajouter les parents plus tard. On ne bloque plus la navigation si le
-    // parent principal n'a pas de nom/prénom.
+    // ⭐ FIX 16/11/2026 (bug 4 — « récap zéro parent / élève créé sans parent ») :
+    // un parent n'est enregistré côté backend QUE s'il a un prénom ET un nom
+    // complets. Avant : aucune validation → la secrétaire saisissait parfois
+    // seulement le nom + téléphone du parent → récap « 0 parent(s) » puis élève
+    // créé SANS parent, sans le moindre message. On bloque désormais ici avec
+    // une explication claire. Un bloc entièrement vide reste autorisé
+    // (parents ajoutables plus tard dans Familles).
+    if (guardians.some((g) => {
+      const any = (g.firstName?.trim() || g.lastName?.trim() || g.phone?.trim() || g.email?.trim() || g.address?.trim());
+      const complete = (g.firstName?.trim() && g.lastName?.trim());
+      return any && !complete;
+    })) {
+      setError('Complétez le prénom ET le nom de chaque parent saisi — un parent incomplet ne serait pas enregistré (retour à l’étape Parents pour corriger).');
+      return false;
+    }
     return true;
   };
 
@@ -344,6 +356,11 @@ export default function StudentEnrollmentForm({
   };
 
   const handleSubmit = async () => {
+    // ⭐ FIX 16/11/2026 (bug 4) : protection au moment de la soumission — seuls
+    // les parents avec prénom ET nom complets sont envoyés (le backend exige
+    // les deux). Si une saisie partiale subsiste, on l'explique au lieu de
+    // l'ignorer silencieusement (le message d'erreur est posé par validateStep3).
+    if (!validateStep3()) return;
     setIsSubmitting(true);
     setError(null);
     try {
@@ -427,6 +444,10 @@ export default function StudentEnrollmentForm({
   }, [selectedLevelId, classesList, schoolLevels]);
 
   // ─── Render ───
+
+  // ⭐ FIX 16/11/2026 (bug 4) : parents COMPLETS = prénom + nom (les seuls
+  // enregistrés par le backend) — même règle partout (étape 3, récap, submit).
+  const completeGuardians = guardians.filter(g => g.firstName?.trim() && g.lastName?.trim());
 
   const steps = [
     { num: 1, label: 'Identité' },
@@ -612,6 +633,14 @@ export default function StudentEnrollmentForm({
       {/* ─── Étape 3 : Parents ─── */}
       {step === 3 && (
         <div className="space-y-4">
+          {/* ⭐ FIX 16/11/2026 (bug 4) : expliquer les champs réellement
+              obligatoires — un parent sans prénom ET nom n'était PAS
+              enregistré, sans aucun message (élève créé « sans parent »). */}
+          <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-xs text-blue-800 leading-relaxed">
+            Renseignez au minimum le <strong>prénom</strong> et le <strong>nom</strong> de chaque parent
+            (le téléphone est fortement recommandé : il sert d’identifiant de connexion au
+            portail parent). Un parent incomplet ne sera <strong>pas</strong> enregistré.
+          </div>
           {guardians.map((g, idx) => (
             <div key={idx} className="border border-gray-200 rounded-lg p-4 space-y-3 relative">
               <div className="flex items-center justify-between">
@@ -623,9 +652,9 @@ export default function StudentEnrollmentForm({
                 )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <input type="text" placeholder="Prénom" value={g.firstName} onChange={e => updateGuardian(idx, 'firstName', e.target.value)}
+                <input type="text" placeholder="Prénom *" value={g.firstName} onChange={e => updateGuardian(idx, 'firstName', e.target.value)}
                   className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                <input type="text" placeholder="Nom" value={g.lastName} onChange={e => updateGuardian(idx, 'lastName', e.target.value)}
+                <input type="text" placeholder="Nom *" value={g.lastName} onChange={e => updateGuardian(idx, 'lastName', e.target.value)}
                   className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -828,7 +857,23 @@ export default function StudentEnrollmentForm({
                 {formData.enrollmentType === 'NEW' ? '🌟 Nouvel élève (frais d\'inscription)' : '↻ Ancien élève (frais de réinscription)'}
               </span>
             </div>
-            <div className="flex justify-between"><span className="text-gray-500">Parents:</span><span className="font-medium">{guardians.filter(g => g.firstName).length} parent(s)</span></div>
+            {/* ⭐ FIX 16/11/2026 (bug 4) : comptage COHÉRENT avec l’enregistrement
+                (prénom + nom complets) + DÉTAIL des parents — le promoteur doit
+                voir QUI sera enregistré, pas juste un nombre qui peut dire 0
+                alors que des informations ont été saisies. */}
+            <div className="flex justify-between"><span className="text-gray-500">Parents:</span><span className="font-medium">{completeGuardians.length} parent(s) enregistré(s)</span></div>
+            {completeGuardians.map((g, i) => (
+              <div key={i} className="flex justify-between text-xs text-gray-600 pl-2">
+                <span>• {g.firstName} {g.lastName} <span className="text-gray-400">({g.relationship})</span></span>
+                <span>{g.phone || g.email || '—'}</span>
+              </div>
+            ))}
+            {completeGuardians.length === 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-md px-3 py-2 text-xs text-amber-800">
+                ⚠️ Aucun parent ne sera enregistré pour cet élève. Vous pourrez l’ajouter
+                plus tard dans l’onglet « Familles » → « Responsables ».
+              </div>
+            )}
             {showParentAccountStep && (
             <div className="flex justify-between">
               <span className="text-gray-500">Comptes parents:</span>

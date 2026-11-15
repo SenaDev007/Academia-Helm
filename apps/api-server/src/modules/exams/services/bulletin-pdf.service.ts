@@ -352,7 +352,12 @@ export class BulletinPdfService {
   }
 
   private buildHtml(data: BulletinPdfData, qrCode: string, bulletinId: string): string {
-    const ministry = data.isSecondary
+    // ⭐ 2026-11-15 — Ministère du SECONDaire pour TOUS les bulletins du niveau
+    //    secondaire : isSecondary (trimestriel consolidé) + isSecondaryEval
+    //    (bulletin d'évaluation) + isSecondaryLevel (Report Book EN). Avant,
+    //    seul le trimestriel recevait le ministère secondaire — l'évaluation
+    //    et le Report Book affichaient « Maternel et Primaire ».
+    const ministry = (data.isSecondary || data.isSecondaryEval || data.isSecondaryLevel)
       ? "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes"
       : 'Ministère des Enseignements Maternel et Primaire';
 
@@ -1910,7 +1915,10 @@ ${data.schoolLogo ? `<img src="${data.schoolLogo}" class="watermark" style="widt
    *   Headmaster(mistress)'s Comment (grille) · 3 signatures.
    */
   private buildHtmlAnglophone(data: BulletinPdfData, qrCode: string, _bulletinId: string): string {
-    const ministry = data.isSecondary
+    // ⭐ 2026-11-15 — isSecondaryLevel (Report Book EN secondaire) désormais
+    //    inclus : avant, l'EN secondaire affichait « Ministry of Pre-Primary
+    //    and Primary Education ».
+    const ministry = (data.isSecondary || data.isSecondaryEval || data.isSecondaryLevel)
       ? 'Ministry of Secondary, Technical and Vocational Education and Youth Insertion'
       : 'Ministry of Pre-Primary and Primary Education';
 
@@ -2599,8 +2607,11 @@ ${page2Content}
    */
   private buildHtmlVueParMatiere(data: BulletinPdfData, qrCode: string, _bulletinId: string): string {
     const isMaternelle = data.isMaternelle;
-    const ministry = isMaternelle
-      ? 'Ministère des Enseignements Maternel et Primaire'
+    // ⭐ 2026-11-15 — FIX ternaire cassé (les 2 branches affichaient « Maternel
+    //    et Primaire ») : un document du niveau secondaire reçoit désormais le
+    //    ministère secondaire.
+    const ministry = (data.isSecondary || data.isSecondaryEval || data.isSecondaryLevel)
+      ? "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes"
       : 'Ministère des Enseignements Maternel et Primaire';
 
     // Benin flag as SVG data URL (même drapeau que buildHtml)

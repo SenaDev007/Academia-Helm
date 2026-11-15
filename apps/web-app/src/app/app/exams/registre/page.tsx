@@ -292,6 +292,7 @@ function RegistreContent() {
         evaluations={evaluations}
         loading={loading}
         levelBadge={`${scopeLevel || '—'} ${language ? `· ${language}` : ''}`}
+        language={language as 'FR' | 'EN'}
         onRefresh={loadEvaluations}
       />
     );
@@ -482,6 +483,7 @@ function RegistreSecondaireView({
   evaluations,
   loading,
   levelBadge,
+  language,
   onRefresh,
 }: {
   classes: any[];
@@ -490,8 +492,13 @@ function RegistreSecondaireView({
   evaluations: any[];
   loading: boolean;
   levelBadge: string;
+  /** ⭐ FIX 2026-11-15 — « language is not defined » : le sélecteur de classe
+   *    traduit les noms en piste EN, mais la prop n'était pas transmise →
+   *    ReferenceError dès le 1er rendu du registre secondaire (FR comme EN). */
+  language: 'FR' | 'EN';
   onRefresh: () => void;
 }) {
+  const isEN = language === 'EN';
   // ── Matières disponibles (celles des évaluations VALIDATED de la classe) ──
   const subjects = useMemo(() => {
     const map = new Map<string, { id: string; name: string; coefficient: number }>();

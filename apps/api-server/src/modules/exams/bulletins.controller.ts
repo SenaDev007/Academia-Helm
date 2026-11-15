@@ -1346,10 +1346,17 @@ export class BulletinsController {
 
     // ⭐ 2026-11-13 — Identité secondaire : écoles combinées — le secondaire peut
     //    porter un nom/logo/contacts DIFFÉRENTS (tenant_level_identity_profiles).
-    //    Overlay appliqué AVANT la fusion pdfData → le paramètre front
-    //    (body.schoolName…) garde toujours la priorité. L'élève précis
+    //    Overlay appliqué AVANT la fusion pdfData. L'élève précis
     //    (studentSchoolLevelId) prime sur le flag du front ; overlay null ⇒
     //    branding global inchangé (maternelle/primaire = identité par défaut).
+    //    ⭐ 2026-11-15 — PRIORITÉ INVERSÉE quand l'identité secondaire est configurée :
+    //    le front envoie TOUJOURS l'identité globale (useSchoolIdentity) dans
+    //    body.school* — l'ancienne fusion `body.school* || branding.school*`
+    //    écrasait donc l'overlay secondaire à chaque coup (le nom/contacts du
+    //    secondaire ne s'affichaient jamais dans les PDF). Désormais :
+    //    overlay secondaire > body > branding global ; sans overlay (maternelle/
+    //    primaire, ou secondaire non configuré) l'ancienne priorité est gardée.
+    let secondaryIdentityApplied = false;
     if (isAnySecondary) {
       const secOverlay = await resolveLevelIdentityOverlay(
         this.prisma,
@@ -1357,6 +1364,7 @@ export class BulletinsController {
         studentSchoolLevelId ? { schoolLevelId: studentSchoolLevelId } : { isSecondary: true },
       );
       if (secOverlay) {
+        secondaryIdentityApplied = true;
         // Helper partagé : remplace les champs canoniques non vides (schoolName).
         const mergedBranding: any = applyLevelIdentityOverlay(branding, secOverlay);
         // Mapping local : champs canoniques de l'overlay → noms school* lus par
@@ -1371,17 +1379,22 @@ export class BulletinsController {
         };
       }
     }
+    const schoolField = (key: 'schoolName' | 'schoolLogo' | 'schoolAddress' | 'schoolPhone' | 'schoolEmail' | 'schoolSlogan') => {
+      const fromBody = (body as any)[key];
+      const fromBranding = (branding as any)[key];
+      return secondaryIdentityApplied ? (fromBranding || fromBody) : (fromBody || fromBranding);
+    };
 
     // Fusionner les données du frontend avec le branding + teacherName résolu
     const pdfData = {
       ...body,
       subjects: subjectsWithConduite,
-      schoolName: body.schoolName || branding.schoolName,
-      schoolLogo: body.schoolLogo || branding.schoolLogo,
-      schoolAddress: body.schoolAddress || branding.schoolAddress,
-      schoolPhone: body.schoolPhone || branding.schoolPhone,
-      schoolEmail: body.schoolEmail || branding.schoolEmail,
-      schoolSlogan: body.schoolSlogan || branding.schoolSlogan,
+      schoolName: schoolField('schoolName'),
+      schoolLogo: schoolField('schoolLogo'),
+      schoolAddress: schoolField('schoolAddress'),
+      schoolPhone: schoolField('schoolPhone'),
+      schoolEmail: schoolField('schoolEmail'),
+      schoolSlogan: schoolField('schoolSlogan'),
       // ⭐ Nom du titulaire : priorité au backend (résolu via Teacher),
       //    fallback sur ce que le frontend a envoyé (pour rétro-compat)
       teacherName: teacherName || body.teacherName || null,

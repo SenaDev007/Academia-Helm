@@ -13593,3 +13593,46 @@ Stage Summary:
 - ✅ La base Neon est dormante entre les cycles (delta 90 s = 0 requête applicative) ; coût attendu ~$5-10/mois confirmé par la mesure
 - ⚠️ Vérification post-déploiement : /health → version « 1.0.2 » + uptime remis à zéro ; /api/health/db → 200 {status: ok, db: connected}
 - 🔐 Rotation credentials toujours requise (mot de passe Neon + token GitHub circulés en clair) — Process A (emails-only) cible l'ANCIENNE base, il mourra avec sa suppression ; si un Process A touchait la nouvelle base, la rotation le tuerait aussi
+
+---
+Task ID: postdeploy-102-verification
+Agent: Super Z (agent principal)
+Task: Vérifier le déploiement du build 1.0.2 (bcf1656) et PROUVER le scale-to-zero de la nouvelle base Neon
+
+Work Log:
+- Build 1.0.2 confirmé en ligne à 18:28:07 UTC (uptime remis à zéro) : /health → version 1.0.2 ; /api/health/db → HTTP 200 {status: ok, db: connected}
+- Stabilité : uptime strictement monotone 5 s → 925 s+ sur ~17 min de polling continu 25-40 s (plus AUCUNE boucle de redémarrage ; les restarts 18:09/18:21/18:23 étaient l'ancien build)
+- Surveillance pollers (neon-verify-sleep.py 5 min, échantillon 2 s, NOUVELLE base) : AUCUN poller — zéro scheduled_emails/community/chat, zéro SELECT 1 → rc=0 OK
+- Preuve AUTOSUSPEND (neon-verify-suspend.py 7 min silence total) : postmaster 18:28:10 → redémarré 18:43:53 PENDANT le silence, âge 1 s ≈ latence de réveil 2,2 s → VERDICT SUSPENDED (le compute dort ≤ 5 min après la dernière requête et se réveille pour la 1re connexion)
+- Preuve des correctifs en base : catchup du boot 18:29 → 15 conversations piste UPDATEes (Conseil pédagogique FR/EN, Administration FR, Conseil des classes) + 177 lignes chat_auto_groups — le chemin ex-42P18 tourne désormais ; 0 INSERT (tous les canaux existaient déjà, chemin UPDATE)
+- ANCIENNE base sondée : stats_reset = 18:45:18.877 (au moment exact de mon knock) → elle était SUSPENDUE avant ; 2 min de surveillance → ZÉRO tick findPendingDue → Process A (poller emails 1/min hors Railway, vivant à 10:57 UTC) a cessé de frapper entre ~11:00 et ~18:40 — hôte probablement hors ligne ; thèse pg_cron ÉCARTÉE (aucune extension pg_cron/cron.job dans les 2 bases)
+- Script persisté : scripts/check_boot_channels.py (sandbox /home/z/my-project/scripts/)
+
+Stage Summary:
+- ✅✅ Incident coût Neon RÉSOLU sur la nouvelle base : build 1.0.2 stable + zéro poller + SUSPENSION PROUVÉE (7 min silence → réveil pour notre seule connexion) → trajectoire ~$5-10/mois (vs $50-65)
+- ✅ L'ancienne base dort aussi désormais — plus personne ne la frappe ; sa suppression (≥ 1 semaine) n'a plus d'urgence fonctionnelle
+- ⚠️ Latence de réveil constatée : ~2,2 s sur la 1re requête après > 5 min d'inactivité (normal Neon scale-to-zero) — à signaler aux utilisateurs si remarqué
+- 🔐 Reste côté utilisateur : (1) rotation mot de passe Neon (circulé en clair) + DATABASE_URL Railway/Vercel + redéploiement ; (2) suppression ancien compte/base Neon ; (3) rotation token GitHub ; (4) Play Store captures/soumission ; (5) optionnel : portes d'activité cron métier (Finance 7h/12h/17h, facturation 9h, clôture 23:59, relances 02:00)
+
+---
+Task ID: exams-module-fixes-1511
+Agent: Super Z (agent principal)
+Task: Module Examens — (1) crash « language is not defined » du registre des notes secondaire ; (2) en-tête des bulletins du secondaire conforme à « Identité école secondaire » (Paramètres → Identité)
+
+Work Log:
+- BUG 1 : RegistreSecondaireView (registre/page.tsx) référençait la variable « language » au sélecteur de classe (traduction EN des noms de classes) sans jamais la recevoir en prop → ReferenceError au 1er rendu (FR et EN — l'utilisateur l'a vu via la piste EN) capturé par l'error boundary « Erreur du module ». Prop language ajoutée à l'interface + transmise depuis RegistreContent.
+- BUG 2 (diagnostic en 4 causes cumulées) : (a) le front utilisait useSchoolIdentity() (identité GLOBALE maternelle/primaire) pour l'en-tête écran + tous les payloads PDF ; (b) le backend appliquait bien l'overlay tenant_level_identity_profiles (ajouté le 13/11) MAIS la fusion « body.school* || branding.school* » laissait l'identité globale envoyée par le front écraser l'overlay à chaque génération ; (c) le ministère secondaire n'était choisi que sur data.isSecondary (trimestriel consolidé) — le bulletin d'évaluation FR, le Report Book EN (isSecondaryLevel) et la vue par matière affichaient « Maternel et Primaire » ; (d) ternaire cassé dans buildHtmlVueParMatiere (même valeur sur les 2 branches).
+- Correctifs FRONT (bulletins/page.tsx) : chargement de l'identité secondaire (settingsService.getSecondaryIdentity) quand scopeLevel=SECONDAIRE + fusion non destructive dans schoolForLevel (nom, acronyme, slogan, logo, adresse, ville, département, tél, whatsapp, email, site) → en-tête écran (BulletinTwoPage), payload generate-pdf (bulletin d'évaluation/trimestriel/Report Book), prop MoyennesTab (vue par matière trimestriel/annuel).
+- Correctifs BACK (bulletins.controller.ts) : booléen secondaryIdentityApplied + helper schoolField() — quand l'overlay secondaire existe : overlay > body > branding global (inversé) ; sinon priorité historique conservée (maternelle/primaire).
+- Correctifs BACK (bulletin-pdf.service.ts) : ministère = isSecondary || isSecondaryEval || isSecondaryLevel dans buildHtml, buildHtmlAnglophone (EN : « Ministry of Secondary, Technical and Vocational Education and Youth Insertion ») et buildHtmlVueParMatiere (ternaire réparé).
+- BONUS (trouvé au typecheck TS7 sur les 2 fichiers, même classe de bug) : BulletinPrimairePage1 référençait « handleVisaBlur » jamais déclaré (présent côté maternelle) → ReferenceError au blur du visa directeur — handler ajouté (maintien d'état local, même sémantique que la version maternelle).
+- Validation : esbuild (syntaxe OK sur les 4 fichiers) + tsc 7 ciblé : AVANT mes correctifs tsc signalait language (registre l.796) et handleVisaBlur (bulletins l.2255) ; APRÈS : zéro TS2304 résiduel (les autres erreurs = bruit environnemental node_modules absent / toast React namespace préexistants).
+- Logo secondaire : stocké en data-URL base64 (compressImageFileToDataUrl 1024px q0.82) → directement consommable par le front ET Puppeteer, aucune résolution d'URL nécessaire.
+- Version 1.0.2 → 1.0.3 (marqueur /health) ; commit 20a60d3 créé localement — PUSH BLOQUÉ : le token GitHub a été retiré du remote (hygiène post-migration) → en attente d'un token frais de l'utilisateur ou d'un push manuel de sa part.
+
+Stage Summary:
+- ✅ Registre des notes secondaire : plus de crash (prop language) — les classes EN s'affichent traduites
+- ✅ Bulletins du secondaire (évaluation, trimestriel, annuel, Report Book EN) : en-tête écran ET PDF portent l'identité « école secondaire » paramétrée (nom/logo/contacts) + le ministère de l'Enseignement Secondaire — maternelle/primaire inchangés (identité globale)
+- ✅ 2 ReferenceError latentes éradiquées (language, handleVisaBlur) — vérifiées par typecheck avant/après
+- ⏳ Déploiement : commit 20a60d3 prêt — token GitHub requis pour push (ou push manuel utilisateur) → vérifier ensuite /health → « 1.0.3 » puis tester registre secondaire + en-tête bulletins
+- 🔐 Rappel hygiène : rotation mot de passe Neon + token GitHub toujours en attente côté utilisateur

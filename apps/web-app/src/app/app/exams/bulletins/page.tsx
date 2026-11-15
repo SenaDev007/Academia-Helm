@@ -48,6 +48,7 @@ import { Badge } from '@/components/ui/badge';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { useSchoolLevel } from '@/hooks/useSchoolLevel';
 import { useSchoolIdentity } from '@/hooks/useSchoolIdentity';
+import * as settingsService from '@/services/settings.service';
 import { institutionalExamsService } from '@/services/institutional-exams.service';
 import apiClient from '@/lib/api/client';
 import { enComponentForCode, translatePeriodName } from '@/lib/exam-anglophone-config';
@@ -450,6 +451,44 @@ function BulletinsContent() {
   const user = session?.user;
   const effectiveTenantId = session?.tenant?.id;
 
+  // ⭐ 2026-11-15 — IDENTITÉ DU NIVEAU SECONDAIRE (écoles combinées) : le module
+  //    Paramètres → onglet Identité → « Identité école secondaire » peut définir
+  //    un nom/logo/contacts DIFFÉRENTS du global (maternelle/primaire). Les
+  //    documents du secondaire (bulletins d'évaluation, trimestriels, annuels,
+  //    Report Book EN) doivent porter CETTE identité — l'identité globale ne
+  //    convient que pour maternelle/primaire. Fusion non destructive : chaque
+  //    champ non vide du profil secondaire remplace le champ global.
+  const isSecondaire = scopeLevel === 'SECONDAIRE';
+  const [secondaryIdentityProfile, setSecondaryIdentityProfile] = useState<any | null>(null);
+  useEffect(() => {
+    if (!isSecondaire) { setSecondaryIdentityProfile(null); return; }
+    let cancelled = false;
+    settingsService.getSecondaryIdentity(effectiveTenantId ?? undefined)
+      .then((res: any) => {
+        if (!cancelled) setSecondaryIdentityProfile(res?.configured && res?.profile ? res.profile : null);
+      })
+      .catch(() => { if (!cancelled) setSecondaryIdentityProfile(null); });
+    return () => { cancelled = true; };
+  }, [isSecondaire, effectiveTenantId]);
+  const schoolForLevel = useMemo(() => {
+    const sec = secondaryIdentityProfile;
+    if (!isSecondaire || !sec) return school;
+    const merged: any = { ...school };
+    if (sec.schoolName) merged.schoolName = sec.schoolName;
+    if (sec.schoolAcronym) merged.schoolAcronym = sec.schoolAcronym;
+    if (sec.slogan) merged.slogan = sec.slogan;
+    if (sec.logoUrl) merged.logoUrl = sec.logoUrl;
+    if (sec.address) merged.address = sec.address;
+    if (sec.city) merged.city = sec.city;
+    if (sec.department) merged.department = sec.department;
+    if (sec.phonePrimary) merged.phone = sec.phonePrimary;
+    if (sec.phoneSecondary) merged.phoneSecondary = sec.phoneSecondary;
+    if (sec.whatsapp) merged.whatsapp = sec.whatsapp;
+    if (sec.email) merged.email = sec.email;
+    if (sec.website) merged.website = sec.website;
+    return merged;
+  }, [school, isSecondaire, secondaryIdentityProfile]);
+
   const [classes, setClasses] = useState<any[]>([]);
   const [periods, setPeriods] = useState<any[]>([]);
   // ⭐ FIX PERF (2026-09-21) : refs miroirs — loadBulletins lit classes/periods
@@ -484,7 +523,7 @@ function BulletinsContent() {
   //      un élève, toutes les matières de ce type.
   //    • « Bulletin trimestriel » = modèle consolidé CEG : Interrogation écrite
   //      1/2 + Devoir surveillé 1/2 du trimestre, moyennes et coefficients.
-  const isSecondaire = scopeLevel === 'SECONDAIRE';
+  //    (isSecondaire est déclaré plus haut avec l'identité du niveau secondaire)
   const isSecondaryTrack = isSecondaire && scopeLang !== 'EN';
   const secondaryConsolidated = isSecondaryTrack && activeSubTab === 'trimestriel';
 
@@ -1206,12 +1245,15 @@ function BulletinsContent() {
       const nextTermStart = nextPeriod?.startDate ? format(new Date(nextPeriod.startDate), 'EEEE, MMMM d, yyyy', { locale: enUSLocale }) : null;
 
       const payload: any = {
-        schoolName: school?.schoolName,
-        schoolLogo: school?.logoUrl,
-        schoolAddress: school?.address,
-        schoolPhone: school?.phone,
-        schoolEmail: school?.email,
-        schoolSlogan: school?.slogan,
+        // ⭐ 2026-11-15 — schoolForLevel : identité du NIVEAU courant — pour le
+        //    secondaire, l'override « Identité école secondaire » (module
+        //    Paramètres → Identité) remplace nom/logo/adresse/tél/email/slogan.
+        schoolName: schoolForLevel?.schoolName,
+        schoolLogo: schoolForLevel?.logoUrl,
+        schoolAddress: schoolForLevel?.address,
+        schoolPhone: schoolForLevel?.phone,
+        schoolEmail: schoolForLevel?.email,
+        schoolSlogan: schoolForLevel?.slogan,
         academicYearName: academicYear?.label || '',
         periodName: selectedPeriodName,
         // ⭐ 2026-09-29 — periodId envoyé au backend pour qu'il puisse résoudre
@@ -1675,7 +1717,7 @@ function BulletinsContent() {
                       student={student}
                       bulletinData={bulletinData}
                       isMaternelle={isMaternelle}
-                      school={school}
+                      school={schoolForLevel}
                       academicYear={academicYear}
                       selectedPeriodName={selectedPeriodName}
                       selectedClassName={selectedClassName}
@@ -1719,7 +1761,7 @@ function BulletinsContent() {
           setActiveMoyenneTab={setActiveMoyenneTab}
           activeVue={activeVue}
           setActiveVue={setActiveVue}
-          school={school}
+          school={schoolForLevel}
           effectiveTenantId={effectiveTenantId}
           user={user}
           directorName={directorName}
@@ -2127,6 +2169,15 @@ function BulletinPrimairePage1({
     }
     setDirectorVisas(initial);
   }, [student.id, sortedSubjects]);
+
+  // ⭐ FIX 2026-11-15 — « handleVisaBlur is not defined » : le visa directeur du
+  //    bulletin PRIMAIRE référence un handler jamais déclaré (présent côté
+  //    maternelle mais oublié ici) → ReferenceError au blur de la cellule
+  //    « Visa ». Même comportement que la version maternelle : maintien de
+  //    l'état local (le PDF consomme les valeurs en mémoire).
+  const handleVisaBlur = async (subjectId: string, value: string) => {
+    setDirectorVisas(prev => ({ ...prev, [subjectId]: value }));
+  };
 
   const totalGeneral = sortedSubjects.reduce((sum, subj) => {
     const s = student.subjectScores[subj.id];

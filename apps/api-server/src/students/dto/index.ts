@@ -88,6 +88,20 @@ export class CreateGuardianDto {
   @IsString() relationship: string;
   @IsOptional() @IsString() address?: string;
   @IsOptional() @IsBoolean() isPrimary?: boolean;
+  /**
+   * ⭐ (demande promoteur, nov. 2026) Créer le compte parent (User role=PARENT)
+   * en même temps que l'ajout du responsable — défaut true (comportement
+   * 2026-09-19). false = étape skippée : le compte sera créable plus tard
+   * depuis l'onglet Famille → sous-onglet « Création de compte »
+   * (POST /students/:studentId/guardians/:guardianId/account).
+   */
+  @IsOptional() @IsBoolean() createAccount?: boolean;
+  /**
+   * ⭐ (demande promoteur, nov. 2026) Envoyer les informations de connexion
+   * au parent par email + Helm Connect (pattern « modal d'encaissement ») —
+   * défaut false. N'a d'effet que si un compte est créé (createAccount !== false).
+   */
+  @IsOptional() @IsBoolean() sendCredentials?: boolean;
   /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
 }
@@ -104,6 +118,34 @@ export class UpdateGuardianDto {
 export class UpdateGuardianRelationDto {
   @IsOptional() @IsString() relationship?: string;
   @IsOptional() @IsBoolean() isPrimary?: boolean;
+  @IsOptional() @IsString() tenantId?: string;
+}
+
+/**
+ * ⭐ (demande promoteur, nov. 2026) Création du compte parent en même temps
+ * que l'inscription de l'élève (wizard Onglet Inscriptions) :
+ *   - createAccount=false  → NE PAS créer le User parent (étape skippée —
+ *     rattrapable dans l'onglet Famille → sous-onglet « Création de compte »)
+ *   - sendCredentials=true → envoyer les informations de connexion au parent
+ *     par email + Helm Connect (pattern « modal d'encaissement » du module
+ *     Finance — receipt-notification-finance.service.ts).
+ * Défauts rétro-compatibles : compte créé (comportement 2026-09-19),
+ * identifiants NON envoyés (l'envoi est explicite).
+ */
+export class ProvisionParentAccountDto {
+  /** Créer (ou garantir) le User parent — défaut true. */
+  @IsOptional() @IsBoolean() createAccount?: boolean;
+  /** Envoyer les identifiants de connexion au parent — défaut true. */
+  @IsOptional() @IsBoolean() sendCredentials?: boolean;
+  /**
+   * Canaux d'envoi — défaut ['email', 'helm_connect'] comme le module
+   * Finance (WhatsApp/SMS remplacés par Helm Connect, conservés pour compat).
+   */
+  @IsOptional()
+  @IsArray()
+  @IsIn(['email', 'whatsapp', 'sms', 'helm_connect'], { each: true })
+  channels?: ('email' | 'whatsapp' | 'sms' | 'helm_connect')[];
+  /** Frontend may send tenantId — ignored */
   @IsOptional() @IsString() tenantId?: string;
 }
 

@@ -552,10 +552,21 @@ class StudentsService {
 
   /**
    * Ajouter des tuteurs
+   *
+   * ⭐ nov. 2026 (demande promoteur) — options de création du compte parent :
+   *   - createAccount (défaut true)  : créer le User parent (portail) en même
+   *     temps. false = étape skippée (rattrapable via provisionParentAccount).
+   *   - sendCredentials (défaut false) : envoyer les informations de
+   *     connexion au parent par email + Helm Connect (pattern « modal
+   *     d'encaissement » du module Finance).
    */
   async addGuardians(
     studentId: string,
-    data: { guardians: any[] },
+    data: {
+      guardians: any[];
+      createAccount?: boolean;
+      sendCredentials?: boolean;
+    },
   ): Promise<any> {
     // ⭐ FIX : le backend POST /students/:id/guardians attend un guardian PLAT
     //    (CreateGuardianDto), pas un objet { guardians: [...] }.
@@ -566,8 +577,15 @@ class StudentsService {
     //    Si plusieurs guardians, on envoie plusieurs POST en parallèle.
     const guardians = data.guardians || [];
     if (guardians.length === 0) return null;
+    // ⭐ nov. 2026 — les flags de compte parent sont transmis dans CHAQUE
+    //    guardian PLAT (CreateGuardianDto accepte createAccount/sendCredentials).
+    const flatGuardian = (g: any) => ({
+      ...g,
+      ...(data.createAccount === false ? { createAccount: false } : {}),
+      ...(data.sendCredentials === true ? { sendCredentials: true } : {}),
+    });
     if (guardians.length === 1) {
-      const g = guardians[0];
+      const g = flatGuardian(guardians[0]);
       return apiFetch(`${BASE_URL}/${encodeURIComponent(studentId)}/guardians`, {
         method: "POST",
         body: g, // ⭐ PLAT, pas { guardians: [g] }
@@ -579,10 +597,43 @@ class StudentsService {
       guardians.map(g =>
         apiFetch(`${BASE_URL}/${encodeURIComponent(studentId)}/guardians`, {
           method: "POST",
-          body: g,
+          body: flatGuardian(g),
           timeout: 30000,
         })
       )
+    );
+  }
+
+  /**
+   * ⭐ nov. 2026 (demande promoteur) — Onglet Famille → sous-onglet
+   * « Création de compte » : créer le compte parent d'un responsable qui
+   * n'en avait pas (étape skippée au wizard d'inscription) et lui envoyer
+   * ses informations de connexion.
+   *
+   * Backend : POST /students/:studentId/guardians/:guardianId/account
+   * (GuardiansPrismaController.provisionAccount — pattern « modal
+   * d'encaissement » : canaux email + Helm Connect, WhatsApp/SMS en compat).
+   *
+   * @returns { guardian, student, account: { userId?, created? },
+   *            credentials: { portalUrl, identifier, identifierType },
+   *            notification: { email?: {...}, helm_connect?: {...} } }
+   */
+  async provisionParentAccount(
+    studentId: string,
+    guardianId: string,
+    options?: {
+      createAccount?: boolean; // défaut true côté backend
+      sendCredentials?: boolean; // défaut true côté backend
+      channels?: ('email' | 'whatsapp' | 'sms' | 'helm_connect')[];
+    },
+  ): Promise<any> {
+    return apiFetch(
+      `${BASE_URL}/${encodeURIComponent(studentId)}/guardians/${encodeURIComponent(guardianId)}/account`,
+      {
+        method: "POST",
+        body: options ?? {},
+        timeout: 30000,
+      },
     );
   }
 

@@ -20,8 +20,9 @@ import { TenantGuard } from '../common/guards/tenant.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { SkipAcademicYear } from '../common/decorators/skip-academic-year.decorator';
-import { CreateGuardianDto, UpdateGuardianDto, UpdateGuardianRelationDto } from './dto';
+import { CreateGuardianDto, UpdateGuardianDto, UpdateGuardianRelationDto, ProvisionParentAccountDto } from './dto';
 
 /**
  * ⭐ P2.3 — RBAC renforcé sur GuardiansPrismaController.
@@ -61,12 +62,44 @@ export class GuardiansPrismaController {
   async create(
     @Param('studentId') studentId: string,
     @TenantId() tenantId: string,
+    @CurrentUser() user: any,
     @Body() createDto: CreateGuardianDto,
   ) {
     return this.guardiansService.createGuardianForStudent({
       ...createDto,
       tenantId,
       studentId,
+      // ⭐ Expéditeur du message Helm Connect d'envoi des identifiants
+      //    (l'utilisateur qui inscrit l'élève — ex : la secrétaire).
+      senderUserId: user?.id,
+    });
+  }
+
+  /**
+   * ⭐ nov. 2026 (demande promoteur) — Onglet Famille → sous-onglet
+   * « Création de compte » : crée le compte parent d'un responsable qui
+   * n'en avait pas (wizard avec étape skippée) et lui envoie ses
+   * informations de connexion par email + Helm Connect (pattern « modal
+   * d'encaissement » du module Finance). Idempotent : renvoyer les
+   * identifiants d'un compte existant est possible à volonté.
+   */
+  @Post(':guardianId/account')
+  @Roles(...MANAGEMENT_ROLES)
+  async provisionAccount(
+    @Param('studentId') studentId: string,
+    @Param('guardianId') guardianId: string,
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Body() dto: ProvisionParentAccountDto,
+  ) {
+    return this.guardiansService.provisionParentAccount({
+      tenantId,
+      studentId,
+      guardianId,
+      createAccount: dto.createAccount,
+      sendCredentials: dto.sendCredentials,
+      channels: dto.channels,
+      senderUserId: user?.id, // expéditeur du message Helm Connect (repli : directeur)
     });
   }
 

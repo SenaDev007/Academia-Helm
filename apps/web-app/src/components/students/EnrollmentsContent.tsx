@@ -1791,6 +1791,14 @@ export default function EnrollmentsContent() {
               });
 
               // 3. Ajouter les parents (en parallèle pour la vitesse)
+              // ⭐ nov. 2026 (demande promoteur) : le wizard demande à
+              //    l'étape Parents s'il faut créer en même temps le compte
+              //    du parent avec ses identifiants. Si oui (défaut) : le
+              //    backend crée le User parent ET envoie les informations de
+              //    connexion au parent par email + Helm Connect (pattern
+              //    « modal d'encaissement » du module Finance).
+              //    Si non : étape skippée — rattrapable dans l'onglet
+              //    Familles → sous-onglet « Création de compte ».
               if (data.guardians?.length) {
                 const guardianPromises = data.guardians
                   .filter(g => g.firstName?.trim() && g.lastName?.trim())
@@ -1802,8 +1810,26 @@ export default function EnrollmentsContent() {
                       address: g.address || undefined,
                       isPrimary: g.isPrimary ?? false,
                     }],
+                    // ⭐ nov. 2026 — compte parent à l'inscription :
+                    // createAccount=false si l'utilisateur a décoché la case ;
+                    // sendCredentials=true si créés (identifiants envoyés).
+                    createAccount: data.createParentAccounts !== false,
+                    sendCredentials: data.createParentAccounts !== false,
                   }).catch((e: any) => console.warn('Guardian:', e?.message)));
-                await Promise.all(guardianPromises);
+                const guardianResults = await Promise.all(guardianPromises);
+
+                // ⭐ Retour explicite « identifiants envoyés » (le backend
+                //    renvoie parentAccount sur chaque guardian créé).
+                if (data.createParentAccounts !== false) {
+                  const createdCount = [guardianResults].flat().filter(Boolean).length;
+                  if (createdCount > 0) {
+                    toast({
+                      title: 'Comptes parents créés',
+                      description: `Identifiants de connexion envoyés aux ${createdCount} parent(s) par email et Helm Connect.`,
+                      variant: 'success',
+                    });
+                  }
+                }
               }
 
               toast({
@@ -1938,6 +1964,10 @@ export default function EnrollmentsContent() {
           <StudentEnrollmentForm
             academicYearId={academicYear.id}
             schoolLevelId={schoolLevel.schoolLevelId || (schoolLevel.id !== 'ALL' ? schoolLevel.id : undefined)}
+            // ⭐ nov. 2026 — pas d'étape « comptes parents » en mode ÉDITION :
+            // les comptes des responsables sans compte se créent dans l'onglet
+            // Familles → sous-onglet « Création de compte ».
+            showParentAccountStep={false}
             initialData={{
               firstName: editEnrollment.student.firstName || '',
               lastName: editEnrollment.student.lastName || '',

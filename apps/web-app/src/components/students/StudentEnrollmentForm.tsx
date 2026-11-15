@@ -49,6 +49,15 @@ export interface EnrollmentSubmitData {
   classId?: string;
   schoolLevelId?: string;
   enrollmentType?: 'NEW' | 'REPEAT';
+  /**
+   * ⭐ nov. 2026 (demande promoteur) — « on devra demander à l'utilisateur
+   * s'il faut créer en même temps le compte du parent avec ses identifiants » :
+   * true (défaut) = compte parent créé à l'inscription ET identifiants de
+   * connexion envoyés au parent par email + Helm Connect (pattern « modal
+   * d'encaissement » du module Finance). false = étape skippée — le compte
+   * restera créable depuis l'onglet Famille → sous-onglet « Création de compte ».
+   */
+  createParentAccounts?: boolean;
 }
 
 interface StudentEnrollmentFormProps {
@@ -57,6 +66,13 @@ interface StudentEnrollmentFormProps {
   onSubmit: (data: EnrollmentSubmitData) => Promise<any>;
   onCancel: () => void;
   initialData?: any;
+  /**
+   * ⭐ nov. 2026 — afficher l'étape « Créer en même temps les comptes parents »
+   * (wizard de création uniquement). Le modal « Modifier l'inscription »
+   * passe false : les comptes parents s'y gèrent via l'onglet Familles →
+   * sous-onglet « Création de compte ».
+   */
+  showParentAccountStep?: boolean;
 }
 
 // ─── Composant principal ───
@@ -67,6 +83,7 @@ export default function StudentEnrollmentForm({
   onSubmit,
   onCancel,
   initialData,
+  showParentAccountStep = true,
 }: StudentEnrollmentFormProps) {
   const { academicYear, schoolLevel } = useModuleContext();
 
@@ -88,6 +105,13 @@ export default function StudentEnrollmentForm({
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ⭐ nov. 2026 (demande promoteur) — « compte du parent créé dans
+  //    l'onboarding, en le demandant en même temps » : case à cocher à
+  //    l'étape Parents. Défaut : cochée (comportement 2026-09-19 confirmé).
+  //    Décochée = skip → l'onglet Famille → sous-onglet « Création de
+  //    compte » permettra de créer le compte plus tard.
+  const [createParentAccounts, setCreateParentAccounts] = useState(true);
 
   // Données formulaire — pré-rempli depuis initialData si mode édition
   // ⭐ enrollmentType : 'NEW' (nouvel élève → frais d'INSCRIPTION) ou
@@ -345,6 +369,10 @@ export default function StudentEnrollmentForm({
         schoolLevelId: selectedLevelId || undefined,
         // ⭐ enrollmentType : 'NEW' (frais d'INSCRIPTION) ou 'REPEAT' (frais de RÉINSCRIPTION)
         enrollmentType: formData.enrollmentType,
+        // ⭐ nov. 2026 — création du compte parent + envoi des identifiants
+        // (uniquement en wizard de création — pas en « Modifier l'inscription »,
+        // où les comptes parents se gèrent dans Familles → Création de compte)
+        createParentAccounts: showParentAccountStep ? createParentAccounts : undefined,
       });
     } catch (err: any) {
       setError(err.message || "Erreur lors de l'inscription");
@@ -622,6 +650,49 @@ export default function StudentEnrollmentForm({
           <button onClick={addGuardian} className="text-sm text-blue-600 hover:underline">
             + Ajouter un parent/tuteur
           </button>
+
+          {/* ⭐ nov. 2026 (demande promoteur) — « on devra demander à l'utilisateur
+              s'il faut créer en même temps le compte du parent avec ses
+              identifiants » : la question est posée ICI, en même temps que la
+              saisie des parents. Si cochée : compte créé + identifiants envoyés
+              au parent par email et Helm Connect (exactement comme le modal
+              d'encaissement du module Finance). Si décochée : skip — le compte
+              restera créable dans l'onglet Famille → sous-onglet « Création de
+              compte » (voir StudentFamiliesContent). */}
+          {showParentAccountStep && (
+          <div className={`rounded-xl border p-4 transition-all ${
+            createParentAccounts
+              ? 'border-emerald-300 bg-emerald-50/70'
+              : 'border-slate-200 bg-slate-50'
+          }`}>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={createParentAccounts}
+                onChange={e => setCreateParentAccounts(e.target.checked)}
+                className="mt-0.5 w-5 h-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              <span className="text-sm">
+                <span className="block font-semibold text-slate-800">
+                  Créer en même temps les comptes parents (portail parent)
+                </span>
+                <span className="block mt-1 text-xs text-slate-600 leading-relaxed">
+                  Les informations de connexion (adresse du portail + numéro de
+                  téléphone ou email, sans mot de passe) seront envoyées
+                  automatiquement au parent par <strong>email</strong> et{' '}<strong>Helm Connect</strong> —
+                  exactement comme l'envoi du reçu dans le module Finance.
+                </span>
+                {!createParentAccounts && (
+                  <span className="block mt-2 text-[11px] text-amber-700">
+                    ⚠️ Étape ignorée : les parents ne pourront pas se connecter au
+                    portail. Vous pourrez créer leurs comptes plus tard dans
+                    l'onglet « Familles » → sous-onglet « Création de compte ».
+                  </span>
+                )}
+              </span>
+            </label>
+          </div>
+          )}
         </div>
       )}
 
@@ -757,6 +828,16 @@ export default function StudentEnrollmentForm({
               </span>
             </div>
             <div className="flex justify-between"><span className="text-gray-500">Parents:</span><span className="font-medium">{guardians.filter(g => g.firstName).length} parent(s)</span></div>
+            {showParentAccountStep && (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Comptes parents:</span>
+              <span className={`font-medium ${createParentAccounts ? 'text-emerald-700' : 'text-amber-700'}`}>
+                {createParentAccounts
+                  ? 'Créés — identifiants envoyés (email + Helm Connect)'
+                  : 'Ignorés (créables dans Familles → Création de compte)'}
+              </span>
+            </div>
+            )}
           </div>
         </div>
       )}

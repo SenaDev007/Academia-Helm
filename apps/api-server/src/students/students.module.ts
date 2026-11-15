@@ -46,6 +46,9 @@ import { EducmasterExcelExportService } from './services/educmaster-excel-export
 import { ClassListPdfService } from './services/class-list-pdf.service';
 import { MatriculeService } from './services/matricule.service';
 import { StudentsImportService } from './services/students-import.service';
+// ⭐ nov. 2026 (demande promoteur) — envoi des identifiants de connexion du
+//    compte parent (pattern « modal d'encaissement » du module Finance).
+import { ParentAccountNotificationService } from './services/parent-account-notification.service';
 // ⭐ ParentUserProvisioningService is now in ParentProvisioningModule (separate
 //    module) to avoid circular dependency: CommunicationModule ↔ StudentsModule.
 //    Import ParentProvisioningModule directly where you need the service.
@@ -125,6 +128,8 @@ import { CommunicationModule } from '../communication/communication.module';
     MatriculeService,
     StudentTransferService,
     StudentsImportService,
+    // ⭐ nov. 2026 — identifiants du compte parent (email + Helm Connect + compat WhatsApp/SMS)
+    ParentAccountNotificationService,
     // ⭐ ParentUserProvisioningService moved to ParentProvisioningModule
     //    (avoids circular dep — see parent-provisioning.module.ts)
   ],

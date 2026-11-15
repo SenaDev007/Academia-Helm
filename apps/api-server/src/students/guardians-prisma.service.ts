@@ -17,6 +17,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { ParentUserProvisioningService } from './services/parent-user-provisioning.service';
+import { ParentAccountNotificationService } from './services/parent-account-notification.service';
 
 @Injectable()
 export class GuardiansPrismaService {
@@ -25,6 +26,7 @@ export class GuardiansPrismaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly parentProvisioningService: ParentUserProvisioningService,
+    private readonly parentAccountNotificationService: ParentAccountNotificationService,
   ) {}
 
   /**
@@ -40,6 +42,12 @@ export class GuardiansPrismaService {
     relationship: string; // MOTHER, FATHER, GUARDIAN, etc.
     address?: string;
     isPrimary?: boolean;
+    /** ⭐ nov. 2026 — false = ne PAS créer le User parent (étape skippée au wizard). Défaut true. */
+    createAccount?: boolean;
+    /** ⭐ nov. 2026 — true = envoyer les identifiants de connexion au parent (email + Helm Connect). Défaut false. */
+    sendCredentials?: boolean;
+    /** ⭐ nov. 2026 — expéditeur du message Helm Connect (défaut : directeur du tenant). */
+    senderUserId?: string;
   }) {
     // Vérifier que l'élève existe
     const student = await this.prisma.student.findFirst({
@@ -91,12 +99,39 @@ export class GuardiansPrismaService {
     //    responsable vient d'être créé/lié → on garantit son User (role=PARENT)
     //    TOUT DE SUITE (connexion portail parent par téléphone/email).
     //    Idempotent (déjà lié → no-op) et NON BLOQUANT pour l'inscription.
-    try {
-      await this.parentProvisioningService.ensureUserForGuardian(guardian.id);
-    } catch (provisioningErr: any) {
-      this.logger.warn(
-        `Compte parent non provisionné pour le guardian ${guardian.id} (non bloquant): ${provisioningErr?.message || provisioningErr}`,
-      );
+    // ⭐ nov. 2026 (demande promoteur) : le wizard Onglet Inscriptions DEMANDE
+    //    désormais à l'utilisateur s'il faut créer le compte en même temps.
+    //    createAccount=false → étape skippée (rattrapable dans l'onglet Famille
+    //    → sous-onglet « Création de compte »).
+    let parentAccount: { userId?: string; created?: boolean } | null = null;
+    if (data.createAccount !== false) {
+      try {
+        const provisioned = await this.parentProvisioningService.ensureUserForGuardian(guardian.id);
+        parentAccount = { userId: provisioned.userId, created: provisioned.created };
+      } catch (provisioningErr: any) {
+        this.logger.warn(
+          `Compte parent non provisionné pour le guardian ${guardian.id} (non bloquant): ${provisioningErr?.message || provisioningErr}`,
+        );
+      }
+
+      // ⭐ nov. 2026 (demande promoteur « envoyer les identifiants exactement
+      //    comme le modal d'encaissement du module Finance ») : envoi des
+      //    informations de connexion par email + Helm Connect.
+      if (data.sendCredentials === true && parentAccount) {
+        try {
+          await this.parentAccountNotificationService.sendAccountCredentials({
+            tenantId: data.tenantId,
+            guardianId: guardian.id,
+            studentId: data.studentId,
+            channels: ['email', 'helm_connect'],
+            senderUserId: data.senderUserId,
+          });
+        } catch (notifErr: any) {
+          this.logger.warn(
+            `Identifiants du compte parent non envoyés pour le guardian ${guardian.id} (non bloquant): ${notifErr?.message || notifErr}`,
+          );
+        }
+      }
     }
 
     // Créer la relation
@@ -114,7 +149,86 @@ export class GuardiansPrismaService {
       },
     });
 
-    return studentGuardian;
+    // ⭐ nov. 2026 — infos additives (rétro-compatibles) sur le compte parent :
+    //    le wizard affiche un retour explicite (« identifiants envoyés »).
+    return {
+      ...studentGuardian,
+      parentAccount,
+    };
+  }
+
+  /**
+   * ⭐ nov. 2026 (demande promoteur) — Onglet Famille → sous-onglet
+   * « Création de compte » : crée (ou garantit) le compte parent pour un
+   * responsable qui n'en avait pas (wizard avec étape skippée), et envoie
+   * les informations de connexion au parent par les canaux demandés
+   * (défaut email + Helm Connect — pattern modal d'encaissement).
+   *
+   * Idempotent : si le guardian a déjà un User, aucun nouveau compte n'est
+   * créé (created=false) mais les identifiants peuvent être renvoyés.
+   */
+  async provisionParentAccount(params: {
+    tenantId: string;
+    studentId: string;
+    guardianId: string;
+    createAccount?: boolean; // défaut true
+    sendCredentials?: boolean; // défaut true
+    channels?: ('email' | 'whatsapp' | 'sms' | 'helm_connect')[];
+    senderUserId?: string; // expéditeur du message Helm Connect
+  }) {
+    // 1. Vérifier que le guardian est bien lié à cet élève dans ce tenant
+    const link = await this.prisma.studentGuardian.findFirst({
+      where: {
+        studentId: params.studentId,
+        guardianId: params.guardianId,
+        tenantId: params.tenantId,
+      },
+      include: {
+        guardian: true,
+        student: { select: { id: true, firstName: true, lastName: true, matricule: true } },
+      },
+    });
+    if (!link) {
+      throw new NotFoundException(
+        `Guardian ${params.guardianId} n'est pas lié à l'élève ${params.studentId}`,
+      );
+    }
+
+    // 2. Créer / garantir le compte (sauf refus explicite)
+    let account: { userId?: string; created?: boolean } | null = null;
+    if (params.createAccount !== false) {
+      const provisioned = await this.parentProvisioningService.ensureUserForGuardian(params.guardianId);
+      account = { userId: provisioned.userId, created: provisioned.created };
+    } else if (link.guardian.userId) {
+      account = { userId: link.guardian.userId, created: false };
+    }
+
+    // 3. Informations de connexion (URL portail + identifiant)
+    const credentials = await this.parentAccountNotificationService.buildCredentials(
+      params.tenantId,
+      link.guardian,
+    );
+
+    // 4. Envoyer les identifiants (défaut true — « on lui envoie les
+    //    informations de connexion » ; renvoyables à volonté)
+    let notification: Record<string, any> = {};
+    if (params.sendCredentials !== false) {
+      notification = await this.parentAccountNotificationService.sendAccountCredentials({
+        tenantId: params.tenantId,
+        guardianId: params.guardianId,
+        studentId: params.studentId,
+        channels: params.channels?.length ? params.channels : ['email', 'helm_connect'],
+        senderUserId: params.senderUserId,
+      });
+    }
+
+    return {
+      guardian: link.guardian,
+      student: link.student,
+      account,
+      credentials,
+      notification,
+    };
   }
 
   /**

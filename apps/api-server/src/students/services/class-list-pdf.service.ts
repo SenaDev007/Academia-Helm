@@ -31,6 +31,10 @@ import {
   resolveLevelIdentityOverlay,
   LevelIdentityOverlay,
 } from '../../common/context/resolve-level-identity';
+// ⭐ FIX 2026-11-16 (1.0.15) — liste officielle : actifs + admis uniquement.
+import {
+  officialEnrollmentStatusFilter,
+} from '../../common/constants/official-list-statuses';
 
 export type ClassListPdfMode = 'physical' | 'official';
 
@@ -615,11 +619,13 @@ ${allHtml.map((body) => `<div class="class-section">${body}</div>`).join('\n')}
           academicClassId: classId,
           academicYearId,
           // ⭐ Si statusFilter est fourni (ex: 'WITHDRAWN' pour liste d'abandons),
-          //    filtrer uniquement ce statut. Sinon, exclure WITHDRAWN+TRANSFERRED
-          //    (comportement par défaut : listes d'élèves actifs).
+          //    filtrer uniquement ce statut. Sinon : LISTE OFFICIELLE = élèves
+          //    actifs + admis uniquement (FIX 2026-11-16, 1.0.15 — les abandons,
+          //    exclusions, sorties de fin d'année, dossiers PENDING et
+          //    pré-inscriptions ne figurent plus dans les listes officielles).
           ...(statusFilter
             ? { status: statusFilter }
-            : { status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] } }),
+            : officialEnrollmentStatusFilter()),
         },
         include: {
           student: {
@@ -681,10 +687,11 @@ ${allHtml.map((body) => `<div class="class-section">${body}</div>`).join('\n')}
         classId,
         academicYearId,
         // ⭐ Si statusFilter est fourni (ex: 'WITHDRAWN'), filtrer uniquement
-        //    ce statut. Sinon, exclure WITHDRAWN+TRANSFERRED (comportement par défaut).
+        //    ce statut. Sinon : LISTE OFFICIELLE = élèves actifs + admis
+        //    uniquement (FIX 2026-11-16, 1.0.15 — cf. official-list-statuses.ts).
         ...(statusFilter
           ? { status: statusFilter }
-          : { status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] } }),
+          : officialEnrollmentStatusFilter()),
       },
       include: {
         student: {
@@ -987,10 +994,12 @@ ${data.pageBreakAfter ? '<div style="page-break-after: always;"></div>' : ''}
         academicYearId,
         [classIdField]: { in: classIds },
         // ⭐ Si statusFilter est fourni (ex: 'WITHDRAWN'), filtrer uniquement
-        //    ce statut. Sinon, exclure WITHDRAWN+TRANSFERRED (défaut).
+        //    ce statut. Sinon : LISTE OFFICIELLE = élèves actifs + admis
+        //    uniquement (FIX 2026-11-16, 1.0.15 — avec garde Student.status
+        //    anti-dé-synchronisation, cf. official-list-statuses.ts).
         ...(statusFilter
           ? { status: statusFilter }
-          : { status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] } }),
+          : officialEnrollmentStatusFilter()),
       },
       include: {
         student: {

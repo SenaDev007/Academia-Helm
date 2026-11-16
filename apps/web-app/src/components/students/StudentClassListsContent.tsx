@@ -36,6 +36,27 @@ import ResponsiveTableWrapper from '@/components/ui/tables/ResponsiveTableWrappe
 import { cn } from '@/lib/utils';
 import { useAllClasses, useEnrollments, useInvalidateStudentsData } from '@/lib/query/student-queries';
 
+// ⭐ FIX 2026-11-16 (1.0.15, retour promoteur) — LISTE OFFICIELLE des élèves :
+//    seuls les élèves ACTIFS et ADMIS figurent dans cet onglet (avec les
+//    variantes actives RE_ENROLLED / PROMOTED / ENROLLED / VALIDATED).
+//    Les élèves retirés pour ABANDON (WITHDRAWN), transférés, exclus ou
+//    sortis en fin d'année n'apparaissent PLUS ici — ils restent
+//    consultables dans l'onglet dédié « Sorties & Abandons ».
+//    (Miroir front de OFFICIAL_LIST_ENROLLMENT_STATUSES côté backend,
+//    common/constants/official-list-statuses.ts — utilisée par les exports
+//    Excel/PDF et les templates Educ Master pour la même règle.)
+const OFFICIAL_LIST_ENROLLMENT_STATUSES = [
+  'ACTIVE',
+  'ADMITTED',
+  'RE_ENROLLED',
+  'PROMOTED',
+  'ENROLLED',
+  'VALIDATED',
+] as const;
+
+const isOfficiallyEnrolled = (e: Enrollment) =>
+  (OFFICIAL_LIST_ENROLLMENT_STATUSES as readonly string[]).includes(e.status);
+
 interface Enrollment {
   id: string;
   student: {
@@ -174,6 +195,15 @@ export default function StudentClassListsContent() {
     setIsLoading(allClassesQuery.isLoading || enrollmentsQuery.isLoading);
   }, [allClassesQuery.data, enrollmentsQuery.data, allClassesQuery.isLoading, enrollmentsQuery.isLoading]);
 
+  // ⭐ FIX 2026-11-16 (1.0.15) : inscriptions de la LISTE OFFICIELLE uniquement
+  //    (actifs + admis). Les abandons/transferts/exclusions/sorties sont filtrés
+  //    en amont de l'arborescence ET des compteurs — l'onglet « Sorties &
+  //    Abandons » reste la vue dédiée pour les retrouver.
+  const officialEnrollments = useMemo(
+    () => enrollments.filter(isOfficiallyEnrolled),
+    [enrollments],
+  );
+
   const loadData = async () => {
     invalidateStudentsData();
   };
@@ -212,9 +242,9 @@ export default function StudentClassListsContent() {
       classesByLevel.get(cls.schoolLevelId)!.push(cls);
     }
 
-    // ⭐ Grouper par classe PHYSIQUE (classId)
+    // ⭐ Grouper par classe PHYSIQUE (classId) — LISTE OFFICIELLE uniquement
     const enrollmentsByClass = new Map<string, Enrollment[]>();
-    for (const enr of enrollments) {
+    for (const enr of officialEnrollments) {
       const classId = enr.class?.id || 'unassigned';
       if (!enrollmentsByClass.has(classId)) enrollmentsByClass.set(classId, []);
       enrollmentsByClass.get(classId)!.push(enr);
@@ -256,7 +286,8 @@ export default function StudentClassListsContent() {
       .sort((a, b) => levelOrder(a.name) - levelOrder(b.name))
       .map(level => {
         const levelClasses = (classesByLevel.get(level.id) || []).sort((a, b) => classOrder(a.name) - classOrder(b.name));
-        const levelEnrollments = enrollments.filter(e => {
+        // ⭐ Compteur = élèves OFFICIELS du niveau (abandons/exclus filtrés)
+        const levelEnrollments = officialEnrollments.filter(e => {
           const cls = classes.find(c => c.id === e.class?.id);
           return cls?.schoolLevelId === level.id;
         });
@@ -269,7 +300,7 @@ export default function StudentClassListsContent() {
           totalStudents: levelEnrollments.length,
         };
       });
-  }, [classes, enrollments]);
+  }, [classes, officialEnrollments]);
 
   const filteredTree = useMemo(() => {
     if (!searchQuery.trim()) return treeData;
@@ -295,14 +326,17 @@ export default function StudentClassListsContent() {
   // l'onglet Affectations & Mouvements.
   const unassignedStudents = useMemo(() => {
     const knownClassIds = new Set(classes.map(c => c.id));
-    const list = enrollments.filter(e =>
+    // ⭐ FIX 2026-11-16 (1.0.15) : mêmes règles que l'arborescence — uniquement
+    //    les élèves OFFICIELS (actifs + admis) ; les abandons ne doivent plus
+    //    apparaître dans la liste officielle (onglet dédié « Sorties & Abandons »).
+    const list = officialEnrollments.filter(e =>
       (!e.class?.id || !knownClassIds.has(e.class.id)) &&
-      e.status !== 'WITHDRAWN' && e.status !== 'TRANSFERRED',
+      isOfficiallyEnrolled(e),
     );
     list.sort((a, b) => `${a.student.lastName} ${a.student.firstName}`.localeCompare(
       `${b.student.lastName} ${b.student.firstName}`));
     return list;
-  }, [classes, enrollments]);
+  }, [classes, officialEnrollments]);
 
   const filteredUnassigned = useMemo(() => {
     if (!searchQuery.trim()) return unassignedStudents;

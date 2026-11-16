@@ -33,6 +33,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
 import { PrismaService } from '../../database/prisma.service';
+import {
+  officialEnrollmentStatusFilter,
+} from '../../common/constants/official-list-statuses';
 
 /** Définition d'une colonne du fichier Educmaster (ordre et libellé exact pour emp.educmaster.bj) */
 export interface EducmasterColumn {
@@ -130,12 +133,19 @@ export class EducmasterExcelExportService {
 
     // ⭐ 2. Récupérer TOUTES les inscriptions pour ce niveau + cette année.
     // StudentEnrollment porte schoolLevelId directement — c'est la source de vérité.
+    // ⭐ FIX 2026-11-16 (1.0.15, retour promoteur CSPEB) : la liste officielle
+    //    (« templates Educ Master ») n'inclut que les élèves ACTIFS et ADMIS
+    //    (ACTIVE/ADMITTED/RE_ENROLLED/PROMOTED/ENROLLED/VALIDATED) — les abandons
+    //    (WITHDRAWN), transferts, exclusions, sorties de fin d'année, dossiers
+    //    PENDING et pré-inscriptions sont EXCLUS. PENDING était inclus avant.
+    //    Double garde : statut d'inscription + statut de l'élève (anti
+    //    dé-synchronisation des flux bulk-status/PUT qui ne touchent que Student).
     const enrollments = await this.prisma.studentEnrollment.findMany({
       where: {
         tenantId,
         academicYearId,
         schoolLevelId: schoolLevel.id,
-        status: { in: ['ACTIVE', 'ADMITTED', 'RE_ENROLLED', 'PENDING'] },
+        ...officialEnrollmentStatusFilter(),
       },
       include: {
         academicClass: true,
@@ -306,7 +316,10 @@ export class EducmasterExcelExportService {
         tenantId,
         academicYearId,
         schoolLevelId: schoolLevel.id,
-        status: { in: ['ACTIVE', 'ADMITTED', 'RE_ENROLLED', 'PENDING'] },
+        // ⭐ FIX 2026-11-16 (1.0.15) : élèves actifs + admis uniquement (les
+        //    abandons/transferts/exclusions/sorties ne figurent plus dans
+        //    l'export « Mes élèves » du MEMP).
+        ...officialEnrollmentStatusFilter(),
       },
       include: {
         academicClass: { select: { id: true, name: true, code: true } },
@@ -498,11 +511,14 @@ export class EducmasterExcelExportService {
     ]);
 
     // 3. Récupérer TOUTES les inscriptions pour cette année
+    // ⭐ FIX 2026-11-16 (1.0.15) : liste officielle = actifs + admis uniquement
+    //    (l'ancien notIn ['WITHDRAWN','TRANSFERRED'] laissait passer EXCLUDED,
+    //    COMPLETED, PENDING, PRE_REGISTERED — et ne contrôlait pas Student.status).
     const enrollments = await this.prisma.studentEnrollment.findMany({
       where: {
         tenantId,
         academicYearId,
-        status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+        ...officialEnrollmentStatusFilter(),
       },
       include: {
         academicClass: true,
@@ -628,12 +644,14 @@ export class EducmasterExcelExportService {
     }
 
     // 2. Récupérer les élèves de cette classe officielle
+    // ⭐ FIX 2026-11-16 (1.0.15) : liste officielle = actifs + admis uniquement
+    //    (+ garde Student.status — cf. official-list-statuses.ts).
     const enrollments = await this.prisma.studentEnrollment.findMany({
       where: {
         tenantId,
         academicClassId: classId,
         academicYearId,
-        status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+        ...officialEnrollmentStatusFilter(),
       },
       include: {
         student: {
@@ -762,12 +780,14 @@ export class EducmasterExcelExportService {
     }
 
     // 2. Récupérer les élèves de cette classe physique
+    // ⭐ FIX 2026-11-16 (1.0.15) : liste officielle = actifs + admis uniquement
+    //    (+ garde Student.status — cf. official-list-statuses.ts).
     const enrollments = await this.prisma.studentEnrollment.findMany({
       where: {
         tenantId,
         classId,
         academicYearId,
-        status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+        ...officialEnrollmentStatusFilter(),
       },
       include: {
         student: {
@@ -911,11 +931,13 @@ export class EducmasterExcelExportService {
     ]);
 
     // 3. Récupérer TOUTES les inscriptions
+    // ⭐ FIX 2026-11-16 (1.0.15) : liste officielle = actifs + admis uniquement
+    //    (+ garde Student.status — cf. official-list-statuses.ts).
     const enrollments = await this.prisma.studentEnrollment.findMany({
       where: {
         tenantId,
         academicYearId,
-        status: { notIn: ['WITHDRAWN', 'TRANSFERRED'] },
+        ...officialEnrollmentStatusFilter(),
       },
       include: {
         student: {

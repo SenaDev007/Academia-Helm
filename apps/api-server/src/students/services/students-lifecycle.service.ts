@@ -1106,7 +1106,18 @@ export class StudentsLifecycleService {
     // ⭐ 2026-09-17 — Anomalie « non affectés » : backfill de la classe OFFICIELLE
     //    dès qu'on pose une classe PHYSIQUE et que academicClassId manque
     //    (inscriptions issues du sync hors-ligne sans academicClassId).
-    if (!enrollment.academicClassId && newPhysicalClass.officialClassId) {
+    // ⭐ FIX 2026-11-16 (1.0.15, anomalie ATCHADE Mazoune @ CSPEB) : la classe
+    //    officielle doit désormais rester SYNCHRONISÉE avec la classe physique —
+    //    si la nouvelle section physique (ex: CI) est rattachée à une classe
+    //    officielle différente (ex: CP), on met à jour academicClassId.
+    //    AVANT : l'élève changé de section CI gardait academicClassId=CP → il
+    //    restait « au CP » dans l'onglet Inscriptions, les listes officielles
+    //    et les templates Educ Master (groupés par classe officielle), même
+    //    après plusieurs tentatives de ré-affectation.
+    if (
+      newPhysicalClass.officialClassId &&
+      newPhysicalClass.officialClassId !== enrollment.academicClassId
+    ) {
       updateData.academicClassId = newPhysicalClass.officialClassId;
     }
     const updatedEnrollment = await this.prisma.studentEnrollment.update({
@@ -1193,7 +1204,15 @@ export class StudentsLifecycleService {
     //    de la classe OFFICIELLE dès qu'on affecte une classe PHYSIQUE et que
     //    academicClassId manque. Sans cela, l'onglet Inscriptions considère
     //    l'élève « non affecté » bien qu'il ait une section physique.
-    if (!enrollment.academicClassId && physicalClass.officialClassId) {
+    // ⭐ FIX 2026-11-16 (1.0.15, anomalie ATCHADE Mazoune @ CSPEB) : si la
+    //    section physique rattachée correspond à une classe officielle
+    //    DIFFÉRENTE de l'actuelle, la classe officielle est resynchronisée
+    //    (l'élève affecté en section CI ne doit pas rester « officiellement »
+    //    au CP dans les listes officielles et les templates Educ Master).
+    if (
+      physicalClass.officialClassId &&
+      physicalClass.officialClassId !== enrollment.academicClassId
+    ) {
       updateData.academicClassId = physicalClass.officialClassId;
     }
     const updatedEnrollment = await this.prisma.studentEnrollment.update({

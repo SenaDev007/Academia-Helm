@@ -18,7 +18,7 @@
  *   II.  Responsables légaux
  *   III. Parcours scolaire (année par année + école d'origine)
  *   IV.  Résultats & bulletins (par année / période)
- *   V.   Frais & paiements (résumé)
+ *   V.   Frais & paiements (année par année + récapitulatif global)
  *   VI.  Assiduité & discipline
  *   VII. Documents & carte scolaire
  * ============================================================================
@@ -32,7 +32,6 @@ import {
   BookOpen, ChevronLeft, ChevronRight, Eye, Printer, Building2,
 } from 'lucide-react';
 import { studentsService } from '@/services/students.service';
-import { financeService } from '@/services/finance.service';
 import { apiFetch, apiClient } from '@/lib/api/client';
 import { toast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
@@ -91,6 +90,53 @@ interface DossierData {
   recentDisciplinaryActions?: any[];
   guardians?: any[];
   documents?: any[];
+  // ⭐ 1.0.14 — frais & paiements réels, année par année + récapitulatif
+  //    global (source : compte financier du backend — l'ancien appel
+  //    /finance/student-accounts?studentId=… ignore le filtre côté service
+  //    et affichait le compte d'un AUTRE élève).
+  financeByYear?: FinanceByYear[];
+  financeGlobal?: {
+    yearsCount: number;
+    totalDue: number;
+    totalPaid: number;
+    balance: number;
+    arrears: number;
+    reductionTotal: number;
+  };
+}
+
+interface FinanceByYear {
+  academicYearId: string;
+  academicYear?: { id: string; name: string; label: string } | null;
+  account: {
+    id: string;
+    totalDue: number;
+    totalPaid: number;
+    balance: number;
+    arrearsAmount: number;
+    carriedArrears: number;
+    status: string;
+  };
+  reductionTotal: number;
+  regime?: { id: string; label: string; code: string } | null;
+  breakdowns: Array<{
+    id: string;
+    name: string;
+    feeType: string | null;
+    standardAmount: number;
+    appliedAmount: number;
+    reduction: number;
+    paidAmount: number;
+    remainingAmount: number;
+  }>;
+  transactions: Array<{
+    id: string;
+    type: string;
+    amount: number;
+    paymentMethod: string;
+    reference: string | null;
+    createdAt: string;
+  }>;
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -217,9 +263,6 @@ export default function StudentDossierContent({ student, academicYear, onBack, c
   const [documents, setDocuments] = useState<any[]>([]);
   const [movementHistory, setMovementHistory] = useState<any[]>([]);
   const [studentCard, setStudentCard] = useState<any>(null);
-  const [financeAccount, setFinanceAccount] = useState<any>(null);
-  const [payments, setPayments] = useState<any[]>([]);
-  const [feeProfile, setFeeProfile] = useState<any>(null);
   const [cardFace, setCardFace] = useState<'recto' | 'verso'>('recto');
   const [previewDoc, setPreviewDoc] = useState<{ filePath: string; fileName: string; mimeType: string } | null>(null);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
@@ -267,26 +310,14 @@ export default function StudentDossierContent({ student, academicYear, onBack, c
       setStudentCard(cardRes.status === 'fulfilled' ? cardRes.value : null);
       setDossier(dossierRes.status === 'fulfilled' ? dossierRes.value : null);
 
-      // Compte financier + transactions + régime tarifaire (comme auparavant)
-      try {
-        const accounts = await financeService.getStudentAccounts({ studentId, academicYearId: academicYear?.id });
-        const account = Array.isArray(accounts) ? accounts[0] : (accounts?.data?.[0] || accounts);
-        setFinanceAccount(account);
-        if (account?.id) {
-          try {
-            const transactions = await financeService.getTransactions({ studentAccountId: account.id, limit: '10' });
-            setPayments(Array.isArray(transactions) ? transactions : (transactions?.data || []));
-          } catch { setPayments([]); }
-        }
-      } catch { setFinanceAccount(null); setPayments([]); }
-      try {
-        const profiles = await financeService.createStudentFeeProfile({
-          studentId, academicYearId: academicYear?.id, feeRegimeId: '',
-        });
-        setFeeProfile(profiles);
-      } catch {
-        setFeeProfile(financeAccount?.feeRegime || null);
-      }
+      // ⭐ 1.0.14 — PLUS D'APPEL /finance/student-accounts ici : le dossier
+      //    agrégé du backend embarque désormais financeByYear (compte +
+      //    lignes de frais + réductions réelles + transactions, année par
+      //    année) et financeGlobal (récapitulatif toutes années). L'ancien
+      //    appel transmettait ?studentId=… que le service backend IGNORAIT →
+      //    le front prenait accounts[0] = le compte d'un AUTRE élève (d'où le
+      //    « total dû 55 750 » sur un élève qui ne devait que ses frais
+      //    d'inscription après réduction).
     } catch (e) { console.warn('loadDetail error:', e); }
     finally { setIsLoadingDetail(false); }
   };
@@ -326,6 +357,9 @@ export default function StudentDossierContent({ student, academicYear, onBack, c
   const recentAbsences = (dossier?.recentAbsences || []) as any[];
   const recentIncidents = (dossier?.recentDisciplinaryActions || []) as any[];
   const originatingAdmission = dossier?.originatingAdmission || null;
+  // ⭐ 1.0.14 — frais & paiements réels issus du dossier agrégé backend
+  const financeByYear = (dossier?.financeByYear || []) as FinanceByYear[];
+  const financeGlobal = dossier?.financeGlobal || null;
 
   // Bulletins groupés par année (desc) puis période
   const reportCardsByYear = reportCards
@@ -648,39 +682,132 @@ export default function StudentDossierContent({ student, academicYear, onBack, c
           </SectionCard>
 
           {/* ═══ V. FRAIS & PAIEMENTS ═══ */}
-          <SectionCard id="sec-frais" num="V" title="Frais & paiements — résumé" icon={Wallet}>
-            {feeProfile && (
-              <div className="mb-3 p-2.5 bg-blue-50 border border-blue-100 rounded-lg flex items-center gap-2 text-xs">
-                <Wallet className="w-3.5 h-3.5 text-blue-600" />
-                <span className="text-blue-700 font-bold">Régime tarifaire :</span>
-                <span className="text-slate-700">{feeProfile.feeRegime?.label || feeProfile.feeRegime?.code || 'Standard'}</span>
-              </div>
-            )}
-            {financeAccount ? (
+          {/* ⭐ 1.0.14 — vraies données du compte financier, ANNÉE PAR ANNÉE
+              (total dû, réduction réelle, arriérés, payé, reste à solder) +
+              récapitulatif global sur toutes les années passées. */}
+          <SectionCard id="sec-frais" num="V" title="Frais & paiements — année par année" icon={Wallet}>
+            {(financeByYear.length > 0 && financeGlobal) ? (
               <>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <MiniStat label="Total dû" value={formatMoney(financeAccount.totalDue)} color="text-slate-800" />
-                  <MiniStat label="Payé" value={formatMoney(financeAccount.totalPaid)} color="text-emerald-600" />
-                  <MiniStat label="Arriérés" value={formatMoney(financeAccount.arrearsAmount)} color="text-rose-600" />
-                  <MiniStat label="Solde" value={formatMoney(financeAccount.balance)} color={financeAccount.balance > 0 ? 'text-rose-600' : 'text-emerald-600'} />
-                </div>
-                {payments.length > 0 && (
-                  <div className="mt-3">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">Dernières transactions</p>
-                    <div className="space-y-1">
-                      {payments.slice(0, 5).map((pay: any) => (
-                        <div key={pay.id} className="flex items-center gap-2 p-1.5 bg-slate-50 rounded-lg text-xs">
-                          <span className="w-6 h-6 rounded bg-emerald-100 flex items-center justify-center"><Wallet className="w-3 h-3 text-emerald-600" /></span>
-                          <span className="font-semibold text-slate-700">{formatMoney(pay.amount)}</span>
-                          <span className="text-slate-400">{new Date(pay.transactionDate || pay.createdAt).toLocaleDateString('fr-FR')} · {pay.paymentMethod || '—'}</span>
-                          <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">{pay.status || 'COMPLETED'}</span>
-                        </div>
-                      ))}
+                {/* Récapitulatif global (toutes années) */}
+                <div className="mb-4 p-3 bg-gradient-to-r from-[#0d1f6e] to-[#1e3a8a] rounded-lg">
+                  <p className="text-[10px] font-bold text-white/80 uppercase mb-2 flex items-center gap-1.5">
+                    <Wallet className="w-3.5 h-3.5" /> Récapitulatif global — {financeGlobal.yearsCount} an(s) dans l'établissement
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                    <div className="bg-white/10 rounded-lg px-2.5 py-2 text-center">
+                      <p className="text-[9px] font-bold text-white/70 uppercase">Total dû</p>
+                      <p className="text-sm font-bold text-white">{formatMoney(financeGlobal.totalDue)}</p>
+                    </div>
+                    <div className="bg-white/10 rounded-lg px-2.5 py-2 text-center">
+                      <p className="text-[9px] font-bold text-white/70 uppercase">Réductions cumulées</p>
+                      <p className="text-sm font-bold text-cyan-300">{financeGlobal.reductionTotal > 0 ? formatMoney(financeGlobal.reductionTotal) : '—'}</p>
+                    </div>
+                    <div className="bg-white/10 rounded-lg px-2.5 py-2 text-center">
+                      <p className="text-[9px] font-bold text-white/70 uppercase">Arriérés</p>
+                      <p className="text-sm font-bold text-amber-300">{financeGlobal.arrears > 0 ? formatMoney(financeGlobal.arrears) : '—'}</p>
+                    </div>
+                    <div className="bg-white/10 rounded-lg px-2.5 py-2 text-center">
+                      <p className="text-[9px] font-bold text-white/70 uppercase">Total payé</p>
+                      <p className="text-sm font-bold text-emerald-300">{formatMoney(financeGlobal.totalPaid)}</p>
+                    </div>
+                    <div className="bg-white/10 rounded-lg px-2.5 py-2 text-center">
+                      <p className="text-[9px] font-bold text-white/70 uppercase">Solde restant</p>
+                      <p className={cn('text-sm font-bold', financeGlobal.balance > 0 ? 'text-rose-300' : 'text-emerald-300')}>{formatMoney(financeGlobal.balance)}</p>
                     </div>
                   </div>
-                )}
+                </div>
+
+                {/* Détail par année scolaire */}
+                <div className="space-y-4">
+                  {financeByYear.map((y: FinanceByYear, yi: number) => (
+                    <div key={y.academicYearId || yi} className="border border-slate-200 rounded-lg overflow-hidden">
+                      <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200">
+                        <span className="w-1.5 h-4 bg-[#0d1f6e] rounded-full" />
+                        <p className="text-xs font-bold text-slate-700 uppercase">{y.academicYear?.name || y.academicYear?.label || 'Année inconnue'}</p>
+                        {y.regime && (
+                          <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                            Régime : {y.regime.label || y.regime.code}
+                          </span>
+                        )}
+                        {y.account.status && (
+                          <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                            Compte {y.account.status === 'ACTIVE' ? 'actif' : y.account.status}
+                          </span>
+                        )}
+                      </div>
+                      <div className="p-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3">
+                          <MiniStat label="Total dû" value={formatMoney(y.account.totalDue)} color="text-slate-800" />
+                          <MiniStat label="Réduction" value={y.reductionTotal > 0 ? formatMoney(y.reductionTotal) : '—'} color="text-cyan-700" />
+                          <MiniStat label="Arriérés" value={y.account.arrearsAmount > 0 ? formatMoney(y.account.arrearsAmount) : '—'} color="text-rose-600" />
+                          <MiniStat label="Payé" value={formatMoney(y.account.totalPaid)} color="text-emerald-600" />
+                          <MiniStat label="Reste à solder" value={formatMoney(y.account.balance)} color={y.account.balance > 0 ? 'text-rose-600' : 'text-emerald-600'} />
+                        </div>
+                        {y.account.carriedArrears > 0 && (
+                          <p className="mb-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                            dont {formatMoney(y.account.carriedArrears)} d'arriérés reportés des années antérieures
+                          </p>
+                        )}
+                        {y.breakdowns.length > 0 && (
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-slate-200 text-xs">
+                              <thead>
+                                <tr className="bg-slate-50">
+                                  <th className="px-2.5 py-1.5 text-left font-bold text-slate-500 uppercase">Ligne de frais</th>
+                                  <th className="px-2.5 py-1.5 text-right font-bold text-slate-500 uppercase">Standard</th>
+                                  <th className="px-2.5 py-1.5 text-right font-bold text-slate-500 uppercase">Réduction</th>
+                                  <th className="px-2.5 py-1.5 text-right font-bold text-slate-500 uppercase">Dû</th>
+                                  <th className="px-2.5 py-1.5 text-right font-bold text-slate-500 uppercase">Payé</th>
+                                  <th className="px-2.5 py-1.5 text-right font-bold text-slate-500 uppercase">Reste</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {y.breakdowns.map((b) => (
+                                  <tr key={b.id} className="hover:bg-slate-50">
+                                    <td className="px-2.5 py-1.5 text-slate-600">{b.name}</td>
+                                    <td className="px-2.5 py-1.5 text-right text-slate-500">{b.reduction > 0 ? formatMoney(b.standardAmount) : '—'}</td>
+                                    <td className="px-2.5 py-1.5 text-right text-cyan-700 font-semibold">{b.reduction > 0 ? formatMoney(b.reduction) : '—'}</td>
+                                    <td className="px-2.5 py-1.5 text-right font-semibold text-slate-700">{formatMoney(b.appliedAmount)}</td>
+                                    <td className="px-2.5 py-1.5 text-right text-emerald-700">{formatMoney(b.paidAmount)}</td>
+                                    <td className="px-2.5 py-1.5 text-right text-rose-700 font-semibold">{formatMoney(b.remainingAmount)}</td>
+                                  </tr>
+                                ))}
+                                <tr className="bg-slate-50 font-bold">
+                                  <td className="px-2.5 py-1.5 text-slate-700" colSpan={2}>Total {y.academicYear?.name || ''}</td>
+                                  <td className="px-2.5 py-1.5 text-right text-cyan-700">{y.reductionTotal > 0 ? formatMoney(y.reductionTotal) : '—'}</td>
+                                  <td className="px-2.5 py-1.5 text-right text-slate-800">{formatMoney(y.account.totalDue)}</td>
+                                  <td className="px-2.5 py-1.5 text-right text-emerald-700">{formatMoney(y.account.totalPaid)}</td>
+                                  <td className="px-2.5 py-1.5 text-right text-rose-700">{formatMoney(y.account.balance)}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        {y.transactions.length > 0 && (
+                          <div className="mt-3">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">Dernières transactions ({y.transactions.length})</p>
+                            <div className="space-y-1">
+                              {y.transactions.slice(0, 5).map((t) => (
+                                <div key={t.id} className="flex items-center gap-2 p-1.5 bg-slate-50 rounded-lg text-xs">
+                                  <span className="w-6 h-6 rounded bg-emerald-100 flex items-center justify-center"><Wallet className="w-3 h-3 text-emerald-600" /></span>
+                                  <span className="font-semibold text-slate-700">{formatMoney(t.amount)}</span>
+                                  <span className="text-slate-400">{new Date(t.createdAt).toLocaleDateString('fr-FR')} · {t.paymentMethod || '—'}</span>
+                                  {t.reference && <span className="text-slate-400 truncate">réf. {t.reference}</span>}
+                                  <span className={cn('ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full border',
+                                    t.type === 'PAYMENT' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-600 border-slate-200')}>
+                                    {t.type}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </>
-            ) : <EmptyState icon={Wallet} text="Aucun compte financier trouvé pour cette année" />}
+            ) : <EmptyState icon={Wallet} text="Aucun compte financier enregistré pour cet élève" />}
           </SectionCard>
 
           {/* ═══ VI. ASSIDUITÉ & DISCIPLINE ═══ */}

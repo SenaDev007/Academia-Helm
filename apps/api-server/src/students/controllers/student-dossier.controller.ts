@@ -31,10 +31,14 @@ import { PublicVerificationService } from '../services/public-verification.servi
 // ⭐ 1.0.10 (refonte dossier numérique) — rôles autorisés à consulter/générer
 //    le dossier complet : inclut le PROMOTEUR et la SECRETAIRE (avant, la route
 //    PDF était limitée à DIRECTEUR/ADMIN — le promoteur avait un 403).
+// ⭐ 1.0.14 (demande promoteur) — la secrétaire comptable (SECRETAIRE_COMPTABLE)
+//    et le comptable sont aussi admis : le RolesGuard applique en plus la fusion
+//    SECRETAIRE ↔ SECRETAIRE_COMPTABLE, ces entrées les rendent explicites.
 const DOSSIER_ROLES = [
   'ADMIN', 'DIRECTOR', 'SCHOOL_ADMIN', 'DIRECTEUR',
   'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SUPER_DIRECTOR',
   'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT', 'SECRETARY', 'SECRETAIRE',
+  'SECRETAIRE_COMPTABLE', 'COMPTABLE',
   'TEACHER',
 ];
 
@@ -173,9 +177,11 @@ export class StudentDossierController {
   /**
    * GET /api/students/:studentId/verification-qr
    * Retourne l'URL publique et l'image QR pour la carte scolaire (dossier / impression)
+   * ⭐ 1.0.14 — SECRETARY/SECRETAIRE ajoutés (lecture seule, flux carte scolaire
+   *    de la secrétaire) ; la génération/régénération du token reste direction.
    */
   @Get(':studentId/verification-qr')
-  @Roles('DIRECTEUR', 'DIRECTOR', 'ADMIN', 'TEACHER', 'PARENT', 'STUDENT')
+  @Roles('DIRECTEUR', 'DIRECTOR', 'ADMIN', 'TEACHER', 'PARENT', 'STUDENT', 'SECRETARY', 'SECRETAIRE')
   async getVerificationQR(
     @Param('studentId') studentId: string,
     @Query('academicYearId') academicYearId: string,

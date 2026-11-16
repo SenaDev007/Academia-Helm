@@ -26,6 +26,10 @@ export class StudentAccountController {
     @Query('exportAll') exportAll?: string,
     // ⭐ Task 23 : flag includeWithdrawn pour inclure les élèves abandonnés
     @Query('includeWithdrawn') includeWithdrawn?: string,
+    // ⭐ 1.0.14 : filtre par élève précis — AVANT ce paramètre était transmis
+    //    par le dossier élève mais IGNORÉ (fausses données de frais : le front
+    //    prenait accounts[0] = le compte d'un autre élève).
+    @Query('studentId') studentId?: string,
   ) {
     if (!academicYearId) return [];
     const pageNum = page ? parseInt(page, 10) : undefined;
@@ -35,6 +39,7 @@ export class StudentAccountController {
       classId,
       status,
       search,
+      studentId,
       isBlocked: isBlocked === 'true' ? true : isBlocked === 'false' ? false : undefined,
       page: pageNum && !isNaN(pageNum) ? pageNum : undefined,
       limit: limitNum && !isNaN(limitNum) ? limitNum : undefined,

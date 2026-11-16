@@ -20,6 +20,10 @@ const MANAGEMENT_ROLES = [
   'ADMIN', 'DIRECTOR', 'SCHOOL_ADMIN', 'DIRECTEUR',
   'DIRECTEUR_GENERAL', 'DIRECTEUR_ETABLISSEMENT', 'SUPER_DIRECTOR',
   'PROMOTER', 'SCHOOL_OWNER', 'BOARD_PRESIDENT',
+  // ⭐ 1.0.14 (demande promoteur) — la secrétaire et la secrétaire comptable
+  //    ont tous les droits sur le module Élèves & Scolarité : l'onglet
+  //    « Transferts & Mobilité » leur était inaccessible (403).
+  'SECRETAIRE', 'SECRETAIRE_COMPTABLE', 'SECRETARY', 'COMPTABLE', 'ACCOUNTANT',
 ];
 
 @Controller('students/transfers')

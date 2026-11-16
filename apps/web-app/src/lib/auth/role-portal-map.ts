@@ -637,8 +637,15 @@ export function getVisibleModulesForRole(role: string): {
   ];
 
   // ⭐ Finance : comptable, caissier, responsable financier, économe, intendant, etc.
+  // ⭐ 1.0.14 (demande promoteur) — les SECRÉTAIRES (pures) accèdent aussi au
+  //    module Finance : le backend applique la même fusion dans le RolesGuard
+  //    (un rôle SECRETAIRE/SECRETAIRE_COMPTABLE matche toute route requérant
+  //    SECRETAIRE OU COMPTABLE). Sans cette entrée, la secrétaire voyait le
+  //    module Finance masqué dans la barre latérale alors qu'elle en a
+  //    désormais tous les droits.
   const FINANCE_ROLES = [
     ...levelSpecificComptableRoles,
+    ...levelSpecificSecretaryRoles,
     'CFO', 'FINANCE_MANAGER', 'ACCOUNTANT', 'CASHIER', 'RECOVERY_MANAGER',
     'SECRETAIRE_COMPTABLE', 'ECONOME', 'INTENDANT',
   ];

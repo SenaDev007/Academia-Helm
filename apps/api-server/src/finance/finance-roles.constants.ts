@@ -22,6 +22,14 @@
  * et effectuer des opérations de gestion dans l'école.
  *
  * Le PROMOTEUR est inclus car c'est le propriétaire de l'école.
+ *
+ * ⭐ 1.0.14 (demande promoteur) — SECRETAIRE / SECRETARY / SECRETAIRE_COMPTABLE
+ *    ajoutés : la secrétaire et la secrétaire comptable doivent avoir TOUTES
+ *    les permissions sur le module Finance (encaissements, reçus, échéanciers,
+ *    dossiers de recouvrement, allocations). Le COMPTABLE pur n'est PAS
+ *    ajouté ici (ses droits restent ceux d'hier : lecture + caisse) — seuls
+ *    les rôles fusionnés Secrétaire±Comptable sont élargis, cohérent avec la
+ *    fusion appliquée dans le RolesGuard.
  */
 export const ALL_ADMIN_ROLES = [
   'PLATFORM_OWNER',
@@ -37,6 +45,9 @@ export const ALL_ADMIN_ROLES = [
   'ADMIN',
   'SCHOOL_ADMIN',
   'SCHOOL_OWNER',
+  'SECRETARY',
+  'SECRETAIRE',
+  'SECRETAIRE_COMPTABLE',
 ] as const;
 
 /**

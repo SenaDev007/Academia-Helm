@@ -980,9 +980,19 @@ export class StudentAccountService {
       // Par défaut (false), les élèves abandonnés sont EXCLUS de la liste
       // pour éviter les confusions dans le module Comptes élèves.
       includeWithdrawn?: boolean;
+      // ⭐ 1.0.14 (retour promoteur « vraies données frais ») : filtre par élève
+      //    précis. AVANT, le query param ?studentId=… transmis par le dossier
+      //    élève était IGNORÉ (absent de la signature) → le front recevait la
+      //    liste complète et prenait accounts[0] = le compte d'un AUTRE élève
+      //    (premier alphabétique) — fausses données de frais affichées.
+      studentId?: string;
     },
   ) {
     const where: any = { tenantId, academicYearId: filters.academicYearId };
+    // ⭐ 1.0.14 : filtrer sur l'élève précis quand le paramètre est fourni.
+    if (filters.studentId) {
+      where.studentId = filters.studentId;
+    }
     if (filters.status) where.status = filters.status;
     if (filters.isBlocked !== undefined) where.isBlocked = filters.isBlocked;
     // ⭐ Task 23 : exclure les élèves abandonnés par défaut

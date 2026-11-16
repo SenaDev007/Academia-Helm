@@ -244,7 +244,8 @@ export class StudentDossierService {
 
     // ⭐ 1.0.10 — ÉCOLE D'ORIGINE : l'admission convertie en dossier élève
     // porte previousSchool / previousLevel / changeReason (cursus hors
-    // établissement) — remontée ici pour tracer le parcours complet.
+    // établissement) —
+    //    remontée ici pour tracer le parcours complet.
     const originatingAdmission = await this.prisma.admission.findFirst({
       where: { convertedStudentId: studentId, tenantId },
       select: {
@@ -256,6 +257,108 @@ export class StudentDossierService {
         isNewStudent: true,
       },
     });
+
+    // ⭐ 1.0.14 (retour promoteur « vraies données frais non récupérées ») :
+    //    FRAIS & PAIEMENTS année par année — la source de vérité est le compte
+    //    financier (student_accounts : totalDue/totalPaid/balance/arrears)
+    //    avec le détail des lignes (account_breakdowns : initial vs ajusté =
+    //    réduction réelle appliquée, payé, restant) et les transactions
+    //    réelles (finance_transactions). AVANT, le front appelait
+    //    GET /finance/student-accounts?studentId=… dont le service IGNORAIT le
+    //    filtre studentId → il affichait le compte d'un AUTRE élève (le
+    //    premier alphabétique du tenant) — d'où le « total dû 55 750 » sur un
+    //    élève qui ne devait que ses frais d'inscription après réduction.
+    const accounts = await this.prisma.studentAccount.findMany({
+      where: { studentId, tenantId },
+      include: {
+        academicYear: true,
+        breakdowns: {
+          include: {
+            feeStructure: {
+              select: { id: true, name: true, feeType: true, totalAmount: true },
+            },
+          },
+          orderBy: { feeStructure: { name: 'asc' } },
+        },
+        transactions: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          select: {
+            id: true, type: true, amount: true, paymentMethod: true,
+            reference: true, createdAt: true,
+          },
+        },
+      },
+      orderBy: { academicYear: { startDate: 'desc' } },
+    });
+
+    // Profils tarifaires par année (régime appliqué — réduction/exonération)
+    const feeProfiles = await this.prisma.studentFeeProfile.findMany({
+      where: { studentId },
+      include: {
+        academicYear: { select: { id: true, name: true } },
+        feeRegime: { select: { id: true, label: true, code: true } },
+      },
+    });
+    const profileByYear = new Map(feeProfiles.map((p: any) => [p.academicYearId, p]));
+
+    const n = (v: any): number => Number(v ?? 0);
+    const financeByYear = accounts.map((a: any) => {
+      const breakdowns = (a.breakdowns || []).map((b: any) => {
+        const standard = n(b.feeStructure?.totalAmount);
+        const applied = n(b.adjustedAmount ?? b.initialAmount);
+        return {
+          id: b.id,
+          name: b.feeStructure?.name || 'Frais',
+          feeType: b.feeStructure?.feeType || null,
+          standardAmount: standard,
+          appliedAmount: applied,
+          // Réduction réelle = montant standard − montant appliqué (si > 0)
+          reduction: Math.max(0, standard - applied),
+          paidAmount: n(b.paidAmount),
+          remainingAmount: n(b.remainingAmount),
+        };
+      });
+      const reductionTotal = breakdowns.reduce(
+        (s: number, b: any) => s + b.reduction, 0,
+      );
+      const profile = profileByYear.get(a.academicYearId);
+      return {
+        academicYearId: a.academicYearId,
+        academicYear: a.academicYear
+          ? { id: a.academicYear.id, name: a.academicYear.name, label: a.academicYear.label }
+          : null,
+        account: {
+          id: a.id,
+          totalDue: n(a.totalDue),
+          totalPaid: n(a.totalPaid),
+          balance: n(a.balance),
+          arrearsAmount: n(a.arrearsAmount),
+          carriedArrears: n(a.carriedArrears),
+          status: a.status,
+        },
+        reductionTotal,
+        regime: profile?.feeRegime
+          ? { id: profile.feeRegime.id, label: profile.feeRegime.label, code: profile.feeRegime.code }
+          : null,
+        breakdowns,
+        transactions: (a.transactions || []).map((t: any) => ({
+          id: t.id, type: t.type, amount: n(t.amount),
+          paymentMethod: t.paymentMethod, reference: t.reference, createdAt: t.createdAt,
+        })),
+      };
+    });
+
+    // ⭐ 1.0.14 — RÉCAPITULATIF GLOBAL sur TOUTES les années passées dans
+    //    l'établissement : total dû, arriérés, total payé, solde restant.
+    const financeGlobal = {
+      yearsCount: financeByYear.length,
+      totalDue: financeByYear.reduce((s: number, y: any) => s + y.account.totalDue, 0),
+      totalPaid: financeByYear.reduce((s: number, y: any) => s + y.account.totalPaid, 0),
+      balance: financeByYear.reduce((s: number, y: any) => s + y.account.balance, 0),
+      arrears: financeByYear.reduce((s: number, y: any) => s + y.account.arrearsAmount, 0),
+      reductionTotal: financeByYear.reduce((s: number, y: any) => s + y.reductionTotal, 0),
+    };
 
     // Module 1 — Identité légale complète (lieu de naissance, pièce, régime)
     return {
@@ -288,6 +391,9 @@ export class StudentDossierService {
       // ⭐ 1.0.10 — parcours réel + école d'origine (dossier numérique complet)
       studentEnrollments: enrollments,
       originatingAdmission,
+      // ⭐ 1.0.14 — frais & paiements réels, année par année + récap global
+      financeByYear,
+      financeGlobal,
     };
   }
 
@@ -299,9 +405,10 @@ export class StudentDossierService {
    *   II.  Responsables légaux
    *   III. Parcours dans l'établissement (année par année) + école d'origine
    *   IV.  Résultats & bulletins (par année / période)
-   *   V.   Assiduité & discipline
-   *   VI.  Documents du dossier
-   *   VII. Carte scolaire
+   *   V.   Frais & paiements — année par année + récapitulatif global (⭐ 1.0.14)
+   *   VI.  Assiduité & discipline
+   *   VII. Documents du dossier
+   *   VIII. Carte scolaire
    */
   async generateAcademicDossierPdf(
     tenantId: string,
@@ -468,7 +575,7 @@ export class StudentDossierService {
     const disciplinaryBlock = disciplinaryRows
       ? `
     <div class="subsection">
-      <h3>V.2. Synthèse par année scolaire</h3>
+      <h3>VI.1. Synthèse par année scolaire</h3>
       <table>
         <thead>
           <tr><th>Année</th><th>Absences</th><th>Absences non justifiées</th><th>Incidents</th><th>Sanctions</th><th>Suspensions</th></tr>
@@ -495,7 +602,7 @@ export class StudentDossierService {
     const lastAbsencesBlock = lastAbsencesRows
       ? `
     <div class="subsection">
-      <h3>V.3. Dernières absences (15 max)</h3>
+      <h3>VI.2. Dernières absences (15 max)</h3>
       <table>
         <thead><tr><th>Date</th><th>Type</th><th>Justification</th><th>Motif</th></tr></thead>
         <tbody>${lastAbsencesRows}</tbody>
@@ -535,7 +642,7 @@ export class StudentDossierService {
     const card = d.currentIdCard;
     const cardBlock = `
     <div class="section">
-      <h2>VII. Carte scolaire</h2>
+      <h2>VIII. Carte scolaire</h2>
       <table>
         <tbody>
           <tr><th>Numéro de carte</th><td>${card ? esc(card.cardNumber) : 'Non générée'}</td></tr>
@@ -543,6 +650,104 @@ export class StudentDossierService {
           <tr><th>Valide jusqu'au</th><td>${card ? dfmt(card.validUntil) : '—'}</td></tr>
         </tbody>
       </table>
+    </div>`;
+
+    // ⭐ 1.0.14 — FRAIS & PAIEMENTS année par année (vraies données du compte
+    //    financier : réduction réelle, arriérés, payé, reste à solder) +
+    //    récapitulatif global sur toutes les années passées.
+    const fmtMoney = (v: any): string =>
+      `${Number(v ?? 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} F`;
+
+    const feesSections = ((d.financeByYear || []) as any[])
+      .map(
+        (y: any) => `
+    <div class="subsection">
+      <h3>Frais de l'année ${esc(y.academicYear?.name || y.academicYear?.label || '—')}${y.regime ? ` — régime : ${esc(y.regime.label)}` : ''}</h3>
+      <table>
+        <thead>
+          <tr><th>Ligne de frais</th><th class="num">Montant standard</th><th class="num">Réduction</th><th class="num">Montant dû</th><th class="num">Payé</th><th class="num">Reste à solder</th></tr>
+        </thead>
+        <tbody>
+          ${(y.breakdowns || [])
+            .map(
+              (b: any) => `
+            <tr>
+              <td>${esc(b.name)}</td>
+              <td class="num">${fmtMoney(b.standardAmount)}</td>
+              <td class="num">${b.reduction > 0 ? `<b>${fmtMoney(b.reduction)}</b>` : '—'}</td>
+              <td class="num"><b>${fmtMoney(b.appliedAmount)}</b></td>
+              <td class="num">${fmtMoney(b.paidAmount)}</td>
+              <td class="num">${fmtMoney(b.remainingAmount)}</td>
+            </tr>`,
+            )
+            .join('')}
+          <tr>
+            <td><b>Total ${esc(y.academicYear?.name || '')}</b></td>
+            <td class="num">—</td>
+            <td class="num">${y.reductionTotal > 0 ? `<b>${fmtMoney(y.reductionTotal)}</b>` : '—'}</td>
+            <td class="num"><b>${fmtMoney(y.account.totalDue)}</b></td>
+            <td class="num"><b>${fmtMoney(y.account.totalPaid)}</b></td>
+            <td class="num"><b>${fmtMoney(y.account.balance)}</b></td>
+          </tr>
+          ${
+            y.account.arrearsAmount > 0
+              ? `<tr><td colspan="6" class="num">dont arriérés reportés : <b>${fmtMoney(y.account.arrearsAmount)}</b></td></tr>`
+              : ''
+          }
+        </tbody>
+      </table>
+      ${
+        (y.transactions || []).length > 0
+          ? `
+      <h3>Dernières transactions — ${esc(y.academicYear?.name || '')}</h3>
+      <table>
+        <thead><tr><th>Date</th><th>Type</th><th class="num">Montant</th><th>Moyen</th><th>Référence</th></tr></thead>
+        <tbody>
+          ${y.transactions
+            .map(
+              (t: any) => `
+            <tr>
+              <td>${dfmt(t.createdAt)}</td>
+              <td>${esc(t.type)}</td>
+              <td class="num"><b>${fmtMoney(t.amount)}</b></td>
+              <td>${esc(t.paymentMethod) || '—'}</td>
+              <td>${esc(t.reference) || '—'}</td>
+            </tr>`,
+            )
+            .join('')}
+        </tbody>
+      </table>`
+          : ''
+      }
+    </div>`,
+      )
+      .join('');
+
+    const fg = d.financeGlobal;
+    const feesBlock = `
+    <div class="section">
+      <h2>V. Frais &amp; paiements — année par année</h2>
+      ${
+        feesSections
+          ? feesSections +
+            `
+      <div class="subsection">
+        <h3>Récapitulatif global — toutes années (${esc(fg?.yearsCount ?? 0)} an(s) dans l'établissement)</h3>
+        <table>
+          <thead><tr><th>Total dû (toutes années)</th><th class="num">Réductions cumulées</th><th class="num">Arriérés</th><th class="num">Total payé</th><th class="num">Solde restant</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><b>${fmtMoney(fg?.totalDue)}</b></td>
+              <td class="num">${(fg?.reductionTotal ?? 0) > 0 ? fmtMoney(fg?.reductionTotal) : '—'}</td>
+              <td class="num">${(fg?.arrears ?? 0) > 0 ? `<b>${fmtMoney(fg?.arrears)}</b>` : '—'}</td>
+              <td class="num"><b>${fmtMoney(fg?.totalPaid)}</b></td>
+              <td class="num"><b>${fmtMoney(fg?.balance)}</b></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>`
+          : '<p class="empty" style="color:#94a3b8;font-style:italic;text-align:center;">Aucun compte financier enregistré pour cet élève.</p>'
+      }
     </div>`;
 
     const yearName =
@@ -656,8 +861,10 @@ export class StudentDossierService {
       ${academicRecordsBlock}
     </div>
 
+    ${feesBlock}
+
     <div class="section">
-      <h2>V. Assiduité &amp; discipline</h2>
+      <h2>VI. Assiduité &amp; discipline</h2>
       ${disciplinaryBlock}
       ${lastAbsencesBlock}
       ${
@@ -668,7 +875,7 @@ export class StudentDossierService {
     </div>
 
     <div class="section">
-      <h2>VI. Documents du dossier</h2>
+      <h2>VII. Documents du dossier</h2>
       <table>
         <thead><tr><th>Type de document</th><th>Fichier</th><th>Déposé le</th></tr></thead>
         <tbody>${documentsRows}</tbody>

@@ -24,7 +24,10 @@ import { StudentAccountService } from '../../finance/student-account.service';
 
 @Controller('students/bulk-setup')
 @UseGuards(RolesGuard)
-@Roles('PROMOTER', 'PROMOTEUR', 'director', 'admin', 'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_ADMIN')
+// ⭐ 1.0.14 (demande promoteur) — SECRETAIRE/SECRETAIRE_COMPTABLE/SECRETARY
+//    ajoutés : le bouton « rattrapage matricules + comptes » de l'onglet
+//    Listes de classes (module Élèves) retournait 403 à la secrétaire.
+@Roles('PROMOTER', 'PROMOTEUR', 'director', 'admin', 'SUPER_DIRECTOR', 'PLATFORM_OWNER', 'PLATFORM_ADMIN', 'SECRETAIRE', 'SECRETAIRE_COMPTABLE', 'SECRETARY')
 export class BulkSetupController {
   private readonly logger = new Logger(BulkSetupController.name);
 

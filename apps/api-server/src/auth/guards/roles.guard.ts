@@ -100,6 +100,28 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
+    // ⭐ FIX 16/11/2026 (1.0.14, demande promoteur) — FUSION SECRETAIRE ↔
+    //    SECRETAIRE_COMPTABLE : l'enum officiel définit SECRETAIRE_COMPTABLE
+    //    comme « Fusion Secrétaire + Comptable », et le promoteur exige que
+    //    la secrétaire ET la secrétaire comptable aient tous les droits sur
+    //    les modules Élèves & Scolarité et Finance. Or de nombreuses listes
+    //    @Roles listent l'UN des deux rôles seulement (SECRETARY sans
+    //    SECRETAIRE_COMPTABLE, ou COMPTABLE sans SECRETAIRE) : la secrétaire
+    //    comptable réelle (SECRETAIRE_COMPTABLE_MAT_PRI) avait 403 partout —
+    //    dossier élève (année/niveau vides par chute de secours), cartes
+    //    scolaires (« aucune carte » + « accès refusé » à la génération),
+    //    documents, admissions…
+    //    Règle : un utilisateur SECRETAIRE ou SECRETAIRE_COMPTABLE (base,
+    //    après retrait du suffixe de niveau) matche toute route requérant
+    //    SECRETAIRE (SECRETARY) OU COMPTABLE (ACCOUNTANT). Le COMPTABLE pur
+    //    reste limité aux routes comptables (pas d'élargissement inverse).
+    const userCanon = canon(userRole);
+    if (userCanon === 'SECRETAIRE' || userCanon === 'SECRETAIRE_COMPTABLE') {
+      if (requiredRoles.some((r) => ['SECRETAIRE', 'COMPTABLE'].includes(canon(r)))) {
+        return true;
+      }
+    }
+
     return false;
   }
 }

@@ -14137,3 +14137,19 @@ Stage Summary:
 - ✅ Livrable sécurisé : download/desktop-updater/ (clé privée + mot de passe + README de conservation, hors dépôt) — les preuves E2E dans download/e2e-preuves/121-desktop-updater/.
 - ⚠️ Une action manuelle unique reste (physiquement incontournable) : construire la coquille 1.1.1 signée sur machine Windows (guide §3) et réinstaller les rares coquilles 1.1.0-placeholder existantes ; ensuite toutes les mises à jour sont automatiques.
 - ⏳ Rappels en attente (inchangés) : ticket Termii route DND BJ (worklog 111), migration des 15 numéros ARCEP hérités, rotation des secrets (Neon/GitHub), ré-encaissement du paiement 5 000 F du doublon ATCHADE supprimé (worklog 115) si réel.
+
+---
+Task ID: 121-bis-verification-finale
+Agent: Super Z (agent principal)
+Task: Re-vérification live post-session (17 nov.) — confirmer que l'état livré en 120/121 tient toujours avant rapport final à l'utilisateur.
+
+Work Log:
+- GIT : local == origin/main (f6213c7), statut propre — rien en attente.
+- Sondes live (scripts/verification_finale_121.py, UA navigateur) : api.academiahelm.com/health → 200, version 1.0.19 ✓ ; app.academiahelm.com/app → 200 ✓ ; app.academiahelm.com/desktop → 200 ✓ ; academiahelm.com/portal → 200 ✓ ; releases.academiahelm.com/desktop/{msi,nsis,triple-Rust}/x86_64/1.1.0 → 200 application/json + cache-control no-store, manifests corrects (1.1.0 = « à jour » pour coquilles actuelles) ✓ ; assetlinks.json → package com.yehiortech.academiahelm + empreinte SHA-256 2124E36E… ✓.
+- Config coquille desktop (tauri.conf.json) : version 1.1.1, pubkey minisign réelle (152 car., zéro placeholder), endpoint https://releases.academiahelm.com/desktop/{{target}}/{{arch}}/{{current_version}} ✓.
+- Livrables présents : download/e2e-preuves/alignement-desktop-mobile-120/ + download/e2e-preuves/121-desktop-updater/ + download/desktop-updater/ (clé privée + mot de passe + README, hors dépôt).
+
+Stage Summary:
+- ✅ État 120/121 confirmé inchangé en production : alignement web/desktop/mobile (API 1.0.19 → dossier corrigé servi à l'identique aux 3 plateformes) + updater desktop opérationnel.
+- ⏳ Action manuelle unique inchangée : construire la coquille 1.1.1 signée sur machine Windows (guide §3) et réinstaller les rares coquilles 1.1.0-placeholder ; ensuite mises à jour automatiques.
+- ⏳ Rappels en attente (inchangés) : ticket Termii route DND BJ (worklog 111), migration des 15 numéros ARCEP hérités, rotation des secrets (Neon/GitHub), ré-encaissement du paiement 5 000 F du doublon ATCHADE supprimé (worklog 115) si réel.

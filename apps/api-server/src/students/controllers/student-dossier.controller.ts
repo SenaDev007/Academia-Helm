@@ -79,6 +79,11 @@ export class StudentDossierController {
    * ⭐ 1.0.10 — génère le DOSSIER SCOLAIRE COMPLET en PDF (7 sections :
    *    identité, responsables, parcours année par année + école d'origine,
    *    bulletins, assiduité/discipline, documents, carte scolaire).
+   * ⭐ 1.0.18 — TÉLÉCHARGEMENT EN BLOC (demande promoteur) : quand l'élève a
+   *    des documents joints, la réponse devient une archive ZIP contenant
+   *    TOUT dans un seul dossier — le PDF du dossier + les fichiers joints
+   *    (Documents joints/). Sans document récupérable : PDF seul, inchangé.
+   *    Content-Type application/zip vs application/pdf — le client s'adapte.
    */
   @Get(':studentId/academic-dossier')
   @Roles(...DOSSIER_ROLES)
@@ -89,18 +94,32 @@ export class StudentDossierController {
     @Res() res: Response,
   ) {
     const tenantId = req.user.tenantId;
-    const pdfBuffer = await this.dossierService.generateAcademicDossierPdf(
+    const bundle = await this.dossierService.generateAcademicDossierBundle(
       tenantId,
       studentId,
       academicYearId,
     );
 
-    res.setHeader('Content-Type', 'application/pdf');
+    // Nom de fichier sûr (accents/espaces) — pattern admission.controller :
+    // fallback ASCII pour filename= + forme RFC 5987 pour filename*=UTF-8''.
+    const asciiFallback =
+      bundle.fileName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9._-]+/g, '_')
+        .replace(/^_+|_+$/g, '') || 'dossier-academique';
+    const encodedFileName = encodeURIComponent(bundle.fileName)
+      .replace(/'/g, '%27')
+      .replace(/\(/g, '%28')
+      .replace(/\)/g, '%29');
+
+    res.setHeader('Content-Type', bundle.mimeType);
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="dossier-academique-${studentId}.pdf"`,
+      `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodedFileName}`,
     );
-    return res.send(pdfBuffer);
+    res.setHeader('Content-Length', bundle.buffer.length);
+    return res.send(bundle.buffer);
   }
 
   /**

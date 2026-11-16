@@ -16,15 +16,21 @@ export async function GET(
       `${API_URL}/students/${studentId}/academic-dossier${academicYearId ? `?academicYearId=${academicYearId}` : ''}`
     );
     const headers = await getProxyAuthHeaders(request);
-    const response = await fetchWithTimeout(url, { headers , cache: 'no-store' }, 15000);
+    // ⭐ 1.0.18 — le backend renvoie désormais soit application/pdf, soit
+    //    application/zip (bundle : dossier PDF + documents joints dans un seul
+    //    dossier). On relaie le Content-Type tel quel — l'ancien forçage
+    //    application/pdf étiquetait le ZIP « .pdf » côté client.
+    // Timeout porté à 120 s : le bundle agrège le PDF + N fichiers joints.
+    const response = await fetchWithTimeout(url, { headers, cache: 'no-store' }, 120000);
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       return NextResponse.json(error, { status: response.status });
     }
     const arrayBuffer = await response.arrayBuffer();
+    const contentType = response.headers.get('content-type') || 'application/pdf';
     return new NextResponse(Buffer.from(arrayBuffer), {
       status: 200,
-      headers: { 'Content-Type': 'application/pdf' },
+      headers: { 'Content-Type': contentType },
     });
   } catch (e) {
     return NextResponse.json({ error: 'Failed to generate academic dossier' }, { status: 500 });

@@ -12,6 +12,30 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/database/prisma.service';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
+import { StorageService } from '../../common/services/storage.service';
+// ⭐ 1.0.18 — en-tête officiel par cycle (module Examen) : overlay d'identité
+//    du secondaire quand l'élève est au secondaire (nom/contacts/logo différents).
+import {
+  resolveLevelIdentityOverlay,
+  applyLevelIdentityOverlay,
+} from '../../common/context/resolve-level-identity';
+// ⭐ 1.0.18 — téléchargement EN BLOC : dossier PDF + documents joints dans une
+//    seule archive (même utilitaire zéro-dépendance que le module Fédérés).
+import { createZipArchive, type ZipEntryInput } from '../../federis/zip-writer';
+
+/** Libellés FR des types de documents élèves (partagés PDF + bundle ZIP). */
+const DOC_TYPE_LABELS: Record<string, string> = {
+  BIRTH_CERTIFICATE: 'Acte de naissance', NPI_CARD: 'Carte NPI',
+  SCHOOL_CERTIFICATE: 'Certificat de scolarité', PHOTO: "Photo d'identité",
+  PREVIOUS_REPORT_CARD: 'Bulletin précédent', MEDICAL_RECORD: 'Fiche médicale',
+  PARENTAL_AUTHORIZATION: 'Autorisation parentale',
+  TRANSFER_CERTIFICATE: 'Certificat de transfert', OTHER: 'Autre document',
+};
+
+/** Ministères par cycle — mêmes libellés que le module Examen (Bulletins). */
+const MINISTERE_MATERNELLE_PRIMAIRE = 'Ministère des Enseignements Maternel et Primaire';
+const MINISTERE_SECONDAIRE =
+  "Ministère de l'Enseignement Secondaire, de la Formation Technique et Professionnelle, de la Reconversion et de l'Insertion des Jeunes";
 
 @Injectable()
 export class StudentDossierService {
@@ -20,6 +44,7 @@ export class StudentDossierService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly puppeteerPool: PuppeteerPoolService,
+    private readonly storageService: StorageService,
   ) {}
 
   /**
@@ -37,6 +62,10 @@ export class StudentDossierService {
       },
       include: {
         identifier: true,
+        // ⭐ 1.0.18 — niveau actuel de l'élève : détermine le CYCLE du dossier
+        //    (en-tête officiel différent maternelle/primaire vs secondaire,
+        //    comme le module Examen Bulletins).
+        schoolLevel: { select: { id: true, code: true, name: true, label: true } },
         idCards: {
           where: academicYearId ? { academicYearId } : undefined,
           orderBy: { generatedAt: 'desc' },
@@ -513,6 +542,11 @@ export class StudentDossierService {
     };
 
     // Module 1 — Identité légale complète (lieu de naissance, pièce, régime)
+    // ⭐ 1.0.18 — IDENTITÉ D'ÉCOLE + MINISTÈRE PAR CYCLE (module Examen) :
+    //    profil d'identité actif du tenant → repli fiche School ; overlay
+    //    secondaire (tenant_level_identity_profiles) appliqué quand l'élève
+    //    est au secondaire → en-tête officiel différent, comme les bulletins.
+    const schoolBranding = await this.resolveSchoolBrandingForDossier(tenantId, student);
     return {
       identity: {
         id: student.id,
@@ -546,6 +580,63 @@ export class StudentDossierService {
       // ⭐ 1.0.14 — frais & paiements réels, année par année + récap global
       financeByYear,
       financeGlobal,
+      // ⭐ 1.0.18 — identité d'école par cycle (en-tête officiel du PDF)
+      schoolBranding,
+    };
+  }
+
+  /**
+   * ⭐ 1.0.18 — Résout l'identité d'école EFFECTIVE du dossier selon le cycle
+   *    de l'élève (même logique que le module Examen Bulletins) :
+   *    · TenantIdentityProfile actif → repli School (tenant.schools) → tenant.name ;
+   *    · élève au SECONDAIRE + identité secondaire configurée → overlay
+   *      (nom/logo/contacts différents pour le secondaire) ;
+   *    · ministère « Maternel et Primaire » vs « Secondaire » selon le cycle.
+   */
+  private async resolveSchoolBrandingForDossier(tenantId: string, student: any) {
+    let identityProfile: any = null;
+    try {
+      identityProfile = await this.prisma.tenantIdentityProfile.findFirst({
+        where: { tenantId, isActive: true },
+      });
+    } catch (err) {
+      this.logger.warn(`resolveSchoolBrandingForDossier: ${
+        (err as Error).message
+      } — repli fiche School`);
+    }
+    const school = (student as any)?.tenant?.schools || null;
+    let branding: Record<string, any> = {
+      schoolName:
+        identityProfile?.schoolName || school?.name || (student as any)?.tenant?.name || 'Établissement',
+      slogan: identityProfile?.slogan || school?.slogan || school?.motto || null,
+      address: identityProfile?.address || school?.address || null,
+      city: identityProfile?.city || school?.city || null,
+      department: identityProfile?.department || school?.department || null,
+      phonePrimary: identityProfile?.phonePrimary || school?.primaryPhone || null,
+      email: identityProfile?.email || school?.primaryEmail || null,
+      logoUrl: identityProfile?.logoUrl || school?.logo || null,
+    };
+    const levelCode = ((student as any)?.schoolLevel?.code || '').toUpperCase().trim();
+    const isSecondary = ['SECONDAIRE', 'SECONDARY', 'SEC'].includes(levelCode);
+    if (isSecondary) {
+      try {
+        const overlay = await resolveLevelIdentityOverlay(this.prisma, tenantId, {
+          isSecondary: true,
+        });
+        branding = applyLevelIdentityOverlay(branding, overlay) || branding;
+      } catch (err) {
+        this.logger.warn(
+          `resolveLevelIdentityOverlay (secondaire) a échoué : ${
+            (err as Error).message
+          } — identité globale conservée`,
+        );
+      }
+    }
+    return {
+      ...branding,
+      isSecondary,
+      levelCode: levelCode || null,
+      ministry: isSecondary ? MINISTERE_SECONDAIRE : MINISTERE_MATERNELLE_PRIMAIRE,
     };
   }
 
@@ -606,13 +697,6 @@ export class StudentDossierService {
         : avg >= 12 ? 'Assez Bien' : avg >= 10 ? 'Passable' : 'Insuffisant';
     const QUALI_LABELS: Record<string, string> = {
       TS: 'Très Satisfaisant', S: 'Satisfaisant', PS: 'Peu Satisfaisant', NS: 'Non Satisfaisant',
-    };
-    const docTypeLabel: Record<string, string> = {
-      BIRTH_CERTIFICATE: 'Acte de naissance', NPI_CARD: 'Carte NPI',
-      SCHOOL_CERTIFICATE: 'Certificat de scolarité', PHOTO: "Photo d'identité",
-      PREVIOUS_REPORT_CARD: 'Bulletin précédent', MEDICAL_RECORD: 'Fiche médicale',
-      PARENTAL_AUTHORIZATION: 'Autorisation parentale',
-      TRANSFER_CERTIFICATE: 'Certificat de transfert', OTHER: 'Autre document',
     };
 
     const guardiansRows =
@@ -742,10 +826,10 @@ export class StudentDossierService {
     <div class="subsection">
       <h3>${esc(cycleLabel)} — ${esc(rc.academicYear?.name || rc.academicYear?.label)} · ${esc(rc.periodName || rc.type)}</h3>
       ${qualiNote}
-      <table>
+      <div class="tblwrap"><table>
         <thead>${head}</thead>
         <tbody>${rows}</tbody>
-      </table>
+      </table></div>
     </div>`;
         },
       )
@@ -770,12 +854,12 @@ export class StudentDossierService {
       ? `
     <div class="subsection">
       <h3>IV.2. Synthèse annuelle enregistrée</h3>
-      <table>
+      <div class="tblwrap"><table>
         <thead>
           <tr><th>Année</th><th>Classe</th><th>Moyenne</th><th>Rang</th><th>Absences</th><th>Incidents</th></tr>
         </thead>
         <tbody>${academicRecordsRows}</tbody>
-      </table>
+      </table></div>
     </div>`
       : '';
 
@@ -798,12 +882,12 @@ export class StudentDossierService {
       ? `
     <div class="subsection">
       <h3>VI.1. Synthèse par année scolaire</h3>
-      <table>
+      <div class="tblwrap"><table>
         <thead>
           <tr><th>Année</th><th>Absences</th><th>Absences non justifiées</th><th>Incidents</th><th>Sanctions</th><th>Suspensions</th></tr>
         </thead>
         <tbody>${disciplinaryRows}</tbody>
-      </table>
+      </table></div>
     </div>`
       : '';
 
@@ -825,10 +909,10 @@ export class StudentDossierService {
       ? `
     <div class="subsection">
       <h3>VI.2. Dernières absences (15 max)</h3>
-      <table>
+      <div class="tblwrap"><table>
         <thead><tr><th>Date</th><th>Type</th><th>Justification</th><th>Motif</th></tr></thead>
         <tbody>${lastAbsencesRows}</tbody>
-      </table>
+      </table></div>
     </div>`
       : '';
 
@@ -850,14 +934,14 @@ export class StudentDossierService {
       ? `
     <div class="subsection">
       <h3>III.2. École d'origine (avant l'entrée dans l'établissement)</h3>
-      <table>
+      <div class="tblwrap"><table>
         <tbody>
           <tr><th>École d'origine</th><td>${esc(oa.previousSchool) || 'Non renseignée'}</td></tr>
           <tr><th>Niveau précédent</th><td>${esc(oa.previousLevel) || '—'}</td></tr>
           <tr><th>Motif du changement</th><td>${esc(oa.changeReason) || '—'}</td></tr>
           <tr><th>Candidature d'origine</th><td>${esc(oa.admissionNumber) || '—'} (${dfmt(oa.applicationDate)})</td></tr>
         </tbody>
-      </table>
+      </table></div>
     </div>`
       : '';
 
@@ -865,13 +949,13 @@ export class StudentDossierService {
     const cardBlock = `
     <div class="section">
       <h2>VIII. Carte scolaire</h2>
-      <table>
+      <div class="tblwrap"><table>
         <tbody>
           <tr><th>Numéro de carte</th><td>${card ? esc(card.cardNumber) : 'Non générée'}</td></tr>
           <tr><th>Émise le</th><td>${card ? dfmt(card.generatedAt) : '—'}</td></tr>
           <tr><th>Valide jusqu'au</th><td>${card ? dfmt(card.validUntil) : '—'}</td></tr>
         </tbody>
-      </table>
+      </table></div>
     </div>`;
 
     // ⭐ 1.0.14 — FRAIS & PAIEMENTS année par année (vraies données du compte
@@ -890,7 +974,7 @@ export class StudentDossierService {
           const ft = y.feeTotals || {};
           const traceabilityBlock = `
       <h3>Traçabilité du barème — ${esc(y.academicYear?.name || y.academicYear?.label || '—')}</h3>
-      <table>
+      <div class="tblwrap"><table>
         <thead><tr><th>Montants normalement dus (barème standard)</th><th class="num">Frais d'inscription</th><th class="num">Frais de réinscription</th><th class="num">Frais de scolarité</th><th class="num">Autres frais</th></tr></thead>
         <tbody>
           <tr>
@@ -901,8 +985,8 @@ export class StudentDossierService {
             <td class="num">${ft.other && ft.other.standard > 0 ? fmtMoney(ft.other.standard) : '—'}</td>
           </tr>
         </tbody>
-      </table>
-      <table style="margin-top:4px;">
+      </table></div>
+      <div class="tblwrap" style="margin-top:4px;"><table>
         <tbody>
           <tr>
             <th>Réduction appliquée</th>
@@ -911,12 +995,12 @@ export class StudentDossierService {
             <td><b>${fmtMoney(y.netDue)}</b></td>
           </tr>
         </tbody>
-      </table>`;
+      </table></div>`;
           return `
     <div class="subsection">
       <h3>Frais de l'année ${esc(y.academicYear?.name || y.academicYear?.label || '—')}${y.regime ? ` — régime : ${esc(y.regime.label)}` : ''}</h3>
       ${traceabilityBlock}
-      <table>
+      <div class="tblwrap"><table>
         <thead>
           <tr><th>Ligne de frais</th><th class="num">Montant standard</th><th class="num">Réduction</th><th class="num">Montant dû</th><th class="num">Payé</th><th class="num">Reste à solder</th></tr>
         </thead>
@@ -948,12 +1032,12 @@ export class StudentDossierService {
               : ''
           }
         </tbody>
-      </table>
+      </table></div>
       ${
         (y.transactions || []).length > 0
           ? `
       <h3>Dernières transactions — ${esc(y.academicYear?.name || '')}</h3>
-      <table>
+      <div class="tblwrap"><table>
         <thead><tr><th>Date</th><th>Type</th><th class="num">Montant</th><th>Moyen</th><th>Référence</th></tr></thead>
         <tbody>
           ${y.transactions
@@ -969,7 +1053,7 @@ export class StudentDossierService {
             )
             .join('')}
         </tbody>
-      </table>`
+      </table></div>`
           : ''
       }
     </div>`;
@@ -987,7 +1071,7 @@ export class StudentDossierService {
             `
       <div class="subsection">
         <h3>Récapitulatif global — toutes années (${esc(fg?.yearsCount ?? 0)} an(s) dans l'établissement)</h3>
-        <table>
+        <div class="tblwrap"><table>
           <tbody>
             <tr>
               <th>Barème normal cumulé (avant réduction)</th>
@@ -998,8 +1082,8 @@ export class StudentDossierService {
               <td><b>${fmtMoney(fg?.netDue)}</b></td>
             </tr>
           </tbody>
-        </table>
-        <table style="margin-top:4px;">
+        </table></div>
+        <div class="tblwrap" style="margin-top:4px;"><table>
           <thead><tr><th>Total dû (toutes années)</th><th class="num">Réductions cumulées</th><th class="num">Arriérés</th><th class="num">Total payé</th><th class="num">Solde restant</th></tr></thead>
           <tbody>
             <tr>
@@ -1010,7 +1094,7 @@ export class StudentDossierService {
               <td class="num"><b>${fmtMoney(fg?.balance)}</b></td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
       </div>`
           : '<p class="empty" style="color:#94a3b8;font-style:italic;text-align:center;">Aucun compte financier enregistré pour cet élève.</p>'
       }
@@ -1020,6 +1104,20 @@ export class StudentDossierService {
       (d.studentEnrollments || [])[0]?.academicYear?.name ||
       (d.studentEnrollments || [])[0]?.academicYear?.label ||
       '';
+    const currentClassName =
+      (d.studentEnrollments || [])[0]?.academicClass?.name ||
+      (d.studentEnrollments || [])[0]?.class?.name ||
+      'Non affectée';
+
+    // ⭐ 1.0.18 — EN-TÊTE OFFICIEL PAR CYCLE, reproduit du module Examen
+    //    (Examen > Bulletins) : drapeau du Bénin à gauche, République /
+    //    ministère / nom d'école + coordonnées au centre, logo à droite ;
+    //    maternelle/primaire ≠ secondaire (ministère + identité secondaire).
+    const sb = d.schoolBranding || ({} as any);
+    const beninFlagSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="40" viewBox="0 0 75 50"><rect width="30" height="50" fill="#008751"/><rect x="30" width="45" height="25" fill="#FCD116"/><rect x="30" y="25" width="45" height="25" fill="#E8112D"/></svg>`;
+    const beninFlag = `data:image/svg+xml;base64,${Buffer.from(beninFlagSvg).toString('base64')}`;
+    const schoolAddressLine = [sb.address, sb.city, sb.department].filter(Boolean).join(', ');
+    const editionDate = new Date().toLocaleDateString('fr-FR');
 
     const html = `
 <!DOCTYPE html>
@@ -1028,45 +1126,106 @@ export class StudentDossierService {
     <meta charset="UTF-8" />
     <title>Dossier scolaire — ${esc(idn.lastName)} ${esc(idn.firstName)}</title>
     <style>
-      @page { size: A4; margin: 14mm 12mm; }
+      /* ⭐ 1.0.18 — marges pilotées par page.pdf() (footer officiel sur chaque
+         page via displayHeaderFooter) : @page ne fixe plus les marges. */
+      @page { size: A4; }
       body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 10.5px; color: #1e293b; }
-      .doc-header { display: flex; align-items: center; gap: 14px; border-bottom: 3px solid #0d1f6e; padding-bottom: 10px; margin-bottom: 14px; }
-      .doc-header .logo { width: 46px; height: 46px; border-radius: 50%; border: 2px solid #0d1f6e; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #0d1f6e; font-size: 16px; }
-      .doc-header h1 { font-size: 16px; margin: 0; color: #0d1f6e; text-transform: uppercase; letter-spacing: 0.5px; }
-      .doc-header .sub { font-size: 10px; color: #475569; margin-top: 2px; }
-      .doc-header .right { margin-left: auto; text-align: right; font-size: 9px; color: #64748b; }
+
+      /* ── En-tête officiel (module Examen Bulletins) ── */
+      .header { margin-bottom: 10px; padding-bottom: 6px; border-bottom: 2px solid #0d1f6e; }
+      .header-table { width: 100%; border-collapse: collapse; }
+      .header-table td { vertical-align: middle; padding: 2px 4px; }
+      .header-left { text-align: center; width: 12%; }
+      .header-center { text-align: center; width: 68%; }
+      .header-right { text-align: center; width: 20%; }
+      .republique { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+      .divider { margin: 2px auto; width: 50%; }
+      .divider-line { height: 1px; background: #0d1f6e; }
+      .ministere { font-size: 8px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.3px; line-height: 1.3; }
+      .school-name { font-size: 11px; font-weight: bold; text-transform: uppercase; margin-top: 3px; color: #0d1f6e; }
+      .school-info { font-size: 7px; color: #555; margin-top: 2px; font-style: italic; }
+
+      /* ── Barre de titre encadrée navy arrondie (standard bulletin Examen) ── */
+      .doc-title { text-align: center; border: 2px solid #0d1f6e; border-radius: 8px; padding: 4px 8px; margin-bottom: 6px; font-size: 11px; font-weight: bold; text-transform: uppercase; color: #0d1f6e; background: #f1f5f9; }
+
+      /* ── Bandeau élève (module Examen .info-wrap : photo + identifiants) ── */
+      .info-wrap { border: 1px solid #000; border-radius: 6px; overflow: hidden; margin-bottom: 10px; break-inside: avoid; page-break-inside: avoid; }
+      .info-table { width: 100%; border-collapse: collapse; }
+      .info-table td { border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 3px 5px; font-size: 9px; background: #f1f5f9; }
+      .info-table td:last-child { border-right: none; }
+      .info-table tr:last-child td { border-bottom: none; }
+
       h2 { font-size: 12px; color: #0d1f6e; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; margin: 16px 0 6px; text-transform: uppercase; letter-spacing: 0.4px; }
       h3 { font-size: 10.5px; color: #334155; margin: 10px 0 4px; }
+
+      /* ⭐ 1.0.18 — TABLEAUX À COINS ARRONDIS (module Examen) : le cadre externe
+         est porté par le wrapper .tblwrap (Chromium peint mal border-radius
+         directement sur une <table>) ; grille interne en collapse → filets
+         continus ; en-tête navy/blanc comme les bulletins. */
+      .tblwrap { border: 2px solid #0d1f6e; border-radius: 8px; overflow: hidden; margin-bottom: 6px; }
       table { width: 100%; border-collapse: collapse; }
-      th, td { border: 1px solid #cbd5e1; padding: 3.5px 6px; text-align: left; vertical-align: top; }
-      thead th { background: #eef2f7; font-weight: 700; color: #0d1f6e; }
-      tbody th { background: #f8fafc; font-weight: 600; width: 34%; color: #334155; }
+      th, td { border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; padding: 3.5px 6px; text-align: left; vertical-align: top; }
+      th:last-child, td:last-child { border-right: none; }
+      tbody tr:last-child td, tbody tr:last-child th { border-bottom: none; }
+      thead { display: table-header-group; }
+      thead th { background: #0d1f6e; color: #fff; font-weight: 700; font-size: 9px; text-transform: uppercase; }
+      table tr { break-inside: avoid; page-break-inside: avoid; }
+      tbody th { background: #f1f5f9; font-weight: 600; width: 34%; color: #334155; border-right: 1px solid #cbd5e1; }
       td.num { text-align: center; }
       td.empty, tr.empty td { text-align: center; color: #94a3b8; font-style: italic; }
-      .kv { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; }
-      .kv table { margin-bottom: 0; }
-      .footer { margin-top: 18px; padding-top: 8px; border-top: 1px solid #cbd5e1; display: flex; justify-content: space-between; font-size: 8.5px; color: #64748b; }
+      .kv { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+      .kv .tblwrap { margin-bottom: 0; }
       .section { page-break-inside: avoid; }
       .subsection { page-break-inside: avoid; margin-top: 8px; }
     </style>
   </head>
   <body>
-    <div class="doc-header">
-      <div class="logo">AH</div>
-      <div>
-        <h1>${esc(idn.institution)}</h1>
-        <div class="sub">Dossier scolaire de l'élève — document officiel interne</div>
-      </div>
-      <div class="right">
-        Année scolaire : ${esc(yearName) || '—'}<br/>
-        Édité le ${new Date().toLocaleDateString('fr-FR')}
-      </div>
+    <!-- ═══ EN-TÊTE OFFICIEL (module Examen Bulletins — par cycle) ═══ -->
+    <div class="header">
+      <table class="header-table">
+        <tr>
+          <td class="header-left"><img src="${beninFlag}" alt="Drapeau du Bénin" style="width:30px;height:20px;" /></td>
+          <td class="header-center">
+            <div class="republique">République du Bénin</div>
+            <div class="divider"><div class="divider-line"></div></div>
+            <div class="ministere">${esc(sb.ministry || MINISTERE_MATERNELLE_PRIMAIRE)}</div>
+            <div class="divider"><div class="divider-line"></div></div>
+            <div class="school-name">${esc(sb.schoolName || idn.institution)}</div>
+            <div class="school-info">${sb.slogan ? `« ${esc(sb.slogan)} » · ` : ''}${esc(schoolAddressLine)}${sb.phonePrimary ? ` · Tél: ${esc(sb.phonePrimary)}` : ''}${sb.email ? ` · ${esc(sb.email)}` : ''}</div>
+          </td>
+          <td class="header-right">${sb.logoUrl ? `<img src="${esc(sb.logoUrl)}" style="max-width:35px;max-height:35px;object-fit:contain;" alt="" />` : ''}</td>
+        </tr>
+      </table>
+    </div>
+
+    <!-- ═══ TITRE DU DOCUMENT (barre encadrée navy arrondie) ═══ -->
+    <div class="doc-title">Dossier scolaire de l'élève — document officiel</div>
+
+    <!-- ═══ BANDEAU ÉLÈVE (module Examen : photo + identifiants clés) ═══ -->
+    <div class="info-wrap">
+      <table class="info-table">
+        <tr>
+          <td rowspan="2" style="width:55px;text-align:center;vertical-align:middle;border-bottom:none;">
+            ${idn.photoUrl
+              ? `<img src="${esc(idn.photoUrl)}" style="width:45px;height:50px;object-fit:cover;border:1px solid #000;border-radius:2px;" alt="Photo" />`
+              : `<div style="width:45px;height:50px;border:1px solid #000;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#94a3b8;background:#f1f5f9;">Photo</div>`}
+          </td>
+          <td>Année scolaire : <strong>${esc(yearName) || '—'}</strong></td>
+          <td>Nom et prénoms : <strong style="text-transform:uppercase;">${esc(idn.lastName)} ${esc(idn.firstName)}</strong></td>
+          <td>Classe : <strong>${esc(currentClassName)}</strong></td>
+        </tr>
+        <tr>
+          <td>Matricule : <strong>${esc(idn.matricule) || '—'}</strong></td>
+          <td>Date de naissance : <strong>${dfmt(idn.dateOfBirth)}</strong></td>
+          <td>Statut : <strong>${esc(statusLabel[idn.status] || idn.status)}</strong></td>
+        </tr>
+      </table>
     </div>
 
     <div class="section">
       <h2>I. Identité &amp; situation administrative</h2>
       <div class="kv">
-        <table>
+        <div class="tblwrap"><table>
           <tbody>
             <tr><th>Nom / Prénom</th><td><b>${esc(idn.lastName)} ${esc(idn.firstName)}</b></td></tr>
             <tr><th>Matricule</th><td>${esc(idn.matricule) || '—'}</td></tr>
@@ -1075,8 +1234,8 @@ export class StudentDossierService {
             <tr><th>Sexe</th><td>${idn.gender === 'M' ? 'Masculin' : idn.gender === 'F' ? 'Féminin' : '—'}</td></tr>
             <tr><th>Nationalité</th><td>${esc(idn.nationality) || '—'}</td></tr>
           </tbody>
-        </table>
-        <table>
+        </table></div>
+        <div class="tblwrap"><table>
           <tbody>
             <tr><th>NPI</th><td>${esc(idn.npi) || 'Non renseigné'}</td></tr>
             <tr><th>Statut</th><td>${esc(statusLabel[idn.status] || idn.status)}</td></tr>
@@ -1084,30 +1243,30 @@ export class StudentDossierService {
             <tr><th>Adresse</th><td>${esc(idn.address) || '—'}</td></tr>
             <tr><th>N° de dossier</th><td>${esc(idn.studentCode) || esc(idn.matricule) || '—'}</td></tr>
           </tbody>
-        </table>
+        </table></div>
       </div>
     </div>
 
     <div class="section">
       <h2>II. Responsables légaux</h2>
-      <table>
+      <div class="tblwrap"><table>
         <thead>
           <tr><th>Nom</th><th>Lien de parenté</th><th>Téléphone</th><th>Email</th><th>Adresse</th></tr>
         </thead>
         <tbody>${guardiansRows}</tbody>
-      </table>
+      </table></div>
     </div>
 
     <div class="section">
       <h2>III. Parcours dans l'établissement</h2>
       <div class="subsection">
         <h3>III.1. Inscriptions année par année</h3>
-        <table>
+        <div class="tblwrap"><table>
           <thead>
             <tr><th>Année scolaire</th><th>Niveau</th><th>Classe</th><th>Type</th><th>Statut</th><th>Date d'inscription</th></tr>
           </thead>
           <tbody>${enrollmentsRows}</tbody>
-        </table>
+        </table></div>
       </div>
       ${previousSchoolBlock}
     </div>
@@ -1116,12 +1275,12 @@ export class StudentDossierService {
       <h2>IV. Résultats &amp; bulletins</h2>
       <div class="subsection">
         <h3>IV.1. Bulletins par année et période</h3>
-        <table>
+        <div class="tblwrap"><table>
           <thead>
             <tr><th>Année</th><th>Période</th><th>Moyenne générale</th><th>Rang</th><th>Statut</th></tr>
           </thead>
           <tbody>${reportCardsRows}</tbody>
-        </table>
+        </table></div>
       </div>
       ${reportCardsSubjectsBlocks}
       ${academicRecordsBlock}
@@ -1142,18 +1301,13 @@ export class StudentDossierService {
 
     <div class="section">
       <h2>VII. Documents du dossier</h2>
-      <table>
+      <div class="tblwrap"><table>
         <thead><tr><th>Type de document</th><th>Fichier</th><th>Déposé le</th></tr></thead>
         <tbody>${documentsRows}</tbody>
-      </table>
+      </table></div>
     </div>
 
     ${cardBlock}
-
-    <div class="footer">
-      <span>${esc(idn.institution)} — Dossier généré par Academia Helm (système de gestion scolaire)</span>
-      <span>Élève : ${esc(idn.lastName)} ${esc(idn.firstName)} · ${esc(idn.matricule) || 'sans matricule'}</span>
-    </div>
   </body>
 </html>
     `;
@@ -1161,7 +1315,21 @@ export class StudentDossierService {
     const { page } = await this.puppeteerPool.acquirePage();
     try {
       await page.setContent(html, { waitUntil: 'networkidle0' });
-      const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
+      // ⭐ 1.0.18 — PIED DE PAGE OFFICIEL SUR CHAQUE PAGE (module Examen) :
+      //    displayHeaderFooter + footerTemplate (école · élève · matricule ·
+      //    Academia Helm · page X/Y). ⚠️ Les templates Puppeteer vivent dans un
+      //    contexte isolé : styles INLINE uniquement, classes pageNumber /
+      //    totalPages remplacées par Chromium ; marges portées par page.pdf()
+      //    (l'ancien @page margin CSS est retiré, sinon il doublonnait).
+      const footerHtml = `<div style="font-size:7px;font-family:Arial,Helvetica,sans-serif;color:#64748b;width:100%;text-align:center;">${esc(sb.schoolName || idn.institution)} — Élève : ${esc(idn.lastName)} ${esc(idn.firstName)} · ${esc(idn.matricule) || 'sans matricule'} · Édité le ${editionDate} — Document généré par Academia Helm · Tél : +229 0141360803 · Page <span class="pageNumber"></span> / <span class="totalPages"></span></div>`;
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        displayHeaderFooter: true,
+        headerTemplate: '<span></span>',
+        footerTemplate: footerHtml,
+        margin: { top: '14mm', bottom: '14mm', left: '12mm', right: '12mm' },
+      });
       // ⭐ 1.0.14 — Puppeteer v13+ page.pdf() retourne un Uint8Array (pas un
       //    Buffer) : res.send() l'ENVERRAIT en JSON {"0":37,"1":80,…} avec
       //    content-type application/pdf → PDF corrompu au téléchargement
@@ -1172,6 +1340,183 @@ export class StudentDossierService {
     } finally {
       await this.puppeteerPool.releasePage(page);
     }
+  }
+
+  /**
+   * ⭐ 1.0.18 — TÉLÉCHARGEMENT EN BLOC (demande promoteur) : génère le dossier
+   *    complet PDF ET récupère les DOCUMENTS JOINTS de l'élève pour tout mettre
+   *    dans UN SEUL dossier (archive ZIP) :
+   *
+   *      Dossier_scolaire_<NOM>_<Prenom>_<Matricule>/
+   *        ├─ Dossier_scolaire_<NOM>_<Prenom>_<Matricule>.pdf
+   *        └─ Documents joints/
+   *             ├─ Acte_de_naissance_acte.pdf
+   *             ├─ Photo_identite_photo.jpg
+   *             └─ …
+   *
+   *    Comportement : si AUCUN document n'est récupérable (aucun document
+   *    enregistré, ou fichiers introuvables), la réponse reste le PDF seul —
+   *    l'archive n'apporterait rien. Les documents irrécupérables sont
+   *    journalisés (warn) et IGNORÉS : le téléchargement ne doit jamais échouer
+   *    à cause d'un fichier manquant.
+   */
+  async generateAcademicDossierBundle(
+    tenantId: string,
+    studentId: string,
+    academicYearId?: string,
+  ): Promise<{
+    buffer: Buffer;
+    fileName: string;
+    mimeType: 'application/pdf' | 'application/zip';
+    documentsIncluded: number;
+    documentsTotal: number;
+  }> {
+    const d = await this.getStudentDossier(tenantId, studentId, academicYearId);
+    const idn = d.identity;
+    const pdfBuffer = await this.generateAcademicDossierPdf(
+      tenantId,
+      studentId,
+      academicYearId,
+    );
+
+    // Nom de fichier sûr (accents/espaces/caractères filesystem-dangereux)
+    const safe = (s: string | null | undefined): string =>
+      (s ?? '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[''`]/g, '')
+        .replace(/[^a-zA-Z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 60);
+    const lastName = safe(idn.lastName) || 'Eleve';
+    const firstName = safe(idn.firstName);
+    const matricule = safe(idn.matricule);
+    const stem = `Dossier_scolaire_${lastName}${firstName ? '_' + firstName : ''}${matricule ? '_' + matricule : ''}`;
+    const zipFileName = `${stem}.zip`;
+    const pdfEntryName = `${stem}.pdf`;
+
+    // ── Récupération des documents joints (même chaîne que le module
+    //    Admissions : data URL → https → storage R2/S3/local → filesystem) ──
+    const documents = (d.documents || []) as any[];
+    const entries: ZipEntryInput[] = [];
+    const usedNames = new Set<string>();
+    let docIdx = 0;
+    for (const doc of documents) {
+      docIdx += 1;
+      let buffer: Buffer | null = null;
+      try {
+        buffer = await this.retrieveStudentDocumentFile(doc);
+      } catch (err) {
+        this.logger.warn(
+          `Document ${doc.documentType} (${doc.fileName}) non récupérable : ${
+            (err as Error).message
+          } — ignoré dans l'archive`,
+        );
+      }
+      if (!buffer || buffer.length === 0) continue;
+
+      // Nom d'entrée : <type>_<fichier> — unicité garantie dans l'archive
+      let base = safe(
+        `${DOC_TYPE_LABELS[doc.documentType] || doc.documentType}_${doc.fileName || `document_${docIdx}`}`,
+      );
+      if (!base) base = `document_${docIdx}`;
+      if (!/\.[a-zA-Z0-9]{2,5}$/.test(base)) base += '.bin';
+      let entryName = base;
+      let n = 2;
+      while (usedNames.has(entryName)) {
+        const m = /^(.*?)(\.[^.]+)?$/.exec(base);
+        entryName = `${m?.[1] || base}-${n}${m?.[2] || ''}`;
+        n += 1;
+      }
+      usedNames.add(entryName);
+      entries.push({
+        name: `${stem}/Documents joints/${entryName}`,
+        data: buffer,
+        mtime: doc.createdAt ? new Date(doc.createdAt) : undefined,
+      });
+    }
+
+    // ── Aucun document récupérable → PDF seul (comportement inchangé) ──
+    if (entries.length === 0) {
+      return {
+        buffer: pdfBuffer,
+        fileName: pdfEntryName,
+        mimeType: 'application/pdf',
+        documentsIncluded: 0,
+        documentsTotal: documents.length,
+      };
+    }
+
+    // ── Archive : tout dans UN SEUL dossier racine (PDF + Documents joints) ──
+    const zip = createZipArchive([
+      { name: `${stem}/${pdfEntryName}`, data: pdfBuffer },
+      ...entries,
+    ]);
+    this.logger.log(
+      `Bundle dossier ZIP généré : ${entries.length}/${documents.length} document(s) joint(s) + PDF`,
+    );
+    return {
+      buffer: zip,
+      fileName: zipFileName,
+      mimeType: 'application/zip',
+      documentsIncluded: entries.length,
+      documentsTotal: documents.length,
+    };
+  }
+
+  /**
+   * ⭐ 1.0.18 — Récupère le FICHIER d'un document joint élève (StudentDocument)
+   *    — même chaîne de repli que le module Admissions :
+   *    1. data URL (base64 en DB) ;
+   *    2. URL http(s) (R2/S3 public, CDN) ;
+   *    3. StorageService (R2/S3/local) ;
+   *    4. filesystem local (chemin relatif au cwd).
+   *    Retourne null si introuvable — l'appelant décide d'ignorer.
+   */
+  private async retrieveStudentDocumentFile(doc: any): Promise<Buffer | null> {
+    const filePath = (doc?.filePath || '').trim();
+    if (!filePath) return null;
+
+    // 1. Data URL : décoder directement le base64
+    if (filePath.startsWith('data:')) {
+      const m = /^data:([^;]+);base64,(.+)$/is.exec(filePath);
+      if (m) return Buffer.from(m[2], 'base64');
+      return null;
+    }
+
+    // 2. URL HTTPS (R2/S3 public ou autre) : fetch direct
+    if (/^https?:\/\//i.test(filePath)) {
+      try {
+        const response = await fetch(filePath);
+        if (response.ok) {
+          return Buffer.from(await response.arrayBuffer());
+        }
+      } catch {
+        // fetch échoué — essaie le storage service ci-dessous
+      }
+    }
+
+    // 3. Storage service (R2/S3/local)
+    try {
+      return await this.storageService.downloadFile(filePath);
+    } catch {
+      // storage échoué — essaie le filesystem local
+    }
+
+    // 4. Fallback filesystem local
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const absolutePath = path.isAbsolute(filePath)
+        ? filePath
+        : path.join(process.cwd(), filePath.replace(/^\.\//, ''));
+      if (fs.existsSync(absolutePath)) {
+        return fs.readFileSync(absolutePath);
+      }
+    } catch {
+      // filesystem local échoué
+    }
+    return null;
   }
 
   /**

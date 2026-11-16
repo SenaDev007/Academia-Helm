@@ -371,23 +371,45 @@ export default function StudentDossierContent({ student, academicYear, onBack, c
   };
 
   // ⭐ 1.0.10 — DOSSIER COMPLET PDF (généré backend, 7 sections)
+  // ⭐ 1.0.18 — TÉLÉCHARGEMENT EN BLOC : quand l'élève a des documents joints,
+  //    le backend renvoie une archive ZIP (dossier PDF + fichiers joints dans
+  //    un seul dossier) — Content-Type application/zip → on nomme le fichier
+  //    .zip et adapte le message ; sinon PDF seul comme avant.
   const handleDownloadDossierPdf = async () => {
     setIsPdfLoading(true);
     try {
       const url = `/students/${encodeURIComponent(student.id)}/academic-dossier${academicYear?.id ? `?academicYearId=${encodeURIComponent(academicYear.id)}` : ''}`;
       const response = await apiClient.get(url, { responseType: 'blob', timeout: 120000 });
+      const contentType: string =
+        (response.headers?.['content-type'] as string) ||
+        (response.headers?.get?.('content-type') as string) ||
+        '';
+      const isZip = contentType.includes('zip');
       const blobUrl = URL.createObjectURL(response.data);
       const a = document.createElement('a');
       a.href = blobUrl;
-      a.download = `dossier-${student.lastName}-${student.firstName}-${student.matricule || 'eleve'}.pdf`;
+      const base = `dossier-${student.lastName}-${student.firstName}-${student.matricule || 'eleve'}`;
+      a.download = isZip ? `${base}.zip` : `${base}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(blobUrl);
-      toast({ title: 'Dossier complet téléchargé', description: 'Dossier scolaire complet (PDF) — prêt à imprimer ou transférer.', variant: 'success' });
+      toast(
+        isZip
+          ? {
+              title: 'Dossier complet + documents joints téléchargés (ZIP)',
+              description: 'Dossier scolaire complet et pièces jointes regroupés dans un seul dossier — prêt à archiver ou transférer.',
+              variant: 'success' as const,
+            }
+          : {
+              title: 'Dossier complet téléchargé',
+              description: 'Dossier scolaire complet (PDF) — prêt à imprimer ou transférer.',
+              variant: 'success' as const,
+            },
+      );
     } catch (e: any) {
       toast({
-        title: 'Impossible de générer le dossier PDF',
+        title: 'Impossible de générer le dossier complet',
         description: e?.response?.status === 403
           ? 'Votre rôle ne permet pas de générer le dossier complet. Contactez la direction.'
           : (e?.message || 'Erreur réseau — réessayez.'),
@@ -460,11 +482,13 @@ export default function StudentDossierContent({ student, academicYear, onBack, c
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* ⭐ 1.0.10 — impression du dossier complet (backend) */}
+            {/* ⭐ 1.0.10 — impression du dossier complet (backend)
+                ⭐ 1.0.18 — bundle : PDF + documents joints dans un seul dossier (ZIP) */}
             <button onClick={handleDownloadDossierPdf} disabled={isPdfLoading}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold bg-white text-[#0d1f6e] hover:bg-slate-100 rounded-lg border border-white/60 shadow-sm transition disabled:opacity-50">
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold bg-white text-[#0d1f6e] hover:bg-slate-100 rounded-lg border border-white/60 shadow-sm transition disabled:opacity-50"
+              title="Dossier scolaire complet (PDF) et documents joints regroupés dans un seul dossier">
               {isPdfLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
-              Télécharger le dossier complet (PDF)
+              Télécharger le dossier complet (PDF + documents joints)
             </button>
           </div>
         </div>

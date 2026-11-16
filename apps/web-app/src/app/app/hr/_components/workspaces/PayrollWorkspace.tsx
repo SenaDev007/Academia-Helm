@@ -67,11 +67,15 @@ export function PayrollWorkspace() {
   useEffect(() => { fetchData(); }, [tenant?.id, academicYear?.id]);
 
   // Auto-compute start/end dates when month/year changes
+  // ⭐ 16/11/2026 — FIX FUSEAU : Date.UTC pour que « Novembre 2026 » produise
+  //    2026-11-01 → 2026-11-30 quel que soit le fuseau du poste (UTC+1 Cotonou
+  //    reculait les dates d'un jour : période « Novembre » stockée 31/10 →
+  //    affichée « Octobre », lot de paie rattaché au mois 2026-10).
   useEffect(() => {
     const y = modalForm.year;
     const m = modalForm.month;
-    const start = new Date(y, m - 1, 1);
-    const end = new Date(y, m, 0);
+    const start = new Date(Date.UTC(y, m - 1, 1));
+    const end = new Date(Date.UTC(y, m, 0));
     setModalForm((prev) => ({
       ...prev,
       startDate: start.toISOString().split('T')[0],
@@ -83,10 +87,14 @@ export function PayrollWorkspace() {
     e.preventDefault();
     try {
       setModalLoading(true);
+      // ⭐ Mois explicite « YYYY-MM » : le lot de paie et les déclarations
+      //    CNSS/IST/AIB se rattachent au mois CHOISI, jamais à une date dérivée.
+      const monthKey = `${modalForm.year}-${String(modalForm.month).padStart(2, '0')}`;
       await hrFetch(hrUrl('payroll/periods', { tenantId: tenant.id }), {
         method: 'POST',
         body: {
           name: `${MONTHS.find(m => m.value === modalForm.month)?.label || ''} ${modalForm.year}`,
+          month: monthKey,
           startDate: new Date(modalForm.startDate).toISOString(),
           endDate: new Date(modalForm.endDate).toISOString(),
           academicYearId: academicYear?.id,
@@ -205,7 +213,10 @@ export function PayrollWorkspace() {
 function PayrollRow({ payroll, index }: { payroll: any; index: number }) {
   const config = STATUS_CONFIG[payroll.status] || STATUS_CONFIG.OPEN;
   const StatusIcon = config.icon;
-  const monthLabel = new Date(payroll.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  // ⭐ Libellé = NOM de la période (« Novembre 2026 ») — jamais la date
+  //    dérivée (fuseau) ; repli sur le mois de startDate pour les vieux lots.
+  const monthLabel = payroll.name
+    || new Date(payroll.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }}>

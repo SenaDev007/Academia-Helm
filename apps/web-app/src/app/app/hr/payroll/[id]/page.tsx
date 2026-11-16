@@ -425,11 +425,14 @@ export default function PayrollDetailPage() {
     try {
       setShowRegister(true);
       setRegisterLoading(true);
-      const start = period?.startDate ? new Date(period.startDate) : new Date();
+      // ⭐ Filtre sur le mois RÉEL de la période (period.month « 2026-11 »),
+      //    pas sur la date décalée par le fuseau.
+      const monthKey = period?.month || new Date(period?.startDate || Date.now()).toISOString().substring(0, 7);
+      const [periodYear, periodMonth] = monthKey.split('-').map(Number);
       const docs = await hrFetch<any[]>(hrUrl('payroll/documents', {
         tenantId: tenant.id,
-        periodYear: start.getFullYear(),
-        periodMonth: start.getMonth() + 1,
+        periodYear,
+        periodMonth,
       }));
       setRegisterDocs(docs || []);
     } catch (error: any) {
@@ -460,7 +463,10 @@ export default function PayrollDetailPage() {
     (acc: number, p: any) => acc + Number(p.cnssEmployee) + Number(p.irppAmount) + Number(p.otherDeductions || 0), 0) || 0;
   const docsIssued = period.payrolls?.filter((p: any) => p.payrollDocument).length || 0;
   const nonDeclares = period.payrolls?.filter((p: any) => p.staff?.statutContractuel === 'SALARIE_NON_DECLARE').length || 0;
-  const monthLabel = new Date(period.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  // ⭐ Libellé = NOM de la période (« Novembre 2026 ») — la date seule
+  //    décalait le mois d'un cran selon le fuseau du poste.
+  const monthLabel = period.name
+    || new Date(period.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
   const statusClass = STATUS_CLASS[period.status] || STATUS_CLASS.OPEN;
 
   return (

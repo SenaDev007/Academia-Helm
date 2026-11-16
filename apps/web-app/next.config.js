@@ -244,6 +244,27 @@ const nextConfig = {
           { key: 'X-Accel-Buffering', value: 'no' },
         ],
       },
+      // ✅ Task 121 — Desktop updater (Tauri v2) : le manifest JSON servi sur
+      // https://releases.academiahelm.com/desktop/{target}/{arch}/{version} (alias
+      // Vercel de ce web-app, réécrit vers public/desktop/{target}/{arch}/latest.json)
+      // ne doit JAMAIS rester dans un cache intermédiaire — sinon une coquille ne
+      // verrait pas une nouvelle version publiée.
+      {
+        source: '/desktop/:target/:arch/:version',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate' },
+          { key: 'Pragma', value: 'no-cache' },
+        ],
+      },
+      // ✅ Task 121 — Artefacts d'update (installeurs signés + .sig) : nom de fichier
+      // immuable (version dans le nom) → cache 1 an.
+      {
+        source: '/desktop/:target/:arch/files/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+        ],
+      },
       // Headers de sécurité globaux
       {
         source: '/:path*',
@@ -294,10 +315,39 @@ const nextConfig = {
    * Dev : proxifier les avis vers l’API Nest (même origine côté navigateur → pas de CORS).
    * Cible : {origin}/api/reviews/* (préfixe global Nest).
    * Désactiver : NEXT_PUBLIC_REVIEWS_DEV_PROXY=0
+   *
+   * ⭐ Task 121 — Desktop updater (Tauri v2), TOUJOURS actif (dev ET prod) :
+   *   l'endpoint configuré dans apps/desktop/src-tauri/tauri.conf.json est
+   *   https://releases.academiahelm.com/desktop/{{target}}/{{arch}}/{{current_version}}
+   *   (releases.academiahelm.com est un alias de domaine Vercel de ce web-app).
+   *   La version demandée ({{current_version}}) n'existe pas statiquement → on
+   *   réécrit vers le manifest public/desktop/{target}/{arch}/latest.json.
+   *   - Règles exactes msi/nsis en premier : la valeur de {{target}} pour une
+   *     coquille Windows est "msi" ou "nsis" selon le bundle installé.
+   *   - Repli générique ensuite : toute autre valeur (ex. triple Rust) est servie
+   *     par le manifest nsis (la saveur d'update recommandée par Tauri).
+   *   - La page /desktop (« Changer d'école ») et les fichiers publics existants
+   *     (latest.json) sont servis par le filesystem AVANT ces rewrites afterFiles
+   *     → jamais touchés.
    */
   async rewrites() {
-    if (process.env.NODE_ENV !== 'development') return [];
-    if (process.env.NEXT_PUBLIC_REVIEWS_DEV_PROXY === '0') return [];
+    const desktopUpdaterRewrites = [
+      {
+        source: '/desktop/msi/:arch/:version',
+        destination: '/desktop/msi/:arch/latest.json',
+      },
+      {
+        source: '/desktop/nsis/:arch/:version',
+        destination: '/desktop/nsis/:arch/latest.json',
+      },
+      {
+        source: '/desktop/:target/:arch/:version',
+        destination: '/desktop/nsis/:arch/latest.json',
+      },
+    ];
+
+    if (process.env.NODE_ENV !== 'development') return desktopUpdaterRewrites;
+    if (process.env.NEXT_PUBLIC_REVIEWS_DEV_PROXY === '0') return desktopUpdaterRewrites;
 
     const explicit =
       process.env.API_SERVER_ORIGIN?.trim() ||
@@ -311,9 +361,10 @@ const nextConfig = {
       if (m) origin = m[1];
     }
 
-    if (!origin) return [];
+    if (!origin) return desktopUpdaterRewrites;
 
     return [
+      ...desktopUpdaterRewrites,
       {
         source: '/reviews/:path*',
         destination: `${origin}/api/reviews/:path*`,

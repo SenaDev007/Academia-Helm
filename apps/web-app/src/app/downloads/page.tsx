@@ -35,6 +35,11 @@
  */
 
 import { useState, useEffect } from "react";
+// ⭐ Task 122 — API_URL (racine Nest AVEC préfixe /api, normalisée) : la
+//    concat manuelle NEXT_PUBLIC_API_URL + "/releases/…" produisait
+//    https://api.academiahelm.com/releases… (SANS /api) → 404 → la page
+//    vivait exclusivement sur le fallback statique depuis toujours.
+import { API_URL } from "@/lib/api-config";
 import {
   Download, CheckCircle2, AlertCircle, ChevronRight,
   Calendar, Tag, Shield, Zap, WifiOff, RefreshCw, FileCode, Loader2,
@@ -186,10 +191,8 @@ function useLatestRelease(): { release: Release; loading: boolean } {
     async function fetchLatestRelease() {
       try {
         // Récupère toutes les releases stables depuis notre API
-        // (qui lit la table app_releases dans Neon)
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL
-          ? `${process.env.NEXT_PUBLIC_API_URL}/releases?channel=stable`
-          : "/api/releases?channel=stable";
+        // (qui lit la table app_releases dans Neon) — via API_URL centralisé
+        const apiUrl = `${API_URL}/releases?channel=stable`;
 
         const response = await fetch(apiUrl);
 

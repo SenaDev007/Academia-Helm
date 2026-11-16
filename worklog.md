@@ -13897,3 +13897,36 @@ Stage Summary:
 - ✅ Fix 1.0.13 livré : plus AUCUN SMS Academia Helm ne part vers un numéro mort de l'ancien plan ARCEP (migré automatiquement à l'envoi Termii).
 - ✅ Diagnostic complet du « facturé mais non reçu » : route generic (repli) + DND du numéro — le déblocage définitif passe par l'activation de la route DND BJ chez Termii (ticket support, message 422 exact en main).
 - ⏳ Utilisateur : ticket Termii route DND BJ + vérifier statut Delivered dans le dashboard + (option) migrer les 15 numéros hérités en DB.
+
+---
+
+Task ID: 112-dossier-anomalies-eleve-permissions-secretariat
+Agent: Super Z (agent principal)
+Task: Retour promoteur (16/11) — 4 anomalies sur le dossier élève : parcours (année vide, niveau non récupéré), frais & paiements (fausses données, pas de détail par année), carte scolaire (« aucune carte » + « accès refusé » à la génération par la secrétaire), permissions secrétaire/secrétaire comptable (Élèves, Scolarité, Finance).
+
+Work Log:
+- DIAGNOSTIC (cause racine commune aux anomalies 1 et 3) : le compte réel de la secrétaire comptable porte le rôle SECRETAIRE_COMPTABLE_MAT_PRI. Le RolesGuard normalise bien le suffixe (_MAT_PRI → base SECRETAIRE_COMPTABLE) MAIS aucune liste @Roles ne contient SECRETAIRE_COMPTABLE sur les routes clés → 403 PARTOUT : GET /students/:id/dossier (le front retombe sur la liste élèves → colonne « Année scolaire » VIDE et « Niveau » manquant, fraude visuelle), GET /students/id-cards/:studentId (→ « aucune carte scolaire » alors qu'elle existe), POST generate (→ « accès refusé »).
+- FIX 1+3+4 — RolesGuard (fusion) : un utilisateur SECRETAIRE ou SECRETAIRE_COMPTABLE (base, après retrait du suffixe) matche désormais toute route requérant SECRETAIRE (SECRETARY) OU COMPTABLE (ACCOUNTANT). Le COMPTABLE pur n'est PAS élargi en sens inverse. Validé par 16 cas de simulation (scripts/test_roles_guard_logic.mjs — tous PASS).
+- FIX 2 — Frais & paiements (vraies données, année par année) : le front appelait GET /finance/student-accounts?studentId=… dont le service backend IGNORAIT le filtre (paramètre absent de la signature) → le front prenait accounts[0] = le compte d'un AUTRE élève (le « total dû 55 750 » d'un autre). Corrections :
+  · student-dossier.service : le dossier agrégé embarque financeByYear (compte financier + lignes de frais avec réduction réelle = standard − ajusté, arriérés, payé, reste, transactions, régime tarifaire, ANNÉE PAR ANNÉE) + financeGlobal (récapitulatif toutes années : total dû / réductions cumulées / arriérés / total payé / solde restant) ;
+  · student-account.service/controller : findAll accepte et applique le filtre studentId (défense pour les autres écrans) ;
+  · front StudentDossierContent : section V refaite — bloc « Récapitulatif global » + un bloc par année (stats, tableau des lignes de frais standard/réduction/dû/payé/reste, transactions) ; plus d'appel /finance/student-accounts ni createStudentFeeProfile détourné ;
+  · PDF dossier : nouvelle section « V. Frais & paiements — année par année » + récapitulatif global (renumérotation VI/VII/VIII cohérente).
+- FIX 4 (complément) : DOSSIER_ROLES + SECRETAIRE_COMPTABLE/COMPTABLE ; verification-qr ouvert en lecture au secrétariat (token generate/regenerate reste direction) ; finance-roles.constants ALL_ADMIN_ROLES + SECRETARY/SECRETAIRE/SECRETAIRE_COMPTABLE (encaissements, reçus, échéanciers, recouvrement, allocations — le COMPTABLE pur inchangé) ; student-transfers + bulk-setup (module Élèves) ouverts au secrétariat ; front FINANCE_ROLES + secrétaires pures (module Finance visible dans la barre latérale).
+- 🔴 BUG DORMANT DÉCOUVERT E2E : le PDF « dossier complet » était CORROMPU depuis 1.0.10 — Puppeteer v13+ page.pdf() retourne un Uint8Array (pas un Buffer) → res.send() le sérialisait en JSON {"0":37,"1":80,…} avec content-type application/pdf (1,2 Mo de JSON au lieu d'un PDF). Le téléchargement via le bouton produisait un fichier illisible. Fix : Buffer.from(pdfBuffer) comme dans bulletin-pdf/id-card (commit b699ff5). Les autres services PDF vérifiés : déjà corrects.
+- DÉPLOIEMENT : 8225137 + b699ff5 → Railway, /health → 1.0.14 OK.
+- E2E (production, compte de TEST du tenant Academia Helm — recette.sec-comptable2@academia-helm.test, rôle SECRETAIRE_COMPTABLE_MAT_PRI, mot de passe de test réinitialisé pour la recette) :
+  · Login OK → barre latérale : Élèves & Scolarité ET Finances & Économat visibles ;
+  · Dossier Hadjara HELM : section III « Parcours scolaire » → Année 2026-2027, Niveau Primaire, Classe CM1 (plus de colonne vide) ; section V → Récapitulatif global (1 an, total dû 51 000 FCFA, payé 0, solde 51 000) + lignes « Frais d'inscription 3 000 » / « Frais de scolarité CM1 48 000 » + total 2026-2027 — les VRAIES données de l'élève ;
+  · Génération de cartes par la secrétaire comptable (onglet Cartes Scolaires → Générer → niveau Primaire) : 42 cartes créées, AUCUN « accès refusé » ; POST /id-cards/:id/generate direct → 400 « matricule global requis » (règle métier) et NON 403 ;
+  · Dossier Alain HELM (carte CARD-26-0011 générée à l'instant par la secrétaire) : carte affichée avec visuel + bouton « PDF carte » ;
+  · API : GET /finance/accounts?studentId=Hadjara → EXACTEMENT 1 compte (Hadjara, 51 000) ; sans le filtre → 103 comptes (le « mauvais élève » d'avant) ;
+  · Dossier Emmanuel HELM : totalDue 48 000 / payé 23 000 / reste 25 000 / 1 transaction — vraies données ;
+  · PDF dossier complet (secrétaire comptable) : HTTP 200, %PDF-1.4, 108 Ko, sections V (frais année par année + récap global), VIII carte scolaire + CARD-26-0011 présentes.
+  · Captures : download/e2e-preuves/dossier-anomalies-114/ (5 PNG).
+- HORS PÉRIMÈTRE volontairement : validation des clôtures de caisse et approbations de dépenses restent direction (contrôle interne — même le COMPTABLE pur ne les a pas) ; migration des 15 numéros ARCEP hérités toujours en attente de validation promoteur (worklog 111).
+
+Stage Summary:
+- ✅✅ 4 anomalies du promoteur corrigées et prouvées E2E en production (1.0.14) : parcours année/niveau affichés, frais réels année par année + récapitulatif global, carte scolaire générée et affichée par la secrétaire comptable, permissions secrétariat complètes sur Élèves/Scolarité/Finance.
+- ✅ Bonus : PDF « dossier complet » réparé (corrompu depuis 1.0.10, Uint8Array Puppeteer).
+- ⏳ Rappel utilisateur : ticket Termii route DND BJ (worklog 111) + migration éventuelle des 15 numéros hérités + rotation des secrets (Neon/GitHub) toujours recommandée.

@@ -661,7 +661,18 @@ export class StudentDossierService {
     const d = await this.getStudentDossier(tenantId, studentId, academicYearId);
     const idn = d.identity;
 
-    // ── Helpers d'affichage ──
+    // ⭐ 1.0.19 — SOURCE DE LA PHOTO (section I) : Student.photoUrl en priorité ;
+    //    à défaut, la photo d'identité déposée comme DOCUMENT JOINT (type PHOTO,
+    //    data/https uniquement — les chemins serveur ne se rendent pas en <img>).
+    const photoDoc = (d.documents || []).find(
+      (doc: any) =>
+        doc.documentType === 'PHOTO' &&
+        typeof doc.filePath === 'string' &&
+        /^(data:image\/|https:\/\/)/i.test(doc.filePath),
+    );
+    const photoSrc: string | null = idn.photoUrl || photoDoc?.filePath || null;
+
+    // ── Helpers d’affichage ──
     const esc = (v: unknown): string =>
       String(v ?? '')
         .replace(/&/g, '&amp;')
@@ -1228,8 +1239,8 @@ export class StudentDossierService {
           </tbody>
         </table></div>
         <div class="photo-box">
-          ${idn.photoUrl
-            ? `<img src="${esc(idn.photoUrl)}" alt="Photo de l'élève" />`
+          ${photoSrc
+            ? `<img src="${esc(photoSrc)}" alt="Photo de l'élève" />`
             : `<div class="photo-empty">Photo</div>`}
         </div>
       </div>

@@ -193,6 +193,30 @@ export class EducmasterExcelExportService {
 
     // ⭐ 4. Grouper par AcademicClass (une feuille Excel par classe officielle).
     // Les élèves sans academicClassId vont dans une feuille « Non classés ».
+    // ⭐ FIX 2026-11-16 (1.0.17, retour promoteur CSPEB) : GARDE-FOU ANTI
+    //    INTER-NIVEAUX — la feuille « Maternelle 2 » était apparue dans le
+    //    fichier PRIMAIRE (et « CI » dans le fichier maternelle) car certaines
+    //    inscriptions portaient un schoolLevelId (niveau de la requête) ≠
+    //    niveau réel de leur classe officielle. On mappe donc chaque classe
+    //    officielle vers le niveau de ses classes physiques (via
+    //    Class.officialClassId → SchoolLevel) : une inscription dont la classe
+    //    officielle appartient à un AUTRE niveau que celui du fichier part
+    //    dans « Non classés » (visible) au lieu de polluter une feuille
+    //    inter-niveaux — le fichier d'un niveau ne contient plus QUE les
+    //    classes de ce niveau.
+    const physicalClasses = await this.prisma.class.findMany({
+      where: { tenantId, academicYearId, officialClassId: { not: null } },
+      select: {
+        officialClassId: true,
+        schoolLevel: { select: { code: true } },
+      },
+    });
+    const officialClassLevel = new Map<string, string>();
+    for (const c of physicalClasses) {
+      if (c.officialClassId && c.schoolLevel?.code && !officialClassLevel.has(c.officialClassId)) {
+        officialClassLevel.set(c.officialClassId, c.schoolLevel.code);
+      }
+    }
     const groups = new Map<string, { academicClass: { id: string; name: string; code: string } | null; students: StudentRow[] }>();
     const seenStudentIds = new Set<string>(); // Évite les doublons si un élève a 2 inscriptions
 
@@ -200,12 +224,21 @@ export class EducmasterExcelExportService {
       if (seenStudentIds.has(e.studentId)) continue;
       seenStudentIds.add(e.studentId);
 
-      const key = e.academicClassId || '__NO_CLASS__';
+      // Niveau réel de la classe officielle — si connu ET différent du niveau
+      // du fichier → « Non classés » (l'élève reste visible, la feuille reste
+      // homogène par niveau).
+      const officialLevelCode = e.academicClassId
+        ? officialClassLevel.get(e.academicClassId)
+        : undefined;
+      const levelMismatch =
+        !!officialLevelCode && officialLevelCode.toUpperCase() !== schoolLevel.code.toUpperCase();
+      const key = e.academicClassId && !levelMismatch ? e.academicClassId : '__NO_CLASS__';
       if (!groups.has(key)) {
         groups.set(key, {
-          academicClass: e.academicClass
-            ? { id: e.academicClass.id, name: e.academicClass.name, code: e.academicClass.code }
-            : null,
+          academicClass:
+            key !== '__NO_CLASS__' && e.academicClass
+              ? { id: e.academicClass.id, name: e.academicClass.name, code: e.academicClass.code }
+              : null,
           students: [],
         });
       }

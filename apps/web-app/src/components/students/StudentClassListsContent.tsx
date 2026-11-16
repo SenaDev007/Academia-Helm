@@ -45,6 +45,12 @@ import { useAllClasses, useEnrollments, useInvalidateStudentsData } from '@/lib/
 //    (Miroir front de OFFICIAL_LIST_ENROLLMENT_STATUSES côté backend,
 //    common/constants/official-list-statuses.ts — utilisée par les exports
 //    Excel/PDF et les templates Educ Master pour la même règle.)
+//    ⭐ FIX 2026-11-16 (1.0.17, retour promoteur CSPEB) : AJOUT de la garde
+//    Student.status (anti-dé-synchronisation des flux bulk-status/PUT qui ne
+//    touchent que la fiche Student) — la Liste des Élèves applique désormais
+//    EXACTEMENT le même filtre que les fichiers EducMaster (statut
+//    d'inscription officiel + statut de l'élève) : ce qui est dans la liste
+//    est dans le fichier, et réciproquement.
 const OFFICIAL_LIST_ENROLLMENT_STATUSES = [
   'ACTIVE',
   'ADMITTED',
@@ -54,11 +60,20 @@ const OFFICIAL_LIST_ENROLLMENT_STATUSES = [
   'VALIDATED',
 ] as const;
 
+const OFFICIAL_LIST_EXCLUDED_STUDENT_STATUSES = [
+  'WITHDRAWN',
+  'TRANSFERRED',
+  'EXCLUDED',
+  'ARCHIVED',
+] as const;
+
 const isOfficiallyEnrolled = (e: Enrollment) =>
-  (OFFICIAL_LIST_ENROLLMENT_STATUSES as readonly string[]).includes(e.status);
+  (OFFICIAL_LIST_ENROLLMENT_STATUSES as readonly string[]).includes(e.status) &&
+  !(OFFICIAL_LIST_EXCLUDED_STUDENT_STATUSES as readonly string[]).includes(e.student?.status || '');
 
 interface Enrollment {
   id: string;
+  status: string;
   student: {
     id: string;
     firstName: string;
@@ -68,6 +83,9 @@ interface Enrollment {
     dateOfBirth?: string | null;
     gender?: string | null;
     photoUrl?: string | null;
+    /** ⭐ 1.0.17 — statut de la fiche élève (garde anti-dé-synchronisation,
+     *  même règle que les exports EducMaster). Fourni par GET /students/enrollments. */
+    status?: string;
   };
   class?: { id: string; name: string; schoolLevelId?: string };
   /** ⭐ Classe officielle (AcademicClass) — fournie par GET /students/enrollments.
@@ -75,7 +93,6 @@ interface Enrollment {
   academicClass?: { id: string; name: string } | null;
   enrollmentType: string;
   enrollmentDate: string;
-  status: string;
 }
 
 interface ClassInfo {

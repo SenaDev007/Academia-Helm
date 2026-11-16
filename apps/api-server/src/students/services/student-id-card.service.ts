@@ -13,6 +13,12 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { PrismaService } from '../../database/prisma.service';
 import { StudentIdentifierService } from './student-identifier.service';
 import { PuppeteerPoolService } from '../../common/services/puppeteer-pool.service';
+// ⭐ 1.0.17 — liste officielle partagée (mêmes statuts que la « Liste des
+//    Élèves » et les exports EducMaster / PDF)
+import {
+  OFFICIAL_LIST_ENROLLMENT_STATUSES,
+  OFFICIAL_LIST_EXCLUDED_STUDENT_STATUSES,
+} from '../../common/constants/official-list-statuses';
 // ⭐ 2026-11-13 — Identité secondaire (écoles combinées) : helper partagé
 //    d'override du profil d'identité pour les cartes du niveau SECONDAIRE.
 import {
@@ -226,15 +232,36 @@ export class StudentIdCardService {
     },
     generatedBy?: string,
   ) {
-    const where: any = {
-      tenantId,
+    // ⭐ FIX 2026-11-16 (1.0.17, retour promoteur CSPEB) : la sélection était
+    //    pilotée par la fiche Student DÉNORMALISÉE (Student.academicYearId /
+    //    Student.schoolLevelId / Student.status='ACTIVE') et le filtre de
+    //    classe + le statut d'inscription étaient posés dans l'INCLUDE (donc
+    //    non restrictifs) — résultat : « générer pour la classe X » générait
+    //    en fait tout le niveau, les élèves ADMIS (ADMITTED) sans inscription
+    //    exactement 'ACTIVE' étaient écartés du include et ne recevaient pas
+    //    de carte, et toute désynchronisation de la fiche Student rendait
+    //    l'élève invisible de la génération.
+    //    Désormais la sélection est pilotée par l'INSCRIPTION (source de
+    //    vérité) : année + statuts de la liste officielle + niveau/classe de
+    //    l'inscription, avec la garde anti-dé-synchronisation Student.status.
+    const enrollmentWhere: any = {
       academicYearId,
-      status: 'ACTIVE',
+      status: { in: [...OFFICIAL_LIST_ENROLLMENT_STATUSES] },
     };
     // ⭐ Ne filtrer par schoolLevelId que s'il est fourni ET différent de 'ALL'
     if (schoolLevelId && schoolLevelId !== 'ALL') {
-      where.schoolLevelId = schoolLevelId;
+      enrollmentWhere.schoolLevelId = schoolLevelId;
     }
+    if (filters?.classId) {
+      enrollmentWhere.classId = filters.classId;
+    }
+    const where: any = {
+      tenantId,
+      // Garde anti-dé-synchronisation (même règle que les exports) : un
+      // élève retiré/transféré/exclu/archivé ne doit plus recevoir de carte.
+      status: { notIn: [...OFFICIAL_LIST_EXCLUDED_STUDENT_STATUSES] },
+      studentEnrollments: { some: enrollmentWhere },
+    };
 
     const students = await this.prisma.student.findMany({
       where,
@@ -247,9 +274,9 @@ export class StudentIdCardService {
         studentEnrollments: {
           where: {
             academicYearId,
-            status: 'ACTIVE',
-            ...(filters?.classId && { classId: filters.classId }),
+            status: { in: [...OFFICIAL_LIST_ENROLLMENT_STATUSES] },
           },
+          orderBy: { enrollmentDate: 'desc' },
           include: {
             class: {
               select: {
@@ -290,7 +317,12 @@ export class StudentIdCardService {
     const results: Array<{ status: 'fulfilled' | 'rejected'; value?: any; reason?: any }> = [];
     for (const student of studentsWithoutCard) {
       try {
-        const card = await this.generateIdCard(tenantId, academicYearId, student.schoolLevelId, student.id, generatedBy);
+        // ⭐ 1.0.17 — niveau piloté par l'INSCRIPTION de l'année (source de
+        //    vérité), repli sur la fiche Student si l'inscription est muette.
+        const enrLevelId =
+          (student.studentEnrollments || []).find((e: any) => e.schoolLevelId)?.schoolLevelId ||
+          student.schoolLevelId;
+        const card = await this.generateIdCard(tenantId, academicYearId, enrLevelId, student.id, generatedBy);
         results.push({ status: 'fulfilled', value: card });
       } catch (e: any) {
         this.logger.error(`Generate card for ${student.firstName} ${student.lastName} (${student.id}): ${e.message}`);
@@ -445,8 +477,17 @@ export class StudentIdCardService {
     classId: string,
   ): Promise<{ buffer: Buffer; className: string; cardsCount: number }> {
     // Récupérer les inscriptions de cette classe
+    // ⭐ 1.0.17 — statuts de la LISTE OFFICIELLE (ACTIVE/ADMITTED/RE_ENROLLED/
+    //    PROMOTED/ENROLLED/VALIDATED) au lieu d'une liste partielle de 3
+    //    statuts qui excluait les élèves admis/réinscrits/promus/validés.
     const enrollments = await this.prisma.studentEnrollment.findMany({
-      where: { tenantId, academicYearId, classId, status: { in: ['ENROLLED', 'ACTIVE', 'PRE_REGISTERED'] } },
+      where: {
+        tenantId,
+        academicYearId,
+        classId,
+        status: { in: [...OFFICIAL_LIST_ENROLLMENT_STATUSES] },
+        student: { status: { notIn: [...OFFICIAL_LIST_EXCLUDED_STUDENT_STATUSES] } },
+      },
       include: {
         student: {
           include: {

@@ -17,6 +17,11 @@ import { levelWhere, studentTrackRelation, assertLevelInScope } from '../common/
 import { resolveSchoolLevelFilter } from '../common/context/resolve-school-level';
 import { PublicVerificationService } from './services/public-verification.service';
 import { StudentCountVerifierService } from '../billing/services/student-count-verifier.service';
+// ⭐ 1.0.17 — liste officielle partagée (mêmes statuts que les exports
+//    EducMaster / PDF et l'onglet « Liste des Élèves »)
+import {
+  OFFICIAL_LIST_ENROLLMENT_STATUSES,
+} from '../common/constants/official-list-statuses';
 
 @Injectable()
 export class StudentsPrismaService {
@@ -209,8 +214,17 @@ export class StudentsPrismaService {
       where.regimeType = filters.regimeType;
     }
 
+    // ⭐ FIX 2026-11-16 (1.0.17, retour promoteur CSPEB) : le filtre par classe
+    //    exigeait un statut d'inscription EXACTEMENT 'ACTIVE' — les élèves
+    //    ADMIS (ADMITTED), réinscrits (RE_ENROLLED), promus (PROMOTED) ou
+    //    VALIDATED étaient donc INTROUVABLES dès qu'un filtre de classe (ou
+    //    d'arriérés) était appliqué : invisibles dans « Sorties & Abandons »
+    //    (impossible de les retirer pour abandon) et dans « Dossiers Élèves »
+    //    avec filtre de classe, alors qu'ils figuraient dans la liste officielle
+    //    et l'onglet Inscriptions. Désormais : mêmes statuts que la liste
+    //    officielle (OFFICIAL_LIST_ENROLLMENT_STATUSES).
     if (filters?.classId || filters?.hasArrears === true || filters?.hasArrears === false) {
-      const enrollmentWhere: any = { status: 'ACTIVE' };
+      const enrollmentWhere: any = { status: { in: [...OFFICIAL_LIST_ENROLLMENT_STATUSES] } };
       if (filters?.classId) {
         enrollmentWhere.classId = filters.classId;
       }
@@ -247,7 +261,10 @@ export class StudentsPrismaService {
         schoolLevel: true,
         academicYear: true,
         studentEnrollments: {
-          where: { status: { in: ['ACTIVE', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED', 'RE_ENROLLED'] } },
+          // ⭐ 1.0.17 — statuts de la LISTE OFFICIELLE (ajout de PROMOTED et
+          //    VALIDATED qui manquaient) : le front peut grouper/afficher
+          //    tous les élèves officiellement inscrits de l'année.
+          where: { status: { in: [...OFFICIAL_LIST_ENROLLMENT_STATUSES] } },
           include: {
             class: true,
           },

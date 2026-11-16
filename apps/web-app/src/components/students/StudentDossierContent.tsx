@@ -97,11 +97,15 @@ interface DossierData {
   financeByYear?: FinanceByYear[];
   financeGlobal?: {
     yearsCount: number;
+    standardTotal: number;
+    netDue: number;
+    reductionTotal: number;
+    reductionPercent: number;
+    hasReduction: boolean;
     totalDue: number;
     totalPaid: number;
     balance: number;
     arrears: number;
-    reductionTotal: number;
   };
 }
 
@@ -118,6 +122,18 @@ interface FinanceByYear {
     status: string;
   };
   reductionTotal: number;
+  // ⭐ 1.0.16 — traçabilité du barème : montants normalement dus,
+  // ventilation par nature, réduction effective (%) et net dû.
+  standardTotal: number;
+  netDue: number;
+  reductionPercent: number;
+  hasReduction: boolean;
+  feeTotals: {
+    inscription: { standard: number; applied: number };
+    reinscription: { standard: number; applied: number };
+    tuition: { standard: number; applied: number };
+    other: { standard: number; applied: number };
+  };
   regime?: { id: string; label: string; code: string } | null;
   breakdowns: Array<{
     id: string;
@@ -192,6 +208,38 @@ const ACTION_LABELS: Record<string, { label: string; color: string }> = {
 
 const REGIME_LABELS: Record<string, string> = {
   TEACHER_CHILD: 'Enfant enseignant', SCHOLARSHIP: 'Boursier', SPECIAL: 'Spécial',
+};
+
+// ─── ⭐ 1.0.16 — Résultats par cycle (aligné module Examen) ───
+// Maternelle = qualitatif (TS/S/PS/NS) · Primaire = /20 coef 1 ·
+// Secondaire = /20 avec coefficients (moyennes pondérées).
+const QUALI_LABELS: Record<string, string> = {
+  TS: 'Très Satisfaisant', S: 'Satisfaisant', PS: 'Peu Satisfaisant', NS: 'Non Satisfaisant',
+};
+const QUALI_BADGE: Record<string, string> = {
+  TS: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+  S: 'bg-sky-100 text-sky-800 border-sky-300',
+  PS: 'bg-amber-100 text-amber-800 border-amber-300',
+  NS: 'bg-rose-100 text-rose-800 border-rose-300',
+};
+const mentionFromAverage = (avg: number | null | undefined): { label: string; cls: string } => {
+  if (avg == null) return { label: '—', cls: 'text-slate-400' };
+  if (avg >= 16) return { label: 'Très Bien', cls: 'text-emerald-600' };
+  if (avg >= 14) return { label: 'Bien', cls: 'text-emerald-600' };
+  if (avg >= 12) return { label: 'Assez Bien', cls: 'text-sky-600' };
+  if (avg >= 10) return { label: 'Passable', cls: 'text-amber-600' };
+  return { label: 'Insuffisant', cls: 'text-rose-600' };
+};
+type CycleView = 'MATERNELLE' | 'PRIMAIRE' | 'SECONDAIRE';
+const cycleViewOf = (rc: any): CycleView => {
+  if (rc?.isQualitative) return 'MATERNELLE';
+  if ((rc?.schoolLevel?.code || rc?.cycleCode || '').toUpperCase() === 'SECONDAIRE') return 'SECONDAIRE';
+  return 'PRIMAIRE';
+};
+const CYCLE_BADGE: Record<CycleView, { label: string; cls: string }> = {
+  MATERNELLE: { label: 'Maternelle — évaluation qualitative (TS / S / PS)', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
+  PRIMAIRE: { label: 'Primaire — évaluation quantitative /20 (coef. 1)', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+  SECONDAIRE: { label: 'Secondaire — évaluation quantitative /20 avec coefficients', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
 };
 
 const SECTIONS = [
@@ -584,66 +632,184 @@ export default function StudentDossierContent({ student, academicYear, onBack, c
           </SectionCard>
 
           {/* ═══ IV. RÉSULTATS & BULLETINS ═══ */}
+          {/* ⭐ 1.0.16 — tableaux DYNAMIQUES PAR CYCLE, alignés sur le module
+              Examen : maternelle = qualitatif (codes TS/S/PS, sans moyenne ni
+              rang), primaire = quantitatif /20 (coefficient 1), secondaire =
+              quantitatif /20 AVEC coefficients (moyennes pondérées, Σ coef.,
+              rang) — le tableau s'adapte à l'année fréquentée par l'élève. */}
           <SectionCard id="sec-resultats" num="IV" title="Résultats & bulletins — traçabilité année par année" icon={BookOpen}>
             {reportCardsByYear.length > 0 ? (
               <div className="space-y-4">
-                {reportCardsByYear.map((group: any) => (
-                  <div key={group.year}>
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="w-1.5 h-4 bg-[#0d1f6e] rounded-full" />
-                      <p className="text-xs font-bold text-slate-700 uppercase">{group.year}</p>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                      {group.cards.map((rc: any, i: number) => {
-                        const s = RC_STATUS[rc.status] || { label: rc.status || '—', color: 'bg-slate-100 text-slate-600' };
-                        return (
-                          <div key={rc.id || i} className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex flex-col gap-1.5">
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs font-bold text-slate-700">{rc.periodName || rc.type || 'Période'}</p>
-                            <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full', s.color)}>{s.label}</span>
-                          </div>
-                            <div className="flex items-center gap-3 text-xs">
-                              <span className="text-slate-400">Moyenne</span>
-                              <span className="font-bold text-[#0d1f6e]">{rc.overallAverage != null ? Number(rc.overallAverage).toFixed(2) : '—'}/20</span>
-                              {rc.rank != null && <><span className="text-slate-400">Rang</span><span className="font-bold text-slate-700">{rc.rank}</span></>}
-                            </div>
-                            {/* ⭐ 1.0.10 — notes par matière (issues du bulletin) */}
-                            {rc.items?.length > 0 && (
-                              <div className="mt-1 pt-1.5 border-t border-slate-200/70">
-                                <p className="text-[9px] font-bold text-slate-400 uppercase mb-1">Notes par matière</p>
-                                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-                                  {rc.items.slice(0, 10).map((it: any, k: number) => (
-                                    <div key={it.id || k} className="flex items-baseline justify-between gap-1 text-[10px]">
-                                      <span className="text-slate-500 truncate">{it.subject?.name || '—'}</span>
-                                      <span className="font-semibold text-slate-700 shrink-0">{it.average != null ? Number(it.average).toFixed(2) : '—'}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                                {rc.items.length > 10 && (
-                                  <p className="text-[9px] text-slate-400 mt-1">+{rc.items.length - 10} autres matières — détail complet dans le dossier PDF</p>
-                                )}
+                {reportCardsByYear.map((group: any) => {
+                  const cycle = cycleViewOf(group.cards[0]);
+                  const badge = CYCLE_BADGE[cycle];
+                  return (
+                    <div key={group.year}>
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <span className="w-1.5 h-4 bg-[#0d1f6e] rounded-full" />
+                        <p className="text-xs font-bold text-slate-700 uppercase">{group.year}</p>
+                        <span className={cn('text-[9px] font-bold px-2 py-0.5 rounded-full border', badge.cls)}>{badge.label}</span>
+                      </div>
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+                        {group.cards.map((rc: any, i: number) => {
+                          const s = RC_STATUS[rc.status] || { label: rc.status || '—', color: 'bg-slate-100 text-slate-600' };
+                          const mention = mentionFromAverage(rc.overallAverage);
+                          const totalCoef = (rc.items || []).reduce((s2: number, it: any) => s2 + Number(it.coefficient || 1), 0);
+                          const totalWeighted = (rc.items || []).reduce((s2: number, it: any) => s2 + Number(it.average || 0) * Number(it.coefficient || 1), 0);
+                          return (
+                            <div key={rc.id || i} className="p-3 bg-slate-50 rounded-lg border border-slate-100 flex flex-col gap-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs font-bold text-slate-700">{rc.periodName || rc.type || 'Période'}</p>
+                                <span className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full', s.color)}>{s.label}</span>
                               </div>
-                            )}
-                            {rc.filePath ? (
-                              <a href={rc.filePath} target="_blank" rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 hover:text-blue-900 mt-0.5">
-                                <Download className="w-3 h-3" /> Bulletin (PDF)
-                              </a>
-                            ) : (
-                              <span className="text-[10px] text-slate-400 italic">PDF non généré</span>
-                            )}
-                          </div>
-                        );
-                      })}
+
+                              {cycle === 'MATERNELLE' ? (
+                                /* — Maternelle : évaluation QUALITATIVE (TS/S/PS) — */
+                                <>
+                                  {rc.qualitativeOverall ? (
+                                    <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                                      <span className="text-slate-400">Appréciation globale</span>
+                                      <span className={cn('px-2 py-0.5 text-[10px] font-bold rounded-full border', QUALI_BADGE[rc.qualitativeOverall])}>
+                                        {rc.qualitativeOverall} · {QUALI_LABELS[rc.qualitativeOverall]}
+                                      </span>
+                                      {(['TS', 'S', 'PS', 'NS'] as const).filter(c => (rc.qualitativeCounts?.[c] || 0) > 0).map(c => (
+                                        <span key={c} className="text-[9px] font-mono text-slate-500">{c} × {rc.qualitativeCounts[c]}</span>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                  {(rc.items || []).length > 0 && (
+                                    <div className="mt-1 pt-1.5 border-t border-slate-200/70 overflow-x-auto">
+                                      <table className="w-full text-[11px]">
+                                        <thead>
+                                          <tr className="text-[9px] uppercase text-slate-400">
+                                            <th className="text-left font-bold py-1">Domaine / Matière</th>
+                                            <th className="text-center font-bold py-1 px-2">Acquisition</th>
+                                            <th className="text-left font-bold py-1">Appréciation</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-200/60">
+                                          {rc.items.map((it: any, k: number) => (
+                                            <tr key={it.id || k}>
+                                              <td className="py-1 pr-2 text-slate-600">{it.subject?.name || '—'}</td>
+                                              <td className="py-1 px-2 text-center">
+                                                {it.qualitativeCode ? (
+                                                  <span className={cn('inline-block px-1.5 py-0.5 text-[10px] font-black rounded border', QUALI_BADGE[it.qualitativeCode])}>{it.qualitativeCode}</span>
+                                                ) : <span className="text-slate-300">—</span>}
+                                              </td>
+                                              <td className="py-1 pl-2 text-slate-500">{it.qualitativeCode ? QUALI_LABELS[it.qualitativeCode] : (it.appreciation || '—')}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                      <p className="text-[9px] text-slate-400 mt-1">Échelle : TS = Très Satisfaisant · S = Satisfaisant · PS = Peu Satisfaisant</p>
+                                    </div>
+                                  )}
+                                </>
+                              ) : cycle === 'PRIMAIRE' ? (
+                                /* — Primaire : quantitatif /20, coefficient 1 — */
+                                <>
+                                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                                    <span className="text-slate-400">Moyenne</span>
+                                    <span className="font-bold text-[#0d1f6e]">{rc.overallAverage != null ? Number(rc.overallAverage).toFixed(2) : '—'}/20</span>
+                                    <span className="text-slate-400">Mention</span>
+                                    <span className={cn('font-bold', mention.cls)}>{mention.label}</span>
+                                    {rc.rank != null && <><span className="text-slate-400">Rang</span><span className="font-bold text-slate-700">{rc.rank}</span></>}
+                                  </div>
+                                  {(rc.items || []).length > 0 && (
+                                    <div className="mt-1 pt-1.5 border-t border-slate-200/70 overflow-x-auto">
+                                      <table className="w-full text-[11px]">
+                                        <thead>
+                                          <tr className="text-[9px] uppercase text-slate-400">
+                                            <th className="text-left font-bold py-1">Matière</th>
+                                            <th className="text-center font-bold py-1 px-2">Moyenne /20</th>
+                                            <th className="text-left font-bold py-1">Appréciation</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-200/60">
+                                          {rc.items.map((it: any, k: number) => (
+                                            <tr key={it.id || k}>
+                                              <td className="py-1 pr-2 text-slate-600">{it.subject?.name || '—'}</td>
+                                              <td className={cn('py-1 px-2 text-center font-bold', it.average != null && it.average >= 10 ? 'text-emerald-700' : 'text-rose-600')}>
+                                                {it.average != null ? Number(it.average).toFixed(2) : '—'}
+                                              </td>
+                                              <td className="py-1 pl-2 text-slate-500">{it.appreciation || '—'}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                /* — Secondaire : quantitatif /20 AVEC coefficients — */
+                                <>
+                                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                                    <span className="text-slate-400">Moyenne générale</span>
+                                    <span className="font-bold text-[#0d1f6e]">{rc.overallAverage != null ? Number(rc.overallAverage).toFixed(2) : '—'}/20</span>
+                                    <span className="text-slate-400">Mention</span>
+                                    <span className={cn('font-bold', mention.cls)}>{mention.label}</span>
+                                    {rc.rank != null && <><span className="text-slate-400">Rang</span><span className="font-bold text-slate-700">{rc.rank}</span></>}
+                                    {totalCoef > 0 && <><span className="text-slate-400">Σ coef.</span><span className="font-bold text-slate-700">{totalCoef}</span></>}
+                                  </div>
+                                  {(rc.items || []).length > 0 && (
+                                    <div className="mt-1 pt-1.5 border-t border-slate-200/70 overflow-x-auto">
+                                      <table className="w-full text-[11px]">
+                                        <thead>
+                                          <tr className="text-[9px] uppercase text-slate-400">
+                                            <th className="text-left font-bold py-1">Discipline</th>
+                                            <th className="text-center font-bold py-1 px-1.5">Moy. /20</th>
+                                            <th className="text-center font-bold py-1 px-1.5">Coef.</th>
+                                            <th className="text-center font-bold py-1 px-1.5">Moy. × Coef.</th>
+                                            <th className="text-center font-bold py-1 px-1.5">Rang</th>
+                                            <th className="text-left font-bold py-1">Appréciation</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-200/60">
+                                          {rc.items.map((it: any, k: number) => (
+                                            <tr key={it.id || k}>
+                                              <td className="py-1 pr-2 text-slate-600">{it.subject?.name || '—'}</td>
+                                              <td className={cn('py-1 px-1.5 text-center font-bold', it.average != null && it.average >= 10 ? 'text-emerald-700' : 'text-rose-600')}>{it.average != null ? Number(it.average).toFixed(2) : '—'}</td>
+                                              <td className="py-1 px-1.5 text-center text-slate-500">{it.coefficient ?? 1}</td>
+                                              <td className="py-1 px-1.5 text-center font-semibold text-slate-700">{it.average != null ? (Number(it.average) * Number(it.coefficient || 1)).toFixed(2) : '—'}</td>
+                                              <td className="py-1 px-1.5 text-center text-slate-500">{it.rank ?? '—'}</td>
+                                              <td className="py-1 pl-2 text-slate-500">{it.appreciation || '—'}</td>
+                                            </tr>
+                                          ))}
+                                          <tr className="bg-slate-100/70 font-bold">
+                                            <td className="py-1 pr-2 text-slate-700">Total</td>
+                                            <td className="py-1 px-1.5 text-center" colSpan={2}>Σ coef. {totalCoef}</td>
+                                            <td className="py-1 px-1.5 text-center text-slate-800">{totalWeighted.toFixed(2)}</td>
+                                            <td className="py-1 px-1.5 text-center text-slate-800" colSpan={2}>Moy. pond. {totalCoef > 0 ? (totalWeighted / totalCoef).toFixed(2) : '—'}</td>
+                                          </tr>
+                                        </tbody>
+                                      </table>
+                                      <p className="text-[9px] text-slate-400 mt-1">Moyenne pondérée = Σ (moyenne × coefficient) / Σ coefficients</p>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+
+                              {rc.filePath ? (
+                                <a href={rc.filePath} target="_blank" rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 hover:text-blue-900 mt-0.5">
+                                  <Download className="w-3 h-3" /> Bulletin (PDF)
+                                </a>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 italic">PDF non généré</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="bg-slate-50 border border-dashed border-slate-200 rounded-lg p-4 text-center">
                 <BookOpen className="w-6 h-6 text-slate-300 mx-auto mb-2" />
                 <p className="text-xs font-semibold text-slate-500">Aucun bulletin enregistré pour cet élève</p>
-                <p className="text-[10px] text-slate-400 mt-1">Les bulletins apparaissent ici dès qu'ils sont générés dans le module « Examens, Notes &amp; Bulletins » — moyenne, rang et PDF téléchargeable par année et période.</p>
+                <p className="text-[10px] text-slate-400 mt-1">Les bulletins apparaissent ici dès qu'ils sont générés dans le module « Examens, Notes &amp; Bulletins » — le tableau s'adapte au cycle : qualitatif (TS/S/PS) en maternelle, notes /20 au primaire, moyennes pondérées au secondaire.</p>
               </div>
             )}
 
@@ -664,16 +830,21 @@ export default function StudentDossierContent({ student, academicYear, onBack, c
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {academicRecords.map((r: any, i: number) => (
-                        <tr key={r.id || i} className="hover:bg-slate-50">
-                          <td className="px-3 py-2 font-semibold text-slate-700">{r.academicYear?.name || r.academicYear?.label || '—'}</td>
-                          <td className="px-3 py-2 text-slate-600">{r.class?.name || r.schoolLevel?.name || '—'}</td>
-                          <td className="px-3 py-2 text-center font-bold text-[#0d1f6e]">{r.averageScore != null ? Number(r.averageScore).toFixed(2) : '—'}</td>
-                          <td className="px-3 py-2 text-center text-slate-600">{r.rank ?? '—'}</td>
-                          <td className="px-3 py-2 text-center text-slate-600">{r.totalAbsences ?? 0}</td>
-                          <td className="px-3 py-2 text-center text-slate-600">{r.totalIncidents ?? 0}</td>
-                        </tr>
-                      ))}
+                      {academicRecords.map((r: any, i: number) => {
+                        const rIsMaternelle = (r.schoolLevel?.code || '').toUpperCase() === 'MATERNELLE';
+                        return (
+                          <tr key={r.id || i} className="hover:bg-slate-50">
+                            <td className="px-3 py-2 font-semibold text-slate-700">{r.academicYear?.name || r.academicYear?.label || '—'}</td>
+                            <td className="px-3 py-2 text-slate-600">{r.class?.name || r.schoolLevel?.name || '—'}</td>
+                            <td className="px-3 py-2 text-center font-bold text-[#0d1f6e]">
+                              {rIsMaternelle ? <span className="text-violet-600 font-semibold">Évaluation qualitative</span> : (r.averageScore != null ? Number(r.averageScore).toFixed(2) : '—')}
+                            </td>
+                            <td className="px-3 py-2 text-center text-slate-600">{rIsMaternelle ? '—' : (r.rank ?? '—')}</td>
+                            <td className="px-3 py-2 text-center text-slate-600">{r.totalAbsences ?? 0}</td>
+                            <td className="px-3 py-2 text-center text-slate-600">{r.totalIncidents ?? 0}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -685,6 +856,10 @@ export default function StudentDossierContent({ student, academicYear, onBack, c
           {/* ⭐ 1.0.14 — vraies données du compte financier, ANNÉE PAR ANNÉE
               (total dû, réduction réelle, arriérés, payé, reste à solder) +
               récapitulatif global sur toutes les années passées. */}
+          {/* ⭐ 1.0.16 — TRAÇABILITÉ DU BARÈME AVANT les totaux (demande
+              promoteur) : montants NORMALEMENT dus, ventilation inscription /
+              réinscription / scolarité / autres, réduction OUI-NON + POURCENTAGE,
+              net dû après réduction — puis Total dû / Payé / Arriérés / Solde. */}
           <SectionCard id="sec-frais" num="V" title="Frais & paiements — année par année" icon={Wallet}>
             {(financeByYear.length > 0 && financeGlobal) ? (
               <>
@@ -693,6 +868,12 @@ export default function StudentDossierContent({ student, academicYear, onBack, c
                   <p className="text-[10px] font-bold text-white/80 uppercase mb-2 flex items-center gap-1.5">
                     <Wallet className="w-3.5 h-3.5" /> Récapitulatif global — {financeGlobal.yearsCount} an(s) dans l'établissement
                   </p>
+                  {/* Traçabilité globale du barème (avant les totaux) */}
+                  <div className="mb-2 px-2.5 py-1.5 bg-white/10 rounded-lg flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-white/90">
+                    <span>Barème normal cumulé (montants normalement dus) : <b className="text-white">{formatMoney(financeGlobal.standardTotal)}</b></span>
+                    <span>Réduction : {financeGlobal.hasReduction ? <b className="text-cyan-300">Oui — {formatMoney(financeGlobal.reductionTotal)} ({financeGlobal.reductionPercent} %)</b> : 'Aucune'}</span>
+                    <span>Net cumulé après réduction : <b className="text-white">{formatMoney(financeGlobal.netDue)}</b></span>
+                  </div>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                     <div className="bg-white/10 rounded-lg px-2.5 py-2 text-center">
                       <p className="text-[9px] font-bold text-white/70 uppercase">Total dû</p>
@@ -736,6 +917,50 @@ export default function StudentDossierContent({ student, academicYear, onBack, c
                         )}
                       </div>
                       <div className="p-3">
+                        {/* ⭐ 1.0.16 — Traçabilité du barème de l'année (AVANT les totaux) */}
+                        <div className="mb-3 p-3 bg-blue-50/70 border border-blue-100 rounded-lg">
+                          <p className="text-[10px] font-bold text-blue-900 uppercase mb-2">Traçabilité du barème — montants normalement dus</p>
+                          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+                            <div className="p-1.5 bg-white rounded border border-blue-100">
+                              <p className="text-[9px] text-slate-400 uppercase">Barème normal</p>
+                              <p className="font-bold text-slate-800">{formatMoney(y.standardTotal)}</p>
+                            </div>
+                            <div className="p-1.5 bg-white rounded border border-blue-100">
+                              <p className="text-[9px] text-slate-400 uppercase">Inscription</p>
+                              <p className="font-semibold text-slate-700">{y.feeTotals?.inscription?.standard > 0 ? formatMoney(y.feeTotals.inscription.standard) : '—'}</p>
+                            </div>
+                            <div className="p-1.5 bg-white rounded border border-blue-100">
+                              <p className="text-[9px] text-slate-400 uppercase">Réinscription</p>
+                              <p className="font-semibold text-slate-700">{y.feeTotals?.reinscription?.standard > 0 ? formatMoney(y.feeTotals.reinscription.standard) : '—'}</p>
+                            </div>
+                            <div className="p-1.5 bg-white rounded border border-blue-100">
+                              <p className="text-[9px] text-slate-400 uppercase">Scolarité</p>
+                              <p className="font-semibold text-slate-700">{y.feeTotals?.tuition?.standard > 0 ? formatMoney(y.feeTotals.tuition.standard) : '—'}</p>
+                            </div>
+                            <div className="p-1.5 bg-white rounded border border-blue-100">
+                              <p className="text-[9px] text-slate-400 uppercase">Autres frais</p>
+                              <p className="font-semibold text-slate-700">{y.feeTotals?.other?.standard > 0 ? formatMoney(y.feeTotals.other.standard) : '—'}</p>
+                            </div>
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-blue-100 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                            {y.hasReduction ? (
+                              <>
+                                <span className="text-slate-500">Réduction appliquée :</span>
+                                <span className="font-bold text-cyan-700">Oui — {formatMoney(y.reductionTotal)} ({y.reductionPercent} %)</span>
+                                {y.regime && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200 font-bold">Régime : {y.regime.label || y.regime.code}</span>}
+                                <span className="text-slate-500">Total dû après réduction :</span>
+                                <span className="font-bold text-slate-800">{formatMoney(y.netDue)}</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-slate-500">Réduction appliquée :</span>
+                                <span className="font-semibold text-slate-500">Aucune</span>
+                                <span className="text-slate-500">Total dû après réduction :</span>
+                                <span className="font-bold text-slate-800">{formatMoney(y.netDue)}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
                         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3">
                           <MiniStat label="Total dû" value={formatMoney(y.account.totalDue)} color="text-slate-800" />
                           <MiniStat label="Réduction" value={y.reductionTotal > 0 ? formatMoney(y.reductionTotal) : '—'} color="text-cyan-700" />

@@ -116,6 +116,10 @@ export class StudentDossierService {
       },
       include: {
         academicYear: true,
+        // ⭐ 1.0.16 — niveau (cycle) du bulletin : MATERNELLE qualitatif /
+        // PRIMAIRE / SECONDAIRE quantitatif — la présentation de la section
+        // « Résultats & bulletins » du dossier s'aligne sur le module Examen.
+        schoolLevel: { select: { id: true, code: true, name: true, label: true } },
         items: {
           include: { subject: true },
           orderBy: { subject: { name: 'asc' } },
@@ -149,6 +153,96 @@ export class StudentDossierService {
       const p = rc.quarterId ? periodByld.get(rc.quarterId) : undefined;
       rc.periodName = p?.name || null;
       rc.periodOrder = p?.order ?? 0;
+    }
+
+    // ⭐ 1.0.16 (retour promoteur « Résultats & bulletins dynamiques par cycle ») :
+    //    RÉSULTATS PAR CYCLE, alignés sur le module Examen —
+    //    · maternelle (FR)  = évaluation QUALITATIVE (codes TS/S/PS/NS, pas de
+    //      moyenne numérique ni de rang) ;
+    //    · primaire         = évaluation quantitative /20, coefficient 1 ;
+    //    · secondaire       = évaluation quantitative /20 AVEC coefficients
+    //      (moyennes pondérées) — présentation différente du primaire.
+    //    Les codes qualitatifs / appréciations par matière proviennent de
+    //    StudentSubjectAverage (flux trimestres, periodId = Quarter) avec
+    //    repli sur les notes élève (Grade.qualitativeCode / moyenne des
+    //    scores, periodId direct OU evaluation.periodId = AcademicPeriod).
+    const QUALI_ORDER = ['TS', 'S', 'PS', 'NS'] as const;
+    const [subjectAverages, studentGrades] = await Promise.all([
+      this.prisma.studentSubjectAverage.findMany({
+        where: { studentId, tenantId },
+        select: {
+          periodId: true, subjectId: true,
+          average: true, coefficient: true, appreciation: true,
+        },
+      }),
+      this.prisma.grade.findMany({
+        where: { studentId, tenantId },
+        select: {
+          subjectId: true, periodId: true, score: true,
+          qualitativeCode: true, status: true, isAbsent: true,
+          evaluation: { select: { periodId: true } },
+        },
+      }),
+    ]);
+    const ssaBy = new Map<string, any>();
+    for (const ssa of subjectAverages as any[])
+      ssaBy.set(`${ssa.periodId}|${ssa.subjectId}`, ssa);
+    // Notes groupées par (période, matière) — période = Grade.periodId (Quarter)
+    // OU evaluation.periodId (AcademicPeriod) : les deux espaces d'IDs coexistent.
+    const gradesByPeriodSubject = new Map<string, any[]>();
+    for (const g of studentGrades as any[]) {
+      const periods = [g.periodId, g.evaluation?.periodId].filter(Boolean);
+      for (const pid of periods) {
+        const key = `${pid}|${g.subjectId}`;
+        if (!gradesByPeriodSubject.has(key)) gradesByPeriodSubject.set(key, []);
+        gradesByPeriodSubject.get(key)!.push(g);
+      }
+    }
+    const majorityQualiCode = (codes: string[]): string | null => {
+      const counts: Record<string, number> = {};
+      for (const c of codes) counts[c] = (counts[c] || 0) + 1;
+      const present = QUALI_ORDER.filter(c => counts[c] > 0);
+      if (present.length === 0) return null;
+      return present.sort(
+        (a, b) => counts[b] - counts[a] || QUALI_ORDER.indexOf(a) - QUALI_ORDER.indexOf(b),
+      )[0];
+    };
+    for (const rc of reportCards as any[]) {
+      const levelCode = (rc.schoolLevel?.code || '').toUpperCase();
+      const isEn = (rc.language || '').toUpperCase() === 'EN';
+      // Nursery (anglophone) est quantitatif /100 — seule la maternelle FR est qualitative.
+      rc.isQualitative = levelCode === 'MATERNELLE' && !isEn;
+      const counts: Record<string, number> = { TS: 0, S: 0, PS: 0, NS: 0 };
+      for (const it of rc.items || []) {
+        const ssa = rc.quarterId
+          ? ssaBy.get(`${rc.quarterId}|${it.subjectId}`)
+          : undefined;
+        const grades = rc.quarterId
+          ? gradesByPeriodSubject.get(`${rc.quarterId}|${it.subjectId}`) || []
+          : [];
+        it.appreciation = ssa?.appreciation || null;
+        if (rc.isQualitative) {
+          // Code qualitatif : SSA.appreciation (flux trimestres) sinon code
+          // majoritaire des notes (flux évaluations — comme bulletins.service).
+          let code: string | null =
+            ssa?.appreciation && (QUALI_ORDER as readonly string[]).includes(ssa.appreciation.toUpperCase())
+              ? ssa.appreciation.toUpperCase()
+              : null;
+          if (!code) {
+            code = majorityQualiCode(
+              grades.map((g: any) => (g.qualitativeCode || '').toUpperCase()).filter(Boolean),
+            );
+          }
+          it.qualitativeCode = code;
+          if (code && counts[code] !== undefined) counts[code] += 1;
+        }
+      }
+      if (rc.isQualitative) {
+        rc.qualitativeCounts = counts;
+        rc.qualitativeOverall = majorityQualiCode(
+          QUALI_ORDER.filter(c => counts[c] > 0) as unknown as string[],
+        );
+      }
     }
 
     // Récupérer les absences
@@ -322,6 +416,44 @@ export class StudentDossierService {
       const reductionTotal = breakdowns.reduce(
         (s: number, b: any) => s + b.reduction, 0,
       );
+      // ⭐ 1.0.16 (retour promoteur « traçabilité des frais ») — AVANT les
+      //    totaux (dû/payé/arriérés/solde), tracer le barème : montants
+      //    NORMALEMENT dus (standard), ventilation par nature (inscription /
+      //    réinscription / scolarité / autres), réduction effective et son
+      //    POURCENTAGE, net dû après réduction.
+      const sumOf = (list: any[], f: (b: any) => number) => list.reduce((s: number, b: any) => s + f(b), 0);
+      const ofTypes = (types: string[]) =>
+        breakdowns.filter(b => types.includes((b.feeType || '').toUpperCase()));
+      const standardTotal = sumOf(breakdowns, b => b.standardAmount);
+      const netDue = sumOf(breakdowns, b => b.appliedAmount);
+      const feeTotals = {
+        inscription: {
+          standard: sumOf(ofTypes(['INSCRIPTION']), b => b.standardAmount),
+          applied: sumOf(ofTypes(['INSCRIPTION']), b => b.appliedAmount),
+        },
+        reinscription: {
+          standard: sumOf(ofTypes(['REINSCRIPTION']), b => b.standardAmount),
+          applied: sumOf(ofTypes(['REINSCRIPTION']), b => b.appliedAmount),
+        },
+        tuition: {
+          standard: sumOf(ofTypes(['TUITION']), b => b.standardAmount),
+          applied: sumOf(ofTypes(['TUITION']), b => b.appliedAmount),
+        },
+        other: {
+          standard: sumOf(
+            breakdowns.filter(b => !['INSCRIPTION', 'REINSCRIPTION', 'TUITION'].includes((b.feeType || '').toUpperCase())),
+            b => b.standardAmount,
+          ),
+          applied: sumOf(
+            breakdowns.filter(b => !['INSCRIPTION', 'REINSCRIPTION', 'TUITION'].includes((b.feeType || '').toUpperCase())),
+            b => b.appliedAmount,
+          ),
+        },
+      };
+      const reductionPercent =
+        standardTotal > 0
+          ? Math.round((reductionTotal / standardTotal) * 1000) / 10
+          : 0;
       const profile = profileByYear.get(a.academicYearId);
       return {
         academicYearId: a.academicYearId,
@@ -338,6 +470,13 @@ export class StudentDossierService {
           status: a.status,
         },
         reductionTotal,
+        // ⭐ 1.0.16 — traçabilité du barème (montants normalement dus,
+        // ventilation par nature, réduction effective en %, net dû)
+        standardTotal,
+        netDue,
+        reductionPercent,
+        hasReduction: reductionTotal > 0,
+        feeTotals,
         regime: profile?.feeRegime
           ? { id: profile.feeRegime.id, label: profile.feeRegime.label, code: profile.feeRegime.code }
           : null,
@@ -351,13 +490,26 @@ export class StudentDossierService {
 
     // ⭐ 1.0.14 — RÉCAPITULATIF GLOBAL sur TOUTES les années passées dans
     //    l'établissement : total dû, arriérés, total payé, solde restant.
+    // ⭐ 1.0.16 — traçabilité globale du barème en tête du récapitulatif
+    //    (barème normal cumulé, réductions cumulées et pourcentage global,
+    //    net cumulé après réduction) AVANT les totaux dû/payé/arriérés/solde.
+    const gStandardTotal = financeByYear.reduce((s: number, y: any) => s + y.standardTotal, 0);
+    const gNetDue = financeByYear.reduce((s: number, y: any) => s + y.netDue, 0);
+    const gReductionTotal = financeByYear.reduce((s: number, y: any) => s + y.reductionTotal, 0);
     const financeGlobal = {
       yearsCount: financeByYear.length,
+      standardTotal: gStandardTotal,
+      netDue: gNetDue,
+      reductionTotal: gReductionTotal,
+      reductionPercent:
+        gStandardTotal > 0
+          ? Math.round((gReductionTotal / gStandardTotal) * 1000) / 10
+          : 0,
+      hasReduction: gReductionTotal > 0,
       totalDue: financeByYear.reduce((s: number, y: any) => s + y.account.totalDue, 0),
       totalPaid: financeByYear.reduce((s: number, y: any) => s + y.account.totalPaid, 0),
       balance: financeByYear.reduce((s: number, y: any) => s + y.account.balance, 0),
       arrears: financeByYear.reduce((s: number, y: any) => s + y.account.arrearsAmount, 0),
-      reductionTotal: financeByYear.reduce((s: number, y: any) => s + y.reductionTotal, 0),
     };
 
     // Module 1 — Identité légale complète (lieu de naissance, pièce, régime)
@@ -447,6 +599,14 @@ export class StudentDossierService {
       DIRECTOR_SIGNED: 'Signé (direction)', TEACHER_DISTRIBUTED: 'Distribué',
       TEACHER_SIGNED: 'Signé (enseignant)', PARENT_SENT: 'Envoyé aux parents',
     };
+    // ⭐ 1.0.16 — mentions quantitatives (primaire / secondaire) alignées
+    //    sur le module Examen, et libellés de l'échelle qualitative maternelle.
+    const mentionFromAverage = (avg: number | null | undefined): string =>
+      avg == null ? '—' : avg >= 16 ? 'Très Bien' : avg >= 14 ? 'Bien'
+        : avg >= 12 ? 'Assez Bien' : avg >= 10 ? 'Passable' : 'Insuffisant';
+    const QUALI_LABELS: Record<string, string> = {
+      TS: 'Très Satisfaisant', S: 'Satisfaisant', PS: 'Peu Satisfaisant', NS: 'Non Satisfaisant',
+    };
     const docTypeLabel: Record<string, string> = {
       BIRTH_CERTIFICATE: 'Acte de naissance', NPI_CARD: 'Carte NPI',
       SCHOOL_CERTIFICATE: 'Certificat de scolarité', PHOTO: "Photo d'identité",
@@ -493,39 +653,101 @@ export class StudentDossierService {
         <tr>
           <td>${esc(rc.academicYear?.name || rc.academicYear?.label)}</td>
           <td>${esc(rc.periodName || rc.type)}</td>
-          <td class="num">${rc.overallAverage != null ? Number(rc.overallAverage).toFixed(2) : '—'}</td>
-          <td class="num">${rc.rank != null ? esc(rc.rank) : '—'}</td>
+          <td class="num">${rc.isQualitative ? 'Évaluation qualitative (TS/S/PS)' : rc.overallAverage != null ? Number(rc.overallAverage).toFixed(2) + '/20' : '—'}</td>
+          <td class="num">${rc.isQualitative ? '—' : rc.rank != null ? esc(rc.rank) : '—'}</td>
           <td>${esc(rcStatusLabel[rc.status] || rc.status)}</td>
         </tr>`,
         )
         .join('') ||
       `<tr><td colspan="5" class="empty">Aucun bulletin enregistré</td></tr>`;
 
-    // ⭐ 1.0.10 — détail des notes par matière pour chaque bulletin (items)
+    // ⭐ 1.0.16 — détail des notes par matière pour chaque bulletin (items),
+    //    PRÉSENTATION PAR CYCLE alignée sur le module Examen :
+    //    · maternelle  = tableau qualitatif (codes TS/S/PS + appréciation)
+    //    · primaire    = moyenne /20 + appréciation (coefficient 1 implicite)
+    //    · secondaire  = moyenne /20 + coefficient + note coefficient + rang
     const reportCardsSubjectsBlocks = (d.reportCards || [])
       .filter((rc: any) => (rc.items || []).length > 0)
       .map(
-        (rc: any) => `
-    <div class="subsection">
-      <h3>Notes par matière — ${esc(rc.academicYear?.name || rc.academicYear?.label)} · ${esc(rc.periodName || rc.type)}</h3>
-      <table>
-        <thead><tr><th>Matière</th><th class="num">Moyenne</th><th class="num">Coef.</th><th class="num">Rang</th><th>Appréciation</th></tr></thead>
-        <tbody>
-          ${(rc.items || [])
-            .map(
-              (it: any) => `
+        (rc: any) => {
+          const cycleLabel = rc.isQualitative
+            ? 'Maternelle — évaluation qualitative'
+            : (rc.schoolLevel?.code || '').toUpperCase() === 'SECONDAIRE'
+              ? 'Secondaire — moyennes pondérées'
+              : 'Primaire — évaluation /20';
+          let head: string;
+          let rows: string;
+          if (rc.isQualitative) {
+            head = '<tr><th>Domaine / Matière</th><th class="num">Acquisition</th><th>Appréciation</th></tr>';
+            rows = (rc.items || [])
+              .map(
+                (it: any) => `
+            <tr>
+              <td>${esc(it.subject?.name || it.subject?.code || '—')}</td>
+              <td class="num"><b>${esc(it.qualitativeCode) || '—'}</b></td>
+              <td>${esc(it.qualitativeCode ? QUALI_LABELS[it.qualitativeCode] : '') || esc(it.appreciation) || '—'}</td>
+            </tr>`,
+              )
+              .join('');
+          } else if ((rc.schoolLevel?.code || '').toUpperCase() === 'SECONDAIRE') {
+            head = '<tr><th>Discipline</th><th class="num">Moyenne /20</th><th class="num">Coef.</th><th class="num">Moy. × Coef.</th><th class="num">Rang</th><th>Appréciation</th></tr>';
+            const totalCoef = (rc.items || []).reduce((s: number, it: any) => s + Number(it.coefficient || 1), 0);
+            const totalWeighted = (rc.items || []).reduce(
+              (s: number, it: any) => s + Number(it.average || 0) * Number(it.coefficient || 1), 0,
+            );
+            rows =
+              (rc.items || [])
+                .map(
+                  (it: any) => `
             <tr>
               <td>${esc(it.subject?.name || it.subject?.code || '—')}</td>
               <td class="num"><b>${it.average != null ? Number(it.average).toFixed(2) : '—'}</b></td>
-              <td class="num">${esc(it.coefficient ?? '—')}</td>
+              <td class="num">${esc(it.coefficient ?? 1)}</td>
+              <td class="num">${it.average != null ? (Number(it.average) * Number(it.coefficient || 1)).toFixed(2) : '—'}</td>
               <td class="num">${it.rank != null ? esc(it.rank) : '—'}</td>
-              <td>${esc(it.comments) || '—'}</td>
+              <td>${esc(it.appreciation) || '—'}</td>
             </tr>`,
-            )
-            .join('')}
-        </tbody>
+                )
+                .join('') +
+              `
+            <tr>
+              <td><b>Total</b></td>
+              <td class="num" colspan="2"><b>Σ coef. ${totalCoef}</b></td>
+              <td class="num"><b>${totalWeighted.toFixed(2)}</b></td>
+              <td class="num" colspan="2"><b>Moy. pond. ${totalCoef > 0 ? (totalWeighted / totalCoef).toFixed(2) : '—'}</b></td>
+            </tr>
+            <tr>
+              <td colspan="6"><b>Moyenne générale : ${rc.overallAverage != null ? Number(rc.overallAverage).toFixed(2) + '/20' : '—'} · Mention : ${esc(mentionFromAverage(rc.overallAverage))}${rc.rank != null ? ' · Rang : ' + esc(rc.rank) : ''}</b></td>
+            </tr>`;
+          } else {
+            head = '<tr><th>Matière</th><th class="num">Moyenne /20</th><th>Appréciation</th></tr>';
+            rows =
+              (rc.items || [])
+                .map(
+                  (it: any) => `
+            <tr>
+              <td>${esc(it.subject?.name || it.subject?.code || '—')}</td>
+              <td class="num"><b>${it.average != null ? Number(it.average).toFixed(2) : '—'}</b></td>
+              <td>${esc(it.appreciation) || '—'}</td>
+            </tr>`,
+                )
+                .join('') +
+              `
+            <tr><td colspan="3"><b>Moyenne générale : ${rc.overallAverage != null ? Number(rc.overallAverage).toFixed(2) + '/20' : '—'} · Mention : ${esc(mentionFromAverage(rc.overallAverage))}${rc.rank != null ? ' · Rang : ' + esc(rc.rank) : ''}</b></td></tr>`;
+          }
+          const qualiNote = rc.isQualitative
+            ? `<p style="font-size:9px;color:#475569;margin:2px 0 4px;">Échelle : TS = Très Satisfaisant · S = Satisfaisant · PS = Peu Satisfaisant${rc.qualitativeOverall ? ' · Appréciation globale : <b>' + esc(rc.qualitativeOverall) + ' (' + esc(QUALI_LABELS[rc.qualitativeOverall] || '') + ')</b>' : ''}</p>`
+            : '';
+          return `
+    <div class="subsection">
+      <h3>${esc(cycleLabel)} — ${esc(rc.academicYear?.name || rc.academicYear?.label)} · ${esc(rc.periodName || rc.type)}</h3>
+      ${qualiNote}
+      <table>
+        <thead>${head}</thead>
+        <tbody>${rows}</tbody>
       </table>
-    </div>`,
+    </div>`;
+        },
       )
       .join('');
 
@@ -655,14 +877,45 @@ export class StudentDossierService {
     // ⭐ 1.0.14 — FRAIS & PAIEMENTS année par année (vraies données du compte
     //    financier : réduction réelle, arriérés, payé, reste à solder) +
     //    récapitulatif global sur toutes les années passées.
+    // ⭐ 1.0.16 — TRAÇABILITÉ DU BARÈME en tête de chaque année AVANT les
+    //    totaux : montants normalement dus (barème standard), ventilation
+    //    inscription / réinscription / scolarité / autres, réduction effective
+    //    et son pourcentage, net dû après réduction.
     const fmtMoney = (v: any): string =>
       `${Number(v ?? 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} F`;
 
     const feesSections = ((d.financeByYear || []) as any[])
       .map(
-        (y: any) => `
+        (y: any) => {
+          const ft = y.feeTotals || {};
+          const traceabilityBlock = `
+      <h3>Traçabilité du barème — ${esc(y.academicYear?.name || y.academicYear?.label || '—')}</h3>
+      <table>
+        <thead><tr><th>Montants normalement dus (barème standard)</th><th class="num">Frais d'inscription</th><th class="num">Frais de réinscription</th><th class="num">Frais de scolarité</th><th class="num">Autres frais</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><b>${fmtMoney(y.standardTotal)}</b></td>
+            <td class="num">${ft.inscription && ft.inscription.standard > 0 ? fmtMoney(ft.inscription.standard) : '—'}</td>
+            <td class="num">${ft.reinscription && ft.reinscription.standard > 0 ? fmtMoney(ft.reinscription.standard) : '—'}</td>
+            <td class="num">${ft.tuition && ft.tuition.standard > 0 ? fmtMoney(ft.tuition.standard) : '—'}</td>
+            <td class="num">${ft.other && ft.other.standard > 0 ? fmtMoney(ft.other.standard) : '—'}</td>
+          </tr>
+        </tbody>
+      </table>
+      <table style="margin-top:4px;">
+        <tbody>
+          <tr>
+            <th>Réduction appliquée</th>
+            <td>${y.hasReduction ? `<b>Oui</b> — ${fmtMoney(y.reductionTotal)} (${y.reductionPercent} %)${y.regime ? ` — régime : ${esc(y.regime.label)}` : ''}` : 'Aucune'}</td>
+            <th>Net dû après réduction</th>
+            <td><b>${fmtMoney(y.netDue)}</b></td>
+          </tr>
+        </tbody>
+      </table>`;
+          return `
     <div class="subsection">
       <h3>Frais de l'année ${esc(y.academicYear?.name || y.academicYear?.label || '—')}${y.regime ? ` — régime : ${esc(y.regime.label)}` : ''}</h3>
+      ${traceabilityBlock}
       <table>
         <thead>
           <tr><th>Ligne de frais</th><th class="num">Montant standard</th><th class="num">Réduction</th><th class="num">Montant dû</th><th class="num">Payé</th><th class="num">Reste à solder</th></tr>
@@ -683,7 +936,7 @@ export class StudentDossierService {
             .join('')}
           <tr>
             <td><b>Total ${esc(y.academicYear?.name || '')}</b></td>
-            <td class="num">—</td>
+            <td class="num">${y.standardTotal > 0 ? fmtMoney(y.standardTotal) : '—'}</td>
             <td class="num">${y.reductionTotal > 0 ? `<b>${fmtMoney(y.reductionTotal)}</b>` : '—'}</td>
             <td class="num"><b>${fmtMoney(y.account.totalDue)}</b></td>
             <td class="num"><b>${fmtMoney(y.account.totalPaid)}</b></td>
@@ -719,7 +972,8 @@ export class StudentDossierService {
       </table>`
           : ''
       }
-    </div>`,
+    </div>`;
+        },
       )
       .join('');
 
@@ -734,6 +988,18 @@ export class StudentDossierService {
       <div class="subsection">
         <h3>Récapitulatif global — toutes années (${esc(fg?.yearsCount ?? 0)} an(s) dans l'établissement)</h3>
         <table>
+          <tbody>
+            <tr>
+              <th>Barème normal cumulé (avant réduction)</th>
+              <td><b>${fmtMoney(fg?.standardTotal)}</b></td>
+              <th>Réductions cumulées</th>
+              <td>${(fg?.reductionTotal ?? 0) > 0 ? `<b>${fmtMoney(fg?.reductionTotal)}</b> (${fg?.reductionPercent ?? 0} %)` : '—'}</td>
+              <th>Net cumulé après réduction</th>
+              <td><b>${fmtMoney(fg?.netDue)}</b></td>
+            </tr>
+          </tbody>
+        </table>
+        <table style="margin-top:4px;">
           <thead><tr><th>Total dû (toutes années)</th><th class="num">Réductions cumulées</th><th class="num">Arriérés</th><th class="num">Total payé</th><th class="num">Solde restant</th></tr></thead>
           <tbody>
             <tr>

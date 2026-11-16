@@ -13872,3 +13872,28 @@ Stage Summary:
 - ✅✅ Refonte Dossiers livrée et prouvée E2E (1.0.10→1.0.12) : page dossier numérique unifiée 7 sections + PDF complet backend (200 / ~1 Mo).
 - ✅ 2 bugs DORMANTS réparés au passage (route dossier 400 Prisma « quarter » + 403 rôles promoteur) — la route n'avait jamais été appelée avant la refonte.
 - 💡 La section IV (Résultats & bulletins) s'auto-remplira dès que des bulletins existent (module Examens, Notes & Bulletins) : moyenne, rang, notes par matière et PDF téléchargeable par période — sans autre développement.
+
+---
+
+Task ID: 111-termii-sms-facture-non-recu
+Agent: Super Z (agent principal)
+Task: Retour promoteur (16/11 nuit) — « recharge Termii faite, un SMS envoyé, Termii a déduit/facturé la transaction mais le message n'est pas reçu sur le téléphone »
+
+Work Log:
+- DIAGNOSTIC (DB + doc, script scripts/diagnose_termii_delivery.py — DSN jamais affiché) :
+  · Le wallet recharge → la 402 « Insufficient balance » (constat E2E 108) a disparu : Termii répond 200 « Successfully Sent » + solde déduit → FACTURATION À LA SOUMISSION, sans garantie de livraison (doc developers.termii.com/messaging-api). « Facturé » ≠ « livré ».
+  · La transaction la plus probable : renvoi d'identifiants à Dawes AKPOVI (tenant réel CSPEB) le 15/11 20:52 UTC (mot de passe régénéré — users.updatedAt). Son numéro 0195722234 est au BON format (nouveau plan ARCEP) → le format n'explique pas CE cas.
+  · Chaîne observée : TERMII_CHANNEL=dnd (défaut) → 422 « Route not configured for workspace=019f1d1a-9952-73fc-a7bb-f104dc517af1 country=BJ route=DND » (route DND non activée sur le workspace pour le BJ, constaté dès 1.0.7) → REPLI 1.0.8 sur la route GENERIC (promotionnelle) → accepté + facturé, MAIS non délivré sur les numéros en DND (opt-out opérateur) — le scénario exact anticipé au worklog 1.0.7/1.0.8.
+  · 🔴 DÉCOUVERTE SECONDAIRE (autre cause de « facturé non reçu ») : 13 guardians + 2 numéros locaux 8 chiffres en DB (tous tenants confondus — vrais parents CSPEB : Minica AÏDEHOU +229 97 99 99 99 ; Jean ADJIBOGOUN 97000000 ; le reste = numéros de test du tenant de test) sont restés à l'ANCIEN plan ARCEP (+229+8 chiffres, pré-réforme du 30/11/2024 — cf. web.arcep.bj « passage des numéros à 10 chiffres », préfixe 01). Les opérateurs ne routent PLUS l'ancien format → tout SMS vers ces numéros = accepté, facturé, JAMAIS délivré.
+- FIX (commit ca364d8, 1.0.13) — SmsService :
+  · toTermiiDestination(phoneE164) : à l'envoi Termii uniquement (donnée source, recherche DB et connexion parent INCHANGÉES), un numéro béninois 229+8 chiffres (ancien plan) est migré vers 229+01+8 chiffres (plan actuel) ; nouveau plan et numéros étrangers inchangés. Cas réels validés : +22997000000→2290197000000 ; +22997999999→2290197999999 ; +2290195722234 (Dawes) inchangé ; +33612345678 inchangé.
+  · Version 1.0.12 → 1.0.13 (app.controller + health.controller ×3). esbuild OK (3 fichiers).
+- DÉPLOIEMENT : push b5d9303..ca364d8 → Railway (déployé automatiquement, vérif /health).
+- NON FAIT volontairement : E2E d'envoi SMS (chaque test = 1 SMS FACTURÉ sur le wallet du promoteur) — la logique est validée par tests unitaires des cas réels ci-dessus.
+- ⏳ DÉBOCAGE RÉEL (côté UTILISATEUR, pas côté code) : demander au support Termii d'ACTIVER la route DND pour le BJ sur le workspace 019f1d1a-9952-73fc-a7bb-f104dc517af1 (ouvrir un ticket avec le message 422 exact) — c'est la route transactionnelle qui délivre y compris aux numéros DND ; le code est DÉJÀ prêt (TERMII_CHANNEL=dnd par défaut, repli generic en filet). Vérifier aussi dans le dashboard Termii (Reports/SMS) le statut de la transaction (Sent vs Delivered/Failed) et, si TERMII_CHANNEL a été mis à generic sur Railway pendant le déblocage 402, le remettre à dnd.
+- HYGIÈNE recommandée : migration des 15 numéros ancien plan en DB vers le nouveau plan (le fix 1.0.13 protège l'envoi SMS, pas la recherche/connexion) — script à exécuter après validation promoteur.
+
+Stage Summary:
+- ✅ Fix 1.0.13 livré : plus AUCUN SMS Academia Helm ne part vers un numéro mort de l'ancien plan ARCEP (migré automatiquement à l'envoi Termii).
+- ✅ Diagnostic complet du « facturé mais non reçu » : route generic (repli) + DND du numéro — le déblocage définitif passe par l'activation de la route DND BJ chez Termii (ticket support, message 422 exact en main).
+- ⏳ Utilisateur : ticket Termii route DND BJ + vérifier statut Delivered dans le dashboard + (option) migrer les 15 numéros hérités en DB.

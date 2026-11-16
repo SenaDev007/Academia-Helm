@@ -23,6 +23,14 @@
  *       sans route DND active pour le pays, ex. BJ), l'envoi est RÉESSAYÉ UNE
  *       FOIS automatiquement sur la route « generic » pour que le SMS parte
  *       quand même (repli, en attendant l'activation de la route DND).
+ *       ⭐ 16/11/2026 nuit (fix 1.0.13, retour promoteur « facturé mais non
+ *       reçu ») : la route generic facture à la SOUMISSION (200 « Successfully
+ *       Sent », solde déduit) sans garantie de livraison — non délivré sur les
+ *       numéros en DND (route promotionnelle) et sur les numéros de l'ANCIEN
+ *       plan ARCEP. Migration automatique à l'envoi des numéros béninois
+ *       hérités (229 + 8 chiffres, pré-réforme du 30/11/2024) vers le plan
+ *       ACTUEL (229 + « 01 » + 8 chiffres) — les opérateurs ne routent plus
+ *       l'ancien format depuis le basculement ARCEP.
  * ============================================================================
  */
 
@@ -174,6 +182,33 @@ export class SmsService {
   }
 
   /**
+   * ⭐ 16/11/2026 nuit (fix 1.0.13) — Numéro béninois au format international
+   * SANS « + » pour l'API Termii, en migrant l'ANCIEN plan ARCEP vers le plan
+   * ACTUEL.
+   *
+   * Réforme ARCEP du 30/11/2024 : les numéros béninois passent de 8 à 10
+   * chiffres avec l'ajout du préfixe « 01 » (ex : 97 99 99 99 → 01 97 99 99
+   * 99, E.164 +22997999999 → +2290197999999). Depuis le basculement, les
+   * opérateurs ne routent PLUS l'ancien format : un SMS soumis sur un numéro
+   * 8 chiffres est accepté ET FACTURÉ par Termii (« Successfully Sent », solde
+   * déduit) mais n'est JAMAIS délivré — exactement le symptôme « facturé mais
+   * non reçu » constaté le 16/11/2026.
+   *
+   * Diagnostic DB au 16/11/2026 : 13 guardians + 2 numéros locaux (tous
+   * tenants) encore en ancien format — leurs envois partaient vers des
+   * numéros morts. Cette migration à l'envoi les rend livrables sans toucher
+   * à la donnée source (recherche DB / connexion parent inchangées).
+   */
+  private toTermiiDestination(phoneE164: string): string {
+    let digits = phoneE164.replace(/^\+/, '');
+    // Bénin ancien plan : 229 + 8 chiffres → plan actuel 229 + 01 + 8 chiffres
+    if (/^229\d{8}$/.test(digits)) {
+      digits = '22901' + digits.substring(3);
+    }
+    return digits;
+  }
+
+  /**
    * Envoi effectif vers l'API Termii sur une route (channel) donnée.
    */
   private async sendViaTermiiChannel(
@@ -183,8 +218,9 @@ export class SmsService {
     senderId: string,
     channel: string,
   ): Promise<{ success: boolean; messageId?: string }> {
-    // Format Termii : international sans le « + »
-    const to = request.to.replace(/^\+/, '');
+    // Format Termii : international sans le « + » — avec migration du plan
+    // ARCEP hérité (fix 1.0.13)
+    const to = this.toTermiiDestination(request.to);
 
     const response = await fetch(`${baseUrl}/api/sms/send`, {
       method: 'POST',

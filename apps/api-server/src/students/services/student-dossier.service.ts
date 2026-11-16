@@ -921,7 +921,7 @@ export class StudentDossierService {
         .map(
           (doc: any) => `
         <tr>
-          <td>${esc(docTypeLabel[doc.documentType] || doc.documentType)}</td>
+          <td>${esc(DOC_TYPE_LABELS[doc.documentType] || doc.documentType)}</td>
           <td>${esc(doc.fileName)}</td>
           <td>${dfmt(doc.createdAt)}</td>
         </tr>`,

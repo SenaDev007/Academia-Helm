@@ -1100,10 +1100,6 @@ export class StudentDossierService {
       }
     </div>`;
 
-    const yearName =
-      (d.studentEnrollments || [])[0]?.academicYear?.name ||
-      (d.studentEnrollments || [])[0]?.academicYear?.label ||
-      '';
     const currentClassName =
       (d.studentEnrollments || [])[0]?.academicClass?.name ||
       (d.studentEnrollments || [])[0]?.class?.name ||
@@ -1148,12 +1144,13 @@ export class StudentDossierService {
       /* ── Barre de titre encadrée navy arrondie (standard bulletin Examen) ── */
       .doc-title { text-align: center; border: 2px solid #0d1f6e; border-radius: 8px; padding: 4px 8px; margin-bottom: 6px; font-size: 11px; font-weight: bold; text-transform: uppercase; color: #0d1f6e; background: #f1f5f9; }
 
-      /* ── Bandeau élève (module Examen .info-wrap : photo + identifiants) ── */
-      .info-wrap { border: 1px solid #000; border-radius: 6px; overflow: hidden; margin-bottom: 10px; break-inside: avoid; page-break-inside: avoid; }
-      .info-table { width: 100%; border-collapse: collapse; }
-      .info-table td { border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 3px 5px; font-size: 9px; background: #f1f5f9; }
-      .info-table td:last-child { border-right: none; }
-      .info-table tr:last-child td { border-bottom: none; }
+      /* ⭐ 1.0.19 — PHOTO DE L'ÉLÈVE : le bandeau « module Examen » a été retiré
+         (retour promoteur : il dupliquait la section I) ; la PHOTO (seul
+         élément conservé) vit désormais DANS la section I, 3e colonne du
+         grid .kv, format pièce d'identité. */
+      .photo-box { align-self: center; justify-self: end; border: 2px solid #0d1f6e; border-radius: 8px; background: #fff; padding: 3px; break-inside: avoid; page-break-inside: avoid; }
+      .photo-box img { display: block; width: 58px; height: 72px; object-fit: cover; border-radius: 4px; }
+      .photo-empty { width: 58px; height: 72px; border-radius: 4px; background: #f1f5f9; color: #94a3b8; font-size: 8px; display: flex; align-items: center; justify-content: center; }
 
       h2 { font-size: 12px; color: #0d1f6e; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; margin: 16px 0 6px; text-transform: uppercase; letter-spacing: 0.4px; }
       h3 { font-size: 10.5px; color: #334155; margin: 10px 0 4px; }
@@ -1173,7 +1170,10 @@ export class StudentDossierService {
       tbody th { background: #f1f5f9; font-weight: 600; width: 34%; color: #334155; border-right: 1px solid #cbd5e1; }
       td.num { text-align: center; }
       td.empty, tr.empty td { text-align: center; color: #94a3b8; font-style: italic; }
-      .kv { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+      /* ⭐ 1.0.19 — grid 3 colonnes : identité (état civil) · situation
+         administrative · photo — 6 lignes de CHAQUE côté (plus de cellule
+         vide après « N° de dossier », retour promoteur). */
+      .kv { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0 12px; align-items: stretch; }
       .kv .tblwrap { margin-bottom: 0; }
       .section { page-break-inside: avoid; }
       .subsection { page-break-inside: avoid; margin-top: 8px; }
@@ -1201,49 +1201,37 @@ export class StudentDossierService {
     <!-- ═══ TITRE DU DOCUMENT (barre encadrée navy arrondie) ═══ -->
     <div class="doc-title">Dossier scolaire de l'élève — document officiel</div>
 
-    <!-- ═══ BANDEAU ÉLÈVE (module Examen : photo + identifiants clés) ═══ -->
-    <div class="info-wrap">
-      <table class="info-table">
-        <tr>
-          <td rowspan="2" style="width:55px;text-align:center;vertical-align:middle;border-bottom:none;">
-            ${idn.photoUrl
-              ? `<img src="${esc(idn.photoUrl)}" style="width:45px;height:50px;object-fit:cover;border:1px solid #000;border-radius:2px;" alt="Photo" />`
-              : `<div style="width:45px;height:50px;border:1px solid #000;border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7px;color:#94a3b8;background:#f1f5f9;">Photo</div>`}
-          </td>
-          <td>Année scolaire : <strong>${esc(yearName) || '—'}</strong></td>
-          <td>Nom et prénoms : <strong style="text-transform:uppercase;">${esc(idn.lastName)} ${esc(idn.firstName)}</strong></td>
-          <td>Classe : <strong>${esc(currentClassName)}</strong></td>
-        </tr>
-        <tr>
-          <td>Matricule : <strong>${esc(idn.matricule) || '—'}</strong></td>
-          <td>Date de naissance : <strong>${dfmt(idn.dateOfBirth)}</strong></td>
-          <td>Statut : <strong>${esc(statusLabel[idn.status] || idn.status)}</strong></td>
-        </tr>
-      </table>
-    </div>
-
     <div class="section">
       <h2>I. Identité &amp; situation administrative</h2>
+      <!-- ⭐ 1.0.19 — bandeau élève (module Examen) SUPPRIMÉ : il dupliquait
+           cette section (retour promoteur) ; seule la PHOTO est conservée,
+           intégrée ici en 3e colonne. Blocs rééquilibrés 6 lignes / 6 lignes. -->
       <div class="kv">
         <div class="tblwrap"><table>
           <tbody>
             <tr><th>Nom / Prénom</th><td><b>${esc(idn.lastName)} ${esc(idn.firstName)}</b></td></tr>
-            <tr><th>Matricule</th><td>${esc(idn.matricule) || '—'}</td></tr>
             <tr><th>Date de naissance</th><td>${dfmt(idn.dateOfBirth)}</td></tr>
             <tr><th>Lieu de naissance</th><td>${esc(idn.placeOfBirth) || '—'}</td></tr>
             <tr><th>Sexe</th><td>${idn.gender === 'M' ? 'Masculin' : idn.gender === 'F' ? 'Féminin' : '—'}</td></tr>
             <tr><th>Nationalité</th><td>${esc(idn.nationality) || '—'}</td></tr>
+            <tr><th>NPI</th><td>${esc(idn.npi) || 'Non renseigné'}</td></tr>
           </tbody>
         </table></div>
         <div class="tblwrap"><table>
           <tbody>
-            <tr><th>NPI</th><td>${esc(idn.npi) || 'Non renseigné'}</td></tr>
-            <tr><th>Statut</th><td>${esc(statusLabel[idn.status] || idn.status)}</td></tr>
-            <tr><th>Régime scolaire</th><td>${esc(regLabel(idn.regimeType))}</td></tr>
-            <tr><th>Adresse</th><td>${esc(idn.address) || '—'}</td></tr>
+            <tr><th>Matricule</th><td>${esc(idn.matricule) || '—'}</td></tr>
             <tr><th>N° de dossier</th><td>${esc(idn.studentCode) || esc(idn.matricule) || '—'}</td></tr>
+            <tr><th>Classe actuelle</th><td>${esc(currentClassName)}</td></tr>
+            <tr><th>Régime scolaire</th><td>${esc(regLabel(idn.regimeType))}</td></tr>
+            <tr><th>Statut</th><td>${esc(statusLabel[idn.status] || idn.status)}</td></tr>
+            <tr><th>Adresse</th><td>${esc(idn.address) || '—'}</td></tr>
           </tbody>
         </table></div>
+        <div class="photo-box">
+          ${idn.photoUrl
+            ? `<img src="${esc(idn.photoUrl)}" alt="Photo de l'élève" />`
+            : `<div class="photo-empty">Photo</div>`}
+        </div>
       </div>
     </div>
 

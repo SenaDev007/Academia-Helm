@@ -64,6 +64,8 @@ import {
   Server,
   Palette,
   ClipboardCheck,
+  // ⭐ Task 122 — Bouton « Téléchargements » (apps desktop + APK mobile) dans la sidebar
+  MonitorSmartphone,
   // ⭐ 2026-09-27 — Patronats fédérés (validation rattachements Academia Federis)
   Network,
 } from 'lucide-react';
@@ -904,6 +906,24 @@ export default function PilotageSidebar({
             <Globe className="w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 group-hover:scale-105" />
             {effectiveOpen && (
               <span className="text-[13px] font-medium whitespace-nowrap overflow-hidden text-ellipsis flex-1">Visiter le site</span>
+            )}
+          </Link>
+          {/* ⭐ Task 122 — Téléchargements : apps desktop (setup Windows,
+              .deb/.tar.gz Linux) + APK mobile signé, hébergées sur notre canal
+              releases.academiahelm.com. Visible pour tous les utilisateurs
+              (page publique /downloads, nouvel onglet → l'app reste ouverte). */}
+          <Link
+            href="/downloads"
+            prefetch={false}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onCloseMobileDrawer}
+            className="group flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-blue-100/80 hover:bg-white/[0.04] hover:text-white"
+            title={!effectiveOpen ? 'Télécharger les applications (desktop + mobile)' : undefined}
+          >
+            <MonitorSmartphone className="w-[18px] h-[18px] flex-shrink-0 transition-transform duration-200 group-hover:scale-105" />
+            {effectiveOpen && (
+              <span className="text-[13px] font-medium whitespace-nowrap overflow-hidden text-ellipsis flex-1">Téléchargements</span>
             )}
           </Link>
           {/* Paramètres */}

@@ -2,6 +2,12 @@
 
 Ce répertoire contient les exécutables desktop Academia Helm.
 
+> ⭐ Ces installateurs sont désormais **hébergés sur notre propre canal**
+> `https://releases.academiahelm.com` et téléchargeables depuis la page
+> publique `/downloads` (bouton « Téléchargements » dans la sidebar de
+> l'application). Les liens GitHub raw ne doivent plus être utilisés
+> (dépôt privé → 404).
+
 ## Fichiers disponibles
 
 ### Windows (recommandé)
@@ -10,7 +16,7 @@ Ce répertoire contient les exécutables desktop Academia Helm.
 |---|---|---|---|
 | [academia-helm_1.1.0_x64-setup.exe](./academia-helm_1.1.0_x64-setup.exe) | NSIS Installer | ~9 MB | Installation Windows 64-bit (double-clic pour installer) |
 
-**Lien de téléchargement direct** : https://github.com/SenaDev007/Academia-Helm/raw/main/docs/desktop-builds/academia-helm_1.1.0_x64-setup.exe
+**Lien de téléchargement direct** : https://releases.academiahelm.com/desktop/nsis/x86_64/files/academia-helm_1.1.0_x64-setup.exe
 
 ### Linux
 
@@ -18,6 +24,10 @@ Ce répertoire contient les exécutables desktop Academia Helm.
 |---|---|---|---|
 | [academia-helm_1.1.0_amd64.deb](./academia-helm_1.1.0_amd64.deb) | Debian package | ~10 MB | Ubuntu/Debian/Mint |
 | [academia-helm-desktop-1.1.0-linux-x86_64.tar.gz](./academia-helm-desktop-1.1.0-linux-x86_64.tar.gz) | Tarball | ~10 MB | Binaire portable Linux |
+
+**Liens directs** :
+- https://releases.academiahelm.com/desktop/deb/x86_64/files/academia-helm_1.1.0_amd64.deb
+- https://releases.academiahelm.com/desktop/targz/x86_64/files/academia-helm-desktop-1.1.0-linux-x86_64.tar.gz
 
 ## Installation Windows
 

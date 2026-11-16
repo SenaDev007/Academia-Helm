@@ -265,6 +265,25 @@ const nextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
         ],
       },
+      // ✅ Task 122 — APK Android en téléchargement direct (même canal que le
+      // desktop) : nom de fichier immuable (version dans le nom) → cache 1 an.
+      {
+        source: '/mobile/files/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+        ],
+      },
+      // ✅ Task 122 — Manifest public/mobile/latest.json (métadonnées APK :
+      // version, sha256, taille) : toujours re-validé pour refléter une nouvelle
+      // publication dès qu'elle est poussée.
+      {
+        source: '/mobile/latest.json',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate' },
+          { key: 'Pragma', value: 'no-cache' },
+        ],
+      },
       // Headers de sécurité globaux
       {
         source: '/:path*',

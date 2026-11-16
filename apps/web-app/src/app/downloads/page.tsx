@@ -72,44 +72,47 @@ interface Release {
   assets: ReleaseAsset[];
 }
 
-// ── Release par défaut (fallback si GitHub API indisponible) ──
+// ── Release par défaut (fallback si l'API releases est indisponible) ──
+// ⭐ Task 122 : URLs sur NOTRE canal releases.academiahelm.com (hébergé par le
+//    web-app Vercel) — plus aucune dépendance GitHub raw (dépôt privé → 404).
+//    Les tailles correspondent aux fichiers réellement hébergés.
 
 const DEFAULT_RELEASE: Release = {
   version: "1.1.0",
   date: new Date().toISOString(),
   notes: [
     "Application desktop Windows et Linux (macOS bientôt disponible)",
-    "Application mobile Android (bientôt disponible)",
+    "Application mobile Android — installation directe par APK",
     "Base de données locale SQLite pour le mode hors connexion (offline-first)",
     "Synchronisation automatique au retour du réseau (debounce 1.5s + retry backoff)",
     "Bouton « Synchroniser » manuel dans le cockpit digital",
-    "Mise à jour automatique au démarrage de l'application",
+    "Mise à jour automatique au démarrage de l'application desktop",
     "Même interface que la version web — pas de recodage",
     "Multi-caisses, paiements en ligne, reçus PDF/WhatsApp/SMS",
   ],
   assets: [
     {
       name: "academia-helm_1.1.0_x64-setup.exe",
-      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/raw/main/docs/desktop-builds/academia-helm_1.1.0_x64-setup.exe",
-      size: "~10 MB",
+      downloadUrl: "https://releases.academiahelm.com/desktop/nsis/x86_64/files/academia-helm_1.1.0_x64-setup.exe",
+      size: "~9 MB",
       platform: "windows",
     },
     {
       name: "academia-helm_1.1.0_amd64.deb",
-      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/raw/main/docs/desktop-builds/academia-helm_1.1.0_amd64.deb",
+      downloadUrl: "https://releases.academiahelm.com/desktop/deb/x86_64/files/academia-helm_1.1.0_amd64.deb",
       size: "~10 MB",
       platform: "linux",
     },
     {
-      name: "Academia-Helm-1.1.0-macos.dmg",
-      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/raw/main/docs/desktop-builds/academia-helm-1.1.0-macos.dmg",
-      size: "Bientôt disponible",
-      platform: "macos",
+      name: "academia-helm-desktop-1.1.0-linux-x86_64.tar.gz",
+      downloadUrl: "https://releases.academiahelm.com/desktop/targz/x86_64/files/academia-helm-desktop-1.1.0-linux-x86_64.tar.gz",
+      size: "~10 MB",
+      platform: "linux",
     },
     {
-      name: "Academia-Helm-1.1.0-android.apk",
-      downloadUrl: "https://github.com/SenaDev007/Academia-Helm/raw/main/docs/desktop-builds/academia-helm-1.1.0-android.apk",
-      size: "Bientôt disponible",
+      name: "academia-helm-1.0.0.apk",
+      downloadUrl: "https://releases.academiahelm.com/mobile/files/academia-helm-1.0.0.apk",
+      size: "~4 MB",
       platform: "android",
     },
   ],
@@ -153,11 +156,27 @@ function useFileAvailability(url: string): { available: boolean; checking: boole
   return { available, checking };
 }
 
-// ── Hook: récupère la dernière release depuis notre API (/api/releases/latest) ──
+// ── Hook: récupère les releases depuis notre API (/api/releases?channel=stable) ──
 //
 // L'API interroge la table app_releases dans Neon, qui contient les métadonnées
-// des installables. Les fichiers binaires sont stockés sur Cloudflare R2.
+// des installables. Les fichiers binaires sont hébergés sur notre canal
+// releases.academiahelm.com (alias Vercel du web-app, dossier public/).
 // Si l'API échoue, fallback sur les valeurs par défaut (DEFAULT_RELEASE).
+//
+// ⭐ Task 122 : on interroge la LISTE complète (et non /releases/latest qui ne
+//    renvoie qu'UNE ligne par plateforme) pour afficher tous les assets d'une
+//    même version — ex. Linux : .deb ET .tar.gz. Côté client, on ne garde que
+//    les lignes de la version la plus récente de chaque plateforme.
+
+function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
 
 function useLatestRelease(): { release: Release; loading: boolean } {
   const [release, setRelease] = useState<Release>(DEFAULT_RELEASE);
@@ -166,11 +185,11 @@ function useLatestRelease(): { release: Release; loading: boolean } {
   useEffect(() => {
     async function fetchLatestRelease() {
       try {
-        // Récupère les dernières versions depuis notre API
+        // Récupère toutes les releases stables depuis notre API
         // (qui lit la table app_releases dans Neon)
         const apiUrl = process.env.NEXT_PUBLIC_API_URL
-          ? `${process.env.NEXT_PUBLIC_API_URL}/releases/latest`
-          : "/api/releases/latest";
+          ? `${process.env.NEXT_PUBLIC_API_URL}/releases?channel=stable`
+          : "/api/releases?channel=stable";
 
         const response = await fetch(apiUrl);
 
@@ -178,11 +197,26 @@ function useLatestRelease(): { release: Release; loading: boolean } {
 
         const data = await response.json();
 
-        // data est un tableau de releases (une par plateforme disponible)
+        // data est un tableau de releases (toutes versions stables confondues)
         const releases = Array.isArray(data) ? data : [];
+        if (releases.length === 0) throw new Error("No releases registered");
 
-        // Construire les assets depuis les releases
-        const assets: ReleaseAsset[] = releases.map((rel: any) => {
+        // Version la plus récente PAR plateforme → on ne garde que les lignes
+        // de cette version (ex. Linux 1.1.0 : .deb + .tar.gz ensemble).
+        const topVersionByPlatform = new Map<string, string>();
+        for (const rel of releases) {
+          const platform = rel.platform as string;
+          const current = topVersionByPlatform.get(platform);
+          if (!current || compareVersions(rel.version, current) > 0) {
+            topVersionByPlatform.set(platform, rel.version);
+          }
+        }
+        const newest = releases.filter(
+          (rel: any) => topVersionByPlatform.get(rel.platform) === rel.version,
+        );
+
+        // Construire les assets depuis les releases conservées
+        const assets: ReleaseAsset[] = newest.map((rel: any) => {
           const name = rel.filename as string;
           const platform = rel.platform as ReleaseAsset["platform"];
 
@@ -190,19 +224,21 @@ function useLatestRelease(): { release: Release; loading: boolean } {
             name,
             downloadUrl: rel.downloadUrl,
             size: rel.fileSize
-              ? `${Math.round(Number(rel.fileSize) / 1024 / 1024)} MB`
+              ? `${Math.max(1, Math.round(Number(rel.fileSize) / 1024 / 1024))} MB`
               : "—",
             platform,
           };
         });
 
-        // Prendre la version la plus récente (premier élément trié par date)
-        const latestRelease = releases[0];
-        const version = latestRelease?.version || DEFAULT_RELEASE.version;
-        const date = latestRelease?.uploadedAt || new Date().toISOString();
+        // Métadonnées globales : la ligne de version la plus élevée
+        const meta = newest.reduce((best: any, rel: any) =>
+          compareVersions(rel.version, best?.version || "") > 0 ? rel : best,
+        );
+        const version = meta?.version || DEFAULT_RELEASE.version;
+        const date = meta?.uploadedAt || new Date().toISOString();
 
         // Parser les notes de version
-        const notesRaw = latestRelease?.releaseNotes || "";
+        const notesRaw = meta?.releaseNotes || "";
         const notes = notesRaw
           .split("\n")
           .map((line: string) => line.replace(/^[-•*\s]+/, "").trim())
@@ -664,11 +700,47 @@ function MobileDownloads({
           </div>
 
           <div className="p-4 sm:p-6 space-y-2 sm:space-y-3">
-            {/* Play Store */}
-            <a
-              href="https://play.google.com/store/apps/details?id=com.academiahelm.mobile"
-              className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 hover:border-[#0b2f73]/30 hover:bg-[#0b2f73]/5 transition-all duration-200 group"
-            >
+            {/* ⭐ Task 122 — APK DIRECT = chemin principal d'installation.
+                La Play Console est exigeante (revues, fiche, captures) : en
+                attendant la validation, l'APK signé avec la MÊME clé que le
+                Play Store (empreinte 2124E36E… = assetlinks.json) est
+                téléchargeable depuis notre canal releases.academiahelm.com.
+                L'utilisateur Android autorise « Installer d'applications
+                inconnues » pour Chrome, puis installe. Quand l'app sera
+                publiée sur Play, la fiche Play prendra cette place et l'APK
+                restera en second (même clé → mise à jour Play possible). */}
+            {(() => {
+              const apkAsset = release.assets.find((a) => a.platform === "android");
+              if (!apkAsset) {
+                return (
+                  <div className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 opacity-60">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-semibold text-[#0b2f73]">APK direct</p>
+                      <p className="text-[10px] sm:text-xs text-slate-500">Bientôt disponible</p>
+                    </div>
+                    <AlertCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 flex-shrink-0" />
+                  </div>
+                );
+              }
+              return (
+                <div className="space-y-2 sm:space-y-3">
+                  <DownloadLink asset={apkAsset} fileFormat="apk" />
+                  <p className="text-[10px] sm:text-xs text-slate-500 leading-relaxed px-1">
+                    Installation directe — après le téléchargement, autorisez
+                    «&nbsp;Installer des applications inconnues&nbsp;» pour votre
+                    navigateur si Android le demande. Vos données sont identiques
+                    à la version web.
+                  </p>
+                </div>
+              );
+            })()}
+
+            {/* Play Store — fiche EN COURS DE VALIDATION (package définitif
+                com.yehiortech.academiahelm). Rendu non-cliquable « Bientôt »
+                pour ne pas envoyer les utilisateurs vers un lien 404 ; au moment
+                de la publication Play, remplacer ce bloc par :
+                <a href="https://play.google.com/store/apps/details?id=com.yehiortech.academiahelm" …> */}
+            <div className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 opacity-60">
               <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
                 <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-emerald-100 flex items-center justify-center flex-shrink-0">
                   <PlatformIcon platform="google-play" size={16} className="text-emerald-600" />
@@ -677,21 +749,11 @@ function MobileDownloads({
                   <p className="text-xs sm:text-sm font-semibold text-[#0b2f73] truncate">
                     {PLATFORM_LABELS["google-play"]}
                   </p>
-                  <p className="text-[10px] sm:text-xs text-slate-500">Recommandé</p>
+                  <p className="text-[10px] sm:text-xs text-slate-500">En cours de validation</p>
                 </div>
               </div>
-              <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 group-hover:text-[#f5b335] transition-all flex-shrink-0" />
-            </a>
-
-            {/* APK direct */}
-            {/* APK direct — avec vérification de disponibilité */}
-            {(() => {
-              const apkAsset = release.assets.find((a) => a.platform === "android");
-              if (!apkAsset) return null;
-              return (
-                <DownloadLink asset={apkAsset} fileFormat="apk" />
-              );
-            })()}
+              <AlertCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 flex-shrink-0" />
+            </div>
           </div>
         </div>
 

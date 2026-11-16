@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "platform": "android",
+  "filename": "academia-helm-1.0.0.apk",
+  "url": "https://releases.academiahelm.com/mobile/files/academia-helm-1.0.0.apk",
+  "sha256": "05a73048afe0aa3e55cd41af4e22a00419fcf95d067f439e7ba1794df4c24145",
+  "size": 4210856,
+  "versionCode": 1,
+  "minOsVersion": "8.0",
+  "publishedAt": "2026-11-17T12:00:00Z",
+  "notes": "Coquille native Android (Capacitor) qui charge l'application web LIVE academiahelm.com/portal. Signature : cle Play Store (empreinte SHA-256 2124E36E... identique a assetlinks.json → App Links verifies). APK universal (toutes architectures)."
+}

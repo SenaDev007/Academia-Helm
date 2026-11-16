@@ -1183,16 +1183,19 @@ export class StudentDossierService {
       td.empty, tr.empty td { text-align: center; color: #94a3b8; font-style: italic; }
       /* ⭐ 1.0.19 — grid 3 colonnes : identité (état civil) · situation
          administrative · photo — 6 lignes de CHAQUE côté (plus de cellule
-         vide après « N° de dossier », retour promoteur). Les tableaux
-         remplissent EXACTEMENT leur cadre (height:100% : si une valeur
-         replie sur 2 lignes d'un côté, l'autre tableau s'étire au lieu de
-         laisser une bande blanche interne) ; libellés élargis à 38 % pour
-         rester sur UNE ligne (« Date de naissance » ne replie plus depuis
-         que la colonne photo réduit la largeur des tableaux). */
+         vide après « N° de dossier », retour promoteur). Robustesse typog. :
+         · table-layout:fixed + libellés nowrap à 45 % → la colonne libellés
+           (~148 px ≈ largeur de l'ancien PDF) est IDENTIQUE quel que soit le
+           conteneur (Railway n'a ni Segoe UI ni Arial → repli DejaVu Sans
+           plus large, qui faisait replier « Date de naissance » sur 2 lignes
+           avec une largeur auto) ;
+         · height:100% → chaque tableau remplit EXACTEMENT son cadre : si une
+           valeur replie sur 2 lignes d'un côté, l'autre tableau s'étire au
+           lieu de laisser une bande blanche interne. */
       .kv { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0 12px; align-items: stretch; }
       .kv .tblwrap { margin-bottom: 0; }
-      .kv .tblwrap table { height: 100%; }
-      .kv tbody th { width: 38%; }
+      .kv .tblwrap table { height: 100%; table-layout: fixed; }
+      .kv tbody th { white-space: nowrap; width: 45%; }
       .section { page-break-inside: avoid; }
       .subsection { page-break-inside: avoid; margin-top: 8px; }
     </style>

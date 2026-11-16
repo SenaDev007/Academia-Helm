@@ -896,7 +896,13 @@ export class StudentDossierService {
     try {
       await page.setContent(html, { waitUntil: 'networkidle0' });
       const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
-      return pdfBuffer;
+      // ⭐ 1.0.14 — Puppeteer v13+ page.pdf() retourne un Uint8Array (pas un
+      //    Buffer) : res.send() l'ENVERRAIT en JSON {"0":37,"1":80,…} avec
+      //    content-type application/pdf → PDF corrompu au téléchargement
+      //    (constaté E2E : le fichier téléchargé commence par « {"0":… »).
+      //    Même correction que bulletin-pdf / meeting-minutes / distinctions :
+      //    envelopper explicitement en Buffer.
+      return Buffer.from(pdfBuffer);
     } finally {
       await this.puppeteerPool.releasePage(page);
     }

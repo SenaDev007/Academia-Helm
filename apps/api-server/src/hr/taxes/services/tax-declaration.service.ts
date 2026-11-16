@@ -46,7 +46,9 @@ export class TaxDeclarationService {
     // Générer depuis les données de paie du personnel
     const settings = await this.taxSettingsService.getOrCreate(tenantId);
 
-    // Récupérer les salaires bruts du mois (depuis PayrollPrismaService ou Staff)
+    // ⭐ 16/11/2026 — données RÉELLES du module Paie : les lignes du mois
+    //    (moteur statut contractuel — IST calculé par employé selon son type
+    //    de contrat). Plus aucun salaire statique staff.salary.
     const payrollData = await this.getMonthlyPayrollData(tenantId, period);
 
     const totalGrossSalary = payrollData.totalGross;
@@ -54,7 +56,10 @@ export class TaxDeclarationService {
 
     // Calculs
     const vps = totalGrossSalary * (settings.istVpsRate / 100);
-    const irpp = totalGrossSalary * (settings.istIrppRate / 100); // Si 0, calcul auto selon barème (à implémenter)
+    // ⭐ IRPP = somme des IST réellement retenus sur les lignes de paie du mois
+    //    (barème progressif par type de contrat) — le taux des paramètres ne
+    //    sert plus qu'à l'affichage de référence.
+    const irpp = payrollData.totalIrpp;
     const totalIST = vps + irpp;
 
     const data = {
@@ -64,6 +69,8 @@ export class TaxDeclarationService {
       irppRate: settings.istIrppRate,
       vps,
       irpp,
+      irppSource: 'payroll-items',
+      totalAibPrestataires: payrollData.totalAib,
       totalIST,
       staffDetails: payrollData.details,
       // Section paiement (à compléter par l'utilisateur)
@@ -124,13 +131,17 @@ export class TaxDeclarationService {
 
     const totalSalary = payrollData.totalGross;
 
-    // Calculs CNSS
+    // ⭐ 16/11/2026 — parts RÉELLES depuis les lignes de paie du trimestre :
+    //    cnssEmployee/cnssEmployer calculés par le moteur de paie selon le
+    //    statut contractuel de chaque employé (fiche de paie des déclarés).
+    //    Les branches patronales restent décomposées sur la base réelle avec
+    //    les taux paramétrables — le total déclaré = réel de la paie.
+    const partOuvriere = payrollData.totalCnssEmployee;
+    const partPatronale = payrollData.totalCnssEmployer;
     const cotisationsFamiliales = totalSalary * (settings.cnssFamilialesRate / 100);
     const risquesPro = totalSalary * (settings.cnssRisquesRate / 100);
     const assuranceVieillesse = totalSalary * (settings.cnssVieillesseRate / 100);
-    const partPatronale = totalSalary * (settings.cnssPatronaleRate / 100);
-    const partOuvriere = totalSalary * (settings.cnssOuvriereRate / 100);
-    const totalCotisations = cotisationsFamiliales + risquesPro + assuranceVieillesse + partPatronale + partOuvriere;
+    const totalCotisations = partOuvriere + partPatronale;
 
     const data = {
       totalSalary,
@@ -146,6 +157,7 @@ export class TaxDeclarationService {
       assuranceVieillesse,
       partPatronale,
       partOuvriere,
+      source: 'payroll-items',
       totalCotisations,
       majorations: 0, // Calculé si retard
       totalAPayer: totalCotisations,
@@ -195,13 +207,32 @@ export class TaxDeclarationService {
 
     const settings = await this.taxSettingsService.getOrCreate(tenantId);
 
-    const aibAchats = baseAchats * (settings.aibAchatsRate / 100);
-    const aibPrestations = basePrestations * (settings.aibPrestationsRate / 100);
+    // ⭐ 16/11/2026 — Section IV alimentée par la paie RÉELLE : les lignes des
+    //    prestataires de services du mois (retenue AIB à la source calculée
+    //    par le moteur de paie selon la présence de l'IFU).
+    const payrollData = await this.getMonthlyPayrollData(tenantId, period);
+    const prestataires = payrollData.prestataires.map((p: any) => ({
+      name: p.name,
+      address: p.address || '',
+      ifu: p.ifu || '',
+      base: p.base,
+      prelevement: p.prelevement,
+    }));
+
+    // Base « prestations » réelle par défaut si l'école n'a rien saisi :
+    // montant brut versé aux prestataires dans le mois.
+    const baseAchatsReel = baseAchats;
+    const basePrestationsReel = basePrestations > 0
+      ? basePrestations
+      : payrollData.prestataires.reduce((s: number, p: any) => s + p.base, 0);
+
+    const aibAchats = baseAchatsReel * (settings.aibAchatsRate / 100);
+    const aibPrestations = basePrestationsReel * (settings.aibPrestationsRate / 100);
     const totalAIB = aibAchats + aibPrestations;
 
     const data = {
-      baseAchats,
-      basePrestations,
+      baseAchats: baseAchatsReel,
+      basePrestations: basePrestationsReel,
       rates: {
         achats: settings.aibAchatsRate,
         prestations: settings.aibPrestationsRate,
@@ -209,10 +240,10 @@ export class TaxDeclarationService {
       aibAchats,
       aibPrestations,
       totalAIB,
+      aibRetenuePrestataires: payrollData.totalAib,
+      source: 'payroll-items',
       // Section IV — Détail des prélèvements AIB (prestataires)
-      prestataires: [] as Array<{
-        name: string; address: string; ifu: string; base: number; prelevement: number;
-      }>,
+      prestataires,
       // Section paiement
       payment: {
         mode: '', // ESPECES, CHEQUE, VIREMENT
@@ -275,37 +306,102 @@ export class TaxDeclarationService {
     return decl;
   }
 
-  // ─── Helpers : données de paie ───────────────────────────────────────────
+  // ─── Helpers : données de paie (⭐ 16/11/2026 — SOURCES RÉELLES) ─────────
+  //
+  // Les deux helpers lisent désormais les LIGNES DE PAIE du module Paie
+  // (PayrollItem), produites par le moteur statut contractuel :
+  //   - IST/IRPP  → salariés (déclarés ou non) : ITS réellement retenu
+  //   - CNSS      → affiliés uniquement (SALARIE_DECLARE, ou héritage avec
+  //                 n° CNSS actif) : parts ouvrière/patronale réelles
+  //   - AIB       → prestataires de services : retenue à la source réelle
+  // Plus aucun salaire statique staff.salary ni approximation « 26 jours ».
+
+  /** Jours ouvrables (lun-ven) d'un mois YYYY-MM — calendrier réel. */
+  private joursOuvresDuMois(year: number, month: number): number {
+    const start = new Date(Date.UTC(year, month - 1, 1));
+    const end = new Date(Date.UTC(year, month, 0));
+    let count = 0;
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const dow = d.getUTCDay();
+      if (dow !== 0 && dow !== 6) count++;
+    }
+    return count;
+  }
 
   /**
-   * Récupère les salaires bruts du mois pour le calcul IST.
+   * Lignes de paie RÉELLES du mois (period = "2026-01") :
+   * totaux IST/IRPP des salariés + retenues AIB des prestataires + détail
+   * nominatif par employé avec n° CNSS (employeeCNSS en priorité).
    */
   private async getMonthlyPayrollData(tenantId: string, period: string) {
-    // period = "2026-01" (YYYY-MM)
-    // Pour l'instant, on récupère les salaires de base du personnel
-    // TODO: brancher sur PayrollPrismaService quand disponible
-    const staff = await this.prisma.staff.findMany({
-      where: { tenantId, status: { not: 'ARCHIVED' } },
-      select: { id: true, firstName: true, lastName: true, salary: true, cnssNumber: true },
+    const items = await this.prisma.payrollItem.findMany({
+      where: { tenantId, payroll: { month: period } },
+      include: {
+        staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            cnssNumber: true,
+            statutContractuel: true,
+            ifuNumber: true,
+            employeeCNSS: { select: { cnssNumber: true, isActive: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
     });
 
-    const details = staff.map(s => ({
-      staffId: s.id,
-      name: `${s.firstName} ${s.lastName}`,
-      grossSalary: Number(s.salary || 0),
-      cnssNumber: s.cnssNumber || '',
+    const nameOf = (it: any) =>
+      `${it.staff?.firstName ?? ''} ${it.staff?.lastName ?? ''}`.trim();
+    const cnssNumberOf = (it: any) =>
+      it.staff?.employeeCNSS?.cnssNumber || it.staff?.cnssNumber || '';
+
+    // Prestataires → AIB (exclus des traitements et salaires) ;
+    // salariés → ITS (déclarés et non déclarés).
+    const prestataires = items.filter(
+      (it: any) => it.staff?.statutContractuel === 'PRESTATAIRE_SERVICE',
+    );
+    const salaries = items.filter(
+      (it: any) => it.staff?.statutContractuel !== 'PRESTATAIRE_SERVICE',
+    );
+
+    const details = salaries.map((it: any) => ({
+      staffId: it.staffId,
+      name: nameOf(it),
+      grossSalary: Number(it.grossSalary ?? 0),
+      cnssNumber: cnssNumberOf(it),
+      irpp: Number(it.irppAmount ?? 0),
+      cnssEmployee: Number(it.cnssEmployee ?? 0),
+      statutContractuel: it.staff?.statutContractuel ?? null,
+    }));
+
+    const prestataireDetails = prestataires.map((it: any) => ({
+      staffId: it.staffId,
+      name: nameOf(it),
+      address: '',
+      ifu: it.staff?.ifuNumber || '',
+      base: Number(it.grossSalary ?? 0),
+      prelevement: Number(it.otherDeductions ?? 0),
     }));
 
     return {
       totalGross: details.reduce((sum, d) => sum + d.grossSalary, 0),
       staffCount: details.length,
+      totalIrpp: salaries.reduce((s, it: any) => s + Number(it.irppAmount ?? 0), 0),
+      totalCnssEmployee: salaries.reduce((s, it: any) => s + Number(it.cnssEmployee ?? 0), 0),
+      totalAib: prestataires.reduce((s, it: any) => s + Number(it.otherDeductions ?? 0), 0),
+      prestataires: prestataireDetails,
       details,
+      payrollLines: items.length,
     };
   }
 
   /**
-   * Récupère les salaires bruts du trimestre pour le calcul CNSS.
-   * Inclut le détail par employé avec jours ouvrables et rémunération par mois (3 mois).
+   * Lignes de paie RÉELLES du trimestre (period = "2026-T1") pour la
+   * déclaration nominative CNSS : affiliation = SALARIE_DECLARE (ou héritage
+   * sans statut avec n° CNSS actif), jours ouvrables calendaires, rémunération
+   * réelle mois par mois depuis les items, parts ouvrière/patronale réelles.
    */
   private async getQuarterlyPayrollData(tenantId: string, period: string) {
     // period = "2026-T1" → extraire l'année et les 3 mois
@@ -313,42 +409,89 @@ export class TaxDeclarationService {
     const safePeriod = period || '';
     const yearMatch = safePeriod.match(/^(\d{4})-T(\d)$/);
     const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
-    const quarter = yearMatch ? parseInt(yearMatch[2]) : 1;
+    const quarter = yearMatch ? parseInt(yearMatch[2]) : Math.floor(new Date().getMonth() / 3) + 1;
     const startMonth = (quarter - 1) * 3 + 1; // T1=1, T2=4, T3=7, T4=10
     const months = [startMonth, startMonth + 1, startMonth + 2];
+    const monthKeys = months.map(m => `${year}-${String(m).padStart(2, '0')}`);
 
-    const staff = await this.prisma.staff.findMany({
-      where: { tenantId, status: { not: 'ARCHIVED' } },
-      select: { id: true, firstName: true, lastName: true, salary: true, cnssNumber: true },
+    const items = await this.prisma.payrollItem.findMany({
+      where: { tenantId, payroll: { month: { in: monthKeys } } },
+      include: {
+        payroll: { select: { month: true } },
+        staff: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            cnssNumber: true,
+            statutContractuel: true,
+            employeeCNSS: { select: { cnssNumber: true, isActive: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
     });
 
-    // Pour chaque employé: jours ouvrables et rémunération par mois
-    const details = staff.map(s => {
-      const monthlySalary = Number(s.salary || 0);
-      // Jours ouvrables standards (approximation: 26 jours par mois au Bénin)
-      const daysMonth1 = 26, daysMonth2 = 26, daysMonth3 = 26;
-      const totalDays = daysMonth1 + daysMonth2 + daysMonth3;
-
-      return {
-        staffId: s.id,
-        cnssNumber: s.cnssNumber || '',
-        name: `${s.firstName} ${s.lastName}`,
-        // Détail par mois (jours ouvrables)
-        daysMonth1, daysMonth2, daysMonth3,
-        totalDaysAssimilés: totalDays,
-        // Rémunération par mois
-        salaryMonth1: monthlySalary,
-        salaryMonth2: monthlySalary,
-        salaryMonth3: monthlySalary,
-        grossSalary: monthlySalary * 3, // Salaire brut trimestriel
-      };
+    // Affiliés CNSS : statut SALARIE_DECLARE, ou héritage (sans statut) avec
+    // n° CNSS actif — les non-déclarés et prestataires n'y figurent JAMAIS.
+    const affiliated = items.filter((it: any) => {
+      const statut = it.staff?.statutContractuel;
+      if (statut === 'PRESTATAIRE_SERVICE' || statut === 'SALARIE_NON_DECLARE') return false;
+      if (statut === 'SALARIE_DECLARE') return true;
+      return !!(it.staff?.employeeCNSS?.isActive && it.staff?.employeeCNSS?.cnssNumber);
     });
+
+    const daysByMonth: number[] = months.map(m => this.joursOuvresDuMois(year, m));
+
+    // Regroupement par employé — rémunération réelle par mois présent en paie
+    const byStaff = new Map<string, {
+      staffId: string; name: string; cnssNumber: string;
+      salaryByMonth: (number | null)[]; cnssEmployee: number; cnssEmployer: number;
+    }>();
+    for (const it of affiliated) {
+      const monthIdx = monthKeys.indexOf(it.payroll?.month ?? '');
+      if (monthIdx < 0) continue;
+      const key = it.staffId;
+      let entry = byStaff.get(key);
+      if (!entry) {
+        entry = {
+          staffId: key,
+          name: `${it.staff?.firstName ?? ''} ${it.staff?.lastName ?? ''}`.trim(),
+          cnssNumber: it.staff?.employeeCNSS?.cnssNumber || it.staff?.cnssNumber || '',
+          salaryByMonth: [null, null, null],
+          cnssEmployee: 0,
+          cnssEmployer: 0,
+        };
+        byStaff.set(key, entry);
+      }
+      entry.salaryByMonth[monthIdx] = Number(it.grossSalary ?? 0);
+      entry.cnssEmployee += Number(it.cnssEmployee ?? 0);
+      entry.cnssEmployer += Number(it.cnssEmployer ?? 0);
+    }
+
+    const details = Array.from(byStaff.values()).map(e => ({
+      staffId: e.staffId,
+      cnssNumber: e.cnssNumber,
+      name: e.name,
+      // Détail par mois (jours ouvrables calendaires du trimestre)
+      daysMonth1: daysByMonth[0],
+      daysMonth2: daysByMonth[1],
+      daysMonth3: daysByMonth[2],
+      totalDaysAssimilés: daysByMonth.reduce((a, b) => a + b, 0),
+      // Rémunération réelle par mois (0 si aucune paie ce mois-là)
+      salaryMonth1: e.salaryByMonth[0] ?? 0,
+      salaryMonth2: e.salaryByMonth[1] ?? 0,
+      salaryMonth3: e.salaryByMonth[2] ?? 0,
+      grossSalary: e.salaryByMonth.reduce((a, b) => a + (b ?? 0), 0),
+    }));
 
     return {
       totalGross: details.reduce((sum, d) => sum + d.grossSalary, 0),
       staffCount: details.length,
+      totalCnssEmployee: Array.from(byStaff.values()).reduce((a, e) => a + e.cnssEmployee, 0),
+      totalCnssEmployer: Array.from(byStaff.values()).reduce((a, e) => a + e.cnssEmployer, 0),
       details,
-      months: months.map(m => `${year}-${String(m).padStart(2, '0')}`),
+      months: monthKeys,
     };
   }
 }

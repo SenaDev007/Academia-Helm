@@ -636,7 +636,14 @@ export class PayrollPrismaService {
         //                          progressif + charges patronales provisionnées)
         //   Staff sans statut (héritage) → logique historique inchangée ci-dessous.
         //   Tous les taux proviennent de payroll_fiscal_rates (jamais en dur).
-        const statutContractuel = (staff as any).statutContractuel || null;
+        // ⭐ 16/11/2026 — repli sur le contrat ACTIF : le statut contractuel est
+        //    défini à l'onboarding (étape Contrat) et miroiré staff ↔ contrat ;
+        //    un staff hérité sans miroir est résolu depuis son contrat actif,
+        //    exactement comme payroll-documents.service.loadContext.
+        const statutContractuel =
+          ((staff as any).statutContractuel as string | null) ||
+          (contract?.statutContractuel as string | null) ||
+          null;
         const engineResult: any = statutContractuel
           ? await this.payrollEngine.calculateForStatut(Number(grossSalary), statutContractuel, {
               ifuPresent: !!(staff as any).ifuNumber,
@@ -903,12 +910,34 @@ export class PayrollPrismaService {
       .plus(overtimeAmount)
       .plus(bonuses);
 
+    // ─── ⭐ RH Bénin — moteur à deux branches selon le statut contractuel ───
+    //   16/11/2026 : le recalcul d'une ligne (bouton « Calculer taxes » ou
+    //   « Calculer Tout » de la page période) produit désormais les MÊMES
+    //   chiffres que la génération, dérivés du TYPE DE CONTRAT défini à
+    //   l'onboarding — plus aucune divergence de barème entre générer et
+    //   recalculer :
+    //     PRESTATAIRE_SERVICE → état de paiement : AIB uniquement
+    //     SALARIE_DECLARE     → fiche de paie : CNSS + ITS progressif
+    //     SALARIE_NON_DECLARE → fiche de paie : ITS uniquement
+    //   Sans statut (héritage) → logique historique ci-dessous, inchangée.
+    const contract = item.staff.contracts?.[0];
+    const statutContractuel =
+      ((item.staff as any).statutContractuel as string | null) ||
+      (contract?.statutContractuel as string | null) ||
+      null;
+    const engineResult: any = statutContractuel
+      ? await this.payrollEngine.calculateForStatut(Number(grossSalary), statutContractuel, {
+          ifuPresent: !!(item.staff as any).ifuNumber,
+        })
+      : null;
+    let aibAmount = new Prisma.Decimal(0);
+
     // ─── CNSS (uniquement pour les permanents avec numéro CNSS actif) ──
     let cnssEmployee = new Prisma.Decimal(0);
     let cnssEmployer = new Prisma.Decimal(0);
     let taxableAmount = grossSalary;
 
-    if (!vacataire && cnssRate) {
+    if (!vacataire && !engineResult && cnssRate) {
       const hasCnss = item.staff.employeeCNSS?.isActive && item.staff.employeeCNSS?.cnssNumber;
       if (hasCnss) {
         const ceiling = cnssRate.salaryCeiling
@@ -922,7 +951,7 @@ export class PayrollPrismaService {
 
     // ─── IRPP (uniquement pour les permanents, PAS les vacataires) ──
     let irppAmount = new Prisma.Decimal(0);
-    if (!vacataire && taxRates.length > 0 && taxableAmount.greaterThan(0)) {
+    if (!vacataire && !engineResult && taxRates.length > 0 && taxableAmount.greaterThan(0)) {
       let remaining = taxableAmount;
 
       for (const bracket of taxRates) {
@@ -949,11 +978,65 @@ export class PayrollPrismaService {
       }
     }
 
-    const otherDeductions = item.otherDeductions;
+    // ─── Override par le moteur statut contractuel (identique à generate) ───
+    if (engineResult) {
+      if (engineResult.documentPaieType === 'ETAT_DE_PAIEMENT') {
+        aibAmount = new Prisma.Decimal(engineResult.aib ?? 0);
+        cnssEmployee = new Prisma.Decimal(0);
+        cnssEmployer = new Prisma.Decimal(0);
+        taxableAmount = new Prisma.Decimal(0);
+        irppAmount = new Prisma.Decimal(0);
+      } else {
+        cnssEmployee = new Prisma.Decimal(engineResult.cnssSalarial ?? 0);
+        cnssEmployer = new Prisma.Decimal(engineResult.chargesPatronales?.total ?? 0);
+        taxableAmount = new Prisma.Decimal(engineResult.brutImposable ?? Number(grossSalary));
+        irppAmount = new Prisma.Decimal(engineResult.its ?? 0);
+      }
+    }
+
+    // Prestataire → la retenue AIB EST la retenue ; fiche de paie → autres
+    // retenues historiques de la ligne conservées (avances/oppositions).
+    const otherDeductions =
+      engineResult && engineResult.documentPaieType === 'ETAT_DE_PAIEMENT'
+        ? aibAmount
+        : item.otherDeductions;
     const totalDeductions = cnssEmployee
       .plus(irppAmount)
       .plus(otherDeductions);
     const netSalary = grossSalary.minus(totalDeductions);
+
+    // ⭐ RH Bénin — trace fiscale AIB recalculée (idempotente) : la ligne
+    //    prestataire garde sa piste d'audit tax_withholdings à jour même après
+    //    un recalcul (delete puis recreate — pas d'unicité en base).
+    if (statutContractuel === 'PRESTATAIRE_SERVICE' && aibAmount.greaterThan(0)) {
+      try {
+        await db.taxWithholding.deleteMany({
+          where: { payrollItemId: id, taxType: 'AIB', tenantId },
+        });
+        await db.taxWithholding.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            academicYearId: item.academicYearId ?? item.payroll?.academicYearId,
+            payrollItemId: id,
+            staffId: item.staffId,
+            taxType: 'AIB',
+            taxableAmount: grossSalary,
+            ratePercentage: new Prisma.Decimal(engineResult?.tauxAib ?? 0),
+            withheldAmount: aibAmount,
+            calculationDetails: {
+              statutContractuel,
+              documentPaieType: 'ETAT_DE_PAIEMENT',
+              ifuPresent: !!(item.staff as any).ifuNumber,
+              mention: engineResult?.mention ?? null,
+              source: 'payroll-engine recalc (payroll_fiscal_rates)',
+            },
+          },
+        });
+      } catch (twErr: any) {
+        this.logger?.warn?.(`AIB withholding trace (recalc) échoué (non bloquant) : ${twErr?.message}`);
+      }
+    }
 
     return db.payrollItem.update({
       where: { id },

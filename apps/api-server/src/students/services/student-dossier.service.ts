@@ -1379,15 +1379,18 @@ export class StudentDossierService {
       academicYearId,
     );
 
-    // Nom de fichier sûr (accents/espaces/caractères filesystem-dangereux)
+    // Nom de fichier sûr (accents/espaces/caractères filesystem-dangereux).
+    // ⚠️ Les POINTS sont préservés (contrairement au safe() du zip-writer) :
+    // « acte.pdf » doit garder son extension .pdf — sinon l'entrée ressort en
+    // .bin et Windows ne sait plus l'ouvrir d'un double-clic.
     const safe = (s: string | null | undefined): string =>
       (s ?? '')
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/[''`]/g, '')
-        .replace(/[^a-zA-Z0-9]+/g, '_')
+        .replace(/[^a-zA-Z0-9._-]+/g, '_')
         .replace(/^_+|_+$/g, '')
-        .slice(0, 60);
+        .slice(0, 80);
     const lastName = safe(idn.lastName) || 'Eleve';
     const firstName = safe(idn.firstName);
     const matricule = safe(idn.matricule);

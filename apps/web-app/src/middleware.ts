@@ -955,6 +955,14 @@ export const config = {
     // vidéos, sons…) : servis tels quels sur TOUS les domaines (satellites
     // academiafederis/patronatXXX compris) — sinon le rewrite satellite les
     // transforme en /federis/… → 404 → images de la bibliothèque cassées.
-    '/((?!_next/static|_next/image|favicon.ico|.well-known/|images/|fonts/|uploads/|videos/|sounds/|logos/|icons/|legal/|orion-rules/|pedagogy-assets/|pedagogy-images/|~partytown/|sw.js|sw-site.js|sw-chat.js|manifest.json|manifest-site.webmanifest|manifest-app.webmanifest|pwa-icon|apple-touch-icon.png|robots.txt|sitemap.xml|api/).*)',
+    // ✅ Task 122 — Canal de releases releases.academiahelm.com : binaires
+    // (setup .exe/.deb/.tar.gz, APK) + manifests latest.json. SANS cette
+    // exclusion, withAntiCacheHeaders() du middleware écrase le
+    // Cache-Control « immutable 1 an » défini dans next.config.js → tous les
+    // téléchargements repartent de l'origine à chaque fois + 1 invocation
+    // Edge Function (résolution de tenant inutile) par fichier servi.
+    // NB : la PAGE /desktop (exact) reste couverte par le middleware — seuls
+    // les sous-chemins msi/nsis/deb/targz (binaires + manifests) sont exclus.
+    '/((?!_next/static|_next/image|favicon.ico|.well-known/|images/|fonts/|uploads/|videos/|sounds/|logos/|icons/|legal/|orion-rules/|pedagogy-assets/|pedagogy-images/|~partytown/|sw.js|sw-site.js|sw-chat.js|manifest.json|manifest-site.webmanifest|manifest-app.webmanifest|pwa-icon|apple-touch-icon.png|robots.txt|sitemap.xml|desktop/msi/|desktop/nsis/|desktop/deb/|desktop/targz/|mobile/|api/).*)',
   ],
 };

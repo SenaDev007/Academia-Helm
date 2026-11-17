@@ -260,8 +260,17 @@ export default function NewPaymentModal({
   }, [classes, selectedLevelId, levels]);
 
   // Élèves filtrés par niveau + classe + recherche
+  // ⭐ FIX 2026-11-18 (« le sélecteur élève ne liste pas tous les élèves de la
+  //    classe ») : AVANT, on filtrait accounts sur balance > 0 — seuls les
+  //    élèves avec un solde dû apparaissaient dans le sélecteur (ex réel :
+  //    classe de 46 inscrits, 10 visibles). Les élèves soldés ou à crédit
+  //    étaient introuvables par le caissier alors qu'ils sont bien en base.
+  //    → On liste DÉSORMAIS TOUS les élèves du niveau/classe sélectionnés :
+  //    avances, frais généraux à la carte, articles boutique, simple
+  //    consultation du compte… Les débiteurs (solde dû) restent en tête,
+  //    l'ordre alphabétique du backend est conservé au sein de chaque groupe.
   const filteredAccounts = useMemo(() => {
-    let result = accounts.filter((a) => Number(a.balance) > 0);
+    let result = accounts;
 
     // Filtrer par niveau si sélectionné (même sans classe spécifique)
     if (selectedLevelId) {
@@ -302,6 +311,12 @@ export default function NewPaymentModal({
         return name.includes(q);
       });
     }
+
+    // ⭐ FIX 2026-11-18 — Débiteurs d'abord (solde dû > 0), puis élèves
+    //    soldés/à crédit : TOUS restent sélectionnables et trouvables.
+    const withDebt = result.filter((a) => Number(a.balance) > 0);
+    const withoutDebt = result.filter((a) => Number(a.balance) <= 0);
+    result = [...withDebt, ...withoutDebt];
 
     return result;
   }, [accounts, selectedLevelId, selectedClassId, studentSearch, levels, classes]);
@@ -1111,7 +1126,7 @@ export default function NewPaymentModal({
               <SelectContent>
                 {filteredAccounts.map((a) => (
                   <SelectItem key={a.id} value={a.id}>
-                    {a.student ? `${a.student.lastName} ${a.student.firstName}` : a.studentId} — Solde {formatCurrency(a.balance)}
+                    {a.student ? `${a.student.lastName} ${a.student.firstName}${a.student.matricule ? ` (${a.student.matricule})` : ''}` : a.studentId} — Solde {formatCurrency(a.balance)}
                   </SelectItem>
                 ))}
               </SelectContent>

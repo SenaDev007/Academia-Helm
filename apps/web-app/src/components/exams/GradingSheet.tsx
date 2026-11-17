@@ -554,25 +554,35 @@ export function GradingSheet({
         })
       );
 
-      // 2. Si validation : changer le statut de l'évaluation à OPEN_FOR_GRADING
-      //    (les notes sont validées par l'enseignant — pas encore soumises au directeur)
-      //    La soumission au directeur se fera depuis l'Espace Pédagogique
+      // 2. Si validation : SOUMETTRE l'évaluation au directeur (→ SUBMITTED)
+      //    ⭐ FIX 2026-11-18 — « les notes validées ne s'affichent pas dans les
+      //    onglets Validation / Registre / Bulletins » : avant, on appelait
+      //    POST /:id/open (→ OPEN_FOR_GRADING). Résultat : l'évaluation
+      //    n'apparaissait NI dans l'onglet Validation (filtre status=SUBMITTED)
+      //    NI dans Registre des notes / Bulletins (filtre status=VALIDATED) —
+      //    la chaîne de validation était interrompue, les notes restaient
+      //    invisibles après la validation de la saisie.
+      //    → On soumet désormais via PATCH /:id/submit (accepté depuis PLANNED
+      //    ou OPEN_FOR_GRADING) : l'évaluation apparaît immédiatement dans
+      //    l'onglet Validation, où le directeur la valide définitivement
+      //    (→ VALIDATED) — elle est alors visible dans Registre des notes et
+      //    Bulletins.
       if (submit) {
         const submitErrors: string[] = [];
         await Promise.all(
           group.evaluationIds.map(async (evId) => {
             try {
-              // ⭐ Ouvrir pour saisie = validation de l'enseignant
-              // Le statut passe à OPEN_FOR_GRADING (les notes sont saisies et validées)
-              await apiClient.post(`/institutional-exams/evaluations/${evId}/open`);
+              // ⭐ Soumission au directeur : PLANNED/OPEN_FOR_GRADING → SUBMITTED
+              //    (le lot de validation est créé côté serveur)
+              await apiClient.patch(`/institutional-exams/evaluations/${evId}/submit`);
             } catch (err: any) {
-              console.error(`Failed to validate evaluation ${evId}:`, err.response?.data || err.message);
+              console.error(`Failed to submit evaluation ${evId}:`, err.response?.data || err.message);
               submitErrors.push(evId);
             }
           })
         );
         if (submitErrors.length > 0) {
-          throw new Error(`Échec de la validation pour ${submitErrors.length} évaluation(s). Vérifiez la console.`);
+          throw new Error(`Échec de la soumission pour ${submitErrors.length} évaluation(s). Vérifiez la console.`);
         }
       }
 
@@ -596,7 +606,7 @@ export function GradingSheet({
 
       toastSuccess(submit ? 'Notes validées' : 'Notes enregistrées', {
         description: submit
-          ? 'Les notes sont disponibles dans l\'Espace Pédagogique pour soumission au directeur.'
+          ? 'Les notes sont soumises au directeur — validez-les définitivement dans l\'onglet Validation.'
           : `${rows.length} élève(s) · ${group.subjects.length} matière(s)`,
       });
       if (submit) onBack();
@@ -967,15 +977,15 @@ export function GradingSheet({
                         ? `Validate the marks of ${group.className}?\n\n` +
                           `Assessment: ${group.evaluationTypeName}\n` +
                           `${rows.length} pupil(s) · ${group.subjects.length} subject(s)\n\n` +
-                          `Validated marks become available in the Pedagogical Space for submission to the Director.`
+                          `The marks will be submitted to the Director for final validation.`
                         : `Valider la saisie des notes de ${group.className} ?\n\n` +
                           `Évaluation : ${group.evaluationTypeName}\n` +
                           `${rows.length} élève(s) · ${group.subjects.length} matière(s)\n\n` +
-                          `Les notes validées seront disponibles dans l'Espace Pédagogique pour soumission au directeur.`,
+                          `Les notes seront soumises au directeur pour validation définitive. Elles apparaîtront dans l'onglet Validation.`,
                       isEN ? 'Validate marks' : 'Valider la saisie',
                       isEN
-                        ? 'Marks will be locked for modification from this module. Final submission happens in the Pedagogical Space.'
-                        : 'Les notes seront verrouillées pour modification depuis ce module. La soumission finale se fait depuis l\'Espace Pédagogique.'
+                        ? 'The marks will be locked for modification. Final approval happens in the Validation tab.'
+                        : 'Les notes seront verrouillées pour modification. La validation définitive se fait dans l\'onglet Validation.'
                     );
                     if (ok) handleSave(true);
                   }}

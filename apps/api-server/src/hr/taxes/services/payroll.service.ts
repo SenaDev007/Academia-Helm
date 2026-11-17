@@ -62,7 +62,12 @@ export class PayrollService {
       where: {
         tenantId,
         status: { not: 'ARCHIVED' },
-        ...(staffType === 'VACATAIRE' ? { contractType: 'VACATAIRE' } : { contractType: { not: 'VACATAIRE' } }),
+        // ⭐ 125 — sémantique NULL : « non-VACATAIRE » doit INCLURE les fiches
+        //    sans contractType (NULL/'' — dossiers hérités). Un simple
+        //    `contractType: { not: 'VACATAIRE' }` les excluerait (SQL NULL).
+        ...(staffType === 'VACATAIRE'
+          ? { contractType: 'VACATAIRE' }
+          : { OR: [{ contractType: null }, { contractType: '' }, { contractType: { not: 'VACATAIRE' } }] }),
       },
       select: { id: true, firstName: true, lastName: true, salary: true, cnssNumber: true, position: true },
     });

@@ -820,6 +820,33 @@ function MobileDownloads({
 
 // ── Composant: Lien de téléchargement avec vérification de disponibilité ──
 
+// ⭐ 17/11/2026 — AUCUN terme technique sur la page : les noms de fichiers
+//    techniques (x64-setup.exe, amd64.deb, tar.gz, apk…) ne sont plus
+//    AFFICHÉS — libellé grand public par type d'installateur. Le nom réel
+//    reste utilisé pour l'enregistrement du fichier (link.download).
+function friendlyAssetLabel(asset: ReleaseAsset, fileFormat: string | null): string {
+  switch (fileFormat) {
+    case "exe":
+    case "msi":
+      return "Installateur Windows";
+    case "deb":
+    case "rpm":
+      return "Installateur Linux";
+    case "dmg":
+    case "app":
+      return "Installateur macOS";
+    case "apk":
+    case "aab":
+      return "Application Android";
+    case "ipa":
+      return "Application iOS";
+    default:
+      return asset.platform === "linux"
+        ? "Installateur Linux (portable)"
+        : "Fichier d'installation";
+  }
+}
+
 function DownloadLink({
   asset,
   fileFormat,
@@ -828,6 +855,7 @@ function DownloadLink({
   fileFormat: ReturnType<typeof detectFileFormat>;
 }) {
   const { available, checking } = useFileAvailability(asset.downloadUrl);
+  const friendlyName = friendlyAssetLabel(asset, fileFormat);
 
   if (checking) {
     return (
@@ -835,7 +863,7 @@ function DownloadLink({
         <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
           {fileFormat && <FileFormatIcon format={fileFormat} size={32} className="hidden sm:flex" />}
           <div className="flex-1 min-w-0">
-            <p className="text-xs sm:text-sm font-semibold text-slate-400 truncate">{asset.name}</p>
+            <p className="text-xs sm:text-sm font-semibold text-slate-400 truncate">{friendlyName}</p>
             <p className="text-[10px] sm:text-xs text-slate-400">Vérification...</p>
           </div>
         </div>
@@ -850,7 +878,7 @@ function DownloadLink({
         <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
           {fileFormat && <FileFormatIcon format={fileFormat} size={32} className="hidden sm:flex" />}
           <div className="flex-1 min-w-0">
-            <p className="text-xs sm:text-sm font-semibold text-slate-500 truncate">{asset.name}</p>
+            <p className="text-xs sm:text-sm font-semibold text-slate-500 truncate">{friendlyName}</p>
             <p className="text-[10px] sm:text-xs text-amber-600 font-semibold">Bientôt disponible</p>
           </div>
         </div>
@@ -876,7 +904,7 @@ function DownloadLink({
       <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
         {fileFormat && <FileFormatIcon format={fileFormat} size={32} className="hidden sm:flex" />}
         <div className="flex-1 min-w-0">
-          <p className="text-xs sm:text-sm font-semibold text-[#0b2f73] truncate">{asset.name}</p>
+          <p className="text-xs sm:text-sm font-semibold text-[#0b2f73] truncate">{friendlyName}</p>
           <p className="text-[10px] sm:text-xs text-slate-500">{asset.size}</p>
         </div>
       </div>

@@ -13,6 +13,13 @@
  *   4. L'admin corrige les erreurs éventuelles et confirme l'import
  *   5. Le système crée Student + StudentEnrollment + StudentAccount
  *
+ * ⭐ 2026-11-17 — IMPORT INTELLIGENT (anti-doublons) : le preview rapproche
+ * chaque ligne des élèves EXISTANTS de l'établissement (identité normalisée :
+ * prénom + nom + date de naissance, à défaut téléphone du parent). Un élève
+ * reconnu est MIS À JOUR (jamais dupliqué) ; s'il est importé dans une autre
+ * classe, sa classe est changée automatiquement. Un élève figurant deux
+ * fois dans le fichier est signalé comme doublon de fichier.
+ *
  * Accessible depuis le module Élèves > Inscriptions.
  * ============================================================================
  */
@@ -21,15 +28,24 @@
 import { useState, useRef } from 'react';
 import {
   X, Upload, Download, FileSpreadsheet, CheckCircle2, AlertCircle,
-  Loader2, Users, ArrowRight,
+  Loader2, Users, ArrowRight, RefreshCw, ArrowLeftRight, UserCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ResponsiveTableWrapper from '@/components/ui/tables/ResponsiveTableWrapper';
 import { useToast } from '@/components/ui/use-toast';
 import { useModuleContext } from '@/hooks/useModuleContext';
 
+interface PreviewRowMatch {
+  existingMatricule: string | null;
+  existingClassName: string | null;
+  confidence: 'DOB' | 'PHONE' | 'NAME';
+  action: 'UPDATE_INFO' | 'MOVE_CLASS' | 'REENROLL';
+  warnings: string[];
+}
+
 interface PreviewRow {
   rowIndex: number;
+  sheetName?: string;
   firstName: string;
   lastName: string;
   dateOfBirth: string | null;
@@ -40,6 +56,8 @@ interface PreviewRow {
   guardianName: string | null;
   errors: string[];
   isValid: boolean;
+  /** ⭐ Rapprochement avec un élève existant (undefined = nouvel élève). */
+  match?: PreviewRowMatch;
 }
 
 interface PreviewResult {
@@ -52,6 +70,11 @@ interface PreviewResult {
     oldStudents: number;
     byLevel: Record<string, number>;
     byClass: Record<string, number>;
+    /** ⭐ Import intelligent : répartition des actions prévues. */
+    created: number;
+    updatedInfo: number;
+    movedClass: number;
+    reenrolled: number;
   };
 }
 
@@ -59,12 +82,22 @@ interface ImportRunResult {
   totalRows: number;
   succeeded: number;
   failed: number;
+  /** ⭐ Import intelligent : répartition des actions effectuées. */
+  summary?: {
+    created: number;
+    updatedInfo: number;
+    movedClass: number;
+    reenrolled: number;
+  };
   results: Array<{
     rowIndex: number;
+    sheetName?: string;
     studentName: string;
     success: boolean;
     error?: string;
     studentId?: string;
+    action?: 'CREATE' | 'UPDATE_INFO' | 'MOVE_CLASS' | 'REENROLL';
+    message?: string;
   }>;
 }
 
@@ -213,7 +246,18 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
       setImportResult(data);
       setStep('done');
       if (data.failed === 0) {
-        toast({ title: '✅ Import terminé', description: `${data.succeeded} élève(s) importé(s) avec succès.` });
+        const s = data.summary;
+        const parts: string[] = [];
+        if (s?.created) parts.push(`${s.created} créé(s)`;
+        if (s?.updatedInfo) parts.push(`${s.updatedInfo} mis à jour`);
+        if (s?.movedClass) parts.push(`${s.movedClass} changement(s) de classe`);
+        if (s?.reenrolled) parts.push(`${s.reenrolled} réinscrit(s)`);
+        toast({
+          title: '✅ Import terminé — aucun doublon',
+          description: parts.length
+            ? `${data.succeeded} élève(s) traité(s) : ${parts.join(', ')}.`
+            : `${data.succeeded} élève(s) traité(s) avec succès.`,
+        });
       } else {
         toast({
           title: 'Import terminé avec erreurs',
@@ -318,6 +362,19 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
                 </ul>
               </div>
 
+              {/* ⭐ Import intelligent — explication */}
+              <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl">
+                <p className="text-xs font-bold text-emerald-800 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                  <UserCheck className="w-3.5 h-3.5" /> Import intelligent — aucun doublon
+                </p>
+                <ul className="text-xs text-emerald-800/90 space-y-1.5">
+                  <li>• Un élève <strong>déjà présent dans votre base</strong> est automatiquement <strong>mis à jour</strong> (ses informations manquantes sont complétées, son matricule est conservé) — jamais dupliqué</li>
+                  <li>• Si l'élève est importé dans une <strong>autre classe</strong> que la sienne, sa classe est <strong>changée automatiquement</strong> (changement tracé dans son parcours)</li>
+                  <li>• Un élève figurant <strong>deux fois dans le fichier</strong> est signalé comme doublon — corrigez le fichier, une seule occurrence est conservée</li>
+                  <li>• La <strong>date de naissance</strong> (ou le téléphone du parent) permet de reconnaître vos anciens élèves avec certitude</li>
+                </ul>
+              </div>
+
               {/* Bouton valider */}
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={handleClose}>Annuler</Button>
@@ -354,7 +411,39 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
                 </div>
               </div>
 
-              {/* Répartition nouveaux/anciens */}
+              {/* ⭐ Import intelligent — répartition des actions prévues */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2.5">
+                  <UserCheck className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-lg font-bold text-emerald-800 leading-tight">{preview.summary.created ?? preview.summary.newStudents}</p>
+                    <p className="text-[11px] text-emerald-600 leading-tight">Nouveaux élèves à créer</p>
+                  </div>
+                </div>
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2.5">
+                  <RefreshCw className="w-5 h-5 text-blue-600 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-lg font-bold text-blue-800 leading-tight">{preview.summary.updatedInfo ?? 0}</p>
+                    <p className="text-[11px] text-blue-600 leading-tight">Existants — à mettre à jour</p>
+                  </div>
+                </div>
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2.5">
+                  <ArrowLeftRight className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-lg font-bold text-amber-800 leading-tight">{preview.summary.movedClass ?? 0}</p>
+                    <p className="text-[11px] text-amber-600 leading-tight">Changements de classe</p>
+                  </div>
+                </div>
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg flex items-center gap-2.5">
+                  <Users className="w-5 h-5 text-indigo-600 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-lg font-bold text-indigo-800 leading-tight">{preview.summary.reenrolled ?? 0}</p>
+                    <p className="text-[11px] text-indigo-600 leading-tight">Réinscriptions (autre année)</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Répartition nouveaux/anciens (frais) */}
               <div className="flex gap-3">
                 <div className="flex-1 p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-emerald-600" />
@@ -383,15 +472,19 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
                         <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Élève</th>
                         <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Classe</th>
                         <th className="px-3 py-2 text-center font-medium text-slate-600 text-xs">Type</th>
+                        <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Base de données</th>
                         <th className="px-3 py-2 text-left font-medium text-slate-600 text-xs">Statut</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {preview.rows.slice(0, 100).map((row) => (
-                        <tr key={row.rowIndex} className={row.isValid ? '' : 'bg-rose-50/50'}>
+                        <tr key={`${row.sheetName ?? ''}-${row.rowIndex}`} className={row.isValid ? '' : 'bg-rose-50/50'}>
                           <td className="px-3 py-2 text-xs text-slate-400">{row.rowIndex}</td>
                           <td className="px-3 py-2">
                             <span className="font-medium text-slate-800">{row.lastName} {row.firstName}</span>
+                            {row.match?.existingMatricule && (
+                              <span className="block text-[10px] text-slate-400">Matricule : {row.match.existingMatricule}</span>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-xs text-slate-600">{row.schoolLevelName} — {row.className}</td>
                           <td className="px-3 py-2 text-center">
@@ -401,6 +494,30 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
                               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Ancien</span>
                             ) : (
                               <span className="text-[10px] text-slate-400">—</span>
+                            )}
+                          </td>
+                          {/* ⭐ Détection intelligente */}
+                          <td className="px-3 py-2">
+                            {!row.match ? (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">Nouveau</span>
+                            ) : row.match.action === 'MOVE_CLASS' ? (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700" title={row.match.warnings?.join('\n')}>
+                                Changement de classe{row.match.existingClassName ? ` : ${row.match.existingClassName} → ${row.className}` : ''}
+                              </span>
+                            ) : row.match.action === 'REENROLL' ? (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700" title={row.match.warnings?.join('\n')}>
+                                Existant — à réinscrire
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700" title={row.match.warnings?.join('\n')}>
+                                Existant — à mettre à jour
+                              </span>
+                            )}
+                            {row.match?.confidence === 'NAME' && (
+                              <span className="block text-[10px] text-slate-400 mt-0.5">rapprochement par le nom seul — à vérifier</span>
+                            )}
+                            {row.match?.confidence === 'PHONE' && (
+                              <span className="block text-[10px] text-slate-400 mt-0.5">reconnu par le téléphone du parent</span>
                             )}
                           </td>
                           <td className="px-3 py-2">
@@ -438,6 +555,28 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
                 </div>
               )}
 
+              {/* ⭐ Avertissements de rapprochement (confiance faible) */}
+              {(() => {
+                const warnRows = preview.rows.filter((r) => r.isValid && r.match?.warnings?.length);
+                if (warnRows.length === 0) return null;
+                return (
+                  <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-sky-600 mt-0.5 flex-shrink-0" />
+                    <div className="text-xs text-sky-800 min-w-0">
+                      <p><strong>{warnRows.length} élève(s) reconnu(s) avec un élément à vérifier</strong> (rapprochement à confirmer, date de naissance à compléter…) :</p>
+                      <ul className="mt-1 space-y-0.5">
+                        {warnRows.slice(0, 5).map((r) => (
+                          <li key={`${r.sheetName ?? ''}-${r.rowIndex}`} className="truncate">
+                            — {r.lastName} {r.firstName} : {r.match!.warnings.join(' ')}
+                          </li>
+                        ))}
+                        {warnRows.length > 5 && <li>… et {warnRows.length - 5} autre(s)</li>}
+                      </ul>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Boutons */}
               <div className="flex justify-between gap-2">
                 <Button variant="outline" onClick={() => setStep('upload')}>
@@ -449,7 +588,13 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
                   className="bg-emerald-600 hover:bg-emerald-700 text-white"
                 >
                   {loading ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1.5" />}
-                  Importer {preview.validRows} élève(s)
+                  {(() => {
+                    const total = preview.validRows;
+                    const created = preview.summary.created ?? 0;
+                    if (created === total) return `Importer ${total} élève(s)`;
+                    if (created === 0) return `Mettre à jour ${total} élève(s)`;
+                    return `Importer / mettre à jour ${total} élève(s)`;
+                  })()}
                 </Button>
               </div>
             </div>
@@ -460,14 +605,14 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
             <div className="flex flex-col items-center justify-center py-16">
               <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mb-4" />
               <p className="text-lg font-semibold text-slate-800">Import en cours...</p>
-              <p className="text-sm text-slate-500 mt-1">Création des élèves, inscriptions et comptes financiers</p>
+              <p className="text-sm text-slate-500 mt-1 text-center px-6">Création des nouveaux élèves, mise à jour des élèves reconnus, inscriptions et comptes financiers</p>
             </div>
           )}
 
           {/* ─── Étape 4 : Done ─── */}
           {step === 'done' && importResult && (
             <div className="space-y-6">
-              <div className="flex flex-col items-center py-8">
+              <div className="flex flex-col items-center py-6">
                 {importResult.failed === 0 ? (
                   <CheckCircle2 className="w-16 h-16 text-emerald-500 mb-3" />
                 ) : (
@@ -475,12 +620,57 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
                 )}
                 <h3 className="text-xl font-bold text-slate-900">Import terminé</h3>
                 <p className="text-sm text-slate-500 mt-1">
-                  {importResult.succeeded} élève(s) importé(s) avec succès
+                  {importResult.succeeded} élève(s) traité(s) avec succès
                   {importResult.failed > 0 && `, ${importResult.failed} échec(s)`}
                 </p>
               </div>
 
-              {/* Détails */}
+              {/* ⭐ Répartition des actions (import intelligent) */}
+              {importResult.summary && (
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-center">
+                    <p className="text-2xl font-bold text-emerald-700">{importResult.summary.created}</p>
+                    <p className="text-xs text-emerald-600">Nouveaux élèves créés</p>
+                  </div>
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-center">
+                    <p className="text-2xl font-bold text-blue-700">{importResult.summary.updatedInfo}</p>
+                    <p className="text-xs text-blue-600">Existants mis à jour</p>
+                  </div>
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-center">
+                    <p className="text-2xl font-bold text-amber-700">{importResult.summary.movedClass}</p>
+                    <p className="text-xs text-amber-600">Changements de classe</p>
+                  </div>
+                  <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-center">
+                    <p className="text-2xl font-bold text-indigo-700">{importResult.summary.reenrolled}</p>
+                    <p className="text-xs text-indigo-600">Réinscriptions</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ⭐ Détail par élève (message de l'action effectuée) */}
+              {importResult.results.some((r) => r.success && r.message) && (
+                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="p-3 bg-slate-50 border-b border-slate-100">
+                    <p className="text-sm font-semibold text-slate-800">Ce que le système a fait</p>
+                  </div>
+                  <div className="max-h-[220px] overflow-y-auto">
+                    <ResponsiveTableWrapper>
+                    <table className="w-full text-sm">
+                      <tbody className="divide-y divide-slate-100">
+                        {importResult.results.filter((r) => r.success && r.message).slice(0, 200).map((r) => (
+                          <tr key={`${r.sheetName ?? ''}-${r.rowIndex}`}>
+                            <td className="px-3 py-2 font-medium text-slate-800 whitespace-nowrap">{r.studentName}</td>
+                            <td className="px-3 py-2 text-xs text-slate-600">{r.message}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    </ResponsiveTableWrapper>
+                  </div>
+                </div>
+              )}
+
+              {/* Détails des échecs */}
               {importResult.failed > 0 && (
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
                   <div className="p-3 bg-rose-50 border-b border-rose-100">
@@ -491,7 +681,7 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
                     <table className="w-full text-sm">
                       <tbody className="divide-y divide-slate-100">
                         {importResult.results.filter((r) => !r.success).map((r) => (
-                          <tr key={r.rowIndex}>
+                          <tr key={`${r.sheetName ?? ''}-${r.rowIndex}`}>
                             <td className="px-3 py-2 text-xs text-slate-400">Ligne {r.rowIndex}</td>
                             <td className="px-3 py-2 font-medium text-slate-800">{r.studentName}</td>
                             <td className="px-3 py-2 text-xs text-rose-600">{r.error}</td>

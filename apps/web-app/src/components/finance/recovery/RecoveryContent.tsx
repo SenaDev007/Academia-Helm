@@ -33,7 +33,7 @@ import {
   Send, Play, Loader2, ChevronRight, Filter, Search,
   Phone, Mail, FileText, UserCheck, Clock, AlertTriangle,
   Zap, CheckCircle2, XCircle, Calendar, Plus, Eye, FileSpreadsheet, Trash2, Settings,
-  Upload,
+  Upload, Banknote,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -1576,6 +1576,13 @@ function ArrearsTab({
   const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
 
+  // ⭐ Encaissement d'un arriéré (marquer un élève ayant payé) — modal dédié.
+  //    Le POST /finance/collection/arrears/:id/payment enregistre la
+  //    FinanceTransaction PAYMENT ; le compte de l'élève est recalculé
+  //    automatiquement (trigger DB) et la liste des arriérés se recharge
+  //    via l'événement 'recovery-reload' (invalidateRecoveryData).
+  const [paymentArrear, setPaymentArrear] = useState<any | null>(null);
+
   // ⭐ Suppression multiple — sélection des lignes du tableau
   // (cases à cocher + « tout sélectionner » sur la liste filtrée affichée)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -1897,6 +1904,21 @@ function ArrearsTab({
                         >
                           <HelmConnectIcon className="w-3.5 h-3.5" />
                         </Button>
+                        {/* ⭐ Encaisser — marquer l'élève ayant payé son arriéré.
+                            Ouvre le modal d'encaissement ciblé : la
+                            FinanceTransaction recalcule automatiquement le
+                            compte de l'élève (trigger DB) et l'arriéré. */}
+                        {(!a.status || a.status === 'OPEN' || a.status === 'PARTIALLY_PAID') && Number(a.balanceDue) > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 hover:bg-emerald-100 hover:shadow-sm transition-all duration-150"
+                            onClick={() => setPaymentArrear(a)}
+                            title="Encaisser / marquer payé (recalcul automatique du compte)"
+                          >
+                            <Banknote className="w-3.5 h-3.5 text-emerald-600" />
+                          </Button>
+                        )}
                         {/* Abandonner (write-off) — uniquement si OPEN ou PARTIALLY_PAID */}
                         {(!a.status || a.status === 'OPEN' || a.status === 'PARTIALLY_PAID') && (
                           <Button
@@ -1964,6 +1986,32 @@ function ArrearsTab({
           )}
         </Table>
       </div>
+
+      {/* ⭐ Modal d'encaissement d'un arriéré (marquer un élève ayant payé) */}
+      {paymentArrear && (
+        <ArrearPaymentModal
+          arrear={paymentArrear}
+          onClose={() => setPaymentArrear(null)}
+          onSubmitted={(remaining: number) => {
+            // Recalcul dynamique : la mutation invalide les queries recovery
+            // (arrears + statistics + cases) → la liste et les KPIs se
+            // rechargent automatiquement avec les nouveaux soldes.
+            window.dispatchEvent(new CustomEvent('recovery-reload'));
+            if (remaining <= 0) {
+              toast({
+                title: '✅ Arriéré entièrement soldé',
+                description: 'L\'arriéré passe au statut PAID — le compte de l\'élève a été recalculé automatiquement.',
+              });
+            } else {
+              toast({
+                title: '✅ Paiement enregistré',
+                description: `Restant dû sur cet arriéré : ${formatCurrency(remaining)} — le compte de l'élève a été recalculé automatiquement.`,
+              });
+            }
+            setPaymentArrear(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -4515,6 +4563,242 @@ function CaseDetailModal({ caseData, onClose }: { caseData: any; onClose: () => 
               Cliquez sur « Lancer escalade auto » en haut pour déclencher le workflow sur tous les cas.
             </p>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Modal — Encaissement d'un arriéré (marquer un élève ayant payé)    */
+/* ------------------------------------------------------------------ */
+
+function ArrearPaymentModal({
+  arrear,
+  onClose,
+  onSubmitted,
+}: {
+  arrear: any;
+  onClose: () => void;
+  /** Appelé après enregistrement avec le NOUVEAU restant dû de l'arriéré. */
+  onSubmitted: (remainingBalanceDue: number) => void;
+}) {
+  const { toast } = useToast();
+  const balanceDue = Number(arrear.balanceDue) || 0;
+  const [amount, setAmount] = useState<string>(String(balanceDue || ''));
+  const [paymentMethod, setPaymentMethod] = useState<string>('CASH');
+  const [reference, setReference] = useState('');
+  const [notes, setNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const studentName = arrear.student
+    ? `${arrear.student.lastName} ${arrear.student.firstName}`
+    : '—';
+  const className = arrear.student?.studentEnrollments?.[0]?.class?.name || '—';
+  const feeLabel = arrear.studentFee?.feeDefinition?.label || arrear.notes || '—';
+  const parsedAmount = Number(amount) || 0;
+  const amountInvalid = parsedAmount <= 0 || parsedAmount > balanceDue + 1e-9;
+  const newRemaining = Math.max(0, balanceDue - (amountInvalid ? 0 : parsedAmount));
+
+  const handleSubmit = async () => {
+    if (amountInvalid || submitting) return;
+    setSubmitting(true);
+    try {
+      const result = await financeService.recordArrearPayment(arrear.id, {
+        amount: parsedAmount,
+        paymentMethod,
+        reference: reference.trim() || undefined,
+        notes: notes.trim() || undefined,
+      });
+      const remaining = Number(result?.arrear?.balanceDue ?? newRemaining);
+      onSubmitted(remaining);
+    } catch (e: any) {
+      // L'erreur serveur (montant > restant dû, caisse fermée, etc.) est
+      // affichée TELLE QUELLE — l'utilisateur sait exactement quoi corriger.
+      const message =
+        e?.response?.data?.message ||
+        e?.data?.message ||
+        e?.message ||
+        'Erreur inconnue lors de l\'encaissement.';
+      toast({
+        title: '❌ Encaissement refusé',
+        description: Array.isArray(message) ? message.join(' · ') : String(message),
+        variant: 'destructive',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
+      onClick={submitting ? undefined : onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* En-tête émeraude */}
+        <div className="bg-gradient-to-br from-emerald-600 to-emerald-700 px-6 py-4 text-white">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 rounded-full p-2">
+              <Banknote className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold">Encaisser un arriéré</h3>
+              <p className="text-xs text-emerald-100 mt-0.5">
+                Marquer l'élève ayant payé — recalcul automatique du compte
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Corps */}
+        <div className="p-6 space-y-4 overflow-y-auto">
+          {/* Récapitulatif de l'arriéré */}
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
+              <div className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                {studentName}
+              </div>
+              <div className="text-xs text-slate-500">{className}</div>
+            </div>
+            <div className="px-4 py-3 grid grid-cols-3 gap-3 text-center">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Total dû</p>
+                <p className="text-sm font-bold text-slate-900">{formatCurrency(Number(arrear.totalDue))}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Payé</p>
+                <p className="text-sm font-bold text-emerald-700">{formatCurrency(Number(arrear.totalPaid))}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Restant dû</p>
+                <p className="text-sm font-bold text-rose-700">{formatCurrency(balanceDue)}</p>
+              </div>
+            </div>
+            {feeLabel && feeLabel !== '—' && (
+              <div className="px-4 py-2 border-t border-slate-100 text-xs text-slate-500 truncate">
+                {feeLabel}
+              </div>
+            )}
+          </div>
+
+          {/* Montant encaissé */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+              Montant encaissé (FCFA)
+            </Label>
+            <Input
+              type="number"
+              min={1}
+              max={balanceDue}
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              disabled={submitting}
+              className="font-mono"
+            />
+            <div className="flex items-center gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setAmount(String(balanceDue))}
+                className="text-emerald-700 underline hover:text-emerald-800"
+              >
+                Solde total ({formatCurrency(balanceDue)})
+              </button>
+              <span className="text-slate-300">|</span>
+              <button
+                type="button"
+                onClick={() => setAmount(String(Math.floor(balanceDue / 2)))}
+                className="text-slate-600 underline hover:text-slate-800"
+              >
+                Moitié
+              </button>
+              {amountInvalid && (
+                <span className="ml-auto text-rose-600 font-medium">
+                  Doit être entre 1 et {formatCurrency(balanceDue)}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Mode de paiement */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+              Mode de paiement
+            </Label>
+            <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+              <SelectTrigger className="w-full h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="CASH">Espèces</SelectItem>
+                <SelectItem value="MOBILE_MONEY">Mobile Money</SelectItem>
+                <SelectItem value="WIRE">Virement bancaire</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Référence (optionnelle) */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+              Référence <span className="normal-case font-normal text-slate-400">(optionnel)</span>
+            </Label>
+            <Input
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              placeholder="N° bordereau, référence Mobile Money…"
+              disabled={submitting}
+            />
+          </div>
+
+          {/* Note (optionnelle) */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+              Note <span className="normal-case font-normal text-slate-400">(optionnel)</span>
+            </Label>
+            <Input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Commentaire tracé sur l'arriéré…"
+              disabled={submitting}
+            />
+          </div>
+
+          {/* Explication du recalcul */}
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-emerald-800 leading-relaxed">
+              Un reçu <strong>{formatCurrency(parsedAmount)}</strong> est enregistré sur le compte de
+              l'élève. Le solde du compte, l'arriéré et les statistiques de recouvrement sont
+              <strong> recalculés automatiquement</strong> — restant dû après encaissement :
+              <strong className="ml-1">{formatCurrency(newRemaining)}</strong>.
+            </p>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="bg-slate-50 px-6 py-3 flex justify-end gap-2 border-t border-slate-200">
+          <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
+            Annuler
+          </Button>
+          <Button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting || amountInvalid}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Enregistrement…
+              </>
+            ) : (
+              <>
+                <Banknote className="w-4 h-4 mr-2" />
+                Encaisser {formatCurrency(parsedAmount)}
+              </>
+            )}
+          </Button>
         </div>
       </div>
     </div>

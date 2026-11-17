@@ -839,6 +839,244 @@ export class FinanceTransactionService {
     });
   }
 
+  /**
+   * ⭐ RECOUVREMENT — Encaissement DIRECT d'un arriéré (onglet Recouvrement).
+   *
+   * Avant : le tableau des arriérés n'offrait QUE relancer / abandonner /
+   * supprimer — impossible d'enregistrer qu'un élève a PAYÉ son arriéré ;
+   * la comptable devait repasser par « Nouveau paiement » et espérer que le
+   * FIFO impute le bon arriéré. Ce endpoint cible EXPLICITEMENT le FeeArrear
+   * choisi :
+   *   1. enregistre une FinanceTransaction PAYMENT sur le compte élève de
+   *      l'année de l'arriéré (le trigger update_balance_after_transaction
+   *      recalcul totalPaid / balance / status du compte — automatique et
+   *      dynamique) ;
+   *   2. met à jour le FeeArrear (totalPaid, balanceDue, status, lastPaymentDate) ;
+   *   3. décrémente StudentAccount.arrearsAmount (flag app.allow_balance_update,
+   *      même pattern que le write-off / imports d'arriérés) ;
+   *   4. génère le reçu PDF + notifications (fire-and-forget).
+   *
+   * Le solde de l'arriéré et du compte restent ainsi TOUJJOURS cohérents.
+   */
+  async createArrearPayment(
+    tenantId: string,
+    feeArrearId: string,
+    data: {
+      amount: number;
+      paymentMethod: PaymentMethod | string;
+      reference?: string;
+      cashierId: string;
+      deviceId?: string;
+      cashRegisterId?: string;
+      notes?: string;
+      skipReceiptSideEffects?: boolean;
+    },
+  ) {
+    // ─── 1. Charger et valider l'arriéré ───────────────────────────────────
+    const arrear = await this.prisma.feeArrear.findFirst({
+      where: { id: feeArrearId, tenantId },
+      include: {
+        student: { select: { id: true, firstName: true, lastName: true } },
+        academicYear: { select: { id: true, name: true } },
+      },
+    });
+    if (!arrear) throw new NotFoundException('Arriéré non trouvé');
+
+    if (arrear.status === 'WRITTEN_OFF' || arrear.status === 'TRANSFERRED') {
+      throw new BadRequestException(
+        `Cet arriéré est ${arrear.status === 'WRITTEN_OFF' ? 'abandonné (write-off)' : 'reporté sur une autre année'} — il ne peut plus être encaissé.`,
+      );
+    }
+    if (arrear.status === 'PAID' || Number(arrear.balanceDue) <= 0) {
+      throw new BadRequestException('Cet arriéré est déjà entièrement soldé.');
+    }
+
+    const amount = Number(data.amount);
+    if (!(amount > 0)) {
+      throw new BadRequestException('Le montant doit être supérieur à 0.');
+    }
+    const balanceDue = Number(arrear.balanceDue);
+    if (amount > balanceDue + 1e-9) {
+      throw new BadRequestException(
+        `Le montant (${amount.toLocaleString('fr-FR')} FCFA) dépasse le restant dû de cet arriéré ` +
+        `(${balanceDue.toLocaleString('fr-FR')} FCFA).`,
+      );
+    }
+
+    const paymentMethod = (typeof data.paymentMethod === 'string' && PAYMENT_METHODS.includes(data.paymentMethod as PaymentMethod))
+      ? (data.paymentMethod as PaymentMethod) : 'CASH';
+
+    // ─── 2. Compte élève de l'année de l'arriéré (trouvé ou créé) ──────────
+    //    Les arriérés importés/début d'année existent parfois SANS compte sur
+    //    l'année concernée — on le crée alors seedé sur les totaux de l'arriéré
+    //    (l'INSERT ne déclenche pas prevent_balance_update).
+    let account = await this.prisma.studentAccount.findUnique({
+      where: {
+        studentId_academicYearId: {
+          studentId: arrear.studentId,
+          academicYearId: arrear.academicYearId,
+        },
+      },
+    });
+    if (!account) {
+      account = await this.prisma.studentAccount.create({
+        data: {
+          tenantId,
+          studentId: arrear.studentId,
+          academicYearId: arrear.academicYearId,
+          totalDue: arrear.totalDue,
+          totalPaid: arrear.totalPaid,
+          balance: arrear.balanceDue,
+          arrearsAmount: arrear.balanceDue,
+        },
+      });
+      this.logger.log(
+        `Encaissement arriéré : compte élève créé pour ${arrear.student.firstName} ${arrear.student.lastName} ` +
+        `(${arrear.academicYear?.name}) — seedé sur l'arriéré (${balanceDue.toLocaleString('fr-FR')} FCFA).`,
+      );
+    }
+
+    // Caisse (optionnelle) : vérifier ouverte + active (même règles que create()).
+    if (data.cashRegisterId) {
+      const register = await this.prisma.cashRegister.findFirst({
+        where: { id: data.cashRegisterId, tenantId },
+      });
+      if (!register) throw new NotFoundException('Caisse non trouvée');
+      if (!register.isActive) throw new BadRequestException('Caisse archivée — paiements interdits.');
+      if (!register.isOpen) throw new BadRequestException('Caisse fermée — ouvrez-la avant d\'encaisser.');
+    }
+
+    // ─── 3. Reçu + référence (mêmes séquences atomiques que create()) ───────
+    let receiptNumber = await this.receiptFinanceService
+      .generateReceiptNumber(tenantId, arrear.academicYearId)
+      .then((r) => r.local)
+      .catch((err: any) => {
+        this.logger.warn(`MatriculeGeneratorService failed, fallback to AH-YYYY-NNNNNN: ${err.message}`);
+        return this.nextReceiptNumber(tenantId);
+      });
+
+    let transactionReference = data.reference ?? null;
+    if (!transactionReference) {
+      const now = new Date();
+      const ym = `${now.getFullYear().toString().slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      const refSeq = await this.appSequences.next(tenantId, `TXREF:${ym}`);
+      transactionReference = `TX-${ym}-${String(refSeq).padStart(3, '0')}`;
+    } else {
+      // Idempotence : une référence déjà enregistrée → on retourne la transaction existante.
+      const existing = await this.prisma.financeTransaction.findFirst({
+        where: { reference: transactionReference, tenantId },
+      });
+      if (existing) return existing;
+    }
+
+    // ─── 4. Écritures atomiques (transaction interactive) ───────────────────
+    const newBalanceDue = Math.max(0, balanceDue - amount);
+    const newStatus = newBalanceDue <= 0 ? 'PAID' : 'PARTIALLY_PAID';
+    const arrearsDecrement = Math.min(amount, Number(account.arrearsAmount));
+
+    const result = await this.prisma.$transaction(async (prismaTx) => {
+      // Le trigger d'INSERT update_balance_after_transaction maintient
+      // totalPaid / balance / status du compte — recalcul automatique.
+      const created = await prismaTx.financeTransaction.create({
+        data: {
+          tenantId,
+          academicYearId: arrear.academicYearId,
+          studentAccountId: account!.id,
+          type: TransactionType.PAYMENT,
+          amount,
+          paymentMethod,
+          reference: transactionReference,
+          cashierId: data.cashierId,
+          deviceId: data.deviceId ?? null,
+          receiptNumber,
+          receiptUrl: null,
+          cashRegisterId: data.cashRegisterId ?? null,
+        },
+      });
+
+      // Hash d'intégrité — même formule que create().
+      const integrityHash = crypto
+        .createHash('sha256')
+        .update(
+          `${tenantId}|${account!.id}|${amount}|${TransactionType.PAYMENT}|${created.createdAt.toISOString()}`,
+        )
+        .digest('hex');
+      await prismaTx.financeTransaction.update({
+        where: { id: created.id },
+        data: { integrityHash },
+      });
+
+      // L'arriéré reçoit le paiement (totalPaid / balanceDue / status / date).
+      await prismaTx.feeArrear.update({
+        where: { id: arrear.id },
+        data: {
+          totalPaid: { increment: amount },
+          balanceDue: newBalanceDue,
+          status: newStatus,
+          lastPaymentDate: new Date(),
+          ...(data.notes ? { notes: `${arrear.notes || ''} — Encaissement recouvrement: ${data.notes}` } : {}),
+        },
+      });
+
+      // arrearsAmount n'est PAS couvert par le trigger d'INSERT → ajustement
+      // manuel atomique (flag app.allow_balance_update, pattern write-off).
+      if (arrearsDecrement > 0) {
+        await prismaTx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
+        await prismaTx.studentAccount.update({
+          where: { id: account!.id },
+          data: { arrearsAmount: { decrement: arrearsDecrement } },
+        });
+      }
+
+      // Solde de caisse (si fournie) — même incrément que create().
+      if (data.cashRegisterId) {
+        try {
+          await prismaTx.cashRegister.update({
+            where: { id: data.cashRegisterId },
+            data: { currentBalance: { increment: amount } },
+          });
+        } catch (err: any) {
+          this.logger.error(`Failed to update cash register balance: ${err.message}`);
+        }
+      }
+
+      return created;
+    });
+
+    // ─── 5. Reçu PDF + notifications (fire-and-forget) ─────────────────────
+    if (!data.skipReceiptSideEffects) {
+      this.receiptFinanceService
+        .generateForTransaction(result.id, tenantId)
+        .then(() =>
+          this.receiptNotificationService.sendReceiptNotifications(result.id, tenantId, ['email', 'helm_connect']),
+        )
+        .catch((err: any) => {
+          this.logger.error(`Échec génération reçu/notifications pour ${result.receiptNumber}: ${err.message}`);
+        });
+    }
+
+    // ─── 6. Réponse : arriéré rafraîchi + transaction + compte recalculé ───
+    const [updatedArrear, updatedAccount] = await Promise.all([
+      this.prisma.feeArrear.findUnique({ where: { id: arrear.id } }),
+      this.prisma.studentAccount.findUnique({
+        where: { id: account!.id },
+        include: { student: { select: { id: true, firstName: true, lastName: true } } },
+      }),
+    ]);
+
+    this.logger.log(
+      `Encaissement arriéré ${arrear.id.substring(0, 8)} : ${amount.toLocaleString('fr-FR')} FCFA encaissés ` +
+      `(${arrear.student.firstName} ${arrear.student.lastName}) — restant ${newBalanceDue.toLocaleString('fr-FR')} FCFA, ` +
+      `statut ${newStatus}. Transaction ${result.receiptNumber}.`,
+    );
+
+    return {
+      transaction: result,
+      arrear: updatedArrear,
+      account: updatedAccount,
+    };
+  }
+
   async findAll(
     tenantId: string,
     filters: {

@@ -19,6 +19,7 @@ import {
 import { CollectionPrismaService } from './collection-prisma.service';
 import { CollectionCaseService } from './collection-case.service';
 import { ArrearAccumulationService } from './arrear-accumulation.service';
+import { FinanceTransactionService } from './finance-transaction.service';
 import { PrismaService } from '../database/prisma.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -35,6 +36,7 @@ export class CollectionPrismaController {
     private readonly collectionService: CollectionPrismaService,
     private readonly collectionCaseService: CollectionCaseService,
     private readonly arrearAccumulationService: ArrearAccumulationService,
+    private readonly financeTransactionService: FinanceTransactionService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -365,6 +367,52 @@ export class CollectionPrismaController {
     @Body() body: { reason: string },
   ) {
     return this.arrearAccumulationService.writeOffArrear(tenantId, id, body.reason, user?.id);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  PHASE 3-BIS : ENCAISSEMENT DIRECT D'UN ARRÉRÉ (onglet Recouvrement)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * POST /finance/collection/arrears/:id/payment
+   * Enregistre qu'un élève a payé (totalement ou partiellement) son arriéré.
+   *
+   * Crée une FinanceTransaction PAYMENT sur le compte élève de l'année de
+   * l'arriéré → le trigger DB update_balance_after_transaction RECALCULE
+   * automatiquement totalPaid / balance / status du compte ; l'arriéré
+   * (totalPaid, balanceDue, status) et StudentAccount.arrearsAmount sont
+   * mis à jour dans la même transaction atomique.
+   *
+   * Body: {
+   *   amount: number,                 // 1 .. balanceDue
+   *   paymentMethod: 'CASH' | 'MOBILE_MONEY' | 'WIRE' | 'FEDAPAY',
+   *   reference?: string,
+   *   cashRegisterId?: string,       // caisse ouverte requise si fournie
+   *   notes?: string,
+   * }
+   */
+  @Post('arrears/:id/payment')
+  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async recordArrearPayment(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() body: {
+      amount: number;
+      paymentMethod?: string;
+      reference?: string;
+      cashRegisterId?: string;
+      notes?: string;
+    },
+  ) {
+    return this.financeTransactionService.createArrearPayment(tenantId, id, {
+      amount: Number(body?.amount),
+      paymentMethod: body?.paymentMethod ?? 'CASH',
+      reference: body?.reference,
+      cashierId: user?.id,
+      cashRegisterId: body?.cashRegisterId,
+      notes: body?.notes,
+    });
   }
 
   // ═══════════════════════════════════════════════════════════════════════

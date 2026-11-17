@@ -513,6 +513,31 @@ class FinanceService {
   }
 
   /**
+   * ⭐ RECOUVREMENT — Encaissement direct d'un arriéré (marquer un élève
+   * ayant payé tout ou partie de son arriéré). Le backend crée la
+   * FinanceTransaction PAYMENT ; le trigger DB update_balance_after_transaction
+   * recalcule automatiquement le compte de l'élève (totalPaid / balance /
+   * status) et l'arriéré (totalPaid / balanceDue / status) dans la même
+   * transaction atomique.
+   * POST /api/finance/collection/arrears/:id/payment
+   */
+  async recordArrearPayment(
+    arrearId: string,
+    payload: {
+      amount: number;
+      paymentMethod?: string;
+      reference?: string;
+      cashRegisterId?: string;
+      notes?: string;
+    },
+  ): Promise<any> {
+    return financeFetch(`/api/finance/collection/arrears/${encodeURIComponent(arrearId)}/payment`, {
+      method: 'POST',
+      body: payload,
+    });
+  }
+
+  /**
    * Récapitulatif des arriérés par année scolaire — Phase 5.
    * GET /api/finance/collection/arrears/summary-by-year
    */

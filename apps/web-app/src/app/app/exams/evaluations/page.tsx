@@ -1636,14 +1636,31 @@ export default function EvaluationsPage() {
     );
     if (!ok) return;
     try {
+      // ⭐ FIX 2026-11-18 — les échecs ne sont plus avalés silencieusement :
+      //    on collecte chaque erreur et on affiche le message serveur exact
+      //    (avant : toast de succès même si TOUTES les actions échouaient).
+      const failures: string[] = [];
       await Promise.all(
         group.evaluationIds.map((id) =>
-          institutionalExamsService.openEvaluation(id).catch((e) =>
-            console.warn(`Failed to open eval ${id}:`, e),
-          ),
+          institutionalExamsService.openEvaluation(id).catch((e: any) => {
+            console.warn(`Failed to open eval ${id}:`, e);
+            const msg =
+              (e?.response?.data?.message as string) ||
+              (e?.isTimeout ? "Délai d'attente dépassé — réessayez" : null) ||
+              e?.message ||
+              'Erreur inconnue';
+            failures.push(Array.isArray(msg) ? msg.join(' · ') : msg);
+          }),
         ),
       );
-      toastSuccess(`${group.evaluationIds.length} évaluation(s) ouverte(s) pour la saisie`);
+      if (failures.length > 0) {
+        toastError(
+          `Ouverture échouée — ${failures.length}/${group.evaluationIds.length} évaluation(s) NON ouverte(s)`,
+          { description: failures.slice(0, 2).join(' … ') },
+        );
+      } else {
+        toastSuccess(`${group.evaluationIds.length} évaluation(s) ouverte(s) pour la saisie`);
+      }
       await loadData();
     } catch (err: any) {
       toastError('Erreur', { description: err.message });
@@ -1658,14 +1675,28 @@ export default function EvaluationsPage() {
     );
     if (!ok) return;
     try {
+      // ⭐ FIX 2026-11-18 — même correction : les échecs deviennent visibles.
+      const failures: string[] = [];
       await Promise.all(
         group.evaluationIds.map((id) =>
-          institutionalExamsService.submitEvaluation(id).catch((e) =>
-            console.warn(`Failed to submit eval ${id}:`, e),
-          ),
+          institutionalExamsService.submitEvaluation(id).catch((e: any) => {
+            console.warn(`Failed to submit eval ${id}:`, e);
+            const msg =
+              (e?.response?.data?.message as string) ||
+              e?.message ||
+              'Erreur inconnue';
+            failures.push(Array.isArray(msg) ? msg.join(' · ') : msg);
+          }),
         ),
       );
-      toastSuccess(`${group.evaluationIds.length} évaluation(s) soumise(s)`);
+      if (failures.length > 0) {
+        toastError(
+          `Soumission échouée — ${failures.length}/${group.evaluationIds.length} évaluation(s) NON soumise(s)`,
+          { description: failures.slice(0, 2).join(' … ') },
+        );
+      } else {
+        toastSuccess(`${group.evaluationIds.length} évaluation(s) soumise(s)`);
+      }
       await loadData();
     } catch (err: any) {
       toastError('Erreur', { description: err.message });
@@ -1680,14 +1711,41 @@ export default function EvaluationsPage() {
     );
     if (!ok) return;
     try {
+      // ⭐ FIX 2026-11-18 (« notes validées mais invisibles registre/bulletins ») :
+      //    AVANT, chaque échec de validation était avalé (console.warn) et le
+      //    toast annonçait « X évaluation(s) validée(s) » même si TOUT avait
+      //    échoué (403 permission exams.validate / périmètre niveau, 400
+      //    évaluation non soumise, timeout…) → les évaluations restaient
+      //    SUBMITTED/PLANNED → registre des notes et bulletins vides.
+      //    Maintenant : message serveur exact + compte des échecs.
+      const failures: string[] = [];
       await Promise.all(
         group.evaluationIds.map((id) =>
-          institutionalExamsService.validateEvaluation(id).catch((e) =>
-            console.warn(`Failed to validate eval ${id}:`, e),
-          ),
+          institutionalExamsService.validateEvaluation(id).catch((e: any) => {
+            console.warn(`Failed to validate eval ${id}:`, e);
+            const msg =
+              (e?.response?.data?.message as string) ||
+              (e?.isTimeout ? "Délai d'attente dépassé — réessayez" : null) ||
+              e?.message ||
+              'Erreur inconnue';
+            failures.push(Array.isArray(msg) ? msg.join(' · ') : msg);
+          }),
         ),
       );
-      toastSuccess(`${group.evaluationIds.length} évaluation(s) validée(s)`);
+      if (failures.length > 0) {
+        toastError(
+          `Validation échouée — ${failures.length}/${group.evaluationIds.length} évaluation(s) NON validée(s)`,
+          {
+            description:
+              failures.slice(0, 2).join(' … ') +
+              (failures.length > 2 ? ` (+${failures.length - 2} autre(s))` : ''),
+          },
+        );
+      } else {
+        toastSuccess(`${group.evaluationIds.length} évaluation(s) validée(s)`, {
+          description: 'Les notes apparaissent maintenant dans le registre des notes et les bulletins.',
+        });
+      }
       await loadData();
     } catch (err: any) {
       toastError('Erreur', { description: err.message });

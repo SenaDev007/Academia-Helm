@@ -393,18 +393,42 @@ function ValidationDetailSheet({
 
     setApprovingAll(true);
     try {
+      // ⭐ FIX 2026-11-18 (« notes validées mais invisibles registre/bulletins ») :
+      //    AVANT, chaque PATCH /evaluations/:id/validate était capturé par un
+      //    try/catch SILENCIEUX (console.error uniquement) → le toast affichait
+      //    « Notes validées » MÊME SI toutes les validations échouaient côté
+      //    serveur (403 permissions/périmètre, 400 mauvais statut, timeout…) →
+      //    les évaluations restaient SUBMITTED → le registre des notes et les
+      //    bulletins (qui n'affichent QUE VALIDATED) restaient vides.
+      //    Maintenant : chaque échec est collecté, compté et son message serveur
+      //    EXACT est affiché — plus de faux succès.
+      const failures: string[] = [];
       await Promise.all(
         group.evaluationIds.map(async (evId) => {
           try {
             await apiClient.patch(`/institutional-exams/evaluations/${evId}/validate`);
           } catch (err: any) {
             console.error(`Failed to validate evaluation ${evId}:`, err.response?.data || err.message);
+            const msg =
+              (err.response?.data?.message as string) ||
+              (err.isTimeout ? "Délai d'attente dépassé — réessayez" : null) ||
+              err.message ||
+              'Erreur inconnue';
+            failures.push(Array.isArray(msg) ? msg.join(' · ') : msg);
           }
         })
       );
-      toastSuccess('Notes validées et verrouillées', {
-        description: `${rows.length} élève(s) · ${group.subjects.length} matière(s)`,
-      });
+
+      if (failures.length > 0) {
+        toastError(
+          `Validation échouée — ${failures.length}/${group.evaluationIds.length} évaluation(s) NON validée(s)`,
+          { description: failures.slice(0, 2).join(' … ') },
+        );
+      } else {
+        toastSuccess('Notes validées et verrouillées', {
+          description: `${rows.length} élève(s) · ${group.subjects.length} matière(s) — elles apparaissent maintenant dans le registre des notes et les bulletins.`,
+        });
+      }
       onBack();
     } catch (err: any) {
       toastError('Erreur lors de la validation', { description: err.message });
@@ -419,18 +443,33 @@ function ValidationDetailSheet({
     if (!reason || !reason.trim()) return;
 
     try {
+      // ⭐ FIX 2026-11-18 — même correction que handleApproveAll : les échecs du
+      //    rejet ne doivent plus être avalés silencieusement (faux succès).
+      const failures: string[] = [];
       await Promise.all(
         group.evaluationIds.map(async (evId) => {
           try {
             await apiClient.post(`/institutional-exams/evaluations/${evId}/cancel`, { reason: reason.trim() });
           } catch (err: any) {
             console.error(`Failed to reject evaluation ${evId}:`, err.response?.data || err.message);
+            const msg =
+              (err.response?.data?.message as string) ||
+              err.message ||
+              'Erreur inconnue';
+            failures.push(Array.isArray(msg) ? msg.join(' · ') : msg);
           }
         })
       );
-      toastSuccess('Notes rejetées', {
-        description: 'L\'enseignant sera notifié pour correction.',
-      });
+      if (failures.length > 0) {
+        toastError(
+          `Rejet échoué — ${failures.length}/${group.evaluationIds.length} évaluation(s) NON rejetée(s)`,
+          { description: failures.slice(0, 2).join(' … ') },
+        );
+      } else {
+        toastSuccess('Notes rejetées', {
+          description: 'L\'enseignant sera notifié pour correction.',
+        });
+      }
       onBack();
     } catch (err: any) {
       toastError('Erreur lors du rejet', { description: err.message });

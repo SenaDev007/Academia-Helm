@@ -444,6 +444,8 @@ export class StudentAccountService {
       structures: allStructures,
       studentOverrides,
       regimeAdjustments,
+      // ⭐ FIX (nov. 2026) : préserver l'argent encaissé non imputé (cf. planner).
+      accountTotalPaid: Number(account.totalPaid ?? 0),
     });
 
     // ── Application du plan (mêmes écritures qu'avant le refactor) ──
@@ -529,6 +531,12 @@ export class StudentAccountService {
     structures: any[];
     studentOverrides: any[];
     regimeAdjustments: Map<string, number>;
+    /**
+     * ⭐ FIX (nov. 2026 — « scolarité 0 F », Mon Avenir Plus) : totalPaid ACTUEL
+     * du compte, pour ne jamais perdre les paiements NON imputés à des
+     * breakdowns lors du recalcul (voir section 4 ci-dessous).
+     */
+    accountTotalPaid?: number;
   }): RecalcPlan {
     const { breakdowns } = input;
     const structuresById = new Map<string, any>(input.structures.map((fs) => [fs.id, fs]));
@@ -624,9 +632,22 @@ export class StudentAccountService {
         };
       });
 
-    // 4) Totaux sur l'état final (conservés mis à jour + créations)
+    // 4) Totaux sur l'état final (conservés mis à jour + créations).
+    //    ⭐ FIX (nov. 2026 — « scolarité 0 F », Mon Avenir Plus) : totalPaid doit
+    //    conserver les paiements NON imputés à des breakdowns :
+    //      - paiements FIFO sur les arriérés d'années antérieures (FeeArrear) ;
+    //      - paiements enregistrés avant la matérialisation des frais (comptes
+    //        créés par la promotion de fin d'année AVANT la configuration des
+    //        frais : ex. 604 comptes Mon Avenir Plus 2026-2027, dont un
+    //        encaissement de 43 000 F sans aucune ligne de frais).
+    //    AVANT : totalPaid = Σ breakdowns.paidAmount → tout paiement non imputé
+    //    disparaissait au recalcul (balance gonflée d'autant). Les breakdowns
+    //    supprimés sont toujours non payés (paidAmount = 0) → la somme avant ne
+    //    compte que les conservés.
+    const sumBeforePaid = breakdowns.reduce((s, b) => s + Number(b.paidAmount ?? 0), 0);
+    const unallocatedPaid = Math.max(0, Number(input.accountTotalPaid ?? 0) - sumBeforePaid);
     let totalDue = 0;
-    let totalPaid = 0;
+    let totalPaid = unallocatedPaid;
     for (const b of kept) {
       const upd = updateBreakdowns.find((u) => u.id === b.id);
       totalDue += upd ? upd.initialAmount : Number(b.initialAmount);
@@ -682,7 +703,7 @@ export class StudentAccountService {
         ...(academicYearId ? { academicYearId } : {}),
         ...(accountWhere ?? {}),
       },
-      select: { id: true, studentId: true, academicYearId: true },
+      select: { id: true, studentId: true, academicYearId: true, totalPaid: true },
     });
     if (accounts.length === 0) {
       return { success: true, accountsRecalculated: 0, breakdownsUpdated: 0, accountsTotal: 0 };
@@ -784,6 +805,8 @@ export class StudentAccountService {
           structures,
           studentOverrides: overridesByStudent.get(account.studentId) ?? [],
           regimeAdjustments: regimeAdjustmentsByStudent.get(account.studentId) ?? new Map(),
+          // ⭐ FIX (nov. 2026) : préserver l'argent encaissé non imputé (cf. planner).
+          accountTotalPaid: Number((account as any).totalPaid ?? 0),
         });
         allDeleteIds.push(...plan.deleteIds);
         allUpdates.push(...plan.updateBreakdowns);

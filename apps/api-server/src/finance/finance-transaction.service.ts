@@ -16,6 +16,7 @@ import { TransactionType, PaymentMethod, AccountStatus } from '@prisma/client';
 import { ReceiptFinanceService } from './receipt-finance.service';
 import { ReceiptNotificationFinanceService } from './receipt-notification-finance.service';
 import { ArrearAccumulationService } from './arrear-accumulation.service';
+import { StudentAccountService } from './student-account.service';
 import { AccessScope } from '../common/context/access-scope.service';
 import { AppSequenceService } from '../common/services/app-sequence.service';
 
@@ -48,6 +49,11 @@ export class FinanceTransactionService {
     @Inject(forwardRef(() => ArrearAccumulationService))
     private readonly arrearAccumulationService: ArrearAccumulationService,
     private readonly appSequences: AppSequenceService,
+    // ⭐ FIX (nov. 2026 — « scolarité 0 F », Mon Avenir Plus) : matérialise les
+    //    frais applicables d'un compte sans AUCUN breakdown AVANT encaissement
+    //    (cf. create ci-dessous). Aucune dépendance circulaire : le service de
+    //    comptes n'importe pas FinanceTransactionService.
+    private readonly studentAccountService: StudentAccountService,
   ) {}
 
   /** Expose prisma pour le controller (downloadReceipt, resendReceipt) */
@@ -321,6 +327,49 @@ export class FinanceTransactionService {
       },
     });
     if (!account) throw new NotFoundException('StudentAccount not found');
+
+    // ⭐ FIX (nov. 2026 — « scolarité 0 F », Mon Avenir Plus) : un compte SANS
+    //    AUCUN breakdown (comptes créés par la promotion de fin d'année AVANT la
+    //    configuration des frais — ex. 604 comptes Mon Avenir Plus 2026-2027)
+    //    laissait l'encaissement flotter sans imputation : totalPaid > 0,
+    //    balance < 0, aucune ligne de frais, « Scolarité 0 F » dans le module
+    //    Comptes élèves. On matérialise les frais applicables (recalculate —
+    //    mêmes règles que la configuration des frais) AVANT la cascade
+    //    d'allocation : le paiement s'impute alors normalement (FIFO arriérés
+    //    → priorité des frais). Non bloquant : si aucune structure n'existe
+    //    encore pour l'année, on garde le comportement historique.
+    if (account.breakdowns.length === 0) {
+      try {
+        await this.studentAccountService.recalculate(
+          account.studentId,
+          tenantId,
+          account.academicYearId,
+        );
+        const refreshed = await this.prisma.studentAccount.findFirst({
+          where: { id: data.studentAccountId, tenantId },
+          include: {
+            breakdowns: {
+              include: { feeStructure: true },
+              orderBy: { feeStructure: { feeType: 'asc' } },
+            },
+          },
+        });
+        if (refreshed) {
+          account.breakdowns = refreshed.breakdowns;
+          account.totalDue = refreshed.totalDue;
+          account.totalPaid = refreshed.totalPaid;
+          account.balance = refreshed.balance;
+          this.logger.log(
+            `Compte sans frais détecté : ${account.breakdowns.length} ligne(s) de frais ` +
+              `matérialisée(s) avant encaissement (compte ${account.id}).`,
+          );
+        }
+      } catch (err: any) {
+        this.logger.warn(
+          `Matérialisation des frais avant encaissement échouée (non bloquant) : ${err?.message}`,
+        );
+      }
+    }
 
     // ✅ Idempotence : si une transaction existe déjà avec cette référence (Fedapay/FedaPay),
     // on la retourne sans en créer une nouvelle (évite les doublons si le webhook

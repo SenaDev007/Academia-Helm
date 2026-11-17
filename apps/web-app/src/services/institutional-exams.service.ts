@@ -132,7 +132,12 @@ export const institutionalExamsService = {
   // ⭐ Bulk create : plusieurs évaluations en une fois (1 par classe × matière)
   async createBulkEvaluations(data: {
     classIds: string[];
-    subjectIds: string[];
+    /** ⭐ RÉORGANISATION 2026-11-17 — matières PROPRES à chaque classe :
+     *  { [classId]: subjectId[] }. Chaque classe est évaluée sur SES matières
+     *  (Pédagogie > Matières & Programmes) — plus d'intersection entre classes.
+     *  Repli : subjectIds appliqué à toutes les classes (historique). */
+    subjectsByClass?: Record<string, string[]>;
+    subjectIds?: string[];
     periodId: string;
     evaluationTypeId: string;
     title?: string;

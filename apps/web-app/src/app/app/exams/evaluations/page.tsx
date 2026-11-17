@@ -87,6 +87,12 @@ interface ClassItem {
    * leurs coefficients configurés dans Pédagogie > Matières & Programmes.
    */
   officialClassId?: string | null;
+  /**
+   * ⭐ RÉORGANISATION 2026-11-17 (vue par classe) : effectif actif de la
+   * classe (élèves inscrits — statuts actifs, même définition que la grille
+   * de saisie des notes). Attaché par le backend /classes (findAll).
+   */
+  studentCount?: number;
 }
 interface SubjectItem { id: string; name: string; coefficient?: number; }
 interface PeriodItem { id: string; name: string; type: string; isClosed: boolean; }
@@ -101,9 +107,16 @@ interface EvaluationForm {
   title: string;
   description: string;
   classIds: string[];        // ⭐ Sélection multiple
-  subjectIds: string[];      // ⭐ Sélection multiple
+  subjectIds: string[];      // ⭐ Édition d'un groupe existant (re-création)
   periodId: string;
   evaluationTypeId: string;
+  /**
+   * ⭐ RÉORGANISATION 2026-11-17 (modal simplifié) : création = on choisit
+   * la/les classe(s) + le trimestre + le(s) type(s) — les matières de chaque
+   * classe sont associées automatiquement (Pédagogie > Matières & Programmes).
+   * Multi-types cochables d'un coup (IE1 + IE2 + DS1 + DS2…).
+   */
+  evaluationTypeIds: string[];
   evaluationDate: string;
   startDate: string;        // ⭐ Intervalle de dates
   endDate: string;           // ⭐ Intervalle de dates
@@ -134,6 +147,7 @@ const EMPTY_FORM: EvaluationForm = {
   subjectIds: [],
   periodId: '',
   evaluationTypeId: '',
+  evaluationTypeIds: [],
   evaluationDate: new Date().toISOString().slice(0, 10),
   startDate: new Date().toISOString().slice(0, 10),
   endDate: new Date().toISOString().slice(0, 10),
@@ -584,6 +598,164 @@ function EvaluationProgramCard({
   );
 }
 
+// ─── ⭐ RÉORGANISATION 2026-11-17 — VUE PAR CLASSE ───────────────────────────
+//
+// L'onglet Évaluations est désormais organisé PAR CLASSE :
+//   ┌─ Carte de classe (vue d'ensemble) ─────────────────────────────────┐
+//   │  Avatar + Classe 6ème A                                            │
+//   │  33 élèves · 7 matières (Pédagogie) · 4 sessions ce trimestre      │
+//   │  [DS1] [DS2] [INT1] [INT2]  ← types programmés ce trimestre       │
+//   │  « Aucune matière affectée » si la classe n'est pas configurée     │
+//   └───────────────────────────────────────────────────────────────────┘
+//   Clic → détail de la classe (cartes sessions existantes + actions).
+//
+// La carte montre EXACTEMENT ce que demande l'école : nombre d'élèves,
+// nombre de sessions d'évaluation et types d'évaluation du trimestre
+// sélectionné dans le filtre « Trimestre » de la barre d'outils.
+// ────────────────────────────────────────────────────────────────────────────
+
+interface ClassCardStats {
+  classId: string;
+  className: string;
+  studentCount: number;
+  subjectsCount: number;
+  sessionsCount: number;
+  types: Array<{ id: string; name: string; code?: string }>;
+  hasSubjects: boolean;
+}
+function ClassCardGrid({
+  stats,
+  onOpenClass,
+  labels,
+  periodName,
+}: {
+  stats: ClassCardStats[];
+  onOpenClass: (classId: string) => void;
+  labels: any;
+  periodName: string | null;
+}) {
+  return (
+    <div className="space-y-3">
+      {/* Sous-titre explicatif + trimestre courant */}
+      <div className="flex items-baseline justify-between flex-wrap gap-2">
+        <h3 className="text-sm font-bold text-navy-900">{labels.byClassTitle}</h3>
+        {periodName && (
+          <span className="text-xs text-gray-500">
+            {labels.typesForTerm} · {periodName}
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-gray-500 -mt-1">{labels.byClassSubtitle}</p>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+        {stats.map((c) => (
+          <button
+            key={c.classId}
+            type="button"
+            onClick={() => onOpenClass(c.classId)}
+            className={`bg-white rounded-2xl border-2 shadow-sm hover:shadow-md hover:border-blue-400 transition-all text-left flex flex-col ${
+              c.hasSubjects ? 'border-gray-200' : 'border-amber-200'
+            }`}
+          >
+            {/* En-tête : avatar + classe + effectif */}
+            <div className="px-5 py-4 bg-gradient-to-br from-blue-50 to-indigo-50/50 border-b border-blue-100 flex items-center justify-between gap-2">
+              <div className="flex items-center space-x-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+                  {(c.className || '?').slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-base font-bold text-navy-900 truncate">{c.className}</h4>
+                  <p className="text-xs text-gray-500">
+                    {c.studentCount} {labels.studentsLabel} · {c.subjectsCount} {labels.subjectsAssigned}
+                  </p>
+                </div>
+              </div>
+              <span className={`text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap flex-shrink-0 ${
+                c.sessionsCount > 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'
+              }`}>
+                {c.sessionsCount} {labels.sessionsLabel}
+              </span>
+            </div>
+
+            {/* Corps : types d'évaluation programmés ce trimestre */}
+            <div className="p-4 flex-1 space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                {labels.typesForTerm}{periodName ? ` · ${periodName}` : ''}
+              </p>
+              {c.types.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {c.types.map((t) => (
+                    <span
+                      key={t.id}
+                      title={t.name}
+                      className="inline-flex items-center px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100"
+                    >
+                      {t.code ? `[${t.code}] ` : ''}{t.name}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 italic">
+                  {c.hasSubjects ? labels.noSessionsForTerm : labels.configureSubjectsFirst}
+                </p>
+              )}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * En-tête de la vue détail d'une classe : effectif, matières, sessions du
+ * trimestre sélectionné et types programmés (les mêmes badges que les cartes).
+ */
+function ClassDetailHeader({
+  stats,
+  labels,
+  periodName,
+}: {
+  stats: ClassCardStats | null;
+  labels: any;
+  periodName: string | null;
+}) {
+  if (!stats) return null;
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 bg-gradient-to-br from-blue-50 to-indigo-50/50 border-b border-blue-100 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center space-x-3 min-w-0">
+          <div className="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold flex-shrink-0">
+            {(stats.className || '?').slice(0, 2).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-lg font-bold text-navy-900 truncate">{stats.className}</h3>
+            <p className="text-xs text-gray-500">
+              {stats.studentCount} {labels.studentsLabel} · {stats.subjectsCount} {labels.subjectsAssigned} · {stats.sessionsCount} {labels.classDetailSessions}
+            </p>
+          </div>
+        </div>
+        <span className="text-xs text-gray-500 whitespace-nowrap">
+          {periodName ? `${labels.typesForTerm} · ${periodName}` : labels.typesForTerm}
+        </span>
+      </div>
+      {stats.types.length > 0 && (
+        <div className="px-5 py-3 flex flex-wrap gap-1.5">
+          {stats.types.map((t) => (
+            <span
+              key={t.id}
+              title={t.name}
+              className="inline-flex items-center px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100"
+            >
+              {t.code ? `[${t.code}] ` : ''}{t.name}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Page Principale ────────────────────────────────────────────────────────
 
 export default function EvaluationsPage() {
@@ -622,6 +794,14 @@ export default function EvaluationsPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  // ⭐ RÉORGANISATION 2026-11-17 — VUE PAR CLASSE :
+  //   - selectedClassId : null = grille des classes ; un id = détail de la
+  //     classe (ses sessions d'évaluation + actions).
+  //   - periodFilter : trimestre sélectionné dans la barre d'outils (les
+  //     statistiques des cartes et la vue détail suivent ce trimestre).
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [periodFilter, setPeriodFilter] = useState<string>('ALL');
 
   // Modal state — Évaluation
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -826,9 +1006,25 @@ export default function EvaluationsPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // ─── Filtrage des évaluations (search + status) ──────────────────────────
+  // ⭐ RÉORGANISATION 2026-11-17 — par défaut, le filtre trimestre se cale sur
+  //    le trimestre ACTIF (celui « dans lequel nous sommes »). L'utilisateur
+  //    peut ensuite changer de trimestre ou voir tous.
+  useEffect(() => {
+    if (periodFilter === 'ALL') {
+      const active = (periods || []).find((p) => (p as any).isActive && !p.isClosed);
+      if (active) setPeriodFilter(active.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periods]);
+
+  // ─── Filtrage des évaluations (search + status + TRIMESTRE) ───────────
   const filteredEvaluations = useMemo(() => {
     let result = evaluations;
+    // ⭐ Filtre trimestre (vue par classe : statistiques et vue détail suivent
+    //    le trimestre sélectionné dans la barre d'outils)
+    if (periodFilter !== 'ALL') {
+      result = result.filter(e => e.period?.id === periodFilter);
+    }
     if (statusFilter !== 'ALL') {
       result = result.filter(e => e.status === statusFilter);
     }
@@ -842,13 +1038,66 @@ export default function EvaluationsPage() {
       );
     }
     return result;
-  }, [evaluations, statusFilter, searchQuery]);
+  }, [evaluations, statusFilter, searchQuery, periodFilter]);
 
   // ⭐ Regroupement des évaluations filtrées (une carte = 1 session par classe)
   const groupedEvaluations = useMemo(
     () => buildEvaluationGroups(filteredEvaluations, isEN),
     [filteredEvaluations, isEN],
   );
+
+  // ⭐ RÉORGANISATION 2026-11-17 — sessions regroupées PAR CLASSE (l'onglet
+  //    est désormais organisé par classe : grille des classes → détail).
+  const groupsByClassId = useMemo(() => {
+    const map = new Map<string, GroupedEvaluation[]>();
+    for (const g of groupedEvaluations) {
+      if (!map.has(g.classId)) map.set(g.classId, []);
+      map.get(g.classId)!.push(g);
+    }
+    return map;
+  }, [groupedEvaluations]);
+
+  // ⭐ Matières affectées à une classe (Pédagogie > Matières & Programmes,
+  //    résolution officialClassId → class_subjects) — réutilisé par la grille
+  //    des classes, le détail et le modal simplifié.
+  const assignmentsForClass = useCallback((classId: string) => {
+    const cls = classes.find((c) => c.id === classId);
+    const officialId = cls?.officialClassId;
+    return officialId ? (classAssignments[officialId] || []) : [];
+  }, [classes, classAssignments]);
+
+  // ⭐ Statistiques par classe — alimentent la grille « Évaluations par
+  //    classe » : effectif, nombre de matières, nombre de sessions et types
+  //    programmés pour le trimestre sélectionné.
+  const classCardStats = useMemo<ClassCardStats[]>(() => {
+    return classes.map((c) => {
+      const classGroups = groupsByClassId.get(c.id) || [];
+      const assignments = assignmentsForClass(c.id);
+      const types = Array.from(
+        new Map(
+          classGroups.map((g) => [g.evaluationTypeId, {
+            id: g.evaluationTypeId,
+            name: g.evaluationTypeName,
+            code: g.evaluationTypeCode,
+          }]),
+        ).values(),
+      );
+      return {
+        classId: c.id,
+        className: isEN ? translateClassName(c.name) : c.name,
+        studentCount: c.studentCount ?? 0,
+        subjectsCount: assignments.length,
+        sessionsCount: classGroups.length,
+        types,
+        hasSubjects: assignments.length > 0,
+      };
+    });
+  }, [classes, groupsByClassId, assignmentsForClass, isEN]);
+
+  const activePeriodName = useMemo(() => {
+    const p = periods.find((p) => p.id === periodFilter);
+    return p ? translatePeriodName(p.name, scopeLang as 'FR' | 'EN' | undefined) : null;
+  }, [periods, periodFilter, scopeLang]);
 
   // ─── ⭐ FIX 2026-11-17 : matières proposées dans le modal selon la/les
   //    classe(s) sélectionnée(s) ────────────────────────────────────────────
@@ -927,6 +1176,14 @@ export default function EvaluationsPage() {
   );
   const selectedEvalCount = selectedGroups.reduce((n, g) => n + g.evaluationIds.length, 0);
 
+  // ⭐ Sessions actuellement VISIBLES (vue par classe : seulement celles de
+  //    la classe ouverte en détail — « tout sélectionner » ne doit pas
+  //    sélectionner des sessions invisibles d'autres classes).
+  const visibleGroups = useMemo(
+    () => (selectedClassId ? (groupsByClassId.get(selectedClassId) || []) : []),
+    [selectedClassId, groupsByClassId],
+  );
+
   const toggleSelectGroup = (key: string) => {
     setSelectedKeys((prev) => {
       const next = new Set(prev);
@@ -935,12 +1192,14 @@ export default function EvaluationsPage() {
       return next;
     });
   };
-  const selectAllGroups = () => setSelectedKeys(new Set(groupedEvaluations.map((g) => g.key)));
+  const selectAllGroups = () => setSelectedKeys(new Set(visibleGroups.map((g) => g.key)));
   const clearSelection = () => setSelectedKeys(new Set());
 
   // Réinitialiser la sélection quand on change de niveau / langue / année
   useEffect(() => {
     clearSelection();
+    // ⭐ Vue par classe : on revient à la grille des classes
+    setSelectedClassId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeLevel, scopeLang, academicYear?.id]);
 
@@ -1100,19 +1359,25 @@ export default function EvaluationsPage() {
 
   // ─── Handlers ────────────────────────────────────────────────────────────
   const handleOpenCreate = () => {
-    // ⭐ Pré-remplir la période courante (trimestre actif)
+    // ⭐ RÉORGANISATION 2026-11-17 — modal SIMPLIFIÉ : on demande UNIQUEMENT
+    //    1. la/les classe(s) (multi-sélection, pré-cochée avec la classe
+    //       courante si on est dans la vue détail d'une classe)
+    //    2. le trimestre (pré-sélectionné sur le trimestre actif)
+    //    3. le(s) type(s) d'évaluation (multi-sélection)
+    //    → les matières de CHAQUE classe (Pédagogie > Matières & Programmes)
+    //      sont associées AUTOMATIQUEMENT — plus aucune sélection de matières.
+    //    Dates/intitulé/barème en options avancées (défaut = aujourd'hui).
     const currentPeriod = periods.find(p => p.isActive && !p.isClosed) || periods[0];
     setForm({
       ...EMPTY_FORM,
-      periodId: currentPeriod?.id || '',
+      // Pré-cocher la classe courante si on est dans sa vue détail
+      classIds: selectedClassId ? [selectedClassId] : [],
+      // Pré-sélectionner le trimestre du FILTRE courant (ou l'actif)
+      periodId: (periodFilter !== 'ALL' ? periodFilter : currentPeriod?.id) || '',
+      evaluationTypeIds: [],
       // Maternelle : pas de barème numérique (qualitatif TS/S/PS)
       maxScore: isMaternelle ? '0' : '20',
       coefficient: isMaternelle ? '0' : '1',
-      // ⭐ FIX 2026-11-17 : PLUS de pré-sélection globale des matières du
-      //    niveau. Les matières se chargent automatiquement dès que
-      //    l'utilisateur sélectionne une classe (les matières affectées à
-      //    cette classe dans Pédagogie > Matières & Programmes, toutes
-      //    cochées par défaut avec leurs coefficients).
       subjectIds: [],
     });
     setEditingId(null);
@@ -1134,6 +1399,7 @@ export default function EvaluationsPage() {
       subjectIds: group.subjects.map((s) => s.id), // ⭐ Toutes les matières du groupe
       periodId: first.period?.id || '',
       evaluationTypeId: evaluationTypeCode, // ⭐ Utiliser le CODE, pas l'UUID
+      evaluationTypeIds: [], // (édition = type unique)
       evaluationDate: first.evaluationDate ? new Date(first.evaluationDate).toISOString().slice(0, 10) : '',
       startDate: (first as any).startDate ? new Date((first as any).startDate).toISOString().slice(0, 10) : '',
       endDate: (first as any).endDate ? new Date((first as any).endDate).toISOString().slice(0, 10) : '',
@@ -1153,18 +1419,40 @@ export default function EvaluationsPage() {
   };
 
   const handleSave = async () => {
-    // Validation
-    if (form.classIds.length === 0 || form.subjectIds.length === 0 || !form.periodId || !form.evaluationTypeId || !form.startDate || !form.endDate) {
-      toastError(isEN ? 'Please fill in all required fields' : 'Veuillez remplir tous les champs obligatoires');
-      return;
+    // ─── ⭐ RÉORGANISATION 2026-11-17 : deux chemins distincts ────────────
+    //    ÉDITION (groupe existant) : validation historique (classe + matières
+    //    cochées + type unique + période + dates) puis suppression/recréation.
+    if (editingId) {
+      if (form.classIds.length === 0 || form.subjectIds.length === 0 || !form.periodId || !form.evaluationTypeId || !form.startDate || !form.endDate) {
+        toastError(isEN ? 'Please fill in all required fields' : 'Veuillez remplir tous les champs obligatoires');
+        return;
+      }
+    } else {
+      // CRÉATION (modal simplifié) : classes + trimestre + type(s) suffisent —
+      // les matières de chaque classe sont résolues automatiquement.
+      if (form.classIds.length === 0 || !form.periodId || form.evaluationTypeIds.length === 0 || !form.startDate || !form.endDate) {
+        toastError(isEN ? 'Select the class(es), the term and at least one assessment type.' : 'Sélectionnez la/les classe(s), le trimestre et au moins un type d\'évaluation.');
+        return;
+      }
+      // Garde-fou : chaque classe sélectionnée doit avoir SES matières
+      // configurées dans Pédagogie > Matières & Programmes.
+      const missing = form.classIds
+        .map((cid) => {
+          const cls = classes.find((c) => c.id === cid);
+          const has = assignmentsForClass(cid).length > 0;
+          return has ? null : (isEN ? translateClassName(cls?.name || '') : (cls?.name || cid));
+        })
+        .filter(Boolean) as string[];
+      if (missing.length > 0) {
+        toastError(labels.classesWithoutSubjects(missing.join(', ')));
+        return;
+      }
     }
     setSaving(true);
     try {
       const basePayload: any = {
-        title: form.title || null,
         description: form.description || null,
         periodId: form.periodId,
-        evaluationTypeId: form.evaluationTypeId,
         evaluationDate: new Date(form.startDate).toISOString(),
         startDate: new Date(form.startDate).toISOString(),
         endDate: new Date(form.endDate).toISOString(),
@@ -1204,6 +1492,8 @@ export default function EvaluationsPage() {
         // 2. Recréer via bulk create avec les nouvelles données
         const bulkPayload = {
           ...basePayload,
+          title: form.title || null,
+          evaluationTypeId: form.evaluationTypeId,
           classIds: form.classIds,
           subjectIds: form.subjectIds,
         };
@@ -1215,35 +1505,57 @@ export default function EvaluationsPage() {
           },
         );
       } else {
-        // Création : utiliser bulk create pour générer 1 évaluation par combinaison
-        const bulkPayload = {
-          ...basePayload,
-          classIds: form.classIds,
-          subjectIds: form.subjectIds,
-        };
-        const result = await institutionalExamsService.createBulkEvaluations(bulkPayload);
-        // ⭐ Toast détaillé : "X matières programmées pour Y classes(s) — Z enseignant(s) notifié(s)"
+        // ⭐ CRÉATION SIMPLIFIÉE — pour chaque type coché, une programmation
+        //    par classe est créée avec les matières PROPRES à chaque classe
+        //    (subjectsByClass — plus d'intersection : la 6e compose ses 7
+        //    matières pendant que la 4e compose ses 8).
+        const subjectsByClass: Record<string, string[]> = {};
+        for (const cid of form.classIds) {
+          subjectsByClass[cid] = Array.from(
+            new Set(assignmentsForClass(cid).map((a) => a.subjectId)),
+          );
+        }
+        let created = 0;
+        let teachersNotified = 0;
+        const usedTypeNames: string[] = [];
+        for (const typeId of form.evaluationTypeIds) {
+          const t = evaluationTypes.find((et) => et.id === typeId);
+          if (!t) continue;
+          const periodName = periods.find((p) => p.id === form.periodId)?.name || '';
+          const translatedPeriod = translatePeriodName(periodName, scopeLang as 'FR' | 'EN' | undefined);
+          const result = await institutionalExamsService.createBulkEvaluations({
+            ...basePayload,
+            // Titre auto : « Devoir surveillé 1 - Trimestre 1 » (modifiable)
+            title: form.title?.trim()
+              ? form.title
+              : (t.name ? `${t.name} - ${translatedPeriod}` : null),
+            evaluationTypeId: typeId,
+            classIds: form.classIds,
+            subjectsByClass,
+          });
+          created += result.created || 0;
+          teachersNotified += (result as any)?.teachersAssigned || 0;
+          usedTypeNames.push(t.code ? `[${t.code}] ${t.name}` : t.name);
+        }
+
+        // ⭐ Toast détaillé : classes + types + matières par classe
         const classNames = form.classIds
           .map((cid) => {
             const cls = classes.find((c) => c.id === cid);
-            // ⭐ 2026-10-01 — Traduire le nom de la classe pour la piste EN
             return cls ? (isEN ? translateClassName(cls.name) : cls.name) : null;
           })
-          .filter(Boolean);
-        const subjectNames = form.subjectIds
-          .map((sid) =>
-            subjects.find((s) => s.id === sid)?.name
-            ?? modalSubjects.list.find((s) => s.id === sid)?.name,
-          )
           .filter(Boolean) as string[];
-        const teachersNotified = (result as any)?.teachersAssigned || 0;
+        const subjectsByClassPreviewTotal = Object.values(subjectsByClass)
+          .reduce((n, list) => n + list.length, 0);
 
         toastSuccess(
-          isEN ? `${result.created} assessment(s) scheduled` : `${result.created} évaluation(s) programmée(s)`,
+          isEN ? `${created} assessment(s) scheduled` : `${created} évaluation(s) programmée(s)`,
           {
             description:
               `${classNames.length} ${isEN ? `class${classNames.length > 1 ? 'es' : ''}` : `classe${classNames.length > 1 ? 's' : ''}`} (${classNames.join(', ')}) • ` +
-              `${subjectNames.length} ${isEN ? `subject${subjectNames.length > 1 ? 's' : ''}` : `matière${subjectNames.length > 1 ? 's' : ''}`} (${subjectNames.join(', ')})` +
+              `${usedTypeNames.length} ${isEN ? `type${usedTypeNames.length > 1 ? 's' : ''}` : `type${usedTypeNames.length > 1 ? 's' : ''}`} (${usedTypeNames.join(', ')}) • ` +
+              `${subjectsByClassPreviewTotal} ${isEN ? `subject slot${subjectsByClassPreviewTotal > 1 ? 's' : ''} ` : `matière${subjectsByClassPreviewTotal > 1 ? 's' : ''} `}` +
+              (isEN ? 'assigned automatically per class' : 'associées automatiquement par classe') +
               (teachersNotified > 0
                 ? ` • ${teachersNotified} ${isEN ? `teacher${teachersNotified > 1 ? 's' : ''} notified` : `enseignant${teachersNotified > 1 ? 's' : ''} notifié${teachersNotified > 1 ? 's' : ''}`}`
                 : ''),
@@ -1560,6 +1872,29 @@ export default function EvaluationsPage() {
                 />
               </div>
               <div className="flex items-center gap-2">
+                {/* ⭐ RÉORGANISATION 2026-11-17 — filtre TRIMESTRE : les cartes de
+                    classe et la vue détail suivent le trimestre sélectionné
+                    (défaut = trimestre actif). */}
+                <Select value={periodFilter} onValueChange={setPeriodFilter}>
+                  <SelectTrigger className="w-[170px] h-9">
+                    <SelectValue placeholder={labels.allPeriodsLabel}>
+                      {(() => {
+                        const p = periods.find((pp) => pp.id === periodFilter);
+                        return p
+                          ? `${translatePeriodName(p.name, scopeLang as 'FR' | 'EN' | undefined)}${p.isClosed ? ` (${labels.closed})` : ''}`
+                          : labels.allPeriodsLabel;
+                      })()}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">{labels.allPeriodsLabel}</SelectItem>
+                    {periods.map((p) => (
+                      <SelectItem key={p.id} value={p.id} disabled={p.isClosed}>
+                        {translatePeriodName(p.name, scopeLang)}{p.isClosed ? ` (${labels.closed})` : ''}{(p as any).isActive && !p.isClosed ? ` (${labels.active})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="w-[180px] h-9">
                     <SelectValue placeholder={labels.allStatuses} />
@@ -1593,7 +1928,7 @@ export default function EvaluationsPage() {
                   {selectedGroups.length} session{selectedGroups.length > 1 ? 's' : ''} sélectionnée{selectedGroups.length > 1 ? 's' : ''} — {selectedEvalCount} évaluation{selectedEvalCount > 1 ? 's' : ''}
                 </span>
                 <div className="flex-1" />
-                {selectedKeys.size < groupedEvaluations.length ? (
+                {selectedKeys.size < visibleGroups.length ? (
                   <button
                     onClick={selectAllGroups}
                     className="text-xs font-semibold bg-white/15 hover:bg-white/25 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
@@ -1644,33 +1979,81 @@ export default function EvaluationsPage() {
               </div>
             )}
 
-            {/* ⭐ Vue en cartes groupées par classe (programmation des évaluations) */}
+            {/* ⭐ RÉORGANISATION 2026-11-17 — VUE PAR CLASSE :
+                - pas de classe sélectionnée → grille des classes (effectif,
+                  sessions, types du trimestre) ;
+                - classe sélectionnée → ses sessions d'évaluation (cartes
+                  existantes + actions) avec en-tête de retour. */}
             {loading ? (
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
                 <span className="ml-3 text-sm text-gray-500">{labels.loadingEvaluations}</span>
               </div>
-            ) : filteredEvaluations.length === 0 ? (
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
-                <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-600 font-medium mb-1">{labels.noEvaluations}</p>
-                <p className="text-sm text-gray-400">
-                  {searchQuery || statusFilter !== 'ALL'
-                    ? labels.noEvaluationsFiltered
-                    : labels.noEvaluationsHint}
-                </p>
-              </div>
+            ) : !selectedClassId ? (
+              /* ── Vue d'ensemble : cartes par classe (filtre de recherche par
+                    nom de classe actif en vue grille) ── */
+              (() => {
+                const q = searchQuery.trim().toLowerCase();
+                const visibleStats = q
+                  ? classCardStats.filter((s) => s.className.toLowerCase().includes(q))
+                  : classCardStats;
+                if (visibleStats.length === 0) {
+                  return (
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
+                      <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-600 font-medium mb-1">{labels.noEvaluationsFiltered}</p>
+                      <p className="text-sm text-gray-400">{labels.noClasses}</p>
+                    </div>
+                  );
+                }
+                return (
+                  <ClassCardGrid
+                    stats={visibleStats}
+                    onOpenClass={(classId) => setSelectedClassId(classId)}
+                    labels={labels}
+                    periodName={activePeriodName}
+                  />
+                );
+              })()
             ) : (
-              <EvaluationCardsByClass
-                groups={groupedEvaluations}
-                getAvailableActions={getAvailableActions}
-                onOpenEdit={handleOpenEdit}
-                isMaternelle={isMaternelle}
-                selectedKeys={selectedKeys}
-                onToggleSelect={toggleSelectGroup}
-                isEN={isEN}
+              /* ── Vue détail : les évaluations programmées de CETTE classe ── */
+              <div className="space-y-4">
+              <button
+                type="button"
+                onClick={() => setSelectedClassId(null)}
+                className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+                {labels.backToClasses}
+              </button>
+              <ClassDetailHeader
+                stats={classCardStats.find((s) => s.classId === selectedClassId) || null}
                 labels={labels}
+                periodName={activePeriodName}
               />
+              {(groupsByClassId.get(selectedClassId) || []).length === 0 ? (
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
+                  <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-600 font-medium mb-1">{labels.noEvaluations}</p>
+                  <p className="text-sm text-gray-400">
+                    {searchQuery || statusFilter !== 'ALL' || periodFilter !== 'ALL'
+                      ? labels.noEvaluationsFiltered
+                      : labels.noEvaluationsHint}
+                  </p>
+                </div>
+              ) : (
+                <EvaluationCardsByClass
+                  groups={groupsByClassId.get(selectedClassId) || []}
+                  getAvailableActions={getAvailableActions}
+                  onOpenEdit={handleOpenEdit}
+                  isMaternelle={isMaternelle}
+                  selectedKeys={selectedKeys}
+                  onToggleSelect={toggleSelectGroup}
+                  isEN={isEN}
+                  labels={labels}
+                />
+              )}
+              </div>
             )}
           </div>
         )
@@ -1693,7 +2076,7 @@ export default function EvaluationsPage() {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving || form.classIds.length === 0 || form.subjectIds.length === 0 || !form.periodId || !form.evaluationTypeId || !form.startDate || !form.endDate}
+            disabled={saving || form.classIds.length === 0 || !form.periodId || !form.startDate || !form.endDate || (editingId ? (form.subjectIds.length === 0 || !form.evaluationTypeId) : form.evaluationTypeIds.length === 0)}
             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
           >
             {saving ? (isEN ? 'Saving...' : 'Enregistrement...') : editingId ? (isEN ? 'Update' : 'Modifier') : (isEN ? 'Create' : 'Créer')}
@@ -1702,6 +2085,347 @@ export default function EvaluationsPage() {
       }
     >
       <div className="space-y-4 py-2">
+        {/*
+        ⭐ RÉORGANISATION 2026-11-17 — DEUX chemins dans le même modal :
+        - CRÉATION (modal simplifié) : classes (multi) + trimestre + type(s)
+          d'évaluation — les matières de CHAQUE classe sont associées
+          automatiquement (Pédagogie > Matières & Programmes) ; dates/titre/
+          barème en « options avancées » (défauts : aujourd'hui, auto) ;
+        - ÉDITION d'une session existante : formulaire historique complet
+          (type unique, matières cochables, dates, barème…).
+        */}
+        {!editingId ? (
+          <div className="space-y-4">
+            {/* Intro — ce que fait le système */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-xs text-blue-800 leading-relaxed">
+                {labels.createModalIntro}
+              </p>
+            </div>
+
+            {/* 1. Classes (sélection multiple) */}
+            <div>
+              <Label>
+                {labels.classes} <span className="text-red-500">*</span>
+                <span className="ml-2 text-xs text-gray-500 font-normal">
+                  ({form.classIds.length} {isEN ? (form.classIds.length > 1 ? 'selected' : 'selected') : (form.classIds.length > 1 ? 'sélectionnées' : 'sélectionnée')})
+                </span>
+              </Label>
+              <div className="mt-1 max-h-[180px] overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50 space-y-1">
+                {classes.length === 0 ? (
+                  <p className="text-sm text-gray-500 italic text-center py-4">
+                    {labels.noClasses}
+                  </p>
+                ) : (
+                  classes.map(c => {
+                    const assignments = assignmentsForClass(c.id);
+                    return (
+                      <label
+                        key={c.id}
+                        className="flex items-center gap-2 p-2 rounded-md hover:bg-white cursor-pointer transition-colors"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={form.classIds.includes(c.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setForm({ ...form, classIds: [...form.classIds, c.id] });
+                            } else {
+                              setForm({ ...form, classIds: form.classIds.filter(id => id !== c.id) });
+                            }
+                          }}
+                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">
+                          {isEN ? translateClassName(c.name) : c.name}
+                        </span>
+                        <span className="ml-auto shrink-0 text-[10px] text-gray-400 whitespace-nowrap">
+                          {c.studentCount ?? 0} {labels.studentsLabel} · {assignments.length} {labels.subjectsAssigned}
+                        </span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              <div className="mt-1 flex items-center gap-3">
+                {classes.length > 0 && form.classIds.length < classes.length && (
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, classIds: classes.map(c => c.id) })}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                  >
+                    {labels.selectAll}
+                  </button>
+                )}
+                {form.classIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, classIds: [] })}
+                    className="text-xs text-gray-500 hover:text-red-600"
+                  >
+                    {labels.deselectAll}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 2. Période (trimestre) — auto-sélectionnée sur le trimestre actif */}
+            <div>
+              <Label htmlFor="periodId">{labels.period} <span className="text-red-500">*</span></Label>
+              <Select value={form.periodId} onValueChange={(v) => setForm({ ...form, periodId: v })}>
+                <SelectTrigger id="periodId">
+                  <SelectValue placeholder={labels.selectPlaceholder}>
+                    {(() => {
+                      const selectedPeriod = periods.find((p) => p.id === form.periodId);
+                      if (selectedPeriod) {
+                        const displayName = translatePeriodName(selectedPeriod.name, scopeLang as 'FR' | 'EN' | undefined);
+                        return selectedPeriod.isClosed
+                          ? `${displayName} (${labels.closed})`
+                          : (selectedPeriod as any).isActive
+                            ? `${displayName} (${labels.active})`
+                            : displayName;
+                      }
+                      return null;
+                    })()}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {periods.length === 0 ? (
+                    <SelectItem value="_none" disabled>{labels.noPeriods}</SelectItem>
+                  ) : (
+                    periods.map(p => {
+                      const displayName = translatePeriodName(p.name, scopeLang as 'FR' | 'EN' | undefined);
+                      return (
+                        <SelectItem key={p.id} value={p.id} disabled={p.isClosed}>
+                          {displayName} {p.isClosed && `(${labels.closed})`} {(p as any).isActive && !p.isClosed && `(${labels.active})`}
+                        </SelectItem>
+                      );
+                    })
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 3. Type(s) d'évaluation (sélection multiple) */}
+            <div>
+              <Label>
+                {labels.evaluationTypesPlural} <span className="text-red-500">*</span>
+                <span className="ml-2 text-xs text-gray-500 font-normal">
+                  ({form.evaluationTypeIds.length})
+                </span>
+              </Label>
+              <p className="text-[10px] text-gray-500 mb-1">
+                {isEN
+                  ? 'Pick one or several — one assessment session per class and per type.'
+                  : 'Cochez un ou plusieurs types — une session d\'évaluation sera créée par classe et par type.'}
+              </p>
+              <div className="mt-1 max-h-[140px] overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50 space-y-1">
+                {evaluationTypes.length === 0 ? (
+                  <p className="text-sm text-gray-500 italic text-center py-4">
+                    {labels.noTypes}
+                  </p>
+                ) : (
+                  evaluationTypes.map(t => (
+                    <label
+                      key={t.id}
+                      className="flex items-center gap-2 p-2 rounded-md hover:bg-white cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={form.evaluationTypeIds.includes(t.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setForm({ ...form, evaluationTypeIds: [...form.evaluationTypeIds, t.id] });
+                          } else {
+                            setForm({ ...form, evaluationTypeIds: form.evaluationTypeIds.filter(id => id !== t.id) });
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">
+                        {t.code ? `[${t.code}] ` : ''}{t.name}
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+              <div className="mt-1 flex items-center gap-3">
+                {evaluationTypes.length > 0 && form.evaluationTypeIds.length < evaluationTypes.length && (
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, evaluationTypeIds: evaluationTypes.map(t => t.id) })}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                  >
+                    {labels.selectAll}
+                  </button>
+                )}
+                {form.evaluationTypeIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, evaluationTypeIds: [] })}
+                    className="text-xs text-gray-500 hover:text-red-600"
+                  >
+                    {labels.deselectAll}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Aperçu — matières associées AUTOMATIQUEMENT par classe */}
+            {form.classIds.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                  {isEN ? 'Subjects automatically associated per class' : 'Matières associées automatiquement par classe'}
+                </p>
+                {form.classIds.map((cid) => {
+                  const cls = classes.find((c) => c.id === cid);
+                  const assignments = assignmentsForClass(cid);
+                  const displayName = cls ? (isEN ? translateClassName(cls.name) : cls.name) : cid;
+                  const plannedCount = assignments.length * form.evaluationTypeIds.length;
+                  return (
+                    <div
+                      key={cid}
+                      className={`border rounded-lg p-2.5 bg-white ${assignments.length === 0 ? 'border-amber-300' : 'border-gray-200'}`}
+                    >
+                      <p className="text-xs font-semibold text-gray-700 mb-1">
+                        {displayName}
+                        {assignments.length > 0 && (
+                          <span className="ml-2 text-[10px] font-normal text-gray-400">
+                            {assignments.length} {isEN ? (assignments.length > 1 ? 'subjects' : 'subject') : (assignments.length > 1 ? 'matières' : 'matière')}
+                            {form.evaluationTypeIds.length > 0 &&
+                              ` · ${plannedCount} ${labels.evaluationsCreated}`}
+                          </span>
+                        )}
+                      </p>
+                      {assignments.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {assignments.map((a) => (
+                            <span
+                              key={a.subjectId}
+                              title={isEN ? 'Assigned in Pedagogy > Subjects & Programs' : 'Affectée dans Pédagogie > Matières & Programmes'}
+                              className="inline-flex items-center px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-xs font-medium border border-blue-100"
+                            >
+                              {a.subjectName || subjects.find((s) => s.id === a.subjectId)?.name || '—'}
+                              {a.coefficient != null && !isMaternelle && !isEN && (
+                                <span className="ml-1.5 text-[10px] font-bold text-blue-500">coef {a.coefficient}</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-amber-600">{labels.configureSubjectsFirst}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Options avancées (dates, titre, description, barème) */}
+            <details className="border border-gray-200 rounded-lg bg-gray-50">
+              <summary className="px-3 py-2.5 text-xs font-semibold text-gray-600 cursor-pointer select-none">
+                {labels.advancedOptions}
+              </summary>
+              <div className="p-3 pt-2 space-y-4">
+                {/* Dates — défaut : aujourd'hui */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="startDate">{labels.startDate}</Label>
+                    <Input
+                      id="startDate"
+                      type="date"
+                      value={form.startDate}
+                      onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="endDate">{labels.endDate}</Label>
+                    <Input
+                      id="endDate"
+                      type="date"
+                      value={form.endDate}
+                      onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                    />
+                  </div>
+                </div>
+                {/* Titre (préfixe optionnel — auto-généré par type sinon) */}
+                <div>
+                  <Label htmlFor="title">
+                    {labels.title} <span className="text-gray-400 font-normal">({isEN ? 'optional — auto-generated per type' : 'optionnel — auto-généré par type'})</span>
+                  </Label>
+                  <Input
+                    id="title"
+                    value={form.title}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                    placeholder={isEN ? 'Ex: First Term' : 'Ex: Trimestre 1'}
+                  />
+                </div>
+                {/* Barème / coefficient — repli (les valeurs Pédagogie priment) */}
+                {isMaternelle ? (
+                  <div className="bg-pink-50 border border-pink-200 rounded-lg p-3">
+                    <p className="text-xs text-pink-800">
+                      {isEN
+                        ? 'Qualitative assessment (TS / S / PS) — no scale, no coefficient.'
+                        : 'Évaluation qualitative (TS / S / PS) — pas de barème ni de coefficient.'}
+                    </p>
+                  </div>
+                ) : isEN ? (
+                  <div>
+                    <Label htmlFor="maxScore">{labels.maxScore}</Label>
+                    <Input
+                      id="maxScore"
+                      type="number"
+                      step="0.5"
+                      value={form.maxScore}
+                      onChange={(e) => setForm({ ...form, maxScore: e.target.value })}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">CA: out of 40 · Examination: out of 60</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="maxScore">{labels.maxScore}</Label>
+                      <Input
+                        id="maxScore"
+                        type="number"
+                        step="0.5"
+                        value={form.maxScore}
+                        onChange={(e) => setForm({ ...form, maxScore: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="coefficient">{labels.coefficient}</Label>
+                      <Input
+                        id="coefficient"
+                        type="number"
+                        step="0.5"
+                        value={form.coefficient}
+                        onChange={(e) => setForm({ ...form, coefficient: e.target.value })}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        {isEN
+                          ? 'Subject coefficients from Pedagogy are applied automatically — this is only a fallback.'
+                          : 'Les coefficients définis par matière dans Pédagogie sont appliqués automatiquement — cette valeur ne sert que de repli.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {/* Description */}
+                <div>
+                  <Label htmlFor="description">{labels.description}</Label>
+                  <Textarea
+                    id="description"
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    placeholder={isEN ? 'Chapters covered, specific instructions...' : 'Chapitres abordés, consignes particulières...'}
+                    rows={2}
+                  />
+                </div>
+              </div>
+            </details>
+          </div>
+        ) : (
+        <>
         {/* ⭐ Type d'évaluation EN PREMIER (avant titre) */}
         <div>
           <Label htmlFor="evaluationTypeId">{labels.evaluationType} <span className="text-red-500">*</span></Label>
@@ -2068,6 +2792,8 @@ export default function EvaluationsPage() {
             rows={3}
           />
         </div>
+        </>
+        )}
       </div>
     </FormModal>
 

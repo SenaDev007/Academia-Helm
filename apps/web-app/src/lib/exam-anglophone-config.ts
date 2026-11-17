@@ -447,6 +447,25 @@ export const EN_LABELS = {
   // Class selector
   selectClass: 'Select a class',
   selectPeriod: 'Select a term',
+
+  // ⭐ 2026-11-17 — Assessments tab reorganized BY CLASS (vue par classe)
+  byClassTitle: 'Assessments by Class',
+  byClassSubtitle: 'Select a class to see its programmed assessments (subjects, terms, statuses).',
+  studentsLabel: 'students',
+  sessionsLabel: 'session(s)',
+  subjectsAssigned: 'subject(s) in Pedagogy',
+  backToClasses: 'All classes',
+  classDetailSessions: 'assessment session(s)',
+  typesForTerm: 'Type(s) programmed',
+  noSessionsForTerm: 'No assessment programmed for this term.',
+  configureSubjectsFirst: 'No subjects assigned to this class — configure Pedagogy > Subjects & Programs first.',
+  createModalIntro: 'Select the class(es), the term and the assessment type(s). The subjects of each class (with their coefficients, already configured in Pedagogy) are associated automatically.',
+  evaluationTypesPlural: 'Assessment type(s)',
+  selectTypesFirst: 'Select at least one assessment type.',
+  subjectsAutoNote: 'assessed automatically',
+  advancedOptions: 'Advanced options (dates, title, description, scale)',
+  allPeriodsLabel: 'All terms',
+  classesWithoutSubjects: (names: string) => `No subjects assigned to: ${names} — configure Pedagogy > Subjects & Programs first.`,
 } as const;
 
 export const FR_LABELS = {
@@ -580,6 +599,25 @@ export const FR_LABELS = {
   // Class selector
   selectClass: 'Sélectionner une classe',
   selectPeriod: 'Sélectionner un trimestre',
+
+  // ⭐ 2026-11-17 — Onglet Évaluations réorganisé PAR CLASSE
+  byClassTitle: 'Évaluations par classe',
+  byClassSubtitle: 'Choisissez une classe pour voir ses évaluations programmées (matières, trimestre, statuts).',
+  studentsLabel: 'élèves',
+  sessionsLabel: 'session(s)',
+  subjectsAssigned: 'matière(s) dans Pédagogie',
+  backToClasses: 'Toutes les classes',
+  classDetailSessions: 'session(s) d\'évaluation',
+  typesForTerm: 'Type(s) programmé(s)',
+  noSessionsForTerm: 'Aucune évaluation programmée pour ce trimestre.',
+  configureSubjectsFirst: 'Aucune matière affectée à cette classe — configurez d\'abord Pédagogie > Matières & Programmes.',
+  createModalIntro: 'Sélectionnez la/les classe(s), le trimestre et le(s) type(s) d\'évaluation. Les matières de chaque classe (avec leurs coefficients, déjà paramétrées dans Pédagogie > Matières & Programmes) sont associées automatiquement.',
+  evaluationTypesPlural: 'Type(s) d\'évaluation',
+  selectTypesFirst: 'Sélectionnez au moins un type d\'évaluation.',
+  subjectsAutoNote: 'évaluées automatiquement',
+  advancedOptions: 'Options avancées (dates, titre, description, barème)',
+  allPeriodsLabel: 'Tous les trimestres',
+  classesWithoutSubjects: (names: string) => `Aucune matière affectée à : ${names} — configurez d'abord Pédagogie > Matières & Programmes.`,
 } as const;
 
 export function getLabels(language: 'FR' | 'EN' | undefined) {

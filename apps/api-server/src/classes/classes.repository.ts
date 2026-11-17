@@ -65,13 +65,54 @@ export class ClassesRepository {
       include.academicYear = true;
     }
 
-    return this.prisma.class.findMany({
+    const results = await this.prisma.class.findMany({
       where,
       include,
       orderBy: { name: 'asc' },
       skip: pagination.skip,
       take: pagination.take,
     });
+
+    // ⭐ RÉORGANISATION 2026-11-17 (module Examens — onglet Évaluations, vue
+    //    par classe) : attacher l'effectif actif de chaque classe (champ
+    //    additif `studentCount`, ignoré par les consommateurs existants).
+    //    Les classes physiques n'ont généralement PAS de lignes ClassStudent
+    //    (0 en production) — la vérité « effectif » vit dans student_enrollments.
+    //    Mêmes statuts actifs que la grille de saisie des notes
+    //    (grades.service.getGradingSheet) : ADMITTED, PRE_REGISTERED, ACTIVE,
+    //    ENROLLED, RE_ENROLLED, VALIDATED, CONFIRMED, PENDING — seuls
+    //    WITHDRAWN/TRANSFERRED sont exclus.
+    const classIds = results.map((c: any) => c.id);
+    if (classIds.length > 0) {
+      const enrollmentCounts: Array<{ classId: string; academicYearId: string; _count: { _all: number } }> =
+        await this.prisma.studentEnrollment.groupBy({
+          by: ['classId', 'academicYearId'],
+          where: {
+            tenantId,
+            classId: { in: classIds },
+            status: {
+              in: [
+                'ACTIVE', 'ADMITTED', 'ENROLLED', 'PRE_REGISTERED',
+                'RE_ENROLLED', 'VALIDATED', 'CONFIRMED', 'PENDING',
+              ],
+            },
+          },
+          _count: { _all: true },
+        });
+      const countByClassYear = new Map<string, number>();
+      for (const row of enrollmentCounts) {
+        // Une classe est annuelle (classes.academicYearId) : on ne compte que
+        // les inscriptions de SON année (les inscriptions d'une autre année
+        // d'une classe historique homonyme ne doivent pas gonfler l'effectif).
+        const key = `${row.classId}|${row.academicYearId}`;
+        countByClassYear.set(key, row._count._all);
+      }
+      for (const c of results as any[]) {
+        c.studentCount = countByClassYear.get(`${c.id}|${c.academicYearId}`) ?? 0;
+      }
+    }
+
+    return results;
   }
 
   async count(

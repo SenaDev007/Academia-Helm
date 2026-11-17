@@ -503,7 +503,7 @@ export class EvaluationsService {
    */
   async createBulk(tenantId: string, academicYearId: string, data: {
     classIds: string[];
-    subjectIds: string[];
+    subjectIds?: string[];
     periodId: string;
     evaluationTypeId: string;
     title?: string;
@@ -526,6 +526,16 @@ export class EvaluationsService {
      * en repli : data.coefficient, sinon defaultCoefficient du type, sinon 1.
      */
     respectSubjectCoefficients?: boolean;
+    /**
+     * ⭐ RÉORGANISATION 2026-11-17 (onglet Évaluations — vue par classe) :
+     * Matières PROPRES À CHAQUE CLASSE — { [classId]: subjectId[] }.
+     * Chaque classe du multi-select est évaluée sur SES matières affectées
+     * dans Pédagogie > Matières & Programmes (plus d'intersection entre
+     * classes : la 6e A peut composer 7 matières pendant que la 4e en compose 8).
+     * Repli : data.subjectIds appliqué à toutes les classes (comportement
+     * historique, rétro-compatible avec les autres appelants).
+     */
+    subjectsByClass?: Record<string, string[]>;
   }) {
     // ⭐ V10e — Validation du type par id OU par code, résolu PAR NIVEAU
     // (le code "EM1" existe pour Maternelle ET Primaire : sans le scope
@@ -546,7 +556,13 @@ export class EvaluationsService {
       throw new BadRequestException('La période est clôturée — impossible de créer des évaluations.');
     }
 
-    if (!data.classIds?.length || !data.subjectIds?.length) {
+    // ⭐ RÉORGANISATION 2026-11-17 : avec subjectsByClass (matières propres à
+    //    chaque classe), subjectIds n'est plus obligatoire — chaque classe
+    //    apporte SA liste. Repli historique : subjectIds global.
+    const hasSubjectsByClass =
+      !!data.subjectsByClass &&
+      Object.values(data.subjectsByClass).some((list) => Array.isArray(list) && list.length > 0);
+    if (!data.classIds?.length || (!hasSubjectsByClass && !data.subjectIds?.length)) {
       throw new BadRequestException('Au moins une classe et une matière sont requises.');
     }
 
@@ -573,7 +589,7 @@ export class EvaluationsService {
     // Étape 0 : charger les classes opérationnelles + leur classe officielle
     const operationalClasses = await this.prisma.class.findMany({
       where: { id: { in: data.classIds } },
-      select: { id: true, officialClassId: true },
+      select: { id: true, name: true, officialClassId: true },
     });
     const officialClassIds = Array.from(
       new Set(
@@ -583,6 +599,25 @@ export class EvaluationsService {
       ),
     );
 
+    // ⭐ RÉORGANISATION 2026-11-17 — résolution des matières PAR CLASSE :
+    //    - subjectsByClass fourni (modal simplifié : classes + trimestre +
+    //      types, matières auto) → chaque classe utilise SA liste propre ;
+    //    - sinon → data.subjectIds appliqué à toutes (comportement historique).
+    const subjectsForClass = (classId: string): string[] => {
+      const own = data.subjectsByClass?.[classId];
+      if (Array.isArray(own) && own.length > 0) {
+        return Array.from(new Set(own.filter(Boolean)));
+      }
+      return Array.from(new Set((data.subjectIds || []).filter(Boolean)));
+    };
+    // Union de toutes les matières impliquées (pour les requêtes en aval)
+    const allInvolvedSubjectIds = Array.from(
+      new Set([
+        ...(data.subjectIds || []),
+        ...data.classIds.flatMap((cid) => subjectsForClass(cid)),
+      ].filter(Boolean)),
+    );
+
     // Étape 1 : récupérer les ClassSubject pour les (classe × matière) demandées
     // ⭐ ClassSubject.classId est deprecated (souvent null en production).
     // On cherche par academicClassId (la relation utilisée en production),
@@ -590,7 +625,7 @@ export class EvaluationsService {
     const classSubjects = await this.prisma.classSubject.findMany({
       where: {
         tenantId,
-        subjectId: { in: data.subjectIds },
+        subjectId: { in: allInvolvedSubjectIds },
         OR: [
           { classId: { in: data.classIds } },
           { academicClassId: { in: [...data.classIds, ...officialClassIds] } },
@@ -684,8 +719,30 @@ export class EvaluationsService {
       createdBy: string | null;
     }> = [];
 
+    // ⭐ RÉORGANISATION 2026-11-17 — classes sans AUCUNE matière : on refuse
+    //    TOUTE la requête avec un message explicite (le modal simplifié exige
+    //    que chaque classe sélectionnée ait ses matières configurées dans
+    //    Pédagogie > Matières & Programmes — l'école doit les y définir d'abord).
+    const classNameById = new Map(
+      operationalClasses.map((c) => [c.id, c.name] as [string, string]),
+    );
+    const classesWithoutSubjects = data.classIds.filter(
+      (cid) => subjectsForClass(cid).length === 0,
+    );
+    if (classesWithoutSubjects.length > 0) {
+      const displayNames = classesWithoutSubjects.map(
+        (cid) => classNameById.get(cid) || cid,
+      );
+      throw new BadRequestException(
+        `Aucune matière n'est affectée à : ${displayNames.join(', ')} — ` +
+        'affectez d\'abord les matières de ces classes dans Pédagogie > Matières & Programmes.',
+      );
+    }
+
     for (const classId of data.classIds) {
-      for (const subjectId of data.subjectIds) {
+      // ⭐ Matières PROPRES à cette classe (subjectsByClass) — une classe peut
+      //    composer 7 matières pendant qu'une autre en compose 8.
+      for (const subjectId of subjectsForClass(classId)) {
         const teacherId = teacherMap.get(`${classId}|${subjectId}`) || null;
         // ⭐ FIX 2026-11-17 : coefficient PAR MATIÈRE — quand
         //    respectSubjectCoefficients est actif, on reprend le coefficient
@@ -744,7 +801,7 @@ export class EvaluationsService {
           select: { id: true, name: true },
         }),
         this.prisma.subject.findMany({
-          where: { id: { in: data.subjectIds } },
+          where: { id: { in: allInvolvedSubjectIds } },
           select: { id: true, name: true },
         }),
         Promise.resolve(type),
@@ -781,7 +838,10 @@ export class EvaluationsService {
       created: result.length,
       evaluations: result,
       teachersAssigned: teacherMap.size,
-      message: `${result.length} évaluation(s) créée(s) pour ${data.classIds.length} classe(s) × ${data.subjectIds.length} matière(s). ${teacherMap.size} enseignant(s) auto-assigné(s).`,
+      // ⭐ RÉORGANISATION 2026-11-17 — avec subjectsByClass, le nombre de
+      //    matières diffère PAR CLASSE (7 pour la 6e, 8 pour la 4e…) — on
+      //    rapporte l'union des matières impliquées, pas une Croix produit.
+      message: `${result.length} évaluation(s) créée(s) pour ${data.classIds.length} classe(s) × ${allInvolvedSubjectIds.length} matière(s) (union des matières par classe). ${teacherMap.size} enseignant(s) auto-assigné(s).`,
     };
   }
 

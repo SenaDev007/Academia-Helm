@@ -329,7 +329,7 @@ export class PayrollDocumentsService {
               ? Number(staff.prestationAmount ?? contract?.prestationAmount ?? 0)
               : null,
         },
-        decompte: { brut, tauxAib, aib, net },
+        decompte: { brut, tauxAib, aib, net, indemnites: buildIndemnitesGains(item) },
         cumuls,
         rates: { fiscalYear: rates.fiscalYear, aibPct: tauxAib, sourceNotes: rates.sourceNotes },
         mention: MENTION_ETAT_PAIEMENT,
@@ -342,8 +342,18 @@ export class PayrollDocumentsService {
     const brut = Number(item.grossSalary);
     const base = Number(item.baseSalary);
     const heuresSup = Number(item.overtimeAmount);
-    // Primes & indemnités = complément du brut par rapport à la base + heures sup (figé par la ligne)
-    const primes = Math.max(0, Math.round((brut - base - heuresSup) * 100) / 100);
+    // ⭐ 17/11/2026 — indemnités DÉTAILLÉES par type (figées dans la ligne de
+    //    paie au calcul) : salaire réel = base + Σ indemnités + heures supp +
+    //    primes. Lignes héritées sans détail → repli « Primes et indemnités »
+    //    (résidu brut − base − heures sup), rendu inchangé.
+    const indemnites = buildIndemnitesGains(item);
+    const indemTotal = indemnites
+      ? Math.round(indemnites.reduce((s: number, a: any) => s + a.amount, 0) * 100) / 100
+      : 0;
+    // Primes ponctuelles pures : complément du brut hors base/indemnités/heures supp
+    const primes = indemnites
+      ? Math.max(0, Math.round((brut - base - heuresSup - indemTotal) * 100) / 100)
+      : Math.max(0, Math.round((brut - base - heuresSup) * 100) / 100);
     const retenues = {
       cnss: Number(item.cnssEmployee || 0),
       its: Number(item.irppAmount || 0),
@@ -390,7 +400,7 @@ export class PayrollDocumentsService {
         ancienneteDepuis: staff.hireDate || contract?.startDate || null,
         joursTravailles: period.joursOuvres,
       },
-      gains: { base, heuresSup, primes, brut },
+      gains: { base, heuresSup, primes, indemnites, brut },
       retenues,
       net: Number(item.netSalary),
       chargesPatronales,
@@ -584,6 +594,30 @@ export class PayrollDocumentsService {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/**
+ * ⭐ 17/11/2026 — Indemnités DÉTAILLÉES par type, figées dans la ligne de paie
+ * (payroll_items.allowancesDetail) au moment du calcul :
+ *   • détail présent  → [{label, amount}] par type d'indemnité ;
+ *   • total seul      → ligne agrégée « Indemnités » (montant figé) ;
+ *   • rien (héritage) → null → les gabarits retombent sur « Primes et
+ *     indemnités » (résidu), rendu inchangé des documents déjà émis.
+ * Le SALAIRE RÉEL s'affiche alors : base + chaque type d'indemnité + heures
+ * supp + primes = SALAIRE BRUT.
+ */
+function buildIndemnitesGains(item: any): Array<{ label: string; amount: number }> | null {
+  const detailRaw = Array.isArray(item?.allowancesDetail) ? item.allowancesDetail : [];
+  const detail = detailRaw
+    .map((a: any) => ({
+      label: String(a?.label ?? a?.code ?? 'Indemnité'),
+      amount: round2(Number(a?.amount ?? 0)),
+    }))
+    .filter((a: any) => a.amount > 0);
+  if (detail.length > 0) return detail;
+  const total = round2(Number(item?.allowancesTotal ?? 0));
+  if (total > 0) return [{ label: 'Indemnités', amount: total }];
+  return null;
 }
 
 function fmtHash(hash: string): string {

@@ -101,6 +101,10 @@ export interface FichePaieSnapshot {
     base: number;
     heuresSup: number;
     primes: number;
+    /** ⭐ 17/11/2026 — indemnités DÉTAILLÉES par type (figées au calcul) :
+     *  base + Σ indemnites + heuresSup + primes = brut (salaire réel).
+     *  null → ligne héritée sans détail : repli « Primes et indemnités ». */
+    indemnites?: Array<{ label: string; amount: number }> | null;
     brut: number;
   };
   retenues: {
@@ -145,6 +149,8 @@ export interface EtatPaiementSnapshot {
     tauxAib: number; // DÉRIVÉ (IFU présent/absent) — jamais saisi
     aib: number;
     net: number;
+    /** Indemnités détaillées par type (figées au calcul) — null si aucune. */
+    indemnites?: Array<{ label: string; amount: number }> | null;
   };
   cumuls: CumulsAnnuels;
   rates: RatesStamp;
@@ -341,10 +347,20 @@ const EP_GREEN = '#14532d'; // vert foncé — état de paiement
 /** Rendu HTML de la FICHE DE PAIE (identité bleu nuit). */
 export function renderFicheDePaieHtml(s: FichePaieSnapshot): string {
   const num = s.documentNumber ? esc(s.documentNumber) : 'PROJET — NON ÉMIS';
+  // ⭐ 17/11/2026 — gains détaillés : chaque type d'indemnité figé dans la
+  //    ligne de paie s'affiche comme rubrique À PART ENTIERE (le brut =
+  //    base + Σ indemnités + heures supp + primes devient lisible) ;
+  //    snapshots hérités sans gains.indemnites → « Primes et indemnités ».
+  const indemnitesRows = (s.gains.indemnites ?? []).map((a) => row(a.label, a.amount));
   const gainsRows = [
     row('Salaire de base', s.gains.base),
     s.gains.heuresSup > 0 ? row('Heures supplémentaires', s.gains.heuresSup) : null,
-    s.gains.primes > 0 ? row('Primes et indemnités', s.gains.primes) : null,
+    ...(indemnitesRows.length > 0
+      ? indemnitesRows
+      : s.gains.primes > 0
+        ? [row('Primes et indemnités', s.gains.primes)]
+        : []),
+    indemnitesRows.length > 0 && s.gains.primes > 0 ? row('Primes', s.gains.primes) : null,
   ]
     .filter(Boolean)
     .join('');
@@ -468,6 +484,18 @@ export function renderEtatDePaiementHtml(s: EtatPaiementSnapshot): string {
       : s.prestataire.mode === 'HORAIRE'
         ? `Rémunération : ${s.prestataire.heures ?? '—'} h × ${fmtMoney(s.prestataire.tauxHoraire ?? 0)} FCFA/h`
         : null;
+  // ⭐ 17/11/2026 — prestataire AVEC indemnités détaillées : le décompte
+  //    décompose le brut (prestation de base + chaque type d'indemnité) ;
+  //    sans indemnités → « Montant brut de la prestation » seul (inchangé).
+  const epIndemnites = (s.decompte.indemnites ?? []).filter((a) => a.amount > 0);
+  const epIndemTotal = epIndemnites.reduce((acc, a) => acc + a.amount, 0);
+  const gainsDecompteRows =
+    epIndemnites.length > 0
+      ? [
+          row('Prestation de base', s.decompte.brut - epIndemTotal),
+          ...epIndemnites.map((a) => row(a.label, a.amount)),
+        ].join('')
+      : '';
 
   return `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"><style>${BASE_CSS}</style></head>
@@ -509,6 +537,7 @@ export function renderEtatDePaiementHtml(s: EtatPaiementSnapshot): string {
     <caption style="background:${EP_GREEN}">Décompte de paiement</caption>
     <thead><tr><th>Rubrique</th><th class="r">Montant (FCFA)</th></tr></thead>
     <tbody>
+      ${gainsDecompteRows}
       ${row('Montant brut de la prestation', s.decompte.brut)}
       ${row(`Retenue à la source AIB (${fmt(s.decompte.tauxAib)} %${s.prestataire.ifu ? '' : ' — sans IFU'})`, s.decompte.aib)}
       <tr class="total">${rowHTML('NET À PAYER', s.decompte.net)}</tr>

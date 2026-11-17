@@ -586,11 +586,23 @@ export class PayrollPrismaService {
         // Les vacataires ne sont PAS soumis à la CNSS ni à l'IRPP
         const vacataire = isVacataire(staff);
 
-        // Somme des indemnités actives
+        // Somme des indemnités actives + DÉTAIL par type figé dans la ligne
+        // ⭐ 17/11/2026 — exigence : le brut doit EXPLOITER les types d'indemnité
+        //    (base + Σ indemnités + heures supp + primes = salaire réel).
+        //    allowancesTotal/allowancesDetail rendent la composition du brut
+        //    TRANSPARENTE (page période, documents FP/EP) — figée au calcul.
         const totalAllowances = staff.staffAllowances.reduce(
           (acc, sa) => acc.plus(sa.amount),
           new Prisma.Decimal(0),
         );
+        const allowancesDetail = staff.staffAllowances
+          .slice()
+          .sort((a: any, b: any) => String(a.allowanceType?.code ?? '').localeCompare(String(b.allowanceType?.code ?? '')))
+          .map((sa: any) => ({
+            code: sa.allowanceType?.code ?? null,
+            label: sa.allowanceType?.name ?? 'Indemnité',
+            amount: Number(sa.amount),
+          }));
 
         // Calculer les heures supplémentaires validées dans la période
         const overtimeRecords = await this.prisma.overtimeRecord.findMany({
@@ -734,6 +746,8 @@ export class PayrollPrismaService {
             baseSalary,
             overtimeAmount,
             bonuses,
+            allowancesTotal,
+            allowancesDetail: allowancesDetail as any,
             grossSalary,
             cnssEmployee,
             cnssEmployer,
@@ -869,11 +883,19 @@ export class PayrollPrismaService {
     // Base salary
     const baseSalary = item.baseSalary;
 
-    // Allowances
+    // Allowances + DÉTAIL par type (même figéage que la génération — 17/11/2026)
     const totalAllowances = item.staff.staffAllowances.reduce(
       (acc, sa) => acc.plus(sa.amount),
       new Prisma.Decimal(0),
     );
+    const allowancesDetail = item.staff.staffAllowances
+      .slice()
+      .sort((a: any, b: any) => String(a.allowanceType?.code ?? '').localeCompare(String(b.allowanceType?.code ?? '')))
+      .map((sa: any) => ({
+        code: sa.allowanceType?.code ?? null,
+        label: sa.allowanceType?.name ?? 'Indemnité',
+        amount: Number(sa.amount),
+      }));
 
     // Overtime
     const overtimeRecords = await this.prisma.overtimeRecord.findMany({
@@ -1044,6 +1066,8 @@ export class PayrollPrismaService {
         ...prismaUpdateDefaults(),
         overtimeAmount,
         bonuses,
+        allowancesTotal: totalAllowances,
+        allowancesDetail: allowancesDetail as any,
         grossSalary,
         cnssEmployee,
         cnssEmployer,

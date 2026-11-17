@@ -139,13 +139,15 @@ export const PLATFORM_LABELS = {
 };
 
 // ── Config des requirements ──
-
+// ⭐ 17/11/2026 — aucun terme technique sur la page /downloads : « 64-bit »,
+//    « API 26+ », « Intel/Apple Silicon », « 20.04+ » remplacés par des
+//    formulations grand public.
 export const PLATFORM_REQUIREMENTS = {
-  windows: "Windows 10/11 (64-bit)",
-  macos: "macOS 11+ (Intel/Apple Silicon)",
-  linux: "Ubuntu 20.04+ / Debian / Fedora",
-  android: "Android 8.0+ (API 26+)",
-  ios: "iOS 14+ (iPhone/iPad)",
+  windows: "Windows 10 ou 11",
+  macos: "macOS 11 ou plus récent",
+  linux: "Ubuntu, Debian ou Fedora",
+  android: "Android 8.0 ou plus récent",
+  ios: "iOS 14 ou plus récent (iPhone/iPad)",
   "google-play": "Google Play Store",
   "app-store": "Apple App Store",
 };

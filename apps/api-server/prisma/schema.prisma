@@ -6231,6 +6231,12 @@ model PayrollItem {
   baseSalary      Decimal          @db.Decimal(10, 2)
   overtimeAmount  Decimal          @default(0) @db.Decimal(10, 2)
   bonuses         Decimal          @default(0) @db.Decimal(10, 2)
+  /// ⭐ Total des indemnités actives incluses dans le brut (figé au calcul) —
+  ///   brut = base + allowancesTotal + heuresSup + primes (traçabilité).
+  allowancesTotal Decimal          @default(0) @db.Decimal(10, 2)
+  /// Détail des indemnités par type [{code,label,amount}] — figé au calcul,
+  /// alimente la page période et les documents FP/EP (gains détaillés).
+  allowancesDetail Json?
   grossSalary     Decimal          @db.Decimal(10, 2)
   cnssEmployee    Decimal          @default(0) @db.Decimal(10, 2)
   cnssEmployer    Decimal          @default(0) @db.Decimal(10, 2)

@@ -87,13 +87,13 @@ const DEFAULT_RELEASE: Release = {
   date: new Date().toISOString(),
   notes: [
     "Application desktop Windows et Linux (macOS bientôt disponible)",
-    "Application mobile Android — installation directe par APK",
-    "Base de données locale SQLite pour le mode hors connexion (offline-first)",
-    "Synchronisation automatique au retour du réseau (debounce 1.5s + retry backoff)",
+    "Application mobile Android — installation directe en quelques instants",
+    "Mode hors connexion : vos données restent disponibles sans internet",
+    "Synchronisation automatique au retour du réseau, sans action de votre part",
     "Bouton « Synchroniser » manuel dans le cockpit digital",
-    "Mise à jour automatique au démarrage de l'application desktop",
-    "Même interface que la version web — pas de recodage",
-    "Multi-caisses, paiements en ligne, reçus PDF/WhatsApp/SMS",
+    "Mise à jour automatique de l'application desktop au démarrage",
+    "Même interface que la version web — aucune prise en main supplémentaire",
+    "Multi-caisses, paiements en ligne, reçus PDF, WhatsApp et SMS",
   ],
   assets: [
     {
@@ -436,7 +436,7 @@ export default function DownloadsPage() {
             <FeatureCard
               icon={RefreshCw}
               title="Sync automatique"
-              description="Synchronisation toutes les 60 secondes avec la base principale. Vos données sont toujours à jour."
+              description="Synchronisation automatique toutes les 60 secondes. Vos données restent à jour partout, sans action de votre part."
             />
             <FeatureCard
               icon={Shield}
@@ -537,15 +537,15 @@ export default function DownloadsPage() {
             />
             <FaqItem
               question="Puis-je travailler sans connexion internet ?"
-              answer="Oui. L'application stocke vos données localement sur votre ordinateur. Quand vous êtes en ligne, tout se synchronise automatiquement toutes les 60 secondes avec la base principale. Hors ligne, vos actions sont sauvegardées et synchronisées dès le retour de la connexion."
+              answer="Oui. L'application garde vos données sur votre ordinateur. Quand vous êtes en ligne, tout se synchronise automatiquement, toutes les 60 secondes. Hors ligne, vos actions sont sauvegardées et synchronisées dès le retour de la connexion."
             />
             <FaqItem
               question="Mes données sont-elles les mêmes sur web, desktop et mobile ?"
-              answer="Oui, exactement. La base de données principale est unique. L'application desktop et l'application mobile se synchronisent automatiquement avec elle. Vos données sont toujours les mêmes partout."
+              answer="Oui, exactement. Vos données sont conservées au même endroit pour les trois versions. Les applications desktop et mobile s'y synchronisent automatiquement. Vous retrouvez toujours les mêmes informations, à l'identique."
             />
             <FaqItem
               question="Quelles sont les configurations requises ?"
-              answer="Desktop : Windows 10/11 64-bit, macOS 11+, ou Linux. Mobile : Android 8.0+ ou iOS 14+."
+              answer="Desktop : Windows 10 ou 11, macOS 11 ou plus récent, ou Linux. Mobile : Android 8.0 ou plus récent, ou iOS 14 ou plus récent."
             />
           </div>
         </div>
@@ -718,7 +718,7 @@ function MobileDownloads({
                 return (
                   <div className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl border border-slate-200 opacity-60">
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs sm:text-sm font-semibold text-[#0b2f73]">APK direct</p>
+                      <p className="text-xs sm:text-sm font-semibold text-[#0b2f73]">Installation directe</p>
                       <p className="text-[10px] sm:text-xs text-slate-500">Bientôt disponible</p>
                     </div>
                     <AlertCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-400 flex-shrink-0" />

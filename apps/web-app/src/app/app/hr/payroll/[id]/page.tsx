@@ -459,6 +459,17 @@ export default function PayrollDetailPage() {
 
   const totalNet = period.payrolls?.reduce((acc: number, p: any) => acc + Number(p.netSalary), 0) || 0;
   const totalGross = period.payrolls?.reduce((acc: number, p: any) => acc + Number(p.grossSalary), 0) || 0;
+  // ⭐ 17/11/2026 — composition du brut : les INDEMNITÉS sont incluses dans le
+  //    salaire réel (brut = base + Σ indemnités + heures supp + primes).
+  //    Lignes héritées sans allowancesTotal → résidu brut − base − h.sup − primes.
+  const itemAllowances = (p: any) =>
+    p.allowancesTotal != null
+      ? Number(p.allowancesTotal)
+      : Math.max(
+          0,
+          Number(p.grossSalary) - Number(p.baseSalary) - Number(p.overtimeAmount || 0) - Number(p.bonuses || 0),
+        );
+  const totalAllowances = period.payrolls?.reduce((acc: number, p: any) => acc + itemAllowances(p), 0) || 0;
   const totalDeductions = period.payrolls?.reduce(
     (acc: number, p: any) => acc + Number(p.cnssEmployee) + Number(p.irppAmount) + Number(p.otherDeductions || 0), 0) || 0;
   const docsIssued = period.payrolls?.filter((p: any) => p.payrollDocument).length || 0;
@@ -560,7 +571,11 @@ export default function PayrollDetailPage() {
       <div className="px-4 sm:px-6">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
           {[
-            { label: 'Masse brute', value: formatCurrency(totalGross) },
+            {
+              label: 'Masse brute',
+              value: formatCurrency(totalGross),
+              sub: totalAllowances > 0 ? `dont indemnités ${formatCurrency(totalAllowances)}` : null,
+            },
             { label: 'Retenues (CNSS/ITS/AIB)', value: formatCurrency(totalDeductions) },
             { label: 'Net à payer', value: formatCurrency(totalNet), accent: 'text-emerald-600' },
             { label: 'Agents', value: `${period.payrolls?.length || 0} ligne(s)` },
@@ -568,6 +583,7 @@ export default function PayrollDetailPage() {
             <div key={i} className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{k.label}</p>
               <p className={cn('text-base font-bold text-slate-900 mt-0.5', k.accent)}>{k.value}</p>
+              {k.sub && <p className="text-[9px] text-slate-400 font-medium mt-0.5">{k.sub}</p>}
             </div>
           ))}
         </div>
@@ -639,7 +655,39 @@ export default function PayrollDetailPage() {
                       </div>
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className="text-xs font-bold text-slate-700">{formatCurrency(payroll.grossSalary)}</span>
+                      {/* ⭐ 17/11/2026 — composition du SALAIRE RÉEL : base +
+                          indemnités (par type au survol) + heures supp + primes. */}
+                      {(() => {
+                        const base = Number(payroll.baseSalary);
+                        const overtime = Number(payroll.overtimeAmount || 0);
+                        const bonuses = Number(payroll.bonuses || 0);
+                        const indem = itemAllowances(payroll);
+                        const detail = Array.isArray(payroll.allowancesDetail)
+                          ? payroll.allowancesDetail.filter((a: any) => Number(a?.amount) > 0)
+                          : [];
+                        const parts: string[] = [];
+                        if (base > 0) parts.push(`Base ${formatCurrency(base)}`);
+                        if (indem > 0) parts.push(`Indemn. ${formatCurrency(indem)}`);
+                        if (overtime > 0) parts.push(`H.sup ${formatCurrency(overtime)}`);
+                        if (bonuses > 0) parts.push(`Primes ${formatCurrency(bonuses)}`);
+                        return (
+                          <div className="flex flex-col">
+                            <span
+                              className="text-xs font-bold text-slate-700"
+                              title={detail.length > 0
+                                ? detail.map((a: any) => `${a.label}: ${formatCurrency(a.amount)}`).join('\n')
+                                : undefined}
+                            >
+                              {formatCurrency(payroll.grossSalary)}
+                            </span>
+                            {parts.length > 0 && (
+                              <span className="text-[8px] text-slate-400 font-medium mt-0.5">
+                                {parts.join(' · ')}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-2.5">
                       {(isVacataire || isPrestataire) ? (
@@ -797,7 +845,9 @@ export default function PayrollDetailPage() {
           </div>
           <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100">
             <p className="text-[10px] text-slate-500 leading-relaxed">
-              Chaque ligne applique le moteur fiscal dérivé du <strong>type de contrat</strong> défini à l'embauche :
+              Le <strong>salaire brut</strong> intègre les indemnités assignées à chaque agent (survolez le brut pour
+              le détail par type : base + indemnités + heures supplémentaires + primes). Chaque ligne applique ensuite le
+              moteur fiscal dérivé du <strong>type de contrat</strong> défini à l'embauche :
               fiche de paie (FP) pour les salariés — CNSS si déclarés, ITS progressif — et état de paiement (EP) pour
               les prestataires (retenue AIB à la source). Les montants alimentent automatiquement les déclarations
               CNSS / IST / AIB de l'onglet « CNSS &amp; Cotisations ».

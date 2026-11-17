@@ -517,6 +517,15 @@ export class EvaluationsService {
     /** ⭐ 2026-10-01 — Piste linguistique ('FR' ou 'EN'). Définit la piste
      *  de l'évaluation pour le filtrage. Par défaut 'FR'. */
     language?: string;
+    /**
+     * ⭐ FIX 2026-11-17 (« gymnastique » module Examens) :
+     * Respecter les coefficients définis PAR MATIÈRE dans le module
+     * Pédagogie (class_subjects.coefficient, affectés via
+     * Pédagogie > Matières & Programmes). Quand ce flag est actif, chaque
+     * évaluation créée reprend le coefficient de sa matière pour SA classe ;
+     * en repli : data.coefficient, sinon defaultCoefficient du type, sinon 1.
+     */
+    respectSubjectCoefficients?: boolean;
   }) {
     // ⭐ V10e — Validation du type par id OU par code, résolu PAR NIVEAU
     // (le code "EM1" existe pour Maternelle ET Primaire : sans le scope
@@ -541,27 +550,50 @@ export class EvaluationsService {
       throw new BadRequestException('Au moins une classe et une matière sont requises.');
     }
 
-    // ⭐ Résoudre les enseignants assignés pour chaque (classe × matière)
+    // ⭐ Résoudre les enseignants assignés + les coefficients par matière
     //
     // Le modèle TeacherClassAssignment ne possède PAS de `subjectId` direct.
     // Il possède `classSubjectId` (FK vers ClassSubject) + `classId` (classe physique).
-    // Pour résoudre l'enseignant pour (classId × subjectId), il faut donc :
-    //   1. Trouver les ClassSubject dont `classId ∈ classIds` ET `subjectId ∈ subjectIds`
+    // Pour résoudre l'enseignant et le coefficient pour (classId × subjectId), il faut donc :
+    //   1. Trouver les ClassSubject dont classe ∈ classIds (directement OU via
+    //      classes.officialClassId → pedagogy_academic_classes) ET subjectId ∈ subjectIds
     //   2. Pour chaque ClassSubject trouvé, chercher les TeacherClassAssignment
     //      avec `classSubjectId` correspondant (et `classId` si défini).
     //
-    // Cela génère une map `${classId}|${subjectId}` → teacherId.
+    // ⭐ FIX 2026-11-17 : les évaluations sont créées pour les classes
+    //    OPÉRATIONNELLES (table `classes`), mais les affectations
+    //    Pédagogie > Matières & Programmes vivent dans class_subjects avec
+    //    academicClassId = classe OFFICIELLE (pedagogy_academic_classes).
+    //    Le lien opérationnel → officiel est classes.officialClassId.
+    //    Avant ce fix, la correspondance ne matchait JAMAIS (academicClassId
+    //    comparé aux IDs opérationnels) → aucun enseignant résolu, aucun
+    //    coefficient de matière disponible.
+    //    Ce bloc alimente aussi coefMap pour respectSubjectCoefficients.
+
+    // Étape 0 : charger les classes opérationnelles + leur classe officielle
+    const operationalClasses = await this.prisma.class.findMany({
+      where: { id: { in: data.classIds } },
+      select: { id: true, officialClassId: true },
+    });
+    const officialClassIds = Array.from(
+      new Set(
+        operationalClasses
+          .map((c) => c.officialClassId)
+          .filter((v): v is string => !!v),
+      ),
+    );
 
     // Étape 1 : récupérer les ClassSubject pour les (classe × matière) demandées
     // ⭐ ClassSubject.classId est deprecated (souvent null en production).
-    // On cherche aussi par academicClassId (la relation utilisée en production).
+    // On cherche par academicClassId (la relation utilisée en production),
+    // en incluant les classes officielles des classes opérationnelles demandées.
     const classSubjects = await this.prisma.classSubject.findMany({
       where: {
         tenantId,
         subjectId: { in: data.subjectIds },
         OR: [
           { classId: { in: data.classIds } },
-          { academicClassId: { in: data.classIds } },
+          { academicClassId: { in: [...data.classIds, ...officialClassIds] } },
         ],
       },
       select: {
@@ -569,24 +601,41 @@ export class EvaluationsService {
         classId: true,
         academicClassId: true,
         subjectId: true,
+        coefficient: true,
       },
     });
 
-    // Construire une map `${classId}|${subjectId}` → classSubjectId
-    // (utilise classId OU academicClassId selon ce qui est défini)
-    const classSubjectMap = new Map<string, string>();
+    // Étape 2 : construire les maps indexées par classe OPÉRATIONNELLE :
+    //   csMap   : `${classId}|${subjectId}` → classSubjectId (résolution enseignant)
+    //   coefMap : `${classId}|${subjectId}` → coefficient de la matière pour cette classe
+    const csMap = new Map<string, string>();
+    const coefMap = new Map<string, number>();
     for (const cs of classSubjects) {
-      const effectiveClassId = cs.classId || cs.academicClassId;
-      if (effectiveClassId && data.classIds.includes(effectiveClassId)) {
-        const key = `${effectiveClassId}|${cs.subjectId}`;
-        if (!classSubjectMap.has(key)) {
-          classSubjectMap.set(key, cs.id);
+      // Propriétaires opérationnels de ce ClassSubject :
+      //  - la classe physique si cs.classId la référence directement
+      //  - les classes opérationnelles dont officialClassId = cs.academicClassId
+      //  - cs.academicClassId lui-même s'il fait partie des classIds demandés
+      const owners = new Set<string>();
+      if (cs.classId && data.classIds.includes(cs.classId)) owners.add(cs.classId);
+      if (cs.academicClassId) {
+        if (data.classIds.includes(cs.academicClassId)) owners.add(cs.academicClassId);
+        for (const op of operationalClasses) {
+          if (op.officialClassId === cs.academicClassId) owners.add(op.id);
+        }
+      }
+      for (const opClassId of owners) {
+        const key = `${opClassId}|${cs.subjectId}`;
+        if (!csMap.has(key)) {
+          csMap.set(key, cs.id);
+          if (cs.coefficient !== null && cs.coefficient !== undefined) {
+            coefMap.set(key, cs.coefficient);
+          }
         }
       }
     }
 
-    // Étape 2 : récupérer les TeacherClassAssignment pour ces classSubjectId
-    const classSubjectIds = Array.from(classSubjectMap.values());
+    // Étape 3 : récupérer les TeacherClassAssignment pour ces classSubjectId
+    const classSubjectIds = Array.from(csMap.values());
     const assignments = classSubjectIds.length > 0
       ? await this.prisma.teacherClassAssignment.findMany({
           where: {
@@ -608,7 +657,7 @@ export class EvaluationsService {
 
     // Construire la map finale `${classId}|${subjectId}` → teacherId
     const teacherMap = new Map<string, string>();
-    for (const [key, csId] of classSubjectMap.entries()) {
+    for (const [key, csId] of csMap.entries()) {
       const teacherId = csToTeacher.get(csId);
       if (teacherId) {
         teacherMap.set(key, teacherId);
@@ -638,6 +687,15 @@ export class EvaluationsService {
     for (const classId of data.classIds) {
       for (const subjectId of data.subjectIds) {
         const teacherId = teacherMap.get(`${classId}|${subjectId}`) || null;
+        // ⭐ FIX 2026-11-17 : coefficient PAR MATIÈRE — quand
+        //    respectSubjectCoefficients est actif, on reprend le coefficient
+        //    configuré dans Pédagogie > Matières & Programmes pour cette
+        //    matière DANS cette classe (class_subjects.coefficient via
+        //    classes.officialClassId). Repli : coefficient global du
+        //    formulaire, puis defaultCoefficient du type, puis 1.
+        const subjectCoef = data.respectSubjectCoefficients
+          ? coefMap.get(`${classId}|${subjectId}`)
+          : undefined;
         evaluationsToCreate.push({
           tenantId,
           academicYearId,
@@ -655,7 +713,11 @@ export class EvaluationsService {
           startDate: data.startDate ? new Date(data.startDate) : null,
           endDate: data.endDate ? new Date(data.endDate) : null,
           maxScore: data.maxScore ?? type.defaultMaxScore ?? 20,
-          coefficient: data.coefficient ?? type.defaultCoefficient ?? 1,
+          coefficient:
+            (subjectCoef !== undefined && !Number.isNaN(subjectCoef) ? subjectCoef : undefined) ??
+            data.coefficient ??
+            type.defaultCoefficient ??
+            1,
           teacherId,
           status: 'PLANNED',
           createdBy: data.createdBy || null,

@@ -140,6 +140,13 @@ export const institutionalExamsService = {
     evaluationDate: string;
     maxScore?: number;
     coefficient?: number;
+    /**
+     * ⭐ FIX 2026-11-17 (« gymnastique » module Examens) : reprendre
+     * automatiquement le coefficient de CHAQUE matière défini dans
+     * Pédagogie > Matières & Programmes (affectation classe × matière).
+     */
+    respectSubjectCoefficients?: boolean;
+    language?: string;
   }) {
     const response = await apiClient.post(`/institutional-exams/evaluations/bulk`, data);
     return response.data;

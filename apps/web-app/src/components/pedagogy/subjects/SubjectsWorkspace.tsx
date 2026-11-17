@@ -249,8 +249,23 @@ export default function SubjectsWorkspace() {
   const [massConfig, setMassConfig] = useState({
     weeklyHours: 0,
     coefficient: 1.0,
-    useSeries: true
+    useSeries: true,
+    // ⭐ FIX 2026-11-17 (« gymnastique des coefficients ») : par défaut,
+    // l'affectation en masse reprend le coefficient défini sur CHAQUE matière
+    // (saisi à la création dans le modal ci-dessus) au lieu d'écraser toutes
+    // les affectations avec un coefficient global à 1. L'utilisateur peut
+    // toujours forcer un coefficient global en décochant l'option.
+    useSubjectCoefficients: true,
   });
+
+  // ⭐ FIX 2026-11-17 — Classes cibles cochées dans le modal de création
+  //    (« Affecter directement aux classes »). Permet de créer les matières
+  //    ET de les affecter avec leurs coefficients en UNE seule opération
+  //    (surtout pour les classes de la 4e au lycée où les coefficients
+  //    varient par matière) — fini la gymnastique « affecter puis modifier ».
+  const [targetClassIds, setTargetClassIds] = useState<string[]>([]);
+  // Coefficient saisi par matière dans le panneau de suggestions
+  // (clé = code de la suggestion ; utilisé par le modal de création)
 
   // Class filtering for mass assignment
   // Filtres du tableau principal (Affectation Classes)
@@ -421,7 +436,9 @@ export default function SubjectsWorkspace() {
   /** ⭐ Liste des matières à afficher pour 4e/3e/2nd cycle.
    *  Utilise les matières du secondaire déjà en DB + les suggestions du catalogue
    *  secondaire (pour qu'il y ait toujours des matières à afficher même si
-   *  l'utilisateur n'a pas encore créé de matières secondaires). */
+   *  l'utilisateur n'a pas encore créé de matières secondaires).
+   *  ⭐ FIX 2026-11-17 : en piste EN, on suggère le catalogue ANGLAIS (avant :
+   *  le catalogue FR était utilisé même en mode EN). */
   const secondarySubjectsForModal = useMemo(() => {
     // Matières du secondaire déjà en DB
     const dbSubjects = subjects
@@ -432,13 +449,56 @@ export default function SubjectsWorkspace() {
       })
       .map(s => ({ id: s.id, name: s.name, code: s.code, isFromDb: true }));
 
-    // Suggestions du catalogue secondaire (pas déjà en DB)
-    const catalogSubjects = (DEFAULT_SUBJECTS_CATALOGUE['SECONDAIRE'] || [])
+    // Suggestions du catalogue (pas déjà en DB) — EN en piste EN, FR sinon
+    const secondaryCatalogue = (bilingualEnabled && currentTrack === 'EN')
+      ? DEFAULT_SUBJECTS_CATALOGUE_EN
+      : (DEFAULT_SUBJECTS_CATALOGUE['SECONDAIRE'] || []);
+    const catalogSubjects = secondaryCatalogue
       .filter(cat => !dbSubjects.some(db => db.code === cat.code))
       .map(cat => ({ id: cat.code, name: cat.name, code: cat.code, isFromDb: false }));
 
     return [...dbSubjects, ...catalogSubjects];
-  }, [subjects]);
+  }, [subjects, bilingualEnabled, currentTrack]);
+
+  /** ⭐ FIX 2026-11-17 : faut-il proposer un coefficient PAR matière dans le
+   *  panneau de suggestions du modal de création ? OUI dès qu'on est au
+   *  secondaire à partir de la 4e (4e/3e/2nd cycle, ou secondaire sans
+   *  sous-niveau choisi). Non pour Maternelle/Primaire/6e-5e (coef = 1). */
+  const suggestionsNeedCoefficients = isSecondary && !is6e5e;
+
+  /** ⭐ FIX 2026-11-17 : classes cibles proposées dans le modal de création
+   *  (« Affecter directement aux classes »). Filtrées par le niveau choisi
+   *  (et par le sous-niveau 4e/3e/2nd cycle s'il est sélectionné) pour que
+   *  l'utilisateur puisse créer + affecter + définir les coefficients en
+   *  une seule opération. */
+  const targetClassOptions = useMemo(() => {
+    if (is4e3e) {
+      return classes.filter(c => {
+        const name = (c.name || c.code || '').toUpperCase();
+        const code = (c.code || '').toUpperCase();
+        if (secondarySubLevel === '4E') {
+          return name.includes('4E') || name.includes('4ÈME') || name.includes('4EME') ||
+                 name.includes('QUATRI') || code.includes('4EME') || code.startsWith('4');
+        }
+        if (secondarySubLevel === '3E') {
+          return name.includes('3E') || name.includes('3ÈME') || name.includes('3EME') ||
+                 name.includes('TROIS') || code.includes('3EME') || code.startsWith('3');
+        }
+        return false;
+      });
+    }
+    if (isSecondCycle) return secondCycleClasses;
+    // Comparaison par CODE/nom de niveau (les classes académiques référencent
+    // pedagogy_academic_levels — ID différent des school_levels/education_levels)
+    const selectedLevel = schoolLevels.find(l => l.id === subjectForm.schoolLevelId);
+    if (!selectedLevel) return classes;
+    const levelCode = (selectedLevel.code || selectedLevel.name || '').toUpperCase();
+    return classes.filter(c => {
+      const classLevelName = ((c as any).level?.name || (c as any).level?.code || '').toUpperCase();
+      if (!classLevelName) return true; // classe sans niveau rattaché → conservée
+      return classLevelName.includes(levelCode) || levelCode.includes(classLevelName);
+    });
+  }, [classes, is4e3e, isSecondCycle, secondarySubLevel, secondCycleClasses, schoolLevels, subjectForm.schoolLevelId]);
 
   /** Séries filtrées par niveaux actifs (le secondaire doit être actif) */
   const filteredSeries = useMemo(() => {
@@ -477,6 +537,9 @@ export default function SubjectsWorkspace() {
   // Réinitialiser la sélection quand le niveau change ou quand on ferme le modal
   useEffect(() => {
     setSelectedSuggestions(new Set());
+    // ⭐ FIX 2026-11-17 : réinitialiser aussi les classes cibles et les
+    //    coefficients par matière du modal de création.
+    setTargetClassIds([]);
   }, [subjectForm.schoolLevelId, modal]);
 
   // ⭐ Réinitialiser le sous-niveau secondaire quand le niveau change
@@ -651,12 +714,18 @@ export default function SubjectsWorkspace() {
           subjectIds: selectedSubjects,
           weeklyHours: massConfig.weeklyHours,
           coefficient: massConfig.coefficient,
-          useSeriesCoefficients: massConfig.useSeries
+          useSeriesCoefficients: massConfig.useSeries,
+          // ⭐ FIX 2026-11-17 : reprendre le coefficient défini sur chaque
+          // matière (saisi à la création) au lieu d'écraser avec le coefficient
+          // global — supprime l'étape « modifier les coefficients après coup ».
+          useSubjectCoefficients: massConfig.useSubjectCoefficients,
         }
        });
        toast({
          title: "Succès",
-         description: "Affectation en masse effectuée avec succès.",
+         description: massConfig.useSubjectCoefficients
+           ? "Affectation en masse effectuée avec les coefficients définis par matière."
+           : "Affectation en masse effectuée avec succès.",
        });
        setModal('none');
        setSelectedClasses([]);
@@ -866,6 +935,39 @@ export default function SubjectsWorkspace() {
             title: "Succès",
             description: "La matière a été créée.",
           });
+
+          // ⭐ FIX 2026-11-17 : affectation DIRECTE aux classes cibles cochées
+          //    (avec le coefficient saisi) — création + affectation en une
+          //    seule opération, sans passer par l'assistant d'affectation.
+          if (targetClassIds.length > 0 && academicYear?.id) {
+            try {
+              await pedagogyFetch('/api/pedagogy/class-subjects/bulk', {
+                method: 'POST',
+                body: {
+                  academicYearId: academicYear.id,
+                  classIds: targetClassIds,
+                  subjectIds: [created.id],
+                  weeklyHours: Number(subjectForm.weeklyHours) || 0,
+                  coefficient: Number(subjectForm.coefficient) || 1.0,
+                  subjectCoefficients: {
+                    [created.id]: Number(subjectForm.coefficient) || 1.0,
+                  },
+                },
+              });
+              loadClassSubjects();
+              toast({
+                title: "Affectation directe",
+                description: `Matière affectée à ${targetClassIds.length} classe${targetClassIds.length > 1 ? 's' : ''} avec le coefficient ${Number(subjectForm.coefficient) || 1.0}.`,
+              });
+            } catch (assignErr: any) {
+              console.error('[SubjectsWorkspace] Failed to assign created subject to target classes:', assignErr.message);
+              toast({
+                title: "Affectation partielle",
+                description: `La matière a été créée, mais l'affectation aux classes a échoué : ${assignErr.message}. Utilisez l'onglet Classes > Assistant d'affectation.`,
+                variant: "destructive",
+              });
+            }
+          }
         } else {
           // Backend a répondu 200 mais sans objet valide
           throw new Error('Le backend a répondu sans données valides (création non confirmée). Vérifiez que Fly.io est bien redéployé.');
@@ -934,21 +1036,31 @@ export default function SubjectsWorkspace() {
     let skipped = 0;
     let lastError = '';
     const optimisticSubjects: any[] = [];
+    // ⭐ FIX 2026-11-17 : coefficient PAR matière (clé = code de suggestion).
+    // Sert à la création du sujet ET à l'affectation directe aux classes cibles.
+    const coefficientOf = (code: string): number => {
+      const v = Number(subjectCoefficients[code]);
+      return Number.isFinite(v) && v > 0 ? v : (isPrimaryOrMaternelle || is6e5e ? 1 : bulkCoefficient);
+    };
+    // subjectId → coefficient (pour l'affectation aux classes cibles)
+    const createdCoefMap: Record<string, number> = {};
     for (const suggestion of toCreate) {
       try {
+        const perCoef = coefficientOf(suggestion.code);
         const createdEntity = await pedagogyFetch<any>(`/api/subjects`, { method: 'POST', body: {
           academicYearId: academicYear.id,
           schoolLevelId: subjectForm.schoolLevelId,
           code: suggestion.code,
           name: suggestion.name,
           abbreviation: suggestion.abbreviation,
-          coefficient: bulkCoefficient,
+          coefficient: perCoef,
           weeklyHours: bulkWeeklyHours,
           ...(bilingualEnabled ? { language: currentTrack } : {}),
         }});
         // Vérifier que la création a VRAIMENT réussi — le backend doit renvoyer un objet avec un id
         if (createdEntity && createdEntity.id) {
           created++;
+          createdCoefMap[createdEntity.id] = perCoef;
           optimisticSubjects.push({
             id: createdEntity.id,
             academicYearId: academicYear.id,
@@ -956,7 +1068,7 @@ export default function SubjectsWorkspace() {
             code: suggestion.code,
             name: suggestion.name,
             abbreviation: suggestion.abbreviation,
-            coefficient: bulkCoefficient,
+            coefficient: perCoef,
             weeklyHours: bulkWeeklyHours,
             schoolLevel: schoolLevels.find((l) => l.id === subjectForm.schoolLevelId) || null,
             ...(bilingualEnabled ? { language: currentTrack } : {}),
@@ -977,17 +1089,59 @@ export default function SubjectsWorkspace() {
     if (optimisticSubjects.length > 0) {
       setSubjects(prev => [...optimisticSubjects, ...prev] as any);
     }
+
+    // ⭐ FIX 2026-11-17 (« gymnastique des coefficients ») : affectation
+    // DIRECTE des matières créées aux classes cibles cochées — avec le
+    // coefficient saisi pour chacune. Une seule requête bulk côté backend,
+    // upsert idempotent (les affectations existantes sont mises à jour).
+    let assigned = 0;
+    const createdSubjectIds = Object.keys(createdCoefMap);
+    if (createdSubjectIds.length > 0 && targetClassIds.length > 0) {
+      try {
+        await pedagogyFetch('/api/pedagogy/class-subjects/bulk', {
+          method: 'POST',
+          body: {
+            academicYearId: academicYear.id,
+            classIds: targetClassIds,
+            subjectIds: createdSubjectIds,
+            weeklyHours: bulkWeeklyHours,
+            coefficient: bulkCoefficient,
+            subjectCoefficients: createdCoefMap,
+          },
+        });
+        assigned = targetClassIds.length;
+      } catch (e: any) {
+        console.error('[SubjectsWorkspace] Failed to assign created subjects to target classes:', e.message);
+        toast({
+          title: "Affectation partielle",
+          description: `Les matières ont été créées, mais l'affectation aux classes a échoué : ${e.message}. Utilisez l'onglet Classes > Assistant d'affectation.`,
+          variant: "destructive",
+        });
+      }
+    }
+
     setBulkSaving(false);
     setSelectedSuggestions(new Set());
+    setSubjectCoefficients({});
     await loadSubjects();
+    if (assigned > 0) {
+      await loadClassSubjects();
+    }
     toast({
       title: created > 0 ? `${created} matière${created > 1 ? 's' : ''} créée${created > 1 ? 's' : ''}` : 'Aucune matière créée',
-      description: skipped > 0
-        ? `${skipped} matière${skipped > 1 ? 's' : ''} ignorée${skipped > 1 ? 's' : ''}. Erreur: ${lastError || 'déjà existante'}`
-        : 'Toutes les matières sélectionnées ont été ajoutées.',
+      description:
+        (skipped > 0
+          ? `${skipped} matière${skipped > 1 ? 's' : ''} ignorée${skipped > 1 ? 's' : ''}. Erreur: ${lastError || 'déjà existante'}. `
+          : (created > 0 ? 'Toutes les matières sélectionnées ont été ajoutées. ' : '')) +
+        (assigned > 0
+          ? `Affectée${created > 1 ? 's' : ''} à ${assigned} classe${assigned > 1 ? 's' : ''} avec leurs coefficients.`
+          : ''),
       variant: skipped > 0 && created === 0 ? 'destructive' : undefined,
     });
-    if (created > 0) setModal('none');
+    if (created > 0) {
+      setModal('none');
+      setTargetClassIds([]);
+    }
   };
 
   const handleDeleteSubject = async (id: string) => {
@@ -2186,6 +2340,63 @@ export default function SubjectsWorkspace() {
             </div>
           </div>}
 
+          {/* ⭐ FIX 2026-11-17 — Classes cibles : affectation directe à la création.
+              Permet de créer les matières ET de les affecter aux classes choisies
+              (avec leurs coefficients) en UNE seule opération — supprime la
+              gymnastique « affecter d'abord, puis modifier les coefficients ».
+              Masqué en mode 4e/3e/2nd cycle (ces modes ont leur propre
+              sélecteur de classe officielle avec coefficients par matière). */}
+          {!(is4e3e || isSecondCycle) && subjectForm.schoolLevelId && (
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4 space-y-2">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="w-4 h-4 text-emerald-600" />
+                <span className="text-xs font-bold uppercase tracking-wide text-emerald-700">
+                  Affecter directement aux classes (optionnel)
+                </span>
+                {targetClassIds.length > 0 && (
+                  <span className="ml-auto text-[11px] font-bold text-emerald-700 bg-white border border-emerald-200 rounded-full px-2 py-0.5">
+                    {targetClassIds.length} classe{targetClassIds.length > 1 ? 's' : ''} ciblée{targetClassIds.length > 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-emerald-700/90 leading-relaxed">
+                {suggestionsNeedCoefficients
+                  ? 'Cochez les classes concernées : les matières créées seront affectées immédiatement avec le coefficient saisi pour chacune (à partir de la 4e, les coefficients varient par matière).'
+                  : 'Cochez les classes concernées : les matières créées seront affectées immédiatement (coefficient 1). Sinon, utilisez l\'onglet Classes > Assistant d\'affectation.'}
+              </p>
+              {targetClassOptions.length === 0 ? (
+                <p className="text-xs text-slate-500 italic">
+                  Aucune classe officielle ne correspond à ce niveau — vérifiez Paramètres &gt; Structure.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2 max-h-[130px] overflow-y-auto">
+                  {targetClassOptions.map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setTargetClassIds(prev =>
+                          prev.includes(c.id)
+                            ? prev.filter(id => id !== c.id)
+                            : [...prev, c.id],
+                        );
+                      }}
+                      className={cn(
+                        'px-3 py-1.5 rounded-lg text-sm font-bold transition',
+                        targetClassIds.includes(c.id)
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:border-emerald-400',
+                      )}
+                    >
+                      {c.name}
+                      {c.series?.name && <span className="ml-1 text-[10px] opacity-70">({c.series.name})</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── Suggestions de matières par défaut (multi-sélection) ──────── */}
           {/* Masqué pour 4e/3e/2nd cycle (les matières sont déjà listées avec coef ci-dessus) */}
           {modal === 'create-subject' && defaultSuggestionsForLevel.length > 0 && !(is4e3e || isSecondCycle) && (
@@ -2229,8 +2440,8 @@ export default function SubjectsWorkspace() {
                   const isSelected = selectedSuggestions.has(suggestion.code);
 
                   return (
+                    <div key={suggestion.code} className="flex items-center gap-2">
                     <button
-                      key={suggestion.code}
                       type="button"
                       disabled={isAlreadyCreated}
                       title={`${suggestion.name} (${suggestion.abbreviation})`}
@@ -2244,7 +2455,7 @@ export default function SubjectsWorkspace() {
                         });
                       }}
                       className={cn(
-                        'w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-left transition-all border',
+                        'flex-1 min-w-0 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-left transition-all border',
                         isAlreadyCreated
                           ? 'cursor-not-allowed bg-slate-50 border-slate-200 text-slate-400'
                           : isSelected
@@ -2299,6 +2510,32 @@ export default function SubjectsWorkspace() {
                         </span>
                       )}
                     </button>
+
+                    {/* ⭐ FIX 2026-11-17 : coefficient individuel par matière
+                        (secondaire à partir de la 4e) — saisi directement à la
+                        création, appliqué à la fiche matière ET aux classes
+                        cibles cochées ci-dessus. */}
+                    {isSelected && suggestionsNeedCoefficients && (
+                      <div className="shrink-0 flex flex-col items-center gap-0.5 w-[76px]">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                          Coef.
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="10"
+                          step="0.5"
+                          title="Coefficient de la matière (appliqué aux classes ciblées)"
+                          value={(subjectCoefficients[suggestion.code] ?? Number(subjectForm.coefficient)) || 1}
+                          onChange={(e) => setSubjectCoefficients(prev => ({
+                            ...prev,
+                            [suggestion.code]: Number(e.target.value) || 1,
+                          }))}
+                          className="w-16 px-1.5 py-1.5 text-sm border border-slate-300 rounded-lg text-center font-bold text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                      </div>
+                    )}
+                    </div>
                   );
                 })}
               </div>
@@ -2323,9 +2560,11 @@ export default function SubjectsWorkspace() {
                       )}
                     </button>
                   </div>
-                  {/* Rappel contextuel : les champs Coefficient/Horaire ci-dessous s'appliquent à toutes les matières */}
+                  {/* Rappel contextuel : coefficients individuels quand le niveau l'exige */}
                   <p className="text-[11px] text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-1.5 leading-relaxed">
-                    💡 Les valeurs <strong>Coefficient</strong> et <strong>Volume Hebdo</strong> définies ci-dessous seront appliquées à toutes les matières sélectionnées.
+                    {suggestionsNeedCoefficients
+                      ? <>💡 Chaque matière sélectionnée porte son propre <strong>coefficient</strong> (champ à droite de la liste). Le <strong>Volume Hebdo</strong> ci-dessous s'applique à toutes.{targetClassIds.length > 0 && <> Les matières seront <strong>affectées directement</strong> aux {targetClassIds.length} classe{targetClassIds.length > 1 ? 's' : ''} ciblée{targetClassIds.length > 1 ? 's' : ''} avec ces coefficients.</>}</>
+                      : <>💡 Les valeurs <strong>Coefficient</strong> et <strong>Volume Hebdo</strong> définies ci-dessous seront appliquées à toutes les matières sélectionnées.{targetClassIds.length > 0 && <> Les matières seront <strong>affectées directement</strong> aux {targetClassIds.length} classe{targetClassIds.length > 1 ? 's' : ''} ciblée{targetClassIds.length > 1 ? 's' : ''}.</>}</>}
                   </p>
                 </div>
               )}
@@ -2557,17 +2796,27 @@ export default function SubjectsWorkspace() {
               <Info className="w-4 h-4 text-blue-600 shrink-0" />
               <p className="text-xs text-blue-800">
                 <strong>{selectedSubjects.length}</strong> matière(s) seront affectées à <strong>{selectedClasses.length}</strong> classe(s).
-                Les affectations existantes seront ignorées (pas de doublon).
+                {massConfig.useSubjectCoefficients
+                  ? ' Les affectations existantes seront mises à jour avec le coefficient de chaque matière.'
+                  : ' Les affectations existantes seront mises à jour (pas de doublon).'}
               </p>
             </div>
           )}
 
-          <div className="pt-4 border-t border-slate-200 grid grid-cols-3 gap-6">
+          <div className="pt-4 border-t border-slate-200 space-y-4">
+          <div className="grid grid-cols-3 gap-6">
              <div className="space-y-1">
                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Coefficient Global</label>
                <input
                 type="number"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800"
+                className={cn(
+                  'w-full rounded-lg border px-3 py-2 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-medium text-slate-800',
+                  massConfig.useSubjectCoefficients && 'opacity-50',
+                )}
+                disabled={massConfig.useSubjectCoefficients}
+                title={massConfig.useSubjectCoefficients
+                  ? 'Désactivé : les coefficients définis par matière (à la création) sont utilisés'
+                  : 'Coefficient appliqué uniformément à toutes les matières sélectionnées'}
                 value={massConfig.coefficient}
                 onChange={(e) => setMassConfig({...massConfig, coefficient: parseFloat(e.target.value)})}
                />
@@ -2592,6 +2841,31 @@ export default function SubjectsWorkspace() {
                 />
                 <label htmlFor="use-series" className="text-xs font-semibold text-slate-700 cursor-pointer">Priorité aux coefficients de série</label>
              </div>
+          </div>
+
+          {/* ⭐ FIX 2026-11-17 : reprendre les coefficients définis par matière
+              (saisis à la création dans le modal « Nouvelle Matière ») au lieu
+              d'écraser toutes les affectations avec le coefficient global.
+              Cochée par défaut — supprime la gymnastique « affecter puis
+              re-modifier chaque coefficient ». */}
+          <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="use-subject-coefficients"
+              className="w-5 h-5 mt-0.5 rounded border-gray-300 focus:ring-slate-500"
+              style={{ color: PRIMARY }}
+              checked={massConfig.useSubjectCoefficients}
+              onChange={(e) => setMassConfig({...massConfig, useSubjectCoefficients: e.target.checked})}
+            />
+            <label htmlFor="use-subject-coefficients" className="text-xs font-semibold text-emerald-800 cursor-pointer leading-relaxed">
+              Utiliser le coefficient défini sur chaque matière
+              <span className="block font-normal text-emerald-700/90 mt-0.5">
+                Les coefficients saisis lors de la création des matières (Pédagogie &gt; Matières &amp; Programmes) sont
+                repris automatiquement — les affectations existantes sont mises à jour, aucune modification manuelle
+                n'est nécessaire. Décochez pour forcer le coefficient global.
+              </span>
+            </label>
+          </div>
           </div>
         </div>
       </FormModal>

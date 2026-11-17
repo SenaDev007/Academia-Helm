@@ -21,6 +21,7 @@ import {
   IsUUID,
   IsIn,
   IsArray,
+  IsObject,
   Min,
   Max,
 } from 'class-validator';
@@ -128,6 +129,20 @@ export class CreateClassSubjectBulkDto {
   @IsOptional() @IsNumber() @Type(() => Number) weeklyHours?: number;
   @IsOptional() @IsNumber() @Type(() => Number) coefficient?: number;
   @IsOptional() @IsBoolean() useSeriesCoefficients?: boolean;
+  /**
+   * ⭐ FIX 2026-11-17 (« gymnastique des coefficients ») :
+   * Utiliser le coefficient défini sur CHAQUE matière (subjects.coefficient —
+   * saisi à la création dans Pédagogie > Matières & Programmes) au lieu du
+   * coefficient global. Évite de devoir re-modifier chaque affectation après
+   * l'affectation en masse.
+   */
+  @IsOptional() @IsBoolean() useSubjectCoefficients?: boolean;
+  /**
+   * ⭐ Coefficients explicites par matière : { [subjectId]: coefficient }.
+   * Envoyé par le modal de création lorsque l'utilisateur saisit un coefficient
+   * par matière directement à la création (matières de la 4e au lycée).
+   */
+  @IsOptional() @IsObject() subjectCoefficients?: Record<string, number>;
   /** Frontend may send schoolLevelId */
   @IsOptional() @IsUUID() schoolLevelId?: string;
   /** Frontend may send tenantId — ignored */

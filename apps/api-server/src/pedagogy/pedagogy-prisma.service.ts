@@ -71,6 +71,18 @@ export class PedagogyPrismaService {
 
   /**
    * Création en masse d'affectations classe/matière
+   *
+   * ⭐ FIX 2026-11-17 (« gymnastique des coefficients ») :
+   * Résolution du coefficient PAR MATIÈRE en plus du coefficient global.
+   * Priorité (par matière) :
+   *   1. coefficient de série (si useSeriesCoefficients et série configurée)
+   *   2. subjectCoefficients[subjectId] (carte explicite envoyée à la création)
+   *   3. subjects.coefficient (si useSubjectCoefficients=true)
+   *   4. data.coefficient (valeur globale du formulaire)
+   *   5. 1
+   * Les affectations existantes sont MISES À JOUR avec le coefficient résolu
+   * (upsert), donc relancer l'affectation avec les bons coefficients corrige
+   * les affectations précédentes sans gymnastique manuelle.
    */
   async createBulkClassSubjects(
     tenantId: string,
@@ -81,9 +93,31 @@ export class PedagogyPrismaService {
       weeklyHours?: number;
       coefficient?: number;
       useSeriesCoefficients?: boolean;
+      useSubjectCoefficients?: boolean;
+      subjectCoefficients?: Record<string, number>;
     }
   ) {
     const results = [];
+
+    // ⭐ Étape 0 : résoudre les coefficients par matière si demandés.
+    //    - carte explicite (subjectCoefficients) : prioritaire par matière
+    //    - useSubjectCoefficients : lit subjects.coefficient (saisi à la création)
+    let perSubjectCoefficients: Record<string, number> | null =
+      data.subjectCoefficients && Object.keys(data.subjectCoefficients).length > 0
+        ? { ...data.subjectCoefficients }
+        : null;
+    if (data.useSubjectCoefficients) {
+      const subjectRows = await this.prisma.subject.findMany({
+        where: { id: { in: data.subjectIds } },
+        select: { id: true, coefficient: true },
+      });
+      perSubjectCoefficients = perSubjectCoefficients ?? {};
+      for (const s of subjectRows) {
+        if (perSubjectCoefficients[s.id] === undefined) {
+          perSubjectCoefficients[s.id] = (s.coefficient as number) ?? 1;
+        }
+      }
+    }
 
     for (const classId of data.classIds) {
       // Récupérer les détails de la classe (pour la série)
@@ -108,6 +142,13 @@ export class PedagogyPrismaService {
           if (seriesSub) {
             coeff = seriesSub.coefficient;
             hours = seriesSub.weeklyHours;
+          }
+        } else if (perSubjectCoefficients && perSubjectCoefficients[subjectId] !== undefined) {
+          // ⭐ Coefficient spécifique à cette matière (saisi à la création ou
+          //    défini sur la fiche matière) — prioritaire sur le global.
+          const perCoef = Number(perSubjectCoefficients[subjectId]);
+          if (!Number.isNaN(perCoef) && perCoef > 0) {
+            coeff = perCoef;
           }
         }
 

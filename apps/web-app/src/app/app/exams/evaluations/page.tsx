@@ -77,8 +77,18 @@ interface Evaluation {
   _count?: { grades: number };
 }
 
-interface ClassItem { id: string; name: string; }
-interface SubjectItem { id: string; name: string; }
+interface ClassItem {
+  id: string;
+  name: string;
+  /**
+   * ⭐ FIX 2026-11-17 : classe officielle (Pédagogie > Academic Structure)
+   * rattachée à cette classe opérationnelle. C'est par elle qu'on retrouve
+   * les matières affectées à la classe (class_subjects.academicClassId) et
+   * leurs coefficients configurés dans Pédagogie > Matières & Programmes.
+   */
+  officialClassId?: string | null;
+}
+interface SubjectItem { id: string; name: string; coefficient?: number; }
 interface PeriodItem { id: string; name: string; type: string; isClosed: boolean; }
 interface EvaluationTypeItem {
   id: string; name: string; code?: string;
@@ -634,6 +644,17 @@ export default function EvaluationsPage() {
   const [periods, setPeriods] = useState<PeriodItem[]>([]);
   const [evaluationTypes, setEvaluationTypes] = useState<EvaluationTypeItem[]>([]);
 
+  // ⭐ FIX 2026-11-17 (« gymnastique » module Examens) : affectations
+  //    matières × classes déjà configurées dans Pédagogie > Matières &
+  //    Programmes (class_subjects). Clé = officialClassId (classe officielle)
+  //    → liste { subjectId, coefficient, subjectName }. Permet au modal de
+  //    programmation d'afficher AUTOMATIQUEMENT les matières de la classe
+  //    sélectionnée (avec leurs coefficients) au lieu de demander à
+  //    l'utilisateur de re-sélectionner les matières à chaque fois.
+  const [classAssignments, setClassAssignments] = useState<
+    Record<string, Array<{ subjectId: string; coefficient: number; subjectName?: string }>>
+  >({});
+
   // ─── Chargement initial : évaluations + données de référence ──────────────
   const loadData = useCallback(async () => {
     if (!schoolLevelUuid || !academicYear?.id) {
@@ -666,7 +687,7 @@ export default function EvaluationsPage() {
       //    (résolution de availableLevels) ne rejoue plus N requêtes réseau
       //    identiques, et le rafraîchissement post-enregistrement ne refetch
       //    que la liste des évaluations (invalidée par la mutation).
-      const [activeSettings, evals, allClassesData, periodsData, subjectsData] = await Promise.all([
+      const [activeSettings, evals, allClassesData, periodsData, subjectsData, classSubjectsData] = await Promise.all([
         academicSettingsService.getActive(academicYear.id, {
           levelCode: scopeLevel || undefined,
           language: scopeLang || undefined,
@@ -686,6 +707,15 @@ export default function EvaluationsPage() {
           schoolLevelId: schoolLevelUuid,
           language: scopeLang,
         }).catch(() => []),
+        // ⭐ FIX 2026-11-17 : toutes les affectations matières × classes du
+        //    tenant pour l'année (class_subjects, avec subject inclus).
+        //    GET /api/pedagogy/class-subjects?academicYearId=X (endpoint batch
+        //    du module Pédagogie) → permet de connaître, pour chaque classe,
+        //    SES matières et SES coefficients configurés dans
+        //    Pédagogie > Matières & Programmes.
+        fetch(`/api/pedagogy/class-subjects?academicYearId=${encodeURIComponent(academicYear.id)}`, { credentials: 'include' })
+          .then(r => (r.ok ? r.json() : []))
+          .catch(() => []),
       ]);
 
       // Convertir assessmentTypes → format EvaluationTypeItem
@@ -748,6 +778,26 @@ export default function EvaluationsPage() {
 
       setPeriods(Array.isArray(periodsData) ? periodsData : []);
 
+      // ⭐ FIX 2026-11-17 : indexer les affectations matières × classes
+      //    (class_subjects du module Pédagogie) par classe officielle.
+      //    academicClassId = pedagogy_academic_classes.id ; les classes
+      //    opérationnelles du sélecteur pointent dessus via officialClassId.
+      const rawAssignments = Array.isArray(classSubjectsData) ? classSubjectsData : [];
+      const assignmentsByOfficialClass: Record<
+        string,
+        Array<{ subjectId: string; coefficient: number; subjectName?: string }>
+      > = {};
+      for (const a of rawAssignments) {
+        const key: string | null | undefined = a?.academicClassId || a?.classId;
+        if (!key || !a?.subjectId) continue;
+        (assignmentsByOfficialClass[key] ||= []).push({
+          subjectId: a.subjectId,
+          coefficient: Number(a.coefficient ?? 1),
+          subjectName: a.subject?.name,
+        });
+      }
+      setClassAssignments(assignmentsByOfficialClass);
+
       // ⭐ V10b — Isolation stricte des matières (même règle que les classes) :
       // niveau schoolLevelId + marqueur linguistique (non marqué = FR).
       const allSubjects = Array.isArray(subjectsData) ? subjectsData : (subjectsData?.data ?? []);
@@ -799,6 +849,70 @@ export default function EvaluationsPage() {
     () => buildEvaluationGroups(filteredEvaluations, isEN),
     [filteredEvaluations, isEN],
   );
+
+  // ─── ⭐ FIX 2026-11-17 : matières proposées dans le modal selon la/les
+  //    classe(s) sélectionnée(s) ────────────────────────────────────────────
+  //
+  // « Le système doit savoir que quand on prend une classe, cette classe a
+  //  déjà ses matières affectées avec leurs coefficients » :
+  //  - aucune classe sélectionnée → liste complète du niveau (comportement
+  //    historique, avec l'invite « sélectionnez d'abord une classe ») ;
+  //  - UNE classe sélectionnée → SES matières affectées dans
+  //    Pédagogie (via officialClassId → class_subjects), avec leurs
+  //    coefficients, toutes cochées par défaut ;
+  //  - PLUSIEURS classes → intersection des matières affectées à TOUTES les
+  //    classes sélectionnées (une évaluation (classe × matière) n'a de sens
+  //    que si la matière est affectée à la classe) ;
+  //  - classe sans affectation → repli sur la liste du niveau avec un
+  //    avertissement invitant à configurer Pédagogie > Matières & Programmes.
+  const modalSubjects = useMemo(() => {
+    if (form.classIds.length === 0) {
+      return { list: subjects as Array<SubjectItem & { coefficient?: number }>, mode: 'level' as const };
+    }
+    // Matières affectées par classe (via officialClassId → class_subjects)
+    const perClass = form.classIds.map((cid) => {
+      const cls = classes.find((c) => c.id === cid);
+      const officialId = cls?.officialClassId;
+      const assignments = officialId ? (classAssignments[officialId] || []) : [];
+      return assignments.map((a) => ({
+        id: a.subjectId,
+        name: a.subjectName || subjects.find((s) => s.id === a.subjectId)?.name || '—',
+        coefficient: a.coefficient,
+      }));
+    });
+    const anyEmpty = perClass.some((l) => l.length === 0);
+    if (anyEmpty) {
+      return { list: subjects as Array<SubjectItem & { coefficient?: number }>, mode: 'level' as const };
+    }
+    // Intersection : matières présentes dans TOUTES les classes sélectionnées
+    const [first, ...rest] = perClass;
+    const inter = first.filter((a) =>
+      rest.every((l) => l.some((x) => x.id === a.id)),
+    );
+    return { list: inter, mode: 'class' as const };
+  }, [form.classIds, classes, classAssignments, subjects]);
+
+  // Synchroniser form.subjectIds quand la sélection de classes change :
+  //  - une seule classe (mode 'class') → toutes ses matières cochées par
+  //    défaut (l'utilisateur décoche celles à exclure) ;
+  //  - plusieurs classes → on garde les matières toujours valides ;
+  //  - mode 'level' → on garde la sélection si elle reste valide.
+  // NB : l'effet ne se déclenche QUE sur changement de classes/modalSubjects —
+  // les décochemes manuels de l'utilisateur ne sont jamais écrasés.
+  useEffect(() => {
+    if (form.classIds.length === 0) return;
+    const validIds = new Set(modalSubjects.list.map((s) => s.id));
+    const filtered = form.subjectIds.filter((id) => validIds.has(id));
+    if (!editingId && form.classIds.length === 1 && modalSubjects.mode === 'class') {
+      // Une classe → toutes ses matières par défaut
+      if (filtered.length !== modalSubjects.list.length) {
+        setForm((f) => ({ ...f, subjectIds: modalSubjects.list.map((s) => s.id) }));
+      }
+    } else if (filtered.length !== form.subjectIds.length) {
+      setForm((f) => ({ ...f, subjectIds: filtered }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.classIds, modalSubjects, editingId]);
 
   // ─── SÉLECTION MULTIPLE (suppression / modification groupées) ──────────
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
@@ -994,11 +1108,12 @@ export default function EvaluationsPage() {
       // Maternelle : pas de barème numérique (qualitatif TS/S/PS)
       maxScore: isMaternelle ? '0' : '20',
       coefficient: isMaternelle ? '0' : '1',
-      // ⭐ V10d — TOUTES les matières sélectionnées PAR DÉFAUT :
-      // « lorsqu'on programme une évaluation pour une classe, c'est toutes
-      // les matières qui sont évaluées — sauf exclusion explicite ».
-      // L'utilisateur décoche simplement les matières à exclure.
-      subjectIds: subjects.map((s) => s.id),
+      // ⭐ FIX 2026-11-17 : PLUS de pré-sélection globale des matières du
+      //    niveau. Les matières se chargent automatiquement dès que
+      //    l'utilisateur sélectionne une classe (les matières affectées à
+      //    cette classe dans Pédagogie > Matières & Programmes, toutes
+      //    cochées par défaut avec leurs coefficients).
+      subjectIds: [],
     });
     setEditingId(null);
     setIsModalOpen(true);
@@ -1060,6 +1175,12 @@ export default function EvaluationsPage() {
       if (!isMaternelle) {
         basePayload.maxScore = parseFloat(form.maxScore) || 20;
         basePayload.coefficient = parseFloat(form.coefficient) || 1;
+        // ⭐ FIX 2026-11-17 : reprendre le coefficient défini PAR MATIÈRE dans
+        //    Pédagogie > Matières & Programmes (affectation classe × matière).
+        //    Le backend résout le coefficient de chaque évaluation via
+        //    classes.officialClassId → class_subjects.coefficient ; la valeur
+        //    du formulaire ne sert que de repli. (Piste EN : pas de coefficient.)
+        if (!isEN) basePayload.respectSubjectCoefficients = true;
       } else {
         basePayload.maxScore = 0;
         basePayload.coefficient = 0;
@@ -1110,8 +1231,11 @@ export default function EvaluationsPage() {
           })
           .filter(Boolean);
         const subjectNames = form.subjectIds
-          .map((sid) => subjects.find((s) => s.id === sid)?.name)
-          .filter(Boolean);
+          .map((sid) =>
+            subjects.find((s) => s.id === sid)?.name
+            ?? modalSubjects.list.find((s) => s.id === sid)?.name,
+          )
+          .filter(Boolean) as string[];
         const teachersNotified = (result as any)?.teachersAssigned || 0;
 
         toastSuccess(
@@ -1706,6 +1830,10 @@ export default function EvaluationsPage() {
           </div>
 
           {/* Matières — checkboxes multiples */}
+          {/* ⭐ FIX 2026-11-17 : la liste suit la/les classe(s) sélectionnée(s) —
+              matières affectées à la classe dans Pédagogie > Matières &
+              Programmes, avec leurs coefficients. Sélectionner une classe
+              charge automatiquement ses matières (toutes cochées). */}
           <div>
             <Label>
               {labels.subjects} <span className="text-red-500">*</span>
@@ -1713,20 +1841,26 @@ export default function EvaluationsPage() {
                 ({form.subjectIds.length} {isEN ? (form.subjectIds.length > 1 ? 'selected' : 'selected') : (form.subjectIds.length > 1 ? 'sélectionnées' : 'sélectionnée')})
               </span>
             </Label>
-            {/* ⭐ V10d — toutes les matières sont sélectionnées par défaut :
-                l'utilisateur décoche uniquement les matières à exclure. */}
             <p className="text-[10px] text-gray-500 mb-1">
-              {isEN
-                ? 'All subjects are selected by default — uncheck to exclude.'
-                : 'Toutes les matières sont sélectionnées par défaut — décochez celles à exclure.'}
+              {form.classIds.length === 0
+                ? (isEN
+                    ? 'Select a class first — its subjects (configured in Pedagogy) will load automatically.'
+                    : 'Sélectionnez d\'abord une classe — ses matières (configurées dans Pédagogie) se chargeront automatiquement.')
+                : modalSubjects.mode === 'class'
+                  ? (isEN
+                      ? `Subjects assigned to the selected class(es) in Pedagogy — all selected by default, uncheck to exclude.`
+                      : 'Matières affectées à la classe sélectionnée dans Pédagogie — toutes cochées par défaut, décochez celles à exclure.')
+                  : (isEN
+                      ? 'The selected class(es) have no subjects assigned in Pedagogy (Matières & Programmes) — full level list shown as fallback.'
+                      : 'Aucune matière affectée à la classe sélectionnée dans Pédagogie (Matières & Programmes) — liste complète du niveau en repli.')}
             </p>
             <div className="mt-1 max-h-[160px] overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50 space-y-1">
-              {subjects.length === 0 ? (
+              {modalSubjects.list.length === 0 ? (
                 <p className="text-sm text-gray-500 italic text-center py-4">
                   {labels.noSubjects}
                 </p>
               ) : (
-                subjects.map(s => (
+                modalSubjects.list.map(s => (
                   <label
                     key={s.id}
                     className="flex items-center gap-2 p-2 rounded-md hover:bg-white cursor-pointer transition-colors"
@@ -1743,16 +1877,27 @@ export default function EvaluationsPage() {
                       }}
                       className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
-                    <span className="text-sm text-gray-700">{s.name}</span>
+                    <span className="text-sm text-gray-700 flex-1">{s.name}</span>
+                    {/* ⭐ Coefficient de la matière pour cette classe
+                        (défini dans Pédagogie > Matières & Programmes) —
+                        il sera appliqué automatiquement à l'évaluation. */}
+                    {s.coefficient !== undefined && s.coefficient !== null && !isMaternelle && !isEN && (
+                      <span
+                        title={isEN ? 'Coefficient from Pedagogy — applied automatically' : 'Coefficient défini dans Pédagogie — appliqué automatiquement'}
+                        className="ml-auto shrink-0 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5"
+                      >
+                        coef {s.coefficient}
+                      </span>
+                    )}
                   </label>
                 ))
               )}
             </div>
             <div className="mt-1 flex items-center gap-3">
-              {subjects.length > 0 && form.subjectIds.length < subjects.length && (
+              {modalSubjects.list.length > 0 && form.subjectIds.length < modalSubjects.list.length && (
                 <button
                   type="button"
-                  onClick={() => setForm({ ...form, subjectIds: subjects.map(s => s.id) })}
+                  onClick={() => setForm({ ...form, subjectIds: modalSubjects.list.map(s => s.id) })}
                   className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
                 >
                   {labels.selectAll}
@@ -1902,6 +2047,12 @@ export default function EvaluationsPage() {
                 value={form.coefficient}
                 onChange={(e) => setForm({ ...form, coefficient: e.target.value })}
               />
+              {/* ⭐ FIX 2026-11-17 : le coefficient de chaque matière (défini
+                  dans Pédagogie > Matières & Programmes) est appliqué
+                  automatiquement — cette valeur ne sert que de repli. */}
+              <p className="text-xs text-gray-500 mt-1">
+                Les coefficients définis par matière dans <strong>Pédagogie &gt; Matières &amp; Programmes</strong> sont appliqués automatiquement — cette valeur ne sert que de repli.
+              </p>
             </div>
           </div>
         )}

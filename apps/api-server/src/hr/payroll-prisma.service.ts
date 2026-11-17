@@ -1073,6 +1073,11 @@ export class PayrollPrismaService {
         cnssEmployer,
         taxableAmount,
         irppAmount,
+        // ⭐ 17/11/2026 — FIX cohérence : otherDeductions n'était PAS écrit au
+        //    recalcul → une ligne prestataire voyait son net amputé de l'AIB
+        //    sans que la retenue soit stockée/affichée (net ≠ brut − retenues
+        //    affichées). Désormais la retenue AIB figée = celle soustraite.
+        otherDeductions,
         totalDeductions,
         netSalary,
         status: 'CALCULATED',

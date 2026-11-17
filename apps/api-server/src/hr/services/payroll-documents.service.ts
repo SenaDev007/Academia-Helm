@@ -273,7 +273,11 @@ export class PayrollDocumentsService {
     ctx: any,
     opts: { forIssue: boolean; documentNumber?: string; issuedAt?: Date; issuedByName?: string | null },
   ): Promise<PayrollDocumentSnapshot> {
-    const { item, staff, contract, statut, period, fiscalYear } = ctx;
+    // ⭐ 17/11/2026 — FIX ReferenceError « tenantId is not defined » : le
+    //    champ existe dans le contexte (retourné par loadContext) mais
+    //    n'était pas déstructuré → TOUTES les prévisualisations/émissions
+    //    FP/EP renvoyaient 500 depuis l'origine.
+    const { item, staff, contract, statut, period, fiscalYear, tenantId } = ctx;
     const countryCode = ctx.payroll?.tenant?.country?.code || 'BJ';
     const rates = await this.payrollEngine.getFiscalRates(countryCode, new Date(period.endDate));
     if (!rates) {

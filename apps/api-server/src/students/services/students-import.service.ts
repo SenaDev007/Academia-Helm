@@ -104,6 +104,23 @@ export interface ImportRowMatch {
   warnings: string[];
 }
 
+/** ⭐ 2026-11-17 — Option du sélecteur de classes pour le template d'import :
+ *  l'école choisit les classes pour lesquelles elle veut faire l'importation
+ *  de masse, le template est généré en conséquence (une feuille par classe
+ *  sélectionnée). */
+export interface TemplateClassOption {
+  id: string;
+  name: string;
+  code: string | null;
+  schoolLevel: {
+    id: string | null;
+    name: string | null;
+    order: number | null;
+  };
+  /** Nom de la classe officielle (AcademicClass) rattachée, si connu. */
+  officialClassName: string | null;
+}
+
 export interface ImportPreviewResult {
   totalRows: number;
   validRows: number;
@@ -449,52 +466,65 @@ export class StudentsImportService {
   }
 
   /**
+   * ⭐ 2026-11-17 — Liste des classes physiques disponibles pour le template
+   * d'import, pour l'année donnée (ou l'année ACTIVE par défaut). Nourrit le
+   * sélecteur de classes côté frontend : l'école choisit LES classes pour
+   * lesquelles elle veut importer, et le template est généré en conséquence
+   * (plus d'imposition de TOUTES les classes).
+   */
+  async listTemplateClasses(
+    tenantId: string,
+    academicYearId?: string,
+  ): Promise<TemplateClassOption[]> {
+    const classes = await this.loadTemplateClasses(tenantId, academicYearId);
+    return classes.map((cls) => ({
+      id: cls.id,
+      name: cls.name,
+      code: cls.code,
+      schoolLevel: {
+        id: cls.schoolLevel?.id ?? null,
+        name: cls.schoolLevel?.name ?? null,
+        order: cls.schoolLevel?.order ?? null,
+      },
+      officialClassName: cls.officialClass?.name ?? null,
+    }));
+  }
+
+  /**
    * ⭐ Génère et télécharge le template Excel MULTI-FEUILLES.
    * Une feuille par classe physique configurée dans le système (tenant).
    * Chaque feuille est nommée d'après la classe.
    *
+   * ⭐ 2026-11-17 — SÉLECTION DE CLASSES : si `classIds` est fourni, le template
+   * ne contient QUE les feuilles des classes sélectionnées par l'utilisateur
+   * (l'école n'est plus obligée d'importer toutes les classes d'un coup).
+   * Sans `classIds` (ou vide), comportement inchangé : toutes les classes de
+   * l'année cible.
+   *
    * Si aucune classe n'est configurée, on tombe sur un template par défaut
    * avec une seule feuille "Élèves" (rétro-compatibilité).
    */
-  async downloadTemplate(tenantId: string, res: Response): Promise<void> {
+  async downloadTemplate(
+    tenantId: string,
+    res: Response,
+    classIds?: string[],
+    academicYearId?: string,
+  ): Promise<void> {
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Academia Helm';
     workbook.created = new Date();
 
-    // ⭐ FIX 500 : récupérer les classes de l'ANNÉE ACTIVE uniquement (fallback :
-    // la plus récente). Sans ce filtre, les classes des années antérieures (mêmes
-    // noms — ex: « CI A » ×2) créent des feuilles Excel en double et ExcelJS jette
-    // « Worksheet name already exists » → erreur 500 au téléchargement du template.
-    const activeYear = await this.prisma.academicYear.findFirst({
-      where: { tenantId, isActive: true },
-      orderBy: { name: 'desc' },
-      select: { id: true },
-    });
-    const latestYear = activeYear
-      ?? await this.prisma.academicYear.findFirst({
-        where: { tenantId },
-        orderBy: { name: 'desc' },
-        select: { id: true },
-      });
-
-    // ⭐ Récupérer toutes les classes physiques du tenant, triées par niveau puis par nom
-    // Inclure la classe officielle (officialClass) pour l'afficher dans les instructions
-    // de la feuille — l'admin sait ainsi à quelle classe officielle correspond chaque section.
-    const classes = await this.prisma.class.findMany({
-      where: { tenantId, ...(latestYear ? { academicYearId: latestYear.id } : {}) },
-      include: {
-        schoolLevel: {
-          select: { id: true, name: true, code: true, order: true },
-        },
-        officialClass: {
-          select: { id: true, name: true },
-        },
-      },
-      orderBy: [
-        { schoolLevel: { order: 'asc' } },
-        { name: 'asc' },
-      ],
-    });
+    // ⭐ Récupérer les classes physiques du tenant (année cible ou active),
+    // éventuellement FILTRÉES par la sélection de l'utilisateur (classIds).
+    const allClasses = await this.loadTemplateClasses(tenantId, academicYearId);
+    const classes = classIds && classIds.length > 0
+      ? allClasses.filter((c) => classIds.includes(c.id))
+      : allClasses;
+    if (classIds && classIds.length > 0 && classes.length === 0) {
+      throw new BadRequestException(
+        'Aucune des classes sélectionnées n’existe pour cette année académique',
+      );
+    }
 
     if (classes.length === 0) {
       // Fallback : template par défaut avec une seule feuille
@@ -541,6 +571,54 @@ export class StudentsImportService {
   }
 
   // ─── Méthodes privées ───
+
+  /**
+   * ⭐ 2026-11-17 — Charge les classes physiques du tenant pour le template :
+   * année cible explicite si fournie, sinon ANNÉE ACTIVE (fallback : la plus
+   * récente — ⭐ FIX 500 : sans filtre année, les classes des années antérieures
+   * (mêmes noms — ex: « CI A » ×2) créent des feuilles Excel en double et ExcelJS
+   * jette « Worksheet name already exists »).
+   * Tri : niveau (order) puis nom — inclut la classe officielle (officialClass)
+   * pour les instructions de feuille.
+   */
+  private async loadTemplateClasses(
+    tenantId: string,
+    academicYearId?: string,
+  ) {
+    let targetYearId = academicYearId;
+    if (!targetYearId) {
+      const activeYear = await this.prisma.academicYear.findFirst({
+        where: { tenantId, isActive: true },
+        orderBy: { name: 'desc' },
+        select: { id: true },
+      });
+      targetYearId = activeYear?.id
+        ?? (await this.prisma.academicYear.findFirst({
+          where: { tenantId },
+          orderBy: { name: 'desc' },
+          select: { id: true },
+        }))?.id;
+    }
+
+    return this.prisma.class.findMany({
+      where: {
+        tenantId,
+        ...(targetYearId ? { academicYearId: targetYearId } : {}),
+      },
+      include: {
+        schoolLevel: {
+          select: { id: true, name: true, code: true, order: true },
+        },
+        officialClass: {
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: [
+        { schoolLevel: { order: 'asc' } },
+        { name: 'asc' },
+      ],
+    });
+  }
 
   /**
    * Nettoie un nom de feuille Excel (max 31 chars, pas de \ / ? * [ ] :).

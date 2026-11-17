@@ -282,6 +282,14 @@ export class EducationStructureService {
 
   /**
    * Liste des classes physiques pour une année scolaire.
+   *
+   * ⭐ 2026-11-17 — UX SUPPRESSION : chaque classe est enrichie des compteurs
+   * de blocage utilisés par deleteClassroom() (élèves inscrits sur la classe
+   * officielle + sections physiques liées). L'UI « Paramètres > Structure >
+   * Classes officielles » peut ainsi AFFICHER AVANT la tentative pourquoi une
+   * classe ne peut pas être supprimée (au lieu d'un refus constaté après coup
+   * dans un toast éphémère — perçu par l'école comme « la suppression ne
+   * fonctionne pas »).
    */
   async getClassrooms(tenantId: string, academicYearId: string) {
     const list = await this.prisma.classroom.findMany({
@@ -296,7 +304,29 @@ export class EducationStructureService {
       },
       orderBy: { name: 'asc' },
     });
-    return list;
+
+    // ⭐ Compteurs de blocage : mêmes règles que deleteClassroom() —
+    // rapprochement de l'AcademicClass par (tenant, année, nom).
+    const academicClasses = await this.prisma.academicClass.findMany({
+      where: { tenantId, academicYearId },
+      select: {
+        id: true,
+        name: true,
+        _count: { select: { studentEnrollments: true, physicalClasses: true } },
+      },
+    });
+    const academicClassesByName = new Map(academicClasses.map((ac) => [ac.name, ac]));
+
+    return list.map((cr) => {
+      const ac = academicClassesByName.get(cr.name);
+      return {
+        ...cr,
+        /** Élèves inscrits sur la classe officielle correspondante (bloque la suppression si > 0). */
+        linkedStudentEnrollmentsCount: ac?._count?.studentEnrollments ?? 0,
+        /** Sections physiques (A/B/C…) rattachées à la classe officielle correspondante (bloque si > 0). */
+        linkedSectionsCount: ac?._count?.physicalClasses ?? 0,
+      };
+    });
   }
 
   /**

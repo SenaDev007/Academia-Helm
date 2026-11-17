@@ -412,6 +412,11 @@ export default function SettingsPage() {
   const [structureYearId, setStructureYearId] = useState<string | null>(null);
   const [educationClassrooms, setEducationClassrooms] = useState<any[]>([]);
   const [structureBusy, setStructureBusy] = useState(false);
+  /** ⭐ 2026-11-17 — Erreurs PERSISTANTES de l'onglet Structure (suppression de
+   *  classe officielle refusée, etc.). Un toast de 4 s est trop éphémère pour
+   *  un refus métier important (« 8 élèves inscrits — réaffectez d'abord ») :
+   *  l'école ne voyait rien et percevait la suppression comme cassée. */
+  const [structureError, setStructureError] = useState<string | null>(null);
   const [newClassroomGradeId, setNewClassroomGradeId] = useState<string | null>(null);
   const [newClassroomName, setNewClassroomName] = useState('');
   const [newClassroomCapacity, setNewClassroomCapacity] = useState<number | ''>('');
@@ -1601,13 +1606,17 @@ export default function SettingsPage() {
     if (!window.confirm(`Supprimer la série "${seriesCode}" ? Les 3 grades (2nde ${seriesCode}, 1ère ${seriesCode}, Terminale ${seriesCode}) seront supprimés. Action irréversible.`)) return;
     try {
       setSeriesBusy(true);
+      setStructureError(null);
       await settingsService.deleteEducationSeries(seriesId, effectiveTenantId ?? undefined);
       await loadEducationSeries();
       const res = await settingsService.getEducationStructure(effectiveTenantId ?? undefined);
       if (res?.levels) setEducationStructure(res);
       showToast('success', `Série ${seriesCode} supprimée.`);
     } catch (error: any) {
-      showToast('error', error.message || 'Erreur lors de la suppression de la série');
+      const msg = error.message || 'Erreur lors de la suppression de la série';
+      showToast('error', msg);
+      // ⭐ Bandeau persistant : le refus (classes liées…) reste visible jusqu'à fermeture manuelle
+      setStructureError(`Suppression de la série « ${seriesCode} » refusée : ${msg}`);
     } finally {
       setSeriesBusy(false);
     }
@@ -1734,6 +1743,7 @@ export default function SettingsPage() {
   const handleArchiveEducationClassroom = async (id: string) => {
     try {
       setStructureBusy(true);
+      setStructureError(null);
       await settingsService.archiveEducationClassroom(id, effectiveTenantId ?? undefined);
       if (structureYearIdOrActive) {
         const list = await settingsService.getEducationClassrooms(structureYearIdOrActive, effectiveTenantId ?? undefined);
@@ -1762,6 +1772,7 @@ export default function SettingsPage() {
     if (!ok) return;
     try {
       setStructureBusy(true);
+      setStructureError(null);
       await settingsService.deleteEducationClassroom(id, effectiveTenantId ?? undefined);
       if (structureYearIdOrActive) {
         const list = await settingsService.getEducationClassrooms(structureYearIdOrActive, effectiveTenantId ?? undefined);
@@ -1769,7 +1780,12 @@ export default function SettingsPage() {
       }
       showToast('success', `Classe officielle « ${name} » supprimée définitivement.`);
     } catch (error: any) {
-      showToast('error', error.message || 'Erreur lors de la suppression');
+      const msg = error.message || 'Erreur lors de la suppression';
+      showToast('error', msg);
+      // ⭐ Bandeau PERSISTANT : un refus métier (« N élèves inscrits —
+      //    réaffectez d'abord ») ne doit pas disparaître en 4 s. L'école
+      //    voyait « rien ne se passe » et jugeait la suppression cassée.
+      setStructureError(`Suppression de la classe officielle « ${name} » refusée : ${msg}`);
     } finally {
       setStructureBusy(false);
     }
@@ -3929,7 +3945,29 @@ export default function SettingsPage() {
         const showSeriesReminderBulk = !!selectedGradeForBulk && isSecondCycleSecondary(selectedGradeForBulk);
         return (
           <div className="space-y-6">
-            {/* ═══════════════════════════════════════════════════════════════
+            {/* ⭐ 2026-11-17 — BANDEAU D'ERREUR PERSISTANT de l'onglet Structure :
+                refus de suppression de classe officielle / série avec la raison
+                exacte (élèves inscrits, sections liées…). Remplace le toast de 4 s
+                que l'école ne voyait pas → « la suppression ne fonctionne pas ». */}
+            {structureError && (
+              <div className="bg-red-50 border border-red-300 rounded-lg p-4 flex items-start gap-3" role="alert">
+                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 text-sm text-red-800">
+                  <p className="font-semibold">Action refusée</p>
+                  <p className="mt-1">{structureError}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStructureError(null)}
+                  className="text-red-500 hover:text-red-700 p-1"
+                  title="Fermer"
+                  aria-label="Fermer l'avertissement"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+            {/* ═════════════════════════════════════════════════════════════
                 ⭐ MODE D'ADMINISTRATION — Fusion Maternelle + Primaire
                 Toggle pour notifier au système que les niveaux Maternelle et
                 Primaire sont fusionnés (même staff gère les 2 niveaux).
@@ -4489,6 +4527,8 @@ export default function SettingsPage() {
                                       <th className="text-left py-2 px-3 font-medium text-gray-700">Nom</th>
                                       <th className="text-left py-2 px-3 font-medium text-gray-700">Classe pédagogique</th>
                                       <th className="text-left py-2 px-3 font-medium text-gray-700 w-20">Série</th>
+                                      {/* ⭐ Dépendances qui bloquent la suppression (informé AVANT la tentative) */}
+                                      <th className="text-left py-2 px-3 font-medium text-gray-700">Élèves / Sections</th>
                                       <th className="text-right py-2 px-3 font-medium text-gray-700">Actions</th>
                                     </tr>
                                   </thead>
@@ -4526,6 +4566,30 @@ export default function SettingsPage() {
                                             </select>
                                           ) : (
                                             c.grade?.series?.code ?? '—'
+                                          )}
+                                        </td>
+                                        {/* ⭐ Dépendances de la classe officielle — rendent le refus de
+                                            suppression PRÉVISIBLE (le backend refuse si > 0). */}
+                                        <td className="py-2 px-3">
+                                          {(c.linkedStudentEnrollmentsCount ?? 0) > 0 || (c.linkedSectionsCount ?? 0) > 0 ? (
+                                            <div className="flex flex-wrap gap-1">
+                                              {(c.linkedStudentEnrollmentsCount ?? 0) > 0 && (
+                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold whitespace-nowrap"
+                                                      title="Des élèves sont inscrits sur cette classe officielle — la suppression sera refusée jusqu'à leur réaffectation">
+                                                  {c.linkedStudentEnrollmentsCount} élève{c.linkedStudentEnrollmentsCount > 1 ? 's' : ''}
+                                                </span>
+                                              )}
+                                              {(c.linkedSectionsCount ?? 0) > 0 && (
+                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 text-[10px] font-semibold whitespace-nowrap"
+                                                      title="Des sections physiques (A/B/C…) sont liées — supprimez-les d'abord dans « Sections par classe »">
+                                                  {c.linkedSectionsCount} section{c.linkedSectionsCount > 1 ? 's' : ''}
+                                                </span>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <span className="text-[10px] text-emerald-600 font-semibold" title="Aucun élève ni section — la suppression définitive est possible">
+                                              supprimable
+                                            </span>
                                           )}
                                         </td>
                                         <td className="py-2 px-3 text-right">
@@ -4577,7 +4641,13 @@ export default function SettingsPage() {
                                                 onClick={() => handleDeleteEducationClassroom(c.id, c.name ?? '')}
                                                 disabled={structureBusy}
                                                 className="text-gray-500 hover:text-red-600 disabled:opacity-50"
-                                                title="Supprimer définitivement"
+                                                title={
+                                                  (c.linkedStudentEnrollmentsCount ?? 0) > 0
+                                                    ? `Supprimer définitivement — refusé actuellement : ${c.linkedStudentEnrollmentsCount} élève(s) inscrit(s). Réaffectez-les d'abord à une autre classe.`
+                                                    : (c.linkedSectionsCount ?? 0) > 0
+                                                      ? `Supprimer définitivement — refusé actuellement : ${c.linkedSectionsCount} section(s) liée(s). Supprimez-les d'abord.`
+                                                      : 'Supprimer définitivement'
+                                                }
                                               >
                                                 <Trash2 className="w-3.5 h-3.5" />
                                               </button>

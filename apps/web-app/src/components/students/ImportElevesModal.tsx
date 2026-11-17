@@ -25,10 +25,11 @@
  */
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   X, Upload, Download, FileSpreadsheet, CheckCircle2, AlertCircle,
   Loader2, Users, ArrowRight, RefreshCw, ArrowLeftRight, UserCheck,
+  ListChecks, ChevronsUpDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ResponsiveTableWrapper from '@/components/ui/tables/ResponsiveTableWrapper';
@@ -113,6 +114,19 @@ interface ImportElevesModalProps {
   onSuccess: () => void;
 }
 
+/** ⭐ Option du sélecteur de classes (mirroir de TemplateClassOption backend). */
+interface TemplateClassOption {
+  id: string;
+  name: string;
+  code: string | null;
+  schoolLevel: {
+    id: string | null;
+    name: string | null;
+    order: number | null;
+  };
+  officialClassName: string | null;
+}
+
 export default function ImportElevesModal({ open, onClose, onSuccess }: ImportElevesModalProps) {
   const { academicYear } = useModuleContext();
   const { toast } = useToast();
@@ -124,6 +138,90 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [importResult, setImportResult] = useState<ImportRunResult | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // ⭐ 2026-11-17 — SÉLECTEUR DE CLASSES POUR L'IMPORT DE MASSE :
+  // l'école choisit les classes pour lesquelles elle veut importer (le
+  // template généré ne contient QUE les feuilles des classes sélectionnées).
+  const [templateClasses, setTemplateClasses] = useState<TemplateClassOption[]>([]);
+  const [classesLoading, setClassesLoading] = useState(false);
+  const [classesError, setClassesError] = useState<string | null>(null);
+  const [selectedClassIds, setSelectedClassIds] = useState<Set<string>>(new Set());
+
+  // ⭐ Charger la liste des classes (pour le sélecteur) à l'ouverture du modal,
+  // pour l'année académique courante du module. Hooks avant le early-return !
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const loadClasses = async () => {
+      setClassesLoading(true);
+      setClassesError(null);
+      try {
+        const qs = academicYear?.id ? `?academicYearId=${encodeURIComponent(academicYear.id)}` : '';
+        const res = await fetch(`/api/students/import/classes${qs}`, { credentials: 'include' });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err?.error || err?.message || 'Erreur lors du chargement des classes');
+        }
+        const data: TemplateClassOption[] = await res.json();
+        if (cancelled) return;
+        setTemplateClasses(Array.isArray(data) ? data : []);
+        // ⭐ Pas de sélection par défaut : l'école choisit explicitement les
+        // classes pour lesquelles elle veut importer (fini l'imposition de toutes).
+        setSelectedClassIds(new Set());
+      } catch (e: any) {
+        if (!cancelled) setClassesError(e?.message || 'Erreur lors du chargement des classes');
+      } finally {
+        if (!cancelled) setClassesLoading(false);
+      }
+    };
+    loadClasses();
+    return () => { cancelled = true; };
+  }, [open, academicYear?.id]);
+
+  // ⭐ Classes groupées par niveau scolaire (pour l'affichage du sélecteur)
+  const classesByLevel = useMemo(() => {
+    const groups: Array<{ levelName: string; levelOrder: number | null; classes: TemplateClassOption[] }> = [];
+    for (const cls of templateClasses) {
+      const key = cls.schoolLevel?.name || 'Autres classes';
+      let group = groups.find((g) => g.levelName === key);
+      if (!group) {
+        group = { levelName: key, levelOrder: cls.schoolLevel?.order ?? null, classes: [] };
+        groups.push(group);
+      }
+      group.classes.push(cls);
+    }
+    groups.sort((a, b) => (a.levelOrder ?? 9999) - (b.levelOrder ?? 9999));
+    return groups;
+  }, [templateClasses]);
+
+  const toggleClass = (classId: string) => {
+    setSelectedClassIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(classId)) next.delete(classId);
+      else next.add(classId);
+      return next;
+    });
+  };
+
+  const toggleLevel = (classesOfLevel: TemplateClassOption[]) => {
+    setSelectedClassIds((prev) => {
+      const next = new Set(prev);
+      const allSelected = classesOfLevel.every((c) => next.has(c.id));
+      for (const c of classesOfLevel) {
+        if (allSelected) next.delete(c.id);
+        else next.add(c.id);
+      }
+      return next;
+    });
+  };
+
+  const selectAllClasses = () => {
+    setSelectedClassIds(new Set(templateClasses.map((c) => c.id)));
+  };
+
+  const clearAllClasses = () => {
+    setSelectedClassIds(new Set());
+  };
 
   if (!open) return null;
 
@@ -142,10 +240,29 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
     onClose();
   };
 
-  // ─── Télécharger le template ───
+  // ─── Télécharger le template (⭐ selon les classes sélectionnées) ───
   const handleDownloadTemplate = async () => {
+    // ⭐ Sélection obligatoire d'au moins une classe quand des classes existent :
+    // le template est généré EN FONCTION de la sélection (fini l'imposition
+    // de toutes les classes). Sans classe configurée → template générique.
+    if (templateClasses.length > 0 && selectedClassIds.size === 0) {
+      toast({
+        title: 'Sélectionnez au moins une classe',
+        description: 'Cochez les classes pour lesquelles vous voulez importer des élèves, puis téléchargez le template.',
+        variant: 'destructive',
+      });
+      return;
+    }
     try {
-      const res = await fetch('/api/students/import/template', { credentials: 'include' });
+      const params = new URLSearchParams();
+      if (selectedClassIds.size > 0) {
+        selectedClassIds.forEach((id) => params.append('classIds', id));
+      }
+      if (academicYear?.id) {
+        params.append('academicYearId', academicYear.id);
+      }
+      const qs = params.toString();
+      const res = await fetch(`/api/students/import/template${qs ? `?${qs}` : ''}`, { credentials: 'include' });
       if (!res.ok) throw new Error('Erreur téléchargement template');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -156,7 +273,13 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      toast({ title: '✅ Template téléchargé', description: 'Remplissez-le avec vos élèves, puis importez-le.' });
+      const desc = selectedClassIds.size > 0
+        ? `Template avec ${selectedClassIds.size} feuille(s) : ${templateClasses
+            .filter((c) => selectedClassIds.has(c.id))
+            .map((c) => c.name)
+            .join(', ')}. Remplissez-le, puis importez-le.`
+        : 'Remplissez-le avec vos élèves, puis importez-le.';
+      toast({ title: '✅ Template téléchargé', description: desc });
     } catch (e: any) {
       toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
     }
@@ -310,21 +433,121 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
           {/* ─── Étape 1 : Upload ─── */}
           {step === 'upload' && (
             <div className="space-y-6">
-              {/* Bouton télécharger template */}
-              <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center">
-                    <FileSpreadsheet className="w-5 h-5 text-indigo-700" />
+              {/* ⭐ SÉLECTEUR DE CLASSES + téléchargement du template :
+                  l'école choisit les classes pour lesquelles elle veut importer,
+                  le template est généré en fonction de cette sélection. */}
+              <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                      <FileSpreadsheet className="w-5 h-5 text-indigo-700" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">Template Excel multi-feuilles</p>
+                      <p className="text-xs text-slate-500">
+                        Choisissez les classes à importer — une feuille par classe sélectionnée
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">Template Excel multi-feuilles</p>
-                    <p className="text-xs text-slate-500">Une feuille par classe physique configurée dans votre établissement</p>
-                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDownloadTemplate}
+                    disabled={classesLoading || (templateClasses.length > 0 && selectedClassIds.size === 0)}
+                    className="border-indigo-300 text-indigo-700 hover:bg-indigo-100 flex-shrink-0"
+                  >
+                    <Download className="w-4 h-4 mr-1.5" />
+                    Télécharger
+                  </Button>
                 </div>
-                <Button variant="outline" size="sm" onClick={handleDownloadTemplate} className="border-indigo-300 text-indigo-700 hover:bg-indigo-100">
-                  <Download className="w-4 h-4 mr-1.5" />
-                  Télécharger
-                </Button>
+
+                {/* Sélecteur de classes */}
+                {classesLoading ? (
+                  <div className="mt-4 flex items-center gap-2 text-sm text-slate-500">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Chargement des classes…
+                  </div>
+                ) : classesError ? (
+                  <div className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-xs text-rose-700">
+                      <p className="font-semibold">Impossible de charger les classes</p>
+                      <p className="mt-0.5">{classesError} — vous pouvez quand même télécharger un template vierge.</p>
+                    </div>
+                  </div>
+                ) : templateClasses.length === 0 ? (
+                  <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                    Aucune classe configurée pour cette année académique — le template contiendra une feuille générique « Élèves ».
+                  </div>
+                ) : (
+                  <div className="mt-4 border border-slate-200 bg-white rounded-lg overflow-hidden">
+                    {/* Barre d'actions : compteur + tout sélectionner / désélectionner */}
+                    <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+                      <p className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                        <ListChecks className="w-3.5 h-3.5 text-indigo-600" />
+                        {selectedClassIds.size} / {templateClasses.length} classe(s) sélectionnée(s)
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={selectAllClasses}
+                          className="text-[11px] font-medium text-indigo-600 hover:text-indigo-800 hover:underline"
+                        >
+                          Tout sélectionner
+                        </button>
+                        <span className="text-slate-300">|</span>
+                        <button
+                          type="button"
+                          onClick={clearAllClasses}
+                          className="text-[11px] font-medium text-slate-500 hover:text-slate-700 hover:underline"
+                        >
+                          Tout désélectionner
+                        </button>
+                      </div>
+                    </div>
+                    {/* Liste des classes groupées par niveau, scrollable */}
+                    <div className="max-h-[260px] overflow-y-auto">
+                      {classesByLevel.map((group) => (
+                        <div key={group.levelName} className="border-b border-slate-100 last:border-b-0">
+                          {/* En-tête de niveau — coche/décoche tout le niveau */}
+                          <button
+                            type="button"
+                            onClick={() => toggleLevel(group.classes)}
+                            className="w-full flex items-center gap-2 px-3 py-2 bg-slate-50/80 hover:bg-slate-100 transition-colors text-left"
+                          >
+                            <ChevronsUpDown className="w-3.5 h-3.5 text-slate-400" />
+                            <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wide">{group.levelName}</span>
+                            <span className="text-[10px] text-slate-400">({group.classes.length})</span>
+                          </button>
+                          {/* Classes du niveau */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-3 gap-y-1 p-2">
+                            {group.classes.map((cls) => (
+                              <label
+                                key={cls.id}
+                                className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-indigo-50/60 cursor-pointer text-xs"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedClassIds.has(cls.id)}
+                                  onChange={() => toggleClass(cls.id)}
+                                  className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 flex-shrink-0 accent-indigo-600"
+                                />
+                                <span className="text-slate-700 truncate" title={cls.officialClassName ? `${cls.name} — classe officielle : ${cls.officialClassName}` : cls.name}>
+                                  {cls.name}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Rappel si aucune classe sélectionnée */}
+                    {selectedClassIds.size === 0 && (
+                      <div className="px-3 py-2 bg-amber-50/70 border-t border-amber-200 text-[11px] text-amber-700">
+                        Sélectionnez au moins une classe pour activer le téléchargement du template.
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Zone upload */}
@@ -358,12 +581,12 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
                 <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">📋 Instructions</p>
                 <ul className="text-xs text-slate-600 space-y-1.5">
-                  <li>1. Téléchargez le template Excel — ⭐ une feuille par classe physique configurée dans votre établissement</li>
+                  <li>1. ⭐ Choisissez les classes pour lesquelles vous voulez importer des élèves, puis téléchargez le template — une feuille par classe sélectionnée</li>
                   <li>2. Remplissez chaque feuille avec les élèves de la classe correspondante (supprimez les lignes d'exemple)</li>
                   <li>3. Indiquez "Nouvel élève" ou "Ancien élève" pour chaque élève</li>
                   <li>4. ⭐ Le niveau scolaire et la classe sont déduits automatiquement du nom de la feuille — ne les saisissez pas</li>
                   <li>5. Colonnes obligatoires : Prénom, Nom, Date de naissance, Sexe, Type d'élève</li>
-                  <li>6. Uploadez le fichier rempli et vérifiez le preview</li>
+                  <li>6. Uploadez le fichier rempli et vérifiez le preview (les feuilles de classes non sélectionnées restent importables si présentes dans le fichier)</li>
                   <li>7. Confirmez l'import — les élèves et leurs comptes financiers sont créés automatiquement</li>
                 </ul>
               </div>

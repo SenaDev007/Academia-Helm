@@ -17,6 +17,7 @@ import {
   Get,
   Post,
   Body,
+  Query,
   Res,
   UseGuards,
   BadRequestException,
@@ -33,9 +34,30 @@ export class StudentsImportController {
   constructor(private readonly importService: StudentsImportService) {}
 
   /**
-   * GET /students/import/template
+   * GET /students/import/classes?academicYearId=...
+   * ⭐ 2026-11-17 — Liste les classes physiques disponibles pour le template
+   * d'import (année cible si fournie, sinon année ACTIVE). Nourrit le
+   * sélecteur de classes : l'école choisit les classes pour lesquelles elle
+   * veut faire l'importation de masse, le template est généré en conséquence.
+   */
+  @Get('classes')
+  async listClasses(
+    @TenantId() tenantId: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    return this.importService.listTemplateClasses(tenantId, academicYearId || undefined);
+  }
+
+  /**
+   * GET /students/import/template?classIds=...&academicYearId=...
    * Télécharge le template Excel multi-feuilles : une feuille par classe physique
    * configurée dans le système (pour le tenant courant).
+   *
+   * ⭐ 2026-11-17 — SÉLECTION DE CLASSES : `classIds` (répété ou séparé par des
+   * virgules) restreint le template aux classes choisies par l'utilisateur.
+   * Sans `classIds` : toutes les classes de l'année cible (comportement historique).
+   * `academicYearId` (optionnel) cible l'année du template — cohérent avec
+   * l'année utilisée ensuite pour le preview/run de l'import.
    *
    * Chaque feuille est nommée "MATERNELLE 1", "CP", "6ème", etc.
    * Les colonnes "Niveau scolaire" et "Classe" sont pré-remplies (readonly)
@@ -44,9 +66,23 @@ export class StudentsImportController {
   @Get('template')
   async downloadTemplate(
     @TenantId() tenantId: string,
+    @Query('classIds') classIds?: string | string[],
+    @Query('academicYearId') academicYearId?: string,
     @Res() res: Response,
   ) {
-    await this.importService.downloadTemplate(tenantId, res);
+    // ⭐ classIds : accepté répété (?classIds=a&classIds=b) OU en liste CSV
+    // (?classIds=a,b,c) — les IDs sont des cuid/uuid (jamais de virgule interne).
+    const flat = Array.isArray(classIds) ? classIds : (classIds ? [classIds] : []);
+    const ids = flat
+      .flatMap((v) => v.split(','))
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0);
+    await this.importService.downloadTemplate(
+      tenantId,
+      res,
+      ids.length > 0 ? ids : undefined,
+      academicYearId || undefined,
+    );
   }
 
   /**

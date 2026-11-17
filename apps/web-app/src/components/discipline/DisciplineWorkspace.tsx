@@ -37,7 +37,8 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Shield, Plus, Loader2, Search, Gavel, BookOpen, Settings, X,
   AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Trash2, Edit,
@@ -49,6 +50,22 @@ import { cn } from '@/lib/utils';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+
+// ─── Portal — FIX 2026-11-17 « modal qui grandit / devient transparent » ────
+// Les 5 modals de ce fichier utilisent position:fixed (inset-0), mais les
+// conteneurs ancêtres (.app-fade-in du layout-client et .page-transition-in
+// du PilotageLayout) conservent un transform:translateY(0) après leur
+// animation CSS (fill-mode both) : tout ancêtre portant un transform devient
+// le bloc conteneur des descendants fixed. L'overlay inset-0 était donc
+// DIMENSIONNÉ PAR LE CONTENEUR DE LA PAGE — sa hauteur suivait celle du
+// tableau (le modal s'allongeait avec le nombre de lignes) et, tableau vide,
+// il ne couvrait qu'une bande étroite (rendu « transparent », reste de la
+// page non assombri). Rendu via createPortal(document.body), l'overlay
+// redevient un vrai plein-viewport, indépendant du tableau.
+function Portal({ children }: { children: ReactNode }) {
+  if (typeof document === 'undefined') return null;
+  return createPortal(children, document.body);
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -475,13 +492,19 @@ export default function DisciplineWorkspace({
       ) : (
         <RulesTab
           rules={rules}
-          onEdit={(r) => setEditingRule(r)}
+          // ⭐ FIX 2026-11-17 — le bouton « Modifier » ne faisait rien :
+          // setEditingRule seul n'ouvrait PAS le modal (showRuleModal
+          // n'était passé à true que par le bouton « Nouvelle règle »).
+          // On ouvre donc aussi le modal ici.
+          onEdit={(r) => { setEditingRule(r); setShowRuleModal(true); }}
           onDelete={(id) => setDeletingRuleId(id)}
         />
       )}
 
-      {/* Modals */}
+      {/* Modals — ⭐ FIX 2026-11-17 : rendus via Portal (document.body) pour
+          échapper aux conteneurs à transform qui piègent position:fixed */}
       {showSanctionModal && (
+        <Portal>
         <SanctionModal
           onClose={() => setShowSanctionModal(false)}
           onSuccess={() => { loadData(); setShowSanctionModal(false); }}
@@ -494,15 +517,19 @@ export default function DisciplineWorkspace({
           preselectedStudentName={modalStudentName}
           allClasses={sortedClasses}
         />
+        </Portal>
       )}
       {showRuleModal && (
+        <Portal>
         <RuleModal
           onClose={() => { setShowRuleModal(false); setEditingRule(null); }}
           onSuccess={() => { loadData(); setShowRuleModal(false); setEditingRule(null); }}
           editingRule={editingRule}
         />
+        </Portal>
       )}
       {showSettingsModal && (
+        <Portal>
         <ConductSettingsModal
           onClose={() => setShowSettingsModal(false)}
           onSuccess={(updated) => {
@@ -520,21 +547,26 @@ export default function DisciplineWorkspace({
           currentReference={conductSettings.conduct_reference}
           currentThreshold={conductSettings.critical_threshold}
         />
+        </Portal>
       )}
 
       {cancellingSanctionId && (
+        <Portal>
         <CancelSanctionModal
           onClose={() => { setCancellingSanctionId(null); setCancelReason(''); }}
           onConfirm={() => handleCancelSanction(cancellingSanctionId)}
           cancelReason={cancelReason}
           setCancelReason={setCancelReason}
         />
+        </Portal>
       )}
       {deletingRuleId && (
+        <Portal>
         <DeleteRuleModal
           onClose={() => setDeletingRuleId(null)}
           onConfirm={() => handleDeleteRule(deletingRuleId)}
         />
+        </Portal>
       )}
     </div>
   );
@@ -986,7 +1018,7 @@ function SanctionModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex justify-center" style={{ paddingTop: '80px' }}>
+    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex items-start justify-center" style={{ paddingTop: '80px' }}>
       {/* ⭐ 2026-09-28 — FIX « bande grise qui cache le modal » : on remplace
           motion.div (qui avait initial opacity:0 → restait invisible pendant
           l'animation framer-motion) par une div simple. Le centrage se fait
@@ -1181,11 +1213,13 @@ function RuleModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex justify-center" style={{ paddingTop: '80px' }}>
+    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex items-start justify-center" style={{ paddingTop: '80px' }}>
       {/* ⭐ 2026-09-28 — FIX « bande grise » : div simple (pas de motion.div) +
           flex justify-center pour le centrage horizontal. */}
+      {/* ⭐ FIX 2026-11-17 — items-start : le panneau ne s'étire plus sur toute
+          la hauteur de l'overlay ; max-h + overflow : hauteur bornée. */}
       <div
-        className="my-8 bg-white rounded-xl shadow-2xl max-w-lg w-full"
+        className="my-8 bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2">
@@ -1331,10 +1365,10 @@ function ConductSettingsModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex justify-center" style={{ paddingTop: '80px' }}>
+    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex items-start justify-center" style={{ paddingTop: '80px' }}>
       {/* ⭐ 2026-09-28 — FIX « bande grise » : div simple + flex justify-center. */}
       <div
-        className="my-8 bg-white rounded-xl shadow-2xl max-w-md w-full"
+        className="my-8 bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[85vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between p-4 border-b bg-blue-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -1414,10 +1448,10 @@ function CancelSanctionModal({
   setCancelReason: (v: string) => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex justify-center" style={{ paddingTop: '80px' }}>
+    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex items-start justify-center" style={{ paddingTop: '80px' }}>
       {/* ⭐ 2026-09-28 — FIX « bande grise » : div simple + flex justify-center. */}
       <div
-        className="my-8 bg-white rounded-xl shadow-2xl max-w-md w-full"
+        className="my-8 bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[85vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between p-4 border-b bg-red-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-red-900 flex items-center gap-2">
@@ -1460,10 +1494,10 @@ function CancelSanctionModal({
 
 function DeleteRuleModal({ onClose, onConfirm }: { onClose: () => void; onConfirm: () => void }) {
   return (
-    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex justify-center" style={{ paddingTop: '80px' }}>
+    <div className="fixed inset-0 z-[100] bg-black/50 overflow-y-auto flex items-start justify-center" style={{ paddingTop: '80px' }}>
       {/* ⭐ 2026-09-28 — FIX « bande grise » : div simple + flex justify-center. */}
       <div
-        className="my-8 bg-white rounded-xl shadow-2xl max-w-sm w-full"
+        className="my-8 bg-white rounded-xl shadow-2xl max-w-sm w-full max-h-[85vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between p-4 border-b bg-red-50 rounded-t-xl">
           <h3 className="text-lg font-bold text-red-900">Supprimer la règle</h3>

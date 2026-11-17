@@ -261,6 +261,16 @@ export function GradingSheet({
     ? evalMaxScore
     : (isEN ? getMaxScoreForType(evalTypeCode, language) : 20);
   const [rows, setRows] = useState<GradeRow[]>([]);
+  // ⭐ FIX 2026-11-17 — Snapshot des cellules portant une note ENREGISTRÉE
+  //    (chargée depuis l'API ou fraîchement sauvegardée). Le verrou du mode
+  //    'add' (« seules les cellules vides sont éditables, les notes
+  //    existantes sont grisées ») doit s'appuyer sur ce snapshot et NON sur
+  //    la valeur live : l'ancien code testait score.score !== null, donc
+  //    dès le PREMIER chiffre saisi (onChange → setState → re-render) la
+  //    cellule elle-même se verrouillait et se grisait — le bug « ça grise
+  //    dès le premier chiffre en mode Ajouter » (toutes les tables :
+  //    secondaire, primaire CM, maternelle, broadsheet EN).
+  const [savedCells, setSavedCells] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -385,6 +395,17 @@ export function GradingSheet({
 
         rowsArray.sort((a, b) => a.studentName.localeCompare(b.studentName, 'fr'));
         setRows(rowsArray);
+        // ⭐ FIX 2026-11-17 — Snapshot des notes chargées (verrou du mode 'add')
+        const saved = new Set<string>();
+        rowsArray.forEach((row) => {
+          group.subjects.forEach((subject) => {
+            const s = row.scores[subject.id];
+            if (s && (s.score !== null || s.cm !== null || s.cp !== null || s.qualitativeCode !== null || s.isAbsent)) {
+              saved.add(`${row.studentId}|${subject.id}`);
+            }
+          });
+        });
+        setSavedCells(saved);
       } catch (err) {
         console.error('Error loading grading sheet', err);
         toastError('Erreur lors du chargement de la fiche de saisie');
@@ -554,6 +575,24 @@ export function GradingSheet({
           throw new Error(`Échec de la validation pour ${submitErrors.length} évaluation(s). Vérifiez la console.`);
         }
       }
+
+      // ⭐ FIX 2026-11-17 — Après une sauvegarde réussie, rafraîchir le
+      //    snapshot des cellules enregistrées : les notes fraîchement
+      //    sauvegardées deviennent verrouillées en mode 'add' (cohérent avec
+      //    la bannière « les notes existantes sont grisées »), sans verrouiller
+      //    les cellules en cours de frappe AVANT sauvegarde.
+      setSavedCells(() => {
+        const next = new Set<string>();
+        rows.forEach((row) => {
+          group.subjects.forEach((subject) => {
+            const s = row.scores[subject.id];
+            if (s && (s.score !== null || s.cm !== null || s.cp !== null || s.qualitativeCode !== null || s.isAbsent)) {
+              next.add(`${row.studentId}|${subject.id}`);
+            }
+          });
+        });
+        return next;
+      });
 
       toastSuccess(submit ? 'Notes validées' : 'Notes enregistrées', {
         description: submit
@@ -1284,12 +1323,12 @@ export function GradingSheet({
                               </td>
                               {sortedSubjects.map((subject) => {
                                 const score = row.scores[subject.id] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
-                                const hasNote = score.score !== null;
-                                // ⭐ 2026-10-01 — Protection des notes : par défaut les inputs sont
-                                //    disabled (readonly). En mode 'add' : seules les cellules SANS
-                                //    note sont éditables (les notes existantes sont grisées). En mode
-                                //    'modify' : toutes les cellules sont éditables.
-                                const isEditable = editMode === 'modify' || (editMode === 'add' && !hasNote);
+                                // ⭐ FIX 2026-11-17 — verrou basé sur le snapshot des notes
+                                //    ENREGISTRÉES (pas la valeur live) + correction du mode :
+                                //    'edit' (l'ancien 'modify' ne matchait JAMAIS → en mode
+                                //    Modifier TOUTES les cellules restaient disabled).
+                                const hasNote = savedCells.has(`${row.studentId}|${subject.id}`);
+                                const isEditable = editMode === 'edit' || (editMode === 'add' && !hasNote);
                                 return (
                                   <td key={subject.id} className={cn("border border-slate-300 p-0", canAdd && hasNote && "bg-gray-100")}>
                                     <input
@@ -1462,7 +1501,13 @@ export function GradingSheet({
                             {/* Notes obtenues — une cellule par matière */}
                             {sortedSubjects.map((subject) => {
                               const score = row.scores[subject.id] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
-                              const hasNote = score.score !== null;
+                              // ⭐ FIX 2026-11-17 — verrou du mode 'add' basé sur le snapshot des
+                              //    notes ENREGISTRÉES : avant, hasNote = score.score !== null
+                              //    (valeur live) → dès le premier chiffre saisi la cellule se
+                              //    verrouillait et se grisait (disabled + bg-gray-100).
+                              //    Désormais la cellule saisie reste éditable tant qu'elle
+                              //    n'est pas sauvegardée ; en mode 'edit' tout reste éditable.
+                              const hasNote = savedCells.has(`${row.studentId}|${subject.id}`);
                               const cellLocked = isLocked || editMode === 'readonly' || (canAdd && hasNote);
                               return (
                                 <td key={subject.id} className={cn("border border-slate-300 p-0", canAdd && hasNote && "bg-gray-100")}>
@@ -1694,10 +1739,10 @@ export function GradingSheet({
                             {/* Matières */}
                             {sortedSubjects.map((subject) => {
                               const score = row.scores[subject.id] || { score: null, cm: null, cp: null, qualitativeCode: null, isAbsent: false, comment: '' };
-                              // ⭐ hasNote = la cellule a déjà une note (pour le mode 'add')
-                              const hasNote = isMaternelle
-                                ? !!score.qualitativeCode
-                                : (score.cm !== null || score.score !== null);
+                              // ⭐ FIX 2026-11-17 — hasNote basé sur le snapshot des notes
+                              //    ENREGISTRÉES (pas la valeur live) : corrige le verrouillage
+                              //    au premier chiffre (primaire) et au premier clic (maternelle).
+                              const hasNote = savedCells.has(`${row.studentId}|${subject.id}`);
                               if (isMaternelle) {
                                 return (
                                   <td key={subject.id} className={cn("border border-slate-300 px-1 py-1 text-center", canAdd && hasNote && "bg-gray-100")}>

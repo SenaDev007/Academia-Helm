@@ -1516,9 +1516,17 @@ export class StudentsImportService {
     row: ImportRow,
   ): Promise<void> {
     // Parser le nom du parent
-    const parts = (row.guardianName || '').trim().split(' ');
-    const lastName = parts[0] || 'Parent';
-    const firstName = parts.slice(1).join(' ') || '';
+    // ⭐ FIX 2026-11-17 : le modèle GUARDIAN n'a PAS de champ isPrimary (il vit sur
+    //    la junction StudentGuardian — posée juste en dessous). Prisma rejetait
+    //    « Unknown argument isPrimary » → TOUTE ligne d'import avec un parent nommé
+    //    échouait APRÈS création de l'élève (élève créé, parent absent, ligne
+    //    marquée en échec) — c'est ce qui faussait l'import de masse réel.
+    // ⭐ FIX 2026-11-17 (2) : convention du template « Nom du parent/tuteur » =
+    //    « Prénom(s) NOM » (exemple documenté : Koffi AKOVI) — le dernier mot est
+    //    le NOM, les premiers sont le(s) prénom(s) (l'ancien parsing inversait).
+    const parts = (row.guardianName || '').trim().split(/\s+/).filter(Boolean);
+    const lastName = parts.length > 1 ? parts[parts.length - 1] : (parts[0] || 'Parent');
+    const firstName = parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
 
     const guardian = await this.prisma.guardian.create({
       data: {
@@ -1527,7 +1535,6 @@ export class StudentsImportService {
         lastName,
         phone: row.guardianPhone,
         email: row.guardianEmail,
-        isPrimary: true,
       },
     });
 

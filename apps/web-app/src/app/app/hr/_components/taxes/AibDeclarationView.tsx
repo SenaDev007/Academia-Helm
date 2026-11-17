@@ -159,14 +159,21 @@ export function AibDeclarationView() {
                           </tr>
                         </thead>
                         <tbody>
-                          {data.prestataires.map((p: any, i: number) => (
+                          {data.prestataires.map((p: any, i: number) => {
+                            // ⭐ 125 — champs réels de getOrGenerateAIB (source
+                            //    payroll-items) : base (montant) et prelevement
+                            //    (AIB réellement retenu) — repli sur l'ancien « amount ».
+                            const base = p.base ?? p.amount ?? 0;
+                            const retenu = p.prelevement ?? ((base * 5) / 100);
+                            return (
                             <tr key={i} className="border-b border-slate-100">
                               <td className="px-2 py-2 font-bold">{p.name}</td>
                               <td className="px-2 py-2 font-mono">{p.ifu || '—'}</td>
-                              <td className="px-2 py-2 text-right">{formatCurrency(p.amount || 0)}</td>
-                              <td className="px-2 py-2 text-right font-bold text-rose-600">{formatCurrency(((p.amount || 0) * 5) / 100)}</td>
+                              <td className="px-2 py-2 text-right">{formatCurrency(base)}</td>
+                              <td className="px-2 py-2 text-right font-bold text-rose-600">{formatCurrency(retenu)}</td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     )}

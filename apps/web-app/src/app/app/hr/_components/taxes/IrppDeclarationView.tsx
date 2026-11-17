@@ -138,7 +138,7 @@ export function IrppDeclarationView() {
                 <div className="p-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
                   <div className="bg-slate-50 rounded-lg p-3 text-center">
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Base imposable</p>
-                    <p className="text-sm font-bold text-slate-900 mt-1">{formatCurrency(data.taxableAmount || data.baseImposable || 0)}</p>
+                    <p className="text-sm font-bold text-slate-900 mt-1">{formatCurrency(data.taxableAmount || data.baseImposable || data.totalGrossSalary || 0)}</p>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-3 text-center">
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">IRPP dû</p>
@@ -173,11 +173,11 @@ export function IrppDeclarationView() {
                         {data.staffDetails.map((s: any, i: number) => (
                           <tr key={i} className="border-b border-slate-100">
                             <td className="px-2 py-2 font-bold">{s.name}</td>
-                            <td className="px-2 py-2 text-right">{formatCurrency(s.grossSalary || 0)}</td>
+                            <td className="px-2 py-2 text-right">{formatCurrency(s.grossSalary || s.taxableAmount || 0)}</td>
                             <td className="px-2 py-2 text-right text-rose-600">-{formatCurrency(s.cnssEmployee || 0)}</td>
-                            <td className="px-2 py-2 text-right">{formatCurrency(s.taxableAmount || 0)}</td>
+                            <td className="px-2 py-2 text-right">{formatCurrency((s.grossSalary || s.taxableAmount || 0) - (s.cnssEmployee || 0))}</td>
                             <td className="px-2 py-2 text-right text-rose-600 font-bold">-{formatCurrency(s.irpp || 0)}</td>
-                            <td className="px-2 py-2 text-right font-bold text-emerald-600">{formatCurrency(s.netSalary || 0)}</td>
+                            <td className="px-2 py-2 text-right font-bold text-emerald-600">{formatCurrency(s.netSalary ?? ((s.grossSalary || s.taxableAmount || 0) - (s.cnssEmployee || 0) - (s.irpp || 0)))}</td>
                           </tr>
                         ))}
                       </tbody>

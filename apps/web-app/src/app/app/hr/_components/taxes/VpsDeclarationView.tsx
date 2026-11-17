@@ -114,7 +114,7 @@ export function VpsDeclarationView() {
                 <div className="p-4 grid grid-cols-2 lg:grid-cols-3 gap-3">
                   <div className="bg-slate-50 rounded-lg p-3 text-center">
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Masse salariale brute</p>
-                    <p className="text-sm font-bold text-slate-900 mt-1">{formatCurrency(data.totalGross || 0)}</p>
+                    <p className="text-sm font-bold text-slate-900 mt-1">{formatCurrency(data.totalGrossSalary ?? data.totalGross ?? 0)}</p>
                   </div>
                   <div className="bg-slate-50 rounded-lg p-3 text-center">
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Taux VPS</p>

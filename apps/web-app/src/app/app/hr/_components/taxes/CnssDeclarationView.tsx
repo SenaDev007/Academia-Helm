@@ -98,7 +98,15 @@ export function CnssDeclarationView() {
           {declarations.map((decl) => {
             const data = decl.data || {};
             const isExpanded = expandedId === decl.id;
-            const totalCnss = (data.cnssFamiliales || 0) + (data.cnssRisques || 0) + (data.cnssVieillesse || 0) + (data.cnssPatronale || 0) + (data.cnssOuvriere || 0);
+            // ⭐ 125 — champs réels de getOrGenerateCNSS (source payroll-items) :
+            //    cotisationsFamiliales / risquesPro / assuranceVieillesse /
+            //    partPatronale / partOuvriere — avec repli sur les anciens noms.
+            const totalCnss = data.totalCotisations
+              ?? ((data.cotisationsFamiliales || data.cnssFamiliales || 0)
+                + (data.risquesPro || data.cnssRisques || 0)
+                + (data.assuranceVieillesse || data.cnssVieillesse || 0)
+                + (data.partPatronale || data.cnssPatronale || 0)
+                + (data.partOuvriere || data.cnssOuvriere || 0));
             return (
               <div key={decl.id} className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                 <div className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100">
@@ -124,11 +132,11 @@ export function CnssDeclarationView() {
                 {/* Summary */}
                 <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
                   {[
-                    { label: 'Familiales (9%)', value: data.cnssFamiliales },
-                    { label: 'Risques (1%)', value: data.cnssRisques },
-                    { label: 'Vieillesse', value: data.cnssVieillesse },
-                    { label: 'Patronale (6.4%)', value: data.cnssPatronale },
-                    { label: 'Ouvrière (3.6%)', value: data.cnssOuvriere },
+                    { label: 'Familiales (9%)', value: data.cotisationsFamiliales ?? data.cnssFamiliales },
+                    { label: 'Risques (1%)', value: data.risquesPro ?? data.cnssRisques },
+                    { label: 'Vieillesse', value: data.assuranceVieillesse ?? data.cnssVieillesse },
+                    { label: 'Patronale (6.4%)', value: data.partPatronale ?? data.cnssPatronale },
+                    { label: 'Ouvrière (3.6%)', value: data.partOuvriere ?? data.cnssOuvriere },
                   ].map((item, i) => (
                     <div key={i} className="bg-slate-50 rounded-lg p-3 text-center">
                       <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{item.label}</p>
@@ -166,13 +174,15 @@ export function CnssDeclarationView() {
                           <tr key={i} className="border-b border-slate-100">
                             <td className="px-2 py-2 font-mono">{s.cnssNumber || '—'}</td>
                             <td className="px-2 py-2 font-bold">{s.name}</td>
-                            <td className="px-2 py-2 text-center">{s.daysM1 || 26}</td>
-                            <td className="px-2 py-2 text-center">{s.daysM2 || 26}</td>
-                            <td className="px-2 py-2 text-center">{s.daysM3 || 26}</td>
-                            <td className="px-2 py-2 text-right">{formatCurrency(s.salaryM1 || 0)}</td>
-                            <td className="px-2 py-2 text-right">{formatCurrency(s.salaryM2 || 0)}</td>
-                            <td className="px-2 py-2 text-right">{formatCurrency(s.salaryM3 || 0)}</td>
-                            <td className="px-2 py-2 text-right font-bold">{formatCurrency(s.quarterlyGross || 0)}</td>
+                            {/* ⭐ 125 — champs réels : daysMonth1-3 / salaryMonth1-3 (h
+                                anciens daysM1-3 / salaryM1-3) */}
+                            <td className="px-2 py-2 text-center">{s.daysMonth1 ?? s.daysM1 ?? '—'}</td>
+                            <td className="px-2 py-2 text-center">{s.daysMonth2 ?? s.daysM2 ?? '—'}</td>
+                            <td className="px-2 py-2 text-center">{s.daysMonth3 ?? s.daysM3 ?? '—'}</td>
+                            <td className="px-2 py-2 text-right">{formatCurrency(s.salaryMonth1 ?? s.salaryM1 ?? 0)}</td>
+                            <td className="px-2 py-2 text-right">{formatCurrency(s.salaryMonth2 ?? s.salaryM2 ?? 0)}</td>
+                            <td className="px-2 py-2 text-right">{formatCurrency(s.salaryMonth3 ?? s.salaryM3 ?? 0)}</td>
+                            <td className="px-2 py-2 text-right font-bold">{formatCurrency(s.grossSalary ?? s.quarterlyGross ?? 0)}</td>
                           </tr>
                         ))}
                       </tbody>

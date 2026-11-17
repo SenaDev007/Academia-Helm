@@ -270,6 +270,249 @@ export default function EnrollmentsContent() {
   // chaînage automatique Modal Affectation (skippable) → Modal Paiement
   // préréglé sur l'élève — plus besoin de naviguer entre les onglets/modules.
   const [postFlow, setPostFlow] = useState<PostEnrollmentFlowData | null>(null);
+  // ⭐ 2026-11-17 — ANTI-DOUBLON : conflit détecté par le serveur pendant une
+  // inscription (409 DUPLICATE_STUDENT) — modal de vérification homonymes.
+  const [duplicateConflict, setDuplicateConflict] = useState<{
+    strong: boolean;
+    message: string;
+    duplicates: any[];
+    data: any; // payload du wizard (pour la re-soumission confirmée)
+  } | null>(null);
+  const [duplicateRetryInProgress, setDuplicateRetryInProgress] = useState(false);
+
+  // ─── ⭐ 2026-11-17 — ANTI-DOUBLON : orchestration d'inscription extraite ───
+  // Réutilisable pour la soumission initiale ET pour la re-soumission après
+  // confirmation explicite d'un homonyme (allowDuplicate=true).
+  const runInscriptionSubmission = async (data: any, allowDuplicate: boolean): Promise<boolean> => {
+    try {
+    // ⭐ FIX 2026-09-07 « accès refusé à la finalisation » :
+    //   Le fallback historique `schoolLevel!.id` pouvait valoir 'ALL'
+    //   (option virtuelle « Tous les niveaux » auto-sélectionnée) ou
+    //   un UUID education_levels (mauvaise table) → AccessScopeGuard
+    //   rejetait preRegister/admit avec 403 « Accès refusé » pour les
+    //   comptes à périmètre restreint (secrétaires…).
+    //   → On utilise : 1) le niveau choisi dans le wizard (vrai UUID
+    //     school_levels), 2) le schoolLevelId du contexte, 3) l'id du
+    //     contexte SEULEMENT s'il n'est pas la sentinelle 'ALL'.
+    const fallbackLevelId =
+      schoolLevel?.schoolLevelId ||
+      (schoolLevel?.id && schoolLevel.id !== 'ALL' ? schoolLevel.id : undefined);
+    const effectiveSchoolLevelId = data.schoolLevelId || fallbackLevelId;
+    if (!effectiveSchoolLevelId) {
+      // Message explicite plutôt qu'un 403 opaque côté backend
+      throw new Error(
+        "Le niveau scolaire est manquant. Sélectionnez un niveau (et une classe) à l'étape « Classe » avant de finaliser l'inscription.",
+      );
+    }
+
+    // 1. Pré-inscrire l'élève — ne PAS envoyer photoUrl dans le payload
+    //    (sera uploadée via uploadPhoto séparément pour persister dans student_photos).
+    //    Le backend preRegister persiste déjà npi, photoUrl, placeOfBirth, etc.
+    // ⭐ FIX: data.classId est en réalité l'UUID d'un AcademicClass (CP, CE1, 6ème…)
+    //    récupéré depuis /api/academic-classes. Il faut l'envoyer comme
+    //    `academicClassId` (pas `classId`) sinon le backend lève une erreur
+    //    P2003 FK violation car l'UUID n'existe pas dans la table `classes`
+    //    (classes physiques) → HTTP 400 "Référence invalide".
+    const student = await studentsService.preRegister({
+      academicYearId: academicYear!.id,
+      schoolLevelId: effectiveSchoolLevelId,
+      firstName: data.student.firstName,
+      lastName: data.student.lastName,
+      // Convertir la date string (YYYY-MM-DD) en ISO pour Prisma
+      dateOfBirth: data.student.dateOfBirth ? new Date(data.student.dateOfBirth).toISOString() : undefined,
+      gender: data.student.gender || undefined,
+      nationality: data.student.nationality || undefined,
+      placeOfBirth: data.student.placeOfBirth || undefined,
+      npi: data.student.npi || undefined,
+      // ⭐ data.classId = UUID d'AcademicClass → envoyé comme academicClassId
+      academicClassId: data.classId || undefined,
+      // ⭐ enrollmentType : 'NEW' (frais INSCRIPTION) ou 'REPEAT' (frais RÉINSCRIPTION)
+      enrollmentType: data.enrollmentType,
+      // ⭐ 2026-11-17 — ANTI-DOUBLON : true UNIQUEMENT après confirmation
+      //    explicite de l'opérateur sur la liste d'homonymes (modal de
+      //    conflit) — le garde-fou serveur reste actif sinon.
+      ...(allowDuplicate ? { allowDuplicate: true } : {}),
+    });
+
+    // 1b. Upload photo en arrière-plan (ne pas bloquer l'inscription)
+    if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {
+      studentsService.uploadPhoto(student.id, data.student.photoUrl)
+        .catch((e: any) => console.warn('uploadPhoto (background):', e?.message));
+    }
+
+    // 2. Admettre l'élève (génère matricule + compte financier)
+    // ⭐ Ne PAS envoyer classId ici — data.classId est un AcademicClass UUID,
+    // pas un Class UUID. Le preRegister a déjà assigné academicClassId.
+    // admit n'a pas de paramètre academicClassId, donc on ne fait rien
+    // pour la classe ici (l'enrollment a déjà academicClassId du preRegister).
+    const admitted = await studentsService.admit({
+      studentId: student.id,
+      academicYearId: academicYear!.id,
+      schoolLevelId: effectiveSchoolLevelId,
+    });
+
+    // 3. Ajouter les parents (en parallèle pour la vitesse)
+    // ⭐ nov. 2026 (demande promoteur) : le wizard demande à
+    //    l'étape Parents s'il faut créer en même temps le compte
+    //    du parent avec ses identifiants. Si oui (défaut) : le
+    //    backend crée le User parent ET envoie les informations de
+    //    connexion au parent par SMS (Termii) + email + Helm Connect
+    //    (pattern « modal d'encaissement » du module Finance).
+    //    Si non : étape skippée — rattrapable dans l'onglet
+    //    Familles → sous-onglet « Création de compte ».
+    if (data.guardians?.length) {
+      // ⭐ FIX 16/11/2026 (bug 4 — « élève créé sans son parent associé ») :
+      //    l'échec d'ajout d'un parent était AVALÉ (catch console.warn)
+      //    → l'élève était créé sans parent, sans le moindre message.
+      //    Maintenant : 1 retry automatique, puis toast d'erreur
+      //    EXPLICITE (nom du parent + raison + rattrapage).
+      const submittedGuardians = data.guardians.filter(
+        (g: any) => g.firstName?.trim() && g.lastName?.trim(),
+      );
+      const ignoredCount = data.guardians.length - submittedGuardians.length;
+      if (ignoredCount > 0) {
+        toast({
+          title: 'Parent incomplet ignoré',
+          description: `${ignoredCount} parent(s) saisi(s) sans prénom ET nom complets n'ont PAS été enregistrés. Complétez-les dans Élèves → Familles → Responsables.`,
+          variant: 'destructive',
+        });
+      }
+      const addOneWithRetry = async (g: any) => {
+        const payload = {
+          guardians: [{
+            firstName: g.firstName, lastName: g.lastName,
+            relationship: g.relationship || 'GUARDIAN',
+            phone: g.phone || undefined, email: g.email || undefined,
+            address: g.address || undefined,
+            isPrimary: g.isPrimary ?? false,
+          }],
+          // ⭐ nov. 2026 — compte parent à l'inscription :
+          // createAccount=false si l'utilisateur a décoché la case ;
+          // sendCredentials=true si créés (identifiants envoyés).
+          createAccount: data.createParentAccounts !== false,
+          sendCredentials: data.createParentAccounts !== false,
+        };
+        try {
+          return await studentsService.addGuardians(student.id, payload);
+        } catch (e1: any) {
+          // 1 retry après un court délai (réseau/API ponctuel)
+          await new Promise((r) => setTimeout(r, 1500));
+          try {
+            return await studentsService.addGuardians(student.id, payload);
+          } catch (e2: any) {
+            return {
+              __failed: true,
+              name: `${g.firstName} ${g.lastName}`.trim(),
+              message: e2?.message || e1?.message || 'erreur inconnue',
+            };
+          }
+        }
+      };
+      const guardianResults = await Promise.all(
+        submittedGuardians.map((g: any) => addOneWithRetry(g)),
+      );
+
+      // ⭐ Retour explicite « identifiants envoyés » (le backend
+      //    renvoie parentAccount + rapport par canal sur chaque
+      //    guardian créé — 15/11/2026 : canaux RÉELS envoyés, y
+      //    compris SMS Termii).
+      if (data.createParentAccounts !== false) {
+        // ⭐ FIX 16/11/2026 (bug 4) : ne pas compter les échecs comme
+        // des créations ; alerter explicitement sur les échecs restants.
+        const failures: any[] = [guardianResults].flat().filter((r: any) => r?.__failed);
+        if (failures.length > 0) {
+          toast({
+            title: `Élève créé, mais ${failures.length} parent(s) NON enregistré(s)`,
+            description: failures.map((f: any) => `${f.name} : ${f.message}`).join(' · ') + ' — Ajoutez-le manuellement dans Élèves & Scolarité → Familles → Responsables.',
+            variant: 'destructive',
+          });
+        }
+        const createdCount = [guardianResults].flat().filter((r: any) => r && !r?.__failed).length;
+        if (createdCount > 0) {
+          // Agréger les canaux réellement envoyés (sent) sur tous les parents
+          const channelLabel = (ch: string) =>
+            ch === 'helm_connect' ? 'Helm Connect' : ch === 'sms' ? 'SMS' : ch;
+          const sentSet = new Set<string>();
+          const skippedSms = [guardianResults].flat().some(
+            (r: any) => r?.parentAccount?.notification?.sms?.status === 'skipped',
+          );
+          for (const r of [guardianResults].flat()) {
+            const notif = (r as any)?.parentAccount?.notification ?? {};
+            for (const [ch, rep] of Object.entries(notif)) {
+              if (ch !== 'error' && (rep as any)?.status === 'sent') sentSet.add(ch);
+            }
+          }
+          const sentList = [...sentSet].map(channelLabel);
+          toast({
+            title: 'Comptes parents créés',
+            description: sentList.length > 0
+              ? `Identifiants de connexion envoyés aux ${createdCount} parent(s) par ${sentList.join(', ')}${skippedSms ? ' (SMS non configuré — activez Termii : SMS_PROVIDER=termii + TERMII_API_KEY)' : ''}.`
+              : `Comptes créés — identifiants envoyables depuis Familles → Création de compte.`,
+            variant: 'success',
+          });
+        }
+      }
+    }
+
+    toast({
+      title: 'Inscription effectuée',
+      description: `${data.student.firstName} ${data.student.lastName} a été admis(e)${admitted?.matricule ? ` (matricule: ${admitted.matricule})` : ''}.`,
+      variant: 'success',
+    });
+    setIsCreateModalOpen(false);
+    loadData();
+
+    // ⭐ CHAÎNAGE DYNAMIQUE POST-INSCRIPTION (sept. 2026) :
+    // ouvre automatiquement le modal d'affectation vers une classe
+    // physique (skippable), puis le modal de paiement préréglé sur
+    // l'élève — la secrétaire n'a plus à naviguer entre onglets et
+    // modules pour finaliser l'accueil d'un nouvel élève.
+    // NB : l'auto-affectation éventuelle de preRegister (section
+    // physique unique) est pré-sélectionnée dans le modal.
+    const preassigned = (admitted?.studentEnrollments ?? []).find(
+      (e: any) => e.academicYearId === academicYear!.id && e.classId,
+    );
+    setPostFlow({
+      studentId: student.id,
+      firstName: data.student.firstName,
+      lastName: data.student.lastName,
+      matricule: admitted?.matricule ?? undefined,
+      schoolLevelId: effectiveSchoolLevelId,
+      academicClassId: data.classId || undefined,
+      academicClassName: data.classId
+        ? classes.find((c) => c.id === data.classId)?.name
+        : undefined,
+      preassignedPhysicalClassId: preassigned?.classId ?? null,
+      preassignedPhysicalClassName: preassigned?.class?.name ?? null,
+    });
+    return admitted;
+  } catch (e: any) {
+    // ⭐ 2026-11-17 — ANTI-DOUBLON : interception du refus serveur (409
+    //    DUPLICATE_STUDENT) → modal de conflit au lieu d'un toast sec.
+    const status = e?.status ?? e?.response?.status;
+    const body: any = e?.response?.data ?? {};
+    if (status === 409 && body?.error === 'DUPLICATE_STUDENT') {
+      setDuplicateConflict({
+        strong: !!body.strong,
+        message: body.message || 'Un élève correspondant existe déjà en base.',
+        duplicates: body.duplicates || [],
+        data,
+      });
+      // pas de re-throw : le wizard reste ouvert, le modal de conflit prend
+      // la main (continuer quand même = re-soumission allowDuplicate).
+      return false;
+    }
+    console.error('Erreur inscription:', e);
+    toast({
+      title: "Erreur lors de l'inscription",
+      description: e?.message || 'Une erreur est survenue.',
+      variant: 'error',
+    });
+    throw e;
+  }
+  return true;
+  }
+
   // ⭐ Export Excel par classe (bouton à côté du PDF)
   const [excelGeneratingClassId, setExcelGeneratingClassId] = useState<string | null>(null);
   // ⭐ Export PDF de toutes les classes d'un niveau
@@ -508,7 +751,9 @@ export default function EnrollmentsContent() {
     // Construire un map schoolLevelId → nom depuis les classes chargées
     const levelNameMap = new Map<string, string>();
     for (const cls of classes) {
-      if (cls.schoolLevel?.name && !levelNameMap.has(cls.schoolLevelId)) {
+      // ⭐ FIX 2026-11-17 (erreur TS pré-existante rendue visible par le fix du
+      //    parse ImportElevesModal) : schoolLevelId peut être undefined côté type
+      if (cls.schoolLevel?.name && cls.schoolLevelId && !levelNameMap.has(cls.schoolLevelId)) {
         levelNameMap.set(cls.schoolLevelId, cls.schoolLevel.name);
       }
     }
@@ -1731,218 +1976,86 @@ export default function EnrollmentsContent() {
       {/* ─── MODAL : Nouvelle inscription ─── */}
       <FormModal title="Nouvelle inscription" isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} size="xl" actions={null}>
         <StudentEnrollmentForm
-          onSubmit={async (data) => {
-            try {
-              // ⭐ FIX 2026-09-07 « accès refusé à la finalisation » :
-              //   Le fallback historique `schoolLevel!.id` pouvait valoir 'ALL'
-              //   (option virtuelle « Tous les niveaux » auto-sélectionnée) ou
-              //   un UUID education_levels (mauvaise table) → AccessScopeGuard
-              //   rejetait preRegister/admit avec 403 « Accès refusé » pour les
-              //   comptes à périmètre restreint (secrétaires…).
-              //   → On utilise : 1) le niveau choisi dans le wizard (vrai UUID
-              //     school_levels), 2) le schoolLevelId du contexte, 3) l'id du
-              //     contexte SEULEMENT s'il n'est pas la sentinelle 'ALL'.
-              const fallbackLevelId =
-                schoolLevel?.schoolLevelId ||
-                (schoolLevel?.id && schoolLevel.id !== 'ALL' ? schoolLevel.id : undefined);
-              const effectiveSchoolLevelId = data.schoolLevelId || fallbackLevelId;
-              if (!effectiveSchoolLevelId) {
-                // Message explicite plutôt qu'un 403 opaque côté backend
-                throw new Error(
-                  "Le niveau scolaire est manquant. Sélectionnez un niveau (et une classe) à l'étape « Classe » avant de finaliser l'inscription.",
-                );
-              }
-
-              // 1. Pré-inscrire l'élève — ne PAS envoyer photoUrl dans le payload
-              //    (sera uploadée via uploadPhoto séparément pour persister dans student_photos).
-              //    Le backend preRegister persiste déjà npi, photoUrl, placeOfBirth, etc.
-              // ⭐ FIX: data.classId est en réalité l'UUID d'un AcademicClass (CP, CE1, 6ème…)
-              //    récupéré depuis /api/academic-classes. Il faut l'envoyer comme
-              //    `academicClassId` (pas `classId`) sinon le backend lève une erreur
-              //    P2003 FK violation car l'UUID n'existe pas dans la table `classes`
-              //    (classes physiques) → HTTP 400 "Référence invalide".
-              const student = await studentsService.preRegister({
-                academicYearId: academicYear!.id,
-                schoolLevelId: effectiveSchoolLevelId,
-                firstName: data.student.firstName,
-                lastName: data.student.lastName,
-                // Convertir la date string (YYYY-MM-DD) en ISO pour Prisma
-                dateOfBirth: data.student.dateOfBirth ? new Date(data.student.dateOfBirth).toISOString() : undefined,
-                gender: data.student.gender || undefined,
-                nationality: data.student.nationality || undefined,
-                placeOfBirth: data.student.placeOfBirth || undefined,
-                npi: data.student.npi || undefined,
-                // ⭐ data.classId = UUID d'AcademicClass → envoyé comme academicClassId
-                academicClassId: data.classId || undefined,
-                // ⭐ enrollmentType : 'NEW' (frais INSCRIPTION) ou 'REPEAT' (frais RÉINSCRIPTION)
-                enrollmentType: data.enrollmentType,
-              });
-
-              // 1b. Upload photo en arrière-plan (ne pas bloquer l'inscription)
-              if (data.student.photoUrl && data.student.photoUrl.startsWith('data:')) {
-                studentsService.uploadPhoto(student.id, data.student.photoUrl)
-                  .catch((e: any) => console.warn('uploadPhoto (background):', e?.message));
-              }
-
-              // 2. Admettre l'élève (génère matricule + compte financier)
-              // ⭐ Ne PAS envoyer classId ici — data.classId est un AcademicClass UUID,
-              // pas un Class UUID. Le preRegister a déjà assigné academicClassId.
-              // admit n'a pas de paramètre academicClassId, donc on ne fait rien
-              // pour la classe ici (l'enrollment a déjà academicClassId du preRegister).
-              const admitted = await studentsService.admit({
-                studentId: student.id,
-                academicYearId: academicYear!.id,
-                schoolLevelId: effectiveSchoolLevelId,
-              });
-
-              // 3. Ajouter les parents (en parallèle pour la vitesse)
-              // ⭐ nov. 2026 (demande promoteur) : le wizard demande à
-              //    l'étape Parents s'il faut créer en même temps le compte
-              //    du parent avec ses identifiants. Si oui (défaut) : le
-              //    backend crée le User parent ET envoie les informations de
-              //    connexion au parent par SMS (Termii) + email + Helm Connect
-              //    (pattern « modal d'encaissement » du module Finance).
-              //    Si non : étape skippée — rattrapable dans l'onglet
-              //    Familles → sous-onglet « Création de compte ».
-              if (data.guardians?.length) {
-                // ⭐ FIX 16/11/2026 (bug 4 — « élève créé sans son parent associé ») :
-                //    l'échec d'ajout d'un parent était AVALÉ (catch console.warn)
-                //    → l'élève était créé sans parent, sans le moindre message.
-                //    Maintenant : 1 retry automatique, puis toast d'erreur
-                //    EXPLICITE (nom du parent + raison + rattrapage).
-                const submittedGuardians = data.guardians.filter(
-                  (g: any) => g.firstName?.trim() && g.lastName?.trim(),
-                );
-                const ignoredCount = data.guardians.length - submittedGuardians.length;
-                if (ignoredCount > 0) {
-                  toast({
-                    title: 'Parent incomplet ignoré',
-                    description: `${ignoredCount} parent(s) saisi(s) sans prénom ET nom complets n'ont PAS été enregistrés. Complétez-les dans Élèves → Familles → Responsables.`,
-                    variant: 'destructive',
-                  });
-                }
-                const addOneWithRetry = async (g: any) => {
-                  const payload = {
-                    guardians: [{
-                      firstName: g.firstName, lastName: g.lastName,
-                      relationship: g.relationship || 'GUARDIAN',
-                      phone: g.phone || undefined, email: g.email || undefined,
-                      address: g.address || undefined,
-                      isPrimary: g.isPrimary ?? false,
-                    }],
-                    // ⭐ nov. 2026 — compte parent à l'inscription :
-                    // createAccount=false si l'utilisateur a décoché la case ;
-                    // sendCredentials=true si créés (identifiants envoyés).
-                    createAccount: data.createParentAccounts !== false,
-                    sendCredentials: data.createParentAccounts !== false,
-                  };
-                  try {
-                    return await studentsService.addGuardians(student.id, payload);
-                  } catch (e1: any) {
-                    // 1 retry après un court délai (réseau/API ponctuel)
-                    await new Promise((r) => setTimeout(r, 1500));
-                    try {
-                      return await studentsService.addGuardians(student.id, payload);
-                    } catch (e2: any) {
-                      return {
-                        __failed: true,
-                        name: `${g.firstName} ${g.lastName}`.trim(),
-                        message: e2?.message || e1?.message || 'erreur inconnue',
-                      };
-                    }
-                  }
-                };
-                const guardianResults = await Promise.all(
-                  submittedGuardians.map((g: any) => addOneWithRetry(g)),
-                );
-
-                // ⭐ Retour explicite « identifiants envoyés » (le backend
-                //    renvoie parentAccount + rapport par canal sur chaque
-                //    guardian créé — 15/11/2026 : canaux RÉELS envoyés, y
-                //    compris SMS Termii).
-                if (data.createParentAccounts !== false) {
-                  // ⭐ FIX 16/11/2026 (bug 4) : ne pas compter les échecs comme
-                  // des créations ; alerter explicitement sur les échecs restants.
-                  const failures: any[] = [guardianResults].flat().filter((r: any) => r?.__failed);
-                  if (failures.length > 0) {
-                    toast({
-                      title: `Élève créé, mais ${failures.length} parent(s) NON enregistré(s)`,
-                      description: failures.map((f: any) => `${f.name} : ${f.message}`).join(' · ') + ' — Ajoutez-le manuellement dans Élèves & Scolarité → Familles → Responsables.',
-                      variant: 'destructive',
-                    });
-                  }
-                  const createdCount = [guardianResults].flat().filter((r: any) => r && !r?.__failed).length;
-                  if (createdCount > 0) {
-                    // Agréger les canaux réellement envoyés (sent) sur tous les parents
-                    const channelLabel = (ch: string) =>
-                      ch === 'helm_connect' ? 'Helm Connect' : ch === 'sms' ? 'SMS' : ch;
-                    const sentSet = new Set<string>();
-                    const skippedSms = [guardianResults].flat().some(
-                      (r: any) => r?.parentAccount?.notification?.sms?.status === 'skipped',
-                    );
-                    for (const r of [guardianResults].flat()) {
-                      const notif = (r as any)?.parentAccount?.notification ?? {};
-                      for (const [ch, rep] of Object.entries(notif)) {
-                        if (ch !== 'error' && (rep as any)?.status === 'sent') sentSet.add(ch);
-                      }
-                    }
-                    const sentList = [...sentSet].map(channelLabel);
-                    toast({
-                      title: 'Comptes parents créés',
-                      description: sentList.length > 0
-                        ? `Identifiants de connexion envoyés aux ${createdCount} parent(s) par ${sentList.join(', ')}${skippedSms ? ' (SMS non configuré — activez Termii : SMS_PROVIDER=termii + TERMII_API_KEY)' : ''}.`
-                        : `Comptes créés — identifiants envoyables depuis Familles → Création de compte.`,
-                      variant: 'success',
-                    });
-                  }
-                }
-              }
-
-              toast({
-                title: 'Inscription effectuée',
-                description: `${data.student.firstName} ${data.student.lastName} a été admis(e)${admitted?.matricule ? ` (matricule: ${admitted.matricule})` : ''}.`,
-                variant: 'success',
-              });
-              setIsCreateModalOpen(false);
-              loadData();
-
-              // ⭐ CHAÎNAGE DYNAMIQUE POST-INSCRIPTION (sept. 2026) :
-              // ouvre automatiquement le modal d'affectation vers une classe
-              // physique (skippable), puis le modal de paiement préréglé sur
-              // l'élève — la secrétaire n'a plus à naviguer entre onglets et
-              // modules pour finaliser l'accueil d'un nouvel élève.
-              // NB : l'auto-affectation éventuelle de preRegister (section
-              // physique unique) est pré-sélectionnée dans le modal.
-              const preassigned = (admitted?.studentEnrollments ?? []).find(
-                (e: any) => e.academicYearId === academicYear!.id && e.classId,
-              );
-              setPostFlow({
-                studentId: student.id,
-                firstName: data.student.firstName,
-                lastName: data.student.lastName,
-                matricule: admitted?.matricule ?? undefined,
-                schoolLevelId: effectiveSchoolLevelId,
-                academicClassId: data.classId || undefined,
-                academicClassName: data.classId
-                  ? classes.find((c) => c.id === data.classId)?.name
-                  : undefined,
-                preassignedPhysicalClassId: preassigned?.classId ?? null,
-                preassignedPhysicalClassName: preassigned?.class?.name ?? null,
-              });
-              return admitted;
-            } catch (e: any) {
-              console.error('Erreur inscription:', e);
-              toast({
-                title: "Erreur lors de l'inscription",
-                description: e?.message || 'Une erreur est survenue.',
-                variant: 'error',
-              });
-              throw e;
-            }
-          }}
+          onSubmit={(data) => runInscriptionSubmission(data, false)}
           onCancel={() => setIsCreateModalOpen(false)}
         />
       </FormModal>
+
+      {/* ─── ⭐ 2026-11-17 — MODAL : Anti-doublon (conflit d'identité détecté) ─── */}
+      {duplicateConflict && (
+        <div
+          className="fixed inset-0 z-[220] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => {
+            if (!duplicateRetryInProgress) setDuplicateConflict(null);
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={`px-5 py-4 border-b ${duplicateConflict.strong ? 'border-red-100 bg-red-50' : 'border-amber-100 bg-amber-50'}`}>
+              <h3 className={`text-base font-bold flex items-center gap-2 ${duplicateConflict.strong ? 'text-red-800' : 'text-amber-800'}`}>
+                {duplicateConflict.strong ? '⛔ Doublon confirmé — inscription refusée' : '⚠️ Élève homonyme détecté'}
+              </h3>
+              <p className="text-sm mt-1 text-slate-600">{duplicateConflict.message}</p>
+            </div>
+
+            <div className="px-5 py-4 overflow-y-auto space-y-2">
+              {duplicateConflict.duplicates.map((d: any) => (
+                <div key={d.studentId} className="border border-slate-200 rounded-lg p-3 text-sm space-y-1">
+                  <p className="font-semibold text-slate-800">
+                    {d.lastName} {d.firstName}
+                    {d.matricule ? <span className="text-slate-500 font-normal"> · matricule {d.matricule}</span> : null}
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    {d.dateOfBirth ? `Né(e) le ${d.dateOfBirth}` : 'Date de naissance non renseignée'}
+                    {d.enrolledThisYear?.className
+                      ? ` · inscrit cette année en « ${d.enrolledThisYear.className} » (${d.enrolledThisYear.enrollmentStatus})`
+                      : d.lastEnrollment
+                        ? ` · dernière inscription ${d.lastEnrollment.yearName ?? '—'} (${d.lastEnrollment.className ?? '—'})`
+                        : ''}
+                  </p>
+                </div>
+              ))}
+              <p className="text-xs text-slate-500 pt-1">
+                {duplicateConflict.strong
+                  ? "L'inscription d'un élève déjà présent est bloquée : réutilisez sa fiche existante (réinscription ou changement de classe)."
+                  : "Si le formulaire papier confirme qu'il s'agit bien d'un AUTRE enfant (date de naissance différente), poursuivez ; sinon annulez et retrouvez sa fiche."}
+              </p>
+            </div>
+
+            <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                onClick={() => setDuplicateConflict(null)}
+                disabled={duplicateRetryInProgress}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-lg transition disabled:opacity-50"
+              >
+                {duplicateConflict.strong ? 'Fermer' : 'Annuler l\u2019inscription'}
+              </button>
+              {!duplicateConflict.strong && (
+                <button
+                  onClick={async () => {
+                    if (!duplicateConflict?.data) return;
+                    setDuplicateRetryInProgress(true);
+                    try {
+                      await runInscriptionSubmission(duplicateConflict.data, true);
+                    } catch {
+                      /* déjà géré (toast + wizard) */
+                    } finally {
+                      setDuplicateRetryInProgress(false);
+                      setDuplicateConflict(null);
+                    }
+                  }}
+                  disabled={duplicateRetryInProgress}
+                  className="px-4 py-2 text-sm font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition disabled:opacity-50"
+                >
+                  {duplicateRetryInProgress ? 'Inscription en cours…' : "C'est un autre enfant — poursuivre l'inscription"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ─── MODAL : Réinscription individuelle ─── */}
       {reEnrollStudent && (

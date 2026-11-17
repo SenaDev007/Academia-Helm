@@ -67,6 +67,10 @@ interface PreviewResult {
   validRows: number;
   invalidRows: number;
   rows: PreviewRow[];
+  /** ⭐ Feuilles présentes dans le fichier mais ignorées (aucune classe
+   *  correspondante pour l'année sélectionnée) — affichées en encart
+   *  d'avertissement pour que l'école voie CE qu'elle perd. */
+  skippedSheets?: string[];
   summary: {
     newStudents: number;
     oldStudents: number;
@@ -250,7 +254,7 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
       if (data.failed === 0) {
         const s = data.summary;
         const parts: string[] = [];
-        if (s?.created) parts.push(`${s.created} créé(s)`;
+        if (s?.created) parts.push(`${s.created} créé(s)`);
         if (s?.updatedInfo) parts.push(`${s.updatedInfo} mis à jour`);
         if (s?.movedClass) parts.push(`${s.movedClass} changement(s) de classe`);
         if (s?.reenrolled) parts.push(`${s.reenrolled} réinscrit(s)`);
@@ -561,6 +565,30 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
                   </p>
                 </div>
               )}
+
+              {/* ⭐ Feuilles ignorées (aucune classe correspondante) — transparence
+                  « classes du niveau secondaire » : la feuille doit porter
+                  EXACTEMENT le nom de la classe configurée pour l'année sélectionnée. */}
+              {(() => {
+                const skipped = preview.skippedSheets ?? [];
+                if (skipped.length === 0) return null;
+                return (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-600 mt-0.5 flex-shrink-0" />
+                    <div className="text-xs text-rose-800 min-w-0">
+                      <p>
+                        <strong>{skipped.length} feuille(s) ignorée(s)</strong> — leur nom ne correspond à aucune classe configurée
+                        pour l'année {academicYear?.name ?? 'sélectionnée'} :
+                      </p>
+                      <p className="mt-1 font-semibold">{skipped.join(', ')}</p>
+                      <p className="mt-1">
+                        Les élèves de ces feuilles ne seront PAS importés. Vérifiez que le nom de la feuille est identique à la classe
+                        (Paramètres &gt; Classes), et qu'elle est bien configurée pour l'année {academicYear?.name ?? 'en cours'}.
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* ⭐ Avertissements de rapprochement (confiance faible / homonymes) */}
               {(() => {

@@ -3,7 +3,7 @@
  * Matricule : <CODE_TENANT>-<ANNEE>-<AUTO_INCREMENT>
  */
 
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { MatriculeService } from './matricule.service';
 import { PublicVerificationService } from './public-verification.service';
@@ -61,6 +61,189 @@ export class StudentsLifecycleService {
         },
       });
     }
+  }
+
+  // ─── ⭐ 2026-11-17 — ANTI-DOUBLON à l'inscription ───
+
+  /** Normalise un nom pour comparaison : minuscules, sans accents, espaces compressés.
+   *  (Miroir exact de StudentsImportService.normalizeName — le wizard et l'import
+   *  partagent ainsi la MÊME définition de « même élève ».) */
+  private normalizeIdentityName(value: string): string {
+    return (value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /** Jour calendaire ISO (YYYY-MM-DD) d'une date, insensible à la sérialisation UTC. */
+  private isoDay(date: Date): string {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  /**
+   * Recherche les élèves existants du tenant correspondant à une identité soumise
+   * au wizard d'inscription. Ne modifie RIEN — utilisable en contrôle temps réel.
+   *
+   * Règles de rapprochement (identiques à l'import intelligent) :
+   *   - STRONG  : prénom+nom normalisés identiques ET même date de naissance
+   *               (toutes deux présentes) → quasi certainement le même enfant ;
+   *   - AMBIGUOUS: prénom+nom normalisés identiques sans pouvoir trancher
+   *               (date de naissance absente d'un côté ou divergente) → homonyme
+   *               possible, confirmation de l'opérateur requise.
+   *
+   * @returns null si aucun homonyme, sinon { strong, duplicates: [...] }
+   */
+  async findIdentityDuplicates(
+    tenantId: string,
+    identity: { firstName: string; lastName: string; dateOfBirth?: Date | string | null; academicYearId?: string },
+  ): Promise<{
+    strong: boolean;
+    duplicates: Array<{
+      studentId: string;
+      matricule: string | null;
+      firstName: string;
+      lastName: string;
+      dateOfBirth: string | null;
+      gender: string | null;
+      status: string;
+      /** Inscription de l'élève pour l'année ciblée par le wizard (si fournie). */
+      enrolledThisYear: { className: string | null; enrollmentStatus: string } | null;
+      /** Dernière inscription connue (toutes années) — oriente vers la réinscription. */
+      lastEnrollment: { className: string | null; yearName: string | null; enrollmentStatus: string } | null;
+    }>;
+  } | null> {
+    const nFirst = this.normalizeIdentityName(identity.firstName || '');
+    const nLast = this.normalizeIdentityName(identity.lastName || '');
+    if (!nFirst || !nLast) return null;
+
+    // Snapshot identité du tenant (même approche que l'import intelligent —
+    // normalisation accent/casse impossible côté SQL, donc rapprochement mémoire).
+    const existingStudents = await this.prisma.student.findMany({
+      where: { tenantId },
+      select: {
+        id: true, firstName: true, lastName: true, dateOfBirth: true,
+        gender: true, matricule: true, status: true,
+      },
+    });
+
+    const candidates = existingStudents.filter(
+      (s) =>
+        this.normalizeIdentityName(s.firstName) === nFirst &&
+        this.normalizeIdentityName(s.lastName) === nLast,
+    );
+    if (candidates.length === 0) return null;
+
+    // Jour de naissance soumis (l'input date du wizard est YYYY-MM-DD)
+    let submittedDobDay: string | null = null;
+    if (identity.dateOfBirth) {
+      const d = identity.dateOfBirth instanceof Date
+        ? identity.dateOfBirth
+        : new Date(String(identity.dateOfBirth));
+      if (!isNaN(d.getTime())) submittedDobDay = this.isoDay(d);
+    }
+
+    let strong = false;
+    for (const c of candidates) {
+      const cDobDay = c.dateOfBirth ? this.isoDay(new Date(c.dateOfBirth)) : null;
+      if (submittedDobDay && cDobDay && submittedDobDay === cDobDay) {
+        strong = true;
+        break;
+      }
+    }
+
+    // Inscriptions des candidats (classe + année) pour informer l'opérateur
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: { tenantId, studentId: { in: candidates.map((c) => c.id) } },
+      include: {
+        class: { select: { name: true } },
+        academicYear: { select: { name: true } },
+      },
+      orderBy: [{ academicYearId: 'desc' }, { enrollmentDate: 'desc' }],
+    });
+
+    const duplicates = candidates.map((c) => {
+      const own = enrollments.filter((e) => e.studentId === c.id);
+      const thisYear = identity.academicYearId
+        ? own.find((e) => e.academicYearId === identity.academicYearId)
+        : undefined;
+      const last = own[0];
+      return {
+        studentId: c.id,
+        matricule: c.matricule,
+        firstName: c.firstName,
+        lastName: c.lastName,
+        dateOfBirth: c.dateOfBirth ? this.isoDay(new Date(c.dateOfBirth)) : null,
+        gender: c.gender,
+        status: c.status,
+        enrolledThisYear: thisYear
+          ? { className: thisYear.class?.name ?? null, enrollmentStatus: thisYear.status }
+          : null,
+        lastEnrollment: last
+          ? {
+              className: last.class?.name ?? null,
+              yearName: last.academicYear?.name ?? null,
+              enrollmentStatus: last.status,
+            }
+          : null,
+      };
+    });
+
+    return { strong, duplicates };
+  }
+
+  /**
+   * Garde anti-doublon de preRegister : lève ConflictException (409) avec la
+   * liste des élèves correspondants si l'identité soumise existe déjà.
+   *
+   * - strong (même nom + même date de naissance) : refus SANS possibilité de
+   *   forcer — l'élève existe, on réutilise sa fiche (réinscription/changement
+   *   de classe), on ne recrée pas un doublon.
+   * - homonyme (même nom, identité non tranchable) : refus avec strong=false —
+   *   le wizard propose « Continuer quand même » qui re-soumet avec
+   *   allowDuplicate=true après lecture de la liste.
+   */
+  private async assertNoDuplicateStudent(
+    tenantId: string,
+    data: { firstName: string; lastName: string; dateOfBirth?: Date; academicYearId: string },
+  ): Promise<void> {
+    const match = await this.findIdentityDuplicates(tenantId, data);
+    if (!match) return;
+
+    const dup = match.duplicates[0];
+    const enrolledInfo = dup.enrolledThisYear
+      ? `déjà inscrit cette année en classe « ${dup.enrolledThisYear.className ?? '—'} »`
+      : dup.lastEnrollment
+        ? `connu de l'année ${dup.lastEnrollment.yearName ?? '—'} (classe « ${dup.lastEnrollment.className ?? '—'} »)`
+        : 'présent en base';
+
+    if (match.strong) {
+      throw new ConflictException({
+        error: 'DUPLICATE_STUDENT',
+        strong: true,
+        message:
+          `Inscription refusée : « ${dup.firstName} ${dup.lastName} » existe déjà ` +
+          `(${enrolledInfo}${dup.matricule ? `, matricule ${dup.matricule}` : ''}). ` +
+          (dup.enrolledThisYear
+            ? "S'il change de classe, utilisez « Changer de classe » depuis sa fiche — ne recréez pas son dossier."
+            : "Utilisez le bouton « Réinscrire » de sa ligne pour l'année en cours — ne recréez pas son dossier."),
+        duplicates: match.duplicates,
+      });
+    }
+
+    // Homonyme non tranchable (date de naissance absente ou divergente) :
+    // bloquant jusqu'à confirmation explicite de l'opérateur.
+    throw new ConflictException({
+      error: 'DUPLICATE_STUDENT',
+      strong: false,
+      message:
+        `${match.duplicates.length} élève(s) homonyme(s) « ${dup.lastName} ${dup.firstName} » existe(nt) déjà ` +
+        `en base (${enrolledInfo}${dup.matricule ? `, matricule ${dup.matricule}` : ''}). ` +
+        `Vérifiez la date de naissance sur le formulaire papier : s'il s'agit bien d'un autre enfant, ` +
+        `vous pouvez poursuivre ; sinon, retrouvez sa fiche existante.`,
+      duplicates: match.duplicates,
+    });
   }
 
   private async logAudit(
@@ -157,11 +340,30 @@ export class StudentsLifecycleService {
       previousArrears?: number;
       /** Type d'inscription : 'NEW' (défaut) pour nouvel élève, 'REPEAT' pour ancien élève */
       enrollmentType?: string;
+      /** ⭐ 2026-11-17 — ANTI-DOUBLON à l'inscription :
+       *  false (défaut) = le serveur vérifie qu'aucun élève homonyme/même identité
+       *  n'existe déjà (409 ConflictException avec les détails) ;
+       *  true = contrôle expresse de bypass réservé aux flux qui font LEUR PROPRE
+       *  rapprochement anti-doublon en amont (import Excel intelligent, conversion
+       *  d'admission) ou à la confirmation explicite de l'opérateur après lecture
+       *  de la liste d'homonymes (wizard d'inscription). */
+      allowDuplicate?: boolean;
     },
     userId?: string,
   ) {
     // Vérifier que le tenant peut inscrire un nouvel élève (plan d'abonnement)
     await this.assertCanEnroll(tenantId);
+
+    // ⭐ 2026-11-17 — ANTI-DOUBLON pendant le processus d'inscription :
+    //    même identité (prénom+nom normalisés+date de naissance) ou homonyme
+    //    déjà en base → inscription refusée (409) avec les fiches existantes,
+    //    SAUF allowDuplicate=true (bypass contrôlé — cf. doc du paramètre).
+    //    Constat fondateur : « CHABI GONNI Joana » inscrit 2× en 3 minutes via
+    //    le wizard (CSPMON-E-26-708 puis -709) — le doublon passe inaperçu car
+    //    le formulaire ne regardait PAS la base avant de créer.
+    if (!data.allowDuplicate) {
+      await this.assertNoDuplicateStudent(tenantId, data);
+    }
 
     // ⭐ FIX 2026-09-07 « miroir bilingue / multi-tables » : la FK
     //    Student.schoolLevelId référence school_levels. Le wizard envoie

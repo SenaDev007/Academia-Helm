@@ -13,10 +13,11 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  CheckCircle, AlertCircle, BookOpen, Loader2, Camera, Upload, X, RefreshCw,
+  CheckCircle, AlertCircle, BookOpen, Loader2, Camera, Upload, X, RefreshCw, Search,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { compressImageFileToDataUrl } from '@/lib/media';
+import { studentsService } from '@/services/students.service';
 
 // ─── Types ───
 
@@ -44,9 +45,14 @@ export interface EnrollmentSubmitData {
     npi?: string;
     photoUrl?: string;
     address?: string;
+    /** ⭐ Numéro Educmaster (export MEMP des 6e) — 2026-10-01 */
+    educMasterMatricule?: string;
   };
   guardians: Guardian[];
   classId?: string;
+  /** ⭐ Classe officielle (AcademicClass UUID) — envoyé en miroir de classId
+   *  (compatibilité ascendante backend, cf. FIX 2026-09-07 du wizard). */
+  academicClassId?: string;
   schoolLevelId?: string;
   enrollmentType?: 'NEW' | 'REPEAT';
   /**
@@ -174,6 +180,109 @@ export default function StudentEnrollmentForm({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
+  // ─── ⭐ 2026-11-17 — ANTI-DOUBLON : contrôle temps réel pendant la saisie ───
+  // Dès que prénom + nom sont assez longs, on interroge la base (debounce 600 ms)
+  // pour signaler les homonymes / élèves de même identité AVANT la soumission.
+  // Désactivé en mode édition (initialData) — l'élève se retrouverait lui-même.
+  const isEditMode = !!initialData;
+  const [dupCheck, setDupCheck] = useState<{
+    loading: boolean;
+    strong: boolean;
+    duplicates: Array<{
+      studentId: string; matricule: string | null; firstName: string; lastName: string;
+      dateOfBirth: string | null;
+      enrolledThisYear: { className: string | null; enrollmentStatus: string } | null;
+      lastEnrollment: { className: string | null; yearName: string | null; enrollmentStatus: string } | null;
+    }>;
+  } | null>(null);
+  const dupCheckTokenRef = useRef(0);
+
+  useEffect(() => {
+    const first = (formData.firstName || '').trim();
+    const last = (formData.lastName || '').trim();
+    if (isEditMode || first.length < 2 || last.length < 2) {
+      setDupCheck(null);
+      return;
+    }
+    const token = ++dupCheckTokenRef.current;
+    const t = setTimeout(async () => {
+      try {
+        const res = await studentsService.checkIdentityDuplicate({
+          firstName: first,
+          lastName: last,
+          dateOfBirth: formData.dateOfBirth || undefined,
+          academicYearId: yearId || undefined,
+        });
+        if (token !== dupCheckTokenRef.current) return; // réponse obsolète
+        setDupCheck({ loading: false, strong: !!res.strong, duplicates: res.duplicates || [] });
+      } catch {
+        if (token === dupCheckTokenRef.current) setDupCheck(null); // UX best-effort
+      }
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.firstName, formData.lastName, formData.dateOfBirth, yearId, isEditMode]);
+
+  /** Bannière anti-doublon partagée (étapes Identité + Validation). */
+  const DuplicateCheckBanner = () => {
+    if (!dupCheck || isEditMode) return null;
+    if (dupCheck.loading) {
+      return (
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex items-center gap-2">
+          <Loader2 className="w-4 h-4 text-slate-500 animate-spin flex-shrink-0" />
+          <p className="text-xs text-slate-500">Vérification des doublons en base…</p>
+        </div>
+      );
+    }
+    if (!dupCheck.duplicates.length) return null;
+    const first = dupCheck.duplicates[0];
+    if (dupCheck.strong) {
+      return (
+        <div className="bg-red-50 border border-red-300 rounded-lg p-3 space-y-1">
+          <p className="text-sm font-bold text-red-800 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" /> Cet élève existe déjà — l'inscription sera refusée
+          </p>
+          <p className="text-xs text-red-700">
+            {first.firstName} {first.lastName}
+            {first.matricule ? ` (matricule ${first.matricule})` : ''}
+            {first.enrolledThisYear?.className
+              ? ` — déjà inscrit cette année en classe « ${first.enrolledThisYear.className} »`
+              : first.lastEnrollment
+                ? ` — connu de l'année ${first.lastEnrollment.yearName ?? '—'} (classe « ${first.lastEnrollment.className ?? '—'} »)`
+                : ''}
+            . Utilisez sa fiche existante (réinscription ou changement de classe) — ne recréez pas son dossier.
+          </p>
+        </div>
+      );
+    }
+    return (
+      <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 space-y-1">
+        <p className="text-sm font-bold text-amber-800 flex items-center gap-2">
+          <Search className="w-4 h-4" />
+          {dupCheck.duplicates.length} élève(s) homonyme(s) déjà en base
+        </p>
+        <ul className="text-xs text-amber-800 space-y-0.5">
+          {dupCheck.duplicates.slice(0, 4).map((d) => (
+            <li key={d.studentId}>
+              — {d.firstName} {d.lastName}
+              {d.matricule ? ` · matricule ${d.matricule}` : ''}
+              {d.enrolledThisYear?.className
+                ? ` · inscrit cette année en ${d.enrolledThisYear.className}`
+                : d.lastEnrollment
+                  ? ` · dernière inscription ${d.lastEnrollment.yearName ?? '—'} (${d.lastEnrollment.className ?? '—'})`
+                  : ''}
+            </li>
+          ))}
+          {dupCheck.duplicates.length > 4 && <li>… et {dupCheck.duplicates.length - 4} autre(s)</li>}
+        </ul>
+        <p className="text-xs text-amber-700">
+          Comparez avec le formulaire papier (date de naissance) : s'il s'agit d'un autre enfant, poursuivez —
+          le système vous demandera de confirmer à la validation ; sinon, retrouvez sa fiche existante.
+        </p>
+      </div>
+    );
+  };
+
   // ─── Chargement des niveaux scolaires depuis /api/academic-classes ───
   // ⭐ On utilise les classes OFFICIELLES (AcademicClass) pour l'inscription.
   // Le parent choisit une classe officielle (CP, CE1, 6ème…), l'affectation à
@@ -300,7 +409,7 @@ export default function StudentEnrollmentForm({
   };
 
   const addGuardian = () => {
-    setGuardians(prev => [...prev, { firstName: '', lastName: '', phone: '', email: '', relationship: 'Mère', isPrimary: false }]);
+    setGuardians(prev => [...prev, { firstName: '', lastName: '', phone: '', email: '', address: '', relationship: 'Mère', isPrimary: false }]);
   };
 
   const removeGuardian = (idx: number) => {
@@ -361,6 +470,19 @@ export default function StudentEnrollmentForm({
     // les deux). Si une saisie partiale subsiste, on l'explique au lieu de
     // l'ignorer silencieusement (le message d'erreur est posé par validateStep3).
     if (!validateStep3()) return;
+    // ⭐ 2026-11-17 — ANTI-DOUBLON : refus local anticipé si le contrôle temps réel
+    //    a établi une identité IDENTIQUE (même nom + même date de naissance).
+    //    (Le serveur re-vérifie de toute façon — double barrière.)
+    if (!isEditMode && dupCheck?.strong) {
+      const d = dupCheck.duplicates[0];
+      setError(
+        `Inscription refusée : « ${d.firstName} ${d.lastName} » existe déjà` +
+        `${d.matricule ? ` (matricule ${d.matricule})` : ''}` +
+        `${d.enrolledThisYear?.className ? `, déjà inscrit cette année en « ${d.enrolledThisYear.className} »` : ''}. ` +
+        `Utilisez sa fiche existante (réinscription / changement de classe).`,
+      );
+      return;
+    }
     setIsSubmitting(true);
     setError(null);
     try {
@@ -494,6 +616,8 @@ export default function StudentEnrollmentForm({
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
           </div>
+          {/* ⭐ 2026-11-17 — anti-doublon temps réel (homonymes / même identité) */}
+          <DuplicateCheckBanner />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Date de naissance</label>
@@ -846,6 +970,8 @@ export default function StudentEnrollmentForm({
       {step === 5 && (
         <div className="space-y-4">
           <h3 className="font-semibold text-gray-800">Récapitulatif</h3>
+          {/* ⭐ 2026-11-17 — anti-doublon temps réel (rappel avant validation) */}
+          <DuplicateCheckBanner />
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2 text-sm">
             <div className="flex justify-between"><span className="text-gray-500">Nom:</span><span className="font-medium">{formData.lastName} {formData.firstName}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Date de naissance:</span><span className="font-medium">{formData.dateOfBirth || '—'}</span></div>

@@ -510,6 +510,11 @@ export class AdmissionService {
         classId: validClassId ?? undefined,  // ← null si classe supprimée
         // Propager isNewStudent → enrollmentType
         enrollmentType: effectiveEnrollmentType,
+        // ⭐ 2026-11-17 — anti-doublon inscription : le module Admissions gère son
+        //    propre contrôle applicatif (même email parent + même année bloqué
+        //    à la création de l'admission). La conversion garde son comportement
+        //    historique — le garde-fou strict vit dans le wizard d'inscription.
+        allowDuplicate: true,
       }, userId);
 
       this.logger.log(
@@ -523,13 +528,15 @@ export class AdmissionService {
       let classIdForAdmit = validClassId;
 
       if (!classIdForAdmit) {
-        // Chercher la première classe disponible pour ce tenant + année + niveau
-        // ⚠️ Utiliser studentSchoolLevelId (school_levels) et non admission.schoolLevelId (education_levels)
-        // car classes.schoolLevelId → school_levels
+        // Chercher la première classe disponible pour ce tenant + ANNÉE DE
+        // L'ADMISSION + niveau (⭐ FIX 2026-11-17 : sans le filtre année, une
+        // classe homonyme d'une année antérieure pouvait être choisie —
+        // findFirst sans orderBy = ordre physique arbitraire).
         const fallbackClass = await this.prisma.class.findFirst({
           where: {
             tenantId,
             schoolLevelId: studentSchoolLevelId,
+            academicYearId: admission.academicYearId,
           },
           orderBy: { name: 'asc' },
           select: { id: true, name: true },

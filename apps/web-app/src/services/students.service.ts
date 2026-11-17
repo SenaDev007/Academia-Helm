@@ -532,6 +532,27 @@ class StudentsService {
   }
 
   /**
+   * ⭐ 2026-11-17 — ANTI-DOUBLON : contrôle temps réel pendant la saisie du
+   * wizard d'inscription. Renvoie les élèves homonymes / de même identité déjà
+   * en base pour ce tenant (ne modifie rien).
+   * Backend : GET /students/duplicate-check
+   */
+  async checkIdentityDuplicate(params: {
+    firstName: string;
+    lastName: string;
+    dateOfBirth?: string;
+    academicYearId?: string;
+  }): Promise<{ checked: boolean; strong: boolean; duplicates: any[] }> {
+    const qs = new URLSearchParams({
+      firstName: params.firstName,
+      lastName: params.lastName,
+    });
+    if (params.dateOfBirth) qs.set("dateOfBirth", params.dateOfBirth);
+    if (params.academicYearId) qs.set("academicYearId", params.academicYearId);
+    return apiFetch(`${BASE_URL}/duplicate-check?${qs.toString()}`, { noCache: true });
+  }
+
+  /**
    * Admission formelle : génère le matricule institutionnel,
    * change le statut d'enrollment PRE_REGISTERED → ADMITTED,
    * assigne la classe (si fournie) et crée le dossier académique.

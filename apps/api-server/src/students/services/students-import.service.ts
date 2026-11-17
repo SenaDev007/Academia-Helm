@@ -110,6 +110,11 @@ export interface ImportPreviewResult {
   invalidRows: number;
   rows: ImportRow[];
   sheetsProcessed: string[]; // ⭐ liste des feuilles traitées
+  /** ⭐ 2026-11-17 — Feuilles PRÉSENTES dans le fichier mais IGNORÉES car leur nom
+   *  ne correspond à aucune classe configurée pour l'année cible. Transparence
+   *  anti-silence : avant, l'école ne voyait jamais que « 6ème » avait été écartée
+   *  (les élèves de la feuille n'apparaissaient tout simplement pas). */
+  skippedSheets: string[];
   summary: {
     newStudents: number;
     oldStudents: number;
@@ -211,6 +216,7 @@ export class StudentsImportService {
 
     const rows: ImportRow[] = [];
     const sheetsProcessed: string[] = [];
+    const skippedSheets: string[] = [];
 
     // ⭐ Itérer sur toutes les feuilles du classeur
     workbook.eachSheet((worksheet) => {
@@ -223,13 +229,25 @@ export class StudentsImportService {
 
       // ⭐ Déduire schoolLevelName et className du nom de la feuille
       // Le nom de la feuille DOIT correspondre à une classe existante.
-      // On essaie d'abord un match exact, puis un match insensible à la casse.
-      const cls = classes.find(
+      // On essaie d'abord un match exact, puis insensible à la casse.
+      let cls = classes.find(
         (c) => c.name.toLowerCase() === sheetName.toLowerCase() ||
                (c.code && c.code.toLowerCase() === sheetName.toLowerCase()),
       );
+      // ⭐ 2026-11-17 — puis insensible aux ACCENTS (feuille renommée « 1ERE A2 »
+      //    alors que la classe s'appelle « 1ère A2 ») — le niveau secondaire
+      //    concentre les noms accentués (1ère, 2nde, 3ème…).
       if (!cls) {
-        // Feuille inconnue — on ignore avec un warning
+        const nSheet = this.normalizeName(sheetName);
+        cls = classes.find(
+          (c) =>
+            this.normalizeName(c.name) === nSheet ||
+            (c.code && this.normalizeName(c.code) === nSheet),
+        );
+      }
+      if (!cls) {
+        // Feuille inconnue — signalée au preview (transparence) puis ignorée
+        skippedSheets.push(sheetName);
         this.logger.warn(`Feuille "${sheetName}" ne correspond à aucune classe configurée — ignorée`);
         return;
       }
@@ -294,6 +312,7 @@ export class StudentsImportService {
       invalidRows,
       rows,
       sheetsProcessed,
+      skippedSheets,
       summary,
     };
   }
@@ -358,7 +377,14 @@ export class StudentsImportService {
           // ⭐ Nouvel élève — création (flux historique)
           // Résoudre schoolLevelId et classId
           const schoolLevel = await this.resolveSchoolLevel(tenantId, row.schoolLevelName);
-          const classId = await this.resolveClassId(tenantId, schoolLevel.id, row.className);
+          // ⭐ FIX 2026-11-17 : utiliser l'id de classe résolu par le PREVIEW
+          // (filtré sur l'année cible) en priorité ; resolveClassId sert de
+          // repli et reçoit désormais academicYearId (cf. commentaire de la
+          // méthode) — plus de résolution « heap-order » vers une classe d'une
+          // autre année (bug « classes du niveau secondaire »).
+          const classId =
+            row.resolvedClassId ??
+            (await this.resolveClassId(tenantId, schoolLevel.id, row.className, academicYearId));
 
           // ⭐ Résoudre la classe officielle (AcademicClass) depuis Class.officialClassId.
           // Permet de remplir StudentEnrollment.academicClassId pour que l'élève apparaisse
@@ -833,23 +859,59 @@ export class StudentsImportService {
     tenantId: string,
     schoolLevelId: string,
     className: string,
+    /** ⭐ FIX 2026-11-17 « classes du niveau secondaire » : une classe homonyme
+     *  peut exister sur PLUSIEURS années (ex : « 6ème » en 2025-2026 ET
+     *  2026-2027). Sans filtre par année, findFirst renvoie une ligne
+     *  PHYSIQUEMENT arbitraire (ordre du heap Postgres) → l'élève importé
+     *  pouvait être inscrit dans la classe de l'année PASSÉE (invisible dans
+     *  l'année courante). L'année cible est désormais TOUJOURS filtrée. */
+    academicYearId?: string,
   ): Promise<string | null> {
+    // 1) Match exact + niveau + ANNÉE CIBLE (insensible à la casse)
+    if (academicYearId) {
+      const clsYear = await this.prisma.class.findFirst({
+        where: {
+          tenantId,
+          schoolLevelId,
+          academicYearId,
+          name: { equals: className, mode: 'insensitive' },
+        },
+        select: { id: true },
+      });
+      if (clsYear) return clsYear.id;
+
+      // 2) Match sans niveau, mais TOUJOURS dans l'année cible
+      const clsAnyLevelYear = await this.prisma.class.findFirst({
+        where: {
+          tenantId,
+          academicYearId,
+          name: { equals: className, mode: 'insensitive' },
+        },
+        select: { id: true },
+      });
+      if (clsAnyLevelYear) return clsAnyLevelYear.id;
+    }
+
+    // 3) Repli historique (sans année) — déterministe : la classe la plus
+    //    récemment créée gagne (jamais l'ordre du heap)
     const cls = await this.prisma.class.findFirst({
       where: {
         tenantId,
         schoolLevelId,
         name: { equals: className, mode: 'insensitive' },
       },
+      orderBy: { createdAt: 'desc' },
       select: { id: true },
     });
     if (cls) return cls.id;
 
-    // Fallback : chercher sans filtrer par niveau
+    // 4) Dernier repli : chercher sans filtrer par niveau (même déterminisme)
     const clsAny = await this.prisma.class.findFirst({
       where: {
         tenantId,
         name: { equals: className, mode: 'insensitive' },
       },
+      orderBy: { createdAt: 'desc' },
       select: { id: true },
     });
     return clsAny?.id || null;
@@ -1126,6 +1188,12 @@ export class StudentsImportService {
       academicClassId,
       previousArrears: 0,
       enrollmentType,
+      // ⭐ 2026-11-17 — l'import intelligent fait SON PROPRE rapprochement
+      //    anti-doublon en amont (detectDuplicatesAndMatchRows) : seules des
+      //    lignes sans correspondance atteignent la création. On bypass donc
+      //    le garde-fou homonymes de preRegister (qui bloquerait les homonymes
+      //    volontairement créés avec avertissement).
+      allowDuplicate: true,
     }, userId);
 
     // ⭐ Générer le matricule automatiquement après la pré-inscription.

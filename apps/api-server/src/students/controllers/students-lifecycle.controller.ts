@@ -73,6 +73,37 @@ export class StudentsLifecycleController {
     return this.lifecycle.preRegister(tenantId, body, user?.id);
   }
 
+  /**
+   * ⭐ GET /students/duplicate-check — ANTI-DOUBLON à l'inscription (17/11/2026).
+   * Contrôle temps réel du wizard « Nouvelle inscription » : recherche les
+   * élèves homonymes / de même identité déjà en base POUR CE TENANT.
+   * Ne modifie rien — renvoie { strong, duplicates } ou { checked: true, duplicates: [] }.
+   * Query: firstName, lastName, dateOfBirth (YYYY-MM-DD optionnel), academicYearId (optionnel).
+   */
+  @Get('duplicate-check')
+  async checkIdentityDuplicates(
+    @TenantId() tenantId: string,
+    @Query('firstName') firstName?: string,
+    @Query('lastName') lastName?: string,
+    @Query('dateOfBirth') dateOfBirth?: string,
+    @Query('academicYearId') academicYearId?: string,
+  ) {
+    if (!firstName?.trim() || !lastName?.trim()) {
+      throw new BadRequestException('firstName et lastName sont requis');
+    }
+    const match = await this.lifecycle.findIdentityDuplicates(tenantId, {
+      firstName,
+      lastName,
+      dateOfBirth: dateOfBirth || null,
+      academicYearId: academicYearId || undefined,
+    });
+    return {
+      checked: true,
+      strong: match?.strong ?? false,
+      duplicates: match?.duplicates ?? [],
+    };
+  }
+
   @Post('admit')
   @Roles(...MANAGEMENT_ROLES)
   async admit(@TenantId() tenantId: string, @CurrentUser() user: any, @Body() body: any) {

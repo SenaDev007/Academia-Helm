@@ -45,7 +45,7 @@
  * séparément via ArrearsImportService.
  * ============================================================================
  */
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, HttpException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { StudentsLifecycleService } from './students-lifecycle.service';
 import { StudentAccountService } from '../../finance/student-account.service';
@@ -341,6 +341,34 @@ export class StudentsImportService {
    * de créer un doublon. Une ligne sans correspondance crée l'élève.
    */
   async runImport(
+    tenantId: string,
+    academicYearId: string,
+    fileDataUrl: string,
+    userId: string,
+  ): Promise<ImportRunResult> {
+    // ⭐ FIX 2026-11-17 (incident MON AVENIR PLUS — 93 doublons) : deux
+    // exécutions simultanées de l'import créent tout en double (chaque
+    // preview voit « aucun élève existant » avant la moindre création).
+    // Verrou par tenant : une seule exécution à la fois.
+    const lockAcquired = await this.acquireImportLock(tenantId);
+    if (!lockAcquired) {
+      throw new HttpException(
+        "Un import est déjà en cours pour cet établissement — attendez la fin de l'opération " +
+        'puis relancez (les exécutions simultanées créent des doublons).',
+        409,
+      );
+    }
+    try {
+    return await this.runImportLocked(tenantId, academicYearId, fileDataUrl, userId);
+    } finally {
+      await this.releaseImportLock(tenantId);
+    }
+  }
+
+  /**
+   * ⭐ FIX 2026-11-17 — corps de runImport sous verrou (voir acquireImportLock).
+   */
+  private async runImportLocked(
     tenantId: string,
     academicYearId: string,
     fileDataUrl: string,
@@ -996,6 +1024,40 @@ export class StudentsImportService {
   }
 
   // ─── ⭐ 2026-11-17 — IMPORT INTELLIGENT : méthodes privées ───
+
+  /**
+   * ⭐ FIX 2026-11-17 (incident MON AVENIR PLUS — 93 doublons) : verrou
+   * applicatif par tenant contre les exécutions simultanées de runImport.
+   *
+   * INSERT ... ON CONFLICT DO UPDATE ... WHERE (périmé > 10 min) :
+   *   - renvoie 1  → verrou acquis (insertion OU rachat d'un verrou périmé)
+   *   - renvoie 0  → un import est déjà en cours → refus 409
+   * Un crash sans libération laisse un verrou qui se fait racheter après 10 min.
+   */
+  private async acquireImportLock(tenantId: string): Promise<boolean> {
+    try {
+      const affected = await this.prisma.$executeRaw`
+        INSERT INTO "import_run_locks" ("tenantId", "lockedAt")
+        VALUES (${tenantId}, now())
+        ON CONFLICT ("tenantId")
+        DO UPDATE SET "lockedAt" = now()
+        WHERE "import_run_locks"."lockedAt" < now() - interval '10 minutes'`;
+      return affected === 1;
+    } catch (e: any) {
+      // Table absente (migration non appliquée) → ne pas bloquer l'import
+      this.logger.warn(`acquireImportLock indisponible (${e.message}) — import sans verrou`);
+      return true;
+    }
+  }
+
+  /** ⭐ FIX 2026-11-17 — libère le verrou d'import du tenant (best-effort). */
+  private async releaseImportLock(tenantId: string): Promise<void> {
+    try {
+      await this.prisma.$executeRaw`DELETE FROM "import_run_locks" WHERE "tenantId" = ${tenantId}`;
+    } catch {
+      /* table absente — rien à libérer */
+    }
+  }
 
   /** Normalise un nom pour comparaison : minuscules, sans accents, espaces compressés. */
   private normalizeName(value: string): string {

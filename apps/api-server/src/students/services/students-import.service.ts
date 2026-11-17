@@ -81,6 +81,10 @@ export interface ImportRow {
   /** ⭐ 2026-11-17 — Rapprochement avec un élève EXISTANT (import intelligent).
    *  Présent uniquement si un élève correspondant a été trouvé en base. */
   match?: ImportRowMatch;
+  /** ⭐ Avertissements NON bloquants sur la ligne (ex : homonymes non fusionnables,
+   *  date de naissance divergente d'un homonyme existant) — affichés dans le
+   *  preview pour transparence, sans invalider la ligne. */
+  warnings?: string[];
 }
 
 /** Action décidée par l'import intelligent pour une ligne rapprochée. */
@@ -1020,6 +1024,11 @@ export class StudentsImportService {
     const rowDobDay = row.dateOfBirth ? this.isoDay(row.dateOfBirth) : null;
     const rowPhoneDigits = this.normalizePhone(row.guardianPhone || '');
 
+    /** Avertissement non bloquant porté par la LIGNE (visible dans le preview). */
+    const rowWarn = (msg: string): void => {
+      row.warnings = [...(row.warnings || []), msg];
+    };
+
     let selected: any = null;
     let confidence: ImportMatchConfidence | null = null;
 
@@ -1043,7 +1052,7 @@ export class StudentsImportService {
           confidence = 'DOB';
           warnings.push('Date de naissance absente en base — elle sera complétée par cet import.');
         } else if (candidates.length >= 1) {
-          warnings.push(`Un élève homonyme existe avec une date de naissance différente — nouvel enregistrement créé, vérifiez qu'il ne s'agit pas du même élève.`);
+          rowWarn('Un élève homonyme existe avec une date de naissance différente — un nouvel enregistrement sera créé : vérifiez qu’il ne s’agit pas du même élève.');
           return undefined;
         }
       }
@@ -1072,7 +1081,7 @@ export class StudentsImportService {
         confidence = 'NAME';
         warnings.push('Rapprochement par le nom seul (ni date de naissance, ni téléphone fournis) — vérifiez la fiche après import.');
       } else {
-        warnings.push(`${candidates.length} élèves homonymes existent en base sans élément distinctif (ni date de naissance, ni téléphone) — nouvel enregistrement créé.`);
+        rowWarn(`${candidates.length} élèves homonymes existent en base sans élément distinctif (ni date de naissance, ni téléphone) — un nouvel enregistrement sera créé ; complétez la date de naissance pour fusionner les doublons existants.`);
         return undefined;
       }
     }

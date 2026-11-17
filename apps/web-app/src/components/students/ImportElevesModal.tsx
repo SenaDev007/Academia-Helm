@@ -56,6 +56,8 @@ interface PreviewRow {
   guardianName: string | null;
   errors: string[];
   isValid: boolean;
+  /** ⭐ Avertissements non bloquants (homonymes non fusionnables, etc.). */
+  warnings?: string[];
   /** ⭐ Rapprochement avec un élève existant (undefined = nouvel élève). */
   match?: PreviewRowMatch;
 }
@@ -519,6 +521,11 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
                             {row.match?.confidence === 'PHONE' && (
                               <span className="block text-[10px] text-slate-400 mt-0.5">reconnu par le téléphone du parent</span>
                             )}
+                            {!row.match && row.warnings?.length ? (
+                              <span className="block text-[10px] text-amber-600 mt-0.5" title={row.warnings.join('\n')}>
+                                {row.warnings[0]}
+                              </span>
+                            ) : null}
                           </td>
                           <td className="px-3 py-2">
                             {row.isValid ? (
@@ -555,21 +562,26 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
                 </div>
               )}
 
-              {/* ⭐ Avertissements de rapprochement (confiance faible) */}
+              {/* ⭐ Avertissements de rapprochement (confiance faible / homonymes) */}
               {(() => {
-                const warnRows = preview.rows.filter((r) => r.isValid && r.match?.warnings?.length);
+                const warnRows = preview.rows.filter(
+                  (r) => r.isValid && ((r.match?.warnings?.length || 0) + (r.warnings?.length || 0) > 0),
+                );
                 if (warnRows.length === 0) return null;
                 return (
                   <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg flex items-start gap-2">
                     <AlertCircle className="w-4 h-4 text-sky-600 mt-0.5 flex-shrink-0" />
                     <div className="text-xs text-sky-800 min-w-0">
-                      <p><strong>{warnRows.length} élève(s) reconnu(s) avec un élément à vérifier</strong> (rapprochement à confirmer, date de naissance à compléter…) :</p>
+                      <p><strong>{warnRows.length} élève(s) avec un élément à vérifier</strong> (rapprochement à confirmer, homonymes non fusionnables, date de naissance à compléter…) :</p>
                       <ul className="mt-1 space-y-0.5">
-                        {warnRows.slice(0, 5).map((r) => (
-                          <li key={`${r.sheetName ?? ''}-${r.rowIndex}`} className="truncate">
-                            — {r.lastName} {r.firstName} : {r.match!.warnings.join(' ')}
-                          </li>
-                        ))}
+                        {warnRows.slice(0, 5).map((r) => {
+                          const all = [...(r.match?.warnings || []), ...(r.warnings || [])];
+                          return (
+                            <li key={`${r.sheetName ?? ''}-${r.rowIndex}`} className="truncate">
+                              — {r.lastName} {r.firstName} : {all.join(' ')}
+                            </li>
+                          );
+                        })}
                         {warnRows.length > 5 && <li>… et {warnRows.length - 5} autre(s)</li>}
                       </ul>
                     </div>

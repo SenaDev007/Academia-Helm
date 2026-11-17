@@ -13,6 +13,8 @@ const PRIMARY = '#1A2BA6';
 
 const STATUS_CONFIG: Record<string, { label: string; className: string; icon: React.ComponentType<any> }> = {
   OPEN:       { label: 'Ouvert',  className: 'bg-blue-50 text-[#1A2BA6] border border-blue-200',        icon: Clock },
+  // ⭐ 125 — lot en brouillon (lignes pas encore générées) — visible AVANT génération seulement
+  DRAFT:      { label: 'Brouillon', className: 'bg-slate-100 text-slate-600 border border-slate-200',      icon: Calculator },
   CALCULATED: { label: 'Calculé', className: 'bg-amber-50 text-amber-600 border border-amber-200',      icon: Calculator },
   VALIDATED:  { label: 'Validé',  className: 'bg-emerald-50 text-emerald-600 border border-emerald-200', icon: ShieldCheck },
   PAID:       { label: 'Payé',    className: 'bg-emerald-600 text-white border border-emerald-600',      icon: CreditCard },
@@ -171,7 +173,9 @@ export function PayrollWorkspace() {
       {/* KPI strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
         {[
-          { label: 'Masse annuelle', value: stats?.totalAmount ? `${Math.round(stats.totalAmount / 1000000)}M XOF` : '—' },
+          // ⭐ 125 — champs réels de /payroll/statistics (l'ancien code lisait
+          //    stats.totalAmount — inexistant → KPI toujours vides).
+          { label: 'Masse annuelle', value: stats?.totalGrossSalary ? formatCurrency(stats.totalGrossSalary) : '—' },
           { label: 'Effectif moyen', value: stats?.totalStaff ? `${stats.totalStaff} pers.` : '—' },
           { label: 'Dernière paie', value: lastPayroll?.startDate ? new Date(lastPayroll.startDate).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) : '—' },
         ].map((k, i) => (
@@ -233,14 +237,16 @@ function PayrollRow({ payroll, index }: { payroll: any; index: number }) {
                   <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase', config.className)}>
                     <StatusIcon className="h-3 w-3" />{config.label}
                   </span>
-                  <span className="text-[10px] text-slate-400 font-medium">{payroll._count?.payrolls || 0} bulletins</span>
+                  <span className="text-[10px] text-slate-400 font-medium">{payroll.itemCount ?? payroll._count?.payrolls ?? 0} bulletins</span>
                 </div>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8 flex-grow w-full md:max-w-md">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Net à Payer</p>
-                <p className="text-lg font-black text-slate-900">{formatCurrency(payroll.totalAmount)}</p>
+                {/* ⭐ 125 — total réel agrégé par l'API (l'« à payer » restait à 0 :
+                    PayrollPeriod n'a pas de colonne totalAmount) */}
+                <p className="text-lg font-black text-slate-900">{formatCurrency(payroll.totalAmount ?? 0)}</p>
               </div>
               <div className="hidden md:block">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">Période</p>

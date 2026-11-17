@@ -23,6 +23,8 @@ import { PrismaService } from '../database/prisma.service';
 import { Prisma } from '@prisma/client';
 import { prismaCreateDefaults, prismaUpdateDefaults } from '../common/utils/prisma-helpers';
 import { PayrollEngineService } from './services/payroll-engine.service';
+import { TaxDeclarationService } from './taxes/services/tax-declaration.service';
+import { PayrollService as TaxPayslipService } from './taxes/services/payroll.service';
 // ⭐ FedaPay supprimé — les payouts Mobile Money ne sont plus disponibles
 // tant qu'une nouvelle intégration payout n'est pas configurée.
 // Les méthodes de paiement de salaire lèveront une erreur explicite.
@@ -64,6 +66,8 @@ export class PayrollPrismaService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly payrollEngine: PayrollEngineService,
+    private readonly taxDeclarationService: TaxDeclarationService,
+    private readonly taxPayslipService: TaxPayslipService,
   ) {}
 
   // ============================================================================
@@ -495,8 +499,17 @@ export class PayrollPrismaService {
     // Mettre à jour le PayrollItem → PAID
     await this.prisma.payrollItem.update({
       where: { id: payrollItemId },
-      data: { ...prismaUpdateDefaults(), status: 'PAID' },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: 'PAID',
+        paidAt: new Date(),
+      },
     });
+
+    // ⭐ 125 — clôture AUTOMATIQUE du lot : quand toutes les lignes sont
+    //    perçues, le lot passe PAID (plus aucun badge « Brouillon »/« Calculé »
+    //    sur la période — l'historique de paie reflète la réalité).
+    await this.closeBatchIfFullyPaid(item.payrollId, tenantId);
 
     this.logger.log(
       `Manual payment validated for ${item.staff?.firstName} ${item.staff?.lastName}: amount=${item.netSalary} FCFA (cash)`,
@@ -507,6 +520,136 @@ export class PayrollPrismaService {
       salaryPaymentId: salaryPayment.id,
       message: `Paiement manuel validé pour ${item.staff?.firstName} ${item.staff?.lastName} — ${item.netSalary} FCFA (espèces)`,
     };
+  }
+
+  /**
+   * ⭐ 125 — Marque TOUTES les lignes d'un lot comme PERÇUES (paiement groupé
+   * en espèces/virement — quand l'école a remis les salaires aux employés).
+   *   - Crée un SalaryPayment COMPLETED (CASH) par ligne non encore payée ;
+   *   - Passe chaque ligne → PAID ;
+   *   - Clôture le lot → PAID.
+   * Idempotent : les lignes déjà perçues sont comptées « skipped ».
+   */
+  async manualValidateAllForBatch(
+    batchId: string,
+    tenantId: string,
+    academicYearId: string,
+    note?: string,
+  ) {
+    const batch = await this.prisma.payroll.findFirst({
+      where: { id: batchId, tenantId },
+      include: {
+        items: {
+          include: {
+            staff: { select: { id: true, firstName: true, lastName: true } },
+            payments: { where: { status: 'COMPLETED' }, take: 1 },
+          },
+        },
+      },
+    });
+    if (!batch) throw new NotFoundException(`Lot de paie ${batchId} introuvable.`);
+
+    // Lignes éligibles : calculées (ou validées/paid sans paiement enregistré)
+    const eligible = batch.items.filter(
+      (it: any) =>
+        ['CALCULATED', 'VALIDATED'].includes(it.status) && !(it.payments ?? []).some((p: any) => p.status === 'COMPLETED'),
+    );
+
+    let validated = 0;
+    const errors: string[] = [];
+    for (const item of eligible) {
+      try {
+        await this.prisma.salaryPayment.create({
+          data: {
+            ...prismaCreateDefaults(),
+            tenantId,
+            academicYearId,
+            payrollItemId: item.id,
+            staffId: item.staffId,
+            amount: item.netSalary,
+            paymentMethod: 'CASH',
+            paymentDate: new Date(),
+            status: 'COMPLETED',
+            notes: note
+              ? `Salaire perçu — ${note}`
+              : `Salaire perçu (validation groupée) — ${new Date().toISOString()}`,
+          },
+        });
+        await this.prisma.payrollItem.update({
+          where: { id: item.id },
+          data: {
+            ...prismaUpdateDefaults(),
+            status: 'PAID',
+            paidAt: new Date(),
+          },
+        });
+        validated += 1;
+      } catch (err: any) {
+        errors.push(`${(item.staff as any)?.firstName ?? ''} ${(item.staff as any)?.lastName ?? ''}: ${err?.message}`);
+      }
+    }
+
+    // Clôture du lot : PAID si aucune ligne non perçue ne reste
+    const closeInfo = await this.closeBatchIfFullyPaid(batchId, tenantId);
+
+    return {
+      total: batch.items.length,
+      validated,
+      skipped: batch.items.length - validated - errors.length,
+      errors,
+      batchStatus: closeInfo?.status ?? null,
+      message:
+        validated > 0
+          ? `${validated} salaire(s) marqué(s) comme perçu(s) sur ${batch.items.length} ligne(s).`
+          : 'Aucune ligne à marquer — tous les salaires sont déjà perçus.',
+    };
+  }
+
+  /** ⭐ 125 — Variante PÉRIODE (la page mensuelle pilote la période). */
+  async manualValidateAllForPeriod(
+    periodId: string,
+    tenantId: string,
+    academicYearId?: string,
+    note?: string,
+  ) {
+    const batch = await this.resolvePeriodBatch(periodId, tenantId);
+    return this.manualValidateAllForBatch(
+      batch.id,
+      tenantId,
+      academicYearId ?? batch.academicYearId,
+      note,
+    );
+  }
+
+  /**
+   * ⭐ 125 — Passer le lot à PAID si (et seulement si) toutes ses lignes sont
+   * perçues (statut PAID ou SalaryPayment COMPLETED). Retourne le statut
+   * effectif, ou null si la clôture ne s'applique pas.
+   */
+  private async closeBatchIfFullyPaid(batchId: string, tenantId: string) {
+    if (!batchId) return null;
+    const items = await this.prisma.payrollItem.findMany({
+      where: { payrollId: batchId, tenantId },
+      select: { id: true, status: true },
+    });
+    if (items.length === 0) return null;
+
+    // Lignes pas encore perçues ?
+    const unpaid = items.filter(
+      (it) =>
+        !['PAID', 'CANCELLED'].includes(it.status),
+    );
+    if (unpaid.length > 0) return { status: 'CALCULATED', unpaid: unpaid.length };
+
+    const updated = await this.prisma.payroll.update({
+      where: { id: batchId },
+      data: {
+        ...prismaUpdateDefaults(),
+        status: 'PAID',
+        paidAt: new Date(),
+      },
+    });
+    return { status: updated.status, unpaid: 0 };
   }
 
   // ============================================================================
@@ -564,7 +707,7 @@ export class PayrollPrismaService {
       },
     });
 
-    return this.prisma.$transaction(async (tx) => {
+    const generated = await this.prisma.$transaction(async (tx) => {
       const results = [];
 
       for (const staff of staffWithContracts) {
@@ -756,7 +899,12 @@ export class PayrollPrismaService {
             otherDeductions,
             totalDeductions,
             netSalary,
-            status: 'PENDING',
+            // ⭐ 125 — la génération CALCULE déjà les taxes (moteur statut
+            //    contractuel ci-dessus) : la ligne naît CALCULÉE, plus jamais
+            //    « En attente » (PENDING). Les documents FP/EP et l'aperçu PDF
+            //    sont immédiatement disponibles.
+            status: 'CALCULATED',
+            calculatedAt: new Date(),
           },
         });
 
@@ -792,7 +940,9 @@ export class PayrollPrismaService {
         results.push(payrollItem);
       }
 
-      // Mettre à jour le totalAmount du batch
+      // Mettre à jour le totalAmount du batch + statut CALCULATED
+      // ⭐ 125 — le lot devient CALCULÉ dès la génération (les taxes sont
+      //    calculées) : plus de badge « Brouillon » après avoir généré.
       const totalAmount = results.reduce(
         (sum, item) => sum.plus(item.netSalary),
         new Prisma.Decimal(0),
@@ -802,11 +952,28 @@ export class PayrollPrismaService {
         data: {
           ...prismaUpdateDefaults(),
           totalAmount,
+          ...(payroll.status === 'DRAFT' ? { status: 'CALCULATED', processedAt: new Date() } : {}),
         },
       });
 
       return results;
     });
+
+    // ⭐ 125 — FLUX AUTOMATIQUE vers l'onglet CNSS : chaque génération de paie
+    //    alimente immédiatement les déclarations IST/IRPP-VPS, AIB, CNSS du
+    //    trimestre et les fiches fiscales (états de paiement / vacataires).
+    //    Non bloquant : une erreur de synchronisation ne fait pas échouer la paie.
+    try {
+      await this.syncTaxCompanionData(
+        tenantId,
+        (academicYearId ?? (payroll as any).academicYearId) as string,
+        payroll.month,
+      );
+    } catch (syncErr: any) {
+      this.logger.warn(`Synchronisation CNSS après génération échouée (non bloquant) : ${syncErr?.message}`);
+    }
+
+    return generated;
   }
 
   /**
@@ -1087,7 +1254,37 @@ export class PayrollPrismaService {
   }
 
   /**
+   * ⭐ 125 — Synchronisation automatique du volet fiscal (onglet CNSS) après
+   * chaque opération de paie : déclarations IST/IRPP-VPS + AIB du mois,
+   * CNSS du trimestre, fiches fiscales (états de paiement / vacataires).
+   * Idempotent — les déclarations déposées (SUBMITTED/PAID) restent figées.
+   */
+  private async syncTaxCompanionData(tenantId: string, academicYearId: string, monthKey?: string) {
+    if (!academicYearId) return;
+    try {
+      if (monthKey && /^\d{4}-\d{2}$/.test(monthKey)) {
+        // Mois explicite (génération/calcul d'une période) — périmètre ciblé
+        await this.taxDeclarationService.getOrGenerateIST(tenantId, academicYearId, monthKey);
+        await this.taxDeclarationService.getOrGenerateAIB(tenantId, academicYearId, monthKey);
+        const [y, m] = monthKey.split('-').map(Number);
+        const quarter = Math.floor((m - 1) / 3) + 1;
+        await this.taxDeclarationService.getOrGenerateCNSS(tenantId, academicYearId, `${y}-T${quarter}`);
+        for (const staffType of ['PERMANENT', 'VACATAIRE']) {
+          await this.taxPayslipService.generatePayslips(tenantId, academicYearId, monthKey, staffType);
+        }
+      } else {
+        // Sans mois → tout l'historique de paie du tenant
+        await this.taxDeclarationService.syncAllForTenant(tenantId, academicYearId);
+      }
+    } catch (err: any) {
+      this.logger.warn(`syncTaxCompanionData (${monthKey ?? 'all'}) : ${err?.message}`);
+      throw err;
+    }
+  }
+
+  /**
    * Calcule toutes les lignes d'un lot de paie et met à jour le totalAmount
+   * ⭐ 125 — alimente aussi automatiquement les sous-onglets CNSS.
    */
   async calculateAllItems(payrollId: string, tenantId: string) {
     const payroll = await this.prisma.payroll.findFirst({
@@ -1099,7 +1296,7 @@ export class PayrollPrismaService {
       throw new NotFoundException(`Lot de paie ${payrollId} introuvable.`);
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // Calculer chaque ligne
       const calculatedItems = [];
       for (const item of payroll.items) {
@@ -1130,6 +1327,15 @@ export class PayrollPrismaService {
         items: calculatedItems,
       };
     });
+
+    // ⭐ 125 — même flux automatique vers l'onglet CNSS après « Calculer Tout ».
+    try {
+      await this.syncTaxCompanionData(tenantId, payroll.academicYearId as string, payroll.month);
+    } catch (syncErr: any) {
+      this.logger.warn(`Synchronisation CNSS après calcul échouée (non bloquant) : ${syncErr?.message}`);
+    }
+
+    return result;
   }
 
   // ============================================================================
@@ -1138,6 +1344,10 @@ export class PayrollPrismaService {
 
   /**
    * Statistiques agrégées depuis les PayrollItems
+   * ⭐ 125 — les lignes CALCULÉES comptent désormais (elles portaient tout le
+   *    massif à 0 : la génération produit déjà les montants finaux, et une
+   *    validation ligne par ligne n'a jamais lieu — « Masse annuelle » et
+   *    « Effectif moyen » restaient vides).
    */
   async getPayrollStatistics(tenantId: string, academicYearId?: string) {
     const where: Prisma.PayrollItemWhereInput = { tenantId };
@@ -1145,7 +1355,7 @@ export class PayrollPrismaService {
 
     const itemWhere = {
       ...where,
-      status: { in: ['VALIDATED', 'PAID'] } as Prisma.PayrollItemWhereInput['status'],
+      status: { in: ['CALCULATED', 'VALIDATED', 'PAID'] } as Prisma.PayrollItemWhereInput['status'],
     };
 
     // Use Prisma aggregate instead of loading all records into memory
@@ -1174,7 +1384,7 @@ export class PayrollPrismaService {
     if (academicYearId) payrollWhere.academicYearId = academicYearId;
     const payrollItemWhere2 = {
       ...payrollWhere,
-      status: { in: ['VALIDATED', 'PAID'] } as Prisma.PayrollWhereInput['status'],
+      status: { in: ['CALCULATED', 'VALIDATED', 'PAID'] } as Prisma.PayrollWhereInput['status'],
     };
 
     const [payrollStats, payrollCount] = await Promise.all([
@@ -1185,14 +1395,19 @@ export class PayrollPrismaService {
       this.prisma.payroll.count({ where: payrollItemWhere2 }),
     ]);
 
+    const totalNet = Number(itemStats._sum.netSalary ?? 0);
+    const totalGross = Number(itemStats._sum.grossSalary ?? 0);
+
     return {
-      totalNetSalary: Number(itemStats._sum.netSalary ?? 0),
-      totalGrossSalary: Number(itemStats._sum.grossSalary ?? 0),
+      totalNetSalary: totalNet,
+      totalGrossSalary: totalGross,
       totalDeductions: Number(itemStats._sum.totalDeductions ?? 0),
       totalCnssEmployee: Number(itemStats._sum.cnssEmployee ?? 0),
       totalCnssEmployer: Number(itemStats._sum.cnssEmployer ?? 0),
       totalIrpp: Number(itemStats._sum.irppAmount ?? 0),
       totalPayrollAmount: Number(payrollStats._sum.totalAmount ?? 0),
+      // ⭐ 125 — alias consommés par le front (KPI « Masse annuelle »)
+      totalAmount: totalGross,
       totalStaff: distinctStaff.length,
       totalPayrollItems: itemCount,
       totalPayrollBatches: payrollCount,
@@ -1234,18 +1449,56 @@ export class PayrollPrismaService {
 
   /**
    * Liste toutes les périodes de paie d'un tenant
+   * ⭐ 125 — AGRÉGATION réelle par période : total net (l'« à payer » était
+   *    toujours 0 — PayrollPeriod n'a pas de colonne totalAmount), nombre de
+   *    bulletins (lignes de paie, pas le nombre de lots) et statut EFFECTIF
+   *    dérivé du lot sous-jacent (DRAFT→CALCULATED→PAID) — l'historique
+   *    reflète l'avancement réel de chaque mois.
    */
   async findAllPayrollPeriods(tenantId: string, academicYearId?: string) {
     const where: Record<string, unknown> = { tenantId };
     if (academicYearId) where.academicYearId = academicYearId;
 
-    return this.prisma.payrollPeriod.findMany({
+    const periods = await this.prisma.payrollPeriod.findMany({
       where,
       include: {
         _count: { select: { payrolls: true } },
+        payrolls: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+            month: true,
+            totalAmount: true,
+            paidAt: true,
+            _count: { select: { items: true } },
+          },
+        },
         academicYear: { select: { id: true, name: true } },
       },
       orderBy: { startDate: 'desc' },
+    });
+
+    return periods.map((period: any) => {
+      const batch = period.payrolls?.[0] ?? null;
+      const displayStatus =
+        period.status === 'CLOSED' || period.status === 'LOCKED'
+          ? period.status
+          : batch?.status ?? period.status;
+      return {
+        ...period,
+        payrolls: undefined,
+        // Statut effectif (suivre le lot) — consommé par la liste « Historique des Paies »
+        status: displayStatus,
+        // Total net réel de la période (somme des lots)
+        totalAmount: batch?.totalAmount ?? new Prisma.Decimal(0),
+        // Bulletins = LIGNES de paie (pas le nombre de lots)
+        itemCount: batch?._count?.items ?? 0,
+        batchId: batch?.id ?? null,
+        batchStatus: batch?.status ?? null,
+        paidAt: batch?.paidAt ?? null,
+      };
     });
   }
 

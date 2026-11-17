@@ -254,15 +254,24 @@ export class PayrollDocumentsService {
     }
 
     const payroll: any = item.payroll;
-    const periodStart = payroll?.startDate ? new Date(payroll.startDate) : new Date();
+    // ⭐ 125 — période dérivée du MOIS EXPLICITE du lot (« 2026-11 »), pas de
+    //    la date startDate (les lots hérités décalés d'un jour par le fuseau
+    //    produisaient periodMonth ≠ mois du lot → le registre FP/EP filtré sur
+    //    le mois de la période trouvait « aucun document »).
+    const monthKey: string | null = payroll?.month ?? null;
+    const periodStart = monthKey && /^\d{4}-\d{2}$/.test(monthKey)
+      ? new Date(`${monthKey}-01T00:00:00Z`)
+      : payroll?.startDate
+        ? new Date(payroll.startDate)
+        : new Date();
     const periodEnd = payroll?.endDate ? new Date(payroll.endDate) : periodStart;
     const period = {
-      year: periodStart.getFullYear(),
-      month: periodStart.getMonth() + 1,
-      label: monthLabel(periodStart.getFullYear(), periodStart.getMonth() + 1),
+      year: periodStart.getUTCFullYear(),
+      month: periodStart.getUTCMonth() + 1,
+      label: monthLabel(periodStart.getUTCFullYear(), periodStart.getUTCMonth() + 1),
       startDate: periodStart.toISOString(),
       endDate: periodEnd.toISOString(),
-      joursOuvres: joursOuvres(periodStart.getFullYear(), periodStart.getMonth() + 1),
+      joursOuvres: joursOuvres(periodStart.getUTCFullYear(), periodStart.getUTCMonth() + 1),
     };
     const fiscalYear = period.year;
 

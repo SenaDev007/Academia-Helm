@@ -208,9 +208,46 @@ export class PayrollPrismaController {
   }
 
   /**
-   * Paie les salaires de TOUS les employés d'un lot via FedaPay (paiement groupé).
-   * POST /hr/payroll/batches/:id/pay-all
+   * ⭐ 125 — Marque TOUTES les lignes d'une PÉRIODE comme perçues par les
+   * employés (paiement groupé espèces/virement). Chaque ligne reçoit son
+   * SalaryPayment COMPLETED, passe PAID, et le lot est clôturé PAID.
+   * POST /hr/payroll/periods/:id/validate-all
    */
+  @Post('periods/:id/validate-all')
+  async validateAllForPeriod(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() body: { academicYearId?: string; note?: string },
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    return this.payrollService.manualValidateAllForPeriod(id, tid, body?.academicYearId, body?.note);
+  }
+
+  /**
+   * ⭐ 125 — Variante LOT : POST /hr/payroll/batches/:id/validate-all
+   * (usage programmatique — la page période pilote periods/:id/validate-all)
+   */
+  @Post('batches/:id/validate-all')
+  async validateAllForBatch(
+    @GetTenant() tenant: any,
+    @Param('id') id: string,
+    @Body() body: { academicYearId: string; note?: string },
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = tenant?.id ?? tenantIdFallback;
+    if (!tid) {
+      throw new BadRequestException('Tenant ID requis pour cette opération');
+    }
+    if (!body?.academicYearId) {
+      throw new BadRequestException('academicYearId requis dans le body');
+    }
+    return this.payrollService.manualValidateAllForBatch(id, tid, body.academicYearId, body.note);
+  }
+
   @Post('batches/:id/pay-all')
   async disburseAllSalaries(
     @GetTenant() tenant: any,

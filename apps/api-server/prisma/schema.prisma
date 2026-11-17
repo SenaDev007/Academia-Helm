@@ -5654,6 +5654,8 @@ model Staff {
   updatedAt                 DateTime                   @updatedAt
   employeeCNSS              EmployeeCNSS?
   contracts                 Contract[]
+  /// Fiches de paie du module Impôts (tax_payslips) — vue « États de paiement »
+  taxPayslips               TaxPayslip[]
   hrApplications            HrApplication[]
   libraryLoans              LibraryLoan[]
   overtimeRecords           OvertimeRecord[]
@@ -16780,6 +16782,10 @@ model TaxPayslip {
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// ⭐ 125 — relation manquante : `include: { staff }` échouait (PrismaClientValidationError)
+  ///    sur les sous-onglets Vacataires / États de paiement. Relation purement
+  ///    Prisma (staffId existe déjà) — aucun DDL requis.
+  staff         Staff            @relation(fields: [staffId], references: [id], onDelete: Cascade)
   payrollPeriod TaxPayrollPeriod @relation(fields: [payrollPeriodId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, academicYearId, period])

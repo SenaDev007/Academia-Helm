@@ -21,12 +21,14 @@ export function PayrollManagement() {
     if (!tenant?.id || !currentYear?.id) return;
     try {
       setLoading(true);
-      const res = await hrFetch<any[]>(hrUrl('taxes/payroll/payslips', { tenantId: tenant.id, academicYearId: currentYear.id, period }));
+      // ⭐ 125 — staffType transmis : la vue « Permanents » ne montre QUE les
+      //    fiches des permanents (et « Vacataires » que les vacataires).
+      const res = await hrFetch<any[]>(hrUrl('taxes/payroll/payslips', { tenantId: tenant.id, academicYearId: currentYear.id, period, staffType }));
       setPayslips(Array.isArray(res) ? res : []);
     } catch {} finally { setLoading(false); }
   };
 
-  useEffect(() => { loadData(); }, [tenant?.id, currentYear?.id, period]);
+  useEffect(() => { loadData(); }, [tenant?.id, currentYear?.id, period, staffType]);
 
   const handleGenerate = async () => {
     if (!tenant?.id || !currentYear?.id) return;

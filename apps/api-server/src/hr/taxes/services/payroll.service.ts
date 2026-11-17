@@ -11,6 +11,11 @@ import { PrismaService } from '../../../database/prisma.service';
 import { TaxSettingsService } from './tax-settings.service';
 import { PAYSLIP_DEDICATED_CODES } from '../../allowance-catalog';
 
+/** ⭐ 125 — rubrique de la fiche fiscale pour un code d'indemnité. */
+function rubriqueFor(code: string | null | undefined): string {
+  return (code && PAYSLIP_DEDICATED_CODES[code]) || 'indemnites';
+}
+
 @Injectable()
 export class PayrollService {
   private readonly logger = new Logger(PayrollService.name);
@@ -32,9 +37,26 @@ export class PayrollService {
     return period_;
   }
 
+  /**
+   * Génère les fiches de paie fiscales (tax_payslips) pour une période.
+   *
+   * ⭐ 125 — SOURCE DE VÉRITÉ = les LIGNES DE PAIE du module Paie (PayrollItem)
+   *    quand elles existent pour le mois demandé : les montants affichés dans
+   *    l'onglet CNSS (« États de paiement » / « Vacataires ») sont EXACTEMENT
+   *    ceux calculés par le moteur statut contractuel (CNSS/ITS/AIB, indemnités
+   *    par rubrique). Repli inchangé sur staff.salary + indemnités actives
+   *    pour les mois sans paie générée.
+   */
   async generatePayslips(tenantId: string, academicYearId: string, period: string, staffType: string) {
     const settings = await this.taxSettingsService.getOrCreate(tenantId);
     const payrollPeriod = await this.getOrCreatePeriod(tenantId, academicYearId, period, staffType);
+
+    // ── Lignes de paie réelles du mois (source de vérité) ──
+    const payrollItems = await this.prisma.payrollItem.findMany({
+      where: { tenantId, payroll: { month: period } },
+      include: { staff: { select: { contractType: true } } },
+    });
+    const itemsByStaff = new Map<string, any>(payrollItems.map((it: any) => [it.staffId, it]));
 
     const staffList = await this.prisma.staff.findMany({
       where: {
@@ -81,21 +103,49 @@ export class PayrollService {
     let totalGross = 0, totalDeductions = 0, totalNet = 0;
 
     for (const staff of staffList) {
-      const salaireBase = Number(staff.salary || 0);
-      const rub = allowancesByStaff.get(staff.id) || new Map<string, number>();
-      const moinsPercesArriere = rub.get('moinsPercesArriere') || 0;
-      const gratificationsEtrennes = rub.get('gratificationsEtrennes') || 0;
-      const indemnites = rub.get('indemnites') || 0;
-      const primeSalissures = rub.get('primeSalissures') || 0;
-      const salaireBrut = salaireBase + moinsPercesArriere + gratificationsEtrennes + indemnites + primeSalissures;
+      // ⭐ 125 — LIGNE DE PAIE RÉELLE en priorité (moteur statut contractuel)
+      const item: any = itemsByStaff.get(staff.id);
+      let salaireBase: number, salaireBrut: number, cnssOuvriere: number,
+          itsNet: number, cnssPatronale: number, vps: number,
+          totalRetenues: number, netAPayer: number;
+      let moinsPercesArriere = 0, gratificationsEtrennes = 0, indemnites = 0, primeSalissures = 0;
 
-      const cnssOuvriere = salaireBrut * (settings.cnssOuvriereRate / 100);
-      const itsNet = salaireBrut * (settings.istVpsRate / 100);
-      const cnssPatronale = salaireBrut * (settings.cnssPatronaleRate / 100);
-      const vps = salaireBrut * (settings.istVpsRate / 100);
+      if (item) {
+        salaireBase = Number(item.baseSalary ?? 0);
+        salaireBrut = Number(item.grossSalary ?? 0);
+        cnssOuvriere = Number(item.cnssEmployee ?? 0);
+        itsNet = Number(item.irppAmount ?? 0);
+        cnssPatronale = Number(item.cnssEmployer ?? 0);
+        vps = salaireBrut * (settings.istVpsRate / 100);
+        totalRetenues = Number(item.totalDeductions ?? 0);
+        netAPayer = Number(item.netSalary ?? 0);
+        // Répartition des indemnités par rubrique (détail figé dans la ligne)
+        for (const d of (Array.isArray(item.allowancesDetail) ? (item.allowancesDetail as any[]) : [])) {
+          const bucket = rubriqueFor(d?.code);
+          if (bucket === 'moinsPercesArriere') moinsPercesArriere += Number(d?.amount || 0);
+          else if (bucket === 'gratificationsEtrennes') gratificationsEtrennes += Number(d?.amount || 0);
+          else if (bucket === 'primeSalissures') primeSalissures += Number(d?.amount || 0);
+          else indemnites += Number(d?.amount || 0);
+        }
+      } else {
+        // ── Repli historique : staff.salary + indemnités actives ──
+        const salBase = Number(staff.salary || 0);
+        const rub = allowancesByStaff.get(staff.id) || new Map<string, number>();
+        moinsPercesArriere = rub.get('moinsPercesArriere') || 0;
+        gratificationsEtrennes = rub.get('gratificationsEtrennes') || 0;
+        indemnites = rub.get('indemnites') || 0;
+        primeSalissures = rub.get('primeSalissures') || 0;
+        salaireBrut = salBase + moinsPercesArriere + gratificationsEtrennes + indemnites + primeSalissures;
 
-      const totalRetenues = cnssOuvriere + itsNet;
-      const netAPayer = salaireBrut - totalRetenues;
+        cnssOuvriere = salaireBrut * (settings.cnssOuvriereRate / 100);
+        itsNet = salaireBrut * (settings.istVpsRate / 100);
+        cnssPatronale = salaireBrut * (settings.cnssPatronaleRate / 100);
+        vps = salaireBrut * (settings.istVpsRate / 100);
+
+        totalRetenues = cnssOuvriere + itsNet;
+        netAPayer = salaireBrut - totalRetenues;
+        salaireBase = salBase;
+      }
 
       totalGross += salaireBrut;
       totalDeductions += totalRetenues;
@@ -128,15 +178,22 @@ export class PayrollService {
     return { payrollPeriod, payslipsCount: staffList.length, totalGross, totalDeductions, totalNet };
   }
 
-  async getPayslips(tenantId: string, academicYearId: string, period: string) {
+  async getPayslips(tenantId: string, academicYearId: string, period: string, staffType?: string) {
     const where: any = { tenantId, academicYearId };
     // Only filter by period if it's non-empty
     if (period && period.trim()) {
       where.period = period;
     }
+    // ⭐ 125 — filtre par type de personnel (Vacataires vs États de paiement) :
+    //    la vue « Vacataires » ne doit montrer QUE les fiches vacataires.
+    if (staffType && staffType.trim()) {
+      where.payrollPeriod = { staffType };
+    }
     return this.prisma.taxPayslip.findMany({
       where,
-      include: { staff: { select: { firstName: true, lastName: true, position: true, cnssNumber: true, maritalStatus: true } } },
+      // ⭐ 125 — relation staff ajoutée au schéma Prisma (TaxPayslip.staff) :
+      //    l'include échouait avant (PrismaClientValidationError « Champ "staff" »).
+      include: { staff: { select: { firstName: true, lastName: true, position: true, cnssNumber: true, maritalStatus: true, hireDate: true, contractType: true } } },
       orderBy: { staff: { lastName: 'asc' } },
     });
   }

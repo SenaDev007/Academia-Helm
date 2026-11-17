@@ -30,14 +30,14 @@ import {
   ArrowLeft,
   ShieldCheck,
   AlertCircle,
-  Send,
   Loader2,
-  Wallet,
   HandCoins,
   FileBadge2,
-  Eye,
   X,
   Calendar,
+  ReceiptText,
+  BadgeCheck,
+  CheckCheck,
 } from 'lucide-react';
 import { useModuleContext } from '@/hooks/useModuleContext';
 import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
@@ -81,10 +81,24 @@ const PAYROLL_STATUS_LABELS: Record<string, string> = {
   CALCULATED: 'Calculé',
   VALIDATED: 'Validé',
   PAID: 'Payé',
-  PENDING: 'En attente',
+  // ⭐ 125 — plus jamais « En attente » : les lignes naissent désormais
+  // CALCULÉES (la génération calcule les taxes) ; ce libellé ne sert
+  // qu'aux très vieilles lignes jamais recalculées.
+  PENDING: 'À calculer',
   FAILED: 'Échec',
   COMPLETED: 'Terminé',
   CANCELLED: 'Annulé',
+};
+
+// ⭐ 125 — TYPE DE CONTRAT de l'employé (défini à l'embauche) affiché dans la
+//    colonne Employé : visibilité immédiate sur qui est CDI / CDD / Vacataire…
+const CONTRACT_TYPE_LABELS: Record<string, { label: string; className: string }> = {
+  CDI:         { label: 'CDI',           className: 'bg-indigo-50 text-indigo-700 border border-indigo-200' },
+  CDD:         { label: 'CDD',           className: 'bg-violet-50 text-violet-700 border border-violet-200' },
+  VACATAIRE:   { label: 'Vacataire',     className: 'bg-purple-50 text-purple-600 border border-purple-100' },
+  STAGE:       { label: 'Stage',         className: 'bg-sky-50 text-sky-700 border border-sky-200' },
+  CONSULTANT:  { label: 'Consultant',    className: 'bg-teal-50 text-teal-700 border border-teal-200' },
+  PRESTATAIRE: { label: 'Prestataire',    className: 'bg-emerald-50 text-emerald-700 border border-emerald-200' },
 };
 
 export default function PayrollDetailPage() {
@@ -95,7 +109,6 @@ export default function PayrollDetailPage() {
   const [processing, setProcessing] = useState(false);
   const [payingItem, setPayingItem] = useState<string | null>(null);
   const [payingAll, setPayingAll] = useState(false);
-  const [showPayAllConfirm, setShowPayAllConfirm] = useState(false);
   // Documents de paie officiels FP/EP
   const [issuingItem, setIssuingItem] = useState<string | null>(null);
   const [showRegister, setShowRegister] = useState(false);
@@ -166,128 +179,76 @@ export default function PayrollDetailPage() {
     }
   };
 
-  const handleValidateAndPay = async () => {
-    try {
-      setProcessing(true);
-      // PUT periods/:id/status (niveau période)
-      await hrFetch<any>(hrUrl(`payroll/periods/${id}/status`, { tenantId: tenant.id }), {
-        method: 'PUT',
-        body: { status: 'PAID' },
-      });
-      toast({ variant: 'success', title: 'Paie validée et marquée comme payée' });
-      fetchPayroll();
-    } catch (error: any) {
-      toast({ variant: 'error', title: 'Erreur lors de la validation', description: error?.message });
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  // ─── Paiement individuel via FedaPay ──
-  const handlePaySalary = async (itemId: string, staffName: string, amount: number) => {
+  // ⭐ 125 — Marquer le salaire d'UN employé comme PERÇU (remis en espèces /
+  //    virement) : remplace l'ancien bouton FedaPay (intégration payout
+  //    désactivée) — l'école confirme que l'employé a reçu son argent.
+  const handleMarkReceived = async (itemId: string, staffName: string, amount: number) => {
     if (!academicYear?.id) {
       toast({ variant: 'error', title: 'Année académique requise', description: 'Sélectionnez une année académique active.' });
       return;
     }
     const confirmed = window.confirm(
-      `Confirmer le paiement de ${formatCurrency(amount)} à ${staffName} via Mobile Money ?\n\nLe paiement sera initié depuis le compte FedaPay de l'école vers le numéro Mobile Money du personnel.`,
+      `Confirmer que ${staffName} a bien perçu son salaire de ${formatCurrency(amount)} ?`,
     );
     if (!confirmed) return;
 
     try {
       setPayingItem(itemId);
-      const result = await hrFetch<any>(hrUrl(`payroll/items/${itemId}/pay`, { tenantId: tenant.id }), {
+      const result = await hrFetch<any>(hrUrl(`payroll/items/${itemId}/manual-validate`, { tenantId: tenant.id }), {
         method: 'POST',
         body: { academicYearId: academicYear.id },
       });
-      if (result?.success) {
-        toast({
-          variant: 'success',
-          title: 'Paiement initié',
-          description: result.message || `Paiement de ${formatCurrency(amount)} envoyé à ${staffName}`,
-        });
-      } else {
-        toast({
-          variant: 'error',
-          title: 'Échec du paiement',
-          description: result?.message || 'Erreur inconnue',
-        });
-      }
-      fetchPayroll();
-    } catch (err: any) {
-      toast({
-        variant: 'error',
-        title: 'Erreur de paiement',
-        description: err?.message || 'Impossible d\'initier le paiement',
-      });
-    } finally {
-      setPayingItem(null);
-    }
-  };
-
-  // ─── Paiement groupé via FedaPay ──
-  const handlePayAll = async () => {
-    setShowPayAllConfirm(false);
-    try {
-      setPayingAll(true);
-      const result = await hrFetch<any>(hrUrl(`payroll/batches/${id}/pay-all`, { tenantId: tenant.id }), {
-        method: 'POST',
-      });
-      toast({
-        variant: result.failed > 0 ? 'warning' : 'success',
-        title: result.failed === 0
-          ? `Paiement groupé terminé — ${result.success} salarié(s) payés`
-          : `Paiement partiel — ${result.success} réussis, ${result.failed} échecs`,
-        description: `Total: ${result.total} lignes traitées`,
-      });
-      fetchPayroll();
-    } catch (err: any) {
-      toast({
-        variant: 'error',
-        title: 'Erreur lors du paiement groupé',
-        description: err?.message,
-      });
-    } finally {
-      setPayingAll(false);
-    }
-  };
-
-  // ─── Validation manuelle du paiement (espèces / hors FedaPay) ──
-  const handleManualValidate = async (itemId: string, staffName: string, amount: number) => {
-    if (!academicYear?.id) {
-      toast({ variant: 'error', title: 'Année académique requise', description: 'Sélectionnez une année académique active.' });
-      return;
-    }
-    const note = window.prompt(
-      `Validation manuelle du paiement de ${formatCurrency(amount)} à ${staffName}.\n\n` +
-      `Cette option est utilisée quand le paiement a été fait en espèces ou par virement ` +
-      `(hors FedaPay Mobile Money).\n\n` +
-      `Ajoutez une note (optionnel) :`,
-      'Paiement en espèces',
-    );
-    // user cancelled
-    if (note === null) return;
-
-    try {
-      setPayingItem(itemId);
-      const result = await hrFetch<any>(hrUrl(`payroll/items/${itemId}/manual-validate`, { tenantId: tenant.id }), {
-        method: 'POST',
-        body: { academicYearId: academicYear.id, note: note || undefined },
-      });
       toast({
         variant: 'success',
-        title: 'Paiement validé manuellement',
-        description: result.message || `${formatCurrency(amount)} validé pour ${staffName} (espèces)`,
+        title: 'Salaire perçu',
+        description: result?.message || `${formatCurrency(amount)} perçu par ${staffName}`,
       });
       fetchPayroll();
     } catch (err: any) {
       toast({
         variant: 'error',
         title: 'Erreur de validation',
-        description: err?.message || 'Impossible de valider le paiement',
+        description: err?.message || 'Impossible de marquer le salaire comme perçu',
       });
     } finally {
       setPayingItem(null);
+    }
+  };
+
+  // ⭐ 125 — Marquer TOUS les salaires de la période comme PERÇUS (groupé).
+  //    Chaque employé reçoit son paiement COMPLETED ; quand toutes les lignes
+  //    sont perçues, le lot passe PAID — plus aucun badge « Brouillon ».
+  const handleMarkAllReceived = async () => {
+    const unpaidCount = (period?.payrolls || []).filter(
+      (p: any) => p.salaryPayment?.status !== 'COMPLETED' && p.status !== 'PAID',
+    ).length;
+    const confirmed = window.confirm(
+      `Confirmer que les ${unpaidCount} employé(s) restant(s) ont déjà perçu leur salaire ?\n\n` +
+      `Chaque ligne sera marquée « Payé » et le lot sera clôturé.`,
+    );
+    if (!confirmed) return;
+    try {
+      setPayingAll(true);
+      const result = await hrFetch<any>(hrUrl(`payroll/periods/${id}/validate-all`, { tenantId: tenant.id }), {
+        method: 'POST',
+        body: {
+          ...(academicYear?.id ? { academicYearId: academicYear.id } : {}),
+        },
+      });
+      toast({
+        variant: result?.errors?.length ? 'warning' : 'success',
+        title: 'Salaires marqués comme perçus',
+        description: result?.message || 'Tous les salaires de la période sont perçus.',
+      });
+      fetchPayroll();
+    } catch (err: any) {
+      toast({
+        variant: 'error',
+        title: 'Erreur',
+        description: err?.message || 'Impossible de marquer les salaires comme perçus',
+      });
+    } finally {
+      setPayingAll(false);
     }
   };
 
@@ -312,8 +273,8 @@ export default function PayrollDetailPage() {
       } else {
         toast({ variant: 'info', title: 'Aperçu du bulletin', description: 'Le PDF sera généré par le serveur.' });
       }
-    } catch (error) {
-      toast({ variant: 'error', title: 'Erreur lors de la génération de l\'aperçu' });
+    } catch (error: any) {
+      toast({ variant: 'error', title: 'Erreur lors de la génération de l\'aperçu', description: error?.message });
     }
   };
 
@@ -351,8 +312,8 @@ export default function PayrollDetailPage() {
         }
       }
       toast({ variant: 'success', title: 'Téléchargement du bulletin lancé.' });
-    } catch (error) {
-      toast({ variant: 'error', title: 'Erreur lors du téléchargement' });
+    } catch (error: any) {
+      toast({ variant: 'error', title: 'Erreur lors du téléchargement', description: error?.message });
     }
   };
 
@@ -429,11 +390,21 @@ export default function PayrollDetailPage() {
       //    pas sur la date décalée par le fuseau.
       const monthKey = period?.month || new Date(period?.startDate || Date.now()).toISOString().substring(0, 7);
       const [periodYear, periodMonth] = monthKey.split('-').map(Number);
-      const docs = await hrFetch<any[]>(hrUrl('payroll/documents', {
+      let docs = await hrFetch<any[]>(hrUrl('payroll/documents', {
         tenantId: tenant.id,
         periodYear,
         periodMonth,
       }));
+      // ⭐ 125 — REpli : si le filtre mois ne renvoie RIEN alors que des
+      //    documents existent (lots hérités avec mois stocké décalé), on
+      //    élargit à l'année entière — le registre ne doit JAMAIS montrer
+      //    « aucun document » quand des FP/EP ont été émis.
+      if (!docs || docs.length === 0) {
+        docs = await hrFetch<any[]>(hrUrl('payroll/documents', {
+          tenantId: tenant.id,
+          periodYear,
+        }));
+      }
       setRegisterDocs(docs || []);
     } catch (error: any) {
       toast({ variant: 'error', title: 'Registre indisponible', description: error?.message });
@@ -474,6 +445,10 @@ export default function PayrollDetailPage() {
     (acc: number, p: any) => acc + Number(p.cnssEmployee) + Number(p.irppAmount) + Number(p.otherDeductions || 0), 0) || 0;
   const docsIssued = period.payrolls?.filter((p: any) => p.payrollDocument).length || 0;
   const nonDeclares = period.payrolls?.filter((p: any) => p.staff?.statutContractuel === 'SALARIE_NON_DECLARE').length || 0;
+  // ⭐ 125 — salariés restant à percevoir (pour le bouton groupé « Marquer tout perçu »)
+  const unpaidCount = (period.payrolls || []).filter(
+    (p: any) => p.salaryPayment?.status !== 'COMPLETED' && p.status !== 'PAID',
+  ).length;
   // ⭐ Libellé = NOM de la période (« Novembre 2026 ») — la date seule
   //    décalait le mois d'un cran selon le fuseau du poste.
   const monthLabel = period.name
@@ -542,24 +517,27 @@ export default function PayrollDetailPage() {
                 </button>
               </>
             )}
-            {(period.status === 'CALCULATED' || period.status === 'VALIDATED') && (
+            {(period.status === 'CALCULATED' || period.status === 'VALIDATED' || (period.status === 'PAID' && unpaidCount > 0)) && (
               <>
+                {unpaidCount > 0 && (
+                  <button
+                    onClick={handleMarkAllReceived}
+                    disabled={payingAll || processing}
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-sm transition-all font-bold text-xs disabled:opacity-50"
+                    title="Confirmer que tous les employés ont reçu leur salaire (espèces / virement)"
+                  >
+                    {payingAll ? <Loader2 size={14} className="animate-spin" /> : <CheckCheck size={14} />}
+                    {payingAll ? 'Enregistrement...' : `Marquer tout perçu (${unpaidCount})`}
+                  </button>
+                )}
                 <button
-                  onClick={() => setShowPayAllConfirm(true)}
-                  disabled={payingAll || processing}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 shadow-sm transition-all font-bold text-xs disabled:opacity-50"
-                >
-                  {payingAll ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                  {payingAll ? 'Paiement en cours...' : 'Payer Tout (FedaPay)'}
-                </button>
-                <button
-                  onClick={handleValidateAndPay}
+                  onClick={handleCalculateAll}
                   disabled={processing}
                   className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-all font-bold text-xs disabled:opacity-50"
-                  title="Marquer comme payé sans FedaPay (paiement manuel)"
+                  title="Recalculer toutes les lignes (taxes/CNSS) et rafraîchir les déclarations"
                 >
-                  <ShieldCheck size={14} />
-                  Marquer Payé
+                  <Calculator size={14} className={processing ? 'animate-spin' : ''} />
+                  Recalculer
                 </button>
               </>
             )}
@@ -639,9 +617,18 @@ export default function PayrollDetailPage() {
                           </span>
                           <div className="flex items-center gap-1 flex-wrap mt-0.5">
                             <span className="text-[9px] text-slate-400 font-bold uppercase">{payroll.staff?.employeeNumber || payroll.staff?.staffCode}</span>
-                            {isVacataire && (
-                              <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-100">VACATAIRE</span>
-                            )}
+                            {/* ⭐ 125 — TYPE DE CONTRAT visible sur CHAQUE ligne
+                                (œil immédiat : CDI / CDD / Vacataire / …) */}
+                            {(() => {
+                              const ct = payroll.staff?.contractType;
+                              if (!ct) return null;
+                              const ctInfo = CONTRACT_TYPE_LABELS[ct] || { label: ct, className: 'bg-slate-50 text-slate-500 border border-slate-200' };
+                              return (
+                                <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${ctInfo.className}`}>
+                                  {ctInfo.label}
+                                </span>
+                              );
+                            })()}
                             {statutInfo && (
                               <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${statutInfo.className}`}>{statutInfo.label}</span>
                             )}
@@ -722,9 +709,17 @@ export default function PayrollDetailPage() {
                       </span>
                     </td>
                     <td className="px-4 py-2.5">
-                      {payroll.salaryPayment?.status === 'COMPLETED' ? (
+                      {/* ⭐ 125 — colonne Paiement : plus de simple tiret « — » ;
+                          chaque ligne affiche explicitement Perçu (avec date) /
+                          Non perçu / En cours / Échec. */}
+                      {payroll.salaryPayment?.status === 'COMPLETED' || payroll.status === 'PAID' ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600">
-                          <CheckCircle2 size={12} /> Payé
+                          <BadgeCheck size={13} /> Perçu
+                          {payroll.salaryPayment?.paymentDate && (
+                            <span className="text-[8px] font-medium text-slate-400">
+                              {new Date(payroll.salaryPayment.paymentDate).toLocaleDateString('fr-FR')}
+                            </span>
+                          )}
                         </span>
                       ) : payroll.salaryPayment?.status === 'PENDING' ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600">
@@ -735,7 +730,9 @@ export default function PayrollDetailPage() {
                           <AlertCircle size={12} /> Échec
                         </span>
                       ) : (
-                        <span className="text-[10px] text-slate-300">—</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400">
+                          <HandCoins size={12} className="opacity-60" /> Non perçu
+                        </span>
                       )}
                     </td>
                     <td className="px-4 py-2.5 text-right">
@@ -749,61 +746,58 @@ export default function PayrollDetailPage() {
                             <Calculator size={15} />
                           </button>
                         )}
-                        {/* Bouton Paiement individuel via FedaPay */}
-                        {(period.status === 'CALCULATED' || period.status === 'VALIDATED') &&
-                         payroll.salaryPayment?.status !== 'COMPLETED' && (
-                          <>
+                        {/* ⭐ 125 — Marquer le salaire comme PERÇU (individuel) */}
+                        {payroll.salaryPayment?.status !== 'COMPLETED' && payroll.status !== 'PAID' &&
+                         ['CALCULATED', 'VALIDATED'].includes(period.status) && (
                           <button
-                            onClick={() => handlePaySalary(payroll.id, `${payroll.staff?.firstName} ${payroll.staff?.lastName}`, Number(payroll.netSalary))}
+                            onClick={() => handleMarkReceived(payroll.id, `${payroll.staff?.firstName} ${payroll.staff?.lastName}`, Number(payroll.netSalary))}
                             disabled={payingItem === payroll.id}
                             className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all disabled:opacity-50"
-                            title="Payer via FedaPay (Mobile Money)"
-                          >
-                            {payingItem === payroll.id ? <Loader2 size={12} className="animate-spin" /> : <Wallet size={12} />}
-                            Payer
-                          </button>
-                          <button
-                            onClick={() => handleManualValidate(payroll.id, `${payroll.staff?.firstName} ${payroll.staff?.lastName}`, Number(payroll.netSalary))}
-                            disabled={payingItem === payroll.id}
-                            className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-all disabled:opacity-50 border border-slate-200"
-                            title="Valider manuellement (paiement en espèces / hors FedaPay)"
+                            title="Marquer comme perçu (espèces / virement)"
                           >
                             {payingItem === payroll.id ? <Loader2 size={12} className="animate-spin" /> : <HandCoins size={12} />}
-                            Valider
+                            Perçu
                           </button>
-                          </>
                         )}
                         {statut ? (
                           /* ── Personnel AVEC statut contractuel → documents officiels FP/EP ──
-                             (les anciens boutons « bulletin » génériques sont masqués : risque
-                             juridique de confusion fiche de paie / état de paiement) */
+                             ⭐ 125 — ICÔNES DIFFÉRENCIÉES par type de document :
+                               Fiche de paie (FP)  → FileText  (bleu #1A2BA6)
+                               État de paiement (EP) → ReceiptText (vert émeraude)
+                             L'aperçu ET le téléchargement suivent la même couleur. */
                           <>
                           {doc ? (
                             <button
                               onClick={() => handleDownloadDocument(doc.id)}
                               className={`p-1.5 rounded-lg transition-colors ${doc.documentType === 'ETAT_DE_PAIEMENT' ? 'text-emerald-600 hover:bg-emerald-50' : 'text-[#1A2BA6] hover:bg-blue-50'}`}
-                              title={`Télécharger ${doc.documentNumber} (PDF scellé)`}
+                              title={`Télécharger ${doc.documentNumber} (${doc.documentType === 'ETAT_DE_PAIEMENT' ? 'état de paiement' : 'fiche de paie'} — PDF scellé)`}
                             >
-                              <FileBadge2 size={15} />
+                              {doc.documentType === 'ETAT_DE_PAIEMENT' ? <ReceiptText size={15} /> : <FileText size={15} />}
                             </button>
                           ) : (
                             <>
                               <button
                                 onClick={() => handlePreviewDocument(payroll.id)}
                                 disabled={payroll.status === 'PENDING'}
-                                className="p-1.5 text-slate-400 hover:text-[#1A2BA6] hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-40"
-                                title={payroll.status === 'PENDING' ? 'Calculez d\u2019abord la ligne' : 'Aperçu du document (fiche ou état selon le statut)'}
+                                className={`p-1.5 rounded-lg transition-colors disabled:opacity-40 ${statut === 'PRESTATAIRE_SERVICE'
+                                  ? 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50'
+                                  : 'text-slate-400 hover:text-[#1A2BA6] hover:bg-blue-50'}`}
+                                title={payroll.status === 'PENDING'
+                                  ? 'Calculez d\u2019abord la ligne'
+                                  : statut === 'PRESTATAIRE_SERVICE'
+                                    ? 'Aperçu de l\u2019état de paiement (EP — prestataire)'
+                                    : 'Aperçu de la fiche de paie (FP — salarié)'}
                               >
-                                <Eye size={15} />
+                                {statut === 'PRESTATAIRE_SERVICE' ? <ReceiptText size={15} /> : <FileText size={15} />}
                               </button>
                               <button
                                 onClick={() => handleIssueDocument(payroll.id, `${payroll.staff?.firstName} ${payroll.staff?.lastName}`)}
                                 disabled={issuingItem === payroll.id || payroll.status === 'PENDING'}
-                                className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-white rounded-lg hover:opacity-90 transition-all disabled:opacity-50"
-                                style={{ backgroundColor: PRIMARY }}
+                                className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-white rounded-lg hover:opacity-90 transition-all disabled:opacity-50 ${statut === 'PRESTATAIRE_SERVICE' ? 'bg-emerald-600' : ''}`}
+                                style={statut === 'PRESTATAIRE_SERVICE' ? undefined : { backgroundColor: PRIMARY }}
                                 title={payroll.status === 'PENDING' ? 'Calculez d\u2019abord la ligne (impossible sur PENDING)' : 'Émettre le document officiel (immuable, numéroté, scellé)'}
                               >
-                                {issuingItem === payroll.id ? <Loader2 size={12} className="animate-spin" /> : <FileBadge2 size={12} />}
+                                {issuingItem === payroll.id ? <Loader2 size={12} className="animate-spin" /> : statut === 'PRESTATAIRE_SERVICE' ? <ReceiptText size={12} /> : <FileText size={12} />}
                                 Émettre {statut === 'PRESTATAIRE_SERVICE' ? 'EP' : 'FP'}
                               </button>
                             </>
@@ -856,58 +850,6 @@ export default function PayrollDetailPage() {
         </div>
       </div>
     </div>
-
-    {/* Modal de confirmation pour le paiement groupé */}
-    {showPayAllConfirm && (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-        <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-          <div className="px-6 py-5 text-white" style={{ background: PRIMARY }}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center">
-                <Send className="h-5 w-5 text-white" />
-              </div>
-              <div>
-                <h3 className="text-white font-bold text-base">Paiement groupé via FedaPay</h3>
-                <p className="text-white/70 text-xs mt-0.5">Vérification avant envoi</p>
-              </div>
-            </div>
-          </div>
-          <div className="p-6 space-y-4">
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-              <p className="text-sm text-blue-800">
-                Vous êtes sur le point de payer <strong>{period.payrolls?.length || 0} salarié(s)</strong> via FedaPay Mobile Money.
-              </p>
-              <p className="text-sm font-bold text-blue-900 mt-2">
-                Montant total : {formatCurrency(totalNet)}
-              </p>
-            </div>
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex gap-2">
-              <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-800">
-                Chaque salarié recevra son salaire net sur son numéro Mobile Money configuré.
-                Les salariés sans numéro Mobile Money seront ignorés (échec).
-              </p>
-            </div>
-          </div>
-          <div className="px-6 py-4 bg-slate-50 flex items-center justify-end gap-3">
-            <button
-              onClick={() => setShowPayAllConfirm(false)}
-              className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition"
-            >
-              Annuler
-            </button>
-            <button
-              onClick={handlePayAll}
-              disabled={payingAll}
-              className="flex items-center gap-2 px-5 py-2 text-sm font-bold text-white rounded-xl shadow-sm hover:opacity-90 disabled:opacity-50 transition bg-emerald-600"
-            >
-              {payingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Confirmer le paiement groupé
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
 
     {/* ── Registre des documents de paie émis (FP fiches / EP états) ── */}
     {showRegister && (
@@ -979,9 +921,9 @@ export default function PayrollDetailPage() {
                           <button
                             onClick={() => handleDownloadDocument(d.id)}
                             className={`p-1.5 rounded-lg transition-colors ${isEP ? 'text-emerald-600 hover:bg-emerald-50' : 'text-[#1A2BA6] hover:bg-blue-50'}`}
-                            title="Télécharger le PDF émis (vérification SHA-256 incluse)"
+                            title={`Télécharger le PDF émis (${isEP ? 'état de paiement' : 'fiche de paie'} — vérification SHA-256 incluse)`}
                           >
-                            <FileBadge2 size={14} />
+                            {isEP ? <ReceiptText size={14} /> : <FileText size={14} />}
                           </button>
                         </td>
                       </tr>

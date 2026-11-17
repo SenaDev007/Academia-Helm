@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { HRShell } from '../_components/HRShell';
 import { TaxDashboard } from '../_components/taxes/TaxDashboard';
 import { StaffFiscalManagement } from '../_components/taxes/StaffFiscalManagement';
@@ -15,6 +15,9 @@ import { IrppDeclarationView } from '../_components/taxes/IrppDeclarationView';
 import { AibDeclarationView } from '../_components/taxes/AibDeclarationView';
 import { VpsDeclarationView } from '../_components/taxes/VpsDeclarationView';
 import { VacatairesView } from '../_components/taxes/VacatairesView';
+import { useModuleContext } from '@/hooks/useModuleContext';
+import { hrFetch, hrUrl } from '@/lib/hr/hr-client';
+import { Loader2 } from 'lucide-react';
 import {
   LayoutDashboard, Users, FileText, Landmark, Settings,
   BarChart3, FileEdit, Receipt, ClipboardList,
@@ -61,9 +64,37 @@ const FINANCIAL_SUBTABS = [
 ] as const;
 
 export default function CnssPage() {
+  const { tenant, academicYear } = useModuleContext();
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [staffSubtab, setStaffSubtab] = useState<string>('annuaire');
   const [financialSubtab, setFinancialSubtab] = useState<string>('statements');
+  // ⭐ 125 — SYNCHRONISATION AUTOMATIQUE : dès l'ouverture de l'onglet CNSS,
+  //    les déclarations IST/IRPP-VPS, AIB, CNSS trimestrielle et les fiches
+  //    fiscales sont (re)générées depuis la paie — l'utilisateur n'a PLUS
+  //    BESOIN de cliquer « Générer » dans chaque sous-onglet. Idempotent :
+  //    les déclarations déjà déposées ne sont jamais modifiées.
+  const [synced, setSynced] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!tenant?.id || !academicYear?.id) {
+        setSynced(true);
+        return;
+      }
+      try {
+        await hrFetch<any>(hrUrl('taxes/declarations/sync-all', { tenantId: tenant.id }), {
+          method: 'POST',
+          body: { academicYearId: academicYear.id, tenantId: tenant.id },
+        });
+      } catch (e) {
+        // Non bloquant : les sous-onglets fonctionnent aussi sans sync
+        console.warn('sync-all declarations:', e);
+      }
+      if (!cancelled) setSynced(true);
+    })();
+    return () => { cancelled = true; };
+  }, [tenant?.id, academicYear?.id]);
 
   const renderSubTabs = (tabs: readonly any[], active: string, setActive: (v: string) => void) => (
     <div className="mb-4 flex items-center gap-1 bg-slate-100 rounded-lg p-1 overflow-x-auto">
@@ -117,6 +148,10 @@ export default function CnssPage() {
         })}
       </div>
 
+      {/* ⭐ 125 — le contenu n'est rendu qu'après la synchronisation automatique :
+          chaque sous-onglet ouvre sur des données À JOUR, sans clic « Générer ». */}
+      {synced ? (
+        <>
       {/* ─── 1. TABLEAU DE BORD ─── */}
       {activeTab === 'dashboard' && <TaxDashboard />}
 
@@ -161,6 +196,15 @@ export default function CnssPage() {
 
       {/* ─── 11. PARAMÈTRES ─── */}
       {activeTab === 'settings' && <TaxSettingsPanel />}
+        </>
+      ) : (
+        /* Synchronisation automatique en cours (déclarations + fiches) */
+        <div className="flex flex-col items-center justify-center py-24 text-slate-400">
+          <Loader2 className="h-8 w-8 animate-spin mb-3 text-[#1A2BA6]/60" />
+          <p className="text-sm font-semibold">Synchronisation des déclarations fiscales…</p>
+          <p className="text-xs mt-1">CNSS · IRPP · VPS · AIB — générées depuis la paie</p>
+        </div>
+      )}
     </HRShell>
   );
 }

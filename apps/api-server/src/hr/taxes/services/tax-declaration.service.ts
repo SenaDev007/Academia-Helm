@@ -15,6 +15,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../database/prisma.service';
 import { TaxSettingsService } from './tax-settings.service';
+import { PayrollService } from './payroll.service';
 
 @Injectable()
 export class TaxDeclarationService {
@@ -23,11 +24,15 @@ export class TaxDeclarationService {
   constructor(
     private prisma: PrismaService,
     private taxSettingsService: TaxSettingsService,
+    private payrollFiscalService: PayrollService,
   ) {}
 
   /**
-   * Génère ou récupère la déclaration IST pour une période.
+   * Génère (ou RAFRAÎCHIT si encore DRAFT) la déclaration IST pour une période.
    * L'IST = IRPP + VPS (Versement Patronal sur Salaires)
+   * ⭐ 125 — rafraîchissement : une déclaration en brouillon suit la paie
+   *    (recalcul des données) ; SUBMITTED/PAID restent figés (déclaration
+   *    déposée = immuable).
    */
   async getOrGenerateIST(tenantId: string, academicYearId: string, period: string) {
     if (!period) {
@@ -37,11 +42,8 @@ export class TaxDeclarationService {
     }
 
     // Vérifier si la déclaration existe déjà
-    let declaration = await this.prisma.taxDeclaration.findFirst({
-      where: { tenantId, academicYearId, type: 'IST', period },
-    });
-
-    if (declaration) return declaration;
+    const existing = await this.prisma.taxDeclaration.findFirst({
+      where: { tenantId, academicYearId, type: 'IST', period }, });
 
     // Générer depuis les données de paie du personnel
     const settings = await this.taxSettingsService.getOrCreate(tenantId);
@@ -74,7 +76,7 @@ export class TaxDeclarationService {
       totalIST,
       staffDetails: payrollData.details,
       // Section paiement (à compléter par l'utilisateur)
-      payment: {
+      payment: existing?.status === 'DRAFT' ? (existing.data as any)?.payment : {
         mode: '', // ESPECES, CHEQUE, VIREMENT
         chequeNumber: '',
         bank: '',
@@ -94,7 +96,26 @@ export class TaxDeclarationService {
       submissionDate: '',
     };
 
-    declaration = await this.prisma.taxDeclaration.create({
+    // ⭐ 125 — paiement/pénalités/cadre déjà saisis par l'utilisateur : préservés
+    if (existing?.status === 'DRAFT') {
+      const prev: any = existing.data ?? {};
+      if (prev.payment) data.payment = prev.payment;
+      if (prev.penalties) data.penalties = prev.penalties;
+      if (prev.quittanceNumber) data.quittanceNumber = prev.quittanceNumber;
+      if (prev.submissionDate) data.submissionDate = prev.submissionDate;
+    }
+
+    if (existing) {
+      if (existing.status === 'DRAFT') {
+        return this.prisma.taxDeclaration.update({
+          where: { id: existing.id },
+          data: { data: data as any, totalAmount: totalIST },
+        });
+      }
+      return existing; // SUBMITTED/PAID → figée
+    }
+
+    return this.prisma.taxDeclaration.create({
       data: {
         tenantId,
         academicYearId,
@@ -105,12 +126,11 @@ export class TaxDeclarationService {
         totalAmount: totalIST,
       },
     });
-
-    return declaration;
   }
 
   /**
-   * Génère ou récupère la déclaration CNSS pour un trimestre.
+   * Génère (ou RAFRAÎCHIT si encore DRAFT) la déclaration CNSS pour un trimestre.
+   * ⭐ 125 — même mécanique que l'IST : brouillon = suit la paie ; déposé = figé.
    */
   async getOrGenerateCNSS(tenantId: string, academicYearId: string, period: string) {
     if (!period) {
@@ -120,11 +140,9 @@ export class TaxDeclarationService {
       period = `${now.getFullYear()}-T${quarter}`;
     }
 
-    let declaration = await this.prisma.taxDeclaration.findFirst({
+    const existing = await this.prisma.taxDeclaration.findFirst({
       where: { tenantId, academicYearId, type: 'CNSS', period },
     });
-
-    if (declaration) return declaration;
 
     const settings = await this.taxSettingsService.getOrCreate(tenantId);
     const payrollData = await this.getQuarterlyPayrollData(tenantId, period);
@@ -164,7 +182,7 @@ export class TaxDeclarationService {
       // Détail par employé (jours ouvrables et rémunération par mois)
       staffDetails: payrollData.details,
       months: payrollData.months || [],
-      // Section paiement (à compléter par l'utilisateur)
+      // Section paiement — saisie utilisateur préservée sur refresh (⭐ 125)
       payment: {
         mode: '', // VIREMENT, CHEQUE, ESPECES
         bank: '',
@@ -172,8 +190,23 @@ export class TaxDeclarationService {
         reference: '',
       },
     };
+    if (existing?.status === 'DRAFT') {
+      const prev: any = existing.data ?? {};
+      if (prev.payment) data.payment = prev.payment;
+      if (prev.majorations) data.majorations = prev.majorations;
+    }
 
-    declaration = await this.prisma.taxDeclaration.create({
+    if (existing) {
+      if (existing.status === 'DRAFT') {
+        return this.prisma.taxDeclaration.update({
+          where: { id: existing.id },
+          data: { data: data as any, totalAmount: totalCotisations },
+        });
+      }
+      return existing; // SUBMITTED/PAID → figée
+    }
+
+    return this.prisma.taxDeclaration.create({
       data: {
         tenantId,
         academicYearId,
@@ -184,13 +217,12 @@ export class TaxDeclarationService {
         totalAmount: totalCotisations,
       },
     });
-
-    return declaration;
   }
 
   /**
-   * Génère ou récupère la déclaration AIB pour une période.
+   * Génère (ou RAFRAÎCHIT si encore DRAFT) la déclaration AIB pour une période.
    * AIB 1% sur achats + AIB 5% sur prestations.
+   * ⭐ 125 — même mécanique : brouillon = suit la paie ; déposé = figé.
    */
   async getOrGenerateAIB(tenantId: string, academicYearId: string, period: string, baseAchats = 0, basePrestations = 0) {
     if (!period) {
@@ -199,11 +231,9 @@ export class TaxDeclarationService {
       period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     }
 
-    let declaration = await this.prisma.taxDeclaration.findFirst({
+    const existing = await this.prisma.taxDeclaration.findFirst({
       where: { tenantId, academicYearId, type: 'AIB', period },
     });
-
-    if (declaration) return declaration;
 
     const settings = await this.taxSettingsService.getOrCreate(tenantId);
 
@@ -221,10 +251,16 @@ export class TaxDeclarationService {
 
     // Base « prestations » réelle par défaut si l'école n'a rien saisi :
     // montant brut versé aux prestataires dans le mois.
-    const baseAchatsReel = baseAchats;
-    const basePrestationsReel = basePrestations > 0
-      ? basePrestations
-      : payrollData.prestataires.reduce((s: number, p: any) => s + p.base, 0);
+    // ⭐ 125 — saisie utilisateur (bases achats/prestations) préservée sur refresh.
+    const prevData: any = existing?.data ?? {};
+    const keepAchats = existing?.status === 'DRAFT' && prevData?.baseAchats > 0;
+    const keepPrestations = existing?.status === 'DRAFT' && prevData?.basePrestations > 0;
+    const baseAchatsReel = keepAchats ? Number(prevData.baseAchats) : baseAchats;
+    const basePrestationsReel = keepPrestations
+      ? Number(prevData.basePrestations)
+      : basePrestations > 0
+        ? basePrestations
+        : payrollData.prestataires.reduce((s: number, p: any) => s + p.base, 0);
 
     const aibAchats = baseAchatsReel * (settings.aibAchatsRate / 100);
     const aibPrestations = basePrestationsReel * (settings.aibPrestationsRate / 100);
@@ -244,7 +280,7 @@ export class TaxDeclarationService {
       source: 'payroll-items',
       // Section IV — Détail des prélèvements AIB (prestataires)
       prestataires,
-      // Section paiement
+      // Section paiement — saisie utilisateur préservée sur refresh (⭐ 125)
       payment: {
         mode: '', // ESPECES, CHEQUE, VIREMENT
         bank: '',
@@ -256,8 +292,24 @@ export class TaxDeclarationService {
       emissionDate: '',
       penalty: 0,
     };
+    if (existing?.status === 'DRAFT') {
+      if (prevData.payment) data.payment = prevData.payment;
+      if (prevData.quittanceNumber) data.quittanceNumber = prevData.quittanceNumber;
+      if (prevData.emissionDate) data.emissionDate = prevData.emissionDate;
+      if (prevData.penalty) data.penalty = prevData.penalty;
+    }
 
-    declaration = await this.prisma.taxDeclaration.create({
+    if (existing) {
+      if (existing.status === 'DRAFT') {
+        return this.prisma.taxDeclaration.update({
+          where: { id: existing.id },
+          data: { data: data as any, totalAmount: totalAIB },
+        });
+      }
+      return existing; // SUBMITTED/PAID → figée
+    }
+
+    return this.prisma.taxDeclaration.create({
       data: {
         tenantId,
         academicYearId,
@@ -268,8 +320,82 @@ export class TaxDeclarationService {
         totalAmount: totalAIB,
       },
     });
+  }
 
-    return declaration;
+  /**
+   * ⭐ 125 — SYNCHRONISATION AUTOMATIQUE des sous-onglets CNSS/IRPP/VPS/AIB.
+   *
+   * Appelée :
+   *   1. par le module Paie après chaque génération / calcul de période ;
+   *   2. par le front à l'ouverture de l'onglet CNSS (POST sync-all).
+   *
+   * Pour chaque MOIS disposant de lignes de paie (PayrollItem) :
+   *   - déclaration IST (IRPP + VPS) du mois (créée ou rafraîchie si DRAFT) ;
+   *   - déclaration AIB du mois (idem) ;
+   *   - déclaration CNSS du TRIMESTRE correspondant (idem) ;
+   *   - fiches fiscales tax_payslips PERMANENT + VACATAIRE du mois.
+   *
+   * Idempotent : les déclarations SUBMITTED/PAID ne sont jamais touchées.
+   */
+  async syncAllForTenant(tenantId: string, academicYearId: string, options?: { payslips?: boolean }) {
+    const months = await this.prisma.payrollItem.findMany({
+      where: { tenantId },
+      select: { payroll: { select: { month: true } } },
+      distinct: ['payrollId'],
+    });
+    const monthKeys = Array.from(
+      new Set(months.map((m: any) => m?.payroll?.month).filter((m: string) => m && /^\d{4}-\d{2}$/.test(m))),
+    ).sort();
+
+    const results: any = { months: monthKeys, ist: 0, aib: 0, cnss: 0, payslips: 0, errors: [] };
+
+    for (const monthKey of monthKeys) {
+      try {
+        await this.getOrGenerateIST(tenantId, academicYearId, monthKey);
+        results.ist += 1;
+      } catch (e: any) {
+        results.errors.push(`IST ${monthKey}: ${e?.message}`);
+      }
+      try {
+        await this.getOrGenerateAIB(tenantId, academicYearId, monthKey);
+        results.aib += 1;
+      } catch (e: any) {
+        results.errors.push(`AIB ${monthKey}: ${e?.message}`);
+      }
+      // CNSS trimestrielle couvrant ce mois
+      try {
+        const [y, m] = monthKey.split('-').map(Number);
+        const quarter = Math.floor((m - 1) / 3) + 1;
+        await this.getOrGenerateCNSS(tenantId, academicYearId, `${y}-T${quarter}`);
+        results.cnss += 1;
+      } catch (e: any) {
+        results.errors.push(`CNSS ${monthKey}: ${e?.message}`);
+      }
+    }
+
+    // Trimestres sans mois de paie (aucun) — couvert par la boucle ci-dessus.
+
+    if (options?.payslips !== false) {
+      // Fiches fiscales (tax_payslips) — permanents + vacataires, par mois de paie
+      for (const monthKey of monthKeys) {
+        for (const staffType of ['PERMANENT', 'VACATAIRE']) {
+          try {
+            await this.payrollFiscalService.generatePayslips(tenantId, academicYearId, monthKey, staffType);
+            results.payslips += 1;
+          } catch (e: any) {
+            results.errors.push(`payslips ${monthKey}/${staffType}: ${e?.message}`);
+          }
+        }
+      }
+    }
+
+    this.logger.log(
+      `syncAllForTenant: ${monthKeys.length} mois → ${results.ist} IST, ${results.aib} AIB, ` +
+      `${results.cnss} CNSS, ${results.payslips} jeux de fiches fiscales` +
+      (results.errors.length ? ` — erreurs: ${results.errors.join(' | ')}` : ''),
+    );
+
+    return results;
   }
 
   /**

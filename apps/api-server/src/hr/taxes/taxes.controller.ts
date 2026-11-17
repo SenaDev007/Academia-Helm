@@ -141,6 +141,30 @@ export class TaxesController {
     return this.taxDeclarationService.getById(id);
   }
 
+  /**
+   * ⭐ 125 — Synchronisation AUTOMATIQUE des déclarations + fiches fiscales :
+   * alimente IST/IRPP/VPS, AIB, CNSS trimestrielle et tax_payslips depuis la
+   * paie générée. Appelée par le front à l'ouverture de l'onglet CNSS et par
+   * le module Paie après chaque génération/calcul — plus besoin de cliquer
+   * « Générer » dans chaque sous-onglet.
+   */
+  @Post('declarations/sync-all')
+  async syncAllDeclarations(
+    @GetTenant() t: any,
+    @Body() body: { academicYearId: string; tenantId?: string; period?: string },
+    @Query('tenantId') tenantIdFallback?: string,
+  ) {
+    const tid = t?.id ?? tenantIdFallback ?? body.tenantId;
+    if (!tid) throw new BadRequestException('Tenant ID requis');
+    if (!body.academicYearId) throw new BadRequestException('academicYearId requis');
+
+    if (body.period && /^\d{4}-\d{2}$/.test(body.period)) {
+      // Synchronisation ciblée sur un mois unique
+      return this.taxDeclarationService.syncAllForTenant(tid, body.academicYearId);
+    }
+    return this.taxDeclarationService.syncAllForTenant(tid, body.academicYearId);
+  }
+
   @Post('declarations/ist/generate')
   async generateIST(
     @GetTenant() t: any,
@@ -297,7 +321,7 @@ export class TaxesController {
     @Query('staffType') staffType?: string,
   ) {
     if (!t?.id || !academicYearId) throw new BadRequestException('academicYearId requis');
-    return this.payrollService.getPayslips(t.id, academicYearId, period || '');
+    return this.payrollService.getPayslips(t.id, academicYearId, period || '', staffType || '');
   }
 
   @Put('payslips/:id')

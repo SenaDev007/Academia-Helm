@@ -178,7 +178,7 @@ export function UnlockRequestModal({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
         showCloseButton={!submitting}
-        className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto p-0 rounded-2xl ring-1 ring-slate-200/60 shadow-xl"
+        className="sm:max-w-[640px] max-h-[calc(100dvh-2rem)] overflow-y-auto p-0 rounded-2xl ring-1 ring-slate-200/60 shadow-xl"
       >
         {/* ─── Header ─── */}
         <div className="px-7 pt-7 pb-4 text-slate-900">

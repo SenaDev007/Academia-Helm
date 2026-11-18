@@ -406,7 +406,7 @@ function QuestionnaireEditor({ questionnaire, tenantId, onClose, onSuccess }: {
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-auto">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[calc(100dvh-2rem)] overflow-auto">
         <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between z-10">
           <h3 className="font-bold text-slate-900 text-sm">{questionnaire ? 'Modifier le test' : 'Nouveau test'}</h3>
           <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-100"><X className="h-4 w-4 text-slate-400" /></button>
@@ -604,7 +604,7 @@ function ScoreResponseModal({ response, onClose, onScore }: {
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[calc(100dvh-2rem)] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="px-6 py-4 sticky top-0 bg-white border-b border-slate-200" style={{ background: 'linear-gradient(135deg, #0D1F6E 0%, #0D3B85 100%)' }}>
           <h3 className="text-white font-bold text-sm">Réponses de {response?.candidateName}</h3>
           {response?.autoScorePercent != null && (

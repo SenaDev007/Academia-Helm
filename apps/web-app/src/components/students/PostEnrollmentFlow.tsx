@@ -220,10 +220,10 @@ export default function PostEnrollmentFlow({
         initial={{ opacity: 0, y: 16, scale: 0.99 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.22, ease: 'easeOut' }}
-        className="bg-white rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto border border-emerald-100 shadow-2xl"
+        className="bg-white rounded-xl w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col border border-emerald-100 shadow-2xl"
       >
-        {/* Bandeau succès inscription */}
-        <div className="px-5 pt-5 pb-4 bg-gradient-to-br from-emerald-50 to-teal-50 border-b border-emerald-100">
+        {/* Bandeau succès inscription — toujours visible */}
+        <div className="px-5 pt-5 pb-4 bg-gradient-to-br from-emerald-50 to-teal-50 border-b border-emerald-100 shrink-0">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
               <CheckCircle2 className="w-5 h-5" />
@@ -248,8 +248,8 @@ export default function PostEnrollmentFlow({
           </div>
         </div>
 
-        {/* Corps : affectation */}
-        <div className="px-5 py-5">
+        {/* Corps : affectation — zone scrollable (le pied reste visible) */}
+        <div className="px-5 py-5 overflow-y-auto overscroll-contain">
           <div className="flex items-center gap-2 mb-1">
             <Layers className="w-4 h-4 text-blue-600" />
             <h4 className="text-sm font-bold text-slate-800">Affecter à une classe physique</h4>
@@ -334,8 +334,8 @@ export default function PostEnrollmentFlow({
           )}
         </div>
 
-        {/* Actions */}
-        <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+        {/* Actions — pied FIXE toujours visible */}
+        <div className="px-5 py-4 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 shrink-0">
           <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={assigning}>
             Terminer pour l&apos;instant
           </Button>

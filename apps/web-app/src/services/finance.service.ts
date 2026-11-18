@@ -466,6 +466,23 @@ class FinanceService {
   }
 
   /**
+   * ⭐ RECOUVREMENT — Modification d'un arriéré (correction d'erreur de saisie).
+   * Le backend recalcule balanceDue / statut / niveau de gravité et
+   * resynchronise les miroirs d'arriérés du compte élève (recalcul dynamique
+   * du compte, des KPIs et du bilan des encaissements).
+   * PATCH /api/finance/collection/arrears/:id
+   */
+  async updateArrear(
+    arrearId: string,
+    payload: { totalDue?: number; totalPaid?: number; notes?: string; reason?: string },
+  ): Promise<any> {
+    return financeFetch(`/api/finance/collection/arrears/${encodeURIComponent(arrearId)}`, {
+      method: 'PATCH',
+      body: payload,
+    });
+  }
+
+  /**
    * ⭐ RECOUVREMENT — Encaissement direct d'un arriéré (marquer un élève
    * ayant payé tout ou partie de son arriéré). Le backend crée la
    * FinanceTransaction PAYMENT ; le trigger DB update_balance_after_transaction

@@ -98,14 +98,14 @@ export default function ModalTemplate({
         <div
           ref={modalRef}
           className={cn(
-            'relative bg-white shadow-2xl w-full max-h-[90vh] overflow-y-auto rounded-t-2xl md:rounded-2xl',
+            'relative bg-white shadow-2xl w-full max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col rounded-t-2xl md:rounded-2xl',
             sizeClasses[size],
             'transform transition-all'
           )}
           role="document"
         >
-          {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          {/* Header — toujours visible (fixe) */}
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 shrink-0">
             <h2
               id="modal-title"
               className="text-2xl font-bold text-gray-900"
@@ -124,10 +124,10 @@ export default function ModalTemplate({
             )}
           </div>
 
-          {/* Content */}
+          {/* Content — zone scrollable */}
           <div
             id="modal-description"
-            className="p-6"
+            className="p-6 flex-1 min-h-0 overflow-y-auto overscroll-contain"
             aria-label={ariaLabel}
           >
             {children}

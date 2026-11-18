@@ -5726,7 +5726,7 @@ export default function SettingsPage() {
             {/* Modal édition des permissions d'un rôle */}
             {editingPermissionsRoleId && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingPermissionsRoleId(null)}>
-                <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+                <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
                   <div className="p-4 border-b border-gray-200 flex items-center justify-between">
                     <h4 className="font-semibold text-gray-800">Permissions du rôle — {formatRoleDisplayName(roles.find((r: any) => r.id === editingPermissionsRoleId)?.name)}</h4>
                     <button type="button" onClick={() => setEditingPermissionsRoleId(null)} className="text-gray-500 hover:text-gray-700">✕</button>

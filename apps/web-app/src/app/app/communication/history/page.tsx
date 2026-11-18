@@ -483,7 +483,7 @@ function EmailLogDetailModal({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+        className="bg-white rounded-3xl max-w-3xl w-full max-h-[calc(100dvh-2rem)] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 bg-white border-b border-slate-100 p-6 flex items-center justify-between">

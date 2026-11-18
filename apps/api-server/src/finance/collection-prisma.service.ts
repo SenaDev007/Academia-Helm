@@ -774,6 +774,207 @@ export class CollectionPrismaService {
   }
 
   /**
+   * ⭐ MODIFICATION D'UN ARRÉRÉ (nov. 2026 — retour promoteur) :
+   * corriger une erreur de saisie sans supprimer/recréer l'arriéré.
+   *
+   * Champs modifiables :
+   *   - totalDue   : montant total dû de l'arriéré (erreur de saisie du montant)
+   *   - totalPaid  : total déjà payé (correction manuelle, ex. paiement saisi
+   *                  deux fois ou jamais enregistré dans le système)
+   *   - notes      : motif / description de la correction
+   *
+   * Le restant dû (balanceDue = totalDue - totalPaid), le statut
+   * (OPEN / PARTIALLY_PAID / PAID) et le niveau de gravité sont recalculés
+   * automatiquement. Après la mise à jour :
+   *   - les miroirs du compte élève (arrearsAmount / carriedArrears) sont
+   *     resynchronisés (moteur unifié — FeeArrear = seule source de vérité) ;
+   *   - StudentEnrollment.previousArrears suit le delta du restant dû ;
+   *   - une trace d'audit ARREAR_UPDATE est enregistrée.
+   */
+  async updateArrear(
+    tenantId: string,
+    id: string,
+    data: { totalDue?: number; totalPaid?: number; notes?: string; reason?: string },
+    userId?: string,
+  ) {
+    const arrear = await this.prisma.feeArrear.findFirst({
+      where: { id, tenantId },
+      include: {
+        student: { select: { id: true, firstName: true, lastName: true, matricule: true } },
+        academicYear: { select: { id: true, name: true } },
+      },
+    });
+    if (!arrear) throw new NotFoundException('Arriéré non trouvé');
+
+    const oldTotalDue = Number(arrear.totalDue);
+    const oldTotalPaid = Number(arrear.totalPaid);
+    const oldBalance = Number(arrear.balanceDue);
+
+    // ── Validation ──
+    const newTotalDue = data.totalDue !== undefined ? Number(data.totalDue) : oldTotalDue;
+    const newTotalPaid = data.totalPaid !== undefined ? Number(data.totalPaid) : oldTotalPaid;
+    if (!Number.isFinite(newTotalDue) || newTotalDue < 0) {
+      throw new BadRequestException('Le montant total dû doit être un nombre positif ou nul.');
+    }
+    if (!Number.isFinite(newTotalPaid) || newTotalPaid < 0) {
+      throw new BadRequestException('Le montant déjà payé doit être un nombre positif ou nul.');
+    }
+    if (newTotalPaid > newTotalDue) {
+      throw new BadRequestException(
+        `Le montant payé (${newTotalPaid}) ne peut pas dépasser le montant total dû (${newTotalDue}).`,
+      );
+    }
+    if (newTotalDue === oldTotalDue && newTotalPaid === oldTotalPaid && data.notes === undefined) {
+      return arrear; // rien à changer — idempotent
+    }
+
+    // ── Recalcul dynamique : solde, statut, niveau de gravité ──
+    const newBalance = newTotalDue - newTotalPaid;
+    const newStatus = newBalance <= 0 ? 'PAID' : newTotalPaid > 0 ? 'PARTIALLY_PAID' : 'OPEN';
+    // Le niveau de gravité suit la date de dernier paiement existante
+    // (jamais de paiement → CRITIQUE, sinon délai depuis ce paiement).
+    const newLevel = newBalance <= 0
+      ? arrear.arrearsLevel
+      : this.calculateArrearsLevel(newBalance, arrear.lastPaymentDate ?? null);
+
+    const updated = await this.prisma.feeArrear.update({
+      where: { id },
+      data: {
+        totalDue: newTotalDue,
+        totalPaid: newTotalPaid,
+        balanceDue: newBalance,
+        status: newStatus,
+        arrearsLevel: newLevel,
+        notes: data.notes ?? arrear.notes,
+        updatedAt: new Date(),
+      },
+      include: {
+        student: { select: { id: true, firstName: true, lastName: true, matricule: true } },
+        academicYear: { select: { id: true, name: true } },
+      },
+    });
+
+    // ── Trace d'audit (avant/après) ──
+    try {
+      await this.prisma.financialAuditLog.create({
+        data: {
+          tenantId,
+          entityType: 'FeeArrear',
+          entityId: id,
+          action: 'ARREAR_UPDATE',
+          oldValue: {
+            totalDue: oldTotalDue,
+            totalPaid: oldTotalPaid,
+            balanceDue: oldBalance,
+            status: arrear.status,
+            notes: arrear.notes,
+          },
+          newValue: {
+            totalDue: newTotalDue,
+            totalPaid: newTotalPaid,
+            balanceDue: newBalance,
+            status: newStatus,
+            notes: data.notes ?? arrear.notes,
+            reason: data.reason || 'Correction manuelle depuis le tableau des arriérés',
+            performedVia: 'PATCH /finance/collection/arrears/:id',
+          },
+          performedById: userId || '',
+        },
+      });
+    } catch {
+      // Non bloquant (audit best-effort)
+    }
+
+    // ── Ajustement de previousArrears de l'inscription (delta du restant dû) ──
+    const deltaBalance = newBalance - oldBalance;
+    if (deltaBalance !== 0) {
+      try {
+        const enrollment = await this.prisma.studentEnrollment.findFirst({
+          where: { studentId: arrear.studentId, tenantId, academicYearId: arrear.academicYearId },
+          select: { id: true, previousArrears: true },
+        });
+        if (enrollment && Number(enrollment.previousArrears) > 0) {
+          // Le delta ne peut pas faire passer previousArrears sous zéro
+          const target = Math.max(0, Number(enrollment.previousArrears) + deltaBalance);
+          await this.prisma.studentEnrollment.update({
+            where: { id: enrollment.id },
+            data: { previousArrears: target },
+          });
+        }
+      } catch {
+        // Non bloquant
+      }
+    }
+
+    // ── ⭐ Moteur unifié : resynchronisation des miroirs du compte élève ──
+    //    (arrearsAmount / carriedArrears = Σ FeeArrear ouverts — le compte
+    //    de l'élève, les KPIs et le bilan reflètent immédiatement la correction)
+    await this.resyncArrearsMirrors(tenantId, [arrear.studentId]);
+
+    return updated;
+  }
+
+  /**
+   * ⭐ Statistiques de recouvrement (réimplémentées nov. 2026) :
+   * agrégats des FeeArrear ouverts (OPEN / PARTIALLY_PAID, balanceDue > 0)
+   * de l'année — même source de vérité que le tableau des arriérés.
+   * Retourne { totals: { expected, paid, balanceDue, collectionRate }, ... }
+   */
+  async getCollectionStatistics(tenantId: string, academicYearId?: string) {
+    const where: any = {
+      tenantId,
+      status: { in: ['OPEN', 'PARTIALLY_PAID'] },
+      balanceDue: { gt: 0 },
+    };
+    if (academicYearId) where.academicYearId = academicYearId;
+
+    const [agg, byLevel, byStatus] = await Promise.all([
+      this.prisma.feeArrear.aggregate({
+        where,
+        _sum: { totalDue: true, totalPaid: true, balanceDue: true },
+        _count: { _all: true },
+      }),
+      this.prisma.feeArrear.groupBy({
+        by: ['arrearsLevel'],
+        where,
+        _count: { _all: true },
+        _sum: { balanceDue: true },
+      }),
+      this.prisma.feeArrear.groupBy({
+        by: ['status'],
+        where,
+        _count: { _all: true },
+        _sum: { balanceDue: true },
+      }),
+    ]);
+
+    const expected = Number(agg._sum.totalDue ?? 0);
+    const paid = Number(agg._sum.totalPaid ?? 0);
+    const balanceDue = Number(agg._sum.balanceDue ?? 0);
+    const collectionRate = expected > 0 ? Math.min(100, (paid / expected) * 100) : 0;
+
+    return {
+      totals: {
+        expected,
+        paid,
+        balanceDue,
+        collectionRate: Math.round(collectionRate * 10) / 10,
+        count: agg._count._all,
+      },
+      byLevel: byLevel.map((l) => ({
+        level: l.arrearsLevel,
+        count: l._count._all,
+        balanceDue: Number(l._sum.balanceDue ?? 0),
+      })),
+      byStatus: byStatus.map((s) => ({
+        status: s.status,
+        count: s._count._all,
+        balanceDue: Number(s._sum.balanceDue ?? 0),
+      })),
+    };
+  }
+
+  /**
    * Saisie manuelle d'un arriéré pour un élève (onboarding nouveaux clients).
    *
    * Permet aux écoles qui débutent avec Academia Helm en cours d'année de

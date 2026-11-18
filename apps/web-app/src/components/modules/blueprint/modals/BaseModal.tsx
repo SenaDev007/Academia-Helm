@@ -135,7 +135,7 @@ export default function BaseModal({
             <motion.div
               ref={modalRef}
               className={cn(
-                'relative isolate bg-white shadow-2xl w-full max-h-[90vh] overflow-y-auto',
+                'relative isolate bg-white shadow-2xl w-full max-h-[calc(100dvh-2rem)] overflow-y-auto',
                 'rounded-t-2xl md:rounded-2xl border border-slate-200',
                 sizeClasses[size],
                 className
@@ -155,8 +155,8 @@ export default function BaseModal({
               />
               {/* Drag handle mobile */}
               <div className="relative z-[1] md:hidden w-10 h-1 bg-gray-300 rounded-full mx-auto mb-4 mt-3 flex-shrink-0" aria-hidden />
-              {/* Header */}
-              <div className="relative z-[1] flex items-start justify-between bg-white px-4 md:px-6 py-4 border-b border-slate-200">
+              {/* Header — toujours visible (sticky) */}
+              <div className="relative z-[5] sticky top-0 flex items-start justify-between bg-white px-4 md:px-6 py-4 border-b border-slate-200">
                 <div className="flex-1 min-w-0">
                   <h2
                     id="modal-title"
@@ -208,9 +208,9 @@ export default function BaseModal({
                 {children}
               </div>
 
-              {/* Footer */}
+              {/* Footer — toujours visible (sticky) */}
               {footer && (
-                <div className="relative z-[1] flex items-center justify-end space-x-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
+                <div className="relative z-[5] sticky bottom-0 flex items-center justify-end space-x-3 px-6 py-4 border-t border-slate-200 bg-slate-50">
                   {footer}
                 </div>
               )}

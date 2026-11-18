@@ -278,7 +278,7 @@ export default function EnrollmentFeeCustomizationStep({
         initial={{ opacity: 0, y: 16, scale: 0.99 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.22, ease: 'easeOut' }}
-        className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-emerald-100 shadow-2xl"
+        className="bg-white rounded-xl w-full max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto border border-emerald-100 shadow-2xl"
       >
         {/* Bandeau succès inscription (continuité avec l'étape d'affectation) */}
         <div className="px-5 pt-5 pb-4 bg-gradient-to-br from-emerald-50 to-teal-50 border-b border-emerald-100">

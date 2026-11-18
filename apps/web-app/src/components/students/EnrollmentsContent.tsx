@@ -2409,7 +2409,7 @@ export default function EnrollmentsContent() {
           }}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl border-2 border-red-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-200 max-h-[90vh] flex flex-col"
+            className="bg-white rounded-2xl shadow-2xl border-2 border-red-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-200 max-h-[calc(100dvh-2rem)] flex flex-col"
             role="dialog"
             aria-modal="true"
             aria-labelledby="delete-student-modal-title"

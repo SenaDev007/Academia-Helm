@@ -208,7 +208,7 @@ export default function BulkClassOverrideModal({
         initial={modalMotion.initial}
         animate={modalMotion.animate}
         transition={modalMotion.transition}
-        className="bg-white rounded-xl p-6 max-w-lg w-full border border-blue-100 shadow-2xl max-h-[90vh] overflow-y-auto"
+        className="bg-white rounded-xl p-6 max-w-lg w-full border border-blue-100 shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto"
       >
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-lg font-semibold flex items-center gap-2">

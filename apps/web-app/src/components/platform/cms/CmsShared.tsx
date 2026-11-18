@@ -128,7 +128,7 @@ export function ModalShell({
 }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-      <div className={`bg-white rounded-2xl shadow-2xl w-full ${maxWidth} max-h-[90vh] overflow-y-auto`}>
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${maxWidth} max-h-[calc(100dvh-2rem)] overflow-y-auto`}>
         <div className="flex items-center justify-between p-6 border-b border-slate-100 sticky top-0 bg-white z-10">
           <div>
             <h2 className="text-lg font-bold text-blue-900">{title}</h2>

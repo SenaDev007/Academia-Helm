@@ -436,7 +436,7 @@ function SealFormModal({ seal, onClose, onSuccess }: { seal: AdministrativeSeal 
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <div className="p-6">
           <h3 className="text-xl font-bold text-gray-900 mb-4">
             {seal ? 'Modifier le cachet' : 'Nouveau cachet'}
@@ -595,7 +595,7 @@ function UsageHistoryModal({ seal, onClose }: { seal: AdministrativeSeal; onClos
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <div className="p-6">
           <h3 className="text-xl font-bold text-gray-900 mb-4">
             Historique d'utilisation - {seal.label}

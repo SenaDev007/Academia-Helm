@@ -1403,7 +1403,7 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
       </ModuleContentArea>
       {detailAccount && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[calc(100dvh-2rem)] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-4">
               {detailAccount.student ? `${detailAccount.student.lastName} ${detailAccount.student.firstName}` : 'Détail compte'}
             </h3>

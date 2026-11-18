@@ -382,7 +382,7 @@ export function MultigradeTab() {
       {/* Modal création */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => { setShowModal(false); setEditingId(null); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between p-4 border-b border-slate-100 sticky top-0 bg-white">
               <h3 className="font-bold text-slate-900">{editingId ? 'Modifier le groupe multigrade' : 'Nouveau groupe multigrade'}</h3>
               <button onClick={() => { setShowModal(false); setEditingId(null); }} className="text-slate-400 hover:text-slate-700">

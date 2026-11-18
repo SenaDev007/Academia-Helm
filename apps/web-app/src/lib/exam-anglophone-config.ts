@@ -466,6 +466,14 @@ export const EN_LABELS = {
   advancedOptions: 'Advanced options (dates, title, description, scale)',
   allPeriodsLabel: 'All terms',
   classesWithoutSubjects: (names: string) => `No subjects assigned to: ${names} — configure Pedagogy > Subjects & Programs first.`,
+
+  // ⭐ 2026-11-18 — Hierarchy Term → Class → Assessments
+  periodsTitle: 'Terms',
+  periodsSubtitle: 'Select a term to see the classes with programmed assessments.',
+  backToPeriods: 'Back to terms',
+  classesLabel: 'class(es)',
+  evaluationsLabel: 'assessment(s)',
+  noClassesInPeriod: 'No class with programmed assessments for this term.',
 } as const;
 
 export const FR_LABELS = {
@@ -618,6 +626,14 @@ export const FR_LABELS = {
   advancedOptions: 'Options avancées (dates, titre, description, barème)',
   allPeriodsLabel: 'Tous les trimestres',
   classesWithoutSubjects: (names: string) => `Aucune matière affectée à : ${names} — configurez d'abord Pédagogie > Matières & Programmes.`,
+
+  // ⭐ 2026-11-18 — Hiérarchie Trimestre → Classe → Évaluations
+  periodsTitle: 'Trimestres',
+  periodsSubtitle: 'Choisissez un trimestre pour voir les classes et leurs évaluations programmées.',
+  backToPeriods: 'Retour aux trimestres',
+  classesLabel: 'classe(s)',
+  evaluationsLabel: 'évaluation(s)',
+  noClassesInPeriod: 'Aucune classe avec évaluations programmées pour ce trimestre.',
 } as const;
 
 export function getLabels(language: 'FR' | 'EN' | undefined) {

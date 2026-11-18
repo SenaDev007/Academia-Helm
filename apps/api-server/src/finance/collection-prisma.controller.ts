@@ -287,6 +287,39 @@ export class CollectionPrismaController {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
+  //  PHASE 3-TER : MODIFICATION D'UN ARRÉRÉ (CORRECTION D'ERREUR DE SAISIE)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * PATCH /finance/collection/arrears/:id
+   * Modifie un arriéré (correction d'erreur de saisie) :
+   *   - totalDue  : montant total dû
+   *   - totalPaid : montant déjà payé
+   *   - notes     : motif de la correction
+   *
+   * Le restant dû (balanceDue), le statut et le niveau de gravité sont
+   * recalculés automatiquement ; les miroirs d'arriérés du compte élève
+   * (arrearsAmount / carriedArrears) sont resynchronisés dans la même
+   * opération — le compte élève, les KPIs et le bilan des encaissements
+   * reflètent immédiatement la correction.
+   */
+  @Patch('arrears/:id')
+  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
+  async updateArrear(
+    @TenantId() tenantId: string,
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() body: { totalDue?: number; totalPaid?: number; notes?: string; reason?: string },
+  ) {
+    return this.collectionService.updateArrear(tenantId, id, {
+      totalDue: body?.totalDue !== undefined ? Number(body.totalDue) : undefined,
+      totalPaid: body?.totalPaid !== undefined ? Number(body.totalPaid) : undefined,
+      notes: typeof body?.notes === 'string' ? body.notes : undefined,
+      reason: body?.reason,
+    }, user?.id);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
   //  PHASE 5 : RAPPORT — RÉCAPITULATIF DES ARRÉRÉS PAR ANNÉE
   // ═══════════════════════════════════════════════════════════════════════
 

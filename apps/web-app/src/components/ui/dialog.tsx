@@ -58,7 +58,9 @@ function DialogContent({
         )}
         {...props}
       >
-        {/* Corps scrollable — l'en-tête et le bouton fermer restent visibles */}
+        {/* Corps scrollable — l'en-tête et le pied (boutons Annuler /
+            Enregistrer) restent TOUJOURS visibles grâce au positionnement
+            sticky à l'intérieur du conteneur de défilement. */}
         <div
           data-slot="dialog-body"
           className="flex flex-col gap-4 overflow-y-auto overscroll-contain p-4"
@@ -71,7 +73,7 @@ function DialogContent({
             render={
               <Button
                 variant="ghost"
-                className="absolute top-1 right-1 z-10 rounded-lg bg-white/60 hover:bg-white"
+                className="absolute top-1 right-1 z-20 rounded-lg bg-white/60 hover:bg-white"
                 size="icon"
               />
             }
@@ -90,7 +92,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2", className)}
+      className={cn("sticky top-0 z-10 flex flex-col gap-2 bg-white", className)}
       {...props}
     />
   )
@@ -108,7 +110,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        "sticky bottom-0 z-10 -mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted p-4 sm:flex-row sm:justify-end",
         className
       )}
       {...props}

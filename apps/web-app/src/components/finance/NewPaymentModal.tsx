@@ -947,14 +947,15 @@ export default function NewPaymentModal({
    */
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4">
       <motion.div
         initial={{ opacity: 0, y: 16, scale: 0.99 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.22, ease: 'easeOut' }}
-        className="bg-white rounded-xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-blue-100 shadow-2xl"
+        className="bg-white rounded-xl max-w-4xl w-full max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col border border-blue-100 shadow-2xl"
       >
-        <div className="flex items-center justify-between gap-3 mb-4">
+        {/* En-tête — toujours visible (fixe) */}
+        <div className="flex items-center justify-between gap-3 px-6 pt-6 shrink-0">
           <h3 className="text-lg font-semibold">
             {presetStudent
               ? (presetMode === 'ACCOUNT' ? 'Nouvel encaissement' : 'Encaissement — Frais d\u2019inscription')
@@ -967,12 +968,13 @@ export default function NewPaymentModal({
           )}
         </div>
 
-        {/* Bandeau reçu — affiché après succès, en lecture seule */}
+        {/* Bandeau reçu — affiché après succès, en lecture seule (zone scrollable) */}
         {receipt && (
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 pt-4">
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-4 p-4 rounded-lg bg-emerald-50 border border-emerald-200"
+            className="p-4 rounded-lg bg-emerald-50 border border-emerald-200"
           >
             <div className="flex items-start gap-3 mb-3">
               <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
@@ -1043,9 +1045,13 @@ export default function NewPaymentModal({
               </Button>
             </div>
           </motion.div>
+          </div>
         )}
 
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ display: receipt ? 'none' : undefined }}>
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0" style={{ display: receipt ? 'none' : undefined }}>
+          {/* Corps scrollable — le pied (Annuler / Encaisser) reste TOUJOURS visible */}
+          <div className="flex-1 overflow-y-auto overscroll-contain p-6 pt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* ⭐ FLUX POST-INSCRIPTION : carte élève préréglée (remplace les sélecteurs) */}
           {presetStudent ? (
             <div className="md:col-span-2 rounded-xl border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-4">
@@ -1435,7 +1441,10 @@ export default function NewPaymentModal({
             </div>
           )}
 
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end pt-4 md:col-span-2">
+          {/* Pied FIXE — boutons Annuler / Encaisser toujours visibles sans scroller */}
+          </div>
+          </div>
+          <div className="shrink-0 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end px-6 py-3 border-t border-slate-200 bg-slate-50">
             <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
             <Button
               type="submit"

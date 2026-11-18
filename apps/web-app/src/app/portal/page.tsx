@@ -881,7 +881,7 @@ export default function PortalPage() {
           >
             <motion.div
               key="dev-modal"
-              className="relative w-full max-w-md rounded-2xl border bg-white p-4 sm:p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
+              className="relative w-full max-w-md rounded-2xl border bg-white p-4 sm:p-6 shadow-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto"
               style={{
                 borderColor: `${NAVY}18`,
                 boxShadow: `0 24px 48px -12px ${NAVY}20, 0 0 0 1px ${GOLD}14`,

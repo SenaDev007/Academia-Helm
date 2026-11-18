@@ -34,3 +34,37 @@ export async function DELETE(
     );
   }
 }
+
+/**
+ * PATCH /api/finance/collection/arrears/[id]
+ * Modifie un arriéré (correction d'erreur de saisie) : totalDue / totalPaid /
+ * notes. Le backend recalcule balanceDue, statut et niveau de gravité, puis
+ * resynchronise les miroirs d'arriérés du compte élève (arrearsAmount /
+ * carriedArrears) — le compte élève et les KPIs sont mis à jour dynamiquement.
+ */
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  try {
+    const body = await request.json().catch(() => ({}));
+    const headers = await getProxyAuthHeaders(request);
+    const r = await fetchWithTimeout(
+      normalizeApiUrl(`${API_URL}/finance/collection/arrears/${encodeURIComponent(id)}`),
+      {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body ?? {}),
+      },
+    30000);
+    const data = await r.json().catch(() => ({}));
+    return NextResponse.json(data, { status: r.status });
+  } catch (e: any) {
+    console.error('[BFF] PATCH arrears/[id] error:', e);
+    return NextResponse.json(
+      { error: e?.message || 'Internal server error' },
+      { status: 500 },
+    );
+  }
+}

@@ -409,7 +409,7 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={handleClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+        className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* En-tête */}
@@ -605,7 +605,7 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
               </div>
 
               {/* Bouton valider */}
-              <div className="flex justify-end gap-2">
+              <div className="sticky bottom-0 z-10 -mx-6 -mb-6 px-6 py-4 pt-4 mt-4 bg-white/95 backdrop-blur border-t border-slate-200 flex justify-end gap-2">
                 <Button variant="outline" onClick={handleClose}>Annuler</Button>
                 <Button onClick={handlePreview} disabled={!fileDataUrl || loading}>
                   {loading ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <ArrowRight className="w-4 h-4 mr-1.5" />}
@@ -841,7 +841,7 @@ export default function ImportElevesModal({ open, onClose, onSuccess }: ImportEl
               })()}
 
               {/* Boutons */}
-              <div className="flex justify-between gap-2">
+              <div className="sticky bottom-0 z-10 -mx-6 -mb-6 px-6 py-4 mt-4 bg-white/95 backdrop-blur border-t border-slate-200 flex justify-between gap-2 flex-wrap">
                 <Button variant="outline" onClick={() => setStep('upload')}>
                   ← Retour
                 </Button>

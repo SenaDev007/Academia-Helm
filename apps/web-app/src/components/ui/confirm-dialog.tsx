@@ -139,7 +139,7 @@ export function ConfirmDialog({
         className="sm:max-w-[440px] p-0 overflow-hidden rounded-2xl ring-1 ring-slate-200/60 shadow-xl"
       >
         {/* ─── Header section with icon + title + description ─── */}
-        <div className="px-7 pt-7 pb-5 text-slate-900">
+        <div className="sticky top-0 z-10 bg-white px-7 pt-7 pb-5 text-slate-900">
           <div className="flex items-start gap-4">
             <div
               className={cn(
@@ -166,8 +166,8 @@ export function ConfirmDialog({
           </div>
         </div>
 
-        {/* ─── Footer with action buttons — well separated and padded ─── */}
-        <div className="flex items-center justify-end gap-3 px-7 py-5 bg-slate-50/80 border-t border-slate-200/60">
+        {/* ─── Footer with action buttons — toujours visible (sticky) ─── */}
+        <div className="sticky bottom-0 z-10 -mb-4 flex items-center justify-end gap-3 bg-slate-50 px-7 py-5 border-t border-slate-200/60">
           <Button
             variant="outline"
             onClick={onCancel}

@@ -248,7 +248,7 @@ export default function FeeStructureModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50">
-      <motion.div initial={{ opacity: 0, y: 16, scale: 0.99 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.22, ease: 'easeOut' }} className="bg-white rounded-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-blue-100 shadow-2xl">
+      <motion.div initial={{ opacity: 0, y: 16, scale: 0.99 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.22, ease: 'easeOut' }} className="bg-white rounded-xl p-6 max-w-2xl w-full max-h-[calc(100dvh-2rem)] overflow-y-auto border border-blue-100 shadow-2xl">
         <h3 className="text-lg font-semibold mb-4">{isEdit ? 'Modifier le frais' : 'Nouveau frais'}</h3>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div><Label>Type de frais</Label>

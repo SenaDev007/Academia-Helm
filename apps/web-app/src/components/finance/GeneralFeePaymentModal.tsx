@@ -381,7 +381,7 @@ export default function GeneralFeePaymentModal({
         initial={{ opacity: 0, y: 16, scale: 0.99 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.22, ease: 'easeOut' }}
-        className="bg-white rounded-xl p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto border border-indigo-100 shadow-2xl"
+        className="bg-white rounded-xl p-6 max-w-3xl w-full max-h-[calc(100dvh-2rem)] overflow-y-auto border border-indigo-100 shadow-2xl"
       >
         {/* Titre distinctif (flux séparé du paiement standard) */}
         <div className="flex items-center gap-2 mb-4">

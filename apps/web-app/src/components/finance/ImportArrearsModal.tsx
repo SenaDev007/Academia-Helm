@@ -193,7 +193,7 @@ export default function ImportArrearsModal({ open, onClose, onSuccess }: ImportA
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4" onClick={handleClose}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
         {/* En-tête */}
         <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-amber-600 to-orange-600 flex items-center justify-between">
           <div className="flex items-center gap-3">

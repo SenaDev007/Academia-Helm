@@ -36,7 +36,7 @@ import {
   AlertCircle, TrendingDown, Users, Wallet, RefreshCw,
   Send, Loader2, Search, FileText, AlertTriangle,
   Zap, CheckCircle2, XCircle, Plus, FileSpreadsheet, Trash2, Settings,
-  Upload, Banknote, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown,
+  Upload, Banknote, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown, Pencil, Info,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -1287,6 +1287,13 @@ function ArrearsTab({
   //    via l'événement 'recovery-reload' (invalidateRecoveryData).
   const [paymentArrear, setPaymentArrear] = useState<any | null>(null);
 
+  // ⭐ Modification d'un arriéré (correction d'erreur de saisie) — modal dédié.
+  //    Le PATCH /finance/collection/arrears/:id met à jour totalDue/totalPaid,
+  //    recalcule balanceDue/statut/niveau et resynchronise les miroirs du
+  //    compte élève (recalcul dynamique) ; la liste se recharge via
+  //    l'événement 'recovery-reload' (invalidateRecoveryData).
+  const [editArrear, setEditArrear] = useState<any | null>(null);
+
   // ⭐ Suppression multiple — sélection des lignes du tableau
   // (cases à cocher + « tout sélectionner » sur la liste filtrée affichée)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -1707,6 +1714,20 @@ function ArrearsTab({
                         >
                           <HelmConnectIcon className="w-3.5 h-3.5" />
                         </Button>
+                        {/* ⭐ Modifier — correction d'erreur de saisie sur le
+                            montant dû / payé. Le recalcul (restant dû, statut,
+                            niveau, miroirs du compte élève) est dynamique. */}
+                        {(!a.status || a.status === 'OPEN' || a.status === 'PARTIALLY_PAID') && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 hover:bg-indigo-100 hover:shadow-sm transition-all duration-150"
+                            onClick={() => setEditArrear(a)}
+                            title="Modifier l'arriéré (correction d'erreur — recalcul automatique du compte)"
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-indigo-600" />
+                          </Button>
+                        )}
                         {/* ⭐ Encaisser — marquer l'élève ayant payé son arriéré.
                             Ouvre le modal d'encaissement ciblé : la
                             FinanceTransaction recalcule automatiquement le
@@ -1882,6 +1903,30 @@ function ArrearsTab({
               });
             }
             setPaymentArrear(null);
+          }}
+        />
+      )}
+
+      {/* ⭐ Modal de modification d'un arriéré (correction d'erreur de saisie) */}
+      {editArrear && (
+        <EditArrearModal
+          arrear={editArrear}
+          onClose={() => setEditArrear(null)}
+          onSubmitted={(updated: any) => {
+            // Recalcul dynamique : invalidation des queries recovery +
+            // rafraîchissement croisé des comptes élèves (le backend a déjà
+            // resynchronisé les miroirs d'arriérés du compte de l'élève).
+            window.dispatchEvent(new CustomEvent('recovery-reload'));
+            window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
+            invalidateRecoveryData();
+            const newBalance = Number(updated?.balanceDue ?? 0);
+            toast({
+              title: '✅ Arriéré modifié',
+              description: newBalance <= 0
+                ? 'Arriéré corrigé et entièrement soldé — le compte de l\'élève a été recalculé automatiquement.'
+                : `Nouveau restant dû : ${formatCurrency(newBalance)} — le compte de l'élève a été recalculé automatiquement.`,
+            });
+            setEditArrear(null);
           }}
         />
       )}
@@ -2347,11 +2392,11 @@ function ManualReminderModal({
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+        className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden max-h-[calc(100dvh-2rem)] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* En-tête */}
-        <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-2xl">
+        <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-2xl shrink-0">
           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <Send className="w-5 h-5 text-blue-600" />
             Relance manuelle
@@ -2362,7 +2407,7 @@ function ManualReminderModal({
           </p>
         </div>
 
-        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto overscroll-contain">
           {/* Colonne gauche : Sélection élève */}
           <div className="space-y-4">
             <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wide flex items-center gap-2">
@@ -2471,8 +2516,8 @@ function ManualReminderModal({
           </div>
         </div>
 
-        {/* Pied : actions */}
-        <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 rounded-b-2xl flex justify-end gap-2">
+        {/* Pied : actions — toujours visible (fixe) */}
+        <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 rounded-b-2xl flex justify-end gap-2 shrink-0">
           <Button variant="outline" onClick={onClose} disabled={sending}>Annuler</Button>
           <Button onClick={onSubmit} disabled={!accountId || sending}>
             {sending ? (
@@ -2600,20 +2645,20 @@ function ManualArrearModal({
   }, [selectedClassId, setStudentId]);
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div
-        className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto"
+        className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden max-h-[calc(100dvh-2rem)] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
+        <h3 className="text-lg font-bold text-slate-900 mb-1 px-6 pt-6 flex items-center gap-2">
           <Plus className="w-5 h-5 text-amber-600" />
           Saisir un arriéré
         </h3>
-        <p className="text-xs text-slate-500 mb-4">
+        <p className="text-xs text-slate-500 px-6">
           Saisissez manuellement un arriéré pour un élève (issu des registres papier).
           Sélectionnez d'abord le niveau scolaire, puis la classe, puis l'élève.
         </p>
-        <div className="space-y-4">
+        <div className="space-y-4 p-6 overflow-y-auto overscroll-contain">
           {/* Ligne 1 : Niveau scolaire + Classe (côte à côte) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -2792,28 +2837,28 @@ function ManualArrearModal({
               (email + WhatsApp + SMS) via les boutons d'action.
             </p>
           </div>
+        </div>
 
-          {/* Actions */}
-          <div className="flex gap-2 justify-end pt-2">
-            <Button variant="outline" onClick={onClose} disabled={saving}>Annuler</Button>
-            <Button
-              onClick={onSubmit}
-              disabled={!studentId || !amount || saving}
-              className="bg-amber-600 hover:bg-amber-700 text-white"
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Enregistrement...
-                </>
-              ) : (
-                <>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Enregistrer l'arriéré
-                </>
-              )}
-            </Button>
-          </div>
+        {/* Actions — pied FIXE toujours visible (pas besoin de scroller) */}
+        <div className="flex gap-2 justify-end px-6 py-3 border-t border-slate-200 bg-slate-50 shrink-0">
+          <Button variant="outline" onClick={onClose} disabled={saving}>Annuler</Button>
+          <Button
+            onClick={onSubmit}
+            disabled={!studentId || !amount || saving}
+            className="bg-amber-600 hover:bg-amber-700 text-white"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Enregistrement...
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4 mr-2" />
+                Enregistrer l'arriéré
+              </>
+            )}
+          </Button>
         </div>
       </div>
     </div>
@@ -3120,7 +3165,7 @@ function BulkDeleteArrearModal({
       onClick={loading ? undefined : onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col"
+        className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[calc(100dvh-2rem)] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* En-tête rouge */}
@@ -3295,7 +3340,7 @@ function ArrearPaymentModal({
       onClick={submitting ? undefined : onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col"
+        className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[calc(100dvh-2rem)] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* En-tête émeraude */}
@@ -3455,6 +3500,255 @@ function ArrearPaymentModal({
               <>
                 <Banknote className="w-4 h-4 mr-2" />
                 Encaisser {formatCurrency(parsedAmount)}
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/* ------------------------------------------------------------------ */
+/*  Modal — Modification d'un arriéré (correction d'erreur de saisie)   */
+/* ------------------------------------------------------------------ */
+
+function EditArrearModal({
+  arrear,
+  onClose,
+  onSubmitted,
+}: {
+  arrear: any;
+  onClose: () => void;
+  /** Appelé après enregistrement avec l'arriéré MIS À JOUR (balanceDue recalculé). */
+  onSubmitted: (updatedArrear: any) => void;
+}) {
+  const { toast } = useToast();
+  const oldTotalDue = Number(arrear.totalDue) || 0;
+  const oldTotalPaid = Number(arrear.totalPaid) || 0;
+  const oldBalance = Number(arrear.balanceDue) || 0;
+
+  const [totalDue, setTotalDue] = useState<string>(String(oldTotalDue));
+  const [totalPaid, setTotalPaid] = useState<string>(String(oldTotalPaid));
+  const [notes, setNotes] = useState<string>(arrear.notes || '');
+  const [submitting, setSubmitting] = useState(false);
+
+  const studentName = arrear.student
+    ? `${arrear.student.lastName} ${arrear.student.firstName}`
+    : '—';
+  const className = arrear.student?.studentEnrollments?.[0]?.class?.name || '—';
+  const academicYearName = arrear.academicYear?.name || '';
+  const feeLabel = arrear.studentFee?.feeDefinition?.label || arrear.notes || '—';
+
+  const parsedDue = Number(totalDue);
+  const parsedPaid = Number(totalPaid);
+  const dueInvalid = !Number.isFinite(parsedDue) || parsedDue < 0;
+  const paidInvalid = !Number.isFinite(parsedPaid) || parsedPaid < 0;
+  const paidExceeds = !dueInvalid && !paidInvalid && parsedPaid > parsedDue;
+  const formInvalid = dueInvalid || paidInvalid || paidExceeds;
+
+  // ⭐ Recalcul dynamique en direct : nouveau restant dû + statut prévisionnel
+  const newBalance = formInvalid ? oldBalance : parsedDue - parsedPaid;
+  const newStatus = newBalance <= 0 ? 'PAID' : parsedPaid > 0 ? 'PARTIALLY_PAID' : 'OPEN';
+  const changed =
+    !formInvalid &&
+    (parsedDue !== oldTotalDue || parsedPaid !== oldTotalPaid || notes !== (arrear.notes || ''));
+
+  const handleSubmit = async () => {
+    if (formInvalid || submitting || !changed) return;
+    setSubmitting(true);
+    try {
+      const updated = await financeService.updateArrear(arrear.id, {
+        totalDue: parsedDue,
+        totalPaid: parsedPaid,
+        notes: notes.trim() || undefined,
+        reason: 'Correction manuelle depuis le tableau des arriérés',
+      });
+      onSubmitted(updated);
+    } catch (e: any) {
+      const message =
+        e?.response?.data?.message ||
+        e?.data?.message ||
+        e?.message ||
+        'Erreur inconnue lors de la modification.';
+      toast({
+        title: '❌ Modification refusée',
+        description: Array.isArray(message) ? message.join(' · ') : String(message),
+        variant: 'destructive',
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4"
+      onClick={submitting ? undefined : onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[calc(100dvh-2rem)] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* En-tête indigo */}
+        <div className="bg-gradient-to-br from-indigo-600 to-indigo-700 px-6 py-4 text-white shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/20 rounded-full p-2">
+              <Pencil className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold">Modifier l'arriéré</h3>
+              <p className="text-xs text-indigo-100 mt-0.5">
+                Correction d'erreur de saisie — recalcul automatique du compte
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Corps scrollable — le pied (Annuler / Enregistrer) reste TOUJOURS visible */}
+        <div className="p-6 space-y-4 overflow-y-auto overscroll-contain">
+          {/* Récapitulatif actuel de l'arriéré */}
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
+              <div className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                {studentName}
+              </div>
+              <div className="text-xs text-slate-500">
+                {className}{academicYearName ? ` · ${academicYearName}` : ''}
+              </div>
+            </div>
+            <div className="px-4 py-3 grid grid-cols-3 gap-3 text-center">
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Total dû</p>
+                <p className="text-sm font-bold text-slate-900">{formatCurrency(oldTotalDue)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Payé</p>
+                <p className="text-sm font-bold text-emerald-700">{formatCurrency(oldTotalPaid)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Restant dû</p>
+                <p className="text-sm font-bold text-rose-700">{formatCurrency(oldBalance)}</p>
+              </div>
+            </div>
+            {feeLabel && feeLabel !== '—' && (
+              <div className="px-4 py-2 border-t border-slate-100 text-xs text-slate-500 truncate">
+                {feeLabel}
+              </div>
+            )}
+          </div>
+
+          {/* Montant total dû */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+              Montant total dû (FCFA)
+            </Label>
+            <Input
+              type="number"
+              min={0}
+              value={totalDue}
+              onChange={(e) => setTotalDue(e.target.value)}
+              disabled={submitting}
+              className="font-mono"
+            />
+            {dueInvalid && (
+              <p className="text-xs text-rose-600">Doit être un nombre positif ou nul.</p>
+            )}
+          </div>
+
+          {/* Montant déjà payé */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+              Montant déjà payé (FCFA)
+            </Label>
+            <Input
+              type="number"
+              min={0}
+              value={totalPaid}
+              onChange={(e) => setTotalPaid(e.target.value)}
+              disabled={submitting}
+              className="font-mono"
+            />
+            <p className="text-xs text-slate-500">
+              Utilisez « Encaisser » pour enregistrer un NOUVEAU paiement — ce champ
+              corrige un total saisi à tort (ex. paiement doublé ou jamais enregistré).
+            </p>
+            {paidInvalid && (
+              <p className="text-xs text-rose-600">Doit être un nombre positif ou nul.</p>
+            )}
+            {paidExceeds && (
+              <p className="text-xs text-rose-600 font-medium">
+                Le montant payé ne peut pas dépasser le montant total dû.
+              </p>
+            )}
+          </div>
+
+          {/* Nouveau restant dû — recalcul en direct */}
+          <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <Info className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span className="text-xs font-semibold text-indigo-900 uppercase tracking-wide">
+                Nouveau restant dû
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-lg font-bold font-mono text-indigo-900">
+                {formatCurrency(Math.max(0, newBalance))}
+              </span>
+              {newBalance !== oldBalance && (
+                <Badge variant="outline" className="text-[10px] border-indigo-300 text-indigo-700 bg-white">
+                  {newStatus === 'PAID' ? 'soldé' : newStatus === 'PARTIALLY_PAID' ? 'partiellement payé' : 'ouvert'}
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          {/* Motif de la correction */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+              Motif de la correction <span className="normal-case font-normal text-slate-400">(tracé dans l'audit)</span>
+            </Label>
+            <Input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Ex. montant saisi à tort (erreur de frappe), paiement omis…"
+              disabled={submitting}
+            />
+          </div>
+
+          {/* Explication du recalcul */}
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-emerald-800 leading-relaxed">
+              Après enregistrement, le restant dû, le statut, le niveau de gravité et les
+              miroirs d'arriérés du compte de l'élève sont <strong>recalculés
+              automatiquement</strong> — le compte élève, les KPIs de recouvrement et le
+              bilan des encaissements reflètent immédiatement la correction.
+            </p>
+          </div>
+        </div>
+
+        {/* Actions — pied FIXE toujours visible (pas besoin de scroller) */}
+        <div className="bg-slate-50 px-6 py-3 flex justify-end gap-2 border-t border-slate-200 shrink-0">
+          <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
+            Annuler
+          </Button>
+          <Button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting || formInvalid || !changed}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Enregistrement…
+              </>
+            ) : (
+              <>
+                <Pencil className="w-4 h-4 mr-2" />
+                Enregistrer la correction
               </>
             )}
           </Button>

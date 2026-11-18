@@ -95,7 +95,18 @@ interface ClassItem {
   studentCount?: number;
 }
 interface SubjectItem { id: string; name: string; coefficient?: number; }
-interface PeriodItem { id: string; name: string; type: string; isClosed: boolean; }
+interface PeriodItem {
+  id: string;
+  name: string;
+  type: string;
+  isClosed: boolean;
+  /** ⭐ 2026-11-18 — hiérarchie Trimestre → Classe → Évaluations :
+   * champs additionnels portés par AcademicPeriod (tri + dates + badges). */
+  periodOrder?: number;
+  startDate?: string;
+  endDate?: string;
+  isActive?: boolean;
+}
 interface EvaluationTypeItem {
   id: string; name: string; code?: string;
   defaultMaxScore: number; defaultCoefficient: number;
@@ -756,6 +767,97 @@ function ClassDetailHeader({
   );
 }
 
+/**
+ * ⭐ 2026-11-18 — ÉTAPE 1 DE LA HIÉRARCHIE : grille des TRIMESTRES.
+ * Une carte par trimestre (T1 → T2 → T3, tri par periodOrder) : dates de
+ * début/fin, badge « En cours » / « Clôturé », nombre d'évaluations
+ * programmées et nombre de classes concernées. Cliquer ouvre l'étape 2
+ * (grille des classes avec évaluations programmées ce trimestre).
+ */
+function PeriodCardGrid({
+  periods,
+  statsByPeriodId,
+  onOpenPeriod,
+  labels,
+  scopeLang,
+}: {
+  periods: PeriodItem[];
+  statsByPeriodId: Map<string, { classesCount: number; sessionsCount: number; evaluationsCount: number }>;
+  onOpenPeriod: (periodId: string) => void;
+  labels: any;
+  scopeLang: string | undefined;
+}) {
+  const fmtDate = (d?: string) =>
+    d ? new Date(d).toLocaleDateString(scopeLang === 'EN' ? 'en-GB' : 'fr-FR') : '';
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between flex-wrap gap-2">
+        <h3 className="text-sm font-bold text-navy-900">{labels.periodsTitle}</h3>
+      </div>
+      <p className="text-xs text-gray-500 -mt-1">{labels.periodsSubtitle}</p>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {periods.map((p, idx) => {
+          const s = statsByPeriodId.get(p.id) || { classesCount: 0, sessionsCount: 0, evaluationsCount: 0 };
+          const isActive = (p as any).isActive && !p.isClosed;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onOpenPeriod(p.id)}
+              className={`bg-white rounded-2xl border-2 shadow-sm hover:shadow-md hover:border-blue-400 transition-all text-left flex flex-col ${
+                isActive ? 'border-emerald-300' : 'border-gray-200'
+              }`}
+            >
+              {/* En-tête : numéro du trimestre + nom + dates */}
+              <div className="px-5 py-4 bg-gradient-to-br from-blue-50 to-indigo-50/50 border-b border-blue-100 flex items-center justify-between gap-2">
+                <div className="flex items-center space-x-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+                    {idx + 1}
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-base font-bold text-navy-900 truncate">
+                      {translatePeriodName(p.name, scopeLang as 'FR' | 'EN' | undefined)}
+                    </h4>
+                    <p className="text-xs text-gray-500">
+                      {fmtDate(p.startDate) || '—'} → {fmtDate(p.endDate) || '—'}
+                    </p>
+                  </div>
+                </div>
+                {isActive && (
+                  <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 whitespace-nowrap flex-shrink-0">
+                    {labels.active}
+                  </span>
+                )}
+                {p.isClosed && (
+                  <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-gray-100 text-gray-500 whitespace-nowrap flex-shrink-0">
+                    {labels.closed}
+                  </span>
+                )}
+              </div>
+
+              {/* Corps : évaluations programmées + classes concernées */}
+              <div className="p-4 flex-1 flex items-center justify-between gap-3">
+                <span
+                  className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                    s.evaluationsCount > 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'
+                  }`}
+                >
+                  {s.evaluationsCount} {labels.evaluationsLabel}
+                </span>
+                <span className="text-xs text-gray-500">
+                  {s.classesCount} {labels.classesLabel}
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Page Principale ────────────────────────────────────────────────────────
 
 export default function EvaluationsPage() {
@@ -795,13 +897,13 @@ export default function EvaluationsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
-  // ⭐ RÉORGANISATION 2026-11-17 — VUE PAR CLASSE :
+  // ⭐ HIÉRARCHIE 2026-11-18 — TRIMESTRE → CLASSE → ÉVALUATIONS :
+  //   - selectedPeriodId : null = grille des TRIMESTRES (étape 1) ; un id =
+  //     grille des classes de CE trimestre (étape 2) ;
   //   - selectedClassId : null = grille des classes ; un id = détail de la
-  //     classe (ses sessions d'évaluation + actions).
-  //   - periodFilter : trimestre sélectionné dans la barre d'outils (les
-  //     statistiques des cartes et la vue détail suivent ce trimestre).
+  //     classe (ses sessions d'évaluation + actions — étape 3).
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null);
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
-  const [periodFilter, setPeriodFilter] = useState<string>('ALL');
 
   // Modal state — Évaluation
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1006,24 +1108,20 @@ export default function EvaluationsPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // ⭐ RÉORGANISATION 2026-11-17 — par défaut, le filtre trimestre se cale sur
-  //    le trimestre ACTIF (celui « dans lequel nous sommes »). L'utilisateur
-  //    peut ensuite changer de trimestre ou voir tous.
-  useEffect(() => {
-    if (periodFilter === 'ALL') {
-      const active = (periods || []).find((p) => (p as any).isActive && !p.isClosed);
-      if (active) setPeriodFilter(active.id);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periods]);
+  // ⭐ (2026-11-18) Le filtre par trimestre se fait désormais par la
+  //    NAVIGATION HIÉRARCHIQUE (grille des trimestres → classes → détail) :
+  //    plus besoin de caler un filtre par défaut sur le trimestre actif.
 
-  // ─── Filtrage des évaluations (search + status + TRIMESTRE) ───────────
+  // ─── Filtrage des évaluations (search + status + TRIMESTRE) ───
+  // ⭐ HIÉRARCHIE 2026-11-18 : la recherche + le statut s'appliquent à TOUTES
+  //    les vues (grille des trimestres incluse) ; le trimestre est appliqué
+  //    uniquement quand un trimestre est ouvert (étape 2 et 3).
   const filteredEvaluations = useMemo(() => {
     let result = evaluations;
-    // ⭐ Filtre trimestre (vue par classe : statistiques et vue détail suivent
-    //    le trimestre sélectionné dans la barre d'outils)
-    if (periodFilter !== 'ALL') {
-      result = result.filter(e => e.period?.id === periodFilter);
+    // ⭐ Filtre trimestre (vue par trimestre/classe : statistiques et vue
+    //    détail suivent le trimestre sélectionné dans la hiérarchie)
+    if (selectedPeriodId) {
+      result = result.filter(e => e.period?.id === selectedPeriodId);
     }
     if (statusFilter !== 'ALL') {
       result = result.filter(e => e.status === statusFilter);
@@ -1038,7 +1136,60 @@ export default function EvaluationsPage() {
       );
     }
     return result;
-  }, [evaluations, statusFilter, searchQuery, periodFilter]);
+  }, [evaluations, statusFilter, searchQuery, selectedPeriodId]);
+
+  // ⭐ Statistiques PAR TRIMESTRE (étape 1 de la hiérarchie) : nombre de
+  //    classes concernées, nombre d'évaluations programmées — la recherche et
+  //    le filtre de statut s'appliquent, mais PAS le trimestre (on compte
+  //    pour CHAQUE trimestre).
+  const filteredNoPeriod = useMemo(() => {
+    let result = evaluations;
+    if (statusFilter !== 'ALL') {
+      result = result.filter(e => e.status === statusFilter);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter(e =>
+        (e.title?.toLowerCase().includes(q)) ||
+        (e.class?.name?.toLowerCase().includes(q)) ||
+        (e.subject?.name?.toLowerCase().includes(q)) ||
+        (e.evaluationType?.name?.toLowerCase().includes(q))
+      );
+    }
+    return result;
+  }, [evaluations, statusFilter, searchQuery]);
+
+  const periodStats = useMemo(() => {
+    const map = new Map<string, { classesCount: number; sessionsCount: number; evaluationsCount: number }>();
+    for (const g of buildEvaluationGroups(filteredNoPeriod, isEN)) {
+      if (!g.periodId || g.periodId === '_no_period') continue;
+      const entry = map.get(g.periodId) || { classesCount: 0, sessionsCount: 0, evaluationsCount: 0 };
+      entry.sessionsCount += 1;
+      entry.evaluationsCount += g.evaluationIds.length;
+      map.set(g.periodId, entry);
+    }
+    // Garantir une entrée (à zéro) pour chaque trimestre configuré
+    for (const p of periods) {
+      if (!map.has(p.id)) map.set(p.id, { classesCount: 0, sessionsCount: 0, evaluationsCount: 0 });
+    }
+    // Classes distinctes ayant des évaluations programmées, par trimestre
+    for (const [pid, entry] of map) {
+      entry.classesCount = new Set(
+        filteredNoPeriod.filter(e => e.period?.id === pid && e.class?.id).map(e => e.class!.id)
+      ).size;
+    }
+    return map;
+  }, [filteredNoPeriod, periods, isEN]);
+
+  // Trimestres triés par ordre pédagogique (T1 → T2 → T3)
+  const sortedPeriods = useMemo(() => {
+    return [...periods].sort((a: any, b: any) => {
+      const oa = typeof a.periodOrder === 'number' ? a.periodOrder : 99;
+      const ob = typeof b.periodOrder === 'number' ? b.periodOrder : 99;
+      if (oa !== ob) return oa - ob;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+  }, [periods]);
 
   // ⭐ Regroupement des évaluations filtrées (une carte = 1 session par classe)
   const groupedEvaluations = useMemo(
@@ -1095,9 +1246,9 @@ export default function EvaluationsPage() {
   }, [classes, groupsByClassId, assignmentsForClass, isEN]);
 
   const activePeriodName = useMemo(() => {
-    const p = periods.find((p) => p.id === periodFilter);
+    const p = periods.find((p) => p.id === selectedPeriodId);
     return p ? translatePeriodName(p.name, scopeLang as 'FR' | 'EN' | undefined) : null;
-  }, [periods, periodFilter, scopeLang]);
+  }, [periods, selectedPeriodId, scopeLang]);
 
   // ─── ⭐ FIX 2026-11-17 : matières proposées dans le modal selon la/les
   //    classe(s) sélectionnée(s) ────────────────────────────────────────────
@@ -1198,7 +1349,8 @@ export default function EvaluationsPage() {
   // Réinitialiser la sélection quand on change de niveau / langue / année
   useEffect(() => {
     clearSelection();
-    // ⭐ Vue par classe : on revient à la grille des classes
+    // ⭐ Hiérarchie : on revient à la grille des TRIMESTRES (étape 1)
+    setSelectedPeriodId(null);
     setSelectedClassId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeLevel, scopeLang, academicYear?.id]);
@@ -1372,8 +1524,8 @@ export default function EvaluationsPage() {
       ...EMPTY_FORM,
       // Pré-cocher la classe courante si on est dans sa vue détail
       classIds: selectedClassId ? [selectedClassId] : [],
-      // Pré-sélectionner le trimestre du FILTRE courant (ou l'actif)
-      periodId: (periodFilter !== 'ALL' ? periodFilter : currentPeriod?.id) || '',
+      // Pré-sélectionner le trimestre de la hiérarchie courante (ou l'actif)
+      periodId: (selectedPeriodId || currentPeriod?.id) || '',
       evaluationTypeIds: [],
       // Maternelle : pas de barème numérique (qualitatif TS/S/PS)
       maxScore: isMaternelle ? '0' : '20',
@@ -1930,29 +2082,9 @@ export default function EvaluationsPage() {
                 />
               </div>
               <div className="flex items-center gap-2">
-                {/* ⭐ RÉORGANISATION 2026-11-17 — filtre TRIMESTRE : les cartes de
-                    classe et la vue détail suivent le trimestre sélectionné
-                    (défaut = trimestre actif). */}
-                <Select value={periodFilter} onValueChange={setPeriodFilter}>
-                  <SelectTrigger className="w-[170px] h-9">
-                    <SelectValue placeholder={labels.allPeriodsLabel}>
-                      {(() => {
-                        const p = periods.find((pp) => pp.id === periodFilter);
-                        return p
-                          ? `${translatePeriodName(p.name, scopeLang as 'FR' | 'EN' | undefined)}${p.isClosed ? ` (${labels.closed})` : ''}`
-                          : labels.allPeriodsLabel;
-                      })()}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">{labels.allPeriodsLabel}</SelectItem>
-                    {periods.map((p) => (
-                      <SelectItem key={p.id} value={p.id} disabled={p.isClosed}>
-                        {translatePeriodName(p.name, scopeLang)}{p.isClosed ? ` (${labels.closed})` : ''}{(p as any).isActive && !p.isClosed ? ` (${labels.active})` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {/* ⭐ HIÉRARCHIE 2026-11-18 — le filtre trimestre devient une
+                    NAVIGATION (Trimestre → Classe → Évaluations) : le sélecteur
+                    a été retiré au profit de la grille des trimestres. */}
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="w-[180px] h-9">
                     <SelectValue placeholder={labels.allStatuses} />
@@ -2037,53 +2169,113 @@ export default function EvaluationsPage() {
               </div>
             )}
 
-            {/* ⭐ RÉORGANISATION 2026-11-17 — VUE PAR CLASSE :
-                - pas de classe sélectionnée → grille des classes (effectif,
-                  sessions, types du trimestre) ;
+            {/* ⭐ HIÉRARCHIE 2026-11-18 — TRIMESTRE → CLASSE → ÉVALUATIONS :
+                - pas de trimestre sélectionné → grille des TRIMESTRES (dates,
+                  classes concernées, évaluations programmées) ;
+                - trimestre sélectionné, pas de classe → grille des classes
+                  avec évaluations programmées CE trimestre ;
                 - classe sélectionnée → ses sessions d'évaluation (cartes
-                  existantes + actions) avec en-tête de retour. */}
+                  existantes + actions) avec en-têtes de retour. */}
             {loading ? (
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
                 <span className="ml-3 text-sm text-gray-500">{labels.loadingEvaluations}</span>
               </div>
-            ) : !selectedClassId ? (
-              /* ── Vue d'ensemble : cartes par classe (filtre de recherche par
-                    nom de classe actif en vue grille) ── */
+            ) : !selectedPeriodId ? (
+              /* ── Étape 1 : grille des trimestres ── */
               (() => {
-                const q = searchQuery.trim().toLowerCase();
-                const visibleStats = q
-                  ? classCardStats.filter((s) => s.className.toLowerCase().includes(q))
-                  : classCardStats;
-                if (visibleStats.length === 0) {
+                if (sortedPeriods.length === 0) {
                   return (
                     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
                       <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                      <p className="text-gray-600 font-medium mb-1">{labels.noEvaluationsFiltered}</p>
-                      <p className="text-sm text-gray-400">{labels.noClasses}</p>
+                      <p className="text-gray-600 font-medium mb-1">{labels.noPeriodsConfigured}</p>
+                      <p className="text-sm text-gray-400">{labels.noPeriodsHint}</p>
                     </div>
                   );
                 }
                 return (
-                  <ClassCardGrid
-                    stats={visibleStats}
-                    onOpenClass={(classId) => setSelectedClassId(classId)}
+                  <PeriodCardGrid
+                    periods={sortedPeriods}
+                    statsByPeriodId={periodStats}
+                    onOpenPeriod={(periodId) => {
+                      clearSelection();
+                      setSelectedPeriodId(periodId);
+                    }}
                     labels={labels}
-                    periodName={activePeriodName}
+                    scopeLang={scopeLang}
                   />
                 );
               })()
+            ) : !selectedClassId ? (
+              /* ── Étape 2 : classes avec évaluations programmées ce trimestre ── */
+              (() => {
+                const q = searchQuery.trim().toLowerCase();
+                // Ne montrer que les classes avec des évaluations programmées
+                // pour le trimestre ouvert (demande promoteur 2026-11-18).
+                const periodStatsClasses = classCardStats.filter((s) => s.sessionsCount > 0);
+                const visibleStats = q
+                  ? periodStatsClasses.filter((s) => s.className.toLowerCase().includes(q))
+                  : periodStatsClasses;
+                if (visibleStats.length === 0) {
+                  return (
+                    <div className="space-y-4">
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedPeriodId(null); clearSelection(); }}
+                        className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                        {labels.backToPeriods}
+                      </button>
+                      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-10 text-center">
+                        <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-600 font-medium mb-1">{labels.noClassesInPeriod}</p>
+                        <p className="text-sm text-gray-400">
+                          {searchQuery || statusFilter !== 'ALL'
+                            ? labels.noEvaluationsFiltered
+                            : labels.noSessionsForTerm}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="space-y-4">
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedPeriodId(null); clearSelection(); }}
+                      className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                      {labels.backToPeriods}
+                    </button>
+                    <ClassCardGrid
+                      stats={visibleStats}
+                      onOpenClass={(classId) => setSelectedClassId(classId)}
+                      labels={labels}
+                      periodName={activePeriodName}
+                    />
+                  </div>
+                );
+              })()
             ) : (
-              /* ── Vue détail : les évaluations programmées de CETTE classe ── */
+              /* ── Étape 3 : les évaluations programmées de CETTE classe ── */
               <div className="space-y-4">
-              <button
-                type="button"
-                onClick={() => setSelectedClassId(null)}
-                className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors"
-              >
-                <X className="w-4 h-4" />
-                {labels.backToClasses}
-              </button>
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setSelectedClassId(null)}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                  {labels.backToClasses}
+                </button>
+                {activePeriodName && (
+                  <span className="text-xs text-gray-400">
+                    {activePeriodName}
+                  </span>
+                )}
+              </div>
               <ClassDetailHeader
                 stats={classCardStats.find((s) => s.classId === selectedClassId) || null}
                 labels={labels}
@@ -2094,9 +2286,9 @@ export default function EvaluationsPage() {
                   <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p className="text-gray-600 font-medium mb-1">{labels.noEvaluations}</p>
                   <p className="text-sm text-gray-400">
-                    {searchQuery || statusFilter !== 'ALL' || periodFilter !== 'ALL'
+                    {searchQuery || statusFilter !== 'ALL'
                       ? labels.noEvaluationsFiltered
-                      : labels.noEvaluationsHint}
+                      : labels.noSessionsForTerm}
                   </p>
                 </div>
               ) : (

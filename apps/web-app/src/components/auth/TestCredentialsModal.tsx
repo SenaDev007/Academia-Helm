@@ -214,7 +214,7 @@ export default function TestCredentialsModal({
 
       {/* Modal — max-h pour qu'il tienne dans l'écran même avec 14 comptes */}
       <div
-        className="relative z-10 w-full max-w-lg max-h-[90vh] overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="relative z-10 w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-hidden rounded-2xl bg-white shadow-2xl"
         style={{ animation: 'testModalIn 200ms ease-out' }}
       >
         <style jsx>{`

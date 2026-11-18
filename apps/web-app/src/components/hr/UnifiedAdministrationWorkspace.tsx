@@ -2826,7 +2826,7 @@ export default function UnifiedAdministrationWorkspace() {
           setTeacherAssignForm({ staffId: '', position: '' });
         }
       }}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <GraduationCap className="w-4 h-4" style={{ color: PRIMARY }} />
@@ -2948,7 +2948,7 @@ export default function UnifiedAdministrationWorkspace() {
           setTeacherEditForm({ staffId: '', staffName: '', schoolLevelId: '', position: '', languages: [] });
         }
       }}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <Edit3 className="w-4 h-4" style={{ color: PRIMARY }} />

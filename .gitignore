@@ -171,3 +171,6 @@ apps/mobile/helm_connect/.flutter-plugins
 apps/mobile/helm_connect/.flutter-plugins-dependencies
 apps/mobile/helm_connect/build/
 apps/mobile/helm_connect/android/app/build/
+
+# Backups générés par scripts/finance/unify_tenant_rules.py (données élèves — ne pas commiter)
+scripts/finance/backup_*.json

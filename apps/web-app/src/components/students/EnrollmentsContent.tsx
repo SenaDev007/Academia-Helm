@@ -130,8 +130,27 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
   RE_ENROLLED: { label: 'Réinscrit', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
   PENDING: { label: 'En attente', color: 'bg-orange-50 text-orange-700 border-orange-200' },
   TRANSFERRED: { label: 'Transféré', color: 'bg-slate-50 text-slate-600 border-slate-200' },
-  WITHDRAWN: { label: 'Retiré', color: 'bg-rose-50 text-rose-700 border-rose-200' },
+  // ⭐ FIX 2026-11-18 : « Retiré » → « Abandon » (l'onglet abandon est réservé à
+  //    ces élèves ; l'onglet Inscriptions ne les affiche plus — cf. isEnrollmentInProgress)
+  WITHDRAWN: { label: 'Abandon', color: 'bg-rose-50 text-rose-700 border-rose-200' },
 };
+
+// ⭐ FIX 2026-11-18 « les élèves retirés ne doivent plus figurer dans l'onglet
+//    Inscriptions » (retour promoteur) : l'onglet « Sorties & Abandons » est
+//    réservé aux élèves retirés pour abandon. Miroir front des constantes
+//    OFFICIAL_LIST_* du backend (cf. StudentClassListsContent) : on exclut les
+//    inscriptions dont le statut est une sortie (WITHDRAWN, TRANSFERRED,
+//    EXCLUDED, ARCHIVED, COMPLETED) ET la garde anti-dé-synchronisation
+//    Student.status — archiveStudent() ne touche PAS l'inscription : un élève
+//    ARCHIVED peut garder une inscription ACTIVE → il doit quand même
+//    disparaître de l'arbre Inscriptions.
+//    Les PENDING / PRE_REGISTERED restent : ce sont des dossiers en cours
+//    d'inscription (pipeline de l'onglet).
+const EXIT_ENROLLMENT_STATUSES = ['WITHDRAWN', 'TRANSFERRED', 'EXCLUDED', 'ARCHIVED', 'COMPLETED'];
+const EXIT_STUDENT_STATUSES = ['WITHDRAWN', 'TRANSFERRED', 'EXCLUDED', 'ARCHIVED'];
+const isEnrollmentInProgress = (e: Enrollment): boolean =>
+  !EXIT_ENROLLMENT_STATUSES.includes(e.status) &&
+  !EXIT_STUDENT_STATUSES.includes((e.student as any).status || '');
 
 const TYPE_META: Record<string, { label: string; color: string }> = {
   NEW: { label: 'Nouveau', color: 'bg-blue-50 text-blue-700' },
@@ -592,6 +611,16 @@ export default function EnrollmentsContent() {
     checkAll();
   }, [academicYear, classes]);
 
+  // ─── ⭐ FIX 2026-11-18 : inscriptions « en cours » uniquement ───
+  // L'onglet Inscriptions ne doit plus afficher les élèves retirés pour
+  // abandon (onglet dédié « Sorties & Abandons »), ni les transférés/exclus/
+  // archivés. Toutes les vues de l'onglet (arborescence, élèves non affectés,
+  // stats) consomment cette liste filtrée.
+  const activeEnrollments = useMemo(
+    () => enrollments.filter(isEnrollmentInProgress),
+    [enrollments],
+  );
+
   // ─── Arborescence niveau → classe officielle → élèves ─────────────────
   // ⭐ L'onglet Inscriptions groupe par classe OFFICIELLE (AcademicClass).
   // Les élèves sont rattachés via StudentEnrollment.academicClassId.
@@ -633,8 +662,10 @@ export default function EnrollmentsContent() {
 
     // ⭐ Pour les inscriptions : utiliser academicClassId en priorité (classe officielle),
     // avec fallback sur classId (classe physique) pour les inscriptions legacy.
+    // ⭐ FIX 2026-11-18 : on ne groupe que les inscriptions EN COURS (les
+    // abandons/transferts/archivages sortent de l'onglet Inscriptions).
     const enrollmentsByClass = new Map<string, Enrollment[]>();
-    for (const enr of enrollments) {
+    for (const enr of activeEnrollments) {
       const classId = (enr as any).academicClass?.id || (enr as any).academicClassId || enr.class?.id || 'unassigned';
       if (!enrollmentsByClass.has(classId)) enrollmentsByClass.set(classId, []);
       enrollmentsByClass.get(classId)!.push(enr);
@@ -683,7 +714,7 @@ export default function EnrollmentsContent() {
         const levelClasses = (classesByLevel.get(level.id) || []).sort((a, b) => classOrder(a.name) - classOrder(b.name));
         // ⭐ Pour le comptage des élèves du niveau : utiliser academicClassId (officiel)
         // avec fallback sur classId (physique) pour les inscriptions legacy.
-        const levelEnrollments = enrollments.filter(e => {
+        const levelEnrollments = activeEnrollments.filter(e => {
           const acid = (e as any).academicClass?.id || (e as any).academicClassId;
           const cls = acid ? classes.find(c => c.id === acid) : classes.find(c => c.id === e.class?.id);
           return (cls?.levelId || cls?.schoolLevelId) === level.id;
@@ -697,7 +728,7 @@ export default function EnrollmentsContent() {
           totalStudents: levelEnrollments.length,
         };
       });
-  }, [classes, enrollments]);
+  }, [classes, activeEnrollments]);
 
   const filteredTree = useMemo(() => {
     if (!searchQuery.trim()) return treeData;
@@ -723,7 +754,7 @@ export default function EnrollmentsContent() {
   // classe chargée), alors qu'ils sont comptés dans les stats → confusion pour l'admin.
   const unassignedEnrollments = useMemo(() => {
     const loadedClassIds = new Set(classes.map(c => c.id));
-    const orphans = enrollments.filter(e => {
+    const orphans = activeEnrollments.filter(e => {
       const acid = (e as any).academicClass?.id || (e as any).academicClassId;
       const classId = acid || e.class?.id;
       return !classId || !loadedClassIds.has(classId);
@@ -734,7 +765,7 @@ export default function EnrollmentsContent() {
       `${s.student.lastName} ${s.student.firstName}`.toLowerCase().includes(q) ||
       (s.student.matricule || '').toLowerCase().includes(q)
     );
-  }, [enrollments, classes, searchQuery]);
+  }, [activeEnrollments, classes, searchQuery]);
 
   // ─── Orphelins groupés par niveau scolaire ──────────────────────────
   // L'élève a un schoolLevelId sur Student (résolu depuis l'admission). On groupe
@@ -812,18 +843,20 @@ export default function EnrollmentsContent() {
     // et ADMITTED (élève admis via admission/convertToStudent — a déjà son matricule
     // et sa classe via admit()). Avant, ADMITTED était compté comme "en attente"
     // ce qui était faux : un élève ADMITTED est inscrit, pas en attente.
-    const active = enrollments.filter(e =>
+    // ⭐ FIX 2026-11-18 : compté sur les inscriptions EN COURS uniquement (les
+    // abandons sont visibles dans l'onglet dédié « Sorties & Abandons »).
+    const active = activeEnrollments.filter(e =>
       ['ACTIVE', 'VALIDATED', 'ADMITTED', 'RE_ENROLLED'].includes(e.status)
     ).length;
-    const newCount = enrollments.filter(e => e.enrollmentType === 'NEW').length;
-    const reEnrolled = enrollments.filter(e => ['REPEAT', 'PROMOTION'].includes(e.enrollmentType)).length;
+    const newCount = activeEnrollments.filter(e => e.enrollmentType === 'NEW').length;
+    const reEnrolled = activeEnrollments.filter(e => ['REPEAT', 'PROMOTION'].includes(e.enrollmentType)).length;
     // En attente = élèves PAS encore admis (pré-inscrits sans matricule, ou en
     // attente de validation). ADMITTED est exclu car l'élève est déjà inscrit.
-    const pending = enrollments.filter(e =>
+    const pending = activeEnrollments.filter(e =>
       ['PENDING', 'PRE_REGISTERED'].includes(e.status)
     ).length;
-    return { active, newCount, reEnrolled, pending, total: enrollments.length };
-  }, [enrollments]);
+    return { active, newCount, reEnrolled, pending, total: activeEnrollments.length };
+  }, [activeEnrollments]);
 
   // ─── Actions ────────────────────────────────────────────────────────
   const toggleLevel = (id: string) => {
@@ -2102,7 +2135,10 @@ export default function EnrollmentsContent() {
             </div>
             <div className="flex-1 overflow-y-auto px-5 py-2">
               <p className="text-xs text-slate-500 mb-2">{selectedForBulk.size} élève(s) sélectionné(s)</p>
-              {enrollments.map(enr => (
+              {/* ⭐ FIX 2026-11-18 : inscriptions EN COURS uniquement — les abandons
+                  ne se réinscrivent pas ici (flux dédié « Réintégrer » dans l'onglet
+                  Sorties & Abandons). */}
+              {activeEnrollments.map(enr => (
                 <label key={enr.id} className="flex items-center gap-3 py-1.5 px-2 hover:bg-slate-50 rounded-lg cursor-pointer">
                   <input type="checkbox" checked={selectedForBulk.has(enr.student.id)} onChange={() => toggleBulkSelection(enr.student.id)} className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
                   <span className="text-sm text-slate-700 flex-1">{enr.student.lastName.toUpperCase()} {enr.student.firstName}</span>

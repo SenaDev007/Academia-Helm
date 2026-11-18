@@ -690,7 +690,8 @@ export class StudentDossierService {
             : 'Normal';
     const statusLabel: Record<string, string> = {
       ACTIVE: 'Actif', PRE_REGISTERED: 'Pré-inscrit', ADMITTED: 'Admis',
-      ARCHIVED: 'Archivé', WITHDRAWN: 'Retiré', EXCLUDED: 'Exclu',
+      // ⭐ FIX 2026-11-18 : « Retiré » → « Abandon » (statut d'un élève retiré pour abandon)
+      ARCHIVED: 'Archivé', WITHDRAWN: 'Abandon', EXCLUDED: 'Exclu',
       INACTIVE: 'Inactif', PENDING: 'En attente',
     };
     const enrTypeLabel: Record<string, string> = {

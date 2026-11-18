@@ -73,6 +73,11 @@ export class StudentsPrismaController {
     @Query('hasArrears') hasArrears?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    // ⭐ FIX 2026-11-18 « abandons de classe invisibles » : l'onglet Sorties &
+    //    Abandons demande TOUTES les inscriptions (WITHDRAWN inclus) quand il
+    //    filtre par classe — sinon le filtre `some` OFFICIAL_LIST vidait la
+    //    liste (les abandons n'étaient visibles que dans le PDF).
+    @Query('enrollmentScope') enrollmentScope?: string,
   ) {
     return this.studentsService.findAllStudents(tenantId, {
       academicYearId,
@@ -84,6 +89,7 @@ export class StudentsPrismaController {
       hasArrears: hasArrears === 'true' ? true : hasArrears === 'false' ? false : undefined,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
+      enrollmentScope: enrollmentScope === 'ALL' ? 'ALL' : undefined,
     }, user?.scope ?? null);
   }
 

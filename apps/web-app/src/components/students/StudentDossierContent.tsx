@@ -160,7 +160,8 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   PRE_REGISTERED: { label: 'Pré-inscrit', color: 'bg-blue-50 text-blue-700 border-blue-200' },
   ADMITTED: { label: 'Admis', color: 'bg-amber-50 text-amber-700 border-amber-200' },
   ARCHIVED: { label: 'Archivé', color: 'bg-slate-50 text-slate-600 border-slate-200' },
-  WITHDRAWN: { label: 'Retiré', color: 'bg-rose-50 text-rose-700 border-rose-200' },
+  // ⭐ FIX 2026-11-18 : « Retiré » → « Abandon » (statut d'un élève retiré pour abandon)
+  WITHDRAWN: { label: 'Abandon', color: 'bg-rose-50 text-rose-700 border-rose-200' },
   EXCLUDED: { label: 'Exclu', color: 'bg-red-50 text-red-700 border-red-200' },
   INACTIVE: { label: 'Inactif', color: 'bg-slate-50 text-slate-600 border-slate-200' },
   PENDING: { label: 'En attente', color: 'bg-blue-50 text-blue-700 border-blue-200' },
@@ -168,7 +169,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 
 const ENROLLMENT_STATUS: Record<string, string> = {
   ACTIVE: 'Actif', PENDING: 'En attente', ADMITTED: 'Admis',
-  PRE_REGISTERED: 'Pré-inscrit', COMPLETED: 'Terminé', WITHDRAWN: 'Retiré',
+  PRE_REGISTERED: 'Pré-inscrit', COMPLETED: 'Terminé', WITHDRAWN: 'Abandon',
   ARCHIVED: 'Archivé', TRANSFERRED: 'Transféré', GRADUATED: 'Diplômé',
 };
 

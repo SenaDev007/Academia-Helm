@@ -74,7 +74,9 @@ interface AcademicYearInfo {
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string; icon: any }> = {
-  WITHDRAWN: { label: 'Retiré', color: 'bg-rose-50 text-rose-700 border-rose-200', icon: LogOut },
+  // ⭐ FIX 2026-11-18 (retour promoteur) : le statut d'un élève retiré doit
+  // s'afficher « Abandon » (et non « Retiré ») — cohérent avec l'onglet dédié.
+  WITHDRAWN: { label: 'Abandon', color: 'bg-rose-50 text-rose-700 border-rose-200', icon: LogOut },
   ARCHIVED: { label: 'Archivé', color: 'bg-slate-50 text-slate-600 border-slate-200', icon: Archive },
   TRANSFERRED: { label: 'Transféré', color: 'bg-blue-50 text-blue-700 border-blue-200', icon: ArrowRightLeft },
   ACTIVE: { label: 'Actif', color: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: Users },
@@ -271,6 +273,12 @@ export default function StudentMovementsContent() {
   }, [filterStatus, filterLevelId, filterClassId, searchQuery]);
 
   // ⭐ FIX : utilise React Query (useStudents + useEnrollments) au lieu de fetch manuel.
+  // ⭐ FIX 2026-11-18 « abandons de classe invisibles » : enrollmentScope='ALL' —
+  //    sans lui, le filtre `classId` du backend ne matchait que les inscriptions
+  //    de la LISTE OFFICIELLE (ACTIVE, ADMITTED…) : les élèves ABANDONNÉS de la
+  //    classe étaient introuvables dans la liste (seuls le PDF /students/class-list/:classId/pdf?status=WITHDRAWN
+  //    les montrait). Avec le scope, la liste matche TOUTES les inscriptions de
+  //    la classe — cohérent avec le PDF abandons.
   const studentsQuery = useStudents({
     academicYearId: effectiveYearId,
     page: currentPage,
@@ -279,6 +287,7 @@ export default function StudentMovementsContent() {
     classId: filterClassId || undefined,
     status: filterStatus !== 'ALL' ? filterStatus : undefined,
     search: searchQuery.trim() || undefined,
+    enrollmentScope: 'ALL',
   });
   const enrollmentsQuery = useEnrollments(effectiveYearId);
   // ⭐ FIX 2026-09-23 : invalidation de TOUTE la famille du module Élèves
@@ -411,7 +420,7 @@ export default function StudentMovementsContent() {
           academicYearId: effectiveYearId,
           exitReason: actionReason || 'Abandon',
         });
-        toast({ title: '✅ Élève retiré', description: `${actionStudent.firstName} ${actionStudent.lastName} a été marqué comme abandon.`, variant: 'success' });
+        toast({ title: '✅ Abandon enregistré', description: `${actionStudent.firstName} ${actionStudent.lastName} a été marqué comme abandon.`, variant: 'success' });
       } else if (actionType === 'reactivate') {
         // ⭐ FIX 2026-11-15 « Accès refusé : le périmètre “tous les niveaux” est
         //    réservé aux profils transverses » : schoolLevel?.id peut être la
@@ -577,7 +586,7 @@ export default function StudentMovementsContent() {
         {[
           { label: 'Total', value: stats.total, icon: Users, color: 'bg-slate-50 text-slate-600' },
           { label: 'Actifs', value: stats.active, icon: Users, color: 'bg-emerald-50 text-emerald-600' },
-          { label: 'Retirés', value: stats.withdrawn, icon: LogOut, color: 'bg-rose-50 text-rose-600' },
+          { label: 'Abandons', value: stats.withdrawn, icon: LogOut, color: 'bg-rose-50 text-rose-600' },
           { label: 'Archivés', value: stats.archived, icon: Archive, color: 'bg-amber-50 text-amber-600' },
           { label: 'Transférés', value: stats.transferred, icon: ArrowRightLeft, color: 'bg-blue-50 text-blue-600' },
         ].map((stat, i) => (
@@ -616,7 +625,7 @@ export default function StudentMovementsContent() {
           >
             <option value="ALL">Tous les statuts</option>
             <option value="ACTIVE">Actifs</option>
-            <option value="WITHDRAWN">Retirés</option>
+            <option value="WITHDRAWN">Abandons</option>
             <option value="ARCHIVED">Archivés</option>
             <option value="TRANSFERRED">Transférés</option>
           </select>
@@ -764,9 +773,9 @@ export default function StudentMovementsContent() {
                               <button
                                 onClick={() => openAction(student, 'withdraw')}
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-200 transition"
-                                title="Retirer l'élève (sortie définitive)"
+                                title="Marquer l'élève comme abandon (sortie définitive)"
                               >
-                                <LogOut className="w-3.5 h-3.5" /> Retirer
+                                <LogOut className="w-3.5 h-3.5" /> Abandonner
                               </button>
                               {/* ⭐ Le transfert inter-écoles est désormais géré exclusivement
                                   dans l'onglet « Transferts & Mobilité ». Cet onglet ne gère
@@ -819,7 +828,7 @@ export default function StudentMovementsContent() {
             <div className="px-6 py-4 border-b border-slate-100">
               <h3 className="text-base font-bold text-slate-800">
                 {actionType === 'archive' && 'Archiver l\'élève'}
-                {actionType === 'withdraw' && 'Retirer l\'élève'}
+                {actionType === 'withdraw' && 'Marquer comme abandon'}
                 {actionType === 'reactivate' && 'Réintégrer l\'élève'}
                 {actionType === 'transfer' && 'Transférer l\'élève'}
               </h3>
@@ -835,7 +844,7 @@ export default function StudentMovementsContent() {
               {(actionType === 'archive' || actionType === 'withdraw') && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    {actionType === 'withdraw' ? 'Motif du retrait' : 'Motif de l\'archivage'}
+                    {actionType === 'withdraw' ? 'Motif de l\'abandon' : 'Motif de l\'archivage'}
                   </label>
                   <textarea
                     value={actionReason}

@@ -160,6 +160,10 @@ export class StudentsPrismaService {
       hasArrears?: boolean;
       page?: number;
       limit?: number;
+      /** ⭐ FIX 2026-11-18 « abandons de classe invisibles » : 'ALL' → la vue
+       *  filtrante (onglet Sorties & Abandons) matche TOUTES les inscriptions
+       *  de la classe (WITHDRAWN inclus), pas seulement la liste officielle. */
+      enrollmentScope?: 'ALL';
     },
     scope?: AccessScope | null,
   ) {
@@ -223,8 +227,29 @@ export class StudentsPrismaService {
     //    avec filtre de classe, alors qu'ils figuraient dans la liste officielle
     //    et l'onglet Inscriptions. Désormais : mêmes statuts que la liste
     //    officielle (OFFICIAL_LIST_ENROLLMENT_STATUSES).
+    // ⭐ FIX 2026-11-18 « abandons de classe invisibles » (retour promoteur) :
+    //    dans l'onglet Abandon, le filtre par classe + statut « Abandons » ne
+    //    renvoyait RIEN (les abandons n'étaient visibles que dans le PDF) car
+    //    le filtre `some` OFFICIAL_LIST excluait les inscriptions WITHDRAWN.
+    //    Désormais :
+    //      1) enrollmentScope='ALL' (onglet Sorties & Abandons) → on matche
+    //         TOUTES les inscriptions de la classe (WITHDRAWN inclus) ;
+    //      2) sinon, le statut DEMANDÉ (ex: WITHDRAWN) est ajouté à la liste
+    //         officielle — un appelant qui filtre status=WITHDRAWN + classId
+    //         (sans scope) retrouve aussi ses abandons.
     if (filters?.classId || filters?.hasArrears === true || filters?.hasArrears === false) {
-      const enrollmentWhere: any = { status: { in: [...OFFICIAL_LIST_ENROLLMENT_STATUSES] } };
+      const scopeAll = filters?.enrollmentScope === 'ALL';
+      const enrollmentStatusIn: string[] = [...OFFICIAL_LIST_ENROLLMENT_STATUSES];
+      if (
+        !scopeAll &&
+        filters?.status &&
+        !enrollmentStatusIn.includes(filters.status)
+      ) {
+        enrollmentStatusIn.push(filters.status);
+      }
+      const enrollmentWhere: any = scopeAll
+        ? {}
+        : { status: { in: enrollmentStatusIn } };
       if (filters?.classId) {
         enrollmentWhere.classId = filters.classId;
       }
@@ -264,7 +289,13 @@ export class StudentsPrismaService {
           // ⭐ 1.0.17 — statuts de la LISTE OFFICIELLE (ajout de PROMOTED et
           //    VALIDATED qui manquaient) : le front peut grouper/afficher
           //    tous les élèves officiellement inscrits de l'année.
-          where: { status: { in: [...OFFICIAL_LIST_ENROLLMENT_STATUSES] } },
+          // ⭐ FIX 2026-11-18 « abandons de classe invisibles » : avec
+          //    enrollmentScope='ALL' (onglet Sorties & Abandons), on renvoie
+          //    AUSSI les inscriptions WITHDRAWN — la vue mouvements doit
+          //    afficher la classe de l'élève abandonné (sinon « Non affecté »).
+          ...(filters?.enrollmentScope === 'ALL'
+            ? {}
+            : { where: { status: { in: [...OFFICIAL_LIST_ENROLLMENT_STATUSES] } } }),
           include: {
             class: true,
           },
@@ -603,7 +634,7 @@ export class StudentsPrismaService {
     //    WITHDRAWN = élève retiré/abandon pour cette année
     const activeEnrollmentStatuses = ['ACTIVE', 'PROMOTED', 'RE_ENROLLED'];
 
-    const [active, preRegistered, admitted, pending, withdrawn, byGenderRaw, byStatus] = await Promise.all([
+    const [active, preRegistered, admitted, pending, withdrawn, archivedCount, byGenderRaw, byStatus] = await Promise.all([
       // ⭐ 'active' = élèves officiellement inscrits pour CETTE année (ACTIVE + PROMOTED + RE_ENROLLED)
       this.prisma.studentEnrollment.count({
         where: { ...enrollmentWhere, status: { in: activeEnrollmentStatuses } },
@@ -619,6 +650,21 @@ export class StudentsPrismaService {
       }),
       this.prisma.studentEnrollment.count({
         where: { ...enrollmentWhere, status: 'WITHDRAWN' },
+      }),
+      // ⭐ FIX 2026-11-18 « KPI Abandons = KPI Archivés » : archived était un
+      //    simple alias de withdrawn (archived = withdrawn) → les deux KPI de
+      //    l'onglet Sorties & Abandons affichaient LE MÊME chiffre. Un élève
+      //    archivé a Student.status='ARCHIVED' (archiveStudent ne touche pas
+      //    l'inscription, qui peut rester ACTIVE) → on compte les inscriptions
+      //    de l'année dont l'ÉLÈVE est ARCHIVED, en préservant le filtre piste
+      //    (scopeTrack) porté par enrollmentWhere.student.
+      this.prisma.studentEnrollment.count({
+        where: {
+          ...enrollmentWhere,
+          student: scopeTrack
+            ? { AND: [scopeTrack as any, { status: 'ARCHIVED' }] }
+            : { status: 'ARCHIVED' },
+        },
       }),
       // ⭐ byGender : regroupé par sexe via StudentEnrollment.student
       this.prisma.studentEnrollment.findMany({
@@ -646,8 +692,10 @@ export class StudentsPrismaService {
     // Total = tous les élèves ayant une inscription cette année (tous statuts confondus)
     const total = active + preRegistered + admitted + pending + withdrawn;
 
-    // Archived =WITHDRAWN (= retirés cette année)
-    const archived = withdrawn;
+    // ⭐ FIX 2026-11-18 : archived = élèves ARCHIVÉS de l'année (Student.status
+    //    = 'ARCHIVED') — avant c'était un alias de withdrawn (même chiffre que
+    //    le KPI Abandons, trompeur dans l'onglet Sorties & Abandons).
+    const archived = archivedCount;
 
     // ⭐ Mapper byGender au format attendu par le frontend :
     //    [{ label: 'Garçons', count: N }, { label: 'Filles', count: N }]

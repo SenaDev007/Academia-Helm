@@ -137,9 +137,13 @@ export function useStudents(params: {
   classId?: string;
   status?: string;
   search?: string;
+  /** ⭐ FIX 2026-11-18 « abandons de classe invisibles » : 'ALL' → demander
+   *  TOUTES les inscriptions (WITHDRAWN inclus) au filtre par classe —
+   *  utilisé par l'onglet Sorties & Abandons. Autres vues : liste officielle. */
+  enrollmentScope?: 'ALL';
 }) {
-  const { academicYearId, page = 1, limit = 50, schoolLevelId, classId, status, search } = params;
-  const queryKey = ['students', academicYearId, page, limit, schoolLevelId, classId, status, search];
+  const { academicYearId, page = 1, limit = 50, schoolLevelId, classId, status, search, enrollmentScope } = params;
+  const queryKey = ['students', academicYearId, page, limit, schoolLevelId, classId, status, search, enrollmentScope];
 
   return useQuery({
     queryKey,
@@ -154,6 +158,7 @@ export function useStudents(params: {
       if (classId) p.set('classId', classId);
       if (status && status !== 'ALL') p.set('status', status);
       if (search?.trim()) p.set('search', search.trim());
+      if (enrollmentScope) p.set('enrollmentScope', enrollmentScope);
 
       const res = await fetch(`/api/students?${p}`, { credentials: 'include', cache: 'no-store' });
       if (!res.ok) return { data: [], total: 0, page: 1, limit: 50, totalPages: 1 };

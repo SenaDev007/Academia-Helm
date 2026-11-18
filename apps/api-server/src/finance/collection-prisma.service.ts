@@ -924,6 +924,7 @@ export class CollectionPrismaService {
     }> = [];
 
     const deleted: any[] = [];
+    const deletedStudentIds = new Set<string>();
     let totalDeletedAmount = 0;
 
     await this.prisma.$transaction(async (tx) => {
@@ -934,31 +935,14 @@ export class CollectionPrismaService {
             ? `${arrear.student.lastName} ${arrear.student.firstName}`.trim()
             : 'Élève';
 
-          // ── 1. Ajustement ADAPTATIF du StudentAccount ──
-          // Uniquement si le compte reflète l'arriéré (arrearsAmount >= balanceDue).
-          // Sinon (comptes pilotés par agrégation FeeArrear) : aucune écriture.
-          const account = await tx.studentAccount.findUnique({
-            where: {
-              studentId_academicYearId: {
-                studentId: arrear.studentId,
-                academicYearId: arrear.academicYearId,
-              },
-            },
-            select: { id: true, arrearsAmount: true, totalDue: true, balance: true },
-          });
-          if (account && Number(account.arrearsAmount) >= balanceDue && balanceDue > 0) {
-            // Bypass documenté du trigger d'immutabilité (même mécanisme que
-            // l'import Excel) — dans CETTE transaction, SET LOCAL s'applique.
-            await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
-            await tx.studentAccount.update({
-              where: { id: account.id },
-              data: {
-                arrearsAmount: { decrement: balanceDue },
-                totalDue: { decrement: balanceDue },
-                balance: { decrement: balanceDue },
-              },
-            });
-          }
+          // ── 1. ⭐ Moteur unifié (nov. 2026) : PLUS AUCUNE écriture manuelle de
+          //    totalDue/balance ici. La suppression d'un FeeArrear ne touche PAS
+          //    aux totaux du compte (périmètre compte de l'élève = frais de
+          //    l'année uniquement, arriérés suivis en FeeArrear) — seuls les
+          //    MIROIRS d'arriérés sont resynchronisés après la transaction
+          //    (cf. arrearsMirror.syncForStudent ci-dessous, depuis les
+          //    FeeArrear restants — l'ancien décrément « adaptatif » des
+          //    totaux datait de l'ère pré-moteur et corrompait les soldes).
 
           // ── 2. Ajustement previousArrears de l'inscription (si > 0) ──
           const enrollment = await tx.studentEnrollment.findFirst({
@@ -987,6 +971,7 @@ export class CollectionPrismaService {
 
           // ── 4. Supprimer l'arriéré ──
           await tx.feeArrear.delete({ where: { id: arrear.id } });
+          deletedStudentIds.add(arrear.studentId);
 
           deleted.push({
             arrearId: arrear.id,
@@ -1042,6 +1027,11 @@ export class CollectionPrismaService {
       }
     });
 
+    // ⭐ Moteur unifié : resynchroniser les miroirs d'arriérés des élèves
+    //    concernés (Σ FeeArrear ouverts — seule source de vérité ; remplace
+    //    l'ancien décrément manuel « adaptatif » des totaux du compte).
+    await this.resyncArrearsMirrors(tenantId, deletedStudentIds);
+
     return {
       success: true,
       requested: uniqueIds.length,
@@ -1050,6 +1040,22 @@ export class CollectionPrismaService {
       notFound: notFoundIds,
       results,
     };
+  }
+
+  /**
+   * ⭐ Moteur unifié (nov. 2026) : resynchronise les miroirs d'arriérés
+   * (arrearsAmount / carriedArrears) d'une liste d'élèves depuis les FeeArrear
+   * ouverts — via ArrearsMirrorService (seule source de vérité des arriérés).
+   * Utilisé par les suppressions d'arriérés (unitaire et groupée).
+   */
+  async resyncArrearsMirrors(tenantId: string, studentIds: Iterable<string>): Promise<void> {
+    for (const studentId of new Set(studentIds)) {
+      try {
+        await this.arrearsMirror.syncForStudent(tenantId, studentId);
+      } catch (e: any) {
+        console.warn(`Miroirs arriérés non resynchronisés pour ${studentId} (non bloquant): ${e?.message}`);
+      }
+    }
   }
 
   /**

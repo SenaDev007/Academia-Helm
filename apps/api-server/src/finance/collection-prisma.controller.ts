@@ -467,24 +467,11 @@ export class CollectionPrismaController {
 
     const balanceDue = Number(arrear.balanceDue);
 
-    // Ajuster le StudentAccount si possible
-    try {
-      await this.prisma.studentAccount.update({
-        where: {
-          studentId_academicYearId: {
-            studentId: arrear.studentId,
-            academicYearId: arrear.academicYearId,
-          },
-        },
-        data: {
-          totalDue: { decrement: balanceDue },
-          balance: { decrement: balanceDue },
-          arrearsAmount: { decrement: balanceDue },
-        },
-      });
-    } catch {
-      // Le compte n'existe peut-être pas — non bloquant
-    }
+    // ⭐ Moteur unifié (nov. 2026) : plus AUCUN ajustement manuel de
+    // totalDue/balance du compte (l'arriéré n'a jamais été incrusté dans les
+    // totaux — périmètre compte de l'élève = frais de l'année uniquement).
+    // Seul le MIROIR arrearsAmount est resynchronisé après la suppression
+    // (cf. resyncArrearsMirrors ci-dessous, depuis les FeeArrear restants).
 
     // Ajuster previousArrears sur l'inscription si elle existe
     try {
@@ -508,6 +495,10 @@ export class CollectionPrismaController {
 
     // Supprimer l'arriéré
     await this.prisma.feeArrear.delete({ where: { id } });
+
+    // ⭐ Moteur unifié : miroirs d'arriérés resynchronisés depuis les FeeArrear
+    //    restants (seule source de vérité).
+    await this.collectionService.resyncArrearsMirrors(tenantId, [arrear.studentId]);
 
     return { success: true, deletedAmount: balanceDue };
   }

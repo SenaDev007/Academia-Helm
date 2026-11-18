@@ -11554,6 +11554,13 @@ model FinanceTransaction {
   /// Reliquat / monnaie rendue au client (calculé côté frontend : tenderedAmount - amount).
   /// Re-vérifié côté backend par sécurité.
   changeGiven      Decimal?                       @db.Decimal(10, 2)
+  /// ⭐ MOTEUR UNIFIÉ DU COMPTE DE L'ÉLÈVE (nov. 2026) : montant de la
+  /// transaction appliqué aux ARRÉRÉS (FeeArrear) — part FIFO de l'encaissement
+  /// standard ou encaissement dédié d'un arriéré. Exclu du total payé du
+  /// compte de l'élève : les arriérés vivent en FeeArrear (source unique) et
+  /// sont ajoutés au total dû à l'AFFICHAGE — jamais comptés deux fois.
+  /// (cf. recompute_student_account_totals, migrations/unify_compte_eleve_engine.sql)
+  arrearsApplied   Decimal                        @default(0) @db.Decimal(10, 2)
   allocations      FinanceTransactionAllocation[]
   /// ⭐ Piste (D6 — consolidation track scope) : colonne présente en base
   /// depuis 20260906110000. Dénormalisée à l'écriture (piste de l'élève via sa

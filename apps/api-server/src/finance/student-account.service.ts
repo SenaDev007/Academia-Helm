@@ -44,6 +44,29 @@ export function normalizeClassNameForExam(name: string): string {
 }
 
 /**
+ * ⭐ PÉRIMÈTRE DU COMPTE DE L'ÉLÈVE (moteur unifié — nov. 2026, build 1.0.29) :
+ *
+ *   Le compte de l'élève = frais d'INSCRIPTION + RÉINSCRIPTION + SCOLARITÉ
+ *   (+ ARRÉRÉS de ces postes, suivis en FeeArrear et ajoutés au total dû à
+ *   l'AFFICHAGE : « 45 000 dont 5 000 d'arriérés »).
+ *
+ *   Les FRAIS GÉNÉRAUX, FRAIS D'EXAMENS, CANTEEN et OTHER sont suivis À PART
+ *   (onglet Frais généraux / sous-onglet Frais des examens) et ne sont
+ *   JAMAIS additionnés à l'inscription ni à la scolarité.
+ *
+ *   MÊME RÈGLE pour toutes les écoles, tous les tenants — aucune exception.
+ *   Miroir exact du filtre SQL de recompute_student_account_totals()
+ *   (migrations/unify_compte_eleve_engine.sql) : une seule définition du
+ *   périmètre, côté moteur SQL comme côté service.
+ */
+export const CORE_FEE_TYPES = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION'] as const;
+
+/** Vrai si le type de frais appartient au périmètre « compte de l'élève ». */
+export function isCoreFeeType(feeType: string): boolean {
+  return (CORE_FEE_TYPES as readonly string[]).includes(feeType);
+}
+
+/**
  * ⭐ FIX (sept. 2026 — bug « mauvais frais appliqués aux comptes élèves ») :
  * Sélectionne les FeeStructures applicables à un élève, avec la priorité :
  *
@@ -125,9 +148,11 @@ export interface RecalcPlan {
     paidAmount: number;
     remainingAmount: number;
   }[];
-  totalDue: number;
-  totalPaid: number;
-  balance: number;
+  // ⭐ Moteur unifié (nov. 2026) : les totaux du compte (totalDue/totalPaid/
+  //    balance) ne sont PLUS calculés par le plan — ils sont DÉRIVÉS des lignes
+  //    et du ledger par la fonction SQL recompute_student_account_totals
+  //    (périmètre compte de l'élève = INSCRIPTION/RÉINSCRIPTION/TUITION +
+  //    arriérés à l'affichage ; frais généraux/examens à part).
 }
 
 @Injectable()
@@ -497,8 +522,6 @@ export class StudentAccountService {
       structures: allStructures,
       studentOverrides,
       regimeAdjustments,
-      // ⭐ FIX (nov. 2026) : préserver l'argent encaissé non imputé (cf. planner).
-      accountTotalPaid: Number(account.totalPaid ?? 0),
     });
 
     // ── Application du plan (mêmes écritures qu'avant le refactor) ──
@@ -527,30 +550,21 @@ export class StudentAccountService {
       await this.prisma.accountBreakdown.createMany({ data: plan.createBreakdowns });
     }
 
-    // Recalculer totalDue et balance
-    // ⭐ Juillet 2026 : SET LOCAL app.allow_balance_update doit être dans la MÊME
-    // transaction que l'UPDATE du studentAccount, sinon le trigger prevent_balance_update
-    // déclenche l'erreur "Direct modification of balance fields is forbidden".
-    // Avant : allowBalanceUpdate() + prisma.studentAccount.update() étaient dans 2
-    // transactions séparées → le flag était perdu.
-    // Maintenant : tout est dans une seule $transaction (pattern identique à
-    // fee-structure.service.ts lignes 641-652 qui fonctionne correctement).
+    // ⭐ Moteur unifié (nov. 2026, build 1.0.29) : les totaux du compte sont
+    //    DÉRIVÉS des lignes + du ledger par la fonction SQL
+    //    recompute_student_account_totals — déclenchée par les triggers sur
+    //    les écritures de lignes ci-dessus, et appelée ici explicitement pour
+    //    couvrir aussi les plans sans AUCUN changement de ligne.
+    //    Périmètre : compte de l'élève = INSCRIPTION/RÉINSCRIPTION/TUITION
+    //    (+ arriérés à l'affichage) ; frais généraux/examens/cantine À PART.
+    //    Plus AUCUNE écriture manuelle de totalDue/totalPaid/balance.
     const accountId = account.id;
-    account = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
-      return tx.studentAccount.update({
-        where: { id: accountId },
-        data: {
-          totalDue: plan.totalDue,
-          totalPaid: plan.totalPaid,
-          balance: plan.balance,
-          updatedAt: new Date(),
-        },
-        include: { breakdowns: { include: { feeStructure: true } } },
-      });
-    });
+    await this.prisma.$queryRaw`SELECT public.recompute_student_account_totals(${accountId})`;
 
-    return account;
+    return this.prisma.studentAccount.findUnique({
+      where: { id: accountId },
+      include: { breakdowns: { include: { feeStructure: true } } },
+    });
   }
 
   /**
@@ -740,13 +754,15 @@ export class StudentAccountService {
       });
     }
 
-    // ── Réimputation FIFO du crédit : paiements des lignes remplacées + reliquat
-    //    non imputé déjà présent sur le compte (ex. encaissement antérieur aux
-    //    frais — pattern du fix « scolarité 0 F »).
-    const sumBeforePaid = account.breakdowns.reduce(
-      (s, b) => s + Number(b.paidAmount ?? 0), 0,
-    );
-    const unallocatedPaid = Math.max(0, Number(account.totalPaid ?? 0) - sumBeforePaid);
+    // ── Réimputation FIFO du crédit : paiements des lignes remplacées + AVANCES
+    //    du compte (argent reçu non imputé — ⭐ moteur unifié : même formule que
+    //    recompute_student_account_totals, via la fonction SQL dédiée — plus
+    //    fiable que totalPaid − Σ payé qui mélangeait l'argent des frais
+    //    généraux et des arriérés).
+    const advanceRows: { advance: number }[] = await this.prisma.$queryRaw`
+      SELECT public.student_account_advance(${account.id}) AS advance
+    `;
+    const unallocatedPaid = Number(advanceRows[0]?.advance ?? 0);
     let credit = transferredPaid + unallocatedPaid;
 
     // Ordre de priorité identique à l'encaissement (finance-transaction.service.ts)
@@ -767,7 +783,9 @@ export class StudentAccountService {
     }
 
     // ── Écritures atomiques (une seule transaction : suppressions, mises à
-    //    jour, créations, puis le solde du compte avec son bypass de trigger).
+    //    jour, créations de lignes — les TOTAUX du compte sont dérivés par le
+    //    trigger SQL recompute_student_account_totals à chaque écriture de
+    //    ligne : plus d'écriture manuelle de totalDue/totalPaid/balance).
     const updates = linePlan
       .filter((l) => l.existingId)
       .map((l) => ({
@@ -786,13 +804,8 @@ export class StudentAccountService {
         remainingAmount: l.initialAmount - l.paidAmount,
       }));
 
-    const totalDue = linePlan.reduce((s, l) => s + l.initialAmount, 0);
-    // totalPaid INCHANGÉ : l'argent encaissé est conservé (crédit réimputé).
-    const totalPaid = Number(account.totalPaid ?? 0);
-    const balance = totalDue - totalPaid;
-
     const accountId = account.id;
-    account = await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
       if (deleteIds.length > 0) {
         await tx.accountBreakdown.deleteMany({ where: { id: { in: deleteIds } } });
       }
@@ -810,27 +823,24 @@ export class StudentAccountService {
       if (creates.length > 0) {
         await tx.accountBreakdown.createMany({ data: creates });
       }
-      await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
-      return tx.studentAccount.update({
-        where: { id: accountId },
-        data: {
-          totalDue,
-          totalPaid,
-          balance,
-          updatedAt: new Date(),
-        },
-        include: { breakdowns: { include: { feeStructure: true } } },
-      });
+    });
+
+    // ⭐ Moteur unifié : totaux dérivés des lignes + du ledger (appel explicite
+    //    pour couvrir aussi le cas sans changement de ligne).
+    await this.prisma.$queryRaw`SELECT public.recompute_student_account_totals(${accountId})`;
+    const refreshed = await this.prisma.studentAccount.findUnique({
+      where: { id: accountId },
+      include: { breakdowns: { include: { feeStructure: true } } },
     });
 
     this.logger.log(
       `rebuildForClassChange: élève=${studentId} année=${academicYearId} ` +
       `lignes remplacées=${replacedPaid.length} (dont payées=${transferredPaid} F réimputées) ` +
-      `nouveau totalDue=${totalDue} F totalPaid=${totalPaid} F balance=${balance} F ` +
+      `nouveau totalDue=${Number(refreshed?.totalDue ?? 0)} F totalPaid=${Number(refreshed?.totalPaid ?? 0)} F balance=${Number(refreshed?.balance ?? 0)} F ` +
       `crédit non imputable restant=${credit} F`,
     );
 
-    return account;
+    return refreshed ?? account;
   }
 
   /**
@@ -848,7 +858,12 @@ export class StudentAccountService {
    *   3. Breakdowns non payés → supprimés (recréés si applicables).
    *      Breakdowns payés conservés → montants resynchronisés (applicables
    *      ET orphelins — cf. fix « suppression d'override »).
-   *   4. Totaux = somme des breakdowns à l'état final.
+   *   4. ⭐ Moteur unifié (nov. 2026) : les TOTAUX ne sont plus calculés ici —
+   *      ils sont dérivés des lignes + du ledger par la fonction SQL
+   *      recompute_student_account_totals (périmètre compte de l'élève =
+   *      INSCRIPTION/RÉINSCRIPTION/TUITION + arriérés à l'affichage ;
+   *      frais généraux/examens/cantine À PART ; avances préservées par
+   *      construction à partir du ledger).
    *
    * Ce planner est partagé par le chemin mono-élève (recalculate, utilisé par
    * les paiements/personnalisations) et le chemin batch
@@ -864,12 +879,6 @@ export class StudentAccountService {
     structures: any[];
     studentOverrides: any[];
     regimeAdjustments: Map<string, number>;
-    /**
-     * ⭐ FIX (nov. 2026 — « scolarité 0 F », Mon Avenir Plus) : totalPaid ACTUEL
-     * du compte, pour ne jamais perdre les paiements NON imputés à des
-     * breakdowns lors du recalcul (voir section 4 ci-dessous).
-     */
-    accountTotalPaid?: number;
   }): RecalcPlan {
     const { breakdowns } = input;
     const structuresById = new Map<string, any>(input.structures.map((fs) => [fs.id, fs]));
@@ -965,36 +974,10 @@ export class StudentAccountService {
         };
       });
 
-    // 4) Totaux sur l'état final (conservés mis à jour + créations).
-    //    ⭐ FIX (nov. 2026 — « scolarité 0 F », Mon Avenir Plus) : totalPaid doit
-    //    conserver les paiements NON imputés à des breakdowns :
-    //      - paiements FIFO sur les arriérés d'années antérieures (FeeArrear) ;
-    //      - paiements enregistrés avant la matérialisation des frais (comptes
-    //        créés par la promotion de fin d'année AVANT la configuration des
-    //        frais : ex. 604 comptes Mon Avenir Plus 2026-2027, dont un
-    //        encaissement de 43 000 F sans aucune ligne de frais).
-    //    AVANT : totalPaid = Σ breakdowns.paidAmount → tout paiement non imputé
-    //    disparaissait au recalcul (balance gonflée d'autant). Les breakdowns
-    //    supprimés sont toujours non payés (paidAmount = 0) → la somme avant ne
-    //    compte que les conservés.
-    const sumBeforePaid = breakdowns.reduce((s, b) => s + Number(b.paidAmount ?? 0), 0);
-    const unallocatedPaid = Math.max(0, Number(input.accountTotalPaid ?? 0) - sumBeforePaid);
-    let totalDue = 0;
-    let totalPaid = unallocatedPaid;
-    for (const b of kept) {
-      const upd = updateBreakdowns.find((u) => u.id === b.id);
-      totalDue += upd ? upd.initialAmount : Number(b.initialAmount);
-      totalPaid += Number(b.paidAmount);
-    }
-    for (const c of createBreakdowns) totalDue += c.initialAmount;
-
     return {
       deleteIds,
       updateBreakdowns,
       createBreakdowns,
-      totalDue,
-      totalPaid,
-      balance: totalDue - totalPaid,
     };
   }
 
@@ -1036,7 +1019,7 @@ export class StudentAccountService {
         ...(academicYearId ? { academicYearId } : {}),
         ...(accountWhere ?? {}),
       },
-      select: { id: true, studentId: true, academicYearId: true, totalPaid: true },
+      select: { id: true, studentId: true, academicYearId: true },
     });
     if (accounts.length === 0) {
       return { success: true, accountsRecalculated: 0, breakdownsUpdated: 0, accountsTotal: 0 };
@@ -1054,7 +1037,6 @@ export class StudentAccountService {
     const allDeleteIds: string[] = [];
     const allUpdates: RecalcPlan['updateBreakdowns'] = [];
     const allCreates: RecalcPlan['createBreakdowns'] = [];
-    const accountTotals: { id: string; totalDue: number; totalPaid: number; balance: number }[] = [];
     let accountsRecalculated = 0;
 
     for (const [year, yearAccounts] of accountsByYear) {
@@ -1138,23 +1120,18 @@ export class StudentAccountService {
           structures,
           studentOverrides: overridesByStudent.get(account.studentId) ?? [],
           regimeAdjustments: regimeAdjustmentsByStudent.get(account.studentId) ?? new Map(),
-          // ⭐ FIX (nov. 2026) : préserver l'argent encaissé non imputé (cf. planner).
-          accountTotalPaid: Number((account as any).totalPaid ?? 0),
         });
         allDeleteIds.push(...plan.deleteIds);
         allUpdates.push(...plan.updateBreakdowns);
         allCreates.push(...plan.createBreakdowns);
-        accountTotals.push({
-          id: account.id,
-          totalDue: plan.totalDue,
-          totalPaid: plan.totalPaid,
-          balance: plan.balance,
-        });
         accountsRecalculated++;
       }
     }
 
-    // ── Application groupée (4 écritures, quelle que soit la taille du batch) ──
+    // ── Application groupée (3 écritures de LIGNES, quelle que soit la taille du
+    //    batch) — les TOTAUX des comptes sont dérivés par le trigger SQL
+    //    recompute_student_account_totals (statement-level + tables de
+    //    transition : une recompute par compte touché, pas par ligne) ──
     if (allDeleteIds.length > 0) {
       await this.prisma.accountBreakdown.deleteMany({ where: { id: { in: allDeleteIds } } });
     }
@@ -1178,28 +1155,18 @@ export class StudentAccountService {
         WHERE ab.id = t.bid
       `;
     }
-    if (accountTotals.length > 0) {
-      const ids = accountTotals.map((a) => a.id);
-      const dues = accountTotals.map((a) => a.totalDue);
-      const paids = accountTotals.map((a) => a.totalPaid);
-      const bals = accountTotals.map((a) => a.balance);
-      const now = new Date();
-      // SET LOCAL app.allow_balance_update dans la MÊME transaction que l'UPDATE
-      // (pattern obligatoire — cf. trigger prevent_balance_update_trigger).
-      await this.prisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
-        await tx.$executeRaw`
-          UPDATE student_accounts AS sa
-          SET "totalDue" = t.due, "totalPaid" = t.paid, "balance" = t.bal, "updatedAt" = ${now}
-          FROM unnest(
-            ${ids}::text[],
-            ${dues}::float8[],
-            ${paids}::float8[],
-            ${bals}::float8[]
-          ) AS t(aid, due, paid, bal)
-          WHERE sa.id = t.aid
-        `;
-      });
+    // ⭐ Moteur unifié : recompute explicite pour les comptes du batch SANS
+    //    changement de ligne (totaux dérivés des lignes + du ledger — périmètre
+    //    compte de l'élève, avances préservées, frais généraux/examens à part).
+    const accountIds = accounts.map((a) => a.id);
+    for (let i = 0; i < accountIds.length; i += 400) {
+      const chunk = accountIds.slice(i, i + 400);
+      await this.prisma.$queryRawUnsafe(
+        `SELECT public.recompute_student_account_totals(sa.id)
+         FROM student_accounts sa
+         WHERE sa.id = ANY(string_to_array($1, ','))`,
+        chunk.join(','),
+      );
     }
 
     console.log(

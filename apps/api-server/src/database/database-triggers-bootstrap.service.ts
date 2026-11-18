@@ -204,23 +204,185 @@ $$ LANGUAGE plpgsql`,
       `DROP TRIGGER IF EXISTS trg_no_delete_finance_transaction ON "finance_transactions"`,
       `CREATE TRIGGER trg_no_delete_finance_transaction BEFORE DELETE ON "finance_transactions" FOR EACH ROW EXECUTE FUNCTION prevent_finance_transaction_delete()`,
 
-      // 2. Mise à jour atomique du solde StudentAccount après chaque transaction
-      `CREATE OR REPLACE FUNCTION update_account_balance_after_tx()
-RETURNS TRIGGER AS $$
+      // 2. ⭐ MOTEUR UNIFIÉ DU COMPTE DE L'ÉLÈVE (nov. 2026, build 1.0.29) —
+      //    remplace l'ancien incrément aveugle update_account_balance_after_tx
+      //    (totalPaid += montant COMPLET, y compris la part FIFO des arriérés →
+      //    double comptage). RÈGLE IDENTIQUE POUR TOUS LES TENANTS :
+      //    compte de l'élève = INSCRIPTION + RÉINSCRIPTION + SCOLARITÉ
+      //    (+ arriérés à l'affichage) ; frais généraux / examens / cantine
+      //    À PART, jamais additionnés. Les totaux sont DÉRIVÉS des lignes et du
+      //    ledger par UNE seule fonction (source de vérité unique).
+      //    ⚠ Ce bootstrap ré-applique les triggers à CHAQUE démarrage : toute
+      //    modification du moteur doit être faite ICI ET dans la migration
+      //    prisma/migrations/unify_compte_eleve_engine.sql (les deux doivent
+      //    rester synchronisées).
+      `ALTER TABLE "finance_transactions" ADD COLUMN IF NOT EXISTS "arrearsApplied" DECIMAL(10,2) NOT NULL DEFAULT 0`,
+      `DROP FUNCTION IF EXISTS student_account_advance(uuid)`,
+      `DROP FUNCTION IF EXISTS student_account_advance(text)`,
+      `CREATE OR REPLACE FUNCTION student_account_advance(p_account_id text)
+RETURNS double precision
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+  v_money       double precision;
+  v_alloc       double precision;
+  v_arrears     double precision;
+  v_lines_paid  double precision;
 BEGIN
-  -- Permet la mise à jour légitime du solde par ce trigger (bypass prevent_balance_update)
+  SELECT coalesce(sum(ft."amount"), 0) INTO v_money
+  FROM "finance_transactions" ft
+  WHERE ft."studentAccountId" = p_account_id;
+
+  SELECT coalesce(sum(a."amount"), 0) INTO v_alloc
+  FROM "finance_transaction_allocations" a
+  JOIN "finance_transactions" ft ON ft.id = a."financeTransactionId"
+  WHERE ft."studentAccountId" = p_account_id
+    AND ft."type" = 'PAYMENT'
+    AND NOT EXISTS (
+      SELECT 1 FROM "finance_transactions" r
+      WHERE r."reversedFromId" = ft.id AND r."type" = 'REVERSAL'
+    );
+
+  SELECT coalesce(sum(ft."arrearsApplied"), 0) INTO v_arrears
+  FROM "finance_transactions" ft
+  WHERE ft."studentAccountId" = p_account_id
+    AND ft."type" = 'PAYMENT'
+    AND NOT EXISTS (
+      SELECT 1 FROM "finance_transactions" r
+      WHERE r."reversedFromId" = ft.id AND r."type" = 'REVERSAL'
+    );
+
+  SELECT coalesce(sum(ab."paidAmount"), 0) INTO v_lines_paid
+  FROM "account_breakdowns" ab
+  WHERE ab."studentAccountId" = p_account_id;
+
+  RETURN greatest(0, least(
+    v_money - v_alloc - v_arrears,
+    v_money - v_lines_paid
+  ))::double precision;
+END;
+$$`,
+      `DROP FUNCTION IF EXISTS recompute_student_account_totals(uuid)`,
+      `DROP FUNCTION IF EXISTS recompute_student_account_totals(text)`,
+      `CREATE OR REPLACE FUNCTION recompute_student_account_totals(p_account_id text)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_core_due    double precision;
+  v_core_paid   double precision;
+  v_advance     double precision;
+  v_total_due   double precision;
+  v_total_paid  double precision;
+  v_balance     double precision;
+  v_blocked     boolean;
+BEGIN
+  -- Périmètre « compte de l'élève » : INSCRIPTION + RÉINSCRIPTION + SCOLARITÉ.
+  -- (les frais généraux / examens / cantine / autres sont suivis à part)
+  SELECT
+    coalesce(sum(ab."initialAmount"), 0),
+    coalesce(sum(ab."paidAmount"), 0)
+  INTO v_core_due, v_core_paid
+  FROM "account_breakdowns" ab
+  JOIN "fee_structures" fs ON fs.id = ab."feeStructureId"
+  WHERE ab."studentAccountId" = p_account_id
+    AND fs."feeType" IN ('INSCRIPTION', 'REINSCRIPTION', 'TUITION');
+
+  v_advance := public.student_account_advance(p_account_id);
+
+  v_total_due := v_core_due;
+  v_total_paid := v_core_paid + v_advance;
+  v_balance := v_total_due - v_total_paid;
+
+  SELECT sa."isBlocked" INTO v_blocked
+  FROM "student_accounts" sa
+  WHERE sa.id = p_account_id;
+
   PERFORM set_config('app.allow_balance_update', 'true', true);
   UPDATE "student_accounts"
-  SET
-    "totalPaid" = "totalPaid" + NEW.amount,
-    "balance" = "balance" - NEW.amount,
-    "updatedAt" = NOW()
-  WHERE "id" = NEW."studentAccountId";
+  SET "totalDue"   = round(v_total_due::numeric, 2),
+      "totalPaid"  = round(v_total_paid::numeric, 2),
+      "balance"    = round(v_balance::numeric, 2),
+      "status"     = CASE
+                       WHEN v_blocked THEN "status"
+                       WHEN v_balance <= 0.005 THEN 'PAID'::"AccountStatus"
+                       WHEN v_total_paid > 0.005 THEN 'PARTIAL'::"AccountStatus"
+                       ELSE 'ACTIVE'::"AccountStatus"
+                     END,
+      "updatedAt"  = now()
+  WHERE id = p_account_id;
+END;
+$$`,
+      `CREATE OR REPLACE FUNCTION recompute_after_finance_tx()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_account text;
+BEGIN
+  v_account := CASE WHEN TG_OP = 'DELETE' THEN OLD."studentAccountId"
+                    ELSE NEW."studentAccountId" END;
+  PERFORM public.recompute_student_account_totals(v_account);
+  IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+END;
+$$`,
+      `DROP TRIGGER IF EXISTS trg_update_balance_after_tx ON "finance_transactions"`,
+      `DROP FUNCTION IF EXISTS update_account_balance_after_tx()`,
+      `DROP TRIGGER IF EXISTS trg_recompute_after_finance_tx ON "finance_transactions"`,
+      `CREATE TRIGGER trg_recompute_after_finance_tx AFTER INSERT OR UPDATE OR DELETE ON "finance_transactions" FOR EACH ROW EXECUTE FUNCTION recompute_after_finance_tx()`,
+      `CREATE OR REPLACE FUNCTION recompute_after_breakdown_change()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_id uuid;
+BEGIN
+  IF TG_OP IN ('INSERT', 'UPDATE') THEN
+    FOR v_id IN SELECT DISTINCT "studentAccountId" FROM new_rows LOOP
+      PERFORM public.recompute_student_account_totals(v_id);
+    END LOOP;
+  END IF;
+  IF TG_OP IN ('UPDATE', 'DELETE') THEN
+    FOR v_id IN SELECT DISTINCT "studentAccountId" FROM old_rows LOOP
+      PERFORM public.recompute_student_account_totals(v_id);
+    END LOOP;
+  END IF;
+  RETURN NULL;
+END;
+$$`,
+      `DROP TRIGGER IF EXISTS trg_recompute_after_breakdown_insert ON "account_breakdowns"`,
+      `CREATE TRIGGER trg_recompute_after_breakdown_insert AFTER INSERT ON "account_breakdowns" REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION recompute_after_breakdown_change()`,
+      `DROP TRIGGER IF EXISTS trg_recompute_after_breakdown_update ON "account_breakdowns"`,
+      `CREATE TRIGGER trg_recompute_after_breakdown_update AFTER UPDATE ON "account_breakdowns" REFERENCING NEW TABLE AS new_rows OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION recompute_after_breakdown_change()`,
+      `DROP TRIGGER IF EXISTS trg_recompute_after_breakdown_delete ON "account_breakdowns"`,
+      `CREATE TRIGGER trg_recompute_after_breakdown_delete AFTER DELETE ON "account_breakdowns" REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION recompute_after_breakdown_change()`,
+      // ⭐ Bypass contrôlé pour la maintenance du ledger (annotation
+      //    rétroactive arrearsApplied) — même famille que
+      //    app.allow_transaction_delete : JAMAIS posé par l'application,
+      //    uniquement par scripts/finance/rescope_student_accounts.py.
+      `CREATE OR REPLACE FUNCTION prevent_update_after_closure()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  allow text;
+BEGIN
+  allow := current_setting('app.allow_closure_override', true);
+  IF allow IS NOT NULL AND allow = 'true' THEN
+    RETURN NEW;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM "finance_daily_closures" c
+    WHERE c."tenantId" = NEW."tenantId"
+      AND c."academicYearId" = NEW."academicYearId"
+      AND c.date = DATE(NEW."createdAt")
+  ) THEN
+    RAISE EXCEPTION 'Transaction locked after daily closure';
+  END IF;
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql`,
-      `DROP TRIGGER IF EXISTS trg_update_balance_after_tx ON "finance_transactions"`,
-      `CREATE TRIGGER trg_update_balance_after_tx AFTER INSERT ON "finance_transactions" FOR EACH ROW EXECUTE FUNCTION update_account_balance_after_tx()`,
+$$`,
 
       // 3. Audit log automatique sur changement de statut sensible (Blocage)
       `CREATE OR REPLACE FUNCTION audit_account_blocking()
@@ -240,7 +402,8 @@ $$ LANGUAGE plpgsql`,
       `CREATE TRIGGER trg_audit_account_blocking AFTER UPDATE ON "student_accounts" FOR EACH ROW EXECUTE FUNCTION audit_account_blocking()`,
 
       // 4. prevent_balance_update — block direct modification of balance fields
-      // (only the AFTER INSERT trigger update_account_balance_after_tx is allowed via app.allow_balance_update flag)
+      // (only the engine recompute_student_account_totals is allowed via the
+      //  app.allow_balance_update flag, set by the trigger itself)
       `CREATE OR REPLACE FUNCTION prevent_balance_update()
 RETURNS TRIGGER AS $$
 DECLARE

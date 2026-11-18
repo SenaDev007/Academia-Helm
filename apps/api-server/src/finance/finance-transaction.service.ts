@@ -12,10 +12,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
-import { TransactionType, PaymentMethod, AccountStatus } from '@prisma/client';
+import { TransactionType, PaymentMethod } from '@prisma/client';
 import { ReceiptFinanceService } from './receipt-finance.service';
 import { ReceiptNotificationFinanceService } from './receipt-notification-finance.service';
 import { ArrearAccumulationService } from './arrear-accumulation.service';
+import { ArrearsMirrorService } from './arrears-mirror.service';
 import { StudentAccountService } from './student-account.service';
 import { AccessScope } from '../common/context/access-scope.service';
 import { AppSequenceService } from '../common/services/app-sequence.service';
@@ -48,6 +49,9 @@ export class FinanceTransactionService {
     private readonly receiptNotificationService: ReceiptNotificationFinanceService,
     @Inject(forwardRef(() => ArrearAccumulationService))
     private readonly arrearAccumulationService: ArrearAccumulationService,
+    // ⭐ Moteur unifié (nov. 2026) : miroirs d'arriérés resynchronisés depuis
+    //    FeeArrear après l'encaissement dédié d'un arriéré.
+    private readonly arrearsMirror: ArrearsMirrorService,
     private readonly appSequences: AppSequenceService,
     // ⭐ FIX (nov. 2026 — « scolarité 0 F », Mon Avenir Plus) : matérialise les
     //    frais applicables d'un compte sans AUCUN breakdown AVANT encaissement
@@ -441,36 +445,24 @@ export class FinanceTransactionService {
               `dépasse le montant du frais (${Number(structure.totalAmount).toLocaleString('fr-FR')} FCFA).`,
             );
           }
-          // ⚠️ Le trigger prevent_balance_update bloque les UPDATE directs des
-          // champs de solde : on passe par $transaction + SET LOCAL
-          // app.allow_balance_update (pattern FeeStructureService) pour que le
-          // breakdown ET l'ajustement du compte soient atomiques et autorisés.
+          // ⭐ Moteur unifié (nov. 2026) : les totaux du compte sont DÉRIVÉS des
+          //    lignes par le trigger SQL recompute_student_account_totals — plus
+          //    d'incrément manuel de totalDue/balance. Et règle unifiée : les
+          //    frais généraux restent À PART du total dû du compte de l'élève
+          //    (jamais additionnés à l'inscription ni à la scolarité).
           const structAmount = Number(structure.totalAmount);
-          breakdown = await this.prisma.$transaction(async (tx) => {
-            const created = await tx.accountBreakdown.create({
-              data: {
-                studentAccountId: account.id,
-                feeStructureId: structure.id,
-                initialAmount: structure.totalAmount,
-                adjustedAmount: structure.totalAmount,
-                paidAmount: 0,
-                remainingAmount: structure.totalAmount,
-              },
-              include: { feeStructure: true },
-            });
-            await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
-            await tx.studentAccount.update({
-              where: { id: account.id },
-              data: {
-                totalDue: { increment: structAmount },
-                balance: { increment: structAmount },
-              },
-            });
-            return created;
+          breakdown = await this.prisma.accountBreakdown.create({
+            data: {
+              studentAccountId: account.id,
+              feeStructureId: structure.id,
+              initialAmount: structure.totalAmount,
+              adjustedAmount: structure.totalAmount,
+              paidAmount: 0,
+              remainingAmount: structure.totalAmount,
+            },
+            include: { feeStructure: true },
           });
           account.breakdowns.push(breakdown);
-          account.totalDue = Number(account.totalDue) + structAmount;
-          account.balance = Number(account.balance) + structAmount;
           merged.push({ accountBreakdownId: breakdown.id, amount: amt });
           this.logger.log(
             `Frais général à la carte : breakdown « ${structure.name} » créé sur le compte ` +
@@ -552,8 +544,17 @@ export class FinanceTransactionService {
     // ⭐ Répartition manuelle : FIFO sauté également — la comptable a précisé
     //    explicitement où imputer le paiement (les arriérés éventuels seront
     //    gérés par l'onglet dédié Arriérés).
+    // ⭐ MOTEUR UNIFIÉ (nov. 2026) : la part du paiement qui solde des ARRÉRÉS
+    //    (FeeArrear) est annotée sur la transaction ("arrearsApplied") — elle
+    //    ne doit JAMAIS compter dans le « payé » du compte de l'élève : les
+    //    arriérés vivent en FeeArrear (source de vérité unique) et sont ajoutés
+    //    au total dû à l'AFFICHAGE. AVANT, le trigger incrémentait totalPaid du
+    //    montant COMPLET → l'argent des arriérés comptait deux fois (le payé
+    //    baissait le solde ET l'arriéré disparaissait) → soldes incohérents.
+    let arrearsApplied = 0;
     if (remaining > 0 && !data.targetFeeType && !effectiveManualAllocations) {
       try {
+        const fifoBefore = remaining;
         const fifoResult = await this.arrearAccumulationService.allocatePaymentFIFO(
           tenantId,
           account.studentId,
@@ -570,6 +571,7 @@ export class FinanceTransactionService {
 
         // Le reste est alloué aux AccountBreakdown
         remaining = fifoResult.remainingAmount;
+        arrearsApplied = Math.max(0, fifoBefore - remaining);
       } catch (err: any) {
         this.logger.warn(`FIFO allocation failed (non-blocking): ${err.message}`);
         // En cas d'erreur, on continue avec le montant original (non bloquant)
@@ -713,8 +715,9 @@ export class FinanceTransactionService {
     // de solde), et chaque aller-retour occupait le pool de connexions pendant
     // les pics de charge.
     // Maintenant : atomique (tout ou rien) + un seul BEGIN/COMMIT.
-    // Le trigger DB update_balance_after_transaction maintient les totaux du
-    // compte élève à l'INSERT exactement comme avant (incrément atomique).
+    // ⭐ Moteur unifié : le trigger SQL recompute_student_account_totals
+    // maintient les totaux du compte (dérivation lignes + ledger) à l'INSERT —
+    // plus d'incrément aveugle du totalPaid.
     const tx = await this.prisma.$transaction(async (prismaTx) => {
       const created = await prismaTx.financeTransaction.create({
         data: {
@@ -723,6 +726,9 @@ export class FinanceTransactionService {
           studentAccountId: data.studentAccountId,
           type: TransactionType.PAYMENT,
           amount: data.amount,
+          // ⭐ Moteur unifié : part appliquée aux arriérés (FeeArrear) — exclue
+          //    du total payé du compte de l'élève (jamais de double comptage).
+          arrearsApplied,
           paymentMethod,
           reference: transactionReference,
           cashierId: data.cashierId,
@@ -788,8 +794,8 @@ export class FinanceTransactionService {
       await this.allocateToDestinationCaisses(tenantId, tx.id, updates, effectiveCashRegisterId);
     }
 
-    // Note: totalPaid, balance and status are now updated via the DB Trigger 'update_balance_after_transaction'
-    // on the finance_transactions table to ensure atomicity.
+    // Note: totalPaid, balance and status are now derived by the SQL engine
+    // trigger 'recompute_student_account_totals' (lines + ledger).
 
     // ─── Génération du reçu PDF + notifications automatiques (fire-and-forget) ─
     // Le PDF est généré en arrière-plan, puis les notifications (email, WhatsApp,
@@ -848,12 +854,12 @@ export class FinanceTransactionService {
    * FIFO impute le bon arriéré. Ce endpoint cible EXPLICITEMENT le FeeArrear
    * choisi :
    *   1. enregistre une FinanceTransaction PAYMENT sur le compte élève de
-   *      l'année de l'arriéré (le trigger update_balance_after_transaction
+   *      l'année de l'arriéré (le trigger SQL recompute_student_account_totals
    *      recalcul totalPaid / balance / status du compte — automatique et
    *      dynamique) ;
    *   2. met à jour le FeeArrear (totalPaid, balanceDue, status, lastPaymentDate) ;
-   *   3. décrémente StudentAccount.arrearsAmount (flag app.allow_balance_update,
-   *      même pattern que le write-off / imports d'arriérés) ;
+   *   3. resynchronise les miroirs d'arriérés du compte (ArrearsMirrorService,
+   *      depuis les FeeArrear ouverts — source unique) ;
    *   4. génère le reçu PDF + notifications (fire-and-forget).
    *
    * Le solde de l'arriéré et du compte restent ainsi TOUJJOURS cohérents.
@@ -978,11 +984,11 @@ export class FinanceTransactionService {
     // ─── 4. Écritures atomiques (transaction interactive) ───────────────────
     const newBalanceDue = Math.max(0, balanceDue - amount);
     const newStatus = newBalanceDue <= 0 ? 'PAID' : 'PARTIALLY_PAID';
-    const arrearsDecrement = Math.min(amount, Number(account.arrearsAmount));
 
     const result = await this.prisma.$transaction(async (prismaTx) => {
-      // Le trigger d'INSERT update_balance_after_transaction maintient
-      // totalPaid / balance / status du compte — recalcul automatique.
+      // ⭐ Moteur unifié (nov. 2026) : le trigger SQL recompute_student_account_totals
+      //    dérive totalDue/totalPaid/balance des lignes + du ledger à l'INSERT —
+      //    recalcul automatique (la part arrearsApplied est exclue du payé).
       const created = await prismaTx.financeTransaction.create({
         data: {
           tenantId,
@@ -990,6 +996,12 @@ export class FinanceTransactionService {
           studentAccountId: account!.id,
           type: TransactionType.PAYMENT,
           amount,
+          // ⭐ Moteur unifié : encaissement DÉDIÉ d'un arriéré — le montant est
+          //    appliqué au FeeArrear → annoté « arrearsApplied » et EXCLU du
+          //    total payé du compte de l'élève (jamais de double comptage : les
+          //    arriérés suivis en FeeArrear sont ajoutés au total dû à
+          //    l'affichage, leur paiement les réduit).
+          arrearsApplied: amount,
           paymentMethod,
           reference: transactionReference,
           cashierId: data.cashierId,
@@ -1024,16 +1036,6 @@ export class FinanceTransactionService {
         },
       });
 
-      // arrearsAmount n'est PAS couvert par le trigger d'INSERT → ajustement
-      // manuel atomique (flag app.allow_balance_update, pattern write-off).
-      if (arrearsDecrement > 0) {
-        await prismaTx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
-        await prismaTx.studentAccount.update({
-          where: { id: account!.id },
-          data: { arrearsAmount: { decrement: arrearsDecrement } },
-        });
-      }
-
       // Solde de caisse (si fournie) — même incrément que create().
       if (data.cashRegisterId) {
         try {
@@ -1048,6 +1050,15 @@ export class FinanceTransactionService {
 
       return created;
     });
+
+    // ⭐ Moteur unifié : miroirs d'arriérés resynchronisés depuis les FeeArrear
+    //    (seule source de vérité) — remplace l'ancien décrément manuel
+    //    approximatif de arrearsAmount.
+    try {
+      await this.arrearsMirror.syncForStudent(tenantId, arrear.studentId);
+    } catch (e: any) {
+      this.logger.warn(`Miroirs arriérés non resynchronisés (non bloquant): ${e.message}`);
+    }
 
     // ─── 5. Reçu PDF + notifications (fire-and-forget) ─────────────────────
     if (!data.skipReceiptSideEffects) {
@@ -1596,32 +1607,12 @@ export class FinanceTransactionService {
           newChange,
         );
 
-        // 5. Solde du compte élève : le trigger ne réagit qu'aux INSERT →
-        //    ajustement manuel du delta (bypass contrôlé app.allow_balance_update)
+        // 5. Solde du compte élève : ⭐ moteur unifié (nov. 2026) — les écritures
+        //    de lignes ci-dessus ET l'UPDATE de la transaction déclenchent le
+        //    trigger SQL recompute_student_account_totals (lignes + ledger).
+        //    Plus d'ajustement manuel de totalPaid/balance/status : le solde
+        //    est TOUJOURS dérivé, jamais incrémenté (fin des dérives).
         const delta = newAmount - oldAmount;
-        if (Math.abs(delta) > 0.005) {
-          await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
-          const account: any = await tx.studentAccount.findUnique({
-            where: { id: original.studentAccountId },
-            select: { balance: true, totalDue: true, totalPaid: true, isBlocked: true },
-          });
-          const newBalance = Number(account.balance) - delta;
-          const newStatus = account.isBlocked
-            ? AccountStatus.BLOCKED
-            : newBalance <= 0.005
-              ? AccountStatus.PAID
-              : newBalance < Number(account.totalDue) - 0.005
-                ? AccountStatus.PARTIAL
-                : AccountStatus.ACTIVE;
-          await tx.studentAccount.update({
-            where: { id: original.studentAccountId },
-            data: {
-              totalPaid: { increment: delta },
-              balance: { decrement: delta },
-              status: newStatus,
-            },
-          });
-        }
 
         // 6. Caisses : ajuster du delta (ou transférer si caisse changée)
         if (!isFedapay) {
@@ -1762,28 +1753,10 @@ export class FinanceTransactionService {
           });
         }
 
-        // 3. Solde du compte : réverser le montant (trigger INSERT-only → manuel)
-        await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
-        const account: any = await tx.studentAccount.findUnique({
-          where: { id: original.studentAccountId },
-          select: { balance: true, totalDue: true, isBlocked: true },
-        });
-        const newBalance = Number(account.balance) + amount;
-        const newStatus = account.isBlocked
-          ? AccountStatus.BLOCKED
-          : newBalance <= 0.005
-            ? AccountStatus.PAID
-            : newBalance < Number(account.totalDue) - 0.005
-              ? AccountStatus.PARTIAL
-              : AccountStatus.ACTIVE;
-        await tx.studentAccount.update({
-          where: { id: original.studentAccountId },
-          data: {
-            totalPaid: { decrement: amount },
-            balance: { increment: amount },
-            status: newStatus,
-          },
-        });
+        // 3. Solde du compte : ⭐ moteur unifié (nov. 2026) — la réversion des
+        //    imputations (lignes) ci-dessus puis la SUPPRESSION de la transaction
+        //    déclenchent le trigger SQL recompute_student_account_totals
+        //    (lignes + ledger). Plus d'ajustement manuel de totalPaid/balance.
 
         // 4. Caisses : réverser le crédit
         if (!isFedapay) {

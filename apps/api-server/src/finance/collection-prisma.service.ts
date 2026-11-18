@@ -854,35 +854,39 @@ export class CollectionPrismaService {
       },
     });
 
-    // ── Trace d'audit (avant/après) ──
-    try {
-      await this.prisma.financialAuditLog.create({
-        data: {
-          tenantId,
-          entityType: 'FeeArrear',
-          entityId: id,
-          action: 'ARREAR_UPDATE',
-          oldValue: {
-            totalDue: oldTotalDue,
-            totalPaid: oldTotalPaid,
-            balanceDue: oldBalance,
-            status: arrear.status,
-            notes: arrear.notes,
+    // ── Trace d'audit (avant/après) — performedById a une FK vers User,
+    //    on ne trace que si l'utilisateur est connu (même garde que
+    //    bulkDeleteArrears) ──
+    if (userId) {
+      try {
+        await this.prisma.financialAuditLog.create({
+          data: {
+            tenantId,
+            entityType: 'FeeArrear',
+            entityId: id,
+            action: 'ARREAR_UPDATE',
+            oldValue: {
+              totalDue: oldTotalDue,
+              totalPaid: oldTotalPaid,
+              balanceDue: oldBalance,
+              status: arrear.status,
+              notes: arrear.notes,
+            },
+            newValue: {
+              totalDue: newTotalDue,
+              totalPaid: newTotalPaid,
+              balanceDue: newBalance,
+              status: newStatus,
+              notes: data.notes ?? arrear.notes,
+              reason: data.reason || 'Correction manuelle depuis le tableau des arriérés',
+              performedVia: 'PATCH /finance/collection/arrears/:id',
+            },
+            performedById: userId,
           },
-          newValue: {
-            totalDue: newTotalDue,
-            totalPaid: newTotalPaid,
-            balanceDue: newBalance,
-            status: newStatus,
-            notes: data.notes ?? arrear.notes,
-            reason: data.reason || 'Correction manuelle depuis le tableau des arriérés',
-            performedVia: 'PATCH /finance/collection/arrears/:id',
-          },
-          performedById: userId || '',
-        },
-      });
-    } catch {
-      // Non bloquant (audit best-effort)
+        });
+      } catch {
+        // Non bloquant (audit best-effort)
+      }
     }
 
     // ── Ajustement de previousArrears de l'inscription (delta du restant dû) ──

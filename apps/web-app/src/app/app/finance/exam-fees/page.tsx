@@ -1,14 +1,18 @@
 'use client';
 
-import ExamFeesContent from '@/components/finance/ExamFeesContent';
+import GeneralExamFeesContent from '@/components/finance/GeneralExamFeesContent';
 
 /**
- * ⭐ ONGLET « FRAIS DES EXAMENS » (juste après Frais généraux) — route /app/finance/exam-fees
- * Suivi dédié des frais d'examen (CEP / BEPC / Baccalauréat / CAP) par élève :
- * dus / payé / solde pour l'année scolaire, avec déduction automatique après
- * chaque encaissement (même mécanique que Frais généraux / Comptes élèves).
- * Sous-onglets dynamiques selon les niveaux activés (Paramètres > Structure).
+ * ⭐ ANCIENNE ROUTE « FRAIS DES EXAMENS » — /app/finance/exam-fees
+ *
+ * ⭐ Fusion (nov. 2026, demande promoteur) : l'onglet « Frais des examens »
+ *    est devenu le SOUS-ONGLET « Frais des examens » de l'onglet unique
+ *    « Frais généraux » (route /app/finance/general-fees). Cette route rend
+ *    le même composant avec le sous-onglet examens pré-sélectionné afin que
+ *    les liens et favoris existants continuent de fonctionner.
+ *    Si l'école n'a aucun examen national éligible, le composant replie
+ *    automatiquement sur le sous-onglet « Frais généraux ».
  */
 export default function ExamFeesPage() {
-  return <ExamFeesContent />;
+  return <GeneralExamFeesContent initialSubTab="exam" />;
 }

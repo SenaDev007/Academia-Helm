@@ -27,6 +27,7 @@
  */
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { ArrearsMirrorService } from './arrears-mirror.service';
 import * as ExcelJS from 'exceljs';
 import { Response } from 'express';
 
@@ -89,7 +90,10 @@ export class ArrearsImportService {
     'Notes (optionnel)',
   ];
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly arrearsMirror: ArrearsMirrorService,
+  ) {}
 
   /**
    * Parse et valide le fichier Excel (multi-feuilles) sans créer d'arriérés.
@@ -215,33 +219,12 @@ export class ArrearsImportService {
           });
         }
 
-        // Mettre à jour le StudentAccount (arrearsAmount + totalDue + balance)
-        // pour l'année active
-        const activeYear = await this.prisma.academicYear.findFirst({
-          where: { tenantId, isActive: true },
-          select: { id: true },
-        });
-        if (activeYear) {
-          const account = await this.prisma.studentAccount.findFirst({
-            where: {
-              tenantId,
-              studentId: row.resolvedStudentId!,
-              academicYearId: activeYear.id,
-            },
-          });
-          if (account) {
-            // Désactiver le trigger pour permettre la mise à jour directe
-            await this.prisma.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
-            await this.prisma.studentAccount.update({
-              where: { id: account.id },
-              data: {
-                arrearsAmount: { increment: balanceDue },
-                totalDue: { increment: balanceDue },
-                balance: { increment: balanceDue },
-              },
-            });
-          }
-        }
+        // ⭐ Correctif moteur de calcul (nov. 2026) : PLUS AUCUN incrément de
+        //    totalDue/balance/arrearsAmount sur le compte — les FeeArrear
+        //    fraîchement importés SONT la dette (l'affichage de Comptes
+        //    élèves les somme au total dû). AVANT : l'import incrémentait le
+        //    compte ET créait le FeeArrear → double comptage systématique.
+        //    Les miroirs sont resynchronisés en fin d'import (batch).
 
         results.push({
           rowIndex: row.rowIndex,
@@ -261,6 +244,14 @@ export class ArrearsImportService {
           error: e.message,
         });
       }
+    }
+
+    // ⭐ Resynchroniser les miroirs de TOUS les comptes des élèves importés
+    //    (arrearsAmount / carriedArrears := Σ FeeArrear ouverts) — une seule
+    //    source de vérité, jamais de dérive.
+    const importedStudentIds = validRows.map((r) => r.resolvedStudentId!).filter(Boolean);
+    if (importedStudentIds.length > 0) {
+      await this.arrearsMirror.syncForStudents(tenantId, importedStudentIds);
     }
 
     return {

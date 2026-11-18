@@ -1,12 +1,20 @@
 'use client';
 
-import GeneralFeesContent from '@/components/finance/GeneralFeesContent';
+import GeneralExamFeesContent from '@/components/finance/GeneralExamFeesContent';
 
 /**
  * ⭐ ONGLET « FRAIS GÉNÉRAUX » (juste après Comptes élèves) — route /app/finance/general-fees
- * Listing par élève : dus / payé / solde pour l'année scolaire, avec déduction
- * automatique après chaque encaissement (même mécanique que Comptes élèves).
+ *
+ * ⭐ Fusion (nov. 2026, demande promoteur) : les anciens onglets « Frais
+ *    généraux » et « Frais des examens » sont fusionnés en UN SEUL onglet
+ *    « Frais généraux » avec deux sous-onglets internes :
+ *      • Frais généraux   — listing par élève (dus / payé / solde) ;
+ *      • Frais des examens — suivi par examen national (CEP/BEPC/BAC/CAP),
+ *        visible seulement si l'école a un examen éligible.
+ *
+ * L'ancienne route /app/finance/exam-fees rend le même composant avec le
+ * sous-onglet examens pré-sélectionné (liens existants préservés).
  */
 export default function GeneralFeesPage() {
-  return <GeneralFeesContent />;
+  return <GeneralExamFeesContent initialSubTab="general" />;
 }

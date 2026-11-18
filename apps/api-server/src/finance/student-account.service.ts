@@ -11,6 +11,7 @@
  */
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { ArrearsMirrorService } from './arrears-mirror.service';
 
 const STATUS_ACTIVE = 'ACTIVE';
 const STATUS_PARTIAL = 'PARTIAL';
@@ -133,7 +134,10 @@ export interface RecalcPlan {
 export class StudentAccountService {
   private readonly logger = new Logger(StudentAccountService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly arrearsMirror: ArrearsMirrorService,
+  ) {}
 
   /**
    * Active le flag SQL `app.allow_balance_update` pour la transaction courante.
@@ -351,21 +355,24 @@ export class StudentAccountService {
       }
       return sum + amount;
     }, 0);
-    // (nouveaux clients qui ont des arriérés sur papier). Injectés dans le
-    // StudentAccount pour être visibles dans le compte financier et inclus
-    // dans le total dû et le solde.
-    const totalDueWithArrears = totalDue + previousArrears;
+    // (nouveaux clients qui ont des arriérés sur papier).
+    // ⭐ Correctif moteur de calcul (nov. 2026) : les arriérés déclarés à
+    //    l'inscription (previousArrears) ne sont PLUS incrustés dans
+    //    totalDue/balance/arrearsAmount du compte — ils sont MATÉRIALISÉS
+    //    en FeeArrear (la seule source de vérité) ci-dessous, et l'affichage
+    //    de Comptes élèves les somme au total dû (« 59 000 F dont 16 000 F
+    //    d'arriérés »). AVANT : double comptage selon les flux (certains
+    //    élèves corrects, d'autres non).
 
     account = await this.prisma.studentAccount.create({
       data: {
         tenantId,
         studentId,
         academicYearId,
-        totalDue: totalDueWithArrears,
+        totalDue,
         totalPaid: 0,
-        balance: totalDueWithArrears,
-        arrearsAmount: previousArrears,
-        status: totalDueWithArrears > 0 ? STATUS_ACTIVE : STATUS_PAID,
+        balance: totalDue,
+        status: totalDue > 0 ? STATUS_ACTIVE : STATUS_PAID,
         isBlocked: false,
         updatedAt: new Date(),
         breakdowns: {
@@ -391,6 +398,52 @@ export class StudentAccountService {
       },
       include: { breakdowns: { include: { feeStructure: true } } },
     });
+
+    // ⭐ Matérialisation des arriérés déclarés à l'inscription en FeeArrear
+    //    (uniquement la part NON déjà matérialisée — le report d'année peut
+    //    avoir déjà créé les FeeArrear correspondants).
+    if (previousArrears > 0) {
+      try {
+        const [openArrears, anyArrearsWithPayments] = await Promise.all([
+          this.prisma.feeArrear.aggregate({
+            where: {
+              tenantId,
+              studentId,
+              status: { in: ['OPEN', 'PARTIALLY_PAID'] },
+              balanceDue: { gt: 0 },
+            },
+            _sum: { balanceDue: true },
+          }),
+          this.prisma.feeArrear.count({
+            where: { tenantId, studentId, totalPaid: { gt: 0 } },
+          }),
+        ]);
+        const alreadyMaterialized = Number(openArrears._sum.balanceDue ?? 0);
+        // Si des FeeArrear existent déjà (report d'année, import, saisie
+        // manuelle) — et a fortiori s'ils ont un historique de paiements —
+        // on ne rajoute RIEN (la dette est déjà suivie quelque part).
+        if (alreadyMaterialized <= 0 && anyArrearsWithPayments === 0) {
+          await this.prisma.feeArrear.create({
+            data: {
+              tenantId,
+              academicYearId,
+              studentId,
+              studentFeeId: null,
+              totalDue: previousArrears,
+              totalPaid: 0,
+              balanceDue: previousArrears,
+              arrearsLevel: previousArrears > 100000 ? 'HIGH' : (previousArrears > 50000 ? 'MEDIUM' : 'LOW'),
+              status: 'OPEN',
+              notes: 'Arriérés déclarés à l\u2019inscription (matérialisés automatiquement)',
+            },
+          });
+        }
+        // Miroirs synchronisés depuis les FeeArrear (moteur de calcul unifié)
+        await this.arrearsMirror.syncForStudent(tenantId, studentId);
+      } catch (e: any) {
+        this.logger.warn(`Matérialisation des arriérés d'inscription impossible (non bloquant): ${e.message}`);
+      }
+    }
 
     return { account, created: true };
   }
@@ -1229,7 +1282,13 @@ export class StudentAccountService {
   }
 
   /**
-   * Injecte les arriérés de l'année N dans le compte N+1 (arrearsAmount + breakdown).
+   * Injecte les arriérés de l'année N dans le compte N+1.
+   * ⭐ Correctif moteur de calcul (nov. 2026) : les arriérés sont
+   *    MATÉRIALISÉS en FeeArrear (seule source de vérité) puis les miroirs
+   *    du compte sont resynchronisés — plus D'INCRÉMENT direct de
+   *    totalDue/balance/arrearsAmount (l'affichage de Comptes élèves somme
+   *    les FeeArrear ouverts au total dû : « total dû = scolarité +
+   *    arriérés »).
    */
   async injectArrearsFromPreviousYear(
     tenantId: string,
@@ -1242,27 +1301,31 @@ export class StudentAccountService {
 
     const { account } = await this.getOrCreate(tenantId, studentId, toAcademicYearId);
 
-    // ⭐ Juillet 2026 : SET LOCAL + UPDATE dans la MÊME $transaction (sinon le flag
-    // est perdu entre les deux appels et le trigger prevent_balance_update déclenche).
-    // ⭐ BRIEF PERF 3.3 — incrémentations SQL ATOMIQUES ({ increment }) au lieu
-    // de recalculer totalDue/balance en JS depuis des valeurs lues AVANT la
-    // transaction (fenêtre de course : deux écritures simultanées sur le même
-    // compte s'écrasaient mutuellement leurs montants).
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
-      return tx.studentAccount.update({
-        where: { id: account.id },
-        data: {
-          arrearsAmount: { increment: arrearsAmount },
-          totalDue: { increment: arrearsAmount },
-          balance: { increment: arrearsAmount },
-          updatedAt: new Date(),
-        },
-      });
+    // 1. Matérialiser en FeeArrear (seule source de vérité des arriérés)
+    await this.prisma.feeArrear.create({
+      data: {
+        tenantId,
+        academicYearId: toAcademicYearId,
+        studentId,
+        studentFeeId: null,
+        totalDue: arrearsAmount,
+        totalPaid: 0,
+        balanceDue: arrearsAmount,
+        arrearsLevel: arrearsAmount > 100000 ? 'HIGH' : (arrearsAmount > 50000 ? 'MEDIUM' : 'LOW'),
+        status: 'OPEN',
+        notes: `Arriéré reporté depuis l'année ${fromAcademicYearId}`,
+      },
     });
 
+    // 2. Resynchroniser les miroirs du compte (arrearsAmount/carriedArrears)
+    try {
+      await this.arrearsMirror.syncForStudent(tenantId, studentId);
+    } catch (e: any) {
+      this.logger.warn(`Miroirs arriérés non resynchronisés (non bloquant): ${e.message}`);
+    }
+
     return this.prisma.studentAccount.findUnique({
-      where: { id: updated.id },
+      where: { id: account.id },
       include: { breakdowns: true },
     });
   }

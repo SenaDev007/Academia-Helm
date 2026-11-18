@@ -86,6 +86,8 @@ import { ComptaExportController } from './compta-export.controller';
 import { ComptaAutoExportService } from './compta-auto-export.service';
 import { ArrearsImportService } from './arrears-import.service';
 import { ArrearsImportController } from './arrears-import.controller';
+// ⭐ Moteur de calcul unifié des arriérés — miroirs StudentAccount ↔ FeeArrear
+import { ArrearsMirrorService } from './arrears-mirror.service';
 import { FeeOverrideImportService } from './fee-override-import.service';
 import { CollectionSummaryImportService } from './collection-summary-import.service';
 import { CollectionSummaryController } from './collection-summary.controller';
@@ -196,6 +198,9 @@ import { ParentProvisioningModule } from '../students/parent-provisioning.module
     ComptaAutoExportService,
     // Import d'arriérés via Excel
     ArrearsImportService,
+    // ⭐ Moteur de calcul unifié des arriérés — miroirs StudentAccount ↔ FeeArrear
+    //    (correctif nov. 2026 : arriérés sommés dans le total dû partout)
+    ArrearsMirrorService,
     // Import en masse de personnalisations de frais (FeeOverride)
     FeeOverrideImportService,
     // Import en masse du bilan des encaissements (FinanceTransaction)
@@ -214,6 +219,8 @@ import { ParentProvisioningModule } from '../students/parent-provisioning.module
     FeeStructureService,
     StudentAccountService,
     FinanceTransactionService,
+    // ⭐ Miroirs d'arriérés (utilisé par élève/promotion, recouvrement, import)
+    ArrearsMirrorService,
     RecoveryReminderService,
     RecoveryReminderEmailService,
     // Module 4 - Frais & Priorité de Paiement

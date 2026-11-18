@@ -919,20 +919,26 @@ export class FinanceTransactionService {
       },
     });
     if (!account) {
+      // ⭐ Correctif moteur de calcul (nov. 2026) : le compte n'est PLUS seedé
+      //    sur les totaux de l'arriéré (totalDue = arrear.totalDue incrémentait
+      //    la dette D'ANNÉE dans le compte, et l'affichage de Comptes élèves
+      //    ajoute EN PLUS les FeeArrear ouverts → double comptage). Seed à 0 :
+      //    la transaction incrémentera totalPaid via le trigger, et les
+      //    FeeArrear ouverts s'ajouteront au total dû à l'affichage.
       account = await this.prisma.studentAccount.create({
         data: {
           tenantId,
           studentId: arrear.studentId,
           academicYearId: arrear.academicYearId,
-          totalDue: arrear.totalDue,
-          totalPaid: arrear.totalPaid,
-          balance: arrear.balanceDue,
+          totalDue: 0,
+          totalPaid: 0,
+          balance: 0,
           arrearsAmount: arrear.balanceDue,
         },
       });
       this.logger.log(
         `Encaissement arriéré : compte élève créé pour ${arrear.student.firstName} ${arrear.student.lastName} ` +
-        `(${arrear.academicYear?.name}) — seedé sur l'arriéré (${balanceDue.toLocaleString('fr-FR')} FCFA).`,
+        `(${arrear.academicYear?.name}) — miroir arriéré ${balanceDue.toLocaleString('fr-FR')} FCFA.`,
       );
     }
 

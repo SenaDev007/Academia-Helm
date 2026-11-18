@@ -793,13 +793,17 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
                       const totalDue = Number(a.totalDue ?? 0);
                       const totalPaid = Number(a.totalPaid ?? 0);
                       const balance = Number(a.balance ?? 0);
-                      const arrearsAmount = Number(a.arrearsAmount ?? 0);
-                      const carriedArrears = Number(a.carriedArrears ?? 0);
-                      // ⚠️ Utiliser actualArrears (calculé en backend en agrégeant les FeeArrear ouverts)
-                      // au lieu de arrearsAmount + carriedArrears qui ne sont pas toujours synchronisés.
-                      // On prend le max des deux pour ne jamais sous-estimer les arriérés affichés.
-                      const actualArrears = Number(a.actualArrears ?? 0);
-                      const totalArrears = Math.max(actualArrears, arrearsAmount + carriedArrears);
+                      // ⭐ Correctif moteur de calcul (nov. 2026) : UNE SEULE
+                      //    source d'affichage — actualArrears (somme des
+                      //    FeeArrear ouverts calculée par le backend), qui est
+                      //    EXACTEMENT le montant ajouté au total dû et au solde
+                      //    affichés. AVANT : Math.max(actualArrears,
+                      //    arrearsAmount + carriedArrears) — les champs legacy
+                      //    étaient incrémentés deux fois par le report d'année →
+                      //    « 43 000 dont 16 000 d'arriérés » alors que le total
+                      //    dû n'incluait QUE 0 ou la part FeeArrear → totaux
+                      //    incohérents d'un élève à l'autre.
+                      const totalArrears = Number(a.actualArrears ?? 0);
                       let rowBg = '';
                       let rowBorder = '';
                       if (balance <= 0) {
@@ -898,13 +902,9 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
                             {totalArrears > 0 ? (
                               <div>
                                 <div className="font-semibold text-amber-700 whitespace-nowrap">{formatCurrency(totalArrears)}</div>
-                                {(a.feeArrears?.length > 0 || carriedArrears > 0) && (
+                                {a.feeArrears?.length > 0 && (
                                   <div className="text-[10px] text-amber-500">
-                                    {a.feeArrears?.length > 0
-                                      ? `${a.feeArrears.length} arriéré${a.feeArrears.length > 1 ? 's' : ''} (multi-année)`
-                                      : carriedArrears > 0
-                                        ? `dont reporté : ${formatCurrency(carriedArrears)}`
-                                        : ''}
+                                    {a.feeArrears.length} arriéré{a.feeArrears.length > 1 ? 's' : ''} (multi-année)
                                   </div>
                                 )}
                               </div>
@@ -1007,9 +1007,9 @@ export default function StudentAccountsContent({ refreshTrigger = 0 }: { refresh
                         {formatCurrency(filteredAccounts.reduce((s, a) => s + Number(a.totalDue ?? 0), 0))}
                       </TableCell>
                       <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
-                        {formatCurrency(filteredAccounts.reduce((s, a) =>
-                          s + Math.max(Number(a.actualArrears ?? 0), Number(a.arrearsAmount ?? 0) + Number(a.carriedArrears ?? 0)), 0
-                        ))}
+                        {/* ⭐ Correctif moteur de calcul : somme des FeeArrear ouverts —
+                            exactement ce que le backend ajoute au total dû affiché */}
+                        {formatCurrency(filteredAccounts.reduce((s, a) => s + Number(a.actualArrears ?? 0), 0))}
                       </TableCell>
                       <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
                         {formatCurrency(filteredAccounts.reduce((s, a) => s + Number(a.totalPaid ?? 0), 0))}

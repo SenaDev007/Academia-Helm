@@ -17,12 +17,16 @@
 
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { ArrearsMirrorService } from './arrears-mirror.service';
 
 @Injectable()
 export class ArrearAccumulationService {
   private readonly logger = new Logger(ArrearAccumulationService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly arrearsMirror: ArrearsMirrorService,
+  ) {}
 
   // ═══════════════════════════════════════════════════════════════════
   //  PHASE 2 : REPORT D'ARRIÉRÉS AU PASSAGE D'ANNÉE
@@ -35,11 +39,18 @@ export class ArrearAccumulationService {
    *   1. Calcule le solde impayé = StudentAccount.balance (année source)
    *   2. Crée un FeeArrear dans l'année destination (arriéré global)
    *   3. Crée un ArrearTransfer (traçabilité)
-   *   4. Met à jour le StudentAccount de l'année destination :
-   *      - carriedArrears += solde
-   *      - totalDue += solde
-   *      - balance += solde
+   *   4. Resynchronise les miroirs du compte destination
+   *      (arrearsAmount / carriedArrears — cf. ArrearsMirrorService)
    *   5. Marque les FeeArrear de l'année source comme TRANSFERRED
+   *
+   * ⭐ Correctif moteur de calcul (nov. 2026) : le compte destination ne
+   *    voit PLUS son totalDue/balance incrémentés — les arriérés vivent
+   *    exclusivement dans les FeeArrear (l'affichage de Comptes élèves les
+   *    ajoute au total dû : « 59 000 F dont 16 000 F d'arriérés »).
+   *    AVANT, le report incrémentait totalDue + balance + arrearsAmount +
+   *    carriedArrears → le même arriéré comptait DEUX FOIS dans les champs
+   *    legacy et UNE FOIS en FeeArrear → totaux incohérents d'un élève à
+   *    l'autre selon le flux qui les avait créés.
    *
    * @returns { processed, transferred, totalAmount, errors }
    */
@@ -92,31 +103,23 @@ export class ArrearAccumulationService {
         });
 
         if (!destAccount) {
-          // Créer le compte pour la nouvelle année (sans frais, juste l'arriéré)
+          // Créer le compte pour la nouvelle année — SANS frais et SANS
+          // arriérés incrustés (les frais seront matérialisés par le
+          // recalcul à la configuration ; les arriérés vivent en FeeArrear).
+          // L'INSERT ne déclenche pas prevent_balance_update.
           destAccount = await this.prisma.studentAccount.create({
             data: {
               tenantId,
               studentId: sourceAccount.studentId,
               academicYearId: toAcademicYearId,
-              totalDue: balance,
+              totalDue: 0,
               totalPaid: 0,
-              balance: balance,
-              carriedArrears: balance,
-              arrearsAmount: balance,
-            },
-          });
-        } else {
-          // Mettre à jour le compte existant
-          destAccount = await this.prisma.studentAccount.update({
-            where: { id: destAccount.id },
-            data: {
-              carriedArrears: { increment: balance },
-              totalDue: { increment: balance },
-              balance: { increment: balance },
-              arrearsAmount: { increment: balance },
+              balance: 0,
             },
           });
         }
+        // ⭐ Plus AUCUNE incrément de totalDue/balance/arrearsAmount/carriedArrears :
+        //    les miroirs sont resynchronisés depuis les FeeArrear (ci-dessous).
 
         // 3. Créer un FeeArrear dans l'année destination
         const fromYear = await this.prisma.academicYear.findUnique({
@@ -163,6 +166,9 @@ export class ArrearAccumulationService {
           },
           data: { status: 'TRANSFERRED' },
         });
+
+        // ⭐ 6. Resynchroniser les miroirs du compte (moteur de calcul unifié)
+        await this.arrearsMirror.syncForStudent(tenantId, sourceAccount.studentId);
 
         transferred++;
         totalAmount += balance;
@@ -280,6 +286,19 @@ export class ArrearAccumulationService {
       );
     }
 
+    // ⭐ 4. Resynchroniser les miroirs du compte (arrearsAmount/carriedArrears)
+    //    AVANT : les FeeArrear étaient décrémentés mais PAS les champs du
+    //    compte → l'arriéré restait affiché à son montant d'origine dans les
+    //    colonnes « dont arriérés »/« Arriérés » alors que le total dû, lui,
+    //    avait bien baissé → totaux incohérents d'un élève à l'autre.
+    if (allocations.length > 0) {
+      try {
+        await this.arrearsMirror.syncForStudent(tenantId, studentId);
+      } catch (e: any) {
+        this.logger.warn(`Miroirs arriérés non resynchronisés (non bloquant): ${e.message}`);
+      }
+    }
+
     return { allocations, remainingAmount: remaining };
   }
 
@@ -289,7 +308,10 @@ export class ArrearAccumulationService {
 
   /**
    * Marque un FeeArrear comme "abandonné" (WRITTEN_OFF).
-   * Le montant est retiré du total dû et du solde.
+   * ⭐ Correctif moteur de calcul (nov. 2026) : le totalDue/balance du
+   *    compte ne sont PLUS décrémentés — ils ne contiennent que les frais de
+   *    l'année (l'affichage ajoute les FeeArrear ouverts par-dessus).
+   *    Les miroirs sont resynchronisés depuis les FeeArrear restants.
    */
   async writeOffArrear(
     tenantId: string,
@@ -316,20 +338,16 @@ export class ArrearAccumulationService {
       },
     });
 
-    // Ajuster le StudentAccount
-    await this.prisma.studentAccount.update({
-      where: {
-        studentId_academicYearId: {
-          studentId: arrear.studentId,
-          academicYearId: arrear.academicYearId,
-        },
-      },
-      data: {
-        totalDue: { decrement: balanceDue },
-        balance: { decrement: balanceDue },
-        arrearsAmount: { decrement: balanceDue },
-      },
-    });
+    // ⭐ Resynchroniser les miroirs du compte (moteur de calcul unifié)
+    //    AVANT : totalDue/balance/arrearsAmount décrémentés manuellement →
+    //    si l'arriéré n'y avait jamais été incrusté, le solde de l'élève
+    //    partait en négatif ; s'il y avait été incrusté deux fois, reste trop
+    //    élevé. Désormais : une seule source de vérité (FeeArrear) + miroirs.
+    try {
+      await this.arrearsMirror.syncForStudent(tenantId, arrear.studentId);
+    } catch (e: any) {
+      this.logger.warn(`Miroirs arriérés non resynchronisés (non bloquant): ${e.message}`);
+    }
 
     this.logger.log(
       `Write-off: ${balanceDue} FCFA for FeeArrear ${feeArrearId} — reason: ${reason}`,

@@ -10,10 +10,14 @@
 
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { ArrearsMirrorService } from './arrears-mirror.service';
 
 @Injectable()
 export class CollectionPrismaService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly arrearsMirror: ArrearsMirrorService,
+  ) {}
 
   /**
    * Détecte et crée les impayés automatiquement.
@@ -98,6 +102,14 @@ export class CollectionPrismaService {
         const arrearsLevel = this.calculateArrearsLevel(carriedArrears, lastPaymentDate);
 
         if (existing) {
+          // ⭐ Correctif moteur de calcul (nov. 2026) : ne JAMAIS écraser un
+          //    arriéré qui a un historique de paiements (totalPaid > 0) —
+          //    AVANT, la re-détection remettait totalPaid à 0 et gonflait
+          //    balanceDue au montant d'origine → l'argent encaissé disparaissait
+          //    du recouvrement et les totaux divergeaient.
+          if (Number(existing.totalPaid ?? 0) > 0) {
+            continue;
+          }
           await this.prisma.feeArrear.update({
             where: { id: existing.id },
             data: {
@@ -200,6 +212,11 @@ export class CollectionPrismaService {
         const arrearsLevel = this.calculateArrearsLevel(balance, lastPaymentDate);
 
         if (existing) {
+          // ⭐ Correctif moteur de calcul (nov. 2026) : idem Source 1 — ne pas
+          //    écraser un arriéré avec historique de paiements.
+          if (Number(existing.totalPaid ?? 0) > 0) {
+            continue;
+          }
           await this.prisma.feeArrear.update({
             where: { id: existing.id },
             data: {
@@ -307,6 +324,14 @@ export class CollectionPrismaService {
       }
     } catch (err) {
       // PaymentSummary peut ne pas exister — non bloquant
+    }
+
+    // ⭐ Correctif moteur de calcul (nov. 2026) : resynchroniser les miroirs
+    //    des comptes des élèves touchés par la détection (arrearsAmount /
+    //    carriedArrears := Σ FeeArrear ouverts) — une seule source de vérité.
+    const detectedStudentIds = [...new Set(arrears.map((a: any) => a.studentId).filter(Boolean))];
+    if (detectedStudentIds.length > 0) {
+      await this.arrearsMirror.syncForStudents(tenantId, detectedStudentIds);
     }
 
     return arrears;
@@ -1129,24 +1154,12 @@ export class CollectionPrismaService {
       });
     }
 
-    // 3. Mettre à jour le StudentAccount si le compte existe
-    const account = await this.prisma.studentAccount.findUnique({
-      where: { studentId_academicYearId: { studentId, academicYearId } },
-    });
-
-    if (account) {
-      const currentArrears = Number(account.arrearsAmount ?? 0);
-      const currentTotalDue = Number(account.totalDue ?? 0);
-      const currentBalance = Number(account.balance ?? 0);
-      await this.prisma.studentAccount.update({
-        where: { id: account.id },
-        data: {
-          arrearsAmount: currentArrears + amount,
-          totalDue: currentTotalDue + amount,
-          balance: currentBalance + amount,
-        },
-      });
-    }
+    // 3. ⭐ Correctif moteur de calcul (nov. 2026) : PLUS d'incrément direct de
+    //    totalDue/balance/arrearsAmount sur le compte — la saisie manuelle
+    //    matérialise l'arriéré en FeeArrear (ci-dessous), l'affichage de
+    //    Comptes élèves le somme au total dû, et les miroirs sont
+    //    resynchronisés après création. AVANT : double comptage (FeeArrear +
+    //    champs du compte incrémentés).
 
     // 4. Créer un FeeArrear pour visibilité dans le tableau de recouvrement
     const arrear = await this.prisma.feeArrear.create({
@@ -1163,6 +1176,13 @@ export class CollectionPrismaService {
         notes: reason || `Arriéré antérieur — ${academicYear.name} (saisie manuelle)`,
       },
     });
+
+    // ⭐ 5. Resynchroniser les miroirs du compte (moteur de calcul unifié)
+    try {
+      await this.arrearsMirror.syncForStudent(tenantId, studentId);
+    } catch (e: any) {
+      // non bloquant : les miroirs seront resynchronisés au prochain flux
+    }
 
     return {
       success: true,

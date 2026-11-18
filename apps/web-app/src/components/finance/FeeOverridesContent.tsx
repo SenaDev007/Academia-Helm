@@ -64,10 +64,15 @@ function classOrder(name: string): number {
 }
 
 // Helper : nom intelligent du frais (enrichi avec la classe si manquante)
-function feeDisplayName(s: any): string {
+// ⭐ FIX nov. 2026 : prioriser academicClass (classe officielle — ex. CSP Mon
+//    Avenir Plus) sur class (classe physique), avec fallback sur la liste des
+//    classes chargée par le composant. Les frais homonymes de classes
+//    différentes redeviennent distinguables ("Frais de scolarité — CP").
+function feeDisplayName(s: any, classes: any[] = []): string {
   const baseName = s.name ?? '';
-  if (!s.classId) return baseName;
-  const className = s.class?.name;
+  const classId = s.academicClassId || s.classId;
+  if (!classId) return baseName;
+  const className = s.academicClass?.name ?? s.class?.name ?? classes.find((c: any) => c.id === classId)?.name;
   if (!className) return baseName;
   if (baseName.includes(className)) return baseName;
   return `${baseName} — ${className}`;
@@ -528,8 +533,8 @@ export default function FeeOverridesContent() {
                         {studentMatricule && <span className="text-xs text-slate-500 ml-1">({studentMatricule})</span>}
                       </TableCell>
                       {/* Frais concerné — single line, tronqué si trop long */}
-                      <TableCell className="text-sm whitespace-nowrap max-w-[200px] truncate py-3" title={feeDisplayName(o.feeStructure)}>
-                        {feeDisplayName(o.feeStructure)}
+                      <TableCell className="text-sm whitespace-nowrap max-w-[200px] truncate py-3" title={feeDisplayName(o.feeStructure, classes)}>
+                        {feeDisplayName(o.feeStructure, classes)}
                       </TableCell>
                       <TableCell className="whitespace-nowrap py-3"><Badge variant="outline">{feeTypeLabel(o.feeStructure?.feeType)}</Badge></TableCell>
                       <TableCell className="text-right text-slate-500 line-through whitespace-nowrap py-3">{formatCurrency(original)}</TableCell>

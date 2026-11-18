@@ -106,10 +106,13 @@ export default function BulkClassOverrideModal({
   const originalAmount = selectedFee ? Number(selectedFee.totalAmount) : 0;
 
   // Nom intelligent du frais (enrichi classe) — même logique que FeeOverrideModal
+  // ⭐ FIX nov. 2026 : prioriser academicClass (classe officielle) sur class,
+  //    sinon les frais homonymes de classes différentes sont indistinguables.
   const feeDisplayName = (s: any): string => {
     const baseName = s.name ?? '';
-    if (!s.classId) return baseName;
-    const className = s.class?.name ?? classes.find((c) => c.id === s.classId)?.name;
+    const classId = s.academicClassId || s.classId;
+    if (!classId) return baseName;
+    const className = s.academicClass?.name ?? s.class?.name ?? classes.find((c: any) => c.id === classId)?.name;
     if (!className) return baseName;
     if (baseName.includes(className)) return baseName;
     return `${baseName} — ${className}`;
@@ -250,7 +253,12 @@ export default function BulkClassOverrideModal({
             <Select value={feeStructureId} onValueChange={(v) => { setFeeStructureId(v); setReductionPercent(''); setReductionAmount(''); }}>
               <SelectTrigger><SelectValue placeholder="Sélectionner un frais" /></SelectTrigger>
               <SelectContent>
-                {structures.filter((s) => s.isActive).map((s) => (
+                {[...structures].filter((s) => s.isActive).sort((a, b) => {
+                  const clsOf = (s: any) => s.academicClass?.name ?? s.class?.name ?? classes.find((c: any) => c.id === (s.academicClassId || s.classId))?.name ?? '';
+                  const clsA = clsOf(a); const clsB = clsOf(b);
+                  if (clsA !== clsB) return clsA.localeCompare(clsB, 'fr', { sensitivity: 'base' });
+                  return (a.name ?? '').localeCompare(b.name ?? '', 'fr');
+                }).map((s) => (
                   <SelectItem key={s.id} value={s.id}>
                     {feeDisplayName(s)} — {formatCurrency(Number(s.totalAmount))}
                   </SelectItem>

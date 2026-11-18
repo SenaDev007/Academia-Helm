@@ -1624,7 +1624,7 @@ export default function EnrollmentsContent() {
                                         <span className="w-20 shrink-0">Type</span>
                                         <span className="w-24 shrink-0">Statut</span>
                                         <span className="w-24 shrink-0">Date</span>
-                                        <span className="w-20 shrink-0">Actions</span>
+                                        <span className="w-44 shrink-0">Actions</span>
                                       </div>
                                       {group.students.map((enr, idx) => {
                                         const statusInfo = STATUS_META[enr.status] || { label: enr.status, color: 'bg-slate-50 text-slate-600 border-slate-200' };
@@ -1658,11 +1658,11 @@ export default function EnrollmentsContent() {
                                             <div className="w-20 shrink-0 flex justify-center"><span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold inline-block', typeInfo.color)}>{typeInfo.label}</span></div>
                                             <div className="w-24 shrink-0 flex justify-center"><span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold border inline-block', statusInfo.color)}>{statusInfo.label}</span></div>
                                             <span className="w-24 text-xs text-slate-500 shrink-0">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
-                                            <div className="flex gap-1 w-28 shrink-0">
+                                            <div className="flex gap-1.5 w-44 shrink-0">
                                               {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
-                                                <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-4 h-4" /></button>
+                                                <button onClick={() => handleValidate(enr.student.id)} className="p-1.5 rounded-md border border-emerald-200/70 hover:border-emerald-300 hover:bg-emerald-100 text-emerald-600 transition-all" title="Valider"><CheckCircle className="w-5 h-5" /></button>
                                               ) : null}
-                                              <button onClick={() => setEditEnrollment(enr)} className="p-1 hover:bg-amber-100 rounded text-amber-600" title="Éditer / Compléter"><Pencil className="w-4 h-4" /></button>
+                                              <button onClick={() => setEditEnrollment(enr)} className="p-1.5 rounded-md border border-amber-200/70 hover:border-amber-300 hover:bg-amber-100 text-amber-600 transition-all" title="Éditer / Compléter"><Pencil className="w-5 h-5" /></button>
                                               {/* Générer le matricule si manquant (élève converti sans classe avant le fix) */}
                                               {(!enr.student.matricule && !enr.student.studentCode) && (
                                                 <button
@@ -1675,37 +1675,37 @@ export default function EnrollmentsContent() {
                                                       toast({ title: 'Erreur génération matricule', description: e.message, variant: 'error' });
                                                     }
                                                   }}
-                                                  className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                                                  className="p-1.5 rounded-md border border-blue-200/70 hover:border-blue-300 hover:bg-blue-100 text-blue-600 transition-all"
                                                   title="Générer le matricule"
-                                                ><FileText className="w-4 h-4" /></button>
+                                                ><FileText className="w-5 h-5" /></button>
                                               )}
-                                              <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-4 h-4" /></button>
+                                              <button onClick={() => handleReEnroll(enr)} className="p-1.5 rounded-md border border-indigo-200/70 hover:border-indigo-300 hover:bg-indigo-100 text-indigo-600 transition-all" title="Réinscrire"><RotateCcw className="w-5 h-5" /></button>
                                               {/* ⭐ Toggle Nouvel/Ancien élève — impacte les frais */}
                                               {enr.enrollmentType === 'NEW' ? (
                                                 <button
                                                   onClick={() => handleToggleEnrollmentType(enr, 'REPEAT')}
-                                                  className="p-1 hover:bg-amber-100 rounded text-amber-600"
+                                                  className="p-1.5 rounded-md border border-amber-200/70 hover:border-amber-300 hover:bg-amber-100 text-amber-600 transition-all"
                                                   title="Marquer comme ancien élève (frais de réinscription)"
-                                                ><RefreshCw className="w-4 h-4" /></button>
+                                                ><RefreshCw className="w-5 h-5" /></button>
                                               ) : (
                                                 <button
                                                   onClick={() => handleToggleEnrollmentType(enr, 'NEW')}
-                                                  className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                                                  className="p-1.5 rounded-md border border-blue-200/70 hover:border-blue-300 hover:bg-blue-100 text-blue-600 transition-all"
                                                   title="Marquer comme nouvel élève (frais d'inscription)"
-                                                ><UserPlus className="w-4 h-4" /></button>
+                                                ><UserPlus className="w-5 h-5" /></button>
                                               )}
                                               <button
                                                 onClick={() => router.push(`/app/finance/accounts?studentId=${enr.student.id}`)}
-                                                className="p-1 hover:bg-emerald-100 rounded text-emerald-600"
+                                                className="p-1.5 rounded-md border border-emerald-200/70 hover:border-emerald-300 hover:bg-emerald-100 text-emerald-600 transition-all"
                                                 title="Régime & Finance"
-                                              ><DollarSign className="w-4 h-4" /></button>
+                                              ><DollarSign className="w-5 h-5" /></button>
                                               {/* ⭐ Supprimer (seulement si PRE_REGISTERED ou ADMITTED) */}
                                               {(enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED') && (
                                                 <button
                                                   onClick={() => handleDeleteStudent(enr)}
-                                                  className="p-1 hover:bg-red-100 rounded text-red-600"
+                                                  className="p-1.5 rounded-md border border-red-200/70 hover:border-red-300 hover:bg-red-100 text-red-600 transition-all"
                                                   title="Supprimer définitivement"
-                                                ><Trash2 className="w-4 h-4" /></button>
+                                                ><Trash2 className="w-5 h-5" /></button>
                                               )}
                                             </div>
                                           </div>
@@ -1916,7 +1916,7 @@ export default function EnrollmentsContent() {
                                                 <span className="w-20 shrink-0">Type</span>
                                                 <span className="w-24 shrink-0">Statut</span>
                                                 <span className="w-24 shrink-0">Date</span>
-                                                <span className="w-20 shrink-0">Actions</span>
+                                                <span className="w-44 shrink-0">Actions</span>
                                               </div>
                                               {filteredStudents.map((enr, idx) => {
                                                 const statusInfo = STATUS_META[enr.status] || { label: enr.status, color: 'bg-slate-50 text-slate-600 border-slate-200' };
@@ -1948,38 +1948,38 @@ export default function EnrollmentsContent() {
                                                     <div className="w-20 shrink-0 flex justify-center"><span className={cn('px-1.5 py-0.5 rounded text-[10px] font-bold inline-block', typeInfo.color)}>{typeInfo.label}</span></div>
                                                     <div className="w-24 shrink-0 flex justify-center"><span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold border inline-block', statusInfo.color)}>{statusInfo.label}</span></div>
                                                     <span className="w-24 text-xs text-slate-500 shrink-0">{new Date(enr.enrollmentDate).toLocaleDateString('fr-FR')}</span>
-                                                    <div className="flex gap-1 w-32 shrink-0">
+                                                    <div className="flex gap-1.5 w-44 shrink-0">
                                                       {enr.status === 'PENDING' || enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED' ? (
-                                                        <button onClick={() => handleValidate(enr.student.id)} className="p-1 hover:bg-emerald-100 rounded text-emerald-600" title="Valider"><CheckCircle className="w-4 h-4" /></button>
+                                                        <button onClick={() => handleValidate(enr.student.id)} className="p-1.5 rounded-md border border-emerald-200/70 hover:border-emerald-300 hover:bg-emerald-100 text-emerald-600 transition-all" title="Valider"><CheckCircle className="w-5 h-5" /></button>
                                                       ) : null}
-                                                      <button onClick={() => setEditEnrollment(enr)} className="p-1 hover:bg-amber-100 rounded text-amber-600" title="Éditer / Compléter"><Pencil className="w-4 h-4" /></button>
-                                                      <button onClick={() => handleReEnroll(enr)} className="p-1 hover:bg-indigo-100 rounded text-indigo-600" title="Réinscrire"><RotateCcw className="w-4 h-4" /></button>
+                                                      <button onClick={() => setEditEnrollment(enr)} className="p-1.5 rounded-md border border-amber-200/70 hover:border-amber-300 hover:bg-amber-100 text-amber-600 transition-all" title="Éditer / Compléter"><Pencil className="w-5 h-5" /></button>
+                                                      <button onClick={() => handleReEnroll(enr)} className="p-1.5 rounded-md border border-indigo-200/70 hover:border-indigo-300 hover:bg-indigo-100 text-indigo-600 transition-all" title="Réinscrire"><RotateCcw className="w-5 h-5" /></button>
                                                       {/* ⭐ Toggle Nouvel/Ancien élève — impacte les frais */}
                                                       {enr.enrollmentType === 'NEW' ? (
                                                         <button
                                                           onClick={() => handleToggleEnrollmentType(enr, 'REPEAT')}
-                                                          className="p-1 hover:bg-amber-100 rounded text-amber-600"
+                                                          className="p-1.5 rounded-md border border-amber-200/70 hover:border-amber-300 hover:bg-amber-100 text-amber-600 transition-all"
                                                           title="Marquer comme ancien élève (frais de réinscription)"
-                                                        ><RefreshCw className="w-4 h-4" /></button>
+                                                        ><RefreshCw className="w-5 h-5" /></button>
                                                       ) : (
                                                         <button
                                                           onClick={() => handleToggleEnrollmentType(enr, 'NEW')}
-                                                          className="p-1 hover:bg-blue-100 rounded text-blue-600"
+                                                          className="p-1.5 rounded-md border border-blue-200/70 hover:border-blue-300 hover:bg-blue-100 text-blue-600 transition-all"
                                                           title="Marquer comme nouvel élève (frais d'inscription)"
-                                                        ><UserPlus className="w-4 h-4" /></button>
+                                                        ><UserPlus className="w-5 h-5" /></button>
                                                       )}
                                                       <button
                                                         onClick={() => router.push(`/app/finance/accounts?studentId=${enr.student.id}`)}
-                                                        className="p-1 hover:bg-emerald-100 rounded text-emerald-600"
+                                                        className="p-1.5 rounded-md border border-emerald-200/70 hover:border-emerald-300 hover:bg-emerald-100 text-emerald-600 transition-all"
                                                         title="Régime & Finance"
-                                                      ><DollarSign className="w-4 h-4" /></button>
+                                                      ><DollarSign className="w-5 h-5" /></button>
                                                       {/* ⭐ Supprimer (seulement si PRE_REGISTERED ou ADMITTED) */}
                                                       {(enr.status === 'PRE_REGISTERED' || enr.status === 'ADMITTED') && (
                                                         <button
                                                           onClick={() => handleDeleteStudent(enr)}
-                                                          className="p-1 hover:bg-red-100 rounded text-red-600"
+                                                          className="p-1.5 rounded-md border border-red-200/70 hover:border-red-300 hover:bg-red-100 text-red-600 transition-all"
                                                           title="Supprimer définitivement"
-                                                        ><Trash2 className="w-4 h-4" /></button>
+                                                        ><Trash2 className="w-5 h-5" /></button>
                                                       )}
                                                     </div>
                                                   </div>

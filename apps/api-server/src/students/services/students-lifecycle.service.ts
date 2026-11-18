@@ -1327,6 +1327,24 @@ export class StudentsLifecycleService {
       data: updateData,
     });
 
+    // ⭐ FIX nov. 2026 — synchroniser le NIVEAU SCOLAIRE de l'élève avec la
+    //    nouvelle classe : les frais scoped par niveau (ex. inscription
+    //    Maternelle 5 000 / Primaire 5 000 / Secondaire 8 000) se basent sur
+    //    student.schoolLevelId. Sans cette synchro, un élève Maternelle
+    //    réorienté vers CP restait « Maternelle » → mauvais frais de niveau.
+    if (newPhysicalClass.schoolLevelId) {
+      const student = await this.prisma.student.findFirst({
+        where: { id: data.studentId, tenantId },
+        select: { schoolLevelId: true },
+      });
+      if (student?.schoolLevelId !== newPhysicalClass.schoolLevelId) {
+        await this.prisma.student.update({
+          where: { id: data.studentId },
+          data: { schoolLevelId: newPhysicalClass.schoolLevelId },
+        });
+      }
+    }
+
     // ⭐ Créer un enregistrement ClassTransfer pour l'historique
     if (previousClassId !== data.newClassId) {
       await this.prisma.classTransfer.create({
@@ -1354,11 +1372,17 @@ export class StudentsLifecycleService {
       academicYearId: updatedEnrollment.academicYearId,
     });
 
-    // ⭐ P1.3 — Recalculer le StudentAccount après changement de classe
+    // ⭐ FIX nov. 2026 (Mon Avenir Plus) — RECONSTRUCTION du compte pour la
+    //    classe d'ARRIVÉE : l'ancien `recalculate()` conservait les lignes
+    //    payées de la classe de départ (ex. scolarité CE1) tout en créant
+    //    celles de la classe d'arrivée (ex. CP) → double barème, solde non
+    //    conforme. `rebuildForClassChange()` supprime les lignes remplacées
+    //    (payées incluses), conserve l'argent encaissé et le RÉIMPUTE FIFO
+    //    sur les nouvelles lignes → solde conforme à la classe d'arrivée.
     try {
-      await this.studentAccountService.recalculate(data.studentId, tenantId, data.academicYearId);
+      await this.studentAccountService.rebuildForClassChange(data.studentId, tenantId, data.academicYearId);
     } catch (e: any) {
-      this.logger.warn(`Compte non recalculé après changeClass: ${(e as Error).message}`);
+      this.logger.warn(`Compte non reconstruit après changeClass: ${(e as Error).message}`);
     }
 
     return this.prisma.student.findUnique({
@@ -1422,6 +1446,21 @@ export class StudentsLifecycleService {
       data: updateData,
     });
 
+    // ⭐ FIX nov. 2026 — synchroniser le NIVEAU SCOLAIRE avec la classe
+    //    physique affectée (frais scoped par niveau — cf. changeClass).
+    if (physicalClass.schoolLevelId) {
+      const student = await this.prisma.student.findFirst({
+        where: { id: data.studentId, tenantId },
+        select: { schoolLevelId: true },
+      });
+      if (student?.schoolLevelId !== physicalClass.schoolLevelId) {
+        await this.prisma.student.update({
+          where: { id: data.studentId },
+          data: { schoolLevelId: physicalClass.schoolLevelId },
+        });
+      }
+    }
+
     // ⭐ Créer un ClassTransfer de type INITIAL_ASSIGNMENT (ou CLASS_CHANGE si déjà affecté)
     await this.prisma.classTransfer.create({
       data: {
@@ -1447,13 +1486,15 @@ export class StudentsLifecycleService {
       physicalClassName: physicalClass.name,
     });
 
-    // ⭐ P1.3 — Recalculer le StudentAccount car la structure de frais peut
-    //    dépendre de la classe physique. Sans ça, l'élève garde l'ancienne
-    //    structure de frais après changement de classe → incohérence financière.
+    // ⭐ FIX nov. 2026 (Mon Avenir Plus) — RECONSTRUCTION du compte pour la
+    //    classe d'arrivée (même logique que changeClass) : les frais suivent la
+    //    nouvelle classe, l'argent déjà encaissé est réimputé FIFO sur les
+    //    nouvelles lignes. L'ancien `recalculate()` laissait le double barème
+    //    (lignes payées de la classe de départ + lignes complètes de la nouvelle).
     try {
-      await this.studentAccountService.recalculate(data.studentId, tenantId, data.academicYearId);
+      await this.studentAccountService.rebuildForClassChange(data.studentId, tenantId, data.academicYearId);
     } catch (e: any) {
-      this.logger.warn(`Compte non recalculé après assignPhysicalClass: ${(e as Error).message}`);
+      this.logger.warn(`Compte non reconstruit après assignPhysicalClass: ${(e as Error).message}`);
     }
 
     return this.prisma.student.findUnique({
@@ -1552,11 +1593,14 @@ export class StudentsLifecycleService {
       newSeriesId: data.newSeriesId,
     });
 
-    // ⭐ P1.3 — Recalculer le StudentAccount après changement de série
+    // ⭐ FIX nov. 2026 — RECONSTRUCTION du compte après changement de série :
+    //    la série cible rattachée à une classe officielle différente peut avoir
+    //    des frais différents → mêmes règles que changeClass (réimputation FIFO
+    //    de l'argent déjà encaissé sur les lignes de la nouvelle classe).
     try {
-      await this.studentAccountService.recalculate(data.studentId, tenantId, data.academicYearId);
+      await this.studentAccountService.rebuildForClassChange(data.studentId, tenantId, data.academicYearId);
     } catch (e: any) {
-      this.logger.warn(`Compte non recalculé après changeSeries: ${(e as Error).message}`);
+      this.logger.warn(`Compte non reconstruit après changeSeries: ${(e as Error).message}`);
     }
 
     return this.prisma.student.findUnique({

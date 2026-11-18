@@ -167,15 +167,41 @@ export default function FeeOverrideModal({
   const originalAmount = effectiveFee ? Number(effectiveFee.totalAmount) : 0;
 
   // Helper : nom intelligent du frais (enrichi avec la classe si manquante)
-  // Affichage identique au tableau : "Frais de scolarité — CI — 40000 FCFA"
+  // Affichage identique au tableau de configuration : "Frais de scolarité — CI — 40000 FCFA"
+  // ⭐ FIX nov. 2026 : prioriser academicClass (classe officielle — utilisée par les
+  //    écoles comme CSP Mon Avenir Plus) sur class (classe physique), avec fallback
+  //    sur la liste locale `classes`. Avant, un frais rattaché à une classe officielle
+  //    s'affichait "Frais de scolarité — montant" SANS le nom de la classe → impossible
+  //    de distinguer deux frais homonymes de classes différentes.
   const feeDisplayName = (s: any): string => {
     const baseName = s.name ?? '';
-    if (!s.classId) return baseName;
-    const className = s.class?.name;
+    const classId = s.academicClassId || s.classId;
+    if (!classId) return baseName;
+    const className =
+      s.academicClass?.name ??
+      s.class?.name ??
+      classes.find((c: any) => c.id === classId)?.name;
     if (!className) return baseName;
     if (baseName.includes(className)) return baseName;
     return `${baseName} — ${className}`;
   };
+
+  // ⭐ FIX nov. 2026 : frais triés par nom de classe puis par nom — les frais de
+  //    classes différentes (ex: "Frais de scolarité CP/CE1/CE2") se regroupent
+  //    visuellement dans le sélecteur au lieu d'être mélangés.
+  const sortedStructures = useMemo(() => {
+    const classNameOf = (s: any): string =>
+      s.academicClass?.name ??
+      s.class?.name ??
+      classes.find((c: any) => c.id === (s.academicClassId || s.classId))?.name ??
+      '';
+    return [...structures].sort((a: any, b: any) => {
+      const clsA = classNameOf(a);
+      const clsB = classNameOf(b);
+      if (clsA !== clsB) return clsA.localeCompare(clsB, 'fr', { sensitivity: 'base' });
+      return (a.name ?? '').localeCompare(b.name ?? '', 'fr');
+    });
+  }, [structures, classes]);
 
   // Fermer les suggestions au clic en dehors
   useEffect(() => {
@@ -441,7 +467,7 @@ export default function FeeOverrideModal({
               <Select value={feeStructureId} onValueChange={handleFeeStructureChange}>
                 <SelectTrigger><SelectValue placeholder="Sélectionner un frais" /></SelectTrigger>
                 <SelectContent>
-                  {structures.filter((f) => f.isActive).map((s) => (
+                  {sortedStructures.filter((f: any) => f.isActive).map((s: any) => (
                     <SelectItem key={s.id} value={s.id}>
                     {feeDisplayName(s)} — {formatCurrency(Number(s.totalAmount))}
                   </SelectItem>

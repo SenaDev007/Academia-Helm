@@ -501,6 +501,286 @@ export class StudentAccountService {
   }
 
   /**
+   * ⭐ RECONSTRUCTION DU COMPTE ÉLÈVE APRÈS CHANGEMENT DE CLASSE (nov. 2026 —
+   * anomalie « solde non conforme à la classe d'arrivée », Mon Avenir Plus).
+   *
+   * PROBLÈME : lorsqu'un élève quittait une classe (ex. CE1) pour une autre
+   * (ex. CP) dont les frais diffèrent, l'ancien `recalculate()` CONSERVAIT les
+   * lignes payées de la classe de départ (scolarité CE1) tout en CRÉANT les
+   * lignes complètes de la classe d'arrivée (scolarité CP) → le compte
+   * additionnait les DEUX barèmes : totalDue gonflé, restant de la classe de
+   * départ encore dû, solde jamais conforme à la nouvelle classe.
+   *
+   * COMPORTEMENT ATTENDU (règle métier validée par le promoteur) :
+   *   1. Les frais applicables (scolarité, inscription, réinscription,
+   *      examens…) suivent EXCLUSIVEMENT la classe d'ARRIVÉE.
+   *   2. Les lignes de frais de la classe de DÉPART disparaissent — y compris
+   *      celles partiellement ou totalement payées.
+   *   3. L'argent déjà encaissé N'EST PAS perdu : il est conservé (totalPaid)
+   *      et RÉIMPUTÉ dynamiquement sur les nouvelles lignes (FIFO, même ordre
+   *      de priorité que l'encaissement : INSCRIPTION → REINSCRIPTION →
+   *      TUITION → CANTEEN → EXAMEN → GENERAL → OTHER).
+   *   4. balance = totalDue(nouvelle classe) − totalPaid → les tranches déjà
+   *      payées « s'amputent » sur le nouveau solde. Si l'élève a payé plus
+   *      que le nouveau barème, le reliquat apparaît en avance (balance
+   *      négative) — cohérent avec la sémantique de crédit du compte.
+   *
+   * PRÉSERVATION DE L'INTÉGRITÉ :
+   *   - Les FinanceTransaction (mouvements d'argent, reçus) sont INTACTES.
+   *   - Seules sont supprimées les lignes « remplacées » : celles dont le type
+   *     de frais est désormais couvert par une structure applicable de la
+   *     nouvelle classe. Les lignes payées SANS remplaçant applicable (ex.
+   *     frais général optionnel « T-shirt » acheté, cantine désactivée) sont
+   *     CONSERVÉES telles quelles — leurs paiements restent rattachés.
+   *   - Les imputations (FinanceTransactionAllocation) des lignes supprimées
+   *     sont effacées en cascade avec elles ; le crédit réimputé est porté
+   *     par les montants des nouvelles lignes. L'annulation ultérieure d'un
+   *     paiement reste correcte au niveau du compte (trigger SQL).
+   *
+   * Idempotent : rappeler la méthode sans changement de périmètre de frais
+   * est un no-op (aucune ligne remplacée, aucune réimputation).
+   */
+  async rebuildForClassChange(studentId: string, tenantId: string, academicYearId: string) {
+    let account = await this.prisma.studentAccount.findUnique({
+      where: { studentId_academicYearId: { studentId, academicYearId } },
+      include: {
+        breakdowns: {
+          include: { feeStructure: { select: { id: true, feeType: true, name: true } } },
+        },
+      },
+    });
+
+    if (!account) {
+      const result = await this.getOrCreate(tenantId, studentId, academicYearId);
+      return result.account;
+    }
+
+    // ── Contexte élève (APRÈS le changement de classe : classId/academicClassId
+    //    déjà mis à jour par changeClass/assignPhysicalClass).
+    const student = await this.prisma.student.findFirst({
+      where: { id: studentId, tenantId },
+      include: { studentEnrollments: { where: { academicYearId }, include: { class: true } } },
+    });
+    if (!student) throw new NotFoundException('Student not found');
+
+    const enrollment = student.studentEnrollments?.[0];
+    const classId = enrollment?.classId ?? null;
+    const academicClassId = enrollment?.academicClassId ?? null;
+    const levelId = student.schoolLevelId;
+    const enrollmentType = enrollment?.enrollmentType ?? 'NEW';
+
+    const allStructures = await this.prisma.feeStructure.findMany({
+      where: { tenantId, academicYearId, isActive: true },
+      include: { structureInstallments: true, overrides: { where: { studentId } } },
+    });
+    const studentOverrides: any[] = allStructures.flatMap((fs: any) => fs.overrides ?? []);
+    const regimeAdjustments = await this.loadFeeRegimeAdjustments(tenantId, studentId, academicYearId);
+
+    // Structures applicables à la classe d'arrivée (mêmes règles que recalculate)
+    const applicable = this.filterOptionalGeneralFees(
+      this.filterFeesByEnrollmentType(
+        selectApplicableStructures(allStructures, {
+          classId,
+          academicClassId,
+          levelId,
+        }),
+        enrollmentType,
+      ),
+    );
+    const applicableIds = new Set(applicable.map((fs: any) => fs.id));
+    // Clé de déduplication par type (GENERAL → par nom) — pour savoir si un type
+    // de frais de l'ancienne classe est désormais couvert par la nouvelle.
+    const feeKeyOf = (fs: any): string =>
+      fs.feeType === 'GENERAL' ? `GENERAL::${(fs.name ?? '').trim().toLowerCase()}` : fs.feeType;
+    const applicableKeys = new Set(applicable.map((fs: any) => feeKeyOf(fs)));
+
+    const overrideByFsId = new Map<string, any>(
+      studentOverrides.map((o: any) => [o.feeStructureId, o]),
+    );
+    const computeAmount = (fs: any): number => {
+      const override = overrideByFsId.get(fs.id);
+      if (override) return Number(override.customAmount);
+      if (regimeAdjustments.has(fs.id)) return regimeAdjustments.get(fs.id)!;
+      return Number(fs.totalAmount);
+    };
+
+    // ── Classer les lignes existantes :
+    //    - KEPT        : structure toujours applicable (ex. frais de niveau/global
+    //                   commun aux deux classes) → paiements conservés SUR PLACE ;
+    //    - REPLACED    : structure non applicable MAIS son type de frais est couvert
+    //                   par une structure de la classe d'arrivée → la ligne disparaît
+    //                   (payée ou non) et son montant payé devient un CRÉDIT à
+    //                   réimputer sur les nouvelles lignes ;
+    //    - KEPT-AS-IS  : structure non applicable SANS remplaçant (ex. cantine
+    //                   désactivée, frais général optionnel déjà acheté) → ligne
+    //                   conservée telle quelle (paiements rattachés).
+    const kept: any[] = [];
+    const keptAsIs: any[] = [];
+    const replacedPaid: any[] = [];
+    const deleteIds: string[] = [];
+    let transferredPaid = 0;
+    for (const b of account.breakdowns) {
+      if (applicableIds.has(b.feeStructureId)) {
+        kept.push(b);
+        continue;
+      }
+      const fsKey = b.feeStructure ? feeKeyOf(b.feeStructure) : null;
+      if (fsKey && applicableKeys.has(fsKey)) {
+        // Type de frais désormais couvert par la classe d'arrivée → remplacé.
+        const paid = Number(b.paidAmount ?? 0);
+        if (paid > 0) {
+          transferredPaid += paid;
+          replacedPaid.push(b);
+        }
+        deleteIds.push(b.id);
+      } else {
+        // Ni applicable ni remplacée (ex. frais général optionnel acheté,
+        // cantine désactivée) → ligne conservée TELLE QUELLE : elle reste au
+        // compte, ses paiements restent rattachés, et elle NE PARTICIPE PAS
+        // à la réimputation du crédit (verrou `locked`).
+        keptAsIs.push(b);
+      }
+    }
+
+    // ── Lignes finales : conservées (montants resynchronisés) + créations.
+    const structuresById = new Map<string, any>(allStructures.map((fs: any) => [fs.id, fs]));
+    const linePlan: {
+      existingId?: string;
+      feeStructureId: string;
+      feeType: string;
+      initialAmount: number;
+      paidAmount: number;
+      /** true = ligne conservée telle quelle (hors réimputation du crédit) */
+      locked?: boolean;
+    }[] = [];
+    for (const b of kept) {
+      const fs = structuresById.get(b.feeStructureId);
+      const newAmount = fs ? computeAmount(fs) : Number(b.initialAmount);
+      linePlan.push({
+        existingId: b.id,
+        feeStructureId: b.feeStructureId,
+        feeType: b.feeStructure?.feeType ?? 'OTHER',
+        initialAmount: newAmount,
+        paidAmount: Number(b.paidAmount ?? 0),
+      });
+    }
+    // Lignes conservées telles quelles : inchangées, comptées dans les totaux.
+    for (const b of keptAsIs) {
+      linePlan.push({
+        existingId: b.id,
+        feeStructureId: b.feeStructureId,
+        feeType: b.feeStructure?.feeType ?? 'OTHER',
+        initialAmount: Number(b.initialAmount ?? 0),
+        paidAmount: Number(b.paidAmount ?? 0),
+        locked: true,
+      });
+    }
+    const keptFsIds = new Set(kept.map((b) => b.feeStructureId));
+    for (const fs of applicable) {
+      if (keptFsIds.has(fs.id)) continue;
+      const initialAmount = computeAmount(fs);
+      linePlan.push({
+        feeStructureId: fs.id,
+        feeType: fs.feeType,
+        initialAmount,
+        paidAmount: 0,
+      });
+    }
+
+    // ── Réimputation FIFO du crédit : paiements des lignes remplacées + reliquat
+    //    non imputé déjà présent sur le compte (ex. encaissement antérieur aux
+    //    frais — pattern du fix « scolarité 0 F »).
+    const sumBeforePaid = account.breakdowns.reduce(
+      (s, b) => s + Number(b.paidAmount ?? 0), 0,
+    );
+    const unallocatedPaid = Math.max(0, Number(account.totalPaid ?? 0) - sumBeforePaid);
+    let credit = transferredPaid + unallocatedPaid;
+
+    // Ordre de priorité identique à l'encaissement (finance-transaction.service.ts)
+    const FEE_PRIORITY = ['INSCRIPTION', 'REINSCRIPTION', 'TUITION', 'CANTEEN', 'EXAMEN', 'GENERAL', 'OTHER'];
+    const sortedLines = [...linePlan].sort((a, b) => {
+      const ia = FEE_PRIORITY.indexOf(a.feeType);
+      const ib = FEE_PRIORITY.indexOf(b.feeType);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+    for (const line of sortedLines) {
+      if (credit <= 0) break;
+      if (line.locked) continue; // lignes conservées hors réimputation
+      const remaining = line.initialAmount - line.paidAmount;
+      if (remaining <= 0) continue;
+      const pay = Math.min(credit, remaining);
+      line.paidAmount += pay;
+      credit -= pay;
+    }
+
+    // ── Écritures atomiques (une seule transaction : suppressions, mises à
+    //    jour, créations, puis le solde du compte avec son bypass de trigger).
+    const updates = linePlan
+      .filter((l) => l.existingId)
+      .map((l) => ({
+        id: l.existingId!,
+        initialAmount: l.initialAmount,
+        paidAmount: l.paidAmount,
+      }));
+    const creates = linePlan
+      .filter((l) => !l.existingId)
+      .map((l) => ({
+        studentAccountId: account.id,
+        feeStructureId: l.feeStructureId,
+        initialAmount: l.initialAmount,
+        adjustedAmount: l.initialAmount,
+        paidAmount: l.paidAmount,
+        remainingAmount: l.initialAmount - l.paidAmount,
+      }));
+
+    const totalDue = linePlan.reduce((s, l) => s + l.initialAmount, 0);
+    // totalPaid INCHANGÉ : l'argent encaissé est conservé (crédit réimputé).
+    const totalPaid = Number(account.totalPaid ?? 0);
+    const balance = totalDue - totalPaid;
+
+    const accountId = account.id;
+    account = await this.prisma.$transaction(async (tx) => {
+      if (deleteIds.length > 0) {
+        await tx.accountBreakdown.deleteMany({ where: { id: { in: deleteIds } } });
+      }
+      for (const u of updates) {
+        await tx.accountBreakdown.update({
+          where: { id: u.id },
+          data: {
+            initialAmount: u.initialAmount,
+            adjustedAmount: u.initialAmount,
+            paidAmount: u.paidAmount,
+            remainingAmount: u.initialAmount - u.paidAmount,
+          },
+        });
+      }
+      if (creates.length > 0) {
+        await tx.accountBreakdown.createMany({ data: creates });
+      }
+      await tx.$executeRawUnsafe(`SET LOCAL app.allow_balance_update = 'true'`);
+      return tx.studentAccount.update({
+        where: { id: accountId },
+        data: {
+          totalDue,
+          totalPaid,
+          balance,
+          updatedAt: new Date(),
+        },
+        include: { breakdowns: { include: { feeStructure: true } } },
+      });
+    });
+
+    this.logger.log(
+      `rebuildForClassChange: élève=${studentId} année=${academicYearId} ` +
+      `lignes remplacées=${replacedPaid.length} (dont payées=${transferredPaid} F réimputées) ` +
+      `nouveau totalDue=${totalDue} F totalPaid=${totalPaid} F balance=${balance} F ` +
+      `crédit non imputable restant=${credit} F`,
+    );
+
+    return account;
+  }
+
+  /**
    * ⭐ PLAN DE RECALCUL (sept. 2026) — cœur métier PUR (aucune requête DB).
    *
    * Calcule, pour UN compte élève, l'ensemble des écritures à effectuer pour

@@ -742,7 +742,7 @@ export class FeeStructureService {
     return this.prisma.feeOverride.findMany({
       where,
       include: {
-        feeStructure: { include: { class: true, level: true } },
+        feeStructure: { include: { class: true, level: true, academicClass: { include: { level: true } } } },
         student: { select: { id: true, firstName: true, lastName: true, matricule: true, studentCode: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -801,7 +801,7 @@ export class FeeStructureService {
     }
 
     const include = {
-      feeStructure: { include: { class: true, level: true } },
+      feeStructure: { include: { class: true, level: true, academicClass: { include: { level: true } } } },
       student: {
         select: {
           id: true, firstName: true, lastName: true, matricule: true, studentCode: true,
@@ -988,7 +988,7 @@ export class FeeStructureService {
         ...(data.reason !== undefined && { reason: data.reason }),
       },
       include: {
-        feeStructure: { include: { class: true, level: true } },
+        feeStructure: { include: { class: true, level: true, academicClass: { include: { level: true } } } },
         student: { select: { id: true, firstName: true, lastName: true, matricule: true, studentCode: true } },
       },
     });

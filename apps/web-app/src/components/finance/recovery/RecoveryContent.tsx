@@ -1310,12 +1310,7 @@ function ArrearsTab({
     () => selectedArrears.reduce((s: number, a: any) => s + (Number(a.balanceDue) || 0), 0),
     [selectedArrears],
   );
-  const allVisibleSelected = arrears.length > 0 && selectedArrears.length === arrears.length;
-  const someVisibleSelected = selectedArrears.length > 0 && !allVisibleSelected;
 
-  const toggleAll = () => {
-    setSelectedIds(allVisibleSelected ? new Set() : new Set(arrears.map((a: any) => a.id)));
-  };
   const toggleOne = (id: string, checked: boolean) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -1389,6 +1384,24 @@ function ArrearsTab({
     ),
     [arrears, arrearsPage],
   );
+
+  // ⭐ Sélection « tout cocher » : porte sur la PAGE courante (50 lignes max) —
+  //    les lignes cochées sur les autres pages restent sélectionnées
+  //    (suppression en masse sécurisée : on n'efface que ce qu'on voit).
+  const pageSelectedCount = pagedArrears.filter((a: any) => selectedIds.has(a.id)).length;
+  const allVisibleSelected = pagedArrears.length > 0 && pageSelectedCount === pagedArrears.length;
+  const someVisibleSelected = pageSelectedCount > 0 && !allVisibleSelected;
+  const toggleAll = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        pagedArrears.forEach((a: any) => next.delete(a.id));
+      } else {
+        pagedArrears.forEach((a: any) => next.add(a.id));
+      }
+      return next;
+    });
+  };
   const pageStart = arrears.length === 0 ? 0 : (arrearsPage - 1) * ARREARS_PAGE_SIZE + 1;
   const pageEnd = Math.min(arrearsPage * ARREARS_PAGE_SIZE, arrears.length);
 
@@ -1604,10 +1617,10 @@ function ArrearsTab({
                     if (el) el.indeterminate = someVisibleSelected;
                   }}
                   onChange={toggleAll}
-                  disabled={arrears.length === 0}
+                  disabled={pagedArrears.length === 0}
                   className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer disabled:opacity-40"
-                  title="Tout sélectionner / tout désélectionner"
-                  aria-label="Tout sélectionner"
+                  title="Tout sélectionner / tout désélectionner (page courante)"
+                  aria-label="Tout sélectionner (page courante)"
                 />
               </TableHead>
               <TableHead className="whitespace-nowrap">Élève</TableHead>

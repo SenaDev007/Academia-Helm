@@ -39,13 +39,17 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto, @Req() req: Request) {
-    // ⭐ NATIVE SESSION — détecter l'app Android (WebView Capacitor) via le
-    //    marqueur « ; wv) » de l'UA ou l'en-tête explicite X-AH-Native-App
-    //    → refresh token 90 jours (session toujours ouverte sur mobile).
+    // ⭐ MOBILE SESSION — détecter le TÉLÉPHONE (app Android WebView Capacitor
+    //    OU navigateur mobile) via le marqueur « ; wv) » de l'UA, les UA mobiles
+    //    (Android Mobile / iPhone / iPad / iPod) ou l'en-tête explicite
+    //    X-AH-Native-App → refresh token 90 jours (session toujours ouverte
+    //    sur mobile — nov. 2026, retour promoteur « comme WhatsApp »).
     const ua = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : '';
     const nativeApp =
       /;\s*wv\)/.test(ua) ||
       /capacitor/i.test(ua) ||
+      /iPhone|iPod|iPad/i.test(ua) ||
+      (/Android/i.test(ua) && /Mobile/i.test(ua)) ||
       req.headers['x-ah-native-app'] === '1';
     return this.authService.login(loginDto, {
       ipAddress: req.ip || req.socket?.remoteAddress,
@@ -82,15 +86,19 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   async refresh(@Body('refreshToken') refreshToken: string, @Req() req: Request) {
-    // ⭐ NATIVE SESSION — l'app Android (WebView Capacitor) est détectée soit
-    //    par le marqueur « ; wv) » de son user-agent, soit par l'en-tête
-    //    explicite X-AH-Native-App posé par le client web (fiable à 100 %,
-    //    le marqueur UA peut manquer sur certains WebView) → refresh token
-    //    90 jours (session toujours ouverte). Les navigateurs web : 7 jours.
+    // ⭐ MOBILE SESSION — le TÉLÉPHONE (app Android WebView OU navigateur mobile)
+    //    est détecté soit par le marqueur « ; wv) » de son user-agent, soit par
+    //    les UA mobiles (Android Mobile / iPhone / iPad / iPod), soit par
+    //    l'en-tête explicite X-AH-Native-App posé par le client web (fiable à
+    //    100 %) → refresh token 90 jours (session toujours ouverte sur mobile —
+    //    jamais de déconnexion automatique, uniquement volontaire).
+    //    Les navigateurs web desktop : 7 jours (inchangé).
     const ua = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : '';
     const nativeSession =
       /;\s*wv\)/.test(ua) ||
       /capacitor/i.test(ua) ||
+      /iPhone|iPod|iPad/i.test(ua) ||
+      (/Android/i.test(ua) && /Mobile/i.test(ua)) ||
       req.headers['x-ah-native-app'] === '1';
     return this.authService.refreshToken(refreshToken, nativeSession);
   }

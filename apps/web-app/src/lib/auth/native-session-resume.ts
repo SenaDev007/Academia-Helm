@@ -1,17 +1,18 @@
 /**
  * ============================================================================
- * NATIVE SESSION RESUME — reprise de session dans l'app Android (Capacitor)
+ * MOBILE SESSION RESUME — reprise de session sur mobile (app Android + web)
  * ============================================================================
  *
  * PROBLÈME :
  *   L'app native démarre TOUJOURS sur server.url = https://academiahelm.com/portal
- *   (domaine racine). Or les tokens de session (accessToken / refreshToken /
- *   localStorage) vivent sur le SOUS-DOMAINE du tenant (ex :
- *   lepalmaresplus.academiahelm.com) — localStorage et cookies host-only sont
- *   isolés par origine. Au démarrage à froid, le domaine racine ne sait donc
- *   RIEN de la session ouverte : l'utilisateur doit repasser par le portail
- *   public (choix du portail → choix de l'école → login) à chaque ouverture
- *   de l'app.
+ *   (domaine racine) ; sur mobile web, l'utilisateur qui revient passe aussi
+ *   par le portail central (choix école). Or les tokens de session
+ *   (accessToken / refreshToken / localStorage) vivent sur le SOUS-DOMAINE du
+ *   tenant (ex : lepalmaresplus.academiahelm.com) — localStorage et cookies
+ *   host-only sont isolés par origine. Au démarrage à froid, le domaine racine
+ *   ne sait donc RIEN de la session ouverte : l'utilisateur doit repasser par
+ *   le portail public (choix du portail → choix de l'école → login) à chaque
+ *   ouverture.
  *
  * SOLUTION :
  *   Un cookie PARTAGÉ posé sur le domaine de base (.academiahelm.com) — le
@@ -19,14 +20,16 @@
  *   les sous-domaines tenant. Il mémorise l'hôte tenant où la session vit.
  *
  *   Démarrage à froid : /portal (racine) lit le cookie → redirige directement
- *   vers https://{tenant}.academiahelm.com/app → AppGate valide la session :
- *     - session valide   → l'utilisateur retrouve son interface immédiatement
- *     - session expirée  → /login du tenant s'affiche (jamais de boucle :
- *                          /login ne redirige jamais vers /portal)
+ *   vers la PAGE INSTITUTIONNELLE de l'école (https://{tenant}.academiahelm.com/
+ *   — retour promoteur nov. 2026 : « pour les prochaines fois, ce sera la page
+ *   institutionnelle, la page principale institutionnelle de l'école qui doit
+ *   s'afficher »). Depuis cette page, l'utilisateur accède à l'application
+ *   (portails → /login → session valide → /app) SANS ressaisir ses
+ *   identifiants — jamais déconnecté.
  *
- * POLITIQUE :
- *   - Écrit UNIQUEMENT dans la coquille native (isNativeApp) — le web
- *     navigateur garde son comportement actuel, inchangé.
+ * POLITIQUE (nov. 2026 — étendue au web mobile) :
+ *   - Écrit sur TÉLÉPHONE (app native Capacitor OU navigateur mobile) — le
+ *     desktop web garde son comportement actuel, inchangé.
  *   - Effacé à la déconnexion (clearClientSessionSync) → « session toujours
  *     ouverte par défaut, l'utilisateur peut se déconnecter lui-même ».
  *   - Durée : 365 jours (le cookie ne fait que mémoriser l'HÔTE, pas un token
@@ -34,7 +37,7 @@
  *     toujours vérifiée côté serveur à la reprise).
  */
 
-import { isNativeApp } from '@/lib/pwa/is-native-app';
+import { isMobileDevice } from '@/lib/pwa/mobile-experience';
 
 /** Nom du cookie de reprise (partagé sur le domaine de base). */
 const NATIVE_RESUME_COOKIE = 'ah_native_resume';
@@ -86,13 +89,14 @@ export function isTenantSessionHost(hostname: string): boolean {
 }
 
 /**
- * Enregistre l'hôte tenant courant comme cible de reprise de session native.
+ * Enregistre l'hôte tenant courant comme cible de reprise de session mobile.
  * Appelé après un login réussi et au montage du shell authentifié /app —
- * UNIQUEMENT dans la coquille native Capacitor. No-op silencieuse ailleurs.
+ * UNIQUEMENT sur téléphone (coquille native Capacitor OU navigateur mobile).
+ * No-op silencieuse ailleurs (desktop web inchangé).
  */
 export function writeNativeResumeHint(): void {
   if (typeof window === 'undefined') return;
-  if (!isNativeApp()) return;
+  if (!isMobileDevice()) return;
 
   const host = window.location.hostname;
   if (!isTenantSessionHost(host)) return;

@@ -55,14 +55,21 @@ class ConflictResolverService {
     }
 
     try {
-      // 1. Appliquer la résolution en base locale
-      await localDb.execute(storeName, 'put', {
-        ...resolvedData,
-        _isDirty: false, // Résolu, donc plus "dirty" par rapport au serveur
-        _lastSync: new Date().toISOString(),
-      });
+      // 1. Appliquer la résolution en base locale (non-fatal : si le store
+      //    n'existe pas dans le schéma IDB, on considère quand même le conflit
+      //    RÉSOLU — sinon il resterait à jamais dans `sync_conflicts` et le
+      //    ConflictResolutionModal le remonterait en boucle).
+      try {
+        await localDb.execute(storeName, 'put', {
+          ...resolvedData,
+          _isDirty: false, // Résolu, donc plus "dirty" par rapport au serveur
+          _lastSync: new Date().toISOString(),
+        });
+      } catch (storeError) {
+        console.warn(`[Conflict] Store "${storeName}" indisponible — conflit ${conflictId} considéré résolu`, storeError);
+      }
 
-      // 2. Marquer le conflit comme résolu
+      // 2. Marquer le conflit comme résolu (TOUJOURS, même si le put local a échoué)
       await localDb.execute('sync_conflicts', 'delete', conflictId);
 
       console.log(`[Conflict] Resolved ${conflictId} using ${strategy}`);

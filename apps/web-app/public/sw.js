@@ -354,8 +354,13 @@ function getApiOrigin() {
 //    selon les params demandés (classId, schoolLevelId — double saveur
 //    d'UUID réconciliée par index d'alias —, status, taskType, category,
 //    codes level/classLevel/subject, search, plages de dates, pagination).
+// v4.23.0 (nov. 2026) — MOBILE SWR : les requêtes RSC issues d'un TÉLÉPHONE
+//    (app Android « ; wv) » / navigateur mobile) sont servies depuis le cache
+//    IMMÉDIATEMENT (changement de module instantané) avec rafraîchissement
+//    réseau en arrière-plan (throttle 2 min/ clé). Fix « l'application ne
+//    fait que tourner sans cesse entre les modules » — desktop inchangé.
 //    Bump → SW_ACTIVATED → re-pré-cache (variantes élargies rafraîchies).
-const SW_VERSION = 'v4.22.0';
+const SW_VERSION = 'v4.23.0';
 const STATIC_CACHE = `ah-static-${SW_VERSION}`;
 // ⭐ v3.8.0 — PERSISTANT (jamais purgé) : cf. en-tête. La fraîcheur vient du
 //    NetworkFirst en ligne ; hors ligne, l'HTML (même ancien) reste valide
@@ -1015,10 +1020,116 @@ async function matchRouteCache(cache, requestOrUrl) {
   }
 }
 
+// ⭐ v4.23.0 — MOBILE : détection UA téléphone (app Android « ; wv) » /
+//    navigateur mobile Android/iOS). Retour promoteur nov. 2026 : « quand on
+//    quitte un module pour un autre, l'application ne fait que tourner sans
+//    cesse » — sur mobile (app native + navigateurs téléphone), chaque
+//    changement de module attendait le réseau AVANT d'afficher quoi que ce
+//    soit (RSC NetworkFirst) → loading AcademiaLoader de plusieurs secondes
+//    à plusieurs minutes sur réseau lent / lambda Vercel froide.
+function isMobileUserAgentRequest(request) {
+  try {
+    const ua = request.headers && request.headers.get('user-agent');
+    if (!ua) return false;
+    // App native Capacitor (« ; wv) » / « capacitor »)
+    if (/;\s*wv\)/.test(ua) || /capacitor/i.test(ua)) return true;
+    // iOS (iPhone / iPod / iPad)
+    if (/iPhone|iPod|iPad/i.test(ua)) return true;
+    // Android TÉLÉPHONE : « Android » ET « Mobile » (tablettes Android sans
+    // « Mobile » → traitées desktop, conservateur)
+    if (/Android/i.test(ua) && /Mobile/i.test(ua)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// ⭐ v4.23.0 — Throttle du refresh arrière-plan mobile SWR (par clé RSC) :
+//    naviguer 3 fois en 10 s entre deux modules déjà vus ne doit PAS
+//    déclencher 3 fetch réseau de rattrapage — 1 seul, daté de 2 min.
+const RSC_MOBILE_REFRESH_MIN_INTERVAL_MS = 2 * 60 * 1000;
+const rscMobileRefreshedAt = new Map();
+
+// ⭐ v4.23.0 — HORODATAGE DES ENTRÉES RSC (cache META ah-rsc-ts:<clé>) :
+//    le mobile SWR ne sert une entrée cachée QUE si elle a moins de 6 h.
+//    Garde-fou hérité de la purge « anti-code-périmé » : un payload RSC du
+//    build N référence les CHUNKS du build N — le servir alors qu'un build N+1
+//    est déployé fait tourner l'ancien code contre le nouveau backend
+//    (constat production 17/10/2026). Au-delà de 6 h → réseau d'abord
+//    (comportement standard), l'entrée se ré-horodate au prochain 200.
+//    (Le epoch de build vérifié au service du shell + les 6 h bornent
+//    ensemble la fenêtre de code ancien servie en ligne.)
+const RSC_TS_PREFIX = 'ah-rsc-ts:';
+const RSC_MOBILE_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+
+async function readRscTimestamp(key) {
+  try {
+    const meta = await caches.open(META_CACHE);
+    const res = await meta.match(RSC_TS_PREFIX + key);
+    if (!res) return 0;
+    return Number(await res.text()) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function touchRscTimestamp(key) {
+  try {
+    const meta = await caches.open(META_CACHE);
+    await meta.put(RSC_TS_PREFIX + key, new Response(String(Date.now())));
+  } catch {
+    /* non-bloquant */
+  }
+}
+
 async function handleRsc(request) {
   const cache = await caches.open(RSC_CACHE);
   const key = rscCacheKey(request);
   const offline = !self.navigator || self.navigator.onLine === false;
+
+  // ⭐ v4.23.0 — MOBILE SWR (stale-while-revalidate) : sur téléphone, si le
+  //    payload RSC de cette route est en cache ET récent (< 6 h), on le sert
+  //    IMMÉDIATEMENT (changement de module instantané, comme une app native)
+  //    et on lance le rafraîchissement réseau en ARRIÈRE-PLAN (fire-and-forget,
+  //    jamais bloquant, throttle 2 min/clave) : la prochaine visite affichera
+  //    les données les plus fraîches. Les données VISIBLES restent pilotées
+  //    par les requêtes API (React Query / NetworkFirst) — le payload RSC
+  //    sert la coquille du module. Desktop : inchangé (NetworkFirst,
+  //    fraîcheur prioritaire). Entrée > 6 h : réseau d'abord (anti-code-périmé).
+  if (!offline && isMobileUserAgentRequest(request)) {
+    const cachedMobile = await matchRouteCache(cache, key);
+    if (cachedMobile) {
+      const ts = await readRscTimestamp(key);
+      if (ts && Date.now() - ts < RSC_MOBILE_MAX_AGE_MS) {
+        const lastRefresh = rscMobileRefreshedAt.get(key) || 0;
+        if (Date.now() - lastRefresh > RSC_MOBILE_REFRESH_MIN_INTERVAL_MS) {
+          rscMobileRefreshedAt.set(key, Date.now());
+          if (rscMobileRefreshedAt.size > 300) {
+            // Garde-fou mémoire : au-delà de 300 clés, on repart de zéro
+            rscMobileRefreshedAt.clear();
+            rscMobileRefreshedAt.set(key, Date.now());
+          }
+          (async () => {
+            try {
+              const fresh = await fetchWithTimeout(request, RSC_TIMEOUT);
+              if (fresh && fresh.status === 200 && !fresh.redirected) {
+                const copy = await toCacheableCopy(fresh);
+                await cache.put(new Request(key), copy);
+                await touchRscTimestamp(key);
+                await trimRscCache();
+              }
+            } catch {
+              /* réseau lent/ko : le cache servi reste valide, nouvelle tentative à la prochaine navigation > 2 min */
+            }
+          })();
+        }
+        return cachedMobile;
+      }
+      // Entrée périmée (> 6 h, build possiblement déployé depuis) → flux
+      // standard ci-dessous : réseau d'abord, mise en cache + horodatage.
+    }
+    // Pas de cache mobile → flux standard ci-dessous (réseau d'abord).
+  }
 
   if (!offline) {
     try {
@@ -1029,6 +1140,7 @@ async function handleRsc(request) {
         //    (Vary mismatch) → le cache RSC semblait vide hors ligne.
         toCacheableCopy(response)
           .then((copy) => cache.put(new Request(key), copy))
+          .then(() => touchRscTimestamp(key))
           .then(() => trimRscCache())
           .catch(() => {});
       }
@@ -1060,7 +1172,9 @@ async function handleRsc(request) {
   );
 }
 
-/** LRU simple : garde au plus RSC_CACHE_MAX entrées (ordre d'insertion). */
+/** LRU simple : garde au plus RSC_CACHE_MAX entrées (ordre d'insertion).
+ *  ⭐ v4.23.0 — purge AUSSI les horodateurs META (ah-rsc-ts:<clé>) des
+ *  entrées évincées : le cache META ne grossit pas indéfiniment. */
 async function trimRscCache() {
   try {
     const cache = await caches.open(RSC_CACHE);
@@ -1068,6 +1182,14 @@ async function trimRscCache() {
     if (keys.length > RSC_CACHE_MAX) {
       const excess = keys.slice(0, keys.length - RSC_CACHE_MAX);
       await Promise.all(excess.map((k) => cache.delete(k)));
+      try {
+        const meta = await caches.open(META_CACHE);
+        await Promise.all(
+          excess.map((k) => meta.delete(RSC_TS_PREFIX + rscCacheKey(k.url || k))),
+        );
+      } catch {
+        /* META non disponible — non bloquant */
+      }
     }
   } catch {
     /* non-bloquant */

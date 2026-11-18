@@ -68,10 +68,11 @@ import AppGate from '@/components/auth/AppGate';
 import { ConflictResolutionModal } from '@/components/offline/ConflictResolutionModal';
 import { PWAInstallPrompt } from '@/components/pwa/PWAInstallPrompt';
 import { DeferredRoutePrefetch } from '@/components/perf/DeferredRoutePrefetch';
-// ⭐ NATIVE SESSION RESUME : mémorise l'hôte tenant courant (cookie partagé
-//    .academiahelm.com) pour que le démarrage à froid de l'app Android
-//    retourne directement à l'interface au lieu du portail public.
-import { isNativeApp } from '@/lib/pwa/is-native-app';
+// ⭐ MOBILE SESSION RESUME : mémorise l'hôte tenant courant (cookie partagé
+//    .academiahelm.com) pour que le démarrage mobile (app Android OU
+//    navigateur téléphone) retourne directement à la page institutionnelle
+//    de l'école au lieu du portail public.
+import { isMobileDevice } from '@/lib/pwa/mobile-experience';
 import { writeNativeResumeHint } from '@/lib/auth/native-session-resume';
 
 // ⭐ V4.0 (rollback de l'approche dataService) : plus AUCUNE installation
@@ -151,13 +152,14 @@ export default function AppLayoutClient({
     })();
   }, [tenant?.id]);
 
-  // ⭐ NATIVE SESSION RESUME — app Android (Capacitor) : au montage du shell
-  //    authentifié, mémoriser l'hôte tenant courant. Couvre AUSSI les sessions
-  //    établies AVANT le déploiement de ce correctif (l'utilisateur ouvre /app
-  //    une fois → le hint est posé → les prochains démarrages à froid
-  //    reprennent directement la session). No-op hors coquille native.
+  // ⭐ MOBILE SESSION RESUME — app Android (Capacitor) + web mobile : au montage
+  //    du shell authentifié, mémoriser l'hôte tenant courant. Couvre AUSSI les
+  //    sessions établies AVANT le déploiement de ce correctif (l'utilisateur
+  //    ouvre /app une fois → le hint est posé → les prochains démarrages mobiles
+  //    reprennent directement la page institutionnelle de son école). No-op hors
+  //    téléphone (desktop inchangé).
   useEffect(() => {
-    if (isNativeApp()) writeNativeResumeHint();
+    if (isMobileDevice()) writeNativeResumeHint();
   }, []);
 
   // ⭐ P4-bis (filtre Rôles × Pistes × Niveaux) : charger le périmètre serveur

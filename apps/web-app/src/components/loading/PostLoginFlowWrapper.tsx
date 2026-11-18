@@ -17,6 +17,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { PostLoginLoading } from './PostLoginLoading';
+import { isMobileDevice } from '@/lib/pwa/mobile-experience';
 import type { PostLoginFlowResult } from '@/lib/loading/post-login-flow.service';
 
 export interface PostLoginFlowWrapperProps {
@@ -27,7 +28,23 @@ export interface PostLoginFlowWrapperProps {
 
 const SESSION_KEY = 'academia_post_login_done';
 const FRESH_LOGIN_KEY = 'academia_fresh_login';
-const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes TTL
+
+/** Desktop : le flow post-login (écran de loading bloquant) se rejoue au
+ *  premier montage après 30 min — comportement voulu pour un navigateur
+ *  desktop gardé ouvert.
+ *  ⭐ MOBILE (nov. 2026 — retour promoteur « l'application ne fait que tourner
+ *  sans cesse avec la page de loading ») : Android tue le WebView en
+ *  arrière-plan ; à chaque réouverture de l'app (> 30 min), la page se
+ *  RECHARGEAIT et rejouait TOUT le flow post-login (loading bloquant avec
+ *  fetchs réseau sur lambdas froides — secondes à minutes). Sur téléphone,
+ *  une session récente (7 jours) suffit : contenu affiché immédiatement,
+ *  les données fraîches arrivent par les requêtes API normales. */
+const SESSION_TTL_MS_DESKTOP = 30 * 60 * 1000; // 30 minutes
+const SESSION_TTL_MS_MOBILE = 7 * 24 * 60 * 60 * 1000; // 7 jours
+
+function getSessionTtlMs(): number {
+  return isMobileDevice() ? SESSION_TTL_MS_MOBILE : SESSION_TTL_MS_DESKTOP;
+}
 
 /**
  * Vérifie si le flow post-login a déjà été complété dans cette session.
@@ -41,7 +58,7 @@ function wasFlowCompletedThisSession(): boolean {
     if (!raw) return false;
     const { ts } = JSON.parse(raw);
     // Expiré ?
-    if (Date.now() - ts > SESSION_TTL_MS) {
+    if (Date.now() - ts > getSessionTtlMs()) {
       localStorage.removeItem(SESSION_KEY);
       return false;
     }

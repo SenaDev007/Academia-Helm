@@ -13,6 +13,12 @@
  *
  * Le verrouillage conserve l'état de l'application. L'utilisateur saisit
  * ses identifiants pour déverrouiller et reprendre son travail.
+ *
+ * ⭐ EXCEPTION MOBILE (nov. 2026 — retour promoteur « comme WhatsApp : une
+ *    fois connecté, c'est fini ») : sur TÉLÉPHONE (app Android Capacitor OU
+ *    navigateur mobile), NI verrouillage, NI expiration automatique — la
+ *    session reste ouverte jusqu'à ce que l'utilisateur clique lui-même sur
+ *    « Se déconnecter ». Refresh token 90 jours côté API. Desktop : inchangé.
  * ============================================================================
  */
 
@@ -33,9 +39,14 @@ import {
   persistClientAccessToken,
   persistClientSession,
 } from '@/lib/auth/client-access-token';
-// ⭐ NATIVE (Capacitor) : session toujours ouverte dans l'app Android —
-//    ni verrouillage d'inactivité, ni expiration automatique.
-import { isNativeApp } from '@/lib/pwa/is-native-app';
+// ⭐ NATIVE (Capacitor) + MOBILE (nov. 2026 — retour promoteur « comme
+//    WhatsApp : une fois connecté, c'est fini ») : session toujours ouverte
+//    sur TÉLÉPHONE — ni verrouillage d'inactivité, ni expiration
+//    automatique, que ce soit dans l'app Android OU dans le navigateur du
+//    téléphone. La déconnexion est un GESTE VOLONTAIRE de l'utilisateur
+//    (bouton « Se déconnecter »). Les parents ne doivent jamais avoir à
+//    ressaisir leurs identifiants. Desktop web : inchangé (15/45 min).
+import { isAlwaysOnMobileSession } from '@/lib/pwa/mobile-experience';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -282,7 +293,7 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
           //    refresh token 90 jours (session toujours ouverte sur mobile).
           headers: {
             'Content-Type': 'application/json',
-            ...(isNativeApp() ? { 'X-AH-Native-App': '1' } : {}),
+            ...(isAlwaysOnMobileSession() ? { 'X-AH-Native-App': '1' } : {}),
           },
           body: JSON.stringify({
             email,
@@ -383,11 +394,12 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
 
   /** Vérifier si le délai d'inactivité est atteint */
   const checkInactivity = useCallback(() => {
-    // ⭐ NATIVE : session toujours ouverte — pas de verrouillage d'inactivité
-    //    dans l'app Android. L'app en arrière-plan ne déclenche aucun évènement
-    //    d'activité ; la rouvrir ne doit JAMAIS présenter l'écran de verrou.
-    //    La session reste protégée par le refresh token (rotation côté serveur).
-    if (isNativeApp()) return;
+    // ⭐ MOBILE : session toujours ouverte — pas de verrouillage d'inactivité
+    //    sur téléphone (app Android OU navigateur mobile). L'app en arrière-plan
+    //    ne déclenche aucun évènement d'activité ; la rouvrir ne doit JAMAIS
+    //    présenter l'écran de verrou. La session reste protégée par le refresh
+    //    token (rotation côté serveur).
+    if (isAlwaysOnMobileSession()) return;
     if (sessionState !== 'active' || isTransitioningRef.current) return;
     // ⭐ Ne pas verrouiller la session si l'utilisateur est hors ligne
     //    L'utilisateur doit pouvoir continuer à travailler offline
@@ -405,10 +417,10 @@ export function SessionManagerProvider({ children }: { children: React.ReactNode
 
   /** Vérifier si le délai de verrouillage est atteint (15 min → déconnexion) */
   const checkLockExpiry = useCallback(() => {
-    // ⭐ NATIVE : jamais de déconnexion automatique dans l'app Android —
-    //    seul l'utilisateur peut se déconnecter (bouton de déconnexion).
+    // ⭐ MOBILE : jamais de déconnexion automatique sur téléphone — seul
+    //    l'utilisateur peut se déconnecter (bouton de déconnexion).
     //    Comportement identique aux autres applications mobiles du téléphone.
-    if (isNativeApp()) return;
+    if (isAlwaysOnMobileSession()) return;
     if (sessionState !== 'locked' || !lockedAtRef.current) return;
     // ⭐ Ne pas déconnecter si offline — l'utilisateur doit pouvoir travailler
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;

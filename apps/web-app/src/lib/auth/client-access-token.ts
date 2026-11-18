@@ -8,7 +8,7 @@ import { persistUserScope } from './user-scope';
 // ⭐ NATIVE SESSION RESUME — cookie partagé .academiahelm.com pour que
 //    l'app Android (Capacitor) reprenne la session au démarrage à froid.
 import { writeNativeResumeHint, clearNativeResumeHint } from './native-session-resume';
-import { isNativeApp } from '@/lib/pwa/is-native-app';
+import { isMobileDevice } from '@/lib/pwa/mobile-experience';
 
 export type PersistClientSessionInput = {
   accessToken?: string | null;
@@ -187,10 +187,11 @@ export function persistClientSession(data: PersistClientSessionInput): void {
     );
   }
 
-  // ⭐ NATIVE SESSION RESUME : mémorise l'hôte tenant courant (cookie partagé
-  //    .academiahelm.com) pour que le démarrage à froid de l'app native
-  //    retourne directement à l'interface au lieu du portail public.
-  //    No-op hors coquille Capacitor — le web navigateur est inchangé.
+  // ⭐ MOBILE SESSION RESUME : mémorise l'hôte tenant courant (cookie partagé
+  //    .academiahelm.com) pour que le démarrage mobile (app native OU
+  //    navigateur téléphone) retourne directement à la page institutionnelle
+  //    de l'école au lieu du portail public.
+  //    No-op sur desktop — le web navigateur desktop est inchangé.
   writeNativeResumeHint();
 }
 
@@ -330,11 +331,12 @@ export async function tryRefreshAccessToken(): Promise<boolean> {
 
   refreshInFlight = (async () => {
     try {
-      // ⭐ NATIVE SESSION — en-tête marqueur pour que le BFF puis l'API Nest
-      //    identifient la coquille Capacitor de façon certaine (le marqueur
-      //    « ; wv) » du user-agent peut manquer sur certains WebView) →
-      //    refresh token 90 jours (session toujours ouverte sur mobile).
-      const nativeHeaders = isNativeApp() ? { 'X-AH-Native-App': '1' } : {};
+      // ⭐ MOBILE SESSION — en-tête marqueur pour que le BFF puis l'API Nest
+      //    identifient le TÉLÉPHONE (coquille Capacitor OU navigateur mobile)
+      //    de façon certaine (le marqueur « ; wv) » du user-agent peut manquer
+      //    sur certains WebView) → refresh token 90 jours (session toujours
+      //    ouverte sur mobile, jamais de déconnexion automatique).
+      const nativeHeaders = isMobileDevice() ? { 'X-AH-Native-App': '1' } : {};
 
       const res = await fetch('/api/auth/refresh', {
         method: 'POST',

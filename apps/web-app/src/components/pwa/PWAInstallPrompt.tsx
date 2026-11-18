@@ -53,6 +53,7 @@ import {
 } from 'lucide-react';
 import { useL } from '@/lib/i18n/bilingual';
 import { isNativeApp } from '@/lib/pwa/is-native-app';
+import { isMobileDevice } from '@/lib/pwa/mobile-experience';
 
 const STORAGE_KEY = 'ah_pwa_prompt_v3';
 const SESSION_KEY = 'ah_pwa_prompt_shown_v3';
@@ -187,6 +188,13 @@ export function PWAInstallPrompt({ appName = 'Academia Helm' }: { appName?: stri
     // ⭐ COQUILLE NATIVE Capacitor (app Android) : l'application est déjà
     //    installée — aucune bannière d'installation, jamais, sur aucune page.
     if (isNativeApp()) return;
+
+    // ⭐ MOBILE (nov. 2026 — retour promoteur) : SUR TÉLÉPHONE, aucune demande
+    //    d'installation PWA, jamais — ni bannière, ni toast. L'expérience
+    //    mobile est l'app native (Play Store) ; demander d'« installer » une
+    //    PWA à un parent sur son téléphone n'est pas cohérent. Le desktop
+    //    garde la bannière (comportement inchangé).
+    if (isMobileDevice()) return;
 
     const standalone = isStandalone();
     if (standalone) {

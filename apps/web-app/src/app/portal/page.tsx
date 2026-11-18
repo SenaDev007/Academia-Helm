@@ -42,7 +42,7 @@ import SchoolSearch from '@/components/portal/SchoolSearch';
 import BeninMap from '@/components/portal/BeninMap';
 // ⭐ NATIVE SESSION RESUME — reprise directe de session au démarrage à froid
 //    de l'app Android (Capacitor charge toujours server.url = /portal).
-import { isNativeApp } from '@/lib/pwa/is-native-app';
+import { isMobileDevice } from '@/lib/pwa/mobile-experience';
 import { readNativeResumeHint, isTenantSessionHost } from '@/lib/auth/native-session-resume';
 import { type DepartmentData } from '@/data/benin-departments';
 import { useTenantRedirect } from '@/lib/hooks/useTenantRedirect';
@@ -160,18 +160,26 @@ export default function PortalPage() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  /* ── ⭐ NATIVE SESSION RESUME (app Android Capacitor) ─────────────── */
+  /* ── ⭐ MOBILE SESSION RESUME (app Android Capacitor + web mobile) ──── */
   // Au démarrage à froid, la coquille native charge TOUJOURS /portal (domaine
-  // racine) alors que la session vit sur le sous-domaine du tenant. Si un hint
-  // de reprise existe (cookie partagé .academiahelm.com posé au login), on
-  // retourne directement sur l'hôte tenant :
-  //   - session valide   → AppGate laisse entrer → interface immédiate
-  //   - session expirée  → AppGate renvoie vers /login du tenant (jamais de
-  //                        boucle : /login ne redirige pas vers /portal)
+  // racine) ; sur mobile web, l'utilisateur repasse aussi par ce portail central
+  // alors que sa session vit sur le sous-domaine du tenant. Si un hint de
+  // reprise existe (cookie partagé .academiahelm.com posé au login sur mobile),
+  // on retourne directement à la PAGE INSTITUTIONNELLE de l'école :
+  //   https://{tenant}.academiahelm.com/  (middleware → /school-portal, site
+  //   institutionnel de l'école — retour promoteur nov. 2026 : « pour les
+  //   prochaines fois, ce sera la page institutionnelle de l'école qui doit
+  //   s'afficher ; l'utilisateur peut aller dans l'application sans être
+  //   déconnecté »).
+  //   Depuis la page institutionnelle, les boutons portails mènent à /login —
+  //   la session valide y est détectée (auto-redirect mobile) → /app direct,
+  //   sans ressaisir d'identifiants.
   // Garde anti-répétition : une seule redirection par session WebView — si
-  // l'utilisateur revient manuellement sur /portal, il reste sur /portal.
+  // l'utilisateur revient manuellement sur /portal, il reste sur /portal
+  // (il peut changer d'école depuis la carte/recherche).
+  // Desktop : inchangé — flux portail normal (choix école à chaque visite).
   useEffect(() => {
-    if (!isNativeApp()) return;
+    if (!isMobileDevice()) return;
     try {
       if (sessionStorage.getItem('ah_native_resume_done')) return;
       sessionStorage.setItem('ah_native_resume_done', '1');
@@ -179,14 +187,17 @@ export default function PortalPage() {
 
     const currentHost = window.location.hostname;
     const hint = readNativeResumeHint();
-    // Sur un hôte tenant, la session est locale → reprendre ici même.
+    // Sur un hôte tenant, la session est locale → rester sur CETTE école
+    // (rediriger vers sa page institutionnelle racine).
     // Sur le domaine racine, suivre le hint vers l'hôte tenant mémorisé.
     const targetHost = isTenantSessionHost(currentHost)
       ? currentHost
       : hint?.host;
-    if (!targetHost) return; // aucune session connue → flux portail normal
+    if (!targetHost) return; // aucune école connue → flux portail normal
 
-    window.location.replace(`${window.location.protocol}//${targetHost}/app`);
+    // ⭐ Page institutionnelle (racine du sous-domaine) — PAS /app : c'est le
+    //    point d'entrée demandé pour les démarrages suivants sur mobile.
+    window.location.replace(`${window.location.protocol}//${targetHost}/`);
   }, []);
 
   const closeMobilePortalModal = useCallback(() => {

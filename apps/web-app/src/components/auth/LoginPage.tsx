@@ -62,7 +62,7 @@ import { getSavedEmailForTenant, saveEmailForTenant } from '@/lib/auth/saved-ema
 import { persistClientSession, markFreshLogin, hasLocalSessionHints, isRecentlyLoggedOut, clearRecentlyLoggedOutFlag, clearClientSessionSync } from '@/lib/auth/client-access-token';
 // ⭐ NATIVE SESSION RESUME — mémoriser l'hôte tenant quand une session valide
 //    est détectée sur /login (transition douce pour les sessions pré-existantes).
-import { isNativeApp } from '@/lib/pwa/is-native-app';
+import { isMobileDevice } from '@/lib/pwa/mobile-experience';
 import { writeNativeResumeHint } from '@/lib/auth/native-session-resume';
 // ⭐ v3.4.0 — enveloppe d'auth hors ligne : re-login offline après un logout
 //    (même école + même identifiant + même mot de passe → session restaurée)
@@ -427,15 +427,27 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       try {
         const res = await fetch('/api/auth/me', { credentials: 'include' });
         if (res.ok) {
-          // Session valide — on pourrait rediriger, mais pour éviter tout risque
-          // de boucle, on laisse le user cliquer sur le bouton "Continuer".
-          // Le bouton est affiché par le composant quand validSessionDetected = true.
-          console.log('[LoginPage] Valid session detected — show "Continue" button');
-          // ⭐ NATIVE SESSION RESUME : session valide détectée sur l'hôte tenant →
-          //    mémoriser l'hôte pour les prochains démarrages à froid de l'app
-          //    Android (retour direct à l'interface sans repasser par /portal).
-          if (isNativeApp()) writeNativeResumeHint();
-          // Note: pas de window.location.href ici !
+          // Session valide — sur MOBILE (nov. 2026 — retour promoteur « aller
+          // dans l'application sans être déconnecté ») : redirection
+          // AUTOMATIQUE vers l'app. La boucle historique login↔app provenait
+          // d'une redirection SANS validation réseau ; ici la session vient
+          // d'être VALIDÉE par le serveur (200) — aucun risque de boucle (au
+          // pire, après logout la grâce 60 s + le nettoyage localStorage
+          // neutralisent tout cycle résiduel).
+          // Desktop : comportement inchangé — bouton « Continuer vers le
+          // tableau de bord » (jamais de flash de redirection non sollicité).
+          console.log('[LoginPage] Valid session detected');
+          // ⭐ MOBILE SESSION RESUME : session valide détectée sur l'hôte tenant
+          //    → mémoriser l'hôte pour les prochains démarrages mobiles (retour
+          //    direct à la page institutionnelle de l'école, sans /portal).
+          if (isMobileDevice()) {
+            writeNativeResumeHint();
+            // ⭐ Auto-redirect mobile : l'utilisateur vient de la page
+            //    institutionnelle de son école (ou rouvre /login) avec une
+            //    session valide — il entre DIRECTEMENT dans l'application.
+            //    redirectPath vaut '/app' sauf ?redirect= explicite.
+            window.location.href = redirectPath || '/app';
+          }
         } else {
           // Session invalide — nettoyer localStorage pour éviter les faux positifs futurs
           console.log('[LoginPage] Session invalid — clearing stale localStorage data');
@@ -1065,11 +1077,12 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
       //    version sans timeout restait pendante indéfiniment sur lambda froide).
       return loginFetchResilient('/api/auth/login', {
         method: 'POST',
-        // ⭐ NATIVE SESSION — marqueur explicite pour l'API : session Android →
-        //    refresh token 90 jours (session toujours ouverte sur mobile).
+        // ⭐ MOBILE SESSION — marqueur explicite pour l'API : session téléphone
+        //    (app Android OU navigateur mobile) → refresh token 90 jours
+        //    (session toujours ouverte sur mobile, jamais de déconnexion auto).
         headers: {
           'Content-Type': 'application/json',
-          ...(isNativeApp() ? { 'X-AH-Native-App': '1' } : {}),
+          ...(isMobileDevice() ? { 'X-AH-Native-App': '1' } : {}),
         },
         body: JSON.stringify({
           email: schoolCredentials.email.trim(),
@@ -1202,7 +1215,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
   const handleStandardLogin = async () => {
     const response = await loginFetchResilient('/api/auth/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // ⭐ MOBILE SESSION — refresh 90 j sur téléphone (session toujours ouverte)
+        ...(isMobileDevice() ? { 'X-AH-Native-App': '1' } : {}),
+      },
       body: JSON.stringify({
         email: schoolCredentials.email,
         password: schoolCredentials.password,
@@ -1313,7 +1330,11 @@ export default function LoginPage({ schoolBranding }: LoginPageProps = {}) {
     const attemptLogin = async (portalTypeAttempt: 'SCHOOL' | 'PLATFORM') => {
       return loginFetchResilient('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          // ⭐ MOBILE SESSION — refresh 90 j sur téléphone (session toujours ouverte)
+          ...(isMobileDevice() ? { 'X-AH-Native-App': '1' } : {}),
+        },
         body: JSON.stringify({
           email: schoolCredentials.email.trim(),
           password: schoolCredentials.password,

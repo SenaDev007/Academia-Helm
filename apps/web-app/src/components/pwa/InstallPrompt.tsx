@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { X, Download, Smartphone } from 'lucide-react';
 import { isNativeApp } from '@/lib/pwa/is-native-app';
+import { isMobileDevice } from '@/lib/pwa/mobile-experience';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -18,6 +19,11 @@ export function InstallPrompt() {
     // ⭐ Coquille native Capacitor (app Android) : l'application est déjà
     //    installée — jamais de bannière d'installation.
     if (isNativeApp()) return;
+
+    // ⭐ MOBILE (nov. 2026 — retour promoteur) : sur téléphone, AUCUNE demande
+    //    d'installation PWA (l'app native existe — la demande n'est pas
+    //    cohérente sur mobile). Desktop : comportement inchangé.
+    if (isMobileDevice()) return;
 
     // Vérifier si l'app est déjà installée
     if (window.matchMedia('(display-mode: standalone)').matches) {

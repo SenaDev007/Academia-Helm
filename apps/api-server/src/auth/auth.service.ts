@@ -558,20 +558,35 @@ export class AuthService {
   }
 
   /**
-   * ⭐ NATIVE SESSION — détecte l'app Android Academia Helm (coquille Capacitor).
+   * ⭐ MOBILE SESSION — détecte l'app Android Academia Helm (coquille
+   *    Capacitor) OU un navigateur sur TÉLÉPHONE.
    *    Le user-agent du WebView Android contient le marqueur « ; wv) » ;
    *    certains WebView personnalisés exposent « capacitor ». Un navigateur
-   *    web classique ne contient JAMAIS ces marqueurs → comportement web
-   *    inchangé.
+   *    mobile (Chrome Android, Samsung, Safari iOS) contient « Mobile » /
+   *    iPhone / iPad / iPod. Un navigateur desktop ne contient JAMAIS ces
+   *    marqueurs → comportement web desktop inchangé.
+   *
+   *    Politique (retour promoteur nov. 2026 — « comme WhatsApp : une fois
+   *    connecté, c'est fini ») : les sessions MOBILES reçoivent un refresh
+   *    token 90 jours et ne sont JAMAIS déconnectées automatiquement — la
+   *    déconnexion est un geste volontaire de l'utilisateur.
    */
   private isNativeWebViewSession(userAgent?: string): boolean {
     if (!userAgent) return false;
-    return /;\s*wv\)/.test(userAgent) || /capacitor/i.test(userAgent);
+    // App native Capacitor (WebView « ; wv) » ou « capacitor »)
+    if (/;\s*wv\)/.test(userAgent) || /capacitor/i.test(userAgent)) return true;
+    // ⭐ Nov. 2026 — navigateur sur TÉLÉPHONE (mobile web) : même politique
+    //    de session toujours ouverte que l'app native. iOS : iPhone/iPod/iPad ;
+    //    Android TÉLÉPHONE : « Android » ET « Mobile » (les tablettes Android
+    //    sans « Mobile » restent desktop — conservateur).
+    if (/iPhone|iPod|iPad/i.test(userAgent)) return true;
+    if (/Android/i.test(userAgent) && /Mobile/i.test(userAgent)) return true;
+    return false;
   }
 
-  /** ⭐ NATIVE : session native si l'UA est un WebView Android OU si le
-   *    contrôleur a posé le flag explicite meta.nativeApp (en-tête
-   *    X-AH-Native-App du client web — fiable à 100 %). */
+  /** ⭐ MOBILE : session mobile (app native OU navigateur téléphone) si l'UA
+   *    est un WebView Android / UA mobile OU si le contrôleur a posé le flag
+   *    explicite meta.nativeApp (en-tête X-AH-Native-App du client web). */
   private isNativeSession(meta?: SessionPersistMeta): boolean {
     return this.isNativeWebViewSession(meta?.userAgent) || meta?.nativeApp === true;
   }

@@ -11,16 +11,57 @@
  * Le store IndexedDB `sync_conflicts` est alimenté par sync-engine.service.ts
  * quand une opération push reçoit un statut CONFLICT du serveur.
  *
+ * ⭐ FIX UX MOBILE (nov. 2026 — retour promoteur « modal qui s'affiche toutes
+ *    les secondes ») : l'ANCIEN comportement rouvrait le modal tant qu'un
+ *    conflit restait en stock (check 30 s) → une fois fermé, il REVENAIT sans
+ *    cesse, y compris sur mobile (parents/directeurs) — inutilisable.
+ *    NOUVELLES règles :
+ *      1. PURGE AUTO : les conflits > 7 jours sont résolus SILENCIEUSEMENT en
+ *         SERVER_WINS (règle plateforme : PostgreSQL gagne toujours) — un
+ *         conflit ignoré 7 jours n'est plus une décision humaine, c'est une
+ *         scorie qui hante l'appareil à chaque cycle.
+ *      2. OUVERTURE UNIQUE : le modal ne s'ouvre QUE si de NOUVEAUX conflits
+ *         apparaissent (compte > dernier compte vu). Un conflit déjà vu ne
+ *         rouvre JAMAIS le modal — on peut le traiter depuis le bouton Sync.
+ *      3. SNOOZE : fermer (✕ / « Plus tard ») pose un délai de grâce — 6 h
+ *         desktop, 24 h mobile — pendant lequel AUCUNE ré-ouverture auto,
+ *         même si de nouveaux conflits arrivent.
+ *
  * Utilisation :
  *   <ConflictResolutionModal />
- *   (auto-monté dans layout-client.tsx, vérifie les conflits toutes les 30s)
+ *   (auto-monté dans layout-client.tsx)
  * ============================================================================
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AlertTriangle, X, GitMerge, Server, Smartphone, RefreshCw, CheckCircle } from 'lucide-react';
 import { conflictResolverService } from '@/lib/offline/conflict-resolver.service';
+import { isMobileDevice } from '@/lib/pwa/mobile-experience';
 import { cn } from '@/lib/utils';
+
+/** Conflits plus anciens que ça → résolution auto SERVER_WINS (silencieuse). */
+const STALE_CONFLICT_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Délai de grâce après fermeture manuelle : 6 h desktop, 24 h mobile. */
+const SNOOZE_MS = 6 * 60 * 60 * 1000;
+const SNOOZE_MS_MOBILE = 24 * 60 * 60 * 1000;
+
+const SNOOZE_KEY = 'ah_conflict_modal_snoozed_until';
+
+function readSnoozeUntil(): number {
+  try {
+    return Number(localStorage.getItem(SNOOZE_KEY) || '0');
+  } catch {
+    return 0;
+  }
+}
+
+function writeSnooze(): void {
+  const ms = isMobileDevice() ? SNOOZE_MS_MOBILE : SNOOZE_MS;
+  try {
+    localStorage.setItem(SNOOZE_KEY, String(Date.now() + ms));
+  } catch { /* non-bloquant */ }
+}
 
 interface ConflictItem {
   id: string;
@@ -35,18 +76,50 @@ export function ConflictResolutionModal() {
   const [isOpen, setIsOpen] = useState(false);
   const [resolving, setResolving] = useState<string | null>(null);
 
-  // ⭐ Vérifier les conflits toutes les 30s
+  // ⭐ Dernier nombre de conflits VUS — le modal ne s'ouvre qu'à l'apparition
+  //    de NOUVEAUX conflits (count > lastSeenCount), jamais en boucle 30 s.
+  const lastSeenCountRef = useRef(0);
+
+  // ⭐ Vérifier les conflits toutes les 30 s — mais NE rouvrir le modal QUE
+  //    si de nouveaux conflits sont apparus ET que l'utilisateur n'a pas
+  //    posé de snooze. Les conflits périmés (> 7 j) sont purgés au passage.
   const checkConflicts = useCallback(async () => {
     try {
-      const pending = await conflictResolverService.getPendingConflicts();
-      if (pending.length > 0) {
-        setConflicts(pending as ConflictItem[]);
+      let pending = (await conflictResolverService.getPendingConflicts()) as ConflictItem[];
+
+      // 1. PURGE AUTO des conflits périmés (> 7 jours) : résolution
+      //    SERVER_WINS silencieuse — PostgreSQL est la source de vérité
+      //    (règle plateforme), et un conflit de plus de 7 jours ignoré par
+      //    l'utilisateur n'est plus une décision à lui demander.
+      const now = Date.now();
+      const stale = pending.filter(
+        (c) => now - new Date(c.detected_at).getTime() > STALE_CONFLICT_MS,
+      );
+      if (stale.length > 0) {
+        for (const c of stale) {
+          await conflictResolverService.resolve(c.id, 'SERVER_WINS').catch(() => false);
+        }
+        pending = pending.filter((c) => !stale.includes(c));
+        console.log(
+          `[ConflictResolution] ${stale.length} conflit(s) périmé(s) > 7j résolu(s) automatiquement (version serveur conservée)`,
+        );
+      }
+
+      // 2. État local à jour (le modal reste cohérent s'il est ouvert)
+      setConflicts(pending);
+
+      // 3. Ouverture UNIQUE : seulement si de NOUVEAUX conflits sont arrivés
+      //    ET que l'utilisateur n'a pas snoozé récemment.
+      const snoozedUntil = readSnoozeUntil();
+      const isNewBatch = pending.length > lastSeenCountRef.current;
+      if (pending.length > 0 && isNewBatch && Date.now() >= snoozedUntil && !isOpen) {
         setIsOpen(true);
       }
+      lastSeenCountRef.current = Math.max(lastSeenCountRef.current, pending.length);
     } catch {
       // IDB pas encore initialisé
     }
-  }, []);
+  }, [isOpen]);
 
   useEffect(() => {
     checkConflicts();
@@ -59,8 +132,10 @@ export function ConflictResolutionModal() {
     try {
       await conflictResolverService.resolve(conflictId, strategy);
       // Retirer le conflit résolu de la liste
-      setConflicts(prev => prev.filter(c => c.id !== conflictId));
-      if (conflicts.length <= 1) {
+      const remaining = conflicts.filter(c => c.id !== conflictId);
+      setConflicts(remaining);
+      lastSeenCountRef.current = remaining.length;
+      if (remaining.length <= 1) {
         setIsOpen(false);
       }
     } catch (e) {
@@ -69,6 +144,14 @@ export function ConflictResolutionModal() {
       setResolving(null);
     }
   };
+
+  // ⭐ Fermeture manuelle (✕ / « Plus tard ») → SNOOoze : aucune ré-ouverture
+  //    automatique avant 6 h (desktop) / 24 h (mobile). Les conflits restent
+  //    consultables/tranquilles — le check 30 s ne fait que purger/résoudre.
+  const handleDismiss = useCallback(() => {
+    setIsOpen(false);
+    writeSnooze();
+  }, []);
 
   if (!isOpen || conflicts.length === 0) return null;
 
@@ -89,7 +172,7 @@ export function ConflictResolutionModal() {
             </p>
           </div>
           <button
-            onClick={() => setIsOpen(false)}
+            onClick={handleDismiss}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-white/60 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -182,10 +265,12 @@ export function ConflictResolutionModal() {
         <div className="bg-slate-50 border-t border-slate-200 px-6 py-3 flex items-center justify-between">
           <p className="text-xs text-slate-500 flex items-center gap-1.5">
             <CheckCircle className="w-3.5 h-3.5 text-slate-400" />
-            Les conflits non résolus seront conservés jusqu'à votre décision.
+            {isMobileDevice()
+              ? 'Prenez votre temps : cette fenêtre ne reviendra pas vous déranger avant 24 h.'
+              : "Les conflits non résolus seront conservés jusqu'à votre décision."}
           </p>
           <button
-            onClick={() => setIsOpen(false)}
+            onClick={handleDismiss}
             className="px-4 py-1.5 text-sm font-semibold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors"
           >
             Plus tard

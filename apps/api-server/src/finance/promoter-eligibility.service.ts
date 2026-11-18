@@ -122,9 +122,16 @@ export class PromoterEligibilityService {
   }
 
   async listActive(tenantId: string, academicYearId: string): Promise<PromoterEligibilityRow[]> {
-    // ⭐ Récupère aussi les montants attendus depuis student_accounts + account_breakdowns
-    // pour les anciens enregistrements où advanceAmount/totalDue/remainingAmount
-    // n'ont pas été renseignés à l'activation.
+    // ⭐ Retour promoteur (nov. 2026) : le sous-onglet « Reçu par le
+    //    promoteur » ne doit présenter QUE les encaissements RÉELS du
+    //    promoteur — une ligne sans montant (élève juste « marqué
+    //    fondateur » sans argent reçu) est une ligne vide inutile.
+    //    Un encaissement réel du promoteur =
+    //      a) l'avance saisie à l'activation (advanceamount), OU
+    //      b) des paiements enregistrés sur sa caisse (code FONDE).
+    //    ⚠️ L'ancien repli « avance = total payé du compte » est SUPPRIMÉ :
+    //    il présentait des paiements de CAISSIERS comme des reçus du
+    //    promoteur (source d'erreurs et de lignes vides).
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT
          pe.id, pe.studentid, pe.academicyearid, pe.motif,
@@ -157,21 +164,55 @@ export class PromoterEligibilityService {
       tenantId, academicYearId,
     );
 
-    return rows.map((r) => {
+    // Encaissements réels du promoteur : paiements sur sa caisse (FONDE)
+    const promoterCaisse = await this.prisma.cashRegister.findFirst({
+      where: { tenantId, code: 'FONDE' },
+      select: { id: true },
+    });
+    let fondeByStudent = new Map<string, number>();
+    if (promoterCaisse) {
+      const fondeTx = await this.prisma.financeTransaction.findMany({
+        where: {
+          tenantId,
+          academicYearId,
+          type: 'PAYMENT',
+          cashRegisterId: promoterCaisse.id,
+          studentAccount: { tenantId },
+        },
+        select: { amount: true, studentAccount: { select: { studentId: true } } },
+      });
+      for (const t of fondeTx) {
+        const sid = (t.studentAccount as any)?.studentId;
+        if (!sid) continue;
+        fondeByStudent.set(sid, (fondeByStudent.get(sid) || 0) + Number(t.amount) || 0);
+      }
+    }
+
+    const result: PromoterEligibilityRow[] = [];
+    for (const r of rows) {
       const userFirstName = r.userfirstname || '';
       const userLastName = r.userlastname || '';
       const createdByName = `${userFirstName} ${userLastName}`.trim();
 
-      // ⭐ Si les montants détaillés ne sont pas renseignés (anciens enregistrements),
-      //    on les calcule depuis student_accounts.
       const saTotalDue = Number(r.sa_totaldue || 0);
-      const saTotalPaid = Number(r.sa_totalpaid || 0);
       const saBalance = Number(r.sa_balance || 0);
       const saArrears = Number(r.sa_arrears || 0);
 
-      const advanceAmount = Number(r.advanceamount) > 0
-        ? Number(r.advanceamount)
-        : saTotalPaid; // fallback: avance = total payé
+      // ⭐ Montant réellement reçu par le promoteur : avance saisie à
+      //    l'activation, sinon paiements encaissés sur la caisse FONDE.
+      const recordedAdvance = Number(r.advanceamount || 0);
+      const fondeReceipts = fondeByStudent.get(r.studentid) || 0;
+      const advanceAmount = recordedAdvance > 0 ? recordedAdvance : fondeReceipts;
+
+      // ⭐ FILTRE « plus de lignes vides » : sans montant réel, la ligne
+      //    n'est PAS retournée (retour promoteur — professionalisme).
+      if (advanceAmount <= 0 && fondeReceipts <= 0) {
+        this.logger.debug(
+          `Promoter eligibility ${r.id} ignorée (aucun encaissement réel du promoteur)`,
+        );
+        continue;
+      }
+
       const totalDue = Number(r.totaldue) > 0
         ? Number(r.totaldue)
         : saTotalDue; // fallback: total dû depuis student_accounts
@@ -179,7 +220,7 @@ export class PromoterEligibilityService {
         ? Number(r.remainingamount)
         : saBalance > 0 ? saBalance : Math.max(0, totalDue - advanceAmount);
 
-      return {
+      result.push({
         id: r.id,
         studentId: r.studentid,
         studentName: `${r.firstName || ''} ${r.lastName || ''}`.trim(),
@@ -199,8 +240,9 @@ export class PromoterEligibilityService {
         arrearExpected: Number(r.arrearexpected || 0) || saArrears,
         totalDue,
         remainingAmount,
-      };
-    });
+      });
+    }
+    return result;
   }
 
   async getActiveStudentIds(tenantId: string, academicYearId: string): Promise<Set<string>> {

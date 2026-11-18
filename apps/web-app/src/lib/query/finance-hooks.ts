@@ -5,7 +5,7 @@
  *
  * Hooks principaux pour le module Finance :
  *   - useArrears : liste des arriérés (recovery)
- *   - useCollectionReminders / useCollectionPromises / useCollectionActions
+ *   - useCollectionReminders : relances de recouvrement
  *   - useStudentAccounts : comptes élèves (soldes)
  *   - useTransactions : transactions
  *   - useCashRegisters : caisses
@@ -92,7 +92,7 @@ export function useCollectionStatistics(tenantId: string, academicYearId: string
   });
 }
 
-// ─── Collection (reminders, promises, actions, cases) ─────────────────────────
+// ─── Collection (reminders) ─────────────────────────────────────────────────
 
 export function useCollectionReminders(params: any, options: { enabled?: boolean } = {}) {
   return useQuery({
@@ -103,92 +103,6 @@ export function useCollectionReminders(params: any, options: { enabled?: boolean
         return Array.isArray(data) ? data : (data?.data ?? []);
       } catch (err: any) {
         console.warn('[useCollectionReminders] Error:', err.message);
-        return [];
-      }
-    },
-    enabled: options.enabled !== false,
-    staleTime: DEFAULT_STALE_TIME,
-    gcTime: DEFAULT_GC_TIME,
-    retry: 1,
-    placeholderData: keepPreviousData,
-    refetchOnWindowFocus: false,
-  });
-}
-
-export function useCollectionPromises(params: any, options: { enabled?: boolean } = {}) {
-  return useQuery({
-    queryKey: financeKeys.collection.promises(params),
-    queryFn: async () => {
-      try {
-        const data = await financeService.getCollectionPromises(params);
-        return Array.isArray(data) ? data : (data?.data ?? []);
-      } catch (err: any) {
-        console.warn('[useCollectionPromises] Error:', err.message);
-        return [];
-      }
-    },
-    enabled: options.enabled !== false,
-    staleTime: DEFAULT_STALE_TIME,
-    gcTime: DEFAULT_GC_TIME,
-    retry: 1,
-    placeholderData: keepPreviousData,
-    refetchOnWindowFocus: false,
-  });
-}
-
-export function useCollectionActions(params: any, options: { enabled?: boolean } = {}) {
-  return useQuery({
-    queryKey: financeKeys.collection.actions(params),
-    queryFn: async () => {
-      try {
-        const data = await financeService.getCollectionActions(params);
-        return Array.isArray(data) ? data : (data?.data ?? []);
-      } catch (err: any) {
-        console.warn('[useCollectionActions] Error:', err.message);
-        return [];
-      }
-    },
-    enabled: options.enabled !== false,
-    staleTime: DEFAULT_STALE_TIME,
-    gcTime: DEFAULT_GC_TIME,
-    retry: 1,
-    placeholderData: keepPreviousData,
-    refetchOnWindowFocus: false,
-  });
-}
-
-export function useCollectionCases(params: any, options: { enabled?: boolean } = {}) {
-  return useQuery({
-    queryKey: financeKeys.collection.cases(params),
-    queryFn: async () => {
-      try {
-        const data = await financeService.getCollectionCases(params);
-        return Array.isArray(data) ? data : (data?.data ?? []);
-      } catch (err: any) {
-        console.warn('[useCollectionCases] Error:', err.message);
-        return [];
-      }
-    },
-    enabled: options.enabled !== false,
-    staleTime: DEFAULT_STALE_TIME,
-    gcTime: DEFAULT_GC_TIME,
-    retry: 1,
-    placeholderData: keepPreviousData,
-    refetchOnWindowFocus: false,
-  });
-}
-
-// ─── Student Accounts ─────────────────────────────────────────────────────────
-
-export function useStudentAccounts(params: any, options: { enabled?: boolean } = {}) {
-  return useQuery({
-    queryKey: financeKeys.studentAccounts.list(params),
-    queryFn: async () => {
-      try {
-        const data = await financeService.getStudentAccounts(params);
-        return Array.isArray(data) ? data : (data?.data ?? []);
-      } catch (err: any) {
-        console.warn('[useStudentAccounts] Error:', err.message);
         return [];
       }
     },

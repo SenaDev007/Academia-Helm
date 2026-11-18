@@ -54,7 +54,6 @@ import { FeexPayService } from './feexpay.service';
 import { PaymentInitiationService } from './payment-initiation.service';
 import { ReceiptNotificationService } from './receipt-notification.service';
 import { FinanceOrionService } from './finance-orion.service';
-import { CollectionCaseController } from './collection-case.controller';
 import { ReceiptGenerationController } from './receipt-generation.controller';
 import { ReceiptNotificationController } from './receipt-notification.controller';
 import { FinanceOrionController } from './finance-orion.controller';
@@ -116,7 +115,6 @@ import { ParentProvisioningModule } from '../students/parent-provisioning.module
     FeeInstallmentController,
     PaymentsEnhancedController,
     // Module 4 - Recouvrement & Reçus
-    CollectionCaseController,
     ReceiptGenerationController,
     ReceiptNotificationController,
     FinanceOrionController,

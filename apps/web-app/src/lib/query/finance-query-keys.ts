@@ -34,9 +34,6 @@ export const financeKeys = {
   collection: {
     all: (tenantId?: string) => [...financeKeys.all, 'collection', tenantId] as const,
     reminders: (params: any) => [...financeKeys.all, 'collection', 'reminders', params] as const,
-    promises: (params: any) => [...financeKeys.all, 'collection', 'promises', params] as const,
-    actions: (params: any) => [...financeKeys.all, 'collection', 'actions', params] as const,
-    cases: (params: any) => [...financeKeys.all, 'collection', 'cases', params] as const,
   },
 
   // ─── Student Accounts ────────────────────────────────────────────────────

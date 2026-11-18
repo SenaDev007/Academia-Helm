@@ -410,56 +410,9 @@ class FinanceService {
     return financeFetch('/api/finance/collection/reminders', { method: 'POST', body: data });
   }
 
-  async createPaymentPromise(data: any): Promise<any> {
-    return financeFetch('/api/finance/collection/promises', { method: 'POST', body: data });
-  }
-
-  async createCollectionAction(data: any): Promise<any> {
-    return financeFetch('/api/finance/collection/actions', { method: 'POST', body: data });
-  }
-
-  async getCollectionCases(params?: Record<string, string>): Promise<any> {
-    const qs = params ? new URLSearchParams(params).toString() : '';
-    return financeFetch(`/api/finance/collection/cases${qs ? `?${qs}` : ''}`);
-  }
-
-  async getCollectionCase(studentId: string, academicYearId: string): Promise<any> {
-    return financeFetch(`/api/finance/collection/cases/${studentId}/${academicYearId}`);
-  }
-
-  async syncCollectionCase(studentId: string, academicYearId: string): Promise<any> {
-    return financeFetch(`/api/finance/collection/cases/${studentId}/${academicYearId}/sync`, { method: 'POST' });
-  }
-
-  async triggerCaseReminders(studentId: string, academicYearId: string): Promise<any> {
-    return financeFetch(`/api/finance/collection/cases/${studentId}/${academicYearId}/trigger-reminders`, { method: 'POST' });
-  }
-
-  // --- Phase 2 : Promesses, Actions, Escalade ---
-  async getCollectionPromises(params?: Record<string, string>): Promise<any> {
-    const qs = params ? new URLSearchParams(params).toString() : '';
-    return financeFetch(`/api/finance/collection/promises${qs ? `?${qs}` : ''}`);
-  }
-
-  async updatePromiseStatus(promiseId: string, status: 'HONORED' | 'BROKEN' | 'PENDING'): Promise<any> {
-    return financeFetch(`/api/finance/collection/promises/${promiseId}/status`, {
-      method: 'PATCH',
-      body: { status },
-    });
-  }
-
-  async deletePaymentPromise(promiseId: string): Promise<any> {
-    return financeFetch(`/api/finance/collection/promises/${promiseId}`, { method: 'DELETE' });
-  }
-
-  async deleteCollectionAction(actionId: string): Promise<any> {
-    return financeFetch(`/api/finance/collection/actions/${actionId}`, { method: 'DELETE' });
-  }
-
-  async getCollectionActions(params?: Record<string, string>): Promise<any> {
-    const qs = params ? new URLSearchParams(params).toString() : '';
-    return financeFetch(`/api/finance/collection/actions${qs ? `?${qs}` : ''}`);
-  }
+  // ⭐ Nettoyage 2026-11 : les méthodes promises/actions/cases (onglets
+  //    Actions / Promesses / Dossiers supprimés) ont été retirées avec
+  //    leurs routes BFF et leurs hooks React Query.
 
   async getCollectionReminders(params?: Record<string, string>): Promise<any> {
     const qs = params ? new URLSearchParams(params).toString() : '';

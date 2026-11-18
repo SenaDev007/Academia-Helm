@@ -38,6 +38,9 @@ interface StudentPaymentRow {
   inscriptionExpected: number;
   reinscriptionExpected: number;
   arrearExpected: number;
+  // ⭐ Arriéré RESTANT DÛ (non payé) — ce que l'élève doit encore,
+  //    même définition que le compte élève et l'onglet Recouvrement
+  arrearRemaining?: number;
   totalTuitionExpected: number;
   // ⭐ Scolarité = totalTuitionExpected (colonne explicite demandée par l'utilisateur)
   scolarite?: number;
@@ -372,6 +375,29 @@ export default function CollectionSummaryContent() {
   //    Utilise la lib xlsx (déjà présente dans les dépendances web-app).
   // ⭐ PERF (chantier GTMetrix) : SheetJS (~120 Ko gz) chargé à la demande
   //    au clic Export — retiré du chunk de la vue Finance.
+  // ⭐ Totaux de synthèse du pied de tableau — calculés sur TOUTES les
+  //    classes (recapRows global, non paginé) :
+  //    1 ligne inscription/réinscription + 1 ligne scolarité
+  //    (chaque ligne : montant attendu, payé, restant).
+  const summaryTotals = useMemo(() => {
+    const inscDue = recapRows.reduce(
+      (s, r) => s + Number(r.inscription || 0) + Number(r.reinscription || 0), 0);
+    const inscPaid = recapRows.reduce(
+      (s, r) => s + Number(r.inscriptionPaid || 0) + Number(r.reinscriptionPaid || 0), 0);
+    const scolDue = recapRows.reduce(
+      (s, r) => s + Number(r.scolarite ?? r.totalTuition ?? 0), 0);
+    const scolPaid = recapRows.reduce(
+      (s, r) => s + Number(r.totalTuitionPaid || 0), 0);
+    return {
+      inscDue,
+      inscPaid,
+      inscReste: inscDue - inscPaid,
+      scolDue,
+      scolPaid,
+      scolReste: scolDue - scolPaid,
+    };
+  }, [recapRows]);
+
   const handleExportExcel = async () => {
     if (studentRows.length === 0 && recapRows.length === 0) {
       alert('Aucune donnée à exporter. Veuillez sélectionner une année scolaire et une classe.');
@@ -384,6 +410,9 @@ export default function CollectionSummaryContent() {
       const instLabels = installments.map((i) => i.label);
 
       // ── Feuille 1 : Bilan détaillé (un élève par ligne) ──
+      // ⭐ Sémantique 2026-11 : « Arriéré » = restant DÛ (non payé — même
+      //    définition que le compte élève), « Total payé » = inscription +
+      //    réinscription + tranches uniquement (jamais les arriérés).
       const detailData = studentRows.map((row) => {
         const instData: Record<string, number> = {};
         for (const label of instLabels) {
@@ -392,7 +421,7 @@ export default function CollectionSummaryContent() {
         return {
           'Noms et Prénoms': row.studentName,
           'Classe': row.className,
-          'Arriéré payé': row.arrearPaid || 0,
+          'Arriéré (restant dû)': row.arrearRemaining ?? 0,
           'Inscription payée': row.inscriptionPaid || 0,
           'Réinscription payée': row.reinscriptionPaid || 0,
           'Scolarité (attendu)': row.scolarite ?? row.totalTuitionExpected ?? 0,
@@ -405,11 +434,25 @@ export default function CollectionSummaryContent() {
       });
       const wsDetail = XLSX.utils.json_to_sheet(detailData);
       wsDetail['!cols'] = [
-        { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 16 },
+        { wch: 30 }, { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 16 },
         { wch: 16 }, { wch: 18 },
         ...instLabels.map(() => ({ wch: 12 })),
         { wch: 12 }, { wch: 12 }, { wch: 14 },
       ];
+
+      // ⭐ 2 lignes de synthèse exigées par le promoteur (mêmes lignes que le
+      //    pied du tableau à l'écran) : INSCRIPTION/RÉINSCRIPTION puis
+      //    SCOLARITÉ — chacune avec montant attendu / payé / restant,
+      //    alignées sous les colonnes Total dû / Total payé / Reste à payer.
+      if (detailData.length > 0) {
+        const blank = Array(instLabels.length).fill('');
+        XLSX.utils.sheet_add_aoa(wsDetail, [
+          ['INSCRIPTION / RÉINSCRIPTION — TOTAL', '', '', '', '', '', '', ...blank,
+            summaryTotals.inscDue, summaryTotals.inscPaid, summaryTotals.inscReste],
+          ['SCOLARITÉ — TOTAL (toutes tranches)', '', '', '', '', '', '', ...blank,
+            summaryTotals.scolDue, summaryTotals.scolPaid, summaryTotals.scolReste],
+        ], { origin: detailData.length + 2 });
+      }
       XLSX.utils.book_append_sheet(wb, wsDetail, 'Bilan détaillé');
 
       // ── Feuille 2 : Récapitulatif (une classe par ligne) ──
@@ -422,7 +465,7 @@ export default function CollectionSummaryContent() {
           return {
             'Effectif': row.effectif,
             'Classe': row.className,
-            'Arriérés payés': row.arrieresPaid || 0,
+            'Arriérés (restant dû)': row.arrieres || 0,
             'Inscription payée': row.inscriptionPaid || 0,
             'Réinscription payée': row.reinscriptionPaid || 0,
             'Scolarité (attendu)': row.scolarite ?? row.totalTuition ?? 0,
@@ -437,11 +480,21 @@ export default function CollectionSummaryContent() {
         });
         const wsRecap = XLSX.utils.json_to_sheet(recapData);
         wsRecap['!cols'] = [
-          { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 18 },
+          { wch: 10 }, { wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 18 },
           { wch: 18 }, { wch: 14 }, { wch: 16 },
           ...instLabels.map(() => ({ wch: 12 })),
           { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 16 },
         ];
+
+        // ⭐ Mêmes 2 lignes de synthèse que le pied du tableau récapitulatif :
+        //    inscription/réinscription puis scolarité (attendu / payé / restant).
+        const blankR = Array(instLabels.length).fill('');
+        XLSX.utils.sheet_add_aoa(wsRecap, [
+          ['', 'INSCRIPTION / RÉINSCRIPTION — TOTAL', '', '', '', '', '', '', ...blankR,
+            summaryTotals.inscDue, summaryTotals.inscPaid, summaryTotals.inscReste, ''],
+          ['', 'SCOLARITÉ — TOTAL (toutes tranches)', '', '', '', '', '', '', ...blankR,
+            summaryTotals.scolDue, summaryTotals.scolPaid, summaryTotals.scolReste, ''],
+        ], { origin: recapData.length + 2 });
         XLSX.utils.book_append_sheet(wb, wsRecap, 'Récapitulatif');
       }
 
@@ -654,6 +707,7 @@ export default function CollectionSummaryContent() {
           <DetailTable
             studentRows={filteredStudentRows}
             installments={installments}
+            summaryTotals={summaryTotals}
             editMode={editMode}
             editBuffer={editBuffer}
             savingStudent={savingStudent}
@@ -736,6 +790,7 @@ export default function CollectionSummaryContent() {
         <RecapTable
           recapRows={recapRows}
           installments={installments}
+          summaryTotals={summaryTotals}
         />
       )}
 
@@ -755,6 +810,7 @@ export default function CollectionSummaryContent() {
 function DetailTable({
   studentRows,
   installments,
+  summaryTotals,
   editMode = false,
   editBuffer,
   savingStudent,
@@ -764,6 +820,8 @@ function DetailTable({
 }: {
   studentRows: StudentPaymentRow[];
   installments: FeeInstallment[];
+  // ⭐ Totaux de synthèse du pied de tableau (inscription/réinscription + scolarité)
+  summaryTotals: { inscDue: number; inscPaid: number; inscReste: number; scolDue: number; scolPaid: number; scolReste: number };
   editMode?: boolean;
   editBuffer: Map<string, any>;
   savingStudent: string | null;
@@ -817,7 +875,10 @@ function DetailTable({
             const displayTotalTuitionPaid = editMode && edits
               ? Object.values(edits.tuitionInstallments || {}).reduce((s: number, n: any) => s + Number(n || 0), 0)
               : row.totalTuitionPaid;
-            const displayTotalPaid = displayInscriptionPaid + displayReinscriptionPaid + displayArrearPaid + displayTotalTuitionPaid;
+            // ⭐ Sémantique promoteur 2026-11 : Total payé = inscription +
+            //    réinscription + tranches UNIQUEMENT (l'arriéré est une dette
+            //    restante, jamais un montant payé — cf. compte élève).
+            const displayTotalPaid = displayInscriptionPaid + displayReinscriptionPaid + displayTotalTuitionPaid;
             const displayReste = row.totalDue - displayTotalPaid;
 
             return (
@@ -840,7 +901,8 @@ function DetailTable({
               </TableCell>
               <TableCell className="text-sm whitespace-nowrap">{row.className}</TableCell>
 
-              {/* Arriéré — éditable en mode édition */}
+              {/* Arriéré — RESTANT DÛ (non payé) ; éditable en mode édition
+                  (outil de réalignement des données de l'année écoulée) */}
               <TableCell className="text-sm text-right whitespace-nowrap">
                 {editMode ? (
                   <input
@@ -850,7 +912,9 @@ function DetailTable({
                     className="w-20 px-1 py-0.5 text-xs text-right border border-amber-300 rounded focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
                   />
                 ) : (
-                  row.arrearPaid > 0 ? formatCurrency(row.arrearPaid) : '—'
+                  <span title="Restant dû sur les arriérés (non payé) — même valeur que le compte élève">
+                    {(row.arrearRemaining ?? 0) > 0 ? formatCurrency(row.arrearRemaining ?? 0) : '—'}
+                  </span>
                 )}
               </TableCell>
 
@@ -944,8 +1008,9 @@ function DetailTable({
               <TableCell colSpan={2} className="text-right text-red-700 py-3">
                 TOTAUX ({studentRows.length} élève(s))
               </TableCell>
+              {/* ⭐ Arriéré = RESTANT DÛ (non payé) — cohérent compte élève */}
               <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
-                {formatCurrency(studentRows.reduce((s, r) => s + Number(r.arrearPaid ?? 0), 0))}
+                {formatCurrency(studentRows.reduce((s, r) => s + Number(r.arrearRemaining ?? 0), 0))}
               </TableCell>
               <TableCell className="text-right text-red-700 whitespace-nowrap py-3">
                 {formatCurrency(studentRows.reduce((s, r) => s + Number(r.inscriptionPaid ?? 0), 0))}
@@ -973,6 +1038,36 @@ function DetailTable({
               </TableCell>
             </TableRow>
           )}
+          {/* ⭐ 2 lignes de synthèse (retour promoteur) — totaux GLOBAUX
+              (toutes classes de l'année, non limités à la page affichée) :
+                1. INSCRIPTION / RÉINSCRIPTION : attendu / payé / restant
+                2. SCOLARITÉ : total / payé / restant
+              Montants alignés sous les colonnes Total dû / Total payé /
+              Reste à payer. Ces lignes figurent AUSSI dans l'export Excel. */}
+          <TableRow className="bg-blue-50/80 border-t border-blue-200 font-semibold">
+            <TableCell colSpan={6 + installments.length} className="py-2.5 text-blue-900 whitespace-nowrap">
+              INSCRIPTION / RÉINSCRIPTION — TOTAL (toutes classes)
+            </TableCell>
+            <TableCell className="text-right py-2.5 whitespace-nowrap">{formatCurrency(summaryTotals.inscDue)}</TableCell>
+            <TableCell className="text-right py-2.5 whitespace-nowrap">{formatCurrency(summaryTotals.inscPaid)}</TableCell>
+            <TableCell className="text-right py-2.5 whitespace-nowrap">
+              <span className={summaryTotals.inscReste > 0 ? 'text-red-600' : 'text-green-600'}>
+                {formatCurrency(summaryTotals.inscReste)}
+              </span>
+            </TableCell>
+          </TableRow>
+          <TableRow className="bg-blue-50/80 border-t border-blue-200 font-semibold">
+            <TableCell colSpan={6 + installments.length} className="py-2.5 text-blue-900 whitespace-nowrap">
+              SCOLARITÉ — TOTAL (toutes tranches, toutes classes)
+            </TableCell>
+            <TableCell className="text-right py-2.5 whitespace-nowrap">{formatCurrency(summaryTotals.scolDue)}</TableCell>
+            <TableCell className="text-right py-2.5 whitespace-nowrap">{formatCurrency(summaryTotals.scolPaid)}</TableCell>
+            <TableCell className="text-right py-2.5 whitespace-nowrap">
+              <span className={summaryTotals.scolReste > 0 ? 'text-red-600' : 'text-green-600'}>
+                {formatCurrency(summaryTotals.scolReste)}
+              </span>
+            </TableCell>
+          </TableRow>
         </TableBody>
       </Table>
     </div>
@@ -984,9 +1079,12 @@ function DetailTable({
 function RecapTable({
   recapRows,
   installments,
+  summaryTotals,
 }: {
   recapRows: RecapRow[];
   installments: FeeInstallment[];
+  // ⭐ Totaux de synthèse du pied de tableau (inscription/réinscription + scolarité)
+  summaryTotals: { inscDue: number; inscPaid: number; inscReste: number; scolDue: number; scolPaid: number; scolReste: number };
 }) {
   if (recapRows.length === 0) {
     return (
@@ -996,17 +1094,23 @@ function RecapTable({
     );
   }
 
-  // Calculer les totaux — cohérents avec la nouvelle semantique :
-  //   - Colonnes Arriérés / Inscription / Réinscription / Tranches = montants PAYÉS
-  //   - Total dû = somme des montants attendus (Inscription + Réinscription + Scolarité + Arriérés - Personnalisation)
-  //   - Total payé = somme de tous les paiements
-  //   - Reste à payer = Total dû - Total payé
-  //   - Solde par classe = Total payé - Total dû
+  // Calculer les totaux — cohérents avec la sémantique 2026-11 :
+  //   - Colonnes Arriérés = RESTANT DÛ (non payé, même valeur que la colonne
+  //     « Arriérés » du compte élève et l'onglet Recouvrement)
+  //   - Inscription / Réinscription = montants PAYÉS (même sémantique que le
+  //     tableau détaillé)
+  //   - Scolarité = montant attendu (totalTuition)
+  //   - Total dû = Inscription attendue + Réinscription attendue + Scolarité + Arriérés restants
+  //   - Total payé = inscription + réinscription + tranches payées
+  //   - Reste à payer = Total dû − Total payé
+  //   - Solde par classe = Total dû − Total payé (restant à recouvrir,
+  //     positif quand la classe doit encore de l'argent)
   const totals = recapRows.reduce(
     (acc, row) => {
       acc.effectif += row.effectif;
+      // Restant dû (non payé)
+      acc.arrieres += row.arrieres;
       // Payé
-      acc.arrieres += row.arrieresPaid;
       acc.inscription += row.inscriptionPaid;
       acc.reinscription += row.reinscriptionPaid;
       acc.totalPaid += row.totalPaid;
@@ -1064,7 +1168,7 @@ function RecapTable({
               <TableCell className="text-sm text-center whitespace-nowrap">{row.effectif}</TableCell>
               <TableCell className="font-medium whitespace-nowrap">{row.className}</TableCell>
               <TableCell className="text-sm text-right whitespace-nowrap">
-                {row.arrieresPaid > 0 ? formatCurrency(row.arrieresPaid) : '—'}
+                {row.arrieres > 0 ? formatCurrency(row.arrieres) : '—'}
               </TableCell>
               <TableCell className="text-sm text-right whitespace-nowrap">
                 {row.inscriptionPaid > 0 ? formatCurrency(row.inscriptionPaid) : '—'}
@@ -1137,6 +1241,35 @@ function RecapTable({
             <TableCell className="text-right text-red-600 whitespace-nowrap">{formatCurrency(totals.reste)}</TableCell>
             <TableCell className="text-right whitespace-nowrap">{formatCurrency(totals.soldeParClasse)}</TableCell>
           </TableRow>
+          {/* ⭐ 2 lignes de synthèse (retour promoteur) — mêmes lignes que le
+              tableau détaillé et l'export Excel :
+              inscription/réinscription puis scolarité (attendu / payé / restant). */}
+          <TableRow className="bg-blue-50/80 border-t border-blue-200 font-semibold">
+            <TableCell colSpan={7 + installments.length} className="py-2.5 text-blue-900 whitespace-nowrap">
+              INSCRIPTION / RÉINSCRIPTION — TOTAL
+            </TableCell>
+            <TableCell className="text-right py-2.5 whitespace-nowrap">{formatCurrency(summaryTotals.inscDue)}</TableCell>
+            <TableCell className="text-right py-2.5 whitespace-nowrap">{formatCurrency(summaryTotals.inscPaid)}</TableCell>
+            <TableCell className="text-right py-2.5 whitespace-nowrap">
+              <span className={summaryTotals.inscReste > 0 ? 'text-red-600' : 'text-green-600'}>
+                {formatCurrency(summaryTotals.inscReste)}
+              </span>
+            </TableCell>
+            <TableCell className="text-right py-2.5"></TableCell>
+          </TableRow>
+          <TableRow className="bg-blue-50/80 border-t border-blue-200 font-semibold">
+            <TableCell colSpan={7 + installments.length} className="py-2.5 text-blue-900 whitespace-nowrap">
+              SCOLARITÉ — TOTAL (toutes tranches)
+            </TableCell>
+            <TableCell className="text-right py-2.5 whitespace-nowrap">{formatCurrency(summaryTotals.scolDue)}</TableCell>
+            <TableCell className="text-right py-2.5 whitespace-nowrap">{formatCurrency(summaryTotals.scolPaid)}</TableCell>
+            <TableCell className="text-right py-2.5 whitespace-nowrap">
+              <span className={summaryTotals.scolReste > 0 ? 'text-red-600' : 'text-green-600'}>
+                {formatCurrency(summaryTotals.scolReste)}
+              </span>
+            </TableCell>
+            <TableCell className="text-right py-2.5"></TableCell>
+          </TableRow>
         </TableBody>
       </Table>
     </div>
@@ -1206,11 +1339,11 @@ function PromoterEligibleList({
       <div className="bg-amber-50 border border-amber-200 rounded-lg p-8 text-center">
         <Crown className="w-12 h-12 text-amber-400 mx-auto mb-3" />
         <p className="text-sm text-amber-800 font-medium mb-1">
-          Aucun élève marqué "paiement fondateur"
+          Aucun encaissement réel du fondateur pour cette année
         </p>
         <p className="text-xs text-amber-600">
-          Activez le toggle "Fondateur" sur la ligne d'un élève dans Comptes élèves
-          pour le faire apparaître ici.
+          Seuls les élèves avec un montant réellement reçu par le fondateur (avance
+          saisie ou paiement sur sa caisse) apparaissent ici — aucune ligne vide.
         </p>
       </div>
     );

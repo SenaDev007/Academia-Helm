@@ -18,7 +18,8 @@
  *
  * Backend : 2 systèmes coexistent
  *   - OLD : RecoveryReminder (cron nightly + envoi email réel)
- *   - NEW : FeeArrear + CollectionReminder + PaymentPromise + CollectionAction + CollectionCase
+ *   - NEW : FeeArrear + CollectionReminder (dossiers/promesses/actions
+ *     retirés 2026-11 — collections_cases conservé pour l'escalade auto)
  *
  * Endpoints utilisés :
  *   GET  /api/finance/collection/arrears
@@ -30,12 +31,12 @@
  * ============================================================================
  */
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
 import {
   AlertCircle, TrendingDown, Users, Wallet, RefreshCw,
   Send, Loader2, Search, FileText, AlertTriangle,
   Zap, CheckCircle2, XCircle, Plus, FileSpreadsheet, Trash2, Settings,
-  Upload, Banknote, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+  Upload, Banknote, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ChevronDown,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -1287,48 +1288,8 @@ function ArrearsTab({
   const [paymentArrear, setPaymentArrear] = useState<any | null>(null);
 
   // ⭐ Suppression multiple — sélection des lignes du tableau
-  // (cases à cocher + « tout sélectionner » sur la PAGE courante ; la
-  //  sélection est conservée d'une page à l'autre)
+  // (cases à cocher + « tout sélectionner » sur la liste filtrée affichée)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-  // ⭐ Pagination — 50 lignes par page. Le découpage se fait APRÈS le
-  //    filtrage (année / niveau / classe / gravité / recherche, calculés
-  //    dans le parent) : les filtres niveau et classe restent donc tenus
-  //    sur TOUTES les pages, et la liste complète est parcourable de page
-  //    en page sans troncature silencieuse.
-  const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(arrears.length / ARREARS_PAGE_SIZE));
-
-  // Retour à la page 1 dès qu'un filtre change — on ne reste jamais sur
-  // une page hors bornes après un changement de niveau/classe/année.
-  useEffect(() => {
-    setPage(1);
-  }, [yearId, schoolLevelId, classId, levelFilter, search]);
-
-  // Recalage : si la liste raccourcit (encaissement, write-off, suppression
-  // ou rafraîchissement), ramener la page dans les bornes réelles.
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
-
-  const pagedArrears = useMemo(
-    () => arrears.slice((page - 1) * ARREARS_PAGE_SIZE, page * ARREARS_PAGE_SIZE),
-    [arrears, page],
-  );
-
-  // Fenêtre compacte de numéros de pages : 1 … 4 5 [6] 7 8 … 12
-  const pageWindow = useMemo(() => {
-    const span = 2;
-    const items: Array<number | 'ellipsis'> = [];
-    for (let p = 1; p <= totalPages; p++) {
-      if (p === 1 || p === totalPages || Math.abs(p - page) <= span) {
-        items.push(p);
-      } else if (items[items.length - 1] !== 'ellipsis') {
-        items.push('ellipsis');
-      }
-    }
-    return items;
-  }, [page, totalPages]);
 
   // Élaguer automatiquement la sélection quand la liste change
   // (lignes supprimées / données rafraîchies) — évite un compte affiché obsolète.
@@ -1349,23 +1310,11 @@ function ArrearsTab({
     () => selectedArrears.reduce((s: number, a: any) => s + (Number(a.balanceDue) || 0), 0),
     [selectedArrears],
   );
-
-  // Sélection « tout cocher » : porte sur la PAGE courante (50 lignes max) —
-  // les lignes cochées sur les autres pages restent sélectionnées.
-  const pageSelectedCount = pagedArrears.filter((a: any) => selectedIds.has(a.id)).length;
-  const allVisibleSelected = pagedArrears.length > 0 && pageSelectedCount === pagedArrears.length;
-  const someVisibleSelected = pageSelectedCount > 0 && !allVisibleSelected;
+  const allVisibleSelected = arrears.length > 0 && selectedArrears.length === arrears.length;
+  const someVisibleSelected = selectedArrears.length > 0 && !allVisibleSelected;
 
   const toggleAll = () => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (allVisibleSelected) {
-        pagedArrears.forEach((a: any) => next.delete(a.id));
-      } else {
-        pagedArrears.forEach((a: any) => next.add(a.id));
-      }
-      return next;
-    });
+    setSelectedIds(allVisibleSelected ? new Set() : new Set(arrears.map((a: any) => a.id)));
   };
   const toggleOne = (id: string, checked: boolean) => {
     setSelectedIds((prev) => {
@@ -1409,6 +1358,59 @@ function ArrearsTab({
       c.schoolLevel?.id === slId
     );
   }, [classes, schoolLevelId, schoolLevels]);
+
+  // ⭐ Sous-onglets de l'onglet Arriérés :
+  //    - 'list'  : liste détaillée des arriérés (pagination 50 lignes/page)
+  //    - 'recap' : récapitulatif hiérarchique par niveau scolaire → classe
+  const [arrearsView, setArrearsView] = useState<'list' | 'recap'>('list');
+
+  // ⭐ Pagination 50 lignes/page — appliquée APRÈS les filtres (année/niveau/
+  //    classe/gravité/recherche) : les filtres restent donc actifs et cohérents
+  //    sur TOUTES les pages. Les TOTAUX du pied de tableau restent calculés sur
+  //    la liste filtrée complète (pas seulement la page visible).
+  const [arrearsPage, setArrearsPage] = useState(1);
+  const arrearsTotalPages = Math.max(1, Math.ceil(arrears.length / ARREARS_PAGE_SIZE));
+
+  // Recalage : si la liste raccourcit (suppression/encaissement) et que la page
+  // courante n'existe plus → clamp à la dernière page.
+  useEffect(() => {
+    if (arrearsPage > arrearsTotalPages) setArrearsPage(arrearsTotalPages);
+  }, [arrearsPage, arrearsTotalPages]);
+
+  // Retour à la page 1 dès qu'un filtre change (les filtres modifient le volume)
+  useEffect(() => {
+    setArrearsPage(1);
+  }, [yearId, schoolLevelId, classId, levelFilter, search]);
+
+  const pagedArrears = useMemo(
+    () => arrears.slice(
+      (arrearsPage - 1) * ARREARS_PAGE_SIZE,
+      arrearsPage * ARREARS_PAGE_SIZE,
+    ),
+    [arrears, arrearsPage],
+  );
+  const pageStart = arrears.length === 0 ? 0 : (arrearsPage - 1) * ARREARS_PAGE_SIZE + 1;
+  const pageEnd = Math.min(arrearsPage * ARREARS_PAGE_SIZE, arrears.length);
+
+  // Fenêtre de pages : 1 … 4 5 6 7 8 … 12 (ellipse pour les pages éloignées)
+  const pageWindow = useMemo(() => {
+    const span = 2;
+    const items: (number | 'ellipsis')[] = [];
+    for (let p = 1; p <= arrearsTotalPages; p++) {
+      if (p === 1 || p === arrearsTotalPages || Math.abs(p - arrearsPage) <= span) items.push(p);
+      else if (items[items.length - 1] !== 'ellipsis') items.push('ellipsis');
+    }
+    return items;
+  }, [arrearsPage, arrearsTotalPages]);
+
+  // Totaux de la liste filtrée COMPLETE (A + B = C vérifiable ligne par ligne :
+  // totalDue = totalPaid + balanceDue)
+  const listTotals = useMemo(() => {
+    const totalDue = arrears.reduce((s: number, a: any) => s + (Number(a.totalDue) || 0), 0);
+    const totalPaid = arrears.reduce((s: number, a: any) => s + (Number(a.totalPaid) || 0), 0);
+    const balanceDue = arrears.reduce((s: number, a: any) => s + (Number(a.balanceDue) || 0), 0);
+    return { totalDue, totalPaid, balanceDue };
+  }, [arrears]);
 
   // Export PDF des arriérés (filtre appliqué) — génère le PDF côté frontend avec jsPDF
   // Export PDF — utilise finance-exports.ts (même pattern que encaissements)
@@ -1511,13 +1513,43 @@ function ArrearsTab({
           </div>
         </div>
         <div className="text-xs text-slate-500">
-          {arrears.length} arriéré(s) filtré(s) sur {totalCount} total · page {page} / {totalPages}
-          {arrears.length > 0 && (
-            <> · lignes {((page - 1) * ARREARS_PAGE_SIZE) + 1}–{Math.min(page * ARREARS_PAGE_SIZE, arrears.length)}</>
-          )}
+          {arrears.length} affiché(s) sur {totalCount} total
         </div>
       </div>
 
+      {/* ⭐ Sous-onglets de l'onglet Arriérés : liste détaillée / récapitulatif */}
+      <div className="flex gap-1 border-b border-slate-200">
+        <button
+          onClick={() => setArrearsView('list')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            arrearsView === 'list'
+              ? 'border-rose-600 text-rose-700'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Liste des arriérés
+        </button>
+        <button
+          onClick={() => setArrearsView('recap')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            arrearsView === 'recap'
+              ? 'border-rose-600 text-rose-700'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Récapitulatif des arriérés
+        </button>
+      </div>
+
+      {arrearsView === 'recap' ? (
+        <ArrearsRecapView
+          arrears={arrears}
+          classes={classes}
+          schoolLevels={schoolLevels}
+          yearName={yearId !== 'ALL' ? (allYears.find((y) => y.id === yearId)?.name || '') : ''}
+        />
+      ) : (
+        <>
       {/* Boutons export — juste au-dessus du tableau */}
       <div className="flex items-center justify-end gap-2">
         <Button variant="outline" size="sm" onClick={handleExportExcel} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
@@ -1572,10 +1604,10 @@ function ArrearsTab({
                     if (el) el.indeterminate = someVisibleSelected;
                   }}
                   onChange={toggleAll}
-                  disabled={pagedArrears.length === 0}
+                  disabled={arrears.length === 0}
                   className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer disabled:opacity-40"
-                  title="Tout sélectionner / tout désélectionner (page courante)"
-                  aria-label="Tout sélectionner la page courante"
+                  title="Tout sélectionner / tout désélectionner"
+                  aria-label="Tout sélectionner"
                 />
               </TableHead>
               <TableHead className="whitespace-nowrap">Élève</TableHead>
@@ -1593,7 +1625,7 @@ function ArrearsTab({
             {arrears.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={10} className="text-center text-gray-500 py-12">
-                  Aucun arriéré à payer — aucun élève avec un restant dû. Lancez la détection pour identifier les impayés.
+                  Aucun arriéré trouvé. Lancez la détection pour identifier les impayés.
                 </TableCell>
               </TableRow>
             ) : (
@@ -1692,10 +1724,8 @@ function ArrearsTab({
                                 financeService.writeOffArrear(a.id, reason)
                                   .then(() => {
                                     toast({ title: '✅ Créance abandonnée', description: `${formatCurrency(Number(a.balanceDue))} retiré du total dû.` });
-                                    // Recharger les données recovery + rafraîchir
-                                    // le solde du compte élève (cross-page).
+                                    // Recharger — on utilise un hack: déclencher un state change
                                     window.dispatchEvent(new CustomEvent('recovery-reload'));
-                                    window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
                                   })
                                   .catch((e: any) => {
                                     toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
@@ -1724,23 +1754,23 @@ function ArrearsTab({
               })
             )}
           </TableBody>
-          {/* Ligne des totaux — portée du FILTRE complet (toutes pages),
-              cohérente avec la pagination : le tableau affiche la page mais
-              les TOTAUX couvrent l'ensemble filtré. */}
+          {/* Ligne des totaux — calculée sur la liste filtrée COMPLÈTE
+              (toutes pages confondues) : A + B = C vérifiable
+              (Total dû = Payé + Solde restant). */}
           {arrears.length > 0 && (
             <tfoot>
               <tr className="bg-slate-50 border-t-2 border-slate-300 font-bold">
                 <td colSpan={4} className="px-3 py-2 text-right text-slate-700 text-sm whitespace-nowrap">
-                  TOTAUX FILTRE ({arrears.length} arriéré{arrears.length > 1 ? 's' : ''} — toutes pages)
+                  TOTAUX ({arrears.length} arriéré{arrears.length > 1 ? 's' : ''})
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-sm whitespace-nowrap">
-                  {formatCurrency(arrears.reduce((s: number, a: any) => s + (Number(a.totalDue) || 0), 0))}
+                  {formatCurrency(listTotals.totalDue)}
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-sm text-emerald-700 whitespace-nowrap">
-                  {formatCurrency(arrears.reduce((s: number, a: any) => s + (Number(a.totalPaid) || 0), 0))}
+                  {formatCurrency(listTotals.totalPaid)}
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-sm font-bold text-rose-700 whitespace-nowrap">
-                  {formatCurrency(arrears.reduce((s: number, a: any) => s + (Number(a.balanceDue) || 0), 0))}
+                  {formatCurrency(listTotals.balanceDue)}
                 </td>
                 <td colSpan={3} className="px-3 py-2"></td>
               </tr>
@@ -1749,49 +1779,72 @@ function ArrearsTab({
         </Table>
       </div>
 
-      {/* ⭐ Pagination — 50 lignes par page ; les filtres niveau/classe/année
-             restent actifs sur toutes les pages (découpage après filtrage). */}
-      {totalPages > 1 && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="text-xs text-slate-500 whitespace-nowrap">
-            Lignes{' '}
-            <span className="font-semibold text-slate-700">
-              {((page - 1) * ARREARS_PAGE_SIZE) + 1}–{Math.min(page * ARREARS_PAGE_SIZE, arrears.length)}
-            </span>{' '}
-            sur {arrears.length} · page{' '}
-            <span className="font-semibold text-slate-700">{page}</span> / {totalPages}
+      {/* ⭐ Pagination — 50 lignes par page ; les filtres (année/niveau/
+          classe/gravité/recherche) restent appliqués sur toutes les pages
+          car la pagination découpe la liste FILTRÉE. */}
+      {arrearsTotalPages > 1 && (
+        <div className="bg-white px-4 py-3 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs text-slate-500">
+            Affichage <strong className="text-slate-700">{pageStart}–{pageEnd}</strong> sur{' '}
+            <strong className="text-slate-700">{arrears.length}</strong> arriéré(s) — page{' '}
+            <strong className="text-slate-700">{arrearsPage}</strong>/{arrearsTotalPages}
           </div>
           <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === 1} onClick={() => setPage(1)} title="Première page">
-              <ChevronsLeft className="w-4 h-4" />
-            </Button>
-            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} title="Page précédente">
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            {pageWindow.map((p, idx) =>
-              p === 'ellipsis' ? (
-                <span key={`e-${idx}`} className="px-1.5 text-slate-400 select-none">…</span>
-              ) : (
-                <Button
-                  key={p}
-                  variant={p === page ? 'default' : 'outline'}
-                  size="icon"
-                  className="h-8 w-8 text-xs"
-                  onClick={() => setPage(p as number)}
-                  aria-current={p === page ? 'page' : undefined}
-                >
-                  {p}
-                </Button>
-              ),
-            )}
-            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} title="Page suivante">
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === totalPages} onClick={() => setPage(totalPages)} title="Dernière page">
-              <ChevronsRight className="w-4 h-4" />
-            </Button>
+            <button
+              onClick={() => setArrearsPage(1)}
+              disabled={arrearsPage <= 1}
+              className="inline-flex items-center px-2 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              title="Première page"
+            >
+              <ChevronsLeft className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setArrearsPage((p) => Math.max(1, p - 1))}
+              disabled={arrearsPage <= 1}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              Précédent
+            </button>
+            <div className="flex items-center gap-0.5">
+              {pageWindow.map((p, i) =>
+                p === 'ellipsis' ? (
+                  <span key={`e-${i}`} className="px-2 text-slate-400 text-xs">…</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setArrearsPage(p)}
+                    className={`min-w-[28px] h-7 px-2 text-xs font-bold rounded-lg transition ${
+                      p === arrearsPage
+                        ? 'bg-rose-600 text-white shadow-sm'
+                        : 'text-slate-600 bg-slate-50 hover:bg-rose-50 hover:text-rose-700 border border-slate-200'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ),
+              )}
+            </div>
+            <button
+              onClick={() => setArrearsPage((p) => Math.min(arrearsTotalPages, p + 1))}
+              disabled={arrearsPage >= arrearsTotalPages}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            >
+              Suivant
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setArrearsPage(arrearsTotalPages)}
+              disabled={arrearsPage >= arrearsTotalPages}
+              className="inline-flex items-center px-2 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              title="Dernière page"
+            >
+              <ChevronsRight className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
+      )}
+        </>
       )}
 
       {/* ⭐ Modal d'encaissement d'un arriéré (marquer un élève ayant payé) */}
@@ -1801,12 +1854,9 @@ function ArrearsTab({
           onClose={() => setPaymentArrear(null)}
           onSubmitted={(remaining: number) => {
             // Recalcul dynamique : la mutation invalide les queries recovery
-            // (arrears + statistics) → la liste et les KPIs se rechargent
-            // automatiquement avec les nouveaux soldes ; le solde du compte
-            // de l'élève est recalculé par le trigger DB et l'onglet Comptes
-            // élèves est rafraîchi via l'événement dédié.
+            // (arrears + statistics + cases) → la liste et les KPIs se
+            // rechargent automatiquement avec les nouveaux soldes.
             window.dispatchEvent(new CustomEvent('recovery-reload'));
-            window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
             if (remaining <= 0) {
               toast({
                 title: '✅ Arriéré entièrement soldé',
@@ -1822,6 +1872,223 @@ function ArrearsTab({
           }}
         />
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Sous-onglet « Récapitulatif des arriérés »                         */
+/*  Vue hiérarchique : niveau scolaire (Maternelle / Primaire /        */
+/*  Secondaire) → classes physiques → total général.                   */
+/*  - Les niveaux et classes sont issus des DONNÉES (aucun nom de      */
+/*    classe codé en dur) : classes chargées de la base via            */
+/*    /api/all-classes + inscription de l'élève portée par l'arriéré.   */
+/*  - Chaque ligne de niveau affiche le total des arriérés restants   */
+/*    du niveau ; le niveau se déplie pour révéler ses classes avec    */
+/*    le total et l'effectif d'élèves concernés par classe.            */
+/*  - Dernière ligne : total général des arriérés restants (filtre      */
+/*    année appliqué — par défaut l'année courante).                    */
+/* ------------------------------------------------------------------ */
+
+const ARREARS_LEVEL_ORDER: Array<{ key: string; label: string; color: string; bg: string; border: string }> = [
+  { key: 'MATERNELLE', label: 'Maternelle', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
+  { key: 'PRIMAIRE', label: 'Primaire', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
+  { key: 'SECONDAIRE', label: 'Secondaire', color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
+  { key: 'AUTRE', label: 'Non classé', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200' },
+];
+
+// Normalise le code de niveau (FR majuscule / EN → FR)
+function normalizeLevelCode(rawCode: string | undefined | null): string {
+  const c = (rawCode || '').toUpperCase().trim();
+  if (c === 'MATERNELLE' || c === 'NURSERY' || c === 'MATERNEL') return 'MATERNELLE';
+  if (c === 'PRIMAIRE' || c === 'PRIMARY') return 'PRIMAIRE';
+  if (c === 'SECONDAIRE' || c === 'SECONDARY') return 'SECONDAIRE';
+  return c || 'AUTRE';
+}
+
+function ArrearsRecapView({
+  arrears,
+  classes,
+  schoolLevels,
+  yearName,
+}: {
+  arrears: any[];
+  classes: any[];
+  schoolLevels: any[];
+  yearName: string;
+}) {
+  const [expandedLevels, setExpandedLevels] = useState<Set<string>>(new Set());
+
+  // Résolution niveau ← classes physiques (base) avec repli sur le niveau
+  // de l'élève porté par l'arriéré.
+  const classLevelByClassId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of classes) {
+      const code = normalizeLevelCode(c.schoolLevel?.code) !== 'AUTRE'
+        ? normalizeLevelCode(c.schoolLevel?.code)
+        : normalizeLevelCode(schoolLevels.find((l: any) => l.schoolLevelId === c.schoolLevelId)?.code);
+      m.set(c.id, code);
+    }
+    return m;
+  }, [classes, schoolLevels]);
+
+  // ⭐ Regroupement niveau → classe → total. Les classes affichées sous
+  //    chaque niveau proviennent des données (aucune classe codée en dur) :
+  //    la classe de l'élève est portée par son inscription (relation
+  //    studentEnrollments → class), niveau résolu depuis la classe.
+  const levelsData = useMemo(() => {
+    const byLevel = new Map<string, {
+      total: number;
+      students: Set<string>;
+      classes: Map<string, { total: number; students: Set<string> }>;
+    }>();
+    for (const a of arrears) {
+      const balance = Number(a.balanceDue) || 0;
+      if (balance <= 0) continue;
+      const enrollment = a.student?.studentEnrollments?.[0];
+      const classId = enrollment?.classId || '';
+      const className = enrollment?.class?.name || '—';
+      const level = classLevelByClassId.get(classId)
+        || normalizeLevelCode(a.student?.schoolLevel?.code);
+      if (!byLevel.has(level)) {
+        byLevel.set(level, { total: 0, students: new Set(), classes: new Map() });
+      }
+      const lvl = byLevel.get(level)!;
+      lvl.total += balance;
+      if (a.student?.id) lvl.students.add(a.student.id);
+      if (!lvl.classes.has(className)) {
+        lvl.classes.set(className, { total: 0, students: new Set() });
+      }
+      const cls = lvl.classes.get(className)!;
+      cls.total += balance;
+      if (a.student?.id) cls.students.add(a.student.id);
+    }
+    // Trier les classes par total décroissant puis nom
+    for (const lvl of byLevel.values()) {
+      lvl.classes = new Map(
+        Array.from(lvl.classes.entries())
+          .sort((x, y) => y[1].total - x[1].total || x[0].localeCompare(y[0])),
+      );
+    }
+    return byLevel;
+  }, [arrears, classLevelByClassId]);
+
+  const grandTotal = useMemo(
+    () => arrears.reduce((s: number, a: any) => s + (Number(a.balanceDue) || 0), 0),
+    [arrears],
+  );
+  const grandStudents = useMemo(
+    () => new Set(arrears.filter((a: any) => (Number(a.balanceDue) || 0) > 0).map((a: any) => a.student?.id).filter(Boolean)).size,
+    [arrears],
+  );
+
+  const toggleLevel = (key: string) => {
+    setExpandedLevels((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  if (arrears.length === 0) {
+    return (
+      <div className="p-8 text-center text-sm text-slate-600 bg-white rounded-xl border border-slate-200">
+        Aucun arriéré restant — rien à récapituler. Les élèves à jour ne figurent pas ici.
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-gradient-to-r from-rose-600 to-rose-700 px-4 py-3 text-white flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <AlertCircle className="w-5 h-5" />
+          <h3 className="font-bold text-sm">Récapitulatif des arriérés par niveau scolaire</h3>
+        </div>
+        <div className="text-xs text-rose-100">
+          {yearName ? `Année ${yearName}` : 'Toutes années'} · {grandStudents} élève(s) concerné(s)
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-slate-50">
+              <TableHead className="whitespace-nowrap">Niveau / Classe</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Élèves concernés</TableHead>
+              <TableHead className="text-right whitespace-nowrap">Arriérés restants</TableHead>
+              <TableHead className="w-16"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {ARREARS_LEVEL_ORDER.map((levelDef) => {
+              const lvl = levelsData.get(levelDef.key);
+              if (!lvl || lvl.total <= 0) return null;
+              const isExpanded = expandedLevels.has(levelDef.key);
+              const classRows = Array.from(lvl.classes.entries());
+              return (
+                <Fragment key={levelDef.key}>
+                  {/* Ligne de niveau — total du niveau, dépliable */}
+                  <TableRow
+                    className={`${levelDef.bg} border ${levelDef.border} cursor-pointer select-none`}
+                    onClick={() => toggleLevel(levelDef.key)}
+                  >
+                    <TableCell className="font-bold whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <ChevronDown
+                          className={`w-4 h-4 ${levelDef.color} transition-transform ${isExpanded ? '' : '-rotate-90'}`}
+                        />
+                        <span className={levelDef.color}>{levelDef.label}</span>
+                        <span className="text-xs text-slate-500 font-normal">
+                          ({classRows.length} classe{classRows.length > 1 ? 's' : ''})
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right font-semibold whitespace-nowrap">{lvl.students.size}</TableCell>
+                    <TableCell className="text-right font-mono font-bold whitespace-nowrap">
+                      {formatCurrency(lvl.total)}
+                    </TableCell>
+                    <TableCell></TableCell>
+                  </TableRow>
+
+                  {/* Classes physiques du niveau (données de la base) */}
+                  {isExpanded && classRows.map(([className, cls]) => (
+                    <TableRow key={`${levelDef.key}-${className}`} className="hover:bg-slate-50">
+                      <TableCell className="pl-10 text-sm text-slate-700 whitespace-nowrap">
+                        <Users className="w-3.5 h-3.5 inline mr-2 text-slate-400" />
+                        {className}
+                      </TableCell>
+                      <TableCell className="text-right text-sm text-slate-600 whitespace-nowrap">
+                        {cls.students.size}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm font-semibold text-rose-700 whitespace-nowrap">
+                        {formatCurrency(cls.total)}
+                      </TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                  ))}
+                </Fragment>
+              );
+            })}
+
+            {/* Total général des arriérés restants (filtre année appliqué) */}
+            <TableRow className="bg-slate-100 border-t-2 border-slate-400 font-bold">
+              <TableCell className="whitespace-nowrap uppercase tracking-wide text-slate-800 text-sm">
+                Total général des arriérés restants
+                <span className="ml-2 text-xs font-normal text-slate-500">
+                  {yearName ? `(${yearName})` : '(toutes années)'}
+                </span>
+              </TableCell>
+              <TableCell className="text-right whitespace-nowrap">{grandStudents}</TableCell>
+              <TableCell className="text-right font-mono text-sm text-rose-700 whitespace-nowrap">
+                {formatCurrency(grandTotal)}
+              </TableCell>
+              <TableCell></TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

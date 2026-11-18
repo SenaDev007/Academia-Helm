@@ -1253,9 +1253,7 @@ export function buildApiPrecacheUrls(apiBase: string, ctx: PrecacheSessionContex
     urls.push('/api/finance/collection/arrears');
     urls.push(`/api/finance/collection/reminders${qs({ academicYearId: year })}`);
     urls.push(`/api/finance/collection/statistics${qs({ academicYearId: year })}`);
-    urls.push(`/api/finance/collection/promises${qs({ academicYearId: year })}`);
-    urls.push(`/api/finance/collection/actions${qs({ academicYearId: year })}`);
-    urls.push(`/api/finance/collection/cases${qs({ academicYearId: year })}`);
+    // ⭐ Nettoyage 2026-11 : promises/actions/cases retirés (onglets supprimés)
     // Dépenses
     urls.push(`/api/finance/expenses-v2${qs({ academicYearId: year })}`);
     urls.push(`/api/finance/expenses-v2/budgets${qs({ academicYearId: year })}`);

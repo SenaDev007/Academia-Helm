@@ -27,7 +27,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { TenantId } from '../common/decorators/tenant-id.decorator';
 import { SchoolLevelId } from '../common/decorators/school-level-id.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { CreateCollectionReminderDto, CreatePaymentPromiseDto, CreateCollectionActionDto } from './dto';
+import { CreateCollectionReminderDto } from './dto';
 
 @Controller('finance/collection')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -115,92 +115,6 @@ export class CollectionPrismaController {
     });
   }
 
-  @Post('promises')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
-  async createPaymentPromise(
-    @CurrentUser() user: any,
-    @Body() createDto: CreatePaymentPromiseDto & { createdBy?: string },
-  ) {
-    return this.collectionService.createPaymentPromise({
-      feeArrearId: createDto.arrearId,
-      promisedAmount: createDto.promisedAmount,
-      promisedDate: new Date(createDto.promiseDate),
-      notes: createDto.notes,
-      // Utiliser createdBy du body si fourni, sinon l'utilisateur connecté
-      createdBy: createDto.createdBy || user?.id,
-    });
-  }
-
-  @Get('promises')
-  async findAllPromises(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId?: string,
-    @Query('status') status?: string,
-    @Query('feeArrearId') feeArrearId?: string,
-  ) {
-    return this.collectionService.findAllPaymentPromises(tenantId, {
-      academicYearId,
-      status,
-      feeArrearId,
-    });
-  }
-
-  @Patch('promises/:id/status')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
-  async updatePromiseStatus(
-    @Param('id') promiseId: string,
-    @Body() body: { status: 'HONORED' | 'BROKEN' | 'PENDING' },
-  ) {
-    return this.collectionService.updatePaymentPromiseStatus(promiseId, body.status);
-  }
-
-  @Delete('promises/:id')
-  @Roles('DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
-  async deletePaymentPromise(
-    @TenantId() tenantId: string,
-    @Param('id') promiseId: string,
-  ) {
-    return this.collectionService.deletePaymentPromise(tenantId, promiseId);
-  }
-
-  @Post('actions')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
-  async createCollectionAction(
-    @CurrentUser() user: any,
-    @Body() createDto: CreateCollectionActionDto & { performedBy?: string },
-  ) {
-    return this.collectionService.createCollectionAction({
-      feeArrearId: createDto.arrearId,
-      actionType: createDto.actionType,
-      notes: createDto.description,
-      // Utiliser performedBy du body si fourni, sinon l'utilisateur connecté
-      performedBy: createDto.performedBy || user?.id,
-    });
-  }
-
-  @Get('actions')
-  async findAllActions(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId?: string,
-    @Query('actionType') actionType?: string,
-    @Query('feeArrearId') feeArrearId?: string,
-  ) {
-    return this.collectionService.findAllCollectionActions(tenantId, {
-      academicYearId,
-      actionType,
-      feeArrearId,
-    });
-  }
-
-  @Delete('actions/:id')
-  @Roles('DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
-  async deleteCollectionAction(
-    @TenantId() tenantId: string,
-    @Param('id') actionId: string,
-  ) {
-    return this.collectionService.deleteCollectionAction(tenantId, actionId);
-  }
-
   @Get('statistics')
   async getStatistics(
     @TenantId() tenantId: string,
@@ -209,50 +123,7 @@ export class CollectionPrismaController {
     return this.collectionService.getCollectionStatistics(tenantId, academicYearId);
   }
 
-  @Get('cases')
-  async findAllCases(
-    @TenantId() tenantId: string,
-    @Query('academicYearId') academicYearId?: string,
-    @Query('status') status?: string,
-    @Query('minOutstanding') minOutstanding?: string,
-  ) {
-    return this.collectionCaseService.findAllCollectionCases(tenantId, {
-      academicYearId,
-      status,
-      minOutstanding: minOutstanding ? Number(minOutstanding) : undefined,
-    });
-  }
-
-  @Get('cases/:studentId/:academicYearId')
-  async getCase(
-    @TenantId() tenantId: string,
-    @Param('studentId') studentId: string,
-    @Param('academicYearId') academicYearId: string,
-  ) {
-    return this.collectionCaseService.getCollectionCase(tenantId, studentId, academicYearId);
-  }
-
-  @Post('cases/:studentId/:academicYearId/sync')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
-  async syncCase(
-    @TenantId() tenantId: string,
-    @Param('studentId') studentId: string,
-    @Param('academicYearId') academicYearId: string,
-  ) {
-    return this.collectionCaseService.upsertCollectionCase(tenantId, studentId, academicYearId);
-  }
-
-  @Post('cases/:studentId/:academicYearId/trigger-reminders')
-  @Roles('DIRECTOR', 'ADMIN', 'ACCOUNTANT', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER')
-  async triggerReminders(
-    @TenantId() tenantId: string,
-    @Param('studentId') studentId: string,
-    @Param('academicYearId') academicYearId: string,
-  ) {
-    return this.collectionCaseService.triggerAutomaticReminders(tenantId, studentId, academicYearId);
-  }
-
-  /**
+    /**
    * Workflow d'escalade automatique : parcourt tous les cas de l'année et
    * déclenche les relances selon le niveau d'escalade calculé.
    *

@@ -26,13 +26,21 @@
  *      automatiquement affecté à la Tranche 2, et ainsi de suite. Cela permet
  *      d'absorber les paiements "globaux" qui ne sont pas affectés à une
  *      tranche précise dans la base.
- *   3. Les arriérés sont récupérés depuis le modèle StudentArrear (et non
- *      plus depuis FeeStructure avec feeType='ARREAR' qui n'existe pas dans
- *      l'enum FeeType — INSCRIPTION/REINSCRIPTION/TUITION/CANTEEN/EXAMEN/OTHER).
- *   4. Inscription attendue et Réinscription attendue sont calculées depuis
+ * ⭐ Corrections majeures (nov. 2026 — retour promoteur « bilan conforme au compte élève ») :
+ *   5. « Arriéré » = ce que l'élève n'a PAS ENCORE PAYÉ (Σ FeeArrear.balanceDue
+ *      des arriérés ouverts, TOUTES années — même requête que le moteur du compte
+ *      de l'élève) — PAS un montant payé. FeeArrear = seule source de vérité
+ *      (StudentArrear n'est qu'une trace de report — le sommer double-compterait).
+ *   6. « Total payé » = inscription payée + réinscription payée + scolarité payée
+ *      (somme des tranches). L'arriéré — dette non encaissée — n'est JAMAIS
+ *      compté comme payé : il alimente le « Total dû » via son restant.
+ *      Les frais généraux / examens / cantine restent À PART (moteur unifié).
+ *   7. « Solde par classe » = Total dû − Total payé (restant à recouvrir,
+ *      positif quand la classe doit encore de l'argent — cohérent avec le
+ *      « solde » du compte élève). Avant : soustraction inversée → négatif.
+ *   8. Inscription attendue et Réinscription attendue sont calculées depuis
  *      les FeeStructures correspondantes (matching class > physical class >
- *      level > global), et non plus seulement depuis les paiements effectués.
- * ============================================================================
+ *      level > global), avec FeeOverride appliqué.
  */
 
 import {
@@ -364,26 +372,50 @@ export class CollectionSummaryController {
     //    comme référence pour valider les montants payés par type de frais.
     //    Si les allocations de transactions sont incohérentes (ex: bug d'import
     //    qui a mal taggé les paiements), on retombe sur paidAmount qui est fiable.
-    const accountIds = new Set<string>();
+    // ⭐ FIX (cohérence Comptes élèves, nov. 2026) : charger les comptes de
+    //    TOUS les élèves inscrits de l'année — pas seulement ceux qui ont des
+    //    transactions. Les lignes du compte (account_breakdowns) sont la
+    //    source des attendus ET des payés : sans ce chargement complet, les
+    //    élèves sans paiement basculaient sur le matching des FeeStructures
+    //    (attendus ≠ compte élève — 673 écarts constatés en production).
+    const txAccountIds = new Set<string>();
     for (const tx of transactions) {
-      if (tx.studentAccountId) accountIds.add(tx.studentAccountId);
+      if (tx.studentAccountId) txAccountIds.add(tx.studentAccountId);
     }
     const studentAccounts = await this.prisma.studentAccount.findMany({
-      where: { id: { in: Array.from(accountIds) } },
+      where: {
+        OR: [
+          { id: { in: Array.from(txAccountIds) } },
+          { tenantId, academicYearId, studentId: { in: studentIds } },
+        ],
+      },
       select: { id: true, studentId: true },
     });
     const accountIdToStudentId = new Map<string, string>();
+    // ⭐ Élèves disposant d'un compte pour l'année : leur bilan dérive
+    //    EXCLUSIVEMENT des lignes du compte (types absents = 0 — comme le
+    //    compte de l'élève) → conformité totale bilan ⇄ comptes élèves.
+    const studentsWithAccount = new Set<string>();
     for (const sa of studentAccounts) {
       accountIdToStudentId.set(sa.id, sa.studentId);
+      studentsWithAccount.add(sa.studentId);
     }
     const breakdownsByStudentDb = await this.prisma.accountBreakdown.findMany({
       where: {
-        studentAccountId: { in: Array.from(accountIds) },
+        studentAccountId: { in: Array.from(accountIdToStudentId.keys()) },
       },
       include: {
         feeStructure: { select: { feeType: true, id: true } },
       },
     });
+    // ⭐ Cohérence Comptes élèves (retour promoteur nov. 2026) : les lignes du
+    //    compte (account_breakdowns) sont LA source de vérité des montants —
+    //    le moteur du compte de l'élève (recompute_student_account_totals)
+    //    dérive totalDue = Σ initialAmount des lignes cœur. Le bilan utilise
+    //    donc ces mêmes lignes (SOMMÉES si plusieurs lignes d'un même type —
+    //    l'ancienne version écrasait la ligne précédente) et ne retombe sur
+    //    le matching des FeeStructures QUE si aucune ligne n'existe encore
+    //    (élèves sans compte matérialisé). Bilan = compte élève, partout.
     const breakdownsByStudent = new Map<string, { [feeType: string]: { paid: number; expected: number; feeStructureId: string } }>();
     for (const bd of breakdownsByStudentDb) {
       const studentId = accountIdToStudentId.get(bd.studentAccountId);
@@ -393,46 +425,41 @@ export class CollectionSummaryController {
       }
       const feeType = bd.feeStructure?.feeType;
       if (!feeType) continue;
-      breakdownsByStudent.get(studentId)![feeType] = {
-        paid: Number(bd.paidAmount) || 0,
-        expected: Number(bd.initialAmount) || 0,
+      const bucket = breakdownsByStudent.get(studentId)!;
+      const prev = bucket[feeType];
+      bucket[feeType] = {
+        paid: (prev?.paid || 0) + (Number(bd.paidAmount) || 0),
+        expected: (prev?.expected || 0) + (Number(bd.initialAmount) || 0),
         feeStructureId: bd.feeStructureId,
       };
     }
 
-    // ─── 3c. Récupérer les arriérés des élèves pour l'année ──────────────────
-    // Les arriérés sont stockés dans FeeArrear (créés par l'import Excel) et
-    // StudentArrear (créés par le report d'année). On combine les deux sources
-    // pour avoir une vue complète.
+    // ─── 3c. Récupérer les arriérés ouverts des élèves ──────────────────────
+    // ⭐ Moteur unifié (nov. 2026) : FeeArrear = SEULE source de vérité des
+    //    arriérés (cf. arrears-mirror.service). StudentArrear n'est qu'une trace
+    //    de report d'année — l'additionner à FeeArrear DOUBLE-COMPTE.
+    // ⭐ Cohérence Comptes élèves / Recouvrement (retour promoteur) : on agrège
+    //    les FeeArrear OUVERTS (OPEN / PARTIALLY_PAID, balanceDue > 0) de
+    //    TOUTES les années — exactement la même requête que le moteur du compte
+    //    de l'élève. Le « Arriéré » affiché dans le bilan est donc TOUJOURS
+    //    égal à la colonne « Arriérés » du compte élève et au solde de
+    //    l'onglet Recouvrement (élève 6e D : 27 000 partout).
+    // ⭐ Sémantique « Arriéré » = RESTANT NON PAYÉ (balanceDue), pas un payé.
     const feeArrears = await this.prisma.feeArrear.findMany({
       where: {
         tenantId,
-        academicYearId,
         studentId: { in: studentIds },
+        status: { in: ['OPEN', 'PARTIALLY_PAID'] },
+        balanceDue: { gt: 0 },
       },
     });
-    const studentArrears = await this.prisma.studentArrear.findMany({
-      where: {
-        tenantId,
-        toAcademicYearId: academicYearId,
-        studentId: { in: studentIds },
-      },
-    });
-    const arrearByStudent = new Map<string, { expected: number; paid: number }>();
-    // Source 1 : FeeArrear (import Excel)
+    const arrearByStudent = new Map<string, { expected: number; paid: number; remaining: number }>();
     for (const ar of feeArrears) {
-      const current = arrearByStudent.get(ar.studentId) || { expected: 0, paid: 0 };
+      const current = arrearByStudent.get(ar.studentId) || { expected: 0, paid: 0, remaining: 0 };
       arrearByStudent.set(ar.studentId, {
         expected: current.expected + Number(ar.totalDue),
         paid: current.paid + Number(ar.totalPaid),
-      });
-    }
-    // Source 2 : StudentArrear (report d'année)
-    for (const ar of studentArrears) {
-      const current = arrearByStudent.get(ar.studentId) || { expected: 0, paid: 0 };
-      arrearByStudent.set(ar.studentId, {
-        expected: current.expected + Number(ar.amountDue),
-        paid: current.paid + Number(ar.amountPaid),
+        remaining: current.remaining + Number(ar.balanceDue ?? 0),
       });
     }
 
@@ -520,8 +547,11 @@ export class CollectionSummaryController {
       const inscriptionPaid = inscriptionBd?.paid ?? inscriptionPaidFromTx;
       const reinscriptionPaid = reinscriptionBd?.paid ?? reinscriptionPaidFromTx;
       const totalTuitionPaid = tuitionBd?.paid ?? totalTuitionPaidFromTx;
-      const arrearInfo = arrearByStudent.get(enrollment.studentId) || { expected: 0, paid: 0 };
+      const arrearInfo = arrearByStudent.get(enrollment.studentId) || { expected: 0, paid: 0, remaining: 0 };
       const arrearPaid = arrearInfo.paid;
+      // ⭐ Arriéré restant (non payé) — SEULE valeur affichée dans la colonne
+      //    « Arriéré » (ce que l'élève doit encore, cf. compte élève)
+      const arrearRemaining = arrearInfo.remaining;
 
       // ─── Matching EXCLUSIF des FeeStructures par type ─────────────────────
       // Priorité : academicClass > physicalClass > level > global (exclusive).
@@ -585,16 +615,26 @@ export class CollectionSummaryController {
       const reinscriptionOverride = overrideInfo.byFeeType.get('REINSCRIPTION');
       const tuitionOverride = overrideInfo.byFeeType.get('TUITION');
 
-      // ⭐ Montants attendus APRÈS personnalisation
-      const inscriptionExpected = inscriptionOverride
-        ? inscriptionOverride.customAmount  // Montant personnalisé
-        : inscriptionStandard;              // Montant standard
-      const reinscriptionExpected = reinscriptionOverride
-        ? reinscriptionOverride.customAmount
-        : reinscriptionStandard;
-      const totalTuitionExpected = tuitionOverride
-        ? tuitionOverride.customAmount
-        : tuitionStandard;
+      // ⭐ Montants attendus — PRIORITÉ ABSOLUE aux lignes du compte de
+      //    l'élève (account_breakdowns, même source que le moteur unifié
+      //    qui pose totalDue = Σ initialAmount des lignes cœur) : dès qu'un
+      //    élève a un compte pour l'année, le bilan dérive TOUS ses attendus
+      //    de SES lignes (types absents = 0 — exactement comme le compte) →
+      //    le « Total dû » du bilan est TOUJOURS égal au « Total dû » du
+      //    compte élève (+ arriérés restants à l'affichage). Le matching des
+      //    FeeStructures (avec FeeOverride) ne sert que pour les élèves SANS
+      //    compte (inscrits récents, frais non encore matérialisés).
+      //    L'ancienne version croisait deux sources → écarts en production.
+      const hasAccount = studentsWithAccount.has(enrollment.studentId);
+      const inscriptionExpected = hasAccount
+        ? (inscriptionBd?.expected ?? 0)
+        : (inscriptionOverride ? inscriptionOverride.customAmount : inscriptionStandard);
+      const reinscriptionExpected = hasAccount
+        ? (reinscriptionBd?.expected ?? 0)
+        : (reinscriptionOverride ? reinscriptionOverride.customAmount : reinscriptionStandard);
+      const totalTuitionExpected = hasAccount
+        ? (tuitionBd?.expected ?? 0)
+        : (tuitionOverride ? tuitionOverride.customAmount : tuitionStandard);
 
       // ─── Distribution FIFO des paiements de scolarité sur les tranches ────
       // Si un parent paie plus que la Tranche 1, le surplus est affecté
@@ -632,12 +672,23 @@ export class CollectionSummaryController {
       // dans totalTuitionPaid → Total payé.
 
       // ─── Totaux cohérents ─────────────────────────────────────────────────
-      // ⭐ Les montants inscriptionExpected, reinscriptionExpected, totalTuitionExpected
-      //    sont DÉJÀ personnalisés (FeeOverride appliqué ci-dessus).
-      //    Donc totalDue = somme directe (pas besoin de soustraire la réduction).
-      const totalDue = inscriptionExpected + reinscriptionExpected + totalTuitionExpected + arrearExpected;
-      const totalPaid = inscriptionPaid + reinscriptionPaid + arrearPaid + totalTuitionPaid + otherPaid;
-      const reste = Math.max(0, totalDue - totalPaid);
+      // ⭐ Sémantique « Total payé » (retour promoteur nov. 2026) : la somme de
+      //    ce qui est RÉELLEMENT payé au titre de l'année = inscription payée +
+      //    réinscription payée + scolarité payée (somme des tranches).
+      //    L'arriéré — dette antérieure non encaissée — n'est JAMAIS compté
+      //    comme payé : il figure dans le « Total dû » via son restant
+      //    (arrearRemaining). A+B=C vérifiable ligne par ligne.
+      //    Les frais généraux / examens / cantine restent À PART (moteur unifié
+      //    — périmètre du bilan = inscription + réinscription + scolarité).
+      //    ⚠️ otherPaid (cantine/examens/autre) volontairement EXCLU du total.
+      const totalDue = inscriptionExpected + reinscriptionExpected + totalTuitionExpected + arrearRemaining;
+      const totalPaid = inscriptionPaid + reinscriptionPaid + totalTuitionPaid;
+      // ⭐ Reste = dû − payé STRICT (peut être négatif si avance) — cohérent
+      //    avec le « solde » du compte élève (dû − payé). Math.max(0, …)
+      //    retiré : il masquait les avances et brisait le contrôle A+B=C
+      //    (Σ reste du récap ≠ totalDue − totalPaid quand des élèves
+      //    surpaient — retour promoteur « mathématiques strictes »).
+      const reste = totalDue - totalPaid;
 
       const studentName = [
         enrollment.student?.lastName,
@@ -653,6 +704,8 @@ export class CollectionSummaryController {
         inscriptionExpected,
         reinscriptionExpected,
         arrearExpected,
+        // ⭐ Arriéré restant (non payé) — affiché dans la colonne « Arriéré »
+        arrearRemaining,
         // ⭐ Scolarité = totalTuitionExpected (montant standard des frais de scolarité)
         scolarite: totalTuitionExpected,
         totalTuitionExpected,
@@ -704,7 +757,9 @@ export class CollectionSummaryController {
       const row = recapMap.get(classKey)!;
       row.effectif += 1;
       // Attendu
-      row.arrieres += student.arrearExpected;
+      // ⭐ « Arriérés » du récap = RESTANT DÛ (non payé) — cohérent avec la
+      //    colonne « Arriérés » du compte élève et l'onglet Recouvrement
+      row.arrieres += student.arrearRemaining;
       row.inscription += student.inscriptionExpected;
       row.reinscription += student.reinscriptionExpected;
       row.totalTuition += student.totalTuitionExpected;
@@ -730,9 +785,12 @@ export class CollectionSummaryController {
       }
     }
 
-    // Calculer le solde par classe (total payé - total dû)
+    // ⭐ « Solde par classe » = RESTANT À RECOUVRIR (Total dû − Total payé) —
+    //    positif quand la classe doit encore de l'argent, cohérent avec le
+    //    « solde » du compte élève (dû − payé). Avant : soustraction inversée
+    //    (payé − dû) → valeurs négatives incompréhensibles (retour promoteur).
     const recap = Array.from(recapMap.values()).map((row) => {
-      row.soldeParClasse = row.totalPaid - row.totalDue;
+      row.soldeParClasse = row.totalDue - row.totalPaid;
       return row;
     });
 

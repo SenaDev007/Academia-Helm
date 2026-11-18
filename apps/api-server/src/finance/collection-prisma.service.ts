@@ -427,6 +427,16 @@ export class CollectionPrismaService {
       tenantId,
     };
 
+    // ⭐ Nettoyage 2026-11 (onglet Arriérés) : ne renvoyer QUE les élèves qui
+    //    ont réellement des arriérés à payer — même définition de « vrai
+    //    arriéré » que getCollectionStatistics et ArrearsMirrorService
+    //    (source unique de vérité des miroirs du compte élève) :
+    //      - status OPEN | PARTIALLY_PAID (ni PAID, ni WRITTEN_OFF, ni TRANSFERRED)
+    //      - balanceDue > 0
+    //    Un arriéré soldé ou abandonné ne doit PLUS figurer dans l'onglet.
+    where.status = { in: ['OPEN', 'PARTIALLY_PAID'] };
+    where.balanceDue = { gt: 0 };
+
     if (filters?.academicYearId) {
       where.academicYearId = filters.academicYearId;
     }
@@ -511,7 +521,10 @@ export class CollectionPrismaService {
         { student: { firstName: 'asc' } },
         { balanceDue: 'desc' },
       ],
-      take: 500,
+      // ⭐ FIX 2026-11 (liste complète) : l'ancien take: 500 tronquait
+      //    silencieusement la liste. L'onglet Arriérés pagine désormais 50
+      //    lignes par page côté interface et doit recevoir la liste COMPLETE
+      //    des arriérés ouverts du tenant (aucun plafond).
     });
   }
 

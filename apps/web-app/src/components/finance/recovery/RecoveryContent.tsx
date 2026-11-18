@@ -6,12 +6,15 @@
  * ============================================================================
  *
  * Outil fintech de pilotage du recouvrement :
- *   - Dashboard KPIs (total arriérés, taux recouvrement, élèves bloqués, promesses)
- *   - Vue Arriérés (tableau filtrable par niveau, classe, montant)
+ *   - Tableau de bord (KPIs : total arriérés, taux recouvrement)
+ *   - Vue Arriérés (tableau filtrable par année, niveau, classe, gravité
+ *     + pagination 50 lignes/page — seuls les élèves avec un restant dû > 0)
  *   - Vue Relances (historique des relances envoyées)
- *   - Vue Promesses (promesses de paiement + suivi honoré/rompu)
- *   - Vue Actions (historique des actions : appel, email, visite, courrier)
- *   - Vue Cas (dossiers consolidés par élève)
+ *   - Paramétrage (relance automatique)
+ *
+ * Nettoyage 2026-11 : les onglets Actions, Promesses et Dossiers ont été
+ * retirés (fonctionnalités jugées inutiles) — seul le suivi Arriérés/Relances
+ * reste exposé.
  *
  * Backend : 2 systèmes coexistent
  *   - OLD : RecoveryReminder (cron nightly + envoi email réel)
@@ -29,11 +32,10 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
-  AlertCircle, TrendingDown, Users, Wallet, Target, RefreshCw,
-  Send, Play, Loader2, ChevronRight, Filter, Search,
-  Phone, Mail, FileText, UserCheck, Clock, AlertTriangle,
-  Zap, CheckCircle2, XCircle, Calendar, Plus, Eye, FileSpreadsheet, Trash2, Settings,
-  Upload, Banknote,
+  AlertCircle, TrendingDown, Users, Wallet, RefreshCw,
+  Send, Loader2, Search, FileText, AlertTriangle,
+  Zap, CheckCircle2, XCircle, Plus, FileSpreadsheet, Trash2, Settings,
+  Upload, Banknote, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
 import { ModuleContentArea } from '@/components/modules/blueprint';
 import { useModuleContext } from '@/hooks/useModuleContext';
@@ -54,24 +56,26 @@ import { exportArrearsToExcel } from '@/lib/exports/excel-exports';
 import { loadPdfLibs } from '@/lib/exports/pdf-loader';
 import { loadXlsx } from '@/lib/exports/xlsx-loader';
 import { useSchoolLevelsQuery } from '@/lib/query/use-school-levels';
-import { useAllClasses } from '@/lib/query/use-all-classes';
 import {
   useArrears, useCollectionReminders, useCollectionStatistics,
-  useCollectionPromises, useCollectionActions, useCollectionCases,
 } from '@/lib/query/finance-hooks';
 import { useQueryClient } from '@tanstack/react-query';
 
-type TabId = 'dashboard' | 'arrears' | 'reminders' | 'promises' | 'actions' | 'cases' | 'settings';
+type TabId = 'dashboard' | 'arrears' | 'reminders' | 'settings';
 
+// Nettoyage 2026-11 : onglets Actions / Promesses / Dossiers supprimés —
+// seuls Tableau de bord, Arriérés, Relances et Paramétrage restent.
 const TABS: Array<{ id: TabId; label: string; icon: any }> = [
   { id: 'dashboard', label: 'Tableau de bord', icon: TrendingDown },
   { id: 'arrears', label: 'Arriérés', icon: AlertCircle },
   { id: 'reminders', label: 'Relances', icon: Send },
-  { id: 'actions', label: 'Actions', icon: Phone },
-  { id: 'promises', label: 'Promesses', icon: Target },
-  { id: 'cases', label: 'Dossiers', icon: FileText },
   { id: 'settings', label: 'Paramétrage', icon: Settings },
 ];
+
+// ⭐ Pagination de l'onglet Arriérés : 50 lignes par page, appliquée APRÈS
+//    les filtres (année/niveau/classe/gravité/recherche) pour garantir que
+//    chaque page reste cohérente avec les filtres actifs.
+const ARREARS_PAGE_SIZE = 50;
 
 const ARREARS_LEVEL_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
   LOW: { label: 'Faible', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
@@ -123,12 +127,9 @@ export default function RecoveryContent() {
   const { data: arrears = [], isLoading: arrearsLoading } = useArrears({});
   const { data: reminders = [], isLoading: remindersLoading } = useCollectionReminders({ academicYearId: academicYear?.id });
   const { data: statistics = null } = useCollectionStatistics(tenant?.id || '', academicYear?.id || '');
-  const { data: promises = [], isLoading: promisesLoading } = useCollectionPromises({ academicYearId: academicYear?.id });
-  const { data: actions = [], isLoading: actionsLoading } = useCollectionActions({ academicYearId: academicYear?.id });
-  const { data: cases = [], isLoading: casesLoading } = useCollectionCases({ academicYearId: academicYear?.id });
 
   // Loading global — true tant qu'au moins une query est en cours
-  const loading = arrearsLoading || remindersLoading || promisesLoading || actionsLoading || casesLoading;
+  const loading = arrearsLoading || remindersLoading;
 
   // Helper pour invalider toutes les queries recovery après une mutation
   const invalidateRecoveryData = useCallback(() => {
@@ -161,12 +162,6 @@ export default function RecoveryContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [academicYear?.id]);
 
-  // Filtres promesses
-  const [promiseStatusFilter, setPromiseStatusFilter] = useState<string>('ALL');
-
-  // Filtres actions
-  const [actionTypeFilter, setActionTypeFilter] = useState<string>('ALL');
-
   // Modal relance manuelle (NOUVEAU système multi-canal)
   const [manualModal, setManualModal] = useState(false);
   const [manualAccountId, setManualAccountId] = useState('');
@@ -187,27 +182,6 @@ export default function RecoveryContent() {
   // ⭐ Hook React Query partagé — cache 5 min, dégradation gracieuse au timeout
   const { data: parentSchoolLevelsData = [] } = useSchoolLevelsQuery();
   const parentSchoolLevels = parentSchoolLevelsData;
-
-  // Modals Phase 2
-  const [promiseModal, setPromiseModal] = useState<{ arrearId: string; studentName: string; balanceDue: number } | null>(null);
-  const [actionModal, setActionModal] = useState<{ arrearId: string; studentName: string } | null>(null);
-  const [caseDetailModal, setCaseDetailModal] = useState<any | null>(null);
-
-  // ─── Filtres par classe pour Promesses et Actions ───
-  const [promiseClassFilter, setPromiseClassFilter] = useState<string>('ALL');
-  const [actionClassFilter, setActionClassFilter] = useState<string>('ALL');
-  // ⭐ Hook React Query partagé — cache 2 min, dégradation gracieuse au timeout
-  const { classes: allClasses = [] } = useAllClasses();
-
-  // ─── Lien Action → Promesse (workflow : action déclenche promesse) ───
-  // Après création d'une action, on bascule sur l'onglet Promesses et on
-  // ouvre automatiquement le modal nouvelle promesse pré-rempli avec l'arriéré
-  // correspondant à l'action qui vient d'être enregistrée.
-  const [pendingPromiseFromAction, setPendingPromiseFromAction] = useState<{
-    arrearId: string;
-    studentName: string;
-    balanceDue: number;
-  } | null>(null);
 
   // Modal suppression de relance (personnalisé, comme pour les arriérés)
   const [deleteReminderModal, setDeleteReminderModal] = useState<{
@@ -345,66 +319,6 @@ export default function RecoveryContent() {
       });
     } finally {
       setDeletingBulkArrears(false);
-    }
-  };
-
-  // Modal suppression de promesse (personnalisé)
-  const [deletePromiseModal, setDeletePromiseModal] = useState<{
-    promiseId: string;
-    studentName: string;
-    promisedAmount: number;
-    promisedDate: string;
-    status: string;
-  } | null>(null);
-  const [deletingPromise, setDeletingPromise] = useState(false);
-
-  const handleConfirmDeletePromise = async () => {
-    if (!deletePromiseModal) return;
-    setDeletingPromise(true);
-    try {
-      const r = await fetch(`/api/finance/collection/promises/${deletePromiseModal.promiseId}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error || data?.message || `Échec (HTTP ${r.status})`);
-      toast({ title: '✅ Promesse supprimée', description: 'La promesse a été retirée.' });
-      setDeletePromiseModal(null);
-      invalidateRecoveryData();
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
-    } finally {
-      setDeletingPromise(false);
-    }
-  };
-
-  // Modal suppression d'action (personnalisé)
-  const [deleteActionModal, setDeleteActionModal] = useState<{
-    actionId: string;
-    studentName: string;
-    actionType: string;
-    performedAt: string;
-    notes: string;
-  } | null>(null);
-  const [deletingAction, setDeletingAction] = useState(false);
-
-  const handleConfirmDeleteAction = async () => {
-    if (!deleteActionModal) return;
-    setDeletingAction(true);
-    try {
-      const r = await fetch(`/api/finance/collection/actions/${deleteActionModal.actionId}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data?.error || data?.message || `Échec (HTTP ${r.status})`);
-      toast({ title: '✅ Action supprimée', description: "L'action a été retirée." });
-      setDeleteActionModal(null);
-      invalidateRecoveryData();
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
-    } finally {
-      setDeletingAction(false);
     }
   };
 
@@ -636,125 +550,6 @@ export default function RecoveryContent() {
     }
   };
 
-  // Marquer une promesse comme honorée ou rompue
-  const handleUpdatePromiseStatus = async (promiseId: string, status: 'HONORED' | 'BROKEN') => {
-    try {
-      await financeService.updatePromiseStatus(promiseId, status);
-      toast({
-        title: status === 'HONORED' ? '✅ Promesse honorée' : '❌ Promesse rompue',
-        description: status === 'HONORED'
-          ? 'La promesse a été marquée comme honorée.'
-          : 'La promesse a été marquée comme rompue. Une escalade est recommandée.',
-      });
-      invalidateRecoveryData();
-    } catch (e: any) {
-      toast({
-        title: 'Erreur',
-        description: e?.message || 'Erreur réseau',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  // Créer une promesse de paiement
-  const handleCreatePromise = async (data: { arrearId: string; promisedAmount: number; promiseDate: string; notes?: string; createdBy?: string }) => {
-    try {
-      await financeService.createPaymentPromise(data);
-      toast({ title: '✅ Promesse enregistrée', description: 'La promesse de paiement a été créée.' });
-      setPromiseModal(null);
-      setPendingPromiseFromAction(null); // Reset au cas où on venait d'une action
-      invalidateRecoveryData();
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
-    }
-  };
-
-  // Créer une action de recouvrement
-  // ⚠️ Workflow : après enregistrement d'une action, on bascule automatiquement
-  // sur l'onglet Promesses et on ouvre le modal nouvelle promesse pré-rempli,
-  // car une action (appel/mail) déclenche généralement une promesse du parent.
-  const handleCreateAction = async (data: { arrearId: string; actionType: string; description?: string; performedBy?: string }) => {
-    try {
-      await financeService.createCollectionAction(data);
-      toast({ title: '✅ Action enregistrée', description: "L'action de recouvrement a été journalisée." });
-      setActionModal(null);
-      invalidateRecoveryData();
-
-      // ─── Lien Action → Promesse ───
-      // Trouver l'arriéré correspondant pour pré-remplir le modal promesse
-      const matchingArrear = arrears.find((a: any) => a.id === data.arrearId);
-      if (matchingArrear) {
-        const studentName = matchingArrear.student
-          ? `${matchingArrear.student.lastName} ${matchingArrear.student.firstName}`
-          : 'Élève';
-        const balanceDue = Number(matchingArrear.balanceDue) || 0;
-
-        // Toast info pour annoncer le workflow
-        toast({
-          title: '📋 Enregistrer une promesse',
-          description: `L'action a été journalisée. Saisissez maintenant la promesse de paiement du parent pour ${studentName}.`,
-        });
-
-        // Basculer sur l'onglet Promesses
-        setActiveTab('promises');
-
-        // Ouvrir le modal promesse pré-rempli (avec un léger délai pour laisser
-        // le temps à l'onglet de changer)
-        setTimeout(() => {
-          setPendingPromiseFromAction({ arrearId: data.arrearId, studentName, balanceDue });
-          setPromiseModal({ arrearId: data.arrearId, studentName, balanceDue });
-        }, 300);
-      }
-    } catch (e: any) {
-      toast({ title: 'Erreur', description: e?.message || 'Erreur', variant: 'destructive' });
-    }
-  };
-
-  // Filtrage des promesses (statut + classe)
-  const filteredPromises = useMemo(() => {
-    let result = promises;
-    if (promiseStatusFilter !== 'ALL') {
-      result = result.filter((p) => p.status === promiseStatusFilter);
-    }
-    if (promiseClassFilter !== 'ALL') {
-      // Filtrer par classe via l'arriéré lié (feeArrear.student.studentEnrollments)
-      result = result.filter((p) => {
-        const student = p.feeArrear?.student;
-        if (!student) return false;
-        // Vérifier via studentEnrollments (si inclus) ou via arrears (fallback)
-        const enrollments = (student as any).studentEnrollments || [];
-        if (enrollments.length > 0) {
-          return enrollments.some((e: any) => e.classId === promiseClassFilter);
-        }
-        // Fallback : chercher dans arrears
-        const arrear = arrears.find((a: any) => a.studentId === student.id);
-        return arrear?.student?.studentEnrollments?.some((e: any) => e.classId === promiseClassFilter) ?? false;
-      });
-    }
-    return result;
-  }, [promises, promiseStatusFilter, promiseClassFilter, arrears]);
-
-  // Filtrage des actions (type + classe)
-  const filteredActions = useMemo(() => {
-    let result = actions;
-    if (actionTypeFilter !== 'ALL') {
-      result = result.filter((a) => a.actionType === actionTypeFilter);
-    }
-    if (actionClassFilter !== 'ALL') {
-      result = result.filter((a) => {
-        const student = a.feeArrear?.student;
-        if (!student) return false;
-        const enrollments = (student as any).studentEnrollments || [];
-        if (enrollments.length > 0) {
-          return enrollments.some((e: any) => e.classId === actionClassFilter);
-        }
-        const arrear = arrears.find((x: any) => x.studentId === student.id);
-        return arrear?.student?.studentEnrollments?.some((e: any) => e.classId === actionClassFilter) ?? false;
-      });
-    }
-    return result;
-  }, [actions, actionTypeFilter, actionClassFilter, arrears]);
-
   // Filtrage des arriérés
   const filteredArrears = useMemo(() => {
     let result = arrears;
@@ -955,83 +750,10 @@ export default function RecoveryContent() {
               amountDue: Number(r.amountDue) || 0,
             })}
           />
-        ) : activeTab === 'promises' ? (
-          <PromisesTab
-            promises={filteredPromises}
-            totalCount={promises.length}
-            statusFilter={promiseStatusFilter}
-            setStatusFilter={setPromiseStatusFilter}
-            classFilter={promiseClassFilter}
-            setClassFilter={setPromiseClassFilter}
-            classes={allClasses}
-            onUpdateStatus={handleUpdatePromiseStatus}
-            onNewPromise={(arrear) => setPromiseModal({
-              arrearId: arrear.id,
-              studentName: arrear.student ? `${arrear.student.lastName} ${arrear.student.firstName}` : 'Élève',
-              balanceDue: Number(arrear.balanceDue) || 0,
-            })}
-            onDelete={(p) => setDeletePromiseModal({
-              promiseId: p.id,
-              studentName: p.feeArrear?.student ? `${p.feeArrear.student.lastName} ${p.feeArrear.student.firstName}` : 'Élève',
-              promisedAmount: Number(p.promisedAmount) || 0,
-              promisedDate: p.promisedDate ? new Date(p.promisedDate).toLocaleDateString('fr-FR') : '—',
-              status: p.status || 'PENDING',
-            })}
-            arrears={arrears}
-            schoolInfo={schoolInfo}
-          />
-        ) : activeTab === 'actions' ? (
-          <ActionsTab
-            actions={filteredActions}
-            totalCount={actions.length}
-            typeFilter={actionTypeFilter}
-            setTypeFilter={setActionTypeFilter}
-            classFilter={actionClassFilter}
-            setClassFilter={setActionClassFilter}
-            classes={allClasses}
-            onNewAction={(arrear) => setActionModal({
-              arrearId: arrear.id,
-              studentName: arrear.student ? `${arrear.student.lastName} ${arrear.student.firstName}` : 'Élève',
-            })}
-            onDelete={(a) => setDeleteActionModal({
-              actionId: a.id,
-              studentName: a.feeArrear?.student ? `${a.feeArrear.student.lastName} ${a.feeArrear.student.firstName}` : 'Élève',
-              actionType: a.actionType || '—',
-              performedAt: a.performedAt ? new Date(a.performedAt).toLocaleDateString('fr-FR') : '—',
-              notes: a.notes || '',
-            })}
-            arrears={arrears}
-            schoolInfo={schoolInfo}
-          />
-        ) : activeTab === 'cases' ? (
-          <CasesTab cases={cases} onViewCase={(c) => setCaseDetailModal(c)} />
         ) : activeTab === 'settings' ? (
           <SettingsTab />
         ) : null}
       </ModuleContentArea>
-
-      {/* Modal nouvelle promesse */}
-      {promiseModal && (
-        <PromiseModal
-          data={promiseModal}
-          onClose={() => setPromiseModal(null)}
-          onSubmit={handleCreatePromise}
-        />
-      )}
-
-      {/* Modal nouvelle action */}
-      {actionModal && (
-        <ActionModal
-          data={actionModal}
-          onClose={() => setActionModal(null)}
-          onSubmit={handleCreateAction}
-        />
-      )}
-
-      {/* Modal détail dossiers */}
-      {caseDetailModal && (
-        <CaseDetailModal caseData={caseDetailModal} onClose={() => setCaseDetailModal(null)} />
-      )}
 
       {/* Modal relance manuelle (NOUVEAU système multi-canal) */}
       {manualModal && (
@@ -1106,25 +828,6 @@ export default function RecoveryContent() {
         />
       )}
 
-      {/* Modal suppression de promesse (personnalisé) */}
-      {deletePromiseModal && (
-        <DeletePromiseModal
-          data={deletePromiseModal}
-          loading={deletingPromise}
-          onClose={() => setDeletePromiseModal(null)}
-          onConfirm={handleConfirmDeletePromise}
-        />
-      )}
-
-      {/* Modal suppression d'action (personnalisé) */}
-      {deleteActionModal && (
-        <DeleteActionModal
-          data={deleteActionModal}
-          loading={deletingAction}
-          onClose={() => setDeleteActionModal(null)}
-          onConfirm={handleConfirmDeleteAction}
-        />
-      )}
     </div>
   );
 }
@@ -1584,8 +1287,48 @@ function ArrearsTab({
   const [paymentArrear, setPaymentArrear] = useState<any | null>(null);
 
   // ⭐ Suppression multiple — sélection des lignes du tableau
-  // (cases à cocher + « tout sélectionner » sur la liste filtrée affichée)
+  // (cases à cocher + « tout sélectionner » sur la PAGE courante ; la
+  //  sélection est conservée d'une page à l'autre)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // ⭐ Pagination — 50 lignes par page. Le découpage se fait APRÈS le
+  //    filtrage (année / niveau / classe / gravité / recherche, calculés
+  //    dans le parent) : les filtres niveau et classe restent donc tenus
+  //    sur TOUTES les pages, et la liste complète est parcourable de page
+  //    en page sans troncature silencieuse.
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(arrears.length / ARREARS_PAGE_SIZE));
+
+  // Retour à la page 1 dès qu'un filtre change — on ne reste jamais sur
+  // une page hors bornes après un changement de niveau/classe/année.
+  useEffect(() => {
+    setPage(1);
+  }, [yearId, schoolLevelId, classId, levelFilter, search]);
+
+  // Recalage : si la liste raccourcit (encaissement, write-off, suppression
+  // ou rafraîchissement), ramener la page dans les bornes réelles.
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const pagedArrears = useMemo(
+    () => arrears.slice((page - 1) * ARREARS_PAGE_SIZE, page * ARREARS_PAGE_SIZE),
+    [arrears, page],
+  );
+
+  // Fenêtre compacte de numéros de pages : 1 … 4 5 [6] 7 8 … 12
+  const pageWindow = useMemo(() => {
+    const span = 2;
+    const items: Array<number | 'ellipsis'> = [];
+    for (let p = 1; p <= totalPages; p++) {
+      if (p === 1 || p === totalPages || Math.abs(p - page) <= span) {
+        items.push(p);
+      } else if (items[items.length - 1] !== 'ellipsis') {
+        items.push('ellipsis');
+      }
+    }
+    return items;
+  }, [page, totalPages]);
 
   // Élaguer automatiquement la sélection quand la liste change
   // (lignes supprimées / données rafraîchies) — évite un compte affiché obsolète.
@@ -1606,11 +1349,23 @@ function ArrearsTab({
     () => selectedArrears.reduce((s: number, a: any) => s + (Number(a.balanceDue) || 0), 0),
     [selectedArrears],
   );
-  const allVisibleSelected = arrears.length > 0 && selectedArrears.length === arrears.length;
-  const someVisibleSelected = selectedArrears.length > 0 && !allVisibleSelected;
+
+  // Sélection « tout cocher » : porte sur la PAGE courante (50 lignes max) —
+  // les lignes cochées sur les autres pages restent sélectionnées.
+  const pageSelectedCount = pagedArrears.filter((a: any) => selectedIds.has(a.id)).length;
+  const allVisibleSelected = pagedArrears.length > 0 && pageSelectedCount === pagedArrears.length;
+  const someVisibleSelected = pageSelectedCount > 0 && !allVisibleSelected;
 
   const toggleAll = () => {
-    setSelectedIds(allVisibleSelected ? new Set() : new Set(arrears.map((a: any) => a.id)));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        pagedArrears.forEach((a: any) => next.delete(a.id));
+      } else {
+        pagedArrears.forEach((a: any) => next.add(a.id));
+      }
+      return next;
+    });
   };
   const toggleOne = (id: string, checked: boolean) => {
     setSelectedIds((prev) => {
@@ -1756,7 +1511,10 @@ function ArrearsTab({
           </div>
         </div>
         <div className="text-xs text-slate-500">
-          {arrears.length} affiché(s) sur {totalCount} total
+          {arrears.length} arriéré(s) filtré(s) sur {totalCount} total · page {page} / {totalPages}
+          {arrears.length > 0 && (
+            <> · lignes {((page - 1) * ARREARS_PAGE_SIZE) + 1}–{Math.min(page * ARREARS_PAGE_SIZE, arrears.length)}</>
+          )}
         </div>
       </div>
 
@@ -1814,10 +1572,10 @@ function ArrearsTab({
                     if (el) el.indeterminate = someVisibleSelected;
                   }}
                   onChange={toggleAll}
-                  disabled={arrears.length === 0}
+                  disabled={pagedArrears.length === 0}
                   className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer disabled:opacity-40"
-                  title="Tout sélectionner / tout désélectionner"
-                  aria-label="Tout sélectionner"
+                  title="Tout sélectionner / tout désélectionner (page courante)"
+                  aria-label="Tout sélectionner la page courante"
                 />
               </TableHead>
               <TableHead className="whitespace-nowrap">Élève</TableHead>
@@ -1835,11 +1593,11 @@ function ArrearsTab({
             {arrears.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={10} className="text-center text-gray-500 py-12">
-                  Aucun arriéré trouvé. Lancez la détection pour identifier les impayés.
+                  Aucun arriéré à payer — aucun élève avec un restant dû. Lancez la détection pour identifier les impayés.
                 </TableCell>
               </TableRow>
             ) : (
-              arrears.map((a) => {
+              pagedArrears.map((a) => {
                 const config = ARREARS_LEVEL_CONFIG[a.arrearsLevel || 'LOW'] || ARREARS_LEVEL_CONFIG.LOW;
                 return (
                   <TableRow key={a.id} className={selectedIds.has(a.id) ? 'bg-rose-50/60 hover:bg-rose-50' : 'hover:bg-slate-50'}>
@@ -1934,8 +1692,10 @@ function ArrearsTab({
                                 financeService.writeOffArrear(a.id, reason)
                                   .then(() => {
                                     toast({ title: '✅ Créance abandonnée', description: `${formatCurrency(Number(a.balanceDue))} retiré du total dû.` });
-                                    // Recharger — on utilise un hack: déclencher un state change
+                                    // Recharger les données recovery + rafraîchir
+                                    // le solde du compte élève (cross-page).
                                     window.dispatchEvent(new CustomEvent('recovery-reload'));
+                                    window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
                                   })
                                   .catch((e: any) => {
                                     toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
@@ -1964,12 +1724,14 @@ function ArrearsTab({
               })
             )}
           </TableBody>
-          {/* Ligne des totaux */}
+          {/* Ligne des totaux — portée du FILTRE complet (toutes pages),
+              cohérente avec la pagination : le tableau affiche la page mais
+              les TOTAUX couvrent l'ensemble filtré. */}
           {arrears.length > 0 && (
             <tfoot>
               <tr className="bg-slate-50 border-t-2 border-slate-300 font-bold">
                 <td colSpan={4} className="px-3 py-2 text-right text-slate-700 text-sm whitespace-nowrap">
-                  TOTAUX ({arrears.length} arriéré{arrears.length > 1 ? 's' : ''})
+                  TOTAUX FILTRE ({arrears.length} arriéré{arrears.length > 1 ? 's' : ''} — toutes pages)
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-sm whitespace-nowrap">
                   {formatCurrency(arrears.reduce((s: number, a: any) => s + (Number(a.totalDue) || 0), 0))}
@@ -1987,6 +1749,51 @@ function ArrearsTab({
         </Table>
       </div>
 
+      {/* ⭐ Pagination — 50 lignes par page ; les filtres niveau/classe/année
+             restent actifs sur toutes les pages (découpage après filtrage). */}
+      {totalPages > 1 && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs text-slate-500 whitespace-nowrap">
+            Lignes{' '}
+            <span className="font-semibold text-slate-700">
+              {((page - 1) * ARREARS_PAGE_SIZE) + 1}–{Math.min(page * ARREARS_PAGE_SIZE, arrears.length)}
+            </span>{' '}
+            sur {arrears.length} · page{' '}
+            <span className="font-semibold text-slate-700">{page}</span> / {totalPages}
+          </div>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === 1} onClick={() => setPage(1)} title="Première page">
+              <ChevronsLeft className="w-4 h-4" />
+            </Button>
+            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} title="Page précédente">
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            {pageWindow.map((p, idx) =>
+              p === 'ellipsis' ? (
+                <span key={`e-${idx}`} className="px-1.5 text-slate-400 select-none">…</span>
+              ) : (
+                <Button
+                  key={p}
+                  variant={p === page ? 'default' : 'outline'}
+                  size="icon"
+                  className="h-8 w-8 text-xs"
+                  onClick={() => setPage(p as number)}
+                  aria-current={p === page ? 'page' : undefined}
+                >
+                  {p}
+                </Button>
+              ),
+            )}
+            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} title="Page suivante">
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+            <Button variant="outline" size="icon" className="h-8 w-8" disabled={page === totalPages} onClick={() => setPage(totalPages)} title="Dernière page">
+              <ChevronsRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* ⭐ Modal d'encaissement d'un arriéré (marquer un élève ayant payé) */}
       {paymentArrear && (
         <ArrearPaymentModal
@@ -1994,9 +1801,12 @@ function ArrearsTab({
           onClose={() => setPaymentArrear(null)}
           onSubmitted={(remaining: number) => {
             // Recalcul dynamique : la mutation invalide les queries recovery
-            // (arrears + statistics + cases) → la liste et les KPIs se
-            // rechargent automatiquement avec les nouveaux soldes.
+            // (arrears + statistics) → la liste et les KPIs se rechargent
+            // automatiquement avec les nouveaux soldes ; le solde du compte
+            // de l'élève est recalculé par le trigger DB et l'onglet Comptes
+            // élèves est rafraîchi via l'événement dédié.
             window.dispatchEvent(new CustomEvent('recovery-reload'));
+            window.dispatchEvent(new CustomEvent('finance-accounts-changed'));
             if (remaining <= 0) {
               toast({
                 title: '✅ Arriéré entièrement soldé',
@@ -2730,993 +2540,6 @@ function ManualArrearModal({
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  PHASE 2 — Vue Promesses de paiement                                */
-/* ------------------------------------------------------------------ */
-
-const PROMISE_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string; icon: any }> = {
-  PENDING: { label: 'En attente', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200', icon: Clock },
-  HONORED: { label: 'Honorée', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: CheckCircle2 },
-  BROKEN: { label: 'Rompu', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200', icon: XCircle },
-};
-
-function PromisesTab({
-  promises,
-  totalCount,
-  statusFilter,
-  setStatusFilter,
-  classFilter,
-  setClassFilter,
-  classes,
-  onUpdateStatus,
-  onNewPromise,
-  onDelete,
-  arrears,
-  schoolInfo,
-}: {
-  promises: any[];
-  totalCount: number;
-  statusFilter: string;
-  setStatusFilter: (v: string) => void;
-  classFilter: string;
-  setClassFilter: (v: string) => void;
-  classes: any[];
-  onUpdateStatus: (id: string, status: 'HONORED' | 'BROKEN') => void;
-  onNewPromise: (arrear: any) => void;
-  onDelete: (promise: any) => void;
-  arrears: any[];
-  schoolInfo: any;
-}) {
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [selectedArrear, setSelectedArrear] = useState<any | null>(null);
-  const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
-
-  // Export Excel des promesses
-  const handleExportExcel = async () => {
-    setExporting('excel');
-    try {
-      const XLSX = await loadXlsx();
-      const data: any[][] = [
-        ['', schoolInfo.schoolName || 'Établissement', ''],
-        ['', 'Promesses de paiement', ''],
-        [schoolInfo.academicYear ? `Année scolaire : ${schoolInfo.academicYear}` : '', '', ''],
-        ['', '', ''],
-        ['Élève', 'Classe', 'Frais', 'Montant promis (FCFA)', 'Date promise', 'Statut', 'Créé par', 'Notes'],
-      ];
-      promises.forEach((p) => {
-        const studentName = p.feeArrear?.student
-          ? `${p.feeArrear.student.lastName} ${p.feeArrear.student.firstName}`
-          : '—';
-        const className = p.feeArrear?.student?.studentEnrollments?.[0]?.class?.name || '—';
-        const feeLabel = p.feeArrear?.studentFee?.feeDefinition?.label || '—';
-        const creator = p.creator ? `${p.creator.firstName} ${p.creator.lastName}` : 'Système';
-        const statusLabel = PROMISE_STATUS_CONFIG[p.status || 'PENDING']?.label || p.status;
-        data.push([
-          studentName,
-          className,
-          feeLabel,
-          Number(p.promisedAmount) || 0,
-          p.promisedDate ? new Date(p.promisedDate).toLocaleDateString('fr-FR') : '—',
-          statusLabel,
-          creator,
-          p.notes || '',
-        ]);
-      });
-      data.push(['']);
-      const totalAmount = promises.reduce((s, p) => s + (Number(p.promisedAmount) || 0), 0);
-      data.push(['', '', 'TOTAL', totalAmount, '', '', '', '']);
-
-      const ws = XLSX.utils.aoa_to_sheet(data);
-      ws['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 30 }];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Promesses');
-      XLSX.writeFile(wb, `promesses-paiement-${new Date().toISOString().slice(0, 10)}.xlsx`);
-    } catch (e: any) {
-      console.error(e);
-    } finally {
-      setExporting(null);
-    }
-  };
-
-  // Export PDF des promesses
-  const handleExportPdf = async () => {
-    setExporting('pdf');
-    try {
-      const { jsPDF, autoTable } = await loadPdfLibs();
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-      const pageWidth = doc.internal.pageSize.getWidth();
-
-      // En-tête simple
-      doc.setFont('times', 'bold');
-      doc.setFontSize(16);
-      doc.setTextColor(13, 31, 110);
-      doc.text(schoolInfo.schoolName || 'Établissement', pageWidth / 2, 18, { align: 'center' });
-      doc.setFontSize(13);
-      doc.text('Promesses de paiement', pageWidth / 2, 26, { align: 'center' });
-      doc.setFont('times', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(100, 100, 100);
-      if (schoolInfo.academicYear) {
-        doc.text(`Année scolaire : ${schoolInfo.academicYear}`, pageWidth / 2, 32, { align: 'center' });
-      }
-      doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, pageWidth / 2, 37, { align: 'center' });
-
-      const tableData = promises.map((p) => {
-        const studentName = p.feeArrear?.student
-          ? `${p.feeArrear.student.lastName} ${p.feeArrear.student.firstName}`
-          : '—';
-        const className = p.feeArrear?.student?.studentEnrollments?.[0]?.class?.name || '—';
-        const feeLabel = p.feeArrear?.studentFee?.feeDefinition?.label || '—';
-        const statusLabel = PROMISE_STATUS_CONFIG[p.status || 'PENDING']?.label || p.status;
-        return [
-          studentName,
-          className,
-          feeLabel,
-          (Number(p.promisedAmount) || 0).toLocaleString('fr-FR') + ' FCFA',
-          p.promisedDate ? new Date(p.promisedDate).toLocaleDateString('fr-FR') : '—',
-          statusLabel,
-        ];
-      });
-      const totalAmount = promises.reduce((s, p) => s + (Number(p.promisedAmount) || 0), 0);
-      tableData.push(['', '', 'TOTAL', totalAmount.toLocaleString('fr-FR') + ' FCFA', '', '']);
-
-      autoTable(doc, {
-        head: [['Élève', 'Classe', 'Frais', 'Montant promis', 'Date promise', 'Statut']],
-        body: tableData,
-        startY: 42,
-        theme: 'grid',
-        headStyles: { fillColor: [13, 31, 110], textColor: 255, fontStyle: 'bold', fontSize: 10 },
-        bodyStyles: { fontSize: 9 },
-        columnStyles: {
-          3: { halign: 'right', fontStyle: 'bold' },
-          5: { halign: 'center' },
-        },
-        didParseCell: (data: any) => {
-          if (data.row.index === tableData.length - 1 && data.section === 'body') {
-            data.cell.styles.fontStyle = 'bold';
-            data.cell.styles.fillColor = [254, 243, 199];
-            data.cell.styles.textColor = [146, 64, 14];
-          }
-        },
-      });
-
-      doc.save(`promesses-paiement-${new Date().toISOString().slice(0, 10)}.pdf`);
-    } catch (e: any) {
-      console.error(e);
-    } finally {
-      setExporting(null);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Filtres + bouton nouvelle promesse + exports */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-wrap gap-3 items-end">
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Statut</Label>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Tous les statuts</SelectItem>
-              <SelectItem value="PENDING">En attente</SelectItem>
-              <SelectItem value="HONORED">Honorée</SelectItem>
-              <SelectItem value="BROKEN">Rompu</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Classe</Label>
-          <Select value={classFilter} onValueChange={setClassFilter}>
-            <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Toutes les classes</SelectItem>
-              {classes.map((c: any) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name} {c.code ? `(${c.code})` : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="text-xs text-slate-500 ml-auto">
-          {promises.length} affiché(s) sur {totalCount} total
-        </div>
-        {/* Exports PDF/Excel (même design que Encaissements) */}
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleExportExcel}
-          disabled={exporting !== null || promises.length === 0}
-          className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-        >
-          {exporting === 'excel' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 mr-2" />}
-          Excel
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleExportPdf}
-          disabled={exporting !== null || promises.length === 0}
-          className="border-rose-300 text-rose-700 hover:bg-rose-50"
-        >
-          {exporting === 'pdf' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
-          PDF
-        </Button>
-        <Button
-          size="sm"
-          onClick={() => setShowNewModal(true)}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Nouvelle promesse
-        </Button>
-      </div>
-
-      {/* Tableau */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-gray-50">
-              <TableHead>Élève</TableHead>
-              <TableHead>Classe</TableHead>
-              <TableHead>Frais</TableHead>
-              <TableHead className="text-right">Montant promis</TableHead>
-              <TableHead>Date promise</TableHead>
-              <TableHead>Statut</TableHead>
-              <TableHead>Créé par</TableHead>
-              <TableHead className="text-center">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {promises.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center text-gray-500 py-12">
-                  Aucune promesse de paiement enregistrée.
-                </TableCell>
-              </TableRow>
-            ) : (
-              promises.map((p) => {
-                const config = PROMISE_STATUS_CONFIG[p.status || 'PENDING'] || PROMISE_STATUS_CONFIG.PENDING;
-                const StatusIcon = config.icon;
-                const isOverdue = p.status === 'PENDING' && new Date(p.promisedDate) < new Date();
-                const className = p.feeArrear?.student?.studentEnrollments?.[0]?.class?.name || '—';
-                return (
-                  <TableRow key={p.id} className="hover:bg-slate-50">
-                    <TableCell className="font-medium">
-                      {p.feeArrear?.student
-                        ? `${p.feeArrear.student.lastName} ${p.feeArrear.student.firstName}`
-                        : '—'}
-                    </TableCell>
-                    <TableCell className="text-sm text-slate-600">{className}</TableCell>
-                    <TableCell className="text-sm text-slate-600">
-                      {p.feeArrear?.studentFee?.feeDefinition?.label || '—'}
-                    </TableCell>
-                    <TableCell className="text-right font-mono font-semibold text-emerald-700">
-                      {formatCurrency(p.promisedAmount)}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      <span className={isOverdue ? 'text-rose-600 font-semibold' : 'text-slate-700'}>
-                        {new Date(p.promisedDate).toLocaleDateString('fr-FR')}
-                      </span>
-                      {isOverdue && (
-                        <Badge variant="outline" className="ml-2 text-[10px] text-rose-700 border-rose-300 bg-rose-50">
-                          En retard
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={`${config.color} ${config.bg} ${config.border} border`}>
-                        <StatusIcon className="w-3 h-3 mr-1" />
-                        {config.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-slate-500">
-                      {p.creator ? `${p.creator.firstName} ${p.creator.lastName}` : 'Système'}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex gap-1 justify-center">
-                        {p.status === 'PENDING' && (
-                          <>
-                            <button
-                              onClick={() => onUpdateStatus(p.id, 'HONORED')}
-                              className="p-1.5 hover:bg-emerald-100 rounded text-emerald-700"
-                              title="Marquer honorée"
-                            >
-                              <CheckCircle2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => onUpdateStatus(p.id, 'BROKEN')}
-                              className="p-1.5 hover:bg-rose-100 rounded text-rose-700"
-                              title="Marquer rompu"
-                            >
-                              <XCircle className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                        <button
-                          onClick={() => onDelete(p)}
-                          className="p-1.5 hover:bg-rose-100 rounded text-rose-600"
-                          title="Supprimer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Modal sélection d'arrieré pour nouvelle promesse */}
-      {showNewModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={() => setShowNewModal(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-slate-900 mb-4">Sélectionner un arrieré</h3>
-            <p className="text-xs text-slate-500 mb-3">Choisissez l'arriéré pour lequel créer une promesse de paiement.</p>
-            {arrears.length === 0 ? (
-              <p className="text-sm text-slate-500 italic py-4 text-center">Aucun arriéré disponible.</p>
-            ) : (
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {arrears.slice(0, 50).map((a) => (
-                  <button
-                    key={a.id}
-                    onClick={() => {
-                      setSelectedArrear(a);
-                      setShowNewModal(false);
-                      onNewPromise(a);
-                    }}
-                    className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 transition-colors"
-                  >
-                    <p className="font-semibold text-sm">
-                      {a.student ? `${a.student.lastName} ${a.student.firstName}` : '—'}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {a.studentFee?.feeDefinition?.label || 'Frais'} · Solde : {formatCurrency(a.balanceDue)}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="flex justify-end mt-4">
-              <Button variant="outline" onClick={() => setShowNewModal(false)}>Annuler</Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  PHASE 2 — Vue Actions de recouvrement                              */
-/* ------------------------------------------------------------------ */
-
-const ACTION_TYPE_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
-  CALL: { label: 'Appel téléphonique', icon: Phone, color: 'text-blue-600' },
-  EMAIL: { label: 'Email', icon: Mail, color: 'text-indigo-600' },
-  MEETING: { label: 'Réunion / Visite', icon: Users, color: 'text-purple-600' },
-  LETTER: { label: 'Courrier / Mise en demeure', icon: FileText, color: 'text-rose-600' },
-  SUSPENSION: { label: 'Suspension', icon: AlertTriangle, color: 'text-orange-600' },
-  OTHER: { label: 'Autre', icon: AlertCircle, color: 'text-slate-600' },
-  REMINDER: { label: 'Rappel automatique', icon: Zap, color: 'text-amber-600' },
-  WARNING: { label: 'Avertissement', icon: AlertTriangle, color: 'text-amber-600' },
-  BLOCK: { label: 'Blocage', icon: AlertCircle, color: 'text-rose-600' },
-};
-
-function ActionsTab({
-  actions,
-  totalCount,
-  typeFilter,
-  setTypeFilter,
-  classFilter,
-  setClassFilter,
-  classes,
-  onNewAction,
-  onDelete,
-  arrears,
-  schoolInfo,
-}: {
-  actions: any[];
-  totalCount: number;
-  typeFilter: string;
-  setTypeFilter: (v: string) => void;
-  classFilter: string;
-  setClassFilter: (v: string) => void;
-  classes: any[];
-  onNewAction: (arrear: any) => void;
-  onDelete: (action: any) => void;
-  arrears: any[];
-  schoolInfo: any;
-}) {
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
-
-  // Export Excel des actions
-  const handleExportExcel = async () => {
-    setExporting('excel');
-    try {
-      const XLSX = await loadXlsx();
-      const data: any[][] = [
-        ['', schoolInfo.schoolName || 'Établissement', ''],
-        ['', 'Actions de recouvrement', ''],
-        [schoolInfo.academicYear ? `Année scolaire : ${schoolInfo.academicYear}` : '', '', ''],
-        ['', '', ''],
-        ['Date', 'Élève', 'Classe', 'Type', 'Description', 'Effectué par'],
-      ];
-      actions.forEach((a) => {
-        const studentName = a.feeArrear?.student
-          ? `${a.feeArrear.student.lastName} ${a.feeArrear.student.firstName}`
-          : '—';
-        const className = a.feeArrear?.student?.studentEnrollments?.[0]?.class?.name || '—';
-        const cfg = ACTION_TYPE_CONFIG[a.actionType] || ACTION_TYPE_CONFIG.OTHER;
-        const performer = a.performer ? `${a.performer.firstName} ${a.performer.lastName}` : 'Système';
-        data.push([
-          a.performedAt ? new Date(a.performedAt).toLocaleDateString('fr-FR') : '—',
-          studentName,
-          className,
-          cfg.label,
-          a.notes || '',
-          performer,
-        ]);
-      });
-      const ws = XLSX.utils.aoa_to_sheet(data);
-      ws['!cols'] = [{ wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 22 }, { wch: 40 }, { wch: 18 }];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Actions');
-      XLSX.writeFile(wb, `actions-recouvrement-${new Date().toISOString().slice(0, 10)}.xlsx`);
-    } catch (e: any) {
-      console.error(e);
-    } finally {
-      setExporting(null);
-    }
-  };
-
-  // Export PDF des actions
-  const handleExportPdf = async () => {
-    setExporting('pdf');
-    try {
-      const { jsPDF, autoTable } = await loadPdfLibs();
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-      const pageWidth = doc.internal.pageSize.getWidth();
-
-      doc.setFont('times', 'bold');
-      doc.setFontSize(16);
-      doc.setTextColor(13, 31, 110);
-      doc.text(schoolInfo.schoolName || 'Établissement', pageWidth / 2, 18, { align: 'center' });
-      doc.setFontSize(13);
-      doc.text('Actions de recouvrement', pageWidth / 2, 26, { align: 'center' });
-      doc.setFont('times', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(100, 100, 100);
-      if (schoolInfo.academicYear) {
-        doc.text(`Année scolaire : ${schoolInfo.academicYear}`, pageWidth / 2, 32, { align: 'center' });
-      }
-      doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, pageWidth / 2, 37, { align: 'center' });
-
-      const tableData = actions.map((a) => {
-        const studentName = a.feeArrear?.student
-          ? `${a.feeArrear.student.lastName} ${a.feeArrear.student.firstName}`
-          : '—';
-        const className = a.feeArrear?.student?.studentEnrollments?.[0]?.class?.name || '—';
-        const cfg = ACTION_TYPE_CONFIG[a.actionType] || ACTION_TYPE_CONFIG.OTHER;
-        const performer = a.performer ? `${a.performer.firstName} ${a.performer.lastName}` : 'Système';
-        return [
-          a.performedAt ? new Date(a.performedAt).toLocaleDateString('fr-FR') : '—',
-          studentName,
-          className,
-          cfg.label,
-          a.notes || '—',
-          performer,
-        ];
-      });
-
-      autoTable(doc, {
-        head: [['Date', 'Élève', 'Classe', 'Type', 'Description', 'Effectué par']],
-        body: tableData,
-        startY: 42,
-        theme: 'grid',
-        headStyles: { fillColor: [13, 31, 110], textColor: 255, fontStyle: 'bold', fontSize: 10 },
-        bodyStyles: { fontSize: 9 },
-        columnStyles: {
-          4: { cellWidth: 'auto' },
-        },
-      });
-
-      doc.save(`actions-recouvrement-${new Date().toISOString().slice(0, 10)}.pdf`);
-    } catch (e: any) {
-      console.error(e);
-    } finally {
-      setExporting(null);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-wrap gap-3 items-end">
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Type d'action</Label>
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-full sm:w-[220px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Tous les types</SelectItem>
-              {Object.entries(ACTION_TYPE_CONFIG).map(([key, cfg]) => (
-                <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Classe</Label>
-          <Select value={classFilter} onValueChange={setClassFilter}>
-            <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Toutes les classes</SelectItem>
-              {classes.map((c: any) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name} {c.code ? `(${c.code})` : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="text-xs text-slate-500 ml-auto">
-          {actions.length} affiché(s) sur {totalCount} total
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleExportExcel}
-          disabled={exporting !== null || actions.length === 0}
-          className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-        >
-          {exporting === 'excel' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 mr-2" />}
-          Excel
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleExportPdf}
-          disabled={exporting !== null || actions.length === 0}
-          className="border-rose-300 text-rose-700 hover:bg-rose-50"
-        >
-          {exporting === 'pdf' ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileText className="w-4 h-4 mr-2" />}
-          PDF
-        </Button>
-        <Button
-          size="sm"
-          onClick={() => setShowNewModal(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Nouvelle action
-        </Button>
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-gray-50">
-              <TableHead>Date</TableHead>
-              <TableHead>Élève</TableHead>
-              <TableHead>Classe</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Effectué par</TableHead>
-              <TableHead className="text-center">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {actions.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center text-gray-500 py-12">
-                  Aucune action de recouvrement enregistrée.
-                </TableCell>
-              </TableRow>
-            ) : (
-              actions.map((a) => {
-                const cfg = ACTION_TYPE_CONFIG[a.actionType] || ACTION_TYPE_CONFIG.OTHER;
-                const Icon = cfg.icon;
-                const className = a.feeArrear?.student?.studentEnrollments?.[0]?.class?.name || '—';
-                return (
-                  <TableRow key={a.id} className="hover:bg-slate-50">
-                    <TableCell className="text-sm text-slate-600 whitespace-nowrap">
-                      {new Date(a.performedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
-                      <span className="text-xs text-slate-400 ml-1">
-                        {new Date(a.performedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      {a.feeArrear?.student
-                        ? `${a.feeArrear.student.lastName} ${a.feeArrear.student.firstName}`
-                        : '—'}
-                    </TableCell>
-                    <TableCell className="text-sm text-slate-600">{className}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={`${cfg.color} border-current`}>
-                        <Icon className="w-3 h-3 mr-1" />
-                        {cfg.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm text-slate-600 max-w-md">
-                      {a.notes || '—'}
-                    </TableCell>
-                    <TableCell className="text-xs text-slate-500">
-                      {a.performer ? `${a.performer.firstName} ${a.performer.lastName}` : 'Système'}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <button
-                        onClick={() => onDelete(a)}
-                        className="p-1.5 hover:bg-rose-100 rounded text-rose-600"
-                        title="Supprimer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {showNewModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={() => setShowNewModal(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-bold text-slate-900 mb-4">Sélectionner un arrieré</h3>
-            <p className="text-xs text-slate-500 mb-3">Choisissez l'arriéré pour lequel journaliser une action.</p>
-            {arrears.length === 0 ? (
-              <p className="text-sm text-slate-500 italic py-4 text-center">Aucun arriéré disponible.</p>
-            ) : (
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {arrears.slice(0, 50).map((a) => (
-                  <button
-                    key={a.id}
-                    onClick={() => {
-                      setShowNewModal(false);
-                      onNewAction(a);
-                    }}
-                    className="w-full text-left p-3 rounded-lg border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
-                  >
-                    <p className="font-semibold text-sm">
-                      {a.student ? `${a.student.lastName} ${a.student.firstName}` : '—'}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {a.studentFee?.feeDefinition?.label || 'Frais'} · Solde : {formatCurrency(a.balanceDue)}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="flex justify-end mt-4">
-              <Button variant="outline" onClick={() => setShowNewModal(false)}>Annuler</Button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  PHASE 2 — Vue Dossiers (cas consolidés par élève)                  */
-/* ------------------------------------------------------------------ */
-
-const CASE_STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  ON_TIME: { label: 'À jour', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
-  LATE: { label: 'En retard', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
-  CRITICAL: { label: 'Critique', color: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-200' },
-  BLOCKED: { label: 'Bloqué', color: 'text-rose-700', bg: 'bg-rose-50', border: 'border-rose-200' },
-};
-
-const ESCALATION_LABELS: Record<number, { label: string; color: string }> = {
-  0: { label: 'Aucune', color: 'text-slate-500' },
-  1: { label: 'Niveau 1 — Rappel', color: 'text-blue-600' },
-  2: { label: 'Niveau 2 — SMS + WhatsApp', color: 'text-amber-600' },
-  3: { label: 'Niveau 3 — Direction', color: 'text-orange-600' },
-  4: { label: 'Niveau 4 — Blocage', color: 'text-rose-600' },
-};
-
-function CasesTab({
-  cases,
-  onViewCase,
-}: {
-  cases: any[];
-  onViewCase: (c: any) => void;
-}) {
-  const [schoolLevels, setSchoolLevels] = useState<any[]>([]);
-  const [classes, setClasses] = useState<any[]>([]);
-  const [filterSchoolLevelId, setFilterSchoolLevelId] = useState<string>('ALL');
-  const [filterClassId, setFilterClassId] = useState<string>('ALL');
-  const [search, setSearch] = useState('');
-
-  // ⭐ FIX 2026-09-09 : classes de l'année du CONTEXTE + rechargement au switch.
-  const { academicYear: casesTabYear } = useModuleContext();
-  useEffect(() => {
-    fetch('/api/school-levels', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => setSchoolLevels(Array.isArray(d) ? d.filter((l: any) => l.id !== 'ALL') : []))
-      .catch(() => setSchoolLevels([]));
-  }, []);
-  useEffect(() => {
-    fetch(`/api/all-classes${casesTabYear?.id ? `?academicYearId=${encodeURIComponent(casesTabYear.id)}` : ''}`, { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => setClasses(Array.isArray(d) ? d : (d?.data ?? [])))
-      .catch(() => setClasses([]));
-  }, [casesTabYear?.id]);
-
-  const filteredClasses = useMemo(() => {
-    if (filterSchoolLevelId === 'ALL') return classes;
-    const selectedLevel = schoolLevels.find((l) => l.id === filterSchoolLevelId);
-    const slId = selectedLevel?.schoolLevelId || filterSchoolLevelId;
-    return classes.filter((c: any) =>
-      c.schoolLevelId === slId || c.schoolLevel?.code === selectedLevel?.code || c.schoolLevel?.id === slId
-    );
-  }, [classes, filterSchoolLevelId, schoolLevels]);
-
-  const filteredCases = useMemo(() => {
-    let result = cases;
-    if (filterSchoolLevelId !== 'ALL') {
-      result = result.filter((c) => c.student?.schoolLevelId === filterSchoolLevelId);
-    }
-    if (filterClassId !== 'ALL') {
-      result = result.filter((c) => {
-        const enrollment = c.student?.studentEnrollments?.[0];
-        return enrollment?.classId === filterClassId;
-      });
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase().trim();
-      result = result.filter((c) => {
-        const name = `${c.student?.lastName || ''} ${c.student?.firstName || ''}`.toLowerCase();
-        return name.includes(q);
-      });
-    }
-    return result;
-  }, [cases, filterSchoolLevelId, filterClassId, search]);
-
-  // Export Excel
-  const [exporting, setExporting] = useState<'pdf' | 'excel' | null>(null);
-
-  const handleExportExcel = async () => {
-    setExporting('excel');
-    try {
-      const ExcelJS = (window as any).ExcelJS;
-      if (!ExcelJS) {
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js';
-        script.onload = () => doExportExcel();
-        document.head.appendChild(script);
-      } else {
-        await doExportExcel();
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setExporting(null);
-    }
-  };
-  const doExportExcel = async () => {
-    const ExcelJS = (window as any).ExcelJS;
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet('Dossiers');
-    const headers = ['Élève', 'Total dû', 'Payé', 'Reste à payer', 'Statut', 'Niveau escalade', 'Dernière action'];
-    headers.forEach((h, i) => {
-      const cell = ws.getCell(1, i + 1);
-      cell.value = h; cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
-    });
-    filteredCases.forEach((c, i) => {
-      ws.getCell(i + 2, 1).value = c.student ? `${c.student.lastName} ${c.student.firstName}` : '—';
-      ws.getCell(i + 2, 2).value = Number(c.totalDue) || 0;
-      ws.getCell(i + 2, 3).value = Number(c.totalPaid) || 0;
-      ws.getCell(i + 2, 4).value = Number(c.outstandingAmount) || 0;
-      ws.getCell(i + 2, 5).value = c.status || '—';
-      ws.getCell(i + 2, 6).value = c.escalationLevel || 0;
-      ws.getCell(i + 2, 7).value = c.lastActionAt ? new Date(c.lastActionAt).toLocaleDateString('fr-FR') : '—';
-    });
-    const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Dossiers_recouvrement_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Export PDF
-  const handleExportPdf = async () => {
-    setExporting('pdf');
-    try {
-      const { jsPDF, autoTable } = await loadPdfLibs();
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-      const pageWidth = doc.internal.pageSize.getWidth();
-
-      // En-tête
-      doc.setFont('times', 'bold');
-      doc.setFontSize(16);
-      doc.setTextColor(13, 31, 110);
-      doc.text('Dossiers de recouvrement', pageWidth / 2, 18, { align: 'center' });
-      doc.setFont('times', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(100, 100, 100);
-      doc.text(`Généré le ${new Date().toLocaleDateString('fr-FR')}`, pageWidth / 2, 26, { align: 'center' });
-      doc.text(`${filteredCases.length} dossier(s)`, pageWidth / 2, 31, { align: 'center' });
-
-      const tableData = filteredCases.map((c) => {
-        const config = CASE_STATUS_CONFIG[c.status] || CASE_STATUS_CONFIG.ON_TIME;
-        const escalation = ESCALATION_LABELS[c.escalationLevel || 0] || ESCALATION_LABELS[0];
-        return [
-          c.student ? `${c.student.lastName} ${c.student.firstName}` : '—',
-          (Number(c.totalDue) || 0).toLocaleString('fr-FR'),
-          (Number(c.totalPaid) || 0).toLocaleString('fr-FR'),
-          (Number(c.outstandingAmount) || 0).toLocaleString('fr-FR'),
-          config.label,
-          escalation.label,
-          c.lastActionAt ? new Date(c.lastActionAt).toLocaleDateString('fr-FR') : '—',
-        ];
-      });
-
-      // Ligne total
-      const totalDue = filteredCases.reduce((s, c) => s + (Number(c.totalDue) || 0), 0);
-      const totalPaid = filteredCases.reduce((s, c) => s + (Number(c.totalPaid) || 0), 0);
-      const totalOutstanding = filteredCases.reduce((s, c) => s + (Number(c.outstandingAmount) || 0), 0);
-      tableData.push([
-        'TOTAL', '',
-        '',
-        totalOutstanding.toLocaleString('fr-FR'),
-        '', '', '',
-      ]);
-
-      autoTable(doc, {
-        head: [['Élève', 'Total dû', 'Payé', 'Reste à payer', 'Statut', 'Escalade', 'Dernière action']],
-        body: tableData,
-        startY: 36,
-        theme: 'grid',
-        headStyles: { fillColor: [13, 31, 110], textColor: 255, fontStyle: 'bold', fontSize: 10 },
-        bodyStyles: { fontSize: 9 },
-        columnStyles: {
-          1: { halign: 'right' },
-          2: { halign: 'right' },
-          3: { halign: 'right', fontStyle: 'bold' },
-          4: { halign: 'center' },
-          5: { halign: 'center' },
-        },
-        didParseCell: (data: any) => {
-          // Ligne total
-          if (data.row.index === tableData.length - 1 && data.section === 'body') {
-            data.cell.styles.fontStyle = 'bold';
-            data.cell.styles.fillColor = [254, 243, 199];
-            data.cell.styles.textColor = [146, 64, 14];
-          }
-          // Couleur statut
-          if (data.section === 'body' && data.column.index === 4 && data.row.index < tableData.length - 1) {
-            const statusLabel = data.cell.raw;
-            const colors: Record<string, [number, number, number]> = {
-              'À jour': [22, 163, 74],
-              'En retard': [217, 119, 6],
-              'Critique': [234, 88, 12],
-              'Bloqué': [220, 38, 38],
-            };
-            if (colors[statusLabel]) {
-              data.cell.styles.textColor = colors[statusLabel];
-              data.cell.styles.fontStyle = 'bold';
-            }
-          }
-        },
-      });
-
-      doc.save(`Dossiers_recouvrement_${new Date().toISOString().slice(0, 10)}.pdf`);
-    } catch (e: any) {
-      console.error(e);
-    } finally {
-      setExporting(null);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Filtres */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-        <div className="flex flex-wrap gap-3 items-end">
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Niveau scolaire</Label>
-            <Select value={filterSchoolLevelId} onValueChange={(v) => { setFilterSchoolLevelId(v); setFilterClassId('ALL'); }}>
-              <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Tous les niveaux</SelectItem>
-                {schoolLevels.map((l) => (<SelectItem key={l.id} value={l.id}>{l.label || l.code || l.name}</SelectItem>))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Classe</Label>
-            <Select value={filterClassId} onValueChange={setFilterClassId}>
-              <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Toutes les classes</SelectItem>
-                {filteredClasses.map((c: any) => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Rechercher</Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nom ou prénom..." className="pl-9" />
-            </div>
-          </div>
-          <Button variant="outline" size="sm" onClick={handleExportExcel} disabled={exporting !== null || filteredCases.length === 0} className="border-emerald-300 text-emerald-700 hover:bg-emerald-100">
-            {exporting === 'excel' ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <FileSpreadsheet className="w-4 h-4 mr-1.5" />} Excel
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={exporting !== null || filteredCases.length === 0} className="border-rose-300 text-rose-700 hover:bg-rose-100">
-            {exporting === 'pdf' ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <FileText className="w-4 h-4 mr-1.5" />} PDF
-          </Button>
-        </div>
-        <div className="text-xs text-slate-500 mt-2">{filteredCases.length} affiché(s) sur {cases.length} total</div>
-      </div>
-
-      {/* Tableau */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-gray-50">
-              <TableHead>Élève</TableHead>
-              <TableHead className="text-right">Total dû</TableHead>
-              <TableHead className="text-right">Payé</TableHead>
-              <TableHead className="text-right">Reste à payer</TableHead>
-              <TableHead>Statut</TableHead>
-              <TableHead>Niveau escalade</TableHead>
-              <TableHead>Dernière action</TableHead>
-              <TableHead className="text-center">Détails</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredCases.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="text-center text-gray-500 py-12">
-                  Aucun dossier de recouvrement. Lancez la détection des arriérés puis synchronisez les dossiers.
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredCases.map((c) => {
-                const config = CASE_STATUS_CONFIG[c.status] || CASE_STATUS_CONFIG.ON_TIME;
-                const escalation = ESCALATION_LABELS[c.escalationLevel || 0] || ESCALATION_LABELS[0];
-                return (
-                  <TableRow key={c.id} className="hover:bg-slate-50">
-                    <TableCell className="font-medium">
-                      {c.student ? `${c.student.lastName} ${c.student.firstName}` : c.studentId}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">{formatCurrency(c.totalDue)}</TableCell>
-                    <TableCell className="text-right font-mono text-sm text-emerald-700">{formatCurrency(c.totalPaid)}</TableCell>
-                    <TableCell className="text-right font-mono text-sm font-bold text-rose-700">{formatCurrency(c.outstandingAmount)}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={`${config.color} ${config.bg} ${config.border} border`}>{config.label}</Badge>
-                    </TableCell>
-                    <TableCell><span className={`text-xs font-semibold ${escalation.color}`}>{escalation.label}</span></TableCell>
-                    <TableCell className="text-xs text-slate-500">
-                      {c.lastActionAt ? new Date(c.lastActionAt).toLocaleDateString('fr-FR') : '—'}
-                      {c.blockedUntil && (<span className="block text-[10px] text-rose-600">Bloqué jusqu'au {new Date(c.blockedUntil).toLocaleDateString('fr-FR')}</span>)}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onViewCase(c)} title="Voir le dossier">
-                        <Eye className="w-3.5 h-3.5" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
-  );
-}
 
 /* ------------------------------------------------------------------ */
 /*  Modal — Confirmation de suppression de relance (personnalisé)      */
@@ -3833,129 +2656,6 @@ function DeleteReminderModal({
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Modal — Confirmation de suppression d'arriéré (personnalisé)       */
-/* ------------------------------------------------------------------ */
-
-/* ------------------------------------------------------------------ */
-/*  Modal — Suppression de promesse (personnalisé)                     */
-/* ------------------------------------------------------------------ */
-
-function DeletePromiseModal({
-  data,
-  loading,
-  onClose,
-  onConfirm,
-}: {
-  data: {
-    promiseId: string;
-    studentName: string;
-    promisedAmount: number;
-    promisedDate: string;
-    status: string;
-  };
-  loading: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  const statusLabel = PROMISE_STATUS_CONFIG[data.status]?.label || data.status;
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="bg-gradient-to-br from-rose-600 to-rose-700 px-6 py-4 text-white">
-          <div className="flex items-center gap-3">
-            <div className="bg-white/20 rounded-full p-2"><Trash2 className="w-5 h-5" /></div>
-            <div>
-              <h3 className="text-lg font-bold">Supprimer la promesse</h3>
-              <p className="text-xs text-rose-100 mt-0.5">Action irréversible</p>
-            </div>
-          </div>
-        </div>
-        <div className="p-6 space-y-4">
-          <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 flex-shrink-0" />
-            <p className="text-xs text-rose-700">Cette promesse sera définitivement supprimée. Cette action ne peut pas être annulée.</p>
-          </div>
-          <div className="border border-slate-200 rounded-lg overflow-hidden">
-            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200"><div className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Détails de la promesse</div></div>
-            <div className="p-4 space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-slate-500">Élève :</span><span className="font-semibold text-slate-900">{data.studentName}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Montant promis :</span><span className="font-bold text-emerald-700">{formatCurrency(data.promisedAmount)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Date promise :</span><span className="font-medium text-slate-700">{data.promisedDate}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Statut :</span><span className="font-medium text-slate-700">{statusLabel}</span></div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-slate-50 px-6 py-3 flex justify-end gap-2 border-t border-slate-200">
-          <Button type="button" variant="outline" onClick={onClose} disabled={loading}>Annuler</Button>
-          <Button type="button" onClick={onConfirm} disabled={loading} className="bg-rose-600 hover:bg-rose-700 text-white">
-            {loading ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Suppression…</>) : (<><Trash2 className="w-4 h-4 mr-2" />Supprimer définitivement</>)}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Modal — Suppression d'action (personnalisé)                        */
-/* ------------------------------------------------------------------ */
-
-function DeleteActionModal({
-  data,
-  loading,
-  onClose,
-  onConfirm,
-}: {
-  data: {
-    actionId: string;
-    studentName: string;
-    actionType: string;
-    performedAt: string;
-    notes: string;
-  };
-  loading: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  const actionLabel = ACTION_TYPE_CONFIG[data.actionType]?.label || data.actionType;
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        <div className="bg-gradient-to-br from-rose-600 to-rose-700 px-6 py-4 text-white">
-          <div className="flex items-center gap-3">
-            <div className="bg-white/20 rounded-full p-2"><Trash2 className="w-5 h-5" /></div>
-            <div>
-              <h3 className="text-lg font-bold">Supprimer l'action</h3>
-              <p className="text-xs text-rose-100 mt-0.5">Action irréversible</p>
-            </div>
-          </div>
-        </div>
-        <div className="p-6 space-y-4">
-          <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-600 mt-0.5 flex-shrink-0" />
-            <p className="text-xs text-rose-700">Cette action de recouvrement sera définitivement supprimée du journal. Cette action ne peut pas être annulée.</p>
-          </div>
-          <div className="border border-slate-200 rounded-lg overflow-hidden">
-            <div className="bg-slate-50 px-4 py-2 border-b border-slate-200"><div className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Détails de l'action</div></div>
-            <div className="p-4 space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-slate-500">Élève :</span><span className="font-semibold text-slate-900">{data.studentName}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Type d'action :</span><span className="font-medium text-slate-700">{actionLabel}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Date :</span><span className="font-medium text-slate-700">{data.performedAt}</span></div>
-              {data.notes && <div className="flex justify-between"><span className="text-slate-500">Notes :</span><span className="font-medium text-slate-700 max-w-[60%] text-right">{data.notes}</span></div>}
-            </div>
-          </div>
-        </div>
-        <div className="bg-slate-50 px-6 py-3 flex justify-end gap-2 border-t border-slate-200">
-          <Button type="button" variant="outline" onClick={onClose} disabled={loading}>Annuler</Button>
-          <Button type="button" onClick={onConfirm} disabled={loading} className="bg-rose-600 hover:bg-rose-700 text-white">
-            {loading ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Suppression…</>) : (<><Trash2 className="w-4 h-4 mr-2" />Supprimer définitivement</>)}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ------------------------------------------------------------------ */
 /*  Modal — Confirmation de suppression d'arriéré (personnalisé)       */
@@ -4247,327 +2947,6 @@ function BulkDeleteArrearModal({
   );
 }
 
-/* ------------------------------------------------------------------ */
-/*  Modal — Nouvelle promesse de paiement                              */
-/* ------------------------------------------------------------------ */
-
-function PromiseModal({
-  data,
-  onClose,
-  onSubmit,
-}: {
-  data: { arrearId: string; studentName: string; balanceDue: number };
-  onClose: () => void;
-  onSubmit: (data: { arrearId: string; promisedAmount: number; promiseDate: string; notes?: string; createdBy?: string }) => void;
-}) {
-  const [amount, setAmount] = useState(String(data.balanceDue || ''));
-  const [date, setDate] = useState('');
-  const [notes, setNotes] = useState('');
-  const [createdBy, setCreatedBy] = useState('');
-  const [manualCreator, setManualCreator] = useState('');
-  const [users, setUsers] = useState<any[]>([]);
-
-  useEffect(() => {
-    fetch('/api/settings/users', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => {
-        const allUsers = Array.isArray(d) ? d : (d?.data ?? []);
-        // Filtrer : uniquement le personnel administratif (pas les enseignants)
-        const ADMIN_ROLES = ['DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER', 'ACCOUNTANT', 'CASHIER', 'SECRETARY', 'SECRETARY_ACCOUNTANT', 'COMPTABLE', 'SECRETAIRE_COMPTABLE', 'DIRECTEUR', 'DIRECTEUR_GENERAL', 'SCHOOL_OWNER', 'SCHOOL_ADMIN'];
-        const filtered = allUsers.filter((u: any) => {
-          const role = (u.role || u.roles?.[0] || '').toUpperCase();
-          return ADMIN_ROLES.some(r => role.includes(r));
-        });
-        setUsers(filtered);
-      })
-      .catch(() => setUsers([]));
-  }, []);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const amt = Number(amount);
-    if (!amt || amt <= 0) return;
-    if (!date) return;
-    onSubmit({ arrearId: data.arrearId, promisedAmount: amt, promiseDate: date, notes: notes.trim() || undefined, createdBy: createdBy || manualCreator || undefined });
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
-          <Target className="w-5 h-5 text-emerald-600" />
-          Nouvelle promesse de paiement
-        </h3>
-        <p className="text-xs text-slate-500 mb-4">Élève : <strong>{data.studentName}</strong> · Solde dû : {formatCurrency(data.balanceDue)}</p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Montant promis (FCFA)</Label>
-            <Input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              max={data.balanceDue}
-              min={1}
-              required
-            />
-            <p className="text-[10px] text-slate-500 mt-1">Ne peut pas dépasser le solde dû ({formatCurrency(data.balanceDue)}).</p>
-          </div>
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Date promise</Label>
-            <Input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              min={new Date().toISOString().slice(0, 10)}
-              required
-            />
-          </div>
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Créé par</Label>
-            {users.length > 0 && (
-              <select
-                value={createdBy}
-                onChange={(e) => { setCreatedBy(e.target.value); setManualCreator(''); }}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-emerald-500 bg-white mb-2"
-              >
-                <option value="">— Sélectionner —</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.firstName} {u.lastName}{u.role ? ` (${u.role})` : ''}
-                  </option>
-                ))}
-              </select>
-            )}
-            <Input
-              type="text"
-              value={manualCreator}
-              onChange={(e) => { setManualCreator(e.target.value); setCreatedBy(''); }}
-              placeholder="Ou saisir manuellement le nom…"
-              className="text-sm"
-            />
-          </div>
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Notes (optionnel)</Label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-emerald-500"
-              rows={2}
-              placeholder="Conditions, modalités..."
-            />
-          </div>
-          <div className="flex gap-2 justify-end pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
-            <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white">Enregistrer</Button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Modal — Nouvelle action de recouvrement                            */
-/* ------------------------------------------------------------------ */
-
-function ActionModal({
-  data,
-  onClose,
-  onSubmit,
-  defaultPerformerId,
-}: {
-  data: { arrearId: string; studentName: string };
-  onClose: () => void;
-  onSubmit: (data: { arrearId: string; actionType: string; description?: string; performedBy?: string }) => void;
-  defaultPerformerId?: string;
-}) {
-  const [actionType, setActionType] = useState('CALL');
-  const [description, setDescription] = useState('');
-  const [performedBy, setPerformedBy] = useState(defaultPerformerId || '');
-  const [manualPerformer, setManualPerformer] = useState('');
-  const [users, setUsers] = useState<any[]>([]);
-
-  // Charger la liste des utilisateurs (uniquement personnel administratif)
-  useEffect(() => {
-    fetch('/api/settings/users', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => {
-        const allUsers = Array.isArray(d) ? d : (d?.data ?? []);
-        // Filtrer : uniquement le personnel administratif (pas les enseignants)
-        const ADMIN_ROLES = ['DIRECTOR', 'ADMIN', 'SUPER_DIRECTOR', 'PROMOTEUR', 'PROMOTER', 'PLATFORM_OWNER', 'ACCOUNTANT', 'CASHIER', 'SECRETARY', 'SECRETARY_ACCOUNTANT', 'COMPTABLE', 'SECRETAIRE_COMPTABLE', 'DIRECTEUR', 'DIRECTEUR_GENERAL', 'SCHOOL_OWNER', 'SCHOOL_ADMIN'];
-        const filtered = allUsers.filter((u: any) => {
-          const role = (u.role || u.roles?.[0] || '').toUpperCase();
-          return ADMIN_ROLES.some(r => role.includes(r));
-        });
-        setUsers(filtered);
-      })
-      .catch(() => setUsers([]));
-  }, [defaultPerformerId]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit({ arrearId: data.arrearId, actionType, description: description.trim() || undefined, performedBy: performedBy || manualPerformer || undefined });
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
-          <Phone className="w-5 h-5 text-indigo-600" />
-          Journaliser une action
-        </h3>
-        <p className="text-xs text-slate-500 mb-4">Élève : <strong>{data.studentName}</strong></p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Type d'action</Label>
-            <Select value={actionType} onValueChange={setActionType}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {Object.entries(ACTION_TYPE_CONFIG).filter(([k]) => !['REMINDER', 'WARNING', 'BLOCK'].includes(k)).map(([key, cfg]) => (
-                  <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Effectué par</Label>
-            {users.length > 0 && (
-              <select
-                value={performedBy}
-                onChange={(e) => { setPerformedBy(e.target.value); setManualPerformer(''); }}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500 bg-white mb-2"
-              >
-                <option value="">— Sélectionner —</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.firstName} {u.lastName}{u.role ? ` (${u.role})` : ''}
-                  </option>
-                ))}
-              </select>
-            )}
-            <Input
-              type="text"
-              value={manualPerformer}
-              onChange={(e) => { setManualPerformer(e.target.value); setPerformedBy(''); }}
-              placeholder="Ou saisir manuellement le nom…"
-              className="text-sm"
-            />
-          </div>
-          <div>
-            <Label className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1.5 block">Description / Notes</Label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-2 focus:ring-indigo-500"
-              rows={3}
-              placeholder="Ex : Appel passé au père, promet de payer vendredi. Ou : Visite à domicile, parent absent..."
-            />
-          </div>
-          <div className="flex gap-2 justify-end pt-2">
-            <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>
-            <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white">Journaliser</Button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Modal — Détail d'un dossier                                        */
-/* ------------------------------------------------------------------ */
-
-function CaseDetailModal({ caseData, onClose }: { caseData: any; onClose: () => void }) {
-  const config = CASE_STATUS_CONFIG[caseData.status] || CASE_STATUS_CONFIG.ON_TIME;
-  const escalation = ESCALATION_LABELS[caseData.escalationLevel || 0] || ESCALATION_LABELS[0];
-
-  return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] flex items-center justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">
-              Dossier de recouvrement
-            </h3>
-            <p className="text-sm text-slate-500">
-              {caseData.student ? `${caseData.student.lastName} ${caseData.student.firstName}` : 'Élève'}
-            </p>
-          </div>
-          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded">
-            <XCircle className="w-5 h-5 text-slate-400" />
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          {/* Statut + escalade */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-              <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Statut</p>
-              <Badge variant="outline" className={`${config.color} ${config.bg} ${config.border} border`}>
-                {config.label}
-              </Badge>
-            </div>
-            <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
-              <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Niveau d'escalade</p>
-              <p className={`text-sm font-semibold ${escalation.color}`}>{escalation.label}</p>
-            </div>
-          </div>
-
-          {/* Montants */}
-          <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
-              <div>
-                <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Total dû</p>
-                <p className="text-base font-bold text-slate-900">{formatCurrency(caseData.totalDue)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Payé</p>
-                <p className="text-base font-bold text-emerald-700">{formatCurrency(caseData.totalPaid)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Reste</p>
-                <p className="text-base font-bold text-rose-700">{formatCurrency(caseData.outstandingAmount)}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Dates */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-            <div>
-              <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Dernière action</p>
-              <p className="text-slate-700">
-                {caseData.lastActionAt ? new Date(caseData.lastActionAt).toLocaleDateString('fr-FR') : '—'}
-              </p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">Bloqué jusqu'au</p>
-              <p className="text-slate-700">
-                {caseData.blockedUntil ? new Date(caseData.blockedUntil).toLocaleDateString('fr-FR') : '—'}
-              </p>
-            </div>
-          </div>
-
-          {/* Workflow d'escalade — explication */}
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-            <p className="text-xs font-semibold text-amber-900 mb-2 flex items-center gap-1">
-              <Zap className="w-3.5 h-3.5" />
-              Workflow d'escalade automatique
-            </p>
-            <ul className="text-[11px] text-amber-800 space-y-1">
-              <li><strong>Niveau 1</strong> — Rappel interne (notification système)</li>
-              <li><strong>Niveau 2</strong> — SMS + WhatsApp (rappel ferme)</li>
-              <li><strong>Niveau 3</strong> — Notification direction (critique)</li>
-              <li><strong>Niveau 4</strong> — Blocage administratif</li>
-            </ul>
-            <p className="text-[10px] text-amber-700 mt-2">
-              Cliquez sur « Lancer escalade auto » en haut pour déclencher le workflow sur tous les cas.
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ------------------------------------------------------------------ */
 /*  Modal — Encaissement d'un arriéré (marquer un élève ayant payé)    */

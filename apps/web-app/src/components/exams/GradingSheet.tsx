@@ -13,11 +13,11 @@
 
 'use client';
 
-import { Fragment, useEffect, useState, useMemo, useCallback } from 'react';
+import { Fragment, useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import {
   Save, Send, ChevronLeft, Calendar, Users, BookOpen, Loader2,
   Search, School, AlertCircle, CheckCircle2, XCircle,
-  Settings, Settings2, X, Plus, Pencil, Lock, FileText, ClipboardCheck,
+  Settings, Settings2, X, Plus, Pencil, Lock, FileText, ClipboardCheck, CloudUpload,
 } from 'lucide-react';
 import { ModuleContainer } from '@/components/modules/blueprint';
 import { Button } from '@/components/ui/button';
@@ -298,6 +298,35 @@ export function GradingSheet({
   const [remarksLoading, setRemarksLoading] = useState(false);
   const [remarksSaving, setRemarksSaving] = useState(false);
 
+  // ═══ V12 — SAUVEGARDE AUTOMATIQUE TOUTES LES 10 SECONDES ═════════════════
+  // Demande promoteur 2026-11-19 : la saisie des notes est sauvegardée
+  // automatiquement toutes les 10 secondes (statut DRAFT, jamais soumise) —
+  // l'enseignant qui oublie de cliquer « Sauvegarder » ne perd jamais son
+  // travail. Cette fiche étant l'UNIQUE point de saisie des notes (les deux
+  // portails + les deux pistes linguistiques + les trois niveaux), le
+  // mécanisme couvre d'un seul coup : maternelle, primaire, secondaire,
+  // piste FR et piste EN (notes du broadsheet + remarques du Head Teacher).
+  // ⭐ Jamais de POST à vide : on ne sauvegarde QUE si l'état courant diffère
+  //   du dernier snapshot persisté (comparaison JSON des rows + remarques).
+  // ⭐ Jamais pendant : un enregistrement en cours, un chargement, le mode
+  //   lecture seule, ou une fiche verrouillée (SUBMITTED/VALIDATED/LOCKED).
+  const [autoSavedAt, setAutoSavedAt] = useState<Date | null>(null);
+  const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
+  const [autoSaveSaving, setAutoSaveSaving] = useState(false);
+  const rowsRef = useRef<GradeRow[]>([]);
+  rowsRef.current = rows;
+  const remarksRef = useRef<{ subjectRemarks: Record<string, string>; extraRemark: { name: string; comment: string } } | null>(null);
+  remarksRef.current = (isEN && remarksLoaded) ? { subjectRemarks, extraRemark } : null;
+  const savedSnapshotRef = useRef<string>('');
+  const saveFnRef = useRef<((submit?: boolean, opts?: { auto?: boolean }) => Promise<void>) | null>(null);
+  const snapshotOf = (
+    rowsState: GradeRow[],
+    remarksState: { subjectRemarks: Record<string, string>; extraRemark: { name: string; comment: string } } | null,
+  ) => JSON.stringify({
+    rows: rowsState,
+    remarks: remarksState ? { subjectRemarks: remarksState.subjectRemarks, extraRemark: remarksState.extraRemark } : null,
+  });
+
   // ⭐ Vérifier si les notes sont verrouillées (soumises ou validées)
   // Si verrouillées, l'enseignant ne peut plus modifier — il doit demander un déverrouillage
   const isLocked = group.statuses.some((s) => s === 'SUBMITTED' || s === 'VALIDATED' || s === 'LOCKED');
@@ -395,6 +424,12 @@ export function GradingSheet({
 
         rowsArray.sort((a, b) => a.studentName.localeCompare(b.studentName, 'fr'));
         setRows(rowsArray);
+        // ⭐ V12 — Référence initiale de l'auto-save : les données chargées
+        //    ne déclenchent PAS de sauvegarde (les remarques EN sont
+        //    intégrées au snapshot par leur propre effet de chargement).
+        savedSnapshotRef.current = snapshotOf(rowsArray, null);
+        setAutoSavedAt(null);
+        setAutoSaveError(null);
         // ⭐ FIX 2026-11-17 — Snapshot des notes chargées (verrou du mode 'add')
         const saved = new Set<string>();
         rowsArray.forEach((row) => {
@@ -417,6 +452,24 @@ export function GradingSheet({
 
     loadSheet();
   }, [group, academicYear?.id]);
+
+  // ═══ V12 — TIMER DE SAUVEGARDE AUTOMATIQUE (TOUTES LES 10 SECONDES) ══════
+  // Ne persiste que s'il y a VRAIMENT du non-sauvegardé (diff de snapshot),
+  // jamais pendant un save/chargement en cours, en lecture seule ou verrouillé.
+  // L'app est aussi la coquille mobile (WebView du web LIVE) : le mécanisme
+  // est donc actif sur smartphone/tablette pour la piste EN comme la FR.
+  useEffect(() => {
+    const AUTO_SAVE_INTERVAL_MS = 10_000;
+    const timer = setInterval(() => {
+      const save = saveFnRef.current;
+      if (typeof save !== 'function') return;
+      if (saving || loading || remarksSaving || editMode === 'readonly' || isLocked) return;
+      const current = snapshotOf(rowsRef.current, remarksRef.current);
+      if (current === savedSnapshotRef.current) return;
+      void save(false, { auto: true });
+    }, AUTO_SAVE_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [group, saving, loading, remarksSaving, editMode, isLocked]);
 
   const handleScoreChange = (studentId: string, subjectId: string, value: string) => {
     setRows((prev) =>
@@ -484,8 +537,14 @@ export function GradingSheet({
     );
   };
 
-  const handleSave = async (submit = false) => {
+  const handleSave = async (submit = false, opts: { auto?: boolean } = {}) => {
+    // ⭐ V12 — opts.auto : appel du TIMER de sauvegarde automatique (toutes
+    //    les 10 s). Mêmes serveurs, même payload DRAFT — mais retour SILENCIEUX
+    //    (pas de toast de succès toutes les 10 secondes) : le badge dans la
+    //    barre d'actions affiche l'heure de la dernière sauvegarde.
+    const { auto = false } = opts;
     setSaving(true);
+    if (auto) setAutoSaveSaving(true);
     try {
       // 0. ⭐ V10f — Piste EN : sauvegarder aussi les commentaires du Head
       //    Teacher par matière (page 2 du broadsheet) avec les notes.
@@ -510,15 +569,22 @@ export function GradingSheet({
           }
         }
         if (violations.length > 0) {
-          toastError(
-            isEN ? 'Grades exceed maximum score' : 'Notes supérieures au barème',
-            {
-              description: isEN
-                ? `${violations.length} grade(s) exceed the maximum (${maxScore}). Please correct before saving.`
-                : `${violations.length} note(s) dépassent le barème (${maxScore}). Veuillez corriger avant de sauvegarder.`,
-            }
-          );
+          if (auto) {
+            // Auto-save silencieuse : jamais de toast au milieu de la frappe.
+            // Les clamps des handlers empêchent en pratique ce cas — garde-fou.
+            console.warn('[auto-save] notes > maxScore, sauvegarde reportée', violations);
+          } else {
+            toastError(
+              isEN ? 'Grades exceed maximum score' : 'Notes supérieures au barème',
+              {
+                description: isEN
+                  ? `${violations.length} grade(s) exceed the maximum (${maxScore}). Please correct before saving.`
+                  : `${violations.length} note(s) dépassent le barème (${maxScore}). Veuillez corriger avant de sauvegarder.`,
+              }
+            );
+          }
           setSaving(false);
+          if (auto) setAutoSaveSaving(false);
           return;
         }
       }
@@ -604,18 +670,43 @@ export function GradingSheet({
         return next;
       });
 
-      toastSuccess(submit ? 'Notes validées' : 'Notes enregistrées', {
-        description: submit
-          ? 'Les notes sont soumises au directeur — validez-les définitivement dans l\'onglet Validation.'
-          : `${rows.length} élève(s) · ${group.subjects.length} matière(s)`,
-      });
+      // ⭐ V12 — Snapshot post-sauvegarde = référence de la prochaine
+      //    comparaison auto-save (rows + remarques EN TELLES QU'ENVOYÉES —
+      //    les valeurs de closure, pas un éventuel état plus récent frappé
+      //    pendant le vol : ces frappes seront re-sauvegardées au tick suivant).
+      savedSnapshotRef.current = snapshotOf(
+        rows,
+        (isEN && remarksLoaded) ? { subjectRemarks, extraRemark } : null,
+      );
+      if (auto) {
+        setAutoSavedAt(new Date());
+        setAutoSaveError(null);
+      } else {
+        toastSuccess(submit ? 'Notes validées' : 'Notes enregistrées', {
+          description: submit
+            ? 'Les notes sont soumises au directeur — validez-les définitivement dans l\'onglet Validation.'
+            : `${rows.length} élève(s) · ${group.subjects.length} matière(s)`,
+        });
+      }
       if (submit) onBack();
     } catch (err: any) {
-      toastError('Erreur lors de la sauvegarde', { description: err.message });
+      if (auto) {
+        // Pas de toast d'erreur en boucle toutes les 10 s : indicateur rouge
+        // dans la barre d'actions + console. La sauvegarde manuelle reste
+        // disponible pour voir l'erreur complète.
+        setAutoSaveError(err?.message || 'auto-save error');
+        console.error('[auto-save] échec :', err?.response?.data || err);
+      } else {
+        toastError('Erreur lors de la sauvegarde', { description: err.message });
+      }
     } finally {
       setSaving(false);
+      if (auto) setAutoSaveSaving(false);
     }
   };
+  // ⭐ V12 — Référence courante du saveur pour le timer 10 s (évite le stale
+  //    closure : à chaque render, le timer voit la dernière closure valide).
+  saveFnRef.current = handleSave;
 
   const filteredRows = useMemo(() => {
     if (!searchQuery.trim()) return rows;
@@ -796,6 +887,19 @@ export function GradingSheet({
             comment: typeof extra.comment === 'string' ? extra.comment : '',
           });
           setRemarksLoaded(true);
+          // ⭐ V12 — Les remarques chargées du serveur ne comptent PAS comme
+          //    des changements non sauvegardés (sinon l'auto-save renverrait
+          //    immédiatement, à l'identique, ce qu'on vient de lire). On prend
+          //    les valeurs CHARGÉES (le state n'est pas encore re-rendu).
+          const loadedRemarks = {
+            subjectRemarks: perSubject,
+            extraRemark: {
+              name: typeof extra.name === 'string' ? extra.name : '',
+              comment: typeof extra.comment === 'string' ? extra.comment : '',
+            },
+          };
+          remarksRef.current = loadedRemarks;
+          savedSnapshotRef.current = snapshotOf(rowsRef.current, loadedRemarks);
         }
       } catch {
         // Silencieux : la page 2 reste utilisable sans persistance.
@@ -956,6 +1060,26 @@ export function GradingSheet({
                 <Badge variant="outline" className="border-amber-200 text-amber-600 text-xs">
                   {isMaternelle ? 'TS/S/PS' : isEN ? `/${maxScore}` : `/20`}
                 </Badge>
+                {editMode !== 'readonly' && !isLocked && (
+                  <Badge
+                    variant="outline"
+                    title={isEN ? 'Draft saved automatically every 10 seconds' : 'Sauvegarde automatique du brouillon toutes les 10 secondes'}
+                    className={
+                      autoSaveError
+                        ? 'border-red-300 text-red-600 text-xs gap-1'
+                        : autoSaveSaving
+                          ? 'border-blue-200 text-blue-600 text-xs gap-1'
+                          : 'border-emerald-200 text-emerald-600 text-xs gap-1'
+                    }
+                  >
+                    {autoSaveSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <CloudUpload className="w-3 h-3" />}
+                    {autoSaveError
+                      ? (isEN ? 'Auto-save failed — use Save' : 'Auto-échouée — cliquez Sauvegarder')
+                      : autoSavedAt
+                        ? (isEN ? `Auto-saved ${autoSavedAt.toLocaleTimeString('en-GB')}` : `Sauvegardé auto ${autoSavedAt.toLocaleTimeString('fr-FR')}`)
+                        : (isEN ? 'Auto-save every 10 s' : 'Sauvegarde auto toutes les 10 s')}
+                  </Badge>
+                )}
                 <Button
                   variant="outline"
                   size="sm"

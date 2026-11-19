@@ -14576,3 +14576,18 @@ Work Log:
 Stage Summary:
 - ✅✅ Inscription → étape Personnalisation réparée : le compte de l'élève se crée et se charge normalement, la personnalisation (réductions bourse/cas social/remise) re-fonctionne, de même que tous les flux qui écrivent des lignes de frais (encaissements, recalculs batch). Correctif déjà ACTIF en production (DDL appliquée directement sur la base Neon).
 - ⏳ Déploiement du commit (api-server + web) pour que le bootstrap ré-applique durablement le trigger corrigé à chaque redémarrage (jusque-là, un redémarrage de l'instance actuelle recréerait la version buguée — la DDL prod la remplace à nouveau, mais le push rend le dépôt cohérent avec la base).
+
+---
+Task ID: 148-exams-retrait-anglais-primaire-mon-avenir-plus
+Agent: Super Z (agent principal)
+Task: Mon Avenir Plus — module Examen, onglet Évaluations : l'Anglais a été intégré PAR ERREUR dans les matières programmées pour les évaluations du primaire. Demande : retirer DÉFINITIVEMENT de la BDD l'Anglais de la liste des matières évaluées de chacune des classes du primaire, pour les évaluations déjà programmées.
+
+Work Log:
+- INSPECTION (lecture seule, Neon prod) : tenant CSP Mon Avenir Plus N'Dali (e0aaa032…), année active 2026-2027 ; matière Anglais primaire = ANG-10 (6f30a250…) ; 11 évaluations Anglais au primaire (10 PLANNED « Évaluation mensuelle 1 » T1 : CE1 C, CE2 A/B/C, CM 1 C, CM1 A/B, CM2 A/B/C + 1 CP B CANCELLED portant 38 notes) ; cause racine = l'Anglais figurait dans les class_subjects des 6 classes officielles du primaire (CP, CI, CE1, CE2, CM1, CM2) → il serait revenu à chaque prochaine programmation.
+- FK grades→evaluations = ON DELETE SET NULL : supprimer seules les évaluations aurait laissé les 38 notes CP B orphelines (pollution des moyennes) → notes supprimées AVEC leur évaluation. Aucune note Anglais-primaire hors évaluations (pré-check = 0) ; aucun devoir/cahier Anglais primaire (homework_entries/lesson_journals = 0) → aucune perte collatérale.
+- SUPPRESSION (transaction unique, dry-run validé puis apply, scripts/remove_anglais_primaire_monavenir.py) : 38 grades CP B + 11 evaluations Anglais primaire + 6 class_subjects Anglais-primaire. Vérifications IN-TRANSACTION et POST-COMMIT (connexion fraîche) : Anglais primaire = 0 partout (évaluations, notes, class_subjects) ; SECONDAIRE INTACT (28 évaluations Anglais, 33 notes 6ème A) ; MATERNELLE INTACTE (2 class_subjects) ; les 9 autres matières des classes touchées intactes (9 évaluations par classe, CP B 18).
+- PÉRIMÈTRE VOLONTAIREMENT CONSERVÉ : la matière ANG-10 existe toujours (aucun autre usage primaire ne la référence désormais) ; maternelle/secondaire conservent l'Anglais (hors demande). La matière ne remonte plus dans le modal de programmation des évaluations du primaire puisque plus aucun class_subjects primaire ne la porte.
+
+Stage Summary:
+- ✅✅ Anglais définitivement retiré des évaluations du primaire (Mon Avenir Plus, 2026-2027) : les 11 évaluations déjà programmées n'affichent plus que les matières légitimes ; les 38 notes erronées de CP B supprimées ; la configuration Pédagogie du primaire ne contient plus l'Anglais → il ne reviendra pas à la prochaine programmation (EM2 etc.).
+- ℹ️ Onglet Évaluations du primaire : rafraîchir la page pour voir la liste nettoyée. Aucun changement de code (correctif de données pures — pas de déploiement requis).

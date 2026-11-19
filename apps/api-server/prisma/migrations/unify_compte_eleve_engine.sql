@@ -213,12 +213,16 @@ FOR EACH ROW EXECUTE FUNCTION public.recompute_after_finance_tx();
 -- 6) Triggers : toute écriture de ligne de frais resynchronise les totaux -----
 --    (statement-level + tables de transition : le recalcul batch du planner
 --    déclenche UNE recompute par compte touché, pas par ligne)
+-- ⚠ v_id TEXT (fix 2026-11-19) : account_breakdowns."studentAccountId" est une
+--    colonne text et la fonction moteur est (p_account_id text). Déclaré uuid,
+--    le PERFORM échouait sur CHAQUE écriture de ligne :
+--    « function public.recompute_student_account_totals(uuid) does not exist ».
 CREATE OR REPLACE FUNCTION public.recompute_after_breakdown_change()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $function$
 DECLARE
-  v_id uuid;
+  v_id text;
 BEGIN
   IF TG_OP IN ('INSERT', 'UPDATE') THEN
     FOR v_id IN SELECT DISTINCT "studentAccountId" FROM new_rows LOOP

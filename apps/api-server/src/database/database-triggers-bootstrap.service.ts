@@ -331,12 +331,17 @@ $$`,
       `DROP FUNCTION IF EXISTS update_account_balance_after_tx()`,
       `DROP TRIGGER IF EXISTS trg_recompute_after_finance_tx ON "finance_transactions"`,
       `CREATE TRIGGER trg_recompute_after_finance_tx AFTER INSERT OR UPDATE OR DELETE ON "finance_transactions" FOR EACH ROW EXECUTE FUNCTION recompute_after_finance_tx()`,
+      // ⚠ FIX 2026-11-19 : v_id est TEXT — account_breakdowns."studentAccountId"
+      //    est une colonne text et la fonction moteur est (p_account_id text).
+      //    Déclaré uuid, le PERFORM résolvait recompute_student_account_totals(uuid)
+      //    → « function does not exist » sur CHAQUE écriture de ligne de frais
+      //    (création du compte à l'inscription, overrides, encaissements).
       `CREATE OR REPLACE FUNCTION recompute_after_breakdown_change()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_id uuid;
+  v_id text;
 BEGIN
   IF TG_OP IN ('INSERT', 'UPDATE') THEN
     FOR v_id IN SELECT DISTINCT "studentAccountId" FROM new_rows LOOP

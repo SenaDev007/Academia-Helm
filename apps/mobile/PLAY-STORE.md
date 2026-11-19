@@ -292,7 +292,7 @@ prêts à copier sont en **Annexe A**. Les visuels :
 | Élément | Source | Spécifications |
 |---|---|---|
 | Icône app (fiche Play) | `apps/mobile/store-assets/play-icon-512.png` | 512×512 PNG 32 bits **fond transparent** (logo flottant, artwork centré pour le masque squircle Play — transparence autorisée par la spéc officielle) — ✅ logo original (2026-11-19) |
-| Icône launcher (installation) | `android/app/src/main/res/mipmap-*` + `values/ic_launcher_background.xml` | **fond NAVY #0B2F73** (variante bd935ac, restaurée 2026-11-19) — ⚠️ fond transparent INTERDIT pour le launcher : la plupart des launchers Android (Samsung One UI, Tecno/Infinix/Itel, stock) compositent la transparence en BLANC ou en noir → icône « lavée ». Le Play 512 peut rester transparent car Play Console applique son propre masque. |
+| Icône launcher (installation) | `android/app/src/main/res/mipmap-*` + `values/ic_launcher_background.xml` | **fond BLANC #FFFFFF plein** (choix promoteur 2026-11-19) — fond PLEIN obligatoire pour le launcher : transparent = composité blanc/noir selon l'appareil. Le Play 512 reste transparent (masque squircle Play). |
 | Bannière (feature graphic) | `apps/mobile/store-assets/feature-graphic-1024x500.jpg` | 1024×500, JPEG 24 bits sans alpha — ✅ fournie (2026-11-19) |
 | Captures téléphone | À faire §5.2.1 | **min. 2**, JPEG/PNG 16:9 ou 9:16 |
 | Captures tablette 7″/10″ | Optionnelles | recommandé plus tard |

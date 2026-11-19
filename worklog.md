@@ -14527,3 +14527,18 @@ Work Log:
 Stage Summary:
 - ✅✅ Icône launcher : fond navy #0B2F73 restauré (logo original au centre) — rendu garanti identique sur tous les téléphones/tablettes, fini le fond blanc des launchers qui compositent la transparence ; icône Play 512 maintenue transparente pour la fiche.
 - ⏳ Sur la machine promoteur : cd apps/mobile && npx cap sync android && cd android && ./gradlew clean bundleRelease → téléverser l'AAB versionCode 11 / versionName 1.0.4 → installer sur téléphone : l'icône affiche le blason sur fond navy.
+
+---
+Task ID: 145-mobile-icone-launcher-fond-blanc-plein
+Agent: Super Z (agent principal)
+Task: Version mobile — le promoteur demande : le blason s'affiche sur un FOND BLANC identique sur tous les téléphones et tablettes (le transparent était composité en noir sur son appareil ; le navy imposé entre-temps n'était pas demandé).
+
+Work Log:
+- FIX : régénération des 10 PNG launcher (ic_launcher + ic_launcher_round, 5 densités) sur fond BLANC #FFFFFF PLEIN (script generate_app_icons.py, WHITE=(255,255,255,255), logo 86%/84%) ; calque background de l'icône adaptive → #FFFFFFFF dans values/ic_launcher_background.xml (Android 8+ : le launcher ne composite plus rien — fond blanc garanti sur tous les appareils). Foregrounds adaptive inchangés (canevas transparent + logo en zone sûre 66dp — le fond vient du calque background). Historique complet : transparent (8c5d7ad) → navy (218a4ef) → BLANC (ce commit) — le choix du rendu launcher appartient au promoteur.
+- L'ICÔNE PLAY 512 reste FOND TRANSPARENT (choix promoteur confirmé 2026-11-19 : Play Console applique son propre masque squircle).
+- VERSION : versionCode 11 → 12 / versionName 1.0.4 → 1.0.5 (changement natif = nouvel AAB ; codes 1-10 consommés par les uploads Console successifs).
+- VALIDATION : coins/bords blancs + 0 pixel transparent (opaque 100%) sur les 5 densités legacy ; foregrounds coins transparents + centre opaque ; Play 512 coins transparents — vérification pixel par script.
+
+Stage Summary:
+- ✅✅ Icône installée : blason sur fond BLANC plein — rendu identique sur tous les téléphones/tablettes (plus rien à compositer, fin des fonds noirs/blancs selon l'appareil) ; Play 512 maintenu transparent.
+- ⏳ Machine promoteur : cd apps/mobile && npx cap sync android && cd android && ./gradlew clean bundleRelease → téléverser l'AAB versionCode 12 / versionName 1.0.5 → installer : blason sur fond blanc.

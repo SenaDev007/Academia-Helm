@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#0B2F73</color>
+    <!-- Fond adaptatif BLANC (demande promoteur 2026-11-19 : le blason s'affiche
+         sur fond blanc identique sur tous les téléphones/tablettes). Fond PLEIN
+         opaque : les launchers n'ont rien à compositer (fin des fonds noirs/blancs
+         selon l'appareil). Historique : transparent 8c5d7ad → navy 218a4ef → blanc. -->
+    <color name="ic_launcher_background">#FFFFFFFF</color>
 </resources>

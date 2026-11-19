@@ -42,11 +42,26 @@ import { isMobileDevice } from '@/lib/pwa/mobile-experience';
 /** Nom du cookie de reprise (partagé sur le domaine de base). */
 const NATIVE_RESUME_COOKIE = 'ah_native_resume';
 
+/** Clé localStorage (racine) — redondance si le cookie WebView est perdu/évincé. */
+const ROOT_RESUME_LS_KEY = 'ah_resume_host';
+
 /** Validité du cookie de reprise : 1 an (renouvelé à chaque écriture). */
 const NATIVE_RESUME_MAX_AGE_S = 365 * 24 * 60 * 60;
 
-/** Sous-domaines qui n'hébergent jamais une session utilisateur. */
-const RESERVED_HOSTS = new Set(['api', 'www', 'app', 'admin', 'cdn']);
+/**
+ * Sous-domaines qui n'hébergent jamais une session utilisateur ou dont la
+ * racine n'est PAS la page institutionnelle d'une école (satellites portails,
+ * back-office, api). ⭐ V12b : les satellites (teacher/enseignant/
+ * saisiemaster/academiafederis) ajoutés — ils hébergent des sessions mais leur
+ * racine n'est pas le site institutionnel d'une école.
+ */
+const RESERVED_HOSTS = new Set([
+  'api', 'www', 'app', 'admin', 'cdn',
+  'teacher', 'enseignant', 'saisiemaster', 'academiafederis', 'federis',
+]);
+
+/** Durée de vie des hints localStorage (js) : 365 j. */
+const ROOT_RESUME_LS_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;
 
 export interface NativeResumeHint {
   /** Hôte tenant où vit la session (ex: lepalmaresplus.academiahelm.com). */
@@ -101,6 +116,39 @@ export function writeNativeResumeHint(): void {
   const host = window.location.hostname;
   if (!isTenantSessionHost(host)) return;
 
+  writeResumeHintCookie(host);
+}
+
+/**
+ * ⭐ V12b (retour promoteur 2026-11-19 : « 2e ouverture = page institutionnelle »
+ *    ne se produisait pas — le cookie WebView est la seule persistance et il
+ *    peut être évincé/perdu) : écrit le hint de reprise POUR UN HÔTE EXPLICITE
+ *    depuis la page COURANTE — cookie partagé .academiahelm.com + localStorage
+ *    de l'origine courante (redondance). Utilisé :
+ *      - par /portal au moment de REDIRIGER vers une école (sélection d'école :
+ *        le premier usage mémorise l'école — même si le login n'a pas encore eu
+ *        lieu, le hint sera là pour les démarrages suivants) ;
+ *      - par le redirectToTenant utilitaire (toute sélection d'école).
+ *    Pas de garde isMobileDevice ici : la LECTURE est réservée au mobile, la
+ *    présence du hint ne change rien au desktop (flux portail normal).
+ */
+export function writeResumeHint(host: string): void {
+  if (typeof window === 'undefined') return;
+  if (!isTenantSessionHost(host)) return;
+  writeResumeHintCookie(host);
+  try {
+    window.localStorage.setItem(
+      ROOT_RESUME_LS_KEY,
+      JSON.stringify({ host, ts: Date.now() }),
+    );
+  } catch {
+    // localStorage indisponible — le cookie reste
+  }
+}
+
+/** Écrit le cookie de reprise pour l'hôte donné (depuis n'importe quel
+ *  sous-domaine du domaine de base). */
+function writeResumeHintCookie(host: string): void {
   try {
     const value = `${host}|${Date.now()}`;
     const secure = window.location.protocol === 'https:' ? '; Secure' : '';
@@ -119,11 +167,29 @@ export function readNativeResumeHint(): NativeResumeHint | null {
     const row = document.cookie
       .split('; ')
       .find((c) => c.startsWith(`${NATIVE_RESUME_COOKIE}=`));
-    if (!row) return null;
+    if (!row) return readRootResumeHintLS();
     const raw = row.split('=').slice(1).join('='); // valeur peut contenir '='
     const [host, ts] = raw.split('|');
-    if (!host || !isTenantSessionHost(host)) return null;
+    if (!host || !isTenantSessionHost(host)) return readRootResumeHintLS();
     return { host, ts: ts ? parseInt(ts, 10) || 0 : 0 };
+  } catch {
+    return readRootResumeHintLS();
+  }
+}
+
+/** ⭐ V12b — Repli localStorage racine (origine courante). Le localStorage
+ *    du domaine racine survit de façon très robuste dans le WebView Android
+ *    (contrairement au cookie, évincable par le GC de Chromium). */
+function readRootResumeHintLS(): NativeResumeHint | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(ROOT_RESUME_LS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { host?: string; ts?: number };
+    if (!parsed.host || !isTenantSessionHost(parsed.host)) return null;
+    // Hint périmé (1 an) → ignorer silencieusement
+    if (parsed.ts && Date.now() - parsed.ts > ROOT_RESUME_LS_MAX_AGE_MS) return null;
+    return { host: parsed.host, ts: parsed.ts || 0 };
   } catch {
     return null;
   }
@@ -135,6 +201,12 @@ export function clearNativeResumeHint(): void {
   try {
     document.cookie =
       `${NATIVE_RESUME_COOKIE}=; Max-Age=0; path=/; domain=.${getBaseDomain()}`;
+  } catch {
+    // best-effort
+  }
+  // ⭐ V12b — effacer AUSSI le localStorage racine (redondance V12b)
+  try {
+    window.localStorage.removeItem(ROOT_RESUME_LS_KEY);
   } catch {
     // best-effort
   }

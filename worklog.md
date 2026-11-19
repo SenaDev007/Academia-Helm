@@ -14542,3 +14542,22 @@ Work Log:
 Stage Summary:
 - ✅✅ Icône installée : blason sur fond BLANC plein — rendu identique sur tous les téléphones/tablettes (plus rien à compositer, fin des fonds noirs/blancs selon l'appareil) ; Play 512 maintenu transparent.
 - ⏳ Machine promoteur : cd apps/mobile && npx cap sync android && cd android && ./gradlew clean bundleRelease → téléverser l'AAB versionCode 12 / versionName 1.0.5 → installer : blason sur fond blanc.
+
+---
+Task ID: 146-mobile-demarrage-page-institutionnelle-v12b
+Agent: Super Z (agent principal)
+Task: Version mobile — retour promoteur : à la 2e utilisation de l'app, c'est TOUJOURS le portail standard Academia Helm qui s'affiche au lieu de la page institutionnelle de l'école (la redirection de reprise V12 — Task 141 FIX 5 — ne se déclenche pas sur son téléphone).
+
+Work Log:
+- DIAGNOSTIC : le mécanisme V12 (cookie partagé .academiahelm.com écrit côté tenant, lu par /portal au démarrage à froid) repose sur UN SEUL point de persistance — le cookie WebView. Or le cookie du WebView Android est évincable/perdu (GC Chromium, politiques de stockage) → le hint disparaît → /portal reste sur le flux normal (sélection d'école). De plus le hint n'était écrit qu'APRÈS login/montage /app : si le cookie initial était déjà perdu, rien ne le réécrivait côté racine.
+- FIX V12b — REDONDANCE TROIS COUCHES (web-only → déploiement Vercel instantané, aucun AAB requis) :
+  1. localStorage RACINE (clé ah_resume_host) en repli du cookie : le localStorage du domaine racine est bien plus robuste que le cookie dans le WebView Android ; readNativeResumeHint() tombe dessus si le cookie est absent/invalide (hint périmé > 1 an ignoré). Déconnexion : le localStorage est effacé AVEC le cookie (clearNativeResumeHint).
+  2. Écriture du hint DÈS LA SÉLECTION d'une école (avant même le login) : redirectToTenant (util partagé, portals SCHOOL/PARENT/générique) + le flux direct de sélection du /portal écrivent l'hôte cible (cookie + localStorage racine) AVANT window.location.href — le premier usage mémorise donc l'école, même si le login n'arrive qu'ensuite. No-op si l'URL n'est pas un sous-domaine tenant (mode query-params, satellites). Desktop : le hint n'est JAMAIS lu (lecture réservée mobile) → flux portail strictement inchangé.
+  3. AUTO-GUÉRISON : l'effet de reprise de /portal ré-écrit le hint (cookie + LS) juste avant window.location.replace vers la page institutionnelle — chaque redirection réussie rafraîchit les deux stockages pour le démarrage suivant.
+- ASSAINISSEMENT des cibles : satellites (teacher/enseignant/saisiemaster/academiafederis/federis) ajoutés aux hôtes exclus de isTenantSessionHost — leur racine n'est PAS la page institutionnelle d'une école (un hint vers le satellite teacher serait une destination erronée) ; la sélection d'un portail TEACHER n'écrit plus de hint. Les hints préexistants pointant vers un satellite sont rejetés à la lecture (repli LS).
+- COMPORTEMENT ATTENDU (app DÉJÀ INSTALLÉE, après le déploiement web) : 1re utilisation → sélection d'école (hint écrit dès la sélection, login écrit le cookie au montage /app) ; chaque démarrage à froid suivant → /portal lit cookie OU localStorage → redirection vers https://{ecole}.academiahelm.com/ (middleware → /school-portal, page institutionnelle) → de là, entrée dans l'app sans identifiants (auto-redirect /login → /app). Mise en arrière-plan simple (processus vivant) : la page courante est conservée (comportement WhatsApp normal).
+- VALIDATION : eslint 3 fichiers exit 0 ; tsc --noEmit web-app : zéro erreur sur les 3 fichiers modifiés (native-session-resume.ts, tenant-redirect.ts, portal/page.tsx). Relecture des flux : sélection SCHOOL/PARENT écrit le hint ; TEACHER/satellites non ; mode query-params no-op ; hint périmé ignoré ; déconnexion efface tout ; garde anti-répétition sessionStorage intacte.
+
+Stage Summary:
+- ✅✅ Démarrage mobile : dès la 2e ouverture, page institutionnelle de l'école — persistance redondante (cookie + localStorage racine, écrit dès la sélection d'école, auto-rafraîchie à chaque reprise) : la perte du cookie WebView ne casse plus le mécanisme. Web-only : actif immédiatement dans l'app installée, sans nouvel AAB.
+- ⏳ Après déploiement (Vercel, auto) : sur le téléphone — ouvrir l'app → sélectionner l'école + se connecter ; fermer l'app (swipe) puis rouvrir → la page institutionnelle de l'école s'affiche directement ; d'elle, entrer dans l'app sans identifiants ; déconnexion manuelle → retour au flux portail normal.

@@ -18,6 +18,7 @@
 import { getAppEnvironment, getAppBaseUrl, type AppEnvironment } from './app-base-url';
 import { API_URL } from '@/lib/api-config';
 import { isReservedSubdomain } from '@/lib/tenant/constants';
+import { writeResumeHint } from '@/lib/auth/native-session-resume';
 
 /**
  * Configuration de redirection tenant
@@ -236,6 +237,28 @@ export async function redirectToTenant(config: TenantRedirectConfig): Promise<vo
     });
   }
   
+  // ⭐ V12b — Mémoriser l'école choisie pour la REPRISE MOBILE : dès la
+  //    sélection d'une école (portal SCHOOL/PARENT, ou générique), l'hôte
+  //    tenant est persisté (cookie partagé + localStorage racine) → au
+  //    prochain démarrage à froid de l'app, /portal redirige directement vers
+  //    la PAGE INSTITUTIONNELLE de cette école. Desktop : le hint n'est jamais
+  //    lu (lecture réservée mobile) → flux portail strictement inchangé.
+  //    No-op silencieuse si l'URL n'est pas un sous-domaine tenant (mode
+  //    query-params, satellite teacher, etc.).
+  if (
+    config.portalType === 'SCHOOL' ||
+    config.portalType === 'PARENT' ||
+    config.portalType === undefined
+  ) {
+    try {
+      if (typeof window !== 'undefined' && /^https?:\/\//.test(url)) {
+        writeResumeHint(new URL(url).hostname);
+      }
+    } catch {
+      // best-effort — la redirection continue normalement
+    }
+  }
+
   // Effectuer la redirection immédiatement
   if (typeof window !== 'undefined') {
     window.location.href = url;

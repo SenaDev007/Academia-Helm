@@ -43,7 +43,7 @@ import BeninMap from '@/components/portal/BeninMap';
 // ⭐ NATIVE SESSION RESUME — reprise directe de session au démarrage à froid
 //    de l'app Android (Capacitor charge toujours server.url = /portal).
 import { isMobileDevice } from '@/lib/pwa/mobile-experience';
-import { readNativeResumeHint, isTenantSessionHost } from '@/lib/auth/native-session-resume';
+import { readNativeResumeHint, isTenantSessionHost, writeResumeHint } from '@/lib/auth/native-session-resume';
 import { type DepartmentData } from '@/data/benin-departments';
 import { useTenantRedirect } from '@/lib/hooks/useTenantRedirect';
 import { getTenantRedirectUrl } from '@/lib/utils/tenant-redirect';
@@ -197,6 +197,10 @@ export default function PortalPage() {
 
     // ⭐ Page institutionnelle (racine du sous-domaine) — PAS /app : c'est le
     //    point d'entrée demandé pour les démarrages suivants sur mobile.
+    // ⭐ V12b — Ré-écrire le hint avant de partir (cookie + localStorage racine)
+    //    : auto-guérison — même si le cookie a été évincé depuis, chaque
+    //    redirection réussie rafraîchit les deux stockages pour la suivante.
+    writeResumeHint(targetHost);
     window.location.replace(`${window.location.protocol}//${targetHost}/`);
   }, []);
 
@@ -349,6 +353,20 @@ export default function PortalPage() {
         }
       } catch {
         // ignore — le logging est best-effort
+      }
+
+      // ⭐ V12b — Mémoriser l'école choisie DÈS la sélection (avant même le
+      //    login) : au prochain démarrage à froid de l'app mobile, /portal
+      //    ouvrira directement la page institutionnelle de CETTE école.
+      //    No-op si l'URL n'est pas un sous-domaine tenant. Desktop : hint
+      //    jamais lu → flux inchangé.
+      try {
+        const selectionHost = new URL(redirectUrl, window.location.origin).hostname;
+        if (selectedPortal === 'SCHOOL' || selectedPortal === 'PARENT') {
+          writeResumeHint(selectionHost);
+        }
+      } catch {
+        // best-effort — la redirection continue normalement
       }
 
       // Redirection immédiate (synchrone)

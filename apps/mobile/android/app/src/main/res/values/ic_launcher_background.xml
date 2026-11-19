@@ -1,6 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Fond adaptatif TRANSPARENT (demande promoteur 2026-11-19) : le logo
-         flotte directement sur le fond. Variante navy = #0B2F73 (commit bd935ac). -->
-    <color name="ic_launcher_background">#00000000</color>
+    <color name="ic_launcher_background">#0B2F73</color>
 </resources>

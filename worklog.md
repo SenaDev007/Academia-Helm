@@ -14511,3 +14511,19 @@ Work Log:
 Stage Summary:
 - ✅✅ Saisie des notes : sauvegarde automatique toutes les 10 secondes (DRAFT) pour maternelle/primaire/secondaire + pistes FR et EN (notes ET remarques Head Teacher), dans les deux portails et sur mobile — l'oubli de « Sauvegarder » ne perd plus rien, au pire 10 s de saisie.
 - ⏳ Après déploiement : ouvrir une fiche de saisie en mode Ajouter/Modifier, taper une note, attendre 10 s sans cliquer → badge vert horodaté + les notes sont en base (recharger la page pour vérifier) ; tester l'échec en coupant le réseau → badge rouge, réseau revenu → tick suivant repasse au vert.
+
+---
+Task ID: 144-mobile-icone-launcher-fond-blanc
+Agent: Super Z (agent principal)
+Task: Version mobile — l'icône affichée à l'installation (launcher téléphone/tablette) avait un FOND BLANC : corriger.
+
+Work Log:
+- DIAGNOSTIC : la variante « fond transparent » (commit 8c5d7ad) rend le fond de l'icône adaptive transparent (couleur #00000000) et les PNG legacy en alpha pur — or la plupart des launchers Android (Samsung One UI, Tecno/Infinix/Itel très répandus au Bénin, launchers stock) NE supportent PAS la transparence du calque background : ils compositent en BLANC (parfois en noir). L'icône installée apparaît donc avec un fond blanc derrière le blason — comportement OS/launcher, non maîtrisable depuis l'app. C'était le risque annoncé lors du passage transparent.
+- FIX : restauration chirurgicale de la variante NAVY (commit bd935ac — générée et vérifiée le même jour) : git checkout bd935ac -- apps/mobile/android/app/src/main/res → les 10 PNG legacy (ic_launcher + ic_launcher_round, 5 densités) retrouvent leur fond navy #0B2F73 plein, et values/ic_launcher_background.xml repasse à #0B2F73 (calque background de l'icône adaptive Android 8+). Les foregrounds adaptive étaient identiques entre les deux variantes (canevas transparent + logo dans la zone sûre 66dp) — aucune autre ressource touchée (git diff bd935ac→HEAD limité à ces 11 fichiers).
+- L'ICÔNE PLAY CONSOLE 512 reste FOND TRANSPARENT (demande explicite promoteur 2026-11-19) : Play Console applique son propre masque squircle — la transparence y est gérée correctement (spéc officielle : « transparency allowed but center your artwork »). PLAY-STORE.md documente désormais les DEUX règles : launcher = navy OBLIGATOIRE, fiche Play = transparent autorisé.
+- VERSION : versionCode 10 → 11 / versionName 1.0.3 → 1.0.4 (changement natif = nouvel AAB ; le code 10 est possiblement consommé par le dernier upload Console, le 11 n'a jamais été construit — zéro risque de collision).
+- VALIDATION : pixels vérifiés par script — coins NAVY + logo présent sur les 5 densités legacy, XML background = #0B2F73, foregrounds intacts.
+
+Stage Summary:
+- ✅✅ Icône launcher : fond navy #0B2F73 restauré (logo original au centre) — rendu garanti identique sur tous les téléphones/tablettes, fini le fond blanc des launchers qui compositent la transparence ; icône Play 512 maintenue transparente pour la fiche.
+- ⏳ Sur la machine promoteur : cd apps/mobile && npx cap sync android && cd android && ./gradlew clean bundleRelease → téléverser l'AAB versionCode 11 / versionName 1.0.4 → installer sur téléphone : l'icône affiche le blason sur fond navy.

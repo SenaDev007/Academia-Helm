@@ -291,7 +291,7 @@ prêts à copier sont en **Annexe A**. Les visuels :
 
 | Élément | Source | Spécifications |
 |---|---|---|
-| Icône app | `apps/mobile/store-assets/play-icon-512.png` | 512×512 PNG 32 bits — ✅ logo original Academia Helm (2026-11-19) |
+| Icône app | `apps/mobile/store-assets/play-icon-512.png` | 512×512 PNG 32 bits **fond transparent** (logo flottant, artwork centré pour le masque Play — transparence autorisée par la spéc officielle) — ✅ logo original (2026-11-19 ; variante navy = commit bd935ac) |
 | Bannière (feature graphic) | `apps/mobile/store-assets/feature-graphic-1024x500.jpg` | 1024×500, JPEG 24 bits sans alpha — ✅ fournie (2026-11-19) |
 | Captures téléphone | À faire §5.2.1 | **min. 2**, JPEG/PNG 16:9 ou 9:16 |
 | Captures tablette 7″/10″ | Optionnelles | recommandé plus tard |
